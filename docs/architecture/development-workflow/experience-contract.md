@@ -1,7 +1,7 @@
 # Peers Dev 体验合同
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`
 
@@ -10,12 +10,13 @@
 ## DEV-J01: 安装并绑定
 
 **Actor**：在明确选定的 worktree 中启动 Agent 的开发者。
-**Decision**：DWF-D26。
+**Decision**：DWF-D33。
 
 1. 开发者运行 `make skills IDE=trae`。
 2. 安装过程验证 canonical source，写入受支持的宿主投影，并通过已安装路径执行
    合成回调。
-3. 第一个真实且可阻断的 `PreToolUse` 创建一次 conversation binding。
+3. 第一个真实且可阻断的 `PreToolUse` 从宿主专用 root-chat identity 创建一次
+   OWNER binding；内部执行 session 不能创建并列 owner。
 4. 后续工具调用复用同一 binding，不受当前 shell 目录影响。
 
 成功结果必须同时证明已安装 Hook、回调可达、执行根不可变且 workspace identity
@@ -62,7 +63,7 @@ DWF-D24 定义的 Plan owner 路径执行。
 **Decision**：DWF-D30。
 
 1. 开发者调用唯一 Doctor 入口。
-2. Doctor 检查安装、conversation binding、Plan/Task/Session ownership、
+2. Doctor 检查安装、BindingProjection、Plan/Task/Session ownership、
    Action Receipt、Completion Review 和 Peers Dev server。
 3. 每条可执行 README 承诺映射到一个机器检查和 typed result。
 4. 任一 required promise 为假时，命令以非零状态退出。
@@ -86,6 +87,27 @@ Doctor 输出不得泄露凭据、原始 conversation identifier、用户主目�
 
 任何未完成 Plan、live owner state、generation mismatch 或 history tamper 都
 必须无 mutation 地拒绝。Agent 不得以新建 worktree 作为恢复动作。
+
+## DEV-J06: 一次准备多模块开发资源
+
+**Actor**：要求 Agent 实现并验证一个跨 Agent、Relay、Station、Desktop 或
+Mobile 模块任务的开发者。
+**Decision**：DWF-D32。
+
+1. 每个受影响模块先输出标准 `ModuleImpact`，不直接部署或申请账号。
+2. Dev Workflow 合并全部影响，解析 target 依赖和可并行 wave。
+3. 资源计划对账号、服务、客户端、设备、Fixture 和自动化 session 去重，并
+   展示峰值需求。
+4. 健康且身份匹配的资源被复用；漂移资源按 owner 能力选择 restart、build 或
+   provision。
+5. 容量不足时只 park 冲突 target；不相关 target 继续。
+6. 每个 ready target 的 claims 一次性进入现有机器工作账本，随后由 Runtime
+   Owner 执行并返回 manifest。
+7. Acceptance Gate 只 attach 到已准备 manifest。
+
+开发者可观察的结果必须明确说明哪些 target 会运行、哪些资源被复用、哪些需要
+重建或创建、哪些 lane 被 park，以及原因。执行过程不得重复创建同一账号/客户端
+或用全局锁串行化无关模块。
 
 ## Recovery Contract
 

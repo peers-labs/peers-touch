@@ -15,12 +15,14 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	providercli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 )
 
 type RuntimeAdmissionResolver struct {
-	providers *ProviderConfigService
-	models    *ModelConfigService
-	now       func() time.Time
+	providers     *ProviderConfigService
+	models        *ModelConfigService
+	now           func() time.Time
+	externalReady func() bool
 }
 
 func NewRuntimeAdmissionResolver(
@@ -34,8 +36,16 @@ func NewRuntimeAdmissionResolver(
 	}
 }
 
+func (r *RuntimeAdmissionResolver) SetExternalRuntimeAvailability(
+	available func() bool,
+) {
+	r.externalReady = available
+}
+
 type AdmissionSnapshot struct {
 	SnapshotID            string
+	RuntimeKind           model.RuntimeKind
+	RuntimeProfileID      string
 	ProviderID            string
 	ModelID               string
 	ProviderConfigVersion string
@@ -73,7 +83,7 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 	var result []ResolvedAvailableModel
 
 	for _, cp := range catalog.List() {
-		if !catalogProviderAdvertised(cp) {
+		if !catalogProviderAdvertised(cp) || !r.CatalogProviderAvailable(cp) {
 			continue
 		}
 		userMatch := providerMap[cp.ID]
@@ -179,7 +189,7 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 		provider := &userProviders[i]
 		if catalog.Find(provider.Name) != nil ||
 			!provider.Enabled ||
-			!ProviderRuntimeAdvertised(provider.RuntimeKind, provider.Protocol) {
+			!r.ProviderRuntimeAvailable(provider.RuntimeKind, provider.Protocol) {
 			continue
 		}
 		hidden := parseHiddenModels(provider.HiddenModels)
@@ -282,7 +292,15 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			"runtime_not_advertised",
 		)
 	}
-	if userMatch != nil && !ProviderRuntimeAdvertised(userMatch.RuntimeKind, userMatch.Protocol) {
+	if cp != nil &&
+		isExternalRuntime(cp.RuntimeKind, cp.Protocol) &&
+		!r.CatalogProviderAvailable(*cp) {
+		return nil, errcode.NewRuntimeUnavailable(
+			runtimeKindForUnavailableProvider(cp.RuntimeKind),
+			"adapter_unavailable",
+		)
+	}
+	if userMatch != nil && !r.ProviderRuntimeAvailable(userMatch.RuntimeKind, userMatch.Protocol) {
 		return nil, errcode.NewRuntimeUnavailable(
 			runtimeKindForUnavailableProvider(userMatch.RuntimeKind),
 			"runtime_not_advertised",
@@ -436,6 +454,8 @@ func (r *RuntimeAdmissionResolver) Resolve(
 
 	return &AdmissionSnapshot{
 		SnapshotID:            snapshotID,
+		RuntimeKind:           resolvedRuntimeKind(cp, userMatch),
+		RuntimeProfileID:      modernChatAgentProfileID,
 		ProviderID:            providerID,
 		ModelID:               modelID,
 		ProviderConfigVersion: providerConfigVersion,
@@ -787,15 +807,54 @@ func catalogProviderAdvertised(cp catalog.CatalogProvider) bool {
 	return ProviderRuntimeAdvertised(cp.RuntimeKind, cp.Protocol)
 }
 
+func CatalogProviderAvailable(cp catalog.CatalogProvider) bool {
+	if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) ||
+		strings.EqualFold(strings.TrimSpace(cp.Protocol), providerRuntimeCLI) {
+		return providercli.VerifyCliBinary(cp.CliCommand).Available
+	}
+	return true
+}
+
+func (r *RuntimeAdmissionResolver) CatalogProviderAvailable(
+	cp catalog.CatalogProvider,
+) bool {
+	if isExternalRuntime(cp.RuntimeKind, cp.Protocol) {
+		return r != nil && r.externalReady != nil && r.externalReady()
+	}
+	return CatalogProviderAvailable(cp)
+}
+
+func (r *RuntimeAdmissionResolver) ProviderRuntimeAvailable(
+	runtimeKind string,
+	protocol string,
+) bool {
+	if !ProviderRuntimeAdvertised(runtimeKind, protocol) {
+		return false
+	}
+	if isExternalRuntime(runtimeKind, protocol) {
+		return r != nil && r.externalReady != nil && r.externalReady()
+	}
+	return true
+}
+
 // ProviderRuntimeAdvertised reports whether Station has an executable adapter
 // for the declared runtime and protocol in the active product profile.
 func ProviderRuntimeAdvertised(runtimeKind, protocol string) bool {
-	if !runtimeAdvertised(runtimeKind) {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(protocol)) {
-	case "openai-compatible", "openai", "anthropic", "ollama":
-		return true
+	switch strings.ToLower(strings.TrimSpace(runtimeKind)) {
+	case "", "http":
+		switch strings.ToLower(strings.TrimSpace(protocol)) {
+		case "openai-compatible", "openai", "anthropic", "ollama":
+			return true
+		default:
+			return false
+		}
+	case "cli":
+		return strings.EqualFold(strings.TrimSpace(protocol), "cli")
+	case "external", "external-agent", "external_agent":
+		return strings.EqualFold(
+			strings.TrimSpace(protocol),
+			"session-cli-v1",
+		)
 	default:
 		return false
 	}
@@ -803,15 +862,48 @@ func ProviderRuntimeAdvertised(runtimeKind, protocol string) bool {
 
 func runtimeAdvertised(runtimeKind string) bool {
 	switch strings.ToLower(strings.TrimSpace(runtimeKind)) {
-	case "", "http":
+	case "", "http", "cli", "external", "external-agent", "external_agent":
 		return true
 	default:
 		return false
 	}
 }
 
+func isExternalRuntime(runtimeKind, protocol string) bool {
+	switch strings.ToLower(strings.TrimSpace(runtimeKind)) {
+	case "external", "external-agent", "external_agent":
+		return strings.EqualFold(strings.TrimSpace(protocol), "session-cli-v1")
+	default:
+		return false
+	}
+}
+
+func resolvedRuntimeKind(
+	catalogProvider *catalog.CatalogProvider,
+	databaseProvider *persistence.AgentProvider,
+) model.RuntimeKind {
+	runtimeKind := ""
+	protocol := ""
+	if catalogProvider != nil {
+		runtimeKind = catalogProvider.RuntimeKind
+		protocol = catalogProvider.Protocol
+	}
+	if databaseProvider != nil {
+		if strings.TrimSpace(databaseProvider.RuntimeKind) != "" {
+			runtimeKind = databaseProvider.RuntimeKind
+		}
+		if strings.TrimSpace(databaseProvider.Protocol) != "" {
+			protocol = databaseProvider.Protocol
+		}
+	}
+	if isExternalRuntime(runtimeKind, protocol) {
+		return model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT
+	}
+	return model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL
+}
+
 func admitProvider(cp catalog.CatalogProvider, userMatch *persistence.AgentProvider) bool {
-	if !catalogProviderAdvertised(cp) {
+	if !catalogProviderAdvertised(cp) || !CatalogProviderAvailable(cp) {
 		return false
 	}
 	enabled := cp.Enabled

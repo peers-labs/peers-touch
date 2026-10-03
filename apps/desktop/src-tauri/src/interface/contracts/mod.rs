@@ -9,17 +9,6 @@ pub struct StubPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthLoginInput {
-    pub account: String,
-    pub password: String,
-    pub base_url: Option<String>,
-    /// Device type sent to Station for session scoping.
-    /// When omitted, callers inject a transport-specific default:
-    /// Tauri commands → "desktop-native", HTTP gateway → "desktop-browser".
-    pub device_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthValidateTokenInput {
     pub token: Option<String>,
 }
@@ -303,25 +292,6 @@ pub struct OAuthAuthorizeInput {
     pub id: String,
     pub environment: Option<String>,
     pub return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OAuthCallbackInput {
-    pub provider: String,
-    pub provider_user_id: String,
-    pub username: Option<String>,
-    pub display_name: Option<String>,
-    pub email: Option<String>,
-    pub avatar_url: Option<String>,
-    pub profile_url: Option<String>,
-    pub expires_at: Option<String>,
-    pub created_at: Option<String>,
-    /// HMAC timestamp from Station relay for oauth-bridge verification
-    pub ts: Option<String>,
-    /// HMAC signature from Station relay for oauth-bridge verification
-    pub sig: Option<String>,
-    #[serde(default)]
-    pub scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -713,6 +683,7 @@ pub struct ExternalUrlInput {
 pub struct OAuthLoopbackStartInput {
     pub id: String,
     pub environment: Option<String>,
+    pub purpose: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

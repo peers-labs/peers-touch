@@ -577,6 +577,22 @@ def detect(
     }
 
 
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--claim", default="Current change is acceptance-ready")
+    parser.add_argument("--range", dest="diff_range", default="HEAD")
+    parser.add_argument("--changed-file", action="append", default=[])
+    parser.add_argument("--plan")
+    parser.add_argument("--run")
+    parser.add_argument("--session")
+    parser.add_argument("--require-gate", action="append", default=[])
+    parser.add_argument(
+        "--contract",
+        help="Path to closure contract YAML for deliverable validation",
+    )
+    return parser.parse_args(argv)
+
+
 def main() -> int:
     from tooling.acceptance.core import (
         RUN_GATE_ENV,
@@ -584,23 +600,12 @@ def main() -> int:
         EvidenceStore,
     )
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--claim", default="Current change is acceptance-ready")
-    parser.add_argument("--range", dest="diff_range", default="HEAD")
-    parser.add_argument("--changed-file", action="append", default=[])
-    parser.add_argument("--plan")
-    parser.add_argument("--run")
-    parser.add_argument("--require-gate", action="append", default=[])
-    parser.add_argument(
-        "--contract",
-        help="Path to closure contract YAML for deliverable validation",
-    )
-    args = parser.parse_args()
+    args = parse_arguments()
 
     try:
         require_acceptance_admission(
             REPO_ROOT,
-            args.run,
+            args.session,
             "gap",
         )
         store = EvidenceStore.from_environment(

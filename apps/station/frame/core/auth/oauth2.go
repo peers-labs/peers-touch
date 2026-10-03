@@ -1,6 +1,11 @@
 package auth
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrOAuthIdentityConflict = errors.New("OAuth identity is already bound to another actor")
 
 type OAuth2ProviderID string
 
@@ -19,6 +24,7 @@ type OAuth2Identity struct {
 	DisplayName    string
 	AvatarURL      string
 	Email          string
+	EmailVerified  bool
 	Raw            map[string]any
 }
 

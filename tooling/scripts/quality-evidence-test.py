@@ -23,6 +23,7 @@ ROUTE_SCRIPT = SCRIPT.parent / "review" / "route-change.sh"
 KNOWLEDGE_SCRIPT = SCRIPT.parent / "review" / "knowledge-match.sh"
 HARD_RULES_SCRIPT = SCRIPT.parent / "review" / "hard-rules.sh"
 REVIEW_RUN_SCRIPT = SCRIPT.parent / "review" / "run.sh"
+REVIEW_WORKFLOW = SCRIPT.parents[2] / ".github" / "workflows" / "review.yml"
 SPEC = importlib.util.spec_from_file_location("quality_evidence", SCRIPT)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"failed to load {SCRIPT}")
@@ -218,6 +219,115 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(len(gaps["review"]), 1)
         self.assertEqual(gaps["review"][0]["impact"], "framework self-proof missing")
         self.assertEqual(gaps["deferred"], [])
+
+    def test_missing_structure_decision_blocks_local_readiness(self) -> None:
+        evidence = {
+            "route": {"ok": True},
+            "knowledge": {"ok": True},
+            "code_structure": {
+                "required": True,
+                "status": "MISSING",
+            },
+            "acceptance": {
+                "plan_ok": True,
+                "blocking_unproven_scope": [],
+                "latest_run": {"results": []},
+                "gate_buckets": {
+                    "environment_evidence_gates": [],
+                    "nightly_or_release_gates": [],
+                },
+            },
+            "head_commit": "current",
+        }
+
+        gaps = MODULE.evidence_gaps(evidence, ci_mode=False)
+
+        self.assertEqual(
+            [gap["kind"] for gap in gaps["blocking"]],
+            ["code-structure-decision"],
+        )
+
+    def test_missing_structure_decision_is_review_work_in_ci(self) -> None:
+        evidence = {
+            "route": {"ok": True},
+            "knowledge": {"ok": True},
+            "code_structure": {
+                "required": True,
+                "status": "MISSING",
+            },
+            "acceptance": {
+                "plan_ok": True,
+                "blocking_unproven_scope": [],
+                "latest_run": {"results": []},
+                "gate_buckets": {
+                    "environment_evidence_gates": [],
+                    "nightly_or_release_gates": [],
+                },
+            },
+            "head_commit": "current",
+        }
+
+        gaps = MODULE.evidence_gaps(evidence, ci_mode=True)
+
+        self.assertEqual(gaps["blocking"], [])
+        self.assertEqual(
+            [gap["kind"] for gap in gaps["review"]],
+            ["code-structure-decision"],
+        )
+
+    def test_stale_structure_decision_blocks_in_ci(self) -> None:
+        evidence = {
+            "route": {"ok": True},
+            "knowledge": {"ok": True},
+            "code_structure": {
+                "required": True,
+                "status": "STALE",
+            },
+            "acceptance": {
+                "plan_ok": True,
+                "blocking_unproven_scope": [],
+                "latest_run": {"results": []},
+                "gate_buckets": {
+                    "environment_evidence_gates": [],
+                    "nightly_or_release_gates": [],
+                },
+            },
+            "head_commit": "current",
+        }
+
+        gaps = MODULE.evidence_gaps(evidence, ci_mode=True)
+
+        self.assertEqual(
+            [gap["kind"] for gap in gaps["blocking"]],
+            ["code-structure-decision"],
+        )
+
+    def test_refactor_required_structure_decision_blocks_readiness(self) -> None:
+        evidence = {
+            "route": {"ok": True},
+            "knowledge": {"ok": True},
+            "code_structure": {
+                "required": True,
+                "status": "REFACTOR_REQUIRED",
+            },
+            "acceptance": {
+                "plan_ok": True,
+                "blocking_unproven_scope": [],
+                "latest_run": {"results": []},
+                "gate_buckets": {
+                    "environment_evidence_gates": [],
+                    "nightly_or_release_gates": [],
+                },
+            },
+            "head_commit": "current",
+        }
+
+        gaps = MODULE.evidence_gaps(evidence, ci_mode=True)
+
+        self.assertEqual(
+            [gap["kind"] for gap in gaps["blocking"]],
+            ["code-structure-refactor"],
+        )
 
     def test_ci_mode_defers_environment_gates_and_unproven_scope(self) -> None:
         evidence = {
@@ -443,6 +553,13 @@ class ReadinessTests(unittest.TestCase):
 
 
 class RouteRangeTests(unittest.TestCase):
+    def test_review_workflow_checks_out_the_exact_pull_request_head(self) -> None:
+        source = REVIEW_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "ref: ${{ github.event.pull_request.head.sha }}",
+            source,
+        )
+
     def test_explicit_range_excludes_untracked_cross_scope_paths(self) -> None:
         with temporary_git_directory() as root:
             subprocess.run(

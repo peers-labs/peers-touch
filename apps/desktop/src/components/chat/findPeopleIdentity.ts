@@ -19,6 +19,37 @@ export interface ActorSearchResult {
   homeStationName?: string;
 }
 
+export type FindPeopleScopeKind = 'federation' | 'station';
+
+export interface FindPeopleScopePresentation {
+  name: string;
+  labelKey:
+    | 'chat.social.findPeople.scopeFederationNamed'
+    | 'chat.social.findPeople.scopeStationNamed';
+  tooltipKey:
+    | 'chat.social.findPeople.scopeFederationTooltip'
+    | 'chat.social.findPeople.scopeStationTooltip';
+}
+
+export function findPeopleScopePresentation(
+  kind: FindPeopleScopeKind,
+  name: string,
+  id: string,
+): FindPeopleScopePresentation {
+  const displayName = name.trim() || id.trim().slice(0, 8);
+  return kind === 'federation'
+    ? {
+        name: displayName,
+        labelKey: 'chat.social.findPeople.scopeFederationNamed',
+        tooltipKey: 'chat.social.findPeople.scopeFederationTooltip',
+      }
+    : {
+        name: displayName,
+        labelKey: 'chat.social.findPeople.scopeStationNamed',
+        tooltipKey: 'chat.social.findPeople.scopeStationTooltip',
+      };
+}
+
 interface FriendRequestFederationContext {
   senderPtid: string;
   receiverPtid: string;

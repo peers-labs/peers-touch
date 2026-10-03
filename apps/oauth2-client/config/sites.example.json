@@ -4,6 +4,9 @@
       "site_id": "main",
       "success_url": "https://your-app.example.com",
       "error_url": "https://your-app.example.com",
+      "allowed_return_to": [
+        "peers-touch://oauth/callback"
+      ],
       "providers": {
         "github": {
           "enabled": true

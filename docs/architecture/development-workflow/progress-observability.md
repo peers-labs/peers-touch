@@ -1,7 +1,7 @@
 # Progress And Agent Activity Observability 产品合同
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`
 
@@ -15,13 +15,13 @@
 它不拥有或修改任何 source state。
 
 Workflow Snapshot 与 Action Receipt 分别由 canonical 决策 DWF-D27 和
-DWF-D29 定义；DWF-D26 提供 conversation binding 输入，DWF-D28 提供
+DWF-D29 定义；DWF-D33 提供 binding projection 输入，DWF-D28 提供
 Completion Review 输入。决策接受不构成实现或 proof 声明。
 
 ## 2. Owner Join
 
 ```text
-Git + conversation binding + Plan binding + Plan Package + current Task
+Git + BindingProjection + Plan binding + Plan Package + current Task
     + Development Session + Completion Review + resource declaration
     + runtime registration/leases + Action Receipts
                               |
@@ -45,6 +45,10 @@ interface ActionReceipt {
   actor: {
     host: string;
     bindingDigest: string;
+    role: 'OWNER' | 'WORKER' | 'REVIEWER';
+    rootBindingDigest: string;
+    parentBindingDigest: string | null;
+    assignmentDigest: string | null;
   };
   binding: {
     workspaceId: string;
@@ -81,6 +85,10 @@ interface ActionReceipt {
 字段，不是 workflow release label。Receipt 排除原始工具参数、prompt、
 stdout、secret 和 raw conversation identifier；记录按 conversation 有界，并
 原子写入 machine Dev root。
+
+Action Receipt store 按 root binding lineage 有界。Child lease 过期或 terminal
+只影响 activity projection，不改变 OWNER authority。Rollout 删除旧 Action
+Receipt store；reader 只接受当前 actor shape，不做兼容解析。
 
 ## 4. Reducer
 

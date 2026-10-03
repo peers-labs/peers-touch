@@ -121,6 +121,20 @@ enum ConnectorErrorCode {
   CONNECTOR_ERROR_CODE_REVOCATION_UNCONFIRMED = 7;
 }
 
+enum McpTransport {
+  MCP_TRANSPORT_UNSPECIFIED = 0;
+  MCP_TRANSPORT_STDIO = 1;
+  MCP_TRANSPORT_HTTP = 2;
+  MCP_TRANSPORT_SSE = 3;
+}
+
+enum McpServerStatus {
+  MCP_SERVER_STATUS_UNSPECIFIED = 0;
+  MCP_SERVER_STATUS_DISCONNECTED = 1;
+  MCP_SERVER_STATUS_READY = 2;
+  MCP_SERVER_STATUS_FAILED = 3;
+}
+
 enum KnowledgeResourceKind {
   KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED = 0;
   KNOWLEDGE_RESOURCE_KIND_DOCUMENT = 1;
@@ -361,6 +375,97 @@ message SyncConnectorResourceManifestsRequest {
 message SyncConnectorResourceManifestsResponse {
   repeated ConnectorResourceManifest manifests = 1;
   repeated CapabilityManifest capability_manifests = 2;
+}
+
+message McpToolDescriptor {
+  string tool_name = 1;
+  string provider_tool_name = 2;
+  string description = 3;
+  string input_schema_json = 4;
+  string capability_id = 5;
+  string capability_version = 6;
+}
+
+message McpServer {
+  string server_id = 1;
+  string ptid = 2;
+  string name = 3;
+  string title = 4;
+  string description = 5;
+  McpTransport transport = 6;
+  ToolExecutionOwner execution_owner = 7;
+  string command = 8;
+  repeated string args = 9;
+  repeated string env_keys = 10;
+  string url = 11;
+  repeated string header_keys = 12;
+  bool enabled = 13;
+  uint64 revision = 14;
+  McpServerStatus status = 15;
+  string last_error = 16;
+  repeated McpToolDescriptor tools = 17;
+  google.protobuf.Timestamp last_tested_at = 18;
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+}
+
+message McpServerSecrets {
+  map<string, string> env = 1;
+  map<string, string> headers = 2;
+}
+
+message UpsertMcpServerRequest {
+  McpServer server = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+  McpServerSecrets station_secrets = 4;
+}
+
+message UpsertMcpServerResponse {
+  McpServer server = 1;
+  repeated CapabilityManifest manifests = 2;
+  bool replayed = 3;
+}
+
+message GetMcpServerRequest {
+  string server_id = 1;
+  string name = 2;
+}
+
+message GetMcpServerResponse {
+  McpServer server = 1;
+}
+
+message ListMcpServersRequest {
+  bool include_disabled = 1;
+}
+
+message ListMcpServersResponse {
+  repeated McpServer servers = 1;
+}
+
+message RefreshMcpServerRequest {
+  string server_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message RefreshMcpServerResponse {
+  McpServer server = 1;
+  repeated CapabilityManifest manifests = 2;
+  bool replayed = 3;
+}
+
+message DeleteMcpServerRequest {
+  string server_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message DeleteMcpServerResponse {
+  McpServer server = 1;
+  repeated CapabilityManifest retired_manifests = 2;
+  bool replayed = 3;
 }
 
 message KnowledgeStationContentRef {

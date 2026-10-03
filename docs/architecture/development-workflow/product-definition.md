@@ -1,7 +1,7 @@
 # Peers Dev 产品定义
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`
 
@@ -43,12 +43,13 @@ Conversation 不得静默改变执行根。Task 或 Plan 不得因聊天文本�
 |---|---|---|---|
 | DWF-D24 | Source invalidation | 当前源码证据失效时，由 Plan 声明的单一 owner 重开最早失效闭环 | accepted |
 | DWF-D25 | Machine-local interaction overlay | Overlay 只能改变交互呈现，不能改变执行政策 | accepted |
-| DWF-D26 | Conversation execution binding | 一个 conversation 绑定一个不可变 `executionRoot` | accepted |
+| DWF-D33 | Owner-rooted binding lineage | 一个可见开发会话拥有一个 OWNER root，内部 WORKER/REVIEWER 只能作为 assigned child | accepted |
 | DWF-D27 | Workflow Snapshot | 跨 owner 的只读一致性投影 | accepted |
 | DWF-D28 | Completion Review | 独立的当前源码完成审查 | accepted |
 | DWF-D29 | Action Receipt | 有界、脱敏的 Agent 动作收据 | accepted |
 | DWF-D30 | Workflow Doctor | 可执行的工作流自诊断 | accepted |
 | DWF-D31 | Plan generation advance | completed 且 quiescent 后复用 canonical owner workspace | accepted |
+| DWF-D32 | Cross-module resource aggregation | runtime acquisition 前统一解析 target、复用、容量与 park | accepted |
 
 Accepted 决策定义目标合同，不等于实现或验收已经通过。在当前源码完成验证前，
 消费者仍须把尚未证明的能力投影为 `UNPROVEN`。
@@ -57,14 +58,15 @@ Accepted 决策定义目标合同，不等于实现或验收已经通过。在�
 
 | ID | Capability | Class | Decision | Readiness claim |
 |---|---|---|---|---|
-| DEV-C01 | Conversation-bound execution | required | DWF-D26 | 首个可阻断工具事件绑定一个不可变执行根；缺少强制能力时 fail closed |
+| DEV-C01 | Owner-rooted execution | required | DWF-D33 | 首个可阻断工具事件绑定一个不可变 OWNER 执行根；内部会话必须携带 assignment；缺少强制能力时 fail closed |
 | DEV-C02 | Truthful completion review | required | DWF-D28 | Task 和 Plan 完成需要绑定当前源码与义务的独立审查收据 |
 | DEV-C03 | Live development observability | required | DWF-D27/DWF-D29 | Dev UI 展示 worktree、Plan、Task、活动、阻塞、漂移、循环和停滞 |
 | DEV-C04 | Human and agent operating guide | required | DWF-D30 | 人类指南中的可执行声明均有机器检查 |
 | DEV-C05 | Self-diagnosis | required | DWF-D30 | 一个 Doctor 入口检查安装、Hook、绑定、状态 owner、Dev UI 和完成 Gate |
 | DEV-C06 | Mutation from Dev UI | unsupported | DWF-D27 | Dev UI 保持只读，所有写入由 owner CLI 执行 |
-| DEV-C07 | Cross-worktree writes | unsupported | DWF-D26 | Conversation 可读取其他 worktree，但只能写入自己的不可变执行根 |
+| DEV-C07 | Cross-worktree writes | unsupported | DWF-D33 | OWNER lineage 可读取其他 worktree，但只能写入自己的不可变执行根 |
 | DEV-C08 | Sequential owner Plans | required | DWF-D31 | completed 且 quiescent 后在同一 canonical owner workspace 推进下一 Plan generation |
+| DEV-C09 | Plan-level resource preparation | required | DWF-D32 | 多模块影响在 runtime acquisition 前聚合；复用、容量、冲突和 park 由一个资源计划裁决 |
 
 ## 5. 首次可用结果
 
@@ -113,7 +115,7 @@ Accepted 决策定义目标合同，不等于实现或验收已经通过。在�
 
 | Capability | TRAE | Cursor/Codex | Browser |
 |---|---|---|---|
-| Conversation binding | DWF-D26 目标能力；需 installed-path proof | 保留 host adapter 合同；逐宿主证明 | 不适用 |
+| Binding projection | DWF-D33 目标能力；需 installed-path proof | 保留 host adapter 合同；逐宿主证明 owner/child lineage | 不适用 |
 | Completion Review | DWF-D28 host-neutral 目标 | 同一 host-neutral 合同 | 只读投影 |
 | Progress and activity | DWF-D29 收据输入 | adapter 能力需单独证明 | DWF-D27 Snapshot 投影 |
 | Workflow Doctor | DWF-D30 完整检查目标 | 未证明能力必须显示 unsupported/unproven | 只展示 server/read-model 状态 |
@@ -125,12 +127,13 @@ Acceptance 单元独立证明。
 
 | Capability | Canonical basis | Missing closure | Smallest executable proof |
 |---|---|---|---|
-| DEV-C01 | DWF-D26 已定义 conversation binding 约束 | 对目标源码、安装投影和宿主回调做当前验证 | 临时宿主目录安装加合成 `PreToolUse` |
+| DEV-C01 | DWF-D33 已定义 owner/child binding 约束 | 对目标源码、安装投影和宿主回调做当前验证 | 临时宿主目录安装加合成 `PreToolUse` |
 | DEV-C02 | Plan、Task、Session 和 lifecycle owner 已定义 | 实现并验证独立 request/receipt 与 closure guard | 缺失/陈旧 receipt 被拒，精确 receipt 通过 |
 | DEV-C03 | `apps/dev/` 是现有只读产品面 | 接入 owner snapshot、action reducer 与 review state | API contract 加桌面/窄屏动态验证 |
 | DEV-C04 | 架构文档和应用 README 已存在 | 确立唯一操作指南并将每条命令纳入 truth audit | 从干净 worktree 执行所有已声明命令 |
 | DEV-C05 | 现有 audit 可作为候选检查输入 | 组合为一个 typed Doctor 并验证公开承诺 | healthy fixture 与故障注入 fixture |
 | DEV-C08 | Workspace binding 已隔离同步进入仓库的外来 Plan | 增加显式 generation CAS、quiescence 与不可变历史 | completed advance、live-resource rejection 与并发测试 |
+| DEV-C09 | Machine ledger、Local Dev lease 和 Acceptance runtime manifest 已有明确 owner | 增加标准 ModuleImpact、target closure 与 fenced PlanResourcePlan | 多模块、复用、容量不足、all-or-none、quarantine replacement 与跨 Plan 冲突测试 |
 
 表中 `Canonical basis` 只说明可继续设计或实现的当前输入，不构成实现完成或
 Acceptance 通过证明。

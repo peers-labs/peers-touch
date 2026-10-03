@@ -32,6 +32,31 @@ func TestRuntimeEvidenceFrozenProfileIsExplicit(t *testing.T) {
 	}
 }
 
+func TestRuntimeEvidenceAdvertisesHealthyExternalAdapter(t *testing.T) {
+	svc := NewRuntimeEvidenceService()
+	svc.SetExternalRuntimeAvailability(func() bool { return true })
+	snapshot, err := svc.EffectiveProfile(
+		context.Background(),
+		"actor-1",
+		"agent-1",
+	)
+	if err != nil {
+		t.Fatalf("effective profile: %v", err)
+	}
+	for _, runtime := range snapshot.GetRuntimes() {
+		if runtime.GetRuntimeId() != runtimeIDExternalAgent {
+			continue
+		}
+		if runtime.GetState() !=
+			model.RuntimeAdvertisementState_RUNTIME_ADVERTISEMENT_STATE_READY ||
+			runtime.GetReasonCode() != "session_adapter_ready" {
+			t.Fatalf("external runtime advertisement = %+v", runtime)
+		}
+		return
+	}
+	t.Fatal("external runtime advertisement is missing")
+}
+
 func TestRuntimeActivityIsMonotonicAndActorScoped(t *testing.T) {
 	svc := NewRuntimeEvidenceService()
 	runtimeKind := model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT

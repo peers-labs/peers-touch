@@ -400,12 +400,13 @@ journeys:
     workClasses: [product-behavior]
     runtimeClass: native-desktop
     actorRoles: [alice, bob, eve, group_member, remote_recipient]
-    clientRoles: [desktop_alice, desktop_bob, desktop_eve]
-    requiredServiceRoles: [station_four, social, conversation_membership, key_exchange, object_backend]
+    clientRoles: [desktop_alice, desktop_bob, desktop_eve, desktop_remote_recipient]
+    requiredServiceRoles: [station_primary, station_secondary, social, conversation_membership, key_exchange, object_backend]
     steps:
       - id: audience
         action: exercise FOLLOWERS FRIENDS CIRCLE GROUP SELF CUSTOM and remote-recipient rejection
-        expected: [authorized readers succeed, stale snapshots and remote recipient reject before publish]
+        expected: [typed Circle and canonical Conversation Group targets select the intended local authority, CUSTOM_DENY accepts only FOLLOWERS, authorized readers succeed, stale snapshots and the fiveArm-backed remote recipient reject before publish]
+        negative: [no CUSTOM_DENY(PUBLIC), numeric Group alias, synthetic remote PTID, remote-member truncation, partial Post, key claim, envelope, delivery or object grant]
       - id: comment
         action: edit encrypt submit retry rate-limit and invalidate parent
         expected: [COMMENT_EDITING and COMMENT_ENCRYPTING retain draft, COMMENT_SUBMITTING is local, COMMENT_POSTED is exact at receiver, COMMENT_FAILED is retryable, COMMENT_RATE_LIMITED exposes retry-after, COMMENT_PARENT_UNAVAILABLE disables submit]

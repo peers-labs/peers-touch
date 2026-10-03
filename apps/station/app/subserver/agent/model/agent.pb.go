@@ -596,6 +596,61 @@ func (RuntimeKind) EnumDescriptor() ([]byte, []int) {
 	return file_domain_agent_agent_proto_rawDescGZIP(), []int{9}
 }
 
+type ExternalRuntimeBindingState int32
+
+const (
+	ExternalRuntimeBindingState_EXTERNAL_RUNTIME_BINDING_STATE_UNSPECIFIED        ExternalRuntimeBindingState = 0
+	ExternalRuntimeBindingState_EXTERNAL_RUNTIME_BINDING_STATE_READY              ExternalRuntimeBindingState = 1
+	ExternalRuntimeBindingState_EXTERNAL_RUNTIME_BINDING_STATE_RESUME_UNAVAILABLE ExternalRuntimeBindingState = 2
+	ExternalRuntimeBindingState_EXTERNAL_RUNTIME_BINDING_STATE_RESET_PREPARED     ExternalRuntimeBindingState = 3
+	ExternalRuntimeBindingState_EXTERNAL_RUNTIME_BINDING_STATE_CLEANUP_FAILED     ExternalRuntimeBindingState = 4
+)
+
+// Enum value maps for ExternalRuntimeBindingState.
+var (
+	ExternalRuntimeBindingState_name = map[int32]string{
+		0: "EXTERNAL_RUNTIME_BINDING_STATE_UNSPECIFIED",
+		1: "EXTERNAL_RUNTIME_BINDING_STATE_READY",
+		2: "EXTERNAL_RUNTIME_BINDING_STATE_RESUME_UNAVAILABLE",
+		3: "EXTERNAL_RUNTIME_BINDING_STATE_RESET_PREPARED",
+		4: "EXTERNAL_RUNTIME_BINDING_STATE_CLEANUP_FAILED",
+	}
+	ExternalRuntimeBindingState_value = map[string]int32{
+		"EXTERNAL_RUNTIME_BINDING_STATE_UNSPECIFIED":        0,
+		"EXTERNAL_RUNTIME_BINDING_STATE_READY":              1,
+		"EXTERNAL_RUNTIME_BINDING_STATE_RESUME_UNAVAILABLE": 2,
+		"EXTERNAL_RUNTIME_BINDING_STATE_RESET_PREPARED":     3,
+		"EXTERNAL_RUNTIME_BINDING_STATE_CLEANUP_FAILED":     4,
+	}
+)
+
+func (x ExternalRuntimeBindingState) Enum() *ExternalRuntimeBindingState {
+	p := new(ExternalRuntimeBindingState)
+	*p = x
+	return p
+}
+
+func (x ExternalRuntimeBindingState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExternalRuntimeBindingState) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_agent_proto_enumTypes[10].Descriptor()
+}
+
+func (ExternalRuntimeBindingState) Type() protoreflect.EnumType {
+	return &file_domain_agent_agent_proto_enumTypes[10]
+}
+
+func (x ExternalRuntimeBindingState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExternalRuntimeBindingState.Descriptor instead.
+func (ExternalRuntimeBindingState) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{10}
+}
+
 type AgentTurnStatus int32
 
 const (
@@ -668,11 +723,11 @@ func (x AgentTurnStatus) String() string {
 }
 
 func (AgentTurnStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[10].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[11].Descriptor()
 }
 
 func (AgentTurnStatus) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[10]
+	return &file_domain_agent_agent_proto_enumTypes[11]
 }
 
 func (x AgentTurnStatus) Number() protoreflect.EnumNumber {
@@ -681,7 +736,7 @@ func (x AgentTurnStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AgentTurnStatus.Descriptor instead.
 func (AgentTurnStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{10}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{11}
 }
 
 type TurnAdmissionStatus int32
@@ -720,11 +775,11 @@ func (x TurnAdmissionStatus) String() string {
 }
 
 func (TurnAdmissionStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[11].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[12].Descriptor()
 }
 
 func (TurnAdmissionStatus) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[11]
+	return &file_domain_agent_agent_proto_enumTypes[12]
 }
 
 func (x TurnAdmissionStatus) Number() protoreflect.EnumNumber {
@@ -733,7 +788,7 @@ func (x TurnAdmissionStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TurnAdmissionStatus.Descriptor instead.
 func (TurnAdmissionStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{11}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{12}
 }
 
 type TurnQueueStatus int32
@@ -772,11 +827,11 @@ func (x TurnQueueStatus) String() string {
 }
 
 func (TurnQueueStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[12].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[13].Descriptor()
 }
 
 func (TurnQueueStatus) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[12]
+	return &file_domain_agent_agent_proto_enumTypes[13]
 }
 
 func (x TurnQueueStatus) Number() protoreflect.EnumNumber {
@@ -785,7 +840,7 @@ func (x TurnQueueStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TurnQueueStatus.Descriptor instead.
 func (TurnQueueStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{12}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{13}
 }
 
 type AgentMessageStatus int32
@@ -833,11 +888,11 @@ func (x AgentMessageStatus) String() string {
 }
 
 func (AgentMessageStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[13].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[14].Descriptor()
 }
 
 func (AgentMessageStatus) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[13]
+	return &file_domain_agent_agent_proto_enumTypes[14]
 }
 
 func (x AgentMessageStatus) Number() protoreflect.EnumNumber {
@@ -846,7 +901,7 @@ func (x AgentMessageStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AgentMessageStatus.Descriptor instead.
 func (AgentMessageStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{13}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{14}
 }
 
 type RuntimeCapabilityResolution int32
@@ -888,11 +943,11 @@ func (x RuntimeCapabilityResolution) String() string {
 }
 
 func (RuntimeCapabilityResolution) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[14].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[15].Descriptor()
 }
 
 func (RuntimeCapabilityResolution) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[14]
+	return &file_domain_agent_agent_proto_enumTypes[15]
 }
 
 func (x RuntimeCapabilityResolution) Number() protoreflect.EnumNumber {
@@ -901,7 +956,7 @@ func (x RuntimeCapabilityResolution) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RuntimeCapabilityResolution.Descriptor instead.
 func (RuntimeCapabilityResolution) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{14}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{15}
 }
 
 type ContextSegmentType int32
@@ -970,11 +1025,11 @@ func (x ContextSegmentType) String() string {
 }
 
 func (ContextSegmentType) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[15].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[16].Descriptor()
 }
 
 func (ContextSegmentType) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[15]
+	return &file_domain_agent_agent_proto_enumTypes[16]
 }
 
 func (x ContextSegmentType) Number() protoreflect.EnumNumber {
@@ -983,7 +1038,7 @@ func (x ContextSegmentType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ContextSegmentType.Descriptor instead.
 func (ContextSegmentType) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{15}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{16}
 }
 
 type ContextSegmentDecision int32
@@ -1025,11 +1080,11 @@ func (x ContextSegmentDecision) String() string {
 }
 
 func (ContextSegmentDecision) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[16].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[17].Descriptor()
 }
 
 func (ContextSegmentDecision) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[16]
+	return &file_domain_agent_agent_proto_enumTypes[17]
 }
 
 func (x ContextSegmentDecision) Number() protoreflect.EnumNumber {
@@ -1038,7 +1093,7 @@ func (x ContextSegmentDecision) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ContextSegmentDecision.Descriptor instead.
 func (ContextSegmentDecision) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{16}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{17}
 }
 
 type ToolExecutionOwner int32
@@ -1074,11 +1129,11 @@ func (x ToolExecutionOwner) String() string {
 }
 
 func (ToolExecutionOwner) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[17].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[18].Descriptor()
 }
 
 func (ToolExecutionOwner) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[17]
+	return &file_domain_agent_agent_proto_enumTypes[18]
 }
 
 func (x ToolExecutionOwner) Number() protoreflect.EnumNumber {
@@ -1087,7 +1142,7 @@ func (x ToolExecutionOwner) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ToolExecutionOwner.Descriptor instead.
 func (ToolExecutionOwner) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{17}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{18}
 }
 
 type ToolCallStatus int32
@@ -1150,11 +1205,11 @@ func (x ToolCallStatus) String() string {
 }
 
 func (ToolCallStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[18].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[19].Descriptor()
 }
 
 func (ToolCallStatus) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[18]
+	return &file_domain_agent_agent_proto_enumTypes[19]
 }
 
 func (x ToolCallStatus) Number() protoreflect.EnumNumber {
@@ -1163,7 +1218,7 @@ func (x ToolCallStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ToolCallStatus.Descriptor instead.
 func (ToolCallStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{18}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{19}
 }
 
 type ClientPlatform int32
@@ -1202,11 +1257,11 @@ func (x ClientPlatform) String() string {
 }
 
 func (ClientPlatform) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[19].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[20].Descriptor()
 }
 
 func (ClientPlatform) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[19]
+	return &file_domain_agent_agent_proto_enumTypes[20]
 }
 
 func (x ClientPlatform) Number() protoreflect.EnumNumber {
@@ -1215,7 +1270,7 @@ func (x ClientPlatform) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientPlatform.Descriptor instead.
 func (ClientPlatform) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{19}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{20}
 }
 
 type CapabilityPermissionState int32
@@ -1257,11 +1312,11 @@ func (x CapabilityPermissionState) String() string {
 }
 
 func (CapabilityPermissionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[20].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[21].Descriptor()
 }
 
 func (CapabilityPermissionState) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[20]
+	return &file_domain_agent_agent_proto_enumTypes[21]
 }
 
 func (x CapabilityPermissionState) Number() protoreflect.EnumNumber {
@@ -1270,7 +1325,7 @@ func (x CapabilityPermissionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CapabilityPermissionState.Descriptor instead.
 func (CapabilityPermissionState) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{20}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{21}
 }
 
 type CapabilityPermissionKind int32
@@ -1318,11 +1373,11 @@ func (x CapabilityPermissionKind) String() string {
 }
 
 func (CapabilityPermissionKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[21].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[22].Descriptor()
 }
 
 func (CapabilityPermissionKind) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[21]
+	return &file_domain_agent_agent_proto_enumTypes[22]
 }
 
 func (x CapabilityPermissionKind) Number() protoreflect.EnumNumber {
@@ -1331,7 +1386,7 @@ func (x CapabilityPermissionKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CapabilityPermissionKind.Descriptor instead.
 func (CapabilityPermissionKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{21}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{22}
 }
 
 type ClientExecutionReplayPolicy int32
@@ -1367,11 +1422,11 @@ func (x ClientExecutionReplayPolicy) String() string {
 }
 
 func (ClientExecutionReplayPolicy) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[22].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[23].Descriptor()
 }
 
 func (ClientExecutionReplayPolicy) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[22]
+	return &file_domain_agent_agent_proto_enumTypes[23]
 }
 
 func (x ClientExecutionReplayPolicy) Number() protoreflect.EnumNumber {
@@ -1380,7 +1435,7 @@ func (x ClientExecutionReplayPolicy) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientExecutionReplayPolicy.Descriptor instead.
 func (ClientExecutionReplayPolicy) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{22}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{23}
 }
 
 type ClientCapabilityReceiptStatus int32
@@ -1422,11 +1477,11 @@ func (x ClientCapabilityReceiptStatus) String() string {
 }
 
 func (ClientCapabilityReceiptStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[23].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[24].Descriptor()
 }
 
 func (ClientCapabilityReceiptStatus) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[23]
+	return &file_domain_agent_agent_proto_enumTypes[24]
 }
 
 func (x ClientCapabilityReceiptStatus) Number() protoreflect.EnumNumber {
@@ -1435,7 +1490,7 @@ func (x ClientCapabilityReceiptStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientCapabilityReceiptStatus.Descriptor instead.
 func (ClientCapabilityReceiptStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{23}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{24}
 }
 
 type ClientCapabilityCommandDomain int32
@@ -1492,11 +1547,11 @@ func (x ClientCapabilityCommandDomain) String() string {
 }
 
 func (ClientCapabilityCommandDomain) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[24].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[25].Descriptor()
 }
 
 func (ClientCapabilityCommandDomain) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[24]
+	return &file_domain_agent_agent_proto_enumTypes[25]
 }
 
 func (x ClientCapabilityCommandDomain) Number() protoreflect.EnumNumber {
@@ -1505,7 +1560,7 @@ func (x ClientCapabilityCommandDomain) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientCapabilityCommandDomain.Descriptor instead.
 func (ClientCapabilityCommandDomain) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{24}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{25}
 }
 
 type ClientCapabilityCommandErrorCode int32
@@ -1556,11 +1611,11 @@ func (x ClientCapabilityCommandErrorCode) String() string {
 }
 
 func (ClientCapabilityCommandErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[25].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[26].Descriptor()
 }
 
 func (ClientCapabilityCommandErrorCode) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[25]
+	return &file_domain_agent_agent_proto_enumTypes[26]
 }
 
 func (x ClientCapabilityCommandErrorCode) Number() protoreflect.EnumNumber {
@@ -1569,7 +1624,7 @@ func (x ClientCapabilityCommandErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientCapabilityCommandErrorCode.Descriptor instead.
 func (ClientCapabilityCommandErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{25}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{26}
 }
 
 type ClientCapabilityLeaseRevokeReason int32
@@ -1614,11 +1669,11 @@ func (x ClientCapabilityLeaseRevokeReason) String() string {
 }
 
 func (ClientCapabilityLeaseRevokeReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[26].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[27].Descriptor()
 }
 
 func (ClientCapabilityLeaseRevokeReason) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[26]
+	return &file_domain_agent_agent_proto_enumTypes[27]
 }
 
 func (x ClientCapabilityLeaseRevokeReason) Number() protoreflect.EnumNumber {
@@ -1627,7 +1682,7 @@ func (x ClientCapabilityLeaseRevokeReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientCapabilityLeaseRevokeReason.Descriptor instead.
 func (ClientCapabilityLeaseRevokeReason) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{26}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{27}
 }
 
 type ClientCapabilityReceiptErrorCode int32
@@ -1696,11 +1751,11 @@ func (x ClientCapabilityReceiptErrorCode) String() string {
 }
 
 func (ClientCapabilityReceiptErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_agent_proto_enumTypes[27].Descriptor()
+	return file_domain_agent_agent_proto_enumTypes[28].Descriptor()
 }
 
 func (ClientCapabilityReceiptErrorCode) Type() protoreflect.EnumType {
-	return &file_domain_agent_agent_proto_enumTypes[27]
+	return &file_domain_agent_agent_proto_enumTypes[28]
 }
 
 func (x ClientCapabilityReceiptErrorCode) Number() protoreflect.EnumNumber {
@@ -1709,7 +1764,7 @@ func (x ClientCapabilityReceiptErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientCapabilityReceiptErrorCode.Descriptor instead.
 func (ClientCapabilityReceiptErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{27}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{28}
 }
 
 type Turn struct {
@@ -5837,17 +5892,20 @@ func (x *AgentDefinition) GetVersion() uint64 {
 }
 
 type ConversationRuntimeBinding struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	RuntimeKind            RuntimeKind            `protobuf:"varint,1,opt,name=runtime_kind,json=runtimeKind,proto3,enum=peers_touch.model.agent.v1.RuntimeKind" json:"runtime_kind,omitempty"`
-	ProviderId             string                 `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	ModelId                string                 `protobuf:"bytes,3,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
-	RuntimeProfileId       string                 `protobuf:"bytes,4,opt,name=runtime_profile_id,json=runtimeProfileId,proto3" json:"runtime_profile_id,omitempty"`
-	ExternalSessionId      string                 `protobuf:"bytes,5,opt,name=external_session_id,json=externalSessionId,proto3" json:"external_session_id,omitempty"`
-	ExternalSessionEpoch   uint64                 `protobuf:"varint,6,opt,name=external_session_epoch,json=externalSessionEpoch,proto3" json:"external_session_epoch,omitempty"`
-	RuntimeHomeRef         string                 `protobuf:"bytes,7,opt,name=runtime_home_ref,json=runtimeHomeRef,proto3" json:"runtime_home_ref,omitempty"`
-	CapabilitySnapshotHash string                 `protobuf:"bytes,8,opt,name=capability_snapshot_hash,json=capabilitySnapshotHash,proto3" json:"capability_snapshot_hash,omitempty"`
-	ConfigSnapshotHash     string                 `protobuf:"bytes,9,opt,name=config_snapshot_hash,json=configSnapshotHash,proto3" json:"config_snapshot_hash,omitempty"`
-	BoundAt                *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=bound_at,json=boundAt,proto3" json:"bound_at,omitempty"`
+	state                  protoimpl.MessageState      `protogen:"open.v1"`
+	RuntimeKind            RuntimeKind                 `protobuf:"varint,1,opt,name=runtime_kind,json=runtimeKind,proto3,enum=peers_touch.model.agent.v1.RuntimeKind" json:"runtime_kind,omitempty"`
+	ProviderId             string                      `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelId                string                      `protobuf:"bytes,3,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
+	RuntimeProfileId       string                      `protobuf:"bytes,4,opt,name=runtime_profile_id,json=runtimeProfileId,proto3" json:"runtime_profile_id,omitempty"`
+	ExternalSessionId      string                      `protobuf:"bytes,5,opt,name=external_session_id,json=externalSessionId,proto3" json:"external_session_id,omitempty"`
+	ExternalSessionEpoch   uint64                      `protobuf:"varint,6,opt,name=external_session_epoch,json=externalSessionEpoch,proto3" json:"external_session_epoch,omitempty"`
+	RuntimeHomeRef         string                      `protobuf:"bytes,7,opt,name=runtime_home_ref,json=runtimeHomeRef,proto3" json:"runtime_home_ref,omitempty"`
+	CapabilitySnapshotHash string                      `protobuf:"bytes,8,opt,name=capability_snapshot_hash,json=capabilitySnapshotHash,proto3" json:"capability_snapshot_hash,omitempty"`
+	ConfigSnapshotHash     string                      `protobuf:"bytes,9,opt,name=config_snapshot_hash,json=configSnapshotHash,proto3" json:"config_snapshot_hash,omitempty"`
+	BoundAt                *timestamppb.Timestamp      `protobuf:"bytes,10,opt,name=bound_at,json=boundAt,proto3" json:"bound_at,omitempty"`
+	State                  ExternalRuntimeBindingState `protobuf:"varint,11,opt,name=state,proto3,enum=peers_touch.model.agent.v1.ExternalRuntimeBindingState" json:"state,omitempty"`
+	LastErrorCode          string                      `protobuf:"bytes,12,opt,name=last_error_code,json=lastErrorCode,proto3" json:"last_error_code,omitempty"`
+	UpdatedAt              *timestamppb.Timestamp      `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -5948,6 +6006,27 @@ func (x *ConversationRuntimeBinding) GetConfigSnapshotHash() string {
 func (x *ConversationRuntimeBinding) GetBoundAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.BoundAt
+	}
+	return nil
+}
+
+func (x *ConversationRuntimeBinding) GetState() ExternalRuntimeBindingState {
+	if x != nil {
+		return x.State
+	}
+	return ExternalRuntimeBindingState_EXTERNAL_RUNTIME_BINDING_STATE_UNSPECIFIED
+}
+
+func (x *ConversationRuntimeBinding) GetLastErrorCode() string {
+	if x != nil {
+		return x.LastErrorCode
+	}
+	return ""
+}
+
+func (x *ConversationRuntimeBinding) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
 	}
 	return nil
 }
@@ -12452,6 +12531,134 @@ func (x *TombstoneMessageResponse) GetMessage() *AgentMessage {
 	return nil
 }
 
+type ResetConversationRuntimeRequest struct {
+	state                       protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId              string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	ExpectedConversationVersion uint64                 `protobuf:"varint,2,opt,name=expected_conversation_version,json=expectedConversationVersion,proto3" json:"expected_conversation_version,omitempty"`
+	ClientIdempotencyKey        string                 `protobuf:"bytes,3,opt,name=client_idempotency_key,json=clientIdempotencyKey,proto3" json:"client_idempotency_key,omitempty"`
+	DestructiveConfirmed        bool                   `protobuf:"varint,4,opt,name=destructive_confirmed,json=destructiveConfirmed,proto3" json:"destructive_confirmed,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
+}
+
+func (x *ResetConversationRuntimeRequest) Reset() {
+	*x = ResetConversationRuntimeRequest{}
+	mi := &file_domain_agent_agent_proto_msgTypes[126]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetConversationRuntimeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetConversationRuntimeRequest) ProtoMessage() {}
+
+func (x *ResetConversationRuntimeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_proto_msgTypes[126]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetConversationRuntimeRequest.ProtoReflect.Descriptor instead.
+func (*ResetConversationRuntimeRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{126}
+}
+
+func (x *ResetConversationRuntimeRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *ResetConversationRuntimeRequest) GetExpectedConversationVersion() uint64 {
+	if x != nil {
+		return x.ExpectedConversationVersion
+	}
+	return 0
+}
+
+func (x *ResetConversationRuntimeRequest) GetClientIdempotencyKey() string {
+	if x != nil {
+		return x.ClientIdempotencyKey
+	}
+	return ""
+}
+
+func (x *ResetConversationRuntimeRequest) GetDestructiveConfirmed() bool {
+	if x != nil {
+		return x.DestructiveConfirmed
+	}
+	return false
+}
+
+type ResetConversationRuntimeResponse struct {
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	Conversation               *Conversation          `protobuf:"bytes,1,opt,name=conversation,proto3" json:"conversation,omitempty"`
+	ClosedExternalSessionEpoch uint64                 `protobuf:"varint,2,opt,name=closed_external_session_epoch,json=closedExternalSessionEpoch,proto3" json:"closed_external_session_epoch,omitempty"`
+	Replayed                   bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *ResetConversationRuntimeResponse) Reset() {
+	*x = ResetConversationRuntimeResponse{}
+	mi := &file_domain_agent_agent_proto_msgTypes[127]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetConversationRuntimeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetConversationRuntimeResponse) ProtoMessage() {}
+
+func (x *ResetConversationRuntimeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_proto_msgTypes[127]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetConversationRuntimeResponse.ProtoReflect.Descriptor instead.
+func (*ResetConversationRuntimeResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{127}
+}
+
+func (x *ResetConversationRuntimeResponse) GetConversation() *Conversation {
+	if x != nil {
+		return x.Conversation
+	}
+	return nil
+}
+
+func (x *ResetConversationRuntimeResponse) GetClosedExternalSessionEpoch() uint64 {
+	if x != nil {
+		return x.ClosedExternalSessionEpoch
+	}
+	return 0
+}
+
+func (x *ResetConversationRuntimeResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 type SchedulerStartRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	AgentId                string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
@@ -12463,7 +12670,7 @@ type SchedulerStartRequest struct {
 
 func (x *SchedulerStartRequest) Reset() {
 	*x = SchedulerStartRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[126]
+	mi := &file_domain_agent_agent_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12475,7 +12682,7 @@ func (x *SchedulerStartRequest) String() string {
 func (*SchedulerStartRequest) ProtoMessage() {}
 
 func (x *SchedulerStartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[126]
+	mi := &file_domain_agent_agent_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12488,7 +12695,7 @@ func (x *SchedulerStartRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStartRequest.ProtoReflect.Descriptor instead.
 func (*SchedulerStartRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{126}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *SchedulerStartRequest) GetAgentId() string {
@@ -12522,7 +12729,7 @@ type SchedulerStartResponse struct {
 
 func (x *SchedulerStartResponse) Reset() {
 	*x = SchedulerStartResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[127]
+	mi := &file_domain_agent_agent_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12534,7 +12741,7 @@ func (x *SchedulerStartResponse) String() string {
 func (*SchedulerStartResponse) ProtoMessage() {}
 
 func (x *SchedulerStartResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[127]
+	mi := &file_domain_agent_agent_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12547,7 +12754,7 @@ func (x *SchedulerStartResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStartResponse.ProtoReflect.Descriptor instead.
 func (*SchedulerStartResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{127}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *SchedulerStartResponse) GetOk() bool {
@@ -12572,7 +12779,7 @@ type SchedulerStopRequest struct {
 
 func (x *SchedulerStopRequest) Reset() {
 	*x = SchedulerStopRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[128]
+	mi := &file_domain_agent_agent_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12584,7 +12791,7 @@ func (x *SchedulerStopRequest) String() string {
 func (*SchedulerStopRequest) ProtoMessage() {}
 
 func (x *SchedulerStopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[128]
+	mi := &file_domain_agent_agent_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12597,7 +12804,7 @@ func (x *SchedulerStopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStopRequest.ProtoReflect.Descriptor instead.
 func (*SchedulerStopRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{128}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{130}
 }
 
 type SchedulerStopResponse struct {
@@ -12610,7 +12817,7 @@ type SchedulerStopResponse struct {
 
 func (x *SchedulerStopResponse) Reset() {
 	*x = SchedulerStopResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[129]
+	mi := &file_domain_agent_agent_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12622,7 +12829,7 @@ func (x *SchedulerStopResponse) String() string {
 func (*SchedulerStopResponse) ProtoMessage() {}
 
 func (x *SchedulerStopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[129]
+	mi := &file_domain_agent_agent_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12635,7 +12842,7 @@ func (x *SchedulerStopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStopResponse.ProtoReflect.Descriptor instead.
 func (*SchedulerStopResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{129}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *SchedulerStopResponse) GetOk() bool {
@@ -12660,7 +12867,7 @@ type SchedulerStatusRequest struct {
 
 func (x *SchedulerStatusRequest) Reset() {
 	*x = SchedulerStatusRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[130]
+	mi := &file_domain_agent_agent_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12672,7 +12879,7 @@ func (x *SchedulerStatusRequest) String() string {
 func (*SchedulerStatusRequest) ProtoMessage() {}
 
 func (x *SchedulerStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[130]
+	mi := &file_domain_agent_agent_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12685,7 +12892,7 @@ func (x *SchedulerStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStatusRequest.ProtoReflect.Descriptor instead.
 func (*SchedulerStatusRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{130}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{132}
 }
 
 type SchedulerStatusResponse struct {
@@ -12701,7 +12908,7 @@ type SchedulerStatusResponse struct {
 
 func (x *SchedulerStatusResponse) Reset() {
 	*x = SchedulerStatusResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[131]
+	mi := &file_domain_agent_agent_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12713,7 +12920,7 @@ func (x *SchedulerStatusResponse) String() string {
 func (*SchedulerStatusResponse) ProtoMessage() {}
 
 func (x *SchedulerStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[131]
+	mi := &file_domain_agent_agent_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12726,7 +12933,7 @@ func (x *SchedulerStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStatusResponse.ProtoReflect.Descriptor instead.
 func (*SchedulerStatusResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{131}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *SchedulerStatusResponse) GetRunning() bool {
@@ -12775,7 +12982,7 @@ type SchedulerAddJobRequest struct {
 
 func (x *SchedulerAddJobRequest) Reset() {
 	*x = SchedulerAddJobRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[132]
+	mi := &file_domain_agent_agent_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12787,7 +12994,7 @@ func (x *SchedulerAddJobRequest) String() string {
 func (*SchedulerAddJobRequest) ProtoMessage() {}
 
 func (x *SchedulerAddJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[132]
+	mi := &file_domain_agent_agent_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12800,7 +13007,7 @@ func (x *SchedulerAddJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerAddJobRequest.ProtoReflect.Descriptor instead.
 func (*SchedulerAddJobRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{132}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *SchedulerAddJobRequest) GetKind() string {
@@ -12833,7 +13040,7 @@ type SchedulerAddJobResponse struct {
 
 func (x *SchedulerAddJobResponse) Reset() {
 	*x = SchedulerAddJobResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[133]
+	mi := &file_domain_agent_agent_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12845,7 +13052,7 @@ func (x *SchedulerAddJobResponse) String() string {
 func (*SchedulerAddJobResponse) ProtoMessage() {}
 
 func (x *SchedulerAddJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[133]
+	mi := &file_domain_agent_agent_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12858,7 +13065,7 @@ func (x *SchedulerAddJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerAddJobResponse.ProtoReflect.Descriptor instead.
 func (*SchedulerAddJobResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{133}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *SchedulerAddJobResponse) GetOk() bool {
@@ -12877,7 +13084,7 @@ type GetGrowthSnapshotRequest struct {
 
 func (x *GetGrowthSnapshotRequest) Reset() {
 	*x = GetGrowthSnapshotRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[134]
+	mi := &file_domain_agent_agent_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12889,7 +13096,7 @@ func (x *GetGrowthSnapshotRequest) String() string {
 func (*GetGrowthSnapshotRequest) ProtoMessage() {}
 
 func (x *GetGrowthSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[134]
+	mi := &file_domain_agent_agent_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12902,7 +13109,7 @@ func (x *GetGrowthSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGrowthSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetGrowthSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{134}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *GetGrowthSnapshotRequest) GetAgentId() string {
@@ -12938,7 +13145,7 @@ type GetGrowthSnapshotResponse struct {
 
 func (x *GetGrowthSnapshotResponse) Reset() {
 	*x = GetGrowthSnapshotResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[135]
+	mi := &file_domain_agent_agent_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12950,7 +13157,7 @@ func (x *GetGrowthSnapshotResponse) String() string {
 func (*GetGrowthSnapshotResponse) ProtoMessage() {}
 
 func (x *GetGrowthSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[135]
+	mi := &file_domain_agent_agent_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12963,7 +13170,7 @@ func (x *GetGrowthSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGrowthSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*GetGrowthSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{135}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *GetGrowthSnapshotResponse) GetAgentId() string {
@@ -13110,7 +13317,7 @@ type RecordFeedbackRequest struct {
 
 func (x *RecordFeedbackRequest) Reset() {
 	*x = RecordFeedbackRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[136]
+	mi := &file_domain_agent_agent_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13122,7 +13329,7 @@ func (x *RecordFeedbackRequest) String() string {
 func (*RecordFeedbackRequest) ProtoMessage() {}
 
 func (x *RecordFeedbackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[136]
+	mi := &file_domain_agent_agent_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13135,7 +13342,7 @@ func (x *RecordFeedbackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordFeedbackRequest.ProtoReflect.Descriptor instead.
 func (*RecordFeedbackRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{136}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *RecordFeedbackRequest) GetAgentId() string {
@@ -13219,7 +13426,7 @@ type RecordFeedbackResponse struct {
 
 func (x *RecordFeedbackResponse) Reset() {
 	*x = RecordFeedbackResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[137]
+	mi := &file_domain_agent_agent_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13231,7 +13438,7 @@ func (x *RecordFeedbackResponse) String() string {
 func (*RecordFeedbackResponse) ProtoMessage() {}
 
 func (x *RecordFeedbackResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[137]
+	mi := &file_domain_agent_agent_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13244,7 +13451,7 @@ func (x *RecordFeedbackResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordFeedbackResponse.ProtoReflect.Descriptor instead.
 func (*RecordFeedbackResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{137}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *RecordFeedbackResponse) GetId() string {
@@ -13698,7 +13905,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\rmemory_policy\x18\t \x01(\tR\fmemoryPolicy\x12]\n" +
 	"\x15runtime_budget_policy\x18\n" +
 	" \x01(\v2).peers_touch.model.agent.v1.RuntimeBudgetR\x13runtimeBudgetPolicy\x12\x18\n" +
-	"\aversion\x18\v \x01(\x04R\aversion\"\x85\x04\n" +
+	"\aversion\x18\v \x01(\x04R\aversion\"\xb7\x05\n" +
 	"\x1aConversationRuntimeBinding\x12J\n" +
 	"\fruntime_kind\x18\x01 \x01(\x0e2'.peers_touch.model.agent.v1.RuntimeKindR\vruntimeKind\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
@@ -13711,7 +13918,11 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x18capability_snapshot_hash\x18\b \x01(\tR\x16capabilitySnapshotHash\x120\n" +
 	"\x14config_snapshot_hash\x18\t \x01(\tR\x12configSnapshotHash\x125\n" +
 	"\bbound_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\aboundAt\"\xb2\x01\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\aboundAt\x12M\n" +
+	"\x05state\x18\v \x01(\x0e27.peers_touch.model.agent.v1.ExternalRuntimeBindingStateR\x05state\x12&\n" +
+	"\x0flast_error_code\x18\f \x01(\tR\rlastErrorCode\x129\n" +
+	"\n" +
+	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xb2\x01\n" +
 	"\x11RuntimeCapability\x12#\n" +
 	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12W\n" +
 	"\n" +
@@ -14387,7 +14598,16 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\a_reason\"\xac\x01\n" +
 	"\x18TombstoneMessageResponse\x12L\n" +
 	"\fconversation\x18\x01 \x01(\v2(.peers_touch.model.agent.v1.ConversationR\fconversation\x12B\n" +
-	"\amessage\x18\x02 \x01(\v2(.peers_touch.model.agent.v1.AgentMessageR\amessage\"\xa4\x01\n" +
+	"\amessage\x18\x02 \x01(\v2(.peers_touch.model.agent.v1.AgentMessageR\amessage\"\xf9\x01\n" +
+	"\x1fResetConversationRuntimeRequest\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12B\n" +
+	"\x1dexpected_conversation_version\x18\x02 \x01(\x04R\x1bexpectedConversationVersion\x124\n" +
+	"\x16client_idempotency_key\x18\x03 \x01(\tR\x14clientIdempotencyKey\x123\n" +
+	"\x15destructive_confirmed\x18\x04 \x01(\bR\x14destructiveConfirmed\"\xcf\x01\n" +
+	" ResetConversationRuntimeResponse\x12L\n" +
+	"\fconversation\x18\x01 \x01(\v2(.peers_touch.model.agent.v1.ConversationR\fconversation\x12A\n" +
+	"\x1dclosed_external_session_epoch\x18\x02 \x01(\x04R\x1aclosedExternalSessionEpoch\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"\xa4\x01\n" +
 	"\x15SchedulerStartRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x126\n" +
 	"\x17review_interval_minutes\x18\x02 \x01(\x05R\x15reviewIntervalMinutes\x128\n" +
@@ -14528,7 +14748,13 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\vRuntimeKind\x12\x1c\n" +
 	"\x18RUNTIME_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19RUNTIME_KIND_DIRECT_MODEL\x10\x01\x12\x1f\n" +
-	"\x1bRUNTIME_KIND_EXTERNAL_AGENT\x10\x02*\xb6\x04\n" +
+	"\x1bRUNTIME_KIND_EXTERNAL_AGENT\x10\x02*\x94\x02\n" +
+	"\x1bExternalRuntimeBindingState\x12.\n" +
+	"*EXTERNAL_RUNTIME_BINDING_STATE_UNSPECIFIED\x10\x00\x12(\n" +
+	"$EXTERNAL_RUNTIME_BINDING_STATE_READY\x10\x01\x125\n" +
+	"1EXTERNAL_RUNTIME_BINDING_STATE_RESUME_UNAVAILABLE\x10\x02\x121\n" +
+	"-EXTERNAL_RUNTIME_BINDING_STATE_RESET_PREPARED\x10\x03\x121\n" +
+	"-EXTERNAL_RUNTIME_BINDING_STATE_CLEANUP_FAILED\x10\x04*\xb6\x04\n" +
 	"\x0fAgentTurnStatus\x12!\n" +
 	"\x1dAGENT_TURN_STATUS_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bAGENT_TURN_STATUS_SUBMITTED\x10\x01\x12\x1c\n" +
@@ -14696,8 +14922,8 @@ func file_domain_agent_agent_proto_rawDescGZIP() []byte {
 	return file_domain_agent_agent_proto_rawDescData
 }
 
-var file_domain_agent_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 28)
-var file_domain_agent_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 140)
+var file_domain_agent_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 29)
+var file_domain_agent_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 142)
 var file_domain_agent_agent_proto_goTypes = []any{
 	(TurnStatus)(0),                                       // 0: peers_touch.model.agent.v1.TurnStatus
 	(FailoverReason)(0),                                   // 1: peers_touch.model.agent.v1.FailoverReason
@@ -14709,380 +14935,386 @@ var file_domain_agent_agent_proto_goTypes = []any{
 	(MessageRole)(0),                                      // 7: peers_touch.model.agent.v1.MessageRole
 	(ConversationStatus)(0),                               // 8: peers_touch.model.agent.v1.ConversationStatus
 	(RuntimeKind)(0),                                      // 9: peers_touch.model.agent.v1.RuntimeKind
-	(AgentTurnStatus)(0),                                  // 10: peers_touch.model.agent.v1.AgentTurnStatus
-	(TurnAdmissionStatus)(0),                              // 11: peers_touch.model.agent.v1.TurnAdmissionStatus
-	(TurnQueueStatus)(0),                                  // 12: peers_touch.model.agent.v1.TurnQueueStatus
-	(AgentMessageStatus)(0),                               // 13: peers_touch.model.agent.v1.AgentMessageStatus
-	(RuntimeCapabilityResolution)(0),                      // 14: peers_touch.model.agent.v1.RuntimeCapabilityResolution
-	(ContextSegmentType)(0),                               // 15: peers_touch.model.agent.v1.ContextSegmentType
-	(ContextSegmentDecision)(0),                           // 16: peers_touch.model.agent.v1.ContextSegmentDecision
-	(ToolExecutionOwner)(0),                               // 17: peers_touch.model.agent.v1.ToolExecutionOwner
-	(ToolCallStatus)(0),                                   // 18: peers_touch.model.agent.v1.ToolCallStatus
-	(ClientPlatform)(0),                                   // 19: peers_touch.model.agent.v1.ClientPlatform
-	(CapabilityPermissionState)(0),                        // 20: peers_touch.model.agent.v1.CapabilityPermissionState
-	(CapabilityPermissionKind)(0),                         // 21: peers_touch.model.agent.v1.CapabilityPermissionKind
-	(ClientExecutionReplayPolicy)(0),                      // 22: peers_touch.model.agent.v1.ClientExecutionReplayPolicy
-	(ClientCapabilityReceiptStatus)(0),                    // 23: peers_touch.model.agent.v1.ClientCapabilityReceiptStatus
-	(ClientCapabilityCommandDomain)(0),                    // 24: peers_touch.model.agent.v1.ClientCapabilityCommandDomain
-	(ClientCapabilityCommandErrorCode)(0),                 // 25: peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	(ClientCapabilityLeaseRevokeReason)(0),                // 26: peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
-	(ClientCapabilityReceiptErrorCode)(0),                 // 27: peers_touch.model.agent.v1.ClientCapabilityReceiptErrorCode
-	(*Turn)(nil),                                          // 28: peers_touch.model.agent.v1.Turn
-	(*ToolCallRecord)(nil),                                // 29: peers_touch.model.agent.v1.ToolCallRecord
-	(*ProviderCallRecord)(nil),                            // 30: peers_touch.model.agent.v1.ProviderCallRecord
-	(*TurnTrace)(nil),                                     // 31: peers_touch.model.agent.v1.TurnTrace
-	(*ClassifiedErrorEvent)(nil),                          // 32: peers_touch.model.agent.v1.ClassifiedErrorEvent
-	(*CompressionEvent)(nil),                              // 33: peers_touch.model.agent.v1.CompressionEvent
-	(*DelegationResult)(nil),                              // 34: peers_touch.model.agent.v1.DelegationResult
-	(*Conversation)(nil),                                  // 35: peers_touch.model.agent.v1.Conversation
-	(*AgentThread)(nil),                                   // 36: peers_touch.model.agent.v1.AgentThread
-	(*CreateThreadRequest)(nil),                           // 37: peers_touch.model.agent.v1.CreateThreadRequest
-	(*CreateThreadResponse)(nil),                          // 38: peers_touch.model.agent.v1.CreateThreadResponse
-	(*ListThreadsRequest)(nil),                            // 39: peers_touch.model.agent.v1.ListThreadsRequest
-	(*ListThreadsResponse)(nil),                           // 40: peers_touch.model.agent.v1.ListThreadsResponse
-	(*ListThreadMessagesRequest)(nil),                     // 41: peers_touch.model.agent.v1.ListThreadMessagesRequest
-	(*ListThreadMessagesResponse)(nil),                    // 42: peers_touch.model.agent.v1.ListThreadMessagesResponse
-	(*Agent)(nil),                                         // 43: peers_touch.model.agent.v1.Agent
-	(*ListAgentsRequest)(nil),                             // 44: peers_touch.model.agent.v1.ListAgentsRequest
-	(*ListAgentsResponse)(nil),                            // 45: peers_touch.model.agent.v1.ListAgentsResponse
-	(*GetAgentRequest)(nil),                               // 46: peers_touch.model.agent.v1.GetAgentRequest
-	(*GetAgentResponse)(nil),                              // 47: peers_touch.model.agent.v1.GetAgentResponse
-	(*CreateAgentRequest)(nil),                            // 48: peers_touch.model.agent.v1.CreateAgentRequest
-	(*CreateAgentResponse)(nil),                           // 49: peers_touch.model.agent.v1.CreateAgentResponse
-	(*UpdateAgentRequest)(nil),                            // 50: peers_touch.model.agent.v1.UpdateAgentRequest
-	(*UpdateAgentResponse)(nil),                           // 51: peers_touch.model.agent.v1.UpdateAgentResponse
-	(*DeleteAgentRequest)(nil),                            // 52: peers_touch.model.agent.v1.DeleteAgentRequest
-	(*DeleteAgentResponse)(nil),                           // 53: peers_touch.model.agent.v1.DeleteAgentResponse
-	(*KnowledgeResource)(nil),                             // 54: peers_touch.model.agent.v1.KnowledgeResource
-	(*KnowledgeChunkReference)(nil),                       // 55: peers_touch.model.agent.v1.KnowledgeChunkReference
-	(*AgentMessage)(nil),                                  // 56: peers_touch.model.agent.v1.AgentMessage
-	(*ExecuteTurnRequest)(nil),                            // 57: peers_touch.model.agent.v1.ExecuteTurnRequest
-	(*ExecuteTurnResponse)(nil),                           // 58: peers_touch.model.agent.v1.ExecuteTurnResponse
-	(*TurnTraceEntry)(nil),                                // 59: peers_touch.model.agent.v1.TurnTraceEntry
-	(*ListTurnTracesRequest)(nil),                         // 60: peers_touch.model.agent.v1.ListTurnTracesRequest
-	(*ListTurnTracesResponse)(nil),                        // 61: peers_touch.model.agent.v1.ListTurnTracesResponse
-	(*GetTurnTraceRequest)(nil),                           // 62: peers_touch.model.agent.v1.GetTurnTraceRequest
-	(*GetTurnTraceResponse)(nil),                          // 63: peers_touch.model.agent.v1.GetTurnTraceResponse
-	(*ClientCapabilitySession)(nil),                       // 64: peers_touch.model.agent.v1.ClientCapabilitySession
-	(*ListClientCapabilitySessionsRequest)(nil),           // 65: peers_touch.model.agent.v1.ListClientCapabilitySessionsRequest
-	(*ListClientCapabilitySessionsResponse)(nil),          // 66: peers_touch.model.agent.v1.ListClientCapabilitySessionsResponse
-	(*ListConversationsRequest)(nil),                      // 67: peers_touch.model.agent.v1.ListConversationsRequest
-	(*ListConversationsResponse)(nil),                     // 68: peers_touch.model.agent.v1.ListConversationsResponse
-	(*GetConversationRequest)(nil),                        // 69: peers_touch.model.agent.v1.GetConversationRequest
-	(*GetConversationResponse)(nil),                       // 70: peers_touch.model.agent.v1.GetConversationResponse
-	(*CreateConversationRequest)(nil),                     // 71: peers_touch.model.agent.v1.CreateConversationRequest
-	(*CreateConversationResponse)(nil),                    // 72: peers_touch.model.agent.v1.CreateConversationResponse
-	(*UpdateConversationRequest)(nil),                     // 73: peers_touch.model.agent.v1.UpdateConversationRequest
-	(*UpdateConversationResponse)(nil),                    // 74: peers_touch.model.agent.v1.UpdateConversationResponse
-	(*ArchiveConversationRequest)(nil),                    // 75: peers_touch.model.agent.v1.ArchiveConversationRequest
-	(*ArchiveConversationResponse)(nil),                   // 76: peers_touch.model.agent.v1.ArchiveConversationResponse
-	(*RestoreConversationRequest)(nil),                    // 77: peers_touch.model.agent.v1.RestoreConversationRequest
-	(*RestoreConversationResponse)(nil),                   // 78: peers_touch.model.agent.v1.RestoreConversationResponse
-	(*ListMessagesRequest)(nil),                           // 79: peers_touch.model.agent.v1.ListMessagesRequest
-	(*ListMessagesResponse)(nil),                          // 80: peers_touch.model.agent.v1.ListMessagesResponse
-	(*AgentDefinition)(nil),                               // 81: peers_touch.model.agent.v1.AgentDefinition
-	(*ConversationRuntimeBinding)(nil),                    // 82: peers_touch.model.agent.v1.ConversationRuntimeBinding
-	(*RuntimeCapability)(nil),                             // 83: peers_touch.model.agent.v1.RuntimeCapability
-	(*RuntimeInputCapabilities)(nil),                      // 84: peers_touch.model.agent.v1.RuntimeInputCapabilities
-	(*RuntimeOutputCapabilities)(nil),                     // 85: peers_touch.model.agent.v1.RuntimeOutputCapabilities
-	(*RuntimeExecutionCapabilities)(nil),                  // 86: peers_touch.model.agent.v1.RuntimeExecutionCapabilities
-	(*RuntimeAgenticCapabilities)(nil),                    // 87: peers_touch.model.agent.v1.RuntimeAgenticCapabilities
-	(*RuntimeCapabilityLimits)(nil),                       // 88: peers_touch.model.agent.v1.RuntimeCapabilityLimits
-	(*RuntimeCapabilityProvenance)(nil),                   // 89: peers_touch.model.agent.v1.RuntimeCapabilityProvenance
-	(*RuntimeCapabilitySnapshot)(nil),                     // 90: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
-	(*RuntimeSnapshot)(nil),                               // 91: peers_touch.model.agent.v1.RuntimeSnapshot
-	(*RuntimeBudget)(nil),                                 // 92: peers_touch.model.agent.v1.RuntimeBudget
-	(*AgentAttachmentRef)(nil),                            // 93: peers_touch.model.agent.v1.AgentAttachmentRef
-	(*CanonicalAgentMessage)(nil),                         // 94: peers_touch.model.agent.v1.CanonicalAgentMessage
-	(*AgentTurn)(nil),                                     // 95: peers_touch.model.agent.v1.AgentTurn
-	(*TurnQueueEntry)(nil),                                // 96: peers_touch.model.agent.v1.TurnQueueEntry
-	(*TurnAdmission)(nil),                                 // 97: peers_touch.model.agent.v1.TurnAdmission
-	(*TurnAttempt)(nil),                                   // 98: peers_touch.model.agent.v1.TurnAttempt
-	(*ContextSegment)(nil),                                // 99: peers_touch.model.agent.v1.ContextSegment
-	(*ContextLedger)(nil),                                 // 100: peers_touch.model.agent.v1.ContextLedger
-	(*CapabilityConstraints)(nil),                         // 101: peers_touch.model.agent.v1.CapabilityConstraints
-	(*ClientCapability)(nil),                              // 102: peers_touch.model.agent.v1.ClientCapability
-	(*ClientCapabilityLease)(nil),                         // 103: peers_touch.model.agent.v1.ClientCapabilityLease
-	(*ClientResourceRef)(nil),                             // 104: peers_touch.model.agent.v1.ClientResourceRef
-	(*ReceiptRecoveryCredential)(nil),                     // 105: peers_touch.model.agent.v1.ReceiptRecoveryCredential
-	(*ReceiptRecoveryScopePayload)(nil),                   // 106: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload
-	(*ClientCapabilityRequest)(nil),                       // 107: peers_touch.model.agent.v1.ClientCapabilityRequest
-	(*ReceiptRecoveryProof)(nil),                          // 108: peers_touch.model.agent.v1.ReceiptRecoveryProof
-	(*ReceiptRecoverySigningPayload)(nil),                 // 109: peers_touch.model.agent.v1.ReceiptRecoverySigningPayload
-	(*ClientCapabilityReceipt)(nil),                       // 110: peers_touch.model.agent.v1.ClientCapabilityReceipt
-	(*ClientCapabilityCommandProof)(nil),                  // 111: peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	(*ClientCapabilityCommandSigningPayload)(nil),         // 112: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload
-	(*ClientCapabilityAdvertisement)(nil),                 // 113: peers_touch.model.agent.v1.ClientCapabilityAdvertisement
-	(*RegisterClientCapabilityLeaseRequest)(nil),          // 114: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest
-	(*RegisterClientCapabilityLeaseResponse)(nil),         // 115: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse
-	(*RenewClientCapabilityLeaseRequest)(nil),             // 116: peers_touch.model.agent.v1.RenewClientCapabilityLeaseRequest
-	(*RenewClientCapabilityLeaseResponse)(nil),            // 117: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse
-	(*RevokeClientCapabilityLeaseRequest)(nil),            // 118: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest
-	(*RevokeClientCapabilityLeaseResponse)(nil),           // 119: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse
-	(*PullClientCapabilityRequestsRequest)(nil),           // 120: peers_touch.model.agent.v1.PullClientCapabilityRequestsRequest
-	(*PullClientCapabilityRequestsResponse)(nil),          // 121: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse
-	(*SubmitClientCapabilityReceiptRequest)(nil),          // 122: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest
-	(*SubmitClientCapabilityReceiptResponse)(nil),         // 123: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse
-	(*SubmitClientCapabilityRecoveryReceiptRequest)(nil),  // 124: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptRequest
-	(*SubmitClientCapabilityRecoveryReceiptResponse)(nil), // 125: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptResponse
-	(*ToolCall)(nil),                                      // 126: peers_touch.model.agent.v1.ToolCall
-	(*TurnUsage)(nil),                                     // 127: peers_touch.model.agent.v1.TurnUsage
-	(*TurnFeedback)(nil),                                  // 128: peers_touch.model.agent.v1.TurnFeedback
-	(*TurnDiagnosticMessageFact)(nil),                     // 129: peers_touch.model.agent.v1.TurnDiagnosticMessageFact
-	(*TurnDiagnosticToolFact)(nil),                        // 130: peers_touch.model.agent.v1.TurnDiagnosticToolFact
-	(*TurnDiagnosticReplay)(nil),                          // 131: peers_touch.model.agent.v1.TurnDiagnosticReplay
-	(*ListTurnFeedbackRequest)(nil),                       // 132: peers_touch.model.agent.v1.ListTurnFeedbackRequest
-	(*ListTurnFeedbackResponse)(nil),                      // 133: peers_touch.model.agent.v1.ListTurnFeedbackResponse
-	(*ExportTurnDiagnosticsRequest)(nil),                  // 134: peers_touch.model.agent.v1.ExportTurnDiagnosticsRequest
-	(*ExportTurnDiagnosticsResponse)(nil),                 // 135: peers_touch.model.agent.v1.ExportTurnDiagnosticsResponse
-	(*SubmitTurnRequest)(nil),                             // 136: peers_touch.model.agent.v1.SubmitTurnRequest
-	(*SubmitTurnResponse)(nil),                            // 137: peers_touch.model.agent.v1.SubmitTurnResponse
-	(*ListQueuedTurnsRequest)(nil),                        // 138: peers_touch.model.agent.v1.ListQueuedTurnsRequest
-	(*ListQueuedTurnsResponse)(nil),                       // 139: peers_touch.model.agent.v1.ListQueuedTurnsResponse
-	(*CancelQueuedTurnRequest)(nil),                       // 140: peers_touch.model.agent.v1.CancelQueuedTurnRequest
-	(*CancelQueuedTurnResponse)(nil),                      // 141: peers_touch.model.agent.v1.CancelQueuedTurnResponse
-	(*CancelTurnRequest)(nil),                             // 142: peers_touch.model.agent.v1.CancelTurnRequest
-	(*CancelTurnResponse)(nil),                            // 143: peers_touch.model.agent.v1.CancelTurnResponse
-	(*RetryTurnRequest)(nil),                              // 144: peers_touch.model.agent.v1.RetryTurnRequest
-	(*RetryTurnResponse)(nil),                             // 145: peers_touch.model.agent.v1.RetryTurnResponse
-	(*RegenerateTurnRequest)(nil),                         // 146: peers_touch.model.agent.v1.RegenerateTurnRequest
-	(*RegenerateTurnResponse)(nil),                        // 147: peers_touch.model.agent.v1.RegenerateTurnResponse
-	(*EditAndResendRequest)(nil),                          // 148: peers_touch.model.agent.v1.EditAndResendRequest
-	(*EditAndResendResponse)(nil),                         // 149: peers_touch.model.agent.v1.EditAndResendResponse
-	(*SelectActiveBranchRequest)(nil),                     // 150: peers_touch.model.agent.v1.SelectActiveBranchRequest
-	(*SelectActiveBranchResponse)(nil),                    // 151: peers_touch.model.agent.v1.SelectActiveBranchResponse
-	(*TombstoneMessageRequest)(nil),                       // 152: peers_touch.model.agent.v1.TombstoneMessageRequest
-	(*TombstoneMessageResponse)(nil),                      // 153: peers_touch.model.agent.v1.TombstoneMessageResponse
-	(*SchedulerStartRequest)(nil),                         // 154: peers_touch.model.agent.v1.SchedulerStartRequest
-	(*SchedulerStartResponse)(nil),                        // 155: peers_touch.model.agent.v1.SchedulerStartResponse
-	(*SchedulerStopRequest)(nil),                          // 156: peers_touch.model.agent.v1.SchedulerStopRequest
-	(*SchedulerStopResponse)(nil),                         // 157: peers_touch.model.agent.v1.SchedulerStopResponse
-	(*SchedulerStatusRequest)(nil),                        // 158: peers_touch.model.agent.v1.SchedulerStatusRequest
-	(*SchedulerStatusResponse)(nil),                       // 159: peers_touch.model.agent.v1.SchedulerStatusResponse
-	(*SchedulerAddJobRequest)(nil),                        // 160: peers_touch.model.agent.v1.SchedulerAddJobRequest
-	(*SchedulerAddJobResponse)(nil),                       // 161: peers_touch.model.agent.v1.SchedulerAddJobResponse
-	(*GetGrowthSnapshotRequest)(nil),                      // 162: peers_touch.model.agent.v1.GetGrowthSnapshotRequest
-	(*GetGrowthSnapshotResponse)(nil),                     // 163: peers_touch.model.agent.v1.GetGrowthSnapshotResponse
-	(*RecordFeedbackRequest)(nil),                         // 164: peers_touch.model.agent.v1.RecordFeedbackRequest
-	(*RecordFeedbackResponse)(nil),                        // 165: peers_touch.model.agent.v1.RecordFeedbackResponse
-	nil,                                                   // 166: peers_touch.model.agent.v1.Conversation.MetaEntry
-	nil,                                                   // 167: peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntry
-	(*timestamppb.Timestamp)(nil),                         // 168: google.protobuf.Timestamp
+	(ExternalRuntimeBindingState)(0),                      // 10: peers_touch.model.agent.v1.ExternalRuntimeBindingState
+	(AgentTurnStatus)(0),                                  // 11: peers_touch.model.agent.v1.AgentTurnStatus
+	(TurnAdmissionStatus)(0),                              // 12: peers_touch.model.agent.v1.TurnAdmissionStatus
+	(TurnQueueStatus)(0),                                  // 13: peers_touch.model.agent.v1.TurnQueueStatus
+	(AgentMessageStatus)(0),                               // 14: peers_touch.model.agent.v1.AgentMessageStatus
+	(RuntimeCapabilityResolution)(0),                      // 15: peers_touch.model.agent.v1.RuntimeCapabilityResolution
+	(ContextSegmentType)(0),                               // 16: peers_touch.model.agent.v1.ContextSegmentType
+	(ContextSegmentDecision)(0),                           // 17: peers_touch.model.agent.v1.ContextSegmentDecision
+	(ToolExecutionOwner)(0),                               // 18: peers_touch.model.agent.v1.ToolExecutionOwner
+	(ToolCallStatus)(0),                                   // 19: peers_touch.model.agent.v1.ToolCallStatus
+	(ClientPlatform)(0),                                   // 20: peers_touch.model.agent.v1.ClientPlatform
+	(CapabilityPermissionState)(0),                        // 21: peers_touch.model.agent.v1.CapabilityPermissionState
+	(CapabilityPermissionKind)(0),                         // 22: peers_touch.model.agent.v1.CapabilityPermissionKind
+	(ClientExecutionReplayPolicy)(0),                      // 23: peers_touch.model.agent.v1.ClientExecutionReplayPolicy
+	(ClientCapabilityReceiptStatus)(0),                    // 24: peers_touch.model.agent.v1.ClientCapabilityReceiptStatus
+	(ClientCapabilityCommandDomain)(0),                    // 25: peers_touch.model.agent.v1.ClientCapabilityCommandDomain
+	(ClientCapabilityCommandErrorCode)(0),                 // 26: peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	(ClientCapabilityLeaseRevokeReason)(0),                // 27: peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
+	(ClientCapabilityReceiptErrorCode)(0),                 // 28: peers_touch.model.agent.v1.ClientCapabilityReceiptErrorCode
+	(*Turn)(nil),                                          // 29: peers_touch.model.agent.v1.Turn
+	(*ToolCallRecord)(nil),                                // 30: peers_touch.model.agent.v1.ToolCallRecord
+	(*ProviderCallRecord)(nil),                            // 31: peers_touch.model.agent.v1.ProviderCallRecord
+	(*TurnTrace)(nil),                                     // 32: peers_touch.model.agent.v1.TurnTrace
+	(*ClassifiedErrorEvent)(nil),                          // 33: peers_touch.model.agent.v1.ClassifiedErrorEvent
+	(*CompressionEvent)(nil),                              // 34: peers_touch.model.agent.v1.CompressionEvent
+	(*DelegationResult)(nil),                              // 35: peers_touch.model.agent.v1.DelegationResult
+	(*Conversation)(nil),                                  // 36: peers_touch.model.agent.v1.Conversation
+	(*AgentThread)(nil),                                   // 37: peers_touch.model.agent.v1.AgentThread
+	(*CreateThreadRequest)(nil),                           // 38: peers_touch.model.agent.v1.CreateThreadRequest
+	(*CreateThreadResponse)(nil),                          // 39: peers_touch.model.agent.v1.CreateThreadResponse
+	(*ListThreadsRequest)(nil),                            // 40: peers_touch.model.agent.v1.ListThreadsRequest
+	(*ListThreadsResponse)(nil),                           // 41: peers_touch.model.agent.v1.ListThreadsResponse
+	(*ListThreadMessagesRequest)(nil),                     // 42: peers_touch.model.agent.v1.ListThreadMessagesRequest
+	(*ListThreadMessagesResponse)(nil),                    // 43: peers_touch.model.agent.v1.ListThreadMessagesResponse
+	(*Agent)(nil),                                         // 44: peers_touch.model.agent.v1.Agent
+	(*ListAgentsRequest)(nil),                             // 45: peers_touch.model.agent.v1.ListAgentsRequest
+	(*ListAgentsResponse)(nil),                            // 46: peers_touch.model.agent.v1.ListAgentsResponse
+	(*GetAgentRequest)(nil),                               // 47: peers_touch.model.agent.v1.GetAgentRequest
+	(*GetAgentResponse)(nil),                              // 48: peers_touch.model.agent.v1.GetAgentResponse
+	(*CreateAgentRequest)(nil),                            // 49: peers_touch.model.agent.v1.CreateAgentRequest
+	(*CreateAgentResponse)(nil),                           // 50: peers_touch.model.agent.v1.CreateAgentResponse
+	(*UpdateAgentRequest)(nil),                            // 51: peers_touch.model.agent.v1.UpdateAgentRequest
+	(*UpdateAgentResponse)(nil),                           // 52: peers_touch.model.agent.v1.UpdateAgentResponse
+	(*DeleteAgentRequest)(nil),                            // 53: peers_touch.model.agent.v1.DeleteAgentRequest
+	(*DeleteAgentResponse)(nil),                           // 54: peers_touch.model.agent.v1.DeleteAgentResponse
+	(*KnowledgeResource)(nil),                             // 55: peers_touch.model.agent.v1.KnowledgeResource
+	(*KnowledgeChunkReference)(nil),                       // 56: peers_touch.model.agent.v1.KnowledgeChunkReference
+	(*AgentMessage)(nil),                                  // 57: peers_touch.model.agent.v1.AgentMessage
+	(*ExecuteTurnRequest)(nil),                            // 58: peers_touch.model.agent.v1.ExecuteTurnRequest
+	(*ExecuteTurnResponse)(nil),                           // 59: peers_touch.model.agent.v1.ExecuteTurnResponse
+	(*TurnTraceEntry)(nil),                                // 60: peers_touch.model.agent.v1.TurnTraceEntry
+	(*ListTurnTracesRequest)(nil),                         // 61: peers_touch.model.agent.v1.ListTurnTracesRequest
+	(*ListTurnTracesResponse)(nil),                        // 62: peers_touch.model.agent.v1.ListTurnTracesResponse
+	(*GetTurnTraceRequest)(nil),                           // 63: peers_touch.model.agent.v1.GetTurnTraceRequest
+	(*GetTurnTraceResponse)(nil),                          // 64: peers_touch.model.agent.v1.GetTurnTraceResponse
+	(*ClientCapabilitySession)(nil),                       // 65: peers_touch.model.agent.v1.ClientCapabilitySession
+	(*ListClientCapabilitySessionsRequest)(nil),           // 66: peers_touch.model.agent.v1.ListClientCapabilitySessionsRequest
+	(*ListClientCapabilitySessionsResponse)(nil),          // 67: peers_touch.model.agent.v1.ListClientCapabilitySessionsResponse
+	(*ListConversationsRequest)(nil),                      // 68: peers_touch.model.agent.v1.ListConversationsRequest
+	(*ListConversationsResponse)(nil),                     // 69: peers_touch.model.agent.v1.ListConversationsResponse
+	(*GetConversationRequest)(nil),                        // 70: peers_touch.model.agent.v1.GetConversationRequest
+	(*GetConversationResponse)(nil),                       // 71: peers_touch.model.agent.v1.GetConversationResponse
+	(*CreateConversationRequest)(nil),                     // 72: peers_touch.model.agent.v1.CreateConversationRequest
+	(*CreateConversationResponse)(nil),                    // 73: peers_touch.model.agent.v1.CreateConversationResponse
+	(*UpdateConversationRequest)(nil),                     // 74: peers_touch.model.agent.v1.UpdateConversationRequest
+	(*UpdateConversationResponse)(nil),                    // 75: peers_touch.model.agent.v1.UpdateConversationResponse
+	(*ArchiveConversationRequest)(nil),                    // 76: peers_touch.model.agent.v1.ArchiveConversationRequest
+	(*ArchiveConversationResponse)(nil),                   // 77: peers_touch.model.agent.v1.ArchiveConversationResponse
+	(*RestoreConversationRequest)(nil),                    // 78: peers_touch.model.agent.v1.RestoreConversationRequest
+	(*RestoreConversationResponse)(nil),                   // 79: peers_touch.model.agent.v1.RestoreConversationResponse
+	(*ListMessagesRequest)(nil),                           // 80: peers_touch.model.agent.v1.ListMessagesRequest
+	(*ListMessagesResponse)(nil),                          // 81: peers_touch.model.agent.v1.ListMessagesResponse
+	(*AgentDefinition)(nil),                               // 82: peers_touch.model.agent.v1.AgentDefinition
+	(*ConversationRuntimeBinding)(nil),                    // 83: peers_touch.model.agent.v1.ConversationRuntimeBinding
+	(*RuntimeCapability)(nil),                             // 84: peers_touch.model.agent.v1.RuntimeCapability
+	(*RuntimeInputCapabilities)(nil),                      // 85: peers_touch.model.agent.v1.RuntimeInputCapabilities
+	(*RuntimeOutputCapabilities)(nil),                     // 86: peers_touch.model.agent.v1.RuntimeOutputCapabilities
+	(*RuntimeExecutionCapabilities)(nil),                  // 87: peers_touch.model.agent.v1.RuntimeExecutionCapabilities
+	(*RuntimeAgenticCapabilities)(nil),                    // 88: peers_touch.model.agent.v1.RuntimeAgenticCapabilities
+	(*RuntimeCapabilityLimits)(nil),                       // 89: peers_touch.model.agent.v1.RuntimeCapabilityLimits
+	(*RuntimeCapabilityProvenance)(nil),                   // 90: peers_touch.model.agent.v1.RuntimeCapabilityProvenance
+	(*RuntimeCapabilitySnapshot)(nil),                     // 91: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
+	(*RuntimeSnapshot)(nil),                               // 92: peers_touch.model.agent.v1.RuntimeSnapshot
+	(*RuntimeBudget)(nil),                                 // 93: peers_touch.model.agent.v1.RuntimeBudget
+	(*AgentAttachmentRef)(nil),                            // 94: peers_touch.model.agent.v1.AgentAttachmentRef
+	(*CanonicalAgentMessage)(nil),                         // 95: peers_touch.model.agent.v1.CanonicalAgentMessage
+	(*AgentTurn)(nil),                                     // 96: peers_touch.model.agent.v1.AgentTurn
+	(*TurnQueueEntry)(nil),                                // 97: peers_touch.model.agent.v1.TurnQueueEntry
+	(*TurnAdmission)(nil),                                 // 98: peers_touch.model.agent.v1.TurnAdmission
+	(*TurnAttempt)(nil),                                   // 99: peers_touch.model.agent.v1.TurnAttempt
+	(*ContextSegment)(nil),                                // 100: peers_touch.model.agent.v1.ContextSegment
+	(*ContextLedger)(nil),                                 // 101: peers_touch.model.agent.v1.ContextLedger
+	(*CapabilityConstraints)(nil),                         // 102: peers_touch.model.agent.v1.CapabilityConstraints
+	(*ClientCapability)(nil),                              // 103: peers_touch.model.agent.v1.ClientCapability
+	(*ClientCapabilityLease)(nil),                         // 104: peers_touch.model.agent.v1.ClientCapabilityLease
+	(*ClientResourceRef)(nil),                             // 105: peers_touch.model.agent.v1.ClientResourceRef
+	(*ReceiptRecoveryCredential)(nil),                     // 106: peers_touch.model.agent.v1.ReceiptRecoveryCredential
+	(*ReceiptRecoveryScopePayload)(nil),                   // 107: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload
+	(*ClientCapabilityRequest)(nil),                       // 108: peers_touch.model.agent.v1.ClientCapabilityRequest
+	(*ReceiptRecoveryProof)(nil),                          // 109: peers_touch.model.agent.v1.ReceiptRecoveryProof
+	(*ReceiptRecoverySigningPayload)(nil),                 // 110: peers_touch.model.agent.v1.ReceiptRecoverySigningPayload
+	(*ClientCapabilityReceipt)(nil),                       // 111: peers_touch.model.agent.v1.ClientCapabilityReceipt
+	(*ClientCapabilityCommandProof)(nil),                  // 112: peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	(*ClientCapabilityCommandSigningPayload)(nil),         // 113: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload
+	(*ClientCapabilityAdvertisement)(nil),                 // 114: peers_touch.model.agent.v1.ClientCapabilityAdvertisement
+	(*RegisterClientCapabilityLeaseRequest)(nil),          // 115: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest
+	(*RegisterClientCapabilityLeaseResponse)(nil),         // 116: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse
+	(*RenewClientCapabilityLeaseRequest)(nil),             // 117: peers_touch.model.agent.v1.RenewClientCapabilityLeaseRequest
+	(*RenewClientCapabilityLeaseResponse)(nil),            // 118: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse
+	(*RevokeClientCapabilityLeaseRequest)(nil),            // 119: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest
+	(*RevokeClientCapabilityLeaseResponse)(nil),           // 120: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse
+	(*PullClientCapabilityRequestsRequest)(nil),           // 121: peers_touch.model.agent.v1.PullClientCapabilityRequestsRequest
+	(*PullClientCapabilityRequestsResponse)(nil),          // 122: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse
+	(*SubmitClientCapabilityReceiptRequest)(nil),          // 123: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest
+	(*SubmitClientCapabilityReceiptResponse)(nil),         // 124: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse
+	(*SubmitClientCapabilityRecoveryReceiptRequest)(nil),  // 125: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptRequest
+	(*SubmitClientCapabilityRecoveryReceiptResponse)(nil), // 126: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptResponse
+	(*ToolCall)(nil),                                      // 127: peers_touch.model.agent.v1.ToolCall
+	(*TurnUsage)(nil),                                     // 128: peers_touch.model.agent.v1.TurnUsage
+	(*TurnFeedback)(nil),                                  // 129: peers_touch.model.agent.v1.TurnFeedback
+	(*TurnDiagnosticMessageFact)(nil),                     // 130: peers_touch.model.agent.v1.TurnDiagnosticMessageFact
+	(*TurnDiagnosticToolFact)(nil),                        // 131: peers_touch.model.agent.v1.TurnDiagnosticToolFact
+	(*TurnDiagnosticReplay)(nil),                          // 132: peers_touch.model.agent.v1.TurnDiagnosticReplay
+	(*ListTurnFeedbackRequest)(nil),                       // 133: peers_touch.model.agent.v1.ListTurnFeedbackRequest
+	(*ListTurnFeedbackResponse)(nil),                      // 134: peers_touch.model.agent.v1.ListTurnFeedbackResponse
+	(*ExportTurnDiagnosticsRequest)(nil),                  // 135: peers_touch.model.agent.v1.ExportTurnDiagnosticsRequest
+	(*ExportTurnDiagnosticsResponse)(nil),                 // 136: peers_touch.model.agent.v1.ExportTurnDiagnosticsResponse
+	(*SubmitTurnRequest)(nil),                             // 137: peers_touch.model.agent.v1.SubmitTurnRequest
+	(*SubmitTurnResponse)(nil),                            // 138: peers_touch.model.agent.v1.SubmitTurnResponse
+	(*ListQueuedTurnsRequest)(nil),                        // 139: peers_touch.model.agent.v1.ListQueuedTurnsRequest
+	(*ListQueuedTurnsResponse)(nil),                       // 140: peers_touch.model.agent.v1.ListQueuedTurnsResponse
+	(*CancelQueuedTurnRequest)(nil),                       // 141: peers_touch.model.agent.v1.CancelQueuedTurnRequest
+	(*CancelQueuedTurnResponse)(nil),                      // 142: peers_touch.model.agent.v1.CancelQueuedTurnResponse
+	(*CancelTurnRequest)(nil),                             // 143: peers_touch.model.agent.v1.CancelTurnRequest
+	(*CancelTurnResponse)(nil),                            // 144: peers_touch.model.agent.v1.CancelTurnResponse
+	(*RetryTurnRequest)(nil),                              // 145: peers_touch.model.agent.v1.RetryTurnRequest
+	(*RetryTurnResponse)(nil),                             // 146: peers_touch.model.agent.v1.RetryTurnResponse
+	(*RegenerateTurnRequest)(nil),                         // 147: peers_touch.model.agent.v1.RegenerateTurnRequest
+	(*RegenerateTurnResponse)(nil),                        // 148: peers_touch.model.agent.v1.RegenerateTurnResponse
+	(*EditAndResendRequest)(nil),                          // 149: peers_touch.model.agent.v1.EditAndResendRequest
+	(*EditAndResendResponse)(nil),                         // 150: peers_touch.model.agent.v1.EditAndResendResponse
+	(*SelectActiveBranchRequest)(nil),                     // 151: peers_touch.model.agent.v1.SelectActiveBranchRequest
+	(*SelectActiveBranchResponse)(nil),                    // 152: peers_touch.model.agent.v1.SelectActiveBranchResponse
+	(*TombstoneMessageRequest)(nil),                       // 153: peers_touch.model.agent.v1.TombstoneMessageRequest
+	(*TombstoneMessageResponse)(nil),                      // 154: peers_touch.model.agent.v1.TombstoneMessageResponse
+	(*ResetConversationRuntimeRequest)(nil),               // 155: peers_touch.model.agent.v1.ResetConversationRuntimeRequest
+	(*ResetConversationRuntimeResponse)(nil),              // 156: peers_touch.model.agent.v1.ResetConversationRuntimeResponse
+	(*SchedulerStartRequest)(nil),                         // 157: peers_touch.model.agent.v1.SchedulerStartRequest
+	(*SchedulerStartResponse)(nil),                        // 158: peers_touch.model.agent.v1.SchedulerStartResponse
+	(*SchedulerStopRequest)(nil),                          // 159: peers_touch.model.agent.v1.SchedulerStopRequest
+	(*SchedulerStopResponse)(nil),                         // 160: peers_touch.model.agent.v1.SchedulerStopResponse
+	(*SchedulerStatusRequest)(nil),                        // 161: peers_touch.model.agent.v1.SchedulerStatusRequest
+	(*SchedulerStatusResponse)(nil),                       // 162: peers_touch.model.agent.v1.SchedulerStatusResponse
+	(*SchedulerAddJobRequest)(nil),                        // 163: peers_touch.model.agent.v1.SchedulerAddJobRequest
+	(*SchedulerAddJobResponse)(nil),                       // 164: peers_touch.model.agent.v1.SchedulerAddJobResponse
+	(*GetGrowthSnapshotRequest)(nil),                      // 165: peers_touch.model.agent.v1.GetGrowthSnapshotRequest
+	(*GetGrowthSnapshotResponse)(nil),                     // 166: peers_touch.model.agent.v1.GetGrowthSnapshotResponse
+	(*RecordFeedbackRequest)(nil),                         // 167: peers_touch.model.agent.v1.RecordFeedbackRequest
+	(*RecordFeedbackResponse)(nil),                        // 168: peers_touch.model.agent.v1.RecordFeedbackResponse
+	nil,                                                   // 169: peers_touch.model.agent.v1.Conversation.MetaEntry
+	nil,                                                   // 170: peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntry
+	(*timestamppb.Timestamp)(nil),                         // 171: google.protobuf.Timestamp
 }
 var file_domain_agent_agent_proto_depIdxs = []int32{
 	0,   // 0: peers_touch.model.agent.v1.Turn.status:type_name -> peers_touch.model.agent.v1.TurnStatus
-	168, // 1: peers_touch.model.agent.v1.Turn.started_at:type_name -> google.protobuf.Timestamp
-	168, // 2: peers_touch.model.agent.v1.Turn.ended_at:type_name -> google.protobuf.Timestamp
-	29,  // 3: peers_touch.model.agent.v1.TurnTrace.tool_calls:type_name -> peers_touch.model.agent.v1.ToolCallRecord
-	30,  // 4: peers_touch.model.agent.v1.TurnTrace.provider_calls:type_name -> peers_touch.model.agent.v1.ProviderCallRecord
-	32,  // 5: peers_touch.model.agent.v1.TurnTrace.errors_classified:type_name -> peers_touch.model.agent.v1.ClassifiedErrorEvent
-	33,  // 6: peers_touch.model.agent.v1.TurnTrace.compression_event:type_name -> peers_touch.model.agent.v1.CompressionEvent
-	34,  // 7: peers_touch.model.agent.v1.TurnTrace.delegation_results:type_name -> peers_touch.model.agent.v1.DelegationResult
-	55,  // 8: peers_touch.model.agent.v1.TurnTrace.knowledge_chunks:type_name -> peers_touch.model.agent.v1.KnowledgeChunkReference
+	171, // 1: peers_touch.model.agent.v1.Turn.started_at:type_name -> google.protobuf.Timestamp
+	171, // 2: peers_touch.model.agent.v1.Turn.ended_at:type_name -> google.protobuf.Timestamp
+	30,  // 3: peers_touch.model.agent.v1.TurnTrace.tool_calls:type_name -> peers_touch.model.agent.v1.ToolCallRecord
+	31,  // 4: peers_touch.model.agent.v1.TurnTrace.provider_calls:type_name -> peers_touch.model.agent.v1.ProviderCallRecord
+	33,  // 5: peers_touch.model.agent.v1.TurnTrace.errors_classified:type_name -> peers_touch.model.agent.v1.ClassifiedErrorEvent
+	34,  // 6: peers_touch.model.agent.v1.TurnTrace.compression_event:type_name -> peers_touch.model.agent.v1.CompressionEvent
+	35,  // 7: peers_touch.model.agent.v1.TurnTrace.delegation_results:type_name -> peers_touch.model.agent.v1.DelegationResult
+	56,  // 8: peers_touch.model.agent.v1.TurnTrace.knowledge_chunks:type_name -> peers_touch.model.agent.v1.KnowledgeChunkReference
 	1,   // 9: peers_touch.model.agent.v1.ClassifiedErrorEvent.reason:type_name -> peers_touch.model.agent.v1.FailoverReason
-	168, // 10: peers_touch.model.agent.v1.ClassifiedErrorEvent.classified_at:type_name -> google.protobuf.Timestamp
+	171, // 10: peers_touch.model.agent.v1.ClassifiedErrorEvent.classified_at:type_name -> google.protobuf.Timestamp
 	2,   // 11: peers_touch.model.agent.v1.DelegationResult.status:type_name -> peers_touch.model.agent.v1.DelegationStatus
-	168, // 12: peers_touch.model.agent.v1.DelegationResult.started_at:type_name -> google.protobuf.Timestamp
-	168, // 13: peers_touch.model.agent.v1.DelegationResult.ended_at:type_name -> google.protobuf.Timestamp
-	166, // 14: peers_touch.model.agent.v1.Conversation.meta:type_name -> peers_touch.model.agent.v1.Conversation.MetaEntry
-	168, // 15: peers_touch.model.agent.v1.Conversation.created_at:type_name -> google.protobuf.Timestamp
-	168, // 16: peers_touch.model.agent.v1.Conversation.updated_at:type_name -> google.protobuf.Timestamp
-	82,  // 17: peers_touch.model.agent.v1.Conversation.runtime_binding:type_name -> peers_touch.model.agent.v1.ConversationRuntimeBinding
-	168, // 18: peers_touch.model.agent.v1.AgentThread.created_at:type_name -> google.protobuf.Timestamp
-	168, // 19: peers_touch.model.agent.v1.AgentThread.updated_at:type_name -> google.protobuf.Timestamp
-	36,  // 20: peers_touch.model.agent.v1.CreateThreadResponse.thread:type_name -> peers_touch.model.agent.v1.AgentThread
-	36,  // 21: peers_touch.model.agent.v1.ListThreadsResponse.threads:type_name -> peers_touch.model.agent.v1.AgentThread
-	56,  // 22: peers_touch.model.agent.v1.ListThreadMessagesResponse.messages:type_name -> peers_touch.model.agent.v1.AgentMessage
+	171, // 12: peers_touch.model.agent.v1.DelegationResult.started_at:type_name -> google.protobuf.Timestamp
+	171, // 13: peers_touch.model.agent.v1.DelegationResult.ended_at:type_name -> google.protobuf.Timestamp
+	169, // 14: peers_touch.model.agent.v1.Conversation.meta:type_name -> peers_touch.model.agent.v1.Conversation.MetaEntry
+	171, // 15: peers_touch.model.agent.v1.Conversation.created_at:type_name -> google.protobuf.Timestamp
+	171, // 16: peers_touch.model.agent.v1.Conversation.updated_at:type_name -> google.protobuf.Timestamp
+	83,  // 17: peers_touch.model.agent.v1.Conversation.runtime_binding:type_name -> peers_touch.model.agent.v1.ConversationRuntimeBinding
+	171, // 18: peers_touch.model.agent.v1.AgentThread.created_at:type_name -> google.protobuf.Timestamp
+	171, // 19: peers_touch.model.agent.v1.AgentThread.updated_at:type_name -> google.protobuf.Timestamp
+	37,  // 20: peers_touch.model.agent.v1.CreateThreadResponse.thread:type_name -> peers_touch.model.agent.v1.AgentThread
+	37,  // 21: peers_touch.model.agent.v1.ListThreadsResponse.threads:type_name -> peers_touch.model.agent.v1.AgentThread
+	57,  // 22: peers_touch.model.agent.v1.ListThreadMessagesResponse.messages:type_name -> peers_touch.model.agent.v1.AgentMessage
 	3,   // 23: peers_touch.model.agent.v1.Agent.visibility:type_name -> peers_touch.model.agent.v1.AgentVisibility
-	168, // 24: peers_touch.model.agent.v1.Agent.created_at:type_name -> google.protobuf.Timestamp
-	168, // 25: peers_touch.model.agent.v1.Agent.updated_at:type_name -> google.protobuf.Timestamp
+	171, // 24: peers_touch.model.agent.v1.Agent.created_at:type_name -> google.protobuf.Timestamp
+	171, // 25: peers_touch.model.agent.v1.Agent.updated_at:type_name -> google.protobuf.Timestamp
 	3,   // 26: peers_touch.model.agent.v1.ListAgentsRequest.visibility:type_name -> peers_touch.model.agent.v1.AgentVisibility
-	43,  // 27: peers_touch.model.agent.v1.ListAgentsResponse.agents:type_name -> peers_touch.model.agent.v1.Agent
-	43,  // 28: peers_touch.model.agent.v1.GetAgentResponse.agent:type_name -> peers_touch.model.agent.v1.Agent
+	44,  // 27: peers_touch.model.agent.v1.ListAgentsResponse.agents:type_name -> peers_touch.model.agent.v1.Agent
+	44,  // 28: peers_touch.model.agent.v1.GetAgentResponse.agent:type_name -> peers_touch.model.agent.v1.Agent
 	3,   // 29: peers_touch.model.agent.v1.CreateAgentRequest.visibility:type_name -> peers_touch.model.agent.v1.AgentVisibility
-	43,  // 30: peers_touch.model.agent.v1.CreateAgentResponse.agent:type_name -> peers_touch.model.agent.v1.Agent
+	44,  // 30: peers_touch.model.agent.v1.CreateAgentResponse.agent:type_name -> peers_touch.model.agent.v1.Agent
 	3,   // 31: peers_touch.model.agent.v1.UpdateAgentRequest.visibility:type_name -> peers_touch.model.agent.v1.AgentVisibility
-	43,  // 32: peers_touch.model.agent.v1.UpdateAgentResponse.agent:type_name -> peers_touch.model.agent.v1.Agent
+	44,  // 32: peers_touch.model.agent.v1.UpdateAgentResponse.agent:type_name -> peers_touch.model.agent.v1.Agent
 	4,   // 33: peers_touch.model.agent.v1.KnowledgeResource.type:type_name -> peers_touch.model.agent.v1.KnowledgeResourceType
 	5,   // 34: peers_touch.model.agent.v1.KnowledgeResource.policy:type_name -> peers_touch.model.agent.v1.KnowledgeResourcePolicy
 	6,   // 35: peers_touch.model.agent.v1.KnowledgeResource.status:type_name -> peers_touch.model.agent.v1.KnowledgeResourceStatus
-	168, // 36: peers_touch.model.agent.v1.KnowledgeResource.created_at:type_name -> google.protobuf.Timestamp
-	168, // 37: peers_touch.model.agent.v1.KnowledgeResource.updated_at:type_name -> google.protobuf.Timestamp
+	171, // 36: peers_touch.model.agent.v1.KnowledgeResource.created_at:type_name -> google.protobuf.Timestamp
+	171, // 37: peers_touch.model.agent.v1.KnowledgeResource.updated_at:type_name -> google.protobuf.Timestamp
 	7,   // 38: peers_touch.model.agent.v1.AgentMessage.role:type_name -> peers_touch.model.agent.v1.MessageRole
-	168, // 39: peers_touch.model.agent.v1.AgentMessage.created_at:type_name -> google.protobuf.Timestamp
-	168, // 40: peers_touch.model.agent.v1.AgentMessage.updated_at:type_name -> google.protobuf.Timestamp
-	13,  // 41: peers_touch.model.agent.v1.AgentMessage.message_status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
-	93,  // 42: peers_touch.model.agent.v1.AgentMessage.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	168, // 43: peers_touch.model.agent.v1.AgentMessage.tombstoned_at:type_name -> google.protobuf.Timestamp
-	93,  // 44: peers_touch.model.agent.v1.ExecuteTurnRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	92,  // 45: peers_touch.model.agent.v1.ExecuteTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	28,  // 46: peers_touch.model.agent.v1.ExecuteTurnResponse.turn:type_name -> peers_touch.model.agent.v1.Turn
-	31,  // 47: peers_touch.model.agent.v1.ExecuteTurnResponse.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
-	56,  // 48: peers_touch.model.agent.v1.ExecuteTurnResponse.response_message:type_name -> peers_touch.model.agent.v1.AgentMessage
-	97,  // 49: peers_touch.model.agent.v1.ExecuteTurnResponse.admission:type_name -> peers_touch.model.agent.v1.TurnAdmission
-	28,  // 50: peers_touch.model.agent.v1.TurnTraceEntry.turn:type_name -> peers_touch.model.agent.v1.Turn
-	31,  // 51: peers_touch.model.agent.v1.TurnTraceEntry.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
-	59,  // 52: peers_touch.model.agent.v1.ListTurnTracesResponse.entries:type_name -> peers_touch.model.agent.v1.TurnTraceEntry
-	59,  // 53: peers_touch.model.agent.v1.GetTurnTraceResponse.entry:type_name -> peers_touch.model.agent.v1.TurnTraceEntry
-	19,  // 54: peers_touch.model.agent.v1.ClientCapabilitySession.platform_kind:type_name -> peers_touch.model.agent.v1.ClientPlatform
-	102, // 55: peers_touch.model.agent.v1.ClientCapabilitySession.typed_capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
-	168, // 56: peers_touch.model.agent.v1.ClientCapabilitySession.expires_at:type_name -> google.protobuf.Timestamp
-	64,  // 57: peers_touch.model.agent.v1.ListClientCapabilitySessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.ClientCapabilitySession
+	171, // 39: peers_touch.model.agent.v1.AgentMessage.created_at:type_name -> google.protobuf.Timestamp
+	171, // 40: peers_touch.model.agent.v1.AgentMessage.updated_at:type_name -> google.protobuf.Timestamp
+	14,  // 41: peers_touch.model.agent.v1.AgentMessage.message_status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
+	94,  // 42: peers_touch.model.agent.v1.AgentMessage.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	171, // 43: peers_touch.model.agent.v1.AgentMessage.tombstoned_at:type_name -> google.protobuf.Timestamp
+	94,  // 44: peers_touch.model.agent.v1.ExecuteTurnRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	93,  // 45: peers_touch.model.agent.v1.ExecuteTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	29,  // 46: peers_touch.model.agent.v1.ExecuteTurnResponse.turn:type_name -> peers_touch.model.agent.v1.Turn
+	32,  // 47: peers_touch.model.agent.v1.ExecuteTurnResponse.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
+	57,  // 48: peers_touch.model.agent.v1.ExecuteTurnResponse.response_message:type_name -> peers_touch.model.agent.v1.AgentMessage
+	98,  // 49: peers_touch.model.agent.v1.ExecuteTurnResponse.admission:type_name -> peers_touch.model.agent.v1.TurnAdmission
+	29,  // 50: peers_touch.model.agent.v1.TurnTraceEntry.turn:type_name -> peers_touch.model.agent.v1.Turn
+	32,  // 51: peers_touch.model.agent.v1.TurnTraceEntry.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
+	60,  // 52: peers_touch.model.agent.v1.ListTurnTracesResponse.entries:type_name -> peers_touch.model.agent.v1.TurnTraceEntry
+	60,  // 53: peers_touch.model.agent.v1.GetTurnTraceResponse.entry:type_name -> peers_touch.model.agent.v1.TurnTraceEntry
+	20,  // 54: peers_touch.model.agent.v1.ClientCapabilitySession.platform_kind:type_name -> peers_touch.model.agent.v1.ClientPlatform
+	103, // 55: peers_touch.model.agent.v1.ClientCapabilitySession.typed_capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
+	171, // 56: peers_touch.model.agent.v1.ClientCapabilitySession.expires_at:type_name -> google.protobuf.Timestamp
+	65,  // 57: peers_touch.model.agent.v1.ListClientCapabilitySessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.ClientCapabilitySession
 	8,   // 58: peers_touch.model.agent.v1.ListConversationsRequest.status:type_name -> peers_touch.model.agent.v1.ConversationStatus
-	35,  // 59: peers_touch.model.agent.v1.ListConversationsResponse.conversations:type_name -> peers_touch.model.agent.v1.Conversation
-	35,  // 60: peers_touch.model.agent.v1.GetConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	35,  // 61: peers_touch.model.agent.v1.CreateConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	167, // 62: peers_touch.model.agent.v1.UpdateConversationRequest.meta:type_name -> peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntry
-	35,  // 63: peers_touch.model.agent.v1.UpdateConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	35,  // 64: peers_touch.model.agent.v1.RestoreConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	56,  // 65: peers_touch.model.agent.v1.ListMessagesResponse.messages:type_name -> peers_touch.model.agent.v1.AgentMessage
-	92,  // 66: peers_touch.model.agent.v1.AgentDefinition.runtime_budget_policy:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	36,  // 59: peers_touch.model.agent.v1.ListConversationsResponse.conversations:type_name -> peers_touch.model.agent.v1.Conversation
+	36,  // 60: peers_touch.model.agent.v1.GetConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	36,  // 61: peers_touch.model.agent.v1.CreateConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	170, // 62: peers_touch.model.agent.v1.UpdateConversationRequest.meta:type_name -> peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntry
+	36,  // 63: peers_touch.model.agent.v1.UpdateConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	36,  // 64: peers_touch.model.agent.v1.RestoreConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	57,  // 65: peers_touch.model.agent.v1.ListMessagesResponse.messages:type_name -> peers_touch.model.agent.v1.AgentMessage
+	93,  // 66: peers_touch.model.agent.v1.AgentDefinition.runtime_budget_policy:type_name -> peers_touch.model.agent.v1.RuntimeBudget
 	9,   // 67: peers_touch.model.agent.v1.ConversationRuntimeBinding.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
-	168, // 68: peers_touch.model.agent.v1.ConversationRuntimeBinding.bound_at:type_name -> google.protobuf.Timestamp
-	14,  // 69: peers_touch.model.agent.v1.RuntimeCapability.resolution:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityResolution
-	168, // 70: peers_touch.model.agent.v1.RuntimeCapabilityProvenance.observed_at:type_name -> google.protobuf.Timestamp
-	84,  // 71: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.input:type_name -> peers_touch.model.agent.v1.RuntimeInputCapabilities
-	85,  // 72: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.output:type_name -> peers_touch.model.agent.v1.RuntimeOutputCapabilities
-	86,  // 73: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.runtime:type_name -> peers_touch.model.agent.v1.RuntimeExecutionCapabilities
-	87,  // 74: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.agentic:type_name -> peers_touch.model.agent.v1.RuntimeAgenticCapabilities
-	88,  // 75: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.limits:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityLimits
-	83,  // 76: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.resolution:type_name -> peers_touch.model.agent.v1.RuntimeCapability
-	89,  // 77: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.provenance:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityProvenance
-	9,   // 78: peers_touch.model.agent.v1.RuntimeSnapshot.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
-	90,  // 79: peers_touch.model.agent.v1.RuntimeSnapshot.capabilities:type_name -> peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
-	92,  // 80: peers_touch.model.agent.v1.RuntimeSnapshot.budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	168, // 81: peers_touch.model.agent.v1.AgentAttachmentRef.expires_at:type_name -> google.protobuf.Timestamp
-	7,   // 82: peers_touch.model.agent.v1.CanonicalAgentMessage.role:type_name -> peers_touch.model.agent.v1.MessageRole
-	13,  // 83: peers_touch.model.agent.v1.CanonicalAgentMessage.status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
-	93,  // 84: peers_touch.model.agent.v1.CanonicalAgentMessage.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	168, // 85: peers_touch.model.agent.v1.CanonicalAgentMessage.created_at:type_name -> google.protobuf.Timestamp
-	10,  // 86: peers_touch.model.agent.v1.AgentTurn.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
-	91,  // 87: peers_touch.model.agent.v1.AgentTurn.runtime_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
-	92,  // 88: peers_touch.model.agent.v1.AgentTurn.budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	168, // 89: peers_touch.model.agent.v1.AgentTurn.submitted_at:type_name -> google.protobuf.Timestamp
-	168, // 90: peers_touch.model.agent.v1.AgentTurn.started_at:type_name -> google.protobuf.Timestamp
-	168, // 91: peers_touch.model.agent.v1.AgentTurn.ended_at:type_name -> google.protobuf.Timestamp
-	12,  // 92: peers_touch.model.agent.v1.TurnQueueEntry.status:type_name -> peers_touch.model.agent.v1.TurnQueueStatus
-	168, // 93: peers_touch.model.agent.v1.TurnQueueEntry.created_at:type_name -> google.protobuf.Timestamp
-	168, // 94: peers_touch.model.agent.v1.TurnQueueEntry.updated_at:type_name -> google.protobuf.Timestamp
-	11,  // 95: peers_touch.model.agent.v1.TurnAdmission.status:type_name -> peers_touch.model.agent.v1.TurnAdmissionStatus
-	96,  // 96: peers_touch.model.agent.v1.TurnAdmission.queue_entry:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
-	91,  // 97: peers_touch.model.agent.v1.TurnAttempt.runtime_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
-	10,  // 98: peers_touch.model.agent.v1.TurnAttempt.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
-	127, // 99: peers_touch.model.agent.v1.TurnAttempt.usage:type_name -> peers_touch.model.agent.v1.TurnUsage
-	168, // 100: peers_touch.model.agent.v1.TurnAttempt.started_at:type_name -> google.protobuf.Timestamp
-	168, // 101: peers_touch.model.agent.v1.TurnAttempt.ended_at:type_name -> google.protobuf.Timestamp
-	15,  // 102: peers_touch.model.agent.v1.ContextSegment.type:type_name -> peers_touch.model.agent.v1.ContextSegmentType
-	16,  // 103: peers_touch.model.agent.v1.ContextSegment.decision:type_name -> peers_touch.model.agent.v1.ContextSegmentDecision
-	99,  // 104: peers_touch.model.agent.v1.ContextLedger.segments:type_name -> peers_touch.model.agent.v1.ContextSegment
-	20,  // 105: peers_touch.model.agent.v1.ClientCapability.permission:type_name -> peers_touch.model.agent.v1.CapabilityPermissionState
-	101, // 106: peers_touch.model.agent.v1.ClientCapability.constraints:type_name -> peers_touch.model.agent.v1.CapabilityConstraints
-	21,  // 107: peers_touch.model.agent.v1.ClientCapability.permission_kind:type_name -> peers_touch.model.agent.v1.CapabilityPermissionKind
-	19,  // 108: peers_touch.model.agent.v1.ClientCapabilityLease.platform:type_name -> peers_touch.model.agent.v1.ClientPlatform
-	102, // 109: peers_touch.model.agent.v1.ClientCapabilityLease.capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
-	168, // 110: peers_touch.model.agent.v1.ClientCapabilityLease.expires_at:type_name -> google.protobuf.Timestamp
-	168, // 111: peers_touch.model.agent.v1.ClientResourceRef.expires_at:type_name -> google.protobuf.Timestamp
-	168, // 112: peers_touch.model.agent.v1.ReceiptRecoveryCredential.expires_at:type_name -> google.protobuf.Timestamp
-	22,  // 113: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
-	168, // 114: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.execution_deadline:type_name -> google.protobuf.Timestamp
-	168, // 115: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.reconciliation_deadline:type_name -> google.protobuf.Timestamp
-	104, // 116: peers_touch.model.agent.v1.ClientCapabilityRequest.resource_refs:type_name -> peers_touch.model.agent.v1.ClientResourceRef
-	168, // 117: peers_touch.model.agent.v1.ClientCapabilityRequest.execution_deadline:type_name -> google.protobuf.Timestamp
-	22,  // 118: peers_touch.model.agent.v1.ClientCapabilityRequest.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
-	105, // 119: peers_touch.model.agent.v1.ClientCapabilityRequest.recovery_credential:type_name -> peers_touch.model.agent.v1.ReceiptRecoveryCredential
-	168, // 120: peers_touch.model.agent.v1.ClientCapabilityRequest.reconciliation_deadline:type_name -> google.protobuf.Timestamp
-	23,  // 121: peers_touch.model.agent.v1.ClientCapabilityReceipt.status:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceiptStatus
-	168, // 122: peers_touch.model.agent.v1.ClientCapabilityReceipt.occurred_at:type_name -> google.protobuf.Timestamp
-	108, // 123: peers_touch.model.agent.v1.ClientCapabilityReceipt.recovery_proof:type_name -> peers_touch.model.agent.v1.ReceiptRecoveryProof
-	168, // 124: peers_touch.model.agent.v1.ClientCapabilityCommandProof.issued_at:type_name -> google.protobuf.Timestamp
-	24,  // 125: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload.domain:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandDomain
-	168, // 126: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload.issued_at:type_name -> google.protobuf.Timestamp
-	19,  // 127: peers_touch.model.agent.v1.ClientCapabilityAdvertisement.platform:type_name -> peers_touch.model.agent.v1.ClientPlatform
-	102, // 128: peers_touch.model.agent.v1.ClientCapabilityAdvertisement.capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
-	113, // 129: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest.advertisement:type_name -> peers_touch.model.agent.v1.ClientCapabilityAdvertisement
-	111, // 130: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	103, // 131: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ClientCapabilityLease
-	25,  // 132: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	111, // 133: peers_touch.model.agent.v1.RenewClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	103, // 134: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ClientCapabilityLease
-	25,  // 135: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	26,  // 136: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest.reason:type_name -> peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
-	111, // 137: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	168, // 138: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.revoked_at:type_name -> google.protobuf.Timestamp
-	26,  // 139: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.reason:type_name -> peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
-	25,  // 140: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	111, // 141: peers_touch.model.agent.v1.PullClientCapabilityRequestsRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	107, // 142: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse.requests:type_name -> peers_touch.model.agent.v1.ClientCapabilityRequest
-	25,  // 143: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	110, // 144: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest.receipt:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceipt
-	111, // 145: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	27,  // 146: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceiptErrorCode
-	25,  // 147: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse.command_error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	110, // 148: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptRequest.receipt:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceipt
-	123, // 149: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptResponse.result:type_name -> peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse
-	17,  // 150: peers_touch.model.agent.v1.ToolCall.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
-	168, // 151: peers_touch.model.agent.v1.ToolCall.dispatch_committed_at:type_name -> google.protobuf.Timestamp
-	168, // 152: peers_touch.model.agent.v1.ToolCall.execution_deadline:type_name -> google.protobuf.Timestamp
-	18,  // 153: peers_touch.model.agent.v1.ToolCall.status:type_name -> peers_touch.model.agent.v1.ToolCallStatus
-	168, // 154: peers_touch.model.agent.v1.ToolCall.cancel_requested_at:type_name -> google.protobuf.Timestamp
-	168, // 155: peers_touch.model.agent.v1.ToolCall.cancel_ack_at:type_name -> google.protobuf.Timestamp
-	168, // 156: peers_touch.model.agent.v1.ToolCall.started_at:type_name -> google.protobuf.Timestamp
-	168, // 157: peers_touch.model.agent.v1.ToolCall.ended_at:type_name -> google.protobuf.Timestamp
-	22,  // 158: peers_touch.model.agent.v1.ToolCall.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
-	168, // 159: peers_touch.model.agent.v1.ToolCall.reconciliation_deadline:type_name -> google.protobuf.Timestamp
-	168, // 160: peers_touch.model.agent.v1.TurnFeedback.created_at:type_name -> google.protobuf.Timestamp
-	168, // 161: peers_touch.model.agent.v1.TurnFeedback.updated_at:type_name -> google.protobuf.Timestamp
-	7,   // 162: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.role:type_name -> peers_touch.model.agent.v1.MessageRole
-	13,  // 163: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
-	168, // 164: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.created_at:type_name -> google.protobuf.Timestamp
-	18,  // 165: peers_touch.model.agent.v1.TurnDiagnosticToolFact.status:type_name -> peers_touch.model.agent.v1.ToolCallStatus
-	17,  // 166: peers_touch.model.agent.v1.TurnDiagnosticToolFact.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
-	168, // 167: peers_touch.model.agent.v1.TurnDiagnosticToolFact.started_at:type_name -> google.protobuf.Timestamp
-	168, // 168: peers_touch.model.agent.v1.TurnDiagnosticToolFact.ended_at:type_name -> google.protobuf.Timestamp
-	168, // 169: peers_touch.model.agent.v1.TurnDiagnosticToolFact.dispatch_committed_at:type_name -> google.protobuf.Timestamp
-	168, // 170: peers_touch.model.agent.v1.TurnDiagnosticToolFact.station_effect_started_at:type_name -> google.protobuf.Timestamp
-	168, // 171: peers_touch.model.agent.v1.TurnDiagnosticToolFact.station_receipt_committed_at:type_name -> google.protobuf.Timestamp
-	10,  // 172: peers_touch.model.agent.v1.TurnDiagnosticReplay.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
-	98,  // 173: peers_touch.model.agent.v1.TurnDiagnosticReplay.attempts:type_name -> peers_touch.model.agent.v1.TurnAttempt
-	100, // 174: peers_touch.model.agent.v1.TurnDiagnosticReplay.context_ledgers:type_name -> peers_touch.model.agent.v1.ContextLedger
-	130, // 175: peers_touch.model.agent.v1.TurnDiagnosticReplay.tool_calls:type_name -> peers_touch.model.agent.v1.TurnDiagnosticToolFact
-	128, // 176: peers_touch.model.agent.v1.TurnDiagnosticReplay.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
-	129, // 177: peers_touch.model.agent.v1.TurnDiagnosticReplay.messages:type_name -> peers_touch.model.agent.v1.TurnDiagnosticMessageFact
-	168, // 178: peers_touch.model.agent.v1.TurnDiagnosticReplay.started_at:type_name -> google.protobuf.Timestamp
-	168, // 179: peers_touch.model.agent.v1.TurnDiagnosticReplay.ended_at:type_name -> google.protobuf.Timestamp
-	168, // 180: peers_touch.model.agent.v1.TurnDiagnosticReplay.generated_at:type_name -> google.protobuf.Timestamp
-	31,  // 181: peers_touch.model.agent.v1.TurnDiagnosticReplay.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
-	128, // 182: peers_touch.model.agent.v1.ListTurnFeedbackResponse.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
-	131, // 183: peers_touch.model.agent.v1.ExportTurnDiagnosticsResponse.replay:type_name -> peers_touch.model.agent.v1.TurnDiagnosticReplay
-	93,  // 184: peers_touch.model.agent.v1.SubmitTurnRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	92,  // 185: peers_touch.model.agent.v1.SubmitTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	95,  // 186: peers_touch.model.agent.v1.SubmitTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	97,  // 187: peers_touch.model.agent.v1.SubmitTurnResponse.admission:type_name -> peers_touch.model.agent.v1.TurnAdmission
-	96,  // 188: peers_touch.model.agent.v1.ListQueuedTurnsResponse.entries:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
-	96,  // 189: peers_touch.model.agent.v1.CancelQueuedTurnResponse.entry:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
-	95,  // 190: peers_touch.model.agent.v1.CancelTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	92,  // 191: peers_touch.model.agent.v1.RetryTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	95,  // 192: peers_touch.model.agent.v1.RetryTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	98,  // 193: peers_touch.model.agent.v1.RetryTurnResponse.attempt:type_name -> peers_touch.model.agent.v1.TurnAttempt
-	35,  // 194: peers_touch.model.agent.v1.RetryTurnResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	92,  // 195: peers_touch.model.agent.v1.RegenerateTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	95,  // 196: peers_touch.model.agent.v1.RegenerateTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	56,  // 197: peers_touch.model.agent.v1.RegenerateTurnResponse.assistant_message:type_name -> peers_touch.model.agent.v1.AgentMessage
-	35,  // 198: peers_touch.model.agent.v1.RegenerateTurnResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	93,  // 199: peers_touch.model.agent.v1.EditAndResendRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	92,  // 200: peers_touch.model.agent.v1.EditAndResendRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	95,  // 201: peers_touch.model.agent.v1.EditAndResendResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	56,  // 202: peers_touch.model.agent.v1.EditAndResendResponse.user_message:type_name -> peers_touch.model.agent.v1.AgentMessage
-	35,  // 203: peers_touch.model.agent.v1.EditAndResendResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	35,  // 204: peers_touch.model.agent.v1.SelectActiveBranchResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	35,  // 205: peers_touch.model.agent.v1.TombstoneMessageResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	56,  // 206: peers_touch.model.agent.v1.TombstoneMessageResponse.message:type_name -> peers_touch.model.agent.v1.AgentMessage
-	128, // 207: peers_touch.model.agent.v1.RecordFeedbackResponse.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
-	208, // [208:208] is the sub-list for method output_type
-	208, // [208:208] is the sub-list for method input_type
-	208, // [208:208] is the sub-list for extension type_name
-	208, // [208:208] is the sub-list for extension extendee
-	0,   // [0:208] is the sub-list for field type_name
+	171, // 68: peers_touch.model.agent.v1.ConversationRuntimeBinding.bound_at:type_name -> google.protobuf.Timestamp
+	10,  // 69: peers_touch.model.agent.v1.ConversationRuntimeBinding.state:type_name -> peers_touch.model.agent.v1.ExternalRuntimeBindingState
+	171, // 70: peers_touch.model.agent.v1.ConversationRuntimeBinding.updated_at:type_name -> google.protobuf.Timestamp
+	15,  // 71: peers_touch.model.agent.v1.RuntimeCapability.resolution:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityResolution
+	171, // 72: peers_touch.model.agent.v1.RuntimeCapabilityProvenance.observed_at:type_name -> google.protobuf.Timestamp
+	85,  // 73: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.input:type_name -> peers_touch.model.agent.v1.RuntimeInputCapabilities
+	86,  // 74: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.output:type_name -> peers_touch.model.agent.v1.RuntimeOutputCapabilities
+	87,  // 75: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.runtime:type_name -> peers_touch.model.agent.v1.RuntimeExecutionCapabilities
+	88,  // 76: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.agentic:type_name -> peers_touch.model.agent.v1.RuntimeAgenticCapabilities
+	89,  // 77: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.limits:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityLimits
+	84,  // 78: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.resolution:type_name -> peers_touch.model.agent.v1.RuntimeCapability
+	90,  // 79: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.provenance:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityProvenance
+	9,   // 80: peers_touch.model.agent.v1.RuntimeSnapshot.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
+	91,  // 81: peers_touch.model.agent.v1.RuntimeSnapshot.capabilities:type_name -> peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
+	93,  // 82: peers_touch.model.agent.v1.RuntimeSnapshot.budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	171, // 83: peers_touch.model.agent.v1.AgentAttachmentRef.expires_at:type_name -> google.protobuf.Timestamp
+	7,   // 84: peers_touch.model.agent.v1.CanonicalAgentMessage.role:type_name -> peers_touch.model.agent.v1.MessageRole
+	14,  // 85: peers_touch.model.agent.v1.CanonicalAgentMessage.status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
+	94,  // 86: peers_touch.model.agent.v1.CanonicalAgentMessage.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	171, // 87: peers_touch.model.agent.v1.CanonicalAgentMessage.created_at:type_name -> google.protobuf.Timestamp
+	11,  // 88: peers_touch.model.agent.v1.AgentTurn.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
+	92,  // 89: peers_touch.model.agent.v1.AgentTurn.runtime_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
+	93,  // 90: peers_touch.model.agent.v1.AgentTurn.budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	171, // 91: peers_touch.model.agent.v1.AgentTurn.submitted_at:type_name -> google.protobuf.Timestamp
+	171, // 92: peers_touch.model.agent.v1.AgentTurn.started_at:type_name -> google.protobuf.Timestamp
+	171, // 93: peers_touch.model.agent.v1.AgentTurn.ended_at:type_name -> google.protobuf.Timestamp
+	13,  // 94: peers_touch.model.agent.v1.TurnQueueEntry.status:type_name -> peers_touch.model.agent.v1.TurnQueueStatus
+	171, // 95: peers_touch.model.agent.v1.TurnQueueEntry.created_at:type_name -> google.protobuf.Timestamp
+	171, // 96: peers_touch.model.agent.v1.TurnQueueEntry.updated_at:type_name -> google.protobuf.Timestamp
+	12,  // 97: peers_touch.model.agent.v1.TurnAdmission.status:type_name -> peers_touch.model.agent.v1.TurnAdmissionStatus
+	97,  // 98: peers_touch.model.agent.v1.TurnAdmission.queue_entry:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
+	92,  // 99: peers_touch.model.agent.v1.TurnAttempt.runtime_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
+	11,  // 100: peers_touch.model.agent.v1.TurnAttempt.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
+	128, // 101: peers_touch.model.agent.v1.TurnAttempt.usage:type_name -> peers_touch.model.agent.v1.TurnUsage
+	171, // 102: peers_touch.model.agent.v1.TurnAttempt.started_at:type_name -> google.protobuf.Timestamp
+	171, // 103: peers_touch.model.agent.v1.TurnAttempt.ended_at:type_name -> google.protobuf.Timestamp
+	16,  // 104: peers_touch.model.agent.v1.ContextSegment.type:type_name -> peers_touch.model.agent.v1.ContextSegmentType
+	17,  // 105: peers_touch.model.agent.v1.ContextSegment.decision:type_name -> peers_touch.model.agent.v1.ContextSegmentDecision
+	100, // 106: peers_touch.model.agent.v1.ContextLedger.segments:type_name -> peers_touch.model.agent.v1.ContextSegment
+	21,  // 107: peers_touch.model.agent.v1.ClientCapability.permission:type_name -> peers_touch.model.agent.v1.CapabilityPermissionState
+	102, // 108: peers_touch.model.agent.v1.ClientCapability.constraints:type_name -> peers_touch.model.agent.v1.CapabilityConstraints
+	22,  // 109: peers_touch.model.agent.v1.ClientCapability.permission_kind:type_name -> peers_touch.model.agent.v1.CapabilityPermissionKind
+	20,  // 110: peers_touch.model.agent.v1.ClientCapabilityLease.platform:type_name -> peers_touch.model.agent.v1.ClientPlatform
+	103, // 111: peers_touch.model.agent.v1.ClientCapabilityLease.capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
+	171, // 112: peers_touch.model.agent.v1.ClientCapabilityLease.expires_at:type_name -> google.protobuf.Timestamp
+	171, // 113: peers_touch.model.agent.v1.ClientResourceRef.expires_at:type_name -> google.protobuf.Timestamp
+	171, // 114: peers_touch.model.agent.v1.ReceiptRecoveryCredential.expires_at:type_name -> google.protobuf.Timestamp
+	23,  // 115: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
+	171, // 116: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.execution_deadline:type_name -> google.protobuf.Timestamp
+	171, // 117: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.reconciliation_deadline:type_name -> google.protobuf.Timestamp
+	105, // 118: peers_touch.model.agent.v1.ClientCapabilityRequest.resource_refs:type_name -> peers_touch.model.agent.v1.ClientResourceRef
+	171, // 119: peers_touch.model.agent.v1.ClientCapabilityRequest.execution_deadline:type_name -> google.protobuf.Timestamp
+	23,  // 120: peers_touch.model.agent.v1.ClientCapabilityRequest.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
+	106, // 121: peers_touch.model.agent.v1.ClientCapabilityRequest.recovery_credential:type_name -> peers_touch.model.agent.v1.ReceiptRecoveryCredential
+	171, // 122: peers_touch.model.agent.v1.ClientCapabilityRequest.reconciliation_deadline:type_name -> google.protobuf.Timestamp
+	24,  // 123: peers_touch.model.agent.v1.ClientCapabilityReceipt.status:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceiptStatus
+	171, // 124: peers_touch.model.agent.v1.ClientCapabilityReceipt.occurred_at:type_name -> google.protobuf.Timestamp
+	109, // 125: peers_touch.model.agent.v1.ClientCapabilityReceipt.recovery_proof:type_name -> peers_touch.model.agent.v1.ReceiptRecoveryProof
+	171, // 126: peers_touch.model.agent.v1.ClientCapabilityCommandProof.issued_at:type_name -> google.protobuf.Timestamp
+	25,  // 127: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload.domain:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandDomain
+	171, // 128: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload.issued_at:type_name -> google.protobuf.Timestamp
+	20,  // 129: peers_touch.model.agent.v1.ClientCapabilityAdvertisement.platform:type_name -> peers_touch.model.agent.v1.ClientPlatform
+	103, // 130: peers_touch.model.agent.v1.ClientCapabilityAdvertisement.capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
+	114, // 131: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest.advertisement:type_name -> peers_touch.model.agent.v1.ClientCapabilityAdvertisement
+	112, // 132: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	104, // 133: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ClientCapabilityLease
+	26,  // 134: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	112, // 135: peers_touch.model.agent.v1.RenewClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	104, // 136: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ClientCapabilityLease
+	26,  // 137: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	27,  // 138: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest.reason:type_name -> peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
+	112, // 139: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	171, // 140: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.revoked_at:type_name -> google.protobuf.Timestamp
+	27,  // 141: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.reason:type_name -> peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
+	26,  // 142: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	112, // 143: peers_touch.model.agent.v1.PullClientCapabilityRequestsRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	108, // 144: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse.requests:type_name -> peers_touch.model.agent.v1.ClientCapabilityRequest
+	26,  // 145: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	111, // 146: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest.receipt:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceipt
+	112, // 147: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	28,  // 148: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceiptErrorCode
+	26,  // 149: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse.command_error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	111, // 150: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptRequest.receipt:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceipt
+	124, // 151: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptResponse.result:type_name -> peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse
+	18,  // 152: peers_touch.model.agent.v1.ToolCall.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
+	171, // 153: peers_touch.model.agent.v1.ToolCall.dispatch_committed_at:type_name -> google.protobuf.Timestamp
+	171, // 154: peers_touch.model.agent.v1.ToolCall.execution_deadline:type_name -> google.protobuf.Timestamp
+	19,  // 155: peers_touch.model.agent.v1.ToolCall.status:type_name -> peers_touch.model.agent.v1.ToolCallStatus
+	171, // 156: peers_touch.model.agent.v1.ToolCall.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	171, // 157: peers_touch.model.agent.v1.ToolCall.cancel_ack_at:type_name -> google.protobuf.Timestamp
+	171, // 158: peers_touch.model.agent.v1.ToolCall.started_at:type_name -> google.protobuf.Timestamp
+	171, // 159: peers_touch.model.agent.v1.ToolCall.ended_at:type_name -> google.protobuf.Timestamp
+	23,  // 160: peers_touch.model.agent.v1.ToolCall.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
+	171, // 161: peers_touch.model.agent.v1.ToolCall.reconciliation_deadline:type_name -> google.protobuf.Timestamp
+	171, // 162: peers_touch.model.agent.v1.TurnFeedback.created_at:type_name -> google.protobuf.Timestamp
+	171, // 163: peers_touch.model.agent.v1.TurnFeedback.updated_at:type_name -> google.protobuf.Timestamp
+	7,   // 164: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.role:type_name -> peers_touch.model.agent.v1.MessageRole
+	14,  // 165: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
+	171, // 166: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.created_at:type_name -> google.protobuf.Timestamp
+	19,  // 167: peers_touch.model.agent.v1.TurnDiagnosticToolFact.status:type_name -> peers_touch.model.agent.v1.ToolCallStatus
+	18,  // 168: peers_touch.model.agent.v1.TurnDiagnosticToolFact.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
+	171, // 169: peers_touch.model.agent.v1.TurnDiagnosticToolFact.started_at:type_name -> google.protobuf.Timestamp
+	171, // 170: peers_touch.model.agent.v1.TurnDiagnosticToolFact.ended_at:type_name -> google.protobuf.Timestamp
+	171, // 171: peers_touch.model.agent.v1.TurnDiagnosticToolFact.dispatch_committed_at:type_name -> google.protobuf.Timestamp
+	171, // 172: peers_touch.model.agent.v1.TurnDiagnosticToolFact.station_effect_started_at:type_name -> google.protobuf.Timestamp
+	171, // 173: peers_touch.model.agent.v1.TurnDiagnosticToolFact.station_receipt_committed_at:type_name -> google.protobuf.Timestamp
+	11,  // 174: peers_touch.model.agent.v1.TurnDiagnosticReplay.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
+	99,  // 175: peers_touch.model.agent.v1.TurnDiagnosticReplay.attempts:type_name -> peers_touch.model.agent.v1.TurnAttempt
+	101, // 176: peers_touch.model.agent.v1.TurnDiagnosticReplay.context_ledgers:type_name -> peers_touch.model.agent.v1.ContextLedger
+	131, // 177: peers_touch.model.agent.v1.TurnDiagnosticReplay.tool_calls:type_name -> peers_touch.model.agent.v1.TurnDiagnosticToolFact
+	129, // 178: peers_touch.model.agent.v1.TurnDiagnosticReplay.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
+	130, // 179: peers_touch.model.agent.v1.TurnDiagnosticReplay.messages:type_name -> peers_touch.model.agent.v1.TurnDiagnosticMessageFact
+	171, // 180: peers_touch.model.agent.v1.TurnDiagnosticReplay.started_at:type_name -> google.protobuf.Timestamp
+	171, // 181: peers_touch.model.agent.v1.TurnDiagnosticReplay.ended_at:type_name -> google.protobuf.Timestamp
+	171, // 182: peers_touch.model.agent.v1.TurnDiagnosticReplay.generated_at:type_name -> google.protobuf.Timestamp
+	32,  // 183: peers_touch.model.agent.v1.TurnDiagnosticReplay.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
+	129, // 184: peers_touch.model.agent.v1.ListTurnFeedbackResponse.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
+	132, // 185: peers_touch.model.agent.v1.ExportTurnDiagnosticsResponse.replay:type_name -> peers_touch.model.agent.v1.TurnDiagnosticReplay
+	94,  // 186: peers_touch.model.agent.v1.SubmitTurnRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	93,  // 187: peers_touch.model.agent.v1.SubmitTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	96,  // 188: peers_touch.model.agent.v1.SubmitTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	98,  // 189: peers_touch.model.agent.v1.SubmitTurnResponse.admission:type_name -> peers_touch.model.agent.v1.TurnAdmission
+	97,  // 190: peers_touch.model.agent.v1.ListQueuedTurnsResponse.entries:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
+	97,  // 191: peers_touch.model.agent.v1.CancelQueuedTurnResponse.entry:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
+	96,  // 192: peers_touch.model.agent.v1.CancelTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	93,  // 193: peers_touch.model.agent.v1.RetryTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	96,  // 194: peers_touch.model.agent.v1.RetryTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	99,  // 195: peers_touch.model.agent.v1.RetryTurnResponse.attempt:type_name -> peers_touch.model.agent.v1.TurnAttempt
+	36,  // 196: peers_touch.model.agent.v1.RetryTurnResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	93,  // 197: peers_touch.model.agent.v1.RegenerateTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	96,  // 198: peers_touch.model.agent.v1.RegenerateTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	57,  // 199: peers_touch.model.agent.v1.RegenerateTurnResponse.assistant_message:type_name -> peers_touch.model.agent.v1.AgentMessage
+	36,  // 200: peers_touch.model.agent.v1.RegenerateTurnResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	94,  // 201: peers_touch.model.agent.v1.EditAndResendRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	93,  // 202: peers_touch.model.agent.v1.EditAndResendRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	96,  // 203: peers_touch.model.agent.v1.EditAndResendResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	57,  // 204: peers_touch.model.agent.v1.EditAndResendResponse.user_message:type_name -> peers_touch.model.agent.v1.AgentMessage
+	36,  // 205: peers_touch.model.agent.v1.EditAndResendResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	36,  // 206: peers_touch.model.agent.v1.SelectActiveBranchResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	36,  // 207: peers_touch.model.agent.v1.TombstoneMessageResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	57,  // 208: peers_touch.model.agent.v1.TombstoneMessageResponse.message:type_name -> peers_touch.model.agent.v1.AgentMessage
+	36,  // 209: peers_touch.model.agent.v1.ResetConversationRuntimeResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	129, // 210: peers_touch.model.agent.v1.RecordFeedbackResponse.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
+	211, // [211:211] is the sub-list for method output_type
+	211, // [211:211] is the sub-list for method input_type
+	211, // [211:211] is the sub-list for extension type_name
+	211, // [211:211] is the sub-list for extension extendee
+	0,   // [0:211] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_agent_proto_init() }
@@ -15099,14 +15331,14 @@ func file_domain_agent_agent_proto_init() {
 	file_domain_agent_agent_proto_msgTypes[99].OneofWrappers = []any{}
 	file_domain_agent_agent_proto_msgTypes[108].OneofWrappers = []any{}
 	file_domain_agent_agent_proto_msgTypes[124].OneofWrappers = []any{}
-	file_domain_agent_agent_proto_msgTypes[136].OneofWrappers = []any{}
+	file_domain_agent_agent_proto_msgTypes[138].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_agent_proto_rawDesc), len(file_domain_agent_agent_proto_rawDesc)),
-			NumEnums:      28,
-			NumMessages:   140,
+			NumEnums:      29,
+			NumMessages:   142,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

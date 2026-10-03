@@ -1,5 +1,13 @@
+import { create } from '@bufbuild/protobuf';
+import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { createDesktopStore } from './createDesktopStore';
-import { Audience_Kind } from '../gen/proto/domain/social/post_pb';
+import {
+  AudienceSchema,
+  Audience_Kind,
+  PostAuthorSchema,
+  PostSchema,
+  PostType,
+} from '../gen/proto/domain/social/post_pb';
 import type {
   Audience,
   FeedObjectExplanation,
@@ -34,12 +42,18 @@ import {
   type MomentDraft,
   type TimelineSort,
 } from '../services/social_api';
-import type { PrivateMomentLocalFileIntent } from '../services/privateMomentsNative';
+import type {
+  PrivateMomentAudience,
+  PrivateMomentLocalFileIntent,
+  PrivateMomentProjection,
+  PrivateMomentPublishIntent,
+} from '../services/privateMomentsNative';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
 
 const TAG = 'moments-store';
 const EMPTY_COMMENTS: Comment[] = [];
+const MAX_PROTO_UINT64 = 18_446_744_073_709_551_615n;
 let storeGeneration = 0;
 
 // All proto-shaped types in this store come straight from the
@@ -89,31 +103,215 @@ const emptyFeed = (): MomentFeedState => ({
   loading: false,
 });
 
-function privateAudienceKind(kind: Audience_Kind) {
-  switch (kind) {
+function privateMomentAudience(audience: Audience): PrivateMomentAudience {
+  const hasActorList = audience.actorPtids.length > 0;
+  const hasBaseKind = audience.baseKind !== Audience_Kind.KIND_UNSPECIFIED;
+  const hasTarget = audience.target.case !== undefined;
+
+  switch (audience.kind) {
     case Audience_Kind.FRIENDS:
-      return 'FRIENDS' as const;
+      if (hasTarget || hasActorList || hasBaseKind) break;
+      return { kind: 'FRIENDS' };
     case Audience_Kind.FOLLOWERS:
-      return 'FOLLOWERS' as const;
-    case Audience_Kind.CIRCLE:
-      return 'CIRCLE' as const;
-    case Audience_Kind.GROUP:
-      return 'GROUP' as const;
+      if (hasTarget || hasActorList || hasBaseKind) break;
+      return { kind: 'FOLLOWERS' };
+    case Audience_Kind.CIRCLE: {
+      if (
+        audience.target.case !== 'circleId'
+        || audience.target.value <= 0n
+        || audience.target.value > MAX_PROTO_UINT64
+        || hasActorList
+        || hasBaseKind
+      ) {
+        break;
+      }
+      return {
+        kind: 'CIRCLE',
+        circleId: audience.target.value.toString(),
+      };
+    }
+    case Audience_Kind.GROUP: {
+      if (
+        audience.target.case !== 'groupConversationId'
+        || !audience.target.value
+        || audience.target.value.trim() !== audience.target.value
+        || audience.target.value.includes('\0')
+        || hasActorList
+        || hasBaseKind
+      ) {
+        break;
+      }
+      return {
+        kind: 'GROUP',
+        groupConversationId: audience.target.value,
+      };
+    }
     case Audience_Kind.SELF:
-      return 'SELF' as const;
+      if (hasTarget || hasActorList || hasBaseKind) break;
+      return { kind: 'SELF' };
     case Audience_Kind.CUSTOM_ALLOW:
-      return 'CUSTOM_ALLOW' as const;
+      if (hasTarget || !hasActorList || hasBaseKind) break;
+      return {
+        kind: 'CUSTOM_ALLOW',
+        actorPtids: [...audience.actorPtids],
+      };
     case Audience_Kind.CUSTOM_DENY:
-      return 'CUSTOM_DENY' as const;
-    default:
-      throw new Error('PRIVATE_AUDIENCE_INVALID');
+      if (audience.baseKind !== Audience_Kind.FOLLOWERS) {
+        break;
+      }
+      if (
+        hasTarget
+        || !hasActorList
+      ) {
+        break;
+      }
+      return {
+        kind: 'CUSTOM_DENY',
+        actorPtids: [...audience.actorPtids],
+        baseKind: 'FOLLOWERS',
+      };
+  }
+
+  throw new Error('PRIVATE_AUDIENCE_INVALID');
+}
+
+function privateMomentKind(
+  draft: MomentDraft,
+): PrivateMomentPublishIntent['momentKind'] {
+  switch (draft.kind) {
+    case 'text':
+      return 'TEXT';
+    case 'image':
+      return 'IMAGE';
+    case 'video':
+      return 'VIDEO';
+    case 'link':
+      return 'LINK';
+    case 'poll':
+      return 'POLL';
+    case 'repost':
+      return 'REPOST';
+    case 'location':
+      return 'LOCATION';
   }
 }
 
-function privateAudienceBaseKind(kind: Audience_Kind) {
-  if (kind === Audience_Kind.PUBLIC) return 'PUBLIC' as const;
-  if (kind === Audience_Kind.FOLLOWERS) return 'FOLLOWERS' as const;
-  return undefined;
+function privateMomentText(draft: MomentDraft): string {
+  return draft.kind === 'repost' ? draft.comment : draft.text;
+}
+
+function privateMomentFiles(
+  draft: MomentDraft,
+): PrivateMomentLocalFileIntent[] {
+  return draft.kind === 'image' || draft.kind === 'video'
+    ? draft.localFiles ?? []
+    : [];
+}
+
+const PRIVATE_AUDIENCE_KINDS: Record<
+  PrivateMomentProjection['audienceKind'],
+  Audience_Kind
+> = {
+  FRIENDS: Audience_Kind.FRIENDS,
+  FOLLOWERS: Audience_Kind.FOLLOWERS,
+  CIRCLE: Audience_Kind.CIRCLE,
+  GROUP: Audience_Kind.GROUP,
+  SELF: Audience_Kind.SELF,
+  CUSTOM_ALLOW: Audience_Kind.CUSTOM_ALLOW,
+  CUSTOM_DENY: Audience_Kind.CUSTOM_DENY,
+  UNKNOWN: Audience_Kind.KIND_UNSPECIFIED,
+};
+
+function privateMomentPostType(
+  projection: PrivateMomentProjection,
+): PostType {
+  switch (projection.content?.kind) {
+    case 'IMAGE':
+      return PostType.IMAGE;
+    case 'VIDEO':
+      return PostType.VIDEO;
+    case 'LINK':
+      return PostType.LINK;
+    case 'POLL':
+      return PostType.POLL;
+    case 'REPOST':
+      return PostType.REPOST;
+    case 'LOCATION':
+      return PostType.LOCATION;
+    case 'TEXT':
+    default:
+      return PostType.TEXT;
+  }
+}
+
+function privateMomentTimestamp(value: number | undefined) {
+  return value !== undefined && Number.isFinite(value)
+    ? timestampFromDate(new Date(value))
+    : undefined;
+}
+
+function privateMomentPostShell(
+  projection: PrivateMomentProjection,
+): Post {
+  return create(PostSchema, {
+    id: projection.postId,
+    authorPtid: projection.authorPtid,
+    type: privateMomentPostType(projection),
+    createdAt: privateMomentTimestamp(projection.createdAtMillis),
+    updatedAt: privateMomentTimestamp(projection.updatedAtMillis),
+    author: create(PostAuthorSchema, { id: projection.authorPtid }),
+    audience: create(AudienceSchema, {
+      kind: PRIVATE_AUDIENCE_KINDS[projection.audienceKind],
+    }),
+  });
+}
+
+function postCreatedAtMillis(post: Post | undefined): number {
+  if (!post?.createdAt) return 0;
+  return Number(post.createdAt.seconds) * 1000
+    + Math.floor(post.createdAt.nanos / 1_000_000);
+}
+
+function projectPrivateMoments(
+  state: MomentsState,
+  actorPtid: string | null,
+  projections: readonly PrivateMomentProjection[],
+): Partial<MomentsState> {
+  if (!actorPtid) return {};
+  const visible = projections
+    .filter((projection) => (
+      projection.state === 'CONTENT_READY'
+      && projection.audienceKind !== 'UNKNOWN'
+    ))
+    .map(privateMomentPostShell);
+  if (visible.length === 0) return {};
+
+  const postsById = { ...state.postsById };
+  for (const post of visible) {
+    postsById[post.id] = post;
+  }
+  const postIds = [
+    ...new Set([
+      ...visible.map((post) => post.id),
+      ...state.feeds.home.postIds,
+    ]),
+  ];
+  postIds.sort(
+    (left, right) => (
+      postCreatedAtMillis(postsById[right])
+      - postCreatedAtMillis(postsById[left])
+    ),
+  );
+  return {
+    postsById,
+    feeds: {
+      ...state.feeds,
+      home: {
+        ...state.feeds.home,
+        postIds,
+      },
+    },
+  };
 }
 
 export function selectMomentComments(
@@ -348,6 +546,36 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         const explore = resp.publicTimeline;
         const mergedHome = ingestPosts(s, home?.posts ?? [], home?.explanations ?? []);
         const mergedExplore = ingestPosts(mergedHome, explore?.posts ?? [], explore?.explanations ?? []);
+        const privateState = usePrivateMomentsStore.getState();
+        const withPrivateMoments = projectPrivateMoments(
+          {
+            ...s,
+            postsById: mergedExplore.postsById,
+            authorsById: mergedExplore.authorsById,
+            reactions: mergedExplore.reactions,
+            feedExplanations: mergedExplore.feedExplanations,
+            feeds: {
+              home: {
+                postIds: mergedHome.ids,
+                nextCursor: home?.nextCursor ?? '',
+                hasMore: home?.hasMore ?? false,
+                loading: false,
+                loadedAt: Date.now(),
+                sort: 'recent',
+              },
+              explore: {
+                postIds: mergedExplore.ids,
+                nextCursor: explore?.nextCursor ?? '',
+                hasMore: explore?.hasMore ?? false,
+                loading: false,
+                loadedAt: Date.now(),
+                sort: currentExploreSort,
+              },
+            },
+          },
+          privateState.scope.actorPtid,
+          Object.values(privateState.postsById),
+        );
         return {
           postsById: mergedExplore.postsById,
           authorsById: mergedExplore.authorsById,
@@ -371,6 +599,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
               sort: currentExploreSort,
             },
           },
+          ...withPrivateMoments,
         };
       });
     } catch (err) {
@@ -486,24 +715,36 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       draft.audience.kind !== Audience_Kind.PUBLIC
       && draft.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
     ) {
-      if (draft.kind !== 'text' && draft.kind !== 'image') {
-        throw new Error('PRIVATE_UNSUPPORTED');
-      }
       if (!draft.draftId || draft.draftRevision === undefined) {
         throw new Error('PRIVATE_DRAFT_IDENTITY_REQUIRED');
       }
       const result = await usePrivateMomentsStore.getState().publishMoment({
         draftId: draft.draftId,
         draftRevision: draft.draftRevision,
-        audienceKind: privateAudienceKind(draft.audience.kind),
-        audienceTargetId: draft.audience.targetId > 0n
-          ? draft.audience.targetId.toString()
+        audience: privateMomentAudience(draft.audience),
+        momentKind: privateMomentKind(draft),
+        text: privateMomentText(draft),
+        mentions: (draft.mentions ?? []).map((mention) => ({
+          actorPtid: mention.actorPtid,
+          offset: mention.offset,
+          length: mention.length,
+          display: mention.display,
+        })),
+        files: privateMomentFiles(draft),
+        link: draft.kind === 'link' ? draft.link : undefined,
+        location: draft.kind === 'location' ? draft.location : undefined,
+        poll: draft.kind === 'poll'
+          ? {
+              question: draft.poll.question,
+              options: draft.poll.options,
+              minChoices: draft.poll.minChoices,
+              maxChoices: draft.poll.maxChoices,
+              expiresAtSeconds: draft.poll.expiresAtSeconds,
+            }
           : undefined,
-        audienceBaseKind: privateAudienceBaseKind(draft.audience.baseKind),
-        audienceActorPtids: draft.audience.actorPtids,
-        momentKind: draft.kind === 'image' ? 'IMAGE' : 'TEXT',
-        text: draft.text,
-        files: draft.kind === 'image' ? draft.localFiles ?? [] : [],
+        repost: draft.kind === 'repost'
+          ? { sourcePostId: draft.originalPostId }
+          : undefined,
       });
       if (generation !== storeGeneration) {
         throw new Error('MOMENTS_SESSION_STALE');
@@ -511,6 +752,17 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       const postId = result.postId ?? result.projection?.postId;
       if (result.state !== 'PUBLISHED' || !postId) {
         throw new Error('UNKNOWN_COMMIT');
+      }
+      const projection = result.projection;
+      if (projection) {
+        set((state) => ({
+          ...state,
+          ...projectPrivateMoments(
+            state,
+            projection.authorPtid,
+            [projection],
+          ),
+        }));
       }
       refreshProjectionBestEffort(get(), 'action:createPrivatePost');
       return postId;

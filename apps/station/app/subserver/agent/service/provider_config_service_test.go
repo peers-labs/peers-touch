@@ -2,13 +2,19 @@ package service
 
 import "testing"
 
-func TestProviderRecordSupportedByFrozenProfileRejectsOptionalCLIRegistration(t *testing.T) {
+func TestProviderRecordSupportedByFrozenProfileAllowsCatalogCLIRegistration(t *testing.T) {
 	provider := newProviderRecord(ProviderCreateRequest{
 		ProviderID: "trae-cli",
 	})
 
-	if providerRecordSupportedByFrozenProfile(provider) {
-		t.Fatal("catalog or registry metadata must not promote trae-cli into the frozen profile")
+	if !providerRecordSupportedByFrozenProfile(provider) {
+		t.Fatal("catalog CLI provider must be available to the Station Direct Model runtime")
+	}
+	if provider.RuntimeKind != "cli" ||
+		provider.Protocol != "cli" ||
+		provider.CliCommand == "" ||
+		provider.ModelsCommand == "" {
+		t.Fatalf("catalog CLI execution metadata was not persisted: %+v", provider)
 	}
 }
 
@@ -28,14 +34,14 @@ func TestProviderRecordSupportedByFrozenProfileRetainsDirectModelQuickCompletion
 	}
 }
 
-func TestProviderRecordSupportedByFrozenProfileRejectsProtocolInference(t *testing.T) {
+func TestProviderRecordSupportedByFrozenProfileRejectsCLIProtocolWithoutCLIRuntime(t *testing.T) {
 	provider := newProviderRecord(ProviderCreateRequest{
 		ProviderID: "custom-cli",
 		Protocol:   "cli",
 	})
 
 	if providerRecordSupportedByFrozenProfile(provider) {
-		t.Fatal("CLI protocol must not masquerade as an HTTP Direct Model provider")
+		t.Fatal("CLI protocol must not masquerade as an HTTP runtime")
 	}
 }
 

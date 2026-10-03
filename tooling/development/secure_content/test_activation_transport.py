@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tooling.development.secure_content.activation_transport import (
+    ActivationTransportError,
     ReviewedSchemaActivationTransport,
     _install_attestation,
     _quiesce,
@@ -178,13 +179,137 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
                     budget_seconds=3600,
                 )
 
-        self.assertEqual(["make", "station"], command_runner.call_args.args[0])
+        self.assertEqual(
+            ["make", "profile", "PROFILE=four"],
+            command_runner.call_args_list[0].args[0],
+        )
+        self.assertEqual(
+            ["make", "station"],
+            command_runner.call_args_list[1].args[0],
+        )
         install_call = remote.calls[0]
         self.assertIn("install-attestation", install_call[0][-1])
         payload = json.loads(str(install_call[1]["input_text"]))
         self.assertEqual("station-four", payload["serviceId"])
         self.assertEqual(COMMIT, payload["commit"])
         self.assertEqual("peer-four", payload["runtimeIdentity"])
+
+    def test_post_reset_deploy_does_not_rebind_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            repo_root = parent / "peers-touch-federation"
+            profile_path = (
+                parent
+                / "env/peers-touch/four/profile.env.example"
+            )
+            repo_root.mkdir()
+            profile_path.parent.mkdir(parents=True)
+            profile_path.write_text(
+                "\n".join(
+                    (
+                        "PT_STATION_MODE=remote",
+                        "PT_STATION_URL=http://station.example:18080",
+                        "PT_STATION_DEPLOY_ENV=station-four",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            remote = FakeRemoteTransport()
+            command_runner = mock.Mock(
+                return_value=SimpleNamespace(
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+            )
+            owner = ReviewedSchemaActivationTransport(
+                repo_root=repo_root,
+                command_runner=command_runner,
+            )
+            with (
+                mock.patch(
+                    "tooling.development.secure_content.activation_transport."
+                    "read_service_version",
+                    return_value={
+                        "build_commit": COMMIT[:12],
+                        "build_time": "2026-09-20T00:00:00Z",
+                        "peer_id": "peer-four",
+                    },
+                ),
+                mock.patch(
+                    "tooling.development.secure_content.activation_transport."
+                    "resolve_remote_source_identity",
+                    return_value=(COMMIT, "clean", "a" * 64),
+                ),
+                mock.patch(
+                    "tooling.development.secure_content.activation_transport."
+                    "reviewed_remote_transport",
+                    return_value=(
+                        remote,
+                        {"PT_DEPLOY_PATH": "peers-touch/repo"},
+                    ),
+                ),
+            ):
+                owner.deploy(
+                    {
+                        "source_commit": COMMIT,
+                        "profile_id": "four",
+                        "deployment_environment": "station-four",
+                    },
+                    budget_seconds=3600,
+                )
+
+        self.assertEqual(1, command_runner.call_count)
+        self.assertEqual(["make", "station"], command_runner.call_args.args[0])
+
+    def test_deploy_fails_before_station_when_profile_selection_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            repo_root = parent / "peers-touch-federation"
+            profile_path = (
+                parent
+                / "env/peers-touch/fiveArm/profile.env.example"
+            )
+            repo_root.mkdir()
+            profile_path.parent.mkdir(parents=True)
+            profile_path.write_text(
+                "\n".join(
+                    (
+                        "PT_STATION_MODE=remote",
+                        "PT_STATION_URL=http://station.example:18080",
+                        "PT_STATION_DEPLOY_ENV=station-five-arm",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            command_runner = mock.Mock(
+                return_value=SimpleNamespace(
+                    returncode=2,
+                    stdout="",
+                    stderr="profile unavailable",
+                )
+            )
+            owner = ReviewedSchemaActivationTransport(
+                repo_root=repo_root,
+                command_runner=command_runner,
+            )
+
+            with self.assertRaisesRegex(
+                ActivationTransportError,
+                "profile selection failed: profile unavailable",
+            ):
+                owner.prepare(
+                    {
+                        "source_commit": COMMIT,
+                        "profile_id": "fiveArm",
+                        "deployment_environment": "station-five-arm",
+                    },
+                    budget_seconds=3600,
+                )
+
+        self.assertEqual(1, command_runner.call_count)
 
     def test_install_attestation_updates_regular_file_in_place(self) -> None:
         payload = {

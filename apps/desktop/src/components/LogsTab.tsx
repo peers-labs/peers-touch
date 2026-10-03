@@ -241,7 +241,7 @@ export function LogsTab() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Peers-Touch-${new Date().toISOString()}.log`;
+    a.download = `peers-touch-${new Date().toISOString()}.log`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

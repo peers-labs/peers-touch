@@ -108,6 +108,8 @@ type TurnConfig struct {
 	RequestedBudgetJSON       json.RawMessage
 	RuntimeBudget             *model.RuntimeBudget
 	RuntimeCapabilities       *model.RuntimeCapabilitySnapshot
+	RuntimeKind               model.RuntimeKind
+	RuntimeProfileID          string
 	PinnedRuntimeSnapshot     *model.RuntimeSnapshot
 	PinnedReadinessSnapshot   *model.CapabilityReadinessSnapshot
 	ExpectedAgentVersion      uint64
@@ -290,6 +292,7 @@ type TurnService struct {
 	capabilityReadiness  *CapabilityAuthorityReadinessService
 	turnAdmission        *TurnAdmissionService
 	attachmentAdmission  *AttachmentAdmissionService
+	externalRuntime      *ExternalRuntimeService
 	resumeProviderCall   continuationProviderCall
 	providerCall         turnProviderCall
 }
@@ -310,6 +313,10 @@ func (s *TurnService) SetTurnAdmissionService(admission *TurnAdmissionService) {
 
 func (s *TurnService) SetAttachmentAdmissionService(admission *AttachmentAdmissionService) {
 	s.attachmentAdmission = admission
+}
+
+func (s *TurnService) SetExternalRuntimeService(runtime *ExternalRuntimeService) {
+	s.externalRuntime = runtime
 }
 
 func (s *TurnService) PreflightTurn(
@@ -344,6 +351,16 @@ func (s *TurnService) PreflightTurn(
 	)
 	if err != nil {
 		return err
+	}
+	if s.externalRuntime != nil {
+		if err := s.externalRuntime.ValidateTurnAdmission(
+			ctx,
+			config.ActorID,
+			config.ConversationID,
+			runtimeSnapshot.RuntimeKind,
+		); err != nil {
+			return err
+		}
 	}
 	effectiveBudget, err := effectiveRuntimeBudget(
 		runtimeSnapshot.Budget,
@@ -1399,6 +1416,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	config.RuntimeCapabilities = proto.Clone(
 		runtimeSnapshot.Capabilities,
 	).(*model.RuntimeCapabilitySnapshot)
+	config.RuntimeKind = runtimeSnapshot.RuntimeKind
+	config.RuntimeProfileID = runtimeSnapshot.RuntimeProfileID
 	if maxDepth := config.RuntimeBudget.GetMaxDelegationDepth(); maxDepth > 0 &&
 		uint32(config.Depth) > maxDepth {
 		budgetErr := runtimeBudgetExhausted(
@@ -1531,6 +1550,11 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.AuthorizedCapabilities.ToolNames(),
 		config.RestrictedTools,
 	)
+	externalAgentRuntime :=
+		runtimeSnapshot.RuntimeKind == model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT
+	if externalAgentRuntime {
+		config.AvailableTools = nil
+	}
 	if err := validateAuthorizedRuntimeCapabilities(
 		config.AvailableTools,
 		runtimeSnapshot.Capabilities,
@@ -1664,7 +1688,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	estimatedTokens := s.compression.EstimateTokens(messages) +
 		assemblyResult.InjectedTokens +
 		int(toolDefinitionTokens)
-	shouldCompress := s.compression.ShouldCompress(estimatedTokens, config.ContextWindowSize)
+	shouldCompress := !externalAgentRuntime &&
+		s.compression.ShouldCompress(estimatedTokens, config.ContextWindowSize)
 
 	logger.Infof(ctx, "compression check: turn_id=%s tokens=%d window=%d should_compress=%v",
 		turnID, estimatedTokens, config.ContextWindowSize, shouldCompress)
@@ -1786,9 +1811,29 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}); err != nil {
 		return nil, settleRunningFailure("failed to persist provider start event", err)
 	}
-	assistantResponse, providerToolCalls, providerCalls, streamed, err := s.providerCallWithRetry(
-		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
-	)
+	var assistantResponse string
+	var providerToolCalls []ProviderToolCall
+	var providerCalls []domain.ProviderCallRecord
+	var streamed bool
+	if externalAgentRuntime {
+		assistantResponse, providerCalls, streamed, err = s.executeExternalRuntimeTurn(
+			ctx,
+			config,
+			turnID,
+			assemblyResult.SystemPrompt,
+			processedInput,
+		)
+	} else {
+		assistantResponse, providerToolCalls, providerCalls, streamed, err =
+			s.providerCallWithRetry(
+				ctx,
+				config,
+				turnID,
+				trace,
+				assemblyResult.SystemPrompt,
+				messages,
+			)
+	}
 	trace.ProviderCalls = append(trace.ProviderCalls, providerCalls...)
 	if err != nil {
 		terminalCtx := context.WithoutCancel(ctx)
@@ -2515,17 +2560,30 @@ func (s *TurnService) executeSummaryLLM(
 	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
 		return "", nil, err
 	}
-	credential, err := s.credentialPool.Lease(ctx, config.ActorID, config.Provider, domain.RotationRoundRobin)
-	if err != nil {
-		return "", nil, fmt.Errorf("no credential for summary: %w", err)
+	providerReference := config.Provider
+	credentialID := ""
+	if !turnUsesCLIProvider(config) {
+		credential, err := s.credentialPool.Lease(
+			ctx,
+			config.ActorID,
+			config.Provider,
+			domain.RotationRoundRobin,
+		)
+		if err != nil {
+			return "", nil, fmt.Errorf("no credential for summary: %w", err)
+		}
+		providerReference = credential.CredentialID
+		credentialID = credential.CredentialID
+		defer s.credentialPool.Release(ctx, credential.CredentialID)
 	}
-	defer s.credentialPool.Release(ctx, credential.CredentialID)
 
 	callStart := time.Now()
 	resp, err := s.callProviderWithRuntimeAuthority(ctx, config, &ProviderCallRequest{
-		ProviderID:   credential.CredentialID,
-		Model:        config.Model,
-		SystemPrompt: "You are a summarization assistant. Produce a concise structured summary.",
+		ProviderID:     providerReference,
+		AgentID:        config.AgentID,
+		ConversationID: config.ConversationID,
+		Model:          config.Model,
+		SystemPrompt:   "You are a summarization assistant. Produce a concise structured summary.",
 		Messages: []domain.Message{{
 			Role:    domain.MessageRoleUser,
 			Content: summaryPrompt,
@@ -2539,7 +2597,7 @@ func (s *TurnService) executeSummaryLLM(
 		Provider:     config.Provider,
 		Model:        config.Model,
 		Latency:      time.Since(callStart),
-		CredentialID: credential.CredentialID,
+		CredentialID: credentialID,
 	}
 	if resp != nil {
 		callRecord.InputTokens = resp.InputTokens
@@ -2721,6 +2779,30 @@ func (s *TurnService) memoryProvider() domain.MemoryProvider {
 	return s.memoryService.GetMemoryProvider()
 }
 
+func turnUsesCLIProvider(config *TurnConfig) bool {
+	if config == nil {
+		return false
+	}
+	capabilities := config.RuntimeCapabilities
+	if capabilities == nil && config.PinnedRuntimeSnapshot != nil {
+		capabilities = config.PinnedRuntimeSnapshot.GetCapabilities()
+	}
+	for _, resolution := range capabilities.GetResolution() {
+		if resolution.GetCapabilityId() == "runtime" &&
+			strings.EqualFold(resolution.GetReasonCode(), providerRuntimeCLI) {
+			return true
+		}
+	}
+	return false
+}
+
+func turnProviderAllowedRoots(config *TurnConfig) []string {
+	if config == nil || strings.TrimSpace(config.WorkspaceRoot) == "" {
+		return nil
+	}
+	return []string{strings.TrimSpace(config.WorkspaceRoot)}
+}
+
 // ---------------------------------------------------------------------------
 // providerCallWithRetry — credential rotation + error recovery loop
 // ---------------------------------------------------------------------------
@@ -2755,10 +2837,13 @@ func (s *TurnService) providerCallWithRetry(
 	if trace.ToolDefinitionTokens == 0 {
 		trace.ToolDefinitionTokens = estimateToolDefinitionTokens(toolDefinitions)
 	}
+	cliProvider := turnUsesCLIProvider(config)
 
 	// Recover any cooled-down credentials before starting the retry loop.
-	if recovered, _ := s.credentialPool.RecoverCooledDown(ctx); recovered > 0 {
-		logger.Infof(ctx, "credential recovery: %d credentials restored before provider call", recovered)
+	if !cliProvider {
+		if recovered, _ := s.credentialPool.RecoverCooledDown(ctx); recovered > 0 {
+			logger.Infof(ctx, "credential recovery: %d credentials restored before provider call", recovered)
+		}
 	}
 
 	strategy := config.RotationStrategy
@@ -2780,27 +2865,38 @@ func (s *TurnService) providerCallWithRetry(
 			return "", nil, providerCalls, false, err
 		}
 
-		// Lease a credential for the provider.
-		credential, leaseErr := s.credentialPool.Lease(ctx, config.ActorID, providerID, strategy)
-		if leaseErr != nil {
-			logger.Errorf(ctx, "credential lease failed: turn_id=%s attempt=%d err=%v",
-				turnID, attempt, leaseErr)
+		providerReference := providerID
+		var credential *domain.CredentialEntry
+		if !cliProvider {
+			leasedCredential, leaseErr := s.credentialPool.Lease(
+				ctx,
+				config.ActorID,
+				providerID,
+				strategy,
+			)
+			if leaseErr != nil {
+				logger.Errorf(ctx, "credential lease failed: turn_id=%s attempt=%d err=%v",
+					turnID, attempt, leaseErr)
 
-			// If no credential is available on a retry, it's fatal.
-			if attempt > 0 {
-				return "", nil, providerCalls, false, errcode.New(errcode.AgentCredentialFailed,
-					http.StatusServiceUnavailable, "no credentials available after rotation", leaseErr)
+				// If no credential is available on a retry, it's fatal.
+				if attempt > 0 {
+					return "", nil, providerCalls, false, errcode.New(errcode.AgentCredentialFailed,
+						http.StatusServiceUnavailable, "no credentials available after rotation", leaseErr)
+				}
+				return "", nil, providerCalls, false, leaseErr
 			}
-			return "", nil, providerCalls, false, leaseErr
+			credential = leasedCredential
+			providerReference = credential.CredentialID
+			logger.Infof(ctx, "credential leased: turn_id=%s attempt=%d credential_id=%s",
+				turnID, attempt, credential.CredentialID)
 		}
-
-		logger.Infof(ctx, "credential leased: turn_id=%s attempt=%d credential_id=%s",
-			turnID, attempt, credential.CredentialID)
 
 		callStart := time.Now()
 
 		resp, callErr := s.callProviderWithRuntimeAuthority(ctx, config, &ProviderCallRequest{
-			ProviderID:      credential.CredentialID,
+			ProviderID:      providerReference,
+			AgentID:         config.AgentID,
+			ConversationID:  config.ConversationID,
 			Model:           config.Model,
 			SystemPrompt:    systemPrompt,
 			Messages:        messages,
@@ -2809,6 +2905,7 @@ func (s *TurnService) providerCallWithRetry(
 			Effort:          config.Effort,
 			ThinkingMode:    config.ThinkingMode,
 			MaxOutputTokens: int(config.RuntimeBudget.GetMaxOutputTokens()),
+			AllowedRoots:    turnProviderAllowedRoots(config),
 			DeltaSink: func(deltaCtx context.Context, delta ProviderDelta) error {
 				return s.emitTurnEvent(deltaCtx, config, turnID, TurnEvent{
 					Type:  delta.Type,
@@ -2822,10 +2919,12 @@ func (s *TurnService) providerCallWithRetry(
 
 		// Build provider call record for trace regardless of outcome.
 		callRecord := domain.ProviderCallRecord{
-			Provider:     config.Provider,
-			Model:        config.Model,
-			Latency:      callDuration,
-			CredentialID: credential.CredentialID,
+			Provider: config.Provider,
+			Model:    config.Model,
+			Latency:  callDuration,
+		}
+		if credential != nil {
+			callRecord.CredentialID = credential.CredentialID
 		}
 
 		if resp != nil {
@@ -2838,8 +2937,10 @@ func (s *TurnService) providerCallWithRetry(
 		}
 		providerCalls = append(providerCalls, callRecord)
 
-		// Release credential (no-op today, future distributed lock support).
-		_ = s.credentialPool.Release(context.WithoutCancel(ctx), credential.CredentialID)
+		if credential != nil {
+			// Release credential (no-op today, future distributed lock support).
+			_ = s.credentialPool.Release(context.WithoutCancel(ctx), credential.CredentialID)
+		}
 
 		if err := executionContextError(ctx); err != nil {
 			return "", nil, providerCalls, false, err
@@ -2857,6 +2958,9 @@ func (s *TurnService) providerCallWithRetry(
 			logger.Infof(ctx, "provider call success: turn_id=%s attempt=%d model=%s input=%d output=%d latency=%s",
 				turnID, attempt, resp.Model, resp.InputTokens, resp.OutputTokens, callDuration)
 			return resp.Content, resp.ToolCalls, providerCalls, resp.Streamed, nil
+		}
+		if cliProvider {
+			return "", nil, providerCalls, false, callErr
 		}
 
 		// Error classification and recovery decision.
@@ -2905,7 +3009,7 @@ func (s *TurnService) providerCallWithRetry(
 		}
 
 		// Recovery: mark credential based on error type.
-		if classified.ShouldRotateCredential {
+		if classified.ShouldRotateCredential && credential != nil {
 			if classified.Reason == domain.FailoverReasonAuth || classified.Reason == domain.FailoverReasonBilling {
 				_ = s.credentialPool.MarkExhausted(ctx, credential.CredentialID, classified.HTTPStatus)
 			} else {
@@ -4291,6 +4395,7 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 				result := s.toolRegistry.Dispatch(
 					toolCtx,
 					&domain.ToolCallMeta{
+						ActorID:        claim.ActorID,
 						AgentID:        batch.AgentID,
 						ConversationID: batch.ConversationID,
 						TurnID:         claim.TurnID,
@@ -5679,8 +5784,6 @@ func capabilityIDForTool(toolName string) string {
 		return "clipboard.write"
 	case "local_shell_safe":
 		return "shell.execute"
-	case "local_mcp":
-		return "mcp.invoke"
 	default:
 		return ""
 	}

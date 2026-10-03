@@ -26,7 +26,12 @@ import {
   CreatePostResponseSchema,
   CreateTextPostRequestSchema,
   CreateImagePostRequestSchema,
+  CreateVideoPostRequestSchema,
+  CreateLinkPostRequestSchema,
+  CreatePollPostRequestSchema,
   CreateRepostRequestSchema,
+  CreateLocationPostRequestSchema,
+  LocationSchema,
   GetPostResponseSchema,
   DeletePostResponseSchema,
   ListPostsResponseSchema,
@@ -93,13 +98,17 @@ import {
   type ListCircleMembersResponse,
 } from '../gen/proto/domain/social/circle_pb';
 import {
+  BlockSocialActorResponseSchema,
   FollowResponseSchema,
   UnfollowResponseSchema,
+  UnblockSocialActorResponseSchema,
   GetRelationshipResponseSchema,
   GetFollowersResponseSchema,
   GetFollowingResponseSchema,
+  type BlockSocialActorResponse,
   type FollowResponse,
   type UnfollowResponse,
+  type UnblockSocialActorResponse,
   type GetRelationshipResponse,
   type GetFollowersResponse,
   type GetFollowingResponse,
@@ -140,13 +149,70 @@ export interface ImageDraft extends MomentDraftBase {
   localFiles?: PrivateMomentLocalFileIntent[];
 }
 
+export interface VideoDraft extends MomentDraftBase {
+  kind: 'video';
+  text: string;
+  /** Public OSS video identity. Private publishes use localFiles instead. */
+  videoId?: string;
+  /** Source, optional poster, then optional variants for Native encryption. */
+  localFiles?: PrivateMomentLocalFileIntent[];
+}
+
+export interface LinkDraft extends MomentDraftBase {
+  kind: 'link';
+  text: string;
+  link: {
+    url: string;
+    title: string;
+    description?: string;
+    imageUrl?: string;
+    siteName?: string;
+    faviconUrl?: string;
+  };
+}
+
+export interface PollDraft extends MomentDraftBase {
+  kind: 'poll';
+  text: string;
+  poll: {
+    question: string;
+    options: string[];
+    minChoices: number;
+    maxChoices: number;
+    expiresAtSeconds: number;
+    /** Public Social retains its existing duration-based wire contract. */
+    durationHours: number;
+    multipleChoice: boolean;
+  };
+}
+
 export interface RepostDraft extends MomentDraftBase {
   kind: 'repost';
   originalPostId: string;
   comment: string;
 }
 
-export type MomentDraft = TextDraft | ImageDraft | RepostDraft;
+export interface LocationDraft extends MomentDraftBase {
+  kind: 'location';
+  text: string;
+  imageIds?: string[];
+  location: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    address?: string;
+    placeId?: string;
+  };
+}
+
+export type MomentDraft =
+  | TextDraft
+  | ImageDraft
+  | VideoDraft
+  | LinkDraft
+  | PollDraft
+  | RepostDraft
+  | LocationDraft;
 
 /**
  * Build the `CreatePostRequest` proto from a draft union and encode
@@ -196,6 +262,48 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
         },
       });
     }
+    case 'video':
+      if (!draft.videoId?.trim()) {
+        throw new Error('socialCreateMoment: public video_id is required');
+      }
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.VIDEO,
+        content: {
+          case: 'video',
+          value: create(CreateVideoPostRequestSchema, {
+            text: draft.text,
+            videoId: draft.videoId,
+          }),
+        },
+      });
+    case 'link':
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.LINK,
+        content: {
+          case: 'link',
+          value: create(CreateLinkPostRequestSchema, {
+            text: draft.text,
+            url: draft.link.url,
+          }),
+        },
+      });
+    case 'poll':
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.POLL,
+        content: {
+          case: 'poll',
+          value: create(CreatePollPostRequestSchema, {
+            text: draft.text,
+            question: draft.poll.question,
+            options: draft.poll.options,
+            durationHours: draft.poll.durationHours,
+            multipleChoice: draft.poll.multipleChoice,
+          }),
+        },
+      });
     case 'repost':
       return create(CreatePostRequestSchema, {
         ...base,
@@ -205,6 +313,25 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
           value: create(CreateRepostRequestSchema, {
             originalPostId: draft.originalPostId,
             comment: draft.comment,
+          }),
+        },
+      });
+    case 'location':
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.LOCATION,
+        content: {
+          case: 'location',
+          value: create(CreateLocationPostRequestSchema, {
+            text: draft.text,
+            imageIds: draft.imageIds ?? [],
+            location: create(LocationSchema, {
+              name: draft.location.name,
+              latitude: draft.location.latitude,
+              longitude: draft.location.longitude,
+              address: draft.location.address ?? '',
+              placeId: draft.location.placeId ?? '',
+            }),
           }),
         },
       });
@@ -501,6 +628,46 @@ export async function socialGetRelationship(
     GetRelationshipResponseSchema,
     { target_actor_ptid: targetActorPtid },
   );
+}
+
+export interface SocialRelationshipMutationInput {
+  targetActorPtid: string;
+  targetHomeStationPeerId: string;
+  observedRevision: number;
+}
+
+export async function socialBlockActor(
+  input: SocialRelationshipMutationInput,
+): Promise<BlockSocialActorResponse> {
+  return invokeRustProto<
+    {
+      target_actor_ptid: string;
+      target_home_station_peer_id: string;
+      observed_revision: number;
+    },
+    BlockSocialActorResponse
+  >('social_block_actor', BlockSocialActorResponseSchema, {
+    target_actor_ptid: input.targetActorPtid,
+    target_home_station_peer_id: input.targetHomeStationPeerId,
+    observed_revision: input.observedRevision,
+  });
+}
+
+export async function socialUnblockActor(
+  input: SocialRelationshipMutationInput,
+): Promise<UnblockSocialActorResponse> {
+  return invokeRustProto<
+    {
+      target_actor_ptid: string;
+      target_home_station_peer_id: string;
+      observed_revision: number;
+    },
+    UnblockSocialActorResponse
+  >('social_unblock_actor', UnblockSocialActorResponseSchema, {
+    target_actor_ptid: input.targetActorPtid,
+    target_home_station_peer_id: input.targetHomeStationPeerId,
+    observed_revision: input.observedRevision,
+  });
 }
 
 // ---------------------------------------------------------------------------

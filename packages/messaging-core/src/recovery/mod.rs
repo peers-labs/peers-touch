@@ -6,6 +6,7 @@ pub use codec::{
 };
 pub use types::{
     DecodedRecoveryRevision, EncodedRecoveryRevision, MessagingRecoveryArchive,
-    RecoveryAttachmentMetadata, RecoveryConversationProjection, RecoveryMessageProjection,
-    RecoveryTrustRecord, MESSAGING_RECOVERY_FORMAT_VERSION,
+    RecoveryAttachmentMetadata, RecoveryAuthorityHead, RecoveryConversationProjection,
+    RecoveryMessageProjection, RecoveryMessageRedactionTombstone, RecoveryReconciliation,
+    RecoveryRetentionFloor, RecoveryTrustRecord, MESSAGING_RECOVERY_FORMAT_VERSION,
 };

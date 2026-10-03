@@ -7,7 +7,7 @@ import {
 } from 'antd';
 import { Button, Input, Tag, Tooltip } from '@lobehub/ui';
 import {
-  Plus, Trash2, Play, Pencil, Upload,
+  Plus, Trash2, Play, Pencil, Upload, Monitor, Server,
   RotateCcw, Square,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -111,6 +111,7 @@ export function MCPTab() {
             args,
             url,
             env,
+            executionOwner: cfg.executionOwner === 'client' ? 'client' : 'station',
             enabled: cfg.enabled !== false,
           });
           imported++;
@@ -282,6 +283,14 @@ function MCPServerCard({
                 style={{ fontSize: 11, margin: 0 }}
               >
                 {server.type}
+              </Tag>
+              <Tag
+                icon={server.executionOwner === 'station'
+                  ? <Server size={11} />
+                  : <Monitor size={11} />}
+                style={{ fontSize: 11, margin: 0 }}
+              >
+                {server.executionOwner === 'station' ? 'Station' : 'Desktop'}
               </Tag>
             </Flexbox>
             <Text type="secondary" style={{ fontSize: 12 }}>
@@ -459,6 +468,7 @@ function AddMCPServerModal({
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
   const [type, setType] = useState<MCPTransport>('stdio');
+  const [executionOwner, setExecutionOwner] = useState<'station' | 'client'>('station');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('');
   const [url, setUrl] = useState('');
@@ -493,6 +503,7 @@ function AddMCPServerModal({
         command: command.trim(),
         args: parsedArgs,
         url: url.trim(),
+        executionOwner,
       });
       message.success(t('provider.mcp.add.success', { name }));
       onDone();
@@ -541,6 +552,18 @@ function AddMCPServerModal({
               { value: 'stdio', label: 'stdio' },
               { value: 'http', label: 'HTTP' },
               { value: 'sse', label: 'SSE' },
+            ]}
+          />
+        </Flexbox>
+        <Flexbox horizontal gap={8} align="center">
+          <Text style={{ width: 80 }}>Runtime</Text>
+          <Select
+            value={executionOwner}
+            onChange={setExecutionOwner}
+            style={{ width: 140 }}
+            options={[
+              { value: 'station', label: 'Station' },
+              { value: 'client', label: 'Desktop' },
             ]}
           />
         </Flexbox>
@@ -641,6 +664,7 @@ function MCPServerEditModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<MCPTransport>('stdio');
+  const [executionOwner, setExecutionOwner] = useState<'station' | 'client'>('station');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('');
   const [url, setUrl] = useState('');
@@ -652,6 +676,7 @@ function MCPServerEditModal({
       setTitle(s.title || '');
       setDescription(s.description || '');
       setType(s.type || 'stdio');
+      setExecutionOwner(s.executionOwner || 'station');
       setCommand(s.command || '');
       setArgs(s.args?.join(' ') || '');
       setUrl(s.url || '');
@@ -681,6 +706,7 @@ function MCPServerEditModal({
         args: parsedArgs,
         url: url.trim(),
         env,
+        executionOwner,
       });
       message.success(t('provider.mcp.edit.saved'));
       onClose();
@@ -743,6 +769,18 @@ function MCPServerEditModal({
               { value: 'stdio', label: 'stdio' },
               { value: 'http', label: 'HTTP' },
               { value: 'sse', label: 'SSE' },
+            ]}
+          />
+        </Flexbox>
+        <Flexbox horizontal gap={8} align="center">
+          <Text style={{ width: 80, fontSize: 12 }}>Runtime</Text>
+          <Select
+            value={executionOwner}
+            onChange={setExecutionOwner}
+            style={{ width: 140 }}
+            options={[
+              { value: 'station', label: 'Station' },
+              { value: 'client', label: 'Desktop' },
             ]}
           />
         </Flexbox>

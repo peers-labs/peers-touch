@@ -687,6 +687,117 @@ func (t *federatedFriendRequestTransaction) ApplyBlockedRelationshipEffects(
 		Delete(&friendshipModel{}).Error; err != nil {
 		return mapFederatedFriendRequestPersistenceError(operation, err)
 	}
+	revokedAt := time.Now().UTC()
+	if err := t.revokePrivateContentBetween(
+		ctx,
+		actorPTID,
+		targetActorPTID,
+		revokedAt,
+	); err != nil {
+		return err
+	}
+	if err := t.revokePrivateContentBetween(
+		ctx,
+		targetActorPTID,
+		actorPTID,
+		revokedAt,
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *federatedFriendRequestTransaction) revokePrivateContentBetween(
+	ctx context.Context,
+	authorPTID string,
+	recipientPTID string,
+	revokedAt time.Time,
+) error {
+	const operation = "social.revoke_blocked_private_content"
+	var posts []dbmodel.SocialPrivateContentPost
+	if err := t.db.WithContext(ctx).
+		Select("post_id", "content_id").
+		Where("author_ptid = ?", authorPTID).
+		Find(&posts).Error; err != nil {
+		return mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+	if len(posts) == 0 {
+		return nil
+	}
+	postIDs := make([]string, 0, len(posts))
+	contentIDs := make([]string, 0, len(posts))
+	for _, post := range posts {
+		postIDs = append(postIDs, post.PostID)
+		contentIDs = append(contentIDs, post.ContentID)
+	}
+	var comments []dbmodel.SocialPrivateContentComment
+	if err := t.db.WithContext(ctx).
+		Select("content_id").
+		Where("post_id IN ?", postIDs).
+		Find(&comments).Error; err != nil {
+		return mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+	for _, comment := range comments {
+		contentIDs = append(contentIDs, comment.ContentID)
+	}
+	var snapshotIDs []string
+	if err := t.db.WithContext(ctx).
+		Model(&dbmodel.SocialPrivateAudienceSnapshot{}).
+		Where("post_id IN ?", postIDs).
+		Pluck("snapshot_id", &snapshotIDs).Error; err != nil {
+		return mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+	if len(snapshotIDs) > 0 {
+		if err := t.db.WithContext(ctx).
+			Model(&dbmodel.SocialPrivateRecipientGrant{}).
+			Where(
+				"snapshot_id IN ? AND recipient_ptid = ? AND revoked_at IS NULL",
+				snapshotIDs,
+				recipientPTID,
+			).
+			Updates(map[string]any{
+				"revoked_at":    revokedAt,
+				"revoke_reason": "RELATIONSHIP_BLOCKED",
+			}).Error; err != nil {
+			return mapFederatedFriendRequestPersistenceError(operation, err)
+		}
+	}
+	var objectIDs []string
+	if err := t.db.WithContext(ctx).
+		Model(&dbmodel.SocialPrivateObjectAttachment{}).
+		Where("content_id IN ?", contentIDs).
+		Pluck("object_id", &objectIDs).Error; err != nil {
+		return mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+	if len(objectIDs) > 0 {
+		if err := t.db.WithContext(ctx).
+			Model(&dbmodel.SocialPrivateObjectGrant{}).
+			Where(
+				"object_id IN ? AND principal_ptid = ? AND revoked_at IS NULL",
+				objectIDs,
+				recipientPTID,
+			).
+			Updates(map[string]any{
+				"revoked_at":    revokedAt,
+				"revoke_reason": "RELATIONSHIP_BLOCKED",
+			}).Error; err != nil {
+			return mapFederatedFriendRequestPersistenceError(operation, err)
+		}
+	}
+	if err := t.db.WithContext(ctx).
+		Model(&dbmodel.SocialPrivateDeliveryIntent{}).
+		Where(
+			"content_id IN ? AND recipient_ptid = ? AND state = ?",
+			contentIDs,
+			recipientPTID,
+			dbmodel.SocialPrivateDeliveryIntentStatePending,
+		).
+		Update(
+			"state",
+			dbmodel.SocialPrivateDeliveryIntentStateRevoked,
+		).Error; err != nil {
+		return mapFederatedFriendRequestPersistenceError(operation, err)
+	}
 	return nil
 }
 

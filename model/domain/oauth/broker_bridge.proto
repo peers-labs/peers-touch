@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package peers_touch.model.oauth.bridge.v1;
+
+import "domain/actor/actor.proto";
+import "domain/oauth/mobile_oauth.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/oauthbridge;oauthbridge";
+
+// BrokerOAuthBridgeRequest carries a signed broker identity assertion plus the
+// local Station Access Attempt and credential-delivery binding.
+message BrokerOAuthBridgeRequest {
+  string provider = 1;
+  string provider_user_id = 2;
+  string email = 3;
+  string username = 4;
+  string display_name = 5;
+  string avatar_url = 6;
+  string ts = 7;
+  string sig = 8;
+  string bridge_version = 9;
+  string site_id = 10;
+  string union_id = 11;
+  bool email_verified = 12;
+  string purpose = 13;
+  string assertion_id = 14;
+  string receiver_id = 15;
+  string receiver_challenge = 16;
+  string receiver_verifier = 17;
+  string station_peer_id = 18;
+  string access_attempt_id = 19;
+  string gate_id = 20;
+  string device_id = 21;
+  uint64 lifecycle_generation = 22;
+  bytes credential_delivery_public_key = 23;
+}
+
+message BrokerOAuthBridgeResponse {
+  peers_touch.model.oauth.mobile.v1.CompleteOAuthAttemptResponse completion = 1;
+}
+
+message BrokerOAuthConnectorLinkResponse {
+  peers_touch.model.actor.v1.ActorRef actor_ref = 1 [json_name = "actor_ref"];
+}

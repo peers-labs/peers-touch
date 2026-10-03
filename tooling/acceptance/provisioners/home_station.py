@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
+import shlex
 import shutil
 import socket
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -17,25 +21,41 @@ from tooling.acceptance.core.attestation import (
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
+    ActorIdentity,
+    ActorManifest,
     ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
+    utc_now,
 )
-from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifest
+from tooling.acceptance.fixtures.chat_native_actors import (
+    ACTOR_ACCOUNTS,
+    persist_actor_manifest,
+    produce_actor_manifest,
+)
+from tooling.acceptance.gates.agent.external_runtime_fixture import (
+    external_runtime_environment,
+    external_runtime_root,
+)
 from tooling.acceptance.provisioners.remote_source_identity import (
+    reviewed_remote_transport,
     resolve_remote_source_identity,
 )
 
 
 GATE_ROLES = {
     "agent-attachment-e2e": ("alice",),
+    "agent-cli-provider-primary-native-e2e": ("alice",),
+    "agent-core-lifecycle-native-e2e": ("alice",),
+    "agent-minimum-usable-chat-native-e2e": ("charlie",),
     "agent-stream-resilience-e2e": ("alice",),
     "agent-v2-capability-binding-e2e": ("alice", "bob"),
     "agent-v2-governed-tool-loop-e2e": ("bob",),
     "agent-v2-mcp-lifecycle-e2e": ("bob",),
     "agent-v2-connector-invocation-e2e": ("bob",),
     "agent-v2-evaluation-lab-e2e": ("alice", "bob"),
+    "agent-v2-external-runtime-e2e": ("bob",),
     "agent-marketplace-catalog-e2e": ("alice",),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-presence-layout-e2e": ("alice", "bob"),
@@ -57,15 +77,44 @@ AGENT_V2_GOVERNED_TOOL_GATE = "agent-v2-governed-tool-loop-e2e"
 AGENT_V2_MCP_GATE = "agent-v2-mcp-lifecycle-e2e"
 AGENT_V2_CONNECTOR_GATE = "agent-v2-connector-invocation-e2e"
 AGENT_V2_EVALUATION_GATE = "agent-v2-evaluation-lab-e2e"
+AGENT_V2_EXTERNAL_RUNTIME_GATE = "agent-v2-external-runtime-e2e"
 AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
+AGENT_CLI_PROVIDER_GATE = "agent-cli-provider-primary-native-e2e"
+AGENT_CORE_LIFECYCLE_GATE = "agent-core-lifecycle-native-e2e"
+AGENT_MINIMUM_USABLE_CHAT_GATE = "agent-minimum-usable-chat-native-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
+        AGENT_CLI_PROVIDER_GATE,
+        "agent-core-lifecycle-native-e2e",
+        AGENT_MINIMUM_USABLE_CHAT_GATE,
         "agent-stream-resilience-e2e",
     }
 )
 AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 AGENT_V2_BINDING_PROFILE = "two"
+AGENT_V2_BINDING_GATES = frozenset(
+    {
+        AGENT_CLI_PROVIDER_GATE,
+        AGENT_CORE_LIFECYCLE_GATE,
+        AGENT_MINIMUM_USABLE_CHAT_GATE,
+        AGENT_V2_HOME_GATE,
+        AGENT_V2_BINDING_GATE,
+        AGENT_V2_GOVERNED_TOOL_GATE,
+        AGENT_V2_MCP_GATE,
+        AGENT_V2_CONNECTOR_GATE,
+        AGENT_V2_EVALUATION_GATE,
+        AGENT_V2_EXTERNAL_RUNTIME_GATE,
+        AGENT_MARKETPLACE_GATE,
+    }
+)
+AGENT_V2_SCENARIO_CONTROL_GATES = frozenset(
+    {
+        AGENT_V2_BINDING_GATE,
+        AGENT_V2_GOVERNED_TOOL_GATE,
+        AGENT_V2_MCP_GATE,
+    }
+)
 AGENT_V2_CREDENTIAL_REFS = (
     "profile:CHAT_NATIVE_DEMO_PASSWORD",
     "profile:PT_AGENT_PROVIDER_API_KEY",
@@ -85,6 +134,196 @@ CLIENT_ROLES = {
     "chat-native-product-closure-e2e": ("alice", "bob", "alice2"),
     "chat-contact-message-resilience-e2e": ("alice",),
 }
+
+
+def agent_profile_for_gate(gate_id: str) -> str:
+    if gate_id in AGENT_V2_BINDING_GATES:
+        return AGENT_V2_BINDING_PROFILE
+    return AGENT_V2_PROFILE
+
+
+def agent_native_requires_disposable_fixture(gate_id: str) -> bool:
+    return gate_id not in {
+        AGENT_CLI_PROVIDER_GATE,
+        AGENT_CORE_LIFECYCLE_GATE,
+        AGENT_MINIMUM_USABLE_CHAT_GATE,
+    }
+
+
+def agent_native_requires_provider(gate_id: str) -> bool:
+    return gate_id not in {
+        AGENT_CLI_PROVIDER_GATE,
+        AGENT_CORE_LIFECYCLE_GATE,
+        AGENT_MINIMUM_USABLE_CHAT_GATE,
+    }
+
+
+def audit_remote_station_cli_processes(deployment_environment: str) -> None:
+    try:
+        transport, environment = reviewed_remote_transport(
+            deployment_environment
+        )
+    except Exception as error:
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit could not resolve "
+            "the approved runtime"
+        ) from error
+
+    compose_project = environment.get(
+        "PT_ACCEPTANCE_COMPOSE_PROJECT",
+        "",
+    ).strip()
+    if not compose_project or any(
+        not (character.isalnum() or character in "._-")
+        for character in compose_project
+    ):
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit has no approved "
+            "Compose project"
+        )
+
+    process_audit = r"""
+set -eu
+for cmdline in /proc/[0-9]*/cmdline; do
+    [ -r "$cmdline" ] || continue
+    argv0="$(tr '\000' '\n' < "$cmdline" | sed -n '1p')"
+    case "${argv0##*/}" in
+        traecli|host-cli-bin) exit 42 ;;
+    esac
+done
+"""
+    project_filter = shlex.quote(
+        f"label=com.docker.compose.project={compose_project}"
+    )
+    service_filter = shlex.quote(
+        "label=com.docker.compose.service=station"
+    )
+    remote_command = (
+        "set -eu; "
+        "container_ids=\"$(docker ps --quiet "
+        f"--filter {project_filter} --filter {service_filter})\"; "
+        "container_count=\"$(printf '%s\\n' \"$container_ids\" "
+        "| sed '/^$/d' | wc -l | tr -d '[:space:]')\"; "
+        "test \"$container_count\" = 1 || exit 41; "
+        "container_id=\"$(printf '%s\\n' \"$container_ids\" "
+        "| sed -n '1p')\"; "
+        f"docker exec \"$container_id\" sh -c {shlex.quote(process_audit)}"
+    )
+    try:
+        completed = transport.run_argv(
+            ["bash", "-lc", remote_command],
+            timeout=30,
+            check=False,
+        )
+    except Exception as error:
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit could not complete"
+        ) from error
+
+    if completed.returncode == 0:
+        return
+    if completed.returncode == 41:
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit could not select "
+            "exactly one Station container"
+        )
+    if completed.returncode == 42:
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit detected a residual "
+            "provider process"
+        )
+    raise RuntimeError(
+        "remote Station CLI process cleanup audit could not complete"
+    )
+
+
+def resolve_existing_actor(
+    station_url: str,
+    role: str,
+    password: str,
+) -> ActorIdentity:
+    account = ACTOR_ACCOUNTS.get(role)
+    if not account:
+        raise BlockedError(
+            reason=f"Unsupported Agent native actor role: {role}",
+            resource=f"fixture-actor:{role}",
+        )
+    request = urllib.request.Request(
+        f"{station_url.rstrip('/')}/actor/login",
+        data=json.dumps(
+            {
+                "email": account,
+                "password": password,
+                "device_type": "desktop",
+            }
+        ).encode("utf-8"),
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        method="POST",
+    )
+    token = ""
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            envelope = json.loads(response.read().decode("utf-8"))
+        data = (
+            envelope.get("data")
+            if isinstance(envelope, dict)
+            and isinstance(envelope.get("data"), dict)
+            else {}
+        )
+        actor_ref = (
+            data.get("actor_ref")
+            if isinstance(data.get("actor_ref"), dict)
+            else {}
+        )
+        tokens = (
+            data.get("tokens")
+            if isinstance(data.get("tokens"), dict)
+            else {}
+        )
+        ptid = str(actor_ref.get("ptid") or "")
+        token = str(tokens.get("access_token") or "")
+        if not ptid.startswith("ptid:") or not token:
+            raise BlockedError(
+                reason=f"Station login did not resolve canonical actor {role}",
+                resource=f"fixture-actor:{role}",
+            )
+        return ActorIdentity(
+            role=role,
+            account_ref=f"station-account:{account}",
+            ptid=ptid,
+            device_policy="ephemeral-acceptance",
+        )
+    except (
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        json.JSONDecodeError,
+    ) as error:
+        raise BlockedError(
+            reason=f"Cannot resolve existing actor {role}: {error}",
+            resource=f"fixture-actor:{role}",
+        ) from error
+    finally:
+        if token:
+            logout = urllib.request.Request(
+                f"{station_url.rstrip('/')}/actor/logout",
+                data=b"{}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                urllib.request.urlopen(logout, timeout=15).close()
+            except (urllib.error.URLError, OSError, TimeoutError) as error:
+                raise BlockedError(
+                    reason=(
+                        f"Existing actor {role} discovery session could not "
+                        f"be released: {error}"
+                    ),
+                    resource=f"fixture-session:{role}",
+                ) from error
 
 
 class HomeStationProvisioner(EnvironmentProvisioner):
@@ -286,6 +525,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         profile_env: dict[str, str],
         *,
         runtime_name: str = "binding",
+        actor: str = "bob",
     ) -> tuple[ClientRuntime, ClientRuntime]:
         environment_prefixes = {
             "binding": "PT_AGENT_V2_BINDING",
@@ -293,6 +533,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             "home": "PT_AGENT_V2_HOME",
             "mcp": "PT_AGENT_V2_MCP",
             "connector": "PT_AGENT_V2_CONNECTOR",
+            "external-runtime": "PT_AGENT_V2_EXTERNAL_RUNTIME",
         }
         try:
             environment_prefix = environment_prefixes[runtime_name]
@@ -308,7 +549,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             os.environ.get(f"{environment_prefix}_WORKTREE", str(REPO_ROOT))
         ).expanduser().resolve()
         native = ClientRuntime(
-            actor="bob",
+            actor=actor,
             runtime="native-tauri",
             worktree=str(worktree),
             gateway_port=int(
@@ -342,7 +583,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             storage_root=str(run_root / "native" / "storage"),
         )
         browser = ClientRuntime(
-            actor="bob",
+            actor=actor,
             runtime="browser",
             worktree=str(worktree),
             gateway_port=int(
@@ -546,16 +787,18 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         profile_env: dict[str, str],
         *,
         journey: str,
+        profile: str,
         worktree_variable: str,
         gateway_port_variable: str,
         renderer_port_variable: str,
         webdriver_port_variable: str,
+        actor: str = "alice",
     ) -> ClientRuntime:
         worktree = Path(
             os.environ.get(worktree_variable, str(REPO_ROOT))
         ).expanduser().resolve()
         client = ClientRuntime(
-            actor="alice",
+            actor=actor,
             runtime="native-tauri",
             worktree=str(worktree),
             gateway_port=int(
@@ -582,7 +825,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     str(4445 + slot * 10),
                 )
             ),
-            profile=AGENT_V2_PROFILE,
+            profile=profile,
             storage_root=f"/tmp/pt-agent-{journey}-{run_id}/storage",
         )
         self._assert_client_ports_available(client)
@@ -593,12 +836,15 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         run_id: str,
         slot: int,
         profile_env: dict[str, str],
+        *,
+        profile: str = AGENT_V2_PROFILE,
     ) -> ClientRuntime:
         return self._agent_native_client(
             run_id,
             slot,
             profile_env,
             journey="stream",
+            profile=profile,
             worktree_variable="PT_AGENT_STREAM_WORKTREE",
             gateway_port_variable="PT_AGENT_STREAM_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_STREAM_RENDERER_PORT",
@@ -616,10 +862,48 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             slot,
             profile_env,
             journey="attachment",
+            profile=AGENT_V2_PROFILE,
             worktree_variable="PT_AGENT_ATTACHMENT_WORKTREE",
             gateway_port_variable="PT_AGENT_ATTACHMENT_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_ATTACHMENT_RENDERER_PORT",
             webdriver_port_variable="PT_AGENT_ATTACHMENT_WEBDRIVER_PORT",
+        )
+
+    def _agent_cli_provider_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        return self._agent_native_client(
+            run_id,
+            slot,
+            profile_env,
+            journey="cli-provider",
+            profile=AGENT_V2_BINDING_PROFILE,
+            worktree_variable="PT_AGENT_CLI_PROVIDER_WORKTREE",
+            gateway_port_variable="PT_AGENT_CLI_PROVIDER_GATEWAY_PORT",
+            renderer_port_variable="PT_AGENT_CLI_PROVIDER_RENDERER_PORT",
+            webdriver_port_variable="PT_AGENT_CLI_PROVIDER_WEBDRIVER_PORT",
+        )
+
+    def _agent_minimum_usable_chat_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        return self._agent_native_client(
+            run_id,
+            slot,
+            profile_env,
+            journey="minimum-usable-chat",
+            profile=AGENT_V2_BINDING_PROFILE,
+            worktree_variable="PT_AGENT_MINIMUM_USABLE_WORKTREE",
+            gateway_port_variable="PT_AGENT_MINIMUM_USABLE_GATEWAY_PORT",
+            renderer_port_variable="PT_AGENT_MINIMUM_USABLE_RENDERER_PORT",
+            webdriver_port_variable="PT_AGENT_MINIMUM_USABLE_WEBDRIVER_PORT",
+            actor="charlie",
         )
 
     def _export_profile_credential_refs(
@@ -743,14 +1027,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         slot: int,
         profile_env: dict[str, str],
     ) -> RuntimeManifest:
-        if profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise BlockedError(
-                reason=(
-                    "Agent V2 capability binding actor Fixture reset requires "
-                    "CHAT_ACCEPTANCE_RESET=1 in Profile two"
-                ),
-                resource="fixture-reset:authorization",
-            )
         missing_configuration = sorted(
             name
             for name in ("CHAT_NATIVE_DEMO_PASSWORD",)
@@ -769,15 +1045,27 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             manifest.run_id,
             slot,
             profile_env,
+            actor="charlie",
         )
-        _, _, actor_ref = produce_actor_manifest(
-            environment_id=self.environment_id,
-            run_id=manifest.run_id,
-            station_url=station_url,
-            deployment_environment=deployment_environment,
-            roles=("alice", "bob"),
-            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
-            reset_authorized=True,
+        actors = tuple(
+            resolve_existing_actor(
+                station_url,
+                role,
+                profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
+            )
+            for role in ("alice", "charlie")
+        )
+        _, _, actor_ref = persist_actor_manifest(
+            ActorManifest(
+                fixture_id="chat-native-existing-actors",
+                environment_id=self.environment_id,
+                run_id=manifest.run_id,
+                created_at=utc_now(),
+                actors=actors,
+                credential_refs=credential_refs,
+                reset_authorized=False,
+                target_verified=True,
+            )
         )
         return dataclasses.replace(
             manifest,
@@ -809,6 +1097,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             slot,
             profile_env,
             runtime_name="governed-tool",
+            actor="charlie",
         )
         return dataclasses.replace(
             manifest,
@@ -842,6 +1131,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 slot,
                 profile_env,
                 runtime_name="mcp",
+                actor="charlie",
             ),
             cleanup_resources=self.contract.cleanup.resources,
         )
@@ -871,6 +1161,238 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 slot,
                 profile_env,
                 runtime_name="connector",
+            ),
+            cleanup_resources=self.contract.cleanup.resources,
+        )
+
+    def _deploy_agent_v2_external_runtime(
+        self,
+        *,
+        run_id: str,
+        profile_env: dict[str, str],
+        deployment_environment: str,
+    ) -> None:
+        runtime_env = external_runtime_environment(run_id)
+        deploy_env = os.environ.copy()
+        deploy_env.update(profile_env)
+        deploy_env.update(runtime_env)
+        deploy_env["PT_ACCEPTANCE_ENVIRONMENT"] = "home-station"
+        deploy_env["PT_AGENT_CAPABILITY_SCENARIO_CONTROL"] = "1"
+        completed = subprocess.run(
+            ["make", "station"],
+            cwd=REPO_ROOT,
+            env=deploy_env,
+            capture_output=True,
+            text=True,
+            timeout=1_800,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "Station deployment failed"
+            )
+            raise BlockedError(
+                reason=(
+                    "P12 external runtime Station deployment failed: "
+                    + detail[-4_000:]
+                ),
+                resource="station:external-runtime-deploy",
+            )
+
+        def cleanup_external_runtime() -> None:
+            transport, environment = reviewed_remote_transport(
+                deployment_environment
+            )
+            compose_project = environment.get(
+                "PT_ACCEPTANCE_COMPOSE_PROJECT",
+                "",
+            ).strip()
+            if not compose_project:
+                raise RuntimeError(
+                    "P12 external runtime cleanup has no Compose project"
+                )
+            root = external_runtime_root(run_id)
+            remote_command = (
+                "set -eu; "
+                "container_id=\"$(docker ps --quiet "
+                f"--filter {shlex.quote(f'label=com.docker.compose.project={compose_project}')} "
+                f"--filter {shlex.quote('label=com.docker.compose.service=station')} "
+                "| sed -n '1p')\"; "
+                "test -n \"$container_id\"; "
+                f"docker exec \"$container_id\" rm -rf -- {shlex.quote(root)}"
+            )
+            result = transport.run_argv(
+                ["bash", "-lc", remote_command],
+                timeout=60,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    "P12 external runtime storage cleanup failed"
+                )
+            restore_env = os.environ.copy()
+            restore_env.update(profile_env)
+            restore_env.update(
+                {
+                    name: ""
+                    for name in runtime_env
+                }
+            )
+            restore_env.update(
+                {
+                    "PT_ACCEPTANCE_ENVIRONMENT": "",
+                    "PT_AGENT_CAPABILITY_SCENARIO_CONTROL": "",
+                    "PT_ACCEPTANCE_RUN_ID": "",
+                }
+            )
+            restored = subprocess.run(
+                ["make", "station"],
+                cwd=REPO_ROOT,
+                env=restore_env,
+                capture_output=True,
+                text=True,
+                timeout=1_800,
+                check=False,
+            )
+            if restored.returncode != 0:
+                detail = (
+                    restored.stderr.strip()
+                    or restored.stdout.strip()
+                    or "Station restore failed"
+                )
+                raise RuntimeError(
+                    "P12 external runtime Station restore failed: "
+                    + detail[-4_000:]
+                )
+
+        self.register_cleanup(
+            f"agent-v2-external-runtime:{run_id}",
+            cleanup_external_runtime,
+        )
+
+    def _deploy_agent_v2_scenario_control(
+        self,
+        *,
+        gate_id: str,
+        profile_env: dict[str, str],
+    ) -> None:
+        run_id = os.environ.get("PT_ACCEPTANCE_RUN_ID", "").strip()
+        if not run_id:
+            raise BlockedError(
+                reason=f"{gate_id} requires the parent Acceptance run identity",
+                resource="acceptance-run:PT_ACCEPTANCE_RUN_ID",
+            )
+        deploy_env = os.environ.copy()
+        deploy_env.update(profile_env)
+        deploy_env.update(
+            {
+                "PT_ACCEPTANCE_ENVIRONMENT": "home-station",
+                "PT_AGENT_CAPABILITY_SCENARIO_CONTROL": "1",
+                "PT_ACCEPTANCE_RUN_ID": run_id,
+            }
+        )
+        completed = subprocess.run(
+            ["make", "station"],
+            cwd=REPO_ROOT,
+            env=deploy_env,
+            capture_output=True,
+            text=True,
+            timeout=1_800,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "Station deployment failed"
+            )
+            raise BlockedError(
+                reason=f"{gate_id} scenario-control deployment failed: "
+                + detail[-4_000:],
+                resource="station:scenario-control-deploy",
+            )
+
+        def cleanup_scenario_control() -> None:
+            restore_env = os.environ.copy()
+            restore_env.update(profile_env)
+            restore_env.update(
+                {
+                    "PT_ACCEPTANCE_ENVIRONMENT": "",
+                    "PT_AGENT_CAPABILITY_SCENARIO_CONTROL": "",
+                    "PT_ACCEPTANCE_RUN_ID": "",
+                }
+            )
+            restored = subprocess.run(
+                ["make", "station"],
+                cwd=REPO_ROOT,
+                env=restore_env,
+                capture_output=True,
+                text=True,
+                timeout=1_800,
+                check=False,
+            )
+            if restored.returncode != 0:
+                detail = (
+                    restored.stderr.strip()
+                    or restored.stdout.strip()
+                    or "Station restore failed"
+                )
+                raise RuntimeError(
+                    f"{gate_id} scenario-control restore failed: "
+                    + detail[-4_000:]
+                )
+
+        self.register_cleanup(
+            f"agent-v2-scenario-control:{run_id}",
+            cleanup_scenario_control,
+        )
+
+    def _agent_v2_external_runtime_manifest(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        station_url: str,
+        deployment_environment: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> RuntimeManifest:
+        if not profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", ""):
+            raise BlockedError(
+                reason=(
+                    "P12 external runtime requires "
+                    "CHAT_NATIVE_DEMO_PASSWORD in Profile two"
+                ),
+                resource="profile:CHAT_NATIVE_DEMO_PASSWORD",
+            )
+        credential_refs = ("profile:CHAT_NATIVE_DEMO_PASSWORD",)
+        actor = resolve_existing_actor(
+            station_url,
+            "bob",
+            profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
+        )
+        _, _, actor_ref = persist_actor_manifest(
+            ActorManifest(
+                fixture_id="agent-v2-external-runtime-existing-actor",
+                environment_id=self.environment_id,
+                run_id=manifest.run_id,
+                created_at=utc_now(),
+                actors=(actor,),
+                credential_refs=credential_refs,
+                reset_authorized=False,
+                target_verified=True,
+            )
+        )
+        return dataclasses.replace(
+            manifest,
+            actor_manifest_ref=actor_ref,
+            credential_refs=credential_refs,
+            clients=self._agent_v2_binding_clients(
+                manifest.run_id,
+                slot,
+                profile_env,
+                runtime_name="external-runtime",
             ),
             cleanup_resources=self.contract.cleanup.resources,
         )
@@ -912,7 +1434,8 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         deployment_environment: str,
         profile_env: dict[str, str],
     ) -> RuntimeManifest:
-        if profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
+        requires_reset = agent_native_requires_disposable_fixture(gate_id)
+        if requires_reset and profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise BlockedError(
                 reason=(
                     f"{gate_id} actor Fixture reset requires "
@@ -920,46 +1443,99 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 ),
                 resource="fixture-reset:authorization",
             )
-        missing_configuration = sorted(
-            name
-            for name in (
-                "PT_AGENT_PROVIDER_ID",
-                "PT_AGENT_PROVIDER_BASE_URL",
-            )
-            if not profile_env.get(name, "")
-        )
-        if missing_configuration:
+        if not profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", ""):
             raise BlockedError(
                 reason=(
-                    f"{gate_id} requires profile values: "
-                    + ", ".join(missing_configuration)
+                    f"{gate_id} requires CHAT_NATIVE_DEMO_PASSWORD "
+                    "in the approved profile"
                 ),
-                resource=f"profile:{missing_configuration[0]}",
+                resource="credential-ref:profile:CHAT_NATIVE_DEMO_PASSWORD",
             )
-        credential_refs = self._export_profile_credential_refs(profile_env)
+        requires_provider = agent_native_requires_provider(gate_id)
+        if requires_provider:
+            missing_configuration = sorted(
+                name
+                for name in (
+                    "PT_AGENT_PROVIDER_ID",
+                    "PT_AGENT_PROVIDER_BASE_URL",
+                )
+                if not profile_env.get(name, "")
+            )
+            if missing_configuration:
+                raise BlockedError(
+                    reason=(
+                        f"{gate_id} requires profile values: "
+                        + ", ".join(missing_configuration)
+                    ),
+                    resource=f"profile:{missing_configuration[0]}",
+                )
+            credential_refs = self._export_profile_credential_refs(profile_env)
+        else:
+            credential_refs = ("profile:CHAT_NATIVE_DEMO_PASSWORD",)
         roles = GATE_ROLES[gate_id]
-        _, _, actor_ref = produce_actor_manifest(
-            environment_id=self.environment_id,
-            run_id=manifest.run_id,
-            station_url=station_url,
-            deployment_environment=deployment_environment,
-            roles=roles,
-            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
-            reset_authorized=True,
-        )
-        client = (
-            self._agent_attachment_client(
+        if requires_reset:
+            _, _, actor_ref = produce_actor_manifest(
+                environment_id=self.environment_id,
+                run_id=manifest.run_id,
+                station_url=station_url,
+                deployment_environment=deployment_environment,
+                roles=roles,
+                credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
+                reset_authorized=True,
+            )
+        else:
+            actors = tuple(
+                resolve_existing_actor(
+                    station_url,
+                    role,
+                    profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
+                )
+                for role in roles
+            )
+            _, _, actor_ref = persist_actor_manifest(
+                ActorManifest(
+                    fixture_id="chat-native-existing-actors",
+                    environment_id=self.environment_id,
+                    run_id=manifest.run_id,
+                    created_at=utc_now(),
+                    actors=actors,
+                    credential_refs=credential_refs,
+                    reset_authorized=False,
+                    target_verified=True,
+                )
+            )
+        if gate_id == "agent-attachment-e2e":
+            client = self._agent_attachment_client(
                 manifest.run_id,
                 manifest.profile_slot,
                 profile_env,
             )
-            if gate_id == "agent-attachment-e2e"
-            else self._agent_stream_client(
+        elif gate_id == AGENT_CLI_PROVIDER_GATE:
+            client = self._agent_cli_provider_client(
                 manifest.run_id,
                 manifest.profile_slot,
                 profile_env,
             )
-        )
+            self.register_cleanup(
+                "remote-station-cli-process-audit:"
+                f"{deployment_environment}",
+                lambda: audit_remote_station_cli_processes(
+                    deployment_environment
+                ),
+            )
+        elif gate_id == AGENT_MINIMUM_USABLE_CHAT_GATE:
+            client = self._agent_minimum_usable_chat_client(
+                manifest.run_id,
+                manifest.profile_slot,
+                profile_env,
+            )
+        else:
+            client = self._agent_stream_client(
+                manifest.run_id,
+                manifest.profile_slot,
+                profile_env,
+                profile=agent_profile_for_gate(gate_id),
+            )
         return dataclasses.replace(
             manifest,
             actor_manifest_ref=actor_ref,
@@ -974,19 +1550,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         profile_name: str,
         profile_env: dict[str, str],
     ) -> None:
-        required_profile = (
-            AGENT_V2_BINDING_PROFILE
-            if gate_id in {
-                AGENT_V2_HOME_GATE,
-                AGENT_V2_BINDING_GATE,
-                AGENT_V2_GOVERNED_TOOL_GATE,
-                AGENT_V2_MCP_GATE,
-                AGENT_V2_CONNECTOR_GATE,
-                AGENT_V2_EVALUATION_GATE,
-                AGENT_MARKETPLACE_GATE,
-            }
-            else AGENT_V2_PROFILE
-        )
+        required_profile = agent_profile_for_gate(gate_id)
         if profile_name != required_profile:
             raise BlockedError(
                 reason=(
@@ -1026,6 +1590,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_MCP_GATE,
                     AGENT_V2_CONNECTOR_GATE,
                     AGENT_V2_EVALUATION_GATE,
+                    AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 }
                 or gate_id in AGENT_NATIVE_GATES
             ):
@@ -1048,6 +1613,25 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 raise BlockedError(
                     reason="Active profile is missing PT_STATION_URL",
                     resource="profile:PT_STATION_URL",
+                )
+            if gate_id in AGENT_V2_SCENARIO_CONTROL_GATES:
+                self._deploy_agent_v2_scenario_control(
+                    gate_id=gate_id,
+                    profile_env=profile_env,
+                )
+            if gate_id == AGENT_V2_EXTERNAL_RUNTIME_GATE:
+                if manifest.workspace_digest != "clean":
+                    raise BlockedError(
+                        reason=(
+                            f"{gate_id} requires a clean candidate "
+                            "worktree before remote deployment"
+                        ),
+                        resource="source-identity:workspace",
+                    )
+                self._deploy_agent_v2_external_runtime(
+                    run_id=manifest.run_id,
+                    profile_env=profile_env,
+                    deployment_environment=deployment_environment,
                 )
             if profile_env.get("PT_STATION_MODE", "local") == "remote":
                 self.acquire_remote_git_source_lease(
@@ -1129,7 +1713,9 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             if gate_id in {
                 AGENT_V2_FOUNDATION_GATE,
                 AGENT_V2_HOME_GATE,
+                AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 AGENT_MARKETPLACE_GATE,
+                AGENT_MINIMUM_USABLE_CHAT_GATE,
             }:
                 if manifest.workspace_digest != "clean":
                     raise BlockedError(
@@ -1148,7 +1734,9 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_MCP_GATE,
                     AGENT_V2_CONNECTOR_GATE,
                     AGENT_V2_EVALUATION_GATE,
+                    AGENT_V2_EXTERNAL_RUNTIME_GATE,
                     AGENT_MARKETPLACE_GATE,
+                    AGENT_MINIMUM_USABLE_CHAT_GATE,
                 }
                 and not attestation.is_clean_workspace
             ):
@@ -1237,6 +1825,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 return self._ready(manifest)
             if gate_id == AGENT_V2_EVALUATION_GATE:
                 manifest = self._agent_v2_evaluation_manifest(
+                    manifest,
+                    station_url=station_url,
+                    deployment_environment=deployment_environment,
+                    slot=slot,
+                    profile_env=profile_env,
+                )
+                self._manifest = manifest
+                return self._ready(manifest)
+            if gate_id == AGENT_V2_EXTERNAL_RUNTIME_GATE:
+                manifest = self._agent_v2_external_runtime_manifest(
                     manifest,
                     station_url=station_url,
                     deployment_environment=deployment_environment,

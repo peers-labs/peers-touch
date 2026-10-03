@@ -1,8 +1,8 @@
 # Social Private Moments - Product State Model
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Social Product
 
 ---
@@ -20,7 +20,7 @@
 | `CHECKING_PRIVATE_READINESS` | 正在确认当前设备和接收者可安全接收 | 继续编辑、取消 | 提交、缩小受众后静默继续 | all recipients ready / failure |
 | `READY_PUBLIC` | 内容将公开发布且不受私密 E2EE 承诺保护 | 发布、改 audience、取消 | 隐藏公开含义 | explicit publish |
 | `READY_PRIVATE` | 所选 audience 和设备均可安全发布 | 发布、改 audience、取消 | 将 key 放进普通响应 | explicit publish |
-| `PRIVATE_UNSUPPORTED` | 当前平台或远端受众不支持私密发布 | 改为受支持 audience、换 Native 设备、取消 | 明文降级、自动改 PUBLIC | user correction |
+| `PRIVATE_UNSUPPORTED` | 当前平台、`CUSTOM_DENY(PUBLIC)`、远端受众或含远端成员的 Group 不支持私密发布 | 改为受支持 audience、换 Native 设备、取消 | 明文降级、自动改 PUBLIC、丢弃远端成员后部分发布 | user correction |
 | `RECIPIENT_KEY_UNAVAILABLE` | 一个或多个接收者暂时无法安全接收 | 查看失败对象、移除、重试、取消 | 部分发布且不告知 | recipient change / key arrival |
 | `AUDIENCE_TOO_LARGE` | 私密 audience 超过协议 actor/slot 上限 | 缩小 audience、取消 | 截断接收者、部分发布 | audience reduced |
 | `PUBLISHING` | 正在提交一个不可变 audience 的版本 | 取消仅限尚未 durable admission | 重复提交、切换 audience | success / typed failure |

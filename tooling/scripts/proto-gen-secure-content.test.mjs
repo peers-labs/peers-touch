@@ -603,8 +603,8 @@ test('audits repository writes from tool discovery and failed tools', () => {
   }
 });
 
-test('does not exempt dependency or build directories from write auditing', () => {
-  for (const directory of ['node_modules', 'target']) {
+test('does not exempt dependency, build, or local runtime directories from write auditing', () => {
+  for (const directory of ['.local', 'node_modules', 'target']) {
     const scope = fixture();
     try {
       const containingDirectory = path.join(scope.root, directory);

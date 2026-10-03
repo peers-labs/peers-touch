@@ -1,4 +1,4 @@
-"""Resolve the frozen Secure Content runtime source from W12A evidence."""
+"""Resolve the frozen Secure Content runtime source from W12D activation."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import hmac
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Optional
 
 from tooling.scripts.plan_lifecycle_source import (
     PlanLifecycleProjection,
@@ -21,6 +21,8 @@ PLAN_PATH = (
     "20260913-secure-content-hard-cut/plan.md"
 )
 AGGREGATE_KIND = "secure-content-schema-activation-aggregate"
+AGGREGATE_TASK_ID = "W12D"
+LEGACY_AGGREGATE_TASK_ID = "W12A"
 SHA = frozenset("0123456789abcdef")
 
 
@@ -47,7 +49,7 @@ def _is_commit(value: Any) -> bool:
     )
 
 
-def _read_activation(path: Path, workspace_id: str) -> str:
+def _read_activation(path: Path, workspace_id: str) -> Optional[str]:
     if path.is_symlink() or not path.is_file():
         raise SourceProjectionError("activation aggregate is not a regular file")
     try:
@@ -60,10 +62,10 @@ def _read_activation(path: Path, workspace_id: str) -> str:
     unsigned = dict(value)
     unsigned.pop("result_digest", None)
     generation = value.get("generation_id")
+    task_id = value.get("task_id")
+    workstream_id = value.get("workstream_id")
     if (
         value.get("kind") != AGGREGATE_KIND
-        or value.get("task_id") != "W12A"
-        or value.get("workstream_id") != "W12A"
         or value.get("workspace_id") != workspace_id
         or value.get("reset_intent") != "SCHEMA_ACTIVATION"
         or value.get("profiles") != ["four", "fiveArm"]
@@ -75,6 +77,13 @@ def _read_activation(path: Path, workspace_id: str) -> str:
         or not isinstance(digest, str)
         or not hmac.compare_digest(digest, _canonical_digest(unsigned))
     ):
+        raise SourceProjectionError("activation aggregate identity is invalid")
+    if (
+        task_id == LEGACY_AGGREGATE_TASK_ID
+        and workstream_id == LEGACY_AGGREGATE_TASK_ID
+    ):
+        return None
+    if task_id != AGGREGATE_TASK_ID or workstream_id != AGGREGATE_TASK_ID:
         raise SourceProjectionError("activation aggregate identity is invalid")
     return generation
 
@@ -123,6 +132,8 @@ def resolve_runtime_source_identity(
     activation_root = result_root / "W12A" / "activation"
     for path in sorted(activation_root.glob("*/aggregate/result.json")):
         generation = _read_activation(path, workspace_id)
+        if generation is None:
+            continue
         if ancestor_checker(root, generation, control_head):
             candidates.append((distance(root, generation, control_head), generation))
     if not candidates:

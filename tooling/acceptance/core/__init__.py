@@ -16,6 +16,7 @@ from .errors import (
     EvidenceRunActive,
     FixtureError,
     ProvisioningError,
+    SuiteRuntimeError,
     ClientBindingError,
     BlockedError,
     EphemeralLaunchError,
@@ -111,6 +112,13 @@ from .runtime_cell import (
     RuntimeCellState,
     parse_required_runtime_cells,
 )
+from .suite_runtime import (
+    RuntimeReuseContract,
+    SuiteRuntimeAction,
+    SuiteRuntimeEvent,
+    SuiteRuntimeLedger,
+    validate_suite_runtime_report,
+)
 from .provisioner import EnvironmentProvisioner
 from .execution_plan import (
     PLAN_BINDING_MISMATCH,
@@ -144,6 +152,7 @@ __all__ = [
     "EvidenceRunActive",
     "FixtureError",
     "ProvisioningError",
+    "SuiteRuntimeError",
     "ClientBindingError",
     "BlockedError",
     "EphemeralLaunchError",
@@ -216,6 +225,11 @@ __all__ = [
     "RuntimeCellManifest",
     "RuntimeCellState",
     "parse_required_runtime_cells",
+    "RuntimeReuseContract",
+    "SuiteRuntimeAction",
+    "SuiteRuntimeEvent",
+    "SuiteRuntimeLedger",
+    "validate_suite_runtime_report",
     "EnvironmentProvisioner",
     "PLAN_BINDING_MISMATCH",
     "PLAN_BINDING_REQUIRED",

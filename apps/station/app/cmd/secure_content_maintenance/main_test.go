@@ -959,7 +959,7 @@ func validAuditRequest(
 		SchemaVersion:         infrastructure.SecureContentResetSchemaVersion,
 		RequestID:             "audit-four-1",
 		PlanID:                infrastructure.SecureContentResetPlanID,
-		TaskID:                "W12A",
+		TaskID:                "W12D",
 		ResetID:               "reset-four-1",
 		ResetIntent:           infrastructure.ResetIntentSchemaActivation,
 		SourceCommit:          binding.SourceCommit,

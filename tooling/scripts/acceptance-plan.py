@@ -277,7 +277,7 @@ def main() -> int:
         elif args.active_plan:
             formal_plan = discover_active_plan(REPO_ROOT)
         paths = args.changed_file or (
-            changed_paths_for_plan(REPO_ROOT, formal_plan)
+            changed_paths_for_plan(REPO_ROOT, formal_plan, execution_mode)
             if formal_plan
             else changed_paths(args.diff_range)
         )

@@ -31,8 +31,14 @@ import {
 } from '../../services/desktop_api';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { identityRuntime } from '../../kernel/identityRuntime';
+import { useAccountIdentityStore } from '../../store/accountIdentity';
+import { useSessionStore } from '../../store/session';
 import { useTranslation } from 'react-i18next';
 import { SettingsContainer, SettingsSection } from './SettingsLayout';
+import {
+  accountLoginProviderLocaleKey,
+  resolveAccountLoginProvider,
+} from './accountIdentityPresentation';
 import { log } from '../../utils/logger';
 
 const { Text, Title } = Typography;
@@ -169,6 +175,7 @@ function EditableAvatar({
 
   return (
     <div
+      data-pt-account-avatar-url={src || ''}
       onClick={() => !uploading && onUpload()}
       style={{
         position: 'relative',
@@ -302,17 +309,23 @@ function IdentityField({
   value,
   prefix,
   copiable,
+  identityKey,
   t,
 }: {
   label: string;
   value: string;
   prefix?: string;
   copiable?: boolean;
+  identityKey?: string;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
   const { token } = theme.useToken();
   return (
-    <Flexbox gap={4} style={{ flex: '1 1 240px', minWidth: 200 }}>
+    <Flexbox
+      data-pt-account-identity={identityKey}
+      gap={4}
+      style={{ flex: '1 1 240px', minWidth: 200 }}
+    >
       <Text type="secondary" style={{ fontSize: 12 }}>
         {label}
       </Text>
@@ -375,6 +388,12 @@ const AUTO_SAVE_DELAY = 800;
 export function AccountTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
+  const activeAccount = useAccountIdentityStore((state) => (
+    state.accounts.find((account) => account.id === state.activeAccountId) ?? null
+  ));
+  const sessionLoginProvider = useSessionStore((state) => (
+    state.currentUser?.loginProvider ?? state.currentUser?.loginMethod
+  ));
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -383,6 +402,12 @@ export function AccountTab() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
+  const loginProvider = resolveAccountLoginProvider({
+    accountProvider: activeAccount?.provider,
+    sessionProvider: sessionLoginProvider,
+  });
+  const loginProviderKey = accountLoginProviderLocaleKey(loginProvider);
+  const loginProviderLabel = loginProviderKey ? t(loginProviderKey) : loginProvider;
 
   const syncCurrentProfileIdentity = async (fallbackAvatar?: string) => {
     await identityRuntime.refreshCurrentProfile(fallbackAvatar);
@@ -579,13 +604,24 @@ export function AccountTab() {
           </div>
 
           <Flexbox gap={8} style={{ flex: 1, minWidth: 0, paddingTop: 44 }}>
-            <Flexbox horizontal align="center" gap={10} style={{ flexWrap: 'wrap' }}>
+            <Flexbox
+              data-pt-account-identity-summary
+              horizontal
+              align="center"
+              gap={10}
+              style={{ flexWrap: 'wrap' }}
+            >
               <Title level={4} style={{ margin: 0 }}>
                 {profile.display_name || profile.username}
               </Title>
               <Tag color="processing" style={{ margin: 0 }}>
                 @{profile.username}
               </Tag>
+              {loginProviderLabel ? (
+                <Tag data-pt-account-login-provider style={{ margin: 0 }}>
+                  {loginProviderLabel}
+                </Tag>
+              ) : null}
             </Flexbox>
 
             <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
@@ -601,7 +637,13 @@ export function AccountTab() {
 
         <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
           <IdentityField label={t('provider.account.identity.preferredUsername')} value={profile.username} prefix="@" copiable t={t} />
-          <IdentityField label={t('provider.account.identity.ptid')} value={profile.peers_touch.network_id} copiable t={t} />
+          <IdentityField
+            identityKey="ptid"
+            label={t('provider.account.identity.ptid')}
+            value={profile.peers_touch.network_id}
+            copiable
+            t={t}
+          />
         </Flexbox>
       </SettingsSection>
       {/* ── Section 2: Public Profile (editable, auto-save) ── */}
@@ -739,14 +781,14 @@ export function AccountTab() {
               <Input
                 value={link.label}
                 onChange={(e) => onLinkChange(index, 'label', e.target.value)}
-                placeholder="Label (e.g. GitHub)"
+                placeholder={t('provider.account.profile.linkLabelPlaceholder')}
                 style={{ flex: 1, fontSize: 12 }}
                 size="small"
               />
               <Input
                 value={link.url}
                 onChange={(e) => onLinkChange(index, 'url', e.target.value)}
-                placeholder="https://..."
+                placeholder={t('provider.account.profile.linkUrlPlaceholder')}
                 style={{ flex: 2, fontSize: 12 }}
                 size="small"
               />

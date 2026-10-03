@@ -2,6 +2,10 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
 use secure_content_core::codec::CanonicalMessageEncoder;
 use secure_content_core::envelope::{open_content_key, ContentKey, SealedContentKey};
+use secure_content_core::object::{
+    validate_object_descriptor, ObjectDescriptor, ObjectEncryptionSuite, ObjectNonceStrategy,
+    ObjectUploadSpec, OBJECT_TAG_SIZE,
+};
 use secure_content_core::payload::{
     decrypt_payload, derive_payload_key, EncryptedPayload as CoreEncryptedPayload,
     PayloadKeyContext, PAYLOAD_FORMAT_VERSION,
@@ -11,9 +15,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::secure_content::adapter::PrivateRepostSourceMaterial;
+use crate::secure_content::private_mention::{
+    domain_hmac_sha256, validated_mention_routing_hash, verify_decrypted_mentions,
+};
 use crate::secure_content::proto::{
     actor::v1 as actor, error::v1 as error_model, secure_content::v1 as wire, social::v1 as social,
 };
+use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::store::PrivateSocialStore;
 use crate::secure_content::transport::{TransportDisposition, TransportError};
 use crate::secure_content::NativeSocialSession;
@@ -22,11 +31,13 @@ const STATION_ATTESTATION_DOMAIN: &[u8] =
     b"peers-touch:secure-content:station-content-signing-key-attestation:v1\0";
 const CLOCK_SKEW_SECONDS: i64 = 60;
 const MAX_IDENTIFIER_BYTES: usize = 128;
+const REPOST_SNAPSHOT_DOMAIN: &[u8] = b"peers-touch:secure-content:repost-snapshot:v1";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum PrivateReadState {
     RecoveryRequired,
+    RecoveryKeyUnavailable,
     ContentReady,
     AuthenticationRequired,
     NotFoundOrNotAuthorized,
@@ -37,7 +48,88 @@ pub enum PrivateReadState {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum PrivateReadContent {
-    Text { text: String },
+    Text {
+        text: String,
+    },
+    Image {
+        text: String,
+        media: Vec<PrivateMomentMediaProjection>,
+    },
+    Video {
+        text: String,
+        media: Vec<PrivateMomentMediaProjection>,
+    },
+    Link {
+        text: String,
+        url: String,
+        title: String,
+    },
+    Poll {
+        text: String,
+        question: String,
+        options: Vec<String>,
+        min_choices: u32,
+        max_choices: u32,
+        expires_at_seconds: i64,
+    },
+    Repost {
+        comment: String,
+        source_post_id: String,
+        source_author_ptid: String,
+        source_kind: String,
+        source_text: String,
+    },
+    Location {
+        text: String,
+        name: String,
+        latitude: String,
+        longitude: String,
+        address: String,
+        media: Vec<PrivateMomentMediaProjection>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PrivateMediaState {
+    MediaPlaceholder,
+    MediaGrantPending,
+    MediaDownloading,
+    MediaDecrypting,
+    MediaReady,
+    MediaAccessDenied,
+    MediaIntegrityFailure,
+    MediaOfflineRetryable,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateMomentMediaProjection {
+    pub attachment_id: String,
+    pub object_id: String,
+    pub state: PrivateMediaState,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub duration_ms: u32,
+    pub alt_text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plaintext_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plaintext_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateMentionProjection {
+    pub actor_ptid: String,
+    pub offset: i32,
+    pub length: i32,
+    pub display: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,6 +141,8 @@ pub struct PrivateMomentReadProjection {
     pub author_ptid: String,
     pub audience_kind: String,
     pub state: PrivateReadState,
+    #[serde(default)]
+    pub mentions: Vec<PrivateMentionProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<PrivateReadContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,10 +165,67 @@ impl PrivateMomentReadProjection {
     }
 }
 
-pub struct DecryptedPrivateTextMoment {
+pub struct DecryptedPrivateMoment {
     pub projection: PrivateMomentReadProjection,
+    pub plaintext: social::PrivateMomentContent,
     pub content_key: ContentKey,
     pub consumed_prekey_id: Option<String>,
+}
+
+pub type DecryptedPrivateTextMoment = DecryptedPrivateMoment;
+
+pub fn attachment_for_object<'a>(
+    content: &'a social::PrivateMomentContent,
+    object_id: &str,
+) -> Option<&'a social::PrivateAttachmentMetadata> {
+    let matches = |metadata: &&social::PrivateAttachmentMetadata| {
+        metadata
+            .object
+            .as_ref()
+            .is_some_and(|descriptor| descriptor.object_id == object_id)
+    };
+    match content.body.as_ref()? {
+        social::private_moment_content::Body::Image(body) => body.images.iter().find(matches),
+        social::private_moment_content::Body::Location(body) => body.images.iter().find(matches),
+        social::private_moment_content::Body::Video(body) => body
+            .source
+            .iter()
+            .chain(body.poster.iter())
+            .chain(
+                body.variants
+                    .iter()
+                    .filter_map(|variant| variant.media.as_ref()),
+            )
+            .find(matches),
+        _ => None,
+    }
+}
+
+pub fn set_media_projection(
+    projection: &mut PrivateMomentReadProjection,
+    object_id: &str,
+    state: PrivateMediaState,
+    local_path: Option<String>,
+    plaintext_sha256: Option<String>,
+    plaintext_size: Option<u64>,
+    error_code: Option<String>,
+) -> Result<(), String> {
+    let media = match projection.content.as_mut() {
+        Some(PrivateReadContent::Image { media, .. })
+        | Some(PrivateReadContent::Video { media, .. })
+        | Some(PrivateReadContent::Location { media, .. }) => media,
+        _ => return Err("private Moment has no media projection".to_string()),
+    };
+    let target = media
+        .iter_mut()
+        .find(|value| value.object_id == object_id)
+        .ok_or_else(|| "private Moment media projection is unavailable".to_string())?;
+    target.state = state;
+    target.local_path = local_path;
+    target.plaintext_sha256 = plaintext_sha256;
+    target.plaintext_size = plaintext_size;
+    target.error_code = error_code;
+    Ok(())
 }
 
 pub struct SenderKeyRequirement {
@@ -145,6 +296,137 @@ pub fn sender_key_requirement(
     validate_resource_identity(expected_post_id, &parts)
 }
 
+pub fn repost_source_material_from_response(
+    expected_post_id: &str,
+    response: &social::GetMomentResourceResponse,
+    decrypted: Option<&DecryptedPrivateMoment>,
+    commitment_salt: &[u8; 32],
+) -> Result<PrivateRepostSourceMaterial, String> {
+    let resource = response
+        .resource
+        .as_ref()
+        .ok_or_else(|| "repost source resource is unavailable".to_string())?;
+    let metadata = resource
+        .metadata
+        .as_ref()
+        .ok_or_else(|| "repost source metadata is unavailable".to_string())?;
+    let source_author = metadata
+        .author
+        .as_ref()
+        .ok_or_else(|| "repost source author is unavailable".to_string())?
+        .clone();
+    if metadata.post_id != expected_post_id
+        || metadata.content_id != expected_post_id
+        || metadata.is_deleted
+        || !canonical_ptid(&source_author.ptid)
+        || source_author.acct.trim().is_empty()
+        || actor::ActorKind::try_from(source_author.kind)
+            .ok()
+            .is_none_or(|kind| kind == actor::ActorKind::Unspecified)
+    {
+        return Err("repost source identity is invalid".to_string());
+    }
+    let (source, rendered_source, source_proof) = match resource.body.as_ref() {
+        Some(social::post_resource::Body::PublicContent(public)) => {
+            if decrypted.is_some() {
+                return Err("public repost source unexpectedly supplied plaintext".to_string());
+            }
+            let post = public
+                .post
+                .as_ref()
+                .ok_or_else(|| "public repost source Post is unavailable".to_string())?;
+            if response.post.as_ref() != Some(post)
+                || post.id != expected_post_id
+                || post.author_ptid != source_author.ptid
+                || post.r#type != metadata.r#type
+                || post.created_at != metadata.created_at
+                || post.is_deleted
+                || post.audience.as_ref().map(|audience| audience.kind)
+                    != Some(social::audience::Kind::Public as i32)
+                || metadata.audience_kind != social::audience::Kind::Public as i32
+            {
+                return Err("public repost source metadata is inconsistent".to_string());
+            }
+            let snapshot = public_rendered_source_snapshot(
+                post,
+                &source_author,
+                metadata.created_at.as_ref(),
+            )?;
+            let source = snapshot
+                .source
+                .as_ref()
+                .expect("public source was constructed")
+                .clone();
+            let canonical_public_post_sha256 = Sha256::digest(snapshot.encode_to_vec()).to_vec();
+            (
+                source,
+                social::RenderedSourceSnapshot {
+                    source_class: Some(
+                        social::rendered_source_snapshot::SourceClass::PublicSource(snapshot),
+                    ),
+                },
+                social::private_repost_authority::SourceProof::PublicSource(
+                    social::PublicRepostSourceProof {
+                        canonical_public_post_sha256,
+                    },
+                ),
+            )
+        }
+        Some(social::post_resource::Body::PrivateContent(_)) => {
+            let decrypted = decrypted
+                .ok_or_else(|| "private repost source plaintext is unavailable".to_string())?;
+            let parts = private_response_parts(response)?;
+            validate_resource_identity(expected_post_id, &parts)?;
+            let source = social::SocialPostSourceRef {
+                post_id: expected_post_id.to_string(),
+                private_content_id: parts.resource.content_id.clone(),
+                private_generation: parts.resource.generation,
+            };
+            let snapshot = private_rendered_source_snapshot(
+                &source,
+                &source_author,
+                metadata.created_at.as_ref(),
+                private_moment_kind(metadata.r#type)?,
+                &decrypted.plaintext,
+            )?;
+            (
+                source,
+                social::RenderedSourceSnapshot {
+                    source_class: Some(
+                        social::rendered_source_snapshot::SourceClass::PrivateSource(snapshot),
+                    ),
+                },
+                social::private_repost_authority::SourceProof::PrivateSource(
+                    social::PrivateRepostSourceProof {
+                        source_resource: Some(parts.resource.clone()),
+                        source_authorization_snapshot_sha256: parts
+                            .proof
+                            .authorization_snapshot_sha256
+                            .clone(),
+                        source_encrypted_payload_sha256: Sha256::digest(
+                            parts.payload.encode_to_vec(),
+                        )
+                        .to_vec(),
+                        source_commit_proof_sha256: Sha256::digest(parts.proof.encode_to_vec())
+                            .to_vec(),
+                    },
+                ),
+            )
+        }
+        None => return Err("repost source body is unavailable".to_string()),
+    };
+    let commitment = private_repost_snapshot_commitment(commitment_salt, &rendered_source)?;
+    Ok(PrivateRepostSourceMaterial {
+        authority: social::PrivateRepostAuthority {
+            source: Some(source),
+            source_author: Some(source_author),
+            rendered_source_commitment: commitment.to_vec(),
+            source_proof: Some(source_proof),
+        },
+        rendered_source,
+    })
+}
+
 pub fn decrypt_text_projection(
     session: &NativeSocialSession,
     store: &PrivateSocialStore,
@@ -160,9 +442,7 @@ pub fn decrypt_text_projection(
         current_unix_seconds(),
     )?;
     let parts = private_response_parts(response)?;
-    let metadata = parts.metadata;
     let private = parts.private;
-    let payload = parts.payload;
     let resource = parts.resource;
 
     let (content_key, consumed_prekey_id) = if let Some(root) = store
@@ -209,7 +489,73 @@ pub fn decrypt_text_projection(
         (content_key, Some(stored.key_id.clone()))
     };
 
-    let domain_binding = text_domain_binding();
+    decrypt_text_with_content_key(response, content_key, consumed_prekey_id)
+}
+
+pub fn decrypt_text_projection_with_recovery(
+    session: &NativeSocialSession,
+    store: &PrivateSocialStore,
+    expected_post_id: &str,
+    response: &social::GetMomentResourceResponse,
+    recovery_envelope: &wire::ViewerContentKeyEnvelope,
+    sender_signing_key: &VerifyingKey,
+) -> Result<DecryptedPrivateTextMoment, PrivateReadError> {
+    let mut point_without_viewer_envelope = response.clone();
+    let private = point_without_viewer_envelope
+        .resource
+        .as_mut()
+        .and_then(|resource| match resource.body.as_mut() {
+            Some(social::post_resource::Body::PrivateContent(private)) => Some(private),
+            _ => None,
+        })
+        .ok_or_else(PrivateReadError::integrity)?;
+    private.viewer_envelope = None;
+    verify_response_integrity(
+        session,
+        expected_post_id,
+        &point_without_viewer_envelope,
+        Some(sender_signing_key),
+        current_unix_seconds(),
+    )?;
+
+    let parts = private_response_parts(response)?;
+    verify_recovery_viewer_envelope(
+        session,
+        recovery_envelope,
+        parts.payload,
+        parts.proof,
+        parts.resource,
+        &validated_object_descriptor_set_hash(parts.private, parts.resource)?,
+        sender_signing_key,
+    )?;
+    let content_key =
+        open_recovery_content_key(store, &session.scope.actor_ptid, recovery_envelope).map_err(
+            |_| PrivateReadError {
+                kind: PrivateReadFailureKind::RecoveryRequired,
+                message: Some("private Social recovery key is unavailable".to_string()),
+            },
+        )?;
+    decrypt_text_with_content_key(response, content_key, None)
+}
+
+fn decrypt_text_with_content_key(
+    response: &social::GetMomentResourceResponse,
+    content_key: ContentKey,
+    consumed_prekey_id: Option<String>,
+) -> Result<DecryptedPrivateTextMoment, PrivateReadError> {
+    let parts = private_response_parts(response)?;
+    let metadata = parts.metadata;
+    let payload = parts.payload;
+    let resource = parts.resource;
+    let kind = private_moment_kind(metadata.r#type)?;
+    let (subtype_prepare_authority_sha256, _) =
+        validated_subtype_authority(parts.private, parts.verification, resource, kind)?;
+    let domain_binding = social::PrivateMomentDomainBinding {
+        format_version: PAYLOAD_FORMAT_VERSION,
+        kind: kind as i32,
+        subtype_prepare_authority_sha256,
+    }
+    .encode_to_vec();
     let authorization_snapshot: [u8; 32] = parts
         .proof
         .authorization_snapshot_sha256
@@ -224,7 +570,7 @@ pub fn decrypt_text_projection(
             owner_domain: resource.owner_domain as u32,
             content_id: &resource.content_id,
             generation: resource.generation,
-            payload_kind: social::PrivateMomentKind::Text as u32,
+            payload_kind: kind as u32,
         },
     )?;
     let plaintext = decrypt_payload(
@@ -251,18 +597,13 @@ pub fn decrypt_text_projection(
     )?;
     let decoded = social::PrivateMomentContent::decode(plaintext.as_slice())
         .map_err(|_| PrivateReadError::integrity())?;
-    let text = match decoded.body {
-        Some(social::private_moment_content::Body::Text(text))
-            if decoded.format_version == PAYLOAD_FORMAT_VERSION
-                && text.mentions.is_empty()
-                && decoded.mention_commitment_salt.is_empty() =>
-        {
-            text.text
-        }
-        _ => return Err(PrivateReadError::integrity()),
-    };
+    if decoded.format_version != PAYLOAD_FORMAT_VERSION {
+        return Err(PrivateReadError::integrity());
+    }
+    let mentions = verified_private_mentions(&decoded, parts.private)?;
+    let content = project_plaintext(&decoded, parts.private, kind)?;
 
-    Ok(DecryptedPrivateTextMoment {
+    Ok(DecryptedPrivateMoment {
         projection: PrivateMomentReadProjection {
             post_id: metadata.post_id.clone(),
             content_id: metadata.content_id.clone(),
@@ -274,15 +615,605 @@ pub fn decrypt_text_projection(
                 .unwrap_or_default(),
             audience_kind: private_audience_kind(metadata.audience_kind)?.to_string(),
             state: PrivateReadState::ContentReady,
-            content: Some(PrivateReadContent::Text { text }),
+            mentions,
+            content: Some(content),
             error_code: None,
             retry_after_seconds: None,
             created_at_millis: timestamp_millis(metadata.created_at.as_ref()),
             updated_at_millis: timestamp_millis(metadata.updated_at.as_ref()),
         },
+        plaintext: decoded,
         content_key,
         consumed_prekey_id,
     })
+}
+
+fn public_rendered_source_snapshot(
+    post: &social::Post,
+    author: &actor::ActorRef,
+    created_at: Option<&prost_types::Timestamp>,
+) -> Result<social::PublicRenderedSourceSnapshot, String> {
+    let created_at = created_at
+        .filter(|timestamp| checked_timestamp_millis(Some(timestamp), "repost source time").is_ok())
+        .cloned()
+        .ok_or_else(|| "public repost source creation time is invalid".to_string())?;
+    let source = social::SocialPostSourceRef {
+        post_id: post.id.clone(),
+        private_content_id: String::new(),
+        private_generation: 0,
+    };
+    let (kind, body) = match post.content.as_ref() {
+        Some(social::post::Content::TextPost(body))
+            if post.r#type == social::PostType::Text as i32 && body.mentions.is_empty() =>
+        {
+            (
+                social::PrivateRenderedSourceKind::Text,
+                social::public_rendered_source_snapshot::Body::Text(body.clone()),
+            )
+        }
+        Some(social::post::Content::ImagePost(body))
+            if post.r#type == social::PostType::Image as i32
+                && body.mentions.is_empty()
+                && body
+                    .images
+                    .iter()
+                    .all(|image| image.media_encryption.is_none()) =>
+        {
+            (
+                social::PrivateRenderedSourceKind::Image,
+                social::public_rendered_source_snapshot::Body::Image(body.clone()),
+            )
+        }
+        Some(social::post::Content::VideoPost(body))
+            if post.r#type == social::PostType::Video as i32
+                && body.mentions.is_empty()
+                && body
+                    .video
+                    .as_ref()
+                    .is_some_and(|video| video.media_encryption.is_none()) =>
+        {
+            (
+                social::PrivateRenderedSourceKind::Video,
+                social::public_rendered_source_snapshot::Body::Video(body.clone()),
+            )
+        }
+        Some(social::post::Content::LinkPost(body))
+            if post.r#type == social::PostType::Link as i32 && body.mentions.is_empty() =>
+        {
+            (
+                social::PrivateRenderedSourceKind::Link,
+                social::public_rendered_source_snapshot::Body::Link(body.clone()),
+            )
+        }
+        Some(social::post::Content::PollPost(body))
+            if post.r#type == social::PostType::Poll as i32 && body.mentions.is_empty() =>
+        {
+            (
+                social::PrivateRenderedSourceKind::Poll,
+                social::public_rendered_source_snapshot::Body::Poll(body.clone()),
+            )
+        }
+        Some(social::post::Content::LocationPost(body))
+            if post.r#type == social::PostType::Location as i32
+                && body.mentions.is_empty()
+                && body
+                    .images
+                    .iter()
+                    .all(|image| image.media_encryption.is_none()) =>
+        {
+            (
+                social::PrivateRenderedSourceKind::Location,
+                social::public_rendered_source_snapshot::Body::Location(body.clone()),
+            )
+        }
+        _ => {
+            return Err(
+                "public repost source kind/body is unsupported or non-canonical".to_string(),
+            )
+        }
+    };
+    Ok(social::PublicRenderedSourceSnapshot {
+        source: Some(source),
+        author: Some(author.clone()),
+        created_at: Some(created_at),
+        kind: kind as i32,
+        typed_mentions: post.typed_mentions.clone(),
+        body: Some(body),
+    })
+}
+
+fn private_rendered_source_snapshot(
+    source: &social::SocialPostSourceRef,
+    author: &actor::ActorRef,
+    created_at: Option<&prost_types::Timestamp>,
+    kind: social::PrivateMomentKind,
+    plaintext: &social::PrivateMomentContent,
+) -> Result<social::PrivateRenderedSourceSnapshot, String> {
+    let created_at = created_at
+        .filter(|timestamp| checked_timestamp_millis(Some(timestamp), "repost source time").is_ok())
+        .cloned()
+        .ok_or_else(|| "private repost source creation time is invalid".to_string())?;
+    let (rendered_kind, body) = match (kind, plaintext.body.as_ref()) {
+        (
+            social::PrivateMomentKind::Text,
+            Some(social::private_moment_content::Body::Text(body)),
+        ) => (
+            social::PrivateRenderedSourceKind::Text,
+            social::private_rendered_source_snapshot::Body::Text(body.clone()),
+        ),
+        (
+            social::PrivateMomentKind::Image,
+            Some(social::private_moment_content::Body::Image(body)),
+        ) => (
+            social::PrivateRenderedSourceKind::Image,
+            social::private_rendered_source_snapshot::Body::Image(body.clone()),
+        ),
+        (
+            social::PrivateMomentKind::Video,
+            Some(social::private_moment_content::Body::Video(body)),
+        ) => (
+            social::PrivateRenderedSourceKind::Video,
+            social::private_rendered_source_snapshot::Body::Video(body.clone()),
+        ),
+        (
+            social::PrivateMomentKind::Link,
+            Some(social::private_moment_content::Body::Link(body)),
+        ) => (
+            social::PrivateRenderedSourceKind::Link,
+            social::private_rendered_source_snapshot::Body::Link(body.clone()),
+        ),
+        (
+            social::PrivateMomentKind::Poll,
+            Some(social::private_moment_content::Body::Poll(body)),
+        ) => (
+            social::PrivateRenderedSourceKind::Poll,
+            social::private_rendered_source_snapshot::Body::Poll(body.clone()),
+        ),
+        (
+            social::PrivateMomentKind::Location,
+            Some(social::private_moment_content::Body::Location(body)),
+        ) => (
+            social::PrivateRenderedSourceKind::Location,
+            social::private_rendered_source_snapshot::Body::Location(body.clone()),
+        ),
+        _ => return Err("private repost source kind/body is unsupported or recursive".to_string()),
+    };
+    Ok(social::PrivateRenderedSourceSnapshot {
+        source: Some(source.clone()),
+        author: Some(author.clone()),
+        created_at: Some(created_at),
+        kind: rendered_kind as i32,
+        body: Some(body),
+    })
+}
+
+fn rendered_repost_identity(
+    rendered: &social::RenderedSourceSnapshot,
+) -> Result<
+    (
+        &social::SocialPostSourceRef,
+        &actor::ActorRef,
+        String,
+        String,
+    ),
+    String,
+> {
+    match rendered.source_class.as_ref() {
+        Some(social::rendered_source_snapshot::SourceClass::PublicSource(snapshot)) => {
+            let source = snapshot
+                .source
+                .as_ref()
+                .ok_or_else(|| "public rendered source identity is unavailable".to_string())?;
+            let author = snapshot
+                .author
+                .as_ref()
+                .ok_or_else(|| "public rendered source author is unavailable".to_string())?;
+            let kind = social::PrivateRenderedSourceKind::try_from(snapshot.kind)
+                .map_err(|_| "public rendered source kind is invalid".to_string())?;
+            let source_text = match (kind, snapshot.body.as_ref()) {
+                (
+                    social::PrivateRenderedSourceKind::Text,
+                    Some(social::public_rendered_source_snapshot::Body::Text(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Image,
+                    Some(social::public_rendered_source_snapshot::Body::Image(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Video,
+                    Some(social::public_rendered_source_snapshot::Body::Video(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Link,
+                    Some(social::public_rendered_source_snapshot::Body::Link(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Poll,
+                    Some(social::public_rendered_source_snapshot::Body::Poll(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Location,
+                    Some(social::public_rendered_source_snapshot::Body::Location(body)),
+                ) => body.text.clone(),
+                _ => return Err("public rendered source body is invalid".to_string()),
+            };
+            if !canonical_identifier(&source.post_id)
+                || !source.private_content_id.is_empty()
+                || source.private_generation != 0
+                || !canonical_ptid(&author.ptid)
+                || author.acct.trim().is_empty()
+                || checked_timestamp_millis(
+                    snapshot.created_at.as_ref(),
+                    "public rendered source creation time",
+                )
+                .is_err()
+            {
+                return Err("public rendered source identity is invalid".to_string());
+            }
+            Ok((
+                source,
+                author,
+                kind.as_str_name()
+                    .trim_start_matches("PRIVATE_RENDERED_SOURCE_KIND_")
+                    .to_string(),
+                source_text,
+            ))
+        }
+        Some(social::rendered_source_snapshot::SourceClass::PrivateSource(snapshot)) => {
+            let source = snapshot
+                .source
+                .as_ref()
+                .ok_or_else(|| "private rendered source identity is unavailable".to_string())?;
+            let author = snapshot
+                .author
+                .as_ref()
+                .ok_or_else(|| "private rendered source author is unavailable".to_string())?;
+            let kind = social::PrivateRenderedSourceKind::try_from(snapshot.kind)
+                .map_err(|_| "private rendered source kind is invalid".to_string())?;
+            let source_text = match (kind, snapshot.body.as_ref()) {
+                (
+                    social::PrivateRenderedSourceKind::Text,
+                    Some(social::private_rendered_source_snapshot::Body::Text(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Image,
+                    Some(social::private_rendered_source_snapshot::Body::Image(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Video,
+                    Some(social::private_rendered_source_snapshot::Body::Video(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Link,
+                    Some(social::private_rendered_source_snapshot::Body::Link(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Poll,
+                    Some(social::private_rendered_source_snapshot::Body::Poll(body)),
+                ) => body.text.clone(),
+                (
+                    social::PrivateRenderedSourceKind::Location,
+                    Some(social::private_rendered_source_snapshot::Body::Location(body)),
+                ) => body.text.clone(),
+                _ => return Err("private rendered source body is invalid".to_string()),
+            };
+            if !canonical_identifier(&source.post_id)
+                || !canonical_identifier(&source.private_content_id)
+                || source.private_generation == 0
+                || !canonical_ptid(&author.ptid)
+                || author.acct.trim().is_empty()
+                || checked_timestamp_millis(
+                    snapshot.created_at.as_ref(),
+                    "private rendered source creation time",
+                )
+                .is_err()
+            {
+                return Err("private rendered source identity is invalid".to_string());
+            }
+            Ok((
+                source,
+                author,
+                kind.as_str_name()
+                    .trim_start_matches("PRIVATE_RENDERED_SOURCE_KIND_")
+                    .to_string(),
+                source_text,
+            ))
+        }
+        None => Err("private repost rendered source class is unavailable".to_string()),
+    }
+}
+
+fn project_plaintext(
+    content: &social::PrivateMomentContent,
+    private: &social::PrivateContentAccess,
+    kind: social::PrivateMomentKind,
+) -> Result<PrivateReadContent, String> {
+    match content.body.as_ref() {
+        Some(social::private_moment_content::Body::Text(body)) => {
+            if kind != social::PrivateMomentKind::Text || !private.objects.is_empty() {
+                return Err("private text Moment contains unexpected objects".to_string());
+            }
+            Ok(PrivateReadContent::Text {
+                text: body.text.clone(),
+            })
+        }
+        Some(social::private_moment_content::Body::Image(body)) => {
+            if kind != social::PrivateMomentKind::Image {
+                return Err("private image Moment subtype is invalid".to_string());
+            }
+            Ok(PrivateReadContent::Image {
+                text: body.text.clone(),
+                media: project_media(&body.images, &private.objects, "image")?,
+            })
+        }
+        Some(social::private_moment_content::Body::Video(body)) => {
+            if kind != social::PrivateMomentKind::Video
+                || body.source.is_none()
+                || body.variants.len() > 8
+                || !body
+                    .variants
+                    .windows(2)
+                    .all(|pair| pair[0].variant_id < pair[1].variant_id)
+            {
+                return Err("private video Moment metadata is invalid".to_string());
+            }
+            let mut attachments =
+                Vec::with_capacity(1 + usize::from(body.poster.is_some()) + body.variants.len());
+            attachments.push(body.source.clone().expect("checked source"));
+            if let Some(poster) = body.poster.as_ref() {
+                attachments.push(poster.clone());
+            }
+            for variant in &body.variants {
+                if variant.variant_id.trim().is_empty() {
+                    return Err("private video variant identity is invalid".to_string());
+                }
+                attachments.push(
+                    variant
+                        .media
+                        .as_ref()
+                        .ok_or_else(|| "private video variant media is missing".to_string())?
+                        .clone(),
+                );
+            }
+            Ok(PrivateReadContent::Video {
+                text: body.text.clone(),
+                media: project_media(&attachments, &private.objects, "video")?,
+            })
+        }
+        Some(social::private_moment_content::Body::Link(body)) => {
+            let link = body
+                .link
+                .as_ref()
+                .ok_or_else(|| "private link Moment preview is missing".to_string())?;
+            if kind != social::PrivateMomentKind::Link
+                || !private.objects.is_empty()
+                || link.url.trim() != link.url
+                || !(link.url.starts_with("https://") || link.url.starts_with("http://"))
+                || link.title.trim().is_empty()
+            {
+                return Err("private link Moment metadata is invalid".to_string());
+            }
+            Ok(PrivateReadContent::Link {
+                text: body.text.clone(),
+                url: link.url.clone(),
+                title: link.title.clone(),
+            })
+        }
+        Some(social::private_moment_content::Body::Poll(body)) => {
+            let authority = match private
+                .verification
+                .as_ref()
+                .and_then(|verification| verification.subtype_authority.as_ref())
+            {
+                Some(social::private_content_verification::SubtypeAuthority::PollAuthority(
+                    authority,
+                )) => authority,
+                _ => return Err("private poll Moment authority is unavailable".to_string()),
+            };
+            let mut option_ids = body
+                .options
+                .iter()
+                .map(|option| option.opaque_option_id.clone())
+                .collect::<Vec<_>>();
+            option_ids.sort();
+            if kind != social::PrivateMomentKind::Poll
+                || !private.objects.is_empty()
+                || body.question.trim().is_empty()
+                || body.options.iter().any(|option| {
+                    option.opaque_option_id.len() != 32 || option.label.trim().is_empty()
+                })
+                || option_ids.windows(2).any(|pair| pair[0] == pair[1])
+                || option_ids != authority.opaque_option_ids
+                || body.option_set_sha256 != authority.option_set_sha256
+                || body.min_choices != authority.min_choices
+                || body.max_choices != authority.max_choices
+                || body.expires_at != authority.expires_at
+            {
+                return Err("private poll Moment authority mismatch".to_string());
+            }
+            Ok(PrivateReadContent::Poll {
+                text: body.text.clone(),
+                question: body.question.clone(),
+                options: body
+                    .options
+                    .iter()
+                    .map(|option| option.label.clone())
+                    .collect(),
+                min_choices: body.min_choices,
+                max_choices: body.max_choices,
+                expires_at_seconds: body
+                    .expires_at
+                    .as_ref()
+                    .map(|timestamp| timestamp.seconds)
+                    .ok_or_else(|| "private poll Moment expiry is unavailable".to_string())?,
+            })
+        }
+        Some(social::private_moment_content::Body::Repost(body)) => {
+            let authority = match private
+                .verification
+                .as_ref()
+                .and_then(|verification| verification.subtype_authority.as_ref())
+            {
+                Some(social::private_content_verification::SubtypeAuthority::RepostAuthority(
+                    authority,
+                )) => authority,
+                _ => return Err("private repost Moment authority is unavailable".to_string()),
+            };
+            let original_source = body
+                .original_source
+                .as_ref()
+                .ok_or_else(|| "private repost original source is unavailable".to_string())?;
+            let rendered_source = body
+                .rendered_source
+                .as_ref()
+                .ok_or_else(|| "private repost rendered source is unavailable".to_string())?;
+            let (rendered_ref, rendered_author, source_kind, source_text) =
+                rendered_repost_identity(rendered_source)?;
+            if kind != social::PrivateMomentKind::Repost
+                || !private.objects.is_empty()
+                || authority.source.as_ref() != Some(original_source)
+                || rendered_ref != original_source
+                || authority.source_author.as_ref() != Some(rendered_author)
+                || private_repost_snapshot_commitment(
+                    &body.rendered_source_commitment_salt,
+                    rendered_source,
+                )?
+                .as_slice()
+                    != authority.rendered_source_commitment
+            {
+                return Err("private repost Moment authority mismatch".to_string());
+            }
+            Ok(PrivateReadContent::Repost {
+                comment: body.comment.clone(),
+                source_post_id: original_source.post_id.clone(),
+                source_author_ptid: rendered_author.ptid.clone(),
+                source_kind,
+                source_text,
+            })
+        }
+        Some(social::private_moment_content::Body::Location(body)) => {
+            let place = body
+                .location
+                .as_ref()
+                .ok_or_else(|| "private location Moment place is missing".to_string())?;
+            if kind != social::PrivateMomentKind::Location
+                || place.name.trim().is_empty()
+                || !place.latitude.is_finite()
+                || !place.longitude.is_finite()
+                || !(-90.0..=90.0).contains(&place.latitude)
+                || !(-180.0..=180.0).contains(&place.longitude)
+            {
+                return Err("private location Moment metadata is invalid".to_string());
+            }
+            Ok(PrivateReadContent::Location {
+                text: body.text.clone(),
+                name: place.name.clone(),
+                latitude: place.latitude.to_string(),
+                longitude: place.longitude.to_string(),
+                address: place.address.clone(),
+                media: project_media(&body.images, &private.objects, "location")?,
+            })
+        }
+        None => Err("private Moment plaintext body is unavailable".to_string()),
+    }
+}
+
+fn verified_private_mentions(
+    content: &social::PrivateMomentContent,
+    private: &social::PrivateContentAccess,
+) -> Result<Vec<PrivateMentionProjection>, String> {
+    let (text, mentions) = match content.body.as_ref() {
+        Some(social::private_moment_content::Body::Text(body)) => {
+            (body.text.as_str(), body.mentions.as_slice())
+        }
+        Some(social::private_moment_content::Body::Image(body)) => {
+            (body.text.as_str(), body.mentions.as_slice())
+        }
+        Some(social::private_moment_content::Body::Video(body)) => {
+            (body.text.as_str(), body.mentions.as_slice())
+        }
+        Some(social::private_moment_content::Body::Link(body)) => {
+            (body.text.as_str(), body.mentions.as_slice())
+        }
+        Some(social::private_moment_content::Body::Poll(body)) => {
+            (body.text.as_str(), body.mentions.as_slice())
+        }
+        Some(social::private_moment_content::Body::Repost(body)) => {
+            (body.comment.as_str(), body.mentions.as_slice())
+        }
+        Some(social::private_moment_content::Body::Location(body)) => {
+            (body.text.as_str(), body.mentions.as_slice())
+        }
+        None => return Err("private Moment plaintext body is unavailable".to_string()),
+    };
+    let routing = private
+        .verification
+        .as_ref()
+        .and_then(|verification| verification.mention_routing.as_ref());
+    verify_decrypted_mentions(
+        text,
+        mentions,
+        &content.mention_commitment_salt,
+        routing,
+        "private Moment",
+    )
+    .map(|mentions| {
+        mentions
+            .into_iter()
+            .map(|mention| PrivateMentionProjection {
+                actor_ptid: mention.actor_ptid,
+                offset: mention.offset,
+                length: mention.length,
+                display: mention.display,
+            })
+            .collect()
+    })
+}
+
+fn project_media(
+    metadata: &[social::PrivateAttachmentMetadata],
+    objects: &[wire::EncryptedObjectDescriptor],
+    label: &str,
+) -> Result<Vec<PrivateMomentMediaProjection>, String> {
+    if metadata.len() != objects.len() {
+        return Err(format!("private {label} Moment object coverage mismatch"));
+    }
+    metadata
+        .iter()
+        .zip(objects)
+        .map(|(metadata, descriptor)| {
+            if metadata.object.as_ref() != Some(descriptor)
+                || metadata.object_key.len() != 32
+                || metadata.base_nonce.len() != 12
+                || metadata.plaintext_sha256.len() != 32
+            {
+                return Err(format!("private {label} Moment media metadata is invalid"));
+            }
+            Ok(PrivateMomentMediaProjection {
+                attachment_id: metadata.attachment_id.clone(),
+                object_id: descriptor.object_id.clone(),
+                state: PrivateMediaState::MediaPlaceholder,
+                mime_type: metadata.mime_type.clone(),
+                width: metadata.width,
+                height: metadata.height,
+                duration_ms: metadata.duration_ms,
+                alt_text: metadata.alt_text.clone(),
+                plaintext_sha256: None,
+                plaintext_size: None,
+                local_path: None,
+                error_code: None,
+            })
+        })
+        .collect()
+}
+
+pub fn recovery_key_unavailable_projection(post_id: &str) -> PrivateMomentReadProjection {
+    terminal_projection(
+        post_id,
+        PrivateReadState::RecoveryKeyUnavailable,
+        "RECOVERY_KEY_UNAVAILABLE",
+        None,
+    )
 }
 
 pub fn terminal_projection_for_transport_error(
@@ -298,6 +1229,9 @@ pub fn terminal_projection_for_transport_error(
             PrivateReadState::NotFoundOrNotAuthorized,
             "NOT_FOUND_OR_NOT_AUTHORIZED",
         ),
+        (true, Some(410), code) if code == error_model::ErrorCode::PostNotFound as i32 => {
+            (PrivateReadState::DeletedOrRevoked, "DELETED_OR_REVOKED")
+        }
         _ => return None,
     };
     Some(terminal_projection(post_id, state, error_code, None))
@@ -332,7 +1266,10 @@ pub fn projection_for_read_failure(
 }
 
 pub fn purges_private_material(state: &PrivateReadState) -> bool {
-    matches!(state, PrivateReadState::NotFoundOrNotAuthorized)
+    matches!(
+        state,
+        PrivateReadState::NotFoundOrNotAuthorized | PrivateReadState::DeletedOrRevoked
+    )
 }
 
 fn terminal_projection(
@@ -348,6 +1285,7 @@ fn terminal_projection(
         author_ptid: String::new(),
         audience_kind: "UNKNOWN".to_string(),
         state,
+        mentions: Vec::new(),
         content: None,
         error_code: Some(error_code.to_string()),
         retry_after_seconds,
@@ -430,6 +1368,11 @@ fn validate_resource_identity(
     let envelope_binding = parts
         .envelope
         .and_then(|envelope| envelope.binding.as_ref());
+    let routing_signing_key_id = parts
+        .verification
+        .mention_routing
+        .as_ref()
+        .map(|routing| routing.sender_signing_key_id.as_str());
     let committed_at = checked_timestamp_millis(
         parts.proof.committed_at.as_ref(),
         "private Moment commit time",
@@ -450,13 +1393,16 @@ fn validate_resource_identity(
         || parts.resource.content_id != expected_post_id
         || parts.resource.generation == 0
         || parts.metadata.is_deleted
-        || parts.metadata.r#type != social::PostType::Text as i32
         || !is_private_audience_kind(parts.metadata.audience_kind)
         || metadata_author != proof_actor
         || envelope_binding
             .and_then(|binding| binding.sender.as_ref())
             .is_some_and(|sender| sender != proof_author)
         || !canonical_ptid(&proof_actor.ptid)
+        || envelope_binding
+            .map(|binding| binding.sender_signing_key_id.as_str())
+            .zip(routing_signing_key_id)
+            .is_some_and(|(envelope_key, routing_key)| envelope_key != routing_key)
         || !canonical_identifier(&proof_author.device_id)
         || envelope_binding
             .is_some_and(|binding| !canonical_identifier(&binding.sender_signing_key_id))
@@ -467,7 +1413,9 @@ fn validate_resource_identity(
     }
     Ok(SenderKeyRequirement {
         sender: proof_author.clone(),
-        signing_key_id: envelope_binding.map(|binding| binding.sender_signing_key_id.clone()),
+        signing_key_id: envelope_binding
+            .map(|binding| binding.sender_signing_key_id.clone())
+            .or_else(|| routing_signing_key_id.map(str::to_string)),
         committed_at_unix_ms: committed_at,
     })
 }
@@ -484,9 +1432,6 @@ fn verify_response_integrity(
     if sender.committed_at_unix_ms > now.saturating_add(CLOCK_SKEW_SECONDS).saturating_mul(1_000) {
         return Err("private Moment commit time is in the future".to_string());
     }
-    let domain_binding = text_domain_binding();
-    let domain_binding_hash = Sha256::digest(&domain_binding);
-    let empty_hash = empty_object_descriptor_set_hash()?;
     if parts.payload.format_version != PAYLOAD_FORMAT_VERSION
         || parts.payload.resource.as_ref() != Some(parts.resource)
         || parts.payload.suite != wire::PayloadEncryptionSuite::Aes256Gcm as i32
@@ -494,22 +1439,43 @@ fn verify_response_integrity(
         || parts.payload.ciphertext.len() < 16
         || parts.payload.ciphertext.len() > 1024 * 1024
         || parts.payload.ciphertext_sha256.len() != 32
-        || parts.payload.aad_sha256 != domain_binding_hash.as_slice()
+        || parts.payload.aad_sha256.len() != 32
         || Sha256::digest(&parts.payload.ciphertext).as_slice() != parts.payload.ciphertext_sha256
-        || !parts.private.objects.is_empty()
-        || parts.private.poll.is_some()
-        || parts.verification.mention_routing.is_some()
-        || parts.verification.subtype_authority.is_some()
-        || parts.proof.format_version != PAYLOAD_FORMAT_VERSION
+    {
+        return Err("private Moment encrypted payload is invalid".to_string());
+    }
+    let kind = private_moment_kind(parts.metadata.r#type)?;
+    let (subtype_prepare_authority_sha256, subtype_authority_hash) =
+        validated_subtype_authority(parts.private, parts.verification, parts.resource, kind)?;
+    let domain_binding = social::PrivateMomentDomainBinding {
+        format_version: PAYLOAD_FORMAT_VERSION,
+        kind: kind as i32,
+        subtype_prepare_authority_sha256,
+    }
+    .encode_to_vec();
+    let domain_binding_hash = Sha256::digest(domain_binding);
+    let object_set_hash = validated_object_descriptor_set_hash(parts.private, parts.resource)?;
+    let mention_routing_hash = validated_mention_routing_hash(
+        parts.verification,
+        parts.proof,
+        parts.resource,
+        parts.payload,
+        &sender.sender,
+        sender.signing_key_id.as_deref(),
+        sender_signing_key,
+        "private Moment",
+    )?;
+    if parts.proof.format_version != PAYLOAD_FORMAT_VERSION
         || parts.proof.resource.as_ref() != Some(parts.resource)
         || parts.proof.canonical_plan_sha256.len() != 32
         || parts.proof.authorization_snapshot_sha256.len() != 32
         || parts.proof.domain_binding_sha256 != domain_binding_hash.as_slice()
+        || parts.payload.aad_sha256 != domain_binding_hash.as_slice()
         || parts.proof.encrypted_payload_sha256
             != Sha256::digest(parts.payload.encode_to_vec()).as_slice()
-        || parts.proof.object_descriptor_set_sha256 != empty_hash
-        || parts.proof.mention_routing_sha256 != Sha256::digest([]).as_slice()
-        || parts.proof.subtype_authority_sha256 != Sha256::digest([]).as_slice()
+        || parts.proof.object_descriptor_set_sha256 != object_set_hash
+        || parts.proof.mention_routing_sha256 != mention_routing_hash.as_slice()
+        || parts.proof.subtype_authority_sha256 != subtype_authority_hash.as_slice()
         || parts.proof.station_signature.len() != 64
     {
         return Err("private Moment encrypted proof binding is invalid".to_string());
@@ -521,7 +1487,7 @@ fn verify_response_integrity(
             parts.payload,
             parts.proof,
             parts.resource,
-            &empty_hash,
+            &object_set_hash,
             sender_signing_key
                 .ok_or_else(|| "private Moment sender signing key is unavailable".to_string())?,
             sender
@@ -551,7 +1517,7 @@ fn verify_response_integrity(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn verify_viewer_envelope(
+pub(crate) fn verify_viewer_envelope(
     session: &NativeSocialSession,
     envelope: &wire::ViewerContentKeyEnvelope,
     payload: &wire::EncryptedPayload,
@@ -608,7 +1574,63 @@ fn verify_viewer_envelope(
         .map_err(|_| "private Moment sender signature is invalid".to_string())
 }
 
-fn verify_station_attestation(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_recovery_viewer_envelope(
+    session: &NativeSocialSession,
+    envelope: &wire::ViewerContentKeyEnvelope,
+    payload: &wire::EncryptedPayload,
+    proof: &wire::ViewerContentCommitProof,
+    resource: &wire::SecureResourceRef,
+    object_set_hash: &[u8; 32],
+    sender_signing_key: &VerifyingKey,
+) -> Result<(), String> {
+    let binding = envelope
+        .binding
+        .as_ref()
+        .ok_or_else(|| "private Moment recovery envelope binding is unavailable".to_string())?;
+    let recovery_actor = match envelope.recipient.as_ref() {
+        Some(wire::viewer_content_key_envelope::Recipient::RecoveryActor(actor)) => actor,
+        _ => return Err("private Moment recovery envelope recipient is invalid".to_string()),
+    };
+    let plan_expires_at = checked_timestamp_millis(
+        binding.plan_expires_at.as_ref(),
+        "private Moment plan expiry",
+    )?;
+    let committed_at =
+        checked_timestamp_millis(proof.committed_at.as_ref(), "private Moment commit time")?;
+    if binding.format_version != PAYLOAD_FORMAT_VERSION
+        || !canonical_identifier(&binding.plan_id)
+        || binding.canonical_plan_sha256.len() != 32
+        || binding.resource.as_ref() != Some(resource)
+        || !canonical_identifier(&binding.recipient_slot_id)
+        || !canonical_identifier(&binding.recipient_key_id)
+        || binding.recipient_key_kind
+            != wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32
+        || binding.principal_binding_sha256.len() != 32
+        || binding.authorization_snapshot_sha256 != proof.authorization_snapshot_sha256
+        || binding.canonical_plan_sha256 != proof.canonical_plan_sha256
+        || binding.payload_ciphertext_sha256 != payload.ciphertext_sha256
+        || binding.object_descriptor_set_sha256 != object_set_hash
+        || binding.sender.as_ref() != proof.author.as_ref()
+        || !canonical_identifier(&binding.sender_signing_key_id)
+        || recovery_actor.ptid != session.scope.actor_ptid
+        || envelope.binding_sha256 != Sha256::digest(binding.encode_to_vec()).as_slice()
+        || envelope.hpke_encapsulated_key.len() != 32
+        || envelope.hpke_ciphertext.len() != 48
+        || envelope.sender_signature.len() != 64
+        || envelope.principal_epoch == 0
+        || committed_at > plan_expires_at
+    {
+        return Err("private Moment recovery envelope binding is invalid".to_string());
+    }
+    let signature = Signature::from_slice(&envelope.sender_signature)
+        .map_err(|_| "private Moment recovery sender signature is invalid".to_string())?;
+    sender_signing_key
+        .verify(&binding.encode_to_vec(), &signature)
+        .map_err(|_| "private Moment recovery sender signature is invalid".to_string())
+}
+
+pub(crate) fn verify_station_attestation(
     session: &NativeSocialSession,
     attestation: &wire::StationContentSigningKeyAttestation,
     now: i64,
@@ -657,6 +1679,197 @@ fn verify_station_attestation(
     .map_err(|_| "private Moment proof key is invalid".to_string())
 }
 
+fn validated_subtype_authority(
+    private: &social::PrivateContentAccess,
+    verification: &social::PrivateContentVerification,
+    resource: &wire::SecureResourceRef,
+    kind: social::PrivateMomentKind,
+) -> Result<(Vec<u8>, [u8; 32]), String> {
+    let empty_hash: [u8; 32] = Sha256::digest([]).into();
+    match kind {
+        social::PrivateMomentKind::Poll => {
+            let authority = match verification.subtype_authority.as_ref() {
+                Some(social::private_content_verification::SubtypeAuthority::PollAuthority(
+                    authority,
+                )) => authority,
+                _ => return Err("private poll Moment authority is unavailable".to_string()),
+            };
+            let expires_at = authority
+                .expires_at
+                .as_ref()
+                .ok_or_else(|| "private poll Moment expiry is unavailable".to_string())?;
+            if authority.resource.as_ref() != Some(resource)
+                || !(2..=20).contains(&authority.opaque_option_ids.len())
+                || authority.min_choices == 0
+                || authority.min_choices > authority.max_choices
+                || authority.max_choices > authority.opaque_option_ids.len() as u32
+                || checked_timestamp_millis(Some(expires_at), "private poll Moment expiry").is_err()
+                || authority
+                    .opaque_option_ids
+                    .iter()
+                    .any(|option_id| option_id.len() != 32)
+                || !authority
+                    .opaque_option_ids
+                    .windows(2)
+                    .all(|pair| pair[0] < pair[1])
+            {
+                return Err("private poll Moment authority is invalid".to_string());
+            }
+            let option_set_hash = private_poll_option_set_hash(&authority.opaque_option_ids)?;
+            if authority.option_set_sha256.as_slice() != option_set_hash.as_slice() {
+                return Err("private poll Moment option-set commitment is invalid".to_string());
+            }
+            if let Some(poll) = private.poll.as_ref() {
+                let projected_ids = poll
+                    .options
+                    .iter()
+                    .map(|option| option.opaque_option_id.as_slice())
+                    .collect::<Vec<_>>();
+                let authority_ids = authority
+                    .opaque_option_ids
+                    .iter()
+                    .map(Vec::as_slice)
+                    .collect::<Vec<_>>();
+                if projected_ids != authority_ids {
+                    return Err("private poll Moment vote projection is invalid".to_string());
+                }
+            }
+            let canonical = authority.encode_to_vec();
+            let hash: [u8; 32] = Sha256::digest(&canonical).into();
+            Ok((hash.to_vec(), hash))
+        }
+        social::PrivateMomentKind::Repost => {
+            let authority = match verification.subtype_authority.as_ref() {
+                Some(social::private_content_verification::SubtypeAuthority::RepostAuthority(
+                    authority,
+                )) => authority,
+                _ => return Err("private repost Moment authority is unavailable".to_string()),
+            };
+            let source = authority
+                .source
+                .as_ref()
+                .ok_or_else(|| "private repost source identity is unavailable".to_string())?;
+            let source_author = authority
+                .source_author
+                .as_ref()
+                .ok_or_else(|| "private repost source author is unavailable".to_string())?;
+            if !canonical_identifier(&source.post_id)
+                || !canonical_identifier(&source_author.ptid)
+                || source_author.acct.trim().is_empty()
+                || authority.rendered_source_commitment.len() != 32
+            {
+                return Err("private repost Moment authority is invalid".to_string());
+            }
+            match authority.source_proof.as_ref() {
+                Some(social::private_repost_authority::SourceProof::PublicSource(proof))
+                    if source.private_content_id.is_empty()
+                        && source.private_generation == 0
+                        && proof.canonical_public_post_sha256.len() == 32 => {}
+                Some(social::private_repost_authority::SourceProof::PrivateSource(proof))
+                    if canonical_identifier(&source.private_content_id)
+                        && source.private_generation > 0
+                        && proof
+                            .source_resource
+                            .as_ref()
+                            .is_some_and(|source_resource| {
+                                source_resource.owner_domain
+                                    == wire::SecureContentOwnerDomain::Social as i32
+                                    && source_resource.content_id == source.private_content_id
+                                    && source_resource.generation == source.private_generation
+                            })
+                        && proof.source_authorization_snapshot_sha256.len() == 32
+                        && proof.source_encrypted_payload_sha256.len() == 32
+                        && proof.source_commit_proof_sha256.len() == 32 => {}
+                _ => return Err("private repost Moment source proof is invalid".to_string()),
+            }
+            let canonical = authority.encode_to_vec();
+            let hash: [u8; 32] = Sha256::digest(&canonical).into();
+            Ok((hash.to_vec(), hash))
+        }
+        _ => {
+            if verification.subtype_authority.is_some() || private.poll.is_some() {
+                return Err("private Moment has unexpected subtype authority".to_string());
+            }
+            Ok((Vec::new(), empty_hash))
+        }
+    }
+}
+
+fn validated_object_descriptor_set_hash(
+    private: &social::PrivateContentAccess,
+    resource: &wire::SecureResourceRef,
+) -> Result<[u8; 32], String> {
+    if private.objects.len() > 10
+        || !private
+            .objects
+            .windows(2)
+            .all(|pair| pair[0].object_id < pair[1].object_id)
+    {
+        return Err("private Moment object descriptor order is invalid".to_string());
+    }
+    for descriptor in &private.objects {
+        if !canonical_identifier(&descriptor.object_id)
+            || descriptor.resource.as_ref() != Some(resource)
+            || descriptor
+                .commitment
+                .as_ref()
+                .and_then(|commitment| commitment.resource.as_ref())
+                != Some(resource)
+        {
+            return Err("private Moment object descriptor binding is invalid".to_string());
+        }
+        validate_object_descriptor(&descriptor_to_core(descriptor)?)?;
+    }
+    object_descriptor_set_hash(&private.objects)
+}
+
+fn descriptor_to_core(
+    descriptor: &wire::EncryptedObjectDescriptor,
+) -> Result<ObjectDescriptor, String> {
+    let commitment = descriptor
+        .commitment
+        .as_ref()
+        .ok_or_else(|| "private Moment object commitment is unavailable".to_string())?;
+    if descriptor.resource.is_none()
+        || descriptor.resource != commitment.resource
+        || descriptor.object_id != commitment.object_id
+        || commitment.encryption_suite != wire::ObjectEncryptionSuite::Aes256GcmChunked as i32
+        || commitment.nonce_strategy != wire::ObjectNonceStrategy::Counter32Be as i32
+        || commitment.tag_size != OBJECT_TAG_SIZE
+    {
+        return Err("private Moment object descriptor identity is invalid".to_string());
+    }
+    Ok(ObjectDescriptor {
+        object_id: descriptor.object_id.clone(),
+        storage_ref: descriptor.storage_ref.clone(),
+        commitment: ObjectUploadSpec {
+            ciphertext_size: commitment.ciphertext_size,
+            ciphertext_sha256: commitment.ciphertext_sha256.clone(),
+            media_type: None,
+            chunk_size: commitment.chunk_size,
+            chunk_count: commitment.chunk_count,
+            encryption_suite: ObjectEncryptionSuite::Aes256GcmChunked,
+            tag_size: commitment.tag_size,
+            nonce_strategy: ObjectNonceStrategy::Counter32Be,
+            chunk_ciphertext_sha256: commitment.chunk_ciphertext_sha256.clone(),
+        },
+    })
+}
+
+fn private_moment_kind(post_type: i32) -> Result<social::PrivateMomentKind, String> {
+    match social::PostType::try_from(post_type) {
+        Ok(social::PostType::Text) => Ok(social::PrivateMomentKind::Text),
+        Ok(social::PostType::Image) => Ok(social::PrivateMomentKind::Image),
+        Ok(social::PostType::Video) => Ok(social::PrivateMomentKind::Video),
+        Ok(social::PostType::Link) => Ok(social::PrivateMomentKind::Link),
+        Ok(social::PostType::Poll) => Ok(social::PrivateMomentKind::Poll),
+        Ok(social::PostType::Repost) => Ok(social::PrivateMomentKind::Repost),
+        Ok(social::PostType::Location) => Ok(social::PrivateMomentKind::Location),
+        Err(_) => Err("private Moment subtype is invalid".to_string()),
+    }
+}
+
+#[cfg(test)]
 fn text_domain_binding() -> Vec<u8> {
     social::PrivateMomentDomainBinding {
         format_version: PAYLOAD_FORMAT_VERSION,
@@ -666,8 +1879,44 @@ fn text_domain_binding() -> Vec<u8> {
     .encode_to_vec()
 }
 
+#[cfg(test)]
 fn empty_object_descriptor_set_hash() -> Result<[u8; 32], String> {
-    Ok(Sha256::digest(CanonicalMessageEncoder::new().finish()).into())
+    object_descriptor_set_hash(&[])
+}
+
+pub(crate) fn object_descriptor_set_hash(
+    descriptors: &[wire::EncryptedObjectDescriptor],
+) -> Result<[u8; 32], String> {
+    let mut encoder = CanonicalMessageEncoder::new();
+    for descriptor in descriptors {
+        encoder
+            .repeated_bytes(1, &descriptor.encode_to_vec())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(Sha256::digest(encoder.finish()).into())
+}
+
+fn private_poll_option_set_hash(opaque_option_ids: &[Vec<u8>]) -> Result<[u8; 32], String> {
+    let mut encoder = CanonicalMessageEncoder::new();
+    for option_id in opaque_option_ids {
+        encoder
+            .repeated_bytes(1, option_id)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(Sha256::digest(encoder.finish()).into())
+}
+
+fn private_repost_snapshot_commitment(
+    commitment_salt: &[u8],
+    rendered_source: &social::RenderedSourceSnapshot,
+) -> Result<[u8; 32], String> {
+    if commitment_salt.len() != 32 {
+        return Err("private repost commitment salt is invalid".to_string());
+    }
+    Ok(domain_hmac_sha256(
+        commitment_salt,
+        &[REPOST_SNAPSHOT_DOMAIN, &rendered_source.encode_to_vec()],
+    ))
 }
 
 fn is_private_audience_kind(kind: i32) -> bool {
@@ -676,8 +1925,10 @@ fn is_private_audience_kind(kind: i32) -> bool {
         Ok(social::audience::Kind::Friends
             | social::audience::Kind::Followers
             | social::audience::Kind::Circle
+            | social::audience::Kind::Group
             | social::audience::Kind::Self_
-            | social::audience::Kind::CustomAllow)
+            | social::audience::Kind::CustomAllow
+            | social::audience::Kind::CustomDeny)
     )
 }
 
@@ -686,13 +1937,15 @@ fn private_audience_kind(kind: i32) -> Result<&'static str, String> {
         Ok(social::audience::Kind::Friends) => Ok("FRIENDS"),
         Ok(social::audience::Kind::Followers) => Ok("FOLLOWERS"),
         Ok(social::audience::Kind::Circle) => Ok("CIRCLE"),
+        Ok(social::audience::Kind::Group) => Ok("GROUP"),
         Ok(social::audience::Kind::Self_) => Ok("SELF"),
         Ok(social::audience::Kind::CustomAllow) => Ok("CUSTOM_ALLOW"),
+        Ok(social::audience::Kind::CustomDeny) => Ok("CUSTOM_DENY"),
         _ => Err("private Moment audience kind is unsupported".to_string()),
     }
 }
 
-fn canonical_identifier(value: &str) -> bool {
+pub(crate) fn canonical_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.trim() == value
         && value.len() <= MAX_IDENTIFIER_BYTES
@@ -703,7 +1956,7 @@ fn canonical_ptid(value: &str) -> bool {
     canonical_identifier(value) && value.starts_with("ptid:")
 }
 
-fn checked_timestamp_millis(
+pub(crate) fn checked_timestamp_millis(
     value: Option<&prost_types::Timestamp>,
     field: &str,
 ) -> Result<i64, String> {
@@ -722,7 +1975,7 @@ fn timestamp_millis(value: Option<&prost_types::Timestamp>) -> Option<i64> {
     checked_timestamp_millis(value, "private Moment timestamp").ok()
 }
 
-fn current_unix_seconds() -> i64 {
+pub(crate) fn current_unix_seconds() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs().min(i64::MAX as u64) as i64)
@@ -737,8 +1990,10 @@ mod tests {
     use secure_content_core::envelope::seal_content_key;
     use secure_content_core::payload::{encrypt_payload_with_nonce, PayloadKeyContext};
     use secure_content_core::prekey::ContentPreKeyPrivate;
+    use secure_content_core::recovery::{derive_recovery_prekey, RecoveryMaster};
     use zeroize::Zeroizing;
 
+    use crate::secure_content::recovery::store_recovery_phrase;
     use crate::secure_content::store::{DurableState, StoredPreKeyPublication};
     use crate::secure_content::{PrivateSocialScope, TrustedStationSigningKey};
 
@@ -989,6 +2244,83 @@ mod tests {
     }
 
     #[test]
+    fn recovery_envelope_decrypts_only_with_the_exact_actor_epoch_master() {
+        const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
+            abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon \
+            abandon abandon abandon abandon art";
+        let station_key = SigningKey::from_bytes(&[7; 32]);
+        let proof_key = SigningKey::from_bytes(&[8; 32]);
+        let sender_key = SigningKey::from_bytes(&[6; 32]);
+        let session = session(&station_key);
+        let store = published_store([11; 32]);
+        store_recovery_phrase(&store, "ptid:alice", 7, PHRASE).unwrap();
+        let mut response = signed_response(
+            &session,
+            &station_key,
+            &proof_key,
+            &sender_key,
+            [11; 32],
+            "recovered receiver text",
+        );
+        let private = response
+            .resource
+            .as_mut()
+            .and_then(|resource| match resource.body.as_mut() {
+                Some(social::post_resource::Body::PrivateContent(private)) => Some(private),
+                _ => None,
+            })
+            .unwrap();
+        let endpoint = private.viewer_envelope.as_ref().unwrap();
+        let mut binding = endpoint.binding.clone().unwrap();
+        binding.recipient_key_kind = wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32;
+        binding.recipient_key_id = "recovery-key-1".to_string();
+        binding.principal_binding_sha256 = vec![13; 32];
+        let binding_bytes = binding.encode_to_vec();
+        let master =
+            RecoveryMaster::from_bytes(store.recovery_master("ptid:alice", 7).unwrap().unwrap());
+        let recovery = derive_recovery_prekey(&master, "ptid:alice", 7, "recovery-key-1").unwrap();
+        let sealed = seal_content_key(
+            recovery.public(),
+            &binding_bytes,
+            &ContentKey::from_bytes([29; 32]),
+        )
+        .unwrap();
+        let envelope = wire::ViewerContentKeyEnvelope {
+            binding: Some(binding),
+            recipient: Some(wire::viewer_content_key_envelope::Recipient::RecoveryActor(
+                actor::ActorRef {
+                    ptid: "ptid:alice".to_string(),
+                    kind: actor::ActorKind::Person as i32,
+                    ..Default::default()
+                },
+            )),
+            binding_sha256: Sha256::digest(&binding_bytes).to_vec(),
+            hpke_encapsulated_key: sealed.encapsulated_key,
+            hpke_ciphertext: sealed.ciphertext,
+            sender_signature: sender_key.sign(&binding_bytes).to_bytes().to_vec(),
+            principal_epoch: 7,
+        };
+
+        let decrypted = decrypt_text_projection_with_recovery(
+            &session,
+            &store,
+            "post-1",
+            &response,
+            &envelope,
+            &sender_key.verifying_key(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            decrypted.projection.content,
+            Some(PrivateReadContent::Text {
+                text: "recovered receiver text".to_string(),
+            }),
+        );
+        assert!(decrypted.consumed_prekey_id.is_none());
+    }
+
+    #[test]
     fn decrypts_text_and_consumes_only_the_selected_endpoint_prekey_on_commit() {
         let station_key = SigningKey::from_bytes(&[7; 32]);
         let proof_key = SigningKey::from_bytes(&[8; 32]);
@@ -1224,6 +2556,7 @@ mod tests {
                 http_status: Some(401),
                 stable_code: error_model::ErrorCode::Unauthorized as i32,
                 typed_error: true,
+                private_content_code: None,
                 retry_after_seconds: None,
                 disposition: TransportDisposition::Terminal,
             },
@@ -1252,6 +2585,7 @@ mod tests {
                 http_status: Some(404),
                 stable_code: error_model::ErrorCode::PostNotFound as i32,
                 typed_error: true,
+                private_content_code: None,
                 retry_after_seconds: Some(9),
                 disposition: crate::secure_content::transport::TransportDisposition::Terminal,
             },
@@ -1271,12 +2605,12 @@ mod tests {
             (false, 410, error_model::ErrorCode::Undefined as i32),
             (true, 403, error_model::ErrorCode::Unauthorized as i32),
             (true, 404, error_model::ErrorCode::Unauthorized as i32),
-            (true, 410, error_model::ErrorCode::PostNotFound as i32),
         ] {
             let error = TransportError {
                 http_status: Some(status),
                 stable_code: code,
                 typed_error,
+                private_content_code: None,
                 retry_after_seconds: None,
                 disposition: TransportDisposition::Terminal,
             };
@@ -1285,11 +2619,31 @@ mod tests {
     }
 
     #[test]
+    fn trusted_gone_projection_purges_private_material() {
+        let projection = terminal_projection_for_transport_error(
+            "post-1",
+            &TransportError {
+                http_status: Some(410),
+                stable_code: error_model::ErrorCode::PostNotFound as i32,
+                typed_error: true,
+                private_content_code: None,
+                retry_after_seconds: None,
+                disposition: TransportDisposition::Terminal,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(projection.state, PrivateReadState::DeletedOrRevoked);
+        assert!(purges_private_material(&projection.state));
+    }
+
+    #[test]
     fn retryable_transport_failure_has_no_terminal_projection() {
         let error = TransportError {
             http_status: Some(503),
             stable_code: 1,
             typed_error: false,
+            private_content_code: None,
             retry_after_seconds: Some(2),
             disposition: TransportDisposition::UnknownOutcome,
         };
@@ -1299,11 +2653,11 @@ mod tests {
     }
 
     #[test]
-    fn blocked_audience_contracts_are_not_accepted_by_the_text_receiver() {
-        assert!(!is_private_audience_kind(
+    fn generic_receiver_accepts_all_supported_private_audience_contracts() {
+        assert!(is_private_audience_kind(
             social::audience::Kind::Group as i32
         ));
-        assert!(!is_private_audience_kind(
+        assert!(is_private_audience_kind(
             social::audience::Kind::CustomDeny as i32
         ));
     }

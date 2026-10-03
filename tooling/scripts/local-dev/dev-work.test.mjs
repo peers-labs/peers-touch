@@ -30,10 +30,31 @@ import {
   statusAll,
   statusCurrent,
 } from './dev-work.mjs';
-import { parseRuntimeClaims } from './dev-work-schema.mjs';
+import {
+  parseRuntimeClaims,
+  RUNTIME_KINDS,
+} from './dev-work-schema.mjs';
 import { workspacePlanBindingPath } from '../plan/workspace-plan-binding.mjs';
 
 const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
+const CANONICAL_RUNTIME_KINDS = [
+  'account',
+  'automation.session',
+  'client',
+  'client.storage',
+  'database',
+  'device',
+  'fixture',
+  'local.slot',
+  'profile',
+  'relay.connect',
+  'relay.deploy',
+  'resource.plan',
+  'service',
+  'station.connect',
+  'station.deploy',
+  'station.reset',
+];
 
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'pt-dev-work-'));
@@ -244,15 +265,45 @@ test('a Plan-bound workspace cannot publish untracked work', () => {
   }
 });
 
-test('accepts Relay and database runtime intent without granting leases', () => {
+test('accepts project runtime intent without granting physical leases', () => {
   assert.deepEqual(
     parseRuntimeClaims(
-      'shared:relay.connect:relay-1;exclusive:relay.deploy:relay-1;exclusive:database:chat-postgres',
+      [
+        'shared:relay.connect:relay-1',
+        'exclusive:relay.deploy:relay-1',
+        'exclusive:database:chat-postgres',
+        'exclusive:service:oauth-broker',
+        'exclusive:account:alice',
+        'exclusive:client:desktop-alice',
+        'exclusive:device:ios-simulator-1',
+        'exclusive:automation.session:appium-1',
+        'shared:resource.plan:dwf-b1',
+      ].join(';'),
     ),
     [
       {
+        kind: 'account',
+        resourceId: 'alice',
+        mode: 'exclusive',
+      },
+      {
+        kind: 'automation.session',
+        resourceId: 'appium-1',
+        mode: 'exclusive',
+      },
+      {
+        kind: 'client',
+        resourceId: 'desktop-alice',
+        mode: 'exclusive',
+      },
+      {
         kind: 'database',
         resourceId: 'chat-postgres',
+        mode: 'exclusive',
+      },
+      {
+        kind: 'device',
+        resourceId: 'ios-simulator-1',
         mode: 'exclusive',
       },
       {
@@ -265,8 +316,76 @@ test('accepts Relay and database runtime intent without granting leases', () => 
         resourceId: 'relay-1',
         mode: 'exclusive',
       },
+      {
+        kind: 'resource.plan',
+        resourceId: 'dwf-b1',
+        mode: 'shared',
+      },
+      {
+        kind: 'service',
+        resourceId: 'oauth-broker',
+        mode: 'exclusive',
+      },
     ],
   );
+});
+
+test('accepts every canonical runtime kind without granting leases', () => {
+  const parsed = parseRuntimeClaims(
+    CANONICAL_RUNTIME_KINDS
+      .map((kind) => `exclusive:${kind}:resource-${kind.replaceAll('.', '-')}`)
+      .join(';'),
+  );
+
+  assert.deepEqual(
+    [...RUNTIME_KINDS].sort(),
+    CANONICAL_RUNTIME_KINDS,
+  );
+  assert.deepEqual(
+    parsed.map((claim) => claim.kind),
+    CANONICAL_RUNTIME_KINDS,
+  );
+});
+
+test('rejects unknown runtime kinds', () => {
+  expectCode('INVALID_RUNTIME_CLAIM', () =>
+    parseRuntimeClaims('exclusive:unknown.resource:runtime'),
+  );
+});
+
+test('a conflicting resource bundle is rejected without partial publication', () => {
+  const scope = fixture();
+  try {
+    startOrUpdateDeclaration(
+      options(scope, {
+        runtimeClaims: 'exclusive:account:alice',
+      }),
+    );
+    expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
+      startOrUpdateDeclaration(
+        options(scope, {
+          workspaceRoot: scope.workspaceB,
+          workItemId: 'parallel-suite',
+          sessionId: 'parallel-session',
+          branch: 'parallel-suite',
+          sourceHead: '8'.repeat(40),
+          sourceClaims: 'shared-read:apps/desktop',
+          runtimeClaims:
+            'exclusive:account:alice;exclusive:device:ios-simulator-1',
+        }),
+      ),
+    );
+    assert.deepEqual(
+      statusCurrent({
+        home: scope.home,
+        workspaceRoot: scope.workspaceB,
+        clock: clock(),
+      }).declarations,
+      [],
+    );
+  } finally {
+    scope.close();
+  }
 });
 
 test('rejects source and runtime conflicts but permits shared reads', () => {

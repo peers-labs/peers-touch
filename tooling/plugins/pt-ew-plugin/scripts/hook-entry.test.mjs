@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import {
   reportHookObservation,
   runHook,
+  workspaceContext,
 } from './hook-entry.mjs';
 
 test('reports the current worktree without changing hook admission', async () => {
@@ -46,6 +56,51 @@ test('observation failure is isolated from hook admission', async () => {
     status: 'UNAVAILABLE',
     code: 'WORKTREE_OBSERVATION_FAILED',
   });
+});
+
+test('loads ordered roots from the installed TRAE workspace descriptor', () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-hook-workspace-'));
+  try {
+    const first = path.join(temporary, 'first');
+    const second = path.join(temporary, 'second');
+    mkdirSync(first);
+    mkdirSync(second);
+    const workspace = path.join(temporary, 'fixture.code-workspace');
+    writeFileSync(
+      workspace,
+      JSON.stringify({
+        folders: [
+          { path: 'first' },
+          { path: 'second' },
+          { path: 'first' },
+        ],
+      }),
+    );
+
+    assert.deepEqual(workspaceContext(workspace), {
+      workspaceRoots: [realpathSync(first), realpathSync(second)],
+      bootstrapRoot: realpathSync(first),
+    });
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('rejects a workspace descriptor with a missing folder', () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-hook-workspace-'));
+  try {
+    const workspace = path.join(temporary, 'fixture.code-workspace');
+    writeFileSync(
+      workspace,
+      JSON.stringify({ folders: [{ path: 'missing' }] }),
+    );
+    assert.throws(
+      () => workspaceContext(workspace),
+      /TRAE_WORKSPACE_DESCRIPTOR_INVALID/,
+    );
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 });
 
 test('runs the host-neutral kernel through a thin TRAE adapter', async () => {

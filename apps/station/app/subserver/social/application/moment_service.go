@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -274,21 +275,26 @@ func imageIDsFromCreateRequest(img *model.CreateImagePostRequest) ([]string, err
 func (s *MomentService) assertAudienceTargetReachable(ctx context.Context, authorPTID string, a *model.Audience) error {
 	switch a.Kind {
 	case model.Audience_CIRCLE:
-		c, err := s.repos.Circles.GetByID(ctx, a.TargetId)
+		circleID := a.GetCircleId()
+		c, err := s.repos.Circles.GetByID(ctx, circleID)
 		if err != nil {
-			return fmt.Errorf("lookup circle %d: %w", a.TargetId, err)
+			return fmt.Errorf("lookup circle %d: %w", circleID, err)
 		}
 		if c == nil || c.OwnerPTID != authorPTID {
-			return fmt.Errorf("circle %d does not exist or is not owned by author", a.TargetId)
+			return fmt.Errorf("circle %d does not exist or is not owned by author", circleID)
 		}
 
 	case model.Audience_GROUP:
-		isMember, err := s.groups.IsMember(ctx, a.TargetId, authorPTID)
+		conversationID := a.GetGroupConversationId()
+		isMember, err := s.groups.IsMember(ctx, conversationID, authorPTID)
 		if err != nil {
 			return fmt.Errorf("lookup group membership: %w", err)
 		}
 		if !isMember {
-			return fmt.Errorf("author is not a member of group %d (or chat subserver not wired in P1)", a.TargetId)
+			return fmt.Errorf(
+				"author is not a member of group %q (or Conversation subserver is unavailable)",
+				conversationID,
+			)
 		}
 	}
 	return nil
@@ -656,7 +662,12 @@ func (s *MomentService) hydratePostWith(ctx context.Context, p *domain.Post, vie
 	}
 
 	if s.reactions != nil {
-		summaries, err := s.reactions.Aggregate(ctx, p.ID, p.AuthorPTID, viewerPTID)
+		summaries, err := s.reactions.Aggregate(
+			ctx,
+			strconv.FormatUint(p.ID, 10),
+			p.AuthorPTID,
+			viewerPTID,
+		)
 		if err == nil && len(summaries) > 0 {
 			out.Reactions = s.conv.SummariesToProto(summaries)
 		}

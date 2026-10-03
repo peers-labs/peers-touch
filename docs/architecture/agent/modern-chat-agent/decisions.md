@@ -1,8 +1,8 @@
 # Modern Chat Agent — Design Decisions
 
 > **Status**: approved
-> **Version**: v1.3
-> **Created**: 2026-07-30 | **Updated**: 2026-09-25
+> **Version**: v1.5
+> **Created**: 2026-07-30 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -28,7 +28,8 @@
 | MCA-D14 | Project Home from Station-owned work state | approved |
 | MCA-D15 | Use one versioned capability manifest and Agent binding contract | approved |
 | MCA-D15K | Make Knowledge resources versioned capability dependencies | approved |
-| MCA-D16 | Model MCP lifecycle as Station operations executed by client capability managers | approved |
+| MCA-D16 | Model MCP lifecycle as Station operations executed by client capability managers | superseded by MCA-D16A |
+| MCA-D16A | Make MCP configuration Station-owned and execution-location explicit | approved |
 | MCA-D17 | Separate Connector OAuth/resources from Agent tool manifests and bindings | approved |
 | MCA-D18 | Make Evaluation a Station aggregate using the canonical Turn kernel | approved |
 | MCA-D19 | Dispatch device-local ToolCalls through a Station-issued fenced execution envelope | approved |
@@ -46,12 +47,13 @@
 | MCA-D25 | Make governed ToolCall role applicability follow the executed boundary | approved |
 | MCA-D26 | Make Connector evidence follow OAuth-owner execution | approved |
 | MCA-D27 | Make client permission denial a typed lease fact | approved |
+| MCA-D29 | Run stateful external Agents through a Station-owned session lifecycle | approved |
 
 ---
 
 ## MCA-D01: Station Owns The Canonical Single-Agent Kernel
 
-**Status**: approved  
+**Status**: approved
 **Date**: 2026-07-30
 
 ### Context
@@ -127,6 +129,49 @@ This makes resume, reset, isolation, capabilities, and cleanup explicit.
 
 Revisit when a claimed external Agent can prove stateless behavior under the
 same context, isolation, and replay contract as `DIRECT_MODEL`.
+
+## MCA-D28: Treat One-Shot CLI Providers As Direct Model Adapters
+
+**Status**: approved
+**Date**: 2026-09-29
+
+### Context
+
+The existing CLI Provider implementations invoke a configured command once per
+request and can receive the complete Station-owned prompt context. They do not
+require a reusable external session to provide a useful first response.
+
+### Decision
+
+A CLI Provider is a `DIRECT_MODEL` adapter when every invocation:
+
+- receives the complete prompt context from Station;
+- returns normalized text or typed failure events;
+- owns no resumable external session;
+- persists user, Assistant, Turn, and terminal state through Station.
+
+CLI runtimes that retain an external session remain `EXTERNAL_AGENT` and must
+still satisfy MCA-D02 and MCA-J10.
+
+### Rationale
+
+Execution transport does not determine runtime semantics. This restores the
+existing non-rate-limited CLI path without weakening the stateful external
+Agent contract.
+
+### Consequences
+
+- Station owns one-shot CLI execution and persistence.
+- Built-in CLI adapters may be advertised only when their command is available.
+- Missing binaries and failed commands produce typed terminal failures.
+- Desktop-local conversation truth remains forbidden.
+
+### Alternatives Considered
+
+- Keep all CLI providers disabled until P12: rejected because it removes an
+  already implemented direct-provider path and blocks the first usable journey.
+- Execute and persist CLI turns only in Desktop: rejected because restart
+  recovery would diverge from Station truth.
 
 ## MCA-D03: Bind Stateful Runtime Identity To The Conversation
 
@@ -780,7 +825,7 @@ package dependency, and local-resource negative-control tests.
 
 ## MCA-D16: Station Capability Operations, Client MCP Execution
 
-**Status**: approved
+**Status**: superseded by MCA-D16A
 
 ### Context
 
@@ -819,6 +864,85 @@ and auditable.
 
 Remote MCP may use a Station executor, but must preserve the same operation
 contract.
+
+## MCA-D16A: Station-Owned MCP Configuration With Explicit Execution Location
+
+**Status**: approved
+
+### Context
+
+MCP transport and MCP execution location are independent. A stdio server can be
+local to Desktop Rust or local to a remote Station runtime. The prior design
+collapsed all MCP work into one Desktop-owned `mcp.invoke` capability, forcing
+a Station-owned Agent loop to depend on a Desktop round trip even when the
+server belongs beside the Agent runtime.
+
+The existing ToolCall contract already supports concrete
+`STATION` and `CLIENT_CAPABILITY` execution owners. The missing contract is a
+Station-owned MCP Server catalog that resolves one owner before admission.
+
+### Decision
+
+Station owns actor-scoped MCP Server identity, sanitized configuration,
+immutable revisions, enabled state, discovered Tool manifests, Agent bindings,
+readiness, idempotent mutation commands, ToolCalls, results, and audit. Every
+Server declares exactly one execution owner:
+
+- `STATION`: stdio executes inside the Station runtime; HTTP/SSE originates
+  from Station.
+- `CLIENT_CAPABILITY`: stdio executes inside Desktop Rust; HTTP/SSE originates
+  from that Desktop runtime and requires the pinned capability session.
+
+Transport never selects or overrides execution owner. Every discovered MCP
+Tool is published as its own immutable `CapabilityManifest`, inheriting the
+Server execution owner and Server revision. A Turn pins that manifest,
+binding, readiness snapshot, and concrete owner before provider execution.
+
+Raw secrets and process state remain local to the declared executor. Station
+stores secret references and redacted projections. Desktop persists only the
+secret material and runtime state required by `CLIENT_CAPABILITY` Servers; it
+does not maintain a second MCP catalog.
+
+Station-owned configuration mutations use idempotent `McpServerCommand`
+revisions. Station-owned invocations use the existing Station
+ToolCall claim/receipt/continuation path. Client-owned invocations use the
+existing device-authenticated capability request/receipt path.
+
+### Rationale
+
+This keeps Agent business truth and routing decisions next to the Station Agent
+kernel, preserves device-local security boundaries, and allows Station-local
+MCP to continue while Desktop is offline. Reusing the existing two-owner
+ToolCall machinery avoids a third MCP-specific dispatch protocol.
+
+### Alternatives Considered
+
+- Keep every MCP in Desktop: rejected because it creates a
+  Station-to-Desktop-to-Station dependency and makes remote Agent execution
+  depend on an online UI device.
+- Move every MCP to Station: rejected because Desktop files, credentials, and
+  device processes are not Station resources.
+- Infer owner from `stdio` versus HTTP/SSE: rejected because either transport
+  can be local to either runtime.
+- Let the model pass an owner in Tool arguments: rejected because model output
+  cannot override manifest, binding, readiness, or policy.
+
+### Consequences
+
+- The generic Desktop-only `local_mcp` manifest and guidance are removed.
+- MCP Server mutations publish/retire per-Tool manifests transactionally.
+- Desktop startup no longer injects a private MCP tool inventory into Turn
+  requests.
+- Station-local MCP discovery and invocation do not create a client lease,
+  target device, or client receipt.
+- Owner changes create a new Server revision and invalidate old readiness;
+  in-flight ToolCalls retain their pinned owner.
+
+### Review Condition
+
+Acceptance must prove Desktop-local stdio, Station-local stdio, owner-pinned
+dispatch, secret redaction, and Station-local success while the Desktop
+executor is offline.
 
 ## MCA-D17: Connector Resource To Tool Manifest
 
@@ -2045,3 +2169,88 @@ closed enum or when the product accepts a privileged remote settings command.
 Neither case may fall back to capability-ID parsing.
 
 The agent-led findings-first architecture review passed on 2026-09-25.
+
+## MCA-D29: Station-Owned Stateful External Runtime Lifecycle
+
+**Status**: approved
+**Date**: 2026-10-01
+
+### Context
+
+The runtime contract already distinguishes `DIRECT_MODEL` from
+`EXTERNAL_AGENT` and persists conversation runtime bindings, but production
+execution currently hard-codes Direct Model snapshots. The Foundation matrix
+therefore reaches `BASE-RESUME_UNAVAILABLE` without an executable external
+session path.
+
+The Owner selected full MCA-P12 implementation on 2026-10-01. This supersedes
+the prior frozen-profile decision to keep P12 permanently `NOT_ADVERTISED`;
+P12 remains optional and is advertised only when a complete session adapter is
+healthy.
+
+### Decision
+
+Station owns a provider-neutral External Runtime Manager with a closed session
+CLI protocol:
+
+- one Conversation and external-session epoch own one opaque runtime home;
+- the first Turn starts a session and persists its opaque handle before
+  forwarding runtime output;
+- later Turns and Station restarts resume exactly that handle;
+- resume failure emits `RUNTIME_RESUME_UNAVAILABLE` with only
+  `runtime_profile_id` and `reason_code`;
+- no automatic fallback or replacement session is allowed;
+- `ResetConversationRuntime` is actor-scoped, version-fenced, idempotent, and
+  requires explicit destructive confirmation;
+- reset persists a durable fence before external cleanup, then atomically
+  advances the epoch and clears the session handle;
+- cleanup failure remains durable and blocks new Turn admission;
+- cancellation terminates the active process group but preserves the session;
+- Conversation deletion uses the same cleanup owner.
+
+Deployment configuration supplies shell-free start, resume, and reset argv
+templates. A runtime is `READY` only when all commands and the executable are
+available. Vendor-specific event formats are translated behind the adapter;
+the canonical product ID remains `external-agent`.
+
+Desktop and Browser only project Station state and submit reset intent.
+Neither client receives a filesystem path, owns the external session, starts a
+runtime process, or increments the epoch.
+
+### Rationale
+
+This activates the already accepted P12 Journey without weakening the
+Station-only truth boundary. Durable reset fencing prevents a crash or
+duplicate command from creating two epochs, while conditional advertisement
+keeps deployments without a configured external runtime honest.
+
+### Alternatives Considered
+
+- Reuse one-shot CLI execution: rejected because it rebuilds context and owns
+  no resumable session.
+- Let the client host the external runtime: rejected because Browser and
+  restart behavior would diverge.
+- Auto-create a replacement session after resume failure: rejected because it
+  destroys private runtime continuity without consent.
+- Hold a database transaction open during process cleanup: rejected because
+  external execution is unbounded and would couple locks to process latency.
+- Remove `BASE-RESUME_UNAVAILABLE`: rejected because P12 is now explicitly
+  selected for implementation.
+
+### Consequences
+
+- Shared proto adds runtime binding state and reset command/receipt messages.
+- Station adds an external runtime process/session owner and durable reset
+  command record.
+- Provider admission and execution must preserve external session identity.
+- Desktop adds a typed `Confirm reset` recovery and exposes only safe binding
+  metadata.
+- Foundation adds real create/resume/restart/failure/reset/isolation/cleanup
+  evidence for Desktop and Browser.
+- Evidence before the D29 cutover cannot prove P12.
+
+### Review Condition
+
+Revisit when another adapter requires a non-CLI transport or when process-local
+sessions move to a remote runtime service. The Station binding, epoch,
+confirmation, idempotency, and cleanup semantics remain unchanged.

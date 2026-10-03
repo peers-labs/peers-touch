@@ -1,8 +1,8 @@
 # Secure Content - Data Model
 
 > **Status**: active
-> **Version**: v1.9
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v2.0
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `model/domain/social/`, `model/domain/key_exchange/`
 
@@ -452,6 +452,20 @@ derived public key with the claimed recovery PreKey before HPKE open.
 Social owns typed prepare requests:
 
 ```protobuf
+message Audience {
+  reserved 5;
+  reserved "key_envelopes", "target_id";
+
+  Kind kind = 1;
+  repeated string actor_ptids = 3;
+  Kind base_kind = 4;
+
+  oneof target {
+    uint64 circle_id = 2;
+    string group_conversation_id = 6;
+  }
+}
+
 enum PrivateMomentKind {
   PRIVATE_MOMENT_KIND_UNSPECIFIED = 0;
   PRIVATE_MOMENT_KIND_TEXT = 1;
@@ -926,8 +940,19 @@ Hash inputs use deterministic protobuf encoding after canonicalization:
   consumers only prove that every runtime can decode and semantically
   round-trip the same legal wire values;
 
-- `audience_sha256` hashes `kind`, `target_id`, `base_kind`, and ascending
-  `actor_ptids`; legacy `key_envelopes` are forbidden;
+- `audience_sha256` hashes `kind`, the selected typed target
+  (`circle_id` or `group_conversation_id`), `base_kind`, and ascending
+  `actor_ptids`; legacy `target_id` and `key_envelopes` are forbidden;
+- `CUSTOM_DENY` requires `base_kind = FOLLOWERS`; `PUBLIC` and every other
+  base fail before Content PreKey claim;
+- a GROUP snapshot hashes the canonical Conversation ID, membership epoch,
+  authority head hash, and ordered active `(actor_ptid, home_station_peer_id)`
+  members; any remote member makes v1 private publish unsupported;
+- every non-SELF recipient source also hashes the ordered Actor Identity
+  `(actor_ptid, home_station_peer_id)` locality projection into
+  `authorization_snapshot_sha256`; prepare and submit require every Home
+  Station to equal the publisher's before a PreKey is claimed or content is
+  committed;
 - the non-zero `PrivateMomentKind` and its canonical Social
   `domain_binding_sha256` are covered by prepare replay, the signed plan, and
   payload AAD;
@@ -1247,9 +1272,9 @@ social_private_object_grants
 |---|---|---|
 | `social_private_posts` | `post_id`, unique `content_id` | author, generation, snapshot ID, canonical encrypted payload bytes/hash, counters, lifecycle |
 | `social_private_comments` | `comment_id`, unique `content_id` | post, parent comment, author, interaction snapshot, canonical encrypted payload bytes/hash |
-| `social_private_audience_snapshots` | `snapshot_id`, unique `post_id` | audience kind/target, source revision, canonical snapshot hash |
+| `social_private_audience_snapshots` | `snapshot_id`, unique `post_id` | audience kind plus canonical typed target projection, source revision, canonical snapshot hash |
 | `social_private_recipient_grants` | `(snapshot_id, recipient_ptid)` | grant time, revoke time/reason |
-| `social_private_content_plans` | `plan_id`; unique `(author_ptid, prepare_command_id)`; unique `(content_id, generation)` | canonical prepare bytes/hash, exact audience bytes/hash, exact subtype prepare-authority bytes/hash, exact Key Exchange claim-request bytes/hash and ordered targets, exact claim-response bytes/hash, resource kind, author endpoint, snapshot ID, exact signed plan bytes/hash, state, expiry, optional domain commit |
+| `social_private_content_plans` | `plan_id`; unique `(author_ptid, prepare_command_id)`; unique `(content_id, generation)` | canonical prepare bytes/hash, exact audience bytes/hash, exact Group-recipient-snapshot bytes/hash when applicable, exact subtype prepare-authority bytes/hash, exact Key Exchange claim-request bytes/hash and ordered targets, exact claim-response bytes/hash, resource kind, author endpoint, snapshot ID, exact signed plan bytes/hash, state, expiry, optional domain commit |
 | `social_private_content_plan_slots` | `(plan_id, recipient_slot_id)`; globally unique `claim_id`; unique `(plan_id, one_time_key_id)` | key kind, recipient actor/device, principal epoch, exact claimed PreKey bytes/hash including issuer signature, principal-binding hash |
 | `social_private_content_envelopes` | `(content_id, key_kind, recipient principal, one_time_key_id)` | exact plan/binding/envelope/signature hashes |
 | `social_private_command_receipts` | `(author_ptid, command_id)` | canonical submit hash, resource kind/content/generation, domain commit ID, exact response bytes/hash, completion time |

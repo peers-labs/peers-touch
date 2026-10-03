@@ -206,17 +206,18 @@ def terminal_marker_entry(marker: Mapping[str, Any]) -> dict[str, str]:
         "message": json.dumps(
             {
                 "message": {
-                    "method": "Tracing.dataCollected",
+                    "method": "Network.requestWillBeSent",
                     "params": {
-                        "value": [
-                            {
-                                "cat": "blink.user_timing",
-                                "name": (
-                                    f"{attached_client.TERMINAL_MARKER_PREFIX}"
-                                    f"{encoded}"
-                                ),
-                            }
-                        ]
+                        "requestId": "terminal-marker",
+                        "request": {
+                            "url": (
+                                "http://localhost:3210"
+                                f"{attached_client.TERMINAL_MARKER_PATH_PREFIX}"
+                                f"{encoded}"
+                            ),
+                            "method": "GET",
+                            "headers": {},
+                        },
                     },
                 }
             }
@@ -310,6 +311,32 @@ class SecureContentRunnerTest(unittest.TestCase):
             "sc-dj-optional-auth",
             scenarios["optional-auth"].journey_id,
         )
+
+    def test_workspace_identity_accepts_canonical_verifier_shape(self) -> None:
+        expected = {
+            "root": str(REPO_ROOT.resolve()),
+            "workspaceId": IDENTITY["workspaceId"],
+            "branch": IDENTITY["branch"],
+            "head": IDENTITY["head"],
+            "worktreeSetDigest": "f" * 64,
+            "gitDir": str(REPO_ROOT / ".git"),
+            "commonDir": str(REPO_ROOT / ".git"),
+        }
+
+        def execute(
+            command: list[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            self.assertEqual(REPO_ROOT, cwd)
+            self.assertIn("--capture", command)
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(expected),
+                stderr="",
+            )
+
+        self.assertEqual(expected, run._workspace_identity(REPO_ROOT, execute))
 
     def test_runtime_mismatch_fails_before_scenario_execution(self) -> None:
         called = False
@@ -513,6 +540,71 @@ class SecureContentRunnerTest(unittest.TestCase):
             content = dict(result)
             digest = content.pop("resultDigest")
             self.assertEqual(digest, run._canonical_digest(content))
+
+    def test_w12_result_copies_post_cut_manifest_binding(self) -> None:
+        selected = run.ScenarioDefinition(
+            scenario_id="w12-post-cut-result",
+            journey_id="sc-dj-runtime-manifest-v3",
+            work_item_id="secure-content-w7r",
+            runtimes=frozenset({"desktop"}),
+            evidence_path=Path("legacy/result.json"),
+            execute=lambda _: {"observations": {"receiverVisible": True}},
+            result_prefix=Path("W12/product"),
+            result_task_id="W12",
+            result_workstream_id="W12",
+            result_variant="desktop",
+        )
+        final_cut_bindings = {
+            profile: {
+                "result_digest": manifest_fixtures.digest(
+                    f"result:{profile}"
+                ),
+                "reset_id": f"reset-{profile}",
+                "schema_attestation_digest": manifest_fixtures.digest(
+                    f"schema:{profile}"
+                ),
+                "station_runtime_identity": f"runtime-{profile}",
+            }
+            for profile in ("four", "fiveArm")
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            payload = v3_payload()
+            payload["post_cut_epoch_id"] = "post-cut-epoch"
+            payload["final_cut_bindings"] = final_cut_bindings
+            manifest_path = write_v3_manifest(root, payload)
+
+            result = run.execute_scenario(
+                runtime="desktop",
+                scenario_id=selected.scenario_id,
+                budget_seconds=10,
+                repo_root=REPO_ROOT,
+                profiles=("four", "fiveArm"),
+                clients=("desktop-alice",),
+                runtime_manifest_path=manifest_path,
+                result_root=root / "results",
+                registry={selected.scenario_id: selected},
+                workspace_identity=IDENTITY,
+                command_runner=control_plane_runner(selected),
+            )
+
+            self.assertEqual("post-cut-epoch", result["postCutEpochId"])
+            self.assertEqual(
+                {
+                    profile: {
+                        "resultDigest": binding["result_digest"],
+                        "resetId": binding["reset_id"],
+                        "schemaAttestationDigest": binding[
+                            "schema_attestation_digest"
+                        ],
+                        "stationRuntimeIdentity": binding[
+                            "station_runtime_identity"
+                        ],
+                    }
+                    for profile, binding in final_cut_bindings.items()
+                },
+                result["finalCutBindings"],
+            )
 
     def test_rejects_result_root_inside_repository(self) -> None:
         selected = scenario(runtime_name="service")
@@ -2234,16 +2326,51 @@ class AttachedProductClientTest(unittest.TestCase):
         self.assertTrue(executor.closed)
         self.assertIsNone(driver.session_id)
 
-    def test_attached_driver_start_uses_only_declared_session_id(self) -> None:
+    def test_attached_driver_start_retains_only_required_cdp_capability(
+        self,
+    ) -> None:
         driver = object.__new__(attached_client._AttachedRemoteWebDriver)
         driver._attached_session_id = "externally-owned-session"
         driver.session_id = None
         driver.caps = {"unexpected": True}
 
-        driver.start_session({"browserName": "chrome"})
+        driver.start_session(
+            {
+                "browserName": "chrome",
+                "acceptInsecureCerts": True,
+            }
+        )
 
         self.assertEqual("externally-owned-session", driver.session_id)
-        self.assertEqual({}, driver.caps)
+        self.assertEqual({"browserName": "chrome"}, driver.caps)
+        with patch.object(
+            driver,
+            "execute",
+            return_value={"value": {"enabled": True}},
+        ) as execute:
+            self.assertEqual(
+                {"enabled": True},
+                driver.execute_cdp_cmd("Network.enable", {}),
+            )
+        execute.assert_called_once_with(
+            "executeCdpCommand",
+            {"cmd": "Network.enable", "params": {}},
+        )
+
+    def test_attached_driver_reads_performance_log_via_webdriver_command(
+        self,
+    ) -> None:
+        driver = object.__new__(attached_client._AttachedRemoteWebDriver)
+        entries = [{"message": "{\"message\":{}}"}]
+
+        with patch.object(
+            driver,
+            "execute",
+            return_value={"value": entries},
+        ) as execute:
+            self.assertEqual(entries, driver.get_log("performance"))
+
+        execute.assert_called_once_with("getLog", {"type": "performance"})
 
     def test_network_capture_rejects_streams_without_terminal_barrier(self) -> None:
         entry = {
@@ -2618,6 +2745,8 @@ class AttachedProductClientTest(unittest.TestCase):
             private_plaintext="private-after-terminal",
             terminal_marker=marker,
         )
+        self.assertEqual(1, observation.observed_request_count)
+        self.assertEqual(1, observation.request_method_count)
         self.assertEqual(1, observation.websocket_event_count)
         self.assertEqual(0, observation.secret_representation_count)
 
@@ -2674,6 +2803,110 @@ class AttachedProductClientTest(unittest.TestCase):
                 private_plaintext="private",
                 terminal_marker=marker,
             )
+
+    def test_network_capture_drains_pre_marker_http_completion(self) -> None:
+        action_id = "delayed-completion-terminal"
+        capture, marker = network_capture_marker(action_id)
+
+        def network_entry(method: str, params: Mapping[str, Any]) -> dict[str, str]:
+            return {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": method,
+                            "params": dict(params),
+                        }
+                    }
+                )
+            }
+
+        request = network_entry(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "request-before-marker",
+                "request": {
+                    "url": "https://station.invalid/public",
+                    "method": "GET",
+                    "headers": {},
+                },
+            },
+        )
+        response = network_entry(
+            "Network.responseReceived",
+            {
+                "requestId": "request-before-marker",
+                "response": {
+                    "url": "https://station.invalid/public",
+                    "headers": {},
+                },
+            },
+        )
+        post_marker_request = network_entry(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "request-after-marker",
+                "request": {
+                    "url": "https://station.invalid/after-marker",
+                    "method": "GET",
+                    "headers": {},
+                },
+            },
+        )
+        pre_marker_finished = network_entry(
+            "Network.loadingFinished",
+            {"requestId": "request-before-marker"},
+        )
+
+        class Driver:
+            def __init__(self) -> None:
+                self.logs = [
+                    [],
+                    [request, response, terminal_marker_entry(marker)],
+                    [post_marker_request, pre_marker_finished],
+                ]
+
+            def execute_cdp_cmd(
+                self,
+                command: str,
+                _params: dict[str, Any],
+            ) -> dict[str, Any]:
+                if command == "Network.enable":
+                    return {}
+                if command == "Network.getResponseBody":
+                    return {"body": "{}", "base64Encoded": False}
+                raise AssertionError(command)
+
+            def get_log(self, _name: str) -> list[dict[str, str]]:
+                return self.logs.pop(0) if self.logs else []
+
+        client = attached_client.AttachedProductClient.__new__(
+            attached_client.AttachedProductClient
+        )
+        client.context = SimpleNamespace(
+            runtime="browser",
+            remaining_seconds=lambda: 1.0,
+        )
+        client._driver = Driver()
+        client._network_capture_armed = False
+        client.clear_network_log()
+        client._network_capture = capture
+        observation = client.network_observation(
+            private_plaintext="private",
+            require_response_body=True,
+            terminal_marker=marker,
+        )
+
+        self.assertEqual(1, observation.observed_request_count)
+        self.assertEqual(1, observation.observed_response_count)
+        self.assertEqual(1, observation.response_body_count)
+        self.assertEqual(
+            (
+                hashlib.sha256(
+                    b"https://station.invalid/public",
+                ).hexdigest(),
+            ),
+            observation.request_url_digests,
+        )
 
     def test_network_capture_fails_when_response_capture_is_insufficient(
         self,

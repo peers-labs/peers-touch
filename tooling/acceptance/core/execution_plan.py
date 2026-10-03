@@ -44,9 +44,11 @@ class FormalExecutionPlan:
     initial_head: str
     current_task_id: str | None
     current_task_path: str | None
+    current_task_write_set: tuple[str, ...] | None
     current_closure: str | None
     closure_statuses: dict[str, str]
     acceptance: dict[str, Any]
+    source_claims: tuple[str, ...] | None = None
 
     def gate_ids(self, mode: str) -> list[str]:
         if mode == "closure":
@@ -268,6 +270,7 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
         )
     current_task_id = payload.get("currentTaskId")
     current_task_path = payload.get("currentTaskPath")
+    current_task_write_set = payload.get("currentTaskWriteSet")
     current_closure = payload.get("currentClosure")
     for field, value in (
         ("currentTaskId", current_task_id),
@@ -276,6 +279,14 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
     ):
         if value is not None and (not isinstance(value, str) or not value):
             raise ExecutionPlanError(PLAN_INVALID, f"{field} is invalid: {path}")
+    if (
+        not isinstance(current_task_write_set, list)
+        or any(not isinstance(item, str) or not item for item in current_task_write_set)
+    ):
+        raise ExecutionPlanError(
+            PLAN_INVALID,
+            f"currentTaskWriteSet is invalid: {path}",
+        )
     required_text = {
         "planId": payload.get("planId"),
         "status": payload.get("status"),
@@ -289,6 +300,21 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
             PLAN_INVALID,
             f"Plan Package status omitted fields: {', '.join(missing)}",
         )
+    source_claims = payload.get("sourceClaims")
+    if (
+        not isinstance(source_claims, list)
+        or not source_claims
+        or any(
+            not isinstance(claim, dict)
+            or not isinstance(claim.get("pathPrefix"), str)
+            or not claim["pathPrefix"]
+            for claim in source_claims
+        )
+    ):
+        raise ExecutionPlanError(
+            PLAN_INVALID,
+            f"Plan Package status omitted valid source claims: {path}",
+        )
     return FormalExecutionPlan(
         path=path,
         plan_id=required_text["planId"],
@@ -299,9 +325,11 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
         initial_head=required_text["initialHead"],
         current_task_id=current_task_id,
         current_task_path=current_task_path,
+        current_task_write_set=tuple(current_task_write_set),
         current_closure=current_closure,
         closure_statuses=dict(closure_statuses),
         acceptance=acceptance,
+        source_claims=tuple(claim["pathPrefix"] for claim in source_claims),
     )
 
 
@@ -344,6 +372,7 @@ def load_formal_plan(path: Path) -> FormalExecutionPlan:
         initial_head=metadata["Initial HEAD"],
         current_task_id=None,
         current_task_path=None,
+        current_task_write_set=None,
         current_closure=current,
         closure_statuses=statuses,
         acceptance=acceptance,
@@ -451,7 +480,11 @@ def discover_active_plan(
     return plan
 
 
-def changed_paths_for_plan(root: Path, plan: FormalExecutionPlan) -> list[str]:
+def changed_paths_for_plan(
+    root: Path,
+    plan: FormalExecutionPlan,
+    execution_mode: str = "closure",
+) -> list[str]:
     paths = set(
         line
         for line in _git(root, "diff", "--name-only", f"{plan.initial_head}..HEAD").splitlines()
@@ -462,4 +495,19 @@ def changed_paths_for_plan(root: Path, plan: FormalExecutionPlan) -> list[str]:
         ("ls-files", "--others", "--exclude-standard"),
     ):
         paths.update(line for line in _git(root, *args).splitlines() if line)
+    scope = (
+        plan.current_task_write_set
+        if execution_mode == "closure" and plan.current_task_write_set is not None
+        else plan.source_claims
+    )
+    if scope is not None:
+        prefixes = tuple(prefix.rstrip("/") for prefix in scope)
+        paths = {
+            changed
+            for changed in paths
+            if any(
+                changed == prefix or changed.startswith(f"{prefix}/")
+                for prefix in prefixes
+            )
+        }
     return sorted(paths)

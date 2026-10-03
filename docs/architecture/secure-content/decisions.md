@@ -1,8 +1,8 @@
 # Secure Content - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.9
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v2.0
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Architecture Team
 
 ---
@@ -39,6 +39,7 @@
 | `SC-D26` | A reviewed source defect may replace one closed post-commit reset boundary through an immutable predecessor link | accepted |
 | `SC-D27` | Recovery replacement separates admission proof from append-only execution provenance | accepted |
 | `SC-D28` | Runtime services separate canonical schema identity from live connection routing | accepted |
+| `SC-D29` | Audience targets are typed and v1 private expansion remains locally enumerable | accepted |
 
 ---
 
@@ -1566,8 +1567,8 @@ reset, deleted its object targets, deployed source
 schema post-audit with `RESET_SCHEMA_TARGET_UNREVIEWED`.
 
 The failure exposed one source contradiction. The canonical
-`SocialPrivateContentPlan` model omitted four durable prepare-binding columns,
-while a second private GORM model wrote those columns into the same
+`SocialPrivateContentPlan` model omitted the four durable prepare-binding
+columns then in scope, while a second private GORM model wrote those columns into the same
 `social_private_content_plans` table:
 
 ```text
@@ -1588,8 +1589,10 @@ way to finish the hard cut after a post-deploy source defect.
 #### One canonical plan model
 
 `SocialPrivateContentPlan` is the only schema owner for
-`social_private_content_plans`. The four prepare-binding columns move into that
-model and are written with the initial `PREPARING` insert. The shadow
+`social_private_content_plans`. The four SC-D26 prepare-binding columns move
+into that model and are written with the initial `PREPARING` insert. SC-D29
+later adds canonical Group-recipient-snapshot bytes/hash to the same owner, for
+six durable prepare-binding columns in the current schema. The shadow
 table-mapping model is deleted. Replay may project a `PrivatePrepareBinding`
 from the canonical row, but that projection does not own schema or persistence.
 
@@ -1958,6 +1961,150 @@ An independent findings-first review on 2026-09-21 required a v3 hard cut,
 owner-specific endpoint errors, the complete closed service shape, and an
 explicit canonical digest projection. The amended decision includes each
 requirement; re-review returned `DESIGN_REVIEW_PASS`.
+
+---
+
+## SC-D29: Audience Targets Are Typed And V1 Private Expansion Remains Locally Enumerable
+
+**Status**: accepted
+**Date**: 2026-09-24
+
+### Context
+
+W8 exact-source execution proved three connected gaps:
+
+1. Social `Audience.target_id` is one `uint64` used for both numeric Social
+   Circle IDs and canonical string Conversation IDs.
+2. `CUSTOM_DENY(PUBLIC)` has no finite, revision-bound federated Actor set that
+   can be frozen into the immutable recipient/envelope snapshot required by
+   `SC-D06`.
+3. The W8 runtime owner starts only `station-four` and provides no
+   owner-produced identity for a real remote recipient, so the accepted
+   unsupported cross-Station boundary cannot be proved.
+
+### Decision
+
+`Audience.target_id` is retired in one hard cut. The canonical proto uses one
+discriminated target:
+
+```protobuf
+oneof target {
+  uint64 circle_id = 2;
+  string group_conversation_id = 6;
+}
+```
+
+The old field name `target_id` and the historical field number `5` remain
+reserved. A CIRCLE audience requires only `circle_id`; a GROUP audience
+requires only `group_conversation_id`; every other kind rejects either target.
+Generated Go, Rust, Desktop TypeScript, and Mobile TypeScript consumers move to
+the typed fields in the same source generation.
+
+Conversation exposes one narrow in-process query capability with two explicit
+operations:
+
+```go
+PrepareSnapshot(ctx, conversationID, authorPTID)
+WithSubmitFence(ctx, expectedSnapshot, commit)
+```
+
+`PrepareSnapshot` reads through the Conversation UOW. `WithSubmitFence` opens a
+Conversation-owned read-only transaction, locks the canonical Conversation row,
+validates the expected snapshot, invokes a Social commit callback that receives
+only the verified snapshot, and releases the fence after the callback returns.
+Conversation membership mutations acquire the same row lock and never acquire
+Social locks. The provider:
+
+- validates a live Group conversation and active author membership;
+- returns active members with their Home Station, membership epoch, and
+  authority head hash; and
+- exposes no Conversation repository or mutation capability to Social.
+
+This read fence is legal only in the co-located Station process with one RDS
+identity; otherwise GROUP private publish is unavailable. Social never imports
+Conversation persistence and Conversation never mutates Social state. The
+global lock direction is Conversation fence then Social UOW. The callback
+cannot access Conversation persistence, and no reverse Social-to-Conversation
+call is allowed from inside the Social commit.
+
+Social filters blocked actors, excludes the author from recipient grants, and
+binds the Conversation ID, membership epoch, authority head hash, ordered
+member PTIDs, and Home Station identities into its audience snapshot. Prepare
+and submit both use the Conversation-owned capability; submit requires byte-for-
+byte equality with the prepared snapshot while holding the read fence through
+Social commit.
+
+Before any Content PreKey claim, the Actor Identity port resolves the canonical
+Home Station of every recipient produced by FRIENDS, FOLLOWERS, CIRCLE, or
+CUSTOM rules; GROUP uses Conversation's member Home Station projection. The
+locality projection is bound into the authorization snapshot. Actor Home
+Station is immutable for a canonical PTID in v1, so submit verifies that stored
+commitment rather than opening an Actor Identity mutation transaction. The
+read adapters cannot call Social. One remote recipient rejects the whole
+publish as `PRIVATE_UNSUPPORTED`; no recipient is silently removed.
+
+`CUSTOM_DENY` accepts only `FOLLOWERS` as `base_kind` in v1.
+`CUSTOM_DENY(PUBLIC)` is rejected as `PRIVATE_UNSUPPORTED` before encryption.
+No implementation may approximate PUBLIC with local accounts, cached profiles,
+known peers, followers, or existing Conversation members.
+
+The Actor Identity fixture provisioner creates and acknowledges a fiveArm-only
+Actor. The W8 runtime owner attaches both `four` and `fiveArm` plus the
+provisioner-issued opaque `remote-private-recipient` handle to the immutable
+runtime manifest. The scenario obtains the remote PTID only through that
+owner-controlled action and proves rejection, zero Content PreKey claims, and
+absence of partial Social rows. This is negative boundary evidence, not
+cross-Station private-sharing support.
+
+### Rationale
+
+Typed targets preserve each domain's canonical identity instead of coercing a
+Conversation ID into a Social numeric namespace. Restricting v1 private
+recipient expansion to enumerable same-Station authorities keeps the frozen
+cryptographic recipient set equal to Social delivery truth. A real secondary
+Station fixture proves the deferred federation boundary without synthetic
+identities or accidental partial delivery.
+
+### Alternatives Considered
+
+- Convert Conversation IDs to numeric aliases: rejected because Social would
+  create a second Conversation identity authority and collision lifecycle.
+- Change the shared target to an untyped string: rejected because Circle and
+  Group validation would remain ambiguous and every consumer would need
+  runtime string interpretation.
+- Enumerate locally known Actors for `CUSTOM_DENY(PUBLIC)`: rejected because
+  the set is incomplete, unversioned, and not federated PUBLIC truth.
+- Silently drop remote Group members: rejected because it narrows user intent
+  and violates exact recipient coverage.
+- Use a fabricated remote PTID in W8: rejected because it cannot prove the
+  production identity and Station boundary.
+
+### Consequences
+
+- The Social Audience wire and all generated consumers change in one source
+  generation; field `5` remains reserved and no compatibility reader or writer
+  is retained.
+- W12A is reopened through the Plan's source-invalidation policy. The new source
+  generation invalidates prior W7/W8 evidence and requires fresh `four` and
+  `fiveArm` schema activation before replay.
+- W12A pre-freeze checks cover Conversation and Social, generated Go/Rust/
+  Desktop/Mobile contract parity, and zero references to the retired Audience
+  target field or compatibility aliases.
+- `GROUP` remains required for same-Station private Moments. Federated Group
+  private delivery and `CUSTOM_DENY(PUBLIC)` require later product and
+  architecture decisions.
+- W8 runtime declarations now require both approved profiles and Station
+  connections, while destructive reset scope remains owned only by W12A/W12.
+
+### Review And Reversal Conditions
+
+Review the v1 locality restriction only after Actor Identity or Social owns a
+complete, revision-bound federated recipient authority and remote Content
+PreKey delivery has receiver-side product evidence. Replacing the typed oneof
+requires a new wire decision and a hard-cut consumer inventory.
+
+The Owner authorized this choice on 2026-09-24 after W8 exact-source evidence
+exhausted the previous contract.
 
 ---
 
