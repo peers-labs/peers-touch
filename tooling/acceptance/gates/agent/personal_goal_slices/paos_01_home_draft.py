@@ -34,6 +34,7 @@ from tooling.acceptance.gates.agent.capability_binding_development import (
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientSpec,
     FoundationRuntimeClient,
+    port_open,
 )
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
@@ -160,10 +161,14 @@ def inspect_runtime_identity(
         tauri_bridge_available is True,
         "Native Tauri bridge is unavailable",
     )
-    require(
-        client.process is not None and client.process.poll() is None,
-        "Native Desktop process is not running",
-    )
+    listener_ports = {
+        "gateway": port_open(client.spec.gateway_port),
+        "renderer": port_open(client.spec.renderer_port),
+        "webdriver": port_open(client.spec.webdriver_port),
+    }
+    require(all(listener_ports.values()), "Native Desktop listeners are unavailable")
+    webdriver_session_id = str(client.driver.session_id or "")
+    require(bool(webdriver_session_id), "Native WebDriver session is unavailable")
 
     capabilities = dict(client.driver.capabilities or {})
     return {
@@ -191,9 +196,10 @@ def inspect_runtime_identity(
             "binary": native_binary.relative_to(ROOT).as_posix(),
             "binaryBytes": native_binary.stat().st_size,
             "binarySha256": sha256_file(native_binary),
-            "processId": client.process.pid,
             "windowUrl": str(client.driver.current_url),
             "tauriBridgeAvailable": tauri_bridge_available,
+            "listenerPorts": listener_ports,
+            "webdriverSessionId": webdriver_session_id,
             "gatewayPort": client.spec.gateway_port,
             "rendererPort": client.spec.renderer_port,
             "webdriverPort": client.spec.webdriver_port,
