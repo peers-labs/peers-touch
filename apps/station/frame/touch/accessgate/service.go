@@ -89,13 +89,11 @@ func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.A
 	if client == nil {
 		return nil, fmt.Errorf("access attempt client is required")
 	}
-	if strings.EqualFold(strings.TrimSpace(client.GetPlatform()), "mobile") {
-		if strings.TrimSpace(client.GetDeviceId()) == "" {
-			return nil, fmt.Errorf("mobile access attempt device id is required")
-		}
-		if client.GetLifecycleGeneration() == 0 {
-			return nil, fmt.Errorf("mobile access attempt lifecycle generation is required")
-		}
+	if strings.TrimSpace(client.GetDeviceId()) == "" {
+		return nil, fmt.Errorf("access attempt device id is required")
+	}
+	if client.GetLifecycleGeneration() == 0 {
+		return nil, fmt.Errorf("access attempt lifecycle generation is required")
 	}
 
 	actorRef, username, email, err := actorRefFromSession(ctx, strings.TrimSpace(req.GetSessionId()))
@@ -298,27 +296,6 @@ func CompleteLoginCandidate(
 	attempt.SessionID = ""
 	attempt.AuthMethod = "password"
 
-	return decisionAndPersist(ctx, attempt)
-}
-
-// CompleteLegacyLogin preserves the existing non-Mobile Desktop path until its
-// owning plan adopts the schema-bound envelope. Mobile attempts are rejected
-// by ValidateLegacySubmission before this function can run.
-func CompleteLegacyLogin(
-	ctx context.Context,
-	attemptID string,
-	actor *actormodel.ActorRef,
-	username, email, sessionID string,
-) (*pb.AccessDecision, error) {
-	attempt, ok := findAttempt(ctx, attemptID)
-	if !ok {
-		return nil, errAttemptNotFound
-	}
-	attempt.Actor = actor
-	attempt.ActorUsername = username
-	attempt.ActorEmail = email
-	attempt.SessionID = sessionID
-	attempt.AuthMethod = "legacy_password"
 	return decisionAndPersist(ctx, attempt)
 }
 

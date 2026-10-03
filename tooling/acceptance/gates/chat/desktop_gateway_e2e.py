@@ -49,6 +49,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     ACTOR_PASSWORD,
 )
+from tooling.acceptance.gates.station_access.gateway import gateway_access_login
 
 GATE_ID = "chat-desktop-gateway-e2e"
 
@@ -443,21 +444,29 @@ def run_identity_consistency_flow(
 
 
 def gateway_login(gateway: str, actor: ActorCredentials, timeout: int = 30) -> str:
-    data = gateway_command(
-        gateway,
-        "auth_login",
-        {"account": actor.email, "password": actor.password},
-        timeout=timeout,
-    )
+    try:
+        data = gateway_access_login(
+            lambda url, command, args: gateway_command(
+                url,
+                command,
+                args,
+                timeout=timeout,
+            ),
+            gateway,
+            actor.email,
+            actor.password,
+        )
+    except RuntimeError as error:
+        raise GateError(str(error)) from error
     actor_ptid = data.get("actor_ptid") or ""
     require(
         isinstance(actor_ptid, str) and actor_ptid.startswith("ptid:"),
-        f"gateway auth_login missing actor_ptid data={data}",
+        f"gateway access login missing actor_ptid data={data}",
     )
     if actor.actor_ptid:
         require(
             actor_ptid == actor.actor_ptid,
-            f"gateway auth_login PTID mismatch got={actor_ptid} want={actor.actor_ptid}",
+            f"gateway access login PTID mismatch got={actor_ptid} want={actor.actor_ptid}",
         )
     identity = current_identity(gateway)
     require(
