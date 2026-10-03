@@ -437,6 +437,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	evaluationSvc.SetAcceptanceScenarioService(capabilityAcceptanceScenarios)
 	capabilityAcceptanceScenarios.SetEvaluationService(evaluationSvc)
 	evaluationHandlers := handler.NewEvaluationHandlers(evaluationSvc)
+	goalHandlers := handler.NewGoalHandlers(service.NewGoalService(s.agentDB))
 	homeHandlers := handler.NewHomeHandlers(
 		service.NewHomeProjectionService(
 			agentSvc,
@@ -470,6 +471,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-home-projection-get", "/agent/home/projection/get", server.POST, homeHandlers.HandleGetProjection, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-home-chat-submit", "/agent/home/chat/submit", server.POST, homeHandlers.HandleSubmitChat, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-home-task-submit", "/agent/home/task/submit", server.POST, homeHandlers.HandleSubmitTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-create", "/agent/goal/create", server.POST, goalHandlers.HandleCreate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-get", "/agent/goal/get", server.POST, goalHandlers.HandleGet, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),

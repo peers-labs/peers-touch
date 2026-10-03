@@ -11,6 +11,13 @@ import {
   SubmitHomeTaskCommandRequestSchema,
   SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
+import {
+  AgentGoalStatus,
+  CreateAgentGoalRequestSchema,
+  CreateAgentGoalResponseSchema,
+  GetAgentGoalRequestSchema,
+  GetAgentGoalResponseSchema,
+} from '../gen/proto/domain/agent/goal_pb';
 import { api } from './desktop_api';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -124,5 +131,69 @@ describe('Desktop Home projection API', () => {
       new Uint8Array(args?.input?.requestBytes ?? []),
     );
     expect(request.clientIdempotencyKey).toBe('home-task-1');
+  });
+
+  it('creates and reads back a durable Goal draft', async () => {
+    const goal = {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Durable Goal',
+      outcome: 'Reopen the same Station record',
+      status: AgentGoalStatus.DRAFT,
+      revision: 1n,
+    };
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({
+        ok: true,
+        data: Array.from(toBinary(
+          CreateAgentGoalResponseSchema,
+          create(CreateAgentGoalResponseSchema, { goal }),
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: Array.from(toBinary(
+          GetAgentGoalResponseSchema,
+          create(GetAgentGoalResponseSchema, { goal }),
+        )),
+      });
+
+    const created = await api.createAgentGoalDraft({
+      title: goal.title,
+      outcome: goal.outcome,
+      idempotencyKey: 'goal-create-1',
+    });
+    const createInvocation = vi.mocked(invoke).mock.calls[0];
+    expect(createInvocation?.[0]).toBe('agent_home_goal_draft_create');
+    const createArgs = createInvocation?.[1] as {
+      input?: { requestBytes?: number[] };
+    } | undefined;
+    const createRequest = fromBinary(
+      CreateAgentGoalRequestSchema,
+      new Uint8Array(createArgs?.input?.requestBytes ?? []),
+    );
+    expect(createRequest).toMatchObject({
+      title: goal.title,
+      outcome: goal.outcome,
+      idempotencyKey: 'goal-create-1',
+      expectedRevision: 0n,
+    });
+
+    const reopened = await api.getAgentGoal(created.goalId);
+    const getInvocation = vi.mocked(invoke).mock.calls[1];
+    expect(getInvocation?.[0]).toBe('agent_home_goal_get');
+    const getArgs = getInvocation?.[1] as {
+      input?: { requestBytes?: number[] };
+    } | undefined;
+    const getRequest = fromBinary(
+      GetAgentGoalRequestSchema,
+      new Uint8Array(getArgs?.input?.requestBytes ?? []),
+    );
+    expect(getRequest.goalId).toBe('goal-1');
+    expect(reopened).toMatchObject({
+      goalId: 'goal-1',
+      status: AgentGoalStatus.DRAFT,
+      revision: 1n,
+    });
   });
 });

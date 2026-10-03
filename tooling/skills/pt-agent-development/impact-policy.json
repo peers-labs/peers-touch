@@ -264,6 +264,7 @@
     {
       "id": "desktop-agent-host",
       "patterns": [
+        "apps/desktop/src-tauri/build.rs",
         "apps/desktop/src-tauri/src/application/agent_event_stream.rs",
         "apps/desktop/src-tauri/src/application/agent_growth/**",
         "apps/desktop/src-tauri/src/application/agent_orchestration/**",
@@ -273,6 +274,7 @@
         "apps/desktop/src-tauri/src/application/agent_local_capability/**",
         "apps/desktop/src-tauri/src/application/agents/**",
         "apps/desktop/src-tauri/src/application/capability_operation/**",
+        "apps/desktop/src-tauri/src/application/home.rs",
         "apps/desktop/src-tauri/src/application/mcp/**",
         "apps/desktop/src-tauri/src/application/provider/**",
         "apps/desktop/src-tauri/src/application/skills_market/**",
@@ -280,7 +282,9 @@
         "apps/desktop/src-tauri/src/application/workspace/**",
         "apps/desktop/src-tauri/src/application/audit/**",
         "apps/desktop/src-tauri/src/interface/tauri_commands/agent*.rs",
-        "apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs"
+        "apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/home.rs",
+        "apps/desktop/src-tauri/src/main.rs"
       ],
       "impactClass": "DESKTOP_HOST"
     },
@@ -294,14 +298,21 @@
         "apps/desktop/src/components/**/*agent*.tsx",
         "apps/desktop/src/components/**/*Agent*.ts",
         "apps/desktop/src/components/**/*Agent*.tsx",
+        "apps/desktop/src/components/home/Goal*.ts",
+        "apps/desktop/src/components/home/Goal*.tsx",
         "apps/desktop/src/diagnostics/agent*.ts",
         "apps/desktop/src/hooks/*Agent*.ts",
         "apps/desktop/src/pages/**/*Agent*.ts",
         "apps/desktop/src/pages/**/*Agent*.tsx",
+        "apps/desktop/src/pages/HomePage*.tsx",
         "apps/desktop/src/runtimes/agent*.ts",
+        "apps/desktop/src/runtimes/homeRuntime*.ts",
         "apps/desktop/src/services/agent/**",
         "apps/desktop/src/services/agent*.ts",
-        "apps/desktop/src/store/agent*.ts"
+        "apps/desktop/src/services/desktop_api*.ts",
+        "apps/desktop/src/store/agent*.ts",
+        "apps/desktop/src/store/home*.ts",
+        "packages/locales/*/agent.json"
       ],
       "impactClass": "DESKTOP_UI"
     },

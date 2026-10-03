@@ -114,6 +114,7 @@ func AllModels() []interface{} {
 		&ExecutionStep{},
 		&ExecutorLease{},
 		&TaskCheckpoint{},
+		&AgentGoal{},
 		&AgentModel{},
 		&EcosystemAgentGroup{},
 		&EcosystemTopicComment{},

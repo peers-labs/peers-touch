@@ -170,6 +170,13 @@ import {
   SubmitHomeTaskCommandRequestSchema,
   SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
+import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
+import {
+  CreateAgentGoalRequestSchema,
+  CreateAgentGoalResponseSchema,
+  GetAgentGoalRequestSchema,
+  GetAgentGoalResponseSchema,
+} from '../gen/proto/domain/agent/goal_pb';
 import * as EvaluationModel from '../gen/proto/domain/agent/evaluation_pb';
 import type {
   ClaimDesktopExecutorTaskResponse,
@@ -5383,6 +5390,40 @@ export const api = {
       SubmitHomeTaskCommandResponseSchema,
       create(SubmitHomeTaskCommandRequestSchema, input),
     ),
+
+  createAgentGoalDraft: async (input: {
+    title: string;
+    outcome: string;
+    workspaceId?: string;
+    idempotencyKey: string;
+  }): Promise<AgentGoal> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_goal_draft_create',
+      CreateAgentGoalRequestSchema,
+      CreateAgentGoalResponseSchema,
+      create(CreateAgentGoalRequestSchema, {
+        ...input,
+        expectedRevision: 0n,
+      }),
+    );
+    if (!response.goal) {
+      throw new Error('agent.goalCreateResponseMissing');
+    }
+    return response.goal;
+  },
+
+  getAgentGoal: async (goalId: string): Promise<AgentGoal> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_goal_get',
+      GetAgentGoalRequestSchema,
+      GetAgentGoalResponseSchema,
+      create(GetAgentGoalRequestSchema, { goalId }),
+    );
+    if (!response.goal) {
+      throw new Error('agent.goalGetResponseMissing');
+    }
+    return response.goal;
+  },
 
   createEvaluationBenchmark: async (
     request: EvaluationModel.CreateEvaluationBenchmarkRequest,

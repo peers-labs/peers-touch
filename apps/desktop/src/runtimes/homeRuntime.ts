@@ -2,6 +2,7 @@ import type { RuntimeDescriptor } from '../kernel/runtime';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { HomeWorkKind } from '../gen/proto/domain/agent/home_pb';
+import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
 import { api } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
 import {
@@ -21,9 +22,10 @@ let runtimeGeneration = 0;
 let activeActorId: string | null = null;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let reconcileInFlight: Promise<void> | null = null;
+let goalReadbackInFlight: Promise<AgentGoal | null> | null = null;
 let unsubscribers: Array<() => void> = [];
 
-function homeCommandKey(kind: 'chat' | 'task'): string {
+function homeCommandKey(kind: 'chat' | 'task' | 'goal'): string {
   const id = globalThis.crypto?.randomUUID?.()
     || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `home-${kind}-${id}`;
@@ -97,6 +99,68 @@ function clearReconcileTimer(): void {
 
 export function refreshHomeProjection(reason = 'user-retry'): Promise<void> {
   return loadHomeProjection(reason);
+}
+
+export async function createHomeGoalDraft(): Promise<AgentGoal> {
+  const state = useHomeStore.getState();
+  const title = state.goalDraftTitle.trim();
+  const outcome = state.goalDraftOutcome.trim();
+  const idempotencyKey =
+    state.goalDraftIdempotencyKey || homeCommandKey('goal');
+  const generation = runtimeGeneration;
+  state.beginGoalCreate(idempotencyKey);
+  try {
+    const goal = await api.createAgentGoalDraft({
+      title,
+      outcome,
+      idempotencyKey,
+    });
+    if (generation === runtimeGeneration) {
+      useHomeStore.getState().applyGoalDraft(goal, 'create');
+    }
+    return goal;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (generation === runtimeGeneration) {
+      useHomeStore.getState().failGoalCreate(message);
+    }
+    throw error;
+  }
+}
+
+export function reopenHomeGoalDraft(): Promise<AgentGoal | null> {
+  if (goalReadbackInFlight) return goalReadbackInFlight;
+  const goalID = useHomeStore.getState().savedGoal?.goalId;
+  if (!goalID) return Promise.resolve(null);
+
+  const generation = runtimeGeneration;
+  useHomeStore.getState().beginGoalReadback();
+  const pending = (async () => {
+    try {
+      const goal = await api.getAgentGoal(goalID);
+      if (
+        generation === runtimeGeneration
+        && useHomeStore.getState().savedGoal?.goalId === goalID
+      ) {
+        useHomeStore.getState().applyGoalDraft(goal, 'readback');
+      }
+      return goal;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (generation === runtimeGeneration) {
+        useHomeStore.getState().failGoalReadback(message);
+      }
+      throw error;
+    }
+  })();
+  goalReadbackInFlight = pending;
+  const clearPending = () => {
+    if (goalReadbackInFlight === pending) {
+      goalReadbackInFlight = null;
+    }
+  };
+  void pending.then(clearPending, clearPending);
+  return pending;
 }
 
 export async function openHomeConversation(work: HomeRecentWorkView): Promise<void> {
@@ -175,6 +239,7 @@ export const homeRuntime: RuntimeDescriptor = {
     clearReconcileTimer();
     clearReconcileSources();
     reconcileInFlight = null;
+    goalReadbackInFlight = null;
     activeActorId = null;
     useHomeStore.getState().reset();
   },
@@ -194,5 +259,9 @@ export const homeRuntime: RuntimeDescriptor = {
   },
   async reconcile(reason) {
     await loadHomeProjection(reason);
+  },
+  async acquirePage(pageId, reason) {
+    if (pageId !== 'home' || reason !== 'activate') return;
+    await reopenHomeGoalDraft().catch(() => undefined);
   },
 };
