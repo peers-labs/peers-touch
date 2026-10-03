@@ -58,6 +58,11 @@ type keyExchangePeerCapabilities interface {
 		string,
 		*keyexchangemodel.ClaimMlsKeyPackageRequest,
 	) (*keyexchangemodel.ClaimMlsKeyPackageResponse, error)
+	ClaimFederatedContentPreKeys(
+		context.Context,
+		string,
+		*keyexchangemodel.ClaimFederatedContentPreKeysRequest,
+	) (*keyexchangemodel.ClaimFederatedContentPreKeysResponse, error)
 }
 
 type realtimePeerCapabilities interface {
@@ -82,6 +87,8 @@ func resolveFederationPeerEndpoint(
 		return handleKeyExchangeMLSFetch, nil
 	case federationruntime.PeerRouteKeyExchangeMLSClaim:
 		return handleKeyExchangeMLSClaim, nil
+	case federationruntime.PeerRouteKeyExchangeContentPreKeyClaim:
+		return handleKeyExchangeContentPreKeyClaim, nil
 	case federationruntime.PeerRouteRealtimeSignal:
 		return handleRealtimeSignal, nil
 	case federationruntime.PeerRouteRealtimeCallResolution:
@@ -349,6 +356,45 @@ func handleKeyExchangeMLSClaim(
 		return err
 	}
 
+	return writeFederationPeerResponse(response, result)
+}
+
+func handleKeyExchangeContentPreKeyClaim(
+	ctx context.Context,
+	request server.Request,
+	response server.Response,
+) error {
+	provider, err := resolveKeyExchangePeerCapabilities()
+	if err != nil {
+		return key_exchange.FederatedContentPreKeyRouteError(ctx, err)
+	}
+	input := &keyexchangemodel.ClaimFederatedContentPreKeysRequest{}
+	if err := decodeFederationPeerRequest(request, input); err != nil {
+		return key_exchange.FederatedContentPreKeyRouteError(ctx, err)
+	}
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	if err := key_exchange.ValidateFederatedContentPreKeyPeerClaims(
+		claims,
+		input,
+	); err != nil {
+		return key_exchange.FederatedContentPreKeyRouteError(ctx, err)
+	}
+	if claims == nil {
+		return key_exchange.FederatedContentPreKeyRouteError(
+			ctx,
+			server.Forbidden(
+				"Federation claims do not identify a Content PreKey source",
+			),
+		)
+	}
+	result, err := provider.ClaimFederatedContentPreKeys(
+		ctx,
+		claims.Issuer,
+		input,
+	)
+	if err != nil {
+		return key_exchange.FederatedContentPreKeyRouteError(ctx, err)
+	}
 	return writeFederationPeerResponse(response, result)
 }
 

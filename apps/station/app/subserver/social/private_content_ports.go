@@ -52,6 +52,12 @@ type privateContentKeyExchangeCapabilities interface {
 		context.Context,
 		*securecontentpb.ClaimContentPreKeysRequest,
 	) (*securecontentpb.ClaimContentPreKeysResponse, error)
+	ClaimRemoteContentPreKeys(
+		context.Context,
+		string,
+		string,
+		*securecontentpb.ClaimContentPreKeysRequest,
+	) (*securecontentpb.ClaimContentPreKeysResponse, error)
 	ValidateContentPreKeyClaims(
 		context.Context,
 		federationdelivery.Transaction,
@@ -60,28 +66,57 @@ type privateContentKeyExchangeCapabilities interface {
 	) error
 }
 
+type privateContentFriendFederationResolver interface {
+	ResolveAcceptedFriendFederation(
+		context.Context,
+		string,
+		string,
+		string,
+		string,
+	) (string, error)
+}
+
+type privateContentFederationMembership interface {
+	ValidateActiveStationPair(
+		context.Context,
+		string,
+		string,
+		string,
+	) error
+}
+
 type privateContentRecipientDirectory struct {
-	actors  privateContentActorCapabilities
-	runtime *sharedfederation.Runtime
-	now     func() time.Time
+	actors      privateContentActorCapabilities
+	runtime     *sharedfederation.Runtime
+	friendships privateContentFriendFederationResolver
+	membership  privateContentFederationMembership
+	now         func() time.Time
 }
 
 func newPrivateContentRecipientDirectory(
 	actors privateContentActorCapabilities,
 	runtime *sharedfederation.Runtime,
+	friendships privateContentFriendFederationResolver,
+	membership privateContentFederationMembership,
 ) (*privateContentRecipientDirectory, error) {
-	if actors == nil || runtime == nil {
+	if actors == nil ||
+		runtime == nil ||
+		friendships == nil ||
+		membership == nil {
 		return nil, nil
 	}
 	return &privateContentRecipientDirectory{
-		actors:  actors,
-		runtime: runtime,
-		now:     time.Now,
+		actors:      actors,
+		runtime:     runtime,
+		friendships: friendships,
+		membership:  membership,
+		now:         time.Now,
 	}, nil
 }
 
 func (d *privateContentRecipientDirectory) ResolveRecipientLocalities(
 	ctx context.Context,
+	authorPTID string,
 	localStationPeerID string,
 	recipientPTIDs []string,
 ) ([]socialdomain.RecipientLocality, error) {
@@ -133,17 +168,35 @@ func (d *privateContentRecipientDirectory) ResolveRecipientLocalities(
 				"Actor Identity returned an invalid Home Station",
 			)
 		}
+		federationID := ""
 		if homeStationPeerID != localStationPeerID {
-			return nil, socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentUnsupported,
-				operation,
-				"recipient_home_station_peer_id",
-				"v1 private content does not support remote recipients",
+			federationID, err = d.friendships.ResolveAcceptedFriendFederation(
+				ctx,
+				authorPTID,
+				actorPTID,
+				localStationPeerID,
+				homeStationPeerID,
 			)
+			if err != nil {
+				return nil, err
+			}
+			if err := d.membership.ValidateActiveStationPair(
+				ctx,
+				federationID,
+				localStationPeerID,
+				homeStationPeerID,
+			); err != nil {
+				return nil, socialdomain.WrapPrivateContentError(
+					socialdomain.PrivateContentUnsupported,
+					operation,
+					err,
+				)
+			}
 		}
 		localities = append(localities, socialdomain.RecipientLocality{
 			ActorPTID:         actorPTID,
 			HomeStationPeerID: homeStationPeerID,
+			FederationID:      federationID,
 		})
 		previous = actorPTID
 	}
@@ -317,13 +370,157 @@ type privateContentKeyExchangePort struct{}
 
 func (privateContentKeyExchangePort) ClaimContentPreKeys(
 	ctx context.Context,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
 	request *securecontentpb.ClaimContentPreKeysRequest,
 ) (*securecontentpb.ClaimContentPreKeysResponse, error) {
 	provider, err := resolvePrivateContentKeyExchange()
 	if err != nil {
 		return nil, err
 	}
-	return provider.ClaimContentPreKeys(ctx, request)
+	return claimContentPreKeyPartitions(
+		ctx,
+		provider,
+		sourceStationPeerID,
+		recipientLocalities,
+		request,
+	)
+}
+
+func claimContentPreKeyPartitions(
+	ctx context.Context,
+	provider privateContentKeyExchangeCapabilities,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+) (*securecontentpb.ClaimContentPreKeysResponse, error) {
+	localityByActor := make(
+		map[string]socialdomain.RecipientLocality,
+		len(recipientLocalities),
+	)
+	for _, locality := range recipientLocalities {
+		localityByActor[locality.ActorPTID] = locality
+	}
+	type claimPartition struct {
+		stationPeerID string
+		federationID  string
+		targets       []*securecontentpb.ContentPreKeyClaimTarget
+	}
+	partitionsByStation := map[string]*claimPartition{}
+	for _, target := range request.GetTargets() {
+		actorPTID := target.GetRecoveryActor().GetPtid()
+		if target.GetEndpoint() != nil {
+			actorPTID = target.GetEndpoint().GetActor().GetPtid()
+		}
+		locality, found := localityByActor[actorPTID]
+		stationPeerID := sourceStationPeerID
+		federationID := ""
+		if found {
+			stationPeerID = locality.HomeStationPeerID
+			if stationPeerID != sourceStationPeerID {
+				federationID = locality.FederationID
+			}
+		}
+		partition := partitionsByStation[stationPeerID]
+		if partition == nil {
+			partition = &claimPartition{
+				stationPeerID: stationPeerID,
+				federationID:  federationID,
+			}
+			partitionsByStation[stationPeerID] = partition
+		} else if partition.federationID != federationID {
+			return nil, errors.New(
+				"recipient claim partition has conflicting Federation identities",
+			)
+		}
+		partition.targets = append(
+			partition.targets,
+			proto.Clone(target).(*securecontentpb.ContentPreKeyClaimTarget),
+		)
+	}
+	stationIDs := make([]string, 0, len(partitionsByStation))
+	for stationPeerID := range partitionsByStation {
+		stationIDs = append(stationIDs, stationPeerID)
+	}
+	sort.Strings(stationIDs)
+	claimsByTarget := make(map[string]*securecontentpb.ClaimedContentPreKey)
+	exactReplay := true
+	for _, stationPeerID := range stationIDs {
+		partition := partitionsByStation[stationPeerID]
+		partitionRequest := &securecontentpb.ClaimContentPreKeysRequest{
+			PlanId: request.GetPlanId(),
+			PlanRequestSha256: append(
+				[]byte(nil),
+				request.GetPlanRequestSha256()...,
+			),
+			Targets: partition.targets,
+		}
+		var partitionResponse *securecontentpb.ClaimContentPreKeysResponse
+		var partitionErr error
+		if stationPeerID == sourceStationPeerID {
+			partitionResponse, partitionErr = provider.ClaimContentPreKeys(
+				ctx,
+				partitionRequest,
+			)
+		} else {
+			if partition.federationID == "" {
+				return nil, errors.New(
+					"remote recipient claim is missing a Federation identity",
+				)
+			}
+			partitionResponse, partitionErr = provider.ClaimRemoteContentPreKeys(
+				ctx,
+				partition.federationID,
+				stationPeerID,
+				partitionRequest,
+			)
+		}
+		if partitionErr != nil {
+			return nil, partitionErr
+		}
+		if partitionResponse == nil ||
+			len(partitionResponse.GetClaims()) != len(partition.targets) {
+			return nil, errors.New(
+				"Content PreKey partition returned an incomplete response",
+			)
+		}
+		exactReplay = exactReplay && partitionResponse.GetExactReplay()
+		for index, claim := range partitionResponse.GetClaims() {
+			if !proto.Equal(claim.GetTarget(), partition.targets[index]) {
+				return nil, errors.New(
+					"Content PreKey partition reordered a claim target",
+				)
+			}
+			targetBytes, marshalErr := proto.MarshalOptions{
+				Deterministic: true,
+			}.Marshal(claim.GetTarget())
+			if marshalErr != nil {
+				return nil, marshalErr
+			}
+			claimsByTarget[string(targetBytes)] = proto.Clone(
+				claim,
+			).(*securecontentpb.ClaimedContentPreKey)
+		}
+	}
+	response := &securecontentpb.ClaimContentPreKeysResponse{
+		ExactReplay: exactReplay,
+	}
+	for _, target := range request.GetTargets() {
+		targetBytes, marshalErr := proto.MarshalOptions{
+			Deterministic: true,
+		}.Marshal(target)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		claim := claimsByTarget[string(targetBytes)]
+		if claim == nil {
+			return nil, errors.New(
+				"Content PreKey partition omitted a claim target",
+			)
+		}
+		response.Claims = append(response.Claims, claim)
+	}
+	return response, nil
 }
 
 func (privateContentKeyExchangePort) ValidateContentPreKeyClaims(
@@ -353,6 +550,20 @@ func resolvePrivateContentKeyExchange() (
 	if !ok || provider == nil {
 		return nil, errors.New(
 			"canonical Key Exchange Content PreKey capability is unavailable",
+		)
+	}
+	return provider, nil
+}
+
+func resolvePrivateContentFederationMembership() (
+	privateContentFederationMembership,
+	error,
+) {
+	instance := server.GetOptions().SubserverInstances["federation"]
+	provider, ok := instance.(privateContentFederationMembership)
+	if !ok || provider == nil {
+		return nil, errors.New(
+			"canonical Federation membership capability is unavailable",
 		)
 	}
 	return provider, nil

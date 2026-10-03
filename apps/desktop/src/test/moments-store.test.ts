@@ -529,6 +529,69 @@ describe('moments store: createPost / deletePost', () => {
       .toBeUndefined();
   });
 
+  it('invalidates stale remote recipient readiness after a draft edit', async () => {
+    const authorPtid = 'ptid:author';
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorPtid: authorPtid,
+        name: 'author',
+        email: '',
+        loginMethod: 'password',
+      },
+    });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor(authorPtid, 1);
+
+    let resolveAdmission!: (value: unknown) => void;
+    let nativeInput: Record<string, unknown> | undefined;
+    enqueueMatch(
+      (cmd, args) => {
+        if (cmd !== 'social_private_moment_publish') return false;
+        nativeInput = (args as { input?: Record<string, unknown> }).input;
+        return true;
+      },
+      new Promise((resolve) => {
+        resolveAdmission = resolve;
+      }),
+    );
+
+    const admission = usePrivateMomentsStore.getState().admitMoment(
+      {
+        draftId: 'draft-remote',
+        draftRevision: 1,
+        audience: { kind: 'FRIENDS' },
+        momentKind: 'TEXT',
+        text: 'before edit',
+        files: [],
+      },
+      'CHECKING_REMOTE_READINESS',
+    );
+    expect(usePrivateMomentsStore.getState().publish).toMatchObject({
+      state: 'CHECKING_REMOTE_READINESS',
+      draftId: 'draft-remote',
+    });
+    expect(nativeInput).toMatchObject({
+      draft_id: 'draft-remote',
+      draft_revision: 1,
+      admission_only: true,
+    });
+
+    usePrivateMomentsStore.getState().clearPublishState();
+    resolveAdmission(statusOk({
+      state: 'READY_PRIVATE',
+      draft_id: 'draft-remote',
+    }));
+
+    await expect(admission).resolves.toMatchObject({
+      state: 'READY_PRIVATE',
+      draftId: 'draft-remote',
+    });
+    expect(usePrivateMomentsStore.getState().publish).toEqual({ state: 'IDLE' });
+  });
+
   it('createPost(private repost) delegates the source identity to Native', async () => {
     const authorPtid = 'ptid:author';
     installEventWindowStub();

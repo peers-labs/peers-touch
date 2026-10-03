@@ -7,6 +7,7 @@ function source(relativePath: string): string {
 }
 
 const composerSource = source('./MomentComposer.tsx');
+const audiencePickerSource = source('./AudiencePicker.tsx');
 const commentListSource = source('./CommentList.tsx');
 const detailSource = source('../../pages/moments/MomentDetailPage.tsx');
 const appSource = source('../../pages/moments/MomentsApp.tsx');
@@ -76,5 +77,21 @@ describe('Desktop Moments interaction contract', () => {
     );
     expect(enMoments['moments.circle.explanation']).toContain('private lists');
     expect(enMoments['moments.circle.searchPeoplePlaceholder']).not.toContain('DID');
+  });
+
+  it('gates a remote recipient publish behind typed readiness', () => {
+    const admissionIndex = composerSource.indexOf('prepareRemotePrivateRecipient(');
+    const publishIndex = composerSource.indexOf('const id = await createPost(privateDraft)');
+
+    expect(admissionIndex).toBeGreaterThan(-1);
+    expect(publishIndex).toBeGreaterThan(admissionIndex);
+    expect(composerSource).toContain('privateMomentPublishIntent(privateDraft)');
+    expect(audiencePickerSource).toContain('data-moments-remote-friend-picker');
+    expect(composerSource).toContain('homeStationPeerId !== localStationPeerId');
+    expect(composerSource).toContain('await preparePrivateAudience(intent)');
+    expect(composerSource).toContain("privatePublishState === 'READY_PRIVATE'");
+    expect(composerSource).toContain('<SocialPrivateState');
+    expect(composerSource).toContain('clearPrivatePublishState();');
+    expect(enMoments['moments.compose.checkRecipients']).toBe('Check recipients');
   });
 });

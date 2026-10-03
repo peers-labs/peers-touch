@@ -29,6 +29,10 @@ const mocks = vi.hoisted(() => {
     deactivate: vi.fn(),
     bootstrap: vi.fn<() => Promise<void>>(),
     reconcile: vi.fn<() => Promise<void>>(),
+    admitMoment: vi.fn<(_intent: unknown) => Promise<{
+      state: 'READY_PRIVATE';
+      draftId: string;
+    }>>(),
     readMoment: vi.fn<() => Promise<void>>(),
     purgeMoment: vi.fn<() => Promise<void>>(),
   };
@@ -137,7 +141,10 @@ vi.mock('../utils/logger', () => ({
 
 import {
   captureMomentsRuntimeScope,
+  MomentsRuntimeScopeChangedError,
   momentsRuntime,
+  preparePrivateAudience,
+  prepareRemotePrivateRecipient,
 } from './momentsRuntime';
 import { EVENT, eventBus } from '../kernel/events';
 
@@ -185,6 +192,10 @@ beforeEach(() => {
   mocks.moments.loadUserFeed.mockResolvedValue(undefined);
   mocks.privateMoments.bootstrap.mockResolvedValue(undefined);
   mocks.privateMoments.reconcile.mockResolvedValue(undefined);
+  mocks.privateMoments.admitMoment.mockResolvedValue({
+    state: 'READY_PRIVATE',
+    draftId: 'draft-remote',
+  });
   mocks.privateMoments.readMoment.mockResolvedValue(undefined);
   mocks.privateMoments.purgeMoment.mockResolvedValue(undefined);
   mocks.privateComments.bootstrap.mockResolvedValue(undefined);
@@ -203,6 +214,102 @@ afterEach(() => {
 });
 
 describe('momentsRuntime identity fence', () => {
+  it('returns typed readiness for one remote recipient before publish', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+
+    const result = await prepareRemotePrivateRecipient({
+      draftId: 'draft-remote',
+      draftRevision: 1,
+      audience: { kind: 'FRIENDS' },
+      momentKind: 'TEXT',
+      text: 'private',
+      files: [],
+    });
+
+    expect(result).toEqual({
+      state: 'READY_PRIVATE',
+      draftId: 'draft-remote',
+    });
+    expect(mocks.privateMoments.admitMoment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draftId: 'draft-remote',
+        audience: { kind: 'FRIENDS' },
+      }),
+      'CHECKING_REMOTE_READINESS',
+    );
+  });
+
+  it('uses generic prekey readiness when recipient locality is unresolved', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+
+    await preparePrivateAudience({
+      draftId: 'draft-private',
+      draftRevision: 1,
+      audience: { kind: 'FRIENDS' },
+      momentKind: 'TEXT',
+      text: 'private',
+      files: [],
+    });
+
+    expect(mocks.privateMoments.admitMoment).toHaveBeenCalledWith(
+      expect.objectContaining({ draftId: 'draft-private' }),
+      'CHECKING_PRIVATE_READINESS',
+    );
+  });
+
+  it('does not accept stale prekey readiness after a Station switch', async () => {
+    let release!: (value: {
+      state: 'READY_PRIVATE';
+      draftId: string;
+    }) => void;
+    mocks.privateMoments.admitMoment.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    momentsRuntime.install();
+    await flushRuntime();
+
+    const pending = prepareRemotePrivateRecipient({
+      draftId: 'draft-stale-prekey',
+      draftRevision: 1,
+      audience: { kind: 'FRIENDS' },
+      momentKind: 'TEXT',
+      text: 'private',
+      files: [],
+    });
+    await vi.waitFor(() => {
+      expect(mocks.privateMoments.admitMoment).toHaveBeenCalledTimes(1);
+    });
+    eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
+      stationUrl: 'https://station-b.invalid/',
+    });
+    release({
+      state: 'READY_PRIVATE',
+      draftId: 'draft-stale-prekey',
+    });
+
+    await expect(pending).rejects.toBeInstanceOf(MomentsRuntimeScopeChangedError);
+  });
+
+  it('propagates an unavailable remote recipient without publishing', async () => {
+    const unavailable = new Error('RECIPIENT_KEY_UNAVAILABLE');
+    mocks.privateMoments.admitMoment.mockRejectedValueOnce(unavailable);
+    momentsRuntime.install();
+    await flushRuntime();
+
+    await expect(prepareRemotePrivateRecipient({
+      draftId: 'draft-unavailable',
+      draftRevision: 1,
+      audience: { kind: 'FRIENDS' },
+      momentKind: 'TEXT',
+      text: 'private',
+      files: [],
+    })).rejects.toBe(unavailable);
+  });
+
   it('binds actor, session, and Station identity and owns periodic reconcile', async () => {
     momentsRuntime.install();
     await flushRuntime();

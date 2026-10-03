@@ -1958,6 +1958,7 @@ type privateContentTestRecipients struct {
 
 func (r privateContentTestRecipients) ResolveRecipientLocalities(
 	_ context.Context,
+	_ string,
 	localStationPeerID string,
 	recipients []string,
 ) ([]socialdomain.RecipientLocality, error) {
@@ -2038,17 +2039,30 @@ func (privateContentTestGroups) WithSubmitFence(
 }
 
 type privateContentTestKeyExchange struct {
-	request    *securecontentpb.ClaimContentPreKeysRequest
-	response   *securecontentpb.ClaimContentPreKeysResponse
-	stale      bool
-	claimCalls int
+	request             *securecontentpb.ClaimContentPreKeysRequest
+	response            *securecontentpb.ClaimContentPreKeysResponse
+	sourceStationPeerID string
+	recipientLocalities []socialdomain.RecipientLocality
+	claimError          error
+	stale               bool
+	claimCalls          int
 }
 
 func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 	_ context.Context,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
 	request *securecontentpb.ClaimContentPreKeysRequest,
 ) (*securecontentpb.ClaimContentPreKeysResponse, error) {
 	k.claimCalls++
+	k.sourceStationPeerID = sourceStationPeerID
+	k.recipientLocalities = append(
+		[]socialdomain.RecipientLocality(nil),
+		recipientLocalities...,
+	)
+	if k.claimError != nil {
+		return nil, k.claimError
+	}
 	k.request = proto.Clone(
 		request,
 	).(*securecontentpb.ClaimContentPreKeysRequest)

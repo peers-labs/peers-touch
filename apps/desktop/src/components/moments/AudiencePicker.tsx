@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Select, theme } from 'antd';
-import { Globe, Users } from 'lucide-react';
+import { Select, Space, theme } from 'antd';
+import { Globe, UserRoundCheck, Users } from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 import {
   Audience_Kind,
@@ -17,6 +17,10 @@ import {
 interface AudiencePickerProps {
   value: Audience;
   onChange: (next: Audience) => void;
+  remoteFriends?: ReadonlyArray<{
+    actorPtid: string;
+    label: string;
+  }>;
   disabled?: boolean;
 }
 
@@ -35,13 +39,27 @@ const OPTIONS: OptionDef[] = [
   { kind: Audience_Kind.SELF, i18nKey: 'moments.audience.self', Icon: Users },
 ];
 
-export function AudiencePicker({ value, onChange, disabled }: AudiencePickerProps) {
+export function AudiencePicker({
+  value,
+  onChange,
+  remoteFriends = [],
+  disabled,
+}: AudiencePickerProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
 
-  const opts = useMemo(
-    () =>
-      OPTIONS.map((o) => ({
+  const opts = useMemo(() => {
+    const available = value.kind === Audience_Kind.CUSTOM_ALLOW || remoteFriends.length > 0
+      ? [
+          ...OPTIONS,
+          {
+            kind: Audience_Kind.CUSTOM_ALLOW,
+            i18nKey: 'moments.audience.singleFriend',
+            Icon: UserRoundCheck,
+          },
+        ]
+      : OPTIONS;
+    return available.map((o) => ({
         value: o.kind,
         label: (
           <span
@@ -55,31 +73,50 @@ export function AudiencePicker({ value, onChange, disabled }: AudiencePickerProp
             {t(o.i18nKey)}
           </span>
         ),
-      })),
-    [t, token.colorTextSecondary],
-  );
+      }));
+  }, [remoteFriends.length, t, token.colorTextSecondary, value.kind]);
 
   return (
-    <Select
-      value={value.kind}
-      onChange={(kind) => {
-        // Build a fresh `Audience` message rather than mutating the
-        // previous one — the composer treats the value as immutable
-        // for cheap React equality checks.
-        const next = create(AudienceSchema, {
-          kind,
-          target: { case: undefined },
-          actorPtids: [],
-        });
-        onChange(next);
-      }}
-      options={opts}
-      disabled={disabled}
-      style={{ minWidth: 132 }}
-      size="small"
-      // popupMatchSelectWidth=false lets the dropdown widen to fit
-      // the longer translated labels (e.g. "Followers only").
-      popupMatchSelectWidth={false}
-    />
+    <Space size={6} wrap>
+      <Select
+        value={value.kind}
+        onChange={(kind) => {
+          const next = create(AudienceSchema, {
+            kind,
+            target: { case: undefined },
+            actorPtids: [],
+          });
+          onChange(next);
+        }}
+        options={opts}
+        disabled={disabled}
+        style={{ minWidth: 132 }}
+        size="small"
+        popupMatchSelectWidth={false}
+      />
+      {value.kind === Audience_Kind.CUSTOM_ALLOW && (
+        <Select
+          aria-label={t('moments.compose.remoteFriendLabel')}
+          data-moments-remote-friend-picker
+          value={value.actorPtids[0] || undefined}
+          placeholder={t('moments.compose.remoteFriendPlaceholder')}
+          options={remoteFriends.map((friend) => ({
+            value: friend.actorPtid,
+            label: friend.label,
+          }))}
+          onChange={(actorPtid) => {
+            onChange(create(AudienceSchema, {
+              kind: Audience_Kind.CUSTOM_ALLOW,
+              target: { case: undefined },
+              actorPtids: [actorPtid],
+            }));
+          }}
+          disabled={disabled}
+          style={{ minWidth: 180, maxWidth: 280 }}
+          size="small"
+          popupMatchSelectWidth={false}
+        />
+      )}
+    </Space>
   );
 }
