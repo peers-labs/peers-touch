@@ -204,6 +204,11 @@ commitment. Owner adapters are read-only and never call back into Social. Any
 remote recipient makes the entire v1 private publish unsupported; no audience
 path may drop remote recipients and continue.
 
+This paragraph remains the current implementation baseline and the rollback
+guard for the completed same-Station milestone. The target replacement is
+defined by `FHSA-D08..FHSA-D15`; it may be removed only by the atomic cutover
+in the 2026-10-03 cross-Station Social plan.
+
 `CUSTOM_DENY(PUBLIC)` is unsupported in v1. A public route has no finite,
 revision-bound recipient set suitable for immutable E2EE envelope coverage.
 Adding it requires a later product and architecture decision that introduces a
@@ -755,7 +760,9 @@ The DESIGN gate requires:
 - Chat and Social do not share business authorization.
 - Stored content does not provide post-compromise forward secrecy after recovery
   secret compromise.
-- Cross-Station private Social delivery remains unsupported.
+- Current implementation still rejects cross-Station private Social delivery
+  until the `federated-social-activity` successor plan completes its atomic
+  cutover; the target architecture is governed there.
 - This design authorizes no reset, deployment, commit, or implementation.
 - `SC-D22` and `SC-D23` authorize only the accepted Development topology and
   reset semantics; they do not establish functional or formal evidence.

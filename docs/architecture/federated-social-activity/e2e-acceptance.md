@@ -1,8 +1,8 @@
 # Federated Human Social Activity — E2E 验收机制
 
 > **Status**: draft
-> **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-06-17
+> **Version**: v0.3
+> **Created**: 2026-06-17 | **Updated**: 2026-10-03
 > **Owner**: Architecture Team
 
 ---
@@ -17,8 +17,12 @@ E2E 验收必须证明当前阶段 Human 联邦社交闭环成立：
 4. 评论、reaction、关注、屏蔽在本地和跨站场景下行为一致。
 5. Runtime projection 能通过事件消费和周期 reconcile 保持新鲜度。
 6. Reload / reconnect 后 Feed 状态可以恢复。
+7. 同一 active Federation 内的私密 Post、媒体、评论、Reaction、恢复和撤销可以跨
+   Station 收敛，且两个 Station 均不可获得明文。
+8. Browser 不存在 Social 页面、runtime 或动作入口。
 
 Agent、A2A、Applet 不进入当前阶段 E2E。
+Mobile 不进入本计划的 E2E；它保持独立 `UNPROVEN`。
 
 ---
 
@@ -184,6 +188,65 @@ Agent、A2A、Applet 不进入当前阶段 E2E。
 - 页面没有 mount-time fetch 依赖。
 - Runtime log 显示 event consumed 或 reconcile completed。
 
+### E2E-H09: Cross-Station Private Publish And Read
+
+**Given**
+
+- Alice 在 Station-A，Bob 在 Station-B，两个 Station 属于同一 active Federation。
+- Alice/Bob Friend Request 已在双方 Home Station 收敛。
+
+**When**
+
+- Alice 在 Native Desktop 发布 `FRIENDS` 文本加图片 Moment。
+
+**Then**
+
+- Alice 看到源 Station 已提交和远端投递状态。
+- Bob 从 Station-B HOME feed 与直接链接读取准确正文和图片。
+- Federation frame、两个 Station 数据库和日志中不存在明文或 content key。
+
+### E2E-H10: Mixed Remote Audience
+
+Alice 依次验证 `FOLLOWERS`、`CIRCLE`、跨站 `GROUP`、
+`CUSTOM_ALLOW` 与 `CUSTOM_DENY(FOLLOWERS)`。每个 required recipient 必须恰好
+收到一次；`CUSTOM_DENY(PUBLIC)`、跨 Federation 和不可验证 recipient 整体拒绝，
+不产生部分 Post。
+
+### E2E-H11: Unauthorized Remote Read
+
+Station-B 的 Eve 使用真实 Post/Object ID 请求 Alice 的私密资源。Feed、detail、
+comment、object 和 recovery 均返回统一拒绝，且不暴露 Bob envelope、device ID 或
+co-recipient PTID。
+
+### E2E-H12: Remote Comment And Reaction
+
+Bob 在 Station-B 评论并 Reaction。Alice Station 重新验证父资源权限并只提交一次；
+Alice/Bob 的 Native projection 在 realtime 或 reconcile 后一致。重复 command ID
+返回同一结果，hash 冲突不写入。
+
+### E2E-H13: Outage, Retry And Restart
+
+Alice source commit 后暂停 Station-B。Alice 看到远端 pending/retrying；恢复
+Station-B 后，同一 outbox frame 完成，Bob 只看到一条 Moment。随后分别重启两个
+Station 和 Desktop，结果保持一致。
+
+### E2E-H14: Cross-Station Delete And Block
+
+Alice 删除 Moment，或 Alice/Bob 任一方向 Block/解除好友。Station-B 先按本地
+policy 抑制，随后应用源 Station 有序 invalidation；detail、media、comment 与
+recovery 均不可恢复，旧 frame 不得复活资源。
+
+### E2E-H15: Cross-Station Device Recovery
+
+Bob 从未在旧设备打开目标 Moment。Bob2 在 Station-B 完成受信恢复后，验证 Alice
+Station 的历史 proof key 并读取准确内容；被撤销设备不能取得新 envelope。
+
+### E2E-H16: Browser Social Prohibited
+
+Browser 构建的导航、Page registry、Runtime registry 和 action surface 均不存在
+Social。直接访问旧 route 不加载 Social bundle，不出现 PUBLIC/private 浏览或发布
+入口。
+
 ---
 
 ## 4. 回归矩阵
@@ -192,12 +255,14 @@ Agent、A2A、Applet 不进入当前阶段 E2E。
 |------|--------|
 | Actor | local human、remote human、unresolved human |
 | Source | local station、trusted remote station、blocked station |
-| Audience | public、followers、circle、self |
+| Audience | public、friends、followers、circle、group、self、custom allow/deny |
 | Reason | following、circle、mentioned、public federated、profile view |
 | Interaction | comment、reaction、follow、unfollow、block |
 | Projection | event update、periodic reconcile、reload recovery |
 | UI | source badge、reason line、audience badge、profile link |
-| Security | no private leakage、no member list leakage、no blocked reinsert |
+| Federation delivery | exact replay、duplicate、reorder、outage、restart、wrong target/signature/hash |
+| Security | no private leakage、no member list leakage、no blocked reinsert、viewer-scoped envelope |
+| Platform | Native Desktop required、Mobile deferred、Browser Social prohibited |
 
 ---
 
@@ -224,7 +289,7 @@ Agent、A2A、Applet 不进入当前阶段 E2E。
 
 ```bash
 ./tooling/scripts/e2e/federated-human-social/bootstrap.sh
-./tooling/scripts/e2e/federated-human-social/run.sh --scenario E2E-H02
+./tooling/scripts/e2e/federated-human-social/run.sh --scenario E2E-H09
 ./tooling/scripts/e2e/federated-human-social/run.sh --all
 ./tooling/scripts/e2e/federated-human-social/report.sh
 ```
@@ -236,3 +301,7 @@ Agent、A2A、Applet 不进入当前阶段 E2E。
 - Post / comment / reaction / relationship ids。
 - UI evidence。
 - 通过/失败原因。
+
+The current completion set is `E2E-H01..H16` except any explicitly deferred
+Mobile cell. Browser H16 is a negative source/build proof, not a Browser
+product journey.

@@ -1,8 +1,8 @@
 # Federated Human Social Activity — 架构设计
 
 > **Status**: draft
-> **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-09-06
+> **Version**: v0.3
+> **Created**: 2026-06-17 | **Updated**: 2026-10-03
 > **Owner**: Architecture Team
 
 ---
@@ -239,7 +239,7 @@ Friend Request is a Social Graph command, not a Chat message and not a client ru
 protocol. The target flow is:
 
 ```text
-Desktop/Mobile
+Native client (Desktop in the current plan; Mobile later)
   -> sender Home Station /api/v1/social/friend-request/send
   -> Social validates sender and writes command + Federation outbox atomically
   -> shared Federation transport authenticates, retries, and deduplicates
@@ -280,3 +280,185 @@ This boundary is accepted by D-07 and AO-D05 as of 2026-09-06.
 | Coordination Object | object kind reserved | 不做协作/共识闭环 |
 
 这些预留点的目标是避免 Human 社交模型未来无法扩展，但不得让当前阶段实现范围膨胀。
+
+---
+
+## 6. Cross-Station Private Social Target
+
+### 6.1 Evidence Ledger
+
+| Claim | Class | Evidence | Consequence |
+|---|---|---|---|
+| Same-Station private Post/Comment/Object/Recovery is implemented and Desktop-proven | verified fact | `apps/station/app/subserver/social/application/private_content_service.go`; `SOCIAL-DESKTOP-ACCEPTANCE-20261002` | Reuse the Secure Content kernel and Social UOW |
+| Social currently rejects any recipient whose Home Station differs from the author | verified fact | `private_content_ports.go::ResolveRecipientLocalities`; `private_content_service.go::bindRecipientLocalities` | Replace one explicit locality guard; do not create a parallel private path |
+| Remote Actor endpoint manifests already traverse authenticated Federation peer routes | verified fact | `private_content_ports.go::endpointManifest` | Reuse Actor Identity and Federation trust |
+| Content PreKey claim is local-only | verified fact | `key_exchange/content_prekey_capability.go`; no Content PreKey peer route | Add typed peer claim/inventory routes before enabling remote publish |
+| Shared Federation delivery already owns durable outbox/inbox, signatures, retry and dedup | verified fact | `station/frame/core/federation/delivery/`; federated Friend Request implementation | Add Social payload kinds and receivers, not a Social transport |
+| No recipient-scoped remote private-content projection exists | verified fact | no Social private delivery payload/receiver or imported projection model | Add receiver-side encrypted projection storage |
+| Browser Social is not a product platform | accepted product decision | Social product v1.2, 2026-10-03 owner direction | Remove/deny Browser Social registration; do not build a degraded web path |
+
+### 6.2 Target Topology
+
+```text
+Alice Native Desktop
+  -> Station A Social authority
+       -> freeze audience + recipient Home Stations
+       -> claim local/remote one-time Content PreKeys
+       -> issue signed encryption plan
+  <- plan
+  -> encrypt payload/object/content-key envelopes locally
+  -> Station A Social submit transaction
+       -> canonical private resource + grants + proof
+       -> local viewer delivery rows
+       -> one recipient-scoped Federation outbox frame per remote actor
+          -> shared Federation delivery
+             -> Station B Social receiver
+                -> verify source, target, proof, audience and envelope
+                -> materialize Bob-only encrypted projection
+                -> publish local Social projection event
+                   -> Bob Native Desktop momentsRuntime
+                      -> local verification + decryption
+```
+
+Large encrypted object bytes do not enter the 8 MiB domain frame. Station B
+serves Bob's normal Social object request by validating its imported grant and
+proxying one authenticated, range-capable ciphertext stream from Station A.
+The Desktop never calls Station A directly.
+
+### 6.3 Ownership
+
+| Concern | Source of truth | May cache/project | Forbidden owner |
+|---|---|---|---|
+| Post, Comment, Reaction lifecycle | author Post Home Station Social | recipient Home Station viewer projection | Federation transport, Desktop |
+| Audience snapshot and membership fence | source Social plus owning Relationship/Circle/Conversation capabilities | immutable digest only | recipient Station |
+| Actor Home Station and endpoint manifest | Actor Identity | source Station verified cache | Social tables |
+| Content PreKey pool and irreversible claim | recipient Actor Home Station Key Exchange | source plan claim receipt | Social or Federation |
+| Durable Station-to-Station transport | shared Federation delivery | none | Social-specific network worker |
+| Recipient-visible encrypted projection | recipient Home Station Social | Desktop encrypted local store | source-only UI state |
+| Content plaintext and content key | authorized Native device | encrypted device-local cache | either Station, Browser |
+| Large object ciphertext | source Social object authority/OSS | bounded encrypted cache | Federation frame payload |
+
+### 6.4 Allowed And Forbidden Relationships
+
+Allowed:
+
+- Social calls Actor Identity for Home Station and endpoint truth.
+- Social calls Key Exchange through local capability or Federation-owned peer
+  route according to recipient Home Station.
+- Social enqueues typed private-resource and interaction frames through the
+  shared transaction-bound Federation outbox.
+- Recipient Social validates and stores one target-actor projection inside the
+  Federation inbox transaction.
+- Recipient Social uses a Federation-owned peer stream to fetch encrypted
+  object bytes from the source Social object authority.
+
+Forbidden:
+
+- Clients directly contact a remote Station.
+- Federation interprets audience, decrypts content, or owns Social lifecycle.
+- Recipient Station becomes a second Post/Comment/Reaction authority.
+- One frame contains envelopes for actors other than its target actor.
+- Private payloads or interactions enter Federation Ledger or ActivityPub.
+- Browser registers Social pages, runtimes, actions, or private key handling.
+
+## 7. Protocol And Delivery Semantics
+
+### 7.1 Remote Content PreKey Claim
+
+The source Station groups `ContentPreKeyClaimTarget` values by verified Home
+Station. Local targets use the existing in-process Key Exchange capability.
+Remote targets use Federation-owned, authenticated `inventory` and `claim`
+peer routes. Every remote request binds:
+
+- source and target Station IDs;
+- source plan ID and canonical prepare hash;
+- exact target principal list;
+- requester actor/device;
+- immutable expiry and request ID.
+
+Remote Key Exchange stores `(source_station_peer_id, plan_id,
+plan_request_sha256)` as the replay identity. Exact replay returns the same
+claims; a different hash is a terminal conflict. A partial multi-Station claim
+may consume unused one-time keys, but it must never commit a partial Social
+resource or silently reduce the audience.
+
+### 7.2 Recipient-Scoped Delivery
+
+After the source Social transaction commits a private resource, it atomically
+enqueues one durable frame per remote actor. The payload contains:
+
+- source resource locator and generation;
+- source/target Station and Federation IDs;
+- canonical metadata and encrypted payload;
+- object descriptors, not object bytes;
+- only that actor's endpoint and recovery envelopes;
+- source commit proof and current proof-key attestation;
+- audience explanation summary without co-recipient identities;
+- lifecycle revision and expiry.
+
+Receiver validation is fail-closed and idempotent. The inbox transaction verifies
+the frame, source proof, target actor Home Station, Federation membership,
+resource generation, payload hashes and envelope principals before writing one
+projection. Duplicate exact frames return `DUPLICATE`; hash conflict, wrong
+target or invalid signature writes nothing.
+
+### 7.3 Remote Read And Object Transfer
+
+The recipient Desktop uses the same Home Station Social APIs as local content.
+The receiver projection returns only the authenticated actor/device envelope.
+For object bytes, the recipient Station opens a Federation-authenticated stream
+to the source Station. Both Stations enforce actor/device/object/resource
+binding and expiry; the Desktop validates descriptor and ciphertext hashes
+before decrypting.
+
+### 7.4 Interaction Commands
+
+Private Comment and Reaction writes are authoritative at the source Post
+Station. A remote actor's Home Station persists a signed command and Federation
+outbox before returning `REMOTE_PENDING`. The source Station validates the
+actor device signature, parent grant, current relationship/block state and
+command hash, then commits once and sends a typed result plus affected
+viewer-scoped projection updates.
+
+### 7.5 Revocation And Recovery
+
+Delete, audience loss, friendship removal and block advance the source
+resource lifecycle revision and enqueue ordered invalidations. Recipient
+Stations suppress locally as soon as their own block truth requires it and
+converge to source authority when the invalidation arrives. New reads, object
+streams, interactions and recovery fail after revocation. Previously exported
+plaintext remains outside the guarantee.
+
+Recovery uses the recipient actor's recovery envelope already delivered to the
+recipient Home Station. A recovered device verifies the historical source
+Station proof through Federation-owned retained public-key history.
+
+## 8. Failure, Ordering, And Capacity
+
+- Durable frames retry until immutable expiry; no fixed attempt cap.
+- Ordering key is `(source_station_peer_id, resource_id, target_actor_ptid)`;
+  lifecycle revision is monotonic within that lane.
+- Receiver projection writes and Federation inbox receipts commit in one UOW.
+- Source resource writes and remote outbox insertion commit in one Social UOW.
+- Remote interaction command IDs and payload hashes are immutable replay keys.
+- Existing bounds remain: 256 recipient actors, 1000 endpoint/recovery slots,
+  8 MiB Federation frame payload. Object bytes always use the streaming plane.
+- Backpressure returns typed pending/retry states; it never changes audience or
+  falls back to PUBLIC.
+
+## 9. Quality Gates
+
+The architecture is not ready until one exact-source two-Station Native
+Desktop suite proves:
+
+1. positive private Post, Comment, Reaction and object delivery;
+2. mixed local/remote audience completeness and metadata minimization;
+3. outage, retry, duplicate, reorder, restart and exact replay;
+4. delete, friendship loss, block and device revoke convergence;
+5. never-opened history recovery on a replacement device;
+6. no plaintext in Station databases/logs, Federation frames or OSS;
+7. no Browser Social route/runtime/page registration;
+8. same-Station Desktop regression remains green.
+
+Mobile is explicitly unproven and cannot be inferred from shared proto or Rust
+code.

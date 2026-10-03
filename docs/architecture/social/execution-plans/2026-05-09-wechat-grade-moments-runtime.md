@@ -1,12 +1,21 @@
 # 2026-05-09 WeChat-Grade Moments Runtime Execution Plan
 
-> Status: Draft
+> **Status**: superseded
+> **Version**: v1.0
+> **Created**: 2026-05-09 | **Updated**: 2026-10-03
+> **Owner**: Social / Client Platform
 >
 > Parent architecture:
 > `docs/architecture/social/wechat-grade-moments-runtime-architecture.md`
 >
 > Method: Domain Responsibility -> Execution Closure -> Dependency Order ->
 > Verifiable Delivery.
+>
+> **Superseded by**:
+> `docs/architecture/federated-social-activity/execution-plans/20261003-cross-station-social-native/plan.md`.
+> Completed runtime/projection work remains valid. Remaining Native Desktop
+> federation closure is re-inventoried there; Mobile is deferred and Browser
+> Social is removed.
 
 ## 1. 目标
 

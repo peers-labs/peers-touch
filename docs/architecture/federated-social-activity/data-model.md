@@ -1,8 +1,8 @@
 # Federated Human Social Activity — 数据模型
 
 > **Status**: draft
-> **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-06-17
+> **Version**: v0.3
+> **Created**: 2026-06-17 | **Updated**: 2026-10-03
 > **Owner**: Architecture Team
 
 ---
@@ -218,3 +218,193 @@ interface FutureExtensionSlots {
 - 不让 Human Activity Object 未来无法扩展。
 - 不在当前阶段引入 Agent 社交、A2A 调用、Applet 发布和协作共识。
 - E2E 验收不得依赖这些字段。
+
+---
+
+## 11. Cross-Station Private Resource Contract
+
+The new wire source belongs under `model/domain/social/private_federation.proto`.
+`model/domain/federation/delivery.proto` only enumerates the domain-neutral
+payload kinds.
+
+```proto
+message FederatedPrivateResourceDelivery {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string delivery_id = 3;
+  string source_station_peer_id = 4;
+  string target_station_peer_id = 5;
+  peers_touch.model.actor.v1.ActorRef target_actor = 6;
+  PrivateContentResourceKind resource_kind = 7;
+  peers_touch.model.secure_content.v1.SecureResourceRef resource = 8;
+  uint64 lifecycle_revision = 9;
+  PostMetadata post_metadata = 10;
+  CommentMetadata comment_metadata = 11;
+  peers_touch.model.secure_content.v1.EncryptedPayload payload = 12;
+  repeated peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+      target_actor_envelopes = 13;
+  repeated peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+      objects = 14;
+  PrivateContentVerification verification = 15;
+  peers_touch.model.social.v1.AudienceExplanation audience_explanation = 16;
+  google.protobuf.Timestamp committed_at = 17;
+}
+
+message FederatedPrivateResourceInvalidation {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string source_station_peer_id = 3;
+  string target_station_peer_id = 4;
+  peers_touch.model.actor.v1.ActorRef target_actor = 5;
+  peers_touch.model.secure_content.v1.SecureResourceRef resource = 6;
+  uint64 lifecycle_revision = 7;
+  PrivateResourceInvalidationReason reason = 8;
+  google.protobuf.Timestamp committed_at = 9;
+}
+
+message FederatedPrivateInteractionCommand {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string command_id = 3;
+  bytes canonical_command_sha256 = 4;
+  peers_touch.model.actor.v1.ActorDeviceRef actor = 5;
+  string source_station_peer_id = 6;
+  string target_station_peer_id = 7;
+  peers_touch.model.secure_content.v1.SecureResourceRef parent = 8;
+  oneof command {
+    SubmitPrivateCommentRequest submit_comment = 10;
+    PrivateReactionCommand reaction = 11;
+  }
+  string actor_signing_key_id = 12;
+  bytes actor_device_signature = 13;
+}
+
+message FederatedPrivateInteractionResult {
+  uint32 format_version = 1;
+  string command_id = 2;
+  bytes canonical_command_sha256 = 3;
+  FederatedPrivateInteractionResultKind kind = 4;
+  bytes canonical_result = 5;
+  bytes canonical_result_sha256 = 6;
+}
+```
+
+Exact field numbering is finalized before code generation. Unknown fields are
+rejected for signed canonical messages.
+
+## 12. Federation Payload Kinds
+
+Add distinct durable kinds:
+
+- `SOCIAL_PRIVATE_RESOURCE_DELIVERY`
+- `SOCIAL_PRIVATE_RESOURCE_INVALIDATION`
+- `SOCIAL_PRIVATE_INTERACTION_COMMAND`
+- `SOCIAL_PRIVATE_INTERACTION_RESULT`
+
+All are durable. Private content never uses the ephemeral signal path and never
+enters Federation Ledger.
+
+## 13. Remote Content PreKey Requests
+
+Extend the generated Key Exchange contract with typed wrappers:
+
+```proto
+message ClaimFederatedContentPreKeysRequest {
+  string source_home_station_peer_id = 1;
+  string target_home_station_peer_id = 2;
+  string federation_id = 3;
+  peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest request = 4;
+  peers_touch.model.actor.v1.ActorDeviceRef requester = 5;
+  bytes canonical_prepare_sha256 = 6;
+}
+
+message ClaimFederatedContentPreKeysResponse {
+  peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse response = 1;
+}
+```
+
+The target Key Exchange authority stores exact replay identity by source
+Station, plan ID and prepare hash. Inventory is advisory; claim is authoritative.
+
+## 14. Recipient Projection Persistence
+
+Recipient Home Station adds a separate projection family; it does not reuse
+source-authority tables as if they were locally authored:
+
+```text
+social_remote_private_resources
+  source_station_peer_id
+  content_id
+  generation
+  target_actor_ptid
+  lifecycle_revision
+  resource_kind
+  metadata_bytes
+  encrypted_payload_bytes
+  object_descriptor_set_bytes
+  commit_proof_bytes
+  proof_key_attestation_bytes
+  state
+  committed_at
+  updated_at
+
+social_remote_private_envelopes
+  source_station_peer_id
+  content_id
+  generation
+  target_actor_ptid
+  key_kind
+  recipient_device_id
+  one_time_key_id
+  envelope_bytes
+  principal_epoch
+
+social_remote_private_interaction_commands
+  actor_ptid
+  command_id
+  source_station_peer_id
+  canonical_command_sha256
+  command_bytes
+  result_bytes
+  state
+  created_at
+  resolved_at
+```
+
+Primary and unique keys include source Station and target actor so equal
+resource IDs from different authorities cannot collide. Receiver queries always
+require the authenticated actor and, for endpoint envelopes, the current device.
+
+## 15. State Machines
+
+### Delivery projection
+
+```text
+ABSENT
+  -> RECEIVED_PENDING_VERIFY
+  -> ACTIVE
+  -> REVOKED
+
+RECEIVED_PENDING_VERIFY
+  -> REJECTED_TERMINAL
+ACTIVE
+  -> ACTIVE          exact duplicate / newer interaction projection
+ACTIVE
+  -> REVOKED         valid higher lifecycle revision
+REVOKED
+  -> REVOKED         stale or duplicate delivery/invalidation
+```
+
+`REVOKED -> ACTIVE` is forbidden for the same resource generation.
+
+### Remote interaction command
+
+```text
+PENDING -> LEASED -> RETRY_WAIT -> LEASED
+LEASED -> COMMITTED
+LEASED -> REJECTED
+LEASED -> EXPIRED
+```
+
+Exact replay returns the recorded terminal result. Reusing a command ID with a
+different hash is `PAYLOAD_HASH_CONFLICT`.
