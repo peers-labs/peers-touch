@@ -1,7 +1,7 @@
 # Cross-Station Private Social - Data Model
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-03 | **Updated**: 2026-10-03
 > **Owner**: Social / Federation
 
@@ -65,6 +65,29 @@ source_home_station_peer_id
 + plan_id
 + plan_request_sha256
 ```
+
+### 3.1 Federated Group Recipient Snapshot
+
+The existing Conversation-owned in-process snapshot remains the only `GROUP`
+recipient authority and gains one canonical Federation field:
+
+```go
+type GroupRecipientSnapshot struct {
+    FederationID       string
+    ConversationID     string
+    AuthorPTID         string
+    MembershipEpoch    uint64
+    AuthorityHeadSHA256 []byte
+    Members            []GroupRecipientMember
+}
+```
+
+The Social value projection and its canonical persisted bytes carry the same
+field. `FederationID`, Conversation identity, epoch, head hash, ordered member
+PTIDs, and member Home Stations participate in byte-for-byte prepare/submit
+equality. An empty or changed Federation ID, an inactive member Station, or a
+cross-Federation member rejects the whole plan before Content PreKey claim or
+Social commit.
 
 ## 4. Private Resource Delivery
 
