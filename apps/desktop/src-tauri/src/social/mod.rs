@@ -332,7 +332,16 @@ pub fn social_private_moment_publish(
         .and_then(|service| service.publish(&input))
     {
         Ok(result) => AppResult::success(json!(result)),
-        Err(error) => native_failure(error, "PUBLISH_FAILED"),
+        Err(error) => {
+            let failure_state = if error.contains("RECIPIENT_KEY_UNAVAILABLE") {
+                "RECIPIENT_KEY_UNAVAILABLE"
+            } else if error.contains("PRIVATE_UNSUPPORTED") {
+                "PRIVATE_UNSUPPORTED"
+            } else {
+                "PUBLISH_FAILED"
+            };
+            native_failure(error, failure_state)
+        }
     }
 }
 
@@ -811,7 +820,11 @@ fn recovery_lease_for_window(
 
 fn native_failure(message: String, state: &str) -> AppResult<Value> {
     let lower = message.to_ascii_lowercase();
-    let (code, app_code) = if lower.contains("auth") || lower.contains("session") {
+    let (code, app_code) = if state == "RECIPIENT_KEY_UNAVAILABLE" {
+        ("RECIPIENT_KEY_UNAVAILABLE", ErrorCode::InvalidArgument)
+    } else if state == "PRIVATE_UNSUPPORTED" {
+        ("PRIVATE_UNSUPPORTED", ErrorCode::InvalidArgument)
+    } else if lower.contains("auth") || lower.contains("session") {
         ("UNAUTHORIZED", ErrorCode::Unauthorized)
     } else if lower.contains("not authorized") || lower.contains("not found") {
         ("NOT_FOUND_OR_NOT_AUTHORIZED", ErrorCode::NotFound)

@@ -28,6 +28,10 @@ import type {
   RealtimeResyncPayload,
   StationActiveChangedPayload,
 } from '../kernel/events/types';
+import type {
+  PrivateMomentPublishIntent,
+  PrivateMomentPublishResult,
+} from '../services/privateMomentsNative';
 import { log } from '../utils/logger';
 
 const MOMENTS_RECONCILE_INTERVAL_MS = 45_000;
@@ -197,6 +201,43 @@ export async function ensureCircleMemberProfiles(): Promise<void> {
       if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
     }
   });
+}
+
+async function preparePrivateMoment(
+  intent: Omit<
+    PrivateMomentPublishIntent,
+    'actorPtid' | 'rendererGeneration'
+  >,
+  readinessState: 'CHECKING_PRIVATE_READINESS' | 'CHECKING_REMOTE_READINESS',
+): Promise<PrivateMomentPublishResult> {
+  const result = await enqueueScopedProjection(async (scope) => {
+    const prepared = await usePrivateMomentsStore.getState().admitMoment(
+      intent,
+      readinessState,
+    );
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    return prepared;
+  });
+  if (!result) throw new MomentsRuntimeScopeChangedError();
+  return result;
+}
+
+export function preparePrivateAudience(
+  intent: Omit<
+    PrivateMomentPublishIntent,
+    'actorPtid' | 'rendererGeneration'
+  >,
+): Promise<PrivateMomentPublishResult> {
+  return preparePrivateMoment(intent, 'CHECKING_PRIVATE_READINESS');
+}
+
+export function prepareRemotePrivateRecipient(
+  intent: Omit<
+    PrivateMomentPublishIntent,
+    'actorPtid' | 'rendererGeneration'
+  >,
+): Promise<PrivateMomentPublishResult> {
+  return preparePrivateMoment(intent, 'CHECKING_REMOTE_READINESS');
 }
 
 async function refreshMomentsProjectionNow(

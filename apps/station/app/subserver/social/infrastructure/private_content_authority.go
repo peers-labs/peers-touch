@@ -38,6 +38,85 @@ func NewGORMPrivateAudienceAuthority(
 	return &GORMPrivateAudienceAuthority{db: db}, nil
 }
 
+// ResolveAcceptedFriendFederation returns the immutable Federation identity
+// carried by the accepted Social relationship between two remote peers.
+func (a *GORMPrivateAudienceAuthority) ResolveAcceptedFriendFederation(
+	ctx context.Context,
+	authorPTID string,
+	recipientPTID string,
+	sourceStationPeerID string,
+	targetStationPeerID string,
+) (string, error) {
+	const operation = "social.private_content.resolve_friend_federation"
+	for field, value := range map[string]string{
+		"author_ptid":                    authorPTID,
+		"recipient_ptid":                 recipientPTID,
+		"source_home_station_peer_id":    sourceStationPeerID,
+		"recipient_home_station_peer_id": targetStationPeerID,
+	} {
+		if strings.TrimSpace(value) == "" || value != strings.TrimSpace(value) {
+			return "", socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentInvalidArgument,
+				operation,
+				field,
+				"must be canonical",
+			)
+		}
+	}
+	var relationship federatedRelationshipProjectionModel
+	if err := a.db.WithContext(ctx).
+		Where("owner_ptid = ? AND peer_ptid = ?", authorPTID, recipientPTID).
+		First(&relationship).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"recipient_ptid",
+				"is not an accepted friend",
+			)
+		}
+		return "", err
+	}
+	var request federatedFriendRequestProjectionModel
+	if err := a.db.WithContext(ctx).
+		Where(
+			"request_id = ? AND state = ? AND authority_confirmed = ?",
+			relationship.RequestID,
+			friendRequestPolicyRelationshipAccepted,
+			true,
+		).
+		First(&request).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"friend_request",
+				"is not authoritatively accepted",
+			)
+		}
+		return "", err
+	}
+	direct := request.SenderPTID == authorPTID &&
+		request.ReceiverPTID == recipientPTID &&
+		request.SenderHomeStationPeerID == sourceStationPeerID &&
+		request.ReceiverHomeStationPeerID == targetStationPeerID
+	reverse := request.ReceiverPTID == authorPTID &&
+		request.SenderPTID == recipientPTID &&
+		request.ReceiverHomeStationPeerID == sourceStationPeerID &&
+		request.SenderHomeStationPeerID == targetStationPeerID
+	if (!direct && !reverse) ||
+		strings.TrimSpace(request.FederationID) == "" ||
+		request.FederationID != strings.TrimSpace(request.FederationID) {
+		return "", socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentConflict,
+			operation,
+			"friend_request",
+			"does not bind the selected actor and Station pair",
+		)
+	}
+	return request.FederationID, nil
+}
+
 func (a *GORMPrivateAudienceAuthority) ResolveFriendsPostSnapshot(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,

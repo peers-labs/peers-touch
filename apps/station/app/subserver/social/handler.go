@@ -1052,6 +1052,10 @@ func privateContentHandlerError(err error) error {
 		status = nethttp.StatusConflict
 		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
 		message = "private-content command conflicts with current authority"
+	case domain.PrivateContentRecipientKeyUnavailable:
+		status = nethttp.StatusConflict
+		code = model.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED
+		message = "private-content recipient key is unavailable"
 	}
 	return privateContentResponseError(status, code, message, err)
 }

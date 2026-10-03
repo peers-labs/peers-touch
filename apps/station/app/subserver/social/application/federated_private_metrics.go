@@ -28,7 +28,8 @@ type federatedPrivateMetrics struct {
 	recoveryTotal      metrics.Counter
 }
 
-func newFederatedPrivateMetrics(provider metrics.Provider) federatedPrivateMetrics {
+func newFederatedPrivateMetrics() federatedPrivateMetrics {
+	provider := metrics.Get()
 	latencyBuckets := []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}
 	return federatedPrivateMetrics{
 		preKeyClaimTotal: provider.Counter(

@@ -245,6 +245,16 @@ test('builds one fixed three-channel output manifest', () => {
           'apps/station/frame/touch/model/privatecontent/private_content.pb.go',
       ),
     );
+    for (const destination of [
+      'apps/station/app/subserver/key_exchange/model/key_exchange.pb.go',
+      'apps/desktop/src/gen/proto/domain/key_exchange/key_exchange_pb.ts',
+      'apps/mobile/src/gen/proto/domain/key_exchange/key_exchange_pb.ts',
+    ]) {
+      assert.ok(
+        manifest.outputs.some((output) => output.destination === destination),
+        `missing Key Exchange generated output ${destination}`,
+      );
+    }
   } finally {
     scope.close();
   }
