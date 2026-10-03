@@ -125,15 +125,48 @@
       "id": "social-private-cross-station-boundary",
       "domain": "social",
       "direction": "acceptance_validates_product",
-      "features": ["social-private-moments-desktop"],
-      "required_gates": ["social-private-desktop-e2e"],
-      "synthetic_paths": ["apps/station/app/subserver/social/application/private_content_remote_recipient_test.go"],
+      "features": ["social-private-cross-station-desktop"],
+      "required_gates": [
+        "station-api-ownership",
+        "social-cross-station-contract",
+        "social-cross-station-eventbus-contract",
+        "social-cross-station-prekey",
+        "social-cross-station-delivery",
+        "social-cross-station-interaction",
+        "social-cross-station-revocation-recovery",
+        "social-cross-station-desktop-functional",
+        "social-private-desktop-e2e",
+        "social-cross-station-native-e2e",
+        "browser-social-zero-registration"
+      ],
+      "synthetic_paths": [
+        "docs/architecture/cross-station-social/design.md",
+        "apps/station/app/subserver/social/application/private_content_remote_recipient_test.go"
+      ],
       "evidence": {
-        "truth_sources": ["Station audience resolution, Content PreKey inventory and durable Social rows"],
-        "surfaces": ["Native Desktop composer rejection for unsupported remote recipients"],
-        "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS12 fail-closed remote-recipient boundary"],
-        "unproven_scope": ["Positive cross-Station private delivery"]
+        "truth_sources": [
+          "source Station canonical Social rows and durable Federation outbox",
+          "recipient Station viewer-scoped Social projection and tombstones",
+          "recipient Key Exchange one-time Content PreKey claims"
+        ],
+        "surfaces": [
+          "Alice Native Desktop composer and pending delivery state",
+          "Bob and Bob2 Native Desktop HOME/detail/comment/media/recovery surfaces",
+          "Eve Native Desktop uniform denial surface"
+        ],
+        "proven_by": [
+          "social-cross-station-native-e2e",
+          "social-private-desktop-e2e",
+          "browser-social-zero-registration"
+        ],
+        "proven_scope": [
+          "SOC-SEC-AS12 historical fail-closed cutover evidence"
+        ],
+        "unproven_scope": [
+          "SOC-SEC-AS17 through SOC-SEC-AS24 pending exact-source activation and Native proof",
+          "Mobile Native parity",
+          "cross-Federation private delivery"
+        ]
       }
     }
   ]

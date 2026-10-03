@@ -116,6 +116,7 @@ OWNER_ID = runtime_manifest.RUNTIME_OWNER_ID
 PROFILE = "four"
 SLOT = 5
 SOCIAL_ACCEPTANCE_SLOT = 12
+SOCIAL_CROSS_STATION_SLOT = 13
 STATION_ID = "station-four"
 SECONDARY_PROFILE = "fiveArm"
 SECONDARY_STATION_ID = "station-five-arm"
@@ -132,6 +133,9 @@ SOCIAL_ACCEPTANCE_TASK_IDS = frozenset(
     {"SDA-02-desktop-proof", "SDA-03-formal-proof"}
 )
 SOCIAL_ACCEPTANCE_JOURNEY = "SOC-SEC-J01-J09"
+SOCIAL_CROSS_STATION_PLAN_ID = "CROSS-STATION-SOCIAL-NATIVE-20261003"
+SOCIAL_CROSS_STATION_TASK_ID = "CSS-09-final-proof"
+SOCIAL_CROSS_STATION_JOURNEY = "SOC-SEC-J10-J12"
 SOCIAL_ACCEPTANCE_IDS = (
     "SOC-SEC-AS01",
     "SOC-SEC-AS02",
@@ -197,6 +201,58 @@ SOCIAL_ACCEPTANCE_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "requireReceiverVisibleProof": True,
         "allowClientReplacement": True,
     }
+)
+SOCIAL_CROSS_STATION_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "focused-social-suite",
+        "scenarioIds": [
+            "AS17",
+            "AS18",
+            "AS19",
+            "AS20",
+            "AS21",
+            "AS22",
+            "AS23",
+            "AS24",
+            "same-station-regression",
+        ],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 3,
+        "minWarmReuseRate": 0.8,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
+SOCIAL_CROSS_STATION_CLIENT_BINDINGS = (
+    ("cross-station-social-alice", "alice", PROFILE, STATION_ID),
+    (
+        "cross-station-social-bob",
+        "bob",
+        SECONDARY_PROFILE,
+        SECONDARY_STATION_ID,
+    ),
+    (
+        "cross-station-social-eve",
+        "eve",
+        SECONDARY_PROFILE,
+        SECONDARY_STATION_ID,
+    ),
+    (
+        "cross-station-social-bob2",
+        "bob",
+        SECONDARY_PROFILE,
+        SECONDARY_STATION_ID,
+    ),
+)
+SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS = (
+    "cross-station-social-alice",
+    "cross-station-social-bob",
+    "cross-station-social-bob2",
+)
+SOCIAL_CROSS_STATION_FIXTURE_ONLY_CLIENT_IDS = (
+    "cross-station-social-eve",
 )
 W9_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
@@ -6387,6 +6443,21 @@ class W7RuntimeOwner:
             expected_slot=slot,
         )
 
+    def run_social_cross_station_suite(
+        self,
+        *,
+        slot: int = SOCIAL_CROSS_STATION_SLOT,
+    ) -> dict[str, Any]:
+        del slot
+        raise RuntimeOwnerBlocked(
+            "SOCIAL_CROSS_STATION_SOURCE_INCOMPLETE",
+            (
+                "cross-Station Social Suite is registered but remains "
+                "unavailable until CSS-01 through CSS-08 close"
+            ),
+            resource="runtime:social-cross-station",
+        )
+
     def run_w9_suite(self) -> dict[str, Any]:
         return self._run_platform_suite(
             TASK_SUITE_DEFINITIONS["run-w9-suite"]
@@ -9049,6 +9120,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "run-w7-desktop-suite",
             "run-w8-suite",
             "run-social-desktop-acceptance-suite",
+            "run-social-cross-station-suite",
             "run-w9-suite",
             "run-w2-suite",
             "run-w10-suite",
@@ -9065,11 +9137,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    required_slot = (
-        SOCIAL_ACCEPTANCE_SLOT
-        if args.action == "run-social-desktop-acceptance-suite"
-        else SLOT
-    )
+    required_slot = {
+        "run-social-desktop-acceptance-suite": SOCIAL_ACCEPTANCE_SLOT,
+        "run-social-cross-station-suite": SOCIAL_CROSS_STATION_SLOT,
+    }.get(args.action, SLOT)
     if args.profile != PROFILE or args.slot != required_slot:
         blocked = RuntimeOwnerBlocked(
             "CONTROLLER_BINDING_MISMATCH",
@@ -9090,6 +9161,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "run-w7-desktop-suite",
         "run-w8-suite",
         "run-social-desktop-acceptance-suite",
+        "run-social-cross-station-suite",
         "run-w2-suite",
         "run-w10-suite",
         "run-w11-suite",
@@ -9104,6 +9176,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "run-w8-suite": "runtime:secure-content-w8",
             "run-social-desktop-acceptance-suite": (
                 "runtime:social-private-desktop"
+            ),
+            "run-social-cross-station-suite": (
+                "runtime:social-cross-station"
             ),
             "run-w2-suite": "runtime:secure-content-w2",
             "run-w10-suite": "runtime:secure-content-w10",
@@ -9151,6 +9226,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = owner.run_w8_suite()
         elif args.action == "run-social-desktop-acceptance-suite":
             result = owner.run_social_desktop_acceptance_suite(slot=args.slot)
+        elif args.action == "run-social-cross-station-suite":
+            result = owner.run_social_cross_station_suite(slot=args.slot)
         elif args.action == "run-w9-suite":
             result = owner.run_w9_suite()
         elif args.action == "run-w2-suite":
@@ -9159,8 +9236,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = owner.run_w10_suite()
         elif args.action == "run-w11-suite":
             result = owner.run_w11_suite()
-        else:
+        elif args.action == "run-final-suite":
             result = owner.run_final_suite()
+        else:
+            raise RuntimeOwnerBlocked(
+                "RUNTIME_ACTION_UNSUPPORTED",
+                f"unsupported runtime owner action: {args.action}",
+                resource=f"runtime:{args.action}",
+            )
     except RuntimeOwnerBlocked as error:
         print(json.dumps(error.payload(), sort_keys=True), file=sys.stderr)
         return 2
