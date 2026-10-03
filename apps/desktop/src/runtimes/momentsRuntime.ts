@@ -10,6 +10,7 @@ import { usePrivateCommentsStore } from '../store/privateComments';
 import { usePrivateMomentsStore } from '../store/privateMoments';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
+import { useFederationStore } from '../store/federation';
 import {
   Audience_Kind,
   type Post,
@@ -25,6 +26,7 @@ import type {
   RelationshipChangedPayload,
   RealtimeConnectionStatePayload,
   RealtimeResyncPayload,
+  StationActiveChangedPayload,
 } from '../kernel/events/types';
 import { log } from '../utils/logger';
 
@@ -33,13 +35,28 @@ const MOMENTS_RECONNECT_REFRESH_MIN_INTERVAL_MS = 5_000;
 
 let teardownRuntime: (() => void) | null = null;
 let reconcileTimer: number | null = null;
-let bootstrappedActorPtid: string | null = null;
-let bootstrappedSessionEpoch: number | null = null;
 let bootstrapSequence = 0;
-let refreshInFlight: { generation: number; promise: Promise<void> } | null = null;
+let activeScope: MomentsRuntimeScope | null = null;
+let pendingScopeKey: string | null = null;
+let stationIdentityHint: string | null = null;
+let projectionQueue: Promise<void> = Promise.resolve();
 let realtimeWasDisconnected = false;
 let lastReconnectRefreshAt = 0;
 const seenMomentEventIds = new Set<string>();
+
+export interface MomentsRuntimeScope {
+  readonly actorPtid: string;
+  readonly sessionEpoch: number;
+  readonly stationIdentity: string;
+  readonly generation: number;
+}
+
+export class MomentsRuntimeScopeChangedError extends Error {
+  constructor() {
+    super('moments_runtime_scope_changed');
+    this.name = 'MomentsRuntimeScopeChangedError';
+  }
+}
 
 export function isPrivateMomentPost(post: Post | undefined): boolean {
   const kind = post?.audience?.kind;
@@ -55,10 +72,85 @@ function privatePostIds(): string[] {
     .filter(Boolean);
 }
 
-function runDetached(label: string, task: () => Promise<void>): void {
-  void task().catch((error) => {
+function runDetached(label: string, task: Promise<void>): void {
+  void task.catch((error) => {
+    if (error instanceof MomentsRuntimeScopeChangedError) return;
     log.warn('momentsRuntime', `${label} failed`, error);
   });
+}
+
+function scopeKey(scope: Omit<MomentsRuntimeScope, 'generation'>): string {
+  return `${scope.actorPtid}\0${scope.sessionEpoch}\0${scope.stationIdentity}`;
+}
+
+function currentStationIdentity(): string {
+  if (stationIdentityHint) return stationIdentityHint;
+  const stationPeerId = useFederationStore.getState().self?.homeStationPeerId.trim();
+  return stationPeerId ? `peer:${stationPeerId}` : 'station:unresolved';
+}
+
+function isCurrentScope(scope: MomentsRuntimeScope): boolean {
+  const session = useSessionStore.getState();
+  return Boolean(
+    activeScope
+    && activeScope.generation === scope.generation
+    && activeScope.actorPtid === scope.actorPtid
+    && activeScope.sessionEpoch === scope.sessionEpoch
+    && activeScope.stationIdentity === scope.stationIdentity
+    && bootstrapSequence === scope.generation
+    && session.authenticated
+    && session.currentUser?.actorPtid === scope.actorPtid
+    && session.sessionEpoch === scope.sessionEpoch
+    && currentStationIdentity() === scope.stationIdentity
+  );
+}
+
+function resetProjection(generation: number): void {
+  usePrivateMomentsStore.getState().deactivate(generation);
+  usePrivateCommentsStore.getState().deactivate(generation);
+  useMomentsStore.getState().reset();
+  useDiscoveryStore.getState().reset();
+  useRelationshipsStore.getState().reset();
+}
+
+function invalidateScope(): number {
+  const generation = ++bootstrapSequence;
+  activeScope = null;
+  realtimeWasDisconnected = false;
+  lastReconnectRefreshAt = 0;
+  seenMomentEventIds.clear();
+  resetProjection(generation);
+  return generation;
+}
+
+function enqueueProjectionWork<T>(task: () => Promise<T>): Promise<T> {
+  const pending = projectionQueue.then(task);
+  projectionQueue = pending.then(
+    () => undefined,
+    () => undefined,
+  );
+  return pending;
+}
+
+function enqueueScopedProjection<T>(
+  task: (scope: MomentsRuntimeScope) => Promise<T>,
+): Promise<T | undefined> {
+  const scope = activeScope;
+  if (!scope) return Promise.resolve(undefined);
+  return enqueueProjectionWork(async () => {
+    if (!isCurrentScope(scope)) return undefined;
+    try {
+      return await task(scope);
+    } finally {
+      if (!isCurrentScope(scope)) {
+        resetProjection(bootstrapSequence);
+      }
+    }
+  });
+}
+
+export function captureMomentsRuntimeScope(): MomentsRuntimeScope | null {
+  return activeScope ? { ...activeScope } : null;
 }
 
 function rememberMomentEvent(eventId: string): boolean {
@@ -72,7 +164,8 @@ function rememberMomentEvent(eventId: string): boolean {
   return true;
 }
 
-async function preloadCircleMembers(): Promise<void> {
+async function preloadCircleMembers(scope: MomentsRuntimeScope): Promise<void> {
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   const store = useMomentsStore.getState();
   const tasks = store.circles
     .map((circle) => String(circle.id ?? ''))
@@ -80,78 +173,80 @@ async function preloadCircleMembers(): Promise<void> {
     .map((circleId) => store.loadCircleMembers(circleId));
 
   await Promise.allSettled(tasks);
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
 }
 
 export async function ensureCircleMemberProfiles(): Promise<void> {
-  await preloadCircleMembers();
-  const discovery = useDiscoveryStore.getState();
-  const memberPtids = [...new Set(
-    Object.values(useMomentsStore.getState().circleMembers)
-      .flat()
-      .map((member) => member.actorPtid.trim())
-      .filter(Boolean),
-  )];
-
-  const batchSize = 6;
-  for (let index = 0; index < memberPtids.length; index += batchSize) {
-    await Promise.allSettled(
-      memberPtids
-        .slice(index, index + batchSize)
-        .map((actorPtid) => discovery.loadUserProfile(actorPtid)),
-    );
-  }
-}
-
-async function refreshMomentsProjection(label: string): Promise<void> {
-  const generation = bootstrapSequence;
-  if (refreshInFlight?.generation === generation) return refreshInFlight.promise;
-
-  const promise = (async () => {
-    log.info('momentsRuntime', 'moments projection refresh started', { label });
-
-    const moments = useMomentsStore.getState();
+  await enqueueScopedProjection(async (scope) => {
+    await preloadCircleMembers(scope);
     const discovery = useDiscoveryStore.getState();
-    const previousPrivatePostIds = [...new Set([
-      ...privatePostIds(),
-      ...Object.keys(usePrivateMomentsStore.getState().postsById),
-    ])];
-    await Promise.allSettled([
-      discovery.loadMe(),
-      moments.syncProjection(label),
-      moments.listMyCircles(),
-    ]);
-    if (generation !== bootstrapSequence) return;
-    await preloadCircleMembers();
-    const currentPrivatePostIds = privatePostIds();
-    const privatePostIdsToReconcile = [...new Set([
-      ...previousPrivatePostIds,
-      ...currentPrivatePostIds,
-    ])];
-    await usePrivateMomentsStore.getState().reconcile(
-      privatePostIdsToReconcile,
-      label,
-      generation,
-    );
-    await usePrivateCommentsStore.getState().reconcile(
-      privatePostIdsToReconcile,
-      label,
-      generation,
-    );
+    const memberPtids = [...new Set(
+      Object.values(useMomentsStore.getState().circleMembers)
+        .flat()
+        .map((member) => member.actorPtid.trim())
+        .filter(Boolean),
+    )];
 
-    log.info('momentsRuntime', 'moments projection refresh completed', { label });
-  })().finally(() => {
-    if (refreshInFlight?.promise === promise) {
-      refreshInFlight = null;
+    const batchSize = 6;
+    for (let index = 0; index < memberPtids.length; index += batchSize) {
+      await Promise.allSettled(
+        memberPtids
+          .slice(index, index + batchSize)
+          .map((actorPtid) => discovery.loadUserProfile(actorPtid)),
+      );
+      if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
     }
   });
-  refreshInFlight = { generation, promise };
-
-  return promise;
 }
 
-export async function ensureMomentDetailProjection(postId: string): Promise<void> {
+async function refreshMomentsProjectionNow(
+  scope: MomentsRuntimeScope,
+  label: string,
+): Promise<void> {
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  log.info('momentsRuntime', 'moments projection refresh started', { label });
+
+  const moments = useMomentsStore.getState();
+  const discovery = useDiscoveryStore.getState();
+  const previousPrivatePostIds = [...new Set([
+    ...privatePostIds(),
+    ...Object.keys(usePrivateMomentsStore.getState().postsById),
+  ])];
+  await Promise.allSettled([
+    discovery.loadMe(),
+    moments.syncProjection(label),
+    moments.listMyCircles(),
+  ]);
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  await preloadCircleMembers(scope);
+  const currentPrivatePostIds = privatePostIds();
+  const privatePostIdsToReconcile = [...new Set([
+    ...previousPrivatePostIds,
+    ...currentPrivatePostIds,
+  ])];
+  await usePrivateMomentsStore.getState().reconcile(
+    privatePostIdsToReconcile,
+    label,
+    scope.generation,
+  );
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  await usePrivateCommentsStore.getState().reconcile(
+    privatePostIdsToReconcile,
+    label,
+    scope.generation,
+  );
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+
+  log.info('momentsRuntime', 'moments projection refresh completed', { label });
+}
+
+async function ensureMomentDetailProjectionNow(
+  scope: MomentsRuntimeScope | null,
+  postId: string,
+): Promise<void> {
   const trimmedPostId = postId.trim();
   if (!trimmedPostId) return;
+  if (scope && !isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
 
   const moments = useMomentsStore.getState();
   const privateMoments = usePrivateMomentsStore.getState();
@@ -171,6 +266,7 @@ export async function ensureMomentDetailProjection(postId: string): Promise<void
     }
   } else {
     const post = await moments.loadPost(trimmedPostId);
+    if (scope && !isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
     if (!post || isPrivateMomentPost(post)) {
       await usePrivateMomentsStore.getState().readMoment(trimmedPostId);
       const projection = usePrivateMomentsStore.getState().postsById[trimmedPostId];
@@ -189,12 +285,30 @@ export async function ensureMomentDetailProjection(postId: string): Promise<void
       await moments.loadComments(trimmedPostId, true);
     }
   }
+  if (scope && !isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   log.info('momentsRuntime', 'moment detail projection refresh completed', { postId: trimmedPostId });
 }
 
-export async function ensureUserMomentsProjection(actorPtid: string): Promise<void> {
+export async function ensureMomentDetailProjection(postId: string): Promise<void> {
+  if (!activeScope) {
+    const privateScope = usePrivateMomentsStore.getState().scope;
+    if (privateScope.actorPtid) {
+      await ensureMomentDetailProjectionNow(null, postId);
+    }
+    return;
+  }
+  await enqueueScopedProjection((scope) => (
+    ensureMomentDetailProjectionNow(scope, postId)
+  ));
+}
+
+async function ensureUserMomentsProjectionNow(
+  scope: MomentsRuntimeScope,
+  actorPtid: string,
+): Promise<void> {
   const trimmedActorPtid = actorPtid.trim();
   if (!trimmedActorPtid) return;
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
 
   const moments = useMomentsStore.getState();
   const discovery = useDiscoveryStore.getState();
@@ -206,75 +320,107 @@ export async function ensureUserMomentsProjection(actorPtid: string): Promise<vo
     relationships.loadFollowers(trimmedActorPtid, true),
     relationships.loadFollowing(trimmedActorPtid, true),
   ]);
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   log.info('momentsRuntime', 'user moments projection refresh completed', { actorPtid: trimmedActorPtid });
 }
 
+export async function ensureUserMomentsProjection(actorPtid: string): Promise<void> {
+  await enqueueScopedProjection((scope) => (
+    ensureUserMomentsProjectionNow(scope, actorPtid)
+  ));
+}
+
 function onMomentCreated(payload: MomentCreatedPayload): void {
-  if (!bootstrappedActorPtid) return;
+  if (!activeScope) return;
   if (!rememberMomentEvent(payload.eventId)) return;
-  runDetached('moment created projection refresh', async () => {
-    await ensureMomentDetailProjection(payload.postId);
-    await refreshMomentsProjection('event:moment.created');
-  });
+  runDetached(
+    'moment created projection refresh',
+    enqueueScopedProjection(async (scope) => {
+      await ensureMomentDetailProjectionNow(scope, payload.postId);
+      await refreshMomentsProjectionNow(scope, 'event:moment.created');
+    }).then(() => undefined),
+  );
 }
 
 function onMomentDeleted(payload: MomentDeletedPayload): void {
-  if (!bootstrappedActorPtid) return;
+  if (!activeScope) return;
   if (!rememberMomentEvent(payload.eventId)) return;
-  runDetached('moment deleted projection refresh', async () => {
-    usePrivateCommentsStore.getState().markParentUnavailable(
-      payload.postId,
-      'COMMENT_PARENT_UNAVAILABLE',
-    );
-    await usePrivateMomentsStore.getState().purgeMoment(payload.postId);
-    await refreshMomentsProjection('event:moment.deleted');
-  });
+  runDetached(
+    'moment deleted projection refresh',
+    enqueueScopedProjection(async (scope) => {
+      usePrivateCommentsStore.getState().markParentUnavailable(
+        payload.postId,
+        'COMMENT_PARENT_UNAVAILABLE',
+      );
+      await usePrivateMomentsStore.getState().purgeMoment(payload.postId);
+      if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+      await refreshMomentsProjectionNow(scope, 'event:moment.deleted');
+    }).then(() => undefined),
+  );
 }
 
 function onMomentCommented(payload: MomentCommentedPayload): void {
-  if (!bootstrappedActorPtid) return;
+  if (!activeScope) return;
   if (!rememberMomentEvent(payload.eventId)) return;
-  runDetached('moment commented projection refresh', async () => {
-    await ensureMomentDetailProjection(payload.postId);
-  });
+  runDetached(
+    'moment commented projection refresh',
+    enqueueScopedProjection((scope) => (
+      ensureMomentDetailProjectionNow(scope, payload.postId)
+    )).then(() => undefined),
+  );
 }
 
 function onMomentReacted(payload: MomentReactedPayload): void {
-  if (!bootstrappedActorPtid) return;
+  if (!activeScope) return;
   if (!rememberMomentEvent(payload.eventId)) return;
-  runDetached('moment reacted projection refresh', async () => {
-    await ensureMomentDetailProjection(payload.postId);
-  });
+  runDetached(
+    'moment reacted projection refresh',
+    enqueueScopedProjection((scope) => (
+      ensureMomentDetailProjectionNow(scope, payload.postId)
+    )).then(() => undefined),
+  );
 }
 
 function onRelationshipChanged(payload: RelationshipChangedPayload): void {
-  if (!bootstrappedActorPtid) return;
-  runDetached('relationship changed moments projection refresh', async () => {
-    const relationships = useRelationshipsStore.getState();
-    await Promise.allSettled([
-      relationships.loadRelationship(payload.targetActorPtid),
-      relationships.loadFollowers(payload.targetActorPtid, true),
-      refreshMomentsProjection(`event:relationship.changed:${payload.action}`),
-    ]);
-  });
+  if (!activeScope) return;
+  runDetached(
+    'relationship changed moments projection refresh',
+    enqueueScopedProjection(async (scope) => {
+      const relationships = useRelationshipsStore.getState();
+      await Promise.allSettled([
+        relationships.loadRelationship(payload.targetActorPtid),
+        relationships.loadFollowers(payload.targetActorPtid, true),
+        refreshMomentsProjectionNow(
+          scope,
+          `event:relationship.changed:${payload.action}`,
+        ),
+      ]);
+    }).then(() => undefined),
+  );
 }
 
 function onMomentResyncRequested(payload: MomentResyncRequestedPayload): void {
-  if (!bootstrappedActorPtid) return;
-  runDetached('moment resync projection refresh', async () => {
-    await refreshMomentsProjection(`event:moment.resync:${payload.reason}`);
-  });
+  if (!activeScope) return;
+  runDetached(
+    'moment resync projection refresh',
+    enqueueScopedProjection((scope) => (
+      refreshMomentsProjectionNow(scope, `event:moment.resync:${payload.reason}`)
+    )).then(() => undefined),
+  );
 }
 
 function onRealtimeResync(payload: RealtimeResyncPayload): void {
-  if (!bootstrappedActorPtid) return;
-  runDetached('realtime resync moments projection refresh', async () => {
-    await refreshMomentsProjection(`event:realtime.resync:${payload.reason}`);
-  });
+  if (!activeScope) return;
+  runDetached(
+    'realtime resync moments projection refresh',
+    enqueueScopedProjection((scope) => (
+      refreshMomentsProjectionNow(scope, `event:realtime.resync:${payload.reason}`)
+    )).then(() => undefined),
+  );
 }
 
 function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): void {
-  if (!bootstrappedActorPtid) return;
+  if (!activeScope) return;
   if (!payload.connected) {
     realtimeWasDisconnected = true;
     return;
@@ -287,88 +433,126 @@ function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): voi
   if (now - lastReconnectRefreshAt < MOMENTS_RECONNECT_REFRESH_MIN_INTERVAL_MS) return;
   lastReconnectRefreshAt = now;
 
-  runDetached('realtime reconnect moments projection refresh', async () => {
-    await refreshMomentsProjection(`event:realtime.connection_state:${payload.reason || 'reconnected'}`);
-  });
+  runDetached(
+    'realtime reconnect moments projection refresh',
+    enqueueScopedProjection((scope) => (
+      refreshMomentsProjectionNow(
+        scope,
+        `event:realtime.connection_state:${payload.reason || 'reconnected'}`,
+      )
+    )).then(() => undefined),
+  );
 }
 
-async function bootstrapForActor(
-  actorPtid: string,
-  sessionEpoch: number,
-  sequence: number,
-): Promise<void> {
-  if (bootstrappedActorPtid && bootstrappedActorPtid !== actorPtid) {
-    useMomentsStore.getState().reset();
-    useDiscoveryStore.getState().reset();
-    useRelationshipsStore.getState().reset();
-  }
-
-  bootstrappedActorPtid = actorPtid;
-  bootstrappedSessionEpoch = sessionEpoch;
-  usePrivateMomentsStore.getState().activateActor(actorPtid, sequence);
-  usePrivateCommentsStore.getState().activateActor(actorPtid, sequence);
+async function bootstrapForScope(scope: MomentsRuntimeScope): Promise<void> {
+  usePrivateMomentsStore.getState().activateActor(
+    scope.actorPtid,
+    scope.generation,
+  );
+  usePrivateCommentsStore.getState().activateActor(
+    scope.actorPtid,
+    scope.generation,
+  );
   try {
-    await usePrivateMomentsStore.getState().bootstrap(sequence);
+    await usePrivateMomentsStore.getState().bootstrap(scope.generation);
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
     await Promise.all([
-      usePrivateCommentsStore.getState().bootstrap(sequence),
-      refreshMomentsProjection('bootstrap'),
+      usePrivateCommentsStore.getState().bootstrap(scope.generation),
+      refreshMomentsProjectionNow(scope, 'bootstrap'),
     ]);
   } catch (error) {
-    if (
-      sequence === bootstrapSequence
-      && bootstrappedActorPtid === actorPtid
-      && bootstrappedSessionEpoch === sessionEpoch
-    ) {
-      bootstrappedActorPtid = null;
-      bootstrappedSessionEpoch = null;
+    if (isCurrentScope(scope)) {
+      activeScope = null;
+      resetProjection(bootstrapSequence);
     }
     throw error;
   }
 
-  if (sequence !== bootstrapSequence) return;
-  log.info('momentsRuntime', 'moments projection bootstrap completed', { actorPtid });
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  log.info('momentsRuntime', 'moments projection bootstrap completed');
 }
 
-function reconcileAuthenticatedRuntime(): void {
+function desiredScope(): Omit<MomentsRuntimeScope, 'generation'> | null {
   const session = useSessionStore.getState();
   const actorPtid = session.authenticated ? session.currentUser?.actorPtid ?? null : null;
-  if (!actorPtid) {
-    bootstrappedActorPtid = null;
-    bootstrappedSessionEpoch = null;
-    realtimeWasDisconnected = false;
-    lastReconnectRefreshAt = 0;
-    const sequence = ++bootstrapSequence;
-    usePrivateMomentsStore.getState().deactivate(sequence);
-    usePrivateCommentsStore.getState().deactivate(sequence);
-    useMomentsStore.getState().reset();
-    useDiscoveryStore.getState().reset();
-    useRelationshipsStore.getState().reset();
-    return;
+  if (!actorPtid) return null;
+  return {
+    actorPtid,
+    sessionEpoch: session.sessionEpoch,
+    stationIdentity: currentStationIdentity(),
+  };
+}
+
+function reconcileAuthenticatedRuntime(_reason = 'session'): Promise<void> {
+  const desired = desiredScope();
+  if (!desired) {
+    pendingScopeKey = null;
+    if (activeScope) invalidateScope();
+    return projectionQueue;
   }
 
+  const nextScopeKey = scopeKey(desired);
   if (
-    bootstrappedActorPtid === actorPtid
-    && bootstrappedSessionEpoch === session.sessionEpoch
-  ) return;
-  const sequence = ++bootstrapSequence;
-  runDetached('moments projection bootstrap', () => (
-    bootstrapForActor(actorPtid, session.sessionEpoch, sequence)
-  ));
+    (activeScope && scopeKey(activeScope) === nextScopeKey)
+    || pendingScopeKey === nextScopeKey
+  ) {
+    return projectionQueue;
+  }
+
+  pendingScopeKey = nextScopeKey;
+  const generation = invalidateScope();
+  const scope: MomentsRuntimeScope = { ...desired, generation };
+  const activation = enqueueProjectionWork(async () => {
+    if (
+      bootstrapSequence !== generation
+      || pendingScopeKey !== nextScopeKey
+    ) {
+      return;
+    }
+    resetProjection(generation);
+    activeScope = scope;
+    try {
+      await bootstrapForScope(scope);
+    } catch (error) {
+      if (error instanceof MomentsRuntimeScopeChangedError) return;
+      throw error;
+    } finally {
+      if (pendingScopeKey === nextScopeKey) {
+        pendingScopeKey = null;
+      }
+      if (!isCurrentScope(scope)) {
+        resetProjection(bootstrapSequence);
+      }
+    }
+  });
+  runDetached('moments projection bootstrap', activation);
+  return activation;
+}
+
+function onStationChanged(payload: StationActiveChangedPayload): void {
+  const stationUrl = payload.stationUrl.trim().replace(/\/+$/, '');
+  stationIdentityHint = stationUrl
+    ? `url:${stationUrl}`
+    : `station-change:${bootstrapSequence + 1}`;
+  void reconcileAuthenticatedRuntime('station-switch');
 }
 
 function startReconcileTimer(): void {
   if (reconcileTimer) return;
   reconcileTimer = window.setInterval(() => {
-    if (!bootstrappedActorPtid) {
+    if (!activeScope) {
       const session = useSessionStore.getState();
       if (session.authenticated && session.currentUser?.actorPtid) {
-        reconcileAuthenticatedRuntime();
+        void reconcileAuthenticatedRuntime('periodic-retry');
       }
       return;
     }
-    runDetached('periodic moments projection refresh', () => (
-      refreshMomentsProjection('periodic reconcile')
-    ));
+    runDetached(
+      'periodic moments projection refresh',
+      enqueueScopedProjection((scope) => (
+        refreshMomentsProjectionNow(scope, 'periodic reconcile')
+      )).then(() => undefined),
+    );
   }, MOMENTS_RECONCILE_INTERVAL_MS);
 }
 
@@ -379,8 +563,9 @@ function stopReconcileTimer(): void {
 }
 
 export async function reconcileMomentsProjection(reason: string): Promise<void> {
-  if (!bootstrappedActorPtid) return;
-  await refreshMomentsProjection(reason);
+  await enqueueScopedProjection((scope) => (
+    refreshMomentsProjectionNow(scope, reason)
+  ));
 }
 
 export const momentsRuntime: RuntimeDescriptor = {
@@ -389,9 +574,28 @@ export const momentsRuntime: RuntimeDescriptor = {
   install(): void {
     if (teardownRuntime) return;
 
-    const unsubscribeSession = useSessionStore.subscribe(reconcileAuthenticatedRuntime);
+    const unsubscribeSession = useSessionStore.subscribe((state, previous) => {
+      if (
+        state.authenticated !== previous.authenticated
+        || state.currentUser?.actorPtid !== previous.currentUser?.actorPtid
+        || state.sessionEpoch !== previous.sessionEpoch
+      ) {
+        void reconcileAuthenticatedRuntime('session');
+      }
+    });
+    const unsubscribeFederation = useFederationStore.subscribe((state, previous) => {
+      if (stationIdentityHint) return;
+      if (
+        state.self?.homeStationPeerId.trim()
+        !== previous.self?.homeStationPeerId.trim()
+      ) {
+        void reconcileAuthenticatedRuntime('station-identity');
+      }
+    });
     const unsubs = [
       unsubscribeSession,
+      unsubscribeFederation,
+      eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, onStationChanged),
       eventBus.subscribe(EVENT.MOMENT_CREATED, onMomentCreated),
       eventBus.subscribe(EVENT.MOMENT_DELETED, onMomentDeleted),
       eventBus.subscribe(EVENT.MOMENT_COMMENTED, onMomentCommented),
@@ -402,20 +606,15 @@ export const momentsRuntime: RuntimeDescriptor = {
       eventBus.subscribe(EVENT.REALTIME_CONNECTION_STATE, onRealtimeConnectionState),
     ];
     startReconcileTimer();
-    reconcileAuthenticatedRuntime();
+    void reconcileAuthenticatedRuntime('install');
 
     teardownRuntime = () => {
       unsubs.forEach((unsubscribe) => unsubscribe());
       stopReconcileTimer();
       teardownRuntime = null;
-      bootstrappedActorPtid = null;
-      bootstrappedSessionEpoch = null;
-      realtimeWasDisconnected = false;
-      lastReconnectRefreshAt = 0;
-      const sequence = ++bootstrapSequence;
-      usePrivateMomentsStore.getState().deactivate(sequence);
-      usePrivateCommentsStore.getState().deactivate(sequence);
-      seenMomentEventIds.clear();
+      pendingScopeKey = null;
+      stationIdentityHint = null;
+      invalidateScope();
     };
 
     log.info('momentsRuntime', 'runtime installed');
@@ -426,7 +625,7 @@ export const momentsRuntime: RuntimeDescriptor = {
     log.info('momentsRuntime', 'runtime torn down');
   },
   async bootstrap(): Promise<void> {
-    reconcileAuthenticatedRuntime();
+    await reconcileAuthenticatedRuntime('runtime-bootstrap');
   },
   async reconcile(reason: string): Promise<void> {
     await reconcileMomentsProjection(`runtime:reconcile:${reason}`);

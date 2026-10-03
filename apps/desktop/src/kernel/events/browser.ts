@@ -26,3 +26,15 @@ export function onWindowOffline(handler: () => void) {
   window.addEventListener('offline', handler);
   return () => window.removeEventListener('offline', handler);
 }
+
+export function onWindowStationActiveChanged(
+  handler: (detail: { url: string; label?: string }) => void,
+) {
+  const listener = (event: Event) => {
+    handler((event as CustomEvent<{ url: string; label?: string }>).detail);
+  };
+  window.addEventListener('peers-touch:station-active-changed', listener);
+  return () => {
+    window.removeEventListener('peers-touch:station-active-changed', listener);
+  };
+}
