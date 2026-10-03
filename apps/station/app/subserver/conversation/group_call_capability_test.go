@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func TestSubServerPrepareSnapshot(t *testing.T) {
+func TestSubServerPrepareGroupRecipientSnapshot(t *testing.T) {
 	fixture := newGroupSnapshotCapabilityFixture(t)
 
 	prepared, err := fixture.server.PrepareSnapshot(
@@ -46,7 +46,8 @@ func TestSubServerPrepareSnapshot(t *testing.T) {
 			HomeStationPeerID: "station-z",
 		},
 	}
-	if prepared.ConversationID != string(fixture.snapshot.ID) ||
+	if prepared.FederationID != string(fixture.snapshot.FederationID) ||
+		prepared.ConversationID != string(fixture.snapshot.ID) ||
 		prepared.AuthorPTID != string(fixture.author.Actor) ||
 		prepared.MembershipEpoch != uint64(fixture.snapshot.Head.MembershipEpoch) ||
 		!reflect.DeepEqual(
@@ -59,55 +60,67 @@ func TestSubServerPrepareSnapshot(t *testing.T) {
 }
 
 func TestSubServerWithSubmitFence(t *testing.T) {
-	t.Run("rejects stale membership before callback", func(t *testing.T) {
-		fixture := newGroupSnapshotCapabilityFixture(t)
-		expected := fixture.prepare(t)
-		expected.Members[1].HomeStationPeerID = "station-changed"
-
-		callbackCalled := false
-		err := fixture.server.WithSubmitFence(
-			context.Background(),
-			expected,
-			func(ports.GroupRecipientSnapshot) error {
-				callbackCalled = true
-				return nil
+	staleCases := []struct {
+		name   string
+		mutate func(*ports.GroupRecipientSnapshot)
+	}{
+		{
+			name: "federation ID",
+			mutate: func(snapshot *ports.GroupRecipientSnapshot) {
+				snapshot.FederationID = "federation-other"
 			},
-		)
-		if !conversationdomain.IsCode(
-			err,
-			conversationdomain.ErrorCodeStaleAuthorityHead,
-		) {
-			t.Fatalf("WithSubmitFence() error = %v", err)
-		}
-		if callbackCalled {
-			t.Fatal("stale membership invoked the commit callback")
-		}
-	})
-
-	t.Run("rejects stale authority head before callback", func(t *testing.T) {
-		fixture := newGroupSnapshotCapabilityFixture(t)
-		expected := fixture.prepare(t)
-		expected.AuthorityHeadSHA256[0] ^= 0xff
-
-		callbackCalled := false
-		err := fixture.server.WithSubmitFence(
-			context.Background(),
-			expected,
-			func(ports.GroupRecipientSnapshot) error {
-				callbackCalled = true
-				return nil
+		},
+		{
+			name: "membership epoch",
+			mutate: func(snapshot *ports.GroupRecipientSnapshot) {
+				snapshot.MembershipEpoch++
 			},
-		)
-		if !conversationdomain.IsCode(
-			err,
-			conversationdomain.ErrorCodeStaleAuthorityHead,
-		) {
-			t.Fatalf("WithSubmitFence() error = %v", err)
-		}
-		if callbackCalled {
-			t.Fatal("stale authority head invoked the commit callback")
-		}
-	})
+		},
+		{
+			name: "authority head",
+			mutate: func(snapshot *ports.GroupRecipientSnapshot) {
+				snapshot.AuthorityHeadSHA256[0] ^= 0xff
+			},
+		},
+		{
+			name: "member set",
+			mutate: func(snapshot *ports.GroupRecipientSnapshot) {
+				snapshot.Members[1].ActorPTID = "ptid:delta"
+			},
+		},
+		{
+			name: "member Home Station",
+			mutate: func(snapshot *ports.GroupRecipientSnapshot) {
+				snapshot.Members[1].HomeStationPeerID = "station-changed"
+			},
+		},
+	}
+	for _, testCase := range staleCases {
+		t.Run("rejects stale "+testCase.name+" before callback", func(t *testing.T) {
+			fixture := newGroupSnapshotCapabilityFixture(t)
+			expected := fixture.prepare(t)
+			testCase.mutate(&expected)
+
+			callbackCalled := false
+			err := fixture.server.WithSubmitFence(
+				context.Background(),
+				expected,
+				func(ports.GroupRecipientSnapshot) error {
+					callbackCalled = true
+					return nil
+				},
+			)
+			if !conversationdomain.IsCode(
+				err,
+				conversationdomain.ErrorCodeStaleAuthorityHead,
+			) {
+				t.Fatalf("WithSubmitFence() error = %v", err)
+			}
+			if callbackCalled {
+				t.Fatalf("stale %s invoked the commit callback", testCase.name)
+			}
+		})
+	}
 
 	t.Run("runs callback inside the conversation transaction", func(t *testing.T) {
 		fixture := newGroupSnapshotCapabilityFixture(t)

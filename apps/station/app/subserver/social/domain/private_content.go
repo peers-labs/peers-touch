@@ -198,6 +198,7 @@ type RecipientLocality struct {
 // GroupRecipientSnapshot is Social's value-only projection of Conversation
 // membership authority. It never carries a Conversation repository or UOW.
 type GroupRecipientSnapshot struct {
+	FederationID        string
 	ConversationID      string
 	AuthorPTID          string
 	MembershipEpoch     uint64
@@ -207,6 +208,7 @@ type GroupRecipientSnapshot struct {
 
 type canonicalGroupRecipientSnapshot struct {
 	FormatVersion       uint32                          `json:"format_version"`
+	FederationID        string                          `json:"federation_id"`
 	ConversationID      string                          `json:"conversation_id"`
 	AuthorPTID          string                          `json:"author_ptid"`
 	MembershipEpoch     uint64                          `json:"membership_epoch"`
@@ -242,6 +244,7 @@ func CanonicalGroupRecipientSnapshotBytes(
 	}
 	encoded, err := json.Marshal(canonicalGroupRecipientSnapshot{
 		FormatVersion:       PrivateContentFormatVersion,
+		FederationID:        snapshot.FederationID,
 		ConversationID:      snapshot.ConversationID,
 		AuthorPTID:          snapshot.AuthorPTID,
 		MembershipEpoch:     snapshot.MembershipEpoch,
@@ -298,6 +301,7 @@ func ParseCanonicalGroupRecipientSnapshot(
 		})
 	}
 	snapshot := GroupRecipientSnapshot{
+		FederationID:        persisted.FederationID,
 		ConversationID:      persisted.ConversationID,
 		AuthorPTID:          persisted.AuthorPTID,
 		MembershipEpoch:     persisted.MembershipEpoch,
@@ -327,6 +331,14 @@ func validateGroupRecipientSnapshot(
 	operation string,
 	snapshot GroupRecipientSnapshot,
 ) error {
+	if err := validateIdentifier(
+		snapshot.FederationID,
+		255,
+		"federation_id",
+		operation,
+	); err != nil {
+		return err
+	}
 	if err := validateIdentifier(
 		snapshot.ConversationID,
 		255,
