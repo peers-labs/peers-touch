@@ -1,0 +1,408 @@
+{
+  "kind": "peers-touch-agent-development-impact-policy",
+  "schemaVersion": 1,
+  "impactClasses": [
+    "STATION_RUNTIME",
+    "DESKTOP_HOST",
+    "DESKTOP_UI",
+    "SHARED_CONTRACT",
+    "ACCEPTANCE_HARNESS",
+    "WORKFLOW_TOOLING",
+    "DOCS_ONLY"
+  ],
+  "productImpactClasses": [
+    "STATION_RUNTIME",
+    "DESKTOP_HOST",
+    "DESKTOP_UI",
+    "SHARED_CONTRACT"
+  ],
+  "proofIdentityDimensions": [
+    "claimId",
+    "closureContractDigest",
+    "affectedComponentDigests",
+    "gateImplementationDigest",
+    "runtimeProfileDigest"
+  ],
+  "moduleId": "agent",
+  "moduleDependencies": [],
+  "ownershipRuleIds": [
+    "agent-acceptance-driver",
+    "station-agent-runtime",
+    "agent-generated-client-contract",
+    "desktop-agent-host",
+    "desktop-agent-ui",
+    "agent-proto-contract",
+    "agent-catalog-contract",
+    "agent-mobile-contract-consumer",
+    "agent-docs",
+    "agent-development-skill"
+  ],
+  "gitHeadRole": "AUDIT_ONLY",
+  "classDecisions": {
+    "STATION_RUNTIME": {
+      "focusedCheckSelectors": [
+        "station-agent-source"
+      ],
+      "targetSelectors": [
+        "station"
+      ],
+      "journeySelectors": [
+        "agent-product-journey"
+      ],
+      "gateSelectors": [
+        "affected-agent-gate"
+      ],
+      "resourceRequirements": [],
+      "proofDefault": "REPROVE_REQUIRED",
+      "proofDimensionsExpectedToChange": [
+        "affectedComponentDigests.stationRuntime"
+      ]
+    },
+    "DESKTOP_HOST": {
+      "focusedCheckSelectors": [
+        "desktop-host-source"
+      ],
+      "targetSelectors": [
+        "desktop-native"
+      ],
+      "journeySelectors": [
+        "agent-product-journey"
+      ],
+      "gateSelectors": [
+        "affected-agent-gate"
+      ],
+      "resourceRequirements": [],
+      "proofDefault": "REPROVE_REQUIRED",
+      "proofDimensionsExpectedToChange": [
+        "affectedComponentDigests.desktopHost"
+      ]
+    },
+    "DESKTOP_UI": {
+      "focusedCheckSelectors": [
+        "desktop-ui-source"
+      ],
+      "targetSelectors": [
+        "desktop-web"
+      ],
+      "journeySelectors": [
+        "agent-product-journey"
+      ],
+      "gateSelectors": [
+        "affected-agent-gate"
+      ],
+      "resourceRequirements": [],
+      "proofDefault": "REPROVE_REQUIRED",
+      "proofDimensionsExpectedToChange": [
+        "affectedComponentDigests.desktopUi"
+      ]
+    },
+    "SHARED_CONTRACT": {
+      "focusedCheckSelectors": [
+        "agent-shared-contract"
+      ],
+      "targetSelectors": [],
+      "journeySelectors": [
+        "agent-product-journey"
+      ],
+      "gateSelectors": [
+        "affected-agent-gate"
+      ],
+      "resourceRequirements": [],
+      "proofDefault": "REPROVE_REQUIRED",
+      "proofDimensionsExpectedToChange": [
+        "affectedComponentDigests.sharedContract"
+      ]
+    },
+    "ACCEPTANCE_HARNESS": {
+      "focusedCheckSelectors": [
+        "agent-acceptance-harness"
+      ],
+      "targetSelectors": [
+        "acceptance-suite-runtime"
+      ],
+      "journeySelectors": [],
+      "gateSelectors": [
+        "affected-agent-gate"
+      ],
+      "resourceRequirements": [],
+      "proofDefault": "REPROVE_REQUIRED",
+      "proofDimensionsExpectedToChange": [
+        "gateImplementationDigest"
+      ]
+    },
+    "WORKFLOW_TOOLING": {
+      "focusedCheckSelectors": [
+        "workflow-tooling"
+      ],
+      "targetSelectors": [],
+      "journeySelectors": [],
+      "gateSelectors": [],
+      "resourceRequirements": [],
+      "proofDefault": "REUSE_CANDIDATE",
+      "proofDimensionsExpectedToChange": [],
+      "requiresSeparateTaskFromProduct": true
+    },
+    "DOCS_ONLY": {
+      "focusedCheckSelectors": [
+        "agent-docs-consistency"
+      ],
+      "targetSelectors": [],
+      "journeySelectors": [],
+      "gateSelectors": [],
+      "resourceRequirements": [],
+      "proofDefault": "REUSE_CANDIDATE",
+      "proofDimensionsExpectedToChange": []
+    }
+  },
+  "pathRules": [
+    {
+      "id": "acceptance-infrastructure",
+      "patterns": [
+        "docs/architecture/acceptance-framework/**",
+        "tooling/acceptance/core/**",
+        "tooling/acceptance/evidence/**",
+        "tooling/acceptance/finalizers/**",
+        "tooling/acceptance/environments/**",
+        "tooling/acceptance/provisioners/**",
+        "tooling/acceptance/templates/**",
+        "tooling/acceptance/transports/**",
+        "tooling/acceptance/tests/**",
+        "tooling/acceptance/README.md",
+        "tooling/acceptance/gates.yaml",
+        "tooling/acceptance/registry.yaml",
+        "tooling/acceptance/remote_platform.py",
+        "tooling/acceptance/requirements.txt",
+        "tooling/make/acceptance.mk",
+        "tooling/scripts/_acceptance_artifacts.py",
+        "tooling/scripts/acceptance-artifact.py",
+        "tooling/scripts/acceptance-artifacts-test.py",
+        "tooling/scripts/acceptance-capability-report.py",
+        "tooling/scripts/acceptance-cell.py",
+        "tooling/scripts/acceptance-closure-gen.py",
+        "tooling/scripts/acceptance-closure-gen-test.py",
+        "tooling/scripts/acceptance-coverage-report.py",
+        "tooling/scripts/acceptance-coverage-report-test.py",
+        "tooling/scripts/acceptance-evidence.py",
+        "tooling/scripts/acceptance-infra-boundary-test.py",
+        "tooling/scripts/acceptance-plan.py",
+        "tooling/scripts/acceptance-plan-test.py",
+        "tooling/scripts/acceptance-proof-set.py",
+        "tooling/scripts/acceptance-prove.py",
+        "tooling/scripts/acceptance-report.py",
+        "tooling/scripts/acceptance-report-test.py",
+        "tooling/scripts/acceptance-run.py",
+        "tooling/scripts/acceptance-run-test.py",
+        "tooling/scripts/acceptance-validate.py",
+        "tooling/scripts/acceptance-validate-test.py"
+      ],
+      "impactClass": "ACCEPTANCE_HARNESS",
+      "requiresSeparateTaskFromProduct": true
+    },
+    {
+      "id": "workflow-acceptance-admission",
+      "patterns": [
+        "tooling/scripts/acceptance-gap-detect.py",
+        "tooling/scripts/acceptance-gap-detect-test.py",
+        "tooling/scripts/local-dev/**",
+        "tooling/scripts/plan/**",
+        "tooling/make/local-dev.mk"
+      ],
+      "impactClass": "WORKFLOW_TOOLING"
+    },
+    {
+      "id": "agent-acceptance-driver",
+      "patterns": [
+        "apps/desktop/src/acceptance/agent/**",
+        "apps/desktop/src/acceptance/agent*",
+        "tooling/scripts/check-agent-v2-*.mjs",
+        "tooling/scripts/check-agent-v2-*.py",
+        "tooling/scripts/expand-agent-v2-runtime-matrix.py",
+        "tooling/acceptance/capabilities/agent.yaml",
+        "tooling/acceptance/domains/agent.yaml",
+        "tooling/acceptance/features/agent*.yaml",
+        "tooling/acceptance/gates/agent/**",
+        "tooling/acceptance/matrices/agent*.yaml",
+        "tooling/acceptance/schemas/agent-v2/**"
+      ],
+      "impactClass": "ACCEPTANCE_HARNESS"
+    },
+    {
+      "id": "agent-runtime-profile",
+      "patterns": [
+        "tooling/docker/**",
+        "tooling/scripts/deploy/**"
+      ],
+      "impactClass": "ACCEPTANCE_HARNESS",
+      "addTargetSelectors": [
+        "acceptance-runtime-reprovision"
+      ],
+      "requiresSeparateTaskFromProduct": true,
+      "replaceProofDimensionsExpectedToChange": [
+        "runtimeProfileDigest"
+      ]
+    },
+    {
+      "id": "station-agent-runtime",
+      "patterns": [
+        "apps/station/app/subserver/agent/**"
+      ],
+      "impactClass": "STATION_RUNTIME"
+    },
+    {
+      "id": "agent-generated-client-contract",
+      "patterns": [
+        "apps/desktop/src/gen/proto/domain/agent/**",
+        "apps/mobile/src/gen/proto/domain/agent/**"
+      ],
+      "impactClass": "SHARED_CONTRACT",
+      "addTargetSelectors": [
+        "station",
+        "desktop-native",
+        "mobile"
+      ]
+    },
+    {
+      "id": "desktop-agent-host",
+      "patterns": [
+        "apps/desktop/src-tauri/src/application/agent_event_stream.rs",
+        "apps/desktop/src-tauri/src/application/agent_growth/**",
+        "apps/desktop/src-tauri/src/application/agent_orchestration/**",
+        "apps/desktop/src-tauri/src/application/agent_scheduler/**",
+        "apps/desktop/src-tauri/src/application/agent_turn/**",
+        "apps/desktop/src-tauri/src/application/agent_workspace/**",
+        "apps/desktop/src-tauri/src/application/agent_local_capability/**",
+        "apps/desktop/src-tauri/src/application/agents/**",
+        "apps/desktop/src-tauri/src/application/capability_operation/**",
+        "apps/desktop/src-tauri/src/application/mcp/**",
+        "apps/desktop/src-tauri/src/application/provider/**",
+        "apps/desktop/src-tauri/src/application/skills_market/**",
+        "apps/desktop/src-tauri/src/application/tools/**",
+        "apps/desktop/src-tauri/src/application/workspace/**",
+        "apps/desktop/src-tauri/src/application/audit/**",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/agent*.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs"
+      ],
+      "impactClass": "DESKTOP_HOST"
+    },
+    {
+      "id": "desktop-agent-ui",
+      "patterns": [
+        "apps/desktop/src/components/agent/**",
+        "apps/desktop/src/components/agent*.ts",
+        "apps/desktop/src/components/agent*.tsx",
+        "apps/desktop/src/components/**/*agent*.ts",
+        "apps/desktop/src/components/**/*agent*.tsx",
+        "apps/desktop/src/components/**/*Agent*.ts",
+        "apps/desktop/src/components/**/*Agent*.tsx",
+        "apps/desktop/src/diagnostics/agent*.ts",
+        "apps/desktop/src/hooks/*Agent*.ts",
+        "apps/desktop/src/pages/**/*Agent*.ts",
+        "apps/desktop/src/pages/**/*Agent*.tsx",
+        "apps/desktop/src/runtimes/agent*.ts",
+        "apps/desktop/src/services/agent/**",
+        "apps/desktop/src/services/agent*.ts",
+        "apps/desktop/src/store/agent*.ts"
+      ],
+      "impactClass": "DESKTOP_UI"
+    },
+    {
+      "id": "agent-proto-contract",
+      "patterns": [
+        "model/domain/agent/**"
+      ],
+      "impactClass": "SHARED_CONTRACT",
+      "addTargetSelectors": [
+        "station",
+        "desktop-native",
+        "mobile"
+      ]
+    },
+    {
+      "id": "agent-catalog-contract",
+      "patterns": [
+        "packages/agent-catalog/**"
+      ],
+      "impactClass": "SHARED_CONTRACT",
+      "addTargetSelectors": [
+        "station",
+        "desktop-native"
+      ]
+    },
+    {
+      "id": "agent-mobile-contract-consumer",
+      "patterns": [
+        "apps/mobile/src/contracts/agent*.ts",
+        "apps/mobile/src/runtimes/agent*.ts",
+        "apps/mobile/src/services/agent/**",
+        "apps/mobile/src-tauri/src/agent*/**"
+      ],
+      "impactClass": "SHARED_CONTRACT",
+      "addTargetSelectors": [
+        "mobile"
+      ]
+    },
+    {
+      "id": "agent-development-skill",
+      "patterns": [
+        "tooling/skills/pt-agent-development/**"
+      ],
+      "impactClass": "WORKFLOW_TOOLING",
+      "requiresSeparateTaskFromProduct": false
+    },
+    {
+      "id": "shared-workflow-surface",
+      "patterns": [
+        "AGENTS.md",
+        "tooling/skills/**"
+      ],
+      "impactClass": "WORKFLOW_TOOLING"
+    },
+    {
+      "id": "agent-docs",
+      "patterns": [
+        "docs/architecture/agent/**",
+        "docs/client/agent/**",
+        "packages/prototypes/agent-canvas/**"
+      ],
+      "impactClass": "DOCS_ONLY",
+      "proofDimensionsToRefresh": [
+        "closureContractDigest"
+      ]
+    }
+  ],
+  "failureSignals": {
+    "orderedChecks": [
+      {
+        "signal": "evidenceIntegrity",
+        "value": "FAIL",
+        "classification": "EVIDENCE_INTEGRITY"
+      },
+      {
+        "signal": "environmentReady",
+        "value": "FAIL",
+        "classification": "ENVIRONMENT_BLOCKER"
+      },
+      {
+        "signal": "workflowIntegrity",
+        "value": "FAIL",
+        "classification": "WORKFLOW_DEFECT"
+      },
+      {
+        "signal": "harnessIntegrity",
+        "value": "FAIL",
+        "classification": "HARNESS_DEFECT"
+      },
+      {
+        "signal": "productOracle",
+        "value": "FAIL",
+        "classification": "PRODUCT_DEFECT"
+      }
+    ],
+    "allowedValues": [
+      "PASS",
+      "FAIL",
+      "UNKNOWN",
+      "NOT_APPLICABLE"
+    ]
+  }
+}

@@ -3,13 +3,29 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   AudienceSchema,
   Audience_Kind,
+  MentionSchema,
+  ReactionKind,
+  type Audience,
   type Post,
 } from '../../gen/proto/domain/social/post_pb';
 import type {
+  PrivateMomentMention,
   PrivateMomentMediaProjection,
   PrivateMomentProjection,
+  PrivateMomentPublishIntent,
 } from '../../services/privateMomentsNative';
+import { privateMomentsNative } from '../../services/privateMomentsNative';
 import { api } from '../../services/desktop_api';
+import {
+  socialBlockActor,
+  socialFollow,
+  socialUnblockActor,
+  type MomentDraft,
+} from '../../services/social_api';
+import {
+  FriendRequestState,
+  SocialRelationshipCommandResultKind,
+} from '../../gen/proto/domain/social/relationship_pb';
 import { useMomentsStore, type MomentComposerDraft } from '../../store/moments';
 import {
   selectPrivateCommentThread,
@@ -30,20 +46,27 @@ const browserPageBootIdentity = (() => {
     .join('');
 })();
 const MAX_CAPTURE_EVENT_DIGESTS = 4096;
+const MAX_PROTO_UINT64 = 18_446_744_073_709_551_615n;
 
 interface StagePrivateDraftInput {
   draftId: string;
   revision: number;
   text: string;
   audienceKind?: keyof typeof PRIVATE_AUDIENCE_BY_NAME;
-  targetId?: string;
+  circleId?: string;
+  groupConversationId?: string;
   baseKind?: 'PUBLIC' | 'FOLLOWERS';
   actorPtids?: string[];
-  momentKind?: 'TEXT' | 'IMAGE';
+  momentKind?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'LINK' | 'POLL' | 'REPOST' | 'LOCATION';
+  mentions?: PrivateMomentPublishIntent['mentions'];
   files?: Array<{
     intentId: string;
     filePath: string;
   }>;
+  link?: PrivateMomentPublishIntent['link'];
+  location?: PrivateMomentPublishIntent['location'];
+  poll?: PrivateMomentPublishIntent['poll'];
+  repost?: PrivateMomentPublishIntent['repost'];
 }
 
 const PRIVATE_AUDIENCE_BY_NAME = {
@@ -56,6 +79,14 @@ const PRIVATE_AUDIENCE_BY_NAME = {
   CUSTOM_DENY: Audience_Kind.CUSTOM_DENY,
 } as const;
 
+const PRIVATE_REACTION_BY_NAME = {
+  LIKE: ReactionKind.REACTION_LIKE,
+  LOVE: ReactionKind.REACTION_LOVE,
+  LAUGH: ReactionKind.REACTION_LAUGH,
+  WOW: ReactionKind.REACTION_WOW,
+  CELEBRATE: ReactionKind.REACTION_CELEBRATE,
+} as const;
+
 function audienceName(kind: Audience_Kind): string {
   return Object.entries(PRIVATE_AUDIENCE_BY_NAME)
     .find(([, value]) => value === kind)?.[0] ?? 'OTHER';
@@ -64,9 +95,35 @@ function audienceName(kind: Audience_Kind): string {
 function privateAudience(input: StagePrivateDraftInput) {
   const kindName = input.audienceKind ?? 'FRIENDS';
   const kind = PRIVATE_AUDIENCE_BY_NAME[kindName];
-  const targetId = input.targetId?.trim()
-    ? BigInt(input.targetId)
-    : 0n;
+  let target: Audience['target'];
+  if (kindName === 'CIRCLE') {
+    const circleId = input.circleId;
+    if (
+      !circleId
+      || input.groupConversationId !== undefined
+      || !/^[1-9]\d*$/.test(circleId)
+      || BigInt(circleId) > MAX_PROTO_UINT64
+    ) {
+      throw new Error('moments.acceptance.invalidAudience');
+    }
+    target = { case: 'circleId', value: BigInt(circleId) };
+  } else if (kindName === 'GROUP') {
+    const groupConversationId = input.groupConversationId;
+    if (
+      input.circleId !== undefined
+      || !groupConversationId
+      || groupConversationId.trim() !== groupConversationId
+      || groupConversationId.includes('\0')
+    ) {
+      throw new Error('moments.acceptance.invalidAudience');
+    }
+    target = { case: 'groupConversationId', value: groupConversationId };
+  } else {
+    if (input.circleId !== undefined || input.groupConversationId !== undefined) {
+      throw new Error('moments.acceptance.invalidAudience');
+    }
+    target = { case: undefined };
+  }
   const baseKind = input.baseKind === 'PUBLIC'
     ? Audience_Kind.PUBLIC
     : input.baseKind === 'FOLLOWERS'
@@ -74,7 +131,7 @@ function privateAudience(input: StagePrivateDraftInput) {
       : Audience_Kind.KIND_UNSPECIFIED;
   return create(AudienceSchema, {
     kind,
-    targetId,
+    target,
     baseKind,
     actorPtids: input.actorPtids ?? [],
   });
@@ -88,6 +145,18 @@ interface PrivateMomentInput {
 interface PublicMomentInput {
   text: string;
   filePath?: string;
+}
+
+interface ResolveFederatedActorIdentityInput {
+  federatedHandle: string;
+}
+
+interface FederationBindingInput {
+  federationId: string;
+}
+
+interface JoinAcceptanceFederationInput extends FederationBindingInput {
+  federationEndpoint: string;
 }
 
 interface RuntimeIdentityResult {
@@ -377,13 +446,16 @@ function canonicalTerminalMarker(marker: Omit<StreamTerminalMarker, 'markerDiges
   });
 }
 
-function terminalPerformanceEntry(marker: StreamTerminalMarker): string {
+function terminalNetworkMarkerUrl(marker: StreamTerminalMarker): string {
   const bytes = new TextEncoder().encode(canonicalTerminalMarker(marker));
   const encoded = btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
-  return `sc-terminal-v1:${encoded}`;
+  return new URL(
+    `/__pt_acceptance/network-terminal/${encoded}`,
+    window.location.origin,
+  ).href;
 }
 
 class AcceptanceBrowserNetworkObserver {
@@ -505,12 +577,10 @@ class AcceptanceBrowserNetworkObserver {
             canonicalTerminalMarker(unsignedMarker),
           ),
         });
-        const entryName = terminalPerformanceEntry(marker);
-        await new Promise<void>((persisted) => {
-          queueMicrotask(() => {
-            performance.mark(entryName, { detail: marker });
-            persisted();
-          });
+        await fetch(terminalNetworkMarkerUrl(marker), {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          method: 'GET',
         });
         resolve(marker);
       }).catch((error) => {
@@ -816,7 +886,40 @@ async function privateProjectionEvidence(
   projection: PrivateMomentProjection,
 ) {
   const content = projection.content;
-  const text = content?.text ?? '';
+  const mentions = projection.mentions ?? [];
+  const text = content?.kind === 'REPOST'
+    ? content.comment
+    : content?.text ?? '';
+  let subtypeEvidence: Record<string, unknown> | undefined;
+  if (content?.kind === 'LINK') {
+    subtypeEvidence = {
+      urlSha256: await sha256(content.url),
+      titleSha256: await sha256(content.title),
+    };
+  } else if (content?.kind === 'POLL') {
+    subtypeEvidence = {
+      questionSha256: await sha256(content.question),
+      optionLabelSha256: await Promise.all(content.options.map(sha256)),
+      minChoices: content.minChoices,
+      maxChoices: content.maxChoices,
+      expiresAtSeconds: content.expiresAtSeconds,
+    };
+  } else if (content?.kind === 'REPOST') {
+    subtypeEvidence = {
+      commentSha256: await sha256(content.comment),
+      sourcePostIdSha256: await sha256(content.sourcePostId),
+      sourceAuthorPtidSha256: await sha256(content.sourceAuthorPtid),
+      sourceKind: content.sourceKind,
+      sourceTextSha256: await sha256(content.sourceText),
+    };
+  } else if (content?.kind === 'LOCATION') {
+    subtypeEvidence = {
+      nameSha256: await sha256(content.name),
+      latitudeSha256: await sha256(content.latitude),
+      longitudeSha256: await sha256(content.longitude),
+      addressSha256: await sha256(content.address),
+    };
+  }
   return {
     platform: usePrivateMomentsStore.getState().platform,
     state: projection.state,
@@ -833,9 +936,14 @@ async function privateProjectionEvidence(
     textByteLength: content
       ? new TextEncoder().encode(text).byteLength
       : undefined,
-    media: content?.kind === 'IMAGE'
+    media: content?.kind === 'IMAGE' || content?.kind === 'VIDEO'
       ? await Promise.all(content.media.map(mediaEvidence))
       : [],
+    mentionCount: mentions.length,
+    mentionedActorPtidsSha256: await Promise.all(
+      mentions.map((mention) => sha256(mention.actorPtid)),
+    ),
+    subtypeEvidence,
   };
 }
 
@@ -892,6 +1000,7 @@ async function privateCommentEvidence(comment: {
   authorPtid: string;
   commentId: string;
   contentId: string;
+  mentions: PrivateMomentMention[];
   postId: string;
   state: string;
   text: string;
@@ -900,6 +1009,10 @@ async function privateCommentEvidence(comment: {
     authorPtidSha256: await sha256(comment.authorPtid),
     commentIdSha256: await sha256(comment.commentId),
     contentIdSha256: await sha256(comment.contentId),
+    mentionCount: comment.mentions.length,
+    mentionedActorPtidsSha256: await Promise.all(
+      comment.mentions.map((mention) => sha256(mention.actorPtid)),
+    ),
     postIdSha256: await sha256(comment.postId),
     state: comment.state,
     textByteLength: new TextEncoder().encode(comment.text).byteLength,
@@ -958,6 +1071,9 @@ async function publishPrivateDraft() {
     platform: usePrivateMomentsStore.getState().platform,
     state: publish.state,
     errorCode: publish.errorCode,
+    ...(publish.rejectionEvidence
+      ? { rejectionEvidence: publish.rejectionEvidence }
+      : {}),
     ...(transientPostId
       ? {
           postIdSha256: await sha256(transientPostId),
@@ -965,6 +1081,168 @@ async function publishPrivateDraft() {
         }
       : {}),
     draft: await draftEvidence(useMomentsStore.getState().composerDraft),
+  };
+}
+
+async function publishUnsupportedCustomDenyPublic(
+  input: StagePrivateDraftInput,
+) {
+  if (
+    input.audienceKind !== 'CUSTOM_DENY'
+    || input.baseKind !== 'PUBLIC'
+    || !input.draftId?.trim()
+    || !Number.isSafeInteger(input.revision)
+    || input.revision < 1
+    || !input.text?.trim()
+    || !input.actorPtids?.length
+  ) {
+    throw new Error('moments.acceptance.invalidUnsupportedAudienceProbe');
+  }
+  const privateState = usePrivateMomentsStore.getState();
+  const { actorPtid, rendererGeneration } = privateState.scope;
+  if (
+    privateState.platform !== 'native'
+    || !actorPtid
+    || rendererGeneration < 1
+  ) {
+    throw new Error('moments.acceptance.nativeScopeMissing');
+  }
+
+  // This cast is deliberately confined to the build-gated Acceptance harness:
+  // production callers cannot construct CUSTOM_DENY(PUBLIC).
+  const intent = {
+    actorPtid,
+    rendererGeneration,
+    draftId: input.draftId,
+    draftRevision: input.revision,
+    audience: {
+      kind: 'CUSTOM_DENY',
+      actorPtids: [...input.actorPtids],
+      baseKind: 'PUBLIC',
+    },
+    momentKind: 'TEXT',
+    text: input.text,
+    mentions: [],
+    files: [],
+  } as unknown as PrivateMomentPublishIntent;
+  const result = await privateMomentsNative.publish(intent);
+  if (result.state !== 'PRIVATE_UNSUPPORTED') {
+    throw new Error('moments.acceptance.unsupportedAudienceWasAccepted');
+  }
+  return {
+    platform: privateState.platform,
+    state: result.state,
+    errorCode: result.errorCode,
+    stationErrorCode: result.stationErrorCode,
+    rejectionEvidence: result.evidence,
+  };
+}
+
+async function publishTypedPrivateMoment(input: StagePrivateDraftInput) {
+  if (
+    !input?.draftId?.trim()
+    || !Number.isSafeInteger(input.revision)
+    || input.revision < 1
+    || !input.text?.trim()
+    || !input.momentKind
+  ) {
+    throw new Error('moments.acceptance.invalidTypedPrivateMoment');
+  }
+  const privateState = usePrivateMomentsStore.getState();
+  const { actorPtid, rendererGeneration } = privateState.scope;
+  if (
+    privateState.platform !== 'native'
+    || !actorPtid
+    || rendererGeneration < 1
+  ) {
+    throw new Error('moments.acceptance.nativeScopeMissing');
+  }
+  const base = {
+    audience: privateAudience(input),
+    draftId: input.draftId,
+    draftRevision: input.revision,
+    mentions: (input.mentions ?? []).map((mention) => create(MentionSchema, {
+      actorPtid: mention.actorPtid,
+      offset: mention.offset,
+      length: mention.length,
+      display: mention.display,
+    })),
+  };
+  const localFiles = (input.files ?? []).map((file) => ({
+      intentId: file.intentId,
+      filePath: file.filePath,
+      previewSrc: '',
+  }));
+  let draft: MomentDraft;
+  switch (input.momentKind) {
+    case 'TEXT':
+      draft = { ...base, kind: 'text', text: input.text };
+      break;
+    case 'IMAGE':
+      draft = {
+        ...base,
+        kind: 'image',
+        text: input.text,
+        imageIds: [],
+        localFiles,
+      };
+      break;
+    case 'VIDEO':
+      draft = {
+        ...base,
+        kind: 'video',
+        text: input.text,
+        localFiles,
+      };
+      break;
+    case 'LINK':
+      if (!input.link) throw new Error('moments.acceptance.linkMissing');
+      draft = { ...base, kind: 'link', text: input.text, link: input.link };
+      break;
+    case 'POLL':
+      if (!input.poll) throw new Error('moments.acceptance.pollMissing');
+      draft = {
+        ...base,
+        kind: 'poll',
+        text: input.text,
+        poll: {
+          ...input.poll,
+          durationHours: 1,
+          multipleChoice: input.poll.maxChoices > 1,
+        },
+      };
+      break;
+    case 'REPOST':
+      if (!input.repost) throw new Error('moments.acceptance.repostMissing');
+      draft = {
+        ...base,
+        kind: 'repost',
+        originalPostId: input.repost.sourcePostId,
+        comment: input.text,
+      };
+      break;
+    case 'LOCATION':
+      if (!input.location) throw new Error('moments.acceptance.locationMissing');
+      draft = {
+        ...base,
+        kind: 'location',
+        text: input.text,
+        location: input.location,
+      };
+      break;
+  }
+  const transientPostId = await useMomentsStore.getState().createPost(draft);
+  const publish = usePrivateMomentsStore.getState().publish;
+  return {
+    platform: privateState.platform,
+    state: publish.state,
+    ...(publish.errorCode ? { errorCode: publish.errorCode } : {}),
+    ...(transientPostId
+      ? {
+          postIdSha256: await sha256(transientPostId),
+          transientPostId,
+        }
+      : {}),
   };
 }
 
@@ -1006,6 +1284,38 @@ export function installAcceptanceHarness(): void {
       return { actorPtid };
     },
 
+    async federatedActorIdentity() {
+      const actorPtid = useSessionStore.getState().currentUser?.actorPtid?.trim();
+      const self = await api.federationGetSelf();
+      const federatedHandle = self.federatedHandle.trim();
+      const homeStationPeerId = self.homeStationPeerId.trim();
+      if (!actorPtid || !federatedHandle || !homeStationPeerId) {
+        throw new Error('moments.acceptance.federatedActorIdentityMissing');
+      }
+      return { actorPtid, federatedHandle, homeStationPeerId };
+    },
+
+    async resolveFederatedActorIdentity(
+      input: ResolveFederatedActorIdentityInput,
+    ) {
+      const federatedHandle = input.federatedHandle?.trim();
+      if (!federatedHandle) {
+        throw new Error('moments.acceptance.federatedHandleMissing');
+      }
+      const resolved = await api.federationResolve(federatedHandle);
+      const actorPtid = resolved.profile?.ref?.ptid.trim();
+      const homeStationPeerId = resolved.homeStationPeerId.trim();
+      const resolvedHandle = resolved.federatedHandle.trim();
+      if (!actorPtid || !homeStationPeerId || !resolvedHandle) {
+        throw new Error('moments.acceptance.federatedActorResolveIncomplete');
+      }
+      return {
+        actorPtid,
+        federatedHandle: resolvedHandle,
+        homeStationPeerId,
+      };
+    },
+
     async friendshipAuthority() {
       const [self, federationProjection] = await Promise.all([
         api.federationGetSelf(),
@@ -1013,12 +1323,116 @@ export function installAcceptanceHarness(): void {
       ]);
       const homeStationPeerId = self.homeStationPeerId.trim();
       const federationId = federationProjection.federations
+        .filter(
+          (federation) => federation.status.trim().toLowerCase() === 'active',
+        )
         .map((federation) => federation.federationId.trim())
         .find(Boolean);
       if (!homeStationPeerId || !federationId) {
         throw new Error('moments.acceptance.friendshipAuthorityMissing');
       }
       return { federationId, homeStationPeerId };
+    },
+
+    async federationJoinAuthority() {
+      const [self, federationProjection] = await Promise.all([
+        api.federationGetSelf(),
+        api.federationListFederations(),
+      ]);
+      const homeStationPeerId = self.homeStationPeerId.trim();
+      if (!homeStationPeerId) {
+        throw new Error('moments.acceptance.friendshipAuthorityMissing');
+      }
+      for (const federation of federationProjection.federations) {
+        const federationId = federation.federationId.trim();
+        const sequencerStationPeerId =
+          federation.sequencerStationPeerId.trim();
+        if (
+          !federationId
+          || !sequencerStationPeerId
+          || federation.status.trim().toLowerCase() !== 'active'
+        ) {
+          continue;
+        }
+        const members = await api.federationListMemberStations(federationId);
+        const sequencer = members.stations.find(
+          (station) =>
+            station.stationPeerId.trim() === sequencerStationPeerId
+            && station.status.trim().toLowerCase() === 'active'
+            && Boolean(station.stationUrl.trim()),
+        );
+        if (sequencer) {
+          return {
+            federationEndpoint: sequencer.stationUrl.trim(),
+            federationId,
+            homeStationPeerId,
+          };
+        }
+      }
+      const created = await api.federationCreate({
+        name: 'Secure Content W8 Fixture',
+        description: 'Acceptance-owned cross-Station Social fixture',
+        policy_type: 'single_admin',
+      });
+      const federationId = created.federationId.trim();
+      if (!federationId) {
+        throw new Error('moments.acceptance.federationJoinAuthorityMissing');
+      }
+      const members = await api.federationListMemberStations(federationId);
+      const sequencer = members.stations.find(
+        (station) =>
+          station.stationPeerId.trim() === homeStationPeerId
+          && station.status.trim().toLowerCase() === 'active'
+          && Boolean(station.stationUrl.trim()),
+      );
+      if (!sequencer) {
+        throw new Error('moments.acceptance.federationJoinAuthorityMissing');
+      }
+      return {
+        federationEndpoint: sequencer.stationUrl.trim(),
+        federationId,
+        homeStationPeerId,
+      };
+    },
+
+    async federationMemberStations(input: FederationBindingInput) {
+      const federationId = input.federationId?.trim();
+      if (!federationId) {
+        throw new Error('moments.acceptance.federationIdMissing');
+      }
+      const response = await api.federationListMemberStations(federationId);
+      const stationPeerIds = Array.from(new Set(
+        response.stations
+          .filter((station) => station.status.trim().toLowerCase() === 'active')
+          .map((station) => station.stationPeerId.trim())
+          .filter(Boolean),
+      )).sort();
+      if (stationPeerIds.length === 0) {
+        throw new Error('moments.acceptance.federationMembersMissing');
+      }
+      return { federationId, stationPeerIds };
+    },
+
+    async joinAcceptanceFederation(input: JoinAcceptanceFederationInput) {
+      const federationId = input.federationId?.trim();
+      const federationEndpoint = input.federationEndpoint?.trim();
+      if (!federationId || !federationEndpoint) {
+        throw new Error('moments.acceptance.federationJoinMissing');
+      }
+      const response = await api.federationJoin({
+        federation_endpoint: federationEndpoint,
+        federation_id: federationId,
+        message: 'secure-content-w8 remote recipient fixture',
+      });
+      const status = response.status.trim().toLowerCase();
+      if (status !== 'active') {
+        throw new Error('moments.acceptance.federationJoinIncomplete');
+      }
+      return {
+        federationId,
+        status,
+        proposalId: response.proposalId.trim(),
+      };
     },
 
     async sendFriendRequest(input: {
@@ -1077,6 +1491,58 @@ export function installAcceptanceHarness(): void {
       throw new Error('moments.acceptance.friendRequestMissing');
     },
 
+    async friendshipProjection(input: { actorPtid: string }) {
+      const actorPtid = input?.actorPtid?.trim();
+      if (!actorPtid) {
+        throw new Error('moments.acceptance.actorIdentityMissing');
+      }
+      const session = await activeSessionIdentity();
+      const currentActorPtid = session.actorPtid;
+      if (!currentActorPtid) {
+        throw new Error('moments.acceptance.sessionIdentityMissing');
+      }
+      const response = await api.socialFriendRequestList(
+        FriendRequestState.ACCEPTED,
+        100,
+        0,
+      );
+      const accepted = response.requests.some((request) => {
+        if (request.state !== FriendRequestState.ACCEPTED) return false;
+        const senderPtid = request.sender?.ptid.trim();
+        const receiverPtid = request.receiver?.ptid.trim();
+        return (
+          senderPtid === currentActorPtid
+          && receiverPtid === actorPtid
+        ) || (
+          receiverPtid === currentActorPtid
+          && senderPtid === actorPtid
+        );
+      });
+      return {
+        actorPtidSha256: await sha256(actorPtid),
+        accepted,
+      };
+    },
+
+    async followActor(input: { actorPtid: string }) {
+      const actorPtid = input?.actorPtid?.trim();
+      if (!actorPtid) {
+        throw new Error('moments.acceptance.actorIdentityMissing');
+      }
+      const response = await socialFollow(actorPtid);
+      if (
+        response.success !== true
+        || response.relationship?.following !== true
+        || response.relationship.targetActorPtid !== actorPtid
+      ) {
+        throw new Error('moments.acceptance.followProjectionMismatch');
+      }
+      return {
+        followed: true,
+        actorPtidSha256: await sha256(actorPtid),
+      };
+    },
+
     async createAudienceCircle(input: { name: string }) {
       if (!input.name?.trim()) {
         throw new Error('moments.acceptance.circleNameMissing');
@@ -1107,6 +1573,34 @@ export function installAcceptanceHarness(): void {
       return publishPrivateDraft();
     },
 
+    async publishUnsupportedCustomDenyPublic(input: StagePrivateDraftInput) {
+      return publishUnsupportedCustomDenyPublic(input);
+    },
+
+    async publishTypedPrivateMoment(input: StagePrivateDraftInput) {
+      return publishTypedPrivateMoment(input);
+    },
+
+    async probeTypedPrivateMomentRejection(input: StagePrivateDraftInput) {
+      try {
+        const result = await publishTypedPrivateMoment(input);
+        return {
+          rejected: false,
+          state: result.state,
+          errorCode: result.errorCode,
+          transientPostId: result.transientPostId,
+        };
+      } catch {
+        const publish = usePrivateMomentsStore.getState().publish;
+        return {
+          rejected: true,
+          state: publish.state,
+          errorCode: publish.errorCode,
+          transientPostId: publish.postId,
+        };
+      }
+    },
+
     async publishFriendsDraft() {
       return publishPrivateDraft();
     },
@@ -1121,7 +1615,13 @@ export function installAcceptanceHarness(): void {
       if (!projection) {
         throw new Error('moments.acceptance.privateProjectionMissing');
       }
-      if (input.openMedia && projection.content?.kind === 'IMAGE') {
+      if (
+        input.openMedia
+        && (
+          projection.content?.kind === 'IMAGE'
+          || projection.content?.kind === 'VIDEO'
+        )
+      ) {
         for (const media of projection.content.media) {
           await usePrivateMomentsStore.getState().openMedia(
             input.postId,
@@ -1134,6 +1634,143 @@ export function installAcceptanceHarness(): void {
         throw new Error('moments.acceptance.privateProjectionMissing');
       }
       return privateProjectionEvidence(projection);
+    },
+
+    async reactToPrivateMoment(input: {
+      postId: string;
+      kind: keyof typeof PRIVATE_REACTION_BY_NAME;
+    }) {
+      if (!input?.postId?.trim()) {
+        throw new Error('moments.acceptance.postIdMissing');
+      }
+      const kind = PRIVATE_REACTION_BY_NAME[input.kind];
+      if (kind === undefined) {
+        throw new Error('moments.acceptance.reactionKindInvalid');
+      }
+      const store = useMomentsStore.getState();
+      await store.reactToPost(input.postId, kind);
+      return {
+        reactions: (useMomentsStore.getState().reactions[input.postId] ?? [])
+          .map((reaction) => ({
+            kind: reaction.kind,
+            count: Number(reaction.count),
+            reactedByViewer: reaction.reactedByViewer,
+          })),
+      };
+    },
+
+    async unreactToPrivateMoment(input: {
+      postId: string;
+      kind: keyof typeof PRIVATE_REACTION_BY_NAME;
+    }) {
+      if (!input?.postId?.trim()) {
+        throw new Error('moments.acceptance.postIdMissing');
+      }
+      const kind = PRIVATE_REACTION_BY_NAME[input.kind];
+      if (kind === undefined) {
+        throw new Error('moments.acceptance.reactionKindInvalid');
+      }
+      const store = useMomentsStore.getState();
+      await store.unreactToPost(input.postId, kind);
+      return {
+        reactions: (useMomentsStore.getState().reactions[input.postId] ?? [])
+          .map((reaction) => ({
+            kind: reaction.kind,
+            count: Number(reaction.count),
+            reactedByViewer: reaction.reactedByViewer,
+          })),
+      };
+    },
+
+    async deletePrivateMoment(input: { postId: string }) {
+      if (!input?.postId?.trim()) {
+        throw new Error('moments.acceptance.postIdMissing');
+      }
+      await useMomentsStore.getState().deletePost(input.postId);
+      return {
+        deleted: true,
+        localProjectionPresent: Boolean(
+          usePrivateMomentsStore.getState().postsById[input.postId],
+        ),
+      };
+    },
+
+    async blockActor(input: {
+      actorPtid: string;
+      homeStationPeerId: string;
+      observedRevision: number;
+    }) {
+      if (
+        !input?.actorPtid?.trim()
+        || !input?.homeStationPeerId?.trim()
+        || !Number.isSafeInteger(input.observedRevision)
+        || input.observedRevision < 0
+      ) {
+        throw new Error('moments.acceptance.relationshipInputInvalid');
+      }
+      const response = await socialBlockActor({
+        targetActorPtid: input.actorPtid,
+        targetHomeStationPeerId: input.homeStationPeerId,
+        observedRevision: input.observedRevision,
+      });
+      const result = response.result;
+      if (
+        !result
+        || (
+          result.kind
+          !== SocialRelationshipCommandResultKind.COMMITTED
+          && result.kind
+          !== SocialRelationshipCommandResultKind.DUPLICATE
+        )
+        || result.projection?.blockedByViewer !== true
+      ) {
+        throw new Error('moments.acceptance.relationshipBlockFailed');
+      }
+      return {
+        state: 'BLOCKED',
+        revision: Number(result.projection.revision),
+        interactionAllowed: result.projection.interactionAllowed,
+        targetActorPtidSha256: await sha256(input.actorPtid),
+      };
+    },
+
+    async unblockActor(input: {
+      actorPtid: string;
+      homeStationPeerId: string;
+      observedRevision: number;
+    }) {
+      if (
+        !input?.actorPtid?.trim()
+        || !input?.homeStationPeerId?.trim()
+        || !Number.isSafeInteger(input.observedRevision)
+        || input.observedRevision < 0
+      ) {
+        throw new Error('moments.acceptance.relationshipInputInvalid');
+      }
+      const response = await socialUnblockActor({
+        targetActorPtid: input.actorPtid,
+        targetHomeStationPeerId: input.homeStationPeerId,
+        observedRevision: input.observedRevision,
+      });
+      const result = response.result;
+      if (
+        !result
+        || (
+          result.kind
+          !== SocialRelationshipCommandResultKind.COMMITTED
+          && result.kind
+          !== SocialRelationshipCommandResultKind.DUPLICATE
+        )
+        || result.projection?.blockedByViewer !== false
+      ) {
+        throw new Error('moments.acceptance.relationshipUnblockFailed');
+      }
+      return {
+        state: 'UNBLOCKED',
+        revision: Number(result.projection.revision),
+        interactionAllowed: result.projection.interactionAllowed,
+        targetActorPtidSha256: await sha256(input.actorPtid),
+      };
     },
 
     async recoverPrivateMoment(input: PrivateMomentInput) {
@@ -1152,12 +1789,13 @@ export function installAcceptanceHarness(): void {
     async submitPrivateComment(input: {
       postId: string;
       text: string;
+      mentions?: PrivateMomentMention[];
     }) {
       if (!input?.postId?.trim() || !input?.text?.trim()) {
         throw new Error('moments.acceptance.privateCommentInvalid');
       }
       const store = usePrivateCommentsStore.getState();
-      await store.submitComment(input.postId, input.text);
+      await store.submitComment(input.postId, input.text, undefined, input.mentions ?? []);
       const thread = selectPrivateCommentThread(
         usePrivateCommentsStore.getState(),
         input.postId,
@@ -1224,9 +1862,7 @@ export function installAcceptanceHarness(): void {
       const audience = create(AudienceSchema, { kind: Audience_Kind.PUBLIC });
       let postId: string;
       if (input.filePath) {
-        const uploaded = await api.ossUploadEncryptedAttachmentSocial(
-          input.filePath,
-        );
+        const uploaded = await api.ossUploadAttachmentSocial(input.filePath);
         if (!uploaded?.cid) {
           throw new Error('moments.acceptance.publicMediaUploadFailed');
         }

@@ -53,6 +53,7 @@ type RuntimeEvidenceService struct {
 	counterEpoch    string
 	counters        map[runtimeActivityKey]runtimeActivityCounters
 	now             func() time.Time
+	externalReady   func() bool
 }
 
 func NewRuntimeEvidenceService() *RuntimeEvidenceService {
@@ -62,6 +63,10 @@ func NewRuntimeEvidenceService() *RuntimeEvidenceService {
 		counters:        make(map[runtimeActivityKey]runtimeActivityCounters),
 		now:             func() time.Time { return time.Now().UTC() },
 	}
+}
+
+func (s *RuntimeEvidenceService) SetExternalRuntimeAvailability(available func() bool) {
+	s.externalReady = available
 }
 
 func (s *RuntimeEvidenceService) EffectiveProfile(
@@ -79,7 +84,13 @@ func (s *RuntimeEvidenceService) EffectiveProfile(
 		)
 	}
 	agentID = strings.TrimSpace(agentID)
-	readinessID := runtimeProfileIdentity(actorID, agentID)
+	externalState := model.RuntimeAdvertisementState_RUNTIME_ADVERTISEMENT_STATE_NOT_ADVERTISED
+	externalReason := "external_adapter_unavailable"
+	if s.externalReady != nil && s.externalReady() {
+		externalState = model.RuntimeAdvertisementState_RUNTIME_ADVERTISEMENT_STATE_READY
+		externalReason = "session_adapter_ready"
+	}
+	readinessID := runtimeProfileIdentity(actorID, agentID, externalState)
 	return &model.EffectiveRuntimeProfileSnapshot{
 		SnapshotId:          "runtime-profile-" + uuid.NewString(),
 		Ptid:                actorID,
@@ -103,8 +114,8 @@ func (s *RuntimeEvidenceService) EffectiveProfile(
 			{
 				RuntimeKind: model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT,
 				RuntimeId:   runtimeIDExternalAgent,
-				State:       model.RuntimeAdvertisementState_RUNTIME_ADVERTISEMENT_STATE_NOT_ADVERTISED,
-				ReasonCode:  "frozen_profile_external_agent_excluded",
+				State:       externalState,
+				ReasonCode:  externalReason,
 			},
 		},
 		ObservedAt: timestamppb.New(s.now()),
@@ -197,7 +208,11 @@ func (s *RuntimeEvidenceService) RecordActivity(
 	return nil
 }
 
-func runtimeProfileIdentity(actorID string, agentID string) string {
+func runtimeProfileIdentity(
+	actorID string,
+	agentID string,
+	externalState model.RuntimeAdvertisementState,
+) string {
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		actorID,
 		agentID,
@@ -205,7 +220,7 @@ func runtimeProfileIdentity(actorID string, agentID string) string {
 		"1",
 		runtimeIDDirectModel + ":ready",
 		runtimeIDTraeCLI + ":not-advertised",
-		runtimeIDExternalAgent + ":not-advertised",
+		runtimeIDExternalAgent + ":" + externalState.String(),
 	}, "\x00")))
 	return "runtime-readiness-" + hex.EncodeToString(sum[:16])
 }

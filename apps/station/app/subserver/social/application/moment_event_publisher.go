@@ -59,10 +59,10 @@ func (p *MomentEventPublisher) PublishCommented(ctx context.Context, postID uint
 	})
 }
 
-func (p *MomentEventPublisher) PublishReacted(ctx context.Context, postID uint64, reactionActorPTID string, kind model.ReactionKind, removed bool) {
+func (p *MomentEventPublisher) PublishReacted(ctx context.Context, postID string, reactionActorPTID string, kind model.ReactionKind, removed bool) {
 	p.publish(ctx, reactionActorPTID, &realtime.MomentEvent{
 		Kind:             realtime.MomentEvent_REACTED,
-		PostId:           fmt.Sprintf("%d", postID),
+		PostId:           postID,
 		ActorPtid:        reactionActorPTID,
 		ReactionKind:     kind.String(),
 		Removed:          removed,

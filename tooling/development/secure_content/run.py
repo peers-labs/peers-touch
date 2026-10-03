@@ -2200,6 +2200,26 @@ def execute_scenario(
         result["fixtureManifestDigest"] = runtime_manifest.payload[
             "fixture_manifest_digest"
         ]
+        final_cut_bindings = runtime_manifest.payload.get(
+            "final_cut_bindings"
+        )
+        if isinstance(final_cut_bindings, Mapping):
+            result["postCutEpochId"] = runtime_manifest.payload[
+                "post_cut_epoch_id"
+            ]
+            result["finalCutBindings"] = {
+                profile_id: {
+                    "resultDigest": binding["result_digest"],
+                    "resetId": binding["reset_id"],
+                    "schemaAttestationDigest": binding[
+                        "schema_attestation_digest"
+                    ],
+                    "stationRuntimeIdentity": binding[
+                        "station_runtime_identity"
+                    ],
+                }
+                for profile_id, binding in final_cut_bindings.items()
+            }
     result.update(detail)
     if failure:
         result["firstFailure"] = {

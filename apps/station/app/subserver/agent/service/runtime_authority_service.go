@@ -14,6 +14,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
@@ -141,7 +142,8 @@ func (s *TurnService) persistRuntimeAuthority(
 		return err
 	}
 
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	bindingCreated := false
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var conversation persistence.Conversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
@@ -175,7 +177,7 @@ func (s *TurnService) persistRuntimeAuthority(
 				nil,
 			)
 		}
-		snapshot := newDirectRuntimeSnapshot(
+		snapshot := newRuntimeSnapshot(
 			admission,
 			fmt.Sprintf("%d", agentVersion),
 			config.ThinkingMode,
@@ -195,7 +197,12 @@ func (s *TurnService) persistRuntimeAuthority(
 
 		var binding *model.ConversationRuntimeBinding
 		if len(conversation.RuntimeBinding) == 0 {
-			binding, err = newConversationRuntimeBinding(snapshot, time.Now().UTC())
+			binding, err = newConversationRuntimeBinding(
+				snapshot,
+				config.ActorID,
+				config.ConversationID,
+				time.Now().UTC(),
+			)
 			if err != nil {
 				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 					"build conversation runtime binding", err)
@@ -223,6 +230,7 @@ func (s *TurnService) persistRuntimeAuthority(
 				return errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
 					"conversation runtime binding changed during installation", nil)
 			}
+			bindingCreated = true
 		} else {
 			binding, err = persistence.UnmarshalConversationRuntimeBinding(conversation.RuntimeBinding)
 			if err != nil {
@@ -313,6 +321,12 @@ func (s *TurnService) persistRuntimeAuthority(
 		}
 		return nil
 	})
+	if err == nil && bindingCreated &&
+		admission.RuntimeKind == model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT &&
+		s.externalRuntime != nil {
+		s.externalRuntime.RecordBindingCreated(config.ActorID)
+	}
+	return err
 }
 
 func (s *TurnService) validatePinnedRuntimeAuthority(
@@ -434,8 +448,16 @@ func (s *TurnService) validatePinnedRuntimeAuthorityWithMode(
 	); err != nil {
 		return err
 	}
-	if pinned.GetRuntimeKind() != model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL ||
-		pinned.GetProviderId() != config.Provider ||
+	if pinned.GetRuntimeKind() != model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL &&
+		pinned.GetRuntimeKind() != model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider execution runtime kind is unsupported",
+			nil,
+		)
+	}
+	if pinned.GetProviderId() != config.Provider ||
 		pinned.GetModelId() != config.Model ||
 		pinned.GetRuntimeProfileId() != modernChatAgentProfileID {
 		return errcode.New(
@@ -444,6 +466,47 @@ func (s *TurnService) validatePinnedRuntimeAuthorityWithMode(
 			"provider execution runtime tuple differs from the pinned snapshot",
 			nil,
 		)
+	}
+	if pinned.GetRuntimeKind() == model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT {
+		if mode != providerRuntimeAuthorityCurrent || s.externalRuntime == nil {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"external runtime execution authority is unavailable",
+				nil,
+			)
+		}
+		if err := s.externalRuntime.validatePinnedBinding(
+			ctx,
+			config.ActorID,
+			config.ConversationID,
+			pinned,
+		); err != nil {
+			return err
+		}
+		current, err := s.admissionResolver.Resolve(
+			ctx,
+			config.ActorID,
+			config.Provider,
+			config.Model,
+		)
+		if err != nil {
+			return err
+		}
+		if current.RuntimeKind != model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT ||
+			current.ProviderConfigVersion != pinned.GetProviderConfigVersion() ||
+			current.SnapshotID != pinned.GetCapabilities().GetSnapshotId() {
+			return errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"external runtime capability provenance is stale",
+				nil,
+			)
+		}
+		config.ProviderConfigVersion = pinned.GetProviderConfigVersion()
+		config.CapabilitySourceVersion =
+			pinned.GetCapabilities().GetProvenance().GetSourceVersion()
+		return nil
 	}
 	if config.RuntimeBudget == nil ||
 		!proto.Equal(config.RuntimeBudget, pinned.GetBudget()) {
@@ -601,29 +664,58 @@ func loadAgentConfigVersionTx(tx *gorm.DB, ptid string, agentID string) (int64, 
 	return agent.Version, nil
 }
 
-func newDirectRuntimeSnapshot(
+func newRuntimeSnapshot(
 	admission *AdmissionSnapshot,
 	agentConfigVersion string,
 	thinkingMode domain.ThinkingMode,
 ) *model.RuntimeSnapshot {
 	capabilities := proto.Clone(admission.Capabilities).(*model.RuntimeCapabilitySnapshot)
+	runtimeKind := admission.RuntimeKind
+	if runtimeKind == model.RuntimeKind_RUNTIME_KIND_UNSPECIFIED {
+		runtimeKind = model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL
+	}
+	runtimeProfileID := strings.TrimSpace(admission.RuntimeProfileID)
+	if runtimeProfileID == "" {
+		runtimeProfileID = modernChatAgentProfileID
+	}
+	externalSessionEpoch := uint64(0)
+	if runtimeKind == model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT {
+		externalSessionEpoch = 1
+	}
 	return &model.RuntimeSnapshot{
-		RuntimeKind:           model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL,
+		RuntimeKind:           runtimeKind,
 		ProviderId:            admission.ProviderID,
 		ModelId:               admission.ModelID,
-		RuntimeProfileId:      modernChatAgentProfileID,
+		RuntimeProfileId:      runtimeProfileID,
 		Capabilities:          capabilities,
 		ProviderConfigVersion: admission.ProviderConfigVersion,
 		AgentConfigVersion:    agentConfigVersion,
 		ExternalSessionId:     "",
-		ExternalSessionEpoch:  0,
+		ExternalSessionEpoch:  externalSessionEpoch,
 		ThinkingMode:          string(thinkingMode),
 		Budget:                cloneRuntimeBudget(admission.Budget),
 	}
 }
 
+func newDirectRuntimeSnapshot(
+	admission *AdmissionSnapshot,
+	agentConfigVersion string,
+	thinkingMode domain.ThinkingMode,
+) *model.RuntimeSnapshot {
+	directAdmission := *admission
+	directAdmission.RuntimeKind = model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL
+	directAdmission.RuntimeProfileID = modernChatAgentProfileID
+	return newRuntimeSnapshot(
+		&directAdmission,
+		agentConfigVersion,
+		thinkingMode,
+	)
+}
+
 func newConversationRuntimeBinding(
 	snapshot *model.RuntimeSnapshot,
+	actorPTID string,
+	conversationID string,
 	boundAt time.Time,
 ) (*model.ConversationRuntimeBinding, error) {
 	capabilityHash, err := runtimeCapabilitySnapshotHash(snapshot.GetCapabilities())
@@ -637,18 +729,32 @@ func newConversationRuntimeBinding(
 	if err != nil {
 		return nil, err
 	}
-	return &model.ConversationRuntimeBinding{
+	binding := &model.ConversationRuntimeBinding{
 		RuntimeKind:            snapshot.GetRuntimeKind(),
 		ProviderId:             snapshot.GetProviderId(),
 		ModelId:                snapshot.GetModelId(),
 		RuntimeProfileId:       snapshot.GetRuntimeProfileId(),
 		ExternalSessionId:      "",
-		ExternalSessionEpoch:   0,
+		ExternalSessionEpoch:   snapshot.GetExternalSessionEpoch(),
 		RuntimeHomeRef:         "",
 		CapabilitySnapshotHash: capabilityHash,
 		ConfigSnapshotHash:     configHash,
 		BoundAt:                timestamppb.New(boundAt),
-	}, nil
+	}
+	if snapshot.GetRuntimeKind() == model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT {
+		homeRef, err := externalruntime.RuntimeHomeRef(
+			actorPTID,
+			conversationID,
+			snapshot.GetExternalSessionEpoch(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		binding.RuntimeHomeRef = homeRef
+		binding.State = model.ExternalRuntimeBindingState_EXTERNAL_RUNTIME_BINDING_STATE_READY
+		binding.UpdatedAt = timestamppb.New(boundAt)
+	}
+	return binding, nil
 }
 
 func reconcileBoundRuntimeSnapshotTx(
@@ -678,8 +784,6 @@ func reconcileBoundRuntimeSnapshotTx(
 		binding.GetProviderId() != boundSnapshot.GetProviderId() ||
 		binding.GetModelId() != boundSnapshot.GetModelId() ||
 		binding.GetRuntimeProfileId() != boundSnapshot.GetRuntimeProfileId() ||
-		binding.GetExternalSessionId() != boundSnapshot.GetExternalSessionId() ||
-		binding.GetExternalSessionEpoch() != boundSnapshot.GetExternalSessionEpoch() ||
 		binding.GetConfigSnapshotHash() != boundConfigHash ||
 		binding.GetCapabilitySnapshotHash() != boundFullCapabilityHash {
 		return nil, errcode.New(
@@ -706,6 +810,10 @@ func reconcileBoundRuntimeSnapshotTx(
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"hash candidate runtime capabilities", err)
+	}
+	if binding.GetRuntimeKind() == model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT {
+		candidate.ExternalSessionId = binding.GetExternalSessionId()
+		candidate.ExternalSessionEpoch = binding.GetExternalSessionEpoch()
 	}
 	if binding.GetRuntimeKind() != candidate.GetRuntimeKind() ||
 		binding.GetProviderId() != candidate.GetProviderId() ||

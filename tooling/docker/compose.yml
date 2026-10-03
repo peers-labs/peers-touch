@@ -56,6 +56,7 @@ services:
     profiles: [station]
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+      PEERS_OAUTH_BRIDGE_SECRET: ${PEERS_OAUTH_BRIDGE_SECRET:-}
       # Canonical Station-owned durable files, including Messaging attachment
       # blobs, must resolve inside the named peers_data volume.
       PEERS_DATA_DIR: /app/data
@@ -123,6 +124,10 @@ services:
       PT_ACCEPTANCE_ENVIRONMENT: ${PT_ACCEPTANCE_ENVIRONMENT:-}
       PT_AGENT_CAPABILITY_SCENARIO_CONTROL: ${PT_AGENT_CAPABILITY_SCENARIO_CONTROL:-}
       PT_ACCEPTANCE_RUN_ID: ${PT_ACCEPTANCE_RUN_ID:-}
+      PT_AGENT_EXTERNAL_RUNTIME_ROOT: ${PT_AGENT_EXTERNAL_RUNTIME_ROOT:-}
+      PT_AGENT_EXTERNAL_START_ARGV_JSON: ${PT_AGENT_EXTERNAL_START_ARGV_JSON:-}
+      PT_AGENT_EXTERNAL_RESUME_ARGV_JSON: ${PT_AGENT_EXTERNAL_RESUME_ARGV_JSON:-}
+      PT_AGENT_EXTERNAL_RESET_ARGV_JSON: ${PT_AGENT_EXTERNAL_RESET_ARGV_JSON:-}
     ports:
       - "${STATION_PORT:-18080}:18080"
       # libp2p port for the bootstrap subserver. Same-host coexistence

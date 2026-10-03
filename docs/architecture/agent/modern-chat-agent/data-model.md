@@ -1,8 +1,8 @@
 # Modern Chat Agent — Data Model
 
 > **Status**: accepted
-> **Version**: v1.3
-> **Created**: 2026-07-30 | **Updated**: 2026-09-25
+> **Version**: v1.5
+> **Created**: 2026-07-30 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 > **Proto Root**: `model/domain/agent/`
 
@@ -74,6 +74,47 @@ Rules:
 - Tombstoning a descriptor retires every published manifest revision so no
   historical revision can receive new admission.
 
+### 2.1B McpServer And McpToolDescriptor
+
+Station-owned actor-scoped MCP configuration and discovery identity.
+
+```text
+McpServer:
+  server_id, ptid, name
+  execution_owner = STATION | CLIENT_CAPABILITY
+  transport = STDIO | HTTP | SSE
+  command, args[] | url
+  env_secret_refs{}, header_secret_refs{}
+  enabled, revision
+  runtime_status, runtime_epoch, last_error_code
+  created_at, updated_at, tombstoned_at?
+
+McpToolDescriptor:
+  server_id, server_revision
+  tool_name, provider_tool_name
+  description
+  input_schema, input_schema_hash
+  manifest_id, manifest_version
+```
+
+Rules:
+
+- `server_id` is stable and opaque; display name changes do not change
+  identity.
+- `execution_owner` and `transport` are independent dimensions.
+- `command`, args, URL, and non-secret metadata are Station configuration
+  truth. Secret values are stored only by the declared executor; Station
+  persists refs and redacted key names.
+- Discovery publishes one immutable manifest per Tool. The manifest owner
+  equals the Server owner and its version binds Server revision plus tool
+  schema hash.
+- A Server owner change creates a new revision and new Tool manifests. Existing
+  ToolCalls retain the owner pinned in their readiness snapshot.
+- Client-owned readiness additionally pins a client capability session;
+  Station-owned readiness never fabricates one.
+- Tombstone retires all current Tool manifests, rejects new admission, and
+  starts owner-local cleanup.
+
 ### 2.2 Conversation
 
 | Field | Meaning |
@@ -114,6 +155,9 @@ message ConversationRuntimeBinding {
   string capability_snapshot_hash = 8;
   string config_snapshot_hash = 9;
   google.protobuf.Timestamp bound_at = 10;
+  ExternalRuntimeBindingState state = 11;
+  string last_error_code = 12;
+  google.protobuf.Timestamp updated_at = 13;
 }
 ```
 
@@ -121,9 +165,12 @@ Rules:
 
 - `DIRECT_MODEL` does not use `external_session_id` or `runtime_home_ref`.
 - `EXTERNAL_AGENT` uses an opaque Station-private runtime-home reference.
+- A newly installed external binding starts at epoch `1`; Direct Model remains
+  epoch `0`.
 - External session epoch increments after destructive reset or confirmed
   resume-unavailable recovery.
 - Client cannot mutate opaque runtime identifiers directly.
+- `RESET_PREPARED` and `CLEANUP_FAILED` block Turn admission.
 
 ### 2.4 Message
 
@@ -712,6 +759,37 @@ Valid only for a stateful external runtime. Requires expected conversation
 version and explicit destructive confirmation. It terminates the current
 external-session epoch, cleans runtime state, increments epoch, and clears the
 resume handle.
+
+```protobuf
+enum ExternalRuntimeBindingState {
+  EXTERNAL_RUNTIME_BINDING_STATE_UNSPECIFIED = 0;
+  EXTERNAL_RUNTIME_BINDING_STATE_READY = 1;
+  EXTERNAL_RUNTIME_BINDING_STATE_RESUME_UNAVAILABLE = 2;
+  EXTERNAL_RUNTIME_BINDING_STATE_RESET_PREPARED = 3;
+  EXTERNAL_RUNTIME_BINDING_STATE_CLEANUP_FAILED = 4;
+}
+
+message ResetConversationRuntimeRequest {
+  string conversation_id = 1;
+  uint64 expected_conversation_version = 2;
+  string client_idempotency_key = 3;
+  bool destructive_confirmed = 4;
+}
+
+message ResetConversationRuntimeResponse {
+  Conversation conversation = 1;
+  uint64 closed_external_session_epoch = 2;
+  bool replayed = 3;
+}
+```
+
+Station persists one `ExternalRuntimeResetCommand` keyed by
+`(ptid, client_idempotency_key)`. It records payload hash, old binding tuple,
+reset fence, lifecycle state, safe error code, and committed response.
+`RESET_PREPARED` is durable before process/session/home cleanup starts.
+Successful cleanup advances exactly one epoch and emits one sequenced
+`runtime_reset` event. Failed cleanup preserves the old tuple and records
+`CLEANUP_FAILED`; the same command may retry it.
 
 ### CreateAndStartAgentTask
 
@@ -1807,10 +1885,11 @@ revoked_at?
 ```
 
 It may report `installed=true` only after target-authority readback succeeds.
-Agent and Skill targets are Station-owned; MCP targets are owned by the
-actor-scoped Desktop Rust MCP store. Catalog revocation blocks new mutation but
-does not delete the target. Explicit uninstall deletes through the same target
-authority and removes the ledger record only after absence readback.
+Agent, Skill, and MCP catalog targets are Station-owned. MCP secret material
+and process state remain in the Server's declared execution owner. Catalog
+revocation blocks new mutation but does not delete the target. Explicit
+uninstall deletes through the Station MCP service, triggers owner-local cleanup,
+and removes the ledger record only after Station absence readback.
 
 ### 8.12 Formal Scenario Evidence
 

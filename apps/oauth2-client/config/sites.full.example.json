@@ -4,6 +4,10 @@
       "site_id": "main",
       "success_url": "https://your-app.example.com/oauth/done",
       "error_url": "https://your-app.example.com/oauth/error",
+      "allowed_return_to": [
+        "peers-touch://oauth/callback",
+        "https://your-app.example.com/oauth/callback"
+      ],
       "providers": {
         "github": {
           "enabled": true,

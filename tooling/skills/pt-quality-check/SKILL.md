@@ -29,13 +29,33 @@ If no target is available, ask for one. Do not produce a generic checklist.
 ## Evidence Workflow
 
 1. Establish the range and verify both endpoints exist.
-2. Prefer the executable evidence aggregator:
+2. Establish review profiles:
+
+   ```bash
+   tooling/scripts/review/route-change.sh --range <base>...<head>
+   ```
+
+3. When `code-structure` is selected, invoke
+   `pt-code-structure-review`. Prepare the exact scope, review it, and record
+   findings before aggregation:
+
+   ```bash
+   python3 tooling/scripts/review/code_structure_decision.py prepare \
+     --range <base>...<head>
+   # After semantic review, record a findings-only payload with the same selector.
+   ```
+
+   The recorder derives the files, exclusions, signals, coverage, hashes, and
+   verdict. Do not hand-build those fields.
+
+4. Run the executable evidence aggregator. It verifies the current
+   source-bound decision:
 
    ```bash
    make quality-evidence REVIEW_RANGE=<base>...<head>
    ```
 
-3. Read the external Evidence Store artifacts through the canonical operator
+5. Read the external Evidence Store artifacts through the canonical operator
    interface:
 
    ```bash
@@ -44,23 +64,25 @@ If no target is available, ask for one. Do not produce a generic checklist.
    python3 tooling/scripts/acceptance-artifact.py cat \
      --gate quality-evidence --role quality-json
    ```
-4. If the aggregator is unavailable, reconstruct the evidence manually:
+6. If the aggregator is unavailable, reconstruct the evidence manually:
 
    ```bash
    tooling/scripts/review/route-change.sh --range <base>...<head>
+   python3 tooling/scripts/review/code_structure_decision.py verify \
+     --range <base>...<head>
    tooling/scripts/review/knowledge-match.sh --range <base>...<head> --strict
    python3 tooling/scripts/acceptance-plan.py --range <base>...<head>
    ```
 
-5. Resolve the current formal plan and run only its completion Gates that are
+7. Resolve the current formal plan and run only its completion Gates that are
    deterministic and cheap. Environment availability is not authorization:
    do not run environment/full Gates unless the user explicitly requested
    release/full Acceptance or the accepted Plan Run authorization names the
    exact environment and Gate scope.
-6. Record every selected gate that was not run and why.
-7. Read acceptance feature/capability contracts for selected features and copy
+8. Record every selected gate that was not run and why.
+9. Read acceptance feature/capability contracts for selected features and copy
    their proven/unproven scope into the report.
-8. Invoke `pt-acceptance-gap-detector` for the exact readiness claim. A
+10. Invoke `pt-acceptance-gap-detector` for the exact readiness claim. A
    detector gap makes `Ready for pt-github-review: no`.
 
 For Acceptance Infra changes, classify capability evidence by direction:
@@ -76,6 +98,10 @@ For Acceptance Infra changes, classify capability evidence by direction:
 - A dry run is planning evidence, not product evidence.
 - `knowledge-match.sh` only proves knowledge entries were selected; semantic
   knowledge delta belongs to review.
+- A `code-structure` profile requires a source-bound decision. A missing,
+  invalid, stale, or `REFACTOR_REQUIRED` local decision makes the evidence
+  incomplete. CI reports a missing semantic decision as reviewer work because
+  CI does not impersonate an agent reviewer.
 - `acceptance-validate` without `--require-proven` proves structure only.
 - Environment-dependent gates (`fedp5`, Desktop gateway, browser, simulator)
   are evidence requests unless the environment is actually available.
@@ -90,6 +116,7 @@ Use this shape:
 
 - Range:
 - Review profiles:
+- Code structure decision status / primary rule IDs:
 - Acceptance impacted features:
 - Selected gates:
 - Gates run:
@@ -108,7 +135,9 @@ Use this shape:
 ```
 
 End with `Ready for pt-github-review: yes/no`. Say `no` when range validation,
-acceptance planning, or knowledge matching could not be performed.
+acceptance planning, knowledge matching, or required local code-structure
+evidence could not be performed, or when its verdict is
+`REFACTOR_REQUIRED`.
 
 ## Handoff To Review
 

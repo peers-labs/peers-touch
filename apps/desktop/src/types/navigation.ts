@@ -2,7 +2,7 @@ import type { AccountIdentity } from '../services/desktop_api';
 
 export type { AccountIdentity };
 
-const CORE_PAGES = ['home', 'chat', 'agent', 'evaluation', 'settings', 'search', 'agent-profile', 'agent-orchestration', 'agent-groups', 'marketplace', 'tasks'] as const;
+const CORE_PAGES = ['home', 'chat', 'agent', 'evaluation', 'settings', 'search', 'agent-profile', 'agent-orchestration', 'agent-groups', 'marketplace', 'custom-plugins', 'tasks'] as const;
 
 export type CorePage = (typeof CORE_PAGES)[number];
 export type Page = CorePage | `applet:${string}` | (string & {});

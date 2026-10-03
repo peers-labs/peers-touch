@@ -1,8 +1,8 @@
 # Modern Chat Agent — Product Definition
 
 > **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-09-08
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -135,6 +135,15 @@ scenario and Station readback pass.
 
 `optional-advertised` means the product may ship without the capability, but it
 cannot advertise it until its complete journey and acceptance cells pass.
+One-shot CLI Providers that receive complete context and do not retain an
+external session are an allowed `DIRECT_MODEL` transport for MCA-P01/MCA-P03;
+they are not MCA-P12.
+
+MCA-P12 activation is accepted for registered session-capable adapters. The
+runtime remains absent when no healthy adapter is configured. When present,
+its first Turn creates a Conversation-owned external session, later Turns and
+Station restarts resume that exact session, and a resume failure preserves the
+old epoch until the user explicitly confirms reset.
 
 ### 5.1 V2 Required Capability Extension
 
@@ -148,7 +157,7 @@ ledger. The brain-map node remains the status source for each mapped capability.
 | MCA-V2-T02 | C3, C6, C7, X1, X5 | required | Agent capability binding and policy save through Station and read back authoritatively |
 | MCA-V2-T03 | C1, C2, C4 | required | Model/runtime compatibility is resolved before admission |
 | MCA-V2-T04 | R5, R6 | required | Tool proposal, policy, decision, execution, result, and replay form one governed lineage |
-| MCA-V2-M01 | X1, R5, R6 | required | MCP install/config/test/connect/invoke/cancel/recover is one visible lifecycle |
+| MCA-V2-M01 | X1, R5, R6 | required | MCP configuration and per-Tool manifests are Station-governed while execution can be pinned independently to Station or Desktop for stdio/http/sse |
 | MCA-V2-C01 | C7, R5, R6 | required | OAuth Connector resources become governed Agent tools with expiry and recovery |
 | MCA-V2-O01 | R4, R5, R6 | required | Tool failures, timeout, denial, disconnect, replay, and redacted diagnostics are actionable |
 | MCA-V2-E01 | E1 | required | Evaluation Lab runs durable benchmark cases against a real Agent runtime and supports cancel, retry, result, metrics, and restart readback |
@@ -208,6 +217,7 @@ V2 scope dispositions:
 | V2 generation scope | Image and video generation are unsupported in Peers-Touch; any future video capability belongs to a separate project. Server-side audio generation remains deferred | 2026-09-08 | APPROVED |
 | V2 platform claim | Desktop is the complete delivery; Browser preserves Station-backed outcomes with explicit device-capability degradation; Mobile contract compatibility is required while Mobile UI remains deferred | 2026-08-17 | APPROVED |
 | Direct Model thinking mode | Agent default and per-Turn override use `auto / enabled / disabled`; default is `auto`; reasoning effort remains an independent control | 2026-08-27 | APPROVED |
+| P12 activation | Advertise a Station-owned stateful external Agent only when its session adapter is healthy; bind one session/home to one Conversation, resume it across restart, and require explicit confirmation before reset | 2026-10-01 | APPROVED |
 
 All owner-level scope decisions are approved. The Home/Tool/Evaluation
 prototype is Owner-confirmed, and the independent PRODUCT review passed on

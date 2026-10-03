@@ -217,6 +217,9 @@
 - Station 接入生命周期：`architecture/station-access-lifecycle/README.md`
   （active；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
   Federation context 与 Relay 客户端边界，实施 Plan 已完成）
+- OAuth Login Broker：`architecture/oauth-login-broker/README.md`
+  （active；定义 Vercel 跨实例 OAuth 事务、GitHub 私有仓库存储、
+  AES-256-GCM 凭据、Provider refresh 与只读管理面）
 - Chat 本机存储治理：`architecture/chat-storage-governance/README.md`
   （active；定义当前设备 Chat 空间统计、缓存、保留周期、消息 redaction、单会话及
   显式批量清理与物理回收）
@@ -235,9 +238,13 @@
 - 群生命周期历史设计：`architecture/social-runtime/group-lifecycle.md`（superseded；当前真源为 Chat Lifecycle 与 Messaging Platform）
 - 双端社交/聊天产品闭环执行计划：`architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md`
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
+- Agent 架构总入口：`architecture/agent/README.md`（active；Station 单一真源、
+  Desktop 本机能力执行、统一能力绑定与 Native 最小可用 Agent Chat 证明边界）
 - A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
 - Agent Canvas 编排架构：`architecture/agent/agent-canvas-orchestration.md`
-- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`（draft / `PRODUCT_DESIGN_INCOMPLETE`；包含 LobeHub/AgentBox benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
+- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`
+  （product-accepted / design-accepted；包含 LobeHub/AgentBox benchmark disposition、
+  产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/runtime/actor-isolated-environment.md`
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`

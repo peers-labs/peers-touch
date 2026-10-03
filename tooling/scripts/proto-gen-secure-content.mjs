@@ -27,6 +27,11 @@ const STATION_MODULE = 'github.com/peers-labs/peers-touch/station';
 const STATION_PACKAGE_PREFIX = `${STATION_MODULE}/`;
 const DEFAULT_BUDGET_SECONDS = 600;
 const MAX_BUDGET_SECONDS = 1_200;
+const METADATA_ONLY_DIRECTORY_NAMES = new Set([
+  '.local',
+  'node_modules',
+  'target',
+]);
 
 export const PROTO_INPUTS = Object.freeze([
   'domain/common/common.proto',
@@ -551,7 +556,7 @@ function snapshotRepository(root) {
       } else if (stats.isFile()) {
         const metadataOnly = relative
           .split('/')
-          .some((segment) => segment === 'node_modules' || segment === 'target');
+          .some((segment) => METADATA_ONLY_DIRECTORY_NAMES.has(segment));
         if (metadataOnly) {
           snapshot.set(
             relative,

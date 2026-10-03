@@ -26,6 +26,7 @@ import { CollaborationEngineType, CollaborationTaskStatus, TaskNodeStatus } from
 import { api, streamAgentCollaborationEvents } from '../services/desktop_api';
 import type { Agent } from '../services/desktop_api';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
+import { openAgentCreateFlow } from '../components/agent/create';
 import { useAgentStore } from '../store/agent';
 import { enforce_canvas_single_agent_readiness } from '../services/agentCanvasReadinessGuard';
 
@@ -205,7 +206,6 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const { token } = theme.useToken();
   const agents = useAgentStore(s => s.agents);
   const loadAgents = useAgentStore(s => s.loadAgents);
-  const createAgent = useAgentStore(s => s.createAgent);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [prompt, setPrompt] = useState('');
   const [runState, setRunState] = useState<CanvasRunState>('idle');
@@ -354,24 +354,10 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     setRunState(prompt.trim() ? 'matched' : 'idle');
   }, [isRunning, prompt]);
 
-  const handleCreateAgent = useCallback(async () => {
+  const handleCreateAgent = useCallback(() => {
     if (isRunning) return;
-    const suffix = Date.now().toString(36);
-    // Use the store's first-class createAgent (C5): it persists, merges into the
-    // roster, selects the new agent and switches to its profile surface.
-    const created = await createAgent({
-      name: `agent-${suffix}`,
-      title: t('agent.profile.identityTitlePlaceholder'),
-      description: '',
-      avatar: '',
-      soulMd: '# SOUL.md\n\n## Identity\n',
-      agentsMd: '# AGENTS.md\n\n## Workflow\n',
-      effort: 'medium',
-      visibility: 'private',
-      workspaceMode: 'agent',
-    });
-    onCreateAgent(created.name);
-  }, [isRunning, createAgent, onCreateAgent, t]);
+    openAgentCreateFlow(onCreateAgent);
+  }, [isRunning, onCreateAgent]);
 
   const removeNode = useCallback((nodeId: string) => {
     if (isRunning) return;
@@ -803,7 +789,14 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
                 <span style={{ fontSize: 11, color: token.colorTextTertiary }}>{t('agent.canvas.libraryHint')}</span>
               </Flexbox>
               <Flexbox horizontal gap={6} style={{ flexShrink: 0 }}>
-                <Button size="small" icon={<Plus size={14} />} onClick={handleCreateAgent} title={t('agent.sidebar.createAgent')} disabled={isRunning} />
+                <Button
+                  data-pt-agent-create
+                  disabled={isRunning}
+                  icon={<Plus size={14} />}
+                  size="small"
+                  title={t('agent.sidebar.createAgent')}
+                  onClick={handleCreateAgent}
+                />
                 <Button size="small" icon={<PanelLeftClose size={14} />} onClick={() => setLibraryOpen(false)} title={t('agent.canvas.collapseLibrary')} />
               </Flexbox>
             </Flexbox>

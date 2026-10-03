@@ -3,9 +3,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const socialMocks = vi.hoisted(() => ({
-  readFederationContexts: vi.fn(),
+  readSocialPeopleSearchFederations: vi.fn(),
   readCurrentSocialProfile: vi.fn(),
   searchSocialPeople: vi.fn(),
+  readFederationContexts: vi.fn(),
   updateCurrentSocialProfile: vi.fn(),
 }));
 const projectionMocks = vi.hoisted(() => ({
@@ -17,13 +18,22 @@ const deviceMocks = vi.hoisted(() => ({
   persistDevicePreferences: vi.fn(),
   readDeviceSettingsRuntimeSnapshot: vi.fn(),
 }));
+const privateMomentRuntimeMocks = vi.hoisted(() => ({
+  trackPublicMomentPublish: vi.fn(async (operation, isPublished) => {
+    const result = await operation();
+    isPublished(result);
+    return result;
+  }),
+}));
 
 vi.mock('../features/social/socialRuntime', () => ({
   acceptSocialFriendRequest: vi.fn(),
   applySocialFriendRequestProjectionCheckpoints: vi.fn(),
-  readFederationContexts: socialMocks.readFederationContexts,
+  readSocialPeopleSearchFederations:
+    socialMocks.readSocialPeopleSearchFederations,
   readSocialRuntimeProjection: vi.fn(),
   readCurrentSocialProfile: socialMocks.readCurrentSocialProfile,
+  readFederationContexts: socialMocks.readFederationContexts,
   reconcileSocialRuntime: vi.fn(),
   searchSocialPeople: socialMocks.searchSocialPeople,
   sendSocialFriendRequest: vi.fn(),
@@ -45,45 +55,58 @@ vi.mock('../runtimes/deviceSettingsRuntime', () => ({
     deviceMocks.readDeviceSettingsRuntimeSnapshot,
 }));
 
-import { mobileAcceptanceActions } from './actions';
+vi.mock('../runtimes/privateMomentsRuntime', async (importOriginal) => ({
+  ...await importOriginal(),
+  trackPublicMomentPublish:
+    privateMomentRuntimeMocks.trackPublicMomentPublish,
+}));
+
+import { mobileAcceptanceActions, publicCallSnapshot } from './actions';
 
 describe('Mobile Acceptance social actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    socialMocks.readSocialPeopleSearchFederations.mockReturnValue([]);
   });
 
-  it('binds people search results to an authoritative Federation context', async () => {
+  it('selects a deterministic active Federation for a local actor search', async () => {
     socialMocks.searchSocialPeople.mockResolvedValue([{
+      id: 'ptid:bob',
       ptid: 'ptid:bob',
-      homeStationPeerId: 'station-peer',
-      federation: { handle: '@bob@station.example' },
+      homeStationPeerId: 'station-four',
+      username: 'bob',
+      displayName: 'Bob',
+      avatar: '',
     }]);
-    socialMocks.readFederationContexts.mockResolvedValue([{
+    socialMocks.readSocialPeopleSearchFederations.mockReturnValue([
+      { federationId: 'federation-2' },
+      { federationId: 'federation-1' },
+    ]);
+
+    await expect(
+      mobileAcceptanceActions['social.people.search']({ query: 'bob' }),
+    ).resolves.toEqual([{
+      ptid: 'ptid:bob',
       federationId: 'federation-1',
-      name: 'Acceptance Federation',
+      homeStationPeerId: 'station-four',
+    }]);
+  });
+
+  it('reads Federation contexts through the active Social runtime', async () => {
+    socialMocks.readFederationContexts.mockResolvedValue([{
+      federationId: 'fed-1',
+      name: 'Primary',
       status: 'active',
     }]);
 
-    await expect(mobileAcceptanceActions['social.people.search']({
-      query: '@bob@station.example',
-      federationId: 'federation-1',
-    })).resolves.toEqual([{
-      ptid: 'ptid:bob',
-      federationId: 'federation-1',
-      homeStationPeerId: 'station-peer',
-    }]);
-    expect(socialMocks.searchSocialPeople)
-      .toHaveBeenCalledWith('@bob@station.example');
-  });
-
-  it('rejects an unknown Federation context after authoritative lookup', async () => {
-    socialMocks.searchSocialPeople.mockResolvedValue([]);
-    socialMocks.readFederationContexts.mockResolvedValue([]);
-
-    await expect(mobileAcceptanceActions['social.people.search']({
-      query: '@bob@station.example',
-      federationId: 'untrusted-federation',
-    })).rejects.toThrow('acceptance.mobile.federationContextUnavailable');
+    await expect(mobileAcceptanceActions['federation.context.read']())
+      .resolves.toEqual({
+        federations: [{
+          federationId: 'fed-1',
+          name: 'Primary',
+          status: 'active',
+        }],
+      });
   });
 
   it('routes Moments mutations through the active owner runtime', async () => {
@@ -160,6 +183,8 @@ describe('Mobile Acceptance social actions', () => {
       postId: 'post-1',
       authorPtid: 'ptid:alice',
     });
+    expect(privateMomentRuntimeMocks.trackPublicMomentPublish)
+      .toHaveBeenCalledOnce();
     await expect(mobileAcceptanceActions['moments.react']({
       postId: 'post-1',
       reactionKind: 1,
@@ -183,6 +208,23 @@ describe('Mobile Acceptance social actions', () => {
       'post-1',
       [reaction],
     );
+  });
+
+  it('does not route a private audience through the legacy public publish action', async () => {
+    const createMoment = vi.fn();
+    projectionMocks.readCurrentActiveMomentsRuntime.mockReturnValue({
+      gateway: { createMoment },
+      feed: { refresh: vi.fn(), state: vi.fn(), updateReaction: vi.fn() },
+    });
+
+    await expect(mobileAcceptanceActions['moments.publish']({
+      text: 'private',
+      audienceKind: 2,
+    })).rejects.toThrow('acceptance.mobile.privateMomentRequiresNativeAction');
+
+    expect(createMoment).not.toHaveBeenCalled();
+    expect(privateMomentRuntimeMocks.trackPublicMomentPublish)
+      .not.toHaveBeenCalled();
   });
 
   it('routes Settings writes through independent owner runtimes', async () => {
@@ -308,5 +350,18 @@ describe('Mobile Acceptance social actions', () => {
       .rejects.toThrow('acceptance.mobile.activeMomentsRuntimeRequired');
     await expect(mobileAcceptanceActions['settings.notifications.read']())
       .rejects.toThrow('acceptance.mobile.activeProfileRuntimeRequired');
+  });
+
+  it('projects rejected terminal call state consistently across clients', () => {
+    expect(publicCallSnapshot({
+      callId: '01K5TCALL00000000000000000',
+      state: 'ended',
+      endReason: 'rejected',
+      winningDeviceId: 'bob-mobile',
+    })).toEqual({
+      callId: '01K5TCALL00000000000000000',
+      state: 'rejected',
+      winningDeviceId: 'bob-mobile',
+    });
   });
 });

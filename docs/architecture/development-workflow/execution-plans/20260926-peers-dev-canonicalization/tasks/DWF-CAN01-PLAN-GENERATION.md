@@ -21,7 +21,11 @@
     "docs/global/workflow.md",
     "docs/knowledge",
     "tooling/make/local-dev.mk",
+    "tooling/acceptance/core/execution_plan.py",
+    "tooling/acceptance/tests/test_execution_plan.py",
     "tooling/scripts/plan",
+    "tooling/scripts/acceptance-plan.py",
+    "tooling/scripts/acceptance-plan-test.py",
     "tooling/skills/pt-dev-workflow",
     "tooling/skills/pt-plan-and-document"
   ],
@@ -30,7 +34,7 @@
   ],
   "budgets": {
     "focusedCheckSeconds": 180,
-    "functionalRunSeconds": 30,
+    "functionalRunSeconds": 420,
     "cleanupSeconds": 30
   },
   "checks": [
@@ -46,7 +50,7 @@
     },
     {
       "id": "plan-generation-proof",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate workspace-plan-generation-self",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate workspace-plan-generation-self --gate development-workflow-control-plane",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],

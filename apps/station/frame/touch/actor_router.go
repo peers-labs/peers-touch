@@ -5,7 +5,7 @@
 // management routes live here.
 //
 // Route prefix is automatically derived from Name() → "actor", so all paths
-// are served under /actor/* (e.g. /actor/sign-up, /actor/login).
+// are served under /actor/* (e.g. /actor/sign-up, /actor/access/start).
 
 package touch
 
@@ -21,9 +21,6 @@ import (
 const (
 	// RouterURLActorSignUP Client sign-up: create a local actor account
 	RouterURLActorSignUP RouterPath = "/sign-up"
-
-	// RouterURLActorLogin Client login: obtain session/tokens
-	RouterURLActorLogin RouterPath = "/login"
 
 	// RouterURLActorLogout Client logout: invalidate session
 	RouterURLActorLogout RouterPath = "/logout"
@@ -74,6 +71,9 @@ const (
 
 	// RouterURLOAuthLogin OAuth login: external gateway callback for OAuth-based login/registration
 	RouterURLOAuthLogin RouterPath = "/oauth-bridge"
+
+	// RouterURLOAuthConnectorLink verifies and binds a connector to the authenticated actor.
+	RouterURLOAuthConnectorLink RouterPath = "/oauth-connector-link"
 
 	// RouterURLFederationProfile is the home-station endpoint that returns
 	// a signed ActorProfileEnvelope for one of its local actors. Public

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-09-17 | **Updated**: 2026-09-18
+> **Created**: 2026-09-17 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -28,6 +28,7 @@ tooling/scripts/local-dev/
 ├── machine-dev-registry.mjs
 ├── machine-dev-lease.py
 ├── machine-dev.mjs
+├── dev-resource-plan.mjs
 ├── dev-work-schema.mjs
 ├── dev-work-ledger.mjs
 └── dev-work.mjs
@@ -49,7 +50,8 @@ tooling/scripts/plan/
 | `apps/dev/web/index.html` | Peers Dev document structure |
 | `apps/dev/web/app.js` | Browser-side projection rendering and refresh |
 | `apps/dev/web/styles.css` | Responsive operational UI styling |
-| `tooling/scripts/local-dev/machine-dev-registry.mjs` | Machine registry, profile validation and live lease projection authority |
+| `tooling/scripts/local-dev/machine-dev-registry.mjs` | Machine registry, profile validation, live lease projection, and committed resource-plan admission authority |
+| `tooling/scripts/local-dev/dev-resource-plan.mjs` | DWF-owned ModuleImpact aggregation and planner-claim provenance consumed by Local Dev admission |
 | `tooling/scripts/local-dev/dev-work-ledger.mjs` | Machine-wide Development intent authority |
 | `tooling/scripts/plan/workspace-plan-binding.mjs` | Immutable workspace Plan ownership under the machine Dev root |
 | `tooling/make/local-dev.mk` | Thin `make dev-ui` and `make dev-ui-snapshot` entry points |

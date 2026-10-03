@@ -38,11 +38,34 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 echo "== Review route =="
-tooling/scripts/review/route-change.sh --range "$diff_range"
+route_output="$(tooling/scripts/review/route-change.sh --range "$diff_range")"
+printf '%s\n' "$route_output"
 
 echo
 echo "== Hard rules =="
 tooling/scripts/review/hard-rules.sh --range "$diff_range"
+
+echo
+echo "== Code structure signals =="
+node tooling/skills/pt-code-structure-review/scripts/structure-signals.mjs \
+  --range "$diff_range"
+
+if rg -q '^\[code-structure\]$' <<< "$route_output"; then
+  echo
+  echo "== Code structure decision =="
+  if python3 tooling/scripts/review/code_structure_decision.py verify \
+    --range "$diff_range"; then
+    :
+  else
+    decision_status=$?
+    if [[ "$decision_status" -eq 2 ]] &&
+      [[ "${CI:-}" =~ ^(1|true|TRUE|yes|YES)$ ]]; then
+      echo "code-structure decision: pending semantic reviewer"
+    else
+      exit "$decision_status"
+    fi
+  fi
+fi
 
 echo
 echo "== Frontend runtime registry =="
@@ -72,4 +95,4 @@ if rg -q '^(tooling/skills/|tooling/review-fixtures/|tooling/scripts/review/|doc
 fi
 
 echo
-echo "review run: pass"
+echo "review automation: pass"

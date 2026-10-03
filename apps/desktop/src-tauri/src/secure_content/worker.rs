@@ -651,6 +651,7 @@ pub fn media_type(path: &Path) -> &'static str {
         "png" => "image/png",
         "gif" => "image/gif",
         "webp" => "image/webp",
+        "mp4" => "video/mp4",
         _ => "application/octet-stream",
     }
 }
@@ -704,7 +705,8 @@ fn media_extension(media_type: &str) -> Result<&'static str, String> {
         "image/png" => "png",
         "image/gif" => "gif",
         "image/webp" => "webp",
-        _ => return Err("private Moment image media type is unsupported".to_string()),
+        "video/mp4" => "mp4",
+        _ => return Err("private Moment media type is unsupported".to_string()),
     };
     Ok(extension)
 }
@@ -757,6 +759,7 @@ mod tests {
     fn secure_content_media_types_are_bounded_and_do_not_trust_caller_metadata() {
         assert_eq!(media_type(Path::new("/tmp/photo.JPG")), "image/jpeg");
         assert_eq!(media_type(Path::new("/tmp/photo.png")), "image/png");
+        assert_eq!(media_type(Path::new("/tmp/video.MP4")), "video/mp4");
         assert_eq!(
             media_type(Path::new("/tmp/unknown.private")),
             "application/octet-stream"
@@ -825,7 +828,13 @@ mod tests {
     #[test]
     fn secure_content_media_cache_path_rejects_unsupported_or_unsafe_inputs() {
         assert!(secure_media_cache_path("ptid:alice", 1, "../object", "image/jpeg").is_err());
-        assert!(secure_media_cache_path("ptid:alice", 1, "object-1", "video/mp4").is_err());
+        assert_eq!(
+            secure_media_cache_path("ptid:alice", 1, "object-1", "video/mp4")
+                .unwrap()
+                .extension()
+                .and_then(|value| value.to_str()),
+            Some("mp4")
+        );
         assert_eq!(
             secure_media_cache_path("ptid:alice", 1, "object-1", "image/webp")
                 .unwrap()

@@ -8,10 +8,11 @@ import (
 )
 
 type SiteConfig struct {
-	SiteID     string
-	SuccessURL string
-	ErrorURL   string
-	Providers  map[valueobject.Provider]port.ProviderConfig
+	SiteID          string
+	SuccessURL      string
+	ErrorURL        string
+	AllowedReturnTo []string
+	Providers       map[valueobject.Provider]port.ProviderConfig
 
 	// BridgeSecret is the shared HMAC key used to sign callback query params.
 	// If empty, signing is skipped.

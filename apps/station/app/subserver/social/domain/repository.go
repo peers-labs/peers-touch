@@ -108,16 +108,23 @@ type CommentRepository interface {
 // parent post; the ReactionService composes both.
 type ReactionRepository interface {
 	Add(ctx context.Context, r *Reaction) error
-	Remove(ctx context.Context, postID uint64, actorPTID string, kind ReactionKindStr) error
-	ListByPost(ctx context.Context, postID uint64) ([]Reaction, error)
-	Aggregate(ctx context.Context, postID uint64) ([]ReactionSummary, error)
-	IsReactedByViewer(ctx context.Context, postID uint64, viewerPTID string, kind ReactionKindStr) (bool, error)
+	Remove(ctx context.Context, postID string, actorPTID string, kind ReactionKindStr) error
+	ListByPost(ctx context.Context, postID string) ([]Reaction, error)
+	Aggregate(ctx context.Context, postID string) ([]ReactionSummary, error)
+	IsReactedByViewer(ctx context.Context, postID string, viewerPTID string, kind ReactionKindStr) (bool, error)
+	MutatePrivatePost(
+		ctx context.Context,
+		postID string,
+		actorPTID string,
+		kind ReactionKindStr,
+		remove bool,
+	) (string, []Reaction, error)
 
 	// HydrateReactedByViewer takes a slice of reaction summaries (already
 	// populated with Kind+Count by `Aggregate`) and fills in the
 	// `ReactedByViewer` flag for each row from one round-trip. Anonymous
 	// viewer (viewerID==0) returns the input unchanged.
-	HydrateReactedByViewer(ctx context.Context, postID uint64, viewerPTID string, summaries []ReactionSummary) ([]ReactionSummary, error)
+	HydrateReactedByViewer(ctx context.Context, postID string, viewerPTID string, summaries []ReactionSummary) ([]ReactionSummary, error)
 }
 
 // ReactionKindStr is the proto enum's String() form used as the DB

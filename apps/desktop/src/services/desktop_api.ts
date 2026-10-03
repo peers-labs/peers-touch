@@ -14,6 +14,7 @@ import { throttleInvoke } from '../kernel/invokeThrottler';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { readDesktopPreferenceSync } from '../storage/desktopClientStorage';
+import type { AccessDecision } from './accessGate';
 import type {
   DesktopFrontendTelemetryEvent,
   FrontendTelemetryUploadResult,
@@ -70,16 +71,19 @@ import {
   ListMemberStationsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
+  Conversation as ProtoAgentConversation,
   ExportTurnDiagnosticsResponse,
   GetTurnTraceResponse,
   ListTurnFeedbackResponse,
   ListTurnTracesResponse,
   RecordFeedbackResponse,
+  ResetConversationRuntimeResponse,
 } from '../gen/proto/domain/agent/agent_pb';
 import {
   ExportTurnDiagnosticsResponseSchema,
   ListTurnFeedbackResponseSchema,
   RecordFeedbackResponseSchema,
+  ResetConversationRuntimeResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
   AdvanceCapabilityAcceptanceScenarioClockRequest,
@@ -99,7 +103,6 @@ import type {
   ListKnowledgeResourceDescriptorsRequest,
   PrepareCapabilityAcceptanceScenarioRequest,
   ReleaseCapabilityAcceptanceBarrierRequest,
-  StartCapabilityOperationResponse,
   TakeOverCapabilityCleanupRequest,
   TakeOverCapabilityOperationRequest,
   TombstoneKnowledgeResourceDescriptorRequest,
@@ -141,7 +144,6 @@ import {
   ReconcileCapabilityOperationResponseSchema,
   ReleaseCapabilityAcceptanceBarrierRequestSchema,
   ReleaseCapabilityAcceptanceBarrierResponseSchema,
-  StartCapabilityOperationResponseSchema,
   SyncConnectorResourceManifestsResponseSchema,
   TakeOverCapabilityCleanupRequestSchema,
   TakeOverCapabilityCleanupResponseSchema,
@@ -618,28 +620,6 @@ async function invokeAppResultStub<TOut>(command: string, payload?: Record<strin
     log.error('api', `← ${command} ERROR (${elapsed}ms)`, { error: error instanceof Error ? error.message : String(error) });
     throw error instanceof Error ? error : new Error(String(error));
   }
-}
-
-function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
-  const url = new URL(urlText);
-  const provider = url.searchParams.get('provider') || '';
-  const providerUserId = url.searchParams.get('provider_user_id') || '';
-  if (!provider || !providerUserId) return null;
-  const createdAt = url.searchParams.get('created_at')
-    || url.searchParams.get('createdAt')
-    || url.searchParams.get('register_time')
-    || undefined;
-  return {
-    provider,
-    provider_user_id: providerUserId,
-    username: url.searchParams.get('username') || undefined,
-    display_name: url.searchParams.get('display_name') || undefined,
-    created_at: createdAt,
-    email: url.searchParams.get('email') || undefined,
-    avatar_url: url.searchParams.get('avatar_url') || undefined,
-    profile_url: url.searchParams.get('profile_url') || undefined,
-    expires_at: url.searchParams.get('expires_at') || undefined,
-  };
 }
 
 /**
@@ -1752,12 +1732,15 @@ export interface MarketSkillPage {
 // ── MCP Server types ──
 
 export interface MCPServerItem {
+  serverId: string;
   name: string;
   title: string;
   description: string;
   type: 'stdio' | 'http' | 'sse';
+  executionOwner: 'station' | 'client';
   source: string;
   enabled: boolean;
+  revision: number;
   metaAvatar: string;
   metaTags: string[];
   toolCount: number;
@@ -1777,11 +1760,13 @@ export type McpLifecycleOperationKind =
   | 'uninstall';
 
 export interface MCPServerRecord {
+  serverId: string;
   name: string;
   title: string;
   description: string;
   version: string;
   type: 'stdio' | 'http' | 'sse';
+  executionOwner: 'station' | 'client';
   command: string;
   args: string[];
   env: Record<string, string>;
@@ -1805,7 +1790,15 @@ export interface MCPServerRecord {
   status?: MCPServerItem['status'];
   lastTestedAt?: string;
   lastError?: string;
-  tools?: string[];
+  tools?: Array<string | {
+    name: string;
+    providerToolName: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    capabilityId: string;
+    capabilityVersion: string;
+  }>;
+  revision: number;
   operationId?: string;
   operationKind?: McpLifecycleOperationKind;
   createdAt: string;
@@ -2297,25 +2290,33 @@ export interface ChatStorageAcceptanceConversationClearFixture {
 
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
-export interface AuthLoginInput {
-  account: string;
-  password: string;
-  base_url?: string;
+export interface AccessDecisionResponse extends TauriStubPayload {
+  decision: AccessDecision;
 }
 
-/// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
-/// The frontend normalizes the wire shape (snake_case keys, string enums).
-export interface AccessDecisionResponse extends TauriStubPayload {
-  decision: unknown;
+export interface AccessDecisionInput {
+  attempt_id: string;
 }
 
 export interface AccessSubmitInviteInput {
   attempt_id: string;
+  gate_id: string;
+  gate_type: number;
+  action_id: string;
+  schema_revision: number;
+  schema_digest: string;
+  submission_id: string;
   invite_code: string;
 }
 
 export interface AccessSubmitLoginInput {
   attempt_id: string;
+  gate_id: string;
+  gate_type: number;
+  action_id: string;
+  schema_revision: number;
+  schema_digest: string;
+  submission_id: string;
   account: string;
   password: string;
 }
@@ -2588,12 +2589,6 @@ export interface McpToggleInput {
   enabled: boolean;
 }
 
-export interface McpLifecycleOperationInput {
-  name: string;
-  operation_kind: McpLifecycleOperationKind;
-  idempotency_key?: string;
-}
-
 export interface AgentToolDecisionIntentInput {
   approval_id: string;
   tool_call_id: string;
@@ -2626,6 +2621,7 @@ export interface AgentErrorResolutionAction {
     | 'openOriginal'
     | 'editQueue'
     | 'selectRuntime'
+    | 'confirmReset'
     | 'retryLater'
     | 'retry'
     | 'switchAccount'
@@ -2646,6 +2642,7 @@ export interface AgentErrorResolutionAction {
   conversationId?: string;
   capacity?: number;
   runtimeKind?: string;
+  runtimeProfileId?: string;
   retryAfterMs?: number;
   deadline?: string;
   resourceKind?: string;
@@ -2677,6 +2674,10 @@ export const AGENT_QUEUE_FULL_LOCALE_KEY = 'agent.errors.queueFull';
 export const AGENT_RUNTIME_UNAVAILABLE_ERROR_TYPE = 'RUNTIME_UNAVAILABLE';
 export const AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY =
   'agent.errors.runtimeUnavailable';
+export const AGENT_RUNTIME_RESUME_UNAVAILABLE_ERROR_TYPE =
+  'RUNTIME_RESUME_UNAVAILABLE';
+export const AGENT_RUNTIME_RESUME_UNAVAILABLE_LOCALE_KEY =
+  'agent.errors.resumeUnavailable';
 export const AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE = 'PROVIDER_RATE_LIMIT';
 export const AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY =
   'agent.errors.providerRateLimit';
@@ -2744,6 +2745,13 @@ export type AgentQueueFullError = AgentTypedErrorPayload & {
 export type AgentRuntimeUnavailableError = AgentTypedErrorPayload & {
   details: {
     runtime_kind: string;
+    reason_code: string;
+  };
+};
+
+export type AgentRuntimeResumeUnavailableError = AgentTypedErrorPayload & {
+  details: {
+    runtime_profile_id: string;
     reason_code: string;
   };
 };
@@ -2870,6 +2878,7 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'conversation_id',
   'capacity',
   'runtime_kind',
+  'runtime_profile_id',
   'provider_id',
   'model_id',
   'deadline',
@@ -3095,6 +3104,27 @@ export function isAgentRuntimeUnavailableError(
     && detailKeys[0] === 'reason_code'
     && detailKeys[1] === 'runtime_kind'
     && error.details.runtime_kind.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
+export function isAgentRuntimeResumeUnavailableError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentRuntimeResumeUnavailableError {
+  if (
+    error?.error_type !== AGENT_RUNTIME_RESUME_UNAVAILABLE_ERROR_TYPE
+    || error.locale_key !== AGENT_RUNTIME_RESUME_UNAVAILABLE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reason_code'
+    && detailKeys[1] === 'runtime_profile_id'
+    && error.details.runtime_profile_id.trim().length > 0
     && error.details.reason_code.trim().length > 0
   );
 }
@@ -3455,6 +3485,14 @@ export function resolveAgentTypedErrorAction(
       runtimeKind: error.details.runtime_kind,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.selectRuntime',
+    };
+  }
+  if (isAgentRuntimeResumeUnavailableError(error)) {
+    return {
+      type: 'confirmReset',
+      runtimeProfileId: error.details.runtime_profile_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.confirmReset',
     };
   }
   if (isAgentQueueFullError(error)) {
@@ -3957,6 +3995,9 @@ export interface AgentConversation {
     capability_snapshot_hash: string;
     config_snapshot_hash: string;
     bound_at: { seconds: number; nanos: number } | null;
+    state: number;
+    last_error_code: string;
+    updated_at: { seconds: number; nanos: number } | null;
   };
   meta?: Record<string, string>;
   created_at: string;
@@ -4030,6 +4071,99 @@ export interface AgentConversationUpdateInput {
 export interface AgentConversationRestoreInput {
   conversation_id: string;
   expected_version: number;
+}
+
+export interface AgentConversationRuntimeResetInput {
+  conversation_id: string;
+  expected_conversation_version: number;
+  client_idempotency_key: string;
+  destructive_confirmed: boolean;
+}
+
+export interface AgentConversationRuntimeResetResult {
+  conversation: AgentConversation;
+  closed_external_session_epoch: number;
+  replayed: boolean;
+}
+
+function agentProtoTimestamp(
+  value: ProtoAgentConversation['createdAt'],
+): { seconds: number; nanos: number } | null {
+  if (!value) return null;
+  return {
+    seconds: toRustUint64(value.seconds, 'timestamp.seconds'),
+    nanos: value.nanos,
+  };
+}
+
+function agentProtoTimestampISO(
+  value: ProtoAgentConversation['createdAt'],
+): string {
+  if (!value) return '';
+  const milliseconds = (
+    toRustUint64(value.seconds, 'timestamp.seconds') * 1_000
+    + Math.floor(value.nanos / 1_000_000)
+  );
+  return new Date(milliseconds).toISOString();
+}
+
+function agentConversationFromProto(
+  conversation: ProtoAgentConversation,
+): AgentConversation {
+  const binding = conversation.runtimeBinding;
+  return {
+    conversation_id: conversation.conversationId,
+    agent_id: conversation.agentId,
+    ptid: conversation.ptid || conversation.actorPtid,
+    title: conversation.title,
+    description: conversation.description,
+    provider_id: conversation.providerId,
+    model_name: conversation.modelName,
+    status: conversation.status,
+    parent_id: conversation.parentId,
+    active_branch_message_id: conversation.activeBranchMessageId,
+    queued_turn_count: conversation.queuedTurnCount,
+    version: toRustUint64(conversation.version, 'conversation.version'),
+    runtime_binding: binding
+      ? {
+          runtime_kind: binding.runtimeKind,
+          provider_id: binding.providerId,
+          model_id: binding.modelId,
+          runtime_profile_id: binding.runtimeProfileId,
+          external_session_id: binding.externalSessionId,
+          external_session_epoch: toRustUint64(
+            binding.externalSessionEpoch,
+            'runtime_binding.external_session_epoch',
+          ),
+          runtime_home_ref: binding.runtimeHomeRef,
+          capability_snapshot_hash: binding.capabilitySnapshotHash,
+          config_snapshot_hash: binding.configSnapshotHash,
+          bound_at: agentProtoTimestamp(binding.boundAt),
+          state: binding.state,
+          last_error_code: binding.lastErrorCode,
+          updated_at: agentProtoTimestamp(binding.updatedAt),
+        }
+      : undefined,
+    meta: conversation.meta,
+    created_at: agentProtoTimestampISO(conversation.createdAt),
+    updated_at: agentProtoTimestampISO(conversation.updatedAt),
+  };
+}
+
+function agentRuntimeResetResultFromProto(
+  response: ResetConversationRuntimeResponse,
+): AgentConversationRuntimeResetResult {
+  if (!response.conversation) {
+    throw new Error('agent.runtimeResetConversationMissing');
+  }
+  return {
+    conversation: agentConversationFromProto(response.conversation),
+    closed_external_session_epoch: toRustUint64(
+      response.closedExternalSessionEpoch,
+      'closed_external_session_epoch',
+    ),
+    replayed: response.replayed,
+  };
 }
 
 export interface AgentRuntimeBudgetInput {
@@ -4324,23 +4458,11 @@ export interface OAuthAuthorizeInput {
 export interface OAuthLoopbackStartInput {
   id: string;
   environment?: string;
+  purpose: 'account_login' | 'connector_link';
 }
 
 export interface OAuthLoopbackPollInput {
   session_id: string;
-}
-
-export interface OAuthCallbackInput {
-  provider: string;
-  provider_user_id: string;
-  username?: string;
-  display_name?: string;
-  created_at?: string;
-  email?: string;
-  avatar_url?: string;
-  profile_url?: string;
-  expires_at?: string;
-  scopes?: string[];
 }
 
 export interface AccountUpsertOAuthInput {
@@ -4731,9 +4853,6 @@ function requireEvaluationValue<T>(
 }
 
 export const api = {
-  authLogin: (input: AuthLoginInput) =>
-    invokeAuthCommand<AuthLoginInput>('auth_login', input),
-
   accessStart: () =>
     invokeAccessCommand<void>('access_start'),
 
@@ -4742,6 +4861,12 @@ export const api = {
 
   accessSubmitLogin: (input: AccessSubmitLoginInput) =>
     invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
+
+  accessDecision: (attemptId: string) =>
+    invokeAccessCommand<AccessDecisionInput>('access_decision', { attempt_id: attemptId }),
+
+  accessCancel: (attemptId: string) =>
+    invokeAccessCommand<AccessDecisionInput>('access_cancel', { attempt_id: attemptId }),
 
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
@@ -6212,72 +6337,34 @@ export const api = {
     invokeRustDataFromStatus<McpNameInput, MCPServerRecord>('mcp_get_server', { name }),
 
   createMCPServer: (data: Partial<MCPServerRecord>) =>
-    invokeRustProto<McpCreateInput, StartCapabilityOperationResponse>(
+    invokeRustDataFromStatus<McpCreateInput, MCPServerRecord>(
       'mcp_create_server',
-      StartCapabilityOperationResponseSchema,
       { data },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+    ),
 
   updateMCPServer: (name: string, data: Partial<MCPServerRecord>) =>
-    invokeRustProto<McpUpdateInput, StartCapabilityOperationResponse>(
+    invokeRustDataFromStatus<McpUpdateInput, MCPServerRecord>(
       'mcp_update_server',
-      StartCapabilityOperationResponseSchema,
       { name, data },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+    ),
 
   deleteMCPServer: (name: string) =>
-    invokeRustProto<McpNameInput, StartCapabilityOperationResponse>(
+    invokeRustDataFromStatus<McpNameInput, { ok: boolean; server?: MCPServerRecord }>(
       'mcp_delete_server',
-      StartCapabilityOperationResponseSchema,
       { name },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+    ),
 
   toggleMCPServer: (name: string, enabled: boolean) =>
-    invokeRustProto<McpToggleInput, StartCapabilityOperationResponse>(
+    invokeRustDataFromStatus<McpToggleInput, MCPServerRecord>(
       'mcp_toggle_server',
-      StartCapabilityOperationResponseSchema,
       { name, enabled },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+    ),
 
-  startMCPLifecycleOperation: (
-    name: string,
-    operationKind: McpLifecycleOperationKind,
-    idempotencyKey?: string,
-  ) =>
-    invokeRustProto<McpLifecycleOperationInput, StartCapabilityOperationResponse>(
-      'mcp_start_lifecycle_operation',
-      StartCapabilityOperationResponseSchema,
-      {
-        name,
-        operation_kind: operationKind,
-        idempotency_key: idempotencyKey,
-      },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+  refreshMCPServer: (name: string) =>
+    invokeRustDataFromStatus<McpNameInput, MCPServerRecord>(
+      'mcp_refresh_server',
+      { name },
+    ),
 
   getCapabilityOperation: (operationId: string) =>
     invokeRustProtoRequest(
@@ -6794,6 +6881,16 @@ export const api = {
       },
     ).then((result) => result.conversation),
 
+  resetAgentConversationRuntime: (input: AgentConversationRuntimeResetInput) =>
+    invokeRustProto<
+      AgentConversationRuntimeResetInput,
+      ResetConversationRuntimeResponse
+    >(
+      'agent_conversation_runtime_reset',
+      ResetConversationRuntimeResponseSchema,
+      input,
+    ).then(agentRuntimeResetResultFromProto),
+
   retryAgentTurn: (input: AgentRetryTurnInput) =>
     invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),
 
@@ -7046,56 +7143,46 @@ export const api = {
   oauth2Authorize: (id: string, environment?: string, returnTo?: string) =>
     invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment, return_to: returnTo }),
 
-  oauth2StartLoopback: (id: string, environment?: string) =>
-    invokeRustDataFromStatus<OAuthLoopbackStartInput, { auth_url: string; session_id: string }>(
+  oauth2StartLoopback: (
+    id: string,
+    environment?: string,
+    purpose: OAuthLoopbackStartInput['purpose'] = 'connector_link',
+  ) =>
+    invokeRustDataFromStatus<OAuthLoopbackStartInput, {
+      auth_url: string;
+      session_id: string;
+      expires_in_ms: number;
+    }>(
       'oauth2_start_loopback',
-      { id, environment },
+      { id, environment, purpose },
     ),
 
   oauth2PollLoopback: (sessionId: string) =>
     invokeRustDataFromStatus<OAuthLoopbackPollInput, {
       completed: boolean;
-      status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
+      status: 'pending' | 'action_required' | 'acknowledgement_pending' | 'cancelling' | 'completed' | 'failed' | 'expired';
       callback_url?: string;
       error?: string;
+      access_decision?: AccessDecision;
     }>(
       'oauth2_poll_loopback',
       { session_id: sessionId },
     ),
 
-  oauth2CancelLoopback: (sessionId: string) =>
+  oauth2ResumeLoopback: (sessionId: string) =>
     invokeRustDataFromStatus<OAuthLoopbackPollInput, {
-      cancelled: boolean;
-      status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
+      status: 'action_required' | 'acknowledgement_pending' | 'completed';
+      access_decision?: AccessDecision;
     }>(
-      'oauth2_cancel_loopback',
+      'oauth2_resume_loopback',
       { session_id: sessionId },
     ),
 
-  oauth2HandleCallback: (input: OAuthCallbackInput) =>
-    (async () => {
-      const result = await invokeRustDataFromStatus<OAuthCallbackInput, { status: string }>('oauth2_handle_callback', input);
-      await api.accountUpsertOAuth({
-        provider: input.provider,
-        provider_user_id: input.provider_user_id,
-        name: input.username || input.display_name || input.provider_user_id,
-        created_at: input.created_at,
-        email: input.email || undefined,
-        avatar_url: input.avatar_url || undefined,
-        profile_url: input.profile_url || undefined,
-      });
-      return result;
-    })(),
-
-  oauth2ConsumeCallbackFromUrl: async (urlText: string) => {
-    const payload = parseOAuthCallbackFromUrl(urlText);
-    if (!payload) return false;
-    await api.oauth2HandleCallback(payload);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('account-identity-changed'));
-    }
-    return true;
-  },
+  oauth2CancelLoopback: (sessionId: string) =>
+    invokeRustDataFromStatus<OAuthLoopbackPollInput, { status: 'cancelled' | 'completed' }>(
+      'oauth2_cancel_loopback',
+      { session_id: sessionId },
+    ),
 
   oauth2ListConnections: () =>
     invokeRustDataFromStatus<void, OAuth2Connection[]>('oauth2_list_connections'),
@@ -8909,7 +8996,35 @@ export function streamAgentTurn(
           );
         }
         if (!controller.signal.aborted && !settled) {
-          onError(err instanceof Error ? err : new Error(String(err)));
+          const normalized = normalizeAgentTurnStreamError(err);
+          if (normalized.typedError) {
+            const sourceData: Record<string, unknown> = {
+              ...normalized.typedError,
+              conversationId: input.conversation_id,
+              agentId: input.agent_id,
+            };
+            const event: StreamEvent = {
+              event: 'error',
+              data: { ...sourceData, streamGeneration },
+              ptid: sourcePtid,
+              sourceDelivery: createAgentTurnSourceDelivery(
+                'error',
+                sourceData,
+                sourcePtid,
+                input.conversation_id,
+              ),
+            };
+            publishAgentTurnRuntimeEvent(
+              streamId,
+              streamGeneration,
+              sourcePtid,
+              input.conversation_id,
+              input.agent_id,
+              event,
+            );
+            onEvent(event);
+          }
+          onError(normalized);
         }
       }
     })();

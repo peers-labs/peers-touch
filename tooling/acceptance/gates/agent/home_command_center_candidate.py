@@ -136,6 +136,7 @@ def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
     binding = _mapping(resolved.get("binding"), "machine binding")
     profile = _mapping(resolved.get("profile"), "machine profile")
     ports = _mapping(resolved.get("ports"), "machine ports")
+    source = _mapping(resolved.get("source"), "machine source")
     require(
         resolved.get("authority") == "machine-control-plane",
         "machine profile has no canonical authority",
@@ -143,7 +144,7 @@ def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
     require(
         binding.get("workspaceId") == workspace_id(ROOT)
         and binding.get("canonicalRoot") == str(ROOT)
-        and binding.get("head") == source_identity(ROOT)["commit"],
+        and source.get("head") == source_identity(ROOT)["commit"],
         "machine control plane worktree identity mismatch",
     )
     require(

@@ -8765,3 +8765,70 @@ Status/code mapping：
 Child只能输出`VALIDATED | REJECTED | BLOCKED`。任何child-originated
 `TIMED_OUT/ERROR`或status/code冲突均转为Core-owned
 `ERROR/FINALIZER_OUTPUT_INVALID`。
+
+---
+
+## 21. Reusable Suite Runtime
+
+### 21.1 Task Contract
+
+A multi-scenario functional Task may declare:
+
+```json
+{
+  "runtimeReuse": {
+    "scope": "suite",
+    "entryCheckId": "social-desktop-suite",
+    "scenarioIds": ["publish", "comment", "delete"],
+    "maxProvisioningRuns": 1,
+    "maxClientLaunches": 3,
+    "minWarmReuseRate": 0.66,
+    "requireAttachOnlyScenarios": true,
+    "requireReceiverVisibleProof": true,
+    "allowClientReplacement": false
+  }
+}
+```
+
+The object is closed. `scenarioIds` are unique and contain at least two
+entries. `entryCheckId` references one `FUNCTIONAL_CHECK`. Reuse rates are
+finite values in `[0, 1]`; counts are positive integers.
+
+### 21.2 Lifecycle Events
+
+The domain-neutral event set is:
+
+```text
+provision
+account-provision
+client-launch
+login
+scenario-start
+fixture-reset
+ui-action
+receiver-assertion
+supporting-observation
+client-replacement
+scenario-end
+cleanup-complete
+```
+
+`provision`, `account-provision`, `client-launch`, and `login` are expensive
+Suite actions. When `requireAttachOnlyScenarios=true`, none may occur after the
+first `scenario-start`. `client-replacement` is legal only when explicitly
+declared and remains a separately visible event.
+
+### 21.3 Suite Runtime Report
+
+One immutable report contains:
+
+- `suiteRuntimeId`, `sourceDigest`, and `fixtureEpoch`;
+- the exact `runtimeReuse` contract;
+- monotonic lifecycle events;
+- provisioning, launch, completion, warm-reuse, and duration metrics;
+- typed findings;
+- `result`, `proofState`, and canonical `reportDigest`.
+
+`PASS/SUPPORTING` means the lifecycle conforms. It is not
+`FUNCTIONAL_PASS/PROVEN`. Missing scenarios, UI action, receiver assertion, or
+terminal cleanup keep the report `FAIL/UNPROVEN`.

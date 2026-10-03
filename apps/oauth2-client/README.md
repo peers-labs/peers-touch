@@ -36,6 +36,8 @@ apps/oauth2-client
 
 ## 路由
 
+- `GET /api/admin`
+- `GET /api/admin/data`
 - `GET /api/oauth/github/start`
 - `GET /api/oauth/github/callback`
 - `GET /api/oauth/google/start`
@@ -57,6 +59,8 @@ apps/oauth2-client
 - `avatar_url`
 - `email`
 - `ts`
+- `bridge_version`
+- `sig`
 
 字段来源：
 
@@ -71,6 +75,41 @@ cd apps/oauth2-client
 go run ./cmd/server
 ```
 
+本地未设置 `OAUTH_STORAGE_DRIVER` 时使用进程内存。管理面仅在同时设置
+`OAUTH_ADMIN_USERNAME` 和 `OAUTH_ADMIN_PASSWORD_HASH` 后开放。
+
+## Vercel 持久化
+
+Vercel 必须使用安装到私有数据仓库的 GitHub App，不能回退到内存：
+
+```text
+OAUTH_STORAGE_DRIVER=github
+OAUTH_GITHUB_STORAGE_OWNER=<owner>
+OAUTH_GITHUB_STORAGE_REPO=<private-repo>
+OAUTH_GITHUB_STORAGE_BRANCH=<data-branch>
+OAUTH_GITHUB_APP_ID=<app-id>
+OAUTH_GITHUB_APP_INSTALLATION_ID=<installation-id>
+OAUTH_GITHUB_APP_PRIVATE_KEY_B64=<base64-pem>
+OAUTH_CREDENTIAL_ACTIVE_KEY_ID=v1
+OAUTH_CREDENTIAL_KEY_V1=<base64-32-bytes>
+OAUTH_STORAGE_INDEX_HMAC_KEY=<base64-32+-bytes>
+OAUTH_AUDIT_HMAC_KEY=<base64-32+-bytes>
+PEERS_OAUTH_BRIDGE_SECRET=<site-result-signing-secret>
+OAUTH_ALLOWED_RETURN_TO=peers-touch://oauth/callback
+OAUTH_ADMIN_USERNAME=<operator>
+OAUTH_ADMIN_PASSWORD_HASH=pbkdf2-sha256$600000$<base64-salt>$<base64-hash>
+```
+
+GitHub App 只需要目标私有仓库的 `Contents: Read and write` 权限。原始 OAuth
+authorization code 和 state 不会写入仓库；transaction、identity、credential 与
+audit payload 均使用环境 key 的 AES-256-GCM 信封存储。
+
+轮换 key 时保留旧 key、切换 active key，然后运行：
+
+```bash
+go run ./cmd/rotate-records
+```
+
 ## 配置示例
 
 - 精简配置：`config/sites.json`
@@ -79,5 +118,8 @@ go run ./cmd/server
 
 ## 说明
 
-- 当前会话存储为内存实现，适合最小可用版本和本地调试
-- 在 Serverless 多实例场景，建议替换为 Redis 持久会话存储
+- GitHub、Google 使用 PKCE S256；Weixin 使用其 Provider 原生 OAuth 流程
+- `/api/admin` 与 `/api/admin/data` 只读，且不会返回 access token 或 refresh token
+- 生产环境要求 HTTPS、回调签名和精确 `return_to` allowlist
+- 当前私有 GitHub 仓库存储面向单管理员、低流量场景；未来可通过 `OAuthStore`
+  接口替换为专用服务

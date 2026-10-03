@@ -1270,6 +1270,90 @@ where
     )
 }
 
+pub(crate) fn request_proto_optional_auth<Req, Resp>(
+    method: Method,
+    path: &str,
+    token: Option<&str>,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+) -> Result<Resp, StationClientError>
+where
+    Req: Message,
+    Resp: Message + Default,
+{
+    let url = format!("{}{}", station_base_url(), path);
+    let body_len = body.map(|value| value.encoded_len()).unwrap_or(0);
+    tracing::debug!(
+        method = %method,
+        path = %path,
+        body_bytes = body_len,
+        "→ station"
+    );
+
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+    let request = client.request(method.clone(), &url);
+    let mut request = match token {
+        Some(token) => with_device_id(request.bearer_auth(token)),
+        None => request,
+    };
+    if let Some(query) = query {
+        request = request.query(query);
+    }
+    request = request.header("Content-Type", "application/protobuf");
+    if let Some(body) = body {
+        request = request.body(body.encode_to_vec());
+    }
+    request = request.header("Accept", "application/protobuf");
+
+    let response = request.send().map_err(|error| {
+        let elapsed = start.elapsed().as_millis();
+        tracing::error!(path = %path, elapsed_ms = elapsed, error = %error, "← station NETWORK_ERROR");
+        StationClientError::new(
+            StationClientErrorKind::Network,
+            format!("request failed: {error}"),
+            None,
+        )
+    })?;
+    let status = response.status();
+    let headers = headers_to_json(response.headers());
+    let elapsed = start.elapsed().as_millis();
+    if !status.is_success() {
+        let code = status.as_u16();
+        let text = response.text().unwrap_or_default();
+        tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
+        return Err(build_error_for_status_with_headers(
+            code,
+            path,
+            &text,
+            Some(&headers),
+        ));
+    }
+    let bytes = response.bytes().map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {error}"),
+            None,
+        )
+    })?;
+    let response_size = bytes.len();
+    let result = Resp::decode(bytes.as_ref()).map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode proto response failed: {error}"),
+            None,
+        )
+    })?;
+    tracing::debug!(
+        path = %path,
+        status = status.as_u16(),
+        elapsed_ms = elapsed,
+        resp_bytes = response_size,
+        "← station OK"
+    );
+    Ok(result)
+}
+
 pub(crate) fn request_proto_with_policy<Req, Resp>(
     method: Method,
     path: &str,
@@ -1875,9 +1959,8 @@ mod tests {
             "",
             Some(&headers),
         );
-        let result = error.into_app_result::<serde_json::Value>(
-            "agent.capabilityBindingUpsertFailed",
-        );
+        let result =
+            error.into_app_result::<serde_json::Value>("agent.capabilityBindingUpsertFailed");
         let details = result
             .error
             .expect("AppResult error")

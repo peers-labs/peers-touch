@@ -90,6 +90,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err := infrastructure.MigrateIdentitySchema(rds); err != nil {
 		return fmt.Errorf("migrate social identity schema: %w", err)
 	}
+	if err := infrastructure.MigrateInteractionSchema(rds); err != nil {
+		return fmt.Errorf("migrate social interaction schema: %w", err)
+	}
 
 	// Actor identity translation is owned by the persistence adapter.
 	resolver := infrastructure.NewActorIdentity(rds)
@@ -135,6 +138,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize Social private audience authority: %w", err)
 	}
+	privateGroupRecipients := newPrivateContentGroupRecipientPort()
 	privateRecipientDirectory, err := newPrivateContentRecipientDirectory(
 		actorCapabilities,
 		federationRuntime,
@@ -160,6 +164,8 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.privateContentSvc, err = application.NewPrivateContentService(
 		privateContentStore,
 		privateAudienceAuthority,
+		privateAudienceAuthority,
+		privateGroupRecipients,
 		privateRecipientDirectory,
 		privateContentKeyExchangePort{},
 		privateStationSigner,

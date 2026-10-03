@@ -1,8 +1,8 @@
 # Secure Content - Integration And Migration
 
 > **Status**: active
-> **Version**: v1.8
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.9
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Architecture Team
 
 ---
@@ -168,11 +168,17 @@ type FriendSnapshotReader interface {
 }
 
 type GroupRecipientSnapshotReader interface {
-    ActiveGroupRecipients(
+    PrepareSnapshot(
         ctx context.Context,
         conversationID string,
         authorPTID string,
     ) (GroupRecipientSnapshot, error)
+
+    WithSubmitFence(
+        ctx context.Context,
+        expected GroupRecipientSnapshot,
+        commit func(GroupRecipientSnapshot) error,
+    ) error
 }
 ```
 
@@ -180,12 +186,45 @@ type GroupRecipientSnapshotReader interface {
 and includes an immutable snapshot hash/version. It does not read
 `friend_chat_friendships` or infer friendship from mutual follows.
 
-`GroupRecipientSnapshot` is returned by Conversation query service and binds
-conversation ID, membership epoch, public head hash, active actor set, and endpoint
-manifests. Social never reads Conversation persistence.
+`GroupRecipientSnapshot` is returned by a narrow Conversation-owned in-process
+query capability and binds the canonical string Conversation ID, membership
+epoch, authority head hash, and ordered active `(actor PTID, Home Station)`
+members. `PrepareSnapshot` uses the Conversation UOW. On submit,
+`WithSubmitFence` opens a Conversation-owned read-only transaction, locks the
+canonical Conversation row, verifies byte-for-byte equality with the prepared
+snapshot, invokes the supplied Social commit callback, and releases the fence
+only after that callback returns. The callback receives only the verified
+snapshot, never a Conversation repository or transaction. The global lock
+direction is Conversation fence then Social UOW; Conversation operations never
+acquire Social locks. A different database identity, reverse call, nested
+Conversation UOW, or fence-release failure fails closed before success is
+reported.
 
-FOLLOWERS, CIRCLE, SELF, and CUSTOM snapshots remain Social-owned and gain explicit
-revision/hash contracts.
+`Audience` carries a typed `circle_id` / `group_conversation_id` oneof. The old
+ambiguous `target_id` is retired. FOLLOWERS, CIRCLE, SELF, and CUSTOM snapshots
+remain Social-owned and gain explicit revision/hash contracts.
+
+`CUSTOM_DENY` is `FOLLOWERS` minus the canonical deny list in v1.
+`CUSTOM_DENY(PUBLIC)` fails before Content PreKey claim because no complete
+federated PUBLIC recipient authority exists. GROUP snapshot expansion likewise
+fails before claim when any active member's Home Station differs from the
+publisher's. Neither failure may silently remove recipients.
+
+FRIENDS, FOLLOWERS, CIRCLE, and CUSTOM pass their complete candidate set through
+an Actor Identity locality port before Content PreKey claim; GROUP uses the
+Conversation member Home Station projection. The corresponding owner-provided
+read adapter returns a locality digest bound into the authorization snapshot.
+Actor Home Station is immutable for a canonical PTID in v1, so submit verifies
+the stored locality commitment rather than opening an Actor Identity mutation
+transaction. These adapters are read-only and never call Social. A remote Actor
+therefore fails identically regardless of the audience that selected it.
+
+Actor Identity's fixture provisioner creates and acknowledges a fiveArm-only
+Actor. W8 attaches `station-four` and `station-five-arm` and binds the
+provisioner-issued opaque `remote-private-recipient` handle into its runtime
+manifest. The scenario resolves the PTID only through the fixture action
+channel and proves the unsupported boundary, zero Content PreKey claims, and
+absence of partial Social persistence.
 
 ## 5. Post Subtype Integration
 

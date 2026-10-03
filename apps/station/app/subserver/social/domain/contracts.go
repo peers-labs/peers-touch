@@ -53,8 +53,15 @@ type ActorResolver interface {
 // a real implementation in P3; until then GROUP-audience posts will
 // effectively bypass membership checks (logged as a WARN at startup).
 type GroupMembershipChecker interface {
-	IsMember(ctx context.Context, groupID uint64, actorPTID string) (bool, error)
-	MembershipsForViewer(ctx context.Context, viewerPTID string) ([]uint64, error)
+	IsMember(
+		ctx context.Context,
+		conversationID string,
+		actorPTID string,
+	) (bool, error)
+	MembershipsForViewer(
+		ctx context.Context,
+		viewerPTID string,
+	) ([]string, error)
 }
 
 // MediaResolver bridges to the OSS subserver. Moments image / video

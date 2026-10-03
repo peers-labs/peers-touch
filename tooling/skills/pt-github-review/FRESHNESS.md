@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-28
-covered_docs_hash: 979e7616d1056d25b08de9c326c3ca72cb202975c02d6b31f4c10d224eefbd8a
+last_verified_at: 2026-10-02
+covered_docs_hash: ad8287b0a677a413a39a1d17c1903a36423b435b6b39bd44b08612d096c6ba5d
 
 covered_docs:
   - AGENTS.md
@@ -29,7 +29,110 @@ covered_docs:
 
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
-Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-02 Review
+
+The Agent architecture is now registered as an active module with an explicit
+minimum-usable chat capability and current root documentation. Existing review
+rules already cover architecture ownership, source containment, exact-source
+evidence, and generated contracts, so no `SKILL.md` or fixture change is
+required.
+
+## 2026-10-01 Review
+
+Owner-rooted workflow binding review now additionally requires atomic OWNER
+publication, exact current Development Session validation before child
+assignment, one atomic execution-session claim per assignment,
+latest-per-action Completion Review selection, persisted PreCompact/PostCompact
+lineage continuity in one receipt per binding, and a one-time installer grant
+tied to the exact live OWNER `skills` action. Installer lifecycle state must be
+published before destructive reset, fallible preflight must precede grant
+consumption, and reset failure must remain observable as `BLOCKED`. `SKILL.md`
+and the owner-rooted invariant now carry these checks; dedicated workflow and
+installer regressions cover each failure mode. Completion Review schema v2 also
+uses a new canonical namespace, so pre-hard-cut requests are preserved but
+never loaded or migrated.
+
+Owner-rooted workflow binding replaced peer conversation bindings. Review now
+requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt
+selection, live assigned reviewers, and no worktree-wide identity fallback.
+TRAE multi-root review also requires one descriptor-selected bootstrap,
+target-derived owner selection, active-editor mismatch rejection, global-idle
+hard-cut admission, and deletion limited to the old conversation and Action
+Receipt stores. `SKILL.md`, workflow regression fixtures, and the owner-rooted
+invariant cover the new omission, stale-child, and bootstrap-authority risks.
+
+Resource-plan selection no longer treats healthy reusable inventory as
+Runtime Owner readiness, and incompatible non-null digest expectations cannot
+be merged onto one physical resource. Planner-owned lease admission now also
+requires complete allocation fences and one matching `READY` result, rejecting
+pending or quarantined resources. Existing runtime ownership, exact-source
+identity, and fail-closed resource conflict rules already cover this behavior.
+Dedicated resource-plan and lease-admission regressions prove these boundaries;
+no `SKILL.md`, generic review fixture, or additional knowledge entry is
+required.
+
+## 2026-09-30 Review
+
+Development Workflow and Local Dev Control Plane are now registered in the
+central architecture module registry. Their existing accepted decisions were
+normalized to the ADR-lite document contract without changing behavior; this
+adds fail-closed ownership discovery and requires no GitHub Review rule change.
+
+Completion Review now derives a deterministic fixed-point blocked candidate
+when a successful Task has no ready successor but other Plan branches remain
+blocked. The Plan lifecycle owner still performs the atomic transition and
+verifies the exact candidate digest.
+
+Independent completion review found that per-target greedy allocation could
+park a constrained target despite a feasible wave-level assignment. Mandatory
+demand now uses deterministic global matching with constrained-target priority;
+the pinned-versus-flexible regression is part of the resource-plan suite.
+
+The superseded skill-rollout implementation was removed after all live setup,
+audit, and host projection ownership moved to agent-integration. Historical
+Plan references remain documentation only and are excluded from live routing.
+
+`DWF-D32` adds one Dev Workflow-owned cross-module resource-plan contract.
+Module Skills emit declarative impact, the existing machine declaration ledger
+holds concrete intent, and Local Dev or Acceptance Suite Runtime retains
+physical lifecycle ownership. Review must reject module-owned provisioning,
+partial target reservations, optional-demand starvation, stale fencing results,
+missing-receipt provenance adoption, bare-ID result joins, and business Gate
+lifecycle actions. The new resource-plan and Agent-impact tests cover those boundaries;
+no GitHub Review severity or fixture schema change is required.
+
+`pt-agent-development` adds an Agent-domain policy for deterministic impact
+classification, proof reuse, minimal deployment, ownership splitting, and
+failure attribution inside the existing Development Workflow. It does not
+change GitHub Review severity or ownership. The co-located policy tests and
+18-commit MCA-P04 replay fixture provide the required regression coverage; no
+generic review fixture or `pt-github-review/SKILL.md` change is required.
+
+## 2026-09-29 Review
+
+Authored source changes now route through `pt-code-structure-review`. The
+specialist uses stable `STRUCT-01` through `STRUCT-09` rule IDs, explicit
+blocking conditions and exceptions, schema-validated positive, blocking, and
+false-positive anchors, and advisory-only structural signals. Its decision is
+bound to source and rubric identity before quality evidence and GitHub Review
+consume it. Fixture schema validation is not presented as cross-model proof.
+The review interface now accepts one range, path/depth, or PR selector and
+derives file classification, advisory signals, source identity, rubric hash,
+verdict fields, and per-file coverage. Reviewers submit semantic findings only;
+the source-bound and fail-closed requirements are unchanged.
+
+## 2026-09-29 Suite Runtime Review
+
+Acceptance Framework D-21 adds a closed, domain-neutral Suite Runtime contract
+for multi-scenario lifecycle reuse. Review must reject Scenario-owned build,
+deploy, account, client/device launch, storage, or login; Harness-only product
+proof; missing receiver assertions; unbounded launch counts; and incomplete
+cleanup. The new `pt-acceptance-pipeline-auditor`, Plan schema regressions,
+Suite Runtime unit tests, and operational invariant provide deterministic
+coverage. Existing GitHub Review severity and evidence rules remain valid, so
+no `pt-github-review/SKILL.md` or golden fixture change is required.
 
 ## 2026-09-28 Review
 
@@ -44,6 +147,22 @@ only a complete source-matched pair is reusable, partial pairs are reconciled
 before port checks, and required generated bindings are prepared through the
 canonical model generator. The machine control-plane Gate owns the regression;
 no GitHub Review `SKILL.md` rule change is required.
+
+Desktop navigation ownership now removes the standalone Notes host page and
+makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
+Palette access. The dedicated browser Gate has an exact-source Runtime Manifest
+and cleanup contract, while the official Note applet remains unchanged.
+Existing Desktop, locale, source-of-truth, and Acceptance evidence rules already
+cover this change, so no `SKILL.md` or review fixture update is required.
+
+## 2026-10-01 Review
+
+The documentation index now registers the OAuth Login Broker architecture.
+Existing review rules already cover architecture ownership, encrypted
+credential storage, exact-source Acceptance, and evidence freshness, so no
+`SKILL.md`, review fixture, or knowledge entry is required.
+
+## 2026-09-28 Review
 
 Desktop navigation ownership now removes the standalone Notes host page and
 makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command

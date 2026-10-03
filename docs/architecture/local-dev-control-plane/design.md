@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-28
+> **Created**: 2026-09-13 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -282,6 +282,14 @@ The registry does not cache that HEAD: the declaration proves source intent,
 the worktree supplies current source, and the OS lock proves possession.
 The binding and intent are revalidated after OS-lock acquisition under the
 registry update lock, closing the registration-update/acquisition race.
+
+When a DWF-D32 `PlanResourcePlan` introduced the claim, admission additionally
+requires a source-current `COMMITTED` receipt for that exact claim. A
+`RESERVING` receipt is recoverable but non-authorizing. The receipt keeps
+pre-existing declaration claims in `baseRuntimeClaims`; those claims retain
+their original declaration authority and are not removed by replanning. A
+shared `resource.plan:<workItemId>` claim marks planner provenance, so a missing
+receipt fails closed instead of falling back to declaration-only admission.
 
 ### 4.7 Runtime Observer
 

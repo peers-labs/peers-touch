@@ -71,6 +71,7 @@ DESKTOP_RUNTIME_EVIDENCE = (
     / "runtime_evidence.rs"
 )
 DESKTOP_API = ROOT / "apps" / "desktop" / "src" / "services" / "desktop_api.ts"
+DESKTOP_INDEX = ROOT / "apps" / "desktop" / "index.html"
 DESKTOP_ASSISTANT_MESSAGE = (
     ROOT
     / "apps"
@@ -236,6 +237,8 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self,
     ) -> None:
         self.assertIn("require_runtime_service(", self.source)
+        self.assertIn("resolve_machine_profile_environment(REPO_ROOT)", self.source)
+        self.assertNotIn("active_profile = (", self.source)
         self.assertNotIn('self.runtime_manifest.get("station")', self.source)
         self.assertIn('"CHAT_NATIVE_DEMO_PASSWORD"', self.source)
         self.assertIn('"PT_AGENT_PROVIDER_API_KEY"', self.source)
@@ -283,8 +286,11 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertNotIn("stationSetActive", self.source)
         self.assertNotIn("stationAdd(", self.source)
 
-    def test_only_stream_resilience_uses_the_fault_proxy(self) -> None:
-        self.assertIn('if journey == "stream-resilience"', self.source)
+    def test_only_transport_fault_journeys_use_the_fault_proxy(self) -> None:
+        self.assertIn(
+            'if journey in {"stream-resilience", "core-lifecycle"}',
+            self.source,
+        )
         self.assertIn(
             "self.proxy.url if self.proxy is not None else self.station_url",
             self.source,
@@ -299,11 +305,17 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         source = HOME_STATION_PROVISIONER.read_text(encoding="utf-8")
         for gate_id in (
             "agent-attachment-e2e",
+            "agent-core-lifecycle-native-e2e",
             "agent-stream-resilience-e2e",
         ):
             with self.subTest(gate_id=gate_id):
                 self.assertIn(f'"{gate_id}": ("alice",)', source)
                 self.assertIn(f'"{gate_id}",', source)
+        self.assertIn(
+            '"agent-minimum-usable-chat-native-e2e": ("charlie",)',
+            source,
+        )
+        self.assertIn("AGENT_MINIMUM_USABLE_CHAT_GATE,", source)
         self.assertIn("def _agent_native_manifest(", source)
         self.assertIn(
             'credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD"',
@@ -376,6 +388,74 @@ class AgentHarnessStaticTest(unittest.TestCase):
     def setUp(self) -> None:
         self.assertTrue(HARNESS.is_file(), f"{HARNESS} must exist")
         self.source = HARNESS.read_text(encoding="utf-8")
+
+    def test_foundation_idempotent_calls_retry_only_transport_fetch_errors(
+        self,
+    ) -> None:
+        start = self.source.index(
+            "function isTransientFoundationFetchError"
+        )
+        end = self.source.index(
+            "function governedToolSettlementSucceeded",
+            start,
+        )
+        poller = self.source[start:end]
+
+        self.assertIn("errorName === 'TypeError'", poller)
+        self.assertIn("errorName === 'RustCommandException'", poller)
+        self.assertNotIn("error instanceof Error", poller)
+        self.assertIn("'Failed to fetch'", poller)
+        self.assertIn("catch (error)", poller)
+        self.assertIn(
+            "if (!isTransientFoundationFetchError(error)) throw error;",
+            poller,
+        )
+        self.assertIn(
+            "const FOUNDATION_TRANSIENT_FETCH_RETRY_TIMEOUT_MS = 15_000;",
+            self.source,
+        )
+        self.assertIn(
+            "const FOUNDATION_TRANSIENT_FETCH_RETRY_INTERVAL_MS = 500;",
+            self.source,
+        )
+        self.assertIn("const startedAt = Date.now()", poller)
+        self.assertIn("while (true)", poller)
+        self.assertIn(
+            "agent.acceptance.foundationFetchRetryExhausted:${operationName}",
+            poller,
+        )
+        self.assertIn("last transient error", poller)
+        policy_start = self.source.index(
+            "async function updateFoundationToolPolicy"
+        )
+        policy_end = self.source.index(
+            "async function updateFoundationCapabilityBindingEnabled",
+            policy_start,
+        )
+        policy = self.source[policy_start:policy_end]
+        self.assertIn("return retryFoundationTransientFetch(", policy)
+        self.assertEqual(policy.count("idempotencyKey"), 2)
+        self.assertIn("'capability-policy-upsert'", policy)
+        f04_start = self.source.index("async function runFoundationF04Scenario")
+        f04_end = self.source.index(
+            "async function restoreFoundationExecutorUnavailableBinding",
+            f04_start,
+        )
+        f04 = self.source[f04_start:f04_end]
+        self.assertIn(
+            "retryFoundationTransientFetch(\n"
+            "      resolveFoundationToolTurnSession,",
+            f04,
+        )
+        self.assertIn("`${label}-capability-session-read`", f04)
+        self.assertIn("'f04-cleanup-binding-list'", f04)
+        self.assertIn("'f04-cleanup-agent-read'", f04)
+        self.assertIn("'f04-cleanup-binding-delete'", f04)
+        self.assertEqual(f04.count("cleanupIdempotencyKey"), 2)
+        self.assertIn("primaryError = error", f04)
+        self.assertIn("foundationF04CleanupFailed:", f04)
+        self.assertIn("foundationFailureSummary(primaryError)", f04)
+        self.assertIn("foundationFailureSummary(cleanupError)", f04)
 
     def test_attachment_turn_disables_unrelated_thinking(self) -> None:
         attachment_turn = self.source.split(
@@ -845,6 +925,17 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "Include nonce ${retrySourceNonce} in every item.",
             scenario,
         )
+        self.assertIn("const maxCancellationAttempts = 3", scenario)
+        self.assertIn("terminalRaceStatuses.push", scenario)
+        self.assertIn(
+            "await cleanupFoundationToolConversation(",
+            scenario,
+        )
+        self.assertIn(
+            "sourceCancellationStatus !== 'completed'",
+            scenario,
+        )
+        self.assertIn("'retry-source-terminal-race'", scenario)
         self.assertNotIn(
             "100 short items",
             scenario,
@@ -1035,7 +1126,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_model_unavailable_development_journey_uses_real_provider(self) -> None:
         start = self.source.index("async runDevelopmentProviderModelUnavailable")
-        end = self.source.index("async runDevelopmentProviderTimeout", start)
+        end = self.source.index("async runDevelopmentProviderRateLimit", start)
         scenario = self.source[start:end]
 
         self.assertIn("await api.addModel(sourceAgent.provider", scenario)
@@ -1135,11 +1226,98 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
 
+    def test_provider_rate_limit_journey_uses_real_provider_path(self) -> None:
+        start = self.source.index("async runDevelopmentProviderRateLimit")
+        end = self.source.index("async runDevelopmentProviderTimeout", start)
+        scenario = self.source[start:end]
+
+        self.assertIn("new URL(providerBaseUrl)", scenario)
+        self.assertIn(
+            "createGovernedToolRuntimeFixture(\n"
+            "          'provider-rate-limit',",
+            scenario,
+        )
+        self.assertIn(
+            "foundation-provider-rate-limit-${sampleId}-",
+            scenario,
+        )
+        self.assertIn("thinkingMode: 'auto'", scenario)
+        self.assertIn("chatConfig: JSON.stringify({ tools: [] })", scenario)
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("=== 'PROVIDER_RATE_LIMIT'", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="retry-later"]',
+            scenario,
+        )
+        self.assertIn(
+            "classifiedReason === FailoverReason.RATE_LIMIT",
+            scenario,
+        )
+        self.assertIn(
+            "classifiedReason === 'FAILOVER_REASON_RATE_LIMIT'",
+            scenario,
+        )
+        self.assertIn("providerCallCount: latestProviderCalls.length", scenario)
+        self.assertIn("classifiedErrorCount: classifiedErrors.length", scenario)
+        self.assertIn("completedAssistantCount:", scenario)
+        self.assertIn("queueStateBeforeHash", scenario)
+        self.assertIn("queueStateAfterHash", scenario)
+        self.assertIn("conversationVersionBefore:", scenario)
+        self.assertIn("conversationVersionAfter:", scenario)
+        self.assertIn("buildDirectRuntimeAttestation(", scenario)
+        self.assertIn("evaluateBaseProviderRateLimitFacts(", scenario)
+        self.assertIn("scenarioFacts.cleanup = cleanup", scenario)
+        for role in (
+            "'receiver-dom':",
+            "'station-readback':",
+            "'runtime-events':",
+            "'measurement-report':",
+            "'side-effect-count':",
+            "replay,",
+        ):
+            self.assertIn(role, scenario)
+        self.assertIn(
+            "resourceKind: 'provider-rate-limit-fixture'",
+            scenario,
+        )
+        self.assertIn(
+            "clearFoundationLocalConversationProjection(conversationId)",
+            scenario,
+        )
+        self.assertIn(
+            "await deleteFoundationConversation(",
+            scenario,
+        )
+        self.assertIn("await api.deleteAgent(disposableAgentId)", scenario)
+        self.assertIn("await api.deleteModel(", scenario)
+        self.assertIn("await api.deleteProvider(", scenario)
+        self.assertNotIn("recovery.click()", scenario)
+        self.assertIn(
+            "agent.acceptance.governedToolRuntimeFixtureCleanupFailed",
+            self.source,
+        )
+        self.assertNotIn(
+            "await api.deleteProvider(providerId).catch(() => undefined)",
+            self.source,
+        )
+
     def test_provider_timeout_development_journey_uses_real_provider(self) -> None:
         start = self.source.index("async runDevelopmentProviderTimeout")
         end = self.source.index("async runDevelopmentLoopBudget", start)
         scenario = self.source[start:end]
 
+        self.assertIn("const sourceAgent = selectedAgent()", scenario)
+        self.assertIn(
+            "foundation-provider-timeout-${sampleId}-${crypto.randomUUID()}",
+            scenario,
+        )
+        self.assertIn("thinkingMode: 'disabled'", scenario)
+        self.assertIn("chatConfig: JSON.stringify({ tools: [] })", scenario)
+        self.assertIn(
+            "agent.acceptance.providerTimeoutToolIsolationFailed",
+            scenario,
+        )
+        self.assertIn("capability.capability_id.startsWith('tool:')", scenario)
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
         self.assertIn("max_output_tokens: 8192", scenario)
         self.assertIn("wall_time_ms: requestedWallTimeMs", scenario)
@@ -1192,10 +1370,37 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn(
-            "await deleteFoundationConversation(",
+            "await cleanupFoundationToolConversation(\n"
+            "              conversationId,\n"
+            "              turnId,\n"
+            "              30_000,\n",
             scenario,
         )
+        self.assertNotIn("await deleteFoundationConversation(", scenario)
+        self.assertIn("await api.deleteAgent(disposableAgentId)", scenario)
+        self.assertIn("disposableAgentDeleted,", scenario)
+        self.assertIn("agentRestored,", scenario)
         self.assertNotIn("recovery.click()", scenario)
+
+    def test_tool_conversation_cleanup_settles_all_turn_dependencies(self) -> None:
+        start = self.source.index("async function cleanupFoundationToolConversation")
+        end = self.source.index(
+            "function clearFoundationLocalConversationProjection",
+            start,
+        )
+        cleanup = self.source[start:end]
+
+        cancel_turn = cleanup.index("await api.cancelAgentTurn(turnId)")
+        cancel_queue = cleanup.index(
+            "await cancelFoundationQueuedTurns(conversationId)"
+        )
+        delete_conversation = cleanup.index(
+            "await deleteFoundationConversation("
+        )
+        self.assertLess(cancel_turn, cancel_queue)
+        self.assertLess(cancel_queue, delete_conversation)
+        self.assertIn("queueCancellationError", cleanup)
+        self.assertIn("cleanupCode", cleanup)
 
     def test_loop_budget_development_journey_reuses_f04_tool_loop(self) -> None:
         start = self.source.index("async runDevelopmentLoopBudget")
@@ -1297,6 +1502,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         prepare_start = self.source.index(
             "async function runFoundationF12Prepare",
         )
+        regenerate_start = self.source.index(
+            "async function regenerateFoundationTurnWithDiagnostics",
+        )
+        regenerate_end = self.source.index(
+            "async function runFoundationF12Prepare",
+            regenerate_start,
+        )
+        regenerate = self.source[regenerate_start:regenerate_end]
         complete_start = self.source.index(
             "async function runFoundationF12Complete",
             prepare_start,
@@ -1329,7 +1542,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("key: topic.key", snapshot)
         self.assertIn("runFoundationF12Turn({", prepare)
         self.assertEqual(prepare.count("runFoundationF12Turn({"), 4)
-        self.assertIn("await api.regenerateAgentTurn({", prepare)
+        self.assertIn("await api.regenerateAgentTurn({", regenerate)
+        self.assertIn("foundationF12MessageListErrorDebug(error)", regenerate)
+        self.assertIn("await api.getAgentConversation(input.conversationId)", regenerate)
+        self.assertIn("`expected=${input.expectedVersion}`", regenerate)
+        self.assertIn("`actual=${actual.version}`", regenerate)
+        self.assertEqual(
+            prepare.count("await regenerateFoundationTurnWithDiagnostics({"),
+            2,
+        )
+        self.assertNotIn("await api.regenerateAgentTurn({", prepare)
         self.assertIn("await api.selectAgentActiveBranch({", prepare)
         self.assertIn("staleExpectedVersion", prepare)
         self.assertIn("foundationF12TopicSnapshot(", prepare)
@@ -1619,10 +1841,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "planFoundationCapabilityBindingRestoration(",
             restore,
         )
-        self.assertEqual(restore.count("await api.getAgent(journal.agentId)"), 2)
+        self.assertIn("await api.listAgents()", restore)
+        self.assertEqual(restore.count("await api.getAgent(journal.agentId)"), 1)
         self.assertLess(
             restore.rindex("await api.getAgent(journal.agentId)"),
-            restore.index(
+            restore.rindex(
                 "window.localStorage.removeItem("
                 "FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY"
             ),
@@ -1759,13 +1982,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         auth_service = DESKTOP_AUTH_SERVICE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "bind_gateway_auth_result(state, app_auth::auth_login(input, state))",
-            gateway,
-        )
-        self.assertIn(
             "bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))",
             gateway,
         )
+        self.assertNotIn('"auth_login" =>', gateway)
         self.assertIn(
             '"station_binding_complete" =>',
             gateway,
@@ -1941,6 +2161,18 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "rejectedRef.current !== null || errorEventRef.current !== null",
             scenario,
         )
+        self.assertIn(
+            "agent.acceptance.foundationForbiddenActorWaitFailed",
+            scenario,
+        )
+        self.assertIn("actorMatchesOwner", scenario)
+        self.assertIn("actorMatchesReceiver", scenario)
+        self.assertIn("rejectionCallbackErrorCode", scenario)
+        self.assertIn("lastSourceTransport", scenario)
+        self.assertIn("bufferedMessageErrors", scenario)
+        self.assertIn("operationErrorMessage", scenario)
+        self.assertIn("operationRunState", scenario)
+        self.assertIn("api.getAgentConversation(input.conversationId)", scenario)
         self.assertIn("requireRuntimeEvent: false", scenario)
         self.assertIn(
             "? projectAgentTypedErrorPayload(outcome)",
@@ -1981,6 +2213,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         replay = scenario.index(
             "const replayed = await runFoundationForbiddenActorAttempt"
         )
+        receiver_replay_restore = scenario.index(
+            "await useChatStore.getState().selectSession(resourceId);",
+            scenario.index("const first = await runFoundationForbiddenActorAttempt"),
+        )
         receiver_restore = scenario.index(
             "await useChatStore.getState().selectSession(resourceId);",
             replay,
@@ -1989,6 +2225,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "'forbidden actor receiver'",
             receiver_restore,
         )
+        self.assertLess(receiver_replay_restore, replay)
         self.assertLess(replay, receiver_restore)
         self.assertLess(receiver_restore, receiver_wait)
         self.assertNotIn("mock", scenario.lower())
@@ -2012,12 +2249,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         fixture = self.source[fixture_start:fixture_end]
         self.assertIn(
-            "const requestedProviderId = `mca-fx-${suffix}`;",
+            "const providerPrefix = 'mca-fx-';",
+            fixture,
+        )
+        self.assertIn(
+            "const requestedProviderId = `${providerPrefix}${suffix}`;",
             fixture,
         )
         self.assertIn("await api.createProvider({", fixture)
         self.assertIn(
-            "fixture.providerId.startsWith('mca-fx-')",
+            "fixture.providerId.startsWith(fixture.providerPrefix)",
             fixture,
         )
         self.assertNotIn("const providerId = 'ollama'", fixture)
@@ -2737,15 +2978,48 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_approval_expired_uses_station_expiry_and_retry_action(self) -> None:
         self.assertNotIn("BASE-APPROVAL-EXPIRED", self.source)
-        scenario_start = self.source.index(
-            "async function runFoundationApprovalExpiredScenario"
+        failure_start = self.source.index(
+            "async function foundationApprovalRetryAttemptFailure"
         )
+        scenario_start = self.source.index(
+            "async function runFoundationApprovalExpiredScenario",
+            failure_start,
+        )
+        failure = self.source[failure_start:scenario_start]
         scenario_end = self.source.index(
             "const FOUNDATION_PNG_BYTES",
             scenario_start,
         )
         scenario = self.source[scenario_start:scenario_end]
 
+        self.assertIn("revisionFailure: revisionFailure", failure)
+        self.assertIn("projectedVersion", failure)
+        self.assertIn("authoritativeVersion", failure)
+        self.assertIn("attemptsAfter: attempts.length", failure)
+        self.assertIn("attemptErrorCodes: attempts.map", failure)
+        self.assertIn("replayTerminalReason:", failure)
+        self.assertIn("retryToolFactCount: retryFacts.length", failure)
+        self.assertIn("recoveryActionDisabled:", failure)
+        self.assertIn(
+            "function foundationApprovalRetryStarted",
+            failure,
+        )
+        self.assertIn(
+            "if (!diagnosticReplayTerminal(replay)) return false",
+            failure,
+        )
+        self.assertIn(
+            "if (attempts.length <= attemptsBefore) return false",
+            failure,
+        )
+        self.assertIn(
+            "'agent.acceptance.foundationApprovalRetryAttemptCountInvalid:'",
+            failure,
+        )
+        self.assertIn(
+            "'agent.acceptance.foundationApprovalRetryTerminal:'",
+            failure,
+        )
         self.assertIn("CapabilityApprovalPolicy.MANUAL", scenario)
         self.assertIn("waitForToolApprovalEvent(turn)", scenario)
         self.assertIn("ToolCallStatus.EXPIRED", scenario)
@@ -2758,6 +3032,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
             2,
         )
         self.assertEqual(scenario.count("recovery.click()"), 2)
+        self.assertIn("foundationApprovalRetryAttemptFailure({", scenario)
+        self.assertIn(
+            "'approval-expired request-again attempt',\n"
+            "        FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,",
+            scenario,
+        )
         self.assertIn("api.cancelAgentTurn(turn.turnId)", scenario)
         self.assertEqual(
             scenario.count("foundationToolSideEffectCount("),
@@ -2871,7 +3151,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "const streamId = observed.controller.streamId;",
             tool_turn,
         )
-        self.assertIn("thinkingMode: 'disabled'", tool_turn)
+        self.assertIn("thinkingMode: input.thinkingMode ?? 'disabled'", tool_turn)
+        self.assertIn(
+            "label: 'mcp-lifecycle-development',\n"
+            "      thinkingMode: 'auto',",
+            self.source,
+        )
         self.assertNotIn("const streamId = input.streamId;", tool_turn)
         self.assertIn(
             "runtimeEvent: preparedRuntimeEvent.current,",
@@ -2996,6 +3281,24 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "const structuredCode = (error as { code?: string }).code",
         )
         self.assertLess(attachment_rejection, generic_structured_code)
+
+    def test_duplicate_conflict_precedes_generic_version_conflict(self) -> None:
+        error_code_start = self.source.index(
+            "function observedErrorCode(error: unknown): string",
+        )
+        error_code_end = self.source.index(
+            "function isFoundationResourceNotFound",
+            error_code_start,
+        )
+        error_code = self.source[error_code_start:error_code_end]
+
+        duplicate_conflict = error_code.index(
+            "serializedDetails.includes('ADMISSION_DUPLICATE_CONFLICT')",
+        )
+        generic_conflict = error_code.index(
+            "(error as { code?: string }).code === 'CONFLICT'",
+        )
+        self.assertLess(duplicate_conflict, generic_conflict)
 
     def test_agent_file_picker_uses_the_portable_attachment_mime_contract(self) -> None:
         chat_input = DESKTOP_CHAT_INPUT.read_text(encoding="utf-8")
@@ -3191,6 +3494,42 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("app_agent_growth::agent_submit_feedback", gateway)
         self.assertIn("app_agent_growth::agent_list_turn_feedback", gateway)
 
+    def test_browser_gateway_isolates_long_lived_agent_stream_workers(self) -> None:
+        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+
+        self.assertIn("const COMMAND_POOL_SIZE: usize = 8;", gateway)
+        self.assertIn("const AGENT_STREAM_POOL_SIZE: usize = 8;", gateway)
+        self.assertIn(
+            "let command_pool = threadpool::ThreadPool::new(COMMAND_POOL_SIZE);",
+            gateway,
+        )
+        self.assertIn(
+            "threadpool::ThreadPool::new(AGENT_STREAM_POOL_SIZE);",
+            gateway,
+        )
+        self.assertIn(
+            'matches!(url, "/agent/turn/stream" | "/agent/turn/events")',
+            gateway,
+        )
+        self.assertIn(
+            "GatewayWorkerLane::Command => &command_pool",
+            gateway,
+        )
+        self.assertIn(
+            "GatewayWorkerLane::AgentStream => &agent_stream_pool",
+            gateway,
+        )
+
+    def test_desktop_boot_ready_reaches_managed_runtime_log(self) -> None:
+        desktop_index = DESKTOP_INDEX.read_text(encoding="utf-8")
+
+        self.assertIn("window.__TAURI_INTERNALS__", desktop_index)
+        self.assertIn("invoke('frontend_log'", desktop_index)
+        self.assertIn(
+            "React app mounted — dismissing boot fallback",
+            desktop_index,
+        )
+
     def test_executor_supervisor_control_is_acceptance_gated(self) -> None:
         runtime_evidence = DESKTOP_RUNTIME_EVIDENCE.read_text(encoding="utf-8")
         desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
@@ -3247,12 +3586,18 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
 
         self.assertLess(
             run_case.index(
-                "const capabilitySession = await resolveFoundationToolTurnSession()"
+                "const capabilitySession = await retryFoundationTransientFetch("
             ),
             run_case.index("const turn = await startFoundationToolTurn"),
         )
+        self.assertIn("resolveFoundationToolTurnSession,", run_case)
         self.assertIn(
             "capabilitySessionId: capabilitySession.capabilitySessionId",
+            run_case,
+        )
+        self.assertIn("turn.observed.controller.abort();", run_case)
+        self.assertIn(
+            "await turn.observed.controller.disconnectTransport();",
             run_case,
         )
         for label in ("'auto'", "'manual'", "'deny'", "'expiry'"):
@@ -3267,16 +3612,18 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("replayTerminal: diagnosticReplayTerminal(replay)", run_case)
         self.assertLess(
             loop_helper.index(
-                "const capabilitySession = await resolveFoundationToolTurnSession()"
+                "const capabilitySession = await retryFoundationTransientFetch("
             ),
             loop_helper.index("const turn = await startFoundationToolTurn"),
         )
+        self.assertIn("resolveFoundationToolTurnSession,", loop_helper)
         self.assertIn(
             "capabilitySessionId: capabilitySession.capabilitySessionId",
             loop_helper,
         )
+        self.assertIn("turnController?.abort();", loop_helper)
         self.assertEqual(
-            scenario.count("await resolveFoundationToolTurnSession()"),
+            scenario.count("resolveFoundationToolTurnSession,"),
             1,
         )
         self.assertNotIn("input.capabilitySessionId", scenario)
@@ -3600,6 +3947,19 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "lifecycle.state === 'ready' && !criticalRuntimeReady",
             app,
         )
+
+    def test_authenticated_critical_runtime_has_no_debug_network_dependency(
+        self,
+    ) -> None:
+        app_runtime = DESKTOP_APP_RUNTIME.read_text(encoding="utf-8")
+        start = app_runtime.index(
+            "export async function installAuthenticatedCriticalRuntimes("
+        )
+        end = app_runtime.index("export function teardownAppRuntime()", start)
+        critical_runtime = app_runtime[start:end]
+
+        self.assertNotIn("fetch(", critical_runtime)
+        self.assertNotIn("#region debug-point", critical_runtime)
 
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")

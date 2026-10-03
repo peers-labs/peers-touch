@@ -46,6 +46,12 @@ export interface FoundationCapabilityRestorationEntry {
   requiresRestore: boolean;
 }
 
+interface FoundationCapabilityIsolationAgent {
+  id: string;
+  name: string;
+  version: number;
+}
+
 const VALID_APPROVAL_POLICIES = new Set<CapabilityApprovalPolicy>([
   CapabilityApprovalPolicy.MANUAL,
   CapabilityApprovalPolicy.ALLOW_LIST,
@@ -278,6 +284,33 @@ export function planFoundationCapabilityBindingRestoration(
   });
 }
 
+export function resolveFoundationCapabilityBindingForCleanup(
+  expected: AgentCapabilityBinding,
+  currentBindings: readonly AgentCapabilityBinding[],
+): AgentCapabilityBinding | null {
+  const current = currentBindings.find(
+    (binding) => binding.bindingId === expected.bindingId
+      && !binding.tombstonedAt,
+  );
+  if (!current) return null;
+  assertFoundationCapabilityBindingIdentity(expected, current);
+  const revisionDelta = current.revision - expected.revision;
+  const agentVersionDelta =
+    current.expectedAgentVersion - expected.expectedAgentVersion;
+  if (
+    current.enabled !== expected.enabled
+    || current.approvalPolicy !== expected.approvalPolicy
+    || revisionDelta < 0n
+    || agentVersionDelta < 0n
+    || revisionDelta !== agentVersionDelta
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationCapabilityBindingStateChanged',
+    );
+  }
+  return current;
+}
+
 export async function restoreFoundationCapabilityBindings(
   originals: readonly FoundationCapabilityIsolationBinding[],
   listBindings: () => Promise<AgentCapabilityBinding[]>,
@@ -360,6 +393,31 @@ export function assertFoundationCapabilityIsolationAgentVersion(
   ) {
     throw new Error('agent.acceptance.foundationCapabilityIsolationAgentChanged');
   }
+}
+
+export function resolveFoundationCapabilityIsolationAgent<
+  T extends FoundationCapabilityIsolationAgent,
+>(
+  journal: Pick<
+    FoundationCapabilityIsolationJournal,
+    'agentId' | 'agentVersion'
+  >,
+  agents: readonly T[],
+): T | null {
+  const matches = agents.filter(
+    (agent) => (agent.id || agent.name) === journal.agentId,
+  );
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) {
+    throw new Error(
+      'agent.acceptance.foundationCapabilityIsolationAgentIdentityAmbiguous',
+    );
+  }
+  assertFoundationCapabilityIsolationAgentVersion(
+    journal.agentVersion,
+    matches[0].version,
+  );
+  return matches[0];
 }
 
 export function assertFoundationCapabilityFixtureCleanupState(

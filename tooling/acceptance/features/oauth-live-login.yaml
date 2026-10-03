@@ -1,0 +1,65 @@
+{
+  "id": "oauth-live-login",
+  "status": "active",
+  "initial_proof_status": "UNPROVEN",
+  "product_area": "oauth-login-broker",
+  "owners": [
+    "apps/oauth2-client/internal/application/oauth/**",
+    "apps/oauth2-client/internal/infrastructure/provider/**",
+    "apps/oauth2-client/internal/interfaces/http/handler/**",
+    "apps/station/app/subserver/oauth/**",
+    "apps/station/frame/core/auth/oauth2.go",
+    "apps/station/frame/touch/auth/**",
+    "apps/station/frame/touch/model/db/oauth2_state.go",
+    "apps/station/frame/touch/oauth_handler.go",
+    "apps/desktop/src-tauri/src/application/oauth2/**",
+    "apps/mobile/src/gen/proto/domain/oauth/**",
+    "apps/desktop/src/pages/login/**",
+    "model/domain/oauth/**"
+  ],
+  "truth_sources": [
+    "OAuth Login Broker durable authorization, identity, credential, and audit records",
+    "Station OAuth assertion consumption, provider binding, Actor, token, and session records",
+    "Desktop account registry and session vault after Station session issuance"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-tauri",
+      "surface": "Desktop OAuth account login"
+    },
+    {
+      "type": "native-tauri",
+      "surface": "Desktop connector settings"
+    },
+    {
+      "type": "http",
+      "route": "/api/oauth/{provider}/{start|callback}"
+    }
+  ],
+  "required_gates": [
+    "oauth-login-broker-handoff-contract",
+    "oauth-login-broker-provider-identity"
+  ],
+  "acceptance": {
+    "service": [
+      "the broker emits one versioned signed assertion that Station verifies before issuing a session",
+      "the assertion is receiver-bound, purpose-bound, and consumed exactly once by Station persistence",
+      "lost acknowledgement responses converge without cancelling an activated session, while expired unacknowledged candidates are revoked and cleaned",
+      "account login and authenticated connector linking use distinct Station boundaries",
+      "provider denial and absent or unverified email preserve transaction-owned routing and provider-scoped identity"
+    ],
+    "visible": [
+      "a logged-out Desktop user can complete OAuth account login through the explicit loopback callback",
+      "Desktop persists an active account and session only after Station returns a canonical PTID and access token",
+      "connector linking cannot create or replace an account-login session"
+    ]
+  },
+  "negative": [
+    "Desktop must not possess the bridge signing secret or synthesize an unsigned bridge request",
+    "Station must fail closed for missing secrets, unsupported versions, invalid signatures, stale assertions, or identity conflicts",
+    "a captured callback assertion must not issue more than one Station session or cross from connector linking into account login",
+    "unverified provider email must not merge actors by email",
+    "the local handoff contract Gate must not be reported as native Desktop proof",
+    "local source checks do not prove live provider consent, Vercel deployment, or native external-network behavior"
+  ]
+}

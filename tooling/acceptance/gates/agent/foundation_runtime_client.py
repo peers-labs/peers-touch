@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import signal
@@ -11,7 +10,6 @@ import socket
 import subprocess
 import threading
 import time
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -32,45 +30,11 @@ from tooling.acceptance.gates.agent.tcp_fault_proxy import (
 WAIT_TICK = threading.Event()
 PROCESS_TERMINATION_TIMEOUT_SECONDS = 15.0
 PROCESS_KILL_TIMEOUT_SECONDS = 5.0
+WEBDRIVER_SESSION_TIMEOUT_SECONDS = 30.0
+WEBDRIVER_SESSION_RETRY_INTERVAL_SECONDS = 0.25
+HARNESS_READY_TIMEOUT_SECONDS = 60.0
+NATIVE_HARNESS_RELOAD_AFTER_SECONDS = 30.0
 
-
-# #region debug-point A-D:harness-call-boundary
-def _report_harness_debug(
-    hypothesis_id: str,
-    message: str,
-    data: Mapping[str, object],
-) -> None:
-    session_id = os.environ.get("DEBUG_SESSION_ID", "")
-    if session_id not in {
-        "browser-renderer-closed",
-        "as-f06-browser-restart-timeout",
-    }:
-        return
-    url = os.environ.get("DEBUG_SERVER_URL", "")
-    if not url:
-        return
-    event = {
-        "sessionId": session_id,
-        "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
-        "hypothesisId": hypothesis_id,
-        "location": "foundation_runtime_client.py:FoundationRuntimeClient.harness",
-        "msg": f"[DEBUG] {message}",
-        "data": dict(data),
-        "ts": int(time.time() * 1000),
-    }
-    try:
-        request = urllib.request.Request(
-            url,
-            data=json.dumps(event).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(request, timeout=1).read()
-    except Exception:
-        pass
-
-
-# #endregion
 
 class FoundationClientError(RuntimeError):
     """A provisioned Foundation client failed its lifecycle contract."""
@@ -290,17 +254,6 @@ class FoundationRuntimeClient:
         return {**environment, **self.extra_launch_env}
 
     def start(self) -> None:
-        start_started_at = time.monotonic()
-        # #region debug-point B-D:runtime-start
-        _report_harness_debug(
-            "B-D",
-            "runtime-start-started",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-            },
-        )
-        # #endregion
         self._station_proxy.start()
         try:
             self._fault_controller.start()
@@ -320,74 +273,9 @@ class FoundationRuntimeClient:
             self._process_group_id = (
                 self.process.pid if os.name == "posix" else None
             )
-            # #region debug-point D:runtime-process-launched
-            _report_harness_debug(
-                "D",
-                "runtime-process-launched",
-                {
-                    "runtime": self.spec.runtime,
-                    "restartGeneration": self.restart_generation,
-                    "elapsedMs": int(
-                        (time.monotonic() - start_started_at) * 1000
-                    ),
-                },
-            )
-            # #endregion
             self._connect_driver()
-            # #region debug-point B-D:driver-connected
-            _report_harness_debug(
-                "B-D",
-                "runtime-driver-connected",
-                {
-                    "runtime": self.spec.runtime,
-                    "restartGeneration": self.restart_generation,
-                    "driverSessionPresent": bool(
-                        getattr(self.driver, "session_id", None)
-                    ),
-                    "elapsedMs": int(
-                        (time.monotonic() - start_started_at) * 1000
-                    ),
-                },
-            )
-            # #endregion
-            agent_harness_ready = harness_ready(
-                self.driver,
-                namespace=self.harness_namespace,
-                timeout=60,
-            )
-            if not agent_harness_ready:
-                raise FoundationClientError(
-                    f"{self.spec.runtime} {self.harness_namespace} acceptance "
-                    "Harness is unavailable"
-                )
-            # #region debug-point A-D:runtime-ready
-            _report_harness_debug(
-                "A-D",
-                "runtime-start-completed",
-                {
-                    "runtime": self.spec.runtime,
-                    "restartGeneration": self.restart_generation,
-                    "elapsedMs": int(
-                        (time.monotonic() - start_started_at) * 1000
-                    ),
-                },
-            )
-            # #endregion
+            self._wait_for_acceptance_harness()
         except BaseException as error:
-            # #region debug-point B-D:runtime-start-failure
-            _report_harness_debug(
-                "B-D",
-                "runtime-start-failed",
-                {
-                    "runtime": self.spec.runtime,
-                    "restartGeneration": self.restart_generation,
-                    "elapsedMs": int(
-                        (time.monotonic() - start_started_at) * 1000
-                    ),
-                    "errorType": type(error).__name__,
-                },
-            )
-            # #endregion
             rollback_failures: list[str] = []
             try:
                 rollback = self._stop_runtime(
@@ -409,6 +297,79 @@ class FoundationRuntimeClient:
                 ) from error
             raise
 
+    def _wait_for_acceptance_harness(self) -> None:
+        if self.driver is None:
+            raise FoundationClientError(
+                f"{self.spec.runtime} client is not connected"
+            )
+        initial_timeout = (
+            NATIVE_HARNESS_RELOAD_AFTER_SECONDS
+            if self.spec.runtime == "native-tauri"
+            else HARNESS_READY_TIMEOUT_SECONDS
+        )
+        if harness_ready(
+            self.driver,
+            namespace=self.harness_namespace,
+            timeout=initial_timeout,
+        ):
+            return
+        if self.spec.runtime == "native-tauri":
+            if (
+                not self._process_alive()
+                or not port_open(self.spec.renderer_port)
+            ):
+                raise FoundationClientError(
+                    "native-tauri renderer became unavailable before "
+                    f"{self.harness_namespace} acceptance Harness recovery"
+                )
+            navigation_error: Exception | None = None
+            try:
+                self.driver.get(
+                    f"http://127.0.0.1:{self.spec.renderer_port}"
+                )
+            except Exception as error:
+                navigation_error = error
+                if "unsupported type (code 5)" in str(error):
+                    self._reconnect_native_driver()
+            if harness_ready(
+                self.driver,
+                namespace=self.harness_namespace,
+                timeout=(
+                    HARNESS_READY_TIMEOUT_SECONDS
+                    - NATIVE_HARNESS_RELOAD_AFTER_SECONDS
+                ),
+            ):
+                return
+            if navigation_error is not None:
+                raise FoundationClientError(
+                    "native-tauri acceptance Harness navigation recovery failed: "
+                    f"{navigation_error}"
+                ) from navigation_error
+        raise FoundationClientError(
+            f"{self.spec.runtime} {self.harness_namespace} acceptance "
+            "Harness is unavailable"
+        )
+
+    def _reconnect_native_driver(self) -> None:
+        stale_driver = self.driver
+        self.driver = None
+        if stale_driver is not None:
+            try:
+                stale_driver.quit()
+            except Exception:
+                command_executor = getattr(
+                    stale_driver,
+                    "command_executor",
+                    None,
+                )
+                close = getattr(command_executor, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+        self._connect_driver()
+
     def _connect_driver(self) -> None:
         if self.spec.runtime == "native-tauri":
             wait_until(
@@ -417,29 +378,34 @@ class FoundationRuntimeClient:
                 self.startup_timeout,
             )
             endpoint = f"http://127.0.0.1:{self.spec.webdriver_port}"
-            connection = RemoteConnection(
-                client_config=ClientConfig(
-                    remote_server_addr=endpoint,
-                    timeout=min(self.startup_timeout, 120),
-                ),
-            )
-            self.driver = webdriver.Remote(
-                command_executor=connection,
-                options=ChromeOptions(),
+
+            def connect_session() -> Any:
+                self._process_alive()
+                connection = RemoteConnection(
+                    client_config=ClientConfig(
+                        remote_server_addr=endpoint,
+                        timeout=min(self.startup_timeout, 120),
+                    ),
+                )
+                try:
+                    driver = webdriver.Remote(
+                        command_executor=connection,
+                        options=ChromeOptions(),
+                    )
+                except BaseException:
+                    connection.close()
+                    raise
+                self.driver = driver
+                return driver
+
+            wait_until(
+                connect_session,
+                "Native embedded WebDriver session",
+                min(self.startup_timeout, WEBDRIVER_SESSION_TIMEOUT_SECONDS),
+                interval=WEBDRIVER_SESSION_RETRY_INTERVAL_SECONDS,
             )
             return
 
-        connect_started_at = time.monotonic()
-        # #region debug-point B-D:browser-port-readiness
-        _report_harness_debug(
-            "B-D",
-            "browser-port-wait-started",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-            },
-        )
-        # #endregion
         wait_until(
             lambda: self._process_alive()
             and port_open(self.spec.gateway_port)
@@ -447,106 +413,12 @@ class FoundationRuntimeClient:
             "Browser gateway and renderer",
             self.startup_timeout,
         )
-        # #region debug-point B-D:browser-port-ready
-        _report_harness_debug(
-            "B-D",
-            "browser-ports-ready",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "elapsedMs": int(
-                    (time.monotonic() - connect_started_at) * 1000
-                ),
-            },
-        )
-        # #endregion
         self.chrome = ChromeDriver(
             user_data_dir=str(self.spec.storage_root / "chrome"),
         )
-        # #region debug-point B-D:browser-session-start
-        _report_harness_debug(
-            "B-D",
-            "browser-session-started",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "elapsedMs": int(
-                    (time.monotonic() - connect_started_at) * 1000
-                ),
-            },
-        )
-        # #endregion
         self.driver = self.chrome.start()
-        # #region debug-point B-D:browser-session-ready
-        _report_harness_debug(
-            "B-D",
-            "browser-session-ready",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "driverSessionPresent": bool(
-                    getattr(self.driver, "session_id", None)
-                ),
-                "elapsedMs": int(
-                    (time.monotonic() - connect_started_at) * 1000
-                ),
-            },
-        )
-        # #endregion
-        # #region debug-point A-B:browser-navigation
-        _report_harness_debug(
-            "A-B",
-            "browser-navigation-started",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "elapsedMs": int(
-                    (time.monotonic() - connect_started_at) * 1000
-                ),
-            },
-        )
-        # #endregion
         self.chrome.navigate(f"http://localhost:{self.spec.renderer_port}")
-        # #region debug-point A-B:browser-navigation-complete
-        _report_harness_debug(
-            "A-B",
-            "browser-navigation-completed",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "elapsedMs": int(
-                    (time.monotonic() - connect_started_at) * 1000
-                ),
-            },
-        )
-        # #endregion
-        # #region debug-point A-B:browser-ready-state
-        _report_harness_debug(
-            "A-B",
-            "browser-ready-wait-started",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "elapsedMs": int(
-                    (time.monotonic() - connect_started_at) * 1000
-                ),
-            },
-        )
-        # #endregion
         self.chrome.wait_for_ready(30)
-        # #region debug-point A-B:browser-ready-state-complete
-        _report_harness_debug(
-            "A-B",
-            "browser-ready-wait-completed",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "elapsedMs": int(
-                    (time.monotonic() - connect_started_at) * 1000
-                ),
-            },
-        )
-        # #endregion
 
     def _process_alive(self) -> bool:
         if self.process is None:
@@ -570,29 +442,6 @@ class FoundationRuntimeClient:
             raise FoundationClientError(
                 f"{self.spec.runtime} client is not connected"
             )
-        started_at = time.monotonic()
-        debug_data: dict[str, object] = {
-            "runtime": self.spec.runtime,
-            "method": method,
-            "cell": (
-                str(payload.get("cell") or "")
-                if isinstance(payload, Mapping)
-                else ""
-            ),
-            "scriptTimeoutSeconds": timeout,
-            "restartGeneration": self.restart_generation,
-            "driverSessionPresent": bool(getattr(self.driver, "session_id", None)),
-            "processReturnCode": (
-                self.process.poll()
-                if self.process is not None
-                else None
-            ),
-        }
-        _report_harness_debug(
-            "A-D",
-            "harness-call-started",
-            debug_data,
-        )
         try:
             result = call_async_harness(
                 self.driver,
@@ -601,26 +450,8 @@ class FoundationRuntimeClient:
                 namespace=self.harness_namespace,
                 script_timeout=timeout,
             )
-            _report_harness_debug(
-                "A-D",
-                "harness-call-completed",
-                {
-                    **debug_data,
-                    "elapsedMs": int((time.monotonic() - started_at) * 1000),
-                    "resultType": type(result).__name__,
-                },
-            )
             return result
         except Exception as error:
-            _report_harness_debug(
-                "A-D",
-                "harness-call-failed",
-                {
-                    **debug_data,
-                    "elapsedMs": int((time.monotonic() - started_at) * 1000),
-                    "errorType": type(error).__name__,
-                },
-            )
             raise FoundationClientError(
                 f"{self.spec.runtime} harness {method} failed: {error}"
             ) from error
@@ -660,50 +491,12 @@ class FoundationRuntimeClient:
 
     def restart(self) -> None:
         self.restart_generation += 1
-        restart_started_at = time.monotonic()
-        # #region debug-point B-D:runtime-restart
-        _report_harness_debug(
-            "B-D",
-            "runtime-restart-started",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-            },
-        )
-        # #endregion
         result = self._stop_runtime(logout=False, remove_storage=False)
-        # #region debug-point B-D:runtime-restart-stopped
-        _report_harness_debug(
-            "B-D",
-            "runtime-restart-stop-completed",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "elapsedMs": int(
-                    (time.monotonic() - restart_started_at) * 1000
-                ),
-                "status": str(result.get("status") or ""),
-            },
-        )
-        # #endregion
         if result["status"] != "clean":
             raise FoundationClientError(
                 f"{self.spec.runtime} restart cleanup failed: {result['failures']}"
             )
         self.start()
-        # #region debug-point B-D:runtime-restart-complete
-        _report_harness_debug(
-            "B-D",
-            "runtime-restart-completed",
-            {
-                "runtime": self.spec.runtime,
-                "restartGeneration": self.restart_generation,
-                "elapsedMs": int(
-                    (time.monotonic() - restart_started_at) * 1000
-                ),
-            },
-        )
-        # #endregion
 
     def _stop_runtime(
         self,
@@ -725,35 +518,11 @@ class FoundationRuntimeClient:
             finally:
                 self.harness_namespace = previous_namespace
         if self.chrome is not None:
-            chrome_stop_started_at = time.monotonic()
-            # #region debug-point B-D:chrome-stop
-            _report_harness_debug(
-                "B-D",
-                "chrome-stop-started",
-                {
-                    "runtime": self.spec.runtime,
-                    "restartGeneration": self.restart_generation,
-                },
-            )
-            # #endregion
             try:
                 self.chrome.stop()
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
                 failures.append(f"chrome: {error}")
             finally:
-                # #region debug-point B-D:chrome-stop-complete
-                _report_harness_debug(
-                    "B-D",
-                    "chrome-stop-completed",
-                    {
-                        "runtime": self.spec.runtime,
-                        "restartGeneration": self.restart_generation,
-                        "elapsedMs": int(
-                            (time.monotonic() - chrome_stop_started_at) * 1000
-                        ),
-                    },
-                )
-                # #endregion
                 self.chrome = None
                 self.driver = None
         elif self.driver is not None:
@@ -767,17 +536,6 @@ class FoundationRuntimeClient:
         if self._managed_runtime_started:
             environment = os.environ.copy()
             environment.update(self.launch_environment())
-            devctl_started_at = time.monotonic()
-            # #region debug-point D:devctl-stop
-            _report_harness_debug(
-                "D",
-                "devctl-stop-started",
-                {
-                    "runtime": self.spec.runtime,
-                    "restartGeneration": self.restart_generation,
-                },
-            )
-            # #endregion
             try:
                 completed = subprocess.run(
                     [
@@ -807,36 +565,8 @@ class FoundationRuntimeClient:
                     )
                 else:
                     self._managed_runtime_started = False
-                # #region debug-point D:devctl-stop-complete
-                _report_harness_debug(
-                    "D",
-                    "devctl-stop-completed",
-                    {
-                        "runtime": self.spec.runtime,
-                        "restartGeneration": self.restart_generation,
-                        "elapsedMs": int(
-                            (time.monotonic() - devctl_started_at) * 1000
-                        ),
-                        "returnCode": completed.returncode,
-                    },
-                )
-                # #endregion
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
                 failures.append(f"devctl cleanup: {error}")
-                # #region debug-point D:devctl-stop-failure
-                _report_harness_debug(
-                    "D",
-                    "devctl-stop-failed",
-                    {
-                        "runtime": self.spec.runtime,
-                        "restartGeneration": self.restart_generation,
-                        "elapsedMs": int(
-                            (time.monotonic() - devctl_started_at) * 1000
-                        ),
-                        "errorType": type(error).__name__,
-                    },
-                )
-                # #endregion
         process_released = process is None and process_group_id is None
         stale_process_group = False
         term_wait_completed: bool | None = None
@@ -891,7 +621,7 @@ class FoundationRuntimeClient:
                 failures.append(f"process: {error}")
         else:
             process_released = True
-        if os.name == "posix":
+        if self.spec.runtime == "native-tauri":
             failures.extend(self._stop_owned_listener_processes())
         if self.log_handle is not None:
             try:
