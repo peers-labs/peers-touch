@@ -17,9 +17,48 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+func accessGateSessionDeviceType(platform string) (session.DeviceType, error) {
+	switch strings.TrimSpace(platform) {
+	case string(session.DeviceTypeDesktop):
+		return session.DeviceTypeDesktop, nil
+	case string(session.DeviceTypeMobile):
+		return session.DeviceTypeMobile, nil
+	case string(session.DeviceTypeWeb):
+		return session.DeviceTypeWeb, nil
+	default:
+		return "", fmt.Errorf("unsupported Access Gate client platform %q", platform)
+	}
+}
+
+func revokeReplacedAccessGateSessions(
+	tx *gorm.DB,
+	userID uint64,
+	deviceID, currentSessionID string,
+	now time.Time,
+) error {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return errors.New("cannot replace Access Gate session without device id")
+	}
+	return tx.Model(&session.SessionRecord{}).
+		Where(
+			"user_id = ? AND device_id = ? AND session_id <> ? AND revoked = ?",
+			userID,
+			deviceID,
+			currentSessionID,
+			false,
+		).
+		Updates(map[string]any{
+			"revoked":        true,
+			"revoked_at":     now,
+			"revoked_reason": "kicked",
+		}).Error
+}
+
 // FinalizeGrantedSession is the sole password/generic Access Gate credential
-// finalizer. It creates at most one Mobile session for a granted attempt and
-// reissues credentials for that same session on an idempotent retry.
+// finalizer. It creates at most one session for a granted attempt, replaces an
+// older session only for the same canonical device, and reissues credentials
+// for that same session on an idempotent retry.
 func FinalizeGrantedSession(
 	ctx context.Context,
 	attemptID, stationPeerID, deviceID string,
@@ -49,6 +88,10 @@ func FinalizeGrantedSession(
 		if attempt.AuthMethod != "password" {
 			return nil
 		}
+		deviceType, err := accessGateSessionDeviceType(attempt.Platform)
+		if err != nil {
+			return err
+		}
 
 		var actor dbmodel.Actor
 		if err := tx.Where("ptid = ?", attempt.ActorPTID).First(&actor).Error; err != nil {
@@ -63,6 +106,7 @@ func FinalizeGrantedSession(
 			if record.AccessAttemptID != attempt.ID ||
 				record.StationPeerID != attempt.StationPeerID ||
 				record.AccessDecisionRevision != attempt.DecisionRevision ||
+				record.DeviceType != deviceType ||
 				record.DeviceID != attempt.DeviceID ||
 				record.LifecycleGeneration != attempt.LifecycleGeneration ||
 				record.AuthMethod != "access_gate" {
@@ -79,6 +123,7 @@ func FinalizeGrantedSession(
 				AccessAttemptID:        attempt.ID,
 				StationPeerID:          attempt.StationPeerID,
 				AccessDecisionRevision: attempt.DecisionRevision,
+				DeviceType:             deviceType,
 				DeviceID:               attempt.DeviceID,
 				LifecycleGeneration:    attempt.LifecycleGeneration,
 			},
@@ -91,19 +136,9 @@ func FinalizeGrantedSession(
 		}
 
 		now := time.Now().UTC()
-		if err := tx.Model(&session.SessionRecord{}).
-			Where(
-				"user_id = ? AND device_type = ? AND session_id <> ? AND revoked = ?",
-				actor.ID,
-				session.DeviceTypeMobile,
-				record.SessionID,
-				false,
-			).
-			Updates(map[string]any{
-				"revoked":        true,
-				"revoked_at":     now,
-				"revoked_reason": "kicked",
-			}).Error; err != nil {
+		if err := revokeReplacedAccessGateSessions(
+			tx, actor.ID, attempt.DeviceID, record.SessionID, now,
+		); err != nil {
 			return err
 		}
 		if err := tx.Create(record).Error; err != nil {

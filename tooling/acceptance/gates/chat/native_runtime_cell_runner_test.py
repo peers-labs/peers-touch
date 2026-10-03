@@ -985,7 +985,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
 
         with patch.object(
             desktop_gateway_e2e,
-            "gateway_command",
+            "gateway_access_login",
             return_value={"actor_ptid": "ptid:test:alice"},
         ), patch.object(
             desktop_gateway_e2e,
@@ -1011,7 +1011,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
 
         with patch.object(
             desktop_gateway_e2e,
-            "gateway_command",
+            "gateway_access_login",
             return_value={"ptid": "ptid:test:alice"},
         ):
             with self.assertRaisesRegex(
