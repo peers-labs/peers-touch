@@ -1,0 +1,1 @@
+"""Social product Acceptance gates."""

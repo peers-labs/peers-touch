@@ -1,0 +1,1425 @@
+package githubstore
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/entity"
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/repository"
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/valueobject"
+	recordcrypto "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/crypto"
+)
+
+func TestStoreCompletesAuthorizationAcrossInstances(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	first := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	second := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	now := time.Date(2026, 9, 30, 1, 0, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "raw-state-secret",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		ReturnTo:  "peers-touch://oauth/callback",
+		Verifier:  "pkce-verifier-secret",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := first.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := second.FindAuthorization(context.Background(), session.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || loaded.Verifier != session.Verifier {
+		t.Fatalf("transaction did not survive store instance change: %#v", loaded)
+	}
+	completion := entity.AuthorizationCompletion{
+		State:           session.State,
+		CompletionID:    "code-fingerprint",
+		CodeFingerprint: "code-fingerprint",
+		Identity: entity.ProviderIdentity{
+			ProviderUserID: "42",
+			Username:       "alice",
+			Email:          "alice@example.com",
+		},
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-token-secret",
+			RefreshToken: "refresh-token-secret",
+			TokenType:    "Bearer",
+			ObtainedAt:   now.Add(time.Minute),
+		},
+		CompletedAt: now.Add(time.Minute),
+	}
+	identity, err := second.CompleteAuthorization(context.Background(), completion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.LoginCount != 1 || identity.IdentityID == "" {
+		t.Fatalf("unexpected identity: %#v", identity)
+	}
+	commitsAfterSuccess := fixture.commitCount()
+	replayed, err := first.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:        session.State,
+		CompletionID: completion.CompletionID,
+		CompletedAt:  now.Add(2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.IdentityID != identity.IdentityID {
+		t.Fatalf("idempotent replay returned another identity: %#v", replayed)
+	}
+	if fixture.commitCount() != commitsAfterSuccess {
+		t.Fatal("idempotent replay created another commit")
+	}
+	if _, err := first.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:        session.State,
+		CompletionID: "different-code",
+		CompletedAt:  now.Add(2 * time.Minute),
+	}); err != repository.ErrAuthorizationConsumed {
+		t.Fatalf("expected consumed error, got %v", err)
+	}
+	for path, content := range fixture.files() {
+		if strings.Contains(path, session.State) {
+			t.Fatalf("raw state leaked into path %s", path)
+		}
+		for _, secret := range []string{
+			session.State,
+			session.Verifier,
+			completion.Tokens.AccessToken,
+			completion.Tokens.RefreshToken,
+		} {
+			if bytes.Contains(content, []byte(secret)) {
+				t.Fatalf("secret leaked into repository payload at %s", path)
+			}
+		}
+		kind, ok := recordKindForPath(path)
+		if !ok {
+			t.Fatalf("unknown record path: %s", path)
+		}
+		plaintext, _, err := first.codec.Decrypt(kind, path, content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if kind != credentialKind {
+			for _, secret := range []string{
+				session.State,
+				completion.Tokens.AccessToken,
+				completion.Tokens.RefreshToken,
+			} {
+				if bytes.Contains(plaintext, []byte(secret)) {
+					t.Fatalf("secret leaked into %s plaintext schema", kind)
+				}
+			}
+		}
+		if kind == auditKind && bytes.Contains(plaintext, []byte(session.Verifier)) {
+			t.Fatal("verifier leaked into audit plaintext")
+		}
+	}
+	snapshot, err := first.AdminSnapshot(context.Background(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Identities) != 1 || len(snapshot.Events) != 2 {
+		t.Fatalf("unexpected admin snapshot: %#v", snapshot)
+	}
+	if !snapshot.Identities[0].HasRefreshToken {
+		t.Fatal("refresh-token presence was not projected")
+	}
+	t.Run("oversized successful response", assertGitHubResponseOverflow)
+	t.Run("truncated recursive tree", assertTruncatedTreeTraversal)
+	t.Run("oversized recursive tree", assertOversizedRecursiveTreeTraversal)
+}
+
+func assertGitHubResponseOverflow(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	client := fixture.newClient(t)
+	var output map[string]any
+	err := client.request(
+		context.Background(),
+		http.MethodGet,
+		client.repoPath("/oversized"),
+		nil,
+		&output,
+	)
+	if !errors.Is(err, errGitHubResponseTooLarge) ||
+		!errors.Is(err, repository.ErrStorageUnavailable) {
+		t.Fatalf("expected bounded overflow error, got %v", err)
+	}
+}
+
+func assertTruncatedTreeTraversal(t *testing.T) {
+	assertTreeTraversalFallback(t, true, false)
+}
+
+func assertOversizedRecursiveTreeTraversal(t *testing.T) {
+	assertTreeTraversalFallback(t, false, true)
+}
+
+func assertTreeTraversalFallback(t *testing.T, truncated, oversized bool) {
+	fixture := newGitDataFixture(t)
+	fixture.mu.Lock()
+	fixture.truncateRecursive = truncated
+	fixture.oversizeRecursive = oversized
+	fixture.trees["tree-0"] = map[string]string{"oauth-data": "tree-1"}
+	fixture.treeTypes["tree-0"] = map[string]string{"oauth-data": "tree"}
+	fixture.trees["tree-1"] = map[string]string{"records": "tree-2"}
+	fixture.treeTypes["tree-1"] = map[string]string{"records": "tree"}
+	fixture.trees["tree-2"] = map[string]string{"identity.json": "blob-existing"}
+	fixture.blobs["blob-existing"] = []byte("encrypted-record")
+	fixture.mu.Unlock()
+
+	snapshot, err := fixture.newClient(t).snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.entries["oauth-data/records/identity.json"] != "blob-existing" {
+		t.Fatalf("nested tree entry missing: %#v", snapshot.entries)
+	}
+	fixture.mu.Lock()
+	nonRecursiveRequests := fixture.nonRecursiveTreeRequests
+	fixture.mu.Unlock()
+	if nonRecursiveRequests != 3 {
+		t.Fatalf("expected three bounded tree requests, got %d", nonRecursiveRequests)
+	}
+}
+
+func TestAdminSnapshotLimitsAuditReadsBeforeFetchingBlobs(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	for index, occurredAt := range []time.Time{
+		time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC),
+		time.Date(2026, 2, 1, 2, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 1, 3, 0, 0, 0, time.UTC),
+	} {
+		if err := store.CreateAuthorization(context.Background(), entity.AuthSession{
+			State:     fmt.Sprintf("bounded-admin-state-%d", index),
+			SiteID:    "main",
+			Provider:  valueobject.ProviderGitHub,
+			Verifier:  "verifier",
+			CreatedAt: occurredAt,
+			ExpiresAt: occurredAt.Add(10 * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fixture.resetBlobReads()
+	snapshot, err := store.AdminSnapshot(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.blobReads() != 2 {
+		t.Fatalf("expected two bounded audit blob reads, got %d", fixture.blobReads())
+	}
+	if len(snapshot.Events) != 2 ||
+		!snapshot.Events[0].OccurredAt.Equal(time.Date(2026, 3, 1, 3, 0, 0, 0, time.UTC)) ||
+		!snapshot.Events[1].OccurredAt.Equal(time.Date(2026, 2, 1, 2, 0, 0, 0, time.UTC)) {
+		t.Fatalf("unexpected bounded recent events: %#v", snapshot.Events)
+	}
+}
+
+func TestAdminSnapshotReturnsNewestSameMonthEventsWithBoundedReads(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	events := []entity.AuditEvent{
+		{
+			SchemaVersion: recordSchema,
+			EventID:       "z-oldest",
+			EventType:     entity.AuditAuthorizationStarted,
+			OccurredAt:    time.Date(2026, 9, 1, 1, 0, 0, 0, time.UTC),
+			SiteID:        "main",
+			Provider:      valueobject.ProviderGitHub,
+			Result:        "success",
+		},
+		{
+			SchemaVersion: recordSchema,
+			EventID:       "m-middle",
+			EventType:     entity.AuditAuthorizationStarted,
+			OccurredAt:    time.Date(2026, 9, 1, 2, 0, 0, 0, time.UTC),
+			SiteID:        "main",
+			Provider:      valueobject.ProviderGitHub,
+			Result:        "success",
+		},
+		{
+			SchemaVersion: recordSchema,
+			EventID:       "a-newest",
+			EventType:     entity.AuditAuthorizationStarted,
+			OccurredAt:    time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC),
+			SiteID:        "main",
+			Provider:      valueobject.ProviderGitHub,
+			Result:        "success",
+		},
+	}
+	if err := store.repository.Update(context.Background(), "test: seed audit events", func(_ *Snapshot) (map[string][]byte, error) {
+		records := make(map[string]recordValue, len(events))
+		for _, event := range events {
+			records[auditPath(event)] = recordValue{kind: auditKind, value: event}
+		}
+		return store.encodeChanges(records)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.resetBlobReads()
+	snapshot, err := store.AdminSnapshot(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.blobReads() != 2 {
+		t.Fatalf("expected two bounded audit blob reads, got %d", fixture.blobReads())
+	}
+	if len(snapshot.Events) != 2 ||
+		snapshot.Events[0].EventID != "a-newest" ||
+		snapshot.Events[1].EventID != "m-middle" {
+		t.Fatalf("unexpected same-month recent events: %#v", snapshot.Events)
+	}
+}
+
+func TestAdminSnapshotRejectsLegacyAuditPathBeforeBlobRead(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	event := entity.AuditEvent{
+		SchemaVersion: recordSchema,
+		EventID:       "legacy-event",
+		EventType:     entity.AuditAuthorizationStarted,
+		OccurredAt:    time.Date(2026, 9, 1, 1, 0, 0, 0, time.UTC),
+		SiteID:        "main",
+		Provider:      valueobject.ProviderGitHub,
+		Result:        "success",
+	}
+	legacyPath := recordRoot + "/audits/2026/09/" + event.EventID + ".json"
+	if err := store.repository.Update(context.Background(), "test: seed legacy audit event", func(_ *Snapshot) (map[string][]byte, error) {
+		return store.encodeChanges(map[string]recordValue{
+			legacyPath: {kind: auditKind, value: event},
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.resetBlobReads()
+	if _, err := store.AdminSnapshot(context.Background(), 2); !errors.Is(err, repository.ErrRecordCorrupt) {
+		t.Fatalf("expected legacy path rejection, got %v", err)
+	}
+	if fixture.blobReads() != 0 {
+		t.Fatalf("legacy path fetched %d blobs before rejection", fixture.blobReads())
+	}
+}
+
+func TestRecordAuthorizationFailureDistinguishesOccurrences(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	first := time.Date(2026, 9, 1, 1, 0, 0, 0, time.UTC)
+	record := func(occurredAt time.Time) {
+		t.Helper()
+		if err := store.RecordAuthorizationFailure(context.Background(), entity.AuthorizationFailure{
+			State:           "repeated-failure-state",
+			Provider:        valueobject.ProviderGitHub,
+			CodeFingerprint: "code-fingerprint",
+			ErrorCode:       "provider_unavailable",
+			OccurredAt:      occurredAt,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record(first)
+	commitsAfterFirst := fixture.commitCount()
+	record(first)
+	if fixture.commitCount() != commitsAfterFirst {
+		t.Fatal("the same failure occurrence created another commit")
+	}
+	record(first.Add(time.Second))
+
+	snapshot, err := store.AdminSnapshot(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Events) != 2 ||
+		snapshot.Events[0].EventID == snapshot.Events[1].EventID {
+		t.Fatalf("distinct failure occurrences were collapsed: %#v", snapshot.Events)
+	}
+}
+
+func TestTerminalAuthorizationFailureConsumesTransaction(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	now := time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "provider-denied-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		ReturnTo:  "http://127.0.0.1:43123/callback?session_id=lp-123",
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := store.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordAuthorizationFailure(context.Background(), entity.AuthorizationFailure{
+		State:      session.State,
+		Provider:   session.Provider,
+		ErrorCode:  "provider_access_denied",
+		OccurredAt: now.Add(time.Minute),
+		Terminal:   true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.FindAuthorization(context.Background(), session.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || !loaded.IsConsumed() {
+		t.Fatalf("terminal provider denial did not consume transaction: %#v", loaded)
+	}
+}
+
+func TestStoreConvergesAfterLostRefUpdateResponse(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	now := time.Date(2026, 9, 30, 2, 0, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGoogle,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := store.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	fixture.abortAfterNextRefUpdate()
+	identity, err := store.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:           session.State,
+		CompletionID:    "same-operation",
+		CodeFingerprint: "same-operation",
+		Identity:        entity.ProviderIdentity{ProviderUserID: "subject"},
+		Tokens:          entity.TokenSet{AccessToken: "token", ObtainedAt: now},
+		CompletedAt:     now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity == nil || identity.LoginCount != 1 {
+		t.Fatalf("lost-response retry did not converge: %#v", identity)
+	}
+	snapshot, err := store.AdminSnapshot(context.Background(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Events) != 2 {
+		t.Fatalf("expected one start and one success event, got %d", len(snapshot.Events))
+	}
+}
+
+func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	now := time.Date(2026, 9, 30, 2, 30, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "refresh-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGoogle,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := store.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := store.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:        session.State,
+		CompletionID: "login-operation",
+		Identity:     entity.ProviderIdentity{ProviderUserID: "subject"},
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-old",
+			RefreshToken: "refresh-old",
+			ObtainedAt:   now,
+		},
+		CompletedAt: now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := store.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-operation",
+		now.Add(2*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.State != entity.CredentialRefreshClaimAcquired {
+		t.Fatalf("refresh claim was not acquired: %#v", claim)
+	}
+	fixture.abortAfterNextRefUpdate()
+	refreshed, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         identity.IdentityID,
+		OperationID:        "refresh-operation",
+		ClaimID:            claim.ClaimID,
+		ExpectedGeneration: 1,
+		Tokens: entity.TokenSet{
+			AccessToken: "access-new",
+			ObtainedAt:  now.Add(2 * time.Minute),
+		},
+		RefreshedAt: now.Add(2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Generation != 2 ||
+		refreshed.RefreshToken != "refresh-old" ||
+		refreshed.LastRefreshOperationID != "refresh-operation" {
+		t.Fatalf("lost refresh response did not converge: %#v", refreshed)
+	}
+	commitsAfterRefresh := fixture.commitCount()
+	duplicate, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         identity.IdentityID,
+		OperationID:        "refresh-operation",
+		ClaimID:            claim.ClaimID,
+		ExpectedGeneration: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate.Generation != 2 || fixture.commitCount() != commitsAfterRefresh {
+		t.Fatalf("duplicate refresh mutated storage: %#v", duplicate)
+	}
+	secondClaim, err := store.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-operation-2",
+		now.Add(3*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondOperation, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         identity.IdentityID,
+		OperationID:        "refresh-operation-2",
+		ClaimID:            secondClaim.ClaimID,
+		ExpectedGeneration: 2,
+		Tokens: entity.TokenSet{
+			AccessToken: "access-newer",
+			ObtainedAt:  now.Add(3 * time.Minute),
+		},
+		RefreshedAt: now.Add(3 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondOperation.Generation != 3 {
+		t.Fatalf("second refresh did not advance generation: %#v", secondOperation)
+	}
+	commitsAfterSecondOperation := fixture.commitCount()
+	staleClaim, err := store.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"stale-refresh",
+		now.Add(4*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         identity.IdentityID,
+		OperationID:        "stale-refresh",
+		ClaimID:            staleClaim.ClaimID,
+		ExpectedGeneration: 2,
+		Tokens: entity.TokenSet{
+			AccessToken: "must-not-commit",
+			ObtainedAt:  now.Add(4 * time.Minute),
+		},
+		RefreshedAt: now.Add(4 * time.Minute),
+	}); !errors.Is(err, repository.ErrCredentialRefreshUncertain) {
+		t.Fatalf("expected stale generation rejection, got %v", err)
+	}
+	if fixture.commitCount() != commitsAfterSecondOperation+1 {
+		t.Fatal("stale refresh claim was not the only repository mutation")
+	}
+	commitsAfterStaleClaim := fixture.commitCount()
+	if _, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         identity.IdentityID,
+		OperationID:        "stale-refresh",
+		ClaimID:            staleClaim.ClaimID,
+		ExpectedGeneration: 2,
+		Tokens: entity.TokenSet{
+			AccessToken: "must-not-commit",
+			ObtainedAt:  now.Add(4 * time.Minute),
+		},
+		RefreshedAt: now.Add(4 * time.Minute),
+	}); !errors.Is(err, repository.ErrCredentialRefreshUncertain) {
+		t.Fatalf("expected stale generation rejection, got %v", err)
+	}
+	if fixture.commitCount() != commitsAfterStaleClaim {
+		t.Fatal("stale refresh created a repository commit")
+	}
+	olderDuplicate, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         identity.IdentityID,
+		OperationID:        "refresh-operation",
+		ClaimID:            claim.ClaimID,
+		ExpectedGeneration: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if olderDuplicate.Generation != 3 ||
+		olderDuplicate.AccessToken != "access-newer" ||
+		fixture.commitCount() != commitsAfterStaleClaim {
+		t.Fatalf("older duplicate refresh mutated storage: %#v", olderDuplicate)
+	}
+	snapshot, err := store.AdminSnapshot(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshEvents := 0
+	for _, event := range snapshot.Events {
+		if event.EventType == entity.AuditCredentialRefreshed {
+			refreshEvents++
+		}
+	}
+	if refreshEvents != 2 {
+		t.Fatalf("expected two refresh events, got %d", refreshEvents)
+	}
+}
+
+func TestRefreshClaimSurvivesInstanceAndLostResponseBoundaries(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	first := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	second := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	now := time.Date(2026, 10, 1, 2, 30, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "refresh-claim-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGoogle,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := first.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := first.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:        session.State,
+		CompletionID: "login-operation",
+		Identity:     entity.ProviderIdentity{ProviderUserID: "subject"},
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-old",
+			RefreshToken: "refresh-old",
+			ObtainedAt:   now,
+		},
+		CompletedAt: now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commitsBeforeClaim := fixture.commitCount()
+	fixture.abortAfterNextRefUpdate()
+	claim, err := first.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-claim",
+		now.Add(2*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.State != entity.CredentialRefreshClaimAcquired ||
+		claim.ClaimID == "" ||
+		fixture.commitCount() != commitsBeforeClaim+1 {
+		t.Fatalf("lost claim response did not converge: %#v", claim)
+	}
+	if err := first.ReleaseCredentialRefreshClaim(context.Background(), *claim); err != nil {
+		t.Fatal(err)
+	}
+	reacquired, err := second.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-claim",
+		now.Add(3*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reacquired.State != entity.CredentialRefreshClaimAcquired ||
+		reacquired.ClaimID == "" ||
+		reacquired.ClaimID == claim.ClaimID ||
+		fixture.commitCount() != commitsBeforeClaim+3 {
+		t.Fatalf("released claim was not reacquired across instances: %#v", reacquired)
+	}
+	if err := first.ReleaseCredentialRefreshClaim(context.Background(), *claim); !errors.Is(err, repository.ErrCredentialRefreshUncertain) {
+		t.Fatalf("stale owner released reacquired operation: %v", err)
+	}
+	retry, err := first.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-claim",
+		now.Add(4*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry.State != entity.CredentialRefreshClaimUncertain ||
+		retry.ClaimID != "" ||
+		fixture.commitCount() != commitsBeforeClaim+3 {
+		t.Fatalf("cross-instance retry acquired an unresolved claim: %#v", retry)
+	}
+	competing, err := first.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"another-operation",
+		now.Add(4*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if competing.State != entity.CredentialRefreshClaimUncertain ||
+		fixture.commitCount() != commitsBeforeClaim+3 {
+		t.Fatalf("same-generation competing claim was accepted: %#v", competing)
+	}
+	if err := second.MarkCredentialRefreshUncertain(
+		context.Background(),
+		*reacquired,
+		"provider_refresh_failed",
+		now.Add(5*time.Minute),
+	); err != nil {
+		t.Fatal(err)
+	}
+	afterFailure, err := second.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-claim",
+		now.Add(6*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFailure.State != entity.CredentialRefreshClaimUncertain {
+		t.Fatalf("uncertain state was not durable: %#v", afterFailure)
+	}
+	snapshot, err := second.AdminSnapshot(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncertainEvents := 0
+	for _, event := range snapshot.Events {
+		if event.EventType == entity.AuditCredentialRefreshUncertain {
+			uncertainEvents++
+		}
+	}
+	if uncertainEvents != 1 {
+		t.Fatalf("expected one uncertain refresh event, got %d", uncertainEvents)
+	}
+}
+
+func TestGitDataRetriesConflictAndRefreshesInstallationToken(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	fixture.rejectNextRepositoryAuth()
+	fixture.conflictAfterNextCommit()
+	now := time.Date(2026, 9, 30, 3, 0, 0, 0, time.UTC)
+	if err := store.CreateAuthorization(context.Background(), entity.AuthSession{
+		State:     "state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	if fixture.installationRequests != 2 {
+		t.Fatalf("expected installation token refresh, got %d requests", fixture.installationRequests)
+	}
+	if fixture.patchRequests != 2 {
+		t.Fatalf("expected one CAS retry, got %d ref updates", fixture.patchRequests)
+	}
+	if !fixture.forceValuesValid {
+		t.Fatal("branch update did not keep force=false")
+	}
+}
+
+func TestRotateEncryptionCoversEveryRecordClass(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldKey := bytes.Repeat([]byte{1}, 32)
+	newKey := bytes.Repeat([]byte{2}, 32)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{"v1": oldKey})
+	now := time.Date(2026, 9, 30, 4, 0, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "rotation-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := oldStore.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := oldStore.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:        session.State,
+		CompletionID: "completion",
+		Identity:     entity.ProviderIdentity{ProviderUserID: "42"},
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-secret",
+			RefreshToken: "refresh-secret",
+			ObtainedAt:   now,
+		},
+		CompletedAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := oldStore.ClaimCredentialRefresh(
+		context.Background(),
+		oldStore.identityID("main", string(valueobject.ProviderGitHub), "42"),
+		"rotation-refresh",
+		now.Add(2*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := oldStore.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         oldStore.identityID("main", string(valueobject.ProviderGitHub), "42"),
+		OperationID:        "rotation-refresh",
+		ClaimID:            claim.ClaimID,
+		ExpectedGeneration: 1,
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-rotated",
+			RefreshToken: "refresh-rotated",
+			ObtainedAt:   now.Add(2 * time.Minute),
+		},
+		RefreshedAt: now.Add(2 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v1": oldKey,
+		"v2": newKey,
+	})
+	fixture.resetBlobReads()
+	first, err := rotatingStore.RotateEncryption(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Scanned != 2 || first.Rotated != 2 || fixture.blobReads() != 2 {
+		t.Fatalf(
+			"first rotation pass exceeded its bounded scan: result=%#v blob_reads=%d",
+			first,
+			fixture.blobReads(),
+		)
+	}
+	totalRotated := first.Rotated
+	for pass := 1; pass < 10; pass++ {
+		result, err := rotatingStore.RotateEncryption(context.Background(), 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		totalRotated += result.Rotated
+		if result.Complete {
+			break
+		}
+	}
+	if totalRotated != 7 {
+		t.Fatalf("expected seven rotated records, got %d", totalRotated)
+	}
+	commitsAfterRotation := fixture.commitCount()
+	second, err := rotatingStore.RotateEncryption(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Rotated != 0 || !second.Complete || fixture.commitCount() != commitsAfterRotation {
+		t.Fatalf("second rotation was not a no-op: %#v", second)
+	}
+	for path, payload := range fixture.files() {
+		var envelope recordcrypto.Envelope
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.KeyID != "v2" {
+			t.Fatalf("record %s still uses key %s", path, envelope.KeyID)
+		}
+	}
+}
+
+func TestRotateEncryptionUnknownKeyFailsClosed(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	now := time.Date(2026, 9, 30, 5, 0, 0, 0, time.UTC)
+	if err := oldStore.CreateAuthorization(context.Background(), entity.AuthSession{
+		State:     "unknown-key-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v2": bytes.Repeat([]byte{2}, 32),
+	})
+	result, err := rotatingStore.RotateEncryption(context.Background(), 100)
+	if !errors.Is(err, repository.ErrKeyUnavailable) {
+		t.Fatalf("expected unknown-key failure, got result=%#v err=%v", result, err)
+	}
+	if result.Failed == 0 || result.Rotated != 0 {
+		t.Fatalf("unexpected failure counts: %#v", result)
+	}
+}
+
+func TestRotateEncryptionDoesNotCountUncommittedRecords(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldKey := bytes.Repeat([]byte{1}, 32)
+	newKey := bytes.Repeat([]byte{2}, 32)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{"v1": oldKey})
+	now := time.Date(2026, 9, 30, 5, 30, 0, 0, time.UTC)
+	if err := oldStore.CreateAuthorization(context.Background(), entity.AuthSession{
+		State:     "failed-rotation-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v1": oldKey,
+		"v2": newKey,
+	})
+	fixture.rejectNextRefUpdates(rotatingStore.repository.maxRetries)
+	result, err := rotatingStore.RotateEncryption(context.Background(), 1)
+	if !errors.Is(err, repository.ErrStorageConflict) {
+		t.Fatalf("expected exhausted ref conflicts, got result=%#v err=%v", result, err)
+	}
+	if result.Rotated != 0 {
+		t.Fatalf("uncommitted rotations were reported as committed: %#v", result)
+	}
+	for path, payload := range fixture.files() {
+		var envelope recordcrypto.Envelope
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.KeyID != "v1" {
+			t.Fatalf("failed rotation changed %s to key %s", path, envelope.KeyID)
+		}
+	}
+}
+
+func TestRotateEncryptionCountsCandidateCorruptionAfterConflict(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldKey := bytes.Repeat([]byte{1}, 32)
+	newKey := bytes.Repeat([]byte{2}, 32)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{"v1": oldKey})
+	now := time.Date(2026, 9, 30, 5, 40, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "rotation-conflict-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := oldStore.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	stateID := oldStore.indexFingerprint.Fingerprint(session.State)
+	event := entity.AuditEvent{
+		EventID:    oldStore.auditFingerprint.Fingerprint("start\x00" + stateID),
+		OccurredAt: session.CreatedAt,
+	}
+	fixture.deletePathAfterNextConflict(auditPath(event))
+
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v1": oldKey,
+		"v2": newKey,
+	})
+	result, err := rotatingStore.RotateEncryption(context.Background(), 1)
+	if !errors.Is(err, repository.ErrRecordCorrupt) {
+		t.Fatalf("expected missing candidate failure, got result=%#v err=%v", result, err)
+	}
+	if result.Rotated != 0 || result.Failed != 1 {
+		t.Fatalf("candidate corruption was not counted: %#v", result)
+	}
+}
+
+func TestRotateEncryptionRetriesWithIncompleteResultAfterConcurrentInsert(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldKey := bytes.Repeat([]byte{1}, 32)
+	newKey := bytes.Repeat([]byte{2}, 32)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{"v1": oldKey})
+	now := time.Date(2026, 9, 30, 5, 42, 0, 0, time.UTC)
+	if err := oldStore.CreateAuthorization(context.Background(), entity.AuthSession{
+		State:     "rotation-concurrent-insert-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	concurrentEvent := entity.AuditEvent{
+		SchemaVersion: recordSchema,
+		EventID:       "concurrent-old-record",
+		EventType:     entity.AuditAuthorizationStarted,
+		OccurredAt:    now.Add(time.Minute),
+		SiteID:        "main",
+		Provider:      valueobject.ProviderGitHub,
+		Result:        "success",
+	}
+	concurrentPath := auditPath(concurrentEvent)
+	encoded, err := oldStore.encodeChanges(map[string]recordValue{
+		concurrentPath: {kind: auditKind, value: concurrentEvent},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.addRecordAfterNextConflict(concurrentPath, encoded[concurrentPath])
+
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v1": oldKey,
+		"v2": newKey,
+	})
+	first, err := rotatingStore.RotateEncryption(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Rotated != 2 || first.Complete {
+		t.Fatalf("retry reused stale completion state: %#v", first)
+	}
+	second, err := rotatingStore.RotateEncryption(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Rotated != 1 || !second.Complete {
+		t.Fatalf("fresh pass did not rotate concurrent record: %#v", second)
+	}
+}
+
+func TestRotateEncryptionConfirmsLostRefUpdateResponse(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldKey := bytes.Repeat([]byte{1}, 32)
+	newKey := bytes.Repeat([]byte{2}, 32)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{"v1": oldKey})
+	now := time.Date(2026, 9, 30, 5, 45, 0, 0, time.UTC)
+	for index := 0; index < 3; index++ {
+		if err := oldStore.CreateAuthorization(context.Background(), entity.AuthSession{
+			State:     fmt.Sprintf("lost-rotation-response-state-%d", index),
+			SiteID:    "main",
+			Provider:  valueobject.ProviderGitHub,
+			Verifier:  "verifier",
+			CreatedAt: now.Add(time.Duration(index) * time.Minute),
+			ExpiresAt: now.Add(10 * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v1": oldKey,
+		"v2": newKey,
+	})
+	commitsBeforeRotation := fixture.commitCount()
+	fixture.abortAfterNextRefUpdate()
+	result, err := rotatingStore.RotateEncryption(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Scanned != 2 || result.Rotated != 2 || result.Complete {
+		t.Fatalf("lost-response rotation was not confirmed: %#v", result)
+	}
+	if fixture.commitCount() != commitsBeforeRotation+1 {
+		t.Fatalf("lost response created duplicate rotation commits: %d", fixture.commitCount())
+	}
+	rotatedRecords := 0
+	for path, payload := range fixture.files() {
+		var envelope recordcrypto.Envelope
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			t.Fatal(err)
+		}
+		switch envelope.KeyID {
+		case "v1":
+		case "v2":
+			rotatedRecords++
+		default:
+			t.Fatalf("record %s uses unexpected key %s", path, envelope.KeyID)
+		}
+	}
+	if rotatedRecords != 2 {
+		t.Fatalf("lost response exceeded the rotation limit: %d records", rotatedRecords)
+	}
+}
+
+type gitDataFixture struct {
+	t      *testing.T
+	server *httptest.Server
+
+	mu                       sync.Mutex
+	head                     string
+	commitTrees              map[string]string
+	commitParents            map[string]string
+	trees                    map[string]map[string]string
+	treeTypes                map[string]map[string]string
+	blobs                    map[string][]byte
+	sequence                 int
+	commitTotal              int
+	truncateRecursive        bool
+	oversizeRecursive        bool
+	nonRecursiveTreeRequests int
+	blobReadTotal            int
+	abortNextPatch           bool
+	conflictPatchRemaining   int
+	deletePathOnConflict     string
+	addPathOnConflict        string
+	addPayloadOnConflict     []byte
+	failNextRepoAuth         bool
+	installationRequests     int
+	patchRequests            int
+	forceValuesValid         bool
+}
+
+func newGitDataFixture(t *testing.T) *gitDataFixture {
+	t.Helper()
+	fixture := &gitDataFixture{
+		t:                t,
+		head:             "commit-0",
+		commitTrees:      map[string]string{"commit-0": "tree-0"},
+		commitParents:    map[string]string{"commit-0": ""},
+		trees:            map[string]map[string]string{"tree-0": {}},
+		treeTypes:        map[string]map[string]string{"tree-0": {}},
+		blobs:            make(map[string][]byte),
+		forceValuesValid: true,
+	}
+	fixture.server = httptest.NewServer(http.HandlerFunc(fixture.serveHTTP))
+	t.Cleanup(fixture.server.Close)
+	return fixture
+}
+
+func (f *gitDataFixture) rejectNextRepositoryAuth() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failNextRepoAuth = true
+}
+
+func (f *gitDataFixture) conflictAfterNextCommit() {
+	f.rejectNextRefUpdates(1)
+}
+
+func (f *gitDataFixture) rejectNextRefUpdates(count int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.conflictPatchRemaining = count
+}
+
+func (f *gitDataFixture) deletePathAfterNextConflict(path string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.conflictPatchRemaining = 1
+	f.deletePathOnConflict = path
+}
+
+func (f *gitDataFixture) addRecordAfterNextConflict(path string, payload []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.conflictPatchRemaining = 1
+	f.addPathOnConflict = path
+	f.addPayloadOnConflict = append([]byte(nil), payload...)
+}
+
+func (f *gitDataFixture) newClient(t *testing.T) *Client {
+	t.Helper()
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateDER := x509.MarshalPKCS1PrivateKey(privateKey)
+	privatePEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: privateDER})
+	auth, err := NewAppAuthenticator(f.server.URL, "1", 2, privatePEM, f.server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := NewClient(f.server.URL, "owner", "repo", "data", auth, f.server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client
+}
+
+func (f *gitDataFixture) newStore(t *testing.T, activeKey string, keys map[string][]byte) *Store {
+	t.Helper()
+	codec, err := recordcrypto.NewCodec(activeKey, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(
+		f.newClient(t),
+		codec,
+		recordcrypto.NewFingerprinter(bytes.Repeat([]byte{3}, 32)),
+		recordcrypto.NewFingerprinter(bytes.Repeat([]byte{4}, 32)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func (f *gitDataFixture) abortAfterNextRefUpdate() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.abortNextPatch = true
+}
+
+func (f *gitDataFixture) resetBlobReads() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blobReadTotal = 0
+}
+
+func (f *gitDataFixture) blobReads() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.blobReadTotal
+}
+
+func (f *gitDataFixture) commitCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.commitTotal
+}
+
+func (f *gitDataFixture) files() map[string][]byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	result := make(map[string][]byte)
+	for path, sha := range f.trees[f.commitTrees[f.head]] {
+		result[path] = append([]byte(nil), f.blobs[sha]...)
+	}
+	return result
+}
+
+func (f *gitDataFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.URL.Path == "/app/installations/2/access_tokens" && r.Method == http.MethodPost {
+		authorization := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if len(strings.Split(authorization, ".")) != 3 {
+			f.t.Errorf("installation token request did not use an App JWT")
+		}
+		f.installationRequests++
+		writeFixtureJSON(w, map[string]any{
+			"token":      fmt.Sprintf("installation-token-%d", f.installationRequests),
+			"expires_at": time.Now().Add(time.Hour).UTC(),
+		})
+		return
+	}
+	const repoPrefix = "/repos/owner/repo"
+	path := strings.TrimPrefix(r.URL.Path, repoPrefix)
+	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer installation-token-") {
+		f.t.Errorf("repository request did not use an installation token")
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if f.failNextRepoAuth {
+		f.failNextRepoAuth = false
+		http.Error(w, "expired", http.StatusUnauthorized)
+		return
+	}
+	switch {
+	case path == "/oversized" && r.Method == http.MethodGet:
+		_, _ = w.Write(bytes.Repeat([]byte("x"), maxGitHubResponseBytes+1))
+	case path == "/git/ref/heads/data" && r.Method == http.MethodGet:
+		writeFixtureJSON(w, map[string]any{"object": map[string]string{"sha": f.head}})
+	case strings.HasPrefix(path, "/git/commits/") && r.Method == http.MethodGet:
+		sha := strings.TrimPrefix(path, "/git/commits/")
+		writeFixtureJSON(w, map[string]any{"tree": map[string]string{"sha": f.commitTrees[sha]}})
+	case strings.HasPrefix(path, "/git/trees/") && r.Method == http.MethodGet:
+		treeSHA := strings.TrimPrefix(path, "/git/trees/")
+		if r.URL.Query().Get("recursive") == "1" && f.oversizeRecursive {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), maxGitHubResponseBytes+1))
+			return
+		}
+		if r.URL.Query().Get("recursive") == "1" && f.truncateRecursive {
+			writeFixtureJSON(w, map[string]any{"truncated": true, "tree": []any{}})
+			return
+		}
+		if r.URL.Query().Get("recursive") == "" {
+			f.nonRecursiveTreeRequests++
+		}
+		entries := make([]map[string]string, 0)
+		for recordPath, sha := range f.trees[treeSHA] {
+			entryType := f.treeTypes[treeSHA][recordPath]
+			if entryType == "" {
+				entryType = "blob"
+			}
+			entries = append(entries, map[string]string{
+				"path": recordPath,
+				"type": entryType,
+				"mode": "100644",
+				"sha":  sha,
+			})
+		}
+		writeFixtureJSON(w, map[string]any{"truncated": false, "tree": entries})
+	case strings.HasPrefix(path, "/git/blobs/") && r.Method == http.MethodGet:
+		sha := strings.TrimPrefix(path, "/git/blobs/")
+		f.blobReadTotal++
+		writeFixtureJSON(w, map[string]string{
+			"encoding": "base64",
+			"content":  base64.StdEncoding.EncodeToString(f.blobs[sha]),
+		})
+	case path == "/git/blobs" && r.Method == http.MethodPost:
+		var input struct {
+			Content string `json:"content"`
+		}
+		decodeFixtureJSON(f.t, r, &input)
+		content, err := base64.StdEncoding.DecodeString(input.Content)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		sha := f.next("blob")
+		f.blobs[sha] = content
+		writeFixtureJSON(w, map[string]string{"sha": sha})
+	case path == "/git/trees" && r.Method == http.MethodPost:
+		var input struct {
+			BaseTree string `json:"base_tree"`
+			Tree     []struct {
+				Path string `json:"path"`
+				SHA  string `json:"sha"`
+			} `json:"tree"`
+		}
+		decodeFixtureJSON(f.t, r, &input)
+		next := make(map[string]string)
+		for recordPath, sha := range f.trees[input.BaseTree] {
+			next[recordPath] = sha
+		}
+		for _, entry := range input.Tree {
+			next[entry.Path] = entry.SHA
+		}
+		sha := f.next("tree")
+		f.trees[sha] = next
+		f.treeTypes[sha] = make(map[string]string, len(next))
+		for recordPath := range next {
+			f.treeTypes[sha][recordPath] = "blob"
+		}
+		writeFixtureJSON(w, map[string]string{"sha": sha})
+	case path == "/git/commits" && r.Method == http.MethodPost:
+		var input struct {
+			Tree    string   `json:"tree"`
+			Parents []string `json:"parents"`
+		}
+		decodeFixtureJSON(f.t, r, &input)
+		sha := f.next("commit")
+		f.commitTrees[sha] = input.Tree
+		f.commitParents[sha] = input.Parents[0]
+		f.commitTotal++
+		writeFixtureJSON(w, map[string]string{"sha": sha})
+	case path == "/git/refs/heads/data" && r.Method == http.MethodPatch:
+		var input struct {
+			SHA   string `json:"sha"`
+			Force bool   `json:"force"`
+		}
+		decodeFixtureJSON(f.t, r, &input)
+		f.patchRequests++
+		f.forceValuesValid = f.forceValuesValid && !input.Force
+		if f.conflictPatchRemaining > 0 {
+			f.conflictPatchRemaining--
+			if f.deletePathOnConflict != "" || f.addPathOnConflict != "" {
+				currentTree := f.trees[f.commitTrees[f.head]]
+				nextTree := make(map[string]string, len(currentTree))
+				for recordPath, sha := range currentTree {
+					if recordPath != f.deletePathOnConflict {
+						nextTree[recordPath] = sha
+					}
+				}
+				if f.addPathOnConflict != "" {
+					blobSHA := f.next("blob")
+					f.blobs[blobSHA] = append([]byte(nil), f.addPayloadOnConflict...)
+					nextTree[f.addPathOnConflict] = blobSHA
+				}
+				treeSHA := f.next("tree")
+				f.trees[treeSHA] = nextTree
+				f.treeTypes[treeSHA] = make(map[string]string, len(nextTree))
+				for recordPath := range nextTree {
+					f.treeTypes[treeSHA][recordPath] = "blob"
+				}
+				commitSHA := f.next("commit")
+				f.commitTrees[commitSHA] = treeSHA
+				f.commitParents[commitSHA] = f.head
+				f.head = commitSHA
+				f.commitTotal++
+				f.deletePathOnConflict = ""
+				f.addPathOnConflict = ""
+				f.addPayloadOnConflict = nil
+			}
+			http.Error(w, "conflict", http.StatusUnprocessableEntity)
+			return
+		}
+		if f.commitParents[input.SHA] != f.head {
+			http.Error(w, "conflict", http.StatusUnprocessableEntity)
+			return
+		}
+		f.head = input.SHA
+		if f.abortNextPatch {
+			f.abortNextPatch = false
+			panic(http.ErrAbortHandler)
+		}
+		writeFixtureJSON(w, map[string]string{"ref": "refs/heads/data"})
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (f *gitDataFixture) next(prefix string) string {
+	f.sequence++
+	return fmt.Sprintf("%s-%d", prefix, f.sequence)
+}
+
+func writeFixtureJSON(w http.ResponseWriter, value any) {
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		panic(err)
+	}
+}
+
+func decodeFixtureJSON(t *testing.T, r *http.Request, output any) {
+	t.Helper()
+	if err := json.NewDecoder(r.Body).Decode(output); err != nil {
+		t.Fatal(err)
+	}
+}

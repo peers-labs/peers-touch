@@ -24,14 +24,3 @@ type AgentSkillBinding struct {
 }
 
 func (AgentSkillBinding) TableName() string { return "agent_skill_bindings" }
-
-type AgentMcpBinding struct {
-	ID         string    `gorm:"primaryKey;type:varchar(36)"`
-	AgentID    string    `gorm:"not null;type:varchar(36);index:idx_mcp_binding_agent_id"`
-	ServerName string    `gorm:"not null;type:varchar(128)"`
-	Enabled    bool      `gorm:"not null;default:true"`
-	CreatedAt  time.Time `gorm:"not null;autoCreateTime"`
-	UpdatedAt  time.Time `gorm:"not null;autoUpdateTime"`
-}
-
-func (AgentMcpBinding) TableName() string { return "agent_mcp_bindings" }

@@ -45,6 +45,12 @@ Every conclusion must be tied to:
 
 If a claim is not proven, mark it as `UNPROVEN`, not `PASS`.
 
+Before any completion/readiness verdict, require the canonical
+`BindingProjection` for the current action. OWNER claims must carry the exact
+root binding; REVIEWER claims must carry the request's exact live assignment,
+root and parent digests. An unassigned, expired, terminal, released, or
+worktree-enumerated binding is `UNPROVEN` and cannot sign completion.
+
 For non-trivial development work, also read
 `docs/architecture/development-workflow/README.md` and require:
 
@@ -61,6 +67,8 @@ prototype evidence cannot substitute for `FUNCTIONAL_CHECK`.
 - `pt-execution-plan-guardian`: keeps work tied to plan and evidence while
   executing.
 - `pt-quality-check`: gathers review/acceptance evidence for a PR or range.
+- `pt-code-structure-review`: produces the stable structural verdict and rule
+  IDs for authored source changes.
 - `pt-completion-auditor`: performs a multi-dimensional completion and
   architecture audit for a change or workstream, including AI overclaim checks.
 
@@ -148,6 +156,9 @@ Check:
 
 Check:
 
+- The source-bound `pt-code-structure-review` decision matches the current
+  HEAD, workspace digest, range, reviewed files, and rubric hash, and has no
+  unresolved blocking primary rule IDs when authored source changed.
 - Clear domain naming and no misleading capability names.
 - No fake APIs or manifest permissions for unimplemented gateway methods.
 - No hidden coupling across Desktop / Station / applet / prototype layers.
@@ -172,6 +183,8 @@ Never treat:
 - Mock bridge as real Host proof.
 - Manifest validation as live permission proof.
 - Docs update as implementation proof.
+- A passing Suite Runtime audit as product proof; it establishes lifecycle
+  conformance only.
 
 ### 8. Documentation And Plan Alignment
 
@@ -190,6 +203,10 @@ Check:
 - The current workspace generation resolves exactly one formal Plan, every closure is
   complete before merge, and the plan's Acceptance Execution contract matches
   the actual diff impact.
+- Multi-scenario runtime Tasks declare `runtimeReuse`; their Suite Runtime
+  reports satisfy provisioning, client-launch, warm-reuse, attach-only,
+  receiver-proof, and cleanup constraints through
+  `pt-acceptance-pipeline-auditor`.
 - workspace active-work, dashboards, and chat projections do not claim progress
   stronger than the plan status table and repository evidence.
 - Acceptance Infra readiness is judged from `acceptance_core_self_validation`

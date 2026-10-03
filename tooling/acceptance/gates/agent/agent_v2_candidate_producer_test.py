@@ -20,6 +20,7 @@ from tooling.acceptance.gates.agent.agent_v2_candidate_producer import (
     AgentV2TupleObservation,
     ensure_evidence_safe,
     load_gate_tuples,
+    load_preprovisioned_runtime_manifest,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -163,6 +164,85 @@ def _observation(runtime_tuple: AgentV2RuntimeTuple) -> AgentV2TupleObservation:
         runtime_attestation=attestation,
         role_observations=role_observations,
     )
+
+
+class PreprovisionedRuntimeManifestTest(unittest.TestCase):
+    def write_manifest(
+        self,
+        root: Path,
+        *,
+        gate_id: str = GATE_ID,
+        state: str = "FIXTURE_READY",
+        source_override: dict[str, str] | None = None,
+    ) -> Path:
+        source = source_override or source_identity(REPO_ROOT)
+        path = root / "runtime-manifest.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "artifactKind": "acceptance-runtime-manifest",
+                    "gateId": gate_id,
+                    "runId": "runtime-run",
+                    "state": state,
+                    "source": {
+                        "worktree": str(REPO_ROOT),
+                        "commit": source["commit"],
+                        "workspaceDigest": source["workspaceDigest"],
+                    },
+                    "services": {"station": {"endpoint": "http://station"}},
+                    "clients": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_absent_manifest_uses_standalone_provisioning(self) -> None:
+        self.assertIsNone(
+            load_preprovisioned_runtime_manifest(
+                GATE_ID,
+                environment={},
+            )
+        )
+
+    def test_fixture_ready_exact_source_manifest_is_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_manifest(Path(directory))
+            manifest = load_preprovisioned_runtime_manifest(
+                GATE_ID,
+                environment={"PT_ACCEPTANCE_RUNTIME_MANIFEST": str(path)},
+            )
+        self.assertIsNotNone(manifest)
+        assert manifest is not None
+        self.assertEqual(manifest["runId"], "runtime-run")
+
+    def test_wrong_gate_or_source_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            wrong_gate = self.write_manifest(root, gate_id="wrong-gate")
+            with self.assertRaisesRegex(AgentV2CandidateError, "Gate"):
+                load_preprovisioned_runtime_manifest(
+                    GATE_ID,
+                    environment={
+                        "PT_ACCEPTANCE_RUNTIME_MANIFEST": str(wrong_gate)
+                    },
+                )
+
+            source = source_identity(REPO_ROOT)
+            wrong_source = self.write_manifest(
+                root,
+                source_override={**source, "commit": "0" * 40},
+            )
+            with self.assertRaisesRegex(
+                AgentV2CandidateError,
+                "source identity",
+            ):
+                load_preprovisioned_runtime_manifest(
+                    GATE_ID,
+                    environment={
+                        "PT_ACCEPTANCE_RUNTIME_MANIFEST": str(wrong_source)
+                    },
+                )
 
 
 class AgentV2CandidateAssemblerTest(unittest.TestCase):

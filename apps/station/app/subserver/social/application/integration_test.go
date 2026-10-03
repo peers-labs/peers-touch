@@ -97,7 +97,7 @@ type legacyPrivatePostFixture struct {
 	AuthorID           uint64 `gorm:"column:author_id;not null"`
 	Type               string `gorm:"column:type;type:varchar(20);not null"`
 	AudienceKind       string `gorm:"column:audience_kind;type:varchar(16);not null"`
-	AudienceTargetID   uint64 `gorm:"column:audience_target_id;default:0"`
+	AudienceTarget     uint64 `gorm:"column:audience_target_id;default:0"`
 	AudienceBaseKind   string `gorm:"column:audience_base_kind;type:varchar(16)"`
 	TextBody           string `gorm:"column:text_body;type:text"`
 	CommentsCount      int64  `gorm:"column:comments_count;default:0"`
@@ -286,8 +286,8 @@ func seedPrivatePost(t *testing.T, f *fixture, audience *model.Audience, text st
 	if audience.Kind == model.Audience_CUSTOM_DENY {
 		row.AudienceBaseKind = audience.BaseKind.String()
 	}
-	if audience.Kind == model.Audience_CIRCLE || audience.Kind == model.Audience_GROUP {
-		row.AudienceTargetID = audience.TargetId
+	if audience.Kind == model.Audience_CIRCLE {
+		row.AudienceTarget = audience.GetCircleId()
 	}
 
 	if err := f.gdb.Create(&row).Error; err != nil {
@@ -439,8 +439,10 @@ func getAnyMoment(t *testing.T, f *fixture, postIDStr, viewerPTID string) *model
 		audienceKind = model.Audience_Kind(v)
 	}
 	audience := &model.Audience{Kind: audienceKind}
-	if row.AudienceTargetID != 0 {
-		audience.TargetId = row.AudienceTargetID
+	if row.AudienceTarget != 0 {
+		audience.Target = &model.Audience_CircleId{
+			CircleId: row.AudienceTarget,
+		}
 	}
 	if row.AudienceBaseKind != "" {
 		if v, ok := model.Audience_Kind_value[row.AudienceBaseKind]; ok {

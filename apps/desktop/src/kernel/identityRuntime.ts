@@ -4,6 +4,12 @@ import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 import { clearLocalIdentityAction, markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
+import {
+  accessDecisionMessage,
+  currentGate,
+  isAccessActionRequired,
+  isLoginGate,
+} from '../services/accessGate';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AppLifecycle, SessionUser } from '../types/navigation';
 import { log } from '../utils/logger';
@@ -236,6 +242,12 @@ function classifyRestoreFailure(error: unknown): IdentityAuthGateReason {
   return 'restore_failed';
 }
 
+function isOAuthAcknowledgementPending(error: unknown): boolean {
+  return error instanceof AuthCommandException
+    && error.code === 'UNAUTHORIZED'
+    && error.details?.reason === 'oauth_acknowledgement_pending';
+}
+
 function isDetachedAccountSwitchFailure(error: unknown): boolean {
   if (typeof error !== 'object' || error === null || !('details' in error)) return false;
   const details = (error as { details?: unknown }).details;
@@ -271,6 +283,8 @@ class IdentityRuntime {
   private listeners = new Set<IdentityRuntimeListener>();
 
   private authGateIdentityUnsubscribe: (() => void) | null = null;
+
+  private oauthAcknowledgementRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   private snapshot: IdentityRuntimeSnapshot;
 
@@ -347,6 +361,10 @@ class IdentityRuntime {
   };
 
   resolveSession = async (source: 'live' | 'disk' | 'applet'): Promise<void> => {
+    if (this.oauthAcknowledgementRetryTimer) {
+      clearTimeout(this.oauthAcknowledgementRetryTimer);
+      this.oauthAcknowledgementRetryTimer = null;
+    }
     this.dispatch({ type: 'SESSION_RESOLVE_STARTED', source });
     try {
       await useSessionStore.getState().restoreSession();
@@ -358,6 +376,13 @@ class IdentityRuntime {
       await api.stationBindingComplete();
       await this.acceptAuthenticatedEdgeFromCurrentSession(source === 'applet' ? 'applet_launch' : 'restored_session');
     } catch (error) {
+      if (isOAuthAcknowledgementPending(error)) {
+        this.oauthAcknowledgementRetryTimer = setTimeout(() => {
+          this.oauthAcknowledgementRetryTimer = null;
+          void this.resolveSession(source);
+        }, 2000);
+        return;
+      }
       await this.loadAuthGate(classifyRestoreFailure(error), false);
     }
   };
@@ -380,7 +405,27 @@ class IdentityRuntime {
   };
 
   loginWithPassword = async (account: string, password: string): Promise<void> => {
-    await useSessionStore.getState().loginWithPassword(account, password);
+    const session = useSessionStore.getState();
+    const decision = await session.accessStart();
+    const gate = currentGate(decision);
+    if (
+      !decision.attemptId
+      || !gate
+      || !isAccessActionRequired(decision)
+      || !isLoginGate(gate)
+    ) {
+      throw new AuthCommandException({
+        code: 'FORBIDDEN',
+        message:
+          accessDecisionMessage(decision)
+          || 'Station access requires another gate before password login',
+        details: {
+          reason: 'access_gate_action_required',
+          gate_id: gate?.gateId ?? null,
+        },
+      });
+    }
+    await session.accessSubmitLogin(decision.attemptId, gate, account, password);
     await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
   };
 
@@ -392,15 +437,7 @@ class IdentityRuntime {
         message: 'oauth loopback session is missing',
       });
     }
-    markLocalIdentityAction();
-    const resp = await api.ensureStationSession();
-    useSessionStore.getState().activateAuthenticatedSession(resp);
-    const method = (resp.login_method as string) || 'oauth';
-    await runIdentityPipeline({
-      reason: 'oauth_bridge',
-      actorPtid: resp.actor_ptid ?? null,
-      loginMethod: method,
-    });
+    await useSessionStore.getState().loginWithOAuth('oauth');
     await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
   };
 
@@ -518,6 +555,10 @@ class IdentityRuntime {
   };
 
   logout = async (): Promise<void> => {
+    if (this.oauthAcknowledgementRetryTimer) {
+      clearTimeout(this.oauthAcknowledgementRetryTimer);
+      this.oauthAcknowledgementRetryTimer = null;
+    }
     // #region debug-point C-D:forbidden-actor-identity-logout
     reportFoundationForbiddenActorAccountGateDebug('C-D', 'logout-entered', {
       phaseKind: this.phase.kind,

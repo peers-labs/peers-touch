@@ -35,7 +35,11 @@ function event(overrides = {}) {
     host: 'cursor',
     event: 'PRE_TOOL_USE',
     hostEvent: 'preToolUse',
-    stableConversationId: 'conversation-1',
+    bindingIdentity: {
+      rootChatId: 'conversation-1',
+      executionSessionId: 'conversation-1',
+      assignmentId: null,
+    },
     executionRootHints: [],
     workspaceRoots: [],
     repositoryWorkingDirectory: null,
@@ -54,20 +58,52 @@ function event(overrides = {}) {
 
 function binding(root) {
   return {
-    kind: 'peers-touch-workflow-conversation-binding',
+    kind: 'peers-touch-workflow-binding-projection',
     host: 'cursor',
-    conversationHash: 'a'.repeat(64),
+    role: 'OWNER',
+    bindingDigest: 'b'.repeat(64),
+    rootBindingDigest: 'b'.repeat(64),
+    parentBindingDigest: null,
+    assignmentDigest: null,
+    workflowSessionId: null,
     executionRoot: root,
     workspaceId: '0123456789abcdef',
-    boundAt: '2026-09-23T00:00:00.000Z',
-    bindingEvent: 'PRE_TOOL_USE',
-    digest: 'b'.repeat(64),
+    subjectRoots: [],
+    toolRoot: null,
+    targetRoots: [],
+    released: false,
+    childState: null,
   };
 }
 
 function injectedBinding(root, extras = {}) {
   return {
-    readConversationBinding: () => binding(root),
+    resolveEventWorkflowBinding: () => ({
+      mode: 'ENFORCED',
+      projection: binding(root),
+      binding: {
+        kind: 'peers-touch-workflow-owner-binding',
+        host: 'cursor',
+        role: 'OWNER',
+        rootChatHash: 'a'.repeat(64),
+        executionRoot: root,
+        workspaceId: '0123456789abcdef',
+        boundAt: '2026-09-23T00:00:00.000Z',
+        bindingEvent: 'PRE_TOOL_USE',
+        digest: 'b'.repeat(64),
+      },
+      owner: {
+        kind: 'peers-touch-workflow-owner-binding',
+        host: 'cursor',
+        role: 'OWNER',
+        rootChatHash: 'a'.repeat(64),
+        executionRoot: root,
+        workspaceId: '0123456789abcdef',
+        boundAt: '2026-09-23T00:00:00.000Z',
+        bindingEvent: 'PRE_TOOL_USE',
+        digest: 'b'.repeat(64),
+      },
+    }),
     recordWorkflowAction: false,
     ...extras,
   };
@@ -78,10 +114,10 @@ test('SessionStart prewarms but never creates the immutable binding', async () =
   const result = await evaluateWorkflowEvent(
     event({ event: 'SESSION_START', hostEvent: 'sessionStart' }),
     {
-      readConversationBinding: () => null,
-      bindConversation: () => {
-        bindCalls += 1;
-      },
+      resolveEventWorkflowBinding: () => ({
+        mode: 'PREWARM',
+        projection: null,
+      }),
     },
   );
   assert.equal(result.action, 'CONTEXT');
@@ -89,10 +125,57 @@ test('SessionStart prewarms but never creates the immutable binding', async () =
   assert.equal(bindCalls, 0);
 });
 
+test('PreCompact records lineage and PostCompact verifies it before restoring context', async () => {
+  const calls = [];
+  const options = injectedBinding('/workspace', {
+    inspectWorkflowContext: async () => ({ status: 'IDLE' }),
+    recordWorkflowPreCompact: (projection) => {
+      calls.push(['PRE', projection.bindingDigest]);
+    },
+    verifyWorkflowPostCompact: (projection) => {
+      calls.push(['POST', projection.bindingDigest]);
+    },
+  });
+  const pre = await evaluateWorkflowEvent(
+    event({ event: 'PRE_COMPACT', hostEvent: 'PreCompact' }),
+    options,
+  );
+  const post = await evaluateWorkflowEvent(
+    event({ event: 'POST_COMPACT', hostEvent: 'PostCompact' }),
+    options,
+  );
+  assert.equal(pre.action, 'CONTEXT');
+  assert.equal(post.action, 'CONTEXT');
+  assert.deepEqual(calls, [
+    ['PRE', 'b'.repeat(64)],
+    ['POST', 'b'.repeat(64)],
+  ]);
+});
+
+test('PostCompact denies restoration when persisted lineage changed', async () => {
+  const result = await evaluateWorkflowEvent(
+    event({ event: 'POST_COMPACT', hostEvent: 'PostCompact' }),
+    injectedBinding('/workspace', {
+      inspectWorkflowContext: async () => ({ status: 'IDLE' }),
+      verifyWorkflowPostCompact: () => {
+        const error = new Error('compact lineage differs');
+        error.code = 'WORKFLOW_COMPACT_LINEAGE_MISMATCH';
+        throw error;
+      },
+    }),
+  );
+  assert.equal(result.action, 'DENY');
+  assert.equal(result.code, 'WORKFLOW_COMPACT_LINEAGE_MISMATCH');
+});
+
 test('missing stable conversation identity denies mutation but permits safe reads', async () => {
   const mutation = await evaluateWorkflowEvent(
     event({
-      stableConversationId: null,
+      bindingIdentity: {
+        rootChatId: null,
+        executionSessionId: null,
+        assignmentId: null,
+      },
       toolName: 'Write',
       toolInput: { file_path: '/tmp/file' },
     }),
@@ -103,7 +186,11 @@ test('missing stable conversation identity denies mutation but permits safe read
 
   const read = await evaluateWorkflowEvent(
     event({
-      stableConversationId: null,
+      bindingIdentity: {
+        rootChatId: null,
+        executionSessionId: null,
+        assignmentId: null,
+      },
       toolName: 'Read',
       toolInput: { file_path: '/tmp/file' },
     }),
@@ -150,6 +237,102 @@ test('first PreToolUse binds once and later cross-worktree reads remain legal', 
   }
 });
 
+test('multi-root first mutation binds its target and rejects active-editor drift', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-multi-root-'));
+  try {
+    const bootstrap = projectRoot(temporary, 'bootstrap');
+    const target = projectRoot(temporary, 'target');
+    const machineRoot = path.join(temporary, 'machine');
+    const inspectWorkflowContext = async () => ({
+      status: 'READY',
+      tracked: false,
+      declaration: {
+        sourceClaims: [{ mode: 'exclusive-write', pathPrefix: '.' }],
+      },
+    });
+    const pendingRead = await evaluateWorkflowEvent(
+      event({
+        host: 'trae',
+        hostEvent: 'PreToolUse',
+        bindingIdentity: {
+          rootChatId: 'multi-root-owner',
+          executionSessionId: 'owner-session',
+          assignmentId: null,
+        },
+        workspaceRoots: [bootstrap, target],
+        repositoryWorkingDirectory: bootstrap,
+        toolWorkingDirectory: bootstrap,
+        toolName: 'Read',
+        toolInput: { file_path: path.join(target, 'README.md') },
+      }),
+      {
+        machineRoot,
+        inspectWorkflowContext,
+        recordWorkflowAction: false,
+      },
+    );
+    assert.equal(pendingRead.action, 'ALLOW');
+    assert.equal(pendingRead.enforcementMode, 'PENDING_BINDING');
+    assert.equal(pendingRead.executionRoot, null);
+
+    const selected = await evaluateWorkflowEvent(
+      event({
+        host: 'trae',
+        hostEvent: 'PreToolUse',
+        bindingIdentity: {
+          rootChatId: 'multi-root-owner',
+          executionSessionId: 'owner-session',
+          assignmentId: null,
+        },
+        workspaceRoots: [bootstrap, target],
+        repositoryWorkingDirectory: bootstrap,
+        toolWorkingDirectory: bootstrap,
+        toolName: 'Write',
+        toolInput: { file_path: path.join(target, 'new.txt') },
+      }),
+      {
+        machineRoot,
+        inspectWorkflowContext,
+        recordWorkflowAction: false,
+      },
+    );
+    assert.equal(selected.action, 'ALLOW');
+    assert.equal(selected.executionRoot, target);
+
+    const mismatched = await evaluateWorkflowEvent(
+      event({
+        host: 'trae',
+        hostEvent: 'PreToolUse',
+        bindingIdentity: {
+          rootChatId: 'mismatched-editor-owner',
+          executionSessionId: 'owner-session',
+          assignmentId: null,
+        },
+        workspaceRoots: [bootstrap, target],
+        activeEditorPath: bootstrap,
+        repositoryWorkingDirectory: bootstrap,
+        toolWorkingDirectory: bootstrap,
+        toolName: 'Write',
+        toolInput: { file_path: path.join(target, 'new.txt') },
+      }),
+      {
+        machineRoot,
+        inspectWorkflowContext,
+        recordWorkflowAction: false,
+      },
+    );
+    assert.equal(mismatched.action, 'DENY');
+    assert.equal(mismatched.code, 'WORKTREE_SELECTION_REQUIRED');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
 test('an existing conversation binding denies cross-worktree writes', async () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-cross-write-'));
   try {
@@ -173,6 +356,101 @@ test('an existing conversation binding denies cross-worktree writes', async () =
       retryDelay: 50,
     });
   }
+});
+
+test('expired child lineage is denied before workflow inspection', async () => {
+  const root = '/workspace';
+  let inspections = 0;
+  const owner = injectedBinding(root).resolveEventWorkflowBinding().owner;
+  const result = await evaluateWorkflowEvent(
+    event({
+      host: 'trae',
+      bindingIdentity: {
+        rootChatId: 'visible-chat',
+        executionSessionId: 'worker-session',
+        assignmentId: 'worker-1',
+      },
+    }),
+    injectedBinding(root, {
+      resolveEventWorkflowBinding: () => ({
+        mode: 'ENFORCED',
+        owner,
+        binding: {
+          host: 'trae',
+          role: 'WORKER',
+          executionSessionHash: 'c'.repeat(64),
+          rootBindingDigest: 'b'.repeat(64),
+          digest: 'd'.repeat(64),
+        },
+        projection: {
+          ...binding(root),
+          host: 'trae',
+          role: 'WORKER',
+          bindingDigest: 'd'.repeat(64),
+          rootBindingDigest: 'b'.repeat(64),
+          parentBindingDigest: 'b'.repeat(64),
+          assignmentDigest: 'e'.repeat(64),
+          workflowSessionId: 'SESSION-1',
+          childState: 'ASSIGNED',
+        },
+      }),
+      inspectWorkflowContext: async () => {
+        inspections += 1;
+      },
+    }),
+  );
+  assert.equal(result.action, 'DENY');
+  assert.equal(result.code, 'WORKFLOW_CHILD_BINDING_NOT_LIVE');
+  assert.equal(inspections, 0);
+});
+
+test('SubagentStop terminalizes the exact assigned child', async () => {
+  const root = '/workspace';
+  const calls = [];
+  const owner = injectedBinding(root).resolveEventWorkflowBinding().owner;
+  const storedChild = {
+    host: 'trae',
+    role: 'REVIEWER',
+    executionSessionHash: 'c'.repeat(64),
+    rootBindingDigest: 'b'.repeat(64),
+    digest: 'd'.repeat(64),
+  };
+  const result = await evaluateWorkflowEvent(
+    event({
+      host: 'trae',
+      event: 'SUBAGENT_STOP',
+      hostEvent: 'SubagentStop',
+      childResult: 'PASS',
+      bindingIdentity: {
+        rootChatId: 'visible-chat',
+        executionSessionId: 'reviewer-session',
+        assignmentId: 'reviewer-1',
+      },
+    }),
+    injectedBinding(root, {
+      resolveEventWorkflowBinding: () => ({
+        mode: 'ENFORCED',
+        owner,
+        binding: storedChild,
+        projection: {
+          ...binding(root),
+          host: 'trae',
+          role: 'REVIEWER',
+          bindingDigest: storedChild.digest,
+          rootBindingDigest: 'b'.repeat(64),
+          parentBindingDigest: 'b'.repeat(64),
+          assignmentDigest: 'e'.repeat(64),
+          workflowSessionId: 'SESSION-1',
+          childState: 'LEASED',
+        },
+      }),
+      terminalizeWorkflowChild: (...args) => calls.push(args),
+    }),
+  );
+  assert.equal(result.action, 'ALLOW');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], storedChild);
+  assert.equal(calls[0][1], 'PASS');
 });
 
 test('shell arguments cannot move a mutation into a sibling worktree', async () => {
@@ -375,7 +653,7 @@ test('Stop blocks an active Plan even when an anchor is already present', async 
         branch: 'main',
         head: 'head',
       }),
-      writeAnchorReceipt: () => {},
+      writeWorkflowAnchorReceipt: () => {},
     }),
   );
   assert.equal(result.action, 'CONTINUE');
@@ -401,8 +679,8 @@ test('Stop requires the exact rendered anchor before atomic release', async () =
       branch: 'main',
       head: 'head',
     }),
-    writeAnchorReceipt: () => {},
-    releaseConversation: () => {
+    writeWorkflowAnchorReceipt: () => {},
+    releaseWorkflowOwner: () => {
       releaseCount += 1;
     },
   });
@@ -459,6 +737,8 @@ test('bound mutations emit one redacted action receipt without changing admissio
   assert.equal(result.action, 'ALLOW');
   assert.equal(receipts.length, 1);
   assert.equal(receipts[0].event, 'STARTED');
+  assert.equal(receipts[0].actor.role, 'OWNER');
+  assert.equal(receipts[0].actor.rootBindingDigest, 'b'.repeat(64));
   assert.equal(receipts[0].operation.family, 'WRITE');
   assert.equal(receipts[0].operation.targetRef, 'tooling/scripts/file.mjs');
   assert.equal('toolInput' in receipts[0], false);
@@ -606,6 +886,45 @@ test('PreToolUse starts heartbeat and PostToolUse records terminal completion', 
   assert.equal(heartbeats[0].actionId, 'tool-call-1');
 });
 
+test('the exact OWNER skills action receives one installer grant', async () => {
+  const grants = [];
+  const inspection = {
+    status: 'READY',
+    tracked: true,
+    declaration: {
+      workItemId: 'WORK-1',
+      planId: 'PLAN-1',
+      taskId: 'TASK-1',
+      sessionId: 'SESSION-1',
+      sourceClaims: [],
+    },
+    session: {
+      eventDigest: 'c'.repeat(64),
+      state: { state: 'IMPLEMENTING' },
+    },
+  };
+  const result = await evaluateWorkflowEvent(
+    event({
+      actionId: 'skills-action',
+      toolWorkingDirectory: '/workspace',
+      toolName: 'Shell',
+      command: 'make skills IDE=codex',
+      toolInput: {
+        command: 'make skills IDE=codex',
+        working_directory: '/workspace',
+      },
+    }),
+    injectedBinding('/workspace', {
+      inspectWorkflowContext: async () => inspection,
+      recordWorkflowAction: () => ({ actionId: 'skills-action' }),
+      issueWorkflowActionGrant: (receipt) => grants.push(receipt.actionId),
+      startWorkflowActionHeartbeat: false,
+    }),
+  );
+  assert.equal(result.action, 'ALLOW');
+  assert.deepEqual(grants, ['skills-action']);
+});
+
 test('PostToolUse cannot create the first binding or emit an action receipt', async () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-post-bind-'));
   try {
@@ -623,11 +942,10 @@ test('PostToolUse cannot create the first binding or emit an action receipt', as
         toolInput: { file_path: path.join(root, 'file.txt') },
       }),
       {
-        readConversationBinding: () => null,
-        bindConversation: () => {
-          bindCalls += 1;
-          throw new Error('PostToolUse must not bind');
-        },
+        resolveEventWorkflowBinding: () => ({
+          mode: 'PREWARM',
+          projection: null,
+        }),
         recordWorkflowAction: () => {
           receiptCalls += 1;
         },

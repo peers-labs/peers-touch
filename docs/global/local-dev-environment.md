@@ -115,6 +115,12 @@ The registry remains schema v1. Runtime does not migrate or accept
 head-bearing registrations; machine-local files produced by superseded
 development code must be corrected explicitly.
 
+The registration stores the canonical root and registered branch, but not Git
+HEAD. Current HEAD is read directly from the worktree for each command.
+The registry remains schema v1. Runtime does not migrate or accept
+head-bearing registrations; machine-local files produced by superseded
+development code must be corrected explicitly.
+
 Local slot and Desktop/Mobile ports come from the machine binding. A profile's
 `PT_DEV_SLOT` and local client port fields are legacy topology observations and
 cannot override the allocation. See

@@ -210,11 +210,8 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             "'[data-pt-agent-composer] [data-pt-agent-readiness-snapshot]'",
             source,
         )
-        self.assertIn(
-            "const providerId = 'ollama'",
-            source,
-        )
-        self.assertIn("catalogProvider.show_api_key !== false", source)
+        self.assertNotIn("const providerId = 'ollama'", source)
+        self.assertIn("base_url: 'https://foundation.invalid/v1'", source)
         self.assertIn("function_call: false", source)
         self.assertIn(
             "deleteFoundationDisposableRuntimeFixture",
@@ -303,7 +300,7 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(
                 CapabilityBindingDevelopmentError,
-                "belongs to another actor",
+                "differs from the Station-accepted identity",
             ):
                 persist_native_actor_identity(
                     source_root=root / "source",
@@ -312,6 +309,96 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
                     actor_id="ptid:mallory",
                     station_accepted=True,
                 )
+
+    def test_skips_stale_actor_identity_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture_identity = (
+                root
+                / "fixture/actor-identity/peers-touch/desktop/data/"
+                "secure-store/identity-keys"
+            )
+            fixture_identity.mkdir(parents=True)
+            (fixture_identity / "stale.key").write_text(
+                "cd" * 32,
+                encoding="utf-8",
+            )
+            (root / "fixture/fixture.json").write_text(
+                json.dumps({
+                    "schemaVersion": 1,
+                    "profile": "two",
+                    "account": J02_ACTOR_ACCOUNT,
+                    "actorId": "ptid:stale",
+                    "stationUrl": "https://station.example",
+                }),
+                encoding="utf-8",
+            )
+
+            seeded = seed_native_actor_identity(
+                fixture_root=root / "fixture",
+                target_root=root / "target",
+                station_url="https://station.example",
+                expected_actor_id="ptid:current",
+            )
+
+            self.assertIsNone(seeded)
+            self.assertFalse((root / "target").exists())
+
+    def test_replaces_stale_identity_after_station_accepts_current_identity(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = (
+                root
+                / "source/peers-touch/desktop/data/"
+                "secure-store/identity-keys"
+            )
+            source.mkdir(parents=True)
+            (source / "current.key").write_text("ef" * 32, encoding="utf-8")
+            fixture = root / "fixture"
+            fixture_identity = (
+                fixture
+                / "actor-identity/peers-touch/desktop/data/"
+                "secure-store/identity-keys"
+            )
+            fixture_identity.mkdir(parents=True)
+            (fixture_identity / "stale.key").write_text(
+                "cd" * 32,
+                encoding="utf-8",
+            )
+            (fixture / "fixture.json").write_text(
+                json.dumps({
+                    "schemaVersion": 1,
+                    "profile": "two",
+                    "account": J02_ACTOR_ACCOUNT,
+                    "actorId": "ptid:stale",
+                    "stationUrl": "https://station.example",
+                }),
+                encoding="utf-8",
+            )
+
+            metadata = persist_native_actor_identity(
+                source_root=root / "source",
+                fixture_root=fixture,
+                station_url="https://station.example",
+                actor_id="ptid:current",
+                station_accepted=True,
+                allow_actor_rebinding=True,
+            )
+
+            self.assertEqual(metadata["actorId"], "ptid:current")
+            self.assertEqual(
+                json.loads(
+                    (fixture / "fixture.json").read_text(encoding="utf-8")
+                )["actorId"],
+                "ptid:current",
+            )
+            self.assertFalse((fixture_identity / "stale.key").exists())
+            self.assertEqual(
+                (fixture_identity / "current.key").read_text(encoding="utf-8"),
+                "ef" * 32,
+            )
 
     def test_supports_explicit_profile_and_account_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -459,7 +546,7 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 CapabilityBindingDevelopmentError,
-                "does not match two/bob@p.t",
+                f"does not match two/{J02_ACTOR_ACCOUNT}",
             ):
                 seed_native_actor_identity(
                     fixture_root=fixture,

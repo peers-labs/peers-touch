@@ -16,6 +16,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { Agent } from '../../../services/desktop_api';
 import { api } from '../../../services/desktop_api';
+import { openAgentCreateFlow } from '../create';
 import { useActiveAgentSlice } from '../useActiveAgentStores';
 import { AgentIconTile } from '../AgentIconTile';
 import { PanelToggleDock } from './PanelToggleDock';
@@ -37,6 +38,8 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
     error,
     setSelectedAgent,
     setDefaultAgent,
+    duplicateAgent,
+    deleteAgent,
     loadAgents,
   } = useActiveAgentSlice((state) => ({
     agents: state.agents,
@@ -45,6 +48,8 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
     error: state.error,
     setSelectedAgent: state.setSelectedAgent,
     setDefaultAgent: state.setDefaultAgent,
+    duplicateAgent: state.duplicateAgent,
+    deleteAgent: state.deleteAgent,
     loadAgents: state.loadAgents,
   }));
 
@@ -85,6 +90,21 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
     [loadAgents, t],
   );
 
+  const cloneAgent = useCallback(
+    async (agent: Agent) => {
+      try {
+        const cloned = await duplicateAgent(agent.id);
+        toast.success(t('agent.chat.toast.agentCloned', {
+          name: cloned.title || cloned.name,
+        }));
+      } catch (errorValue) {
+        const message = errorValue instanceof Error ? errorValue.message : String(errorValue);
+        toast.error(message);
+      }
+    },
+    [duplicateAgent, t],
+  );
+
   const exportAgent = useCallback(
     async (agent: Agent) => {
       try {
@@ -110,7 +130,7 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
     [t],
   );
 
-  const deleteAgent = useCallback(
+  const confirmAgentDelete = useCallback(
     (agent: Agent) => {
       Modal.confirm({
         title: t('agent.chat.deleteConfirm.title'),
@@ -118,17 +138,25 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
           name: agent.title || agent.name,
         }),
         okText: t('agent.chat.menu.delete'),
-        okButtonProps: { danger: true },
+        okButtonProps: {
+          danger: true,
+          'data-pt-agent-delete-confirm': agent.id,
+        },
         centered: true,
-        onOk: () =>
-          mutateAgent(
-            () => api.deleteAgent(agent.id),
-            'agent.chat.toast.agentDeleted',
-            agent,
-          ),
+        onOk: async () => {
+          try {
+            await deleteAgent(agent.id);
+            toast.success(t('agent.chat.toast.agentDeleted', {
+              name: agent.title || agent.name,
+            }));
+          } catch (errorValue) {
+            const message = errorValue instanceof Error ? errorValue.message : String(errorValue);
+            toast.error(message);
+          }
+        },
       });
     },
-    [mutateAgent, t],
+    [deleteAgent, t],
   );
 
   if (collapsed) {
@@ -151,9 +179,10 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
         }}
       >
         <ActionIcon
+          data-pt-agent-create
           icon={Plus}
           title={t('agent.chat.newAgent')}
-          onClick={() => onOpenProfile(selectedAgent)}
+          onClick={() => openAgentCreateFlow(onOpenProfile)}
           size={{ blockSize: 36, size: 16 }}
         />
         <ActionIcon
@@ -250,9 +279,10 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
           {t('agent.chat.myAgents')}
         </span>
         <ActionIcon
+          data-pt-agent-create
           icon={Plus}
           title={t('agent.chat.newAgent')}
-          onClick={() => onOpenProfile(selectedAgent)}
+          onClick={() => openAgentCreateFlow(onOpenProfile)}
           size={{ blockSize: 30, size: 15 }}
         />
       </div>
@@ -263,6 +293,19 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
         allowClear
         size="small"
       />
+      {error && agents.length > 0 ? (
+        <div
+          data-pt-agent-lifecycle-error
+          role="alert"
+          style={{
+            color: token.colorError,
+            fontSize: 12,
+            padding: '8px 4px 0',
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingTop: 8 }}>
         {loading && agents.length === 0 ? (
           <Skeleton active paragraph={{ rows: 4 }} title={false} />
@@ -307,14 +350,10 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
                 )
               }
               onClone={() =>
-                void mutateAgent(
-                  () => api.duplicateAgent(agent.id, `${agent.name} copy`),
-                  'agent.chat.toast.agentCloned',
-                  agent,
-                )
+                void cloneAgent(agent)
               }
               onExport={() => void exportAgent(agent)}
-              onDelete={() => deleteAgent(agent)}
+              onDelete={() => confirmAgentDelete(agent)}
             />
           ))
         )}
@@ -363,7 +402,11 @@ function AgentRailItem({
     {
       key: 'default',
       icon: <Sparkles size={14} />,
-      label: t('agent.chat.menu.setDefault'),
+      label: (
+        <span data-pt-agent-id={agent.id} data-pt-agent-menu-action="default">
+          {t('agent.chat.menu.setDefault')}
+        </span>
+      ),
       disabled: agent.isDefault,
       onClick: onSetDefault,
     },
@@ -371,13 +414,21 @@ function AgentRailItem({
     {
       key: 'edit',
       icon: <Pencil size={14} />,
-      label: t('agent.chat.menu.edit'),
+      label: (
+        <span data-pt-agent-id={agent.id} data-pt-agent-menu-action="edit">
+          {t('agent.chat.menu.edit')}
+        </span>
+      ),
       onClick: onEdit,
     },
     {
       key: 'clone',
       icon: <Copy size={14} />,
-      label: t('agent.chat.menu.clone'),
+      label: (
+        <span data-pt-agent-id={agent.id} data-pt-agent-menu-action="clone">
+          {t('agent.chat.menu.clone')}
+        </span>
+      ),
       onClick: onClone,
     },
     {
@@ -390,7 +441,11 @@ function AgentRailItem({
     {
       key: 'delete',
       icon: <Trash2 size={14} />,
-      label: t('agent.chat.menu.delete'),
+      label: (
+        <span data-pt-agent-id={agent.id} data-pt-agent-menu-action="delete">
+          {t('agent.chat.menu.delete')}
+        </span>
+      ),
       danger: true,
       onClick: onDelete,
     },
@@ -398,6 +453,10 @@ function AgentRailItem({
 
   return (
     <div
+      data-pt-agent-default={agent.isDefault ? 'true' : 'false'}
+      data-pt-agent-id={agent.id}
+      data-pt-agent-name={agent.name}
+      data-pt-agent-row
       role="button"
       tabIndex={0}
       onClick={onSelect}
@@ -448,6 +507,8 @@ function AgentRailItem({
       </span>
       <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
         <button
+          data-pt-agent-id={agent.id}
+          data-pt-agent-menu
           type="button"
           aria-label={t('agent.chat.menu.edit')}
           onClick={(event) => event.stopPropagation()}

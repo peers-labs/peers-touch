@@ -33,6 +33,7 @@ RUNTIME_KINDS = {
 }
 AUTHORIZATION_VALUES = {"allowed", "denied"}
 LIVE_MUTATION_STATES = {"DECLARED", "ACTIVE"}
+TERMINAL_DECLARATION_STATES = {"RELEASED", "STALE"}
 
 TOP_LEVEL_KEYS = {"planRef", "items"}
 ITEM_KEYS = {
@@ -636,6 +637,107 @@ def execute_projection(
     if mutation_readback.get("declarationDigest") != declaration["declarationDigest"]:
         raise LedgerReadbackError("mutation output digest differs from ledger readback")
     return declaration
+
+
+def _read_projection_declaration(
+    projection: WorkItemProjection,
+    *,
+    repo_root: Path,
+    session: Optional[str],
+    command_runner: CommandRunner,
+) -> Mapping[str, Any] | None:
+    status = command_runner(
+        [
+            "node",
+            "tooling/scripts/local-dev/dev-work.mjs",
+            "status",
+            "--work-item",
+            projection.work_item_id,
+        ],
+        repo_root,
+    )
+    status_payload = _decode_json_output(status, "dev-status")
+    declarations = (
+        status_payload.get("declarations")
+        if isinstance(status_payload, dict)
+        else None
+    )
+    if not isinstance(declarations, list) or len(declarations) > 1:
+        raise LedgerReadbackError(
+            "ledger readback returned an invalid declaration set"
+        )
+    if not declarations:
+        return None
+    declaration = declarations[0]
+    if status_payload.get("workspaceId") != declaration.get("workspaceId"):
+        raise LedgerReadbackError("ledger readback workspace id is inconsistent")
+    if declaration.get("state") in TERMINAL_DECLARATION_STATES:
+        return declaration
+    return _validate_readback(declaration, projection, session=session)
+
+
+def ensure_active_projection(
+    projection: WorkItemProjection,
+    *,
+    repo_root: Path,
+    session: Optional[str] = None,
+    owner: Optional[str] = None,
+    expires_minutes: int = 480,
+    command_runner: CommandRunner = _run_command,
+) -> Mapping[str, Any]:
+    declaration = _read_projection_declaration(
+        projection,
+        repo_root=repo_root,
+        session=session,
+        command_runner=command_runner,
+    )
+    if declaration is None or declaration.get("state") in TERMINAL_DECLARATION_STATES:
+        declaration = execute_projection(
+            "start",
+            projection,
+            repo_root=repo_root,
+            session=session,
+            owner=owner,
+            expires_minutes=expires_minutes,
+            command_runner=command_runner,
+        )
+    if declaration.get("state") == "ACTIVE":
+        return declaration
+    if declaration.get("state") != "DECLARED":
+        raise LedgerReadbackError("ledger declaration cannot become ACTIVE")
+
+    declaration_session = _require_identifier(
+        declaration.get("sessionId"),
+        "sessionId",
+    )
+    checked = command_runner(
+        [
+            "node",
+            "tooling/scripts/local-dev/dev-work.mjs",
+            "check",
+            "--work-item",
+            projection.work_item_id,
+            "--session",
+            declaration_session,
+        ],
+        repo_root,
+    )
+    checked_declaration = _validate_readback(
+        _decode_json_output(checked, "development check"),
+        projection,
+        session=declaration_session,
+    )
+    active = _read_projection_declaration(
+        projection,
+        repo_root=repo_root,
+        session=declaration_session,
+        command_runner=command_runner,
+    )
+    if active is None or active.get("state") != "ACTIVE":
+        raise LedgerReadbackError("ledger declaration is not ACTIVE after check")
+    if checked_declaration["declarationDigest"] != active["declarationDigest"]:
+        raise LedgerReadbackError("check output digest differs from ledger readback")
+    return active
 
 
 def _repo_root() -> Path:

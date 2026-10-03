@@ -99,7 +99,8 @@ capabilities:
     response_proto: peers_touch.model.access_gate.v1.StartAccessAttemptResponse
     truth_stores: [access_gate_attempts]
     allowed_dependencies: [station.identity, actor.session.read]
-    forbidden_aliases: []
+    forbidden_aliases:
+      - { method: POST, path: /actor/login }
     superseded_symbols: []
 
   - id: access.gate.start.preflight
@@ -123,7 +124,8 @@ capabilities:
     response_proto: peers_touch.model.access_gate.v1.SubmitAccessGateResponse
     truth_stores: [access_gate_attempts, access_gate_submissions]
     allowed_dependencies: [access.gate.evaluate, actor.session.issue]
-    forbidden_aliases: []
+    forbidden_aliases:
+      - { method: POST, path: /actor/login }
     superseded_symbols: []
 
   - id: access.gate.submit.preflight
@@ -1277,6 +1279,7 @@ capabilities:
     superseded_symbols: []
 
 target_absent_routes:
+  - { method: POST, path: /actor/login }
   - { method: POST, path: /envelope/submit }
   - { method: POST, path: /envelope/ack }
   - { method: GET, path: /envelope/resume }

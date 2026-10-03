@@ -559,7 +559,7 @@ impl SecureContentSupervisor {
             .map_err(|error| format!("resolve private Moment media: {error}"))?;
         if !matches!(
             media_type,
-            "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+            "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "video/mp4"
         ) || !path.is_file()
             || !path.starts_with(&expected_root)
         {
@@ -969,11 +969,37 @@ mod tests {
         assert!(supervisor
             .read_private_media("bob-window", grant_id)
             .is_err());
+
+        let video_path = worker::secure_cache_dir(
+            &alice.session.key.actor_ptid,
+            alice.session.key.session_generation,
+        )
+        .unwrap()
+        .join(format!("{}.mp4", Ulid::new()));
+        std::fs::write(&video_path, b"private-video").unwrap();
+        let video_url = supervisor
+            .grant_private_media(&alice.session.key, &video_path, "video/mp4")
+            .unwrap();
+        let video_grant_id = video_url.rsplit('/').next().unwrap();
+        assert_eq!(
+            supervisor
+                .read_private_media("alice-window", video_grant_id)
+                .unwrap(),
+            (b"private-video".to_vec(), "video/mp4".to_string())
+        );
+        assert!(supervisor
+            .read_private_media("bob-window", video_grant_id)
+            .is_err());
+
         supervisor.teardown_actor(&alice_actor).unwrap();
         assert!(supervisor
             .read_private_media("alice-window", grant_id)
             .is_err());
+        assert!(supervisor
+            .read_private_media("alice-window", video_grant_id)
+            .is_err());
         let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(video_path);
     }
 
     #[test]

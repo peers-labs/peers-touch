@@ -2,6 +2,47 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "agent-minimum-usable-chat",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "initial_proof_status": "UNPROVEN",
+      "features": [
+        "agent-minimum-usable-chat"
+      ],
+      "required_gates": [
+        "agent-minimum-usable-chat-native-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/acceptance/agent/harness.ts",
+        "apps/station/app/subserver/agent/service/turn_service.go",
+        "tooling/acceptance/gates/agent/native_agent_runner.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent, conversation, message, Turn, capability binding, readiness, ToolCall, and receipt state",
+          "Actor-scoped Desktop MCP configuration and process lifecycle"
+        ],
+        "surfaces": [
+          "Native Tauri Agent Chat ToolCall and final Assistant response",
+          "Station Agent, capability, ToolCall, and conversation readback"
+        ],
+        "proven_by": [
+          "agent-minimum-usable-chat-native-e2e"
+        ],
+        "proven_scope": [
+          "One profile-two Native Direct Model Agent configuration and selection",
+          "One ready MCP capability binding, governed invocation, result continuation, and final Assistant response",
+          "Native restart restoration of the same Agent, conversation, binding, and final response",
+          "Provider bridge, MCP process, port, fixture storage, and product fixture cleanup"
+        ],
+        "unproven_scope": [
+          "Browser and Mobile Agent Chat delivery",
+          "The broader capability, ToolCall, MCP, and Foundation runtime matrices",
+          "Marketplace, Evaluation, Artifacts, Multi-Agent, external Agent runtime, TTS, image, and video capabilities"
+        ]
+      }
+    },
+    {
       "id": "agent-core-lifecycle",
       "domain": "agent",
       "direction": "acceptance_validates_product",
@@ -18,24 +59,61 @@
       "evidence": {
         "truth_sources": [
           "Station agent CRUD API",
+          "Station Agent conversation list",
           "Desktop agent store"
         ],
         "surfaces": [
-          "Native Tauri Agent page"
+          "Native Tauri Agent roster, profile, actions, and composer"
         ],
         "proven_by": [
           "agent-core-lifecycle-native-e2e"
         ],
         "proven_scope": [
-          "PENDING: Auto-create default agent"
+          "Native create, Station-backed list, select, edit, duplicate, default, empty session start, and delete lifecycle",
+          "Repeated-duplicate unique naming, no phantom Station conversation, and deleted-Agent selection absence",
+          "Receiver DOM, Station readback, and cleanup evidence for one isolated approved-profile native client"
         ],
         "unproven_scope": [
-          "Auto-create default agent",
-          "Create via + button",
-          "Select \u2192 chat",
-          "Send \u2192 receive",
-          "Session CRUD",
-          "Update profile"
+          "Automatic first-login Agent creation from an initially empty Station account",
+          "Cross-Station and multi-client concurrent Agent lifecycle",
+          "Message send/receive behavior, which is owned by the Agent turn Gates"
+        ]
+      }
+    },
+    {
+      "id": "agent-cli-provider-primary",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-cli-provider-primary"
+      ],
+      "required_gates": [
+        "agent-cli-provider-primary-native-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/catalog/providers.default.yaml",
+        "apps/station/app/subserver/agent/service/cli",
+        "apps/station/app/subserver/agent/service/provider_service.go",
+        "apps/station/app/subserver/agent/service/turn_service.go",
+        "apps/desktop/src/acceptance/agent/harness.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station built-in Provider catalog",
+          "Station Agent, conversation, message, Turn, and runtime binding persistence"
+        ],
+        "surfaces": [
+          "Native Tauri Agent composer and streamed Assistant message"
+        ],
+        "proven_by": [
+          "agent-cli-provider-primary-native-e2e"
+        ],
+        "proven_scope": [
+          "Built-in CLI Provider discovery without HTTP credentials",
+          "Native Agent creation, empty topic, send, provider delta, terminal Station readback, and native restart restoration"
+        ],
+        "unproven_scope": [
+          "Stateful EXTERNAL_AGENT runtimes and cross-device CLI execution"
         ]
       }
     },
@@ -235,6 +313,42 @@
         ],
         "unproven_scope": [
           "Initial state: UNPROVEN until a real scenario emits all mandatory roles and separate validation publishes proof"
+        ]
+      }
+    },
+    {
+      "id": "agent-v2-external-runtime",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": [
+        "agent-v2-external-runtime"
+      ],
+      "required_gates": [
+        "agent-v2-external-runtime-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/external_runtime_service.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Conversation runtime binding and reset command persistence",
+          "Station External Runtime Manager"
+        ],
+        "surfaces": [
+          "Native External Agent conversation and Confirm reset recovery",
+          "Browser External Agent conversation and Confirm reset recovery",
+          "Station binding, Turn, reset, and cleanup readback"
+        ],
+        "proven_by": [
+          "agent-v2-external-runtime-e2e"
+        ],
+        "proven_scope": [
+          "MCA-P12 create, resume, Station restart, resume-unavailable, confirmed reset, idempotent replay, cleanup retry, cancellation, fresh epoch, isolation, and deletion cleanup"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until the exact-source Native and Browser runtime Gate passes"
         ]
       }
     },

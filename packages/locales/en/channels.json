@@ -73,7 +73,7 @@
   "channels.config.webhook.method.placeholder": "POST",
   "channels.config.webhook.secret.label": "HMAC Secret",
   "channels.config.webhook.secret.placeholder": "signing-secret",
-  "channels.config.webhook.secret.help": "Used to sign the payload with HMAC-SHA256 (X-Peers-Touch-Signature header)",
+  "channels.config.webhook.secret.help": "Used to sign the payload with HMAC-SHA256 (X-PeersTouch-Signature header)",
 
   "channels.drawer.titleAdd": "Add Channel",
   "channels.drawer.titleEdit": "Edit Channel",

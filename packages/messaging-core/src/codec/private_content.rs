@@ -1,6 +1,6 @@
 use crate::attachment::validate_chat_encrypted_object_descriptor;
 use crate::proto::chat::{
-    AttachmentContentKind, AttachmentPlaintextMetadata, MessagePrivateContent,
+    AttachmentContentKind, AttachmentPlaintextMetadata, MessagePrivateContent, VoiceNoteMetadata,
 };
 use prost::Message;
 use secure_content_core::object::OBJECT_MAX_PLAINTEXT_SIZE;
@@ -8,6 +8,10 @@ use std::collections::HashSet;
 
 pub const MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION: u32 = 1;
 pub const MESSAGE_MAX_ATTACHMENT_COUNT: usize = 10;
+pub const MESSAGE_MAX_VOICE_NOTE_DURATION_MS: u32 = 60 * 60 * 1000;
+pub const MESSAGE_MAX_VOICE_NOTE_CODEC_BYTES: usize = 127;
+pub const MESSAGE_MAX_VOICE_NOTE_WAVEFORM_SAMPLES: usize = 256;
+pub const MESSAGE_MAX_VOICE_NOTE_WAVEFORM_VALUE: u32 = 255;
 
 pub fn encode_message_private_content(
     text: &str,
@@ -95,9 +99,13 @@ pub fn validate_attachment_plaintext_metadata(
             if attachment.duration_ms == 0 => {}
         Ok(AttachmentContentKind::VoiceNote)
             if attachment.duration_ms > 0
-                && attachment.mime_type.to_ascii_lowercase().starts_with("audio/") => {}
+                && attachment
+                    .mime_type
+                    .to_ascii_lowercase()
+                    .starts_with("audio/") => {}
         _ => return Err("messaging attachment private media metadata is invalid".to_string()),
     }
+    validate_voice_note_metadata(&attachment.mime_type, attachment.voice_note.as_ref())?;
     validate_chat_encrypted_object_descriptor(object)?;
     let expected_chunk_count = attachment
         .plaintext_size
@@ -109,6 +117,30 @@ pub fn validate_attachment_plaintext_metadata(
                 .saturating_add(u64::from(object.tag_size) * u64::from(object.chunk_count))
     {
         return Err("messaging attachment private metadata does not match descriptor".to_string());
+    }
+    Ok(())
+}
+
+pub fn validate_voice_note_metadata(
+    mime_type: &str,
+    voice_note: Option<&VoiceNoteMetadata>,
+) -> Result<(), String> {
+    let Some(voice_note) = voice_note else {
+        return Ok(());
+    };
+    if !mime_type.to_ascii_lowercase().starts_with("audio/")
+        || voice_note.duration_ms == 0
+        || voice_note.duration_ms > MESSAGE_MAX_VOICE_NOTE_DURATION_MS
+        || voice_note.codec.trim().is_empty()
+        || voice_note.codec.len() > MESSAGE_MAX_VOICE_NOTE_CODEC_BYTES
+        || voice_note.codec.chars().any(char::is_control)
+        || voice_note.waveform.len() > MESSAGE_MAX_VOICE_NOTE_WAVEFORM_SAMPLES
+        || voice_note
+            .waveform
+            .iter()
+            .any(|sample| *sample > MESSAGE_MAX_VOICE_NOTE_WAVEFORM_VALUE)
+    {
+        return Err("messaging voice note metadata is invalid".to_string());
     }
     Ok(())
 }
@@ -146,6 +178,7 @@ pub(crate) fn test_attachment_metadata(attachment_id: &str) -> AttachmentPlainte
         }),
         content_kind: AttachmentContentKind::File as i32,
         duration_ms: 0,
+        voice_note: None,
     }
 }
 
@@ -182,6 +215,19 @@ mod tests {
         duplicate.attachments.pop();
         duplicate.attachments[0].base_nonce[11] = 1;
         assert!(validate_message_private_content(&duplicate).is_err());
+
+        let mut invalid_voice = test_attachment_metadata("attachment-voice");
+        invalid_voice.voice_note = Some(VoiceNoteMetadata {
+            duration_ms: 1_000,
+            codec: "audio/webm;codecs=opus".to_string(),
+            waveform: Vec::new(),
+        });
+        assert!(validate_message_private_content(&MessagePrivateContent {
+            format_version: MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
+            text: String::new(),
+            attachments: vec![invalid_voice],
+        })
+        .is_err());
     }
 
     #[test]

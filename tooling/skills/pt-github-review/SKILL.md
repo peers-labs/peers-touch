@@ -63,10 +63,15 @@ Verify range endpoints before trusting any report derived from them.
 
 ### 2. Collect Quality Evidence
 
-Prefer using the `pt-quality-check` skill before making the final review judgment.
-For local ranges, the preferred executable entry is:
+Run the review route first. When it includes `code-structure`, invoke
+`pt-code-structure-review` and record its source-bound decision before quality
+aggregation. Then use `pt-quality-check` before making the final review
+judgment. For local ranges, the preferred executable sequence is:
 
 ```bash
+tooling/scripts/review/route-change.sh --range <base>...<head>
+python3 tooling/scripts/review/code_structure_decision.py prepare --range <base>...<head>
+# Review the prepared files, then record a findings-only payload.
 make quality-evidence REVIEW_RANGE=<base>...<head>
 ```
 
@@ -76,6 +81,8 @@ At minimum, or when reconstructing manually, collect:
 tooling/scripts/review/route-change.sh --range <base>...<head>
 tooling/scripts/review/knowledge-match.sh --range <base>...<head> --strict
 tooling/scripts/review/hard-rules.sh --range <base>...<head>
+python3 tooling/scripts/review/code_structure_decision.py prepare --range <base>...<head>
+python3 tooling/scripts/review/code_structure_decision.py verify --range <base>...<head>
 python3 tooling/scripts/execution-plan.py --require-complete
 python3 tooling/scripts/acceptance-plan.py --active-plan --completion
 ```
@@ -119,9 +126,34 @@ Review in this order:
 5. tests, fixtures, and reports that claim coverage;
 6. documentation and PR template claims.
 
+When the route includes `code-structure`, require the recorded
+`pt-code-structure-review` decision to match the current source and rubric.
+`REFACTOR_REQUIRED` blocks approval; `PASS_WITH_SUGGESTIONS` does not. Advisory
+structure signals never decide the verdict by themselves.
+
 For Goal, execution-skill, or tracked-work workflow changes, additionally
 verify:
 
+- every status, handoff, worker result, and review verdict consumes the
+  current canonical `BindingProjection`; child assignment validates the exact
+  current active-work and Development Session records; one assignment has one
+  atomically published execution-session claim; Completion Review reduces each
+  action to its latest receipt and uses the exact live OWNER command or assigned
+  REVIEWER rather than enumerating worktree bindings, and reads only the current
+  versioned review namespace;
+- OWNER publication uses atomic create-once semantics, and `PreCompact` /
+  `PostCompact` persist and verify one receipt per complete binding lineage so
+  concurrent OWNER/WORKER/REVIEWER compactions cannot overwrite each other;
+- TRAE multi-root integration installs one descriptor-selected bootstrap,
+  never treats bootstrap location or folder order as execution authority, and
+  rejects active-editor/task/target disagreement with
+  `WORKTREE_SELECTION_REQUIRED`;
+- binding rollout proves global workflow quiescence, deletes only the old
+  conversation and workflow-action stores, consumes a create-once grant for
+  the exact current OWNER `skills` action only after fallible preflight,
+  publishes `INSTALLING` immediately after consumption and before destructive
+  reset, records reset failure as `BLOCKED`, and contains no compatibility
+  reader, importer, alias, fallback, or dual writer;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under
@@ -154,6 +186,8 @@ Use the evidence, but decide from code and project contracts:
 - Does the implementation preserve the correct source of truth?
 - Does it violate a matched invariant or repeat a pitfall?
 - Does acceptance evidence actually prove the claimed product scope?
+- Is the code-structure decision source-bound and fresh, and does it contain
+  any unresolved blocking primary rule IDs?
 - Are unproven scopes acceptable for this PR, or must they block?
 - Does one precise DWF-D20 hard-boundary decision require human owner approval,
   or can accepted sources and project Review Skills decide it?
@@ -202,7 +236,7 @@ needed, explain why the finding is not reusable.
 | `skill` | skill safety, freshness, self-growth, CODEOWNERS |
 | `review-system` | fail-closed scripts, fixtures, CI portability |
 | `ci` | GitHub Actions reliability, permissions, fork/range behavior |
-| `code-structure` | AGENTS.md §7 structural health: single responsibility, no inline classes in non-component files, no duplicate imports, effect grouping, composition over dump |
+| `code-structure` | `pt-code-structure-review` rules `STRUCT-01` through `STRUCT-09`; stable ownership, dependency, lifecycle, cutover, locality, proportionality, and testability verdict |
 
 ## Script vs Skill Boundary
 
@@ -212,6 +246,8 @@ Scripts are evidence producers:
   plan, gate tiers, and capability proven/unproven scope.
 - `route-change.sh` identifies review profiles.
 - `hard-rules.sh` catches simple blocking patterns.
+- `structure-signals.mjs` reports non-blocking size, fan-out, and nesting
+  signals that require `pt-code-structure-review` judgment.
 - `knowledge-match.sh` finds knowledge entries that must be read and delegates
   changed-path architecture validation to the shared module-governance parser.
 - The formal execution plan schedules Acceptance Gates.
@@ -228,6 +264,8 @@ This skill owns the judgment scripts cannot make:
 - Station `app` / `frame` boundary correctness;
 - proto compatibility and staged rollout safety;
 - whether tests and acceptance gates prove the actual risk;
+- whether structural evidence requires `PASS`, `PASS_WITH_SUGGESTIONS`, or
+  `REFACTOR_REQUIRED`;
 - whether knowledge or acceptance contracts are stale;
 - whether a finding should become a fixture, invariant, pitfall, playbook, gate,
   skill update, or CI/tooling update.
@@ -422,6 +460,7 @@ Overall: merge | hold | reject
 
 - Range:
 - Review profiles:
+- Code structure verdict / rule IDs:
 - Quality evidence:
 - Acceptance evidence:
 - Matched knowledge:

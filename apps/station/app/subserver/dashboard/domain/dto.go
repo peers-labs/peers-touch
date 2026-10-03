@@ -277,6 +277,11 @@ type StorageTableCount struct {
 // POST endpoints driven solely by path/query params).
 type EmptyRequest struct{}
 
+// FederationPeerRequest binds the peer Station ID from federation trust routes.
+type FederationPeerRequest struct {
+	ID string `json:"id"`
+}
+
 // LoginRequest is the request body for POST /auth/login.
 type LoginRequest struct {
 	Username string `json:"username"`

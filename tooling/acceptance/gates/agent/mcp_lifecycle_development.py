@@ -37,6 +37,7 @@ from tooling.acceptance.gates.agent.capability_binding_development import (
     copy_native_runtime_logs,
     identity_fixture_evidence,
     persist_native_actor_identity,
+    resolve_operation_scenario_actor,
     resolve_machine_profile,
     seed_native_actor_identity,
 )
@@ -563,12 +564,14 @@ def main() -> int:
             manifest.to_dict(),
             profile_env,
         )
+        expected_actor_id = resolve_operation_scenario_actor(profile_env)
         seeded_identity = seed_native_actor_identity(
             fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
             target_root=runtime_client.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            expected_actor_id=expected_actor_id,
         )
         runtime_client.start()
         login = authenticate_native_client(
@@ -576,6 +579,10 @@ def main() -> int:
             profile_env,
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
+        require(
+            login["actorId"] == expected_actor_id,
+            "Native actor differs from the provisioned fixture",
         )
         identity_enrollment = confirm_native_actor_identity_enrollment(
             runtime_client,
@@ -589,6 +596,7 @@ def main() -> int:
             station_accepted=identity_enrollment["accepted"] is True,
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            allow_actor_rebinding=True,
         )
         prepared_value = runtime_client.harness(
             "runMcpLifecycleDevelopment",
@@ -609,6 +617,7 @@ def main() -> int:
                 },
                 "toolName": MCP_TOOL_NAME,
                 "expectedResult": MCP_RESULT_TEXT,
+                "expectedAssistantResponse": "MCP invocation completed.",
             },
             timeout=900,
         )

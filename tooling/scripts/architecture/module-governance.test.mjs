@@ -147,11 +147,15 @@ test('current repository satisfies the module registry', () => {
   assert.deepEqual(result.moduleIds, [
     'architecture-module-governance',
     'chat-storage-governance',
+    'development-workflow',
+    'local-dev-control-plane',
+    'oauth-login-broker',
     'station-access-lifecycle',
   ]);
   assert.deepEqual(result.capabilityIds, [
     'architecture.module.validate',
     'chat.storage.device-governance',
+    'oauth.login.broker',
   ]);
 });
 

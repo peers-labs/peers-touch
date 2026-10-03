@@ -110,6 +110,7 @@ describe('messaging projection read cursor', () => {
     });
 
     await vi.waitFor(() => {
+      expect(mocks.loadSessions).toHaveBeenCalledOnce();
       expect(mocks.loadMessages).toHaveBeenCalledWith('direct-1', 'friend');
       expect(mocks.markFriendRead).toHaveBeenCalledWith('direct-1');
       expect(mocks.clearChatUnread).toHaveBeenCalledWith('direct-1');
@@ -133,6 +134,7 @@ describe('messaging projection read cursor', () => {
     });
 
     await vi.waitFor(() => {
+      expect(mocks.loadSessions).toHaveBeenCalledOnce();
       expect(mocks.loadMessages).toHaveBeenCalledWith('direct-1', 'friend');
     });
     expect(mocks.markFriendRead).not.toHaveBeenCalled();

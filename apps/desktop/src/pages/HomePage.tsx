@@ -38,6 +38,7 @@ import {
   submitHomeTask,
 } from '../runtimes/homeRuntime';
 import { useHomeStore } from '../store/home';
+import { openAgentCreateFlow } from '../components/agent/create';
 
 const { useToken } = theme;
 
@@ -225,8 +226,13 @@ export function HomePage() {
         <Card size="small">
           <Empty description={t('agent.home.noPinnedAgents')}>
             <Button
+              data-pt-agent-create
               type="primary"
-              onClick={() => navigation.navigateToSettings('agents')}
+              onClick={() =>
+                openAgentCreateFlow((agentName) =>
+                  navigation.navigateToAgentSurface(agentName, 'profile'),
+                )
+              }
             >
               {t('agent.home.createAgent')}
             </Button>

@@ -258,11 +258,11 @@ class ChatAttachmentDriverTest(unittest.TestCase):
 
     def test_scenarios_bind_the_w2_runtime_work_items(self) -> None:
         self.assertEqual(
-            "secure-content-w2b-desktop",
+            "secure-content-w2",
             chat_attachment_atomic.SCENARIO.work_item_id,
         )
         self.assertEqual(
-            "secure-content-w2b-mobile",
+            "secure-content-w2",
             chat_attachment_mobile.SCENARIO.work_item_id,
         )
         self.assertEqual(

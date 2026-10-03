@@ -68,7 +68,7 @@ export function AudiencePicker({ value, onChange, disabled }: AudiencePickerProp
         // for cheap React equality checks.
         const next = create(AudienceSchema, {
           kind,
-          targetId: 0n,
+          target: { case: undefined },
           actorPtids: [],
         });
         onChange(next);

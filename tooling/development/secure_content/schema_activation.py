@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from tooling.development.secure_content import work_item as work_item_control
 from tooling.development.secure_content.activation_transport import (
     ActivationTransportError,
     ReviewedSchemaActivationTransport,
@@ -36,8 +37,9 @@ PLAN_PATH = (
     "docs/architecture/secure-content/execution-plans/"
     "20260913-secure-content-hard-cut/plan.md"
 )
-SOURCE_WORK_ITEM_ID = "secure-content-w12a"
-SOURCE_TASK_ID = "W12A"
+SOURCE_WORK_ITEM_ID = "secure-content-w12d"
+SOURCE_TASK_ID = "W12D"
+SOURCE_EVIDENCE_ROOT = "W12A"
 JOURNEY_ID = "sc-dj-canonical-schema-activation"
 
 SOURCE_RECEIPT_KIND = "source-checkpoint-publication-receipt"
@@ -246,6 +248,7 @@ class ProfilePreparationRunner(Protocol):
 
 IdentityLoader = Callable[[], Mapping[str, Any]]
 DeclarationLoader = Callable[[str], Mapping[str, Any]]
+ProfileDeclarationLoader = Callable[[str, str], Mapping[str, Any]]
 CleanChecker = Callable[[], None]
 Clock = Callable[[], datetime]
 IdFactory = Callable[[], str]
@@ -1776,6 +1779,7 @@ class SchemaActivationOwner:
         result_root: Path | None = None,
         identity_loader: IdentityLoader | None = None,
         declaration_loader: DeclarationLoader | None = None,
+        profile_declaration_loader: ProfileDeclarationLoader | None = None,
         clean_checker: CleanChecker | None = None,
         source_checkpoint_runner: SourceCheckpointRunner | None = None,
         maintenance_boundary: MaintenanceBoundary | None = None,
@@ -1790,6 +1794,14 @@ class SchemaActivationOwner:
         self.command_runner = command_runner
         self.identity_loader = identity_loader or self._load_identity
         self.declaration_loader = declaration_loader or self._load_declaration
+        if profile_declaration_loader is not None:
+            self.profile_declaration_loader = profile_declaration_loader
+        elif declaration_loader is not None:
+            self.profile_declaration_loader = (
+                lambda work_item_id, _: self.declaration_loader(work_item_id)
+            )
+        else:
+            self.profile_declaration_loader = self._activate_profile_declaration
         self.clean_checker = clean_checker or self._check_clean
         self.source_checkpoint_runner = source_checkpoint_runner or (
             DevelopmentSessionSourceCheckpointRunner(
@@ -1830,6 +1842,7 @@ class SchemaActivationOwner:
         *,
         generation_id: str,
         budget_seconds: int,
+        work_item_id: str = SOURCE_WORK_ITEM_ID,
     ) -> Mapping[str, Any]:
         generation = _require_text(
             generation_id, "generation_id", pattern=GIT_COMMIT
@@ -1837,11 +1850,16 @@ class SchemaActivationOwner:
         budget = _require_integer(
             budget_seconds, "budget_seconds", minimum=1
         )
+        source_work_item_id = _require_text(
+            work_item_id,
+            "work_item_id",
+            pattern=IDENTIFIER,
+        )
         identity = self._current_identity(generation)
         declaration = _validate_declaration(
-            self.declaration_loader(SOURCE_WORK_ITEM_ID),
+            self.declaration_loader(source_work_item_id),
             identity=identity,
-            work_item_id=SOURCE_WORK_ITEM_ID,
+            work_item_id=source_work_item_id,
             task_id=SOURCE_TASK_ID,
             generation_id=generation,
             target=None,
@@ -1862,7 +1880,7 @@ class SchemaActivationOwner:
             "plan_id": PLAN_ID,
             "plan_path": PLAN_PATH,
             "task_id": SOURCE_TASK_ID,
-            "work_item_id": SOURCE_WORK_ITEM_ID,
+            "work_item_id": source_work_item_id,
             "workspace_id": identity["workspaceId"],
             "branch": identity["branch"],
             "source_commit": generation,
@@ -1937,7 +1955,7 @@ class SchemaActivationOwner:
             allow_plan_lifecycle=checked_intent == "FINAL_CUT",
         )
         declaration = _validate_declaration(
-            self.declaration_loader(work_item_id),
+            self.profile_declaration_loader(work_item_id, expected_workstream),
             identity=identity,
             work_item_id=work_item_id,
             task_id=task_id,
@@ -2054,6 +2072,11 @@ class SchemaActivationOwner:
                     raise ResetIncomplete(
                         "fresh reset reached COMPLETE before the deployment boundary"
                     )
+                response_exact_replay = first_response.get("exact_replay")
+                if not isinstance(response_exact_replay, bool):
+                    raise ResetIncomplete(
+                        "maintenance execution result has invalid exact_replay"
+                    )
                 journal, attestation = _validate_execution_result(
                     first_response,
                     manifest=manifest,
@@ -2061,23 +2084,35 @@ class SchemaActivationOwner:
                     invocations=(),
                     needs_deployment=False,
                     require_attestation=True,
-                    expected_exact_replay=True,
+                    expected_exact_replay=response_exact_replay,
                     require_exact_invocations=False,
                 )
                 terminal_acceptance = journal["accepted_invocations"][-1]
+                terminal_invocation_id = terminal_acceptance["invocation_id"]
+                expected_exact_replay = (
+                    terminal_invocation_id != first_invocation["invocation_id"]
+                )
+                if response_exact_replay is not expected_exact_replay:
+                    raise ResetIncomplete(
+                        "maintenance execution result has invalid exact_replay"
+                    )
                 invocation_directory = (
                     directory
                     / "invocations"
-                    / terminal_acceptance["invocation_id"]
+                    / terminal_invocation_id
                 )
                 invocation = read_json_artifact(
                     invocation_directory / "request.json",
                     "accepted terminal reset invocation",
                 )
+                accepted_declaration = {
+                    **declaration,
+                    "declarationDigest": invocation.get("declaration_digest"),
+                }
                 validate_reset_invocation(
                     invocation,
                     manifest=manifest,
-                    declaration=declaration,
+                    declaration=accepted_declaration,
                     target=target,
                     task_id=task_id,
                 )
@@ -2089,6 +2124,7 @@ class SchemaActivationOwner:
                         "terminal journal acceptance does not match its "
                         "persisted invocation"
                     )
+                result_declaration_digest = invocation["declaration_digest"]
             else:
                 _validate_execution_result(
                     first_response,
@@ -2149,6 +2185,7 @@ class SchemaActivationOwner:
                         invocation_directory / "response.json",
                         response,
                     )
+                    result_declaration_digest = declaration["declarationDigest"]
                 except BaseException as error:
                     if not complete_verified:
                         try:
@@ -2192,7 +2229,7 @@ class SchemaActivationOwner:
                 "destructive_scope": target.destructive_scope,
                 "reset_id": reset_identifier,
                 "reset_intent": checked_intent,
-                "declaration_digest": declaration["declarationDigest"],
+                "declaration_digest": result_declaration_digest,
                 "source_freeze_ref": self._source_result_ref(generation),
                 "source_freeze_digest": source_result["result_digest"],
                 "reset_manifest_ref": manifest_ref,
@@ -2395,6 +2432,39 @@ class SchemaActivationOwner:
         )
         return _decode_process_json(completed, "Development declaration readback")
 
+    def _activate_profile_declaration(
+        self,
+        work_item_id: str,
+        workstream_id: str,
+    ) -> Mapping[str, Any]:
+        try:
+            projection = work_item_control.load_projection(
+                self.repo_root / work_item_control.DEFAULT_MANIFEST,
+                workstream=workstream_id,
+                journey=JOURNEY_ID,
+                repo_root=self.repo_root,
+            )
+            if projection.work_item_id != work_item_id:
+                raise work_item_control.ManifestError(
+                    "profile work-item projection does not match the requested owner"
+                )
+            return work_item_control.ensure_active_projection(
+                projection,
+                repo_root=self.repo_root,
+            )
+        except (
+            work_item_control.ManifestError,
+            work_item_control.LedgerReadbackError,
+            work_item_control.CommandError,
+        ) as error:
+            raise BoundaryUnavailable(
+                f"profile Development declaration is unavailable: {error}",
+                details={
+                    "work_item_id": work_item_id,
+                    "workstream_id": workstream_id,
+                },
+            ) from error
+
     def _check_clean(self) -> None:
         completed = self.command_runner(
             ["git", "status", "--porcelain", "--untracked-files=all"],
@@ -2409,7 +2479,7 @@ class SchemaActivationOwner:
             raise ValidationError("schema activation requires a clean exact source")
 
     def _source_directory(self, generation_id: str) -> Path:
-        return self.result_root / "W12A" / "source" / generation_id
+        return self.result_root / SOURCE_EVIDENCE_ROOT / "source" / generation_id
 
     def _source_result_ref(self, generation_id: str) -> Mapping[str, str]:
         return _relative_ref(
@@ -2450,7 +2520,7 @@ class SchemaActivationOwner:
         if intent == "SCHEMA_ACTIVATION":
             return (
                 self.result_root
-                / "W12A"
+                / SOURCE_EVIDENCE_ROOT
                 / "activation"
                 / generation_id
                 / profile_id
@@ -2476,7 +2546,7 @@ class SchemaActivationOwner:
         if intent == "SCHEMA_ACTIVATION":
             return (
                 self.result_root
-                / "W12A"
+                / SOURCE_EVIDENCE_ROOT
                 / "activation"
                 / generation_id
                 / "aggregate"
@@ -2489,7 +2559,9 @@ class SchemaActivationOwner:
         intended_directory: Path,
     ) -> None:
         candidates = [
-            *self.result_root.glob(f"W12A/activation/*/*/{reset_id}"),
+            *self.result_root.glob(
+                f"{SOURCE_EVIDENCE_ROOT}/activation/*/*/{reset_id}"
+            ),
             *self.result_root.glob(f"W12/final-cut/*/*/{reset_id}"),
         ]
         intended = intended_directory.resolve()
@@ -2928,6 +3000,7 @@ def _parser() -> argparse.ArgumentParser:
     freeze = subparsers.add_parser("source-freeze")
     freeze.add_argument("--generation-id", required=True)
     freeze.add_argument("--budget-seconds", required=True, type=int)
+    freeze.add_argument("--work-item", default=SOURCE_WORK_ITEM_ID)
 
     run = subparsers.add_parser("run")
     run.add_argument("--workstream", required=True)
@@ -2983,6 +3056,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = owner.source_freeze(
                 generation_id=arguments.generation_id,
                 budget_seconds=arguments.budget_seconds,
+                work_item_id=arguments.work_item,
             )
         elif arguments.command == "run":
             generation = arguments.generation_id

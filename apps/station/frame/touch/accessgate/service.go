@@ -89,13 +89,11 @@ func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.A
 	if client == nil {
 		return nil, fmt.Errorf("access attempt client is required")
 	}
-	if strings.EqualFold(strings.TrimSpace(client.GetPlatform()), "mobile") {
-		if strings.TrimSpace(client.GetDeviceId()) == "" {
-			return nil, fmt.Errorf("mobile access attempt device id is required")
-		}
-		if client.GetLifecycleGeneration() == 0 {
-			return nil, fmt.Errorf("mobile access attempt lifecycle generation is required")
-		}
+	if strings.TrimSpace(client.GetDeviceId()) == "" {
+		return nil, fmt.Errorf("access attempt device id is required")
+	}
+	if client.GetLifecycleGeneration() == 0 {
+		return nil, fmt.Errorf("access attempt lifecycle generation is required")
 	}
 
 	actorRef, username, email, err := actorRefFromSession(ctx, strings.TrimSpace(req.GetSessionId()))
@@ -149,7 +147,8 @@ func ValidateStationPeerID(stationPeerID string) error {
 // current actionable gate of the same Station access attempt.
 func ValidateOAuthBinding(
 	ctx context.Context,
-	accessAttemptID, stationPeerID, gateID string,
+	accessAttemptID, stationPeerID, gateID, deviceID string,
+	lifecycleGeneration uint64,
 	actionType pb.AccessGateType,
 ) error {
 	if actionType != pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH {
@@ -162,8 +161,10 @@ func ValidateOAuthBinding(
 	if !ok {
 		return errAttemptNotFound
 	}
-	if attempt.StationPeerID != stationPeerID {
-		return fmt.Errorf("OAuth access attempt Station mismatch")
+	if attempt.StationPeerID != stationPeerID ||
+		attempt.DeviceID != strings.TrimSpace(deviceID) ||
+		attempt.LifecycleGeneration != lifecycleGeneration {
+		return fmt.Errorf("OAuth access attempt client binding mismatch")
 	}
 	decision, err := decisionAndPersist(ctx, attempt)
 	if err != nil {
@@ -193,7 +194,8 @@ func ValidateOAuthBinding(
 // re-evaluates all later Station-owned gates.
 func BindOAuthCandidate(
 	ctx context.Context,
-	accessAttemptID, stationPeerID, gateID string,
+	accessAttemptID, stationPeerID, gateID, deviceID string,
+	lifecycleGeneration uint64,
 	actorRef *actormodel.ActorRef,
 	username, email string,
 ) (*pb.AccessDecision, error) {
@@ -205,6 +207,8 @@ func BindOAuthCandidate(
 		accessAttemptID,
 		stationPeerID,
 		gateID,
+		deviceID,
+		lifecycleGeneration,
 		pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH,
 	); err != nil {
 		return nil, err
@@ -292,27 +296,6 @@ func CompleteLoginCandidate(
 	attempt.SessionID = ""
 	attempt.AuthMethod = "password"
 
-	return decisionAndPersist(ctx, attempt)
-}
-
-// CompleteLegacyLogin preserves the existing non-Mobile Desktop path until its
-// owning plan adopts the schema-bound envelope. Mobile attempts are rejected
-// by ValidateLegacySubmission before this function can run.
-func CompleteLegacyLogin(
-	ctx context.Context,
-	attemptID string,
-	actor *actormodel.ActorRef,
-	username, email, sessionID string,
-) (*pb.AccessDecision, error) {
-	attempt, ok := findAttempt(ctx, attemptID)
-	if !ok {
-		return nil, errAttemptNotFound
-	}
-	attempt.Actor = actor
-	attempt.ActorUsername = username
-	attempt.ActorEmail = email
-	attempt.SessionID = sessionID
-	attempt.AuthMethod = "legacy_password"
 	return decisionAndPersist(ctx, attempt)
 }
 

@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
-> **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -41,6 +41,8 @@
 | DWF-D29 | Derive agent activity from bounded Action Receipts | accepted |
 | DWF-D30 | Make documentation claims executable through Workflow Doctor | accepted |
 | DWF-D31 | Advance completed workspace bindings by explicit Plan generation | accepted |
+| DWF-D32 | Aggregate module impacts before resource acquisition | accepted |
+| DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -76,6 +78,10 @@ Every active Task/Journey records one machine-owned inner state.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Progress was previously inferred from task, file, or test counts without a stable receiver-visible completion boundary.
+
 ### Decision
 
 Track product work by named Journey and receiver-visible result. Infrastructure,
@@ -98,6 +104,10 @@ Every Task Slice declares one Journey or functional boundary.
 
 **Status**: accepted
 **Date**: 2026-09-13
+
+### Context
+
+Formal Acceptance is broad and costly, while implementation needs a fast exact-source feedback loop before product proof is meaningful.
 
 ### Decision
 
@@ -122,6 +132,10 @@ An exception requires an accepted architecture decision.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Development checks and formal Acceptance had separate scenario definitions, allowing the same business behavior to drift between runners.
+
 ### Decision
 
 Dev Runner and Acceptance Runner consume one business-owned Journey. Provisioning,
@@ -131,6 +145,10 @@ persistence, completeness and publication policy remain runner-specific.
 
 Duplicated smoke and Acceptance scripts drift in action and assertion semantics.
 
+### Alternatives Considered
+
+- Maintain separate Journey definitions per runner: rejected because duplicated behavior and assertions diverge.
+
 ### Consequences
 
 Existing Gates that mix behavior with provisioning must separate those concerns.
@@ -139,6 +157,10 @@ Existing Gates that mix behavior with provisioning must separate those concerns.
 
 **Status**: accepted
 **Date**: 2026-09-13
+
+### Context
+
+Remote runtime iteration requires Git-addressable exact source, while a checkpoint must not imply delivery authority.
 
 ### Decision
 
@@ -163,6 +185,10 @@ Plans must state authorization; no capability is inferred from another.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Machine-local resume records and formal product evidence have different trust, retention, and publication requirements.
+
 ### Decision
 
 Development records live under the machine Dev workspace. Evidence Store receives
@@ -171,6 +197,10 @@ only formal Acceptance runs.
 ### Rationale
 
 Resume data and immutable product proof have different retention and trust semantics.
+
+### Alternatives Considered
+
+- Publish every development attempt as Acceptance evidence: rejected because transient or failed iterations are not product proof.
 
 ### Consequences
 
@@ -181,6 +211,10 @@ Development records can diagnose but cannot prove product readiness.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Long-running verification matrices continued after an actionable causal failure and obscured the shortest repair path.
+
 ### Decision
 
 Every command/Journey has a purpose and timeout. The red loop stops on the first
@@ -189,6 +223,10 @@ actionable failure.
 ### Rationale
 
 One causal failure is more useful than a matrix of downstream failures.
+
+### Alternatives Considered
+
+- Continue every check after failure: rejected because derivative failures add cost without improving diagnosis.
 
 ### Consequences
 
@@ -199,6 +237,10 @@ Independent failures may surface after the first failure is fixed.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Tracked plans accumulated per-attempt logs and narrative state, making current work expensive and ambiguous to recover.
+
 ### Decision
 
 Git retains current plan state and durable evidence references; per-attempt logs,
@@ -207,6 +249,10 @@ screenshots and events stay under the machine Dev root.
 ### Rationale
 
 Append-only execution diaries obscure the current dependency frontier.
+
+### Alternatives Considered
+
+- Keep all attempt history in the Plan: rejected because durable intent and transient execution have different lifecycles.
 
 ### Consequences
 
@@ -218,6 +264,10 @@ before session cleanup.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Development checks and formal Acceptance reused completion language even when they established different levels of evidence.
+
 ### Decision
 
 Development uses `PASS/FAIL/BLOCKED/NOT_RUN` plus verification class. `PROVEN`
@@ -226,6 +276,10 @@ is reserved for Acceptance capability interpretation.
 ### Rationale
 
 A static Gate can pass without proving a Native product Journey.
+
+### Alternatives Considered
+
+- Treat every passing check as proven: rejected because source checks cannot establish a product Journey.
 
 ### Consequences
 
@@ -236,6 +290,10 @@ Status renderers always show verification class beside result.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+The control-plane model needed a representative path spanning UI, native clients, Station, encryption, and multiple actors.
+
 ### Decision
 
 Validate Journey and exact-source rules with Direct and three-client Group Chat
@@ -245,6 +303,10 @@ before generic rollout.
 
 Chat exercises UI, native, Station, encryption, actor and multi-client boundaries.
 
+### Alternatives Considered
+
+- Generalize before a demanding pilot: rejected because untested abstractions would hide real lifecycle requirements.
+
 ### Consequences
 
 Generalization requires measured pilot evidence, not speculative abstractions.
@@ -253,6 +315,10 @@ Generalization requires measured pilot evidence, not speculative abstractions.
 
 **Status**: accepted
 **Date**: 2026-09-13
+
+### Context
+
+Concurrent worktrees previously had no pre-mutation machine-wide view of source and runtime intent.
 
 ### Decision
 
@@ -278,6 +344,10 @@ Declarations advertise intent but never grant runtime leases.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Adding orchestration entrypoints for each workflow refinement would split lifecycle authority and user expectations.
+
 ### Decision
 
 Upgrade `pt-dev-workflow` as the sole intake-to-close orchestrator. Delegate
@@ -286,6 +356,10 @@ execution, defect, runtime, Acceptance and delivery work to specialist Skills.
 ### Rationale
 
 A second `pt-dev-loop` would create ambiguous entrypoints and split lifecycle truth.
+
+### Alternatives Considered
+
+- Add a second orchestration Skill: rejected because two intake owners create ambiguous state and recovery behavior.
 
 ### Consequences
 
@@ -740,6 +814,10 @@ the mutable commit outside the tracked Plan removes the clean-checkpoint
 self-reference while preserving fail-closed resume, mutation, and runtime
 identity checks at their actual owners.
 
+### Alternatives Considered
+
+- Persist advancing HEAD in tracked Plan content: rejected because every checkpoint would immediately dirty and invalidate its own source.
+
 ### Consequences
 
 - Existing live Plan Packages remove `expectedHead` before using the new parser.
@@ -791,6 +869,14 @@ Plan had already granted the exact operation.
   compatibility/rollout choices, unavailable external resources or
   fixed-point exhaustion.
 
+### Rationale
+
+A Plan Run preserves user intent across bounded Task slices while retaining owner-controlled checkpoints and stop conditions.
+
+### Alternatives Considered
+
+- Pause for confirmation after every Task or review: rejected because it repeats already granted authority without improving safety.
+
 ### Consequences
 
 - `pt-dev-workflow` owns the Plan Run loop and successor activation.
@@ -833,6 +919,14 @@ Acceptance contracts.
 - Deterministic functional PASS and the matching Session transition are
   committed through one owner-controlled result slice.
 
+### Rationale
+
+Host-neutral owners preserve workflow semantics across IDEs while narrow adapters keep optional automation replaceable.
+
+### Alternatives Considered
+
+- Make one IDE scheduler authoritative: rejected because repository workflows must remain portable and independently verifiable.
+
 ### Consequences
 
 - The old `pt-trae-goal-orchestrator` source is deleted after references move.
@@ -867,6 +961,14 @@ make independent worktrees overwrite one another.
 - Legacy Markdown is readable only by the bounded Plan migration flow and has
   no compatibility writer.
 
+### Rationale
+
+Canonical source can be shared, but mutable execution state must remain isolated by consuming workspace identity.
+
+### Alternatives Considered
+
+- Store all worktree progress in one shared project record: rejected because concurrent worktrees would overwrite each other.
+
 ### Consequences
 
 - Concurrent Goals in different worktrees never write the same active-work
@@ -899,6 +1001,14 @@ versions of one unstable internal workflow.
   integrity details, not workflow versions, and must not be surfaced as one.
 - External protocol, framework, package and formal Acceptance evidence versions
   retain their own independently governed semantics.
+
+### Rationale
+
+A single current internal contract avoids compatibility machinery for development-only formats that are deployed atomically.
+
+### Alternatives Considered
+
+- Version every internal workflow artifact independently: rejected because unrelated version numbers imply unsupported compatibility promises.
 
 ### Consequences
 
@@ -946,6 +1056,10 @@ The Plan remains the single source of dependency and invalidation scope, while
 runtime cleanup and evidence stores retain their existing owners. The
 transition is explicit and recoverable without introducing a second Plan
 implementation or allowing arbitrary lifecycle rewrites.
+
+### Alternatives Considered
+
+- Reopen completed Tasks manually: rejected because Plan, Session, declaration, and evidence owners would diverge.
 
 ### Consequences
 
@@ -1055,6 +1169,14 @@ provide it.
 - TRAE, Cursor and Codex adapters only normalize payloads and render native
   responses. Cursor project hooks set `failClosed: true`.
 
+### Rationale
+
+Conversation-bound execution authority prevents command working directories from silently changing the active worktree or workflow owner.
+
+### Alternatives Considered
+
+- Rebind from each tool call cwd: rejected because legitimate cross-worktree reads could change mutation authority.
+
 ### Consequences
 
 - Conversation binding is not a worktree lease and does not serialize other
@@ -1066,10 +1188,19 @@ provide it.
 - Core owner commands remain the final state-transition authority; the Kernel
   is an earlier admission and handoff-completeness boundary.
 
+**Supersession**: DWF-D33 replaces this decision's identity, lifecycle,
+review-selection, and rollout contracts. DWF-D26 remains registered only
+because immutable completed Plan Packages reference its original safety
+boundary.
+
 ## DWF-D27: Project Workflow Status Through One Snapshot
 
 **Status**: accepted
 **Date**: 2026-09-26
+
+### Context
+
+CLI, UI, and handoff paths independently joined workflow state and could report contradictory progress or freshness.
 
 ### Decision
 
@@ -1083,6 +1214,10 @@ reimplementing joins.
 Independent status joins produced contradictory progress and allowed logs or
 prose to stand in for owner state.
 
+### Alternatives Considered
+
+- Keep one state join per consumer: rejected because projection rules and failure semantics would continue to drift.
+
 ### Consequences
 
 The Snapshot never repairs or advances state. Progress remains Task closure
@@ -1092,6 +1227,10 @@ progress from the Plan; activity and freshness remain diagnostic projections.
 
 **Status**: accepted
 **Date**: 2026-09-26
+
+### Context
+
+Passing implementation checks did not independently verify that the current source satisfied every declared obligation and deletion.
 
 ### Decision
 
@@ -1105,6 +1244,10 @@ digests.
 Successful implementation checks prove what was exercised, not that all
 required work, deletions, and claim boundaries were included.
 
+### Alternatives Considered
+
+- Let the implementation context self-approve completion: rejected because it cannot provide independent coverage judgment.
+
 ### Consequences
 
 Missing, failed, same-context, or stale receipts reject lifecycle completion.
@@ -1115,6 +1258,10 @@ source-invalidation owner.
 
 **Status**: accepted
 **Date**: 2026-09-26
+
+### Context
+
+Process presence and chat narration could not distinguish productive execution from waiting, repetition, or drift.
 
 ### Decision
 
@@ -1127,6 +1274,10 @@ looping, drift, and complete projections.
 Process lists and chat prose cannot reliably distinguish useful progress from
 repetition or inactivity.
 
+### Alternatives Considered
+
+- Infer activity from processes or prose: rejected because neither is bounded, structured, or owner-authenticated.
+
 ### Consequences
 
 Receipts never contain raw prompts, unrestricted tool arguments, or secrets.
@@ -1138,6 +1289,10 @@ state.
 **Status**: accepted
 **Date**: 2026-09-26
 
+### Context
+
+Human workflow documentation described operational guarantees that could drift from repository-enforced behavior.
+
 ### Decision
 
 `docs/global/workflow.md` is the concise human operating guide. Every public
@@ -1147,6 +1302,10 @@ as a non-machine policy.
 ### Rationale
 
 A guide that describes absent hooks or unenforced gates creates false trust.
+
+### Alternatives Considered
+
+- Rely on manual documentation review: rejected because absent enforcement can still appear trustworthy.
 
 ### Consequences
 
@@ -1205,3 +1364,167 @@ stable owner worktree into disposable infrastructure.
   cannot authorize mutation after the current pointer advances.
 - Binding generation and quiescence checks are covered by focused concurrency,
   migration, tamper, and resource-release tests.
+
+## DWF-D32: Aggregate Module Impacts Before Resource Acquisition
+
+**Status**: accepted
+**Date**: 2026-09-30
+
+### Context
+
+Domain Skills can identify their own affected components and proof
+invalidation, but they cannot see the complete Plan dependency graph, machine
+capacity, or resource demand from other modules. Letting each module directly
+select deployment targets, accounts, services, clients, devices, Fixtures, or
+automation sessions creates duplicated provisioning and cross-module
+deadlocks.
+
+### Decision
+
+- Each affected module emits one closed `ModuleImpact` containing change kinds,
+  module dependencies, focused checks, logical target selectors, Journeys,
+  Gates, proof invalidation, and optional logical resource requirements.
+- `pt-dev-workflow` is the sole Plan-level aggregator. It resolves target
+  dependencies, execution waves, requirement deduplication, and peak concurrent
+  capacity into one `PlanResourcePlan`.
+- Concrete resource selection uses owner-supplied inventory and
+  source/artifact/runtime/health identity to choose
+  `REUSE | RESTART | BUILD | PROVISION`.
+- Mandatory demand is solved across each complete execution wave with
+  deterministic rematching. When total capacity cannot satisfy every target,
+  constrained targets are considered before flexible targets.
+- The idempotency key is
+  `planId + lifecycleScope + requirementId + compatibilityKey`.
+- Resource claims for one target are published to the existing machine work
+  ledger all-or-none and in canonical order. A capacity conflict parks only
+  that target and its dependents; independent targets remain runnable.
+- Resource-plan persistence uses the existing workspace lifecycle lock and an
+  explicit non-authorizing `RESERVING -> COMMITTED` transition so receipt and
+  declaration updates are recoverable after interruption. The reserving receipt
+  keeps prior and proposed planner claims until commit, preventing provenance
+  loss during replacement.
+- Physical lease admission checks the matching committed resource-plan fence
+  for planner-owned claims. Claims that predate planning retain explicit base
+  provenance and are never removed or silently adopted by a later plan. A
+  shared `resource.plan:<workItemId>` declaration marker makes a missing
+  receipt fail closed.
+- The resource-plan receipt carries a monotonic fencing token. Runtime Owner
+  results must match its source identity, allocation digest, owner, resource
+  identity, exact idempotency requirement keys, and expected digests.
+- Local Dev and Acceptance Suite Runtime remain the physical lifecycle owners.
+  The plan does not start, log in, reset, clean, or quarantine resources.
+- Business Gates are attach-only and consume the prepared runtime manifest.
+
+### Rationale
+
+The workflow needs one cross-module view to avoid duplicate allocation and
+unnecessary deployment, while domain-specific impact knowledge and physical
+resource lifecycle must remain with their existing owners.
+
+### Alternatives Considered
+
+- Let every module Skill provision its own resources: rejected because it
+  creates parallel orchestration and cannot compute aggregate capacity.
+- Use one global execution lock: rejected because unrelated targets and Plans
+  would block each other.
+- Let each business Gate build and provision: rejected because repeated Gates
+  duplicate setup and cannot safely reuse Suite resources.
+- Treat declarations as physical leases: rejected because intent, process
+  possession, health, and cleanup have different owners.
+
+### Consequences
+
+- Module Skills no longer emit concrete deployment targets.
+- Resource planning extends the existing `dev-work` owner and machine ledger;
+  no second workflow Skill or scheduler is introduced.
+- Fine-grained declaration conflicts and Runtime Owner leases replace a global
+  lock. The acquisition contract forbids hold-and-wait.
+- Quarantined resources remain unavailable until their physical owner records a
+  valid replacement or recovery; the workflow cannot clear quarantine.
+- Planner tests must cover multi-module closure, account/service reuse,
+  parallel capacity shortage, all-or-none target claims, fencing, quarantine
+  replacement, and cross-Plan conflicts.
+
+## DWF-D33: Root Workflow Authority In One Owner Binding With Assigned Child Lineage
+
+**Status**: accepted
+**Date**: 2026-10-01
+
+### Context
+
+TRAE exposes a stable visible-chat `chat_session_id` and may expose a different
+`session_id` for reviewer, retry, or subtask execution. The existing generic
+adapter treated `conversation_id`, `conversationId`, `session_id`, and
+`sessionId` as interchangeable owner keys. Every internal execution could
+therefore create another peer owner binding for the same worktree.
+
+The binding store considered every record without a release receipt active.
+Completion Review first tried a recent Action Receipt and then fell back to a
+global `candidates.length === 1` check. In the reproduced high-chat workspace,
+twenty old records remained active by that definition even though most latest
+RUNNING receipts had expired. The review path was blocked by persistence
+history rather than a live ownership conflict.
+
+### Decision
+
+- A visible development chat owns exactly one immutable OWNER binding. TRAE
+  derives it only from `chat_session_id`; `session_id` never creates owner
+  authority. Cursor and Codex use only their documented host-specific fields.
+- Internal WORKER and REVIEWER sessions require a create-once assignment from
+  an existing OWNER or child. The assignment records role, root and parent
+  binding digests, Development Session identity, operation identity, and a
+  bounded lease.
+- Child claim binds a hashed execution-session identity to one assignment.
+  Child liveness comes only from assignment/lease/terminal receipts. OWNER
+  liveness has no generic TTL.
+- One pure `BindingProjection` joins host identity, owner or child binding,
+  role, lineage, release state, execution root, and per-event subject/tool/
+  target roots. Hook context, status, readiness, handoff, Stop, Action Receipt,
+  worker result, and Completion Review consume that projection.
+- Completion Review selects the exact OWNER or assigned REVIEWER from the
+  current owner-command Action Receipt. There is no worktree-wide active
+  binding fallback.
+- `CROSS_WORKTREE_WRITE_DENIED` remains unchanged: all lineage members inherit
+  the OWNER execution root, may read sibling roots, and cannot write them.
+- TRAE multi-root installations have one workspace bootstrap hook. That hook
+  dispatches to the selected canonical integration instead of installing
+  competing owner hooks in every worktree.
+- Rollout is a hard cut. After proving no live declaration, child assignment,
+  or workflow action exists on the machine other than the current exact
+  OWNER-bound installer command, the installer deletes
+  `~/.peers-touch/dev/conversations/` and every
+  `~/.peers-touch/dev/workspaces/*/workflow/actions/` directory before
+  installing the new bootstrap. Plan/Session/Review/Acceptance stores remain.
+  No legacy schema reader, importer, alias, fallback, or dual-write is allowed.
+
+### Rationale
+
+The visible chat is the authorization boundary; internal execution sessions are
+bounded delegates. Persisting this distinction prevents stale review activity
+from becoming owner authority and makes completion identity exact instead of
+heuristic.
+
+### Alternatives Considered
+
+- Treat every host `session_id` as an owner: rejected because retries,
+  reviewers, and subtasks create false peer owners.
+- Keep worktree-wide enumeration but add TTL: rejected because OWNER
+  authorization must not silently expire and history is not identity.
+- Accept old and new schemas during migration: rejected because it preserves
+  ambiguous ownership and leaves two active truth models.
+- Add adapter routes around Completion Review only: rejected because status,
+  handoff, Stop, and worker attribution would remain inconsistent.
+
+### Consequences
+
+- Internal worker/reviewer launchers must issue and terminalize assignments.
+- A child without a valid assignment cannot claim independent worker or
+  reviewer authority.
+- Machine-local conversation and Action Receipt history is intentionally
+  discarded at rollout; closed Plan/Session/evidence owners remain unchanged.
+- Multi-root bootstrap installation is a separately declared cross-root
+  rollout operation and is not performed implicitly by source implementation.
+- Tests must cover one owner plus two child roles, nested parent linkage,
+  expired and terminal child behavior, compaction/task switching, subject-root
+  projection, exact Completion Review selection with twenty stale children,
+  and wrong-binding status/final claims.

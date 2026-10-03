@@ -4352,6 +4352,7 @@ dependencies = [
  "futures-lite",
  "hex",
  "hkdf",
+ "hmac",
  "keyring",
  "messaging-core",
  "objc2",

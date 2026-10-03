@@ -124,6 +124,13 @@ pub fn get_provider(token: &str, provider_id: &str) -> Result<Value, StationApiE
     )?)
 }
 
+pub fn get_provider_record(
+    token: &str,
+    provider_id: &str,
+) -> Result<StationProvider, StationApiError> {
+    parse_provider_from_response(get_provider(token, provider_id)?)
+}
+
 pub fn list_available_models(token: &str) -> Result<Value, StationApiError> {
     Ok(station_client::request_json_auth(
         Method::POST,

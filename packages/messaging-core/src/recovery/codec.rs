@@ -1,6 +1,7 @@
 use super::types::{
     DecodedRecoveryRevision, EncodedRecoveryRevision, MessagingRecoveryArchive,
-    RecoveryAttachmentMetadata, RecoveryConversationProjection, RecoveryMessageProjection,
+    RecoveryAttachmentMetadata, RecoveryAuthorityHead, RecoveryConversationProjection,
+    RecoveryMessageProjection, RecoveryMessageRedactionTombstone, RecoveryRetentionFloor,
     RecoveryTrustRecord, MESSAGING_RECOVERY_FORMAT_VERSION,
 };
 use crate::codec::private_content::validate_attachment_plaintext_metadata;
@@ -15,7 +16,7 @@ use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const BACKUP_NONCE_BYTES: usize = 12;
@@ -48,6 +49,9 @@ struct ActorIdentitySection {
 struct MessageHistorySection {
     conversations: Vec<RecoveryConversationProjection>,
     messages: Vec<RecoveryMessageProjection>,
+    retention_floors: Vec<RecoveryRetentionFloor>,
+    authority_heads: Vec<RecoveryAuthorityHead>,
+    redaction_tombstones: Vec<RecoveryMessageRedactionTombstone>,
 }
 
 #[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
@@ -71,6 +75,9 @@ struct ActorIdentitySectionRef<'a> {
 struct MessageHistorySectionRef<'a> {
     conversations: &'a [RecoveryConversationProjection],
     messages: &'a [RecoveryMessageProjection],
+    retention_floors: &'a [RecoveryRetentionFloor],
+    authority_heads: &'a [RecoveryAuthorityHead],
+    redaction_tombstones: &'a [RecoveryMessageRedactionTombstone],
 }
 
 #[derive(Serialize)]
@@ -126,8 +133,15 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         &MessageHistorySectionRef {
             conversations: &archive.conversations,
             messages: &archive.messages,
+            retention_floors: &archive.retention_floors,
+            authority_heads: &archive.authority_heads,
+            redaction_tombstones: &archive.redaction_tombstones,
         },
-        (archive.conversations.len() + archive.messages.len()) as u64,
+        (archive.conversations.len()
+            + archive.messages.len()
+            + archive.retention_floors.len()
+            + archive.authority_heads.len()
+            + archive.redaction_tombstones.len()) as u64,
     )?);
     sections.push(encrypt_section(
         &key,
@@ -237,6 +251,9 @@ pub fn decode_recovery_revision<K: RecoveryKdf>(
         actor_profile_version: identity.profile_version,
         conversations: std::mem::take(&mut history.conversations),
         messages: std::mem::take(&mut history.messages),
+        retention_floors: std::mem::take(&mut history.retention_floors),
+        authority_heads: std::mem::take(&mut history.authority_heads),
+        redaction_tombstones: std::mem::take(&mut history.redaction_tombstones),
         attachments: std::mem::take(&mut attachments.attachments),
         trust: std::mem::take(&mut trust.trust),
     };
@@ -257,20 +274,73 @@ pub fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(), String
         .iter()
         .map(|message| message.message_id.as_str())
         .collect::<HashSet<_>>();
+    let message_keys = archive
+        .messages
+        .iter()
+        .map(|message| {
+            (
+                message.conversation_id.as_str(),
+                message.message_id.as_str(),
+            )
+        })
+        .collect::<HashSet<_>>();
+    let conversation_station_by_id = archive
+        .conversations
+        .iter()
+        .map(|conversation| {
+            (
+                conversation.conversation_id.as_str(),
+                conversation.authority_station_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut authority_head_by_conversation = HashMap::new();
+    for head in &archive.authority_heads {
+        if authority_head_by_conversation
+            .insert(head.conversation_id.as_str(), head)
+            .is_some()
+        {
+            return Err("messaging recovery archive has duplicate authority heads".to_string());
+        }
+    }
+    let mut retention_floor_by_conversation = HashMap::new();
+    for floor in &archive.retention_floors {
+        if retention_floor_by_conversation
+            .insert(
+                floor.conversation_id.as_str(),
+                floor.pruned_through_sequence,
+            )
+            .is_some()
+        {
+            return Err("messaging recovery archive has duplicate retention floors".to_string());
+        }
+    }
+    let mut redaction_keys = HashSet::new();
+    for tombstone in &archive.redaction_tombstones {
+        if !redaction_keys.insert((
+            tombstone.conversation_id.as_str(),
+            tombstone.message_id.as_str(),
+            tombstone.kind.as_str(),
+        )) {
+            return Err(
+                "messaging recovery archive has duplicate redaction tombstones".to_string(),
+            );
+        }
+    }
     if archive.ptid.trim().is_empty()
         || archive.actor_profile_version == 0
         || archive.conversations.iter().any(|conversation| {
             conversation.conversation_id.trim().is_empty()
                 || conversation.authority_station_id.trim().is_empty()
+                || conversation.federation_id.trim().is_empty()
                 || conversation.kind == 0
                 || conversation.owner_ptid.trim().is_empty()
                 || conversation.member_ptids.len() < 2
-                || (!conversation.member_roles.is_empty()
-                    && (conversation.member_roles.len() != conversation.member_ptids.len()
-                        || conversation
-                            .member_ptids
-                            .iter()
-                            .any(|ptid| !conversation.member_roles.contains_key(ptid))))
+                || conversation.member_roles.len() != conversation.member_ptids.len()
+                || conversation
+                    .member_ptids
+                    .iter()
+                    .any(|ptid| !conversation.member_roles.contains_key(ptid))
                 || conversation.member_roles.iter().any(|(ptid, role)| {
                     ptid.trim().is_empty()
                         || !matches!(
@@ -280,6 +350,8 @@ pub fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(), String
                                 | crate::proto::chat::MemberRole::Owner)
                         )
                 })
+                || !authority_head_by_conversation
+                    .contains_key(conversation.conversation_id.as_str())
                 || conversation.membership_epoch < 0
                 || conversation.mls_epoch < 0
                 || conversation.updated_at_unix_ms <= 0
@@ -288,9 +360,82 @@ pub fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(), String
             message.conversation_id.trim().is_empty()
                 || message.event_id.trim().is_empty()
                 || message.event_sequence <= 0
+                || message.authority_event_hash.len() != 32
+                || message.authority_event_hash.iter().all(|byte| *byte == 0)
+                || retention_floor_by_conversation
+                    .get(message.conversation_id.as_str())
+                    .is_some_and(|floor| message.event_sequence <= *floor)
                 || message.message_id.trim().is_empty()
                 || message.sender_ptid.trim().is_empty()
                 || message.sender_device_id.trim().is_empty()
+                || authority_head_by_conversation
+                    .get(message.conversation_id.as_str())
+                    .is_none_or(|head| {
+                        message.event_sequence > head.event_sequence
+                            || (message.event_sequence == head.event_sequence
+                                && message.authority_event_hash != head.event_hash)
+                    })
+                || (message.retracted
+                    && (!message.plaintext.is_empty()
+                        || !redaction_keys.contains(&(
+                            message.conversation_id.as_str(),
+                            message.message_id.as_str(),
+                            "retracted",
+                        ))))
+        })
+        || archive.retention_floors.iter().any(|floor| {
+            floor.station_peer_id.trim().is_empty()
+                || floor.conversation_id.trim().is_empty()
+                || conversation_station_by_id.get(floor.conversation_id.as_str())
+                    != Some(&floor.station_peer_id.as_str())
+                || floor.pruned_through_sequence <= 0
+                || floor.authority_event_hash.len() != 32
+                || floor.authority_event_hash.iter().all(|byte| *byte == 0)
+                || !matches!(floor.reason.as_str(), "policy" | "manual_clear")
+                || floor.updated_at_unix_ms <= 0
+                || authority_head_by_conversation
+                    .get(floor.conversation_id.as_str())
+                    .is_none_or(|head| {
+                        floor.pruned_through_sequence > head.event_sequence
+                            || (floor.pruned_through_sequence == head.event_sequence
+                                && floor.authority_event_hash != head.event_hash)
+                    })
+        })
+        || archive.authority_heads.iter().any(|head| {
+            head.conversation_id.trim().is_empty()
+                || !conversation_station_by_id.contains_key(head.conversation_id.as_str())
+                || head.event_sequence <= 0
+                || head.event_hash.len() != 32
+                || head.event_hash.iter().all(|byte| *byte == 0)
+                || head.updated_at_unix_ms <= 0
+        })
+        || archive.redaction_tombstones.iter().any(|tombstone| {
+            tombstone.conversation_id.trim().is_empty()
+                || tombstone.message_id.trim().is_empty()
+                || !matches!(tombstone.kind.as_str(), "hidden_for_actor" | "retracted")
+                || !conversation_station_by_id.contains_key(tombstone.conversation_id.as_str())
+                || tombstone.authority_sequence <= 0
+                || tombstone.authority_event_hash.len() != 32
+                || tombstone.authority_event_hash.iter().all(|byte| *byte == 0)
+                || tombstone.applied_at_unix_ms <= 0
+                || authority_head_by_conversation
+                    .get(tombstone.conversation_id.as_str())
+                    .is_none_or(|head| {
+                        tombstone.authority_sequence > head.event_sequence
+                            || (tombstone.authority_sequence == head.event_sequence
+                                && tombstone.authority_event_hash != head.event_hash)
+                    })
+                || (tombstone.kind == "hidden_for_actor"
+                    && message_keys.contains(&(
+                        tombstone.conversation_id.as_str(),
+                        tombstone.message_id.as_str(),
+                    )))
+                || (tombstone.kind == "retracted"
+                    && archive.messages.iter().any(|message| {
+                        message.conversation_id == tombstone.conversation_id
+                            && message.message_id == tombstone.message_id
+                            && (!message.retracted || !message.plaintext.is_empty())
+                    }))
         })
         || archive.attachments.iter().any(|attachment| {
             attachment.message_id.trim().is_empty()
@@ -501,14 +646,32 @@ mod tests {
             }],
             messages: vec![RecoveryMessageProjection {
                 conversation_id: "conversation-1".to_string(),
-                event_id: "event-1".to_string(),
-                event_sequence: 1,
+                event_id: "event-7".to_string(),
+                event_sequence: 7,
+                authority_event_hash: vec![7; 32],
                 message_id: "message-1".to_string(),
                 sender_ptid: "ptid:bob".to_string(),
                 sender_device_id: "bob-device".to_string(),
                 plaintext: "exact plaintext".to_string(),
+                retracted: false,
                 committed_at_unix_ms: 10,
             }],
+            retention_floors: vec![RecoveryRetentionFloor {
+                station_peer_id: "station-local".to_string(),
+                conversation_id: "conversation-1".to_string(),
+                pruned_through_sequence: 6,
+                authority_event_hash: vec![6; 32],
+                policy_cutoff_unix_ms: Some(60),
+                reason: "policy".to_string(),
+                updated_at_unix_ms: 70,
+            }],
+            authority_heads: vec![RecoveryAuthorityHead {
+                conversation_id: "conversation-1".to_string(),
+                event_sequence: 7,
+                event_hash: vec![7; 32],
+                updated_at_unix_ms: 10,
+            }],
+            redaction_tombstones: Vec::new(),
             attachments: vec![RecoveryAttachmentMetadata {
                 message_id: "message-1".to_string(),
                 attachment_id: "attachment-1".to_string(),
@@ -549,25 +712,69 @@ mod tests {
     }
 
     #[test]
-    fn legacy_archive_without_federation_identity_remains_decodable() {
+    fn recovery_v4_rejects_conversation_projection_without_required_scope() {
         let mut value = serde_json::to_value(archive()).unwrap();
         value["conversations"][0]
             .as_object_mut()
             .unwrap()
             .remove("federation_id");
-        value["conversations"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove("description");
-        value["conversations"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove("avatar_object_id");
-        let legacy: MessagingRecoveryArchive = serde_json::from_value(value).unwrap();
-        assert!(legacy.conversations[0].federation_id.is_empty());
-        assert!(legacy.conversations[0].description.is_empty());
-        assert!(legacy.conversations[0].avatar_object_id.is_empty());
-        assert!(validate_archive(&legacy).is_ok());
+        assert!(serde_json::from_value::<MessagingRecoveryArchive>(value).is_err());
+
+        let mut invalid = archive();
+        invalid.conversations[0].member_roles.clear();
+        assert!(validate_archive(&invalid).is_err());
+    }
+
+    #[test]
+    fn redacted_history_requires_a_tombstone_and_contains_no_plaintext() {
+        let mut redacted = archive();
+        redacted.messages[0].plaintext.clear();
+        redacted.messages[0].retracted = true;
+        redacted.redaction_tombstones = vec![RecoveryMessageRedactionTombstone {
+            conversation_id: "conversation-1".to_string(),
+            message_id: "message-1".to_string(),
+            kind: "retracted".to_string(),
+            authority_sequence: 8,
+            authority_event_hash: vec![8; 32],
+            applied_at_unix_ms: 20,
+        }];
+        redacted.authority_heads[0] = RecoveryAuthorityHead {
+            conversation_id: "conversation-1".to_string(),
+            event_sequence: 8,
+            event_hash: vec![8; 32],
+            updated_at_unix_ms: 20,
+        };
+        assert!(validate_archive(&redacted).is_ok());
+
+        redacted.messages[0].plaintext = "must not survive".to_string();
+        assert!(validate_archive(&redacted).is_err());
+        redacted.messages[0].plaintext.clear();
+        redacted.redaction_tombstones.clear();
+        assert!(validate_archive(&redacted).is_err());
+    }
+
+    #[test]
+    fn actor_hidden_history_cannot_remain_in_the_archive() {
+        let mut hidden = archive();
+        hidden.redaction_tombstones = vec![RecoveryMessageRedactionTombstone {
+            conversation_id: "conversation-1".to_string(),
+            message_id: "message-1".to_string(),
+            kind: "hidden_for_actor".to_string(),
+            authority_sequence: 8,
+            authority_event_hash: vec![8; 32],
+            applied_at_unix_ms: 20,
+        }];
+        hidden.authority_heads[0] = RecoveryAuthorityHead {
+            conversation_id: "conversation-1".to_string(),
+            event_sequence: 8,
+            event_hash: vec![8; 32],
+            updated_at_unix_ms: 20,
+        };
+
+        assert!(validate_archive(&hidden).is_err());
+        hidden.messages.clear();
+        hidden.attachments.clear();
+        assert!(validate_archive(&hidden).is_ok());
     }
 
     #[test]

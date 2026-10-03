@@ -1,0 +1,48 @@
+{
+  "id": "agent-cli-provider-primary",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/catalog/providers.default.yaml",
+    "apps/station/app/subserver/agent/service/cli",
+    "apps/station/app/subserver/agent/service/provider_service.go",
+    "apps/station/app/subserver/agent/service/turn_service.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/store/chat.ts"
+  ],
+  "truth_sources": [
+    "Station built-in Provider catalog",
+    "Station Agent and conversation persistence",
+    "Station Turn event and terminal message persistence"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/sub-agent/provider/list"},
+    {"type": "sse", "route": "/agent/chat/stream"},
+    {"type": "dom", "selector": "[data-pt-agent-selected-provider=\"trae-cli\"]"},
+    {"type": "dom", "selector": "[data-pt-agent-message=\"assistant\"]"}
+  ],
+  "required_gates": ["agent-cli-provider-primary-native-e2e"],
+  "acceptance": {
+    "service": [
+      "the built-in trae-cli Provider and default chat model are discoverable without an HTTP endpoint or API key",
+      "creating an Agent bound to trae-cli persists the Provider and model identity in Station",
+      "sending from an empty topic invokes the CLI adapter and emits at least one durable provider delta",
+      "Station persists one user message, one completed Assistant message, and their shared Turn identity",
+      "restarting the native client restores the same Agent, conversation, and completed response from Station",
+      "a missing built-in CLI binary persists one failed Assistant with RUNTIME_UNAVAILABLE and cli_binary_missing without a completed Assistant"
+    ],
+    "visible": [
+      "the native Agent composer exposes trae-cli and default as its selected runtime",
+      "the empty topic is visible before the first send",
+      "the streamed Assistant response becomes visible and terminal",
+      "the same terminal Assistant response remains visible after a native process restart",
+      "the missing CLI binary failure is visible with the typed runtime-unavailable reason"
+    ]
+  },
+  "negative": [
+    "the CLI Provider journey must not require or mutate an HTTP Provider credential",
+    "the one-shot CLI adapter must remain a Station-owned DIRECT_MODEL transport rather than an EXTERNAL_AGENT session",
+    "a missing, failing, or empty CLI response must fail the Turn and must not fabricate a completed Assistant message",
+    "the Gate must fail closed when provider deltas, Station readback, restart restoration, or cleanup evidence is missing"
+  ]
+}

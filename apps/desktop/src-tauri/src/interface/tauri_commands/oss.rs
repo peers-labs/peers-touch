@@ -394,8 +394,8 @@ pub(crate) fn capture_screenshot_with_window_hidden(
     let was_visible = window.is_visible().unwrap_or(true);
     let outer_position = window.outer_position().ok();
     let outer_size = window.outer_size().ok();
-    let preserve_freeform_geometry = !window.is_maximized().unwrap_or(false)
-        && !window.is_fullscreen().unwrap_or(false);
+    let preserve_freeform_geometry =
+        !window.is_maximized().unwrap_or(false) && !window.is_fullscreen().unwrap_or(false);
     if was_visible {
         if let Err(error) = window.hide() {
             tracing::warn!(error = %error, "Failed to hide window before screenshot capture");

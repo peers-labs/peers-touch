@@ -51,6 +51,8 @@ interface AgentState extends RevalidationState {
   loadApplets: () => Promise<void>;
   toggleApplet: (id: string) => Promise<void>;
   createAgent: (input: AgentCreate) => Promise<Agent>;
+  duplicateAgent: (agentId: string) => Promise<Agent>;
+  deleteAgent: (agentId: string) => Promise<void>;
   updateAgentProfile: (agentId: string, updates: Partial<AgentCreate>) => Promise<Agent>;
   reloadAgentProfile: (agentId: string) => Promise<Agent>;
 }
@@ -74,6 +76,59 @@ function reconcileAgent(agent: Agent): Agent {
     title: resolveI18nValue(agent.title),
     description: resolveI18nValue(agent.description),
   };
+}
+
+function firstExistingAgentName(agents: Agent[], candidates: Array<string | undefined>): string {
+  return candidates.find(
+    (candidate) => candidate && agents.some((agent) => agent.name === candidate),
+  ) || '';
+}
+
+function reconcileAgentRoster(
+  agents: Agent[],
+  selectedCandidates: Array<string | undefined>,
+  defaultCandidate?: string,
+) {
+  const defaultAgent = firstExistingAgentName(agents, [
+    defaultCandidate,
+    agents.find((agent) => agent.isDefault)?.name,
+    agents[0]?.name,
+  ]) || 'assistant';
+  const selectedAgent = firstExistingAgentName(agents, [
+    ...selectedCandidates,
+    defaultAgent,
+  ]) || defaultAgent;
+  const reconciledAgents = agents.map((agent) => ({
+    ...agent,
+    isDefault: agent.name === defaultAgent,
+  }));
+  const selected = reconciledAgents.find((agent) => agent.name === selectedAgent);
+
+  return {
+    agents: reconciledAgents,
+    selectedAgent,
+    defaultAgent,
+    selectedModel: selected?.model?.trim() || '',
+    selectedProviderId: selected?.provider?.trim() || '',
+  };
+}
+
+function nextAgentCopyName(sourceName: string, agents: Agent[]): string {
+  const baseName = `${sourceName.trim()}-copy`;
+  const existingNames = new Set(agents.map((agent) => agent.name));
+  if (!existingNames.has(baseName)) return baseName;
+
+  let copyNumber = 2;
+  while (existingNames.has(`${baseName}-${copyNumber}`)) {
+    copyNumber += 1;
+  }
+  return `${baseName}-${copyNumber}`;
+}
+
+function withoutRecordKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  const next = { ...record };
+  delete next[key];
+  return next;
 }
 
 export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) => ({
@@ -219,37 +274,34 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
           return '';
         }),
       ]);
-      const raw = result.agents || [];
-      let agents = raw.map((a) => ({
-        ...a,
-        title: resolveI18nValue(a.title),
-        description: resolveI18nValue(a.description),
-      }));
+      let agents = (result.agents || []).map(reconcileAgent);
+      let selectedCandidates = [
+        persistedSelected,
+        result.selectedAgent,
+        get().selectedAgent,
+      ];
+      let defaultCandidate = result.defaultAgent;
       if (agents.length === 0) {
         try {
-          const created = await api.createAgent({ name: 'assistant', description: '' });
-          agents = [{ ...created, title: resolveI18nValue(created.title), description: resolveI18nValue(created.description) }];
+          const created = reconcileAgent(
+            await api.createAgent({ name: 'assistant', description: '' }),
+          );
+          agents = [created];
+          selectedCandidates = [created.name];
+          defaultCandidate = created.name;
         } catch (createError) {
           log.warn('agent', 'Auto-create default agent failed', { error: toStoreError(createError) });
         }
       }
       log.info('agent', 'Agents loaded', { count: agents.length });
-      const currentSelected = persistedSelected || get().selectedAgent;
-      const fallbackAgent = result.defaultAgent || agents.find((agent) => agent.isDefault)?.name || agents[0]?.name || 'assistant';
-      const nextSelected = agents.some((a) => a.name === currentSelected)
-        ? currentSelected
-        : fallbackAgent;
-      set({ agents, selectedAgent: nextSelected, defaultAgent: fallbackAgent, lastLoadedAt: Date.now() });
+      const roster = reconcileAgentRoster(agents, selectedCandidates, defaultCandidate);
+      set({ ...roster, lastLoadedAt: Date.now() });
+      const nextSelected = roster.selectedAgent;
       if (nextSelected && nextSelected !== persistedSelected) {
         void api.setSelectedAgent(nextSelected).catch((error) => {
           log.error('agent', 'Failed to reconcile selected agent', { agent: nextSelected, error: toStoreError(error) });
         });
       }
-      const current = agents.find((a) => a.name === nextSelected);
-      set({
-        selectedModel: current?.model?.trim() || '',
-        selectedProviderId: current?.provider?.trim() || '',
-      });
     } catch (error) {
       const message = toStoreError(error);
       log.error('agent', 'Failed to load agents', { error: message });
@@ -324,9 +376,13 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
       const reconciled = reconcileAgent(created);
       set((state) => {
         const others = state.agents.filter((item) => item.id !== reconciled.id);
+        const roster = reconcileAgentRoster(
+          [...others, reconciled],
+          [reconciled.name],
+          state.defaultAgent,
+        );
         return {
-          agents: [...others, reconciled],
-          selectedAgent: reconciled.name,
+          ...roster,
           agentSurfaces: { ...state.agentSurfaces, [reconciled.name]: 'profile' },
           lastLoadedAt: Date.now(),
         };
@@ -340,6 +396,93 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
       throw error;
     } finally {
       set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
+    }
+  },
+
+  duplicateAgent: async (agentId) => {
+    const source = get().agents.find((agent) => agent.id === agentId);
+    if (!source) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    const cloneName = nextAgentCopyName(source.name, get().agents);
+    const mutationKey = `agent-duplicate:${agentId}`;
+    set((state) => ({
+      error: null,
+      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
+    }));
+    try {
+      const cloned = reconcileAgent(await api.duplicateAgent(agentId, cloneName));
+      set((state) => {
+        const others = state.agents.filter((agent) => agent.id !== cloned.id);
+        return {
+          ...reconcileAgentRoster(
+            [...others, cloned],
+            [cloned.name],
+            state.defaultAgent,
+          ),
+          lastLoadedAt: Date.now(),
+        };
+      });
+      await api.setSelectedAgent(cloned.name).catch((error) => {
+        log.error('agent', 'Failed to persist cloned Agent selection', {
+          agentId: cloned.id,
+          error: toStoreError(error),
+        });
+      });
+      return cloned;
+    } catch (error) {
+      const message = toStoreError(error);
+      log.error('agent', 'Failed to duplicate agent', { agentId, error: message });
+      set({ error: message });
+      throw error;
+    } finally {
+      set((state) => ({
+        pendingMutations: endMutation(state.pendingMutations, mutationKey),
+      }));
+    }
+  },
+
+  deleteAgent: async (agentId) => {
+    const deleted = get().agents.find((agent) => agent.id === agentId);
+    if (!deleted) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    const mutationKey = `agent-delete:${agentId}`;
+    set((state) => ({
+      error: null,
+      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
+    }));
+    try {
+      await api.deleteAgent(agentId);
+      set((state) => {
+        const remaining = state.agents.filter((agent) => agent.id !== agentId);
+        return {
+          ...reconcileAgentRoster(
+            remaining,
+            [state.selectedAgent],
+            state.defaultAgent,
+          ),
+          agentSurfaces: withoutRecordKey(state.agentSurfaces, deleted.name),
+          capabilityFocusByAgent: withoutRecordKey(
+            state.capabilityFocusByAgent,
+            deleted.name,
+          ),
+          saveStateByAgentId: withoutRecordKey(state.saveStateByAgentId, agentId),
+          lastLoadedAt: Date.now(),
+        };
+      });
+      await get().loadAgents();
+    } catch (error) {
+      const message = toStoreError(error);
+      log.error('agent', 'Failed to delete agent', { agentId, error: message });
+      set({ error: message });
+      throw error;
+    } finally {
+      set((state) => ({
+        pendingMutations: endMutation(state.pendingMutations, mutationKey),
+      }));
     }
   },
 

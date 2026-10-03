@@ -22,7 +22,10 @@ const (
 	PrivateContentResourcePost    = "POST"
 	PrivateContentResourceComment = "COMMENT"
 
-	privateContentLifecycleActive = "ACTIVE"
+	privateContentLifecycleActive  = "ACTIVE"
+	privateContentLifecycleDeleted = "DELETED"
+	privateContentRevokeDeleted    = "RESOURCE_DELETED"
+	privateContentPostClass        = "private"
 
 	PrivateContentKeyKindEndpoint      = "ENDPOINT"
 	PrivateContentKeyKindActorRecovery = "ACTOR_RECOVERY"
@@ -58,6 +61,11 @@ const (
 	PrivateContentBoundaryObjectGrants      PrivateContentWriteBoundary = "object_grants"
 	PrivateContentBoundaryCommitProof       PrivateContentWriteBoundary = "commit_proof"
 	PrivateContentBoundaryCommandReceipt    PrivateContentWriteBoundary = "command_receipt"
+	PrivateContentBoundaryPostDeleted       PrivateContentWriteBoundary = "post_deleted"
+	PrivateContentBoundaryCommentsDeleted   PrivateContentWriteBoundary = "comments_deleted"
+	PrivateContentBoundaryGrantsRevoked     PrivateContentWriteBoundary = "grants_revoked"
+	PrivateContentBoundaryDeliveriesRevoked PrivateContentWriteBoundary = "deliveries_revoked"
+	PrivateContentBoundaryReactionsRemoved  PrivateContentWriteBoundary = "reactions_removed"
 )
 
 type PrivateContentFailpoint interface {
@@ -92,13 +100,22 @@ type PreparingPlanResult struct {
 	ExactReplay bool
 }
 
-// PrivatePrepareBinding persists the Social-owned audience and subtype facts
-// that cannot be reconstructed from their hashes in the canonical prepare
-// input. The columns live on the canonical plan row and are committed in the
-// same PREPARING transaction.
+// SubmitPreparation is the immutable prepare state needed to select the
+// submit-time authority fence before the Social write transaction begins.
+type SubmitPreparation struct {
+	Plan    dbmodel.SocialPrivateContentPlan
+	Binding PrivatePrepareBinding
+}
+
+// PrivatePrepareBinding persists the Social-owned audience, Conversation Group
+// authority, and subtype facts that cannot be reconstructed from their hashes
+// in the canonical prepare input. The columns live on the canonical plan row
+// and are committed in the same PREPARING transaction.
 type PrivatePrepareBinding struct {
 	AudienceBytes                 []byte
 	AudienceSHA256                []byte
+	GroupRecipientSnapshotBytes   []byte
+	GroupRecipientSnapshotSHA256  []byte
 	SubtypePrepareAuthorityBytes  []byte
 	SubtypePrepareAuthoritySHA256 []byte
 }
@@ -233,6 +250,17 @@ type PrivateContentStore interface {
 		string,
 		[]byte,
 	) (PreparingPlanResult, bool, error)
+	LoadSubmitPreparation(
+		context.Context,
+		string,
+		string,
+	) (SubmitPreparation, error)
+	DeletePrivatePost(
+		context.Context,
+		string,
+		string,
+		time.Time,
+	) (bool, error)
 	ExpirePlan(context.Context, string, time.Time) error
 	GetPrivatePost(
 		context.Context,
@@ -257,6 +285,211 @@ type PrivateContentStore interface {
 		PrivatePrepareBinding,
 	) (PreparingPlanResult, error)
 	MarkPrepared(context.Context, PreparedPlan) (PreparedPlanResult, error)
+}
+
+func (s *GORMPrivateContentStore) DeletePrivatePost(
+	ctx context.Context,
+	postID string,
+	authorPTID string,
+	deletedAt time.Time,
+) (bool, error) {
+	if strings.TrimSpace(postID) == "" ||
+		strings.TrimSpace(authorPTID) == "" ||
+		deletedAt.IsZero() {
+		return false, fmt.Errorf(
+			"%w: private Post deletion identity is incomplete",
+			ErrPrivateContentInvalid,
+		)
+	}
+
+	var deleted bool
+	err := s.withSerializedTransaction(
+		ctx,
+		[]string{"private-post:" + postID},
+		func(tx *gorm.DB) error {
+			var post dbmodel.SocialPrivateContentPost
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("post_id = ?", postID).
+				First(&post).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf(
+					"social private content lock Post for deletion: %w",
+					err,
+				)
+			}
+			if post.AuthorPTID != authorPTID || post.DeletedAt != nil {
+				return nil
+			}
+
+			var comments []dbmodel.SocialPrivateContentComment
+			if err := tx.Select(
+				"comment_id",
+				"content_id",
+				"interaction_snapshot_id",
+			).Where("post_id = ?", postID).Find(&comments).Error; err != nil {
+				return fmt.Errorf(
+					"social private content list Comments for deletion: %w",
+					err,
+				)
+			}
+			contentIDs := make([]string, 0, len(comments)+1)
+			contentIDs = append(contentIDs, post.ContentID)
+			snapshotIDs := make([]string, 0, len(comments)+1)
+			snapshotIDs = append(snapshotIDs, post.AudienceSnapshotID)
+			for _, comment := range comments {
+				contentIDs = append(contentIDs, comment.ContentID)
+				snapshotIDs = append(
+					snapshotIDs,
+					comment.InteractionSnapshotID,
+				)
+			}
+			var objectIDs []string
+			if err := tx.Model(&dbmodel.SocialPrivateObjectAttachment{}).
+				Where("content_id IN ?", contentIDs).
+				Pluck("object_id", &objectIDs).Error; err != nil {
+				return fmt.Errorf(
+					"social private content list objects for deletion: %w",
+					err,
+				)
+			}
+
+			now := deletedAt.UTC()
+			postUpdate := tx.Model(&dbmodel.SocialPrivateContentPost{}).
+				Where(
+					"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
+					postID,
+					privateContentLifecycleActive,
+				).
+				Updates(map[string]any{
+					"lifecycle_state": privateContentLifecycleDeleted,
+					"deleted_at":      now,
+					"updated_at":      now,
+				})
+			if postUpdate.Error != nil {
+				return fmt.Errorf(
+					"social private content delete Post: %w",
+					postUpdate.Error,
+				)
+			}
+			if postUpdate.RowsAffected != 1 {
+				return fmt.Errorf(
+					"%w: private Post changed during deletion",
+					ErrPrivateContentConflict,
+				)
+			}
+			if err := s.afterWrite(
+				ctx,
+				PrivateContentBoundaryPostDeleted,
+			); err != nil {
+				return err
+			}
+
+			if err := tx.Model(&dbmodel.SocialPrivateContentComment{}).
+				Where("post_id = ? AND deleted_at IS NULL", postID).
+				Updates(map[string]any{
+					"lifecycle_state": privateContentLifecycleDeleted,
+					"deleted_at":      now,
+					"updated_at":      now,
+				}).Error; err != nil {
+				return fmt.Errorf(
+					"social private content delete Comments: %w",
+					err,
+				)
+			}
+			if err := s.afterWrite(
+				ctx,
+				PrivateContentBoundaryCommentsDeleted,
+			); err != nil {
+				return err
+			}
+
+			if err := tx.Model(&dbmodel.SocialPrivateRecipientGrant{}).
+				Where(
+					"snapshot_id IN ? AND revoked_at IS NULL",
+					uniqueSortedStrings(snapshotIDs),
+				).
+				Updates(map[string]any{
+					"revoked_at":    now,
+					"revoke_reason": privateContentRevokeDeleted,
+				}).Error; err != nil {
+				return fmt.Errorf(
+					"social private content revoke recipient grants: %w",
+					err,
+				)
+			}
+			if len(objectIDs) > 0 {
+				if err := tx.Model(&dbmodel.SocialPrivateObjectGrant{}).
+					Where(
+						"object_id IN ? AND revoked_at IS NULL",
+						uniqueSortedStrings(objectIDs),
+					).
+					Updates(map[string]any{
+						"revoked_at":    now,
+						"revoke_reason": privateContentRevokeDeleted,
+					}).Error; err != nil {
+					return fmt.Errorf(
+						"social private content revoke object grants: %w",
+						err,
+					)
+				}
+			}
+			if err := s.afterWrite(
+				ctx,
+				PrivateContentBoundaryGrantsRevoked,
+			); err != nil {
+				return err
+			}
+
+			if err := tx.Model(&dbmodel.SocialPrivateDeliveryIntent{}).
+				Where(
+					"content_id IN ? AND state = ?",
+					uniqueSortedStrings(contentIDs),
+					dbmodel.SocialPrivateDeliveryIntentStatePending,
+				).
+				Update(
+					"state",
+					dbmodel.SocialPrivateDeliveryIntentStateRevoked,
+				).Error; err != nil {
+				return fmt.Errorf(
+					"social private content revoke delivery intents: %w",
+					err,
+				)
+			}
+			if err := s.afterWrite(
+				ctx,
+				PrivateContentBoundaryDeliveriesRevoked,
+			); err != nil {
+				return err
+			}
+
+			if err := tx.Where(
+				"post_id = ? AND post_class = ?",
+				postID,
+				privateContentPostClass,
+			).Delete(&dbmodel.SocialReaction{}).Error; err != nil {
+				return fmt.Errorf(
+					"social private content delete reactions: %w",
+					err,
+				)
+			}
+			if err := s.afterWrite(
+				ctx,
+				PrivateContentBoundaryReactionsRemoved,
+			); err != nil {
+				return err
+			}
+
+			deleted = true
+			return nil
+		},
+	)
+	if err != nil {
+		return false, err
+	}
+	return deleted, nil
 }
 
 func (s *GORMPrivateContentStore) ExpirePlan(
@@ -428,6 +661,7 @@ func migratePrivateContentPost(database *gorm.DB) error {
 		{name: "encrypted_payload_bytes", definition: binaryType},
 		{name: "encrypted_payload_sha256", definition: binaryType},
 		{name: "object_descriptor_set_sha256", definition: binaryType},
+		{name: "mention_routing_bytes", definition: binaryType},
 		{name: "mention_routing_sha256", definition: binaryType},
 		{name: "subtype_authority_sha256", definition: binaryType},
 		{name: "lifecycle_state", definition: "VARCHAR(32)"},
@@ -481,6 +715,7 @@ func migratePrivateContentPost(database *gorm.DB) error {
 type PrivatePostReadModel struct {
 	Post                dbmodel.SocialPrivateContentPost
 	Snapshot            dbmodel.SocialPrivateAudienceSnapshot
+	PrepareBinding      PrivatePrepareBinding
 	Envelope            *dbmodel.SocialPrivateContentEnvelope
 	Objects             []dbmodel.SocialPrivateObjectAttachment
 	CommitProof         dbmodel.SocialPrivateCommitProof
@@ -592,9 +827,14 @@ func (s *GORMPrivateContentStore) GetPrivatePost(
 		).First(&plan).Error; err != nil {
 			return err
 		}
+		prepareBinding, err := loadPrivatePrepareBinding(tx, plan.PlanID)
+		if err != nil {
+			return err
+		}
 		result = &PrivatePostReadModel{
 			Post:                post,
 			Snapshot:            snapshot,
+			PrepareBinding:      prepareBinding,
 			Envelope:            envelope,
 			Objects:             objects,
 			CommitProof:         proof,
@@ -927,6 +1167,47 @@ func (s *GORMPrivateContentStore) FindPrepare(
 	}, true, nil
 }
 
+// LoadSubmitPreparation reads the durable audience binding used only to choose
+// the outer submit fence. ExecuteSubmit remains the authority that locks and
+// validates the plan before any Social mutation.
+func (s *GORMPrivateContentStore) LoadSubmitPreparation(
+	ctx context.Context,
+	planID string,
+	authorPTID string,
+) (SubmitPreparation, error) {
+	if strings.TrimSpace(planID) == "" ||
+		strings.TrimSpace(authorPTID) == "" {
+		return SubmitPreparation{}, fmt.Errorf(
+			"%w: submit preparation identity is invalid",
+			ErrPrivateContentInvalid,
+		)
+	}
+	var plan dbmodel.SocialPrivateContentPlan
+	if err := s.db.WithContext(ctx).
+		Where("plan_id = ? AND author_ptid = ?", planID, authorPTID).
+		First(&plan).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SubmitPreparation{}, ErrPrivateContentNotFound
+		}
+		return SubmitPreparation{}, fmt.Errorf(
+			"social private content load submit preparation: %w",
+			err,
+		)
+	}
+	binding, err := loadPrivatePrepareBinding(
+		s.db.WithContext(ctx),
+		plan.PlanID,
+	)
+	if err != nil {
+		return SubmitPreparation{}, err
+	}
+
+	return SubmitPreparation{
+		Plan:    clonePlan(plan),
+		Binding: clonePrepareBinding(binding),
+	}, nil
+}
+
 // ClaimPreparing durably commits the exact claim request before the caller
 // invokes Key Exchange. Exact author/command replay returns the persisted row;
 // any changed identity, bytes, or commitment is terminal conflict.
@@ -943,6 +1224,12 @@ func (s *GORMPrivateContentStore) ClaimPreparing(
 	}
 	candidate.AudienceBytes = cloneBytes(binding.AudienceBytes)
 	candidate.AudienceSHA256 = cloneBytes(binding.AudienceSHA256)
+	candidate.GroupRecipientSnapshotBytes = cloneBytes(
+		binding.GroupRecipientSnapshotBytes,
+	)
+	candidate.GroupRecipientSnapshotSHA256 = cloneBytes(
+		binding.GroupRecipientSnapshotSHA256,
+	)
 	candidate.SubtypePrepareAuthorityBytes = cloneBytes(
 		binding.SubtypePrepareAuthorityBytes,
 	)
@@ -1547,13 +1834,18 @@ func (tx *gormPrivateContentTransaction) CreatePost(
 	); err != nil {
 		return err
 	}
-	for field, digest := range map[string][]byte{
-		"mention routing":   post.MentionRoutingSHA256,
-		"subtype authority": post.SubtypeAuthoritySHA256,
-	} {
-		if err := validateOptionalDigest(field, digest); err != nil {
-			return err
-		}
+	if err := validateOptionalExactDigest(
+		"mention routing",
+		post.MentionRoutingBytes,
+		post.MentionRoutingSHA256,
+	); err != nil {
+		return err
+	}
+	if err := validateOptionalDigest(
+		"subtype authority",
+		post.SubtypeAuthoritySHA256,
+	); err != nil {
+		return err
 	}
 	if err := tx.db.WithContext(ctx).Create(&post).Error; err != nil {
 		return fmt.Errorf("social private content create Post fact: %w", err)
@@ -1596,8 +1888,9 @@ func (tx *gormPrivateContentTransaction) CreateComment(
 	); err != nil {
 		return err
 	}
-	if err := validateOptionalDigest(
+	if err := validateOptionalExactDigest(
 		"mention routing",
+		comment.MentionRoutingBytes,
 		comment.MentionRoutingSHA256,
 	); err != nil {
 		return err
@@ -2260,6 +2553,13 @@ func validatePrepareBinding(binding PrivatePrepareBinding) error {
 	); err != nil {
 		return err
 	}
+	if err := validateOptionalExactDigest(
+		"prepare Group recipient snapshot",
+		binding.GroupRecipientSnapshotBytes,
+		binding.GroupRecipientSnapshotSHA256,
+	); err != nil {
+		return err
+	}
 	if len(binding.SubtypePrepareAuthorityBytes) == 0 {
 		empty := sha256.Sum256(nil)
 		if !bytes.Equal(
@@ -2425,6 +2725,14 @@ func samePrepareBinding(left, right PrivatePrepareBinding) bool {
 	return bytes.Equal(left.AudienceBytes, right.AudienceBytes) &&
 		bytes.Equal(left.AudienceSHA256, right.AudienceSHA256) &&
 		bytes.Equal(
+			left.GroupRecipientSnapshotBytes,
+			right.GroupRecipientSnapshotBytes,
+		) &&
+		bytes.Equal(
+			left.GroupRecipientSnapshotSHA256,
+			right.GroupRecipientSnapshotSHA256,
+		) &&
+		bytes.Equal(
 			left.SubtypePrepareAuthorityBytes,
 			right.SubtypePrepareAuthorityBytes,
 		) &&
@@ -2450,6 +2758,8 @@ func loadPrivatePrepareBinding(
 			"plan_id",
 			"audience_bytes",
 			"audience_sha256",
+			"group_recipient_snapshot_bytes",
+			"group_recipient_snapshot_sha256",
 			"subtype_prepare_authority_bytes",
 			"subtype_prepare_authority_sha256",
 		).
@@ -2463,6 +2773,12 @@ func loadPrivatePrepareBinding(
 	binding := PrivatePrepareBinding{
 		AudienceBytes:  cloneBytes(model.AudienceBytes),
 		AudienceSHA256: cloneBytes(model.AudienceSHA256),
+		GroupRecipientSnapshotBytes: cloneBytes(
+			model.GroupRecipientSnapshotBytes,
+		),
+		GroupRecipientSnapshotSHA256: cloneBytes(
+			model.GroupRecipientSnapshotSHA256,
+		),
 		SubtypePrepareAuthorityBytes: cloneBytes(
 			model.SubtypePrepareAuthorityBytes,
 		),
@@ -2536,6 +2852,26 @@ func validateExactDigest(name string, value []byte, digest []byte) error {
 	return nil
 }
 
+func validateOptionalExactDigest(
+	name string,
+	value []byte,
+	digest []byte,
+) error {
+	if len(value) == 0 {
+		empty := sha256.Sum256(nil)
+		if !bytes.Equal(digest, empty[:]) {
+			return fmt.Errorf(
+				"%w: empty %s hash differs",
+				ErrPrivateContentInvalid,
+				name,
+			)
+		}
+		return nil
+	}
+
+	return validateExactDigest(name, value, digest)
+}
+
 func validateOptionalDigest(name string, digest []byte) error {
 	if len(digest) == 0 {
 		return nil
@@ -2577,6 +2913,12 @@ func clonePlan(plan dbmodel.SocialPrivateContentPlan) dbmodel.SocialPrivateConte
 	plan.CanonicalPrepareSHA256 = cloneBytes(plan.CanonicalPrepareSHA256)
 	plan.AudienceBytes = cloneBytes(plan.AudienceBytes)
 	plan.AudienceSHA256 = cloneBytes(plan.AudienceSHA256)
+	plan.GroupRecipientSnapshotBytes = cloneBytes(
+		plan.GroupRecipientSnapshotBytes,
+	)
+	plan.GroupRecipientSnapshotSHA256 = cloneBytes(
+		plan.GroupRecipientSnapshotSHA256,
+	)
 	plan.SubtypePrepareAuthorityBytes = cloneBytes(
 		plan.SubtypePrepareAuthorityBytes,
 	)
@@ -2596,6 +2938,12 @@ func clonePlan(plan dbmodel.SocialPrivateContentPlan) dbmodel.SocialPrivateConte
 func clonePrepareBinding(binding PrivatePrepareBinding) PrivatePrepareBinding {
 	binding.AudienceBytes = cloneBytes(binding.AudienceBytes)
 	binding.AudienceSHA256 = cloneBytes(binding.AudienceSHA256)
+	binding.GroupRecipientSnapshotBytes = cloneBytes(
+		binding.GroupRecipientSnapshotBytes,
+	)
+	binding.GroupRecipientSnapshotSHA256 = cloneBytes(
+		binding.GroupRecipientSnapshotSHA256,
+	)
 	binding.SubtypePrepareAuthorityBytes = cloneBytes(
 		binding.SubtypePrepareAuthorityBytes,
 	)

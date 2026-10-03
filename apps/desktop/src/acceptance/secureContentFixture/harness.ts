@@ -23,10 +23,13 @@ interface AccountSwitchInput {
   primaryAccountId: string;
   primaryActorPtid: string;
   primaryStorageIdentitySha256: string;
+  primaryLoginId: string;
   secondaryAccountId: string;
   secondaryActorPtid: string;
   secondaryStorageIdentitySha256: string;
+  secondaryLoginId: string;
   pin: string;
+  password: string;
 }
 
 interface StationFixtureInput {
@@ -99,6 +102,20 @@ async function completeLogin(): Promise<void> {
   await identityRuntime.completeCurrentSession();
   if (!useSessionStore.getState().authenticated) {
     throw new Error('secureContentFixture.authenticationIncomplete');
+  }
+}
+
+async function unlockOrReauth(
+  accountId: string,
+  loginId: string,
+  pin: string,
+  password: string,
+): Promise<void> {
+  try {
+    await identityRuntime.unlockWithPin(accountId, pin);
+    await completeLogin();
+  } catch {
+    await replaceSessionWithPassword(loginId, password);
   }
 }
 
@@ -246,11 +263,12 @@ export function installAcceptanceHarness(): void {
 
     async roundTripAccountSwitch(input: AccountSwitchInput) {
       const beforeGeneration = useSessionStore.getState().sessionEpoch;
-      await identityRuntime.unlockWithPin(
+      await unlockOrReauth(
         requireText(input.secondaryAccountId, 'secondaryAccountId'),
+        requireText(input.secondaryLoginId, 'secondaryLoginId'),
         requireText(input.pin, 'pin'),
+        requireText(input.password, 'password'),
       );
-      await completeLogin();
       const secondaryActorPtid = requireCurrentActor();
       if (secondaryActorPtid !== input.secondaryActorPtid) {
         throw new Error('secureContentFixture.secondaryAccountMismatch');
@@ -259,11 +277,12 @@ export function installAcceptanceHarness(): void {
       const clearedProjectionCount = Object.keys(
         usePrivateMomentsStore.getState().postsById,
       ).length;
-      await identityRuntime.unlockWithPin(
+      await unlockOrReauth(
         requireText(input.primaryAccountId, 'primaryAccountId'),
+        requireText(input.primaryLoginId, 'primaryLoginId'),
         input.pin,
+        input.password,
       );
-      await completeLogin();
       const primaryActorPtid = requireCurrentActor();
       const afterGeneration = useSessionStore.getState().sessionEpoch;
       const primaryStorageIdentitySha256 = await accountStorageIdentitySha256();

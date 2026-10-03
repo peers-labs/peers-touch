@@ -4713,28 +4713,31 @@ func (x *RepostResponse) GetRepost() *Post {
 // Field semantics by Kind:
 //
 //	PUBLIC         — visible to anyone (federated when ActivityPub lands).
-//	                 target_id / actor_ptids / base_kind: unused.
+//	                 target / actor_ptids / base_kind: unused.
 //	FOLLOWERS      — visible to author's followers + author. unused: as PUBLIC.
 //	FRIENDS        — visible to accepted Social relationship peers + author.
-//	                 target_id / actor_ptids / base_kind: unused.
-//	CIRCLE         — visible to members of `target_id` circle (publisher-owned).
-//	                 target_id required.
-//	GROUP          — visible to members of `target_id` chat.Group.
-//	                 target_id required.
+//	                 target / actor_ptids / base_kind: unused.
+//	CIRCLE         — visible to members of `circle_id` (publisher-owned).
+//	                 circle_id required.
+//	GROUP          — visible to members of `group_conversation_id`.
+//	                 group_conversation_id required.
 //	SELF           — author-only (private note). all others unused.
 //	CUSTOM_ALLOW   — visible only to `actor_ptids`. allow_list, length>=1.
 //	                 base_kind: unused (the list IS the rule).
 //	CUSTOM_DENY    — visible per `base_kind` MINUS `actor_ptids`. base_kind
-//	                 MUST be PUBLIC or FOLLOWERS, actor_ptids MUST be non-empty.
+//	                 MUST be FOLLOWERS, actor_ptids MUST be non-empty.
 type Audience struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Kind  Audience_Kind          `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.social.v1.Audience_Kind" json:"kind,omitempty"`
-	// Required iff kind == CIRCLE or GROUP.
-	TargetId uint64 `protobuf:"varint,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	// Types that are valid to be assigned to Target:
+	//
+	//	*Audience_CircleId
+	//	*Audience_GroupConversationId
+	Target isAudience_Target `protobuf_oneof:"target"`
 	// Required iff kind == CUSTOM_ALLOW or CUSTOM_DENY.
 	ActorPtids []string `protobuf:"bytes,3,rep,name=actor_ptids,json=actorPtids,proto3" json:"actor_ptids,omitempty"`
 	// ONLY meaningful when kind == CUSTOM_DENY: the base set the deny list
-	// is subtracted from. MUST be PUBLIC or FOLLOWERS. For all other Kinds
+	// is subtracted from. MUST be FOLLOWERS. For all other Kinds
 	// this field is silently ignored.
 	BaseKind      Audience_Kind `protobuf:"varint,4,opt,name=base_kind,json=baseKind,proto3,enum=peers_touch.model.social.v1.Audience_Kind" json:"base_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -4778,11 +4781,29 @@ func (x *Audience) GetKind() Audience_Kind {
 	return Audience_KIND_UNSPECIFIED
 }
 
-func (x *Audience) GetTargetId() uint64 {
+func (x *Audience) GetTarget() isAudience_Target {
 	if x != nil {
-		return x.TargetId
+		return x.Target
+	}
+	return nil
+}
+
+func (x *Audience) GetCircleId() uint64 {
+	if x != nil {
+		if x, ok := x.Target.(*Audience_CircleId); ok {
+			return x.CircleId
+		}
 	}
 	return 0
+}
+
+func (x *Audience) GetGroupConversationId() string {
+	if x != nil {
+		if x, ok := x.Target.(*Audience_GroupConversationId); ok {
+			return x.GroupConversationId
+		}
+	}
+	return ""
 }
 
 func (x *Audience) GetActorPtids() []string {
@@ -4798,6 +4819,24 @@ func (x *Audience) GetBaseKind() Audience_Kind {
 	}
 	return Audience_KIND_UNSPECIFIED
 }
+
+type isAudience_Target interface {
+	isAudience_Target()
+}
+
+type Audience_CircleId struct {
+	// Required iff kind == CIRCLE.
+	CircleId uint64 `protobuf:"varint,2,opt,name=circle_id,json=circleId,proto3,oneof"`
+}
+
+type Audience_GroupConversationId struct {
+	// Required iff kind == GROUP.
+	GroupConversationId string `protobuf:"bytes,6,opt,name=group_conversation_id,json=groupConversationId,proto3,oneof"`
+}
+
+func (*Audience_CircleId) isAudience_Target() {}
+
+func (*Audience_GroupConversationId) isAudience_Target() {}
 
 // Aggregated reaction count for a single ReactionKind on a Post.
 type ReactionSummary struct {
@@ -5686,10 +5725,11 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\n" +
 	"\b_comment\"K\n" +
 	"\x0eRepostResponse\x129\n" +
-	"\x06repost\x18\x01 \x01(\v2!.peers_touch.model.social.v1.PostR\x06repost\"\xf1\x02\n" +
+	"\x06repost\x18\x01 \x01(\v2!.peers_touch.model.social.v1.PostR\x06repost\"\xbe\x03\n" +
 	"\bAudience\x12>\n" +
-	"\x04kind\x18\x01 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\x04kind\x12\x1b\n" +
-	"\ttarget_id\x18\x02 \x01(\x04R\btargetId\x12\x1f\n" +
+	"\x04kind\x18\x01 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\x04kind\x12\x1d\n" +
+	"\tcircle_id\x18\x02 \x01(\x04H\x00R\bcircleId\x124\n" +
+	"\x15group_conversation_id\x18\x06 \x01(\tH\x00R\x13groupConversationId\x12\x1f\n" +
 	"\vactor_ptids\x18\x03 \x03(\tR\n" +
 	"actorPtids\x12G\n" +
 	"\tbase_kind\x18\x04 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\bbaseKind\"\x88\x01\n" +
@@ -5704,7 +5744,8 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x04SELF\x10\x05\x12\x10\n" +
 	"\fCUSTOM_ALLOW\x10\x06\x12\x0f\n" +
 	"\vCUSTOM_DENY\x10\a\x12\v\n" +
-	"\aFRIENDS\x10\bJ\x04\b\x05\x10\x06R\rkey_envelopes\"\x92\x01\n" +
+	"\aFRIENDS\x10\bB\b\n" +
+	"\x06targetJ\x04\b\x05\x10\x06R\rkey_envelopesR\ttarget_id\"\x92\x01\n" +
 	"\x0fReactionSummary\x12=\n" +
 	"\x04kind\x18\x01 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\x12*\n" +
@@ -6003,6 +6044,10 @@ func file_domain_social_post_proto_init() {
 	}
 	file_domain_social_post_proto_msgTypes[25].OneofWrappers = []any{}
 	file_domain_social_post_proto_msgTypes[54].OneofWrappers = []any{}
+	file_domain_social_post_proto_msgTypes[56].OneofWrappers = []any{
+		(*Audience_CircleId)(nil),
+		(*Audience_GroupConversationId)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
