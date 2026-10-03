@@ -1,8 +1,8 @@
 # Modern Chat Agent
 
 > **Status**: product-accepted / design-accepted / execution-active
-> **Version**: v1.3
-> **Created**: 2026-07-30 | **Updated**: 2026-10-01
+> **Version**: v1.4
+> **Created**: 2026-07-30 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `packages/agent-catalog/`,
 > `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
@@ -27,6 +27,8 @@ It defines:
 - Home Command Center, unified Tool/MCP/Connector capability governance, and
   user-visible Evaluation Lab.
 - Platform-neutral client capabilities for Desktop and future Mobile.
+- Station-owned MCP configuration with explicit Station-local or
+  Desktop-local execution.
 - Architecture quality gates required before execution planning.
 
 It does not define:
@@ -147,3 +149,9 @@ MCA-D29: a provider-neutral Station session lifecycle with conditional
 advertisement, exact-session resume, explicit reset, epoch fencing, and
 cleanup. Production implementation and all V2 product Gates remain
 `UNPROVEN`.
+
+On 2026-10-03 the Owner corrected the MCP topology through MCA-D16A: Station
+owns MCP catalog/configuration truth and each Server/Tool manifest pins either
+a Station-local or Desktop-local executor independently of transport. The
+dual-runtime implementation and proof remain `UNPROVEN` until the current
+execution plan closes.

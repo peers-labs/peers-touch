@@ -1,8 +1,8 @@
 # Modern Chat Agent — Design Decisions
 
 > **Status**: approved
-> **Version**: v1.4
-> **Created**: 2026-07-30 | **Updated**: 2026-10-01
+> **Version**: v1.5
+> **Created**: 2026-07-30 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -28,7 +28,8 @@
 | MCA-D14 | Project Home from Station-owned work state | approved |
 | MCA-D15 | Use one versioned capability manifest and Agent binding contract | approved |
 | MCA-D15K | Make Knowledge resources versioned capability dependencies | approved |
-| MCA-D16 | Model MCP lifecycle as Station operations executed by client capability managers | approved |
+| MCA-D16 | Model MCP lifecycle as Station operations executed by client capability managers | superseded by MCA-D16A |
+| MCA-D16A | Make MCP configuration Station-owned and execution-location explicit | approved |
 | MCA-D17 | Separate Connector OAuth/resources from Agent tool manifests and bindings | approved |
 | MCA-D18 | Make Evaluation a Station aggregate using the canonical Turn kernel | approved |
 | MCA-D19 | Dispatch device-local ToolCalls through a Station-issued fenced execution envelope | approved |
@@ -824,7 +825,7 @@ package dependency, and local-resource negative-control tests.
 
 ## MCA-D16: Station Capability Operations, Client MCP Execution
 
-**Status**: approved
+**Status**: superseded by MCA-D16A
 
 ### Context
 
@@ -863,6 +864,84 @@ and auditable.
 
 Remote MCP may use a Station executor, but must preserve the same operation
 contract.
+
+## MCA-D16A: Station-Owned MCP Configuration With Explicit Execution Location
+
+**Status**: approved
+
+### Context
+
+MCP transport and MCP execution location are independent. A stdio server can be
+local to Desktop Rust or local to a remote Station runtime. The prior design
+collapsed all MCP work into one Desktop-owned `mcp.invoke` capability, forcing
+a Station-owned Agent loop to depend on a Desktop round trip even when the
+server belongs beside the Agent runtime.
+
+The existing ToolCall contract already supports concrete
+`STATION` and `CLIENT_CAPABILITY` execution owners. The missing contract is a
+Station-owned MCP Server catalog that resolves one owner before admission.
+
+### Decision
+
+Station owns actor-scoped MCP Server identity, sanitized configuration,
+revision, enabled state, discovered Tool manifests, Agent bindings, readiness,
+operations, ToolCalls, results, and audit. Every Server declares exactly one
+execution owner:
+
+- `STATION`: stdio executes inside the Station runtime; HTTP/SSE originates
+  from Station.
+- `CLIENT_CAPABILITY`: stdio executes inside Desktop Rust; HTTP/SSE originates
+  from that Desktop runtime and requires the pinned capability session.
+
+Transport never selects or overrides execution owner. Every discovered MCP
+Tool is published as its own immutable `CapabilityManifest`, inheriting the
+Server execution owner and Server revision. A Turn pins that manifest,
+binding, readiness snapshot, and concrete owner before provider execution.
+
+Raw secrets and process state remain local to the declared executor. Station
+stores secret references and redacted projections. Desktop persists only the
+secret material and runtime state required by `CLIENT_CAPABILITY` Servers; it
+does not maintain a second MCP catalog.
+
+Station-owned lifecycle operations and invocations use the existing Station
+execution claim/receipt/continuation path. Client-owned work uses the existing
+device-authenticated capability operation/request/receipt path.
+
+### Rationale
+
+This keeps Agent business truth and routing decisions next to the Station Agent
+kernel, preserves device-local security boundaries, and allows Station-local
+MCP to continue while Desktop is offline. Reusing the existing two-owner
+ToolCall machinery avoids a third MCP-specific dispatch protocol.
+
+### Alternatives Considered
+
+- Keep every MCP in Desktop: rejected because it creates a
+  Station-to-Desktop-to-Station dependency and makes remote Agent execution
+  depend on an online UI device.
+- Move every MCP to Station: rejected because Desktop files, credentials, and
+  device processes are not Station resources.
+- Infer owner from `stdio` versus HTTP/SSE: rejected because either transport
+  can be local to either runtime.
+- Let the model pass an owner in Tool arguments: rejected because model output
+  cannot override manifest, binding, readiness, or policy.
+
+### Consequences
+
+- The generic Desktop-only `local_mcp` manifest and guidance are removed.
+- MCP Server mutations publish/retire per-Tool manifests transactionally.
+- Desktop startup no longer injects a private MCP tool inventory into Turn
+  requests.
+- Station-local MCP lifecycle and invocation do not create a client lease,
+  target device, or client receipt.
+- Owner changes create a new Server revision and invalidate old readiness;
+  in-flight ToolCalls retain their pinned owner.
+
+### Review Condition
+
+Acceptance must prove Desktop-local stdio, Station-local stdio, owner-pinned
+dispatch, secret redaction, and Station-local success while the Desktop
+executor is offline.
 
 ## MCA-D17: Connector Resource To Tool Manifest
 

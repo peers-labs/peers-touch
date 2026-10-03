@@ -1,8 +1,8 @@
 # Agent 设计决策
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-02 | **Updated**: 2026-10-02
+> **Version**: v1.1
+> **Created**: 2026-10-02 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -13,7 +13,8 @@
 |---|---|---|
 | MCA-D14 | Home 工作状态由 Station 投影 | accepted |
 | MCA-D15 | 使用统一能力清单与 Agent 绑定 | accepted |
-| MCA-D16 | Station 管理能力操作，客户端执行本机 MCP | accepted |
+| MCA-D16 | Station 管理能力操作，客户端执行本机 MCP | superseded by MCA-D16A |
+| MCA-D16A | MCP 配置归 Station，执行服从显式运行位置 | accepted |
 | MCA-D17 | Connector 资源与 Agent 工具清单分离 | accepted |
 | MCA-D18 | Evaluation 使用 Station 聚合 | accepted |
 | MCA-D20 | 使用发布者签名 catalog 与权威读回 | accepted |
@@ -72,7 +73,7 @@ Builtin tool、Skill、MCP、Connector 与本机能力曾使用不同标识和 r
 
 ## MCA-D16: Station 管理能力操作，客户端执行本机 MCP
 
-**Status**: accepted
+**Status**: superseded by MCA-D16A
 **Date**: 2026-08-17
 
 ### Context
@@ -94,6 +95,59 @@ Station 创建和推进 ToolCall；Desktop 在能力会话内执行 MCP 并回�
 ### Consequences
 
 执行回执必须具备 actor、device、attempt 和 ToolCall lineage。
+
+## MCA-D16A: MCP 配置归 Station，执行服从显式运行位置
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+MCP 是 Agent 能力，不等同于 Desktop 设备能力。现有实现把统一
+`mcp.invoke` manifest 固定为客户端执行，导致 Station 上运行的 Agent 调用
+Station-local stdio MCP 时必须绕行 Desktop，也无法在 Desktop 离线时继续。
+
+### Decision
+
+Station 持有 actor-scoped MCP Server 配置目录、版本、tool manifest、
+Agent binding、readiness、ToolCall、operation 和 audit 真源。每个 Server
+显式声明 `STATION` 或 `CLIENT_CAPABILITY` execution owner；`stdio`、
+`http`、`sse` 只描述 transport，不决定 owner。
+
+- `STATION` Server 在 Station 运行时启动本地 stdio 进程或访问 Station
+  可达的 HTTP/SSE endpoint，复用 Station ToolCall claim、receipt 和
+  continuation。
+- `CLIENT_CAPABILITY` Server 在 Desktop Rust 运行时启动本地 stdio
+  进程或访问 Desktop 可达的 HTTP/SSE endpoint，复用现有 capability
+  session、fencing 和 receipt。
+- secret material 和进程状态留在执行位置；Station 配置只持有 secret
+  reference 和脱敏投影。
+- 每个已发现 MCP tool 发布独立、版本化 manifest，并在 Turn admission
+  前固定 execution owner；模型参数和客户端不得改写 owner。
+
+### Rationale
+
+这使 Agent 在 Station 就近执行可共享的 MCP，同时保留 Desktop 设备资源的
+本地安全边界，并让两种执行路径共享同一治理、审计和恢复协议。
+
+### Alternatives Considered
+
+- 所有 MCP 固定在 Desktop：拒绝，因为 Station Agent 会产生
+  Station → Desktop → Station 的反向依赖，且 Desktop 离线即失效。
+- 所有 MCP 固定在 Station：拒绝，因为设备文件、桌面凭证和用户本机进程不应
+  搬到远端 Station。
+- 根据 transport 或 ToolCall 参数临时选择 owner：拒绝，因为会绕过 manifest
+  binding/readiness，并使同一调用的审计身份不稳定。
+
+### Consequences
+
+- Desktop MCP store 不再是目录/config 真源，只保留
+  `CLIENT_CAPABILITY` secret material 与运行时进程状态。
+- Station 增加 MCP Server 配置、tool discovery 和 Station executor。
+- 旧 `local_mcp` 通用 manifest/guidance 必须删除，不能与逐 Server/Tool
+  manifest 并存。
+- Station-local stdio 的命令与文件路径相对 Station 运行环境解释；Desktop
+  路径绝不透传。
 
 ## MCA-D17: Connector 资源与 Agent 工具清单分离
 
