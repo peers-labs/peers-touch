@@ -16,6 +16,7 @@ import {
   isAccessBlocked,
   isAccessGranted,
   isInviteCodeGate,
+  isLoginGate,
   type AccessDecision,
 } from '../../services/accessGate';
 import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
@@ -81,6 +82,7 @@ export function LoginPage({
   const accessStart = useSessionStore(s => s.accessStart);
   const accessSubmitInviteCode = useSessionStore(s => s.accessSubmitInviteCode);
   const accessSubmitLogin = useSessionStore(s => s.accessSubmitLogin);
+  const accessCancel = useSessionStore(s => s.accessCancel);
 
   // ── Determine initial state ──
   const hasValidRestoredUser = !!(restoredUser && restoredUser.name && restoredUser.name !== 'User');
@@ -237,8 +239,15 @@ export function LoginPage({
 
   // ── Gate chain ──
 
-  const finishLoginGate = useCallback(async (attemptId: string) => {
-    await accessSubmitLogin(attemptId, emailRef.current, passwordRef.current);
+  const finishLoginGate = useCallback(async (decision: AccessDecision) => {
+    const gate = currentGate(decision);
+    if (!gate || !isLoginGate(gate)) throw new Error('auth.gate.unsupported');
+    await accessSubmitLogin(
+      decision.attemptId,
+      gate,
+      emailRef.current,
+      passwordRef.current,
+    );
     setGateDecision(null);
     setGateInviteCode('');
     await continueAfterFreshAuth();
@@ -570,7 +579,7 @@ export function LoginPage({
         setGateInviteCode('');
         return;
       }
-      await finishLoginGate(decision.attemptId);
+      await finishLoginGate(decision);
     } catch (err: unknown) {
       message.error(errorMessage(err, t('auth.login.failed')));
     }
@@ -583,7 +592,9 @@ export function LoginPage({
     setGateLoading(true);
     setGateError('');
     try {
-      const decision = await accessSubmitInviteCode(gateDecision.attemptId, code);
+      const gate = currentGate(gateDecision);
+      if (!gate || !isInviteCodeGate(gate)) throw new Error('auth.gate.unsupported');
+      const decision = await accessSubmitInviteCode(gateDecision.attemptId, gate, code);
       if (isAccessBlocked(decision)) {
         setGateError(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
         setGateDecision(decision);
@@ -602,7 +613,7 @@ export function LoginPage({
         return;
       }
       if (isAccessGranted(decision) || !isInviteCodeGate(currentGate(decision))) {
-        await finishLoginGate(gateDecision.attemptId);
+        await finishLoginGate(decision);
         return;
       }
       setGateDecision(decision);
@@ -635,6 +646,8 @@ export function LoginPage({
           await continueAfterFreshAuth();
           return;
         }
+      } else if (gateDecision?.attemptId) {
+        await accessCancel(gateDecision.attemptId);
       }
       setGateDecision(null);
       setGateInviteCode('');
@@ -644,8 +657,10 @@ export function LoginPage({
       setGateLoading(false);
     }
   }, [
+    accessCancel,
     cancelOAuthAccountLogin,
     continueAfterFreshAuth,
+    gateDecision?.attemptId,
     onLoginWithOAuthBridge,
     pendingOAuthSessionId,
     t,

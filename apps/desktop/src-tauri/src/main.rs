@@ -591,6 +591,8 @@ fn main() {
             auth::access_start,
             auth::access_submit_invite_code,
             auth::access_submit_login,
+            auth::access_decision,
+            auth::access_cancel,
             auth::auth_logout,
             #[cfg(feature = "acceptance-webdriver")]
             auth::acceptance_logout_window_session,

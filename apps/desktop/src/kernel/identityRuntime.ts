@@ -410,6 +410,7 @@ class IdentityRuntime {
     const gate = currentGate(decision);
     if (
       !decision.attemptId
+      || !gate
       || !isAccessActionRequired(decision)
       || !isLoginGate(gate)
     ) {
@@ -424,7 +425,7 @@ class IdentityRuntime {
         },
       });
     }
-    await session.accessSubmitLogin(decision.attemptId, account, password);
+    await session.accessSubmitLogin(decision.attemptId, gate, account, password);
     await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
   };
 
