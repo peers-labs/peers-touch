@@ -6,6 +6,7 @@ import (
 	"time"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/session"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
@@ -17,7 +18,7 @@ func TestPrepareOAuthSessionIncludesCanonicalActorRef(t *testing.T) {
 	})
 	actor := credentialTestActor()
 
-	_, response, err := PrepareOAuthSession(
+	record, response, err := PrepareOAuthSession(
 		context.Background(),
 		actor,
 		OAuthSessionBinding{
@@ -25,6 +26,7 @@ func TestPrepareOAuthSessionIncludesCanonicalActorRef(t *testing.T) {
 			AccessAttemptID:        "attempt-1",
 			StationPeerID:          "station-1",
 			AccessDecisionRevision: 1,
+			DeviceType:             session.DeviceTypeDesktop,
 			DeviceID:               "device-1",
 			LifecycleGeneration:    1,
 		},
@@ -32,6 +34,9 @@ func TestPrepareOAuthSessionIncludesCanonicalActorRef(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("PrepareOAuthSession() error = %v", err)
+	}
+	if got, want := record.DeviceType, session.DeviceTypeDesktop; got != want {
+		t.Fatalf("device type = %q, want %q", got, want)
 	}
 	assertCredentialActorRef(t, response.GetActorRef())
 }

@@ -492,6 +492,7 @@ Current project skills:
 | `pt-github-release` | Semantic versioning, changelog generation, GitHub Release creation |
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
+| `pt-oauth2-client-2-vercel` | Publish and verify the OAuth2 Client on Vercel with fail-closed provider, environment, callback, and persistence checks |
 | `pt-plan-and-document` | Persist accepted models into canonical docs/Plan Packages, validate them, and create or advance the workspace Plan generation |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |

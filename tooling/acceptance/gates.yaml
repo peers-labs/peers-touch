@@ -15,6 +15,13 @@
       "tier": "ci-cheap",
       "description": "Validate transaction-owned provider denial routing, GitHub verified-primary email normalization, provider-scoped no-email identity, and Station actor-binding conflict behavior."
     },
+    "oauth2-client-vercel-publication": {
+      "command": "sh -c 'cd apps/oauth2-client && go test ./... && cd ../.. && python3 -m unittest discover -s tooling/skills/pt-oauth2-client-2-vercel/tests -p \"test_*.py\" && python3 tooling/skills/pt-oauth2-client-2-vercel/scripts/verify_deployment.py --self-test'",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the OAuth2 Client Vercel publication workflow with source/provider discovery, redacted fixture preflight, stdin-only environment sync, HTTP contract checks, run-bound signed callback verification, admin login deltas, and authenticated encrypted-envelope verification without claiming live Vercel traffic."
+    },
     "oauth-login-broker-durable-login": {
       "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope durable-login",
       "timeout_seconds": 600,
