@@ -1,8 +1,8 @@
 # W12D Source Owner Amendment Review
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-28
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Architecture Team
 
 ## Review Scope
@@ -14,6 +14,8 @@ Review the mechanical W12D source-owner correction in:
 - `tooling/development/secure_content/schema_activation.py`
 - `tooling/development/secure_content/test_schema_activation.py`
 - `tooling/development/secure_content/test_work_item.py`
+- `tooling/scripts/local-dev/dev-work-schema.mjs`
+- `tooling/scripts/local-dev/dev-work.test.mjs`
 - `apps/station/app/subserver/social/infrastructure/secure_content_reset_types.go`
 - Station maintenance and reset regression tests covering that allowlist
 
@@ -35,19 +37,39 @@ Review the mechanical W12D source-owner correction in:
 5. W12D owns only the minimum activation-owner source and regression files.
 6. No product Journey or formal Acceptance claim is added.
 7. Push and pull-request authorization remain denied.
+8. The closed runtime-resource kind set accepts the canonical Development
+   Workflow resources without weakening unknown-kind rejection.
+9. Table-driven parser coverage exercises every canonical runtime-resource
+   kind plus one rejected unknown kind.
 
 ## Validation
 
 - `make plan-validate PLAN=docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/plan.md`
 - `python3 -m unittest tooling.development.secure_content.test_schema_activation tooling.development.secure_content.test_work_item`
+- `node --test tooling/scripts/local-dev/dev-work.test.mjs`
 - `git diff --check`
+
+## v1.2 Review Request
+
+Review the narrow W12D source amendment that synchronizes the canonical closed
+runtime-resource kind set and adds its parser regression coverage. Product,
+deployment, reset, and Acceptance semantics are unchanged.
+
+**Review status**: PASS
+
+Evidence:
+
+- Canonical runtime-kind schema matches the Development Workflow owner.
+- All 16 runtime kinds plus unknown-kind rejection have parser coverage.
+- `node --test tooling/scripts/local-dev/dev-work.test.mjs`: 20 PASS.
+- Plan validation, W12D work-item scope tests, and `git diff --check`: PASS.
 
 ## Reviewer Output
 
 Return `PASS`, `CONDITIONAL_PASS`, or `HOLD`, followed by source-backed
 findings ordered by severity.
 
-## Review Result
+## v1.1 Review Result
 
 **Verdict**: PASS
 

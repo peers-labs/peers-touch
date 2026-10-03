@@ -235,6 +235,10 @@ def write_manifest(
     lease_window_from_manifest: bool = False,
 ) -> Path:
     fixture = fixture_payload()
+    schema_workspace_id = payload["source"].get(
+        "source_evidence_workspace_id",
+        payload["source"]["workspace_id"],
+    )
     fixture_path = root / payload["fixture_manifest_ref"]["path"]
     fixture_path.parent.mkdir(parents=True, exist_ok=True)
     fixture_bytes = json.dumps(
@@ -302,7 +306,7 @@ def write_manifest(
             "reset_id": f"reset-{service['profile_id']}",
             "reset_intent": "SCHEMA_ACTIVATION",
             "source_commit": payload["source"]["commit"],
-            "workspace_id": payload["source"]["workspace_id"],
+            "workspace_id": schema_workspace_id,
             "profile_id": service["profile_id"],
             "deployment_environment": service["deployment_environment"],
             "destructive_scope": (
@@ -371,7 +375,7 @@ def write_manifest(
         schema_attestation = {
             "schema_version": 1,
             "source_commit": payload["source"]["commit"],
-            "workspace_id": payload["source"]["workspace_id"],
+            "workspace_id": schema_workspace_id,
             "profile_id": service["profile_id"],
             "deployment_environment": service["deployment_environment"],
             "destructive_scope": reset_manifest["destructive_scope"],
@@ -553,6 +557,60 @@ def load(
 
 
 class RuntimeManifestV3Test(unittest.TestCase):
+    def test_accepts_schema_provenance_from_explicit_source_workspace(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            payload = manifest_payload()
+            payload["source"]["source_evidence_workspace_id"] = (
+                "source-evidence-workspace"
+            )
+            binding = load(write_manifest(Path(temp), payload))
+
+            self.assertEqual(
+                "source-evidence-workspace",
+                binding.payload["source"]["source_evidence_workspace_id"],
+            )
+
+    def test_post_cut_binding_is_closed_and_optional(self) -> None:
+        bindings = {
+            profile: {
+                "result_digest": digest(f"result:{profile}"),
+                "reset_id": f"reset-{profile}",
+                "schema_attestation_digest": digest(f"schema:{profile}"),
+                "station_runtime_identity": f"runtime-{profile}",
+            }
+            for profile in ("four", "fiveArm")
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            payload = manifest_payload()
+            payload["post_cut_epoch_id"] = "post-cut-epoch"
+            payload["final_cut_bindings"] = bindings
+            path = write_manifest(root, payload)
+
+            loaded = load(path)
+
+            self.assertEqual(
+                "post-cut-epoch",
+                loaded.payload["post_cut_epoch_id"],
+            )
+            self.assertEqual(bindings, loaded.payload["final_cut_bindings"])
+
+        for missing in ("post_cut_epoch_id", "final_cut_bindings"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                payload = manifest_payload()
+                payload["post_cut_epoch_id"] = "post-cut-epoch"
+                payload["final_cut_bindings"] = bindings
+                payload.pop(missing)
+                path = write_manifest(root, payload)
+                with self.assertRaisesRegex(
+                    runtime_manifest.RuntimeManifestError,
+                    "must be declared together",
+                ):
+                    load(path)
+
     def test_rfc3339_nano_accepts_variable_fractional_precision(self) -> None:
         parsed = runtime_manifest._timestamp_for_code(
             "2026-09-20T18:34:17.98966Z",

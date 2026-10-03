@@ -26,6 +26,14 @@
       "notes": "Structurally onboarded managed domain. Required product proof uses same-Station iOS Simulator cells; cross-Station/Relay, Android, and physical-device scope remains UNPROVEN."
     },
     {
+      "id": "social",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/social.yaml",
+      "capabilities": "tooling/acceptance/capabilities/social.yaml",
+      "coverage": "managed_domain",
+      "notes": "Private Moments managed domain. Formal proof is bounded to Native Desktop; Browser private access, Mobile parity, and positive cross-Station private delivery remain UNPROVEN."
+    },
+    {
       "id": "applet",
       "status": "active",
       "profile": "tooling/acceptance/domains/applet.yaml",

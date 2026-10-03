@@ -56,13 +56,17 @@ def reviewed_remote_transport(
 def open_reviewed_remote_tunnel(
     deploy_environment: str,
     *,
+    remote_host: str = "127.0.0.1",
     remote_port: int,
+    local_port: int | None = None,
     timeout: float = 10,
 ) -> SshTunnel:
     transport, _environment = _reviewed_remote_transport(deploy_environment)
     try:
         return transport.start_local_forward(
+            remote_host=remote_host,
             remote_port=remote_port,
+            local_port=local_port,
             timeout=timeout,
         )
     except ProvisioningError as error:

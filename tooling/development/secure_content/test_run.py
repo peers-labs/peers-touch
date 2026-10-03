@@ -541,6 +541,71 @@ class SecureContentRunnerTest(unittest.TestCase):
             digest = content.pop("resultDigest")
             self.assertEqual(digest, run._canonical_digest(content))
 
+    def test_w12_result_copies_post_cut_manifest_binding(self) -> None:
+        selected = run.ScenarioDefinition(
+            scenario_id="w12-post-cut-result",
+            journey_id="sc-dj-runtime-manifest-v3",
+            work_item_id="secure-content-w7r",
+            runtimes=frozenset({"desktop"}),
+            evidence_path=Path("legacy/result.json"),
+            execute=lambda _: {"observations": {"receiverVisible": True}},
+            result_prefix=Path("W12/product"),
+            result_task_id="W12",
+            result_workstream_id="W12",
+            result_variant="desktop",
+        )
+        final_cut_bindings = {
+            profile: {
+                "result_digest": manifest_fixtures.digest(
+                    f"result:{profile}"
+                ),
+                "reset_id": f"reset-{profile}",
+                "schema_attestation_digest": manifest_fixtures.digest(
+                    f"schema:{profile}"
+                ),
+                "station_runtime_identity": f"runtime-{profile}",
+            }
+            for profile in ("four", "fiveArm")
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            payload = v3_payload()
+            payload["post_cut_epoch_id"] = "post-cut-epoch"
+            payload["final_cut_bindings"] = final_cut_bindings
+            manifest_path = write_v3_manifest(root, payload)
+
+            result = run.execute_scenario(
+                runtime="desktop",
+                scenario_id=selected.scenario_id,
+                budget_seconds=10,
+                repo_root=REPO_ROOT,
+                profiles=("four", "fiveArm"),
+                clients=("desktop-alice",),
+                runtime_manifest_path=manifest_path,
+                result_root=root / "results",
+                registry={selected.scenario_id: selected},
+                workspace_identity=IDENTITY,
+                command_runner=control_plane_runner(selected),
+            )
+
+            self.assertEqual("post-cut-epoch", result["postCutEpochId"])
+            self.assertEqual(
+                {
+                    profile: {
+                        "resultDigest": binding["result_digest"],
+                        "resetId": binding["reset_id"],
+                        "schemaAttestationDigest": binding[
+                            "schema_attestation_digest"
+                        ],
+                        "stationRuntimeIdentity": binding[
+                            "station_runtime_identity"
+                        ],
+                    }
+                    for profile, binding in final_cut_bindings.items()
+                },
+                result["finalCutBindings"],
+            )
+
     def test_rejects_result_root_inside_repository(self) -> None:
         selected = scenario(runtime_name="service")
         with self.assertRaisesRegex(run.RunnerError, "outside the repository"):

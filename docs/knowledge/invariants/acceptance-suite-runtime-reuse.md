@@ -48,6 +48,12 @@ the required UI action and receiver-visible assertion. Scenarios must not clear
 client state before returning; the Suite owner performs inter-scenario reset
 after evidence capture and final cleanup after the last Scenario.
 
+Child results remain unpublished in an owner-private transaction area until
+every Scenario has completed its UI action and receiver assertion, final
+cleanup has succeeded, and the Suite Runtime report is valid. The Suite owner
+then publishes the complete result generation atomically. A failed or retried
+Suite must expose no partial child set at the aggregate-visible path.
+
 Harness and API observations are supporting evidence only. A required UI action
 or receiver-visible assertion cannot be satisfied by directly invoking a
 Harness action, reading a private Store, or checking only an API response.
@@ -84,6 +90,8 @@ For a completed runtime Suite, pass every immutable report through
 - every declared Scenario has `ui-action`, `receiver-assertion`, and
   `scenario-end`;
 - no Scenario clears client state before its UI evidence is captured;
+- a failed Suite leaves no aggregate-visible child results, and retries cannot
+  create duplicate child results for one generation;
 - the final event is `cleanup-complete`.
 
 Any missing or invalid runtime report keeps lifecycle proof `UNPROVEN`.

@@ -31,7 +31,8 @@ use self::private_comment::{
     PrivateCommentOrchestrator, PrivateCommentSubmitInput,
 };
 use self::private_moment::{
-    PrivateMomentOrchestrator, PrivateMomentPublishIntent, PrivateRecoveryFailureKind,
+    pending_device_recovery_projection, PrivateMomentOrchestrator, PrivateMomentPublishIntent,
+    PrivateRecoveryFailureKind,
 };
 
 #[cfg(feature = "acceptance-webdriver")]
@@ -350,6 +351,22 @@ pub fn social_private_moment_read(
         Ok(lease) => lease,
         Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
     };
+    let recovery_pending = match state.messaging_engines.get(&lease.session.account_id) {
+        Ok(Some(engine)) => match engine.store().pending_device_enrollment() {
+            Ok(pending) => pending.is_some(),
+            Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+        },
+        Ok(None) => {
+            return native_failure(
+                "secure content requires an active messaging engine".to_string(),
+                "AUTHENTICATION_REQUIRED",
+            )
+        }
+        Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+    };
+    if recovery_pending {
+        return AppResult::success(json!(pending_device_recovery_projection(&input.post_id)));
+    }
     let authority_key = lease.session.key.clone();
     let revoke_media = |path: &Path| {
         state
@@ -440,7 +457,7 @@ pub fn social_private_moment_recover(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let lease = match lease_for_window(
+    let lease = match recovery_lease_for_window(
         state.inner(),
         &window,
         &input.actor_ptid,
@@ -771,6 +788,26 @@ fn lease_for_window(
         );
     }
     Ok(lease)
+}
+
+fn recovery_lease_for_window(
+    state: &AppState,
+    window: &Window,
+    actor_ptid: &str,
+    renderer_generation: u64,
+) -> Result<SecureContentLease, String> {
+    let lease = lease_for_window(state, window, actor_ptid, renderer_generation)?;
+    let engine = state
+        .messaging_engines
+        .get(&lease.session.account_id)?
+        .ok_or_else(|| "secure content recovery requires an active messaging engine".to_string())?;
+    if engine.endpoint().ptid != actor_ptid {
+        return Err("secure content recovery device identity does not match the actor".to_string());
+    }
+    if engine.endpoint().device_id == lease.session.key.device_id {
+        return Ok(lease);
+    }
+    activate(state, window, actor_ptid, renderer_generation)
 }
 
 fn native_failure(message: String, state: &str) -> AppResult<Value> {

@@ -11,6 +11,7 @@ import {
   ReactionKind,
 } from '../../gen/proto/domain/social/post_pb';
 import {
+  FriendRequestState,
   SocialRelationshipCommandResultKind,
 } from '../../gen/proto/domain/social/relationship_pb';
 import { privateMomentsNative } from '../../services/privateMomentsNative';
@@ -509,6 +510,35 @@ describe('Moments acceptance harness', () => {
       (result as { actorPtidSha256: string }).actorPtidSha256,
     ).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(result)).not.toContain('ptid:test:alice');
+  });
+
+  it('reads the authoritative mutual-friendship projection', async () => {
+    vi.mocked(api.socialFriendRequestList).mockResolvedValue({
+      requests: [{
+        requestId: 'friend-request-1',
+        sender: { ptid: 'ptid:test:alice' },
+        receiver: { ptid: 'ptid:test:bob' },
+        state: FriendRequestState.ACCEPTED,
+      }],
+      total: 1,
+    } as never);
+
+    const result = await harness().friendshipProjection({
+      actorPtid: 'ptid:test:bob',
+    });
+
+    expect(api.socialFriendRequestList).toHaveBeenCalledWith(
+      FriendRequestState.ACCEPTED,
+      100,
+      0,
+    );
+    expect(result).toMatchObject({
+      accepted: true,
+    });
+    expect(
+      (result as { actorPtidSha256: string }).actorPtidSha256,
+    ).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(result)).not.toContain('ptid:test:bob');
   });
 
   it('keeps private draft plaintext and paths out of returned evidence', async () => {
