@@ -10,7 +10,7 @@
 Review proposed `SC-D21` in:
 
 - `docs/architecture/secure-content/decisions.md`
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/secure-content/data-model.md`
 - `docs/architecture/secure-content/integration.md`
 - `docs/architecture/secure-content/operations.md`

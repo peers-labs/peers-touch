@@ -28,7 +28,7 @@ establish any W7-W12 `FUNCTIONAL_PASS` or W13 formal Acceptance result.
 Review proposed `SC-D22` and `SC-D23` in:
 
 - `docs/architecture/secure-content/decisions.md`
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/secure-content/data-model.md`
 - `docs/architecture/secure-content/integration.md`
 - `docs/architecture/secure-content/operations.md`
