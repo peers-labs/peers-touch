@@ -52,6 +52,46 @@
       }
     },
     {
+      "id": "oauth-login-broker-publication",
+      "domain": "oauth-login-broker",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "oauth2-client-vercel-publication"
+      ],
+      "required_gates": [
+        "oauth2-client-vercel-publication"
+      ],
+      "synthetic_paths": [
+        "apps/oauth2-client/cmd/verify-record-envelopes/main.go",
+        "apps/oauth2-client/vercel.json",
+        "tooling/skills/pt-oauth2-client-2-vercel/scripts/preflight.py",
+        "tooling/skills/pt-oauth2-client-2-vercel/scripts/sync_vercel_env.py",
+        "tooling/skills/pt-oauth2-client-2-vercel/scripts/verify_deployment.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "OAuth2 Client provider source and tests",
+          "pt-oauth2-client-2-vercel provider catalog and deterministic scripts",
+          "apps/oauth2-client/vercel.json"
+        ],
+        "surfaces": [
+          "redacted Vercel publication preflight",
+          "deterministic deployment verification"
+        ],
+        "proven_by": [
+          "oauth2-client-vercel-publication"
+        ],
+        "proven_scope": [
+          "all runtime-enabled provider discovery, complete selection, and catalog drift rejection",
+          "production-safe environment overrides and stdin-only Vercel sync",
+          "fixture-backed HTTP, signed callback receiver, admin-delta, private GitHub repository, and exact-shape authenticated encrypted-envelope verifier behavior"
+        ],
+        "unproven_scope": [
+          "live Vercel project linkage, deployment, provider consent, GitHub persistence, and production traffic"
+        ]
+      }
+    },
+    {
       "id": "oauth-login-broker-native-login",
       "domain": "oauth-login-broker",
       "direction": "acceptance_validates_product",

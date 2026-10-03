@@ -1,11 +1,12 @@
 {
   "version": 1,
   "id": "oauth-login-broker",
-  "description": "Managed domain for durable serverless OAuth login, encrypted credential custody, key rotation, and read-only operator inspection.",
+  "description": "Managed domain for durable serverless OAuth login, encrypted credential custody, governed Vercel publication, key rotation, and read-only operator inspection.",
   "capabilities": [
     "acceptance-framework-self-consistency",
     "oauth-login-broker-durability",
-    "oauth-login-broker-native-login"
+    "oauth-login-broker-native-login",
+    "oauth-login-broker-publication"
   ],
   "validation_gate_id": "oauth-login-broker-contract"
 }

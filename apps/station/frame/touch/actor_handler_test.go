@@ -7,6 +7,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	oauthbridge "github.com/peers-labs/peers-touch/station/frame/touch/model/oauthbridge"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -35,7 +36,7 @@ func TestGetActorHandlersRegistersOAuthBridge(t *testing.T) {
 }
 
 func TestOAuthBridgeRequestAcceptsProtobuf(t *testing.T) {
-	expected := &model.OAuthBridgeRequest{
+	expected := &oauthbridge.BrokerOAuthBridgeRequest{
 		Provider:       "github",
 		ProviderUserId: "oauth-user",
 		Email:          "oauth-user@test.invalid",
@@ -48,7 +49,7 @@ func TestOAuthBridgeRequestAcceptsProtobuf(t *testing.T) {
 	ctx.Request.Header.Set("Content-Type", model.ContentTypeXProtobuf)
 	ctx.Request.SetBody(body)
 
-	var request model.OAuthBridgeRequest
+	var request oauthbridge.BrokerOAuthBridgeRequest
 	if err := bindProtoOrJSON(ctx, &request); err != nil {
 		t.Fatal(err)
 	}

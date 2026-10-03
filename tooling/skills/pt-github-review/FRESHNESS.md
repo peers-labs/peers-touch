@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-02
-covered_docs_hash: ad8287b0a677a413a39a1d17c1903a36423b435b6b39bd44b08612d096c6ba5d
+last_verified_at: 2026-10-03
+covered_docs_hash: d9aa942f1f5e111d540cc657c0fc8f262dc06fb3da6279337b2b737379d03938
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,15 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-03 Review
+
+`AGENTS.md` registers the governed OAuth2 Client Vercel publishing Skill.
+Existing review rules already cover secrets, architecture ownership, runtime
+evidence, and canonical Skill sources. The Skill's deterministic tests cover
+frontmatter, registration, provider drift, stdin-only secret sync, and
+deployment verification, so no `pt-github-review` behavior or fixture change
+is required.
 
 ## 2026-10-02 Review
 

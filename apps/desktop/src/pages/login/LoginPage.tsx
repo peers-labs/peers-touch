@@ -137,9 +137,9 @@ export function LoginPage({
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const resetOAuthAction = useCallback(() => {
+  const resetOAuthAction = useCallback((preserveCompletedAttempt = false) => {
     const attempt = oauthAttemptRef.current;
-    oauthAttemptRef.current = null;
+    if (!preserveCompletedAttempt) oauthAttemptRef.current = null;
     attempt?.controller.abort();
     setConnectProvider(null);
     setAuthState('idle');
@@ -518,8 +518,19 @@ export function LoginPage({
     setAuthError('');
 
     try {
-      const decision = await startAuth(provider.id, undefined, 'account_login');
+      const decision = await startAuth(
+        provider.id,
+        undefined,
+        'account_login',
+        {
+          signal: attempt.controller.signal,
+          onBrowserOpened: () => {
+            if (oauthAttemptRef.current === attempt) setAuthState('waiting');
+          },
+        },
+      );
       if (oauthAttemptRef.current !== attempt) return;
+      if (attempt.controller.signal.aborted) setConnectProvider(provider);
       if (decision) {
         oauthAttemptRef.current = null;
         setConnectProvider(null);
@@ -558,7 +569,7 @@ export function LoginPage({
   }, [continueAfterFreshAuth, onLoginWithOAuthBridge, startAuth, t]);
 
   const handleOAuthCancel = useCallback(() => {
-    resetOAuthAction();
+    resetOAuthAction(true);
   }, [resetOAuthAction]);
 
   // ── Email login handler ──

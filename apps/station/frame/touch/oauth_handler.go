@@ -80,6 +80,6 @@ func OAuthConnectorLink(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 	SuccessResponse(c, ctx, "OAuth connector linked", &oauthbridge.BrokerOAuthConnectorLinkResponse{
-		ActorRef: touchactor.ProtoActorRef(actorRow, baseURLFrom(ctx)),
+		ActorRef: touchactor.ProtoActorRef(actorRow),
 	})
 }

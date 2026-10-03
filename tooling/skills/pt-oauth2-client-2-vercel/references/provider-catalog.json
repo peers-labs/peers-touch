@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "github": {
+      "status": "active",
+      "envPrefix": "OAUTH_GITHUB",
+      "callbackPath": "/api/oauth/github/callback",
+      "authorizationHost": "github.com",
+      "credentialModel": "client_secret",
+      "credentialFields": [
+        {
+          "suffix": "CLIENT_ID",
+          "visibility": "config",
+          "required": true
+        },
+        {
+          "suffix": "CLIENT_SECRET",
+          "visibility": "secret",
+          "required": true
+        }
+      ],
+      "optionalFields": [
+        {
+          "suffix": "SCOPE",
+          "visibility": "config"
+        }
+      ],
+      "capabilities": {
+        "authorizationCode": true,
+        "pkce": "S256",
+        "refreshToken": true,
+        "verifiedEmailLookup": true
+      },
+      "verificationRules": [
+        "authorization redirect uses github.com over HTTPS",
+        "state and PKCE S256 are present",
+        "callback redirect_uri equals the stable broker callback",
+        "live admin readback contains a GitHub identity after consent"
+      ],
+      "officialDocs": [
+        "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps"
+      ]
+    },
+    "google": {
+      "status": "active",
+      "envPrefix": "OAUTH_GOOGLE",
+      "callbackPath": "/api/oauth/google/callback",
+      "authorizationHost": "accounts.google.com",
+      "credentialModel": "client_secret",
+      "credentialFields": [
+        {
+          "suffix": "CLIENT_ID",
+          "visibility": "config",
+          "required": true
+        },
+        {
+          "suffix": "CLIENT_SECRET",
+          "visibility": "secret",
+          "required": true
+        }
+      ],
+      "optionalFields": [
+        {
+          "suffix": "SCOPE",
+          "visibility": "config"
+        }
+      ],
+      "capabilities": {
+        "authorizationCode": true,
+        "pkce": "S256",
+        "refreshToken": true,
+        "oidcUserInfo": true
+      },
+      "verificationRules": [
+        "authorization redirect uses accounts.google.com over HTTPS",
+        "state and PKCE S256 are present",
+        "callback redirect_uri equals the stable broker callback",
+        "live admin readback contains a Google identity after consent"
+      ],
+      "officialDocs": [
+        "https://developers.google.com/identity/protocols/oauth2/web-server"
+      ]
+    },
+    "weixin": {
+      "status": "active",
+      "envPrefix": "OAUTH_WEIXIN",
+      "callbackPath": "/api/oauth/weixin/callback",
+      "authorizationHost": "open.weixin.qq.com",
+      "credentialModel": "app_secret",
+      "credentialFields": [
+        {
+          "suffix": "CLIENT_ID",
+          "visibility": "config",
+          "required": true
+        },
+        {
+          "suffix": "CLIENT_SECRET",
+          "visibility": "secret",
+          "required": true
+        }
+      ],
+      "optionalFields": [
+        {
+          "suffix": "SCOPE",
+          "visibility": "config"
+        }
+      ],
+      "capabilities": {
+        "authorizationCode": true,
+        "pkce": "provider-native-no-pkce",
+        "refreshToken": true,
+        "unionId": true
+      },
+      "verificationRules": [
+        "authorization redirect uses open.weixin.qq.com over HTTPS",
+        "scope is snsapi_login and state is present",
+        "callback redirect_uri equals the stable broker callback",
+        "live admin readback contains a Weixin identity after consent"
+      ],
+      "officialDocs": [
+        "https://developers.weixin.qq.com/doc/oplatform/Website_App/WeChat_Login/Wechat_Login.html"
+      ]
+    },
+    "apple": {
+      "status": "future-onboarding",
+      "envPrefix": "OAUTH_APPLE",
+      "callbackPath": "/api/oauth/apple/callback",
+      "authorizationHost": "appleid.apple.com",
+      "credentialModel": "private_key_jwt",
+      "credentialFields": [
+        {
+          "suffix": "CLIENT_ID",
+          "visibility": "config",
+          "required": true
+        },
+        {
+          "suffix": "ISSUER",
+          "visibility": "config",
+          "required": true
+        },
+        {
+          "suffix": "TEAM_ID",
+          "visibility": "config",
+          "required": true
+        },
+        {
+          "suffix": "KEY_ID",
+          "visibility": "config",
+          "required": true
+        },
+        {
+          "suffix": "PRIVATE_KEY_B64",
+          "visibility": "secret",
+          "required": true
+        }
+      ],
+      "optionalFields": [],
+      "capabilities": {
+        "authorizationCode": true,
+        "clientAssertion": "ES256 private-key JWT",
+        "issuer": "Apple Team ID",
+        "privateKeyRotation": true
+      },
+      "verificationRules": [
+        "onboarding must add source adapter, routes, bootstrap mapping, config, and tests together",
+        "client secret is generated as a short-lived JWT from issuer/team, key ID, and private key",
+        "Services ID, verified domain, return URL, key ownership, and JWT claims are checked against current Apple documentation",
+        "provider catalog and verification rules land in the same commit as provider support"
+      ],
+      "officialDocs": [
+        "https://developer.apple.com/help/account/capabilities/create-a-sign-in-with-apple-private-key/",
+        "https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple"
+      ]
+    }
+  }
+}
