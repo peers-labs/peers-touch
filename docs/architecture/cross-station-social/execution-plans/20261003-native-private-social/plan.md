@@ -1,7 +1,7 @@
 # Cross-Station Private Social - Agent Delivery Plan
 
 > **Status**: prepared
-> **Version**: v3.0
+> **Version**: v3.2
 > **Created**: 2026-10-03 | **Updated**: 2026-10-03
 > **Owner**: Social / Federation
 > **Branch**: `feat/social-cross-station-plan`
@@ -11,13 +11,13 @@
 ## Plan Package
 
 ```json
-{"kind":"peers-touch-plan-package","planId":"CROSS-STATION-SOCIAL-NATIVE-20261003","status":"prepared","binding":{"branch":"feat/social-cross-station-plan","workspaceId":"afaaeaca0845c551","initialHead":"87fff7ae10c0274bbfc4139801c0488461c726cc"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/social/product-definition.md","docs/architecture/social/experience-contract.md","docs/architecture/social/product-state-model.md","docs/architecture/social/acceptance-matrix.md","docs/architecture/cross-station-social/design.md","docs/architecture/cross-station-social/decisions.md","docs/architecture/cross-station-social/data-model.md","docs/architecture/cross-station-social/integration.md","docs/architecture/secure-content/decisions.md","docs/architecture/secure-content/data-model.md","docs/architecture/api-ownership/decisions.md","docs/architecture/federation/README.md"],"decisions":["CSS-D01..CSS-D08","SC-D05..SC-D09","SC-D13","SC-D17..SC-D20","SC-D29","AO-D05"]},"scope":{"sourceClaims":[{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"model/domain/social","mode":"exclusive-write"},{"pathPrefix":"model/domain/federation/delivery.proto","mode":"exclusive-write"},{"pathPrefix":"model/domain/key_exchange/key_exchange.proto","mode":"exclusive-write"},{"pathPrefix":"model/domain/secure_content","mode":"shared-read"},{"pathPrefix":"tooling/scripts/proto-gen-secure-content.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/proto-gen-secure-content.test.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/development/secure_content","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/core/federation","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/model/privatecontent","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/key_exchange","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/social","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/build.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/social","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/secure_content","mode":"shared-read"},{"pathPrefix":"apps/mobile/src/gen/proto","mode":"exclusive-write"},{"pathPrefix":"apps/mobile/src-tauri/build.rs","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/cross-station-social","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/social","mode":"exclusive-write"},{"pathPrefix":"docs/architecture","mode":"shared-read"}],"nonGoals":["Mobile Native Social implementation or readiness","Browser Social support","public cross-Station feed or discovery","cross-Federation private sharing","CUSTOM_DENY with PUBLIC base","DRM or recipient-copy deletion","a second Social transport or Federation Ledger business data","production release or history rewrite"]},"tasks":[{"id":"CSS-01-native-baseline","workstreamId":"CSS-W01","path":"tasks/CSS-01-native-baseline.md","dependsOn":[],"status":"pending","blocker":null},{"id":"CSS-02-private-text","workstreamId":"CSS-W02","path":"tasks/CSS-02-private-text.md","dependsOn":["CSS-01-native-baseline"],"status":"pending","blocker":null},{"id":"CSS-03-private-media","workstreamId":"CSS-W03","path":"tasks/CSS-03-private-media.md","dependsOn":["CSS-02-private-text"],"status":"pending","blocker":null},{"id":"CSS-04-private-comments","workstreamId":"CSS-W04","path":"tasks/CSS-04-private-comments.md","dependsOn":["CSS-03-private-media"],"status":"pending","blocker":null},{"id":"CSS-05-private-reactions","workstreamId":"CSS-W05","path":"tasks/CSS-05-private-reactions.md","dependsOn":["CSS-04-private-comments"],"status":"pending","blocker":null},{"id":"CSS-06-private-revocation","workstreamId":"CSS-W06","path":"tasks/CSS-06-private-revocation.md","dependsOn":["CSS-05-private-reactions"],"status":"pending","blocker":null},{"id":"CSS-07-delivery-resilience","workstreamId":"CSS-W07","path":"tasks/CSS-07-delivery-resilience.md","dependsOn":["CSS-06-private-revocation"],"status":"pending","blocker":null},{"id":"CSS-08-recovery","workstreamId":"CSS-W08","path":"tasks/CSS-08-recovery.md","dependsOn":["CSS-07-delivery-resilience"],"status":"pending","blocker":null},{"id":"CSS-09-final-proof","workstreamId":"CSS-W09","path":"tasks/CSS-09-final-proof.md","dependsOn":["CSS-08-recovery"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["four","fiveArm"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
+{"kind":"peers-touch-plan-package","planId":"CROSS-STATION-SOCIAL-NATIVE-20261003","status":"prepared","binding":{"branch":"feat/social-cross-station-plan","workspaceId":"afaaeaca0845c551","initialHead":"87fff7ae10c0274bbfc4139801c0488461c726cc"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/social/product-definition.md","docs/architecture/social/experience-contract.md","docs/architecture/social/product-state-model.md","docs/architecture/social/acceptance-matrix.md","docs/architecture/social-runtime/decisions.md","docs/architecture/cross-station-social/design.md","docs/architecture/cross-station-social/decisions.md","docs/architecture/cross-station-social/data-model.md","docs/architecture/cross-station-social/integration.md","docs/architecture/secure-content/decisions.md","docs/architecture/secure-content/data-model.md","docs/architecture/api-ownership/decisions.md","docs/architecture/federation/README.md","docs/client/desktop/runtime-projections.md"],"decisions":["CSS-D01..CSS-D08","SC-D05..SC-D09","SC-D13","SC-D17..SC-D20","SC-D29","AO-D05"]},"scope":{"sourceClaims":[{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/skills/pt-github-review","mode":"exclusive-write"},{"pathPrefix":"model/domain/social","mode":"exclusive-write"},{"pathPrefix":"model/domain/federation/delivery.proto","mode":"exclusive-write"},{"pathPrefix":"model/domain/key_exchange/key_exchange.proto","mode":"exclusive-write"},{"pathPrefix":"model/domain/secure_content","mode":"shared-read"},{"pathPrefix":"tooling/scripts/proto-gen-secure-content.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/proto-gen-secure-content.test.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/development/secure_content","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/core/federation","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/model/privatecontent","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/key_exchange","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/social","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/build.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/social","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/secure_content","mode":"shared-read"},{"pathPrefix":"apps/mobile/src/gen/proto","mode":"exclusive-write"},{"pathPrefix":"apps/mobile/src-tauri/build.rs","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/cross-station-social","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/social","mode":"exclusive-write"},{"pathPrefix":"docs/architecture","mode":"shared-read"},{"pathPrefix":"docs/client/desktop/runtime-projections.md","mode":"shared-read"}],"nonGoals":["Mobile Native Social implementation or readiness","Browser Social support","public cross-Station feed or discovery","cross-Federation private sharing","CUSTOM_DENY with PUBLIC base","DRM or recipient-copy deletion","a second Social transport or Federation Ledger business data","production release or history rewrite"]},"tasks":[{"id":"CSS-01-native-baseline","workstreamId":"CSS-W01","path":"tasks/CSS-01-native-baseline.md","dependsOn":[],"status":"pending","blocker":null},{"id":"CSS-02-private-text","workstreamId":"CSS-W02","path":"tasks/CSS-02-private-text.md","dependsOn":["CSS-01-native-baseline"],"status":"pending","blocker":null},{"id":"CSS-03-private-media","workstreamId":"CSS-W03","path":"tasks/CSS-03-private-media.md","dependsOn":["CSS-02-private-text"],"status":"pending","blocker":null},{"id":"CSS-04-private-comments","workstreamId":"CSS-W04","path":"tasks/CSS-04-private-comments.md","dependsOn":["CSS-03-private-media"],"status":"pending","blocker":null},{"id":"CSS-05-private-reactions","workstreamId":"CSS-W05","path":"tasks/CSS-05-private-reactions.md","dependsOn":["CSS-04-private-comments"],"status":"pending","blocker":null},{"id":"CSS-06-private-revocation","workstreamId":"CSS-W06","path":"tasks/CSS-06-private-revocation.md","dependsOn":["CSS-05-private-reactions"],"status":"pending","blocker":null},{"id":"CSS-07-delivery-resilience","workstreamId":"CSS-W07","path":"tasks/CSS-07-delivery-resilience.md","dependsOn":["CSS-06-private-revocation"],"status":"pending","blocker":null},{"id":"CSS-08-recovery","workstreamId":"CSS-W08","path":"tasks/CSS-08-recovery.md","dependsOn":["CSS-07-delivery-resilience"],"status":"pending","blocker":null},{"id":"CSS-09-final-proof","workstreamId":"CSS-W09","path":"tasks/CSS-09-final-proof.md","dependsOn":["CSS-08-recovery"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["four","fiveArm"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
 ```
 
 ## Acceptance Execution
 
 ```json
-{"closures":{"slice-native-baseline":[],"slice-private-text":[],"slice-private-media":[],"slice-private-comments":[],"slice-private-reactions":[],"slice-private-revocation":[],"slice-delivery-resilience":[],"slice-recovery":[],"slice-final-proof":["station-api-ownership","social-cross-station-contract","social-cross-station-prekey","social-cross-station-delivery","social-cross-station-interaction","social-cross-station-revocation-recovery","social-cross-station-desktop-functional","social-private-desktop-e2e","social-cross-station-native-e2e","browser-social-zero-registration","social-domain-validation"]},"completion":["station-api-ownership","social-cross-station-contract","social-cross-station-prekey","social-cross-station-delivery","social-cross-station-interaction","social-cross-station-revocation-recovery","social-cross-station-desktop-functional","social-private-desktop-e2e","social-cross-station-native-e2e","browser-social-zero-registration","social-domain-validation"],"full":["station-api-ownership","social-cross-station-contract","social-cross-station-prekey","social-cross-station-delivery","social-cross-station-interaction","social-cross-station-revocation-recovery","social-cross-station-desktop-functional","social-private-desktop-e2e","social-cross-station-native-e2e","browser-social-zero-registration","social-domain-validation"]}
+{"closures":{"slice-native-baseline":[],"slice-private-text":[],"slice-private-media":[],"slice-private-comments":[],"slice-private-reactions":[],"slice-private-revocation":[],"slice-delivery-resilience":[],"slice-recovery":[],"slice-final-proof":["station-api-ownership","social-cross-station-contract","social-cross-station-eventbus-contract","social-cross-station-prekey","social-cross-station-delivery","social-cross-station-interaction","social-cross-station-revocation-recovery","social-cross-station-desktop-functional","social-private-desktop-e2e","social-cross-station-native-e2e","browser-social-zero-registration","social-domain-validation"]},"completion":["station-api-ownership","social-cross-station-contract","social-cross-station-eventbus-contract","social-cross-station-prekey","social-cross-station-delivery","social-cross-station-interaction","social-cross-station-revocation-recovery","social-cross-station-desktop-functional","social-private-desktop-e2e","social-cross-station-native-e2e","browser-social-zero-registration","social-domain-validation"],"full":["station-api-ownership","social-cross-station-contract","social-cross-station-eventbus-contract","social-cross-station-prekey","social-cross-station-delivery","social-cross-station-interaction","social-cross-station-revocation-recovery","social-cross-station-desktop-functional","social-private-desktop-e2e","social-cross-station-native-e2e","browser-social-zero-registration","social-domain-validation"]}
 ```
 
 ## 1. Delivery Contract
@@ -117,6 +117,11 @@ recipients, falls back to plaintext, or exposes a partially implemented action.
 |---|---|---|
 | Native-only surface | `CSS-D08` | CSS-01 |
 | Remote text and viewer projection | `CSS-D02..D04`, `AO-D05` | CSS-02 |
+| Typed EventBus and projection freshness | Cross-Station Social `design.md` §4.1; Social Runtime `D-01`, `D-04`; Desktop Runtime Projections §3-§5 | CSS-01, CSS-02, CSS-04..CSS-07, CSS-09 |
+| Global lifecycle and projection ownership | Cross-Station Social `design.md` §2, §4.1; GlobalContext; Desktop Runtime Projections | CSS-01, CSS-02, CSS-06, CSS-07, CSS-09 |
+| i18n and shared UI foundation | Cross-Station Social `design.md` §2, §9.1 | CSS-01..CSS-09 |
+| Unified storage and operability | Cross-Station Social `design.md` §2, §9.1 | CSS-02, CSS-03, CSS-06..CSS-09 |
+| Acceptance framework reuse | Cross-Station Social `design.md` §2; Social managed-domain contracts | CSS-01, CSS-09 |
 | Object ciphertext stream | `CSS-D05`, `SC-D18` | CSS-03 |
 | Comment prepare/submit | `CSS-D06`, `SC-D17` | CSS-04 |
 | Reaction exact replay | `CSS-D06` | CSS-05 |
@@ -151,10 +156,48 @@ Each unit runs:
 3. one development-policy user journey proving the new usable version;
 4. previous unit's journey as a regression;
 5. `git diff --check` and source-bound cleanup;
-6. one commit only after all five pass.
+6. one commit only after all checks above pass.
 
 The unit does not run repository-wide or unrelated domain Gates. CSS-09 alone
 runs the accumulated Social-specific Gate set from `Acceptance Execution`.
+
+### 9.1 Execution Projection Of The Social Event Contract
+
+This section repeats `docs/architecture/cross-station-social/design.md` §4.1
+for Task-level emphasis. It has no independent architecture authority. Any
+divergence from `design.md` blocks the Plan until this projection is corrected.
+
+Every Social state change visible in Desktop therefore uses the canonical typed
+notification path:
+
+```text
+committed Social fact or durable delivery
+  -> Station EventBus / typed wake
+  -> Desktop Rust bridge
+  -> desktop-web kernel eventBus
+  -> momentsRuntime (single projection owner)
+  -> Social projection stores
+```
+
+- Event payloads carry identifiers, scope, revision/cursor, and dedup identity;
+  private plaintext and ciphertext objects remain outside the notification.
+- Native/Tauri callbacks are host adapters only. They must republish one typed
+  kernel event and must not let Social modules maintain a parallel private
+  listener that writes the same projection.
+- `momentsRuntime` is the only long-lived owner for Post, Comment, Reaction,
+  revocation, and resync freshness. Pages and components may dispatch commands
+  or pagination but may not own polling, mount-time freshness, or Station
+  reconciliation.
+- Immediate event consumption and Station-backed periodic reconcile are both
+  mandatory. Event delivery is a wake/invalidation hint, never business truth.
+- Subscriptions are actor/session scoped, idempotent, deduplicated, ordered
+  where required, and fully removed on logout, actor switch, Station switch,
+  runtime teardown, and test cleanup.
+- Each event-producing slice proves the receiver projection changes while the
+  Moments page is unopened or hidden. CSS-07 additionally proves dropped-event
+  recovery and duplicate/reordered delivery; CSS-09 rejects orphan producers,
+  orphan consumers, duplicate projection owners, and direct module-private
+  Tauri-to-store bypasses through `social-cross-station-eventbus-contract`.
 
 ## 10. User Scenarios
 
@@ -190,7 +233,8 @@ durable admission is rejected rather than simulated.
 
 Completion requires nine usable commits, `AS11` and `AS17..AS24` proven on the
 declared Native Desktop/two-Station cells, same-Station Social still proven,
-Mobile unproven, and no temporary processes, fixtures, declarations, or leases.
+the Social EventBus contract Gate proven, Mobile unproven, and no temporary
+processes, fixtures, declarations, or leases.
 
 Plan state after document validation: `PLAN_READY_FOR_EXECUTION`. Product
 readiness remains unproven until CSS-09.
