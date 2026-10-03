@@ -15,8 +15,10 @@ domain.
 | `wechat-grade-moments-runtime-architecture.md` | Runtime-first upgrade target for WeChat-grade trusted relationship Moments. Defines Station truth, Desktop runtime projections, delivery inbox, projection sync, and interaction visibility boundaries. |
 | [`../secure-content/README.md`](../secure-content/README.md) | Accepted cross-domain encryption, key-envelope, opaque-object, recovery, and hard-cut architecture used by private Moments and Chat. |
 | `prototype/README.md` | Desktop Social Chat private/group chat prototype entry, run instructions, confirmation status, and review scope. |
-| `execution-plans/2026-05-09-wechat-grade-moments-runtime.md` | Phased implementation plan for the runtime-first Moments upgrade. |
+| `execution-plans/2026-05-09-wechat-grade-moments-runtime.md` | Superseded runtime-first Moments plan; completed projection work remains historical evidence. |
 | `execution-plans/20261002-social-desktop-acceptance/plan.md` | Desktop-only formal Acceptance plan for Private Moments using one reusable Alice/Bob/Eve Native Suite. |
+| [`../federated-social-activity/README.md`](../federated-social-activity/README.md) | Cross-Station Human Social ownership, delivery, interaction, revocation, and Native Desktop readiness. |
+| [`../federated-social-activity/execution-plans/20261003-cross-station-social-native/plan.md`](../federated-social-activity/execution-plans/20261003-cross-station-social-native/plan.md) | Proposed successor plan for positive cross-Station Social on Native Desktop; Mobile is deferred and Browser Social is prohibited. |
 
 ## Source Hierarchy
 
@@ -41,3 +43,6 @@ domain.
   reconciliation.
 - Private HOME timeline should converge on viewer-scoped delivery inbox rather
   than long-term multi-source query merging.
+- Browser is not a Social product platform. Social page/runtime/action
+  registration is Native-only; public Station HTTP/Federation APIs remain
+  infrastructure contracts.
