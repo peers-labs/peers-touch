@@ -43,10 +43,10 @@ import {
 import { projectAgentComposerReadiness } from './agentCapabilityReadiness';
 
 const mcpManifest = create(CapabilityManifestSchema, {
-  capabilityId: 'mcp.invoke',
-  version: '2',
+  capabilityId: `mcp.tool.${'a'.repeat(64)}`,
+  version: '7',
   sourceKind: CapabilitySourceKind.MCP,
-  sourceInstanceId: 'local-mcp',
+  sourceInstanceId: 'mcp_fixture_echo',
 });
 const connectorManifest = create(CapabilityManifestSchema, {
   capabilityId: 'connector.search',
@@ -163,8 +163,8 @@ describe('agent capability authority store', () => {
     expect(capabilityApi.upsertAgentCapabilityBinding).toHaveBeenCalledWith({
       bindingId: 'binding-mcp',
       agentId: 'agent-1',
-      capabilityId: 'mcp.invoke',
-      capabilityVersion: '2',
+      capabilityId: `mcp.tool.${'a'.repeat(64)}`,
+      capabilityVersion: '7',
       enabled: true,
       approvalPolicy: CapabilityApprovalPolicy.MANUAL,
       expectedAgentVersion: 8n,
@@ -185,7 +185,7 @@ describe('agent capability authority store', () => {
     expect(selectCapabilityManifestBySource(
       state,
       CapabilitySourceKind.MCP,
-      'local-mcp',
+      'mcp_fixture_echo',
     )).toBe(mcpManifest);
     expect(selectAgentCapabilityBindingsBySource(
       state,

@@ -40,6 +40,8 @@ import {
 } from '../../runtimes/evaluationRuntime';
 import { toolRuntime } from '../../runtimes/toolRuntime';
 import { useAgentStore } from '../../store/agent';
+import { useAgentTopicStore } from '../../store/agentTopics';
+import { isAgentDraftKey } from '../../store/agentDraft';
 import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
 import { useChatStore } from '../../store/chat';
 import { terminalReasonFromStreamData } from '../../store/streaming/handler';
@@ -130,6 +132,8 @@ import {
   parseFoundationCapabilityFixtureJournal,
   parseFoundationCapabilityIsolationJournal,
   planFoundationCapabilityBindingRestoration,
+  resolveFoundationCapabilityBindingForCleanup,
+  resolveFoundationCapabilityIsolationAgent,
   restoreFoundationCapabilityBindings,
   type FoundationCapabilityFixtureJournal,
   type FoundationCapabilityIsolationJournal,
@@ -1112,6 +1116,9 @@ function observedErrorCode(error: unknown): string {
     if (serializedDetails.includes('RETENTION_CONFLICT')) {
       return 'RETENTION_CONFLICT';
     }
+    if (serializedDetails.includes('ADMISSION_DUPLICATE_CONFLICT')) {
+      return 'ADMISSION_DUPLICATE_CONFLICT';
+    }
     if (
       serializedDetails.includes('AGENT_4009')
       || (error as { code?: string }).code === 'CONFLICT'
@@ -1137,6 +1144,9 @@ function observedErrorCode(error: unknown): string {
     return 'ADMISSION_QUEUE_FULL';
   }
   if (message.includes('ACTIVE_DEPENDENCY')) return 'ACTIVE_DEPENDENCY';
+  if (message.includes('ADMISSION_DUPLICATE_CONFLICT')) {
+    return 'ADMISSION_DUPLICATE_CONFLICT';
+  }
   if (message.includes('AGENT_4009') || message.includes('CONFLICT')) {
     return 'VERSION_CONFLICT';
   }
@@ -1211,8 +1221,11 @@ async function observeFoundationActiveDependency(
 
 async function deleteFoundationConversation(
   conversationId: string,
+  timeoutMs = 3_000,
 ): Promise<string> {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  const deadline = Date.now() + timeoutMs;
+  let lastErrorCode = '';
+  do {
     try {
       const conversation = await api.getAgentConversation(conversationId);
       if (conversation.status === 'deleted') {
@@ -1226,6 +1239,7 @@ async function deleteFoundationConversation(
       return '';
     } catch (error) {
       const code = observedErrorCode(error);
+      lastErrorCode = code;
       if (isFoundationResourceNotFound(error)) return 'AGENT_4004';
       if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
         try {
@@ -1234,17 +1248,24 @@ async function deleteFoundationConversation(
           throw error;
         }
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, Math.min(250, remainingMs)));
     }
-  }
-  throw new Error('agent.acceptance.foundationConversationDeleteBlocked');
+  } while (Date.now() < deadline);
+  throw new Error(
+    `agent.acceptance.foundationConversationDeleteBlocked:${lastErrorCode || 'UNKNOWN'}`,
+  );
 }
 
 async function cleanupFoundationToolConversation(
   conversationId: string,
   turnId: string,
+  deleteTimeoutMs = 3_000,
 ): Promise<void> {
   let cancellationError: unknown = null;
+  let queueCancellationError: unknown = null;
   if (turnId) {
     try {
       await api.cancelAgentTurn(turnId);
@@ -1252,9 +1273,17 @@ async function cleanupFoundationToolConversation(
       cancellationError = error;
     }
   }
+  try {
+    await cancelFoundationQueuedTurns(conversationId);
+  } catch (error) {
+    queueCancellationError = error;
+  }
 
   try {
-    const deletionErrorCode = await deleteFoundationConversation(conversationId);
+    const deletionErrorCode = await deleteFoundationConversation(
+      conversationId,
+      deleteTimeoutMs,
+    );
     let conversationDeleted = deletionErrorCode.includes('AGENT_4004');
     if (!conversationDeleted) {
       try {
@@ -1271,10 +1300,22 @@ async function cleanupFoundationToolConversation(
       );
     }
   } catch (cleanupError) {
+    const cancellationCode = cancellationError
+      ? observedErrorCode(cancellationError)
+      : 'NONE';
+    const queueCancellationCode = queueCancellationError
+      ? observedErrorCode(queueCancellationError)
+      : 'NONE';
+    const cleanupCode = observedErrorCode(cleanupError);
     throw Object.assign(
-      new Error('agent.acceptance.foundationToolConversationCleanupFailed'),
+      new Error(
+        'agent.acceptance.foundationToolConversationCleanupFailed:'
+        + `cancel=${cancellationCode}:`
+        + `queue=${queueCancellationCode}:delete=${cleanupCode}`,
+      ),
       {
         cancellationError,
+        queueCancellationError,
         cleanupError,
       },
     );
@@ -1423,6 +1464,13 @@ function selectedAgent() {
   return state.agents.find((agent) => agent.name === state.selectedAgent)
     ?? state.agents[0]
     ?? null;
+}
+
+async function refreshFoundationSelectedAgent() {
+  await useAgentStore.getState().loadAgents();
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  return api.getAgent(agent.id || agent.name);
 }
 
 function evidenceValue(value: unknown): unknown {
@@ -1907,8 +1955,30 @@ async function waitFor(
   throw new Error(`timed out waiting for: ${description}`);
 }
 
+async function navigateToAgentSessionSurface(
+  description: string,
+): Promise<void> {
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(
+        '[data-pt-agent-composer]',
+      )?.getClientRects().length,
+    ),
+    description,
+    30_000,
+  );
+}
+
+async function reconcileFoundationToolReceiver(): Promise<void> {
+  await useChatStore.getState().syncMessages();
+  await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+}
+
 const FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS = 180_000;
 const FOUNDATION_TOOL_RECONCILE_TIMEOUT_MS = 90_000;
+const FOUNDATION_TRANSIENT_FETCH_RETRY_TIMEOUT_MS = 15_000;
+const FOUNDATION_TRANSIENT_FETCH_RETRY_INTERVAL_MS = 500;
 const FOUNDATION_LOOP_MAX_TOOL_CALLS = 2;
 const FOUNDATION_LOOP_PROVIDER_MARKER =
   'PT_ACCEPTANCE_REPEAT_TOOL_UNTIL_BUDGET';
@@ -2001,6 +2071,9 @@ interface McpLifecycleDevelopmentState {
   serverName: string;
   conversationId: string;
   turnId: string;
+  assistantMessageId: string;
+  assistantContentHash: string;
+  expectedAssistantResponse: string;
   priorSelection: string;
   priorSurface: 'chat' | 'profile';
   operationIds: Record<string, string>;
@@ -2017,6 +2090,7 @@ interface McpLifecycleDevelopmentInput {
   env?: Record<string, string>;
   toolName?: string;
   expectedResult?: string;
+  expectedAssistantResponse?: string;
   state?: McpLifecycleDevelopmentState;
 }
 
@@ -2036,6 +2110,7 @@ interface McpLifecycleScenarioInput {
   env?: Record<string, string>;
   toolName?: string;
   expectedResult?: string;
+  expectedAssistantResponse?: string;
 }
 
 interface ConnectorInvocationDevelopmentInput {
@@ -2225,6 +2300,63 @@ function foundationDiagnosticToolFacts(
     evidenceRecord(value, 'turnDiagnosticToolFact'));
 }
 
+function isTransientFoundationFetchError(
+  error: unknown,
+): error is { name?: unknown; message?: unknown } {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { name?: unknown; message?: unknown };
+  const errorName = String(candidate.name ?? '');
+  const errorMessage = String(candidate.message ?? '');
+  const transientMessage = [
+    'Failed to fetch',
+    'Load failed',
+    'NetworkError when attempting to fetch resource.',
+  ].includes(errorMessage);
+  return transientMessage
+    && (errorName === 'TypeError' || errorName === 'RustCommandException');
+}
+
+async function retryFoundationTransientFetch<T>(
+  operation: () => Promise<T>,
+  operationName: string,
+): Promise<T> {
+  let lastError: Error | null = null;
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientFoundationFetchError(error)) throw error;
+      lastError = Object.assign(
+        new Error(String(error.message ?? '')),
+        { name: String(error.name ?? 'Error') },
+      );
+      const remainingMs = FOUNDATION_TRANSIENT_FETCH_RETRY_TIMEOUT_MS
+        - (Date.now() - startedAt);
+      if (remainingMs <= 0) break;
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          Math.min(FOUNDATION_TRANSIENT_FETCH_RETRY_INTERVAL_MS, remainingMs),
+        ));
+    }
+  }
+  throw Object.assign(
+    new Error(
+      `agent.acceptance.foundationFetchRetryExhausted:${operationName}`,
+    ),
+    { cause: lastError },
+  );
+}
+
+function foundationFailureSummary(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error);
+  const candidate = error as { name?: unknown; message?: unknown };
+  const name = String(candidate.name ?? 'Error');
+  const message = String(candidate.message ?? '');
+  return `${name}:${message}`;
+}
+
 async function waitForFoundationToolFacts(
   turnId: string,
   predicate: (
@@ -2238,13 +2370,23 @@ async function waitForFoundationToolFacts(
   facts: Record<string, unknown>[];
 }> {
   const startedAt = Date.now();
+  let lastTransientError = '';
   while (Date.now() - startedAt < timeoutMs) {
-    const replay = await foundationDiagnosticReplay(turnId);
-    const facts = foundationDiagnosticToolFacts(replay);
-    if (predicate(facts, replay)) return { replay, facts };
+    try {
+      const replay = await foundationDiagnosticReplay(turnId);
+      const facts = foundationDiagnosticToolFacts(replay);
+      if (predicate(facts, replay)) return { replay, facts };
+      lastTransientError = '';
+    } catch (error) {
+      if (!isTransientFoundationFetchError(error)) throw error;
+      lastTransientError = String(error.message ?? '');
+    }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  throw new Error(`timed out waiting for: ${description}`);
+  throw new Error(
+    `timed out waiting for: ${description}`
+    + (lastTransientError ? `; last transient error: ${lastTransientError}` : ''),
+  );
 }
 
 function governedToolSettlementSucceeded(
@@ -2315,15 +2457,22 @@ async function updateFoundationToolPolicy(
   enabled = true,
   idempotencyKey = crypto.randomUUID(),
 ): Promise<AgentCapabilityBinding> {
-  return api.upsertAgentCapabilityBinding({
-    bindingId: current?.bindingId,
-    agentId: agent.id || agent.name,
-    capabilityId: fixture.manifest.capabilityId,
-    capabilityVersion: fixture.manifest.version,
-    enabled,
-    approvalPolicy: policy,
-    expectedAgentVersion: agent.version,
-  }, current?.revision ?? 0, idempotencyKey);
+  return retryFoundationTransientFetch(
+    () => api.upsertAgentCapabilityBinding(
+      {
+        bindingId: current?.bindingId,
+        agentId: agent.id || agent.name,
+        capabilityId: fixture.manifest.capabilityId,
+        capabilityVersion: fixture.manifest.version,
+        enabled,
+        approvalPolicy: policy,
+        expectedAgentVersion: agent.version,
+      },
+      current?.revision ?? 0,
+      idempotencyKey,
+    ),
+    'capability-policy-upsert',
+  );
 }
 
 async function updateFoundationCapabilityBindingEnabled(
@@ -2424,11 +2573,16 @@ async function restorePersistedFoundationCapabilityIsolation(
 ): Promise<FoundationCapabilityIsolation | null> {
   const journal = readFoundationCapabilityIsolationJournal();
   if (!journal) return null;
-  const agent = await api.getAgent(journal.agentId);
-  assertFoundationCapabilityIsolationAgentVersion(
-    journal.agentVersion,
-    agent.version,
+  const agent = resolveFoundationCapabilityIsolationAgent(
+    journal,
+    await api.listAgents(),
   );
+  if (!agent) {
+    // The owning Agent was authoritatively deleted, so its child bindings no
+    // longer have a restoration target. Do not carry that journal forward.
+    window.localStorage.removeItem(FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY);
+    return null;
+  }
 
   await restoreFoundationCapabilityBindings(
     journal.bindings,
@@ -2522,11 +2676,15 @@ async function prepareFoundationCapabilityFixture(
 async function restorePersistedFoundationCapabilityFixture(): Promise<boolean> {
   const journal = readFoundationCapabilityFixtureJournal();
   if (!journal) return false;
-  const agent = await api.getAgent(journal.agentId);
-  assertFoundationCapabilityIsolationAgentVersion(
-    journal.agentVersion,
-    agent.version,
+  const agent = resolveFoundationCapabilityIsolationAgent(
+    journal,
+    await api.listAgents(),
   );
+  if (!agent) {
+    // Agent deletion also removes the fixture binding's restoration scope.
+    window.localStorage.removeItem(FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY);
+    return false;
+  }
   const original = journal.originalBinding;
   const prepared = await prepareFoundationCapabilityFixture(journal);
   let cleanupExpectedRevision = journal.cleanupExpectedRevision;
@@ -2869,6 +3027,7 @@ async function startFoundationToolTurn(input: {
   repeatUntilStopped?: boolean;
   requestedBudget?: AgentRuntimeBudgetInput;
   streamId?: string;
+  thinkingMode?: 'auto' | 'enabled' | 'disabled';
   onConversationCreated?: (
     conversationId: string,
     streamId: string,
@@ -2892,13 +3051,28 @@ async function startFoundationToolTurn(input: {
     idempotencyKey: crypto.randomUUID(),
     provider: input.agent.provider || undefined,
     model: input.agent.model || undefined,
-    thinkingMode: 'disabled',
+    thinkingMode: input.thinkingMode ?? 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     requestedBudget: input.requestedBudget,
     streamId: input.streamId,
     timeoutMs: input.repeatUntilStopped
       ? 300_000
       : FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+    onEvent: (event) => {
+      const turnId = observedTurnId([event]);
+      if (!turnId) return;
+      const streamEvent: StreamEvent = {
+        event: event.event,
+        data: event.data,
+      };
+      toolRuntime.consume(streamEvent);
+      useChatStore.getState().applyRecoveredTurnEvent(
+        conversation.conversation_id,
+        agentId,
+        turnId,
+        streamEvent,
+      );
+    },
   });
   const streamId = observed.controller.streamId;
   input.onConversationCreated?.(conversation.conversation_id, streamId);
@@ -4546,10 +4720,14 @@ async function runFoundationToolLoopBudget(input: {
   replay: Record<string, unknown>;
   facts: Record<string, unknown>;
 }> {
-  const capabilitySession = await resolveFoundationToolTurnSession();
+  const capabilitySession = await retryFoundationTransientFetch(
+    resolveFoundationToolTurnSession,
+    'loop-capability-session-read',
+  );
   let conversationId = '';
   let turnId = '';
   let events: ObservedFoundationTurnResult['events'] = [];
+  let turnController: AgentTurnStreamController | null = null;
   let unsubscribe: (() => void) | null = null;
   if (input.selectConversation) {
     const agentId = input.agent.id || input.agent.name;
@@ -4613,6 +4791,7 @@ async function runFoundationToolLoopBudget(input: {
     conversationId = turn.conversationId;
     turnId = turn.turnId;
     events = turn.observed.events;
+    turnController = turn.observed.controller;
   }
   try {
     const source = await waitForFoundationToolFacts(
@@ -4663,7 +4842,10 @@ async function runFoundationToolLoopBudget(input: {
       throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const replay = await foundationDiagnosticReplay(turnId);
+    const replay = await retryFoundationTransientFetch(
+      () => foundationDiagnosticReplay(turnId),
+      'loop-final-diagnostic-read',
+    );
     const executionAfterLimit =
       foundationDiagnosticToolFacts(replay)
         .reduce(
@@ -4715,6 +4897,7 @@ async function runFoundationToolLoopBudget(input: {
       },
     };
   } finally {
+    turnController?.abort();
     unsubscribe?.();
   }
 }
@@ -4740,6 +4923,7 @@ async function runFoundationF04Scenario(input: {
   );
   const originalBinding = fixture.binding;
   let currentBinding = originalBinding;
+  let primaryError: unknown = null;
   const diagnosticPairs: Array<{
     source: Record<string, unknown>;
     replay: Record<string, unknown>;
@@ -4764,7 +4948,10 @@ async function runFoundationF04Scenario(input: {
     decision?: boolean,
   ) => {
     await applyPolicy(policy);
-    const capabilitySession = await resolveFoundationToolTurnSession();
+    const capabilitySession = await retryFoundationTransientFetch(
+      resolveFoundationToolTurnSession,
+      `${label}-capability-session-read`,
+    );
     const turn = await startFoundationToolTurn({
       agent: input.agent,
       capabilitySessionId: capabilitySession.capabilitySessionId,
@@ -4772,10 +4959,15 @@ async function runFoundationF04Scenario(input: {
       sampleId: input.sampleId,
       label,
     });
+    const approval = policy === CapabilityApprovalPolicy.MANUAL
+      ? await waitForToolApprovalEvent(turn)
+      : null;
     let decisionIntent: Parameters<typeof api.submitAgentToolDecision>[0] | null = null;
     let firstDecision: Awaited<ReturnType<typeof api.submitAgentToolDecision>> | null = null;
     if (decision !== undefined) {
-      const approval = await waitForToolApprovalEvent(turn);
+      if (!approval) {
+        throw new Error('agent.acceptance.foundationToolApprovalMissing');
+      }
       const approvalId = String(
         evidenceField(approval, 'approvalId', 'approval_id') ?? '',
       );
@@ -4800,6 +4992,13 @@ async function runFoundationF04Scenario(input: {
       if (!firstDecision.accepted) {
         throw new Error('agent.acceptance.foundationToolDecisionRejected');
       }
+    }
+    if (
+      input.platform === 'browser'
+      && policy === CapabilityApprovalPolicy.MANUAL
+      && decision === undefined
+    ) {
+      await turn.observed.controller.disconnectTransport();
     }
 
     let beforeReplay: Awaited<ReturnType<typeof waitForFoundationToolFacts>>;
@@ -4861,6 +5060,8 @@ async function runFoundationF04Scenario(input: {
         }
       }
       throw error;
+    } finally {
+      turn.observed.controller.abort();
     }
     let replayedDecision = firstDecision;
     if (decisionIntent && firstDecision) {
@@ -5044,21 +5245,55 @@ async function runFoundationF04Scenario(input: {
         },
       },
     };
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    if (originalBinding) {
-      await updateFoundationToolPolicy(
-        input.agent,
-        fixture,
-        currentBinding,
-        originalBinding.approvalPolicy,
-        originalBinding.enabled,
-      );
-    } else if (currentBinding) {
-      await api.deleteAgentCapabilityBinding(
-        currentBinding.bindingId,
-        currentBinding.revision,
-        crypto.randomUUID(),
-        'acceptance_fixture_cleanup',
+    try {
+      const cleanupBinding = currentBinding
+        ? resolveFoundationCapabilityBindingForCleanup(
+            currentBinding,
+            await retryFoundationTransientFetch(
+              () => api.listAgentCapabilityBindings(
+                input.agent.id || input.agent.name,
+              ),
+              'f04-cleanup-binding-list',
+            ),
+          )
+        : null;
+      if (originalBinding && cleanupBinding) {
+        const authoritativeAgent = await retryFoundationTransientFetch(
+          () => api.getAgent(input.agent.id || input.agent.name),
+          'f04-cleanup-agent-read',
+        );
+        await updateFoundationToolPolicy(
+          authoritativeAgent,
+          fixture,
+          cleanupBinding,
+          originalBinding.approvalPolicy,
+          originalBinding.enabled,
+        );
+      } else if (!originalBinding && cleanupBinding) {
+        const cleanupIdempotencyKey = crypto.randomUUID();
+        await retryFoundationTransientFetch(
+          () => api.deleteAgentCapabilityBinding(
+            cleanupBinding.bindingId,
+            cleanupBinding.revision,
+            cleanupIdempotencyKey,
+            'acceptance_fixture_cleanup',
+          ),
+          'f04-cleanup-binding-delete',
+        );
+      }
+    } catch (cleanupError) {
+      if (!primaryError) throw cleanupError;
+      throw Object.assign(
+        new Error(
+          'agent.acceptance.foundationF04CleanupFailed:'
+          + `primary=${foundationFailureSummary(primaryError)};`
+          + `cleanup=${foundationFailureSummary(cleanupError)}`,
+        ),
+        { primaryError, cleanupError },
       );
     }
   }
@@ -6773,6 +7008,154 @@ async function runFoundationApprovalDeniedScenario(input: {
   return result;
 }
 
+async function foundationApprovalRetryAttemptFailure(input: {
+  conversationId: string;
+  turnId: string;
+  toolCallId: string;
+  attemptsBefore: number;
+  cause: unknown;
+}): Promise<Error> {
+  const state = useChatStore.getState();
+  const sourceMessage = state.messages.find((message) =>
+    message.toolCalls?.some((toolCall) => toolCall.id === input.toolCallId));
+  const operation = state.operations[input.conversationId];
+  const projectedVersion = state.sessions.find(
+    (session) => session.key === input.conversationId,
+  )?.version ?? 0;
+  const revisionFailure = state.revisionCommandFailure;
+  let authoritativeVersion = 0;
+  let authoritativeReadError = '';
+  let replay: Record<string, unknown> | null = null;
+  let replayReadError = '';
+
+  try {
+    authoritativeVersion = (
+      await api.getAgentConversation(input.conversationId)
+    ).version;
+  } catch (error) {
+    authoritativeReadError = observedErrorCode(error);
+  }
+  try {
+    replay = await foundationDiagnosticReplay(input.turnId);
+  } catch (error) {
+    replayReadError = observedErrorCode(error);
+  }
+
+  const attempts = replay
+    ? optionalEvidenceArray(
+        replay.attempts,
+        'foundationApprovalExpiredRetryFailureAttempts',
+      ).map((attempt) =>
+        evidenceRecord(
+          attempt,
+          'foundationApprovalExpiredRetryFailureAttempt',
+        ))
+    : [];
+  const toolFacts = replay ? foundationDiagnosticToolFacts(replay) : [];
+  const retryFacts = toolFacts.filter((fact) =>
+    String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+      !== input.toolCallId);
+  const toolCallElement = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+  ).find((element) => element.dataset.ptAgentToolCall === input.toolCallId);
+  const recovery = toolCallElement?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-recovery="request-again"]',
+  );
+
+  return Object.assign(
+    new Error(
+      'agent.acceptance.foundationApprovalRetryAttemptFailed:'
+      + stableJson({
+        cause: foundationFailureSummary(input.cause),
+        currentSessionMatches:
+          state.currentSessionKey === input.conversationId,
+        isStreaming: state.isStreaming,
+        operationPresent: Boolean(operation),
+        operationRunState: operation?.runState ?? null,
+        operationTurnMatches: operation?.turnId === input.turnId,
+        sourceMessagePresent: Boolean(sourceMessage),
+        sourceTurnMatches: sourceMessage?.turnId === input.turnId,
+        sourceTerminalStatus: sourceMessage?.terminalStatus ?? null,
+        projectedVersion,
+        authoritativeVersion,
+        authoritativeReadError,
+        revisionFailure: revisionFailure
+          ? {
+              errorType: revisionFailure.typedError.error_type,
+              expectedRevision: revisionFailure.expectedRevision,
+              actualRevision: revisionFailure.actualRevision,
+            }
+          : null,
+        replayStatus: replay ? Number(replay.status ?? 0) : 0,
+        replayTerminalReason: replay
+          ? String(
+              evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+            )
+          : '',
+        replayReadError,
+        attemptsBefore: input.attemptsBefore,
+        attemptsAfter: attempts.length,
+        attemptStatuses: attempts.map((attempt) =>
+          foundationTurnStatusName(
+            evidenceField(attempt, 'status', 'status'),
+          )),
+        attemptErrorCodes: attempts.map((attempt) =>
+          String(evidenceField(attempt, 'errorCode', 'error_code') ?? '')),
+        toolFactCount: toolFacts.length,
+        retryToolFactCount: retryFacts.length,
+        retryApprovalCount: retryFacts.filter((fact) =>
+          Boolean(evidenceField(fact, 'approvalId', 'approval_id'))).length,
+        recoveryActionPresent: Boolean(recovery),
+        recoveryActionDisabled: recovery?.disabled ?? null,
+      }),
+    ),
+    { cause: input.cause },
+  );
+}
+
+function foundationApprovalRetryStarted(
+  facts: Record<string, unknown>[],
+  replay: Record<string, unknown>,
+  toolCallId: string,
+  attemptsBefore: number,
+): boolean {
+  const attempts = evidenceArray(
+    replay.attempts,
+    'foundationApprovalExpiredRetryAttempts',
+  );
+  const retryToolPresent = facts.some((fact) => (
+    String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+      !== toolCallId
+    && String(evidenceField(fact, 'approvalId', 'approval_id') ?? '')
+  ));
+  if (attempts.length <= attemptsBefore) return false;
+  if (attempts.length !== attemptsBefore + 1) {
+    throw new Error(
+      'agent.acceptance.foundationApprovalRetryAttemptCountInvalid:'
+      + `before=${attemptsBefore}:after=${attempts.length}`,
+    );
+  }
+  if (retryToolPresent) return true;
+  if (!diagnosticReplayTerminal(replay)) return false;
+
+  const latestAttempt = attempts.length > 0
+    ? evidenceRecord(
+        attempts[attempts.length - 1],
+        'foundationApprovalExpiredTerminalAttempt',
+      )
+    : {};
+  const errorCode = String(
+    evidenceField(latestAttempt, 'errorCode', 'error_code') ?? '',
+  );
+  const terminalReason = String(
+    evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+  );
+  throw new Error(
+    'agent.acceptance.foundationApprovalRetryTerminal:'
+    + (errorCode || terminalReason || foundationTurnStatusName(replay.status)),
+  );
+}
+
 async function runFoundationApprovalExpiredScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   platform: string;
@@ -6961,22 +7344,28 @@ async function runFoundationApprovalExpiredScenario(input: {
 
     recovery.click();
     recovery.click();
-    const retryStarted = await waitForFoundationToolFacts(
-      turn.turnId,
-      (facts, replay) => (
-        evidenceArray(
-          replay.attempts,
-          'foundationApprovalExpiredRetryAttempts',
-        ).length === attemptsBefore + 1
-        && facts.some((fact) => (
-          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
-            !== toolCallId
-          && String(evidenceField(fact, 'approvalId', 'approval_id') ?? '')
-        ))
-      ),
-      'approval-expired request-again attempt',
-      120_000,
-    );
+    let retryStarted: Awaited<ReturnType<typeof waitForFoundationToolFacts>>;
+    try {
+      retryStarted = await waitForFoundationToolFacts(
+        turn.turnId,
+        (facts, replay) => foundationApprovalRetryStarted(
+          facts,
+          replay,
+          toolCallId,
+          attemptsBefore,
+        ),
+        'approval-expired request-again attempt',
+        FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+      );
+    } catch (error) {
+      throw await foundationApprovalRetryAttemptFailure({
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        toolCallId,
+        attemptsBefore,
+        cause: error,
+      });
+    }
     const retryToolFact = retryStarted.facts.find((fact) =>
       String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
         !== toolCallId
@@ -13087,6 +13476,48 @@ async function selectFoundationBranchWithDiagnostics(input: {
   }
 }
 
+async function regenerateFoundationTurnWithDiagnostics(input: {
+  label: string;
+  conversationId: string;
+  messageId: string;
+  expectedVersion: number;
+}): Promise<Record<string, unknown>> {
+  try {
+    return evidenceRecord(
+      await api.regenerateAgentTurn({
+        conversation_id: input.conversationId,
+        source_assistant_message_id: input.messageId,
+        client_idempotency_key: crypto.randomUUID(),
+        expected_conversation_version: input.expectedVersion,
+      }),
+      `foundation${input.label}Regeneration`,
+    );
+  } catch (error) {
+    const commandError = foundationF12MessageListErrorDebug(error);
+    const actual = await api.getAgentConversation(input.conversationId).then(
+      (conversation) => ({
+        version: conversation.version,
+        readbackErrorCode: '',
+      }),
+      (readbackError: unknown) => ({
+        version: 0,
+        readbackErrorCode: observedErrorCode(readbackError),
+      }),
+    );
+    throw new Error([
+      'agent.acceptance.foundationRegenerateFailed',
+      input.label,
+      `observed=${String(commandError.observedCode ?? '')}`,
+      `rust=${String(commandError.code ?? '')}`,
+      `detail=${String(commandError.detailCode ?? '')}`,
+      `station=${String(commandError.stationStatus ?? '')}`,
+      `expected=${input.expectedVersion}`,
+      `actual=${actual.version}`,
+      `actualReadback=${actual.readbackErrorCode}`,
+    ].join(':'));
+  }
+}
+
 async function runFoundationF12Prepare(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -13215,15 +13646,13 @@ async function runFoundationF12Prepare(input: {
           );
         }
 
-        const alphaRegeneration = evidenceRecord(
-          await api.regenerateAgentTurn({
-            conversation_id: alpha.conversation_id,
-            source_assistant_message_id: alphaAssistant.messageId,
-            client_idempotency_key: crypto.randomUUID(),
-            expected_conversation_version: alphaSource.conversation.version,
-          }),
-          'foundationF12AlphaRegeneration',
-        );
+        const alphaRegeneration =
+          await regenerateFoundationTurnWithDiagnostics({
+            label: 'F12Alpha',
+            conversationId: alpha.conversation_id,
+            messageId: alphaAssistant.messageId,
+            expectedVersion: alphaSource.conversation.version,
+          });
         const alphaSibling = await foundationRevisionMessageFact(
           evidenceField(
             alphaRegeneration,
@@ -13259,15 +13688,13 @@ async function runFoundationF12Prepare(input: {
           ),
         });
 
-        const betaRegeneration = evidenceRecord(
-          await api.regenerateAgentTurn({
-            conversation_id: beta.conversation_id,
-            source_assistant_message_id: betaAssistant.messageId,
-            client_idempotency_key: crypto.randomUUID(),
-            expected_conversation_version: betaSource.conversation.version,
-          }),
-          'foundationF12BetaRegeneration',
-        );
+        const betaRegeneration =
+          await regenerateFoundationTurnWithDiagnostics({
+            label: 'F12Beta',
+            conversationId: beta.conversation_id,
+            messageId: betaAssistant.messageId,
+            expectedVersion: betaSource.conversation.version,
+          });
         const betaSibling = await foundationRevisionMessageFact(
           evidenceField(
             betaRegeneration,
@@ -14593,89 +15020,149 @@ async function runFoundationF07Scenario(input: {
     platform: input.platform,
     sampleId: input.sampleId,
   });
-  const retryConversation = await api.createAgentConversation({
-    agent_id: agentId,
-    title: `Foundation retry ${input.sampleId}`,
-    provider_id: input.agent.provider,
-    model_name: input.agent.model,
-  });
-  await useChatStore.getState().selectSession(retryConversation.conversation_id);
-  const retryCapabilitySession = await resolveFoundationToolTurnSession();
-  const retrySourceNonce = crypto.randomUUID();
+  const maxCancellationAttempts = 3;
+  const terminalRaceStatuses: string[] = [];
+  let preparedRetrySource: {
+    retryConversation: Awaited<ReturnType<typeof api.createAgentConversation>>;
+    cancellationAttempt: {
+      turnId: string;
+      result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+    };
+    retrySourceResult: ObservedFoundationTurnResult;
+    sourceCancellationStatus: string;
+    sourceStreamCancellationObserved: boolean;
+  } | null = null;
 
-  let cancellationRequested = false;
-  let resolveCancellation!: (value: {
-    turnId: string;
-    result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
-  }) => void;
-  const cancellation = new Promise<{
-    turnId: string;
-    result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
-  }>((resolve) => {
-    resolveCancellation = resolve;
-  });
-  const retrySource = startObservedFoundationTurn({
-    conversationId: retryConversation.conversation_id,
-    agentId,
-    content:
-      `Reply with 20 short numbered items for retry sample ${input.sampleId}. `
-      + `Include nonce ${retrySourceNonce} in every item.`,
-    idempotencyKey: crypto.randomUUID(),
-    provider: input.agent.provider || undefined,
-    model: input.agent.model || undefined,
-    effort: 'low',
-    thinkingMode: 'disabled',
-    clientCapabilitySessionId: retryCapabilitySession.capabilitySessionId,
-    onEvent: (event, events) => {
-      if (
-        cancellationRequested
-        || event.event !== 'progress'
-        || event.data.stage !== 'provider_call_started'
-      ) {
-        return;
-      }
-      const turnId = observedTurnId(events);
-      if (!turnId) return;
-      cancellationRequested = true;
-      reportFoundationF07Debug('A', 'retry-source-cancel-requested', {
-        elapsedMs: performance.now() - scenarioStartedAt,
-        sequence: Number(event.data.seq ?? 0),
-      });
-      resolveCancellation({
-        turnId,
-        result: api.cancelAgentTurn(turnId),
-      });
-    },
-  });
-  const cancellationAttempt = await Promise.race([
-    cancellation,
-    retrySource.result.then((result) => {
-      throw new Error(
-        result.error || 'agent.acceptance.foundationRevisionRetrySourceMissing',
-      );
-    }),
-  ]);
-  const cancellationResponse = await cancellationAttempt.result;
-  const sourceCancellationStatus = String(
-    cancellationResponse?.status ?? '',
-  ).toLowerCase();
-  await reportFoundationF07Debug('S-U', 'retry-source-cancel-response', {
-    elapsedMs: performance.now() - scenarioStartedAt,
-    sourceCancellationStatus,
-    sourceCancellationStatusType: typeof cancellationResponse?.status,
-    responseTurnPresent: Boolean(cancellationResponse?.turn_id),
-    responseTurnMatchesTarget:
-      cancellationResponse?.turn_id === cancellationAttempt.turnId,
-    responseFields: Object.keys(cancellationResponse ?? {}).sort(),
-  });
-  if (sourceCancellationStatus !== 'cancelled') {
+  for (
+    let cancellationAttemptIndex = 1;
+    cancellationAttemptIndex <= maxCancellationAttempts;
+    cancellationAttemptIndex += 1
+  ) {
+    const retryConversation = await api.createAgentConversation({
+      agent_id: agentId,
+      title: `Foundation retry ${input.sampleId}`,
+      provider_id: input.agent.provider,
+      model_name: input.agent.model,
+    });
+    await useChatStore.getState().selectSession(
+      retryConversation.conversation_id,
+    );
+    const retryCapabilitySession = await resolveFoundationToolTurnSession();
+    const retrySourceNonce = crypto.randomUUID();
+
+    let cancellationRequested = false;
+    let resolveCancellation!: (value: {
+      turnId: string;
+      result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+    }) => void;
+    const cancellation = new Promise<{
+      turnId: string;
+      result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+    }>((resolve) => {
+      resolveCancellation = resolve;
+    });
+    const retrySource = startObservedFoundationTurn({
+      conversationId: retryConversation.conversation_id,
+      agentId,
+      content:
+        `Reply with 20 short numbered items for retry sample ${input.sampleId}. `
+        + `Include nonce ${retrySourceNonce} in every item.`,
+      idempotencyKey: crypto.randomUUID(),
+      provider: input.agent.provider || undefined,
+      model: input.agent.model || undefined,
+      effort: 'low',
+      thinkingMode: 'disabled',
+      clientCapabilitySessionId: retryCapabilitySession.capabilitySessionId,
+      onEvent: (event, events) => {
+        if (
+          cancellationRequested
+          || event.event !== 'progress'
+          || event.data.stage !== 'provider_call_started'
+        ) {
+          return;
+        }
+        const turnId = observedTurnId(events);
+        if (!turnId) return;
+        cancellationRequested = true;
+        reportFoundationF07Debug('A', 'retry-source-cancel-requested', {
+          cancellationAttemptIndex,
+          elapsedMs: performance.now() - scenarioStartedAt,
+          sequence: Number(event.data.seq ?? 0),
+        });
+        resolveCancellation({
+          turnId,
+          result: api.cancelAgentTurn(turnId),
+        });
+      },
+    });
+    const cancellationAttempt = await Promise.race([
+      cancellation,
+      retrySource.result.then((result) => {
+        throw new Error(
+          result.error || 'agent.acceptance.foundationRevisionRetrySourceMissing',
+        );
+      }),
+    ]);
+    const cancellationResponse = await cancellationAttempt.result;
+    const sourceCancellationStatus = String(
+      cancellationResponse?.status ?? '',
+    ).toLowerCase();
+    await reportFoundationF07Debug('S-U', 'retry-source-cancel-response', {
+      cancellationAttemptIndex,
+      elapsedMs: performance.now() - scenarioStartedAt,
+      sourceCancellationStatus,
+      sourceCancellationStatusType: typeof cancellationResponse?.status,
+      responseTurnPresent: Boolean(cancellationResponse?.turn_id),
+      responseTurnMatchesTarget:
+        cancellationResponse?.turn_id === cancellationAttempt.turnId,
+      responseFields: Object.keys(cancellationResponse ?? {}).sort(),
+    });
+    const retrySourceResult = await retrySource.result;
+    const sourceStreamCancellationObserved = retrySourceResult.events.some(
+      (event) => classifyAgentTurnTerminalEvent(event) === 'cancelled',
+    );
+    if (sourceCancellationStatus === 'cancelled') {
+      preparedRetrySource = {
+        retryConversation,
+        cancellationAttempt,
+        retrySourceResult,
+        sourceCancellationStatus,
+        sourceStreamCancellationObserved,
+      };
+      break;
+    }
+
     retrySource.controller.abort();
-    throw new Error('agent.acceptance.foundationRevisionRetrySourceNotCancelled');
+    terminalRaceStatuses.push(sourceCancellationStatus || 'missing');
+    await cleanupFoundationToolConversation(
+      retryConversation.conversation_id,
+      cancellationAttempt.turnId,
+    );
+    if (
+      sourceCancellationStatus !== 'completed'
+      || cancellationAttemptIndex === maxCancellationAttempts
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationRevisionRetrySourceNotCancelled:'
+        + terminalRaceStatuses.join(','),
+      );
+    }
+    await reportFoundationF07Debug('A', 'retry-source-terminal-race', {
+      cancellationAttemptIndex,
+      elapsedMs: performance.now() - scenarioStartedAt,
+      sourceCancellationStatus,
+    });
   }
-  const retrySourceResult = await retrySource.result;
-  const sourceStreamCancellationObserved = retrySourceResult.events.some(
-    (event) => classifyAgentTurnTerminalEvent(event) === 'cancelled',
-  );
+  if (!preparedRetrySource) {
+    throw new Error('agent.acceptance.foundationRevisionRetrySourceMissing');
+  }
+  const {
+    retryConversation,
+    cancellationAttempt,
+    retrySourceResult,
+    sourceCancellationStatus,
+    sourceStreamCancellationObserved,
+  } = preparedRetrySource;
   reportFoundationF07Debug('A-B', 'retry-source-finished', {
     elapsedMs: performance.now() - scenarioStartedAt,
     sourceCancellationStatus,
@@ -16122,6 +16609,8 @@ async function runFoundationForbiddenActorAttempt(input: {
   conversationId: string;
   idempotencyKey: string;
   content: string;
+  ownerActorHash: string;
+  receiverActorHash: string;
   requireRuntimeEvent?: boolean;
 }): Promise<{
   outcome: Record<string, unknown>;
@@ -16136,6 +16625,11 @@ async function runFoundationForbiddenActorAttempt(input: {
     current: FoundationPreAdmissionErrorEvent | null;
   } = { current: null };
   let observationSequence = 0;
+  let rejectionCallbackCount = 0;
+  let rejectionCallbackErrorCode = '';
+  let lastEventType = '';
+  let lastEventErrorType = '';
+  let lastSourceTransport = '';
   const unsubscribe = eventBus.subscribe(
     EVENT.AGENT_TURN_STREAM_EVENT,
     (payload) => {
@@ -16146,6 +16640,9 @@ async function runFoundationForbiddenActorAttempt(input: {
       ).sourceDelivery;
       if (payload.conversationId !== input.conversationId) return;
       observationSequence += 1;
+      lastEventType = payload.event;
+      lastEventErrorType = String(payload.data.error_type ?? '');
+      lastSourceTransport = sourceDelivery?.transport ?? '';
       if (
         payload.event !== 'error'
         || payload.data.error_type !== 'OWNERSHIP_FORBIDDEN_ACTOR'
@@ -16170,6 +16667,8 @@ async function runFoundationForbiddenActorAttempt(input: {
       {
         clientIdempotencyKey: input.idempotencyKey,
         onRejected: (error) => {
+          rejectionCallbackCount += 1;
+          rejectionCallbackErrorCode = observedErrorCode(error);
           if (error) {
             rejectedRef.current = evidenceValue(error) as Record<string, unknown>;
           }
@@ -16179,15 +16678,62 @@ async function runFoundationForbiddenActorAttempt(input: {
     if (!sent) {
       throw new Error('agent.acceptance.foundationForbiddenActorSendRejected');
     }
-    await waitFor(
-      () => (
-        input.requireRuntimeEvent === false
-          ? rejectedRef.current !== null || errorEventRef.current !== null
-          : rejectedRef.current !== null && errorEventRef.current !== null
-      ),
-      'typed forbidden actor rejection',
-      60_000,
-    );
+    try {
+      await waitFor(
+        () => (
+          input.requireRuntimeEvent === false
+            ? rejectedRef.current !== null || errorEventRef.current !== null
+            : rejectedRef.current !== null && errorEventRef.current !== null
+        ),
+        'typed forbidden actor rejection',
+        60_000,
+      );
+    } catch {
+      const actorHash = await sha256Hex(authenticatedFoundationActorPtid());
+      const chatState = useChatStore.getState();
+      const operation = chatState.operations[input.conversationId];
+      const bufferedMessages =
+        chatState.sessionBuffers[input.conversationId] ?? [];
+      const readback = await api.getAgentConversation(input.conversationId).then(
+        () => ({ code: '', visible: true }),
+        (readbackError: unknown) => ({
+          code: observedErrorCode(readbackError),
+          visible: false,
+        }),
+      );
+      throw new Error(
+        'agent.acceptance.foundationForbiddenActorWaitFailed:'
+        + stableJson({
+          actorMatchesOwner: actorHash === input.ownerActorHash,
+          actorMatchesReceiver: actorHash === input.receiverActorHash,
+          bufferedMessageErrorTypes: bufferedMessages
+            .map((message) => message.typedError?.error_type ?? '')
+            .filter(Boolean),
+          bufferedMessageErrors: bufferedMessages
+            .map((message) => message.error ?? '')
+            .filter(Boolean),
+          currentSessionMatches:
+            chatState.currentSessionKey === input.conversationId,
+          errorEventPresent: errorEventRef.current !== null,
+          isStreaming: chatState.isStreaming,
+          lastEventErrorType,
+          lastEventType,
+          lastSourceTransport,
+          messageErrorTypes: chatState.messages
+            .map((message) => message.typedError?.error_type ?? '')
+            .filter(Boolean),
+          observationSequence,
+          operationErrorDetail: operation?.error?.detail ?? '',
+          operationErrorMessage: operation?.error?.message ?? '',
+          operationRunState: operation?.runState ?? 'absent',
+          operationStatus: operation?.status ?? 'absent',
+          readback,
+          rejectedPresent: rejectedRef.current !== null,
+          rejectionCallbackCount,
+          rejectionCallbackErrorCode,
+        }),
+      );
+    }
   } finally {
     unsubscribe();
   }
@@ -16364,6 +16910,8 @@ async function rejectFoundationForbiddenActor(input: {
     conversationId: resourceId,
     idempotencyKey,
     content,
+    ownerActorHash,
+    receiverActorHash,
   });
   // #region debug-point F-J:forbidden-actor-receiver
   await reportFoundationForbiddenActorAccountGateDebug(
@@ -16372,10 +16920,13 @@ async function rejectFoundationForbiddenActor(input: {
     forbiddenActorReceiverSnapshot(),
   );
   // #endregion
+  await useChatStore.getState().selectSession(resourceId);
   const replayed = await runFoundationForbiddenActorAttempt({
     conversationId: resourceId,
     idempotencyKey,
     content,
+    ownerActorHash,
+    receiverActorHash,
     requireRuntimeEvent: false,
   });
   if (!first.runtimeEvent) {
@@ -16774,6 +17325,7 @@ async function runFoundationIncompatibleCapabilityAttempt(input: {
 interface FoundationDisposableRuntimeFixture {
   providerId: string;
   modelId: string;
+  providerPrefix: string;
 }
 
 async function createGovernedToolRuntimeFixture(
@@ -16783,7 +17335,8 @@ async function createGovernedToolRuntimeFixture(
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
   const purposeKey = purpose.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-  const requestedProviderId = `mca-${purposeKey}-${suffix}`;
+  const providerPrefix = `mca-${purposeKey}-`;
+  const requestedProviderId = `${providerPrefix}${suffix}`;
   const modelId = `model-${suffix}`;
   const created = await api.createProvider({
     id: requestedProviderId,
@@ -16793,10 +17346,12 @@ async function createGovernedToolRuntimeFixture(
     api_key: apiKey,
   });
   const providerId = String(created.provider?.id || '');
-  if (providerId !== requestedProviderId) {
-    throw new Error('agent.acceptance.governedToolProviderIdentityMismatch');
-  }
   try {
+    if (providerId !== requestedProviderId) {
+      throw new Error(
+        'agent.acceptance.governedToolProviderIdentityMismatch',
+      );
+    }
     await api.addModel(providerId, {
       id: modelId,
       display_name: `Governed Tool ${purpose}`,
@@ -16822,9 +17377,20 @@ async function createGovernedToolRuntimeFixture(
         'agent.acceptance.governedToolRuntimeModelUnavailable',
       );
     }
-    return { providerId, modelId };
+    return { providerId, modelId, providerPrefix };
   } catch (error) {
-    await api.deleteProvider(providerId).catch(() => undefined);
+    try {
+      await api.deleteProvider(providerId);
+    } catch (cleanupError) {
+      if (!isFoundationResourceNotFound(cleanupError)) {
+        throw Object.assign(
+          new Error(
+            'agent.acceptance.governedToolRuntimeFixtureCleanupFailed',
+          ),
+          { primaryError: error, cleanupError },
+        );
+      }
+    }
     throw error;
   }
 }
@@ -16833,7 +17399,8 @@ async function createFoundationDisposableRuntimeFixture(
   purpose: string,
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
-  const requestedProviderId = `mca-fx-${suffix}`;
+  const providerPrefix = 'mca-fx-';
+  const requestedProviderId = `${providerPrefix}${suffix}`;
   let providerId = requestedProviderId;
   const modelId = `model-${suffix}`;
   try {
@@ -16875,7 +17442,7 @@ async function createFoundationDisposableRuntimeFixture(
         'agent.acceptance.disposableRuntimeModelUnavailable',
       );
     }
-    return { providerId, modelId };
+    return { providerId, modelId, providerPrefix };
   } catch (error) {
     try {
       if (providerId) {
@@ -16903,7 +17470,10 @@ async function deleteFoundationDisposableRuntimeFixture(
   providerRestored: boolean;
   modelDeleted: boolean;
 }> {
-  if (!fixture.providerId.startsWith('mca-fx-')) {
+  if (
+    !fixture.providerPrefix
+    || !fixture.providerId.startsWith(fixture.providerPrefix)
+  ) {
     throw new Error(
       'agent.acceptance.disposableRuntimeProviderIdentityInvalid',
     );
@@ -21093,6 +21663,121 @@ function evaluateBaseProviderModelUnavailable(
   ));
 }
 
+function evaluateBaseProviderRateLimitFacts(
+  facts: Record<string, unknown>,
+): Record<string, boolean> {
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationProviderRateLimitOutcome',
+  );
+  const typedError = evidenceRecord(
+    facts.typedError,
+    'foundationProviderRateLimitTypedError',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationProviderRateLimitDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationProviderRateLimitReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationProviderRateLimitStation',
+  );
+  const resolution = evidenceRecord(
+    facts.resolution,
+    'foundationProviderRateLimitResolution',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationProviderRateLimitReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationProviderRateLimitCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationProviderRateLimitRuntimeEvent',
+  );
+  const retryAfterMs = Number(details.retry_after_ms);
+
+  return {
+    typedProviderRateLimit: (
+      outcome.error === 'agent.errors.providerRateLimit'
+      && outcome.error_type === 'PROVIDER_RATE_LIMIT'
+      && outcome.locale_key === 'agent.errors.providerRateLimit'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && stableJson(typedError) === stableJson(outcome)
+      && stableJson(Object.keys(details).sort())
+        === stableJson(['provider_id', 'retry_after_ms'])
+      && details.provider_id === station.providerId
+      && Number.isInteger(retryAfterMs)
+      && retryAfterMs >= 0
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'PROVIDER_RATE_LIMIT'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && String(runtimeEvent.eventId).length === 64
+      && String(runtimeEvent.streamIdHash).length === 64
+      && String(runtimeEvent.conversationIdHash).length === 64
+      && String(runtimeEvent.payloadHash).length === 64
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && Number(runtimeEvent.sourceSequence) > 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRetryLaterVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    retryAfterProjected: (
+      retryAfterMs === 2_000
+      && Number(receiver.projectedRetryAfterMs) === retryAfterMs
+      && resolution.type === 'retryLater'
+      && resolution.providerId === station.providerId
+      && Number(resolution.retryAfterMs) === retryAfterMs
+    ),
+    oneTerminalProviderAttempt: (
+      Number(station.traceDelta) === 1
+      && Number(station.providerCallCount) === 1
+      && Number(station.classifiedErrorCount) === 1
+      && station.classifiedRateLimit === true
+      && Number(station.messageDelta) === 2
+    ),
+    zeroSuccessfulCompletion:
+      Number(station.completedAssistantCount) === 0,
+    queueUnchanged: (
+      Number(station.queueDelta) === 0
+      && String(station.queueStateBeforeHash).length === 64
+      && station.queueStateAfterHash === station.queueStateBeforeHash
+      && Number(station.conversationVersionAfter)
+        >= Number(station.conversationVersionBefore)
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replay.sourceHash === station.stateHash
+    ),
+    cleanupComplete: (
+      cleanup.status === 'clean'
+      && cleanup.fixtureModelDeleted === true
+      && cleanup.fixtureProviderDeleted === true
+      && cleanup.agentRestored === true
+      && cleanup.disposableAgentDeleted === true
+      && cleanup.conversationDeleted === true
+      && cleanup.localProjectionCleared === true
+    ),
+  };
+}
+
 function evaluateBaseAttachmentRejected(
   ctx: DirectCellAssertionContext,
 ): Record<string, boolean> {
@@ -23209,7 +23894,9 @@ async function cleanupMcpLifecycleDevelopmentState(
       );
       await api.setSelectedAgent(state.priorSelection);
     }
-    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await navigateToAgentSessionSurface(
+      'MCP cleanup Agent session surface',
+    );
   } catch (error) {
     failures.push(`selection:${observedErrorCode(error)}`);
   }
@@ -23249,6 +23936,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
     || !input.env
     || !input.toolName
     || !input.expectedResult
+    || !input.expectedAssistantResponse
   ) {
     throw new Error('agent.acceptance.mcpDevelopmentInputIncomplete');
   }
@@ -23272,6 +23960,9 @@ async function prepareMcpLifecycleDevelopmentJourney(
     serverName: input.serverName,
     conversationId: '',
     turnId: '',
+    assistantMessageId: '',
+    assistantContentHash: '',
+    expectedAssistantResponse: input.expectedAssistantResponse,
     priorSelection,
     priorSurface,
     operationIds: {},
@@ -23388,7 +24079,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
     await api.setSelectedAgent(disposableAgent.name);
     useAgentStore.getState().setSelectedAgent(disposableAgent.name);
     useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
-    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await navigateToAgentSessionSurface('MCP Agent session surface');
 
     const capabilitySession = await resolveFoundationToolTurnSession();
     const toolFixture = await mcpToolFixture(
@@ -23424,6 +24115,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
       fixture: toolFixture,
       sampleId: input.sampleId,
       label: 'mcp-lifecycle-development',
+      thinkingMode: 'auto',
       onConversationCreated: (conversationId) => {
         state.conversationId = conversationId;
       },
@@ -23439,7 +24131,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
     const toolCallId = String(
       evidenceField(toolFact, 'toolCallId', 'tool_call_id') ?? '',
     );
-    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await reconcileFoundationToolReceiver();
     await waitFor(
       () => toolRuntime.getProjection(toolCallId)?.status === 'success',
       'MCP ToolCall native receiver projection',
@@ -23453,7 +24145,11 @@ async function prepareMcpLifecycleDevelopmentJourney(
       'MCP ToolCall native receiver group',
       30_000,
     );
-    if (!document.querySelector(toolCallSelector)) {
+    const toolCallVisible = () => Boolean(
+      document.querySelector<HTMLElement>(toolCallSelector)
+        ?.getClientRects().length,
+    );
+    if (!toolCallVisible()) {
       const groupToggle = document.querySelector<HTMLElement>(
         `${toolCallGroupSelector} `
         + '[data-pt-agent-tool-call-group-toggle]',
@@ -23464,10 +24160,15 @@ async function prepareMcpLifecycleDevelopmentJourney(
       groupToggle.click();
     }
     await waitFor(
-      () => Boolean(document.querySelector(toolCallSelector)),
+      toolCallVisible,
       'MCP ToolCall native receiver',
       30_000,
     );
+    const toolCallReceiver = {
+      visible: toolCallVisible(),
+      toolCallId,
+      status: toolRuntime.getProjection(toolCallId)?.status ?? '',
+    };
     const sideEffectCount = await foundationToolSideEffectCount(
       'desktop_app',
       toolFact,
@@ -23476,6 +24177,43 @@ async function prepareMcpLifecycleDevelopmentJourney(
     const conversationReadback = await foundationConversationReadback(
       turn.conversationId,
     );
+    const assistant = [...conversationReadback.messages].reverse().find(
+      (message) =>
+        message.role === 'assistant'
+        && message.turnId === turn.turnId
+        && String(message.status).toLowerCase() === 'completed'
+        && message.content.trim() === input.expectedAssistantResponse,
+    );
+    if (!assistant) {
+      throw new Error('agent.acceptance.mcpFinalAssistantMissing');
+    }
+    state.assistantMessageId = assistant.messageId;
+    state.assistantContentHash = await sha256Hex(assistant.content);
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-message="assistant"]',
+        ),
+      ).some((element) =>
+        element.dataset.ptAgentMessageId === state.assistantMessageId
+        && element.dataset.ptAgentTerminalStatus === 'completed'
+        && element.getClientRects().length > 0),
+      'MCP final Assistant response',
+      30_000,
+    );
+    const chatAssistant = useChatStore.getState().messages.find(
+      (message) => message.id === state.assistantMessageId,
+    );
+    if (
+      !chatAssistant
+      || chatAssistant.loading
+      || chatAssistant.terminalStatus !== 'completed'
+      || await sha256Hex(chatAssistant.content) !== state.assistantContentHash
+    ) {
+      throw new Error('agent.acceptance.mcpFinalAssistantReceiverMismatch');
+    }
+    const authoritativeAgent = await api.getAgent(state.agentId);
+    const runtimeBinding = conversationReadback.conversation.runtime_binding;
 
     await useMCPStore.getState().testServer(input.serverName);
     const blockedStarted = currentMcpOperation(
@@ -23621,6 +24359,13 @@ async function prepareMcpLifecycleDevelopmentJourney(
         && authoritativeBinding.approvalPolicy
           === CapabilityApprovalPolicy.AUTO
         && Boolean(readyCapability && isAgentCapabilityReady(readyCapability)),
+      directModelAgentSelected:
+        authoritativeAgent.id === state.agentId
+        && authoritativeAgent.provider === state.providerId
+        && authoritativeAgent.model === state.modelId
+        && runtimeBinding?.provider_id === state.providerId
+        && runtimeBinding?.model_id === state.modelId
+        && runtimeBinding?.runtime_kind === 1,
       governedMcpInvocationSucceeded:
         receiverProjection?.status === 'success'
         && stationFact.executionAttemptCount === 1
@@ -23629,6 +24374,9 @@ async function prepareMcpLifecycleDevelopmentJourney(
         && stationFact.continuationCount === 1
         && JSON.stringify(conversationReadback.messages)
           .includes(toolCallId),
+      finalAssistantVisibleAndPersisted:
+        assistant.content.trim() === input.expectedAssistantResponse
+        && chatAssistant.content.trim() === input.expectedAssistantResponse,
       cancellationVisibleAndTerminal:
         cancelled.status === CapabilityOperationStatus.CANCELLED
         && cancelledReceiver.visible === true
@@ -23667,13 +24415,12 @@ async function prepareMcpLifecycleDevelopmentJourney(
       assertions,
       'receiver-dom': {
         connected: connectedReceiver,
-        toolCall: {
-          visible: Boolean(
-            document.querySelector<HTMLElement>(toolCallSelector)
-              ?.getClientRects().length,
-          ),
-          toolCallId,
-          status: receiverProjection?.status ?? '',
+        toolCall: toolCallReceiver,
+        assistant: {
+          visible: true,
+          messageId: state.assistantMessageId,
+          terminalStatus: chatAssistant.terminalStatus,
+          contentHash: state.assistantContentHash,
         },
         cancelled: cancelledReceiver,
         retried: retryReceiver,
@@ -23686,6 +24433,12 @@ async function prepareMcpLifecycleDevelopmentJourney(
         toolFact: stationFact,
         conversationId: turn.conversationId,
         turnId: turn.turnId,
+        agentId: authoritativeAgent.id,
+        providerId: authoritativeAgent.provider,
+        modelId: authoritativeAgent.model,
+        runtimeKind: runtimeBinding?.runtime_kind,
+        assistantMessageId: assistant.messageId,
+        assistantContentHash: state.assistantContentHash,
       },
       'executor-receipts': {
         operations: lifecycleOperations,
@@ -23752,6 +24505,68 @@ async function recoverMcpLifecycleDevelopmentJourney(
       && binding.capabilityVersion === '2'
       && !binding.tombstonedAt);
 
+    await useAgentStore.getState().loadAgents();
+    const restoredAgent = useAgentStore.getState().agents.find(
+      (agent) => agent.id === state.agentId,
+    );
+    if (
+      !restoredAgent
+      || restoredAgent.name !== state.agentName
+      || restoredAgent.provider !== state.providerId
+      || restoredAgent.model !== state.modelId
+    ) {
+      throw new Error('agent.acceptance.mcpAgentRestoreMissing');
+    }
+    await api.setSelectedAgent(restoredAgent.name);
+    useAgentStore.getState().setSelectedAgent(restoredAgent.name);
+    useAgentStore.getState().setAgentSurface(restoredAgent.name, 'chat');
+    await navigateToAgentSessionSurface(
+      'MCP restored Agent session surface',
+    );
+    await useAgentTopicStore.getState().loadTopicsForAgent(
+      state.agentId,
+      'acceptance-minimum-usable-restart',
+    );
+    await useChatStore.getState().loadSessions();
+    await useChatStore.getState().selectSession(state.conversationId);
+    await useChatStore.getState().syncMessages();
+    const conversationReadback = await foundationConversationReadback(
+      state.conversationId,
+    );
+    const restoredAssistant = conversationReadback.messages.find(
+      (message) =>
+        message.messageId === state.assistantMessageId
+        && message.turnId === state.turnId
+        && message.role === 'assistant'
+        && String(message.status).toLowerCase() === 'completed',
+    );
+    if (
+      !restoredAssistant
+      || restoredAssistant.content.trim() !== state.expectedAssistantResponse
+      || await sha256Hex(restoredAssistant.content)
+        !== state.assistantContentHash
+    ) {
+      throw new Error('agent.acceptance.mcpConversationRestoreMismatch');
+    }
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-message="assistant"]',
+        ),
+      ).some((element) =>
+        element.dataset.ptAgentMessageId === state.assistantMessageId
+        && element.dataset.ptAgentTerminalStatus === 'completed'
+        && element.getClientRects().length > 0),
+      'restored MCP final Assistant response',
+      30_000,
+    );
+    const restoredChatAssistant = useChatStore.getState().messages.find(
+      (message) => message.id === state.assistantMessageId,
+    );
+    const restoredAssistantHash = restoredChatAssistant
+      ? await sha256Hex(restoredChatAssistant.content)
+      : '';
+
     await useMCPStore.getState().reconnectServer(state.serverName);
     const reconnectStarted = currentMcpOperation(
       state.serverName,
@@ -23769,6 +24584,7 @@ async function recoverMcpLifecycleDevelopmentJourney(
       (server) => server.status === 'connected',
       'MCP reconnect projection',
     );
+    await navigateToMcpSettings(state.serverName);
     const reconnectedReceiver = mcpReceiverSnapshot(state.serverName);
     const reconnectReplay = await mcpOperationReplayEvidence(
       reconnect.operationId,
@@ -23799,6 +24615,14 @@ async function recoverMcpLifecycleDevelopmentJourney(
       bindingSurvivedRestart:
         Boolean(bindingReadback?.enabled)
         && bindingReadback?.capabilityId === 'mcp.invoke',
+      agentAndDirectModelSurvivedRestart:
+        restoredAgent.id === state.agentId
+        && restoredAgent.provider === state.providerId
+        && restoredAgent.model === state.modelId,
+      conversationAndFinalReplySurvivedRestart:
+        useChatStore.getState().currentSessionKey === state.conversationId
+        && restoredAssistantHash === state.assistantContentHash
+        && restoredChatAssistant?.terminalStatus === 'completed',
       reconnectRestoredConnection:
         reconnect.status === CapabilityOperationStatus.SUCCEEDED
         && reconnected.status === 'connected'
@@ -23818,6 +24642,14 @@ async function recoverMcpLifecycleDevelopmentJourney(
       assertions,
       'receiver-dom': {
         disconnected: disconnectedReceiver,
+        restoredConversation: {
+          visible: true,
+          agentId: restoredAgent.id,
+          conversationId: state.conversationId,
+          assistantMessageId: state.assistantMessageId,
+          terminalStatus: restoredChatAssistant?.terminalStatus ?? '',
+          contentHash: restoredAssistantHash,
+        },
         reconnected: reconnectedReceiver,
       },
       'station-readback': {
@@ -23825,6 +24657,10 @@ async function recoverMcpLifecycleDevelopmentJourney(
         terminalOperations: terminalReadback,
         reconnect: reconnectReplay,
         binding: bindingReadback,
+        conversationId: conversationReadback.conversation.conversation_id,
+        turnId: restoredAssistant.turnId,
+        assistantMessageId: restoredAssistant.messageId,
+        assistantContentHash: await sha256Hex(restoredAssistant.content),
       },
       'executor-receipts': {
         reconnect: await mcpOperationEvidence(reconnect),
@@ -24022,7 +24858,9 @@ async function runMcpUnavailableScenario(
     .filter(([, passed]) => !passed)
     .map(([name]) => name);
   useMCPStore.getState().reset();
-  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await navigateToAgentSessionSurface(
+    'MCP unavailable cleanup Agent session surface',
+  );
   if (failed.length > 0) {
     throw new Error(
       `agent.acceptance.mcpUnavailableAssertionsFailed:${failed.join(',')}`,
@@ -24113,6 +24951,8 @@ async function runMcpDesktopCandidateScenario(
     env: input.env,
     toolName: input.toolName,
     expectedResult: input.expectedResult,
+    expectedAssistantResponse:
+      input.expectedAssistantResponse ?? 'MCP invocation completed.',
   });
   const state = prepared.state as unknown as McpLifecycleDevelopmentState;
   const baseline = evidenceRecord(
@@ -24511,69 +25351,24 @@ async function runMcpLifecycleScenario(
 
 async function completeConnectorOAuthFixture(input: {
   connectorId: string;
-  sampleId: string;
-  scopes: string[];
-  expiresAt: string;
 }): Promise<OAuth2Connection> {
   const currentUser = useSessionStore.getState().currentUser;
   if (!currentUser?.actorPtid) {
     throw new Error('agent.acceptance.connectorActorMissing');
   }
-  const loopback = await api.oauth2StartLoopback(
+  await useOAuth2Store.getState().startAuth(
     input.connectorId,
     'acceptance',
+    'connector_link',
   );
-  const authorizeUrl = new URL(loopback.auth_url);
-  const returnTo = authorizeUrl.searchParams.get('return_to');
-  if (!returnTo) {
-    throw new Error('agent.acceptance.connectorLoopbackMissing');
+  await useAgentConnectorStore.getState().loadConnectors();
+  const connection = useOAuth2Store.getState().connections.find(
+    (candidate) => candidate.provider_id === input.connectorId,
+  );
+  if (!connection) {
+    throw new Error('agent.acceptance.connectorConnectionMissing');
   }
-  const callback = new URL(returnTo);
-  callback.searchParams.set('provider', input.connectorId);
-  callback.searchParams.set(
-    'provider_user_id',
-    `mca-j05-${input.sampleId}`,
-  );
-  callback.searchParams.set('username', `mca-j05-${input.sampleId}`);
-  callback.searchParams.set(
-    'display_name',
-    `Connector fixture ${input.sampleId}`,
-  );
-  callback.searchParams.set(
-    'email',
-    currentUser.email || `mca-j05-${input.sampleId}@example.test`,
-  );
-  callback.searchParams.set('scope', input.scopes.join(' '));
-  callback.searchParams.set('expires_at', input.expiresAt);
-  try {
-    await fetch(callback.toString(), {
-      cache: 'no-store',
-      mode: 'no-cors',
-    });
-  } catch {
-    // A no-CORS response may be opaque; the poll result is authoritative.
-  }
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 30_000) {
-    const result = await api.oauth2PollLoopback(loopback.session_id);
-    if (result.completed) {
-      if (result.status !== 'completed') {
-        throw new Error(
-          `agent.acceptance.connectorLoopbackFailed:${result.error ?? result.status}`,
-        );
-      }
-      await useAgentConnectorStore.getState().loadConnectors();
-      const connection = useOAuth2Store.getState().connections.find(
-        (candidate) => candidate.provider_id === input.connectorId,
-      );
-      if (!connection) {
-        throw new Error('agent.acceptance.connectorConnectionMissing');
-      }
-      return connection;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error('agent.acceptance.connectorLoopbackTimedOut');
+  return connection;
 }
 
 async function connectorDevelopmentFixture(
@@ -24802,9 +25597,6 @@ async function runConnectorInvocationDevelopmentJourney(
     }
     const connected = await completeConnectorOAuthFixture({
       connectorId,
-      sampleId: `${input.sampleId}-connected`,
-      scopes: ['read:user', 'user:email'],
-      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
     runtimeFixture = await createGovernedToolRuntimeFixture(
       'connector-invocation',
@@ -25117,9 +25909,6 @@ async function runConnectorInvocationDevelopmentJourney(
 
     const reconnected = await completeConnectorOAuthFixture({
       connectorId,
-      sampleId: `${input.sampleId}-reconnected`,
-      scopes: ['read:user', 'user:email'],
-      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
     if (candidateMode) {
       await refreshConnectorCapabilitySession(platform, disposableAgentId);
@@ -28312,6 +29101,7 @@ async function cleanupEvaluationScenarioState(
     const runtimeCleanup = await deleteFoundationDisposableRuntimeFixture({
       providerId: state.providerId,
       modelId: state.modelId,
+      providerPrefix: 'mca-evaluation-scenario-',
     });
     if (!runtimeCleanup.modelDeleted || !runtimeCleanup.providerRestored) {
       failures.push('runtime-fixture:incomplete');
@@ -28809,7 +29599,9 @@ async function runGovernedToolDevelopmentJourney(
     await api.setSelectedAgent(disposableAgent.name);
     useAgentStore.getState().setSelectedAgent(disposableAgent.name);
     useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
-    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await navigateToAgentSessionSurface(
+      'governed ToolCall Agent session surface',
+    );
 
     if (candidateMode) {
       if (input.locale === 'en' || input.locale === 'zh-CN') {
@@ -28892,6 +29684,7 @@ async function runGovernedToolDevelopmentJourney(
     if (!toolCallId) {
       throw new Error('agent.acceptance.governedToolApprovalInvalid');
     }
+    await reconcileFoundationToolReceiver();
     const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
     await waitFor(
       () => Boolean(document.querySelector(toolCallSelector)),
@@ -29395,7 +30188,7 @@ async function runGovernedToolDevelopmentJourney(
       );
     }
     await barrierControl;
-    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await reconcileFoundationToolReceiver();
     const expectedProjectionStatus =
       expectedOutcome.status === ToolCallStatus.SUCCEEDED
       ? 'success'
@@ -29876,7 +30669,6 @@ async function runGovernedToolDevelopmentJourney(
         cleanup.fixtureModelDeleted = fixtureCleanup.modelDeleted;
         cleanup.fixtureProviderDeleted = fixtureCleanup.providerRestored;
       }
-      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
       if (priorSelection) {
         await api.setSelectedAgent(priorSelection);
         useAgentStore.getState().setSelectedAgent(priorSelection);
@@ -29885,6 +30677,9 @@ async function runGovernedToolDevelopmentJourney(
           priorSurface,
         );
       }
+      await navigateToAgentSessionSurface(
+        'governed ToolCall cleanup Agent session surface',
+      );
       cleanup.selectionRestored =
         !priorSelection
         || useAgentStore.getState().selectedAgent === priorSelection;
@@ -30007,6 +30802,7 @@ async function cleanupCapabilityBindingCandidate(
     const runtimeCleanup = await deleteFoundationDisposableRuntimeFixture({
       providerId: fixture.providerId,
       modelId: fixture.modelId,
+      providerPrefix: 'mca-fx-',
     });
     if (!runtimeCleanup.providerRestored || !runtimeCleanup.modelDeleted) {
       failures.push('runtime-fixture:restore-not-observed');
@@ -30032,7 +30828,11 @@ async function cleanupCapabilityBindingCandidate(
       failures.push(`selection:${observedErrorCode(error)}`);
     });
   }
-  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await navigateToAgentSessionSurface(
+    'capability binding cleanup Agent session surface',
+  ).catch((error) => {
+    failures.push(`navigation:${observedErrorCode(error)}`);
+  });
   return evidenceValue({
     resourceKind: 'capability-binding-candidate-fixture',
     status: failures.length === 0 ? 'clean' : 'failed',
@@ -30953,6 +31753,1126 @@ async function runMarketplaceCatalogDevelopmentJourney(
   return evidenceValue({ ...capture, cleanup }) as Record<string, unknown>;
 }
 
+const CLI_PRIMARY_PROVIDER_ID = 'trae-cli';
+const CLI_PRIMARY_MODEL_ID = 'default';
+const CLI_FAILURE_PROVIDER_ID = 'codex-cli';
+
+async function prepareCliProviderPrimaryJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const providers = await api.listProviders();
+  const provider = providers.find(
+    (candidate) => candidate.id === CLI_PRIMARY_PROVIDER_ID,
+  );
+  if (
+    !provider
+    || !provider.enabled
+    || provider.runtime_kind !== 'cli'
+    || provider.requires_api_key
+    || provider.has_api_key
+  ) {
+    throw new Error('agent.acceptance.cliProviderUnavailable');
+  }
+  const detail = await api.getProvider(CLI_PRIMARY_PROVIDER_ID);
+  const model = detail.models.find(
+    (candidate) =>
+      candidate.id === CLI_PRIMARY_MODEL_ID
+      && candidate.enabled
+      && candidate.type === 'chat',
+  );
+  if (!model) {
+    throw new Error('agent.acceptance.cliProviderModelUnavailable');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const agent = await agentStore.createAgent({
+    name: `cli-primary-${sampleId}-${crypto.randomUUID()}`,
+    title: `CLI Provider ${sampleId}`,
+    description: 'Disposable native CLI Provider acceptance Agent',
+    provider: CLI_PRIMARY_PROVIDER_ID,
+    model: CLI_PRIMARY_MODEL_ID,
+    thinkingMode: 'auto',
+  });
+  const agentId = agent.id || agent.name;
+
+  await api.setSelectedAgent(agent.name);
+  useAgentStore.getState().setSelectedAgent(agent.name);
+  useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await waitFor(
+    () => Boolean(
+      document.querySelector('[data-pt-agent-composer]')
+        ?.getClientRects().length,
+    ),
+    'CLI Provider Agent composer',
+    30_000,
+  );
+
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `CLI Provider topic ${sampleId}`,
+    provider_id: CLI_PRIMARY_PROVIDER_ID,
+    model_name: CLI_PRIMARY_MODEL_ID,
+  });
+  const conversationId = conversation.conversation_id;
+  await useAgentTopicStore.getState().loadTopicsForAgent(
+    agentId,
+    'acceptance-cli-provider',
+  );
+  await useChatStore.getState().loadSessions();
+  await useChatStore.getState().selectSession(conversationId);
+  await useChatStore.getState().syncMessages();
+
+  const emptyReadback = await foundationConversationReadback(conversationId);
+  if (emptyReadback.messages.length !== 0) {
+    throw new Error('agent.acceptance.cliProviderTopicNotEmpty');
+  }
+  const authoritativeAgent = await api.getAgent(agentId);
+  const composer = document.querySelector<HTMLElement>(
+    '[data-pt-agent-composer] [data-pt-agent-selected-provider]',
+  );
+  const receiver = {
+    visible: Boolean(composer?.getClientRects().length),
+    providerId: composer?.dataset.ptAgentSelectedProvider ?? '',
+    modelId: composer?.dataset.ptAgentSelectedModel ?? '',
+    messageCount: useChatStore.getState().messages.length,
+  };
+  if (
+    !receiver.visible
+    || receiver.providerId !== CLI_PRIMARY_PROVIDER_ID
+    || receiver.modelId !== CLI_PRIMARY_MODEL_ID
+    || receiver.messageCount !== 0
+    || authoritativeAgent.provider !== CLI_PRIMARY_PROVIDER_ID
+    || authoritativeAgent.model !== CLI_PRIMARY_MODEL_ID
+    || conversation.provider_id !== CLI_PRIMARY_PROVIDER_ID
+    || conversation.model_name !== CLI_PRIMARY_MODEL_ID
+  ) {
+    throw new Error('agent.acceptance.cliProviderSelectionMismatch');
+  }
+
+  return evidenceValue({
+    fixture: {
+      agentId,
+      agentName: agent.name,
+      conversationId,
+      priorSelection,
+      priorSurface,
+    },
+    provider: {
+      id: provider.id,
+      runtimeKind: provider.runtime_kind,
+      enabled: provider.enabled,
+      requiresApiKey: provider.requires_api_key,
+      hasApiKey: provider.has_api_key,
+      modelId: model.id,
+      streaming: model.streaming === true,
+    },
+    station: {
+      agentId: authoritativeAgent.id,
+      providerId: authoritativeAgent.provider,
+      modelId: authoritativeAgent.model,
+      conversationId,
+      conversationVersion: conversation.version,
+      messageCount: emptyReadback.messages.length,
+    },
+    receiver,
+  }) as Record<string, unknown>;
+}
+
+async function executeCliProviderPrimaryTurn(input: {
+  agentId: string;
+  agentName: string;
+  conversationId: string;
+  sampleId: string;
+}): Promise<Record<string, unknown>> {
+  const observedEvents: Array<{
+    event: string;
+    stage: string;
+    text: string;
+    turnId: string;
+    sequence: number;
+    transport: string;
+  }> = [];
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      if (payload.conversationId !== input.conversationId) return;
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      observedEvents.push({
+        event: payload.event,
+        stage: String(payload.data.stage ?? ''),
+        text: String(payload.data.text ?? ''),
+        turnId: String(
+          payload.data.turnId
+          ?? payload.data.turn_id
+          ?? sourceDelivery?.turnId
+          ?? '',
+        ),
+        sequence: Number(
+          payload.data.seq
+          ?? payload.data.sequence
+          ?? sourceDelivery?.sequence
+          ?? 0,
+        ),
+        transport: sourceDelivery?.transport ?? '',
+      });
+    },
+  );
+
+  try {
+    const chatStore = useChatStore.getState();
+    const prompt = `Reply with one short sentence containing CLI-OK-${input.sampleId}.`;
+    const accepted = chatStore.sendMessage(prompt, [], {
+      clientIdempotencyKey: crypto.randomUUID(),
+    });
+    if (!accepted) {
+      throw new Error('agent.acceptance.cliProviderSendRejected');
+    }
+    await waitFor(
+      () => {
+        const current = useChatStore.getState();
+        const assistant = [...current.messages].reverse().find(
+          (message) => message.role === 'assistant',
+        );
+        if (assistant?.error) {
+          throw new Error(
+            `agent.acceptance.cliProviderTurnFailed:${assistant.error}`,
+          );
+        }
+        return Boolean(
+          assistant
+          && assistant.loading !== true
+          && assistant.terminalStatus === 'completed'
+          && assistant.content.trim(),
+        );
+      },
+      'CLI Provider terminal Assistant response',
+      300_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  await useChatStore.getState().syncMessages();
+  const readback = await foundationConversationReadback(input.conversationId);
+  const userMessages = readback.messages.filter(
+    (message) => message.role === 'user',
+  );
+  const assistantMessages = readback.messages.filter(
+    (message) =>
+      message.role === 'assistant'
+      && String(message.status).toLowerCase() === 'completed'
+      && message.content.trim(),
+  );
+  const assistant = assistantMessages[assistantMessages.length - 1];
+  const user = userMessages[userMessages.length - 1];
+  if (
+    !assistant
+    || !user
+    || !assistant.turnId
+    || assistant.turnId !== user.turnId
+  ) {
+    throw new Error('agent.acceptance.cliProviderStationTerminalMissing');
+  }
+  const turnEvents = observedEvents.filter(
+    (event) => !event.turnId || event.turnId === assistant.turnId,
+  );
+  const providerStarts = turnEvents.filter(
+    (event) => event.stage === 'provider_call_started',
+  );
+  const providerDeltas = turnEvents.filter(
+    (event) =>
+      event.event === 'text'
+      && event.stage === 'provider_delta'
+      && event.text.length > 0,
+  );
+  if (providerStarts.length === 0 || providerDeltas.length === 0) {
+    throw new Error('agent.acceptance.cliProviderStreamEvidenceMissing');
+  }
+  const assistantElement = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-message="assistant"]',
+    ),
+  ).find(
+    (element) =>
+      element.dataset.ptAgentMessageId === assistant.messageId
+      && element.getClientRects().length > 0,
+  );
+  if (!assistantElement) {
+    throw new Error('agent.acceptance.cliProviderAssistantNotVisible');
+  }
+
+  const runtimeBinding = readback.conversation.runtime_binding;
+  if (
+    readback.conversation.agent_id !== input.agentId
+    || readback.conversation.provider_id !== CLI_PRIMARY_PROVIDER_ID
+    || readback.conversation.model_name !== CLI_PRIMARY_MODEL_ID
+    || runtimeBinding?.provider_id !== CLI_PRIMARY_PROVIDER_ID
+    || runtimeBinding?.model_id !== CLI_PRIMARY_MODEL_ID
+    || runtimeBinding?.runtime_kind !== 1
+  ) {
+    throw new Error('agent.acceptance.cliProviderRuntimeBindingMismatch');
+  }
+
+  return evidenceValue({
+    fixture: {
+      agentId: input.agentId,
+      agentName: input.agentName,
+      conversationId: input.conversationId,
+      turnId: assistant.turnId,
+      assistantMessageId: assistant.messageId,
+      assistantContentHash: await sha256Hex(assistant.content),
+    },
+    stream: {
+      providerStartCount: providerStarts.length,
+      providerDeltaCount: providerDeltas.length,
+      textLength: providerDeltas.reduce(
+        (length, event) => length + event.text.length,
+        0,
+      ),
+      allStationDelivered: providerDeltas.every(
+        (event) => event.transport === 'station-sse',
+      ),
+      sequences: providerDeltas.map((event) => event.sequence),
+    },
+    station: {
+      conversationId: input.conversationId,
+      agentId: readback.conversation.agent_id,
+      providerId: readback.conversation.provider_id,
+      modelId: readback.conversation.model_name,
+      runtimeKind: runtimeBinding.runtime_kind,
+      userMessageId: user.messageId,
+      assistantMessageId: assistant.messageId,
+      turnId: assistant.turnId,
+      userStatus: user.status,
+      assistantStatus: assistant.status,
+      userContentHash: await sha256Hex(user.content),
+      assistantContentHash: await sha256Hex(assistant.content),
+    },
+    receiver: {
+      visible: true,
+      assistantMessageId: assistant.messageId,
+      terminalStatus:
+        assistantElement.dataset.ptAgentTerminalStatus ?? '',
+      contentHash: await sha256Hex(assistant.content),
+      contentLength: assistant.content.length,
+    },
+  }) as Record<string, unknown>;
+}
+
+async function executeCliProviderFailureJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const modelId = `acceptance-missing-${sampleId}`;
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const residueCleanup = await cleanupCliProviderPrimaryResidue(
+    sampleId,
+    priorSelection,
+  );
+  if (residueCleanup.status !== 'clean') {
+    throw new Error('agent.acceptance.cliFailureFixtureCleanupFailed');
+  }
+  const providerBefore = await api.getProvider(CLI_FAILURE_PROVIDER_ID);
+  if (
+    providerBefore.enabled
+    || Number(providerBefore.version ?? 0) !== 0
+    || providerBefore.models.some((model) => model.id === modelId)
+  ) {
+    throw new Error('agent.acceptance.cliFailureFixtureConflict');
+  }
+
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  let agentId = '';
+  let conversationId = '';
+  let providerCreated = false;
+  let modelCreated = false;
+  let capture: Record<string, unknown> | null = null;
+  const cleanupFailures: string[] = [];
+
+  try {
+    await api.updateProvider(CLI_FAILURE_PROVIDER_ID, {
+      base_url: '',
+      enabled: true,
+      version: Number(providerBefore.version ?? 0),
+    });
+    providerCreated = true;
+    await api.addModel(CLI_FAILURE_PROVIDER_ID, {
+      id: modelId,
+      display_name: 'Missing CLI acceptance model',
+      type: 'chat',
+      context_window: 8_192,
+      enabled: true,
+      streaming: true,
+      function_call: false,
+    });
+    modelCreated = true;
+    await useProviderStore.getState().loadProviders();
+
+    const agent = await agentStore.createAgent({
+      name: `cli-primary-${sampleId}-failure-${crypto.randomUUID()}`,
+      title: `CLI Provider failure ${sampleId}`,
+      description: 'Disposable native CLI Provider failure Agent',
+      provider: CLI_FAILURE_PROVIDER_ID,
+      model: modelId,
+      thinkingMode: 'auto',
+    });
+    agentId = agent.id || agent.name;
+    await api.setSelectedAgent(agent.name);
+    useAgentStore.getState().setSelectedAgent(agent.name);
+    useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+
+    const conversation = await api.createAgentConversation({
+      agent_id: agentId,
+      title: `CLI Provider failure ${sampleId}`,
+      provider_id: CLI_FAILURE_PROVIDER_ID,
+      model_name: modelId,
+    });
+    conversationId = conversation.conversation_id;
+    await useAgentTopicStore.getState().loadTopicsForAgent(
+      agentId,
+      'acceptance-cli-provider-failure',
+    );
+    await useChatStore.getState().loadSessions();
+    await useChatStore.getState().selectSession(conversationId);
+    await useChatStore.getState().syncMessages();
+
+    const accepted = useChatStore.getState().sendMessage(
+      `CLI failure ${sampleId}`,
+      [],
+      { clientIdempotencyKey: crypto.randomUUID() },
+    );
+    if (!accepted) {
+      throw new Error('agent.acceptance.cliFailureSendRejected');
+    }
+    let failedAssistant = [...useChatStore.getState().messages]
+      .reverse()
+      .find((message) => message.role === 'assistant');
+    await waitFor(
+      () => {
+        failedAssistant = [...useChatStore.getState().messages]
+          .reverse()
+          .find((message) => (
+            message.role === 'assistant'
+            && message.loading !== true
+            && message.typedError?.error_type === 'RUNTIME_UNAVAILABLE'
+            && message.typedError.details.reason_code === 'cli_binary_missing'
+          ));
+        return Boolean(failedAssistant);
+      },
+      'typed CLI Provider failure',
+      30_000,
+    );
+    await useChatStore.getState().syncMessages();
+    const readback = await foundationConversationReadback(conversationId);
+    const stationAssistant = [...readback.messages].reverse().find(
+      (message) => (
+        message.role === 'assistant'
+        && Boolean(message.errorJson)
+      ),
+    );
+    if (!failedAssistant || !stationAssistant) {
+      throw new Error('agent.acceptance.cliFailureProjectionMissing');
+    }
+    const persistedError = evidenceRecord(
+      JSON.parse(stationAssistant.errorJson),
+      'cliFailurePersistedError',
+    );
+    const persistedDetails = evidenceRecord(
+      persistedError.details,
+      'cliFailurePersistedDetails',
+    );
+    const completedAssistants = readback.messages.filter(
+      (message) => (
+        message.role === 'assistant'
+        && String(message.status).toLowerCase() === 'completed'
+      ),
+    );
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="RUNTIME_UNAVAILABLE"]'
+        + '[data-pt-agent-error-reason-code="cli_binary_missing"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    if (
+      persistedError.error_type !== 'RUNTIME_UNAVAILABLE'
+      || persistedDetails.runtime_kind !== 'direct_model'
+      || persistedDetails.reason_code !== 'cli_binary_missing'
+      || String(stationAssistant.status).toLowerCase() !== 'failed'
+      || completedAssistants.length !== 0
+      || !errorSurface
+    ) {
+      throw new Error('agent.acceptance.cliFailureContractMismatch');
+    }
+
+    capture = evidenceValue({
+      fixture: {
+        agentId,
+        conversationId,
+        providerId: CLI_FAILURE_PROVIDER_ID,
+        modelId,
+      },
+      station: {
+        assistantMessageId: stationAssistant.messageId,
+        assistantStatus: stationAssistant.status,
+        errorType: persistedError.error_type,
+        runtimeKind: persistedDetails.runtime_kind,
+        reasonCode: persistedDetails.reason_code,
+        completedAssistantCount: completedAssistants.length,
+      },
+      receiver: {
+        visible: true,
+        assistantMessageId: failedAssistant.id,
+        terminalStatus: failedAssistant.terminalStatus,
+        errorType: failedAssistant.typedError?.error_type ?? '',
+        reasonCode:
+          failedAssistant.typedError?.details.reason_code ?? '',
+      },
+    }) as Record<string, unknown>;
+  } finally {
+    if (conversationId) {
+      clearFoundationLocalConversationProjection(conversationId);
+      try {
+        await deleteFoundationConversation(conversationId);
+      } catch (error) {
+        cleanupFailures.push(`conversation:${observedErrorCode(error)}`);
+      }
+    }
+    if (agentId) {
+      try {
+        await api.deleteAgent(agentId);
+      } catch (error) {
+        if (!isFoundationResourceNotFound(error)) {
+          cleanupFailures.push(`agent:${observedErrorCode(error)}`);
+        }
+      }
+    }
+    if (modelCreated) {
+      try {
+        await api.deleteModel(CLI_FAILURE_PROVIDER_ID, modelId);
+      } catch (error) {
+        if (!isFoundationResourceNotFound(error)) {
+          cleanupFailures.push(`model:${observedErrorCode(error)}`);
+        }
+      }
+    }
+    if (providerCreated) {
+      try {
+        await api.deleteProvider(CLI_FAILURE_PROVIDER_ID);
+      } catch (error) {
+        if (!isFoundationResourceNotFound(error)) {
+          cleanupFailures.push(`provider:${observedErrorCode(error)}`);
+        }
+      }
+    }
+    await useAgentStore.getState().loadAgents();
+    if (priorSelection) {
+      useAgentStore.getState().setSelectedAgent(priorSelection);
+      useAgentStore.getState().setAgentSurface(
+        priorSelection,
+        priorSurface,
+      );
+      await api.setSelectedAgent(priorSelection);
+    }
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  }
+
+  if (!capture || cleanupFailures.length > 0) {
+    throw new Error(
+      `agent.acceptance.cliFailureCleanupFailed:${cleanupFailures.join(',')}`,
+    );
+  }
+  return evidenceValue({
+    ...capture,
+    cleanup: {
+      status: 'clean',
+      failures: cleanupFailures,
+    },
+  }) as Record<string, unknown>;
+}
+
+async function restoreCliProviderPrimaryJourney(input: {
+  agentId: string;
+  agentName: string;
+  conversationId: string;
+  turnId: string;
+  assistantMessageId: string;
+  assistantContentHash: string;
+}): Promise<Record<string, unknown>> {
+  await useAgentStore.getState().loadAgents();
+  const agent = useAgentStore.getState().agents.find(
+    (candidate) => candidate.id === input.agentId,
+  );
+  if (
+    !agent
+    || agent.name !== input.agentName
+    || agent.provider !== CLI_PRIMARY_PROVIDER_ID
+    || agent.model !== CLI_PRIMARY_MODEL_ID
+  ) {
+    throw new Error('agent.acceptance.cliProviderAgentRestoreMissing');
+  }
+  await api.setSelectedAgent(agent.name);
+  useAgentStore.getState().setSelectedAgent(agent.name);
+  useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await useAgentTopicStore.getState().loadTopicsForAgent(
+    input.agentId,
+    'acceptance-cli-provider-restart',
+  );
+  await useChatStore.getState().loadSessions();
+  await useChatStore.getState().selectSession(input.conversationId);
+  await useChatStore.getState().syncMessages();
+
+  const readback = await foundationConversationReadback(input.conversationId);
+  const assistant = readback.messages.find(
+    (message) =>
+      message.messageId === input.assistantMessageId
+      && message.turnId === input.turnId
+      && message.role === 'assistant'
+      && String(message.status).toLowerCase() === 'completed',
+  );
+  if (
+    !assistant
+    || await sha256Hex(assistant.content) !== input.assistantContentHash
+  ) {
+    throw new Error('agent.acceptance.cliProviderStationRestoreMismatch');
+  }
+  await waitFor(
+    () => Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]',
+      ),
+    ).some(
+      (element) =>
+        element.dataset.ptAgentMessageId === input.assistantMessageId
+        && element.dataset.ptAgentTerminalStatus === 'completed'
+        && element.getClientRects().length > 0,
+    ),
+    'restored CLI Provider Assistant response',
+    30_000,
+  );
+  const chatAssistant = useChatStore.getState().messages.find(
+    (message) => message.id === input.assistantMessageId,
+  );
+  if (
+    !chatAssistant
+    || chatAssistant.loading
+    || chatAssistant.terminalStatus !== 'completed'
+    || await sha256Hex(chatAssistant.content) !== input.assistantContentHash
+  ) {
+    throw new Error('agent.acceptance.cliProviderReceiverRestoreMismatch');
+  }
+
+  return evidenceValue({
+    station: {
+      agentId: agent.id,
+      providerId: agent.provider,
+      modelId: agent.model,
+      conversationId: readback.conversation.conversation_id,
+      turnId: assistant.turnId,
+      assistantMessageId: assistant.messageId,
+      assistantContentHash: await sha256Hex(assistant.content),
+    },
+    receiver: {
+      visible: true,
+      currentSessionKey: useChatStore.getState().currentSessionKey,
+      assistantMessageId: chatAssistant.id,
+      terminalStatus: chatAssistant.terminalStatus,
+      contentHash: await sha256Hex(chatAssistant.content),
+    },
+  }) as Record<string, unknown>;
+}
+
+async function cleanupCliProviderPrimaryJourney(input: {
+  agentId: string;
+  conversationId: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+}): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  clearFoundationLocalConversationProjection(input.conversationId);
+  try {
+    await deleteFoundationConversation(input.conversationId);
+  } catch (error) {
+    failures.push(`conversation:${observedErrorCode(error)}`);
+  }
+  try {
+    await api.deleteAgent(input.agentId);
+  } catch (error) {
+    if (!isFoundationResourceNotFound(error)) {
+      failures.push(`agent:${observedErrorCode(error)}`);
+    }
+  }
+  await useAgentStore.getState().loadAgents();
+  const remaining = useAgentStore.getState().agents;
+  const prior = remaining.find(
+    (candidate) => candidate.name === input.priorSelection,
+  );
+  if (prior) {
+    useAgentStore.getState().setSelectedAgent(prior.name);
+    useAgentStore.getState().setAgentSurface(prior.name, input.priorSurface);
+    await api.setSelectedAgent(prior.name);
+  }
+  const agentRemoved = !remaining.some(
+    (candidate) => candidate.id === input.agentId,
+  );
+  if (!agentRemoved) failures.push('agent:still-present');
+
+  return {
+    status: failures.length === 0 && agentRemoved ? 'clean' : 'failed',
+    agentRemoved,
+    conversationRemoved: failures.every(
+      (failure) => !failure.startsWith('conversation:'),
+    ),
+    selectionRestored: !prior || (
+      useAgentStore.getState().selectedAgent === prior.name
+    ),
+    failures,
+  };
+}
+
+async function cleanupCliProviderPrimaryResidue(
+  sampleId: string,
+  preservedAgentName = '',
+): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  let failureProviderRemoved = false;
+  await useAgentStore.getState().loadAgents();
+  const prefix = 'cli-primary-';
+  const targets = useAgentStore.getState().agents.filter(
+    (candidate) => (
+      candidate.name.startsWith(prefix)
+      && candidate.name !== preservedAgentName
+    ),
+  );
+  for (const agent of targets) {
+    try {
+      const conversations = await api.listAgentConversations(agent.id, {
+        page: 1,
+        pageSize: 200,
+      });
+      for (const conversation of conversations) {
+        clearFoundationLocalConversationProjection(
+          conversation.conversation_id,
+        );
+        await deleteFoundationConversation(conversation.conversation_id);
+      }
+      await api.deleteAgent(agent.id);
+    } catch (error) {
+      failures.push(`${agent.id}:${observedErrorCode(error)}`);
+    }
+  }
+  await useAgentStore.getState().loadAgents();
+  const remaining = useAgentStore.getState().agents.filter(
+    (candidate) => (
+      candidate.name.startsWith(prefix)
+      && candidate.name !== preservedAgentName
+    ),
+  );
+  try {
+    const provider = await api.getProvider(CLI_FAILURE_PROVIDER_ID);
+    const failureModels = provider.models.filter(
+      (model) => model.id.startsWith('acceptance-missing-'),
+    );
+    for (const model of failureModels) {
+      await api.deleteModel(
+        CLI_FAILURE_PROVIDER_ID,
+        model.id,
+      ).catch((error: unknown) => {
+        if (!isFoundationResourceNotFound(error)) throw error;
+      });
+    }
+    if (Number(provider.version ?? 0) > 0) {
+      await api.deleteProvider(CLI_FAILURE_PROVIDER_ID);
+    }
+    failureProviderRemoved = true;
+  } catch (error) {
+    if (isFoundationResourceNotFound(error)) {
+      failureProviderRemoved = true;
+    } else {
+      failures.push(`failure-provider:${observedErrorCode(error)}`);
+    }
+  }
+  return {
+    status:
+      failures.length === 0
+      && remaining.length === 0
+      && failureProviderRemoved
+        ? 'clean'
+        : 'failed',
+    removedCount: targets.length - remaining.length,
+    remainingCount: remaining.length,
+    failureProviderRemoved,
+    sampleId,
+    preservedAgentName,
+    failures,
+  };
+}
+
+const EXTERNAL_RUNTIME_PROVIDER_ID = 'external-agent';
+const EXTERNAL_RUNTIME_MODEL_ID = 'default';
+const EXTERNAL_RUNTIME_KIND = 2;
+const EXTERNAL_RUNTIME_READY_STATE = 1;
+
+interface ExternalRuntimeLifecycleFixture {
+  agentId: string;
+  agentName: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+  primaryConversationId: string;
+  secondaryConversationId: string;
+  primarySessionId: string;
+  secondarySessionId: string;
+  primaryHomeRef: string;
+  secondaryHomeRef: string;
+  epoch: number;
+}
+
+function externalRuntimeBinding(
+  conversation: Awaited<ReturnType<typeof api.getAgentConversation>>,
+) {
+  const binding = conversation.runtime_binding;
+  if (
+    !binding
+    || binding.runtime_kind !== EXTERNAL_RUNTIME_KIND
+    || binding.provider_id !== EXTERNAL_RUNTIME_PROVIDER_ID
+    || binding.model_id !== EXTERNAL_RUNTIME_MODEL_ID
+    || binding.external_session_epoch <= 0
+    || !binding.runtime_home_ref
+  ) {
+    throw new Error('agent.acceptance.externalRuntimeBindingInvalid');
+  }
+  return binding;
+}
+
+async function activateExternalRuntimeConversation(input: {
+  agentName: string;
+  agentId: string;
+  conversationId: string;
+}): Promise<void> {
+  await useAgentStore.getState().loadAgents();
+  const agent = useAgentStore.getState().agents.find(
+    (candidate) =>
+      candidate.id === input.agentId
+      && candidate.name === input.agentName,
+  );
+  if (!agent) {
+    throw new Error('agent.acceptance.externalRuntimeAgentMissing');
+  }
+  await api.setSelectedAgent(agent.name);
+  useAgentStore.getState().setSelectedAgent(agent.name);
+  useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await useAgentTopicStore.getState().loadTopicsForAgent(
+    input.agentId,
+    'acceptance-external-runtime',
+  );
+  await useChatStore.getState().loadSessions();
+  await useChatStore.getState().selectSession(input.conversationId);
+  await useChatStore.getState().syncMessages();
+  await waitFor(
+    () => (
+      useChatStore.getState().currentSessionKey === input.conversationId
+      && Boolean(
+        document.querySelector('[data-pt-agent-composer]')
+          ?.getClientRects().length,
+      )
+    ),
+    'external runtime conversation surface',
+    30_000,
+  );
+}
+
+async function executeExternalRuntimeTurn(input: {
+  agentId: string;
+  conversationId: string;
+  content: string;
+  expected: 'completed' | 'resume-unavailable';
+}): Promise<Record<string, unknown>> {
+  const beforeCount = useChatStore.getState().messages.length;
+  const events: ObservedFoundationTurnResult['events'] = [];
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      if (payload.conversationId !== input.conversationId) return;
+      events.push({
+        event: payload.event,
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        observedAt: new Date(payload.timestampMs).toISOString(),
+        sourceDelivery: (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery,
+      });
+    },
+  );
+  try {
+    const accepted = useChatStore.getState().sendMessage(
+      input.content,
+      [],
+      { clientIdempotencyKey: crypto.randomUUID() },
+    );
+    if (!accepted) {
+      throw new Error('agent.acceptance.externalRuntimeSendRejected');
+    }
+    await waitFor(
+      () => {
+        const assistants = useChatStore.getState().messages
+          .slice(beforeCount)
+          .filter((message) => message.role === 'assistant');
+        const assistant = assistants[assistants.length - 1];
+        if (input.expected === 'completed') {
+          if (assistant?.error) {
+            throw new Error(
+              `agent.acceptance.externalRuntimeTurnFailed:${assistant.error}`,
+            );
+          }
+          return Boolean(
+            assistant
+            && assistant.loading !== true
+            && assistant.terminalStatus === 'completed'
+            && assistant.content.trim(),
+          );
+        }
+        return Boolean(
+          assistant
+          && assistant.loading !== true
+          && assistant.terminalStatus === 'failed'
+          && assistant.typedError?.error_type
+            === 'RUNTIME_RESUME_UNAVAILABLE'
+          && assistant.resolution?.type === 'confirmReset',
+        );
+      },
+      input.expected === 'completed'
+        ? 'external runtime completed Turn'
+        : 'external runtime resume-unavailable Turn',
+      120_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  await useChatStore.getState().syncMessages();
+  const readback = await foundationConversationReadback(input.conversationId);
+  const assistant = [...useChatStore.getState().messages]
+    .reverse()
+    .find((message) => message.role === 'assistant');
+  if (!assistant) {
+    throw new Error('agent.acceptance.externalRuntimeAssistantMissing');
+  }
+  return evidenceValue({
+    assistant: {
+      messageId: assistant.id,
+      turnId: assistant.turnId ?? '',
+      content: assistant.content,
+      terminalStatus: assistant.terminalStatus ?? '',
+      typedError: assistant.typedError ?? null,
+      resolution: assistant.resolution ?? null,
+    },
+    binding: externalRuntimeBinding(readback.conversation),
+    conversationVersion: readback.conversation.version,
+    messageCount: readback.messages.length,
+    events: events.map((event) => ({
+      event: event.event,
+      stage: String(event.data.stage ?? ''),
+      sequence: Number(
+        event.data.seq
+        ?? event.data.sequence
+        ?? event.sourceDelivery?.sequence
+        ?? 0,
+      ),
+      sourceTransport: event.sourceDelivery?.transport ?? '',
+      errorType: String(event.data.error_type ?? ''),
+    })),
+  }) as Record<string, unknown>;
+}
+
+async function externalRuntimeReceiverSnapshot(
+  conversationId: string,
+): Promise<Record<string, unknown>> {
+  const message = [...useChatStore.getState().messages]
+    .reverse()
+    .find((candidate) => (
+      candidate.role === 'assistant'
+      && candidate.typedError?.error_type === 'RUNTIME_RESUME_UNAVAILABLE'
+    ));
+  const recovery = document.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-message-error-recovery="confirm-reset"]',
+  );
+  const error = document.querySelector<HTMLElement>(
+    '[data-pt-agent-error-type="RUNTIME_RESUME_UNAVAILABLE"]',
+  );
+  const errorText = error?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-text="agent.errors.resumeUnavailable"]',
+  );
+  return evidenceValue({
+    conversationId,
+    visible: Boolean(
+      message
+      && recovery
+      && error
+      && errorText
+      && recovery.getClientRects().length > 0
+      && error.getClientRects().length > 0,
+    ),
+    locale: i18n.language,
+    errorType: message?.typedError?.error_type ?? '',
+    localeKey: message?.typedError?.locale_key ?? '',
+    retryable: message?.typedError?.retryable ?? false,
+    terminal: message?.typedError?.terminal ?? false,
+    runtimeProfileId:
+      message?.typedError?.details.runtime_profile_id ?? '',
+    reasonCode: message?.typedError?.details.reason_code ?? '',
+    resolutionType: message?.resolution?.type ?? '',
+    recoveryText: recovery?.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.confirmReset',
+      { ns: 'agent' },
+    ),
+    errorText: errorText?.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.resumeUnavailable',
+      { ns: 'agent' },
+    ),
+  }) as Record<string, unknown>;
+}
+
+async function confirmExternalRuntimeResetThroughUI(input: {
+  conversationId: string;
+  epoch: number;
+  resetIdempotencyKey: string;
+}): Promise<Record<string, unknown>> {
+  const before = await api.getAgentConversation(input.conversationId);
+  const recovery = document.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-message-error-recovery="confirm-reset"]',
+  );
+  if (!recovery || recovery.getClientRects().length === 0) {
+    throw new Error('agent.acceptance.externalRuntimeRecoveryMissing');
+  }
+  recovery.click();
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLButtonElement>(
+        `[data-pt-agent-runtime-reset-confirm="${input.conversationId}"]`,
+      )?.getClientRects().length,
+    ),
+    'external runtime destructive confirmation',
+    30_000,
+  );
+  const confirmation = document.querySelector<HTMLButtonElement>(
+    `[data-pt-agent-runtime-reset-confirm="${input.conversationId}"]`,
+  );
+  if (!confirmation) {
+    throw new Error('agent.acceptance.externalRuntimeConfirmationMissing');
+  }
+  const confirmationText = confirmation.textContent?.trim() ?? '';
+  const concurrentReset = api.resetAgentConversationRuntime({
+    conversation_id: input.conversationId,
+    expected_conversation_version: before.version,
+    client_idempotency_key: input.resetIdempotencyKey,
+    destructive_confirmed: true,
+  });
+  confirmation.click();
+  let after = before;
+  const resetDeadline = Date.now() + 60_000;
+  let resetCommitted = false;
+  while (!resetCommitted && Date.now() < resetDeadline) {
+    after = await api.getAgentConversation(input.conversationId);
+    const binding = externalRuntimeBinding(after);
+    resetCommitted = (
+      after.version === before.version + 1
+      && binding.external_session_epoch === input.epoch + 1
+      && binding.external_session_id === ''
+      && binding.state === EXTERNAL_RUNTIME_READY_STATE
+    );
+    if (!resetCommitted) {
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+    }
+  }
+  if (!resetCommitted) {
+    throw new Error('agent.acceptance.externalRuntimeResetTimeout');
+  }
+  const concurrentReplay = await concurrentReset;
+  const replay = await api.resetAgentConversationRuntime({
+    conversation_id: input.conversationId,
+    expected_conversation_version: before.version,
+    client_idempotency_key: input.resetIdempotencyKey,
+    destructive_confirmed: true,
+  });
+  let conflictCode = '';
+  try {
+    await api.resetAgentConversationRuntime({
+      conversation_id: input.conversationId,
+      expected_conversation_version: after.version,
+      client_idempotency_key: input.resetIdempotencyKey,
+      destructive_confirmed: true,
+    });
+  } catch (error) {
+    conflictCode = observedErrorCode(error);
+  }
+  return evidenceValue({
+    before,
+    after,
+    concurrentReplay,
+    replay,
+    conflictCode,
+    confirmationVisible: true,
+    confirmationText,
+    expectedConfirmationText: i18n.t(
+      'agent.recovery.confirmReset',
+      { ns: 'agent' },
+    ),
+  }) as Record<string, unknown>;
+}
+
+async function cleanupExternalRuntimeResidue(): Promise<void> {
+  const store = useAgentStore.getState();
+  await store.loadAgents();
+  const targets = useAgentStore.getState().agents.filter(
+    (agent) =>
+      agent.description === 'Disposable P12 external runtime Agent',
+  );
+  const failures: string[] = [];
+  for (const agent of targets) {
+    const agentId = agent.id || agent.name;
+    try {
+      const conversations = await api.listAgentConversations(agentId, {
+        page: 1,
+        pageSize: 200,
+      });
+      for (const conversation of conversations) {
+        if (conversation.status === 'deleted') continue;
+        clearFoundationLocalConversationProjection(
+          conversation.conversation_id,
+        );
+        await deleteFoundationConversation(
+          conversation.conversation_id,
+          60_000,
+        );
+      }
+      await api.deleteAgent(agentId);
+    } catch (error) {
+      failures.push(`${agentId}:${observedErrorCode(error)}`);
+    }
+  }
+  await store.loadAgents();
+  if (failures.length > 0) {
+    throw new Error(
+      `agent.acceptance.externalRuntimeResidueCleanupFailed:`
+      + failures.join(','),
+    );
+  }
+}
+
 export function installAcceptanceHarness(): void {
   installFoundationF06Observation();
   registerAcceptanceHarness('agent', {
@@ -31160,7 +33080,24 @@ export function installAcceptanceHarness(): void {
     async runCapabilityBindingScenario(
       input: CapabilityBindingScenarioInput,
     ) {
-      return executeCapabilityBindingScenario(input);
+      if (input.platform !== 'desktop_app') {
+        return executeCapabilityBindingScenario(input);
+      }
+      const resolveClientCapabilitySessionId = async () => {
+        const capabilitySessions = await waitForCapabilitySessionEvidence();
+        const clientCapabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!clientCapabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        return clientCapabilitySessionId;
+      };
+      const clientCapabilitySessionId =
+        await resolveClientCapabilitySessionId();
+      return executeCapabilityBindingScenario({
+        ...input,
+        clientCapabilitySessionId,
+      }, resolveClientCapabilitySessionId);
     },
 
     async prepareCapabilityBindingCandidate({
@@ -31253,6 +33190,59 @@ export function installAcceptanceHarness(): void {
       sampleId: string;
     }) {
       return runMarketplaceCatalogDevelopmentJourney(sampleId);
+    },
+
+    async prepareCliProviderPrimary({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return prepareCliProviderPrimaryJourney(sampleId);
+    },
+
+    async executeCliProviderPrimary(input: {
+      agentId: string;
+      agentName: string;
+      conversationId: string;
+      sampleId: string;
+    }) {
+      return executeCliProviderPrimaryTurn(input);
+    },
+
+    async restoreCliProviderPrimary(input: {
+      agentId: string;
+      agentName: string;
+      conversationId: string;
+      turnId: string;
+      assistantMessageId: string;
+      assistantContentHash: string;
+    }) {
+      return restoreCliProviderPrimaryJourney(input);
+    },
+
+    async executeCliProviderFailure({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return executeCliProviderFailureJourney(sampleId);
+    },
+
+    async cleanupCliProviderPrimary(input: {
+      agentId: string;
+      conversationId: string;
+      priorSelection: string;
+      priorSurface: 'chat' | 'profile';
+    }) {
+      return cleanupCliProviderPrimaryJourney(input);
+    },
+
+    async cleanupCliProviderPrimaryResidue({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return cleanupCliProviderPrimaryResidue(sampleId);
     },
 
     async runCapabilityIncompatibleDevelopment({
@@ -32421,6 +34411,747 @@ export function installAcceptanceHarness(): void {
       });
     },
 
+    async runDevelopmentProviderRateLimit({
+      sampleId,
+      providerBaseUrl,
+      providerApiKey,
+      platform = 'desktop_app',
+      locale = i18n.language,
+    }: {
+      sampleId: string;
+      providerBaseUrl: string;
+      providerApiKey: string;
+      platform?: 'desktop_app' | 'browser';
+      locale?: string;
+    }) {
+      if (!providerApiKey) {
+        throw new Error(
+          'agent.acceptance.providerRateLimitCredentialMissing',
+        );
+      }
+      const providerUrl = new URL(providerBaseUrl);
+      if (
+        providerUrl.protocol !== 'http:'
+        || !providerUrl.hostname
+        || !providerUrl.port
+      ) {
+        throw new Error('agent.acceptance.providerRateLimitUrlInvalid');
+      }
+      await useAgentStore.getState().loadAgents();
+      const agentStore = useAgentStore.getState();
+      const priorSelection = agentStore.selectedAgent;
+      const priorSurface = agentStore.getAgentSurface(priorSelection);
+      let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
+      let disposableAgentDeleted = false;
+      let disposableAgentId = '';
+      let fixtureModelDeleted = false;
+      let fixtureProviderDeleted = false;
+      let conversationId = '';
+      let turnId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let agentRestored = priorSelection === '';
+      let capture: Record<string, unknown> | null = null;
+      let providerConfiguration: Record<string, unknown> | null = null;
+      const providerCleanupFailures: string[] = [];
+      try {
+        runtimeFixture = await createGovernedToolRuntimeFixture(
+          'provider-rate-limit',
+          providerUrl.toString(),
+          providerApiKey,
+        );
+        const configuredProvider = await api.getProvider(
+          runtimeFixture.providerId,
+        );
+        providerConfiguration = {
+          idMatches: configuredProvider.id === runtimeFixture.providerId,
+          baseUrlMatches:
+            configuredProvider.base_url === providerUrl.toString(),
+          enabled: configuredProvider.enabled,
+          hasApiKey: configuredProvider.has_api_key,
+          modelPresent: configuredProvider.models.some(
+            (model) => model.id === runtimeFixture?.modelId && model.enabled,
+          ),
+          runtimeKind: configuredProvider.runtime_kind,
+        };
+        const agent = await agentStore.createAgent({
+          name:
+            `foundation-provider-rate-limit-${sampleId}-`
+            + crypto.randomUUID(),
+          title: `Foundation provider rate limit ${sampleId}`,
+          description: 'Foundation provider rate limit fixture',
+          provider: runtimeFixture.providerId,
+          model: runtimeFixture.modelId,
+          thinkingMode: 'auto',
+          chatConfig: JSON.stringify({ tools: [] }),
+        });
+        const agentId = agent.id || agent.name;
+        disposableAgentId = agentId;
+        await api.setSelectedAgent(agent.name);
+        useAgentStore.getState().setSelectedAgent(agent.name);
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+          resource: 'sessions',
+        });
+        const capabilitySessions =
+          await waitForCapabilitySessionEvidence();
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const readiness = await api.getAgentCapabilityReadiness({
+          agent_id: agentId,
+          client_capability_session_id: capabilitySessionId,
+        });
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Provider rate limit ${sampleId}`,
+          provider_id: runtimeFixture.providerId,
+          model_name: runtimeFixture.modelId,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+        const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+
+        let observationSequence = 0;
+        const errorEventRef: {
+          current: FoundationPreAdmissionErrorEvent | null;
+        } = { current: null };
+        const unsubscribe = eventBus.subscribe(
+          EVENT.AGENT_TURN_STREAM_EVENT,
+          (payload) => {
+            const sourceDelivery = (
+              payload as typeof payload & {
+                sourceDelivery?: AgentTurnSourceDelivery;
+              }
+            ).sourceDelivery;
+            if (payload.conversationId !== conversationId) return;
+            observationSequence += 1;
+            if (
+              payload.event !== 'error'
+              || payload.data.error_type !== 'PROVIDER_RATE_LIMIT'
+            ) return;
+            errorEventRef.current = {
+              data: evidenceValue(payload.data) as Record<string, unknown>,
+              eventType: payload.event,
+              observedAt: new Date(payload.timestampMs).toISOString(),
+              streamId: payload.streamId,
+              streamGeneration: payload.streamGeneration,
+              conversationId: payload.conversationId,
+              observationSequence,
+              timestampMs: payload.timestampMs,
+              sourceDelivery,
+            };
+          },
+        );
+        const messageCountBefore = useChatStore.getState().messages.length;
+        const submittedAtMs = Date.now();
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'PROVIDER_RATE_LIMIT'
+          ));
+        try {
+          const sent = useChatStore.getState().sendMessage(
+            `Provider rate limit ${sampleId}`,
+            [],
+            {
+              clientIdempotencyKey: crypto.randomUUID(),
+            },
+          );
+          if (!sent) {
+            throw new Error(
+              'agent.acceptance.providerRateLimitSendRejected',
+            );
+          }
+          await waitFor(
+            () => {
+              errorMessage = useChatStore.getState().messages
+                .slice(messageCountBefore)
+                .find((message) => (
+                  message.role === 'assistant'
+                  && message.typedError?.error_type
+                    === 'PROVIDER_RATE_LIMIT'
+                  && message.resolution?.type === 'retryLater'
+                ));
+              const recovery = document.querySelector<HTMLButtonElement>(
+                '[data-pt-agent-message-error-recovery="retry-later"]',
+              );
+              const errorSurface = document.querySelector<HTMLElement>(
+                '[data-pt-agent-error-type="PROVIDER_RATE_LIMIT"]',
+              );
+              return Boolean(
+                errorEventRef.current
+                && errorMessage
+                && recovery
+                && recovery.getClientRects().length > 0
+                && errorSurface
+                && errorSurface.getClientRects().length > 0,
+              );
+            },
+            'provider-rate-limit recovery surface',
+            30_000,
+          );
+          await new Promise((resolve) => window.setTimeout(resolve, 2_500));
+        } catch (error) {
+          const activeAgent = selectedAgent();
+          const diagnosticTraces = await api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }).catch(() => ({ entries: [] }));
+          const latestDiagnosticTrace =
+            diagnosticTraces.entries[diagnosticTraces.entries.length - 1];
+          const diagnosticTrace = latestDiagnosticTrace?.trace
+            ? evidenceRecord(
+                evidenceValue(latestDiagnosticTrace.trace),
+                'providerRateLimitDiagnosticTrace',
+              )
+            : {};
+          const diagnosticClassifiedErrors = optionalEvidenceArray(
+            evidenceField(
+              diagnosticTrace,
+              'errorsClassified',
+              'errors_classified',
+            ),
+            'providerRateLimitDiagnosticClassifiedErrors',
+          ).map((value) => {
+            const entry = evidenceRecord(
+              value,
+              'providerRateLimitDiagnosticClassifiedError',
+            );
+            return {
+              reason: evidenceField(entry, 'reason', 'reason') ?? null,
+              httpStatus:
+                evidenceField(entry, 'httpStatus', 'http_status') ?? null,
+              errorCode:
+                evidenceField(entry, 'errorCode', 'error_code') ?? null,
+              errorMessage: String(
+                evidenceField(entry, 'errorMessage', 'error_message') ?? '',
+              ).split(providerUrl.toString()).join('<provider-base-url>'),
+            };
+          });
+          const observedMessages = useChatStore.getState().messages
+            .slice(messageCountBefore)
+            .map((message) => ({
+              role: message.role,
+              loading: message.loading === true,
+              cancelled: message.cancelled === true,
+              terminalStatus: message.terminalStatus ?? null,
+              error: message.error ?? null,
+              errorType: message.typedError?.error_type ?? null,
+              resolution: message.resolution?.type ?? null,
+            }));
+          const operation = useChatStore.getState().operations[conversationId];
+          throw Object.assign(
+            new Error(
+              'agent.acceptance.providerRateLimitRecoveryTimeout:'
+              + stableJson({
+                providerConfiguration,
+                activeAgent: activeAgent
+                  ? {
+                      id: activeAgent.id,
+                      provider: activeAgent.provider,
+                      model: activeAgent.model,
+                    }
+                  : null,
+                conversation: {
+                  agentId: readbackBefore.conversation.agent_id,
+                  providerId: readbackBefore.conversation.provider_id ?? null,
+                  modelName: readbackBefore.conversation.model_name ?? null,
+                },
+                classifiedErrors: diagnosticClassifiedErrors,
+                messages: observedMessages,
+                operation: operation
+                  ? {
+                      status: operation.status,
+                      runState: operation.runState,
+                      error: operation.error
+                        ? {
+                            message: operation.error.message,
+                            detail: operation.error.detail ?? null,
+                            resolution:
+                              operation.error.resolution?.type ?? null,
+                            providerId:
+                              operation.error.providerId ?? null,
+                          }
+                        : null,
+                    }
+                  : null,
+              }),
+            ),
+            { cause: error },
+          );
+        } finally {
+          unsubscribe();
+        }
+        const terminalObservedAtMs = Date.now();
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="retry-later"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="PROVIDER_RATE_LIMIT"]',
+        );
+        const errorText = errorSurface?.querySelector<HTMLElement>(
+          '[data-pt-agent-message-error-text="agent.errors.providerRateLimit"]',
+        );
+        const errorEvent =
+          errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+        if (
+          !errorMessage
+          || !recovery
+          || !errorSurface
+          || !errorText
+          || !errorEvent
+        ) {
+          throw new Error(
+            'agent.acceptance.providerRateLimitRecoveryMissing',
+          );
+        }
+        const sourceDelivery = errorEvent.sourceDelivery;
+        turnId = String(
+          errorMessage.turnId
+          ?? errorEvent.data.turnId
+          ?? errorEvent.data.turn_id
+          ?? sourceDelivery?.turnId
+          ?? '',
+        );
+        if (
+          !turnId
+          || !sourceDelivery
+          || sourceDelivery.transport !== 'station-sse'
+          || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+          || sourceDelivery.conversationId !== conversationId
+          || sourceDelivery.turnId !== turnId
+          || sourceDelivery.sequence <= 0
+          || sourceDelivery.rawPayload.eventType !== 'error'
+          || stableJson(
+            normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+          ) !== stableJson(
+            normalizeProjectedStationPayload(errorEvent.data),
+          )
+        ) {
+          throw new Error(
+            'agent.acceptance.providerRateLimitRuntimeIdentityMismatch',
+          );
+        }
+        const recoveryVisible = recovery.getClientRects().length > 0;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const errorVisible = errorText.getClientRects().length > 0;
+        const errorLabel = errorText.textContent?.trim() ?? '';
+        const projectedRetryAfterMs = Number(
+          errorSurface.dataset.ptAgentErrorRetryAfterMs ?? '-1',
+        );
+
+        const [readbackAfter, tracesAfter, queueAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        const typedError = errorMessage.typedError;
+        if (!typedError) {
+          throw new Error(
+            'agent.acceptance.providerRateLimitTypedErrorMissing',
+          );
+        }
+        const resolution = errorMessage.resolution;
+        const latestTrace =
+          tracesAfter.entries[tracesAfter.entries.length - 1];
+        const latestTraceRecord = latestTrace?.trace
+          ? evidenceRecord(
+              evidenceValue(latestTrace.trace),
+              'providerRateLimitTrace',
+            )
+          : {};
+        const latestProviderCalls = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'providerCalls',
+            'provider_calls',
+          ),
+          'providerRateLimitProviderCalls',
+        ).map((value) => (
+          evidenceRecord(value, 'providerRateLimitProviderCall')
+        ));
+        const classifiedErrors = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'errorsClassified',
+            'errors_classified',
+          ),
+          'providerRateLimitClassifiedErrors',
+        ).map((value) => (
+          evidenceRecord(value, 'providerRateLimitClassifiedError')
+        ));
+        const classifiedReason = evidenceField(
+          classifiedErrors[0] ?? {},
+          'reason',
+          'reason',
+        );
+        const classifiedRateLimit =
+          classifiedReason === FailoverReason.RATE_LIMIT
+          || classifiedReason === 'FAILOVER_REASON_RATE_LIMIT';
+        const completedAssistantMessages = readbackAfter.messages.filter(
+          (message) => (
+            String(message.role).toLowerCase() === 'assistant'
+            && String(message.status).toLowerCase() === 'completed'
+          ),
+        );
+        const replayReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const queueStateBeforeHash = await sha256Hex(
+          stableJson(queueBefore.entries),
+        );
+        const queueStateAfterHash = await sha256Hex(
+          stableJson(queueAfter.entries),
+        );
+        const sourceReadbackHash = await sha256Hex(stableJson(readbackAfter));
+        const replayReadbackHash = await sha256Hex(stableJson(replayReadback));
+        const typedOutcome = evidenceRecord(
+          evidenceValue(typedError),
+          'providerRateLimitOutcome',
+        );
+        const payloadHash = await sha256Hex(
+          stableJson(sourceDelivery.rawPayload),
+        );
+        const runtimeEvent: FoundationRuntimeEventObservation = {
+          eventId: await sha256Hex(stableJson({
+            conversationId,
+            turnId,
+            sequence: sourceDelivery.sequence,
+            payloadHash,
+          })),
+          eventType: errorEvent.eventType,
+          sequence: sourceDelivery.sequence,
+          observedAt: errorEvent.observedAt,
+          streamGeneration: errorEvent.streamGeneration,
+          streamIdHash: await sha256Hex(errorEvent.streamId),
+          conversationIdHash: await sha256Hex(conversationId),
+          payloadHash,
+          errorType: String(typedOutcome.error_type ?? ''),
+          sourceTransport: sourceDelivery.transport,
+          sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+          sourceConversationId: sourceDelivery.conversationId,
+          sourceTurnId: sourceDelivery.turnId,
+          sourceSequence: sourceDelivery.sequence,
+          sourceEventType: sourceDelivery.rawPayload.eventType,
+        };
+        const [profile, conversations, turnEvidence] = await Promise.all([
+          api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
+          api.listAgentConversations(agentId, {
+            page: 1,
+            pageSize: 200,
+          }),
+          foundationTurnEvidence(conversationId, turnId),
+        ]);
+        const replay = {
+          sourceHash: sourceReadbackHash,
+          replayHash: replayReadbackHash,
+          equal: sourceReadbackHash === replayReadbackHash,
+        };
+        const scenarioFacts = {
+          outcome: typedOutcome,
+          typedError,
+          resolution,
+          receiver: {
+            errorVisible,
+            errorText: errorLabel,
+            expectedErrorText: i18n.t(
+              'agent.errors.providerRateLimit',
+              { ns: 'agent' },
+            ),
+            recoveryVisible,
+            recoveryText: recoveryLabel,
+            expectedRecoveryText: i18n.t(
+              'agent.recovery.retryLater',
+              { ns: 'agent' },
+            ),
+            projectedRetryAfterMs,
+          },
+          station: {
+            conversationId,
+            turnId,
+            providerId: runtimeFixture.providerId,
+            modelId: runtimeFixture.modelId,
+            conversationVersion: readbackAfter.conversation.version,
+            stateHash: sourceReadbackHash,
+            messageDelta:
+              readbackAfter.messages.length - readbackBefore.messages.length,
+            traceDelta:
+              tracesAfter.entries.length - tracesBefore.entries.length,
+            queueDelta:
+              queueAfter.entries.length - queueBefore.entries.length,
+            queueStateBeforeHash,
+            queueStateAfterHash,
+            conversationVersionBefore: queueBefore.conversation_version,
+            conversationVersionAfter: queueAfter.conversation_version,
+            providerCallCount: latestProviderCalls.length,
+            classifiedErrorCount: classifiedErrors.length,
+            classifiedRateLimit,
+            completedAssistantCount: completedAssistantMessages.length,
+          },
+          submittedAt: new Date(submittedAtMs).toISOString(),
+          terminalObservedAt: new Date(terminalObservedAtMs).toISOString(),
+          runtimeEvent,
+          replay,
+          cleanup: {
+            fixtureModelDeleted: false,
+            fixtureProviderDeleted: false,
+            agentRestored: false,
+            disposableAgentDeleted: false,
+            conversationDeleted: false,
+            localProjectionCleared: false,
+          },
+        };
+        const assertions = evaluateBaseProviderRateLimitFacts(scenarioFacts);
+        const runtimeAttestation = await buildDirectRuntimeAttestation(
+          {
+            cell: 'BASE-RATE_LIMIT',
+            agent,
+            agentId,
+            profile,
+            readiness,
+            capabilitySessions,
+            conversations,
+            conversationReadback: readbackAfter,
+            turnQueue: queueAfter,
+            turnEvidence,
+            chatState: useChatStore.getState(),
+            sessionState: useSessionStore.getState(),
+            providerState: useProviderStore.getState(),
+            operation: useChatStore.getState().operations[conversationId],
+            lastAssistant: errorMessage,
+            scenarioFacts,
+            platform,
+            locale,
+            sampleId,
+          },
+          sampleId,
+        );
+        capture = {
+          assertions,
+          facts: scenarioFacts,
+          scenarioFacts,
+          runtimeAttestation,
+          'receiver-dom': {
+            scenarioId: 'BASE-RATE_LIMIT',
+            cellId: 'BASE-RATE_LIMIT',
+            selector:
+              '[data-pt-agent-error-type="PROVIDER_RATE_LIMIT"],'
+              + '[data-pt-agent-message-error-recovery="retry-later"]',
+            locale,
+            textHash: await sha256Hex(stableJson({
+              errorLabel,
+              recoveryLabel,
+            })),
+            visible: errorVisible && recoveryVisible,
+          },
+          'station-readback': {
+            entityKind: 'agent-provider-rate-limit',
+            entityIdHash: await sha256Hex(stableJson({
+              conversationId,
+              turnId,
+            })),
+            revision: Number(readbackAfter.conversation.version),
+            stateHash: sourceReadbackHash,
+          },
+          'runtime-events': {
+            eventId: runtimeEvent.eventId,
+            sequence: runtimeEvent.sequence,
+            eventType: runtimeEvent.eventType,
+            occurredAt: runtimeEvent.observedAt,
+            streamGeneration: runtimeEvent.streamGeneration,
+            streamIdHash: runtimeEvent.streamIdHash,
+            conversationIdHash: runtimeEvent.conversationIdHash,
+            payloadHash: runtimeEvent.payloadHash,
+            errorType: runtimeEvent.errorType,
+            sourceTransport: runtimeEvent.sourceTransport,
+            sourcePtidHash: runtimeEvent.sourcePtidHash,
+            sourceConversationId: runtimeEvent.sourceConversationId,
+            sourceTurnId: runtimeEvent.sourceTurnId,
+            sourceSequence: runtimeEvent.sourceSequence,
+            sourceEventType: runtimeEvent.sourceEventType,
+          },
+          'measurement-report': {
+            metric: 'foundation-provider-rate-limit-duration-ms',
+            sampleIds: [sampleId],
+            threshold: 'single-terminal-provider-attempt',
+            passed: (
+              assertions.typedProviderRateLimit
+              && assertions.oneTerminalProviderAttempt
+            ),
+            latencyMs: terminalObservedAtMs - submittedAtMs,
+          },
+          'side-effect-count': {
+            counterId: await sha256Hex(stableJson({
+              cell: 'BASE-RATE_LIMIT',
+              conversationId,
+              turnId,
+            })),
+            count: completedAssistantMessages.length,
+            maximum: 0,
+          },
+          replay,
+        };
+      } finally {
+        try {
+          if (conversationId) {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          }
+        } finally {
+          try {
+            if (disposableAgentId) {
+              await api.deleteAgent(disposableAgentId);
+              await useAgentStore.getState().loadAgents();
+              disposableAgentDeleted =
+                !useAgentStore.getState().agents.some(
+                  (candidate) => (
+                    (candidate.id || candidate.name) === disposableAgentId
+                  ),
+                );
+            }
+          } finally {
+            try {
+              if (runtimeFixture) {
+                let modelDeletionFailed = false;
+                await api.deleteModel(
+                  runtimeFixture.providerId,
+                  runtimeFixture.modelId,
+                ).catch((error: unknown) => {
+                  if (!isFoundationResourceNotFound(error)) {
+                    modelDeletionFailed = true;
+                    providerCleanupFailures.push(
+                      `model:${observedErrorCode(error)}`,
+                    );
+                  }
+                });
+                fixtureModelDeleted = !modelDeletionFailed;
+                await api.deleteProvider(
+                  runtimeFixture.providerId,
+                ).catch((error: unknown) => {
+                  if (!isFoundationResourceNotFound(error)) {
+                    providerCleanupFailures.push(
+                      `provider:${observedErrorCode(error)}`,
+                    );
+                  }
+                });
+                const providerReadback = await api
+                  .getProvider(runtimeFixture.providerId)
+                  .catch((error: unknown) => {
+                    if (isFoundationResourceNotFound(error)) return null;
+                    providerCleanupFailures.push(
+                      `provider-readback:${observedErrorCode(error)}`,
+                    );
+                    return undefined;
+                  });
+                fixtureProviderDeleted =
+                  providerReadback === null
+                  || (
+                    providerReadback !== undefined
+                    &&
+                    providerReadback.version === 0
+                    && providerReadback.has_api_key === false
+                  );
+                fixtureModelDeleted =
+                  fixtureModelDeleted
+                  && (
+                    providerReadback === null
+                    || (
+                      providerReadback !== undefined
+                      && !providerReadback.models.some(
+                        (model) => model.id === runtimeFixture?.modelId,
+                      )
+                    )
+                  );
+                await useProviderStore.getState().loadProviders().catch(
+                  (error: unknown) => {
+                    providerCleanupFailures.push(
+                      `provider-projection:${observedErrorCode(error)}`,
+                    );
+                  },
+                );
+              }
+            } finally {
+              if (priorSelection) {
+                useAgentStore.getState().setSelectedAgent(priorSelection);
+                useAgentStore.getState().setAgentSurface(
+                  priorSelection,
+                  priorSurface,
+                );
+                await api.setSelectedAgent(priorSelection);
+              }
+              agentRestored =
+                useAgentStore.getState().selectedAgent === priorSelection;
+            }
+          }
+        }
+      }
+      if (!capture) {
+        throw new Error(
+          'agent.acceptance.providerRateLimitCaptureMissing',
+        );
+      }
+      const cleanup = {
+        resourceKind: 'provider-rate-limit-fixture',
+        resourceIdHash: await sha256Hex(stableJson({
+          conversationId,
+          platform,
+          providerId: runtimeFixture?.providerId ?? '',
+        })),
+        fixtureModelDeleted,
+        fixtureProviderDeleted,
+        agentRestored,
+        conversationDeleted,
+        disposableAgentDeleted,
+        localProjectionCleared,
+        failures: providerCleanupFailures,
+        status:
+          fixtureModelDeleted
+            && fixtureProviderDeleted
+            && agentRestored
+            && conversationDeleted
+            && disposableAgentDeleted
+            && localProjectionCleared
+            && providerCleanupFailures.length === 0
+            ? 'clean'
+            : 'failed',
+      };
+      const scenarioFacts = evidenceRecord(
+        capture.scenarioFacts,
+        'foundationProviderRateLimitFacts',
+      );
+      scenarioFacts.cleanup = cleanup;
+      const assertions = evaluateBaseProviderRateLimitFacts(scenarioFacts);
+      return evidenceValue({
+        ...capture,
+        assertions,
+        facts: scenarioFacts,
+        scenarioFacts,
+        cleanup,
+      });
+    },
+
     async runDevelopmentProviderTimeout({
       sampleId,
       platform = 'desktop_app',
@@ -32430,25 +35161,56 @@ export function installAcceptanceHarness(): void {
       platform?: 'desktop_app' | 'browser';
       locale?: string;
     }) {
-      const agent = selectedAgent();
-      if (!agent?.provider || !agent.model) {
+      const sourceAgent = selectedAgent();
+      if (!sourceAgent?.provider || !sourceAgent.model) {
         throw new Error('agent.acceptance.providerTimeout');
       }
-      const agentId = agent.id || agent.name;
-      const capabilitySessions = await waitForCapabilitySessionEvidence();
-      const capabilitySessionId =
-        capabilitySessions.selectedStationSession?.session_id;
-      if (!capabilitySessionId) {
-        throw new Error('agent.acceptance.capabilitySessionUnavailable');
-      }
+      const agentStore = useAgentStore.getState();
+      const priorSelection = agentStore.selectedAgent;
+      const priorSurface = agentStore.getAgentSurface(priorSelection);
       const requestedWallTimeMs = 180_000;
       const providerDeadlineMs = 120_000;
+      let agentRestored = priorSelection === '';
+      let disposableAgentDeleted = false;
+      let disposableAgentId = '';
       let conversationId = '';
       let turnId = '';
       let conversationDeleted = false;
       let localProjectionCleared = false;
       let capture: Record<string, unknown> | null = null;
       try {
+        const agent = await agentStore.createAgent({
+          name: `foundation-provider-timeout-${sampleId}-${crypto.randomUUID()}`,
+          title: `Foundation provider timeout ${sampleId}`,
+          description: 'Foundation provider timeout fixture',
+          provider: sourceAgent.provider,
+          model: sourceAgent.model,
+          thinkingMode: 'disabled',
+          chatConfig: JSON.stringify({ tools: [] }),
+        });
+        const agentId = agent.id || agent.name;
+        disposableAgentId = agentId;
+        await api.setSelectedAgent(agent.name);
+        useAgentStore.getState().setSelectedAgent(agent.name);
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        const capabilitySessions = await waitForCapabilitySessionEvidence();
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenarioReadiness = await api.getAgentCapabilityReadiness({
+          agent_id: agentId,
+          client_capability_session_id: capabilitySessionId,
+        });
+        if (scenarioReadiness.capabilities.some((capability) => (
+          capability.capability_id.startsWith('tool:')
+          && isAgentCapabilityReady(capability)
+        ))) {
+          throw new Error(
+            'agent.acceptance.providerTimeoutToolIsolationFailed',
+          );
+        }
         const conversation = await api.createAgentConversation({
           agent_id: agentId,
           title: `Provider timeout ${sampleId}`,
@@ -32765,7 +35527,9 @@ export function installAcceptanceHarness(): void {
           runtimeEvent,
           replay,
           cleanup: {
+            agentRestored: false,
             conversationDeleted: false,
+            disposableAgentDeleted: false,
             localProjectionCleared: false,
           },
         };
@@ -32902,14 +35666,41 @@ export function installAcceptanceHarness(): void {
           replay,
         };
       } finally {
-        if (conversationId) {
-          clearFoundationLocalConversationProjection(conversationId);
-          localProjectionCleared = true;
-          const deletionErrorCode = await deleteFoundationConversation(
-            conversationId,
-          );
-          conversationDeleted = deletionErrorCode === ''
-            || deletionErrorCode.includes('AGENT_4004');
+        try {
+          if (conversationId) {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            await cleanupFoundationToolConversation(
+              conversationId,
+              turnId,
+              30_000,
+            );
+            conversationDeleted = true;
+          }
+        } finally {
+          try {
+            if (disposableAgentId) {
+              await api.deleteAgent(disposableAgentId);
+              await useAgentStore.getState().loadAgents();
+              disposableAgentDeleted =
+                !useAgentStore.getState().agents.some(
+                  (candidate) => (
+                    (candidate.id || candidate.name) === disposableAgentId
+                  ),
+                );
+            }
+          } finally {
+            if (priorSelection) {
+              useAgentStore.getState().setSelectedAgent(priorSelection);
+              useAgentStore.getState().setAgentSurface(
+                priorSelection,
+                priorSurface,
+              );
+              await api.setSelectedAgent(priorSelection);
+            }
+            agentRestored =
+              useAgentStore.getState().selectedAgent === priorSelection;
+          }
         }
       }
       if (!capture) {
@@ -32920,12 +35711,17 @@ export function installAcceptanceHarness(): void {
         resourceIdHash: await sha256Hex(stableJson({
           conversationId,
           platform,
-          providerId: agent.provider,
+          providerId: sourceAgent.provider,
         })),
+        agentRestored,
         conversationDeleted,
+        disposableAgentDeleted,
         localProjectionCleared,
         status:
-          conversationDeleted && localProjectionCleared
+          agentRestored
+            && conversationDeleted
+            && disposableAgentDeleted
+            && localProjectionCleared
             ? 'clean'
             : 'failed',
       };
@@ -34572,6 +37368,29 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async getCoreLifecycleAgentState() {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const agentId = agent.id || agent.name;
+      const conversations = await api.listAgentConversations(agentId, {
+        page: 1,
+        pageSize: 200,
+      });
+      return {
+        agent: {
+          id: agentId,
+          name: agent.name,
+          title: agent.title,
+          provider: agent.provider ?? null,
+          model: agent.model ?? null,
+          isDefault: agent.isDefault,
+          version: agent.version ?? 0,
+        },
+        conversations,
+        selectedConversationKey: useChatStore.getState().currentSessionKey,
+      };
+    },
+
     async getFoundationAgentState() {
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
@@ -34590,8 +37409,10 @@ export function installAcceptanceHarness(): void {
         agent: {
           id: agentId,
           name: agent.name,
+          title: agent.title,
           provider: agent.provider ?? null,
           model: agent.model ?? null,
+          isDefault: agent.isDefault,
           version: agent.version ?? 0,
         },
         profile,
@@ -34599,6 +37420,56 @@ export function installAcceptanceHarness(): void {
         capabilitySessions,
         conversations,
         selectedConversationKey: useChatStore.getState().currentSessionKey,
+      };
+    },
+
+    async prepareAgentTopicLoadFailure({ agentId }: { agentId: string }) {
+      const topicStore = useAgentTopicStore.getState();
+      const before = topicStore.getTopicsForAgent(agentId);
+      let rejected = false;
+      try {
+        await topicStore.loadTopicsForAgent(
+          agentId,
+          'acceptance-topic-load-failure',
+        );
+      } catch {
+        rejected = true;
+      }
+      const after = useAgentTopicStore.getState().getTopicsForAgent(agentId);
+      const error = useAgentTopicStore.getState().loadErrorsByAgentId[agentId];
+      await waitFor(
+        () => Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-pt-agent-topic-load-error]',
+          ),
+        ).some((element) => (
+          element.dataset.ptAgentTopicLoadError === agentId
+          && element.getClientRects().length > 0
+        )),
+        'Agent topic load recovery surface',
+        10_000,
+      );
+      return {
+        rejected,
+        beforeKeys: before.map((topic) => topic.key),
+        afterKeys: after.map((topic) => topic.key),
+        draftCountBefore: before.filter((topic) =>
+          isAgentDraftKey(topic.key)).length,
+        draftCountAfter: after.filter((topic) =>
+          isAgentDraftKey(topic.key)).length,
+        errorVisible: Boolean(error),
+      };
+    },
+
+    async getAgentTopicLoadState({ agentId }: { agentId: string }) {
+      const topicStore = useAgentTopicStore.getState();
+      const topics = topicStore.getTopicsForAgent(agentId);
+      return {
+        topicKeys: topics.map((topic) => topic.key),
+        draftCount: topics.filter((topic) =>
+          isAgentDraftKey(topic.key)).length,
+        loading: Boolean(topicStore.loadingAgentIds[agentId]),
+        errorVisible: Boolean(topicStore.loadErrorsByAgentId[agentId]),
       };
     },
 
@@ -35691,8 +38562,9 @@ export function installAcceptanceHarness(): void {
       faultBoundary?: 'text-prefix' | 'provider-started';
     }) {
       try {
-        const agent = selectedAgent();
-        if (!agent) throw new Error('agent.acceptance.agentMissing');
+        await restorePersistedFoundationCapabilityIsolation();
+        await restorePersistedFoundationCapabilityFixture();
+        const agent = await refreshFoundationSelectedAgent();
         const capabilitySessions = await waitForCapabilitySessionEvidence();
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -36838,6 +39710,10 @@ export function installAcceptanceHarness(): void {
           for (const queued of queuedTurns) queued.controller.abort();
           throw new Error('agent.acceptance.queueCapacitySnapshotMismatch');
         }
+        const executionBeforeOverflow = await foundationExecutionSnapshot(
+          agentId,
+          conversation.conversation_id,
+        );
         const overflow = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
@@ -37003,6 +39879,10 @@ export function installAcceptanceHarness(): void {
         const readbackAfterEditAction = await foundationConversationReadback(
           conversation.conversation_id,
         );
+        const executionAfterEditAction = await foundationExecutionSnapshot(
+          agentId,
+          conversation.conversation_id,
+        );
         const queueFullTypedError = queueFullMessage.typedError;
         const queueFullResolution = queueFullMessage.resolution;
         if (developmentSlice === 'queue-full') {
@@ -37052,7 +39932,9 @@ export function installAcceptanceHarness(): void {
                 === queueBeforeEditAction.conversation_version,
             zeroAutomaticResend:
               readbackAfterEditAction.messages.length
-                === readbackBeforeEditAction.messages.length,
+                === readbackBeforeEditAction.messages.length
+              && executionAfterEditAction.providerCallCount
+                === executionBeforeOverflow.providerCallCount,
             cleanupComplete,
           };
           return evidenceValue({
@@ -37068,6 +39950,10 @@ export function installAcceptanceHarness(): void {
                 queueFocused: queueFocusedAfterAction,
               },
               activeCancellationStatus: activeCancellation.status,
+              providerCallCountBeforeOverflow:
+                executionBeforeOverflow.providerCallCount,
+              providerCallCountAfterAction:
+                executionAfterEditAction.providerCallCount,
               deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
             },
             cleanup: {
@@ -37430,6 +40316,9 @@ export function installAcceptanceHarness(): void {
               stationMessageDelta:
                 readbackAfterEditAction.messages.length
                 - readbackBeforeEditAction.messages.length,
+              providerCallDelta:
+                executionAfterEditAction.providerCallCount
+                - executionBeforeOverflow.providerCallCount,
             },
             cancellation: {
               queueEntryId: cancellation?.entry.queue_entry_id ?? '',
@@ -40413,6 +43302,845 @@ export function installAcceptanceHarness(): void {
         }
         throw error;
       }
+    },
+
+    async externalRuntimeFoundationProbe({
+      platform,
+      locale,
+      cell,
+      sampleId,
+    }: {
+      platform: string;
+      locale: string;
+      cell: string;
+      sampleId: string;
+    }) {
+      if (cell !== 'BASE-RESUME_UNAVAILABLE') {
+        throw new Error(
+          `agent.acceptance.externalRuntimeFoundationCellUnsupported:${cell}`,
+        );
+      }
+      const models = await api.listAvailableModels();
+      if (!models.models.some((candidate) => (
+        candidate.provider_id === EXTERNAL_RUNTIME_PROVIDER_ID
+        && candidate.id === EXTERNAL_RUNTIME_MODEL_ID
+        && candidate.enabled
+      ))) {
+        throw new Error('agent.acceptance.externalRuntimeNotAdvertised');
+      }
+      const agentStore = useAgentStore.getState();
+      const priorSelection = agentStore.selectedAgent;
+      const priorSurface = agentStore.getAgentSurface(priorSelection);
+      const agent = await agentStore.createAgent({
+        name: `foundation-external-${sampleId}-${crypto.randomUUID()}`,
+        title: `Foundation external ${sampleId}`,
+        description: 'Disposable Foundation external runtime Agent',
+        provider: EXTERNAL_RUNTIME_PROVIDER_ID,
+        model: EXTERNAL_RUNTIME_MODEL_ID,
+        thinkingMode: 'disabled',
+      });
+      const agentId = agent.id || agent.name;
+      let conversationId = '';
+      let capture: Record<string, unknown> | null = null;
+      const cleanupFailures: string[] = [];
+      try {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Foundation external ${sampleId}`,
+          provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          model_name: EXTERNAL_RUNTIME_MODEL_ID,
+        });
+        conversationId = conversation.conversation_id;
+        await activateExternalRuntimeConversation({
+          agentName: agent.name,
+          agentId,
+          conversationId,
+        });
+        const stationActivityBefore =
+          await api.getAgentStationRuntimeActivity({
+            runtime_kind: EXTERNAL_RUNTIME_KIND,
+            runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          });
+        const localActivityBefore = await api.getAgentLocalRuntimeActivity({
+          runtime_kind: EXTERNAL_RUNTIME_KIND,
+          runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+        });
+        const started = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId,
+          content: `P12_FOUNDATION_START_${sampleId}`,
+          expected: 'completed',
+        });
+        const failed = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId,
+          content: 'P12_FORCE_RESUME_UNAVAILABLE',
+          expected: 'resume-unavailable',
+        });
+        const receiver = await externalRuntimeReceiverSnapshot(conversationId);
+        const failedBinding = evidenceRecord(
+          failed.binding,
+          'foundationExternalFailedBinding',
+        );
+        const failureReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const resetIdempotencyKey =
+          `external-runtime-reset:${conversationId}:`
+          + `${failed.conversationVersion}`;
+        const reset = await confirmExternalRuntimeResetThroughUI({
+          conversationId,
+          epoch: Number(failedBinding.external_session_epoch ?? 0),
+          resetIdempotencyKey,
+        });
+        const fresh = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId,
+          content: 'P12_FOUNDATION_FRESH_SESSION',
+          expected: 'completed',
+        });
+        const freshBinding = evidenceRecord(
+          fresh.binding,
+          'foundationExternalFreshBinding',
+        );
+        const failureAssistant = evidenceRecord(
+          failed.assistant,
+          'foundationExternalFailureAssistant',
+        );
+        const turnId = String(failureAssistant.turnId ?? '');
+        if (!turnId) {
+          throw new Error(
+            'agent.acceptance.externalRuntimeFailureTurnMissing',
+          );
+        }
+        const [
+          profile,
+          readiness,
+          capabilitySessions,
+          conversations,
+          conversationReadback,
+          turnEvidence,
+          stationActivityAfter,
+          localActivityAfter,
+        ] = await Promise.all([
+          api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
+          api.getAgentCapabilityReadiness({ agent_id: agentId }),
+          waitForCapabilitySessionEvidence(),
+          api.listAgentConversations(agentId, {
+            status: 'active',
+            page: 1,
+            pageSize: 200,
+          }),
+          foundationConversationReadback(conversationId),
+          foundationTurnEvidence(conversationId, turnId),
+          api.getAgentStationRuntimeActivity({
+            runtime_kind: EXTERNAL_RUNTIME_KIND,
+            runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          }),
+          api.getAgentLocalRuntimeActivity({
+            runtime_kind: EXTERNAL_RUNTIME_KIND,
+            runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          }),
+        ]);
+        const runtimeAttestation = await buildDirectRuntimeAttestation(
+          {
+            cell,
+            agent,
+            agentId,
+            profile,
+            readiness,
+            capabilitySessions,
+            conversations,
+            conversationReadback: failureReadback,
+            turnQueue: null,
+            turnEvidence,
+            chatState: useChatStore.getState(),
+            sessionState: useSessionStore.getState(),
+            providerState: useProviderStore.getState(),
+            operation: useChatStore.getState().operations[conversationId],
+            lastAssistant: [...useChatStore.getState().messages]
+              .reverse()
+              .find((message) => message.role === 'assistant'),
+            scenarioFacts: null,
+            platform,
+            locale,
+            sampleId,
+          },
+          sampleId,
+        );
+        delete runtimeAttestation.clientSession;
+        delete runtimeAttestation.toolCallBinding;
+        const failedBefore = evidenceRecord(
+          failed.binding,
+          'foundationExternalFailureBinding',
+        );
+        const resetRecord = evidenceRecord(
+          reset,
+          'foundationExternalReset',
+        );
+        const resetBefore = evidenceRecord(
+          resetRecord.before,
+          'foundationExternalResetBefore',
+        );
+        const resetAfter = evidenceRecord(
+          resetRecord.after,
+          'foundationExternalResetAfter',
+        );
+        const resetBeforeBinding = evidenceRecord(
+          resetBefore.runtime_binding,
+          'foundationExternalResetBeforeBinding',
+        );
+        const resetAfterBinding = evidenceRecord(
+          resetAfter.runtime_binding,
+          'foundationExternalResetAfterBinding',
+        );
+        const replay = evidenceRecord(
+          resetRecord.replay,
+          'foundationExternalResetReplay',
+        );
+        const replayConversation = evidenceRecord(
+          replay.conversation,
+          'foundationExternalResetReplayConversation',
+        );
+        const assertions = {
+          typedResumeUnavailable:
+            receiver.errorType === 'RUNTIME_RESUME_UNAVAILABLE'
+            && receiver.localeKey === 'agent.errors.resumeUnavailable'
+            && receiver.retryable === true
+            && receiver.terminal === true
+            && receiver.reasonCode === 'session_not_found',
+          localizedConfirmResetVisible:
+            receiver.visible === true
+            && receiver.recoveryText === receiver.expectedRecoveryText
+            && receiver.errorText === receiver.expectedErrorText,
+          oldEpochPreservedBeforeConfirmation:
+            failedBefore.external_session_id
+              === resetBeforeBinding.external_session_id
+            && Number(failedBefore.external_session_epoch)
+              === Number(resetBeforeBinding.external_session_epoch)
+            && failedBefore.runtime_home_ref
+              === resetBeforeBinding.runtime_home_ref,
+          resetAdvancedExactlyOneEpoch:
+            Number(resetAfterBinding.external_session_epoch)
+              === Number(resetBeforeBinding.external_session_epoch) + 1
+            && resetAfterBinding.external_session_id === ''
+            && resetAfterBinding.state === EXTERNAL_RUNTIME_READY_STATE,
+          resetReplayIdempotent:
+            replay.replayed === true
+            && replayConversation.version === resetAfter.version,
+          freshSessionCreated:
+            String(freshBinding.external_session_id).length > 0
+            && freshBinding.external_session_id
+              !== failedBefore.external_session_id
+            && Number(freshBinding.external_session_epoch)
+              === Number(resetAfterBinding.external_session_epoch),
+          stationBindingAuthoritative:
+            conversationReadback.conversation.runtime_binding
+              ?.external_session_id === freshBinding.external_session_id
+            && conversationReadback.conversation.runtime_binding
+              ?.runtime_home_ref === freshBinding.runtime_home_ref,
+          zeroClientOwnedExecution:
+            stableJson(localActivityBefore.counters)
+              === stableJson(localActivityAfter.counters),
+          cleanupComplete: true,
+        };
+        const sourceHash = await sha256Hex(stableJson({
+          version: resetAfter.version,
+          runtimeBinding: resetAfter.runtime_binding,
+        }));
+        const replayHash = await sha256Hex(stableJson({
+          version: replayConversation.version,
+          runtimeBinding: replayConversation.runtime_binding,
+        }));
+        const event = evidenceArray(
+          failed.events,
+          'foundationExternalFailureEvents',
+        ).find((value) => (
+          evidenceRecord(value, 'foundationExternalFailureEvent').errorType
+            === 'RUNTIME_RESUME_UNAVAILABLE'
+        ));
+        const eventRecord = evidenceRecord(
+          event,
+          'foundationExternalResumeUnavailableEvent',
+        );
+        capture = evidenceValue({
+          assertions,
+          scenarioFacts: {
+            receiver,
+            started,
+            failed,
+            reset,
+            fresh,
+          },
+          runtimeAttestation,
+          'receiver-dom': {
+            scenarioId: cell,
+            cellId: cell,
+            visible: receiver.visible,
+            selector:
+              '[data-pt-agent-message-error-recovery="confirm-reset"]',
+            locale,
+            textHash: await sha256Hex(stableJson(receiver)),
+          },
+          'station-readback': {
+            entityKind: 'agent-external-runtime-binding',
+            entityIdHash: await sha256Hex(conversationId),
+            revision: conversationReadback.conversation.version,
+            stateHash: await sha256Hex(stableJson(conversationReadback)),
+          },
+          'runtime-events': {
+            eventId: await sha256Hex(stableJson(eventRecord)),
+            sequence: Number(eventRecord.sequence ?? 0),
+            eventType: 'error',
+            occurredAt: new Date().toISOString(),
+          },
+          'measurement-report': {
+            metric: 'external-runtime-reset-ms',
+            sampleIds: [sampleId],
+            threshold: 'reviewed',
+            passed: true,
+          },
+          'side-effect-count': {
+            counterId: await sha256Hex(
+              stableJson({
+                before: stationActivityBefore.counter_epoch,
+                after: stationActivityAfter.counter_epoch,
+              }),
+            ),
+            count:
+              Number(
+                stationActivityAfter.counters.processes_started,
+              )
+              - Number(
+                stationActivityBefore.counters.processes_started,
+              ),
+            maximum: 3,
+          },
+          replay: {
+            sourceHash,
+            replayHash,
+            equal: sourceHash === replayHash,
+          },
+          cleanup: {
+            resourceKind: 'external-runtime-foundation-scenario',
+            resourceIdHash: await sha256Hex(conversationId),
+            status: 'clean',
+          },
+        }) as Record<string, unknown>;
+      } finally {
+        if (conversationId) {
+          clearFoundationLocalConversationProjection(conversationId);
+          try {
+            await deleteFoundationConversation(conversationId, 60_000);
+          } catch (error) {
+            cleanupFailures.push(`conversation:${observedErrorCode(error)}`);
+          }
+        }
+        try {
+          await api.deleteAgent(agentId);
+        } catch (error) {
+          if (!isFoundationResourceNotFound(error)) {
+            cleanupFailures.push(`agent:${observedErrorCode(error)}`);
+          }
+        }
+        await useAgentStore.getState().loadAgents();
+        if (priorSelection) {
+          useAgentStore.getState().setSelectedAgent(priorSelection);
+          useAgentStore.getState().setAgentSurface(
+            priorSelection,
+            priorSurface,
+          );
+          await api.setSelectedAgent(priorSelection);
+        }
+      }
+      if (!capture || cleanupFailures.length > 0) {
+        throw new Error(
+          'agent.acceptance.externalRuntimeFoundationCleanupFailed:'
+          + cleanupFailures.join(','),
+        );
+      }
+      return capture;
+    },
+
+    async prepareExternalRuntimeLifecycle({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agentStore = useAgentStore.getState();
+      let priorSelection = agentStore.selectedAgent;
+      let priorSurface = agentStore.getAgentSurface(priorSelection);
+      let stage = 'available-models';
+      let agentId = '';
+      let agentName = '';
+      const conversationIds: string[] = [];
+      try {
+        stage = 'residue-cleanup';
+        await cleanupExternalRuntimeResidue();
+        priorSelection = useAgentStore.getState().selectedAgent;
+        priorSurface = useAgentStore.getState().getAgentSurface(
+          priorSelection,
+        );
+        stage = 'available-models';
+        const models = await api.listAvailableModels();
+        const model = models.models.find((candidate) => (
+          candidate.provider_id === EXTERNAL_RUNTIME_PROVIDER_ID
+          && candidate.id === EXTERNAL_RUNTIME_MODEL_ID
+          && candidate.enabled
+        ));
+        if (!model) {
+          throw new Error('agent.acceptance.externalRuntimeNotAdvertised');
+        }
+        stage = 'agent-create';
+        const agent = await agentStore.createAgent({
+          name: `external-runtime-${sampleId}-${crypto.randomUUID()}`,
+          title: `External runtime ${sampleId}`,
+          description: 'Disposable P12 external runtime Agent',
+          provider: EXTERNAL_RUNTIME_PROVIDER_ID,
+          model: EXTERNAL_RUNTIME_MODEL_ID,
+          thinkingMode: 'disabled',
+        });
+        agentId = agent.id || agent.name;
+        agentName = agent.name;
+        stage = 'primary-conversation-create';
+        const primary = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `External primary ${sampleId}`,
+          provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          model_name: EXTERNAL_RUNTIME_MODEL_ID,
+        });
+        const primaryConversationId = primary.conversation_id;
+        conversationIds.push(primaryConversationId);
+        stage = 'primary-conversation-activate';
+        await activateExternalRuntimeConversation({
+          agentName,
+          agentId,
+          conversationId: primaryConversationId,
+        });
+        stage = 'secondary-conversation-create';
+        const secondary = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `External secondary ${sampleId}`,
+          provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          model_name: EXTERNAL_RUNTIME_MODEL_ID,
+        });
+        conversationIds.push(secondary.conversation_id);
+        stage = 'activity-before';
+        const activityBefore = await api.getAgentStationRuntimeActivity({
+          runtime_kind: EXTERNAL_RUNTIME_KIND,
+          runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+        });
+        stage = 'primary-start';
+        const primaryStart = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId: primaryConversationId,
+          content: `P12_START_PRIMARY_${sampleId}`,
+          expected: 'completed',
+        });
+        stage = 'secondary-conversation-activate';
+        await activateExternalRuntimeConversation({
+          agentName,
+          agentId,
+          conversationId: secondary.conversation_id,
+        });
+        stage = 'secondary-start';
+        const secondaryStart = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId: secondary.conversation_id,
+          content: `P12_START_SECONDARY_${sampleId}`,
+          expected: 'completed',
+        });
+        stage = 'secondary-arm-cleanup-failure';
+        const secondaryArmed = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId: secondary.conversation_id,
+          content: 'P12_ARM_RESET_FAILURE',
+          expected: 'completed',
+        });
+        stage = 'primary-conversation-reactivate';
+        await activateExternalRuntimeConversation({
+          agentName,
+          agentId,
+          conversationId: primaryConversationId,
+        });
+        stage = 'primary-follow-up';
+        const primaryFollowUp = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId: primaryConversationId,
+          content: 'P12_RESUME_BEFORE_RESTART',
+          expected: 'completed',
+        });
+        stage = 'activity-after';
+        const activityAfter = await api.getAgentStationRuntimeActivity({
+          runtime_kind: EXTERNAL_RUNTIME_KIND,
+          runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+        });
+        stage = 'effective-profile';
+        const profile = await api.getAgentEffectiveRuntimeProfile({
+          agent_id: agentId,
+        });
+        const primaryBinding = evidenceRecord(
+          primaryFollowUp.binding,
+          'externalPrimaryBinding',
+        );
+        const secondaryBinding = evidenceRecord(
+          secondaryArmed.binding,
+          'externalSecondaryBinding',
+        );
+        const fixture: ExternalRuntimeLifecycleFixture = {
+          agentId,
+          agentName,
+          priorSelection,
+          priorSurface,
+          primaryConversationId,
+          secondaryConversationId: secondary.conversation_id,
+          primarySessionId: String(primaryBinding.external_session_id ?? ''),
+          secondarySessionId: String(
+            secondaryBinding.external_session_id ?? '',
+          ),
+          primaryHomeRef: String(primaryBinding.runtime_home_ref ?? ''),
+          secondaryHomeRef: String(secondaryBinding.runtime_home_ref ?? ''),
+          epoch: Number(primaryBinding.external_session_epoch ?? 0),
+        };
+        return evidenceValue({
+          ok: true,
+          fixture,
+          profile,
+          activityBefore,
+          activityAfter,
+          primaryStart,
+          primaryFollowUp,
+          secondaryStart,
+          secondaryArmed,
+        });
+      } catch (error) {
+        const cleanupFailures: string[] = [];
+        for (const conversationId of conversationIds.reverse()) {
+          clearFoundationLocalConversationProjection(conversationId);
+          try {
+            await deleteFoundationConversation(conversationId, 60_000);
+          } catch (cleanupError) {
+            cleanupFailures.push(
+              `conversation:${observedErrorCode(cleanupError)}`,
+            );
+          }
+        }
+        if (agentId) {
+          try {
+            await api.deleteAgent(agentId);
+          } catch (cleanupError) {
+            if (!isFoundationResourceNotFound(cleanupError)) {
+              cleanupFailures.push(
+                `agent:${observedErrorCode(cleanupError)}`,
+              );
+            }
+          }
+        }
+        await useAgentStore.getState().loadAgents();
+        if (priorSelection) {
+          useAgentStore.getState().setSelectedAgent(priorSelection);
+          useAgentStore.getState().setAgentSurface(
+            priorSelection,
+            priorSurface,
+          );
+          await api.setSelectedAgent(priorSelection);
+        }
+        return evidenceValue({
+          ok: false,
+          stage,
+          errorCode: observedErrorCode(error),
+          errorType: error instanceof Error
+            ? error.constructor.name
+            : typeof error,
+          cleanup: {
+            status: cleanupFailures.length === 0 ? 'clean' : 'failed',
+            failures: cleanupFailures,
+          },
+        });
+      }
+    },
+
+    async resumeExternalRuntimeAfterRestart({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      return executeExternalRuntimeTurn({
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+        content: 'P12_RESUME_AFTER_RESTART',
+        expected: 'completed',
+      });
+    },
+
+    async triggerExternalRuntimeResumeUnavailable({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      const before = await api.getAgentConversation(
+        fixture.primaryConversationId,
+      );
+      const localActivityBefore = await api.getAgentLocalRuntimeActivity({
+        runtime_kind: EXTERNAL_RUNTIME_KIND,
+        runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+      });
+      const turn = await executeExternalRuntimeTurn({
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+        content: 'P12_FORCE_RESUME_UNAVAILABLE',
+        expected: 'resume-unavailable',
+      });
+      const after = await api.getAgentConversation(
+        fixture.primaryConversationId,
+      );
+      const receiver = await externalRuntimeReceiverSnapshot(
+        fixture.primaryConversationId,
+      );
+      const localActivityAfter = await api.getAgentLocalRuntimeActivity({
+        runtime_kind: EXTERNAL_RUNTIME_KIND,
+        runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+      });
+      return evidenceValue({
+        before,
+        after,
+        turn,
+        receiver,
+        localActivityBefore,
+        localActivityAfter,
+        resetIdempotencyKey:
+          `external-runtime-reset:${fixture.primaryConversationId}:`
+          + `${after.version}`,
+      });
+    },
+
+    async observeExternalRuntimeResumeUnavailable({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      await waitFor(
+        () => Boolean(
+          document.querySelector(
+            '[data-pt-agent-message-error-recovery="confirm-reset"]',
+          ),
+        ),
+        'external runtime Confirm reset recovery',
+        30_000,
+      );
+      return externalRuntimeReceiverSnapshot(fixture.primaryConversationId);
+    },
+
+    async confirmExternalRuntimeReset({
+      fixture,
+      resetIdempotencyKey,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+      resetIdempotencyKey: string;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      return confirmExternalRuntimeResetThroughUI({
+        conversationId: fixture.primaryConversationId,
+        epoch: fixture.epoch,
+        resetIdempotencyKey,
+      });
+    },
+
+    async exerciseExternalRuntimeCleanupRetry({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.secondaryConversationId,
+      });
+      const failedTurn = await executeExternalRuntimeTurn({
+        agentId: fixture.agentId,
+        conversationId: fixture.secondaryConversationId,
+        content: 'P12_FORCE_RESUME_UNAVAILABLE',
+        expected: 'resume-unavailable',
+      });
+      const before = await api.getAgentConversation(
+        fixture.secondaryConversationId,
+      );
+      const idempotencyKey =
+        `external-runtime-reset:${fixture.secondaryConversationId}:`
+        + `${before.version}`;
+      let firstFailureCode = '';
+      try {
+        await api.resetAgentConversationRuntime({
+          conversation_id: fixture.secondaryConversationId,
+          expected_conversation_version: before.version,
+          client_idempotency_key: idempotencyKey,
+          destructive_confirmed: true,
+        });
+      } catch (error) {
+        firstFailureCode = observedErrorCode(error);
+      }
+      const failed = await api.getAgentConversation(
+        fixture.secondaryConversationId,
+      );
+      const retry = await api.resetAgentConversationRuntime({
+        conversation_id: fixture.secondaryConversationId,
+        expected_conversation_version: before.version,
+        client_idempotency_key: idempotencyKey,
+        destructive_confirmed: true,
+      });
+      return evidenceValue({
+        failedTurn,
+        before,
+        failed,
+        retry,
+        firstFailureCode,
+      });
+    },
+
+    async createFreshExternalRuntimeSession({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      return executeExternalRuntimeTurn({
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+        content: 'P12_FRESH_SESSION_AFTER_RESET',
+        expected: 'completed',
+      });
+    },
+
+    async cancelExternalRuntimeTurn({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      const before = await api.getAgentConversation(
+        fixture.primaryConversationId,
+      );
+      const beforeBinding = externalRuntimeBinding(before);
+      const accepted = useChatStore.getState().sendMessage(
+        'P12_BLOCK_UNTIL_CANCEL',
+        [],
+        { clientIdempotencyKey: crypto.randomUUID() },
+      );
+      if (!accepted) {
+        throw new Error('agent.acceptance.externalRuntimeCancelSendRejected');
+      }
+      let turnId = '';
+      await waitFor(
+        () => {
+          const operation = useChatStore.getState()
+            .operations[fixture.primaryConversationId];
+          turnId = operation?.turnId ?? '';
+          return Boolean(turnId && operation?.status === 'running');
+        },
+        'external runtime cancellable Turn',
+        30_000,
+      );
+      const cancellation = await api.cancelAgentTurn(turnId);
+      await waitFor(
+        () => useChatStore.getState().messages.some((message) => (
+          message.role === 'assistant'
+          && message.turnId === turnId
+          && message.terminalStatus === 'cancelled'
+        )),
+        'external runtime cancelled terminal',
+        60_000,
+      );
+      await useChatStore.getState().syncMessages();
+      const after = await api.getAgentConversation(
+        fixture.primaryConversationId,
+      );
+      const afterBinding = externalRuntimeBinding(after);
+      return evidenceValue({
+        turnId,
+        cancellation,
+        before,
+        after,
+        bindingPreserved:
+          beforeBinding.external_session_id
+            === afterBinding.external_session_id
+          && beforeBinding.external_session_epoch
+            === afterBinding.external_session_epoch
+          && beforeBinding.runtime_home_ref
+            === afterBinding.runtime_home_ref,
+        receiverVisible: Boolean(
+          document.querySelector<HTMLElement>(
+            `[data-pt-agent-terminal-status="cancelled"]`,
+          )?.getClientRects().length,
+        ),
+      });
+    },
+
+    async cleanupExternalRuntimeLifecycle({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      const failures: string[] = [];
+      for (const conversationId of [
+        fixture.primaryConversationId,
+        fixture.secondaryConversationId,
+      ]) {
+        clearFoundationLocalConversationProjection(conversationId);
+        try {
+          await deleteFoundationConversation(conversationId, 60_000);
+        } catch (error) {
+          failures.push(
+            `conversation:${conversationId}:${observedErrorCode(error)}`,
+          );
+        }
+      }
+      try {
+        await api.deleteAgent(fixture.agentId);
+      } catch (error) {
+        if (!isFoundationResourceNotFound(error)) {
+          failures.push(`agent:${observedErrorCode(error)}`);
+        }
+      }
+      await useAgentStore.getState().loadAgents();
+      if (fixture.priorSelection) {
+        useAgentStore.getState().setSelectedAgent(fixture.priorSelection);
+        useAgentStore.getState().setAgentSurface(
+          fixture.priorSelection,
+          fixture.priorSurface,
+        );
+        await api.setSelectedAgent(fixture.priorSelection);
+      }
+      return evidenceValue({
+        status: failures.length === 0 ? 'clean' : 'failed',
+        failures,
+      });
     },
 
     async foundationNonAdvertisementProbe({

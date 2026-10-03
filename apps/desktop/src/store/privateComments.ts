@@ -2,6 +2,7 @@ import { createDesktopStore } from './createDesktopStore';
 import {
   PrivateCommentsNativeError,
   privateCommentsNative,
+  type PrivateCommentMention,
   type PrivateCommentDraftProjection,
   type PrivateCommentIntent,
   type PrivateCommentPage,
@@ -50,6 +51,7 @@ interface PrivateCommentsState {
     postId: string,
     text: string,
     replyToCommentId?: string,
+    mentions?: PrivateCommentMention[],
   ) => Promise<void>;
   retryComment: (postId: string) => Promise<void>;
   markParentUnavailable: (postId: string, errorCode?: string) => void;
@@ -579,7 +581,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
         }
       },
 
-      submitComment: async (postId, text, replyToCommentId) => {
+      submitComment: async (postId, text, replyToCommentId, mentions = []) => {
         const trimmedPostId = postId.trim();
         const trimmedText = text.trim();
         const scope = get().scope;
@@ -626,6 +628,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           postId: trimmedPostId,
           replyToCommentId: replyToCommentId?.trim(),
           text: trimmedText,
+          mentions,
         };
         const optimistic: PrivateCommentDraftProjection = {
           draftId: intent.draftId,
@@ -633,6 +636,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           postId: intent.postId,
           replyToCommentId: intent.replyToCommentId ?? '',
           text: intent.text,
+          mentions: intent.mentions ?? [],
           state: 'COMMENT_EDITING',
         };
         applyDraft(optimistic, actorPtid, scope.rendererGeneration);
@@ -690,6 +694,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
             draft.postId,
             draft.text,
             draft.replyToCommentId,
+            draft.mentions,
           );
           return;
         }
@@ -701,6 +706,7 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           postId: draft.postId,
           replyToCommentId: draft.replyToCommentId,
           text: draft.text,
+          mentions: draft.mentions,
         };
         applyDraft(
           {

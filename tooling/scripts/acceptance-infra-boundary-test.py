@@ -27,6 +27,7 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
             "product_domain_validates_acceptance",
             "Infra never manufactures, repairs, weakens, or completes business injection",
             "Ownership Matrix",
+            "Suite Runtime schema, lifecycle ledger, reuse metrics",
         )
         for marker in required_markers:
             self.assertIn(marker, skill)
@@ -61,6 +62,7 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
             business,
         )
         self.assertIn("ACCEPTANCE_INFRA_REQUIRED", business)
+        self.assertIn("pt-acceptance-pipeline-auditor", business)
         self.assertIn("Need to optimize/audit Acceptance Infra", god_view)
         self.assertIn("Need business Domain Acceptance injection/proof", god_view)
 
@@ -74,11 +76,16 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
             "D-12: Acceptance Infra 与业务注入使用独立责任平面",
             decisions,
         )
+        self.assertIn(
+            "D-21: Multi-Scenario Proof Uses One Suite Runtime",
+            decisions,
+        )
         self.assertIn("**Status**: accepted", decisions)
         self.assertIn(
             "Acceptance Infra 与业务注入责任防火墙",
             design,
         )
+        self.assertIn("Reusable Suite Runtime", design)
         self.assertIn("Infra impact: non-blocking", design)
 
     def test_quality_evidence_separates_reverse_validation(self) -> None:

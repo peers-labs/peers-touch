@@ -19,6 +19,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core.errors import EvidenceManifestInvalid
+from tooling.scripts.review.code_structure_decision import (
+    collect_latest_decision,
+)
 
 
 REVIEW_PROFILE_RE = re.compile(r"^\[([A-Za-z0-9_-]+)\]$")
@@ -337,6 +340,41 @@ def evidence_gaps(
                 "next_evidence": "Fix knowledge frontmatter/path issues or update the relevant docs/knowledge entry.",
             }
         )
+    code_structure = evidence.get(
+        "code_structure",
+        {"required": False, "status": "NOT_REQUIRED"},
+    )
+    if code_structure["required"]:
+        status = code_structure["status"]
+        if status in {"MISSING", "STALE", "INVALID"}:
+            entry = {
+                "kind": "code-structure-decision",
+                "impact": (
+                    "The authored-source review has no valid source-bound "
+                    f"decision ({status.lower()})."
+                ),
+                "next_evidence": (
+                    "Run pt-code-structure-review, record its decision, and "
+                    "rerun quality evidence."
+                ),
+            }
+            (review if ci_mode and status == "MISSING" else blocking).append(
+                entry
+            )
+        elif status == "REFACTOR_REQUIRED":
+            blocking.append(
+                {
+                    "kind": "code-structure-refactor",
+                    "impact": (
+                        "The source-bound code-structure decision contains "
+                        "blocking findings."
+                    ),
+                    "next_evidence": (
+                        "Resolve every blocking primary rule and record a "
+                        "fresh decision."
+                    ),
+                }
+            )
     if not evidence["acceptance"]["plan_ok"]:
         blocking.append(
             {
@@ -416,6 +454,38 @@ def render_markdown(evidence: dict[str, Any]) -> str:
     lines.extend(f"- `{profile}`" for profile in evidence["route"]["profiles"])
     if not evidence["route"]["profiles"]:
         lines.append("- none")
+
+    code_structure = evidence["code_structure"]
+    lines.extend(["", "## Code Structure Decision", ""])
+    lines.append(f"- Required: {str(code_structure['required']).lower()}")
+    lines.append(f"- Status: `{code_structure['status']}`")
+    decision = code_structure.get("decision")
+    if decision:
+        coverage_counts: dict[str, int] = {}
+        for item in decision["coverage"]:
+            status = item["status"]
+            coverage_counts[status] = coverage_counts.get(status, 0) + 1
+        lines.append(f"- Scope ID: `{decision['target']['scopeId']}`")
+        lines.append(
+            "- Coverage: "
+            + ", ".join(
+                f"{status.lower()}={count}"
+                for status, count in sorted(coverage_counts.items())
+            )
+        )
+        lines.append(
+            "- Blocking primary rules: "
+            + (
+                ", ".join(
+                    f"`{rule_id}`"
+                    for rule_id in decision["blockingRuleIds"]
+                )
+                or "none"
+            )
+        )
+        lines.append(f"- Rubric hash: `{decision['rubricHash']}`")
+    if code_structure.get("error"):
+        lines.append(f"- Validation error: {code_structure['error']}")
 
     lines.extend(["", "## Matched Knowledge", ""])
     for match in evidence["knowledge"]["matches"]:
@@ -534,6 +604,13 @@ def main() -> int:
         repo_root=repo_root,
         worktree=repo_root,
     )
+    profiles = parse_review_profiles(route["stdout"])
+    code_structure = collect_latest_decision(
+        repo_root=repo_root,
+        store=store,
+        diff_range=args.diff_range,
+        paths=changed_paths,
+    )
     try:
         latest_run = store.read_json(
             store.latest_artifact_ref("acceptance-run", "run")
@@ -564,10 +641,11 @@ def main() -> int:
         "changed_paths": changed_paths,
         "route": {
             "ok": route["ok"],
-            "profiles": parse_review_profiles(route["stdout"]),
+            "profiles": profiles,
             "stdout": route["stdout"],
             "stderr": route["stderr"],
         },
+        "code_structure": code_structure,
         "knowledge": {
             "ok": knowledge["ok"],
             "matches": parse_knowledge_matches(knowledge["stdout"]),

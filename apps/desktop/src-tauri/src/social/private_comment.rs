@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
+use rand::{rngs::OsRng, RngCore};
 use secure_content_core::envelope::{open_content_key, ContentKey, SealedContentKey};
 use secure_content_core::payload::{
     decrypt_payload, derive_payload_key, encrypt_payload, EncryptedPayload as CoreEncryptedPayload,
@@ -26,10 +27,14 @@ use crate::secure_content::worker::maintain_content_prekeys;
 use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
 use super::crypto::{bounded_command_id, seal_content_envelopes, validate_content_plan};
+use super::private_mention::{
+    build_signed_mention_routing, canonical_private_mentions, validated_mention_routing_hash,
+    verify_decrypted_mentions, PrivateMentionIntent,
+};
 use super::projection::{
     canonical_identifier, checked_timestamp_millis, current_unix_seconds,
     object_descriptor_set_hash, validated_object_descriptor_set_hash, verify_station_attestation,
-    verify_viewer_envelope, SenderKeyRequirement,
+    verify_viewer_envelope, PrivateMentionProjection, SenderKeyRequirement,
 };
 
 const PRIVATE_COMMENT_LIMIT_DEFAULT: u32 = 20;
@@ -49,6 +54,8 @@ pub struct PrivateCommentIntent {
     #[serde(default)]
     pub reply_to_comment_id: String,
     pub text: String,
+    #[serde(default)]
+    pub mentions: Vec<PrivateMentionIntent>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -83,6 +90,8 @@ pub struct PrivateCommentProjection {
     pub state: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    #[serde(default)]
+    pub mentions: Vec<PrivateMentionProjection>,
     pub reactions_count: i64,
     pub replies_count: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -108,6 +117,7 @@ pub struct PrivateCommentDraftProjection {
     pub post_id: String,
     pub reply_to_comment_id: String,
     pub text: String,
+    pub mentions: Vec<PrivateMentionIntent>,
     pub state: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment_id: Option<String>,
@@ -214,30 +224,26 @@ impl<'a> PrivateCommentOrchestrator<'a> {
 
     pub fn snapshot(&self) -> Result<PrivateCommentsSnapshot, String> {
         self.supervisor
-            .with_current_renderer(
-                &self.lease.session.key,
-                self.lease.renderer_generation,
-                |lease| {
-                    let comments = lease
+            .with_current(&self.lease.session.key, |lease| {
+                let comments = lease
+                    .store
+                    .comment_projections()?
+                    .iter()
+                    .map(|bytes| PrivateCommentProjection::decode_local(bytes))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(PrivateCommentsSnapshot {
+                    actor_ptid: lease.session.key.actor_ptid.clone(),
+                    device_id: lease.session.key.device_id.clone(),
+                    session_generation: lease.session.key.session_generation.to_string(),
+                    drafts: lease
                         .store
-                        .comment_projections()?
+                        .comment_drafts()?
                         .iter()
-                        .map(|bytes| PrivateCommentProjection::decode_local(bytes))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Ok(PrivateCommentsSnapshot {
-                        actor_ptid: lease.session.key.actor_ptid.clone(),
-                        device_id: lease.session.key.device_id.clone(),
-                        session_generation: lease.session.key.session_generation.to_string(),
-                        drafts: lease
-                            .store
-                            .comment_drafts()?
-                            .iter()
-                            .map(draft_projection)
-                            .collect(),
-                        comments,
-                    })
-                },
-            )
+                        .map(draft_projection)
+                        .collect::<Result<Vec<_>, _>>()?,
+                    comments,
+                })
+            })
     }
 
     pub fn stage(
@@ -245,6 +251,16 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         intent: &PrivateCommentIntent,
     ) -> Result<PrivateCommentDraftProjection, PrivateCommentFailure> {
         validate_intent(intent)?;
+        let mention_intent_json = serde_json::to_string(&intent.mentions).map_err(|error| {
+            PrivateCommentFailure::failed("COMMENT_DRAFT_INVALID", error.to_string())
+        })?;
+        let mention_commitment_salt = if intent.mentions.is_empty() {
+            None
+        } else {
+            let mut salt = [0u8; 32];
+            OsRng.fill_bytes(&mut salt);
+            Some(salt)
+        };
         let candidate = StoredCommentDraft {
             draft_id: intent.draft_id.clone(),
             draft_revision: intent.draft_revision,
@@ -253,6 +269,8 @@ impl<'a> PrivateCommentOrchestrator<'a> {
             generation: 0,
             reply_to_comment_id: intent.reply_to_comment_id.clone(),
             text: intent.text.clone(),
+            mention_intent_json,
+            mention_commitment_salt,
             intent_sha256: intent_hash(intent)?,
             prepare_command_id: bounded_command_id(
                 "comment-prepare",
@@ -275,7 +293,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
             store.reserve_comment_draft(&candidate)
         })
-        .map(|draft| draft_projection(&draft))
+        .and_then(|draft| draft_projection(&draft))
     }
 
     pub fn prepare(
@@ -308,7 +326,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 if comment_requires_reprepare(&stored)? {
                     stored = self.reset_comment_for_reprepare(&stored)?;
                 } else {
-                    return Ok(draft_projection(&stored));
+                    return draft_projection(&stored);
                 }
             }
             maintain_content_prekeys(self.supervisor, &self.lease)
@@ -364,6 +382,12 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                     )
                 })?;
             let root = ContentKey::generate();
+            let mention_intents = stored_comment_mentions(&stored)?;
+            let mentions =
+                canonical_private_mentions(&stored.text, &mention_intents, "private Comment")
+                    .map_err(|error| {
+                        PrivateCommentFailure::failed("COMMENT_DRAFT_INVALID", error)
+                    })?;
             let payload_key = derive_payload_key(
                 root.as_bytes(),
                 &authorization_snapshot,
@@ -381,8 +405,11 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 content_id: stored.content_id.clone(),
                 parent_content_id: stored.post_id.clone(),
                 text: stored.text.clone(),
-                mentions: Vec::new(),
-                mention_commitment_salt: Vec::new(),
+                mentions: mentions.clone(),
+                mention_commitment_salt: stored
+                    .mention_commitment_salt
+                    .map(|salt| salt.to_vec())
+                    .unwrap_or_default(),
             }
             .encode_to_vec();
             let encrypted = encrypt_payload(&payload_key, &plaintext, &domain_binding)
@@ -396,6 +423,15 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 ciphertext_sha256: encrypted.ciphertext_sha256.to_vec(),
                 aad_sha256: encrypted.aad_sha256.to_vec(),
             };
+            let mention_routing = build_signed_mention_routing(
+                &mentions,
+                stored.mention_commitment_salt.as_ref(),
+                &plan,
+                &payload,
+                self.lease.session.as_ref(),
+                "private Comment",
+            )
+            .map_err(|error| PrivateCommentFailure::failed("COMMENT_ENCRYPT_FAILED", error))?;
             let envelopes = seal_content_envelopes(
                 self.lease.session.as_ref(),
                 &plan,
@@ -417,7 +453,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 payload: Some(payload),
                 envelopes,
                 objects: Vec::new(),
-                mention_routing: None,
+                mention_routing,
                 command_id: submit_command_id.clone(),
                 post_id: intent.post_id.clone(),
             };
@@ -445,7 +481,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                         "prepared private Comment draft is unavailable",
                     )
                 })?;
-            Ok(draft_projection(&prepared))
+            draft_projection(&prepared)
         })();
         if let Err(failure) = &result {
             self.persist_failure(intent, failure)?;
@@ -500,7 +536,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                     })
                 })?;
             return Ok(PrivateCommentSubmitResult {
-                draft: draft_projection(&existing),
+                draft: draft_projection(&existing)?,
                 comment: Some(comment),
             });
         }
@@ -814,7 +850,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
             draft_revision: draft.draft_revision,
         })?;
         Ok(PrivateCommentSubmitResult {
-            draft: draft_projection(&posted),
+            draft: draft_projection(&posted)?,
             comment: Some(decrypted.projection),
         })
     }
@@ -1158,22 +1194,16 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         operation: impl FnOnce(&SecureContentStore) -> Result<T, String>,
     ) -> Result<T, PrivateCommentFailure> {
         self.supervisor
-            .with_current_renderer(
-                &self.lease.session.key,
-                self.lease.renderer_generation,
-                |lease| Ok(operation(lease.store.as_ref())),
-            )
+            .with_current(&self.lease.session.key, |lease| {
+                Ok(operation(lease.store.as_ref()))
+            })
             .map_err(|error| PrivateCommentFailure::failed("COMMENT_SESSION_STALE", error))?
             .map_err(|error| PrivateCommentFailure::failed(error_code, error))
     }
 
     fn ensure_current(&self) -> Result<(), PrivateCommentFailure> {
         self.supervisor
-            .with_current_renderer(
-                &self.lease.session.key,
-                self.lease.renderer_generation,
-                |_| Ok(()),
-            )
+            .with_current(&self.lease.session.key, |_| Ok(()))
             .map_err(|error| PrivateCommentFailure::failed("COMMENT_SESSION_STALE", error))
     }
 }
@@ -1218,6 +1248,8 @@ fn validate_intent(intent: &PrivateCommentIntent) -> Result<(), PrivateCommentFa
             "private Comment draft is invalid",
         ));
     }
+    canonical_private_mentions(&intent.text, &intent.mentions, "private Comment")
+        .map_err(|error| PrivateCommentFailure::failed("COMMENT_DRAFT_INVALID", error))?;
     Ok(())
 }
 
@@ -1229,25 +1261,40 @@ fn intent_hash(intent: &PrivateCommentIntent) -> Result<[u8; 32], PrivateComment
         &intent.post_id,
         &intent.reply_to_comment_id,
         &intent.text,
+        &intent.mentions,
     ))
     .map_err(|error| PrivateCommentFailure::failed("COMMENT_DRAFT_INVALID", error.to_string()))?;
     Ok(Sha256::digest(encoded).into())
 }
 
-fn draft_projection(draft: &StoredCommentDraft) -> PrivateCommentDraftProjection {
-    PrivateCommentDraftProjection {
+fn draft_projection(
+    draft: &StoredCommentDraft,
+) -> Result<PrivateCommentDraftProjection, PrivateCommentFailure> {
+    Ok(PrivateCommentDraftProjection {
         draft_id: draft.draft_id.clone(),
         draft_revision: draft.draft_revision,
         post_id: draft.post_id.clone(),
         reply_to_comment_id: draft.reply_to_comment_id.clone(),
         text: draft.text.clone(),
+        mentions: stored_comment_mentions(draft)?,
         state: draft.state.as_str().to_string(),
         comment_id: draft.comment_id.clone(),
         error_code: draft.error_code.clone(),
         retry_after_seconds: draft.retry_after_seconds,
         retry_not_before_unix_ms: draft.retry_not_before_unix_ms,
         publication_state: draft.publication_state.map(publication_state_name),
-    }
+    })
+}
+
+fn stored_comment_mentions(
+    draft: &StoredCommentDraft,
+) -> Result<Vec<PrivateMentionIntent>, PrivateCommentFailure> {
+    serde_json::from_str(&draft.mention_intent_json).map_err(|error| {
+        PrivateCommentFailure::failed(
+            "COMMENT_DRAFT_FAILED",
+            format!("private Comment mention intent is malformed: {error}"),
+        )
+    })
 }
 
 fn publication_state_name(state: PublicationState) -> String {
@@ -1588,6 +1635,17 @@ fn decrypt_comment_resource(
     let object_set_hash = validated_object_descriptor_set_hash(private, resource)
         .map_err(|error| PrivateCommentFailure::failed("COMMENT_INTEGRITY_FAILURE", error))?;
     let empty_hash = Sha256::digest([]);
+    let mention_routing_hash = validated_mention_routing_hash(
+        verification,
+        proof,
+        resource,
+        payload,
+        &requirement.sender,
+        requirement.signing_key_id.as_deref(),
+        Some(sender_signing_key),
+        "private Comment",
+    )
+    .map_err(|error| PrivateCommentFailure::failed("COMMENT_INTEGRITY_FAILURE", error))?;
     let attestation = verification
         .station_signing_key_attestation
         .as_ref()
@@ -1616,9 +1674,8 @@ fn decrypt_comment_resource(
         || proof.domain_binding_sha256 != domain_binding_hash.as_slice()
         || proof.encrypted_payload_sha256 != Sha256::digest(payload.encode_to_vec()).as_slice()
         || proof.object_descriptor_set_sha256 != object_set_hash
-        || proof.mention_routing_sha256 != empty_hash.as_slice()
+        || proof.mention_routing_sha256 != mention_routing_hash.as_slice()
         || proof.subtype_authority_sha256 != empty_hash.as_slice()
-        || verification.mention_routing.is_some()
         || verification.subtype_authority.is_some()
         || private.poll.is_some()
         || !private.objects.is_empty()
@@ -1789,14 +1846,28 @@ fn decrypt_comment_resource(
         || decoded.content_id != expected_comment_id
         || decoded.parent_content_id != expected_post_id
         || decoded.text.trim().is_empty()
-        || !decoded.mentions.is_empty()
-        || !decoded.mention_commitment_salt.is_empty()
     {
         return Err(PrivateCommentFailure::failed(
             "COMMENT_INTEGRITY_FAILURE",
             "private Comment plaintext binding is invalid",
         ));
     }
+    let mentions = verify_decrypted_mentions(
+        &decoded.text,
+        &decoded.mentions,
+        &decoded.mention_commitment_salt,
+        verification.mention_routing.as_ref(),
+        "private Comment",
+    )
+    .map_err(|error| PrivateCommentFailure::failed("COMMENT_INTEGRITY_FAILURE", error))?
+    .into_iter()
+    .map(|mention| PrivateMentionProjection {
+        actor_ptid: mention.actor_ptid,
+        offset: mention.offset,
+        length: mention.length,
+        display: mention.display,
+    })
+    .collect();
     Ok(DecryptedPrivateComment {
         projection: PrivateCommentProjection {
             comment_id: metadata.comment_id.clone(),
@@ -1808,6 +1879,7 @@ fn decrypt_comment_resource(
             author_acct: (!metadata_author.acct.is_empty()).then(|| metadata_author.acct.clone()),
             state: CommentState::Posted.as_str().to_string(),
             text: Some(decoded.text),
+            mentions,
             reactions_count: metadata.reactions_count,
             replies_count: metadata.replies_count,
             created_at_millis: timestamp_millis(metadata.created_at.as_ref()),
@@ -1880,6 +1952,8 @@ mod tests {
             generation: 0,
             reply_to_comment_id: String::new(),
             text: "private comment".to_string(),
+            mention_intent_json: "[]".to_string(),
+            mention_commitment_salt: None,
             intent_sha256: [3; 32],
             prepare_command_id: format!("{draft_id}-prepare"),
             submit_command_id: None,
@@ -2128,6 +2202,7 @@ mod tests {
             post_id: "post-1".to_string(),
             reply_to_comment_id: String::new(),
             text: "retained private comment".to_string(),
+            mentions: Vec::new(),
         };
         orchestrator.stage(&intent).unwrap();
         store
@@ -2144,6 +2219,61 @@ mod tests {
 
         assert_eq!(failure.code, "COMMENT_RATE_LIMITED");
         assert!(failure.retry_not_before_unix_ms.is_some());
+    }
+
+    #[test]
+    fn comment_draft_preserves_typed_mentions_and_first_random_salt() {
+        let supervisor = SecureContentSupervisor::new();
+        let store = Arc::new(SecureContentStore::in_memory().unwrap());
+        let lease = supervisor
+            .activate_with_store_for_test(session(), 1, store.clone())
+            .unwrap();
+        let orchestrator = PrivateCommentOrchestrator {
+            supervisor: &supervisor,
+            transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
+            lease,
+        };
+        let intent = PrivateCommentIntent {
+            actor_ptid: "ptid:alice".to_string(),
+            renderer_generation: 1,
+            draft_id: "draft-mentioned-comment".to_string(),
+            draft_revision: 1,
+            post_id: "post-1".to_string(),
+            reply_to_comment_id: String::new(),
+            text: "hello Bob".to_string(),
+            mentions: vec![PrivateMentionIntent {
+                actor_ptid: "ptid:bob".to_string(),
+                offset: 6,
+                length: 3,
+                display: "Bob".to_string(),
+            }],
+        };
+
+        let first = orchestrator.stage(&intent).unwrap();
+        let first_persisted = store
+            .comment_draft(&intent.draft_id, intent.draft_revision)
+            .unwrap()
+            .unwrap();
+        let replay = orchestrator.stage(&intent).unwrap();
+        let replay_persisted = store
+            .comment_draft(&intent.draft_id, intent.draft_revision)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(first.mentions, intent.mentions);
+        assert_eq!(replay.mentions, intent.mentions);
+        assert_eq!(
+            first_persisted.mention_commitment_salt,
+            replay_persisted.mention_commitment_salt,
+        );
+        assert!(first_persisted.mention_commitment_salt.is_some());
+
+        let mut conflicting = intent;
+        conflicting.mentions[0].actor_ptid = "ptid:eve".to_string();
+        assert_eq!(
+            orchestrator.stage(&conflicting).unwrap_err().code,
+            "COMMENT_DRAFT_FAILED",
+        );
     }
 
     #[test]
@@ -2289,9 +2419,11 @@ mod tests {
             transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
             lease,
         };
+        let mut replacement_session = session();
+        replacement_session.key.jwt_session_id = "session-2".to_string();
         supervisor
             .activate_with_store_for_test(
-                session(),
+                replacement_session,
                 2,
                 Arc::new(SecureContentStore::in_memory().unwrap()),
             )
@@ -2304,6 +2436,7 @@ mod tests {
             post_id: draft.post_id.clone(),
             reply_to_comment_id: String::new(),
             text: draft.text.clone(),
+            mentions: Vec::new(),
         };
 
         let failure = orchestrator
@@ -2343,6 +2476,7 @@ mod tests {
             post_id: draft.post_id.clone(),
             reply_to_comment_id: String::new(),
             text: "different private comment".to_string(),
+            mentions: Vec::new(),
         };
         let failure = PrivateCommentFailure::failed(
             "COMMENT_DRAFT_FAILED",

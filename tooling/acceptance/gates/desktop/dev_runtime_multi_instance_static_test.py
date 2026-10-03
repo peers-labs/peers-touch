@@ -271,9 +271,11 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
         make_src = self.source("tooling/make/local-dev.mk")
         profile_src = self.source("tooling/scripts/local-dev/profile.sh")
         self.assertIn(
-            '@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"',
+            "@node $(MACHINE_DEV_SCRIPT) select \\",
             make_src,
         )
+        self.assertIn('--profile "$(PROFILE_ARG)" \\', make_src)
+        self.assertIn('--owner "$(ENV_OWNER_ARG)"', make_src)
         self.assertIn("profile.sh {authorize|init|list}", profile_src)
         self.assertNotIn("activate)", profile_src)
         self.assertNotIn("ln -sfn", profile_src)

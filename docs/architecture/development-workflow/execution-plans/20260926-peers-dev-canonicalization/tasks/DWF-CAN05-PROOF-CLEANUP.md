@@ -8,7 +8,7 @@
   "planId": "DWF-PEERS-DEV-CANONICAL-20260926",
   "taskId": "DWF-CAN05-PROOF-CLEANUP",
   "workstreamId": "DWF-DELIVERY",
-  "title": "Prove the canonical product and remove the erroneous worktree",
+  "title": "Prove the canonical product and close local workflow state",
   "workClass": "infrastructure",
   "completionClass": "acceptance-aggregate",
   "executionMode": "fix",
@@ -54,12 +54,12 @@
   "doneWhen": [
     "Workflow source, Doctor, and both browser viewports pass from canonical root",
     "No migrated file references the erroneous workspace identity",
-    "The erroneous worktree is unregistered and removed",
+    "No operation mutates or removes the sibling peers-dev-product worktree",
     "peers-touch-git remains unchanged",
-    "No commit or push is created"
+    "No push, pull request, merge, or history rewrite is created"
   ],
   "failureBehavior": [
-    "Do not delete the erroneous worktree before byte and behavior reconciliation",
+    "Do not mutate or remove the sibling peers-dev-product worktree under this Plan Run",
     "Do not claim historical receipts as canonical proof",
     "Do not hide tests that were not run"
   ],
@@ -70,6 +70,6 @@
 
 ## Current Snapshot
 
-- State: blocked until all implementation lanes reconcile.
-- Cleanup authority: the user's explicit correction approval.
+- State: ready after all implementation lanes reconciled.
+- Cleanup boundary: local workflow state only; `peers-dev-product` is untouched.
 - Delivery boundary: working tree only; commit and push remain denied.

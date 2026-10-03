@@ -84,13 +84,16 @@ func (s *AgentService) createAgentTx(
 	tx *gorm.DB,
 	options domain.AgentUpsertOptions,
 ) (*domain.Agent, error) {
-	actorID := strings.TrimSpace(options.ActorPTID)
-	if actorID == "" {
-		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	actorPTID := strings.TrimSpace(options.ActorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
 	}
 	name := strings.TrimSpace(options.Name)
 	if name == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "name is required", nil)
+	}
+	if err := ensureAgentNameAvailable(ctx, tx, actorPTID, name, ""); err != nil {
+		return nil, err
 	}
 	thinkingMode, err := normalizeThinkingMode(options.ThinkingMode)
 	if err != nil {
@@ -107,14 +110,14 @@ func (s *AgentService) createAgentTx(
 		Effort:         strings.TrimSpace(options.Effort),
 		ThinkingMode:   string(thinkingMode),
 		Visibility:     string(normalizeAgentVisibility(options.Visibility)),
-		OwnerActorPTID: actorID,
+		OwnerActorPTID: actorPTID,
 		ConfigJSON:     options.ConfigJSON,
 		Version:        1,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
 	if err := tx.WithContext(ctx).Create(&record).Error; err != nil {
-		logger.Errorf(ctx, "failed to create agent: actor_ptid=%s err=%v", actorID, err)
+		logger.Errorf(ctx, "failed to create agent: actor_ptid=%s err=%v", actorPTID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create agent", err)
 	}
 	agent := persistenceAgentToDomain(&record)
@@ -144,8 +147,18 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 		if normalizeErr != nil {
 			return normalizeErr
 		}
-		if strings.TrimSpace(options.Name) != "" {
-			record.Name = strings.TrimSpace(options.Name)
+		requestedName := strings.TrimSpace(options.Name)
+		if requestedName != "" {
+			if nameErr := ensureAgentNameAvailable(
+				ctx,
+				tx,
+				options.ActorPTID,
+				requestedName,
+				record.ID,
+			); nameErr != nil {
+				return nameErr
+			}
+			record.Name = requestedName
 		}
 		record.Title = strings.TrimSpace(options.Title)
 		record.Description = strings.TrimSpace(options.Description)
@@ -419,6 +432,49 @@ func normalizeAgentVisibility(visibility domain.AgentVisibility) domain.AgentVis
 		return domain.AgentVisibilityWorkspace
 	}
 	return domain.AgentVisibilityPrivate
+}
+
+func ensureAgentNameAvailable(
+	ctx context.Context,
+	db *gorm.DB,
+	actorPTID string,
+	name string,
+	excludedAgentID string,
+) error {
+	query := db.WithContext(ctx).
+		Model(&persistence.Agent{}).
+		Where(
+			"owner_actor_ptid = ? AND name = ?",
+			strings.TrimSpace(actorPTID),
+			strings.TrimSpace(name),
+		)
+	if excludedAgentID != "" {
+		query = query.Where("id <> ?", strings.TrimSpace(excludedAgentID))
+	}
+
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		logger.Errorf(
+			ctx,
+			"failed to validate Agent name uniqueness: actor_ptid=%s err=%v",
+			actorPTID,
+			err,
+		)
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to validate agent name",
+			err,
+		)
+	}
+	if count > 0 {
+		return agentNameConflictError()
+	}
+	return nil
+}
+
+func agentNameConflictError() error {
+	return errcode.NewAgentNameConflict()
 }
 
 func normalizeThinkingMode(mode domain.ThinkingMode) (domain.ThinkingMode, error) {

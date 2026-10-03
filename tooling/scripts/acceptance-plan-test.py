@@ -314,6 +314,37 @@ class BehaviorRuleTests(unittest.TestCase):
         result = MODULE.plan(ROOT / "tooling" / "acceptance", [path])
         return {gate["id"] for gate in result["selected_gates"]}
 
+    def test_oauth_sources_select_business_and_governance_gates(self) -> None:
+        expected = {
+            "oauth-login-broker-durable-login",
+            "oauth-login-broker-refresh-idempotency",
+            "oauth-login-broker-key-rotation",
+            "oauth-login-broker-operator",
+            "oauth-login-broker-architecture",
+            "oauth-login-broker-contract",
+        }
+        for path in (
+            "apps/oauth2-client/internal/bootstrap/container.go",
+            "docs/architecture/oauth-login-broker/design.md",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(expected.issubset(self.selected_ids(path)))
+
+    def test_acceptance_tooling_selects_all_self_validation_gates(self) -> None:
+        expected = {
+            "acceptance-plan-self",
+            "acceptance-infra-validation",
+            "acceptance-workflow-contract",
+            "acceptance-runtime-provisioning-self",
+        }
+        self.assertTrue(
+            expected.issubset(
+                self.selected_ids(
+                    "tooling/acceptance/provisioners/oauth2_client_local.py"
+                )
+            )
+        )
+
     def test_rejects_duplicate_behavior_rule_authority_keys(self) -> None:
         cases = (
             '"when":{"paths":["src/**"]},"when":{"paths":[]}',

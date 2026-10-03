@@ -350,7 +350,6 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 		&persistence.Skill{},
 		&persistence.AgentSkillBinding{},
 		&persistence.AgentKnowledgeBinding{},
-		&persistence.AgentMcpBinding{},
 		&persistence.ClientCapabilityLease{},
 	); err != nil {
 		t.Fatalf("migrate backfill sources: %v", err)
@@ -359,7 +358,6 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 	legacyConfig := `{
 			"tools":["memory","missing_tool"],
 			"skills":["research"],
-			"mcpServers":["local-files"],
 			"connectors":[{"connectorId":"github","enabledTools":["profile"]}],
 			"knowledgeResources":"[{\"id\":\"knowledge-1\",\"type\":\"document\",\"title\":\"Reference\",\"source\":\"reference content\",\"policy\":\"manual\",\"status\":\"indexed\"},{\"id\":\"knowledge-url\",\"type\":\"url\",\"title\":\"Live URL\",\"source\":\"https://example.invalid/live\",\"policy\":\"auto\",\"status\":\"bound\"},{\"id\":\"knowledge-folder\",\"type\":\"folder\",\"title\":\"Local folder\",\"source\":\"/Users/example/private\",\"policy\":\"manual\",\"status\":\"bound\"}]"
 		}`
@@ -419,11 +417,6 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 		service.now(),
 	); err != nil {
 		t.Fatalf("seed legacy knowledge authority binding: %v", err)
-	}
-	if err := service.db.Create(&persistence.AgentMcpBinding{
-		ID: "mcp-binding-1", AgentID: "agent-1", ServerName: "local-files", Enabled: true,
-	}).Error; err != nil {
-		t.Fatalf("seed MCP binding: %v", err)
 	}
 	leasePayload, err := proto.Marshal(&model.ClientCapabilityLease{
 		CapabilitySessionId: "session-1",
@@ -501,8 +494,8 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 		Count(&bindingCount).Error; err != nil {
 		t.Fatalf("count capability bindings: %v", err)
 	}
-	if bindingCount != 5 {
-		t.Fatalf("expected five deduplicated bindings, got %d", bindingCount)
+	if bindingCount != 4 {
+		t.Fatalf("expected four deduplicated bindings, got %d", bindingCount)
 	}
 	assertCapabilityBackfillRejection(
 		t, first, "retired_extension_endpoint", "source_kind_not_accepted",
@@ -616,7 +609,6 @@ func TestCapabilityBackfillKeepsKnowledgeResourcesActorScoped(t *testing.T) {
 		&persistence.Skill{},
 		&persistence.AgentSkillBinding{},
 		&persistence.AgentKnowledgeBinding{},
-		&persistence.AgentMcpBinding{},
 		&persistence.ClientCapabilityLease{},
 	); err != nil {
 		t.Fatalf("migrate backfill sources: %v", err)
@@ -716,7 +708,6 @@ func TestCapabilityBackfillKnowledgeSurvivesDatabaseRestart(t *testing.T) {
 			&persistence.Skill{},
 			&persistence.AgentSkillBinding{},
 			&persistence.AgentKnowledgeBinding{},
-			&persistence.AgentMcpBinding{},
 			&persistence.ClientCapabilityLease{},
 		); err != nil {
 			t.Fatalf("migrate backfill database: %v", err)
@@ -825,18 +816,6 @@ func TestCapabilityToolManifestSeedUsesCanonicalExecutionRequirements(t *testing
 		t.Fatalf("local tool manifest does not match executor protocol: %+v", fileRead)
 	}
 
-	mcp := capabilityToolManifestSeed(&domain.ToolDefinition{
-		Name:        "local_mcp",
-		Description: "Invoke local MCP",
-		JSONSchema:  json.RawMessage(`{"type":"object"}`),
-	}).manifest
-	if mcp.GetCapabilityId() != "mcp.invoke" ||
-		mcp.GetVersion() != "2" ||
-		len(mcp.GetRequiredRuntimeCapabilities()) != 0 ||
-		mcp.GetAvailability() !=
-			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE {
-		t.Fatalf("MCP must be available after the J04 lifecycle cutover: %+v", mcp)
-	}
 }
 
 func TestCapabilityBackfillKeepsKnownManifestAuthorityOverLegacyLeaseVersion(
@@ -847,32 +826,27 @@ func TestCapabilityBackfillKeepsKnownManifestAuthorityOverLegacyLeaseVersion(
 		&persistence.Skill{},
 		&persistence.AgentSkillBinding{},
 		&persistence.AgentKnowledgeBinding{},
-		&persistence.AgentMcpBinding{},
 		&persistence.ClientCapabilityLease{},
 	); err != nil {
 		t.Fatalf("migrate capability backfill sources: %v", err)
 	}
-	registry := NewToolRegistryService(nil, nil)
-	definitions := registry.Definitions([]string{"local_mcp"})
-	if len(definitions) != 1 {
-		t.Fatalf("local_mcp definitions = %d, want 1", len(definitions))
-	}
-	current := capabilityToolManifestSeed(definitions[0]).manifest
-	historical := proto.Clone(current).(*model.CapabilityManifest)
-	historical.Version = "1"
-	historical.Availability =
-		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE
-	if _, err := upsertBackfillManifest(
-		authority.db,
-		historical,
-		authority.now(),
-	); err != nil {
-		t.Fatalf("seed historical MCP manifest: %v", err)
+	current := capabilityAuthorityTestManifest()
+	current.CapabilityId = "mcp.tool." + strings.Repeat("a", 64)
+	current.Version = "7"
+	current.SourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_MCP
+	current.SourceInstanceId = "mcp_fixture_echo"
+	current.ExecutionOwner =
+		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
+	current.RequiredRuntimeCapabilities = nil
+	current.SecretBoundary = "client:mcp:fixture"
+	current.OwnerPtid = "ptid:person:owner"
+	if _, err := authority.RegisterManifest(context.Background(), current); err != nil {
+		t.Fatalf("seed MCP tool manifest: %v", err)
 	}
 	leasePayload := operationCapabilityLeasePayloadFor(
 		t,
 		current.GetCapabilityId(),
-		historical.GetVersion(),
+		current.GetVersion(),
 	)
 	if err := authority.db.Create(&persistence.ClientCapabilityLease{
 		SessionID:     "legacy-mcp-session",
@@ -887,7 +861,7 @@ func TestCapabilityBackfillKeepsKnownManifestAuthorityOverLegacyLeaseVersion(
 		t.Fatalf("seed legacy MCP capability lease: %v", err)
 	}
 
-	backfill := NewCapabilityBackfillService(authority.db, registry)
+	backfill := NewCapabilityBackfillService(authority.db, nil)
 	backfill.now = authority.now
 	report, err := backfill.Run(context.Background())
 	if err != nil {
@@ -895,7 +869,8 @@ func TestCapabilityBackfillKeepsKnownManifestAuthorityOverLegacyLeaseVersion(
 	}
 	for _, rejection := range report.Rejections {
 		if rejection.Source == "client_capability" &&
-			rejection.SourceID == "legacy-mcp-session:mcp.invoke" {
+			rejection.SourceID ==
+				"legacy-mcp-session:"+current.GetCapabilityId() {
 			t.Fatalf("known MCP advertisement became a manifest source: %+v", rejection)
 		}
 	}
@@ -905,8 +880,8 @@ func TestCapabilityBackfillKeepsKnownManifestAuthorityOverLegacyLeaseVersion(
 		Count(&manifestCount).Error; err != nil {
 		t.Fatalf("count MCP manifest versions: %v", err)
 	}
-	if manifestCount != 2 {
-		t.Fatalf("MCP manifest version count = %d, want 2", manifestCount)
+	if manifestCount != 1 {
+		t.Fatalf("MCP manifest version count = %d, want 1", manifestCount)
 	}
 }
 
@@ -918,7 +893,6 @@ func TestCapabilityBackfillKeepsPersistedConnectorManifestAuthority(
 		&persistence.Skill{},
 		&persistence.AgentSkillBinding{},
 		&persistence.AgentKnowledgeBinding{},
-		&persistence.AgentMcpBinding{},
 		&persistence.ClientCapabilityLease{},
 	); err != nil {
 		t.Fatalf("migrate capability backfill sources: %v", err)

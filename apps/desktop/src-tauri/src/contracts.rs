@@ -28,17 +28,6 @@ pub struct AuthSessionPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthLoginInput {
-    pub account: String,
-    pub password: String,
-    pub base_url: Option<String>,
-    /// Device type sent to Station for session scoping.
-    /// When omitted, callers inject a transport-specific default:
-    /// Tauri commands → "desktop-native", HTTP gateway → "desktop-browser".
-    pub device_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthValidateTokenInput {
     pub token: Option<String>,
 }
@@ -46,33 +35,85 @@ pub struct AuthValidateTokenInput {
 // --- Access gate (interactive chain) contracts ---
 //
 // The Station owns the access policy and emits an ordered gate chain. The
-// desktop client drives the chain interactively: it starts an attempt, then
-// submits the gate the Station marks `action_required` (invite code first,
-// then login credentials). `AccessDecisionPayload.decision` carries the raw
-// Station decision JSON unchanged so the TS layer can normalize the
-// snake_case / string-enum wire shape with the same logic mobile uses.
+// desktop client drives the chain interactively through one generated Proto
+// decoder. Tauri exposes one stable camelCase projection to the renderer.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessDecisionInput {
+    pub attempt_id: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessSubmitInviteInput {
     pub attempt_id: String,
+    pub gate_id: String,
+    pub gate_type: i32,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+    pub submission_id: String,
     pub invite_code: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessSubmitLoginInput {
     pub attempt_id: String,
+    pub gate_id: String,
+    pub gate_type: i32,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+    pub submission_id: String,
     pub account: String,
     pub password: String,
     pub device_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessGateActionProjection {
+    pub action_id: String,
+    pub action_type: String,
+    pub submit_action: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessGateProjection {
+    pub gate_id: String,
+    pub gate_type: String,
+    pub state: String,
+    pub title: String,
+    pub description: String,
+    pub blocking_reason: String,
+    pub submit_action: String,
+    pub input_schema_json: String,
+    pub alternative_actions: Vec<AccessGateActionProjection>,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessDecisionProjection {
+    pub state: String,
+    pub attempt_id: String,
+    pub current_gate_id: String,
+    pub gates: Vec<AccessGateProjection>,
+    pub actor_ptid: Option<String>,
+    pub access_grant_id: String,
+    pub expires_at_unix_ms: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessDecisionPayload {
     pub command: String,
     pub status: String,
-    /// Raw Station `AccessDecision` JSON. Passed through verbatim so the
-    /// frontend normalizes the wire shape (snake_case keys, string enums).
-    pub decision: serde_json::Value,
+    pub decision: AccessDecisionProjection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -452,14 +493,6 @@ pub struct McpExecuteToolInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpLifecycleOperationInput {
-    pub name: String,
-    pub operation_kind: String,
-    #[serde(default)]
-    pub idempotency_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CronIdInput {
     pub id: String,
 }
@@ -568,6 +601,7 @@ pub struct OAuthAuthorizeInput {
 pub struct OAuthLoopbackStartInput {
     pub id: String,
     pub environment: Option<String>,
+    pub purpose: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -584,17 +618,23 @@ pub struct EnsureStationSessionInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthCallbackInput {
+    pub bridge_version: String,
+    pub site_id: String,
+    pub purpose: String,
+    pub assertion_id: String,
+    pub receiver_id: String,
+    pub receiver_challenge: String,
+    pub receiver_verifier: String,
     pub provider: String,
     pub provider_user_id: String,
+    pub union_id: Option<String>,
     pub username: Option<String>,
     pub display_name: Option<String>,
-    pub created_at: Option<String>,
     pub email: Option<String>,
+    pub email_verified: bool,
     pub avatar_url: Option<String>,
-    pub profile_url: Option<String>,
-    pub expires_at: Option<String>,
-    #[serde(default)]
-    pub scopes: Vec<String>,
+    pub ts: String,
+    pub sig: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1172,6 +1212,14 @@ pub struct AgentConversationArchiveInput {
 pub struct AgentConversationRestoreInput {
     pub conversation_id: String,
     pub expected_version: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationRuntimeResetInput {
+    pub conversation_id: String,
+    pub expected_conversation_version: u64,
+    pub client_idempotency_key: String,
+    pub destructive_confirmed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1760,6 +1808,47 @@ pub struct SocialGetTimelineInput {
     pub sort: Option<String>,
 }
 
+impl SocialGetTimelineInput {
+    pub fn station_timeline_type(&self) -> Option<&'static str> {
+        match self.r#type.as_str() {
+            "PUBLIC" | "TIMELINE_PUBLIC" => Some("TIMELINE_PUBLIC"),
+            "HOME" | "TIMELINE_HOME" => Some("TIMELINE_HOME"),
+            "USER" | "TIMELINE_USER" => Some("TIMELINE_USER"),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod social_timeline_input_tests {
+    use super::SocialGetTimelineInput;
+
+    fn input(value: &str) -> SocialGetTimelineInput {
+        SocialGetTimelineInput {
+            r#type: value.to_string(),
+            cursor: None,
+            limit: None,
+            sort: None,
+        }
+    }
+
+    #[test]
+    fn maps_client_timeline_names_to_canonical_proto_names() {
+        assert_eq!(
+            input("PUBLIC").station_timeline_type(),
+            Some("TIMELINE_PUBLIC")
+        );
+        assert_eq!(input("HOME").station_timeline_type(), Some("TIMELINE_HOME"));
+        assert_eq!(input("USER").station_timeline_type(), Some("TIMELINE_USER"));
+    }
+
+    #[test]
+    fn rejects_unknown_timeline_names() {
+        assert_eq!(input("public").station_timeline_type(), None);
+        assert_eq!(input("").station_timeline_type(), None);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialSyncMomentsProjectionInput {
     #[serde(default)]
@@ -1874,6 +1963,13 @@ pub struct SocialGetFollowingInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialGetRelationshipInput {
     pub target_actor_ptid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialRelationshipMutationInput {
+    pub target_actor_ptid: String,
+    pub target_home_station_peer_id: String,
+    pub observed_revision: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

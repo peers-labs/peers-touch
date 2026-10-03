@@ -84,6 +84,12 @@ Slice into TRAE's currently exposed Goal or subagent tool:
   the parent can schedule serial execution.
 
 The translated TRAE Goal is ephemeral transport, not a second project plan.
+Before launch, require the OWNER-issued `workflow_assignment_id`. TRAE
+`SubagentStart` claims it using `chat_session_id` as root identity and
+`session_id` as child execution identity; `SubagentStop` writes the terminal
+receipt. `PreCompact`/`PostCompact` preserve the same root and lineage. Never
+promote an internal `session_id` to OWNER or infer assignment from
+`agent_type`.
 
 ## Output
 

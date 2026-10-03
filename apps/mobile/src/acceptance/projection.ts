@@ -127,6 +127,7 @@ export function sanitizeMessagingProjection(input: {
       name: conversation.name,
       ownerPtid: conversation.ownerPtid,
       memberPtids: [...conversation.memberPtids],
+      members: conversation.members.map((member) => ({ ...member })),
       membershipEpoch: conversation.membershipEpoch,
       mlsEpoch: conversation.mlsEpoch,
       active: conversation.active,

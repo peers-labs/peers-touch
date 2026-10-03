@@ -195,7 +195,7 @@ pub fn dkx_send(
     if actor_ptid.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let sender_device_id = match device_install::get_or_create_device_id(&actor_ptid) {
+    let sender_device_id = match device_install::get_or_create_device_id() {
         Ok(device_id) => device_id,
         Err(error) => {
             return AppResult::fail(

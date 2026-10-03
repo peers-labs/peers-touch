@@ -20,6 +20,10 @@ PLAN_BLOCK = re.compile(
     r"(^## Plan Package\s*$\n+```json\s*$\n)([\s\S]*?)(\n```\s*$)",
     re.MULTILINE,
 )
+PLAN_STATUS_METADATA = re.compile(
+    r"^(> \*\*Status\*\*: )([a-z]+)[ \t]*$",
+    re.MULTILINE,
+)
 
 
 class PlanLifecycleSourceError(RuntimeError):
@@ -87,7 +91,21 @@ def _plan_at(repo_root: Path, commit: str, plan_path: str) -> tuple[dict[str, An
         raise PlanLifecycleSourceError(
             f"{commit} Plan Package block is not an object"
         )
+    status_matches = list(PLAN_STATUS_METADATA.finditer(document))
+    if len(status_matches) != 1:
+        raise PlanLifecycleSourceError(
+            f"{commit} has no unique canonical Plan Status metadata"
+        )
+    if status_matches[0].group(2) != manifest.get("status"):
+        raise PlanLifecycleSourceError(
+            f"{commit} Plan Status metadata does not match the manifest"
+        )
     skeleton = document[: match.start(2)] + "<PLAN_PACKAGE>" + document[match.end(2) :]
+    skeleton = PLAN_STATUS_METADATA.sub(
+        r"\1<PLAN_STATUS>",
+        skeleton,
+        count=1,
+    )
     return manifest, skeleton
 
 
@@ -121,6 +139,32 @@ def _task_statuses(manifest: Mapping[str, Any]) -> dict[str, str]:
     return statuses
 
 
+def _dependencies_done(
+    manifest: Mapping[str, Any],
+    task_id: str,
+    statuses: Mapping[str, str],
+) -> bool:
+    tasks = manifest.get("tasks")
+    if not isinstance(tasks, list):
+        return False
+    task = next(
+        (
+            candidate
+            for candidate in tasks
+            if isinstance(candidate, dict) and candidate.get("id") == task_id
+        ),
+        None,
+    )
+    dependencies = task.get("dependsOn") if task else None
+    return (
+        isinstance(dependencies, list)
+        and all(
+            isinstance(dependency, str) and statuses.get(dependency) == "done"
+            for dependency in dependencies
+        )
+    )
+
+
 def _validate_handoff(
     before: Mapping[str, Any],
     after: Mapping[str, Any],
@@ -133,6 +177,55 @@ def _validate_handoff(
         raise PlanLifecycleSourceError(
             f"{commit} changes the Plan Task inventory"
         )
+    if before.get("status") == "blocked":
+        if after.get("status") != "active":
+            raise PlanLifecycleSourceError(
+                f"{commit} does not reactivate the blocked Plan"
+            )
+        if (
+            not isinstance(before.get("exhaustion"), dict)
+            or after.get("exhaustion") is not None
+        ):
+            raise PlanLifecycleSourceError(
+                f"{commit} has an invalid reactivation exhaustion transition"
+            )
+        if any(status == "in_progress" for status in before_statuses.values()):
+            raise PlanLifecycleSourceError(
+                f"{commit} starts from an invalid blocked Plan projection"
+            )
+        next_tasks = [
+            task_id
+            for task_id, status in after_statuses.items()
+            if status == "in_progress"
+        ]
+        if len(next_tasks) != 1:
+            raise PlanLifecycleSourceError(
+                f"{commit} does not select exactly one reactivated Task"
+            )
+        next_task = next_tasks[0]
+        if before_statuses[next_task] not in {"pending", "blocked"}:
+            raise PlanLifecycleSourceError(
+                f"{commit} reactivates a non-runnable Task"
+            )
+        if not _dependencies_done(before, next_task, before_statuses):
+            raise PlanLifecycleSourceError(
+                f"{commit} reactivates a Task with incomplete dependencies"
+            )
+        changed = {
+            task_id
+            for task_id in before_statuses
+            if before_statuses[task_id] != after_statuses[task_id]
+        }
+        if changed != {next_task}:
+            raise PlanLifecycleSourceError(
+                f"{commit} changes Task state outside one legal reactivation"
+            )
+        return {
+            "commit": commit,
+            "completedTaskId": None,
+            "nextTaskId": next_task,
+        }
+
     current = [
         task_id
         for task_id, status in before_statuses.items()
@@ -142,10 +235,15 @@ def _validate_handoff(
         raise PlanLifecycleSourceError(
             f"{commit} does not start from one active current Task"
         )
-    completed_task = current[0]
-    if after_statuses[completed_task] != "done":
+    if before.get("exhaustion") is not None:
         raise PlanLifecycleSourceError(
-            f"{commit} does not complete the prior current Task"
+            f"{commit} starts from an active Plan with exhaustion"
+        )
+    completed_task = current[0]
+    terminal_status = after_statuses[completed_task]
+    if terminal_status not in {"done", "blocked"}:
+        raise PlanLifecycleSourceError(
+            f"{commit} does not close or block the prior current Task"
         )
     changed = {
         task_id
@@ -158,14 +256,30 @@ def _validate_handoff(
         if status == "in_progress"
     ]
     if after.get("status") == "completed":
-        if next_tasks or any(status != "done" for status in after_statuses.values()):
+        if (
+            terminal_status != "done"
+            or next_tasks
+            or any(status != "done" for status in after_statuses.values())
+            or after.get("exhaustion") is not None
+        ):
             raise PlanLifecycleSourceError(
                 f"{commit} has an invalid completed Plan projection"
             )
         expected_changed = {completed_task}
         next_task = None
+    elif after.get("status") == "blocked":
+        if (
+            terminal_status != "blocked"
+            or next_tasks
+            or not isinstance(after.get("exhaustion"), dict)
+        ):
+            raise PlanLifecycleSourceError(
+                f"{commit} has an invalid blocked Plan projection"
+            )
+        expected_changed = {completed_task}
+        next_task = None
     elif after.get("status") == "active":
-        if len(next_tasks) != 1:
+        if len(next_tasks) != 1 or after.get("exhaustion") is not None:
             raise PlanLifecycleSourceError(
                 f"{commit} does not select exactly one successor"
             )
@@ -173,6 +287,10 @@ def _validate_handoff(
         if before_statuses[next_task] != "pending":
             raise PlanLifecycleSourceError(
                 f"{commit} successor was not pending"
+            )
+        if not _dependencies_done(after, next_task, after_statuses):
+            raise PlanLifecycleSourceError(
+                f"{commit} selects a Task with incomplete dependencies"
             )
         expected_changed = {completed_task, next_task}
     else:

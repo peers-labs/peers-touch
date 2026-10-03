@@ -32,6 +32,7 @@ from tooling.acceptance.gates.agent.agent_v2_candidate_producer import (
     AgentV2RuntimeAttestation,
     AgentV2RuntimeTuple,
     AgentV2TupleObservation,
+    load_preprovisioned_runtime_manifest,
 )
 from tooling.acceptance.gates.agent.foundation_mobile_contract_adapter import (
     _parse_vitest_report,
@@ -43,8 +44,16 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 from tooling.acceptance.gates.agent.foundation_scenario_runner import (
     _build_client_manifest,
 )
+from tooling.acceptance.gates.agent.capability_binding_development import (
+    OPERATION_SCENARIO_ACTOR_ACCOUNT,
+    OPERATION_SCENARIO_IDENTITY_FIXTURE,
+    authenticate_native_client,
+    confirm_native_actor_identity_enrollment,
+    persist_native_actor_identity,
+    resolve_operation_scenario_actor,
+    seed_native_actor_identity,
+)
 from tooling.acceptance.gates.agent.home_command_center_candidate import (
-    _authenticate,
     _load_script,
     resolve_machine_profile,
 )
@@ -55,7 +64,7 @@ from tooling.acceptance.provisioners.home_station import (
 
 
 PROFILE = "two"
-ACTOR_ACCOUNT = "bob@p.t"
+ACTOR_ACCOUNT = OPERATION_SCENARIO_ACTOR_ACCOUNT
 SECONDARY_ACCOUNT = "alice@p.t"
 WORK_ITEM_ID = "MCA-A03-PR112"
 MOBILE_TEST_PATH = Path("apps/mobile/src/contracts/agentV2Contract.test.ts")
@@ -127,15 +136,30 @@ class CapabilityBindingRuntimeAdapter:
         self._runtime_pair = runtime_pair
         self._profile_env = dict(profile_env)
         self._run_id = run_id
+        logins = {
+            "desktop_app": authenticate_native_client(
+                runtime_pair.native,
+                profile_env,
+                profile=PROFILE,
+                account=ACTOR_ACCOUNT,
+            ),
+            "browser": authenticate_native_client(
+                runtime_pair.browser,
+                profile_env,
+                profile=PROFILE,
+                account=ACTOR_ACCOUNT,
+            ),
+        }
         actors = {
-            "desktop_app": _authenticate(runtime_pair.native, profile_env),
-            "browser": _authenticate(runtime_pair.browser, profile_env),
+            platform: str(login["actorId"])
+            for platform, login in logins.items()
         }
         require(
             len(set(actors.values())) == 1,
             "J02 Native and Browser clients authenticated different actors",
         )
-        self.actor_identity_hash = _hash_text(next(iter(actors.values())))
+        self.actor_id = next(iter(actors.values()))
+        self.actor_identity_hash = _hash_text(self.actor_id)
         self._fixture = _mapping(
             runtime_pair.native.harness(
                 "prepareCapabilityBindingCandidate",
@@ -632,19 +656,24 @@ def main() -> int:
     os.environ["PT_ACCEPTANCE_WORKSPACE_ID"] = store.workspace_id
     os.environ["PT_ACCEPTANCE_GATE_ID"] = AGENT_V2_BINDING_GATE
     os.environ["PT_ACCEPTANCE_RUN_ID"] = run.run_id
-    _deploy_acceptance_station(profile_env, run.run_id)
-
-    provisioner = HomeStationProvisioner(
-        EnvironmentContract.from_yaml(
-            ENVIRONMENTS_DIR / "home-station.yaml"
+    runtime_manifest = load_preprovisioned_runtime_manifest(
+        AGENT_V2_BINDING_GATE,
+        repo_root=ROOT,
+    )
+    provisioner: HomeStationProvisioner | None = None
+    if runtime_manifest is None:
+        _deploy_acceptance_station(profile_env, run.run_id)
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
         )
-    )
-    provisioner._resolve_active_profile = lambda: (
-        profile_name,
-        profile_file,
-        slot,
-        dict(profile_env),
-    )
+        provisioner._resolve_active_profile = lambda: (
+            profile_name,
+            profile_file,
+            slot,
+            dict(profile_env),
+        )
     runtime_pair: FoundationRuntimePair | None = None
     runtime_adapter: CapabilityBindingRuntimeAdapter | None = None
     observations: tuple[
@@ -654,22 +683,52 @@ def main() -> int:
     primary_error: BaseException | None = None
     run_closed = False
     try:
-        manifest = provisioner.provision(AGENT_V2_BINDING_GATE)
-        require(
-            manifest.state.value == "FIXTURE_READY",
-            "J02 provisioning blocked: "
-            f"{manifest.blocked_reason or manifest.state.value}",
-        )
+        if runtime_manifest is None:
+            assert provisioner is not None
+            manifest = provisioner.provision(AGENT_V2_BINDING_GATE)
+            require(
+                manifest.state.value == "FIXTURE_READY",
+                "J02 provisioning blocked: "
+                f"{manifest.blocked_reason or manifest.state.value}",
+            )
+            runtime_manifest = manifest.to_dict()
         runtime_pair = FoundationRuntimePair.from_manifest(
-            _build_client_manifest(manifest.to_dict()),
+            _build_client_manifest(runtime_manifest),
             profile_env=profile_env,
             startup_timeout=900,
+        )
+        expected_actor_id = resolve_operation_scenario_actor(profile_env)
+        seed_native_actor_identity(
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+            target_root=runtime_pair.native.actor_identity_root,
+            station_url=profile_env["PT_STATION_URL"],
+            profile=PROFILE,
+            account=ACTOR_ACCOUNT,
+            expected_actor_id=expected_actor_id,
         )
         runtime_pair.start()
         runtime_adapter = CapabilityBindingRuntimeAdapter(
             runtime_pair,
             profile_env,
             run.run_id,
+        )
+        require(
+            runtime_adapter.actor_id == expected_actor_id,
+            "J02 authenticated actor differs from the provisioned fixture",
+        )
+        enrollment = confirm_native_actor_identity_enrollment(
+            runtime_pair.native,
+            actor_id=runtime_adapter.actor_id,
+        )
+        persist_native_actor_identity(
+            source_root=runtime_pair.native.actor_identity_root,
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=runtime_adapter.actor_id,
+            station_accepted=enrollment["accepted"] is True,
+            profile=PROFILE,
+            account=ACTOR_ACCOUNT,
+            allow_actor_rebinding=True,
         )
         producer = CapabilityBindingCandidateProducer(
             runtime_adapter,
@@ -695,10 +754,11 @@ def main() -> int:
                     cleanup_failures.append(f"client cleanup failed: {result}")
             except BaseException as error:
                 cleanup_failures.append(f"client cleanup failed: {error}")
-        try:
-            provisioner.cleanup()
-        except BaseException as error:
-            cleanup_failures.append(f"provisioner cleanup failed: {error}")
+        if provisioner is not None:
+            try:
+                provisioner.cleanup()
+            except BaseException as error:
+                cleanup_failures.append(f"provisioner cleanup failed: {error}")
         if cleanup_failures:
             run.close()
             run_closed = True

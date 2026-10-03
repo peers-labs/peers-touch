@@ -20,6 +20,8 @@
     "apps/mobile/src/gen/proto/domain/agent/agent_pb.ts",
     "apps/desktop/src/gen/proto/domain/agent/agent_pb.ts",
     "apps/station/app/subserver/agent/errcode/error.go",
+    "apps/station/app/subserver/agent/handler/turn_handler.go",
+    "apps/station/app/subserver/agent/handler/turn_handler_test.go",
     "apps/station/app/subserver/agent/model/agent.pb.go",
     "apps/station/app/subserver/agent/service/chat_task_service.go",
     "apps/station/app/subserver/agent/service/chat_task_recovery_test.go",
@@ -35,6 +37,9 @@
     "apps/desktop/src-tauri/src/application/desktop_executor_worker/supervisor.rs",
     "apps/desktop/src-tauri/src/application/runtime_evidence.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+    "apps/desktop/src/runtimes/agentCapabilityRuntime.ts",
+    "apps/desktop/src/runtimes/agentCapabilityRuntime.test.ts",
+    "apps/desktop/src/services/appRuntime.ts",
     "apps/desktop/src/services/desktop_api.ts",
     "apps/desktop/src/services/desktop_api.clientPermissionDenied.test.ts",
     "apps/desktop/src/store/agent.ts",
@@ -77,6 +82,8 @@
     "tooling/acceptance/gates/agent/foundation_runtime_client_test.py",
     "tooling/acceptance/gates/agent/foundation_scenario_runner.py",
     "tooling/acceptance/gates/agent/foundation_scenario_runner_test.py",
+    "tooling/acceptance/gates/agent/foundation_station_restart.py",
+    "tooling/acceptance/gates/agent/foundation_station_restart_test.py",
     "tooling/acceptance/gates/agent/agent_native_static_test.py",
     "docs/architecture/agent"
   ],
@@ -87,7 +94,7 @@
   ],
   "budgets": {
     "focusedCheckSeconds": 1800,
-    "functionalRunSeconds": 3600,
+    "functionalRunSeconds": 7200,
     "cleanupSeconds": 600
   },
   "checks": [
@@ -125,7 +132,7 @@
     "Preserve terminal idempotency and active branch lineage",
     "Return only the first deterministic failure to its owning layer"
   ],
-  "updatedAt": "2026-09-27T18:18:00Z",
+  "updatedAt": "2026-09-30T20:16:45Z",
   "durableEvidence": []
 }
 ```
@@ -140,31 +147,14 @@ permission-denied contract exposed by the next exact-source Foundation run.
 
 ## Current Snapshot
 
-- Exact-source Foundation run `20260924T200431539686Z-b02b1a38a66edf1e9af21f7bb280339e`
-  failed at `agent.acceptance.foundationInterruptedMessageMissing`.
-- Runtime evidence shows the matching Turn Attempt is durably interrupted with
-  `station_restart_interrupted`, while Station message readback contains only
-  the admitted user message.
-- Desktop had projected the empty interrupted Assistant before synchronization;
-  the defect is owned by Station startup recovery persistence.
-- A later exact-source retry reached a matching corrected-resend `done` event
-  and canonical store state, then sampled receiver visibility before DOM
-  convergence; the Harness must await exactly one visible canonical Assistant.
-- Exact-source run `20260925T001210202640Z-b7203aa045503c7a64a5b262fe7b1b66`
-  crossed the restart and receiver regressions, then failed closed at
-  `BASE-LOOP_BUDGET_EXHAUSTED` because the existing standalone product Journey
-  was not registered in the Foundation direct-runtime adapter.
-- Instrumented exact-source run
-  `20260925T022549650004Z-761c02bd8990c84fb3d44592c496975a`
-  proved the Browser `zh-CN` invalid-reference resend was admitted, emitted
-  more than 1,100 thinking events, and then terminated failed. The scenario now
-  pins thinking to disabled and restores the prior Agent setting during cleanup.
-- Exact-source run
-  `20260925T152835902356Z-827632478defe662b212875f3c2c487d`
-  crossed the prior repaired cells and failed closed at Browser
-  `BASE-PERMISSION_DENIED` because no direct-runtime scenario was registered.
-  MCA-D27 now defines the missing proto-first permission owner, Station
-  pre-dispatch rejection, receiver recovery action, Browser observer semantics,
-  and zero-execution proof boundary.
-- Run `20260925T200337561495Z-2467c5cfacc56fecabff73ab2e5ce7a3` exposed a late canonical refresh dropping the local-only `BASE-DUPLICATE_CONFLICT` Assistant; the owner is Desktop chat merge with focused regression coverage.
-- Exact-source redeploy after the sanitized-history rebase exposed two orphaned legacy Social adapters and one stale Conversation response constructor; reconciliation removes the adapters and uses the canonical protobuf `oneof`.
+- Run `20260924T200431539686Z-b02b1a38a66edf1e9af21f7bb280339e` exposed missing Station persistence for an interrupted Assistant; startup recovery now persists the typed projection.
+- A later retry reached canonical corrected-resend state but sampled before DOM convergence; the Harness now awaits one visible canonical Assistant.
+- Run `20260925T001210202640Z-b7203aa045503c7a64a5b262fe7b1b66` reached the missing direct-runtime `BASE-LOOP_BUDGET_EXHAUSTED` registration.
+- Run `20260925T022549650004Z-761c02bd8990c84fb3d44592c496975a` showed Browser `zh-CN` invalid-reference resend emitted 1,100+ thinking events; the fixture now disables thinking and restores prior state.
+- Run `20260925T152835902356Z-827632478defe662b212875f3c2c487d` reached missing Browser `BASE-PERMISSION_DENIED`; MCA-D27 now defines its owner, typed rejection, recovery, and zero-execution proof.
+- Run `20260925T200337561495Z-2467c5cfacc56fecabff73ab2e5ce7a3` exposed a late canonical refresh dropping the local-only duplicate-conflict Assistant; Desktop chat merge now preserves it.
+- Post-rebase reconciliation removed two orphaned Social adapters and one stale Conversation response constructor in favor of the canonical protobuf `oneof`.
+- Run `20260928T014932696320Z-45059d51355332a04a644511cec18390` reached Browser `BASE-PROVIDER_TIMEOUT`; live Turn SSE now survives the provider window with heartbeat frames.
+- Run `20260930T170459504288Z-055e01500d9b0450e25e100eaf3e7514` crossed disposable Station restart and failed at Browser English `BASE-FORBIDDEN_ACTOR`; all runtime resources were cleanly released.
+- Diagnostic run `20260930T181131230145Z-6d68d340aea426d8c79f44e750fe109c` proved the source attempt passed and only the replay targeted a different current conversation. The Harness now reselects the owner-bound conversation before replay; the product stream path and Gate predicates remain unchanged.
+- Exact-source run `20260930T193102500626Z-608146c5a247c33f1e99ea91a8756df5` crossed the repaired cells and stopped at Browser English `BASE-RESUME_UNAVAILABLE`; cleanup passed. P12 remains `NOT_ADVERTISED`, so its external-session reset Journey stays `PRODUCT_AMENDMENT_REQUIRED` and must not be replaced by a direct-model shim.

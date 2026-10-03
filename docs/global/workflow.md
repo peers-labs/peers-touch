@@ -20,6 +20,13 @@ into the current worktree. The Doctor verifies the public promises below. A
 `BLOCKED` result names the owner that must be repaired; it is not permission to
 bypass the workflow or create another worktree.
 
+For a TRAE multi-root workspace, install with
+`make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>`. The
+descriptor's first folder hosts the only managed bootstrap, but it never
+selects execution authority. Installation requires machine-wide workflow
+quiescence and hard-deletes only the old conversation and workflow-action
+stores; there is no compatibility reader or migration.
+
 | Promise ID | What must be true | Normal recovery |
 |---|---|---|
 | `dev.integration.installed` | The selected host has the exact current Skill and hook projection, callback proof, and install receipt. | Run `make skills IDE=<host>` at a durable boundary. |
@@ -54,6 +61,14 @@ Then select platform docs:
 
 When the user starts by saying which worktree to use, that worktree becomes the
 task's active worktree.
+
+The Workflow Kernel represents that authority as one canonical
+`BindingProjection`. One visible chat has one immutable `OWNER`; internal
+`WORKER` and `REVIEWER` sessions require create-once assignments with exact
+root/parent lineage and bounded leases. TRAE uses `chat_session_id` for OWNER
+and `session_id` only for execution-session identity. No host-field alias,
+legacy conversation record, process-global identity, or worktree-wide binding
+enumeration may select authority.
 
 Default rule:
 - All edits, generated files, staging, commits, and PR operations must stay
@@ -126,6 +141,27 @@ Rules:
 - Completion, cancellation and abandonment require
   `make dev-release WORK_ITEM=<id>`.
 
+For a runtime-bearing Task, the Agent gathers one `ModuleImpact` from each
+affected module and prepares one combined resource plan before acquisition:
+
+```bash
+make dev-resources-prepare \
+  WORK_ITEM=<id> \
+  RESOURCE_INPUT=<plan-resource-request.json>
+```
+
+The Agent, not the developer, owns this command and its input. The result names
+the target dependency waves, peak resource demand, reused resources,
+build/restart/provision actions, and any parked target. Compatible accounts,
+services, clients, devices, Fixtures, and automation sessions are deduplicated
+across modules. One target's claims publish all-or-none; a conflict parks only
+that target and its dependents.
+
+Runtime and Acceptance Suite owners perform the physical lifecycle and return
+manifest-bound results through `make dev-resource-record`. Business Gates only
+attach to the prepared manifest. They never create accounts, launch clients,
+deploy services, or release resources.
+
 Architecture source:
 `docs/architecture/development-workflow/README.md`.
 
@@ -154,6 +190,12 @@ make completion-review-submit \
   ASSESSMENT=<owner-only-json-file>
 make dev-release WORK_ITEM=<stable-id>
 ```
+
+`completion-review-prepare` resolves the exact current OWNER Action Receipt and
+creates the REVIEWER assignment recorded by the immutable request.
+`completion-review-submit` accepts only a live child projection with that exact
+assignment. Stale, expired, terminal, unassigned, wrong-parent, and historical
+bindings never participate in selection.
 
 `make plan-advance` closes or parks a Task only after the required journal-backed
 Session and current Completion Review pass. `make plan-reopen` reopens the

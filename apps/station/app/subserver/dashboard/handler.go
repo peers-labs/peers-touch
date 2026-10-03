@@ -1608,21 +1608,24 @@ func (h *dashboardHandler) handleOSSFederationPeers(ctx context.Context, _ *doma
 // that this peer's current key is correct. We record it in the
 // dashboard audit trail so a future audit can prove who flipped it
 // when. The `:id` segment is the peer station id (NOT a numeric).
-func (h *dashboardHandler) handleOSSFederationPinPeer(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
-	return h.setPeerPin(ctx, true)
+func (h *dashboardHandler) handleOSSFederationPinPeer(ctx context.Context, req *domain.FederationPeerRequest) (*domain.MessageResponse, error) {
+	return h.setPeerPin(ctx, req, true)
 }
 
 // handleOSSFederationUnpinPeer — POST /dashboard/api/oss/federation/peers/:id/unpin
-func (h *dashboardHandler) handleOSSFederationUnpinPeer(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
-	return h.setPeerPin(ctx, false)
+func (h *dashboardHandler) handleOSSFederationUnpinPeer(ctx context.Context, req *domain.FederationPeerRequest) (*domain.MessageResponse, error) {
+	return h.setPeerPin(ctx, req, false)
 }
 
-func (h *dashboardHandler) setPeerPin(ctx context.Context, pinned bool) (*domain.MessageResponse, error) {
+func (h *dashboardHandler) setPeerPin(ctx context.Context, req *domain.FederationPeerRequest, pinned bool) (*domain.MessageResponse, error) {
 	if h.sub.ossSvc == nil {
 		return nil, serviceUnavailable("oss service unavailable")
 	}
 	claims := getClaims(ctx)
-	peerID := pathParam(ctx, "id")
+	peerID := ""
+	if req != nil {
+		peerID = strings.TrimSpace(req.ID)
+	}
 	if peerID == "" {
 		return nil, server.BadRequest("peer station id is required")
 	}
@@ -1736,12 +1739,15 @@ func (h *dashboardHandler) recordOSSFederationAudit(ctx context.Context, claims 
 // admin-side audit row and an `oss_audit` row tagged with the
 // dashboard actor id so the operator's intent is captured in the
 // federation-side trail too.
-func (h *dashboardHandler) handleOSSFederationForgetPeer(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+func (h *dashboardHandler) handleOSSFederationForgetPeer(ctx context.Context, req *domain.FederationPeerRequest) (*domain.MessageResponse, error) {
 	if h.sub.ossSvc == nil {
 		return nil, serviceUnavailable("oss service unavailable")
 	}
 	claims := getClaims(ctx)
-	peerID := pathParam(ctx, "id")
+	peerID := ""
+	if req != nil {
+		peerID = strings.TrimSpace(req.ID)
+	}
 	if peerID == "" {
 		return nil, server.BadRequest("peer station id is required")
 	}

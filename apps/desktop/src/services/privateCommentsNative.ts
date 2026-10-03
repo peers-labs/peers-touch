@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import { resolvePrivateMomentsPlatform } from './privateMomentsNative';
+import {
+  resolvePrivateMomentsPlatform,
+  type PrivateMomentMention,
+} from './privateMomentsNative';
+
+export type PrivateCommentMention = PrivateMomentMention;
 
 export const PRIVATE_COMMENTS_COMMANDS = {
   bootstrap: 'social_private_comments_bootstrap',
@@ -36,6 +41,7 @@ export interface PrivateCommentProjection {
   authorAcct?: string;
   state: 'COMMENT_POSTED';
   text: string;
+  mentions: PrivateCommentMention[];
   reactionsCount: number;
   repliesCount: number;
   createdAtMillis?: number;
@@ -48,6 +54,7 @@ export interface PrivateCommentDraftProjection {
   postId: string;
   replyToCommentId: string;
   text: string;
+  mentions: PrivateCommentMention[];
   state: PrivateCommentState;
   commentId?: string;
   errorCode?: string;
@@ -84,6 +91,7 @@ export interface PrivateCommentIntent {
   postId: string;
   replyToCommentId?: string;
   text: string;
+  mentions?: PrivateCommentMention[];
 }
 
 interface NativeCommandResult<T> {
@@ -190,6 +198,43 @@ function contractError(message: string): PrivateCommentsNativeError {
   });
 }
 
+function normalizePrivateCommentMention(value: unknown): PrivateCommentMention {
+  if (!isRecord(value)) {
+    throw contractError('private Comment mention projection is malformed');
+  }
+  const actorPtid = stringField(value.actor_ptid ?? value.actorPtid);
+  const offset = numberField(value.offset);
+  const length = numberField(value.length);
+  const display = stringField(value.display);
+  if (
+    !actorPtid
+    || offset === undefined
+    || !Number.isInteger(offset)
+    || offset < 0
+    || length === undefined
+    || !Number.isInteger(length)
+    || length < 1
+    || !display
+  ) {
+    throw contractError('private Comment mention projection is invalid');
+  }
+  return { actorPtid, offset, length, display };
+}
+
+function sameMentions(
+  left: PrivateCommentMention[],
+  right: PrivateCommentMention[],
+): boolean {
+  return left.length === right.length && left.every((mention, index) => {
+    const candidate = right[index];
+    return candidate !== undefined
+      && mention.actorPtid === candidate.actorPtid
+      && mention.offset === candidate.offset
+      && mention.length === candidate.length
+      && mention.display === candidate.display;
+  });
+}
+
 export function normalizePrivateCommentDraft(
   value: unknown,
 ): PrivateCommentDraftProjection {
@@ -201,6 +246,9 @@ export function normalizePrivateCommentDraft(
   const postId = stringField(value.post_id ?? value.postId);
   const state = stateField(value.state);
   const text = typeof value.text === 'string' ? value.text : '';
+  const mentions = Array.isArray(value.mentions)
+    ? value.mentions.map(normalizePrivateCommentMention)
+    : [];
   const commentId = stringField(value.comment_id ?? value.commentId) || undefined;
   const publicationState = publicationStateField(
     value.publication_state ?? value.publicationState,
@@ -221,6 +269,7 @@ export function normalizePrivateCommentDraft(
     postId,
     replyToCommentId: stringField(value.reply_to_comment_id ?? value.replyToCommentId),
     text,
+    mentions,
     state,
     commentId,
     errorCode: stringField(value.error_code ?? value.errorCode) || undefined,
@@ -245,6 +294,9 @@ export function normalizePrivateCommentProjection(
   const authorPtid = stringField(value.author_ptid ?? value.authorPtid);
   const state = stateField(value.state);
   const text = typeof value.text === 'string' ? value.text : '';
+  const mentions = Array.isArray(value.mentions)
+    ? value.mentions.map(normalizePrivateCommentMention)
+    : [];
   if (
     !commentId
     || !contentId
@@ -266,6 +318,7 @@ export function normalizePrivateCommentProjection(
     authorAcct: stringField(value.author_acct ?? value.authorAcct) || undefined,
     state,
     text,
+    mentions,
     reactionsCount: numberField(value.reactions_count ?? value.reactionsCount) ?? 0,
     repliesCount: numberField(value.replies_count ?? value.repliesCount) ?? 0,
     createdAtMillis: numberField(value.created_at_millis ?? value.createdAtMillis),
@@ -378,6 +431,12 @@ function nativeIntent(intent: PrivateCommentIntent): Record<string, unknown> {
     post_id: intent.postId,
     reply_to_comment_id: intent.replyToCommentId ?? '',
     text: intent.text,
+    mentions: (intent.mentions ?? []).map((mention) => ({
+      actor_ptid: mention.actorPtid,
+      offset: mention.offset,
+      length: mention.length,
+      display: mention.display,
+    })),
   };
 }
 
@@ -392,6 +451,7 @@ function normalizeIntentDraft(
     || draft.postId !== intent.postId
     || draft.replyToCommentId !== (intent.replyToCommentId ?? '')
     || draft.text !== intent.text
+    || !sameMentions(draft.mentions, intent.mentions ?? [])
   ) {
     throw contractError('private Comment Native draft changed its local identity');
   }

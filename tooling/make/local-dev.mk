@@ -4,6 +4,7 @@
 .PHONY: env-register env-update env-unregister env-check env-status-all dev-ui dev-ui-snapshot dev-observe workflow-snapshot workflow-doctor \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
+        dev-resources-prepare dev-resources-status dev-resource-record \
         dev-session-start dev-session-status dev-transition dev-functional-result \
         active-work-sync active-work-status active-work-status-all active-work-close \
         completion-review-prepare completion-review-submit completion-review-status \
@@ -42,6 +43,8 @@ DEV_PURPOSE_ARG := $(or $(PURPOSE),$(DEV_PURPOSE))
 DEV_SOURCE_CLAIMS_ARG := $(or $(SOURCE_CLAIMS),$(DEV_SOURCE_CLAIMS))
 DEV_RUNTIME_CLAIMS_ARG := $(or $(RUNTIME_CLAIMS),$(DEV_RUNTIME_CLAIMS))
 DEV_RUNTIME_CLAIMS_SPECIFIED := $(if $(filter undefined,$(origin RUNTIME_CLAIMS)),$(if $(filter undefined,$(origin DEV_RUNTIME_CLAIMS)),,1),1)
+DEV_RESOURCE_INPUT_ARG := $(or $(RESOURCE_INPUT),$(DEV_RESOURCE_INPUT))
+DEV_RESOURCE_RESULT_ARG := $(or $(RESOURCE_RESULT),$(DEV_RESOURCE_RESULT))
 DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
 DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
@@ -241,6 +244,25 @@ dev-release:
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
 
+dev-resources-prepare:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_RESOURCE_INPUT_ARG)" ]; then echo "Usage: make dev-resources-prepare WORK_ITEM=<id> RESOURCE_INPUT=<json-file>"; exit 1; fi
+	@node $(DEV_WORK_SCRIPT) prepare-resources \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--resource-input "$(DEV_RESOURCE_INPUT_ARG)" \
+		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
+
+dev-resources-status:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-resources-status WORK_ITEM=<id>"; exit 1; fi
+	@node $(DEV_WORK_SCRIPT) resource-status \
+		--work-item "$(DEV_WORK_ITEM_ARG)"
+
+dev-resource-record:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_RESOURCE_RESULT_ARG)" ]; then echo "Usage: make dev-resource-record WORK_ITEM=<id> RESOURCE_RESULT=<json-file>"; exit 1; fi
+	@node $(DEV_WORK_SCRIPT) record-resource \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--resource-result "$(DEV_RESOURCE_RESULT_ARG)" \
+		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
+
 dev-session-start:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_TASK_ARG)" ] || [ -z "$(DEV_JOURNEY_ARG)" ]; then \
 		echo "Usage: make dev-session-start WORK_ITEM=<id> TASK=<id> JOURNEY=<id> [PLAN=<path>]"; \
@@ -302,27 +324,37 @@ active-work-close:
 		--expected-revision "$(EXPECTED_REVISION)"
 
 completion-review-prepare:
-	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-prepare WORK_ITEM=<id> [SCOPE=<task|plan>] [NEXT=<ready-id>]"; exit 1; fi
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-prepare WORK_ITEM=<id> [SCOPE=<task|plan>] [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
 	@node $(COMPLETION_REVIEW_SCRIPT) prepare \
 		--repo-root "$(CURDIR)" \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		$(if $(SCOPE),--scope "$(SCOPE)",) \
-		$(if $(NEXT),--next "$(NEXT)",)
+		$(if $(NEXT),--next "$(NEXT)",) \
+		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
+		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
+		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 completion-review-submit:
-	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> [NEXT=<ready-id>]"; exit 1; fi
+	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
 	@node $(COMPLETION_REVIEW_SCRIPT) submit \
 		--repo-root "$(CURDIR)" \
 		--review "$(REVIEW)" \
 		--verdict "$(VERDICT)" \
 		--assessment "$(ASSESSMENT)" \
-		$(if $(NEXT),--next "$(NEXT)",)
+		$(if $(NEXT),--next "$(NEXT)",) \
+		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
+		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
+		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 completion-review-status:
-	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-status WORK_ITEM=<id>"; exit 1; fi
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-status WORK_ITEM=<id> [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
 	@node $(COMPLETION_REVIEW_SCRIPT) status \
 		--repo-root "$(CURDIR)" \
-		--work-item "$(DEV_WORK_ITEM_ARG)"
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		$(if $(NEXT),--next "$(NEXT)",) \
+		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
+		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
+		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 station:
 	@$(DEVCTL) station start

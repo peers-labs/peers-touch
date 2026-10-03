@@ -62,6 +62,9 @@ Execution Plan's current closure, contrary to D-20.
 - `acceptance-gap-detect.py` validates the canonical planner's candidate
   superset but derives execution obligations only from the supplied formal
   closure and explicit required Gates.
+- Gap detection admits through an explicit `--session` path and selects
+  Acceptance evidence through a separate `--run` path; neither input is reused
+  as the other artifact type.
 - Gate-specific tests cover their journey mappings; the submitted-command
   suite also covers profile-family classification. Gap Detector tests cover a
   receiver-visible path whose broader candidate Gate is intentionally deferred

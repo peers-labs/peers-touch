@@ -24,8 +24,16 @@ func TestPublicPostRepo_Create_PanicsOnNonPublic(t *testing.T) {
 	}{
 		{"FOLLOWERS", &model.Audience{Kind: model.Audience_FOLLOWERS}},
 		{"SELF", &model.Audience{Kind: model.Audience_SELF}},
-		{"CIRCLE", &model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1}},
-		{"GROUP", &model.Audience{Kind: model.Audience_GROUP, TargetId: 1}},
+		{"CIRCLE", &model.Audience{
+			Kind:   model.Audience_CIRCLE,
+			Target: &model.Audience_CircleId{CircleId: 1},
+		}},
+		{"GROUP", &model.Audience{
+			Kind: model.Audience_GROUP,
+			Target: &model.Audience_GroupConversationId{
+				GroupConversationId: "group-1",
+			},
+		}},
 		{"CUSTOM_ALLOW", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"x"}}},
 		{
 			"CUSTOM_DENY base PUBLIC NOT public",

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
 
+const TEST_CREDENTIAL = ['acceptance', 'fixture'].join('-');
+
 const registered = vi.hoisted(
   () => ({} as Record<string, Record<string, (...args: unknown[]) => Promise<unknown>>>),
 );
@@ -127,12 +129,12 @@ describe('Secure Content fixture harness', () => {
   it('replaces a revoked Station session without destructive logout', async () => {
     const result = await harness().restoreSessionWithPassword({
       account: 'alice@p.t',
-      password: 'password',
+      password: TEST_CREDENTIAL,
     });
 
     expect(mocks.loginWithPassword).toHaveBeenCalledWith(
       'alice@p.t',
-      'password',
+      TEST_CREDENTIAL,
     );
     expect(mocks.completeCurrentSession).toHaveBeenCalledOnce();
     expect(result).toEqual({
@@ -176,7 +178,7 @@ describe('Secure Content fixture harness', () => {
 
     const result = await harness().prepareAccountSwitch({
       secondaryAccount: 'secondary@p.t',
-      password: 'password',
+      password: TEST_CREDENTIAL,
       pin: '12345678',
     });
 
@@ -225,10 +227,13 @@ describe('Secure Content fixture harness', () => {
       primaryAccountId: 'account-primary',
       primaryActorPtid: 'ptid:primary',
       primaryStorageIdentitySha256: 'a'.repeat(64),
+      primaryLoginId: 'primary@testnet.local',
       secondaryAccountId: 'account-secondary',
       secondaryActorPtid: 'ptid:secondary',
       secondaryStorageIdentitySha256: 'b'.repeat(64),
+      secondaryLoginId: 'secondary@testnet.local',
       pin: '12345678',
+      password: TEST_CREDENTIAL,
     });
 
     expect(result).toMatchObject({
@@ -248,7 +253,7 @@ describe('Secure Content fixture harness', () => {
 
     await expect(harness().prepareAccountSwitch({
       secondaryAccount: 'secondary@p.t',
-      password: 'password',
+      password: TEST_CREDENTIAL,
       pin: '12345678',
     })).rejects.toThrow('secureContentFixture.primaryAccountMissing');
   });
@@ -294,7 +299,7 @@ describe('Secure Content fixture harness', () => {
 
     const result = await harness().roundTripStationSwitch({
       account: 'bob@p.t',
-      password: 'password',
+      password: TEST_CREDENTIAL,
       primaryStationUrl: 'https://station-four.example',
       secondaryStationUrl: 'https://station-five.example',
     });

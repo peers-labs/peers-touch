@@ -529,7 +529,7 @@ func expectedResetTask(intent ResetIntent, profileID string) (string, bool) {
 	case ResetIntentSchemaActivation:
 		switch profileID {
 		case "four", "fiveArm":
-			return "W12A", true
+			return "W12D", true
 		}
 	case ResetIntentFinalCut:
 		switch profileID {
@@ -806,6 +806,7 @@ func CanonicalPrivatePostColumns() []string {
 		"encrypted_payload_bytes",
 		"encrypted_payload_sha256",
 		"object_descriptor_set_sha256",
+		"mention_routing_bytes",
 		"mention_routing_sha256",
 		"subtype_authority_sha256",
 		"lifecycle_state",

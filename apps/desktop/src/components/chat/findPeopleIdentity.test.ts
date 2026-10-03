@@ -2,11 +2,25 @@ import { describe, expect, it } from 'vitest';
 
 import type { FederationResolveView } from '../../services/desktop_api';
 import {
+  findPeopleScopePresentation,
   friendRequestFederationId,
   resolvedProfileToSearchResult,
 } from './findPeopleIdentity';
 
 describe('Find People identity projection', () => {
+  it('keeps same-name Federation and Station scopes semantically distinct', () => {
+    expect(findPeopleScopePresentation('federation', 'local', 'fed-local')).toEqual({
+      name: 'local',
+      labelKey: 'chat.social.findPeople.scopeFederationNamed',
+      tooltipKey: 'chat.social.findPeople.scopeFederationTooltip',
+    });
+    expect(findPeopleScopePresentation('station', 'local', 'station-local')).toEqual({
+      name: 'local',
+      labelKey: 'chat.social.findPeople.scopeStationNamed',
+      tooltipKey: 'chat.social.findPeople.scopeStationTooltip',
+    });
+  });
+
   it('uses ActorRef PTID instead of the legacy profile URL identity', () => {
     const view = {
       federatedHandle: '@alice@station.example',

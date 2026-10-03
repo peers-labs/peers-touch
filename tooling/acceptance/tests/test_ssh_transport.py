@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import Mock
 from unittest.mock import patch
 
+from tooling.acceptance.core.errors import ProvisioningError
 from tooling.acceptance.transports.ssh import (
     RemotePlatform,
     SshTarget,
@@ -95,6 +96,64 @@ class SshTransportRenderingTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertFalse(SshTransport._valid_windows_path(path))
 
+    def test_local_forward_targets_reviewed_remote_endpoint(self) -> None:
+        transport = SshTransport(SshTarget("host.example", "runner"))
+        tunnel = Mock()
+        with (
+            patch.object(
+                transport,
+                "remote_endpoint_listening",
+                return_value=True,
+            ) as probe,
+            patch.object(
+                transport,
+                "_start_forward",
+                return_value=tunnel,
+            ) as start,
+        ):
+            resolved = transport.start_local_forward(
+                remote_host="10.0.0.4",
+                remote_port=18080,
+                local_port=4101,
+                timeout=7,
+            )
+
+        self.assertIs(resolved, tunnel)
+        probe.assert_called_once_with("10.0.0.4", 18080, timeout=7)
+        start.assert_called_once_with(
+            direction="-L",
+            specification="127.0.0.1:4101:10.0.0.4:18080",
+            local_probe_port=4101,
+            remote_probe_port=None,
+            timeout=7,
+        )
+
+    def test_local_forward_defaults_to_remote_loopback(self) -> None:
+        transport = SshTransport(SshTarget("host.example", "runner"))
+        with (
+            patch.object(
+                transport,
+                "remote_endpoint_listening",
+                return_value=True,
+            ) as probe,
+            patch.object(transport, "_start_forward", return_value=Mock()),
+        ):
+            transport.start_local_forward(
+                remote_port=18080,
+                local_port=4101,
+            )
+
+        probe.assert_called_once_with("127.0.0.1", 18080, timeout=10)
+
+    def test_local_forward_rejects_invalid_remote_host(self) -> None:
+        transport = SshTransport(SshTarget("host.example", "runner"))
+
+        with self.assertRaises(ProvisioningError):
+            transport.start_local_forward(
+                remote_host="host name",
+                remote_port=18080,
+            )
+
     def test_loopback_probe_default_accounts_for_remote_platform_startup(
         self,
     ) -> None:
@@ -129,6 +188,35 @@ class SshTransportRenderingTest(unittest.TestCase):
                     run.call_args.kwargs["timeout"],
                     expected_timeout,
                 )
+                self.assertEqual(
+                    run.call_args.args[0][-2:],
+                    ("127.0.0.1", "4645"),
+                )
+
+    def test_remote_endpoint_probe_uses_requested_host(self) -> None:
+        transport = SshTransport(SshTarget("host.example", "runner"))
+        completed = subprocess.CompletedProcess(
+            ("python",),
+            0,
+            stdout="",
+            stderr="",
+        )
+        with patch.object(
+            transport,
+            "run_argv",
+            return_value=completed,
+        ) as run:
+            self.assertTrue(
+                transport.remote_endpoint_listening(
+                    "10.0.0.4",
+                    18080,
+                )
+            )
+
+        self.assertEqual(
+            run.call_args.args[0][-2:],
+            ("10.0.0.4", "18080"),
+        )
 
     def test_loopback_probe_preserves_explicit_timeout(self) -> None:
         transport = SshTransport(

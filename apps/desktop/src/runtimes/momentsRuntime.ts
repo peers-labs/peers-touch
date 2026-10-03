@@ -307,13 +307,23 @@ async function bootstrapForActor(
   bootstrappedSessionEpoch = sessionEpoch;
   usePrivateMomentsStore.getState().activateActor(actorPtid, sequence);
   usePrivateCommentsStore.getState().activateActor(actorPtid, sequence);
-  await Promise.allSettled([
-    usePrivateMomentsStore.getState().bootstrap(sequence),
-  ]);
-  await Promise.allSettled([
-    usePrivateCommentsStore.getState().bootstrap(sequence),
-    refreshMomentsProjection('bootstrap'),
-  ]);
+  try {
+    await usePrivateMomentsStore.getState().bootstrap(sequence);
+    await Promise.all([
+      usePrivateCommentsStore.getState().bootstrap(sequence),
+      refreshMomentsProjection('bootstrap'),
+    ]);
+  } catch (error) {
+    if (
+      sequence === bootstrapSequence
+      && bootstrappedActorPtid === actorPtid
+      && bootstrappedSessionEpoch === sessionEpoch
+    ) {
+      bootstrappedActorPtid = null;
+      bootstrappedSessionEpoch = null;
+    }
+    throw error;
+  }
 
   if (sequence !== bootstrapSequence) return;
   log.info('momentsRuntime', 'moments projection bootstrap completed', { actorPtid });
@@ -349,7 +359,13 @@ function reconcileAuthenticatedRuntime(): void {
 function startReconcileTimer(): void {
   if (reconcileTimer) return;
   reconcileTimer = window.setInterval(() => {
-    if (!bootstrappedActorPtid) return;
+    if (!bootstrappedActorPtid) {
+      const session = useSessionStore.getState();
+      if (session.authenticated && session.currentUser?.actorPtid) {
+        reconcileAuthenticatedRuntime();
+      }
+      return;
+    }
     runDetached('periodic moments projection refresh', () => (
       refreshMomentsProjection('periodic reconcile')
     ));

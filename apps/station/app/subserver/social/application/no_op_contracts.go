@@ -44,11 +44,11 @@ type noopGroupChecker struct{}
 
 func NewNoopGroupMembershipChecker() domain.GroupMembershipChecker { return noopGroupChecker{} }
 
-func (noopGroupChecker) IsMember(_ context.Context, _ uint64, _ string) (bool, error) {
+func (noopGroupChecker) IsMember(_ context.Context, _ string, _ string) (bool, error) {
 	return false, nil
 }
 
-func (noopGroupChecker) MembershipsForViewer(_ context.Context, _ string) ([]uint64, error) {
+func (noopGroupChecker) MembershipsForViewer(_ context.Context, _ string) ([]string, error) {
 	return nil, nil
 }
 

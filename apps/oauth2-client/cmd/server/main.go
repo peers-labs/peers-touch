@@ -37,6 +37,8 @@ func main() {
 	handle("/api/oauth/weixin/callback", func(w http.ResponseWriter, r *http.Request) {
 		container.Handler.CallbackWithProvider(w, r, valueobject.ProviderWeixin)
 	})
+	handle("/api/admin", container.Admin.Page)
+	handle("/api/admin/data", container.Admin.Data)
 	handle("/api/healthz", container.Handler.Healthz)
 	addr := resolveListenAddr()
 	log.Printf("oauth2-client listening on %s", addr)

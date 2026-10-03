@@ -1,0 +1,22 @@
+{
+  "id": "oauth2-client-local-browser",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "services": {},
+  "fixtures": [],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "oauth2-client-browser",
+      "actor": "operator",
+      "runtime": "browser:chromium",
+      "required_service_roles": [],
+      "service_bindings": {}
+    }
+  ],
+  "cleanup": {
+    "resources": []
+  }
+}

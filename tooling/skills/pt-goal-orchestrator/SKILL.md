@@ -148,11 +148,15 @@ isolation.
 
 Workers:
 
-- receive the same verified binding and explicit `workdir`;
+- receive a create-once WORKER assignment rooted in the same OWNER
+  `BindingProjection`, preserve exact root/parent lineage, and use the OWNER
+  execution root as explicit `workdir`;
 - own non-overlapping source paths;
 - never stage, commit, deploy, mutate tracking, or run broad generators;
 - stop on unexpected writes in their ownership;
 - return exact changed files and focused verification results.
+- terminalize their child binding on PASS, FAIL, BLOCKED, or CANCELLED; an
+  expired or terminal child is history and never blocks a later assignment.
 
 Only live, addressable workers with equivalent worktree, branch, stage, source
 unit, and overlapping ownership are conflicts. Stale metadata is

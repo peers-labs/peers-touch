@@ -107,14 +107,58 @@ pub fn upsert_oauth(
     avatar_url: Option<&str>,
     profile_url: Option<&str>,
 ) -> Result<String, String> {
+    upsert_oauth_state(
+        actor_ptid,
+        provider,
+        provider_user_id,
+        name,
+        false,
+        created_at,
+        email,
+        avatar_url,
+        profile_url,
+    )
+}
+
+pub fn upsert_oauth_with_session(
+    actor_ptid: &str,
+    provider: &str,
+    provider_user_id: &str,
+    name: &str,
+    created_at: Option<&str>,
+    email: Option<&str>,
+    avatar_url: Option<&str>,
+    profile_url: Option<&str>,
+) -> Result<String, String> {
+    upsert_oauth_state(
+        actor_ptid,
+        provider,
+        provider_user_id,
+        name,
+        true,
+        created_at,
+        email,
+        avatar_url,
+        profile_url,
+    )
+}
+
+fn upsert_oauth_state(
+    actor_ptid: &str,
+    provider: &str,
+    provider_user_id: &str,
+    name: &str,
+    has_session: bool,
+    created_at: Option<&str>,
+    email: Option<&str>,
+    avatar_url: Option<&str>,
+    profile_url: Option<&str>,
+) -> Result<String, String> {
     if !actor_ptid.trim().starts_with("ptid:") {
         return Err("canonical actor PTID is required".to_string());
     }
     let mut state = read_state()?;
-    let station_scope = local_scope::active_station_scope();
-    let provider_scope = storage::sanitize_storage_segment(provider);
-    let provider_user_scope = storage::sanitize_storage_segment(provider_user_id);
-    let account_id = format!("station:{station_scope}:{provider_scope}:{provider_user_scope}");
+    let account_id = oauth_account_id(provider, provider_user_id);
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
         existing.actor_ptid = actor_ptid.to_string();
@@ -122,6 +166,7 @@ pub fn upsert_oauth(
         existing.email = email.unwrap_or_default().to_string();
         existing.avatar_url = avatar_url.unwrap_or_default().to_string();
         existing.profile_url = profile_url.unwrap_or_default().to_string();
+        existing.has_session = has_session;
         if existing.created_at.trim().is_empty() {
             existing.created_at = created_at
                 .filter(|v| !v.trim().is_empty())
@@ -149,12 +194,26 @@ pub fn upsert_oauth(
             pin_protection: None,
             encrypted_session: None,
             session_expires_at: None,
-            has_session: false,
+            has_session,
         });
+    }
+    if has_session {
+        for account in &mut state.accounts {
+            if account.id != account_id && account.pin_protection.is_none() {
+                account.has_session = false;
+            }
+        }
     }
     state.active_account_id = Some(account_id.clone());
     write_state(&state)?;
     Ok(account_id)
+}
+
+pub fn oauth_account_id(provider: &str, provider_user_id: &str) -> String {
+    let station_scope = local_scope::active_station_scope();
+    let provider_scope = storage::sanitize_storage_segment(provider);
+    let provider_user_scope = storage::sanitize_storage_segment(provider_user_id);
+    format!("station:{station_scope}:{provider_scope}:{provider_user_scope}")
 }
 
 fn chrono_like_now_unix() -> i64 {
@@ -229,6 +288,14 @@ pub fn find_profile_by_actor_ptid(actor_ptid: &str) -> Option<AccountIdentity> {
         .accounts
         .into_iter()
         .find(|account| account.actor_ptid == actor_ptid)
+}
+
+pub fn find_account_by_id(account_id: &str) -> Option<AccountIdentity> {
+    let state = read_state().ok()?;
+    state
+        .accounts
+        .into_iter()
+        .find(|account| account.id == account_id)
 }
 
 /// Resolve the canonical `account_id` (e.g. `password:123`, `github:456`) for a

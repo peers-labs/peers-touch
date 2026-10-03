@@ -62,6 +62,8 @@ func (s *TurnService) resolveTurnRuntimeSnapshot(
 	}
 	return &AdmissionSnapshot{
 		SnapshotID:            pinned.GetCapabilities().GetSnapshotId(),
+		RuntimeKind:           pinned.GetRuntimeKind(),
+		RuntimeProfileID:      pinned.GetRuntimeProfileId(),
 		ProviderID:            pinned.GetProviderId(),
 		ModelID:               pinned.GetModelId(),
 		ProviderConfigVersion: pinned.GetProviderConfigVersion(),

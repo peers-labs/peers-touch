@@ -56,6 +56,7 @@ EVIDENCE_ROLES = tuple(
 RuntimeAttestationProfile = Literal[
     "direct_runtime",
     "direct_runtime_no_local_capability",
+    "station_turn",
     "contract_only",
     "orchestration_guard",
     "non_advertised",
@@ -63,6 +64,7 @@ RuntimeAttestationProfile = Literal[
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
     "direct_runtime_no_local_capability",
+    "station_turn",
     "contract_only",
     "orchestration_guard",
     "non_advertised",
@@ -76,6 +78,8 @@ ROW_ADAPTERS = {
     "foundation-browser-cli-absent": "non_advertisement",
     "foundation-desktop-external-absent": "non_advertisement",
     "foundation-browser-external-absent": "non_advertisement",
+    "foundation-z-desktop-external-runtime": "desktop_native",
+    "foundation-z-browser-external-runtime": "browser",
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 

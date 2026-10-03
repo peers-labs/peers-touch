@@ -63,7 +63,8 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 	}
 
 	for _, cp := range entries {
-		if !catalogProviderAdvertisedByFrozenProfile(cp) {
+		if !catalogProviderAdvertisedByFrozenProfile(cp) ||
+			!h.admissionResolver.CatalogProviderAvailable(cp) {
 			continue
 		}
 		userMatch := userMatchMap[cp.ID]
@@ -151,7 +152,10 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 		if catalog.Find(up.Name) != nil {
 			continue
 		}
-		if !providerAdvertisedByFrozenProfile(up.RuntimeKind, up.Protocol) {
+		if !h.admissionResolver.ProviderRuntimeAvailable(
+			up.RuntimeKind,
+			up.Protocol,
+		) {
 			continue
 		}
 		p := providerToProto(&up)
@@ -207,10 +211,15 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 	if cp == nil && userMatch == nil {
 		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found")
 	}
-	if cp != nil && !catalogProviderAdvertisedByFrozenProfile(*cp) {
+	if cp != nil &&
+		(!catalogProviderAdvertisedByFrozenProfile(*cp) ||
+			!h.admissionResolver.CatalogProviderAvailable(*cp)) {
 		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found")
 	}
-	if userMatch != nil && !providerAdvertisedByFrozenProfile(userMatch.RuntimeKind, userMatch.Protocol) {
+	if userMatch != nil && !h.admissionResolver.ProviderRuntimeAvailable(
+		userMatch.RuntimeKind,
+		userMatch.Protocol,
+	) {
 		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found")
 	}
 
@@ -455,8 +464,11 @@ func (h *ProviderHandlers) HandleModelList(ctx context.Context, req *model.ListM
 	actorID := subjectActorID(ctx)
 	providerID := req.GetProviderId()
 
-	if cp := catalog.Find(providerID); cp != nil && !catalogProviderAdvertisedByFrozenProfile(*cp) {
-		return &model.ListModelsResponse{}, nil
+	if cp := catalog.Find(providerID); cp != nil {
+		if !catalogProviderAdvertisedByFrozenProfile(*cp) ||
+			!h.admissionResolver.CatalogProviderAvailable(*cp) {
+			return &model.ListModelsResponse{}, nil
+		}
 	}
 	providers, err := h.providerConfig.List(ctx, actorID)
 	if err != nil {
@@ -464,7 +476,10 @@ func (h *ProviderHandlers) HandleModelList(ctx context.Context, req *model.ListM
 	}
 	for i := range providers {
 		if providers[i].Name == providerID &&
-			!providerAdvertisedByFrozenProfile(providers[i].RuntimeKind, providers[i].Protocol) {
+			!h.admissionResolver.ProviderRuntimeAvailable(
+				providers[i].RuntimeKind,
+				providers[i].Protocol,
+			) {
 			return &model.ListModelsResponse{}, nil
 		}
 	}
@@ -687,15 +702,15 @@ func modelToProto(m *persistence.AgentModel) (*model.AgentModelInfo, error) {
 		return nil, err
 	}
 	return &model.AgentModelInfo{
-		Id:          m.ID,
-		ActorPtid:   m.ActorPTID,
-		ProviderId:  m.ProviderID,
-		ModelId:     m.ModelID,
-		DisplayName: m.DisplayName,
-		Enabled:     m.Enabled,
-		Version:     m.Version,
-		CreatedAt:   timestamppb.New(m.CreatedAt),
-		UpdatedAt:   timestamppb.New(m.UpdatedAt),
+		Id:            m.ID,
+		ActorPtid:     m.ActorPTID,
+		ProviderId:    m.ProviderID,
+		ModelId:       m.ModelID,
+		DisplayName:   m.DisplayName,
+		Enabled:       m.Enabled,
+		Version:       m.Version,
+		CreatedAt:     timestamppb.New(m.CreatedAt),
+		UpdatedAt:     timestamppb.New(m.UpdatedAt),
 		ContextWindow: int32(m.ContextWindow),
 		Capabilities:  capabilities,
 	}, nil

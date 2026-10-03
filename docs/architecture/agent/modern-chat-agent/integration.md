@@ -1,8 +1,8 @@
 # Modern Chat Agent — Integration
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-07-30 | **Updated**: 2026-09-19
+> **Version**: v1.4
+> **Created**: 2026-07-30 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -45,6 +45,8 @@ Downstream consumers:
 | `service/provider_service.go` | Direct model provider execution |
 | `service/credential_pool_service.go` | Actor-scoped credential lease and rotation |
 | `service/tool_registry_service.go` | Tool schema/owner resolution |
+| `service/mcp_server_service.go` | MCP config revision and per-Tool manifest authority |
+| `service/mcp_runtime.go` | Station-local stdio/http/sse execution |
 | `service/local_tool_broker.go` | Transitional client-local capability request/result bridge |
 | `service/error_classifier_service.go` | Typed recovery classification foundation |
 | `service/growth_*` and `review_service.go` | Feedback, evaluation, and correction foundation |
@@ -56,7 +58,7 @@ Downstream consumers:
 | Asset | Retained responsibility |
 |---|---|
 | `application/agent_turn/` | Station stream bridge, cancellation forwarding, local tool request handling |
-| `application/mcp/` and `application/tools/` | Device-local capability execution |
+| `application/mcp/` and `application/tools/` | Desktop-local secret/process and device capability execution |
 | `application/agent_orchestration/` | Agent Canvas bridge, downstream of the single-Agent kernel |
 | `interface/http_gateway/` | Browser gateway to the same Station business contracts |
 | `domain/actor_device_identity.rs` | Existing actor/device Ed25519 identity used to sign terminal recovery proof |
@@ -84,6 +86,8 @@ Downstream consumers:
 | `workspace_root` and client-submitted execution fields | Station config plus opaque client/Station resource refs | Delete from shared turn authority |
 | Raw local path/handle flow without a client resource registry | Encrypted actor/device-scoped opaque resource-ref registry | Delete before C08/C07 proof |
 | Desktop-specific local tool names/owner/guidance | Platform-neutral ClientCapabilitySession contract | Replace |
+| Desktop actor-scoped MCP catalog/config store | Station `McpServer` config authority plus Desktop-local secret/process state | Delete catalog truth and migrate client-owned secret refs |
+| Generic `local_mcp` manifest and prompt guidance | Per-Server/Tool MCP manifests with pinned execution owner | Delete |
 | Local durable Agent definition/config files | Station AgentDefinition | Delete shared-state fields; retain local UI preference only |
 | Flat retry/regenerate mutation | Station message lineage and branch selection | Replace |
 | Metadata-only attachment turn path | Canonical opaque AttachmentRef | Replace |
@@ -400,16 +404,48 @@ Cutover requirements:
 
 1. Proto contracts land before Station, Rust, Web Harness, or Acceptance
    adapters.
-2. Station explicitly evaluates P12 and registered CLI candidates as
-   `NOT_ADVERTISED` under the frozen profile.
+2. Station executes one-shot CLI Providers as `DIRECT_MODEL` adapters only
+   when the command is available and the complete prompt context is supplied.
+   Stateful CLI runtimes remain P12 and `NOT_ADVERTISED` under the frozen
+   profile.
 3. Station and Desktop counter owners increment at the actual side-effect
    boundaries, never inside Acceptance code.
 4. The XR-4 adapter captures immutable before/after snapshots and rejects
    identity, revision, epoch, or counter regression.
 5. Old provider-list and TurnTrace-only proof code is deleted rather than kept
    as a fallback.
-6. P12/CLI remain unavailable; this cutover proves non-advertisement and does
-   not activate either runtime.
+6. P12 is conditionally advertised under MCA-D29 only when a complete
+   session-capable adapter is configured and healthy. Stateless CLI Provider
+   activation remains governed by MCA-D28 and does not imply external-session
+   resume or reset support.
+
+### 9.2 Stateful External Runtime Integration
+
+The Station `externalruntime.Manager` is the only process/session owner:
+
+```text
+RuntimeAdmissionResolver
+  -> ConversationRuntimeBinding(epoch, opaque home, opaque session)
+  -> externalruntime.Manager start | resume
+  -> bounded JSONL event translation
+  -> TurnService durable events/messages/trace
+
+ResetConversationRuntime
+  -> durable reset fence
+  -> manager cleanup
+  -> binding epoch advance
+  -> Conversation readback + runtime_reset event
+```
+
+Provider catalog entries may select this runtime through
+`runtime_kind=external-agent` and `protocol=session-cli-v1`. Deployment-owned
+argv configuration is required for advertisement. Browser uses the same
+Station routes and receives no process, filesystem, credential, or session
+mutation authority.
+
+The cutover is atomic: external providers are rejected until manager health,
+binding persistence, reset recovery, client confirmation, and P12 Acceptance
+are present. No Direct Model code path is repurposed as external-session truth.
 
 ## 10. Resolved Integration Policies
 
@@ -432,9 +468,9 @@ Cutover requirements:
    ToolCall/operation. Low-risk work may auto-select only when exactly one
    compatible session exists and policy explicitly allows it.
 7. Package discovery consumes publisher-signed catalog snapshots. Desktop Rust
-   verifies and caches snapshots, while Agent/Skill installation reads back
-   Station truth and MCP installation reads back the actor-scoped Desktop Rust
-   MCP store. The legacy arbitrary URL JSON source path is retired.
+   verifies and caches snapshots, while Agent/Skill/MCP installation reads back
+   Station truth. MCP raw secret and process state remain local to the declared
+   executor. The legacy arbitrary URL JSON source path is retired.
 8. Catalog revocation blocks new install/update and remains visible for an
    installed snapshot. Cleanup is an explicit uninstall through the target
    authority; catalog synchronization never silently deletes user resources.
@@ -497,7 +533,7 @@ product and architecture amendments.
 | MCA-A14 | Future Mobile contract | Mobile can use all Station capabilities and cleanly reject unsupported Desktop-only local capabilities |
 | MCA-A15 | Home Chat/Task/restart | Home submits canonical Chat/Task commands and restores the same accepted work after restart |
 | MCA-A16 | Capability bind/reject | Binding reads back one manifest version; incompatible runtime rejects before execution |
-| MCA-A17 | MCP lifecycle | Install/test/invoke/cancel/reconnect cleans process, port, and secret state |
+| MCA-A17 | MCP dual runtime | Station and Desktop owners independently discover/invoke the same Station-governed Server revisions, with fenced results and process/port/secret cleanup |
 | MCA-A18 | Connector invocation | OAuth resource becomes a manifest, binding, ToolCall, result, and expiry recovery |
 | MCA-A19 | Governed Tool loop | Decision/execution/result are exactly once under duplicate delivery and replay |
 | MCA-A20 | Evaluation lifecycle | Dataset/run/cancel/retry/result/metrics survive restart and remain actor-isolated |
@@ -518,16 +554,16 @@ This is the authoritative starting point for the next planning job.
 | MCA-C04 Context intelligence | D04 | `ContextLedger` | Station prompt/memory/skill/knowledge | Services exist | Deterministic ledger and complete token budget | Untyped prompt-only attribution | A03, A05-A06 |
 | MCA-C05 Stream/recovery | D06, D07 | `Turn`, `TurnEvent` | Station turn/event plus client chat runtime | SSE bridge exists | Sequence, cursor, replay, snapshot, queue | Browser one-shot path | A02, A09 |
 | MCA-C06 Model capability | D05, D09 | capability snapshot, budget | Station runtime resolver | Model metadata partially exists | Fresh provenance, degradation, hard limits | Client/provider-name inference | A08, A11 |
-| MCA-C07 Tool/MCP policy | D09, D10, D13 | `ToolCall`, capability request/result | Station registry plus client executor | Tool loop/approval bridge exists | Loop budget, durable audit, portable owner | Desktop-specific tool contract | A07, A09, A13-A14 |
+| MCA-C07 Tool/MCP policy | D09, D10, D13, D16A | `ToolCall`, capability request/result | Station registry plus Station/client executors | Two-owner ToolDispatch exists | Per-Server/Tool owner pinning, loop budget, durable audit | Desktop-specific generic MCP contract | A07, A09, A13-A14, A17 |
 | MCA-C08 Attachments/resources | D04, D05, D13 | attachment/resource refs | Station storage/context plus client capability kernel | Upload/composer foundations exist | Opaque refs, extraction, auth, model gate | Metadata/local-path payload | A08, A13-A14 |
 | MCA-C09 Evaluation/evidence | D10, D12 | usage, feedback, diagnostic export | Station trace/evaluation | Trace/growth foundations exist | Unified outcomes, fixed cases, replay export | Screenshot-only claims | A12 |
 | MCA-C10 Client portability | D01, D05, D07, D13 | client capability session | Shared client contract plus platform kernels | Desktop and Mobile Tauri kernels exist | Portable bridge, platform capability registry, Mobile contract test | `desktop-rust` shared semantics | A11, A13-A14 |
 | MCA-C11 Home work projection | D14 | `HomeWorkProjection` | Station Home Projection + Desktop `homeRuntime` | Home pinned/recent UI and Station topic/task services exist | Revisioned partial/stale projection and canonical Chat/Task handoff | Page-derived recents/Brief truth | A15 |
-| MCA-C12 Capability manifest/binding | D15 | `CapabilityManifest`, `AgentCapabilityBinding`, readiness snapshot | Station capability catalog/binding/admission | Tool registry and source-specific stores/bindings exist | One versioned catalog, compatibility and atomic consumer cutover | Tool/MCP/Connector split inventories and config JSON truth | A16, A19 |
-| MCA-C13 Capability operation/MCP | D13, D16 | `CapabilityOperation`, client capability request/result | Station operation + Desktop capability manager | Desktop MCP CRUD/test/execute exists | Durable operation, leases, cancel/reconnect and cleanup | Client-only operation terminal state | A17, A19 |
+| MCA-C12 Capability manifest/binding | D15, D16A | `CapabilityManifest`, `AgentCapabilityBinding`, readiness snapshot | Station capability catalog/binding/admission | Tool registry and source-specific bindings exist | MCP Server/Tool manifest publication and atomic consumer cutover | Generic `local_mcp`, Desktop catalog truth, config JSON truth | A16, A17, A19 |
+| MCA-C13 MCP control/execution | D13, D16A | `McpServer`, `McpToolDescriptor`, `McpServerCommand`, client capability request/result | Station MCP service plus Station/Desktop executors | Two-owner ToolDispatch exists | Station-local runtime, Desktop projection/secret cutover, revision-pinned execution and cleanup | Desktop-only config/execution and generic MCP dispatch | A17, A19 |
 | MCA-C14 Connector resource tools | D15, D17 | `ConnectorResourceManifest`, Tool manifest/binding | OAuth owner + Station Connector Manifest/Tool services | OAuth mount/sync lifecycle exists | Scoped resource/version manifests, invocation and expiry recovery | enabled tool names as readiness | A18-A19 |
 | MCA-C15 Evaluation aggregate | D10, D18 | benchmark/dataset/case/run/attempt/result | Station Evaluation + canonical TurnService | Station dataset CRUD and Desktop Evaluation UI exist | Durable run/result/cancel/retry/metrics/restart | localStorage and `quickCompletion` Evaluation | A20 |
-| MCA-X3 Trusted package catalog | D20, D20A, P4-3 | `peers.package-catalog.v1` signed snapshot + proto Station distribution response | Publisher signature + Desktop Rust verifier; Station transports official bytes; target install authorities remain Station Agent/Skill and Desktop MCP | Signed verifier/cache and authority-specific install dispatch exist; private GitHub built-in transport is unreachable | Station-distributed official source, neutral canonical asset, derived policy, cursor pagination, authority readback, revocation and native Journey | Private-GitHub built-in source, arbitrary unsigned JSON source, duplicate envelope copies and ledger-only installed truth | X3-P4-3 |
+| MCA-X3 Trusted package catalog | D20, D20A, D16A, P4-3 | `peers.package-catalog.v1` signed snapshot + proto Station distribution response | Publisher signature + Desktop Rust verifier; Station transports official bytes and owns Agent/Skill/MCP installed targets | Signed verifier/cache and authority-specific install dispatch exist; private GitHub built-in transport is unreachable | Station-distributed official source, neutral canonical asset, derived policy, cursor pagination, authority readback, revocation and native Journey | Private-GitHub built-in source, arbitrary unsigned JSON source, duplicate envelope copies and ledger-only installed truth | X3-P4-3 |
 
 ### 13.1 V2 Deletion And Retention Closure
 
@@ -535,7 +571,7 @@ This is the authoritative starting point for the next planning job.
 |---|---|---|
 | C11 | `HomePage`-owned durable recents/Brief/readiness aggregation | `homeRuntime` projection backed by Station revision |
 | C12 | Embedded Tool/Skill/Knowledge/MCP/Connector binding arrays as authoritative config; parallel readiness selectors | Versioned manifests, Agent bindings, readiness snapshots |
-| C13 | Client-only operation terminal/progress state and unleased executor dispatch | Station `CapabilityOperation`; local MCP configuration/process remains client-owned |
+| C13 | Client-only MCP catalog/config truth, generic `local_mcp`, and unleased executor dispatch | Station `McpServer`/per-Tool manifests and idempotent revision commands; only owner-local secret/process state remains local |
 | C14 | Connector `enabledTools`/labels as readiness or binding identity | OAuth connection owner + Connector resource manifests + Agent bindings |
 | C15 | Evaluation localStorage datasets/runs/results and Evaluation `quickCompletion` execution | Station Evaluation aggregate using canonical Turn/Trace |
 
@@ -632,9 +668,10 @@ Required integration boundaries:
    historical manual JSON is not imported.
 4. J02-J06 reuse production Journey logic but execute tuple-specific adapters;
    a composite development result cannot be relabelled across tuples.
-5. Mobile contract rows emit contract evidence only. Browser unavailable MCP
-   rows emit unavailable-state and zero-execution evidence. Station-owned
-   executors never masquerade as client leases.
+5. Mobile contract rows emit contract evidence only. Browser can execute
+   Station-owned MCP without a client lease and reports Desktop-owned MCP as
+   unavailable with zero execution. Station-owned executors never masquerade as
+   client leases.
 6. MCA-A01 replaces the old matrix identity, schema pins, implicit legacy
    profile fallback, and registration-only proof assumptions. MCA-A07 replaces
    and deletes the shallow J06 candidate writer with its tuple-aware adapter.
@@ -674,7 +711,8 @@ Integration requirements:
 6. Desktop and Browser adapters execute one named cell, observe real DOM/API
    state, read canonical runtime facts, and perform idempotent cleanup.
 7. Station-executor rows never create a Browser client lease. Browser/Mobile
-   unavailable-MCP rows create no process, operation claim, or ToolCall.
+   unavailable client-owned MCP rows create no process, operation claim, or
+   ToolCall.
 8. J03-J05 barriers cover the accepted decision/outbox/receipt/effect,
    business/cleanup lease, timeout/reconnect, OAuth disconnect/provider revoke,
    and manifest/binding deletion boundaries.

@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +16,12 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import ArtifactSession
+from tooling.acceptance.core.redaction import redact_text
 
 MATRIX = {
     "id": "modern-chat-agent-v2-runtime-matrix",
-    "version": "2026-09-21.2",
-    "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
+    "version": "2026-10-01.1",
+    "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
 }
 
 GATE_ROLES = {
@@ -141,6 +144,30 @@ RUNNER_GENERATED_ROLES = {
     "runner-attestation",
 }
 
+AUTO_CANDIDATE_PRODUCERS = {
+    "agent-v2-capability-binding-e2e": (
+        "tooling/acceptance/gates/agent/capability_binding_development.py",
+        "--formal-candidate",
+    ),
+    "agent-v2-governed-tool-loop-e2e": (
+        "tooling/acceptance/gates/agent/governed_tool_development.py",
+        "--formal-candidate",
+    ),
+    "agent-v2-mcp-lifecycle-e2e": (
+        "tooling/acceptance/gates/agent/mcp_lifecycle_development.py",
+        "--formal-candidate",
+    ),
+}
+
+_CHILD_RUN_CONTEXT_KEYS = (
+    "PT_ACCEPTANCE_ARTIFACT_ROOT",
+    "PT_ACCEPTANCE_WORKSPACE_ID",
+    "PT_ACCEPTANCE_GATE_ID",
+    "PT_ACCEPTANCE_REDACTION_VALUES",
+    "PT_AGENT_V2_CANDIDATE_MANIFEST",
+)
+_AUTO_PRODUCER_TIMEOUT_SECONDS = 3_600
+
 
 def _inside_repo(path: Path) -> bool:
     try:
@@ -237,10 +264,129 @@ def _validate_candidate(gate_id: str, manifest_path: Path) -> list[str]:
     return issues
 
 
+def _load_role_payloads(role_paths: dict[str, Path]) -> dict[str, dict[str, Any]]:
+    return {
+        role: json.loads(path.read_text(encoding="utf-8"))
+        for role, path in role_paths.items()
+    }
+
+
+def _candidate_path_from_output(output: str, artifact_root: Path) -> Path:
+    for line in reversed(output.splitlines()):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        raw_path = payload.get("candidate") if isinstance(payload, dict) else None
+        if not isinstance(raw_path, str) or not raw_path:
+            continue
+        candidate_path = Path(raw_path).expanduser().resolve()
+        try:
+            candidate_path.relative_to(artifact_root)
+        except ValueError as error:
+            raise ValueError(
+                "candidate producer returned a path outside its artifact root"
+            ) from error
+        return candidate_path
+    raise ValueError("candidate producer did not emit a candidate path")
+
+
+def _produce_candidate(
+    gate_id: str,
+) -> tuple[str, list[str], dict[str, dict[str, Any]]]:
+    producer = AUTO_CANDIDATE_PRODUCERS.get(gate_id)
+    if producer is None:
+        return (
+            "",
+            ["PT_AGENT_V2_CANDIDATE_MANIFEST is required from a real scenario"],
+            {},
+        )
+
+    producer_label = "auto:" + " ".join(producer)
+    with tempfile.TemporaryDirectory(
+        prefix=f"peers-touch-{gate_id}-candidate-"
+    ) as directory:
+        artifact_root = Path(directory).resolve()
+        environment = os.environ.copy()
+        for key in _CHILD_RUN_CONTEXT_KEYS:
+            environment.pop(key, None)
+        environment["PT_ACCEPTANCE_ARTIFACT_ROOT"] = str(artifact_root)
+        try:
+            completed = subprocess.run(
+                [sys.executable, *producer],
+                cwd=REPO_ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=_AUTO_PRODUCER_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return (
+                producer_label,
+                [
+                    "candidate producer timed out after "
+                    f"{_AUTO_PRODUCER_TIMEOUT_SECONDS} seconds"
+                ],
+                {},
+            )
+        except OSError as error:
+            return (
+                producer_label,
+                [f"candidate producer could not start: {error}"],
+                {},
+            )
+        if completed.returncode != 0:
+            diagnostic = redact_text(
+                (completed.stderr.strip() or completed.stdout.strip())[-4_000:]
+            )
+            return (
+                producer_label,
+                [
+                    "candidate producer failed with exit code "
+                    f"{completed.returncode}"
+                    + (f": {diagnostic}" if diagnostic else "")
+                ],
+                {},
+            )
+        try:
+            candidate_path = _candidate_path_from_output(
+                completed.stdout,
+                artifact_root,
+            )
+        except ValueError as error:
+            return producer_label, [str(error)], {}
+
+        issues, role_paths = _validate_candidate_with_artifacts(
+            gate_id,
+            candidate_path,
+        )
+        if issues:
+            return producer_label, issues, {}
+        return producer_label, [], _load_role_payloads(role_paths)
+
+
+def _resolve_candidate(
+    gate_id: str,
+    manifest: str,
+) -> tuple[str, list[str], dict[str, dict[str, Any]]]:
+    if not manifest:
+        return _produce_candidate(gate_id)
+    issues, role_paths = _validate_candidate_with_artifacts(
+        gate_id,
+        Path(manifest),
+    )
+    return (
+        manifest,
+        issues,
+        {} if issues else _load_role_payloads(role_paths),
+    )
+
+
 def _report(gate_id: str, manifest: str, issues: list[str]) -> dict[str, Any]:
     candidate_complete = not issues
     return {
-        "artifactKind": "agent-v2-gate-registration-verdict",
+        "artifactKind": "acceptance-gate-evidence-report",
         "status": "passed" if candidate_complete else "failed",
         "completionStatus": "DONE" if candidate_complete else "PARTIAL",
         "proofStatus": "CANDIDATE" if candidate_complete else "UNPROVEN",
@@ -287,23 +433,17 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.candidate_manifest:
-        issues, role_paths = _validate_candidate_with_artifacts(
-            args.gate,
-            Path(args.candidate_manifest),
-        )
-    else:
-        issues = [
-            "PT_AGENT_V2_CANDIDATE_MANIFEST is required from a real scenario"
-        ]
-        role_paths = {}
-    report = _report(args.gate, args.candidate_manifest, issues)
+    manifest, issues, role_payloads = _resolve_candidate(
+        args.gate,
+        args.candidate_manifest,
+    )
+    report = _report(args.gate, manifest, issues)
     with ArtifactSession(repo_root=REPO_ROOT, gate_id=args.gate) as session:
         if not issues:
-            for role, path in sorted(role_paths.items()):
+            for role, payload in sorted(role_payloads.items()):
                 session.write_json(
                     f"roles/{role}.json",
-                    json.loads(path.read_text(encoding="utf-8")),
+                    payload,
                     role=role,
                     redact=True,
                 )

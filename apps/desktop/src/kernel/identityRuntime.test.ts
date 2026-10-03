@@ -21,10 +21,15 @@ const mocks = vi.hoisted(() => {
     accountSwitch: vi.fn(),
     accountUnlock: vi.fn(),
     authValidateToken: vi.fn(),
+    stationList: vi.fn(),
+    stationSetActive: vi.fn(),
     accountListRestorable: vi.fn(),
     accountLoad: vi.fn(),
+    accessStart: vi.fn(),
+    accessSubmitLogin: vi.fn(),
     restoreSession: vi.fn(),
     loginWithPassword: vi.fn(),
+    loginWithOAuth: vi.fn(),
     logout: vi.fn(),
     stationBindingComplete: vi.fn(),
     resetSession: vi.fn(),
@@ -51,7 +56,10 @@ vi.mock('../store/accountIdentity', () => ({
 
 vi.mock('../store/oauth2', () => ({
   useOAuth2Store: {
-    getState: () => ({ loadAll: vi.fn(async () => undefined) }),
+    getState: () => ({
+      completedLoopbackSessionId: 'lp-completed',
+      loadAll: vi.fn(async () => undefined),
+    }),
   },
 }));
 
@@ -69,7 +77,10 @@ vi.mock('../store/session', () => ({
         };
         mocks.session.authenticated = true;
       },
+      accessStart: mocks.accessStart,
+      accessSubmitLogin: mocks.accessSubmitLogin,
       loginWithPassword: mocks.loginWithPassword,
+      loginWithOAuth: mocks.loginWithOAuth,
       restoreSession: mocks.restoreSession,
       updateProfile: vi.fn(),
       logout: mocks.logout,
@@ -128,11 +139,22 @@ vi.mock('../services/desktop_api', () => ({
     accountSwitch: mocks.accountSwitch,
     accountUnlock: mocks.accountUnlock,
     authValidateToken: mocks.authValidateToken,
+    stationList: mocks.stationList,
+    stationSetActive: mocks.stationSetActive,
     syncUserProfile: vi.fn(async () => ({ name: 'New', email: '', avatar_url: '' })),
     accountListRestorable: mocks.accountListRestorable,
     stationBindingComplete: mocks.stationBindingComplete,
   },
-  AuthCommandException: class AuthCommandException extends Error {},
+  AuthCommandException: class AuthCommandException extends Error {
+    code: string;
+    details?: Record<string, unknown>;
+
+    constructor(error: { code: string; message: string; details?: Record<string, unknown> }) {
+      super(error.message);
+      this.code = error.code;
+      this.details = error.details;
+    }
+  },
   onSessionRevoked: vi.fn(),
 }));
 
@@ -140,6 +162,7 @@ vi.mock('../applet/productWindowE2E', () => ({
   setAppletProductWindowLaunchContext: vi.fn(),
 }));
 
+const { AuthCommandException } = await import('../services/desktop_api');
 const {
   identityRuntime,
   resolveAppletProductWindowLaunchContext,
@@ -194,12 +217,41 @@ describe('identityRuntime account switch ordering', () => {
         login_method: 'password',
       };
     });
+    mocks.stationList.mockResolvedValue({
+      active_url: 'http://station.test',
+      binding: {
+        bound_url: 'http://station.test',
+        phase: 'bound',
+      },
+    });
+    mocks.stationSetActive.mockResolvedValue(undefined);
     mocks.runIdentityPipeline.mockImplementation(async () => {
       mocks.order.push(`pipeline:${mocks.session.currentUser?.actorPtid}`);
       return { ok: true, failures: [] };
     });
-    mocks.loginWithPassword.mockImplementation(async () => {
-      mocks.order.push('session-login');
+    mocks.accessStart.mockResolvedValue({
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'attempt-1',
+      currentGateId: 'auth.login',
+      gates: [{
+        gateId: 'auth.login',
+        gateType: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+        state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+        title: 'Login',
+        description: '',
+        blockingReason: '',
+        submitAction: 'access_submit_login',
+        inputSchemaJson: '',
+        alternativeActions: [],
+        actionId: 'auth.login.password',
+        schemaRevision: 1,
+        schemaDigest: 'login-schema',
+      }],
+      accessGrantId: '',
+      message: '',
+    });
+    mocks.accessSubmitLogin.mockImplementation(async () => {
+      mocks.order.push('access-login');
       mocks.session.currentUser = {
         actorPtid: 'ptid:person:new',
         name: 'New',
@@ -208,6 +260,17 @@ describe('identityRuntime account switch ordering', () => {
       };
       mocks.session.authenticated = true;
     });
+    mocks.loginWithOAuth.mockImplementation(async () => {
+      mocks.order.push('oauth-session-login');
+      mocks.session.currentUser = {
+        actorPtid: 'ptid:person:new',
+        name: 'New',
+        email: '',
+        loginMethod: 'oauth',
+      };
+      mocks.session.authenticated = true;
+    });
+    mocks.restoreSession.mockResolvedValue(undefined);
     mocks.logout.mockResolvedValue(undefined);
     mocks.accountListRestorable.mockResolvedValue([]);
     mocks.restoreSession.mockImplementation(async () => {
@@ -243,7 +306,19 @@ describe('identityRuntime account switch ordering', () => {
 
     await identityRuntime.loginWithPassword('alice@p.t', 'password');
 
-    expect(mocks.loginWithPassword).toHaveBeenCalledWith('alice@p.t', 'password');
+    expect(mocks.accessStart).toHaveBeenCalledOnce();
+    expect(mocks.accessSubmitLogin).toHaveBeenCalledWith(
+      'attempt-1',
+      expect.objectContaining({
+        gateId: 'auth.login',
+        actionId: 'auth.login.password',
+        schemaRevision: 1,
+        schemaDigest: 'login-schema',
+      }),
+      'alice@p.t',
+      'password',
+    );
+    expect(mocks.loginWithPassword).not.toHaveBeenCalled();
     expect(identityRuntime.getSnapshot().phase.kind).toBe('authenticatedPendingCompletion');
 
     await identityRuntime.completeCurrentSession();
@@ -265,6 +340,50 @@ describe('identityRuntime account switch ordering', () => {
     expect(identityRuntime.getSnapshot().lifecycle.restoredUser).toEqual(
       expect.objectContaining({ name: 'New' }),
     );
+  });
+
+  it('routes OAuth through the session lifecycle before accepting the actor', async () => {
+    mocks.session.currentUser = null;
+    mocks.session.authenticated = false;
+
+    await identityRuntime.loginWithOAuthBridge();
+
+    expect(mocks.loginWithOAuth).toHaveBeenCalledWith('oauth');
+    expect(identityRuntime.getSnapshot().phase.kind).toBe('authenticatedPendingCompletion');
+    expect(mocks.session.currentUser).toMatchObject({
+      actorPtid: 'ptid:person:new',
+    });
+  });
+
+  it('retries a pending OAuth acknowledgement without opening the account gate', async () => {
+    vi.useFakeTimers();
+    mocks.session.currentUser = null;
+    mocks.session.authenticated = false;
+    mocks.restoreSession
+      .mockRejectedValueOnce(new AuthCommandException({
+        code: 'UNAUTHORIZED',
+        message: 'oauth session activation pending',
+        details: { reason: 'oauth_acknowledgement_pending' },
+      }))
+      .mockImplementationOnce(async () => {
+        mocks.session.currentUser = {
+          actorPtid: 'ptid:person:new',
+          name: 'New',
+          email: '',
+          loginMethod: 'oauth',
+        };
+        mocks.session.authenticated = true;
+      });
+
+    await identityRuntime.resolveSession('disk');
+    expect(identityRuntime.getSnapshot().phase.kind).toBe('resolvingSession');
+    expect(mocks.restoreSession).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mocks.restoreSession).toHaveBeenCalledTimes(2);
+    expect(identityRuntime.getSnapshot().phase.kind).toBe('authenticated');
+    vi.useRealTimers();
   });
 
   it('cleans the old actor projection before activating the restored actor', async () => {

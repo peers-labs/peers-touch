@@ -1,5 +1,5 @@
 id: modern-chat-agent-v2-runtime-matrix
-version: 2026-09-21.2
+version: 2026-10-01.1
 status: plan-review
 tuple_expansion:
   mode: cartesian
@@ -152,7 +152,6 @@ cell_sets:
     - BASE-UNAUTHORIZED_RESOURCE
     - BASE-RUNTIME_UNAVAILABLE
     - BASE-INCOMPATIBLE_CAPABILITY
-    - BASE-RESUME_UNAVAILABLE
     - BASE-EXECUTOR_UNAVAILABLE
     - BASE-LEASE_EXPIRED
     - BASE-PERMISSION_DENIED
@@ -371,6 +370,26 @@ rows:
       required: [receiver-dom, station-readback, side-effect-count]
       not_applicable: [runtime-events, measurement-report, replay, contract-evidence, guard-report]
     cells: [AS-F11-NON_ADVERTISED]
+  - id: foundation-z-desktop-external-runtime
+    gate: agent-v2-kernel-foundation-e2e
+    platform: desktop_app
+    runtime: external_agent
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, guard-report]
+    cells: [BASE-RESUME-UNAVAILABLE]
+  - id: foundation-z-browser-external-runtime
+    gate: agent-v2-kernel-foundation-e2e
+    platform: browser
+    runtime: external_agent
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, guard-report]
+    cells: [BASE-RESUME-UNAVAILABLE]
   - id: home-desktop-direct
     gate: agent-v2-home-command-center-e2e
     platform: desktop_app

@@ -22,7 +22,7 @@ DEPLOYMENT = "chat-native-disposable-station"
 PROJECT_LABEL = "pt-chat-native-disposable"
 STATION_PORT = 18132
 AUTHORIZED_ENV = {
-    "PT_AGENT_V2_ALLOW_STATION_RESTART": "1",
+    "PT_AGENT_ALLOW_STATION_RESTART": "1",
     "PT_ACCEPTANCE_APPROVED_PROFILE": PROFILE,
     "PT_ACCEPTANCE_DISPOSABLE": "1",
 }
@@ -658,7 +658,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(
                 foundation_station_restart.FoundationStationRestartError,
-                "PT_AGENT_V2_ALLOW_STATION_RESTART=1",
+                "PT_AGENT_ALLOW_STATION_RESTART=1",
             ):
                 foundation_station_restart.restart_foundation_station(
                     runtime_manifest(),

@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent } from '../services/desktop_api';
 
 const api = vi.hoisted(() => ({
+  createAgent: vi.fn(),
+  deleteAgent: vi.fn(),
+  duplicateAgent: vi.fn(),
   getAgent: vi.fn(),
+  getSelectedAgent: vi.fn(),
+  listAgentsWithMeta: vi.fn(),
+  setSelectedAgent: vi.fn(),
   updateAgent: vi.fn(),
 }));
 const capabilityStore = vi.hoisted(() => ({
@@ -64,6 +70,10 @@ describe('Agent profile capability reconciliation', () => {
     vi.clearAllMocks();
     useAgentStore.setState({
       agents: [agent],
+      selectedAgent: agent.name,
+      defaultAgent: agent.name,
+      selectedModel: agent.model,
+      selectedProviderId: agent.provider,
       error: null,
       saveStateByAgentId: {},
       pendingMutations: {},
@@ -81,6 +91,106 @@ describe('Agent profile capability reconciliation', () => {
       version: 8,
     });
     capabilityStore.loadAgent.mockResolvedValue(undefined);
+    api.getSelectedAgent.mockResolvedValue(agent.name);
+    api.listAgentsWithMeta.mockResolvedValue({
+      agents: [agent],
+      defaultAgent: agent.name,
+      selectedAgent: agent.name,
+    });
+    api.setSelectedAgent.mockResolvedValue(undefined);
+  });
+
+  it('creates exactly one Agent and selects the authoritative result', async () => {
+    const created = {
+      ...agent,
+      id: 'agent-created',
+      name: 'research-agent',
+      title: 'Research Agent',
+      isDefault: false,
+      version: 1,
+    };
+    api.createAgent.mockResolvedValueOnce(created);
+
+    await expect(useAgentStore.getState().createAgent({
+      name: created.name,
+      title: created.title,
+    })).resolves.toMatchObject({
+      id: created.id,
+      name: created.name,
+    });
+
+    expect(api.createAgent).toHaveBeenCalledOnce();
+    expect(api.setSelectedAgent).toHaveBeenCalledWith(created.name);
+    expect(useAgentStore.getState()).toMatchObject({
+      selectedAgent: created.name,
+    });
+    expect(useAgentStore.getState().agents).toContainEqual(
+      expect.objectContaining({ id: created.id }),
+    );
+  });
+
+  it('uses deterministic unique clone names and selects each clone', async () => {
+    api.duplicateAgent
+      .mockImplementationOnce(async (_id: string, name: string) => ({
+        ...agent,
+        id: 'agent-copy-1',
+        name,
+        isDefault: false,
+      }))
+      .mockImplementationOnce(async (_id: string, name: string) => ({
+        ...agent,
+        id: 'agent-copy-2',
+        name,
+        isDefault: false,
+      }));
+
+    await useAgentStore.getState().duplicateAgent(agent.id);
+    await useAgentStore.getState().duplicateAgent(agent.id);
+
+    expect(api.duplicateAgent).toHaveBeenNthCalledWith(
+      1,
+      agent.id,
+      'assistant-copy',
+    );
+    expect(api.duplicateAgent).toHaveBeenNthCalledWith(
+      2,
+      agent.id,
+      'assistant-copy-2',
+    );
+    expect(useAgentStore.getState().selectedAgent).toBe('assistant-copy-2');
+  });
+
+  it('reconciles selection and default after deleting the active Agent', async () => {
+    const fallback = {
+      ...agent,
+      id: 'agent-fallback',
+      name: 'fallback',
+      title: 'Fallback',
+      isDefault: true,
+    };
+    useAgentStore.setState({
+      agents: [{ ...agent, isDefault: true }, fallback],
+      selectedAgent: agent.name,
+      defaultAgent: agent.name,
+    });
+    api.deleteAgent.mockResolvedValueOnce(undefined);
+    api.getSelectedAgent.mockResolvedValueOnce(fallback.name);
+    api.listAgentsWithMeta.mockResolvedValueOnce({
+      agents: [fallback],
+      defaultAgent: fallback.name,
+      selectedAgent: fallback.name,
+    });
+
+    await useAgentStore.getState().deleteAgent(agent.id);
+
+    expect(api.deleteAgent).toHaveBeenCalledWith(agent.id);
+    expect(useAgentStore.getState()).toMatchObject({
+      selectedAgent: fallback.name,
+      defaultAgent: fallback.name,
+    });
+    expect(useAgentStore.getState().agents).toEqual([
+      expect.objectContaining({ id: fallback.id, isDefault: true }),
+    ]);
   });
 
   it('refreshes canonical capability bindings after a successful profile update', async () => {

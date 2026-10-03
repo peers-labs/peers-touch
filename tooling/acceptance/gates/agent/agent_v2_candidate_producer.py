@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -30,6 +31,7 @@ CONTRACT_PATH = SCHEMA_ROOT / "contract.json"
 MATRIX_PATH = REPO_ROOT / "tooling/acceptance/matrices/agent-v2-runtime-matrix.yaml"
 EXPANDER_PATH = REPO_ROOT / "tooling/scripts/expand-agent-v2-runtime-matrix.py"
 FOUNDATION_GATE_ID = "agent-v2-kernel-foundation-e2e"
+RUNTIME_MANIFEST_ENV = "PT_ACCEPTANCE_RUNTIME_MANIFEST"
 TUPLE_FIELDS = (
     "gate",
     "row",
@@ -70,6 +72,64 @@ SAFE_SCHEMA_KEYS = {
 
 class AgentV2CandidateError(RuntimeError):
     """Observed Gate evidence cannot form a valid immutable candidate."""
+
+
+def load_preprovisioned_runtime_manifest(
+    gate_id: str,
+    *,
+    repo_root: Path = REPO_ROOT,
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, Any] | None:
+    current_environment = os.environ if environment is None else environment
+    raw_path = current_environment.get(RUNTIME_MANIFEST_ENV, "").strip()
+    if not raw_path:
+        return None
+    manifest_path = Path(raw_path).expanduser().resolve()
+    if not manifest_path.is_file():
+        raise AgentV2CandidateError(
+            f"{RUNTIME_MANIFEST_ENV} is missing: {manifest_path}"
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise AgentV2CandidateError(
+            f"{RUNTIME_MANIFEST_ENV} is unreadable: {error}"
+        ) from error
+    if not isinstance(manifest, dict):
+        raise AgentV2CandidateError(
+            f"{RUNTIME_MANIFEST_ENV} must contain an object"
+        )
+    if manifest.get("gateId") != gate_id:
+        raise AgentV2CandidateError(
+            f"{RUNTIME_MANIFEST_ENV} Gate does not match {gate_id}"
+        )
+    if manifest.get("state") != "FIXTURE_READY":
+        raise AgentV2CandidateError(
+            f"{RUNTIME_MANIFEST_ENV} is not FIXTURE_READY"
+        )
+    source = manifest.get("source")
+    if not isinstance(source, Mapping):
+        raise AgentV2CandidateError(
+            f"{RUNTIME_MANIFEST_ENV} source identity is missing"
+        )
+    expected_source = source_identity(repo_root)
+    observed_worktree = Path(str(source.get("worktree") or "")).resolve()
+    if (
+        observed_worktree != repo_root.resolve()
+        or source.get("commit") != expected_source["commit"]
+        or source.get("workspaceDigest") != expected_source["workspaceDigest"]
+    ):
+        raise AgentV2CandidateError(
+            f"{RUNTIME_MANIFEST_ENV} source identity does not match current source"
+        )
+    if not isinstance(manifest.get("services"), Mapping) or not isinstance(
+        manifest.get("clients"),
+        list,
+    ):
+        raise AgentV2CandidateError(
+            f"{RUNTIME_MANIFEST_ENV} runtime bindings are incomplete"
+        )
+    return manifest
 
 
 @dataclass(frozen=True)

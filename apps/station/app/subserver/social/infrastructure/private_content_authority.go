@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -13,8 +14,13 @@ import (
 
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -296,18 +302,14 @@ func (a *GORMPrivateAudienceAuthority) ResolveGroupPostSnapshot(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	authorPTID string,
-	targetID uint64,
+	group socialdomain.GroupRecipientSnapshot,
 ) (socialdomain.FriendsSnapshot, error) {
 	database, err := a.database(transaction)
 	if err != nil {
 		return socialdomain.FriendsSnapshot{}, err
 	}
-	if transaction != nil {
-		if err := lockSocialRelationshipAuthority(database, authorPTID); err != nil {
-			return socialdomain.FriendsSnapshot{}, err
-		}
-	}
-	return loadGroupSnapshot(ctx, database, authorPTID, targetID)
+
+	return loadGroupSnapshot(ctx, database, authorPTID, group)
 }
 
 func (a *GORMPrivateAudienceAuthority) ResolveCustomAllowPostSnapshot(
@@ -347,6 +349,97 @@ func (a *GORMPrivateAudienceAuthority) ResolveCustomDenyPostSnapshot(
 	return loadCustomDenySnapshot(ctx, database, authorPTID, actorPTIDs, baseKind)
 }
 
+func (a *GORMPrivateAudienceAuthority) ValidatePrepare(
+	ctx context.Context,
+	repostAuthorPTID string,
+	target socialdomain.FriendsSnapshot,
+	authority *privatecontentpb.PrivateRepostAuthority,
+) error {
+	return a.validateRepostSource(
+		ctx,
+		nil,
+		repostAuthorPTID,
+		target,
+		authority,
+		false,
+	)
+}
+
+func (a *GORMPrivateAudienceAuthority) ValidateSubmit(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	repostAuthorPTID string,
+	target socialdomain.FriendsSnapshot,
+	authority *privatecontentpb.PrivateRepostAuthority,
+) error {
+	if transaction == nil {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrationGap,
+			"social.private_content.repost_source_submit",
+			"transaction",
+			"is required",
+		)
+	}
+	return a.validateRepostSource(
+		ctx,
+		transaction,
+		repostAuthorPTID,
+		target,
+		authority,
+		true,
+	)
+}
+
+func (a *GORMPrivateAudienceAuthority) validateRepostSource(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	repostAuthorPTID string,
+	target socialdomain.FriendsSnapshot,
+	authority *privatecontentpb.PrivateRepostAuthority,
+	submit bool,
+) error {
+	const operation = "social.private_content.repost_source"
+	if err := socialdomain.ValidatePrivateRepostAuthority(
+		authority,
+		operation,
+	); err != nil {
+		return err
+	}
+	database, err := a.database(transaction)
+	if err != nil {
+		return err
+	}
+	switch proof := authority.GetSourceProof().(type) {
+	case *privatecontentpb.PrivateRepostAuthority_PublicSource:
+		return validatePublicRepostSource(
+			ctx,
+			database,
+			repostAuthorPTID,
+			target,
+			authority,
+			proof.PublicSource,
+			submit,
+		)
+	case *privatecontentpb.PrivateRepostAuthority_PrivateSource:
+		return validatePrivateRepostSource(
+			ctx,
+			database,
+			repostAuthorPTID,
+			target,
+			authority,
+			proof.PrivateSource,
+			submit,
+		)
+	default:
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentInvalidArgument,
+			operation,
+			"repost_authority.source_proof",
+			"is required",
+		)
+	}
+}
+
 func (a *GORMPrivateAudienceAuthority) database(
 	transaction federationdelivery.Transaction,
 ) (*gorm.DB, error) {
@@ -357,6 +450,442 @@ func (a *GORMPrivateAudienceAuthority) database(
 		return nil, fmt.Errorf("Social private audience transaction has no database")
 	}
 	return transaction.DB(), nil
+}
+
+func validatePublicRepostSource(
+	ctx context.Context,
+	database *gorm.DB,
+	repostAuthorPTID string,
+	target socialdomain.FriendsSnapshot,
+	authority *privatecontentpb.PrivateRepostAuthority,
+	proof *privatecontentpb.PublicRepostSourceProof,
+	submit bool,
+) error {
+	const operation = "social.private_content.public_repost_source"
+	sourceID, err := strconv.ParseUint(authority.GetSource().GetPostId(), 10, 64)
+	if err != nil ||
+		sourceID == 0 ||
+		strconv.FormatUint(sourceID, 10) != authority.GetSource().GetPostId() {
+		return repostSourceFailure(
+			submit,
+			socialdomain.PrivateContentInvalidArgument,
+			operation,
+			"source.post_id",
+			"must identify a canonical public Post",
+		)
+	}
+	query := database.WithContext(ctx)
+	if submit && database.Dialector.Name() == "postgres" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var row dbmodel.SocialPublicPost
+	if err := query.Where(
+		"id = ? AND deleted_at IS NULL",
+		sourceID,
+	).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return repostSourceFailure(
+				submit,
+				socialdomain.PrivateContentNotFound,
+				operation,
+				"source.post_id",
+				"does not identify a live public Post",
+			)
+		}
+		return err
+	}
+	if row.Type == actormodel.PostType_REPOST.String() {
+		return repostSourceFailure(
+			submit,
+			socialdomain.PrivateContentUnsupported,
+			operation,
+			"source.kind",
+			"nested repost snapshots are not supported",
+		)
+	}
+	var author dbmodel.Actor
+	if err := database.WithContext(ctx).
+		Where("id = ?", row.AuthorID).
+		First(&author).Error; err != nil {
+		return err
+	}
+	sourceAuthor := touchactor.ProtoActorRef(&author)
+	if sourceAuthor == nil ||
+		sourceAuthor.GetPtid() == "" ||
+		sourceAuthor.GetAcct() == "" ||
+		sourceAuthor.GetKind() == actormodel.ActorKind_ACTOR_KIND_UNSPECIFIED {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrationGap,
+			operation,
+			"source_author",
+			"persisted ActorRef is not canonical",
+		)
+	}
+	if !proto.Equal(authority.GetSourceAuthor(), sourceAuthor) {
+		return repostSourceFailure(
+			submit,
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"source_author",
+			"does not match the authoritative public Post author",
+		)
+	}
+	viewers := append(
+		[]string{repostAuthorPTID},
+		target.RecipientPTIDs...,
+	)
+	for _, viewerPTID := range viewers {
+		if err := authorizePrivateBlockBoundary(
+			database,
+			sourceAuthor.GetPtid(),
+			viewerPTID,
+		); err != nil {
+			return repostSourceFailure(
+				submit,
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"target.recipients",
+				"contains an actor blocked from the public source",
+			)
+		}
+	}
+	snapshot, err := publicRenderedSourceSnapshot(
+		&row,
+		sourceAuthor,
+	)
+	if err != nil {
+		return err
+	}
+	canonical, err := socialdomain.CanonicalProtoBytes(snapshot)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(canonical)
+	if proof == nil ||
+		!bytes.Equal(
+			proof.GetCanonicalPublicPostSha256(),
+			digest[:],
+		) {
+		return repostSourceFailure(
+			submit,
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"public_source.canonical_public_post_sha256",
+			"does not match the authoritative public source snapshot",
+		)
+	}
+	return nil
+}
+
+func validatePrivateRepostSource(
+	ctx context.Context,
+	database *gorm.DB,
+	repostAuthorPTID string,
+	target socialdomain.FriendsSnapshot,
+	authority *privatecontentpb.PrivateRepostAuthority,
+	proof *privatecontentpb.PrivateRepostSourceProof,
+	submit bool,
+) error {
+	const operation = "social.private_content.private_repost_source"
+	query := database.WithContext(ctx)
+	if submit && database.Dialector.Name() == "postgres" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var post dbmodel.SocialPrivateContentPost
+	if err := query.Where(
+		"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
+		authority.GetSource().GetPostId(),
+		privateContentLifecycleActive,
+	).First(&post).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return repostSourceFailure(
+				submit,
+				socialdomain.PrivateContentNotFound,
+				operation,
+				"source.post_id",
+				"does not identify a live private Post",
+			)
+		}
+		return err
+	}
+	if post.Kind == actormodel.PostType_REPOST.String() {
+		return repostSourceFailure(
+			submit,
+			socialdomain.PrivateContentUnsupported,
+			operation,
+			"source.kind",
+			"nested repost snapshots are not supported",
+		)
+	}
+	if submit {
+		if err := lockSocialRelationshipAuthority(
+			database,
+			post.AuthorPTID,
+		); err != nil {
+			return err
+		}
+	}
+	if err := authorizePrivatePostViewer(
+		database,
+		post,
+		repostAuthorPTID,
+	); err != nil {
+		return repostSourceFailure(
+			submit,
+			socialdomain.PrivateContentUnauthorized,
+			operation,
+			"repost_author",
+			"is not authorized for the private source",
+		)
+	}
+	var sourceSnapshot dbmodel.SocialPrivateAudienceSnapshot
+	if err := database.WithContext(ctx).
+		Where("snapshot_id = ?", post.AudienceSnapshotID).
+		First(&sourceSnapshot).Error; err != nil {
+		return err
+	}
+	grantsQuery := database.WithContext(ctx)
+	if submit && database.Dialector.Name() == "postgres" {
+		grantsQuery = grantsQuery.Clauses(
+			clause.Locking{Strength: "UPDATE"},
+		)
+	}
+	var grants []dbmodel.SocialPrivateRecipientGrant
+	if err := grantsQuery.Where(
+		"snapshot_id = ? AND revoked_at IS NULL",
+		post.AudienceSnapshotID,
+	).Order("recipient_ptid ASC").Find(&grants).Error; err != nil {
+		return err
+	}
+	authorized := make(map[string]struct{}, len(grants)+1)
+	authorized[post.AuthorPTID] = struct{}{}
+	for _, grant := range grants {
+		authorized[grant.RecipientPTID] = struct{}{}
+	}
+	for _, recipientPTID := range target.RecipientPTIDs {
+		if _, ok := authorized[recipientPTID]; !ok {
+			return repostSourceFailure(
+				submit,
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"target.recipients",
+				"must be a subset of the private source grant",
+			)
+		}
+		if recipientPTID != post.AuthorPTID {
+			if err := authorizePrivatePostViewer(
+				database,
+				post,
+				recipientPTID,
+			); err != nil {
+				return repostSourceFailure(
+					submit,
+					socialdomain.PrivateContentUnauthorized,
+					operation,
+					"target.recipients",
+					"contains an actor no longer authorized for the private source",
+				)
+			}
+		}
+	}
+	var sourceAuthor dbmodel.Actor
+	if err := database.WithContext(ctx).
+		Where("ptid = ?", post.AuthorPTID).
+		First(&sourceAuthor).Error; err != nil {
+		return err
+	}
+	sourceAuthorRef := touchactor.ProtoActorRef(&sourceAuthor)
+	if sourceAuthorRef == nil ||
+		sourceAuthorRef.GetPtid() == "" ||
+		sourceAuthorRef.GetAcct() == "" ||
+		sourceAuthorRef.GetKind() ==
+			actormodel.ActorKind_ACTOR_KIND_UNSPECIFIED ||
+		!proto.Equal(authority.GetSourceAuthor(), sourceAuthorRef) {
+		return repostSourceFailure(
+			submit,
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"source_author",
+			"does not match the authoritative private Post author",
+		)
+	}
+	var commitProof dbmodel.SocialPrivateCommitProof
+	if err := database.WithContext(ctx).Where(
+		"content_id = ? AND generation = ?",
+		post.ContentID,
+		post.Generation,
+	).First(&commitProof).Error; err != nil {
+		return err
+	}
+	source := authority.GetSource()
+	resource := proof.GetSourceResource()
+	if proof == nil ||
+		source.GetPrivateContentId() != post.ContentID ||
+		source.GetPrivateGeneration() != post.Generation ||
+		resource.GetOwnerDomain() !=
+			securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
+		resource.GetContentId() != post.ContentID ||
+		resource.GetGeneration() != post.Generation ||
+		!bytes.Equal(
+			proof.GetSourceAuthorizationSnapshotSha256(),
+			sourceSnapshot.CanonicalSnapshotSHA256,
+		) ||
+		!bytes.Equal(
+			proof.GetSourceEncryptedPayloadSha256(),
+			post.EncryptedPayloadSHA256,
+		) ||
+		!bytes.Equal(
+			proof.GetSourceCommitProofSha256(),
+			commitProof.CanonicalProofSHA256,
+		) {
+		return repostSourceFailure(
+			submit,
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"private_source",
+			"does not match the authoritative private source commitments",
+		)
+	}
+	return nil
+}
+
+func publicRenderedSourceSnapshot(
+	row *dbmodel.SocialPublicPost,
+	author *actormodel.ActorRef,
+) (*privatecontentpb.PublicRenderedSourceSnapshot, error) {
+	const operation = "social.private_content.public_repost_snapshot"
+	post := socialdomain.NewPostConverter().PublicDBToDomain(row)
+	post.AuthorPTID = author.GetPtid()
+	wire, err := socialdomain.NewPostConverter().DomainToProto(post)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := &privatecontentpb.PublicRenderedSourceSnapshot{
+		Source: &privatecontentpb.SocialPostSourceRef{
+			PostId: strconv.FormatUint(row.ID, 10),
+		},
+		Author:    proto.Clone(author).(*actormodel.ActorRef),
+		CreatedAt: timestamppb.New(row.CreatedAt.UTC()),
+		Kind: privatecontentpb.
+			PrivateRenderedSourceKind_PRIVATE_RENDERED_SOURCE_KIND_UNSPECIFIED,
+	}
+	for _, mention := range wire.GetTypedMentions() {
+		snapshot.TypedMentions = append(
+			snapshot.TypedMentions,
+			proto.Clone(mention).(*actormodel.Mention),
+		)
+	}
+	switch wire.GetType() {
+	case actormodel.PostType_TEXT:
+		if wire.GetTextPost() == nil {
+			break
+		}
+		snapshot.Kind = privatecontentpb.
+			PrivateRenderedSourceKind_PRIVATE_RENDERED_SOURCE_KIND_TEXT
+		snapshot.Body =
+			&privatecontentpb.PublicRenderedSourceSnapshot_Text{
+				Text: proto.Clone(
+					wire.GetTextPost(),
+				).(*actormodel.TextPost),
+			}
+	case actormodel.PostType_IMAGE:
+		if wire.GetImagePost() == nil {
+			break
+		}
+		snapshot.Kind = privatecontentpb.
+			PrivateRenderedSourceKind_PRIVATE_RENDERED_SOURCE_KIND_IMAGE
+		snapshot.Body =
+			&privatecontentpb.PublicRenderedSourceSnapshot_Image{
+				Image: proto.Clone(
+					wire.GetImagePost(),
+				).(*actormodel.ImagePost),
+			}
+	case actormodel.PostType_VIDEO:
+		if wire.GetVideoPost() == nil {
+			break
+		}
+		snapshot.Kind = privatecontentpb.
+			PrivateRenderedSourceKind_PRIVATE_RENDERED_SOURCE_KIND_VIDEO
+		snapshot.Body =
+			&privatecontentpb.PublicRenderedSourceSnapshot_Video{
+				Video: proto.Clone(
+					wire.GetVideoPost(),
+				).(*actormodel.VideoPost),
+			}
+	case actormodel.PostType_LINK:
+		if wire.GetLinkPost() == nil {
+			break
+		}
+		snapshot.Kind = privatecontentpb.
+			PrivateRenderedSourceKind_PRIVATE_RENDERED_SOURCE_KIND_LINK
+		snapshot.Body =
+			&privatecontentpb.PublicRenderedSourceSnapshot_Link{
+				Link: proto.Clone(
+					wire.GetLinkPost(),
+				).(*actormodel.LinkPost),
+			}
+	case actormodel.PostType_POLL:
+		if wire.GetPollPost() == nil {
+			break
+		}
+		snapshot.Kind = privatecontentpb.
+			PrivateRenderedSourceKind_PRIVATE_RENDERED_SOURCE_KIND_POLL
+		snapshot.Body =
+			&privatecontentpb.PublicRenderedSourceSnapshot_Poll{
+				Poll: proto.Clone(
+					wire.GetPollPost(),
+				).(*actormodel.PollPost),
+			}
+	case actormodel.PostType_LOCATION:
+		if wire.GetLocationPost() == nil {
+			break
+		}
+		snapshot.Kind = privatecontentpb.
+			PrivateRenderedSourceKind_PRIVATE_RENDERED_SOURCE_KIND_LOCATION
+		snapshot.Body =
+			&privatecontentpb.PublicRenderedSourceSnapshot_Location{
+				Location: proto.Clone(
+					wire.GetLocationPost(),
+				).(*actormodel.LocationPost),
+			}
+	default:
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentUnsupported,
+			operation,
+			"source.kind",
+			"does not support a non-recursive rendered snapshot",
+		)
+	}
+	if snapshot.Body == nil ||
+		snapshot.GetCreatedAt() == nil ||
+		!snapshot.GetCreatedAt().IsValid() {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"source",
+			"is incomplete",
+		)
+	}
+	return snapshot, nil
+}
+
+func repostSourceFailure(
+	submit bool,
+	prepareCode socialdomain.PrivateContentErrorCode,
+	operation string,
+	field string,
+	message string,
+) error {
+	code := prepareCode
+	if submit {
+		code = socialdomain.PrivateContentStalePlan
+	}
+	return socialdomain.NewPrivateContentError(
+		code,
+		operation,
+		field,
+		message,
+	)
 }
 
 func loadFriendsSnapshot(
@@ -538,8 +1067,10 @@ func loadCircleSnapshot(
 		"social.private_content.circle_snapshot",
 		socialdomain.FriendsSnapshot{
 			Audience: &actormodel.Audience{
-				Kind:     actormodel.Audience_CIRCLE,
-				TargetId: targetID,
+				Kind: actormodel.Audience_CIRCLE,
+				Target: &actormodel.Audience_CircleId{
+					CircleId: targetID,
+				},
 			},
 			SourceRevision:   uint64(len(rows)) + 1,
 			SourceHeadSHA256: head.Sum(nil),
@@ -549,21 +1080,120 @@ func loadCircleSnapshot(
 }
 
 func loadGroupSnapshot(
-	_ context.Context,
-	_ *gorm.DB,
-	_ string,
-	targetID uint64,
+	ctx context.Context,
+	database *gorm.DB,
+	authorPTID string,
+	group socialdomain.GroupRecipientSnapshot,
 ) (socialdomain.FriendsSnapshot, error) {
-	return socialdomain.FriendsSnapshot{},
-		socialdomain.NewPrivateContentError(
-			socialdomain.PrivateContentIntegrationGap,
-			"social.private_content.group_snapshot",
-			"target_id",
-			fmt.Sprintf(
-				"DESIGN_AMENDMENT_REQUIRED: Audience.GROUP target_id %d is uint64 but canonical Conversation IDs are string identities",
-				targetID,
-			),
-		)
+	const operation = "social.private_content.group_snapshot"
+	if strings.TrimSpace(group.ConversationID) == "" ||
+		group.ConversationID != strings.TrimSpace(group.ConversationID) ||
+		group.AuthorPTID != authorPTID ||
+		group.MembershipEpoch == 0 ||
+		len(group.AuthorityHeadSHA256) != sha256.Size ||
+		len(group.Members) == 0 {
+		return socialdomain.FriendsSnapshot{},
+			socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentInvalidArgument,
+				operation,
+				"group_snapshot",
+				"is incomplete or does not belong to the author",
+			)
+	}
+
+	memberPTIDs := make([]string, 0, len(group.Members))
+	authorActive := false
+	authorHomeStationPeerID := ""
+	previous := ""
+	for _, member := range group.Members {
+		if strings.TrimSpace(member.ActorPTID) == "" ||
+			member.ActorPTID != strings.TrimSpace(member.ActorPTID) ||
+			strings.TrimSpace(member.HomeStationPeerID) == "" ||
+			member.HomeStationPeerID != strings.TrimSpace(member.HomeStationPeerID) ||
+			member.ActorPTID <= previous {
+			return socialdomain.FriendsSnapshot{},
+				socialdomain.NewPrivateContentError(
+					socialdomain.PrivateContentInvalidArgument,
+					operation,
+					"group_snapshot.members",
+					"must be canonical, unique, and ordered",
+				)
+		}
+		if member.ActorPTID == authorPTID {
+			authorActive = true
+			authorHomeStationPeerID = member.HomeStationPeerID
+		} else {
+			memberPTIDs = append(memberPTIDs, member.ActorPTID)
+		}
+		previous = member.ActorPTID
+	}
+	if !authorActive {
+		return socialdomain.FriendsSnapshot{},
+			socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"author_ptid",
+				"is not an active Group member",
+			)
+	}
+	for _, member := range group.Members {
+		if member.HomeStationPeerID != authorHomeStationPeerID {
+			return socialdomain.FriendsSnapshot{},
+				socialdomain.NewPrivateContentError(
+					socialdomain.PrivateContentUnsupported,
+					operation,
+					"recipient_home_station_peer_id",
+					"v1 private content requires every active Group member on the author Home Station",
+				)
+		}
+	}
+
+	blocked, err := NewBlockGraphRepository(database).BlockedActorPTIDs(
+		ctx,
+		authorPTID,
+		memberPTIDs,
+	)
+	if err != nil {
+		return socialdomain.FriendsSnapshot{}, err
+	}
+
+	head := sha256.New()
+	writeSnapshotField(head, "group")
+	writeSnapshotField(head, group.ConversationID)
+	writeSnapshotField(head, authorPTID)
+	writeSnapshotField(head, strconv.FormatUint(group.MembershipEpoch, 10))
+	writeSnapshotBytes(head, group.AuthorityHeadSHA256)
+	recipients := make([]string, 0, len(memberPTIDs))
+	localities := make(
+		[]socialdomain.RecipientLocality,
+		0,
+		len(memberPTIDs),
+	)
+	for _, member := range group.Members {
+		writeSnapshotField(head, member.ActorPTID)
+		writeSnapshotField(head, member.HomeStationPeerID)
+		if member.ActorPTID == authorPTID || blocked[member.ActorPTID] {
+			continue
+		}
+		recipients = append(recipients, member.ActorPTID)
+		localities = append(localities, member)
+	}
+
+	return requireNonEmptyAudienceSnapshot(
+		operation,
+		socialdomain.FriendsSnapshot{
+			Audience: &actormodel.Audience{
+				Kind: actormodel.Audience_GROUP,
+				Target: &actormodel.Audience_GroupConversationId{
+					GroupConversationId: group.ConversationID,
+				},
+			},
+			SourceRevision:      group.MembershipEpoch,
+			SourceHeadSHA256:    head.Sum(nil),
+			RecipientPTIDs:      recipients,
+			RecipientLocalities: localities,
+		},
+	)
 }
 
 // loadCustomAllowSnapshot resolves the explicitly listed actors as the audience.
@@ -658,10 +1288,10 @@ func loadCustomDenySnapshot(
 	case actormodel.Audience_PUBLIC:
 		return socialdomain.FriendsSnapshot{},
 			socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentIntegrationGap,
+				socialdomain.PrivateContentUnsupported,
 				"social.private_content.custom_deny_snapshot",
 				"base_kind",
-				"DESIGN_AMENDMENT_REQUIRED: Social has no complete federated PUBLIC actor authority for freezing CUSTOM_DENY recipients",
+				"CUSTOM_DENY(PUBLIC) is unsupported in v1",
 			)
 	default:
 		return socialdomain.FriendsSnapshot{},
@@ -669,7 +1299,7 @@ func loadCustomDenySnapshot(
 				socialdomain.PrivateContentInvalidArgument,
 				"social.private_content.custom_deny_snapshot",
 				"base_kind",
-				"must be PUBLIC or FOLLOWERS",
+				"must be FOLLOWERS",
 			)
 	}
 	if err != nil {

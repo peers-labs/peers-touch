@@ -6,8 +6,6 @@ import { ConversationRail } from './ConversationRail';
 import { deriveAgentWorkbenchLayout } from './layout';
 import { TopicRail } from './TopicRail';
 
-let debugWorkbenchSequence = 0;
-
 interface AgentWorkbenchProps {
   onOpenOrchestration?: () => void;
   onNavigateMarketplace?: () => void;
@@ -37,20 +35,6 @@ export function AgentWorkbench({ onOpenOrchestration, onNavigateMarketplace }: A
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    // #region debug-point B:workbench-resize-loop
-    void fetch('http://127.0.0.1:7777/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'post-login-update-loop',
-        runId: 'post-fix',
-        hypothesisId: 'B',
-        location: 'components/agent/workbench/AgentWorkbench.tsx:resize-effect',
-        msg: '[DEBUG] Workbench resize effect installed',
-        data: { agentRailOpen, topicRailOpen, width },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     const updateWidth = (nextWidth: number) => {
       if (nextWidth <= 0) return;
       const nextLayout = deriveAgentWorkbenchLayout(
@@ -60,31 +44,6 @@ export function AgentWorkbench({ onOpenOrchestration, onNavigateMarketplace }: A
       );
       const previousNarrow = previousNarrowRef.current;
       previousNarrowRef.current = nextLayout.narrow;
-      // #region debug-point B:workbench-resize-loop
-      debugWorkbenchSequence += 1;
-      if (debugWorkbenchSequence <= 20 || debugWorkbenchSequence % 25 === 0) {
-        void fetch('http://127.0.0.1:7777/event', {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: 'post-login-update-loop',
-            runId: 'post-fix',
-            hypothesisId: 'B',
-            location: 'components/agent/workbench/AgentWorkbench.tsx:updateWidth',
-            msg: '[DEBUG] Workbench width sample',
-            data: {
-              agentRailOpen,
-              nextNarrow: nextLayout.narrow,
-              nextWidth,
-              previousNarrow,
-              sequence: debugWorkbenchSequence,
-              topicRailOpen,
-              width,
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-      }
-      // #endregion
       setWidth(nextWidth);
       if (nextLayout.narrow && previousNarrow !== true) {
         setAgentRailOpen(false);

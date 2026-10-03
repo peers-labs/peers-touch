@@ -23,6 +23,7 @@ import (
 	accessgatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	oauthpb "github.com/peers-labs/peers-touch/station/frame/touch/model/oauth"
+	oauthbridge "github.com/peers-labs/peers-touch/station/frame/touch/model/oauthbridge"
 	"golang.org/x/crypto/hkdf"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
@@ -42,7 +43,7 @@ const (
 	testGeneration    = uint64(7)
 )
 
-var testAttemptSecret = []byte("test-attempt-secret-with-enough-entropy")
+var testAttemptSecret = []byte("test-attempt-secret-with-enough-entropy-0123456789")
 
 type fakeProviderExchange struct {
 	exchanges atomic.Int32
@@ -85,12 +86,15 @@ func (f *fakeAccessCoordinator) ValidateStation(_ context.Context, stationPeerID
 
 func (f *fakeAccessCoordinator) Validate(
 	_ context.Context,
-	accessAttemptID, stationPeerID, gateID string,
+	accessAttemptID, stationPeerID, gateID, deviceID string,
+	lifecycleGeneration uint64,
 	actionType accessgatepb.AccessGateType,
 ) error {
 	if accessAttemptID != testAccessAttempt ||
 		stationPeerID != testStationPeerID ||
 		gateID != testGateID ||
+		deviceID != testDeviceID ||
+		lifecycleGeneration != testGeneration ||
 		actionType != accessgatepb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH {
 		return fmt.Errorf("access binding mismatch")
 	}
@@ -99,7 +103,8 @@ func (f *fakeAccessCoordinator) Validate(
 
 func (f *fakeAccessCoordinator) BindCandidate(
 	ctx context.Context,
-	_, _, _ string,
+	_, _, _, _ string,
+	_ uint64,
 	actor *model.ActorRef,
 	username, email string,
 ) (*accessgatepb.AccessDecision, error) {
@@ -205,6 +210,7 @@ type fakeSessionCredentialIssuer struct {
 func (f *fakeSessionCredentialIssuer) Prepare(
 	_ context.Context,
 	candidate *dbmodel.OAuthSessionCandidate,
+	platform string,
 	decisionRevision uint64,
 	now time.Time,
 ) (*session.SessionRecord, *model.LoginResponse, error) {
@@ -214,11 +220,15 @@ func (f *fakeSessionCredentialIssuer) Prepare(
 	}
 	sessionID := "session-" + candidate.ID
 	expiresAt := now.Add(time.Hour)
+	deviceType, err := oauthSessionDeviceType(platform)
+	if err != nil {
+		return nil, nil, err
+	}
 	return &session.SessionRecord{
 			SessionID:              sessionID,
 			UserID:                 candidate.ActorID,
 			Email:                  candidate.ActorEmail,
-			DeviceType:             session.DeviceTypeMobile,
+			DeviceType:             deviceType,
 			OAuthCandidateID:       candidate.ID,
 			AccessAttemptID:        candidate.AccessAttemptID,
 			StationPeerID:          candidate.StationPeerID,
@@ -285,6 +295,7 @@ func newOAuthFixture(t *testing.T, decision accessgatepb.AccessDecisionState) *o
 		ID:               testAccessAttempt,
 		Status:           "action_required",
 		StationPeerID:    testStationPeerID,
+		Platform:         "mobile",
 		DeviceID:         testDeviceID,
 		CurrentGateID:    testGateID,
 		DecisionRevision: 1,
@@ -427,6 +438,203 @@ func (f *oauthFixture) acknowledgeRequest(attemptID string) *oauthpb.Acknowledge
 		AttemptSecret:       append([]byte(nil), testAttemptSecret...),
 		DeviceId:            testDeviceID,
 		LifecycleGeneration: testGeneration,
+	}
+}
+
+func (f *oauthFixture) brokerRequest() *oauthbridge.BrokerOAuthBridgeRequest {
+	return &oauthbridge.BrokerOAuthBridgeRequest{
+		Provider:                    "github",
+		ProviderUserId:              "provider-user",
+		Email:                       "oauth-user@example.test",
+		Username:                    "oauth-user",
+		DisplayName:                 "OAuth User",
+		Ts:                          time.Now().UTC().Format(time.RFC3339),
+		BridgeVersion:               "v1",
+		SiteId:                      "default",
+		EmailVerified:               true,
+		Purpose:                     "account_login",
+		AssertionId:                 fmt.Sprintf("%064x", 42),
+		ReceiverId:                  "lp-test",
+		ReceiverChallenge:           pkceChallenge(string(testAttemptSecret)),
+		ReceiverVerifier:            string(testAttemptSecret),
+		StationPeerId:               testStationPeerID,
+		AccessAttemptId:             testAccessAttempt,
+		GateId:                      testGateID,
+		DeviceId:                    testDeviceID,
+		LifecycleGeneration:         testGeneration,
+		CredentialDeliveryPublicKey: f.deliveryPrivate.PublicKey().Bytes(),
+	}
+}
+
+func TestBrokerBridgeUsesCandidateAndAcknowledgementLifecycle(t *testing.T) {
+	fixture := newOAuthFixture(t, accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED)
+	if err := fixture.database.Model(&dbmodel.AccessAttempt{}).
+		Where("id = ?", testAccessAttempt).
+		Update("platform", "desktop").Error; err != nil {
+		t.Fatal(err)
+	}
+	completed, err := fixture.service.CompleteBrokerBridge(
+		context.Background(),
+		fixture.brokerRequest(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED ||
+		completed.GetSessionCandidate() == nil ||
+		completed.GetCredentialEnvelope() == nil {
+		t.Fatalf("broker bridge did not return an inactive credential candidate: %#v", completed)
+	}
+	if fixture.provider.exchanges.Load() != 0 {
+		t.Fatal("broker identity path called the Station provider exchange")
+	}
+	credential := decryptEnvelope(
+		t,
+		fixture.deliveryPrivate,
+		completed.GetCredentialEnvelope(),
+		completed.GetSessionCandidate(),
+	)
+	if credential.GetTokens().GetAccessToken() != "bearer-secret" {
+		t.Fatal("broker credential envelope did not contain the prepared session")
+	}
+	var pending session.SessionRecord
+	if err := fixture.database.
+		Where("session_id = ?", completed.GetCredentialEnvelope().GetSessionId()).
+		First(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !pending.Revoked || pending.RevokedReason != "credential_delivery_pending" {
+		t.Fatalf("broker session became active before acknowledgement: %#v", pending)
+	}
+	if pending.DeviceType != session.DeviceTypeDesktop {
+		t.Fatalf("broker session device type = %q", pending.DeviceType)
+	}
+	result, err := fixture.service.Acknowledge(
+		context.Background(),
+		fixture.acknowledgeRequest(completed.GetSessionCandidate().GetOauthAttemptId()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED {
+		t.Fatalf("broker acknowledgement result = %s", result.GetResult())
+	}
+	if err := fixture.database.
+		Where("session_id = ?", pending.SessionID).
+		First(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pending.Revoked {
+		t.Fatalf("broker session remained inactive after acknowledgement: %#v", pending)
+	}
+}
+
+func TestBrokerBridgeResumesAfterLaterAccessGate(t *testing.T) {
+	fixture := newOAuthFixture(t, accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_ACTION_REQUIRED)
+	if err := fixture.database.Model(&dbmodel.AccessAttempt{}).
+		Where("id = ?", testAccessAttempt).
+		Update("platform", "desktop").Error; err != nil {
+		t.Fatal(err)
+	}
+	completed, err := fixture.service.CompleteBrokerBridge(
+		context.Background(),
+		fixture.brokerRequest(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_SESSION_CANDIDATE_ISSUED ||
+		completed.GetSessionCandidate() == nil ||
+		completed.GetCredentialEnvelope() != nil {
+		t.Fatalf("later gate did not retain an inactive broker candidate: %#v", completed)
+	}
+
+	fixture.access.setDecision(accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED)
+	status, err := fixture.service.Status(
+		context.Background(),
+		fixture.statusRequest(completed.GetSessionCandidate().GetOauthAttemptId()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED ||
+		status.GetCredentialEnvelope() == nil {
+		t.Fatalf("granted later gate did not finalize broker candidate: %#v", status)
+	}
+}
+
+func TestBrokerBridgeCancellationTerminalizesLaterGateCandidate(t *testing.T) {
+	fixture := newOAuthFixture(t, accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_ACTION_REQUIRED)
+	if err := fixture.database.Model(&dbmodel.AccessAttempt{}).
+		Where("id = ?", testAccessAttempt).
+		Update("platform", "desktop").Error; err != nil {
+		t.Fatal(err)
+	}
+	completed, err := fixture.service.CompleteBrokerBridge(
+		context.Background(),
+		fixture.brokerRequest(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := completed.GetSessionCandidate()
+	if candidate == nil {
+		t.Fatal("later gate did not return a candidate")
+	}
+
+	cancelled, err := fixture.service.Cancel(
+		context.Background(),
+		fixture.cancelRequest(candidate.GetOauthAttemptId()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_CANCELLED {
+		t.Fatalf("cancel result = %s", cancelled.GetResult())
+	}
+	var stored dbmodel.OAuthSessionCandidate
+	if err := fixture.database.Where("id = ?", candidate.GetCandidateId()).
+		First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != candidateStateCancelled || stored.LiveBindingKey != nil {
+		t.Fatalf("later-gate candidate remained live after cancellation: %#v", stored)
+	}
+}
+
+func TestBrokerBridgeRejectsAccessClientBindingMismatch(t *testing.T) {
+	tests := map[string]func(*oauthbridge.BrokerOAuthBridgeRequest){
+		"device": func(req *oauthbridge.BrokerOAuthBridgeRequest) {
+			req.DeviceId = "other-device"
+		},
+		"lifecycle generation": func(req *oauthbridge.BrokerOAuthBridgeRequest) {
+			req.LifecycleGeneration++
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			fixture := newOAuthFixture(
+				t,
+				accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED,
+			)
+			request := fixture.brokerRequest()
+			mutate(request)
+
+			if _, err := fixture.service.CompleteBrokerBridge(
+				context.Background(),
+				request,
+			); err == nil {
+				t.Fatal("mismatched Access client binding was accepted")
+			}
+			var attempts int64
+			if err := fixture.database.Model(&dbmodel.OAuthAttempt{}).
+				Count(&attempts).Error; err != nil {
+				t.Fatal(err)
+			}
+			if attempts != 0 {
+				t.Fatalf("mismatched binding persisted %d OAuth attempts", attempts)
+			}
+		})
 	}
 }
 
@@ -650,6 +858,16 @@ func TestOAuthAcknowledgeClearsEnvelopeAndActivatesPersistedSession(t *testing.T
 	if acknowledged.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED {
 		t.Fatalf("acknowledgement result = %s", acknowledged.GetResult())
 	}
+	replayed, err := fixture.service.Acknowledge(
+		context.Background(),
+		fixture.acknowledgeRequest(start.GetOauthAttemptId()),
+	)
+	if err != nil {
+		t.Fatalf("replay acknowledgement after lost response: %v", err)
+	}
+	if replayed.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED {
+		t.Fatalf("replayed acknowledgement result = %s", replayed.GetResult())
+	}
 	status, err := fixture.service.Status(context.Background(), fixture.statusRequest(start.GetOauthAttemptId()))
 	if err != nil {
 		t.Fatalf("status after acknowledgement: %v", err)
@@ -670,6 +888,151 @@ func TestOAuthAcknowledgeClearsEnvelopeAndActivatesPersistedSession(t *testing.T
 		t.Fatalf("acknowledged session is not active and candidate-bound: %#v", record)
 	}
 	assertPersistenceCounts(t, fixture.database, 1, 0)
+}
+
+func TestOAuthCancelAfterAcknowledgementPreservesActivatedSession(t *testing.T) {
+	fixture := newOAuthFixture(t, accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED)
+	start, completeRequest := fixture.start(t)
+	completed, err := fixture.service.Complete(context.Background(), completeRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acknowledged, err := fixture.service.Acknowledge(
+		context.Background(),
+		fixture.acknowledgeRequest(start.GetOauthAttemptId()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acknowledged.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED {
+		t.Fatalf("acknowledgement result = %s", acknowledged.GetResult())
+	}
+
+	cancelled, err := fixture.service.Cancel(
+		context.Background(),
+		fixture.cancelRequest(start.GetOauthAttemptId()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED {
+		t.Fatalf("late cancellation result = %s", cancelled.GetResult())
+	}
+	var record session.SessionRecord
+	if err := fixture.database.Where(
+		"session_id = ?",
+		completed.GetCredentialEnvelope().GetSessionId(),
+	).First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	if record.Revoked {
+		t.Fatalf("late cancellation revoked the activated session: %#v", record)
+	}
+}
+
+func TestOAuthStatusExpiryRevokesCandidateAndDeletesEnvelope(t *testing.T) {
+	fixture := newOAuthFixture(t, accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED)
+	start, completeRequest := fixture.start(t)
+	completed, err := fixture.service.Complete(context.Background(), completeRequest)
+	if err != nil {
+		t.Fatalf("complete OAuth attempt: %v", err)
+	}
+	if completed.GetCredentialEnvelope() == nil {
+		t.Fatal("finalization did not persist an envelope")
+	}
+	if err := fixture.database.Model(&dbmodel.OAuthAttempt{}).
+		Where("id = ?", start.GetOauthAttemptId()).
+		Update("expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatalf("expire OAuth attempt: %v", err)
+	}
+
+	status, err := fixture.service.Status(
+		context.Background(),
+		fixture.statusRequest(start.GetOauthAttemptId()),
+	)
+	if err != nil {
+		t.Fatalf("read expired OAuth attempt: %v", err)
+	}
+	if status.GetState() != oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_EXPIRED ||
+		status.GetResult() != oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_EXPIRED ||
+		status.GetCredentialEnvelope() != nil {
+		t.Fatalf("expired OAuth status retained credential delivery: %#v", status)
+	}
+	assertPersistenceCounts(t, fixture.database, 1, 0)
+
+	var record session.SessionRecord
+	if err := fixture.database.Where(
+		"session_id = ?",
+		completed.GetCredentialEnvelope().GetSessionId(),
+	).First(&record).Error; err != nil {
+		t.Fatalf("load expired candidate session: %v", err)
+	}
+	if !record.Revoked || record.RevokedReason != "oauth_expired" {
+		t.Fatalf("expired candidate session was not revoked: %#v", record)
+	}
+	var candidate dbmodel.OAuthSessionCandidate
+	if err := fixture.database.Where(
+		"id = ?",
+		completed.GetSessionCandidate().GetCandidateId(),
+	).First(&candidate).Error; err != nil {
+		t.Fatalf("load expired candidate: %v", err)
+	}
+	if candidate.State != candidateStateCancelled || candidate.LiveBindingKey != nil {
+		t.Fatalf("expired candidate remained live: %#v", candidate)
+	}
+}
+
+func TestOAuthExpirySweepRevokesAbandonedCandidateWithoutStatusRequest(t *testing.T) {
+	fixture := newOAuthFixture(t, accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED)
+	start, completeRequest := fixture.start(t)
+	completed, err := fixture.service.Complete(context.Background(), completeRequest)
+	if err != nil {
+		t.Fatalf("complete OAuth attempt: %v", err)
+	}
+	expiredAt := time.Now().UTC().Add(-time.Second)
+	if err := fixture.database.Model(&dbmodel.OAuthAttempt{}).
+		Where("id = ?", start.GetOauthAttemptId()).
+		Update("expires_at", expiredAt).Error; err != nil {
+		t.Fatalf("expire OAuth attempt: %v", err)
+	}
+
+	swept, err := fixture.service.SweepExpired(context.Background())
+	if err != nil {
+		t.Fatalf("sweep expired OAuth attempts: %v", err)
+	}
+	if swept != 1 {
+		t.Fatalf("swept attempts = %d, want 1", swept)
+	}
+
+	var record session.SessionRecord
+	if err := fixture.database.Where(
+		"session_id = ?",
+		completed.GetCredentialEnvelope().GetSessionId(),
+	).First(&record).Error; err != nil {
+		t.Fatalf("load swept candidate session: %v", err)
+	}
+	if !record.Revoked || record.RevokedReason != "oauth_expired" {
+		t.Fatalf("swept candidate session was not revoked: %#v", record)
+	}
+	var candidate dbmodel.OAuthSessionCandidate
+	if err := fixture.database.Where(
+		"id = ?",
+		completed.GetSessionCandidate().GetCandidateId(),
+	).First(&candidate).Error; err != nil {
+		t.Fatalf("load swept candidate: %v", err)
+	}
+	if candidate.State != candidateStateCancelled || candidate.LiveBindingKey != nil {
+		t.Fatalf("swept candidate remained live: %#v", candidate)
+	}
+	assertPersistenceCounts(t, fixture.database, 1, 0)
+
+	replayed, err := fixture.service.SweepExpired(context.Background())
+	if err != nil {
+		t.Fatalf("replay OAuth expiry sweep: %v", err)
+	}
+	if replayed != 0 {
+		t.Fatalf("replayed sweep expired %d attempts, want 0", replayed)
+	}
 }
 
 func TestOAuthAttemptSecretAndGenerationMismatchFailClosed(t *testing.T) {

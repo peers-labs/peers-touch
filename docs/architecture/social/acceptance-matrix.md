@@ -1,8 +1,8 @@
 # Social Private Moments - Product Acceptance Matrix
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Social Product
 
 ---
@@ -27,9 +27,11 @@ Native 设备上的当前 source-bound Journey 证明。以下证据不能单独
 | `SOC-SEC-RC03` | Bob/Bob2 | Native restart and trusted recovery | device recovery and revocation |
 | `SOC-SEC-RC04` | Anonymous/Eve/Bob | direct HTTP/object requests | authentication, IDOR and metadata minimization |
 | `SOC-SEC-RC05` | Alice/Anonymous | Native publisher + Browser/HTTP public reader | public continuity |
+| `SOC-SEC-RC06` | Alice/Remote recipient | Native publisher on `four` + real Actor identity on `fiveArm` | unsupported cross-Station private audience fails before durable admission |
 
-Cross-Station private sharing has no required cell in this version because
-`SOC-SEC-C09` is deferred. Any attempt must fail before publish.
+Cross-Station private sharing has no positive delivery cell in this version
+because `SOC-SEC-C09` is deferred. `SOC-SEC-RC06` proves only the fail-closed
+boundary; it does not claim cross-Station private delivery support.
 
 ## 3. Acceptance Scenarios
 
@@ -46,7 +48,7 @@ Cross-Station private sharing has no required cell in this version because
 | `SOC-SEC-AS09` | `SOC-SEC-J08` | Alice deletes or blocks; Bob's new detail/media/recovery requests fail and ordinary cache clears | Station delivery/grant state is revoked; report does not claim malicious-copy deletion | `RC01`, `RC03` |
 | `SOC-SEC-AS10` | `SOC-SEC-J09` | Anonymous reads Alice's explicit PUBLIC Moment after private hard cut | Public table and object path remain readable without private envelopes | `RC05` |
 | `SOC-SEC-AS11` | `SOC-SEC-J01` | Browser attempts private publish/read and is rejected before any plaintext leaves the client | Network capture shows no private publish payload or public media fallback | `RC05` |
-| `SOC-SEC-AS12` | `SOC-SEC-J01` | Alice selects an unsupported remote private recipient and gets a bounded actionable error | No partial Post, delivery, object grant or envelope is committed | `RC01` |
+| `SOC-SEC-AS12` | `SOC-SEC-J01` | Alice publishes to a same-Station GROUP and `CUSTOM_DENY(FOLLOWERS)`, then attempts `CUSTOM_DENY(PUBLIC)`, an explicit fiveArm recipient, and a Group containing that recipient | Supported audiences reach intended readers; unsupported cases consume no Content PreKey and commit no partial Post, delivery, object grant or envelope; remote evidence binds the owner-issued handle, expected identity digest, fixture-manifest digest, and result | `RC01`, `RC06` |
 | `SOC-SEC-AS13` | `SOC-SEC-J02` | Bob response is inspected with multiple recipients/devices in the audience | Only Bob's eligible device envelope is present; author management data uses a separate path | `RC04` |
 | `SOC-SEC-AS14` | all | Same journeys run on Mobile Native with equivalent visible outcomes | Proto identities and Station authorization decisions match Desktop | `RC02` |
 | `SOC-SEC-AS15` | `SOC-SEC-J01` | Alice selects an audience beyond the actor/slot policy | Publish is rejected before encryption with no truncated recipient set or committed object | `RC01` |
@@ -79,6 +81,7 @@ Cross-Station private sharing has no required cell in this version because
 | `SOC-SEC-C06` | `SOC-SEC-J07`, `SOC-SEC-J08` | `SOC-SEC-AS08`, `SOC-SEC-AS09` |
 | `SOC-SEC-C07` | `SOC-SEC-J09` | `SOC-SEC-AS10` |
 | `SOC-SEC-C08` | all supported journeys | `SOC-SEC-AS11`, `SOC-SEC-AS14` |
+| `SOC-SEC-C09` | `SOC-SEC-J01` unsupported boundary | `SOC-SEC-AS12` |
 
 ## 6. Evidence Requirements
 
@@ -86,8 +89,12 @@ Each scenario records:
 
 - exact Git checkpoint and clean source identity;
 - sender, receiver, device and Station identities without credential values;
+- owner-issued fixture handles with expected identity digest, fixture-manifest
+  digest, and result binding for every remote-identity assertion;
 - product action trace and receiver-visible result;
 - Station authorization/storage and OSS grant/object readback;
+- Key Exchange readback proving unsupported remote and
+  `CUSTOM_DENY(PUBLIC)` attempts consumed no Content PreKey;
 - cleanup result for clients, grants, temporary files and runtime leases;
 - explicit `UNPROVEN` status for unrun Desktop, Mobile, recovery or negative cells.
 

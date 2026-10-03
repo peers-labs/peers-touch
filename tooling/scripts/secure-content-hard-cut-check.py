@@ -283,43 +283,113 @@ def check_proto_descriptors(root: Path) -> list[Violation]:
         )
 
     required_reservations = {
-        f"{package}.Post": ("visibility", 4),
-        f"{package}.CreatePostRequest": ("visibility", 2),
-        f"{package}.UpdatePostRequest": ("visibility", 3),
-        f"{package}.PostFilter": ("visibility", 2),
-        f"{package}.Audience": ("key_envelopes", 5),
-        f"{package}.UploadMediaRequest": ("audience_key_envelopes", 7),
-        f"{package}.UploadMediaResponse": ("audience_key_envelopes", 10),
+        f"{package}.Post": (("visibility", 4),),
+        f"{package}.CreatePostRequest": (("visibility", 2),),
+        f"{package}.UpdatePostRequest": (("visibility", 3),),
+        f"{package}.PostFilter": (("visibility", 2),),
+        f"{package}.Audience": (
+            ("key_envelopes", 5),
+            ("target_id", 5),
+        ),
+        f"{package}.UploadMediaRequest": (("audience_key_envelopes", 7),),
+        f"{package}.UploadMediaResponse": (("audience_key_envelopes", 10),),
     }
-    for message_name, (field_name, field_number) in required_reservations.items():
+    for message_name, reservations in required_reservations.items():
         message = messages.get(message_name)
         if message is None:
             violations.append(
                 Violation("proto-message", "model/domain/social", 1, f"missing message: {message_name}")
             )
             continue
-        if any(
-            name == field_name or number == field_number
-            for name, number in message.fields
-        ):
-            violations.append(
-                Violation(
-                    "proto-field",
-                    "model/domain/social",
-                    1,
-                    f"{message_name} still exposes {field_name}/{field_number}",
+        for field_name, field_number in reservations:
+            if any(name == field_name for name, _number in message.fields):
+                violations.append(
+                    Violation(
+                        "proto-field",
+                        "model/domain/social",
+                        1,
+                        f"{message_name} still exposes {field_name}",
+                    )
                 )
-            )
-        if not reserved_field(message, name=field_name, number=field_number):
-            violations.append(
-                Violation(
-                    "proto-reservation",
-                    "model/domain/social",
-                    1,
-                    f"{message_name} must reserve {field_name}/{field_number}",
+            if not reserved_field(
+                message,
+                name=field_name,
+                number=field_number,
+            ):
+                violations.append(
+                    Violation(
+                        "proto-reservation",
+                        "model/domain/social",
+                        1,
+                        f"{message_name} must reserve {field_name}/{field_number}",
+                    )
                 )
-            )
     return violations
+
+
+def retired_audience_target_aliases(text: str) -> list[tuple[int, str]]:
+    matches: dict[tuple[int, str], None] = {}
+    block_markers = (
+        ("type Audience struct {", "\ntype isAudience_Target interface"),
+        (
+            'export type Audience = Message<"peers_touch.model.social.v1.Audience">',
+            "\nexport const AudienceSchema",
+        ),
+        ("pub struct Audience {", "\n}"),
+    )
+    for start_marker, end_marker in block_markers:
+        start = text.find(start_marker)
+        if start < 0:
+            continue
+        end = text.find(end_marker, start + len(start_marker))
+        if end < 0:
+            end = min(len(text), start + 4096)
+        block = text[start:end]
+        for match in re.finditer(
+            r"\bGetTargetId\b|\bTargetId\b|\btargetId\b|\btarget_id\b",
+            block,
+        ):
+            matches[(start + match.start(), match.group(0))] = None
+
+    contextual_patterns = (
+        r"\b(?:\w+\.)?Audience\s*(?:struct\s*)?\{"
+        r"(?:(?!\n\s*\}).){0,1200}?\bTargetId\s*:",
+        r"\b(?:audience|snapshot\.Audience)\.(?:GetTargetId|TargetId)\b",
+        r"\b(?:draft\.)?audience\.targetId\b",
+        r"\bAudienceSchema\s*,\s*\{(?:(?!\n\s*\}).){0,800}?\btargetId\b",
+        r"\baudienceTargetId\b",
+        r"\bAudienceTargetID\b",
+        r"(?<![\"'])\baudience_target_id\s*:",
+    )
+    for pattern in contextual_patterns:
+        for match in re.finditer(pattern, text, flags=re.DOTALL):
+            token = re.search(
+                r"GetTargetId|TargetId|targetId|target_id|"
+                r"audienceTargetId|AudienceTargetID|audience_target_id",
+                match.group(0),
+            )
+            if token is not None:
+                matches[(match.start() + token.start(), token.group(0))] = None
+    return sorted(matches)
+
+
+def _append_retired_audience_target_violations(
+    violations: list[Violation],
+    *,
+    root: Path,
+    path: Path,
+    text: str,
+    rule: str,
+) -> None:
+    for offset, alias in retired_audience_target_aliases(text):
+        violations.append(
+            Violation(
+                rule,
+                relative_path(root, path),
+                line_number(text, offset),
+                f"retired Audience target alias remains: {alias}",
+            )
+        )
 
 
 def check_generated_bindings(root: Path) -> list[Violation]:
@@ -344,6 +414,13 @@ def check_generated_bindings(root: Path) -> list[Violation]:
                     f"retired generated symbol remains: {match.group(0)}",
                 )
             )
+        _append_retired_audience_target_violations(
+            violations,
+            root=root,
+            path=path,
+            text=text,
+            rule="generated-audience-target-alias",
+        )
 
     for prefix in (
         "apps/desktop/src-tauri/src/model/",
@@ -360,6 +437,13 @@ def check_generated_bindings(root: Path) -> list[Violation]:
                         f"retired generated symbol remains: {match.group(0)}",
                     )
                 )
+            _append_retired_audience_target_violations(
+                violations,
+                root=root,
+                path=path,
+                text=text,
+                rule="generated-audience-target-alias",
+            )
     return violations
 
 
@@ -401,6 +485,24 @@ def check_sources(root: Path, files: list[Path]) -> list[Violation]:
             "apps/mobile/src-tauri/src/messaging",
         ),
     )
+    for path in product_roots:
+        relative = relative_path(root, path)
+        if (
+            relative in RESET_OWNER_PATHS
+            or relative in GENERATED_BINDINGS
+            or "/src-tauri/src/model/" in relative
+        ):
+            continue
+        text = path.read_text(encoding="utf-8")
+        if NEGATIVE_FIXTURE_MARKER in text:
+            continue
+        _append_retired_audience_target_violations(
+            violations,
+            root=root,
+            path=path,
+            text=text,
+            rule="retired-audience-target-alias",
+        )
 
     violations += scan_pattern(
         root,

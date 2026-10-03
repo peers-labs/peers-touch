@@ -31,13 +31,14 @@
     ],
     "visible": [
       "required Desktop and Browser receiver outcomes are observable in English and Simplified Chinese",
-      "unsupported Mobile-local, P12, and CLI capabilities are explicitly unavailable before execution"
+      "unsupported Mobile-local and CLI capabilities are explicitly unavailable before execution",
+      "an absent or incomplete P12 adapter is not advertised, while the configured external runtime exposes the reviewed resume-unavailable recovery"
     ]
   },
   "negative": [
     "prototype, static, generated-contract, or historical evidence must not prove the foundation Gate",
     "missing matrix cells or mandatory artifact roles keep the Gate UNPROVEN",
-    "client cache, local durable state, or unadvertised runtime registration must not become product truth",
+    "client cache, local durable state, or an unavailable runtime registration must not become product truth",
     "reasoning effort or thinking deltas must not be reinterpreted as an explicit thinking-mode choice"
   ]
 }

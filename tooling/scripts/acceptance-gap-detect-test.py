@@ -32,6 +32,19 @@ def proven_result(gate_id: str) -> dict[str, Any]:
 
 
 class AcceptanceGapDetectorTests(unittest.TestCase):
+    def test_session_and_acceptance_run_are_distinct_inputs(self) -> None:
+        args = MODULE.parse_arguments(
+            [
+                "--session",
+                "/tmp/development-session.json",
+                "--run",
+                "/tmp/acceptance-run.json",
+            ]
+        )
+
+        self.assertEqual(args.session, "/tmp/development-session.json")
+        self.assertEqual(args.run, "/tmp/acceptance-run.json")
+
     def test_main_rejects_before_loading_evidence_without_a_session(self) -> None:
         with patch.object(
             sys,
@@ -53,6 +66,34 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         admission.assert_called_once_with(
             MODULE.REPO_ROOT,
             None,
+            "gap",
+        )
+
+    def test_main_passes_session_separately_from_acceptance_run(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "acceptance-gap-detect.py",
+                "--session",
+                "session.json",
+                "--run",
+                "run.json",
+            ],
+        ), patch.object(
+            MODULE,
+            "require_acceptance_admission",
+            side_effect=MODULE.AcceptanceAdmissionError("STOP_AFTER_ADMISSION"),
+        ) as admission, patch.object(
+            sys,
+            "stderr",
+        ):
+            exit_code = MODULE.main()
+
+        self.assertEqual(exit_code, 2)
+        admission.assert_called_once_with(
+            MODULE.REPO_ROOT,
+            "session.json",
             "gap",
         )
 

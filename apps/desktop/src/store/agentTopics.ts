@@ -24,10 +24,18 @@ interface TopicTitleHistory {
 export type TopicSearchMode = 'title' | 'content';
 export type TopicSortBy = 'updated_at' | 'created_at';
 
+export interface AgentTopicLoadError {
+  message: string;
+  reason: string;
+  failedAt: string;
+  retryable: true;
+}
+
 interface AgentTopicState {
   topicsByAgentId: Record<string, AgentTopic[]>;
   activeAgentId: string;
   loadingAgentIds: Record<string, boolean>;
+  loadErrorsByAgentId: Record<string, AgentTopicLoadError | undefined>;
   generatingTitleKeys: Record<string, boolean>;
   titleHistoryByKey: Record<string, TopicTitleHistory>;
   lastError?: string;
@@ -40,6 +48,7 @@ interface AgentTopicState {
   reconcileSelectedAgentTopics: (reason?: string) => Promise<void>;
   upsertTopics: (agentId: string, sessions: Session[]) => void;
   createDraftTopic: (agentId: string, agentName: string, title: string) => AgentTopic;
+  ensureDraftTopic: (agentId: string, agentName: string, title: string) => AgentTopic;
   promoteDraftTopic: (agentId: string, draftKey: string, session: Session) => void;
   deleteTopic: (key: string) => Promise<void>;
   renameTopic: (key: string, title: string) => Promise<void>;
@@ -108,10 +117,13 @@ function findSelectedAgentId(): string {
   return agents.find((agent) => agent.name === selectedAgent)?.id || '';
 }
 
+const topicLoadsByAgentId = new Map<string, Promise<AgentTopic[]>>();
+
 export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopics', (set, get) => ({
   topicsByAgentId: {},
   activeAgentId: '',
   loadingAgentIds: {},
+  loadErrorsByAgentId: {},
   generatingTitleKeys: {},
   titleHistoryByKey: {},
   searchQuery: '',
@@ -120,44 +132,85 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
 
   getTopicsForAgent: (agentId: string) => get().topicsByAgentId[agentId] || [],
 
-  loadTopicsForAgent: async (agentId: string, reason = 'manual') => {
-    if (!agentId) return [];
-    log.info('agentTopics', 'loading agent topics', { agentId, reason });
-    set((state) => ({
-      activeAgentId: agentId,
-      loadingAgentIds: { ...state.loadingAgentIds, [agentId]: true },
-      lastError: undefined,
-    }));
-    try {
-      const sessions = await chatService.listAgentSessions(agentId);
-      const existingByKey = new Map((get().topicsByAgentId[agentId] || []).map((topic) => [topic.key, topic]));
-      const drafts = (get().topicsByAgentId[agentId] || []).filter((topic) =>
-        isAgentDraftKey(topic.key),
-      );
-      const topics = [
-        ...drafts,
-        ...sessions.map((session) => normalizeTopic(session, existingByKey.get(session.key))),
-      ];
-      set((state) => ({
-        topicsByAgentId: { ...state.topicsByAgentId, [agentId]: topics },
-        loadingAgentIds: { ...state.loadingAgentIds, [agentId]: false },
-      }));
-      return topics;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log.error('agentTopics', 'failed to load agent topics', { agentId, reason, error: message });
-      set((state) => ({
-        loadingAgentIds: { ...state.loadingAgentIds, [agentId]: false },
-        lastError: message,
-      }));
-      return [];
+  loadTopicsForAgent: (agentId: string, reason = 'manual') => {
+    if (!agentId) {
+      return Promise.reject(new Error('Agent id is required to load topics'));
     }
+    const inFlight = topicLoadsByAgentId.get(agentId);
+    if (inFlight) return inFlight;
+
+    const load = (async () => {
+      log.info('agentTopics', 'loading agent topics', { agentId, reason });
+      set((state) => {
+        const loadErrorsByAgentId = { ...state.loadErrorsByAgentId };
+        delete loadErrorsByAgentId[agentId];
+        return {
+          activeAgentId: agentId,
+          loadingAgentIds: { ...state.loadingAgentIds, [agentId]: true },
+          loadErrorsByAgentId,
+          lastError: undefined,
+        };
+      });
+      try {
+        const sessions = await chatService.listAgentSessions(agentId);
+        const existingByKey = new Map((get().topicsByAgentId[agentId] || []).map((topic) => [topic.key, topic]));
+        const drafts = (get().topicsByAgentId[agentId] || []).filter((topic) =>
+          isAgentDraftKey(topic.key),
+        );
+        const topics = [
+          ...drafts,
+          ...sessions.map((session) => normalizeTopic(session, existingByKey.get(session.key))),
+        ];
+        set((state) => ({
+          topicsByAgentId: { ...state.topicsByAgentId, [agentId]: topics },
+          loadingAgentIds: { ...state.loadingAgentIds, [agentId]: false },
+        }));
+        return topics;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const loadError: AgentTopicLoadError = {
+          message,
+          reason,
+          failedAt: new Date().toISOString(),
+          retryable: true,
+        };
+        log.error('agentTopics', 'failed to load agent topics', { agentId, reason, error: message });
+        set((state) => ({
+          loadingAgentIds: { ...state.loadingAgentIds, [agentId]: false },
+          loadErrorsByAgentId: {
+            ...state.loadErrorsByAgentId,
+            [agentId]: loadError,
+          },
+          lastError: message,
+        }));
+        throw error;
+      }
+    })();
+
+    topicLoadsByAgentId.set(agentId, load);
+    void load.then(
+      () => {
+        if (topicLoadsByAgentId.get(agentId) === load) {
+          topicLoadsByAgentId.delete(agentId);
+        }
+      },
+      () => {
+        if (topicLoadsByAgentId.get(agentId) === load) {
+          topicLoadsByAgentId.delete(agentId);
+        }
+      },
+    );
+    return load;
   },
 
   reconcileSelectedAgentTopics: async (reason = 'reconcile') => {
     const agentId = findSelectedAgentId();
     if (!agentId) return;
-    await get().loadTopicsForAgent(agentId, reason);
+    try {
+      await get().loadTopicsForAgent(agentId, reason);
+    } catch {
+      // The per-Agent retryable error is already projected by loadTopicsForAgent.
+    }
   },
 
   upsertTopics: (agentId: string, sessions: Session[]) => {
@@ -195,6 +248,13 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
       },
     }));
     return topic;
+  },
+
+  ensureDraftTopic: (agentId: string, agentName: string, title: string) => {
+    const existingDraft = (get().topicsByAgentId[agentId] || []).find((topic) =>
+      isAgentDraftKey(topic.key),
+    );
+    return existingDraft ?? get().createDraftTopic(agentId, agentName, title);
   },
 
   promoteDraftTopic: (agentId: string, draftKey: string, session: Session) => {
@@ -369,10 +429,12 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
   },
 
   resetProjection: () => {
+    topicLoadsByAgentId.clear();
     set({
       topicsByAgentId: {},
       activeAgentId: '',
       loadingAgentIds: {},
+      loadErrorsByAgentId: {},
       generatingTitleKeys: {},
       titleHistoryByKey: {},
       lastError: undefined,

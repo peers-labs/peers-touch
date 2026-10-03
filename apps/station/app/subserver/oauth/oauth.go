@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -22,33 +24,82 @@ import (
 
 type oauthURL struct{ name, path string }
 
+const oauthExpirySweepInterval = time.Minute
+
 func (s oauthURL) SubPath() string { return s.path }
 func (s oauthURL) Name() string    { return s.name }
 
 type oauthSubServer struct {
+	mu             sync.Mutex
 	addrs          []string
 	status         server.Status
 	service        *oauthService
 	legacyDatabase func(context.Context) (*gorm.DB, error)
 	jwtWrapper     server.Wrapper
+	expiryCancel   context.CancelFunc
+	expiryDone     chan struct{}
 }
 
 func (s *oauthSubServer) Init(ctx context.Context, opts ...option.Option) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.status = server.StatusStarting
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 	return nil
 }
 func (s *oauthSubServer) Start(ctx context.Context, opts ...option.Option) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.service.SweepExpired(ctx); err != nil {
+		s.status = server.StatusError
+		return err
+	}
+	if s.expiryCancel == nil {
+		sweepContext, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		s.expiryCancel = cancel
+		s.expiryDone = done
+		go func() {
+			defer close(done)
+			s.runExpirySweep(sweepContext)
+		}()
+	}
 	s.status = server.StatusRunning
 	return nil
 }
-func (s *oauthSubServer) Stop(ctx context.Context) error { s.status = server.StatusStopped; return nil }
-func (s *oauthSubServer) Status() server.Status          { return s.status }
-func (s *oauthSubServer) Name() string                   { return "oauth" }
-func (s *oauthSubServer) Type() server.SubserverType     { return server.SubserverTypeHTTP }
+func (s *oauthSubServer) Stop(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.expiryCancel != nil {
+		s.expiryCancel()
+		<-s.expiryDone
+		s.expiryCancel = nil
+		s.expiryDone = nil
+	}
+	s.status = server.StatusStopped
+	return nil
+}
+func (s *oauthSubServer) Status() server.Status      { return s.status }
+func (s *oauthSubServer) Name() string               { return "oauth" }
+func (s *oauthSubServer) Type() server.SubserverType { return server.SubserverTypeHTTP }
 func (s *oauthSubServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
+}
+
+func (s *oauthSubServer) runExpirySweep(ctx context.Context) {
+	ticker := time.NewTicker(oauthExpirySweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := s.service.SweepExpired(ctx); err != nil {
+				logger.Errorf(ctx, "OAuth expiry sweep failed: %v", err)
+			}
+		}
+	}
 }
 
 func (s *oauthSubServer) Handlers() []server.Handler {
@@ -100,19 +151,22 @@ func NewOAuthSubServer(opts ...option.Option) server.Subserver {
 	database := func(ctx context.Context) (*gorm.DB, error) {
 		return store.GetRDS(ctx)
 	}
-	repository := newGormOAuthRepository(database)
 	return &oauthSubServer{
 		addrs:          []string{},
 		status:         server.StatusStopped,
 		legacyDatabase: database,
-		service: newOAuthService(
-			repository,
-			newHTTPProviderExchange(),
-			stationAccessCoordinator{},
-			stationActorResolver{},
-			stationSessionCredentialIssuer{},
-		),
+		service:        newStationOAuthService(database),
 	}
+}
+
+func newStationOAuthService(database func(context.Context) (*gorm.DB, error)) *oauthService {
+	return newOAuthService(
+		newGormOAuthRepository(database),
+		newHTTPProviderExchange(),
+		stationAccessCoordinator{},
+		stationActorResolver{},
+		stationSessionCredentialIssuer{},
+	)
 }
 
 func (s *oauthSubServer) startOAuthAttempt(

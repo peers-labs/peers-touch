@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   accessSubmitLogin: vi.fn(),
   ensureStationSession: vi.fn(),
   authLogout: vi.fn(),
+  authRestoreSession: vi.fn(),
+  stationBindingComplete: vi.fn(),
   markLocalIdentityAction: vi.fn(),
   runIdentityPipeline: vi.fn(),
 }));
@@ -15,8 +17,19 @@ vi.mock('../services/desktop_api', () => ({
     accessSubmitLogin: mocks.accessSubmitLogin,
     ensureStationSession: mocks.ensureStationSession,
     authLogout: mocks.authLogout,
+    authRestoreSession: mocks.authRestoreSession,
+    stationBindingComplete: mocks.stationBindingComplete,
   },
-  AuthCommandException: class AuthCommandException extends Error {},
+  AuthCommandException: class AuthCommandException extends Error {
+    code: string;
+    details?: Record<string, unknown>;
+
+    constructor(error: { code: string; message: string; details?: Record<string, unknown> }) {
+      super(error.message);
+      this.code = error.code;
+      this.details = error.details;
+    }
+  },
 }));
 
 vi.mock('../services/identity_event', () => ({
@@ -27,6 +40,7 @@ vi.mock('../services/identityPipeline', () => ({
   runIdentityPipeline: mocks.runIdentityPipeline,
 }));
 
+const { AuthCommandException } = await import('../services/desktop_api');
 const { useSessionStore } = await import('./session');
 
 const authenticatedResponse = {
@@ -102,7 +116,7 @@ describe('session authentication convergence', () => {
 
   it.each([
     ['password login', () => useSessionStore.getState().loginWithPassword('alice@p.t', 'password')],
-    ['access-gate login', () => useSessionStore.getState().accessSubmitLogin('attempt-1', 'alice@p.t', 'password')],
+    ['access-gate login', () => useSessionStore.getState().accessSubmitLogin('attempt-1', loginGate, 'alice@p.t', 'password')],
     ['OAuth login', () => useSessionStore.getState().loginWithOAuth('github')],
   ])('activates the authenticated session before the identity pipeline for %s', async (_name, login) => {
     useSessionStore.getState().reset();
@@ -124,12 +138,67 @@ describe('session authentication convergence', () => {
 
     expect(mocks.accessStart).toHaveBeenCalledOnce();
     expect(mocks.accessSubmitLogin).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         attempt_id: 'attempt-1',
+        gate_id: loginGate.gateId,
+        gate_type: 2,
+        action_id: loginGate.actionId,
+        schema_revision: loginGate.schemaRevision,
+        schema_digest: loginGate.schemaDigest,
+        submission_id: expect.any(String),
         account: 'alice@p.t',
         password: 'password',
-      },
+      }),
     );
+  });
+
+  it('restores a persisted session and completes station binding', async () => {
+    mocks.authRestoreSession.mockResolvedValue({
+      ...authenticatedResponse,
+      command: 'auth_restore_session',
+      status: 'authenticated',
+    });
+    mocks.stationBindingComplete.mockResolvedValue({
+      phase: 'bound',
+      selected_url: 'http://station.example',
+      bound_url: 'http://station.example',
+    });
+
+    await useSessionStore.getState().restoreSession();
+
+    expect(mocks.authRestoreSession).toHaveBeenCalledOnce();
+    expect(mocks.stationBindingComplete).toHaveBeenCalledOnce();
+    expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:new');
+  });
+
+  it('keeps OAuth acknowledgement recovery pending instead of clearing identity', async () => {
+    const pending = new AuthCommandException({
+      code: 'UNAUTHORIZED',
+      message: 'oauth session activation pending',
+      details: { reason: 'oauth_acknowledgement_pending' },
+    });
+    mocks.authRestoreSession.mockRejectedValueOnce(pending);
+
+    await expect(useSessionStore.getState().restoreSession()).rejects.toBe(pending);
+
+    expect(useSessionStore.getState().authenticated).toBe(true);
+    expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:alice');
+    expect(useSessionStore.getState().restoring).toBe(false);
+  });
+
+  it('rolls back the native session when Station binding cannot complete', async () => {
+    const bindingError = new Error('station binding failed');
+    useSessionStore.getState().reset();
+    mocks.stationBindingComplete.mockRejectedValueOnce(bindingError);
+
+    await expect(
+      useSessionStore.getState().accessSubmitLogin(
+        'attempt-1', loginGate, 'alice@p.t', 'password',
+      ),
+    ).rejects.toThrow('station binding failed');
+
+    expect(mocks.authLogout).toHaveBeenCalledOnce();
+    expect(useSessionStore.getState().authenticated).toBe(false);
   });
 
   it('runs the identity pipeline before propagating native cleanup failure', async () => {

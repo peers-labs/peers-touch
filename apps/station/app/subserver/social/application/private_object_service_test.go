@@ -1409,6 +1409,14 @@ func TestPrivateContentSubmitChecksExpiryAfterSerializedLock(t *testing.T) {
 	)
 	fixture.clock.now = prepared.GetPlan().GetExpiresAt().
 		AsTime().Add(-time.Second)
+	preparation, err := fixture.store.LoadSubmitPreparation(
+		ctx,
+		prepared.GetPlan().GetPlanId(),
+		fixture.author.Endpoint.GetActor().GetPtid(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	blockingTransaction := fixture.database.Begin()
 	if blockingTransaction.Error != nil {
@@ -1424,6 +1432,7 @@ func TestPrivateContentSubmitChecksExpiryAfterSerializedLock(t *testing.T) {
 	fixture.service.store = &submitEntryBarrierStore{
 		PrivateContentStore: fixture.store,
 		entered:             entered,
+		preparation:         preparation,
 	}
 	result := make(chan error, 1)
 	go func() {
@@ -1463,7 +1472,16 @@ func TestPrivateContentSubmitChecksExpiryAfterSerializedLock(t *testing.T) {
 
 type submitEntryBarrierStore struct {
 	infrastructure.PrivateContentStore
-	entered chan struct{}
+	entered     chan struct{}
+	preparation infrastructure.SubmitPreparation
+}
+
+func (s *submitEntryBarrierStore) LoadSubmitPreparation(
+	context.Context,
+	string,
+	string,
+) (infrastructure.SubmitPreparation, error) {
+	return s.preparation, nil
 }
 
 func (s *submitEntryBarrierStore) ExecuteSubmit(

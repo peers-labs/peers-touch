@@ -23,6 +23,8 @@ import {
   accessSubmit,
 } from '../../services/mobileCommands';
 
+const TEST_PASSWORD = '1';
+
 vi.mock('../../services/mobileCommands', () => ({
   accessCancel: vi.fn(),
   accessDecision: vi.fn(),
@@ -123,7 +125,7 @@ describe('Station-advertised credential actions', () => {
         },
         {
           gateId: 'auth.login.camel',
-          type: 2,
+          gateType: 2,
           state: 2,
           alternativeActions: [{
             actionId: 'auth.oauth',
@@ -152,6 +154,7 @@ describe('Station-advertised credential actions', () => {
         schemaDigest: 'b'.repeat(64),
       },
     ]);
+    expect(decision.gates[1].type).toBe(2);
     expect(decision.gates[1].alternativeActions).toEqual([{
       actionId: 'auth.oauth',
       type: 'ACCESS_GATE_TYPE_AUTH_OAUTH',
@@ -189,7 +192,7 @@ describe('Station-advertised credential actions', () => {
       attemptId: 'attempt-1',
       gate: loginGate,
       email: 'alice@example.test',
-      password: 'secret',
+      password: TEST_PASSWORD,
       submissionId: 'submission-1',
     })).resolves.toMatchObject({
       decision: { state: 'ACCESS_DECISION_STATE_GRANTED' },
@@ -209,7 +212,7 @@ describe('Station-advertised credential actions', () => {
       input: {
         kind: 'login',
         email: 'alice@example.test',
-        password: 'secret',
+        password: TEST_PASSWORD,
       },
     });
     expect(JSON.stringify((await vi.mocked(accessSubmit).mock.results[0].value))).not.toContain(
@@ -239,7 +242,7 @@ describe('Station-advertised credential actions', () => {
       attemptId: 'attempt-retry',
       gate: loginGate,
       email: 'alice@example.test',
-      password: 'secret',
+      password: TEST_PASSWORD,
     };
 
     await expect(submitStationLoginGate(input)).rejects.toThrow('response lost');

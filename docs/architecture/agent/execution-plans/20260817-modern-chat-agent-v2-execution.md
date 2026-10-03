@@ -45,8 +45,8 @@ Reviewed runtime matrix:
 
 - `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml`
 - ID `modern-chat-agent-v2-runtime-matrix`
-- version `2026-09-21.2`
-- SHA-256 `4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c`
+- version `2026-10-01.1`
+- SHA-256 `4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142`
 
 ### 1.1 2026-09-16 Product-First Sequencing Amendment
 
@@ -659,7 +659,7 @@ python3 tooling/scripts/expand-agent-v2-runtime-matrix.py \
   --check \
   docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml
 printf '%s  %s\n' \
-  '4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c' \
+  '4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142' \
   'docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml' \
   | shasum -a 256 -c -
 test -x apps/mobile/node_modules/.bin/protoc-gen-es
@@ -1198,7 +1198,7 @@ and zero local-path leakage.
 - The first unchanged G-F run
   `20260909T092206777723Z-b50ac4f18635f12f4b7e91213e3ce332`
   failed closed before AS-F06 because the invocation omitted its documented
-  `PT_AGENT_V2_ALLOW_STATION_RESTART=1` authorization. Cleanup passed.
+  `PT_AGENT_ALLOW_STATION_RESTART=1` authorization. Cleanup passed.
 - The authorized G-F run
   `20260909T093249009857Z-8249ea00d31ec1c6803823fd36fa7cf3`
   advanced to Browser AS-F04 and failed when the Browser gateway reported
@@ -1665,7 +1665,7 @@ and zero local-path leakage.
     unchanged-source rerun
     `20260914T151213561983Z-57306baff0e2d528ecd7321dc0f6182a`
     completed AS-F05 and stopped only because the invocation omitted the
-    documented `PT_AGENT_V2_ALLOW_STATION_RESTART=1`. Fully authorized run
+    documented `PT_AGENT_ALLOW_STATION_RESTART=1`. Fully authorized run
     `20260914T152422560360Z-6b640c89e4e1afdc1d2644d666dbc12a`
     crossed both AS-F05 locales and AS-F06, then exposed a transient Browser
     English `BASE-INVALID_REFERENCE` resend timeout. A clean instrumented
@@ -2083,17 +2083,15 @@ and zero local-path leakage.
     Station message, queue, Conversation-version, Turn-trace, or provider-call
     delta. Provider, Conversation, Fixture, processes, ports, storage, and
     provisioner resources were restored cleanly.
-  - `BASE-RESUME_UNAVAILABLE` remains source-incomplete. The accepted product
-    semantics require explicit `Confirm reset` followed by
-    `ResetConversationRuntime`; the current frozen profile intentionally does
-    not advertise external Agent runtimes and the production reset command is
-    not implemented. Do not map direct-model retry failures to this cell or
-    mutate an external-session epoch before confirmation.
-  - `BASE-RESUME_UNAVAILABLE` is parked at
-    `PRODUCT_AMENDMENT_REQUIRED`: sections 2 and F2 explicitly forbid
-    implementing or advertising P12 `EXTERNAL_AGENT` in this V2 scope, while
-    the error cell requires that stateful runtime's destructive reset
-    lifecycle. The cell cannot be made executable by a direct-model shim.
+  - `BASE-RESUME_UNAVAILABLE` is owned by MCA-P12 and MCA-D29. The 419-cell
+    matrix preserves its tuple count by moving this cell from the Direct Model
+    rows to dedicated Desktop and Browser external-runtime rows. The runtime is
+    advertised only when the complete session adapter is healthy.
+  - The executable closure requires the real
+    `RUNTIME_RESUME_UNAVAILABLE -> Confirm reset ->
+    ResetConversationRuntime` lifecycle. Direct Model retry remains
+    inadmissible evidence, and the old session, epoch, and home remain
+    unchanged until confirmation.
 - **SC3 split**:
   - `BASE-PERMISSION_DENIED` is parked at `DESIGN_AMENDMENT_REQUIRED`.
     Client capability leases expose only a permission state; no authoritative
@@ -5386,7 +5384,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   exact-source to profile `two`. Run
   `20260829T211516341470Z-bded0cbd9862cbe09dc0273d73bf3a2a`
   reached Browser AS-F06 and then failed closed before its destructive Station
-  restart because `PT_AGENT_V2_ALLOW_STATION_RESTART=1` was not present in the
+  restart because `PT_AGENT_ALLOW_STATION_RESTART=1` was not present in the
   runner environment. The immutable result is `PARTIAL / UNPROVEN`; cleanup,
   redaction, runtime storage removal, and release of ports `3130`, `3131`,
   `3310`, `3311`, `4445`, and `4446` passed. This is an execution-environment
@@ -6117,7 +6115,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `20260830T203842372359Z-3e8aa65f2ac7ddefb381dbabaf74709e`
   passed the AS-F03 prefix and retained fully clean Native/Browser teardown,
   then failed at Browser AS-F06 because the invocation omitted the required
-  `PT_AGENT_V2_ALLOW_STATION_RESTART=1` authorization. This is an operator
+  `PT_AGENT_ALLOW_STATION_RESTART=1` authorization. This is an operator
   invocation defect, not product evidence. The next run must use the documented
   restart authorization while keeping profile `two` serially leased.
 - Authorized exact-source run

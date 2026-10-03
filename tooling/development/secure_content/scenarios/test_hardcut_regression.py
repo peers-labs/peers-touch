@@ -129,7 +129,7 @@ class HardcutRegressionScenarioTest(unittest.TestCase):
         )
         android_chat = (
             "secure-content-hardcut-android-alice",
-            "secure-content-hardcut-android-bob",
+            "secure-content-hardcut-android-remote_bob",
         )
 
         self.assertEqual(

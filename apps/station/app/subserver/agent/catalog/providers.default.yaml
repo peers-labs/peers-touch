@@ -211,6 +211,26 @@ providers:
         enabled: true
         context_window: 128000
         capabilities: [text-input, text-output, streaming, native-tools]
+  - id: external-agent
+    name: External Agent
+    description: Stateful session runtime managed by the Station
+    enabled: true
+    builtin: true
+    show_checker: false
+    show_api_key: false
+    protocol: session-cli-v1
+    discovery: environment
+    home_url: ""
+    api_key_url: ""
+    default_base_url: ""
+    runtime_kind: external-agent
+    models:
+      - id: default
+        display_name: Default
+        type: chat
+        enabled: true
+        context_window: 200000
+        capabilities: [text-input, text-output, streaming, external-resume]
   - id: codex-cli
     name: Codex CLI
     description: Local Codex CLI adapter running in the Agent workspace
@@ -268,7 +288,7 @@ providers:
   - id: trae-cli
     name: TRAE CLI
     description: Local TRAE CLI adapter running in the Agent workspace
-    enabled: false
+    enabled: true
     builtin: true
     show_checker: false
     show_api_key: false
@@ -280,4 +300,10 @@ providers:
     runtime_kind: cli
     cli_command: traecli --json exec --skip-git-repo-check -
     models_command: traecli debug models
-    models: []
+    models:
+      - id: default
+        display_name: Default
+        type: chat
+        enabled: true
+        context_window: 200000
+        capabilities: [text-input, text-output, streaming]

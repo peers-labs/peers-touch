@@ -3,6 +3,7 @@ set -euo pipefail
 
 host=""
 root=""
+workspace=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --host)
@@ -11,6 +12,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --root)
       root="${2:-}"
+      shift 2
+      ;;
+    --workspace)
+      workspace="${2:-}"
       shift 2
       ;;
     *)
@@ -34,8 +39,14 @@ else
   root="$(cd "$root" && pwd -P)"
 fi
 
-python3 "$root/tooling/scripts/agent-integration-control.py" \
-  install --root "$root" --host "$host"
+args=(install --root "$root" --host "$host")
+if [[ -n "$workspace" ]]; then
+  args+=(--workspace "$workspace")
+fi
+python3 "$root/tooling/scripts/agent-integration-control.py" "${args[@]}"
 
-python3 "$root/tooling/scripts/agent-integration-audit.py" \
-  --root "$root" --host "$host"
+audit_args=(--root "$root" --host "$host")
+if [[ -n "$workspace" ]]; then
+  audit_args+=(--workspace "$workspace")
+fi
+python3 "$root/tooling/scripts/agent-integration-audit.py" "${audit_args[@]}"

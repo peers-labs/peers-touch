@@ -73,9 +73,9 @@ def source_receipt(
             "kind": "source-checkpoint-publication-receipt",
             "state": "COMPLETE",
             "purpose": "SOURCE_OWNER_CHECKPOINT",
-            "checkpoint_id": "w12a-source-checkpoint",
+            "checkpoint_id": "w12d-source-checkpoint",
             "plan_id": PLAN_ID,
-            "task_id": "W12A",
+            "task_id": "W12D",
             "workspace_id": WORKSPACE_ID,
             "source_commit": source_commit,
             "source_tree": "8" * 40,
@@ -458,20 +458,20 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             "head": COMMIT,
         }
         self.declarations = {
-            "secure-content-w12a": self._declaration(
-                "secure-content-w12a",
-                "W12A",
+            "secure-content-w12d": self._declaration(
+                "secure-content-w12d",
+                "W12D",
                 "c" * 64,
             ),
             "secure-content-w12a-four": self._profile_declaration(
                 "secure-content-w12a-four",
-                "W12A",
+                "W12D",
                 "d" * 64,
                 "four",
             ),
             "secure-content-w12a-five-arm": self._profile_declaration(
                 "secure-content-w12a-five-arm",
-                "W12A",
+                "W12D",
                 "e" * 64,
                 "fiveArm",
             ),
@@ -568,12 +568,17 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         ]
         return value
 
-    def _owner(self) -> SchemaActivationOwner:
+    def _owner(
+        self,
+        *,
+        profile_declaration_loader: Any = None,
+    ) -> SchemaActivationOwner:
         return SchemaActivationOwner(
             repo_root=self.repo_root,
             result_root=self.result_root,
             identity_loader=lambda: copy.deepcopy(self.identity),
             declaration_loader=lambda item: copy.deepcopy(self.declarations[item]),
+            profile_declaration_loader=profile_declaration_loader,
             clean_checker=lambda: None,
             source_checkpoint_runner=self.source_runner,
             maintenance_boundary=self.boundary,
@@ -616,6 +621,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
 
         self.assertEqual("PASS", result["status"])
         self.assertEqual(COMMIT, result["generation_id"])
+        self.assertEqual("W12D", result["workstream_id"])
         source_directory = self.result_root / "W12A" / "source" / COMMIT
         self.assertEqual(
             0o600,
@@ -633,6 +639,31 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         with self.assertRaises(ArtifactConflict):
             self._freeze()
         self.assertEqual(1, len(self.source_runner.requests))
+
+    def test_source_freeze_uses_explicit_reopened_work_item(self) -> None:
+        work_item_id = "secure-content-w12d-reopened"
+        self.declarations[work_item_id] = self._declaration(
+            work_item_id,
+            "W12D",
+            "1" * 64,
+        )
+        self.source_runner.declaration_digest = "1" * 64
+
+        result = self.owner.source_freeze(
+            generation_id=COMMIT,
+            budget_seconds=7200,
+            work_item_id=work_item_id,
+        )
+
+        self.assertEqual("PASS", result["status"])
+        self.assertEqual(
+            work_item_id,
+            self.source_runner.requests[0]["work_item_id"],
+        )
+        self.assertEqual(
+            self.declarations[work_item_id]["declarationDigest"],
+            self.source_runner.requests[0]["declaration_digest"],
+        )
 
     def test_source_checkpoint_reads_the_canonical_development_session(self) -> None:
         commands: list[list[str]] = []
@@ -652,10 +683,10 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                             "eventDigest": "9" * 64,
                             "state": {
                                 "state": "CHECKPOINTED",
-                                "sessionId": "w12a-source-checkpoint",
-                                "workItemId": "secure-content-w12a",
+                                "sessionId": "w12d-source-checkpoint",
+                                "workItemId": "secure-content-w12d",
                                 "planId": PLAN_ID,
-                                "taskId": "W12A",
+                                "taskId": "W12D",
                                 "workspaceId": WORKSPACE_ID,
                                 "branch": "feat/federation",
                                 "source": {
@@ -680,8 +711,8 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             {
                 "purpose": "SOURCE_OWNER_CHECKPOINT",
                 "plan_id": PLAN_ID,
-                "task_id": "W12A",
-                "work_item_id": "secure-content-w12a",
+                "task_id": "W12D",
+                "work_item_id": "secure-content-w12d",
                 "workspace_id": WORKSPACE_ID,
                 "branch": "feat/federation",
                 "source_commit": COMMIT,
@@ -694,7 +725,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             [
                 "make",
                 "dev-session-status",
-                "WORK_ITEM=secure-content-w12a",
+                "WORK_ITEM=secure-content-w12d",
             ],
             commands[0],
         )
@@ -716,7 +747,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         self.assertFalse((self.result_root / "W12A").exists())
 
     def test_source_freeze_rejects_runtime_claims(self) -> None:
-        self.declarations["secure-content-w12a"]["runtimeClaims"] = [
+        self.declarations["secure-content-w12d"]["runtimeClaims"] = [
             {
                 "kind": "station.reset",
                 "resourceId": "station-four-social-private",
@@ -732,6 +763,8 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         result = self._run("four")
 
         self.assertEqual("CANONICAL_SCHEMA_ACTIVE_ONLY", result["claim"])
+        self.assertEqual("W12A-FOUR", result["workstream_id"])
+        self.assertEqual("W12D", result["task_id"])
         run_directory = (
             self.result_root
             / "W12A"
@@ -790,6 +823,25 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             self.deployment_runner.requests[0]["reset_manifest_digest"],
         )
 
+    def test_profile_run_uses_the_profile_declaration_owner(self) -> None:
+        declaration_loader = mock.Mock(
+            return_value=copy.deepcopy(
+                self.declarations["secure-content-w12a-four"]
+            )
+        )
+        self.owner = self._owner(
+            profile_declaration_loader=declaration_loader,
+        )
+        self._freeze()
+
+        result = self._run("four")
+
+        self.assertEqual("PASS", result["status"])
+        declaration_loader.assert_called_once_with(
+            "secure-content-w12a-four",
+            "W12A-FOUR",
+        )
+
     def test_five_arm_cannot_run_before_four(self) -> None:
         self._freeze()
 
@@ -810,6 +862,8 @@ class SchemaActivationOwnerTest(unittest.TestCase):
 
         self.assertEqual(AGGREGATE_RESULT_KIND, aggregate["kind"])
         self.assertEqual("CANONICAL_SCHEMA_ACTIVE_ONLY", aggregate["claim"])
+        self.assertEqual("W12D", aggregate["workstream_id"])
+        self.assertEqual("W12D", aggregate["task_id"])
         self.assertEqual(source["result_digest"], aggregate["source_freeze_digest"])
         self.assertEqual(
             [four["result_digest"], five_arm["result_digest"]],
@@ -1002,9 +1056,16 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         self.assertEqual(2, len(self.boundary.invocations))
         self.assertEqual(2, len(accepted_before_replay))
         self.assertEqual(1, len(self.deployment_runner.requests))
+        self.declarations["secure-content-w12a-four"][
+            "declarationDigest"
+        ] = "f" * 64
         result = self._run("four", reset_id="lost-complete")
 
         self.assertEqual("PASS", result["status"])
+        self.assertEqual(
+            accepted_before_replay[-1]["declaration_digest"],
+            result["declaration_digest"],
+        )
         self.assertEqual(3, len(self.boundary.invocations))
         self.assertEqual(
             accepted_before_replay,
@@ -1038,6 +1099,43 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             accepted_before_replay[-1]["invocation_id"],
             result["invocation_ref"]["path"].split("/")[-2],
         )
+
+    def test_resume_from_objects_deleted_accepts_new_terminal_invocation(
+        self,
+    ) -> None:
+        self._freeze()
+        self.deployment_runner.fail = True
+        with self.assertRaisesRegex(
+            BoundaryUnavailable,
+            "reviewed Station deployment failed",
+        ):
+            self._run("four", reset_id="resume-after-deploy-failure")
+
+        self.deployment_runner.fail = False
+        result = self._run("four", reset_id="resume-after-deploy-failure")
+
+        self.assertEqual("PASS", result["status"])
+        self.assertEqual(2, len(self.boundary.invocations))
+        self.assertEqual(1, len(self.deployment_runner.requests))
+        terminal_invocation = self.boundary.invocations[-1]
+        self.assertEqual(
+            terminal_invocation["declaration_digest"],
+            result["declaration_digest"],
+        )
+        replay_response = json.loads(
+            (
+                self.result_root
+                / "W12A"
+                / "activation"
+                / COMMIT
+                / "four"
+                / "resume-after-deploy-failure"
+                / "invocations"
+                / terminal_invocation["invocation_id"]
+                / "response.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertFalse(replay_response["exact_replay"])
 
     def test_resumed_complete_response_requires_exact_replay(self) -> None:
         self._freeze()
@@ -1425,7 +1523,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                     ResetIntent: infrastructure.ResetIntentSchemaActivation,
                     ResetManifestDigest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                     PlanID: infrastructure.SecureContentResetPlanID,
-                    TaskID: "W12A",
+                    TaskID: "W12D",
                     DeclarationDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                     SourceCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     WorkspaceID: "9eb2cb904c9ae460",
@@ -1545,7 +1643,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             + "b" * 64
             + '","schema_version":1,"source_commit":"'
             + "a" * 40
-            + '","task_id":"W12A",'
+            + '","task_id":"W12D",'
             '"workspace_id":"9eb2cb904c9ae460"}'
         )
         self.assertEqual(
@@ -1618,7 +1716,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                 manifest=manifest,
                 declaration=self.declarations["secure-content-w12a-four"],
                 target=PROFILE_TARGETS["four"],
-                task_id="W12A",
+                task_id="W12D",
                 now=AT,
             )
 
@@ -1637,7 +1735,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                 manifest=manifest,
                 declaration=self.declarations["secure-content-w12a-four"],
                 target=PROFILE_TARGETS["four"],
-                task_id="W12A",
+                task_id="W12D",
                 now=AT,
             )
 

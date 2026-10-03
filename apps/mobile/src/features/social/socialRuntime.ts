@@ -220,6 +220,10 @@ export async function searchSocialPeople(query: string): Promise<ActorSearchResu
   return [...state.peopleSearchResults];
 }
 
+export function readSocialPeopleSearchFederations() {
+  return [...useSocialStore.getState().peopleSearchFederations];
+}
+
 export async function reconcileSocialRuntimeDomains(
   reason: string,
   domains: readonly ProjectionDomain[],

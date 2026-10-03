@@ -25,6 +25,7 @@ import {
   FolderPlus,
   FolderOpen,
   FolderMinus,
+  RefreshCw,
 } from 'lucide-react';
 import { theme, Modal, Popover } from 'antd';
 import type { GlobalToken } from 'antd';
@@ -42,7 +43,7 @@ import {
   useActiveAgentTopicSlice,
   useActiveChatSlice,
 } from './agent/useActiveAgentStores';
-import { openAgentChatSession } from '../utils/openAgentChatSession';
+import { openAgentChatSession } from '../services/openAgentChatSession';
 import { usePortalStore } from '../store/portal';
 import { useSessionGroupStore } from '../store/sessionGroups';
 import type { SessionGroup } from '../store/sessionGroups';
@@ -213,6 +214,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     activeAgentId,
     topicsByAgentId,
     loadingAgentIds,
+    loadErrorsByAgentId,
     loadTopicsForAgent,
     createDraftTopic,
     deleteTopic,
@@ -225,6 +227,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     activeAgentId: s.activeAgentId,
     topicsByAgentId: s.topicsByAgentId,
     loadingAgentIds: s.loadingAgentIds,
+    loadErrorsByAgentId: s.loadErrorsByAgentId,
     loadTopicsForAgent: s.loadTopicsForAgent,
     createDraftTopic: s.createDraftTopic,
     deleteTopic: s.deleteTopic,
@@ -275,7 +278,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     if (!currentAgent) {
       return;
     }
-    void loadTopicsForAgent(currentAgent.id, 'sidebar');
+    void loadTopicsForAgent(currentAgent.id, 'sidebar').catch(() => undefined);
   }, [currentAgent, loadTopicsForAgent]);
 
   useEffect(() => {
@@ -295,22 +298,14 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     return () => window.clearTimeout(timer);
   }, [agentTopics, resetSearch, searchAgentMessages, showSearch, topicSearch]);
 
-  const switchSeqRef = useRef(0);
-
   const handleSwitchAgent = useCallback(
     (agent: Agent) => {
-      const seq = switchSeqRef.current + 1;
-      switchSeqRef.current = seq;
       onAgentChanged?.(agent.name);
 
       openAgentChatSession(agent, { reason: 'switch-agent' })
-        .catch(() => {
-          if (switchSeqRef.current !== seq) return;
-          const topic = createDraftTopic(agent.id, agent.name, t('agent.sidebar.newTopic'));
-          void selectSession(topic.key, topic);
-        });
+        .catch(() => undefined);
     },
-    [createDraftTopic, onAgentChanged, selectSession, t],
+    [onAgentChanged],
   );
 
   const handleNewTopic = useCallback(() => {
@@ -481,7 +476,16 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
   const totalTopics = agentTopics.length;
   const loadingTopics = currentAgent ? !!loadingAgentIds[currentAgent.id] : false;
+  const topicLoadError = currentAgent ? loadErrorsByAgentId[currentAgent.id] : undefined;
   const showMessageResults = showSearch && topicSearch.trim().length >= 2;
+  const handleRetryTopics = useCallback(() => {
+    if (!currentAgent) return;
+    void openAgentChatSession(currentAgent, {
+      forceReload: true,
+      draftTitle: t('agent.sidebar.newTopic'),
+      reason: 'sidebar-retry',
+    }).catch(() => undefined);
+  }, [currentAgent, t]);
 
   return (
     <Flexbox height="100%" style={{ background: token.colorBgContainer }}>
@@ -576,6 +580,60 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
             <Settings2 size={13} color={token.colorTextTertiary} />
           )}
         </Flexbox>
+
+        {topicLoadError && (
+          <Flexbox
+            data-pt-agent-topic-load-error={currentAgent?.id}
+            role="alert"
+            gap={6}
+            style={{
+              margin: '0 4px 8px',
+              padding: '8px 10px',
+              borderRadius: 8,
+              background: token.colorErrorBg,
+              color: token.colorErrorText,
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 600 }}>
+              {t('agent.sidebar.topicLoadFailed')}
+            </span>
+            <span
+              title={topicLoadError.message}
+              style={{
+                fontSize: 11,
+                color: token.colorTextSecondary,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {topicLoadError.message}
+            </span>
+            <button
+              data-pt-agent-topic-load-retry
+              type="button"
+              disabled={loadingTopics}
+              onClick={handleRetryTopics}
+              style={{
+                alignSelf: 'flex-start',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: 0,
+                border: 0,
+                background: 'transparent',
+                color: token.colorPrimary,
+                cursor: loadingTopics ? 'default' : 'pointer',
+                font: 'inherit',
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            >
+              <RefreshCw size={12} />
+              {t('agent.sidebar.retryTopicLoad')}
+            </button>
+          </Flexbox>
+        )}
 
         {showMessageResults ? (
           <MessageSearchResults
@@ -842,6 +900,7 @@ function NavItem({
   return (
     <Block
       data-pt-agent-nav={testId}
+      data-pt-agent-session-start={testId === 'start-topic' ? true : undefined}
       horizontal
       align="center"
       clickable

@@ -74,6 +74,21 @@ class ProvisioningError(RuntimeError):
     pass
 
 
+class SuiteRuntimeError(ProvisioningError):
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "detail": self.detail,
+            "result": "FAILED",
+            "proofState": "UNPROVEN",
+        }
+
+
 class ClientBindingError(ProvisioningError):
     def __init__(
         self,

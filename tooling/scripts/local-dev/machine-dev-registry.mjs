@@ -28,6 +28,10 @@ import {
   workspaceStatePath,
 } from '../lib/machine-dev-paths.mjs';
 import { readActiveWorkRecord } from './active-work-store.mjs';
+import {
+  ResourcePlanError,
+  validatePreparedResourceClaim,
+} from './dev-resource-plan.mjs';
 import { processStartIdentity, readLedger } from './dev-work-ledger.mjs';
 import { LIVE_STATES } from './dev-work-schema.mjs';
 import {
@@ -1383,7 +1387,14 @@ function validateRuntimeIntent(
         { ownerAction, resourceKind, resourceId },
       );
     }
-    return { declarationId: `owner-action:${ownerAction}` };
+    return {
+      declaration: {
+        declarationId: `owner-action:${ownerAction}`,
+      },
+      resourcePlanAdmission: {
+        authority: 'owner-action',
+      },
+    };
   }
   const now = options.now ?? new Date();
   const file =
@@ -1425,7 +1436,23 @@ function validateRuntimeIntent(
       },
     );
   }
-  return declaration;
+  let resourcePlanAdmission;
+  try {
+    resourcePlanAdmission = validatePreparedResourceClaim({
+      ...options,
+      workspaceRoot: binding.canonicalRoot,
+      workItemId: declaration.workItemId,
+      declaration,
+      resourceKind,
+      resourceId,
+    });
+  } catch (error) {
+    if (error instanceof ResourcePlanError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
+  return { declaration, resourcePlanAdmission };
 }
 
 export function prepareLease(options) {
@@ -1478,7 +1505,7 @@ export function prepareLease(options) {
       { resourceId },
     );
   }
-  const declaration = validateRuntimeIntent(
+  const runtimeIntent = validateRuntimeIntent(
     options,
     resolved.binding,
     resolved.source,
@@ -1497,7 +1524,8 @@ export function prepareLease(options) {
         resourceId,
         options.home,
       ),
-    declarationId: declaration.declarationId,
+    declarationId: runtimeIntent.declaration.declarationId,
+    resourcePlanAdmission: runtimeIntent.resourcePlanAdmission,
   };
 }
 

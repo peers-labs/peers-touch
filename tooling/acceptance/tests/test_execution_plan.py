@@ -15,6 +15,7 @@ from tooling.acceptance.core.execution_plan import (
     PLAN_COMPLETE,
     PLAN_INVALID,
     ExecutionPlanError,
+    changed_paths_for_plan,
     closure_status_is_complete,
     discover_active_plan,
     load_formal_plan,
@@ -59,6 +60,17 @@ def package_status(
         "branch": "feat/example",
         "workspaceId": workspace,
         "initialHead": "a" * 40,
+        "currentTaskWriteSet": ["tooling/scripts/plan"] if current else [],
+        "sourceClaims": [
+            {
+                "pathPrefix": "tooling/scripts/plan",
+                "mode": "exclusive-write",
+            },
+            {
+                "pathPrefix": "docs/architecture/development-workflow",
+                "mode": "shared-read",
+            },
+        ],
         "currentTaskId": "T1" if current else None,
         "currentTaskPath": "tasks/T1.md" if current else None,
         "currentClosure": "C1" if current else None,
@@ -332,8 +344,69 @@ class ExecutionPlanTest(unittest.TestCase):
         self.assertEqual(plan.plan_format, "package")
         self.assertEqual(plan.current_task_id, "T1")
         self.assertEqual(plan.current_task_path, "tasks/T1.md")
+        self.assertEqual(
+            plan.current_task_write_set,
+            ("tooling/scripts/plan",),
+        )
         self.assertEqual(plan.current_closure, "C1")
         self.assertEqual(plan.gate_ids("closure"), ["cheap-gate"])
+        self.assertEqual(
+            plan.source_claims,
+            (
+                "tooling/scripts/plan",
+                "docs/architecture/development-workflow",
+            ),
+        )
+
+    def test_package_changed_paths_are_limited_to_source_claims(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "plan.md"
+            path.write_text(package_manifest_text("1" * 16), encoding="utf-8")
+            with mock.patch(
+                "tooling.acceptance.core.execution_plan._package_status",
+                return_value=package_status("1" * 16),
+            ):
+                plan = load_formal_plan(path)
+
+        with mock.patch(
+            "tooling.acceptance.core.execution_plan._git",
+            side_effect=[
+                (
+                    "tooling/scripts/plan/planctl.mjs\n"
+                    "apps/station/unrelated.go\n"
+                ),
+                "docs/architecture/development-workflow/design.md\n",
+                "apps/desktop/untracked.ts\n",
+            ],
+        ):
+            paths = changed_paths_for_plan(Path("/repo"), plan)
+
+        self.assertEqual(paths, ["tooling/scripts/plan/planctl.mjs"])
+
+        with mock.patch(
+            "tooling.acceptance.core.execution_plan._git",
+            side_effect=[
+                (
+                    "tooling/scripts/plan/planctl.mjs\n"
+                    "apps/station/unrelated.go\n"
+                ),
+                "docs/architecture/development-workflow/design.md\n",
+                "apps/desktop/untracked.ts\n",
+            ],
+        ):
+            completion_paths = changed_paths_for_plan(
+                Path("/repo"),
+                plan,
+                "completion",
+            )
+
+        self.assertEqual(
+            completion_paths,
+            [
+                "docs/architecture/development-workflow/design.md",
+                "tooling/scripts/plan/planctl.mjs",
+            ],
+        )
 
     def test_blocked_package_has_no_runnable_closure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

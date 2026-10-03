@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 import unittest
 import urllib.error
 import urllib.request
+from unittest.mock import Mock
 
 from tooling.acceptance.gates.agent.governed_tool_development import (
     FIXTURE_CLIPBOARD_TEXT,
@@ -12,6 +14,7 @@ from tooling.acceptance.gates.agent.governed_tool_development import (
     FIXTURE_TOOL_NAME,
     GovernedToolDevelopmentError,
     OpenAIProviderFixture,
+    RemoteProviderBridge,
     ROOT,
     evaluate_governed_tool,
 )
@@ -207,6 +210,56 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
 
         self.assertFalse(fixture.started)
 
+    def test_remote_bridge_resolves_station_container_gateway(self) -> None:
+        bridge = object.__new__(RemoteProviderBridge)
+        bridge.compose_project = "pt-station-two"
+        bridge.compose_service = "station"
+        bridge.transport = Mock()
+        bridge.transport.run_argv.side_effect = [
+            subprocess.CompletedProcess(
+                args=["docker", "ps"],
+                returncode=0,
+                stdout="container-id\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=["docker", "inspect"],
+                returncode=0,
+                stdout="172.21.0.1\n",
+                stderr="",
+            ),
+        ]
+
+        gateway = bridge._resolve_station_gateway()
+
+        self.assertEqual(gateway, "172.21.0.1")
+        self.assertEqual(
+            bridge.transport.run_argv.call_args_list[0].args[0],
+            (
+                "docker",
+                "ps",
+                "-q",
+                "--filter",
+                "label=com.docker.compose.project=pt-station-two",
+                "--filter",
+                "label=com.docker.compose.service=station",
+            ),
+        )
+
+    def test_remote_bridge_parses_compose_project_name(self) -> None:
+        self.assertEqual(
+            RemoteProviderBridge._compose_project_name(
+                "docker compose -p pt-station-two up -d station"
+            ),
+            "pt-station-two",
+        )
+        self.assertEqual(
+            RemoteProviderBridge._compose_project_name(
+                "docker compose --project-name=pt-station-two up"
+            ),
+            "pt-station-two",
+        )
+
     def test_runner_uses_profile_two_reverse_tunnel_and_dedicated_harness(
         self,
     ) -> None:
@@ -320,6 +373,10 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
         self.assertIn(
             "deleteFoundationDisposableRuntimeFixture(runtimeFixture)",
             governed_journey,
+        )
+        self.assertIn(
+            "fixture.providerId.startsWith(fixture.providerPrefix)",
+            harness_source,
         )
         self.assertIn(
             "Number(replay.status) === AgentTurnStatus.COMPLETED",

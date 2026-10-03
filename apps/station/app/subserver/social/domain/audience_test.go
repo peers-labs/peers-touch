@@ -48,9 +48,25 @@ func (v Viewer) inCircles(ids ...uint64) Viewer {
 	return v
 }
 
-func (v Viewer) inGroups(ids ...uint64) Viewer {
-	v.MemberOfGroups = setU64(ids...)
+func (v Viewer) inGroups(ids ...string) Viewer {
+	v.MemberOfGroups = setStrings(ids...)
 	return v
+}
+
+func circleAudience(id uint64) *model.Audience {
+	return &model.Audience{
+		Kind:   model.Audience_CIRCLE,
+		Target: &model.Audience_CircleId{CircleId: id},
+	}
+}
+
+func groupAudience(id string) *model.Audience {
+	return &model.Audience{
+		Kind: model.Audience_GROUP,
+		Target: &model.Audience_GroupConversationId{
+			GroupConversationId: id,
+		},
+	}
 }
 
 const authorID = "did:peers:author"
@@ -157,19 +173,19 @@ func TestCanRead_Friends(t *testing.T) {
 func TestCanRead_Circle(t *testing.T) {
 	const circleID uint64 = 42
 
-	t.Run("missing target_id rejected", func(t *testing.T) {
-		a := &model.Audience{Kind: model.Audience_CIRCLE} // TargetId == 0
+	t.Run("missing circle_id rejected", func(t *testing.T) {
+		a := &model.Audience{Kind: model.Audience_CIRCLE}
 		v := viewer(7, "did:peers:bob").inCircles(circleID)
 		ok, reason := CanRead(v, authorID, a, false)
 		if ok {
-			t.Fatal("CIRCLE without target_id must be denied")
+			t.Fatal("CIRCLE without circle_id must be denied")
 		}
-		if !strings.Contains(reason, "target_id") {
-			t.Fatalf("expected target_id error, got %q", reason)
+		if !strings.Contains(reason, "circle_id") {
+			t.Fatalf("expected circle_id error, got %q", reason)
 		}
 	})
 
-	a := &model.Audience{Kind: model.Audience_CIRCLE, TargetId: circleID}
+	a := circleAudience(circleID)
 
 	t.Run("non-member denied", func(t *testing.T) {
 		v := viewer(7, "did:peers:bob")
@@ -201,18 +217,18 @@ func TestCanRead_Circle(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCanRead_Group(t *testing.T) {
-	const groupID uint64 = 9
+	const groupID = "group-9"
 
-	t.Run("missing target_id rejected", func(t *testing.T) {
+	t.Run("missing group_conversation_id rejected", func(t *testing.T) {
 		a := &model.Audience{Kind: model.Audience_GROUP}
 		v := viewer(7, "did:peers:bob").inGroups(groupID)
 		ok, _ := CanRead(v, authorID, a, false)
 		if ok {
-			t.Fatal("GROUP without target_id must be denied")
+			t.Fatal("GROUP without group_conversation_id must be denied")
 		}
 	})
 
-	a := &model.Audience{Kind: model.Audience_GROUP, TargetId: groupID}
+	a := groupAudience(groupID)
 
 	t.Run("non-member denied", func(t *testing.T) {
 		v := viewer(7, "did:peers:bob")
@@ -307,28 +323,20 @@ func TestCanRead_CustomDeny_BasePublic(t *testing.T) {
 		ActorPtids: []string{"did:peers:eve"},
 	}
 
-	t.Run("listed PTID denied", func(t *testing.T) {
-		v := viewer(7, "did:peers:eve")
-		ok, _ := CanRead(v, authorID, a, false)
+	for _, candidate := range []Viewer{
+		viewer(7, "did:peers:eve"),
+		viewer(8, "did:peers:alice"),
+		anon(),
+	} {
+		ok, reason := CanRead(candidate, authorID, a, false)
 		if ok {
-			t.Fatal("CUSTOM_DENY listed PTID must be denied")
+			t.Fatalf(
+				"CUSTOM_DENY(PUBLIC) result = %v, %q; want rejected",
+				ok,
+				reason,
+			)
 		}
-	})
-
-	t.Run("unlisted PTID falls through to PUBLIC", func(t *testing.T) {
-		v := viewer(7, "did:peers:alice")
-		ok, _ := CanRead(v, authorID, a, false)
-		if !ok {
-			t.Fatal("unlisted PTID must inherit base_kind PUBLIC visibility")
-		}
-	})
-
-	t.Run("anonymous viewer falls through to PUBLIC", func(t *testing.T) {
-		ok, _ := CanRead(anon(), authorID, a, false)
-		if !ok {
-			t.Fatal("anonymous viewer must inherit base_kind PUBLIC")
-		}
-	})
+	}
 }
 
 func TestCanRead_CustomDeny_BaseFollowers(t *testing.T) {
@@ -464,7 +472,7 @@ func TestIsPublic(t *testing.T) {
 		{"nil → public", nil, true},
 		{"public", &model.Audience{Kind: model.Audience_PUBLIC}, true},
 		{"followers", &model.Audience{Kind: model.Audience_FOLLOWERS}, false},
-		{"circle", &model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1}, false},
+		{"circle", circleAudience(1), false},
 		{"self", &model.Audience{Kind: model.Audience_SELF}, false},
 		{"custom_allow", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"x"}}, false},
 		{
@@ -494,19 +502,11 @@ func TestValidateAudience_HappyPaths(t *testing.T) {
 		{"public", &model.Audience{Kind: model.Audience_PUBLIC}},
 		{"followers", &model.Audience{Kind: model.Audience_FOLLOWERS}},
 		{"self", &model.Audience{Kind: model.Audience_SELF}},
-		{"circle", &model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1}},
-		{"group", &model.Audience{Kind: model.Audience_GROUP, TargetId: 1}},
+		{"circle", circleAudience(1)},
+		{"group", groupAudience("group-1")},
 		{
 			"custom_allow",
 			&model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"did:peers:a"}},
-		},
-		{
-			"custom_deny base public",
-			&model.Audience{
-				Kind:       model.Audience_CUSTOM_DENY,
-				BaseKind:   model.Audience_PUBLIC,
-				ActorPtids: []string{"did:peers:a"},
-			},
 		},
 		{
 			"custom_deny base followers",
@@ -540,9 +540,12 @@ func TestValidateAudience_Errors(t *testing.T) {
 	}{
 		{"unspecified", &model.Audience{Kind: model.Audience_KIND_UNSPECIFIED}, "unspecified"},
 		{
-			"public with target_id",
-			&model.Audience{Kind: model.Audience_PUBLIC, TargetId: 1},
-			"target_id",
+			"public with target",
+			&model.Audience{
+				Kind:   model.Audience_PUBLIC,
+				Target: &model.Audience_CircleId{CircleId: 1},
+			},
+			"target",
 		},
 		{
 			"public with actor_ptids",
@@ -554,27 +557,47 @@ func TestValidateAudience_Errors(t *testing.T) {
 			&model.Audience{Kind: model.Audience_PUBLIC, BaseKind: model.Audience_FOLLOWERS},
 			"base_kind",
 		},
-		{"circle missing target", &model.Audience{Kind: model.Audience_CIRCLE}, "target_id"},
+		{"circle missing target", &model.Audience{Kind: model.Audience_CIRCLE}, "circle_id"},
 		{
 			"circle with actor_ptids",
-			&model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1, ActorPtids: []string{"x"}},
+			&model.Audience{
+				Kind:       model.Audience_CIRCLE,
+				Target:     &model.Audience_CircleId{CircleId: 1},
+				ActorPtids: []string{"x"},
+			},
 			"actor_ptids",
 		},
 		{
 			"circle with base_kind",
-			&model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1, BaseKind: model.Audience_PUBLIC},
+			&model.Audience{
+				Kind:     model.Audience_CIRCLE,
+				Target:   &model.Audience_CircleId{CircleId: 1},
+				BaseKind: model.Audience_PUBLIC,
+			},
 			"base_kind",
 		},
-		{"group missing target", &model.Audience{Kind: model.Audience_GROUP}, "target_id"},
+		{"group missing target", &model.Audience{Kind: model.Audience_GROUP}, "group_conversation_id"},
+		{
+			"group with circle target",
+			&model.Audience{
+				Kind:   model.Audience_GROUP,
+				Target: &model.Audience_CircleId{CircleId: 1},
+			},
+			"group_conversation_id",
+		},
 		{
 			"custom_allow empty list",
 			&model.Audience{Kind: model.Audience_CUSTOM_ALLOW},
 			"actor_ptids",
 		},
 		{
-			"custom_allow with target_id",
-			&model.Audience{Kind: model.Audience_CUSTOM_ALLOW, TargetId: 1, ActorPtids: []string{"x"}},
-			"target_id",
+			"custom_allow with target",
+			&model.Audience{
+				Kind:       model.Audience_CUSTOM_ALLOW,
+				Target:     &model.Audience_CircleId{CircleId: 1},
+				ActorPtids: []string{"x"},
+			},
+			"target",
 		},
 		{
 			"custom_allow with base_kind",
@@ -587,23 +610,32 @@ func TestValidateAudience_Errors(t *testing.T) {
 		},
 		{
 			"custom_deny empty list",
-			&model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC},
+			&model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_FOLLOWERS},
 			"actor_ptids",
 		},
 		{
-			"custom_deny with target_id",
+			"custom_deny with target",
 			&model.Audience{
 				Kind:       model.Audience_CUSTOM_DENY,
-				TargetId:   1,
-				BaseKind:   model.Audience_PUBLIC,
+				Target:     &model.Audience_CircleId{CircleId: 1},
+				BaseKind:   model.Audience_FOLLOWERS,
 				ActorPtids: []string{"x"},
 			},
-			"target_id",
+			"target",
 		},
 		{
 			"custom_deny base unspecified",
 			&model.Audience{
 				Kind:       model.Audience_CUSTOM_DENY,
+				ActorPtids: []string{"x"},
+			},
+			"base_kind",
+		},
+		{
+			"custom_deny base public",
+			&model.Audience{
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   model.Audience_PUBLIC,
 				ActorPtids: []string{"x"},
 			},
 			"base_kind",
@@ -736,7 +768,7 @@ func TestValidateForAuthor_AuthorSelfInclusion(t *testing.T) {
 			"custom_deny excludes author",
 			&model.Audience{
 				Kind:       model.Audience_CUSTOM_DENY,
-				BaseKind:   model.Audience_PUBLIC,
+				BaseKind:   model.Audience_FOLLOWERS,
 				ActorPtids: []string{"did:peers:bob"},
 			},
 			true,
@@ -767,7 +799,7 @@ func TestValidateForAuthor_AuthorSelfInclusion(t *testing.T) {
 func TestValidateForAuthor_RequiresAuthorDIDForCustom(t *testing.T) {
 	cases := []*model.Audience{
 		{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"did:peers:bob"}},
-		{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorPtids: []string{"did:peers:bob"}},
+		{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_FOLLOWERS, ActorPtids: []string{"did:peers:bob"}},
 	}
 	for _, a := range cases {
 		t.Run(a.Kind.String(), func(t *testing.T) {
@@ -795,14 +827,14 @@ func TestValidateForAuthor_PublicFollowersSelfNoAuthorRequired(t *testing.T) {
 }
 
 func TestValidateForAuthor_CircleGroupTargetReassertedAfterShape(t *testing.T) {
-	// ValidateAudience already enforces TargetId != 0 — but ValidateForAuthor
+	// ValidateAudience already enforces typed target presence, but ValidateForAuthor
 	// re-asserts it. Both should reject; the test exists to lock in the
 	// belt-and-braces invariant.
 	for _, kind := range []model.Audience_Kind{model.Audience_CIRCLE, model.Audience_GROUP} {
 		t.Run(kind.String(), func(t *testing.T) {
-			err := ValidateForAuthor("did:peers:alice", &model.Audience{Kind: kind, TargetId: 0})
+			err := ValidateForAuthor("did:peers:alice", &model.Audience{Kind: kind})
 			if err == nil {
-				t.Fatal("missing target_id must be rejected")
+				t.Fatal("missing typed target must be rejected")
 			}
 		})
 	}

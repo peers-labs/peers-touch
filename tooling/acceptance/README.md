@@ -31,6 +31,35 @@ run for a changed path, and which artifacts should be produced for human review.
   dataset, window, warmup, build, runtime, and scenario manifest.
 - `reports/` stores local or CI acceptance artifacts and is ignored by git.
 
+## Reusable Suite Runtime
+
+Multi-scenario runtime Tasks declare a closed `runtimeReuse` object in their
+Task Slice. `tooling/acceptance/core/suite_runtime.py` validates the lifecycle
+without importing a business Domain:
+
+- services, actors, accounts, clients, devices, storage, and login are created
+  at Task or Suite scope;
+- after the first Scenario starts, Scenarios are attach-only;
+- namespaced Fixture reset remains Scenario scoped;
+- Harness observations are supporting evidence only;
+- required real UI actions and receiver-visible assertions are recorded
+  separately;
+- one terminal cleanup event closes the Suite;
+- reports expose provisioning count, client launches, warm-reuse rate, action
+  durations, and an integrity digest.
+
+Audit Plan contracts and immutable reports with:
+
+```bash
+python3 tooling/scripts/acceptance-pipeline-audit.py \
+  --plan <plan.md> \
+  --tasks <task-id[,task-id...]> \
+  [--runtime-report <suite-report.json>]
+```
+
+A passing audit establishes lifecycle conformance only. Product
+`FUNCTIONAL_PASS` and formal `PROVEN` still require their declared Gates.
+
 ## Ephemeral Gate Launch Context
 
 Context-enabled Gates declare canonical `argv` plus

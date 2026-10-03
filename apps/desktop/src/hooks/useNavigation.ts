@@ -12,46 +12,6 @@ import {
   type Page,
 } from '../types/navigation';
 
-// #region debug-point A-D:as-f06-page-switch
-function navigationDebugSnapshot(): Record<string, unknown> {
-  const composer =
-    document.querySelector<HTMLElement>('[data-pt-agent-composer]');
-  return {
-    hash: window.location.hash,
-    composerPresent: composer !== null,
-    composerVisible: Boolean(composer?.getClientRects().length),
-    composerPage:
-      composer?.closest<HTMLElement>('[data-page]')?.dataset.page ?? '',
-    pageFrames: Array.from(
-      document.querySelectorAll<HTMLElement>('[data-page]'),
-    ).map((frame) => ({
-      page: frame.dataset.page ?? '',
-      display: frame.style.display,
-      visible: frame.getClientRects().length > 0,
-    })),
-  };
-}
-
-function reportNavigationDebug(
-  hypothesisId: string,
-  stage: string,
-  data: Record<string, unknown> = {},
-): Promise<void> {
-  return fetch('http://127.0.0.1:7791/event', {
-    method: 'POST',
-    body: JSON.stringify({
-      sessionId: 'as-f06-page-switch',
-      runId: 'pre-fix',
-      hypothesisId,
-      location: 'useNavigation.ts:NAVIGATION_REQUESTED',
-      msg: `[DEBUG] ${stage}`,
-      data,
-      ts: Date.now(),
-    }),
-  }).then(() => undefined).catch(() => undefined);
-}
-// #endregion
-
 export function useNavigation(router: HashRouter): Navigation {
   const [settingsNav, setSettingsNav] = useState<SettingsNavState>({});
 
@@ -107,21 +67,9 @@ export function useNavigation(router: HashRouter): Navigation {
   }, [router.setPage]);
 
   useEffect(() => {
-    void reportNavigationDebug(
-      'A',
-      'subscriber-installed',
-      navigationDebugSnapshot(),
-    );
     const unsubscribe = eventBus.subscribe(EVENT.NAVIGATION_REQUESTED, (parsed) => {
       const nav = parsed as ParsedDeepLink;
       if (!nav?.resource) return;
-      if (nav.resource === 'settings') {
-        void reportNavigationDebug(
-          'A-D',
-          'settings-request-consumed',
-          navigationDebugSnapshot(),
-        );
-      }
       switch (nav.resource) {
         case 'cron':
           setSettingsNav({ tab: 'cron' });
@@ -136,18 +84,6 @@ export function useNavigation(router: HashRouter): Navigation {
         case 'settings':
           if (nav.id) setSettingsNav({ tab: nav.id });
           router.setPage('settings');
-          void reportNavigationDebug(
-            'B-D',
-            'settings-router-dispatched',
-            navigationDebugSnapshot(),
-          );
-          window.requestAnimationFrame(() => {
-            void reportNavigationDebug(
-              'B-D',
-              'settings-post-render-frame',
-              navigationDebugSnapshot(),
-            );
-          });
           break;
         case 'channels':
           setSettingsNav({ tab: 'channels' });
@@ -165,11 +101,6 @@ export function useNavigation(router: HashRouter): Navigation {
       }
     });
     return () => {
-      void reportNavigationDebug(
-        'A',
-        'subscriber-removed',
-        navigationDebugSnapshot(),
-      );
       unsubscribe();
     };
   }, [router.setPage]);

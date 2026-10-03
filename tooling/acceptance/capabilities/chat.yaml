@@ -225,17 +225,167 @@
       }
     },
     {
+      "id": "chat-rich-media-recorded-voice",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-rich-media-recorded-voice"],
+      "required_gates": [
+        "proto-build",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-lifecycle-rich-voice-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/chat/attachment.proto",
+        "packages/messaging-core/src/codec/private_content.rs",
+        "packages/messaging-core/src/store/schema.rs",
+        "packages/client-chat-core/src/index.ts",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/oss.rs",
+        "apps/desktop/src-tauri/src/messaging/attachment_transfer.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src-tauri/src/messaging/private_content.rs",
+        "apps/desktop/src-tauri/src/messaging/store.rs",
+        "apps/desktop/src/components/chat/AttachmentItem.tsx",
+        "apps/desktop/src/components/chat/ChatComposer.tsx",
+        "apps/desktop/src/components/chat/composer/useChatAttachmentDrafts.ts",
+        "apps/desktop/src/components/chat/composer/useChatVoiceRecorder.ts",
+        "apps/desktop/src/services/im-service.ts",
+        "apps/desktop/src/store/socialChat.ts",
+        "apps/mobile/src-tauri/src/messaging/adapter.rs",
+        "packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx",
+        "tooling/acceptance/gates/chat/lifecycle_rich_voice.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "AttachmentPlaintextMetadata inside encrypted message private content",
+          "Device Messaging Engine SQLCipher attachment transfer and projection rows",
+          "verified Engine-owned attachment cache"
+        ],
+        "surfaces": [
+          "Native Desktop attachment drafts",
+          "Native Desktop screenshot capture",
+          "Native Desktop voice recording preview",
+          "Native Desktop receiver voice playback"
+        ],
+        "proven_by": ["chat-lifecycle-rich-voice-e2e"],
+        "proven_scope": [
+          "Exact-source macOS Native Desktop proves encrypted attachment and recorded voice send, receive, retry, restart, and byte identity",
+          "Voice-note kind and duration remain private encrypted metadata and survive local persistence",
+          "Screenshot confirmation and cancellation preserve native window and renderer geometry"
+        ],
+        "unproven_scope": [
+          "Linux and Windows Native Desktop rich-media runtime cells",
+          "Mobile voice recorder and inline playback parity"
+        ]
+      }
+    },
+    {
+      "id": "chat-live-voice-video",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-live-voice-video"],
+      "required_gates": [
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-lifecycle-live-voice-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/modules/p2p/callP2p.ts",
+        "apps/desktop/src/components/chat/CallSurface.tsx",
+        "apps/desktop/src/acceptance/chat/harness.ts",
+        "tooling/acceptance/features/chat-live-voice-video.yaml",
+        "tooling/acceptance/gates/chat/lifecycle_live_voice.py",
+        "tooling/acceptance/gates/chat/lifecycle_live_voice_e2e.py",
+        "tooling/acceptance/gates/chat/lifecycle_live_voice_contract_test.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "authenticated Direct conversation participants",
+          "sealed Realtime CallSignal delivery",
+          "WebRTC local and remote media tracks",
+          "authenticated ICE server discovery"
+        ],
+        "surfaces": [
+          "Alice and Bob native call surfaces",
+          "local video preview and remote audio/video elements",
+          "ringing, active, reconnecting, and ended call states",
+          "Direct message surface during an active call"
+        ],
+        "proven_by": ["chat-lifecycle-live-voice-e2e"],
+        "proven_scope": [
+          "Exact-source macOS Native Desktop proves CHAT-J05 audio and video call lifecycle with bilateral live media",
+          "The same journey proves reject, no-answer, mute, camera toggle, camera-device replacement, ICE restart recovery, text concurrency, hangup, and media release"
+        ],
+        "unproven_scope": [
+          "Linux, Windows, and Mobile live-call runtime cells",
+          "Cross-Station and multi-device ringing resolution beyond the selected two-client fixture",
+          "Recording, transcription, screen sharing, durable call cards, and group calls"
+        ]
+      }
+    },
+    {
+      "id": "chat-group-live",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-group-live"],
+      "required_gates": [
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-lifecycle-group-live-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/groupcall/**",
+        "apps/desktop/src/modules/groupCall/**",
+        "apps/desktop/src/components/chat/GroupCallSurface.tsx",
+        "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+        "apps/desktop/src/pages/SocialChatPage.tsx",
+        "apps/desktop/src/acceptance/chat/harness.ts",
+        "tooling/acceptance/features/chat-group-live.yaml",
+        "tooling/acceptance/gates/chat/lifecycle_group_live.py",
+        "tooling/acceptance/gates/chat/lifecycle_group_live_e2e.py",
+        "tooling/acceptance/gates/chat/lifecycle_group_live_test.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "authenticated Group membership",
+          "deterministic LiveKit room identity",
+          "LiveKit participant and media-track state"
+        ],
+        "surfaces": [
+          "Alice, Bob, and Charlie native group-call surfaces",
+          "remote audio and participant video elements",
+          "compact, expanded, and fullscreen call layouts"
+        ],
+        "proven_by": ["chat-lifecycle-group-live-e2e"],
+        "proven_scope": [
+          "Exact-source macOS Native Desktop proves a same-Station three-participant audio and video call",
+          "The journey proves mute, camera toggle, late join, leave, and media release"
+        ],
+        "unproven_scope": [
+          "Cross-Station webhook fan-out and authority routing",
+          "Forced transport reconnect",
+          "membership-removal and device-revocation ejection",
+          "Linux, Windows, and Mobile group-call runtime cells"
+        ]
+      }
+    },
+    {
       "id": "chat-native-visible-clients",
       "domain": "chat",
       "direction": "acceptance_validates_product",
       "features": [
         "chat-native-visible-clients",
-        "chat-native-friendship-projection"
+        "chat-native-friendship-projection",
+        "chat-presence-layout-stability"
       ],
       "required_gates": [
         "proto-build",
         "desktop-check",
         "chat-native-visible-static",
+        "chat-lifecycle-interactions-group-e2e",
+        "chat-presence-layout-e2e",
         "chat-lifecycle-onboarding-e2e",
         "chat-lifecycle-direct-e2e",
         "chat-native-current-profile-two-client-e2e",
@@ -250,6 +400,14 @@
         "tooling/acceptance/gates/chat/native_group_mls_runner.py",
         "tooling/acceptance/gates/chat/lifecycle_onboarding.py",
         "tooling/acceptance/gates/chat/lifecycle_direct.py",
+        "tooling/acceptance/gates/chat/lifecycle_presence_layout.py",
+        "tooling/acceptance/gates/chat/lifecycle_presence_layout_e2e.py",
+        "tooling/acceptance/fixtures/chat_presence_fault_proxy.py",
+        "apps/station/app/subserver/presence/**",
+        "apps/station/frame/core/federation/presence.go",
+        "apps/station/frame/core/federation/routes.go",
+        "apps/station/frame/core/federation/scope.go",
+        "apps/desktop/src/hooks/usePresence.ts",
         "apps/desktop/src/kernel/identityRuntime.ts",
         "apps/desktop/src/pages/login/LoginPage.tsx",
         "apps/desktop/src/acceptance/chat/identity.ts",
@@ -319,6 +477,7 @@
         "proven_by": [
           "chat-lifecycle-onboarding-e2e",
           "chat-lifecycle-direct-e2e",
+        "chat-presence-layout-e2e",
           "chat-native-current-profile-two-client-e2e",
           "chat-native-two-client-e2e",
           "chat-native-multi-device-e2e",
@@ -327,6 +486,7 @@
         ],
         "proven_scope": [
           "Only successful live runs with complete current source-bound reports prove W8 journeys",
+        "CHAT-UR14 through CHAT-UR16 are proven only by a current-source two-Station Native run that observes lease-stable presence, explicit unknown fallback, fixed unread geometry, and stable message metadata geometry",
           "Current-profile Native onboarding cold-restarts both actors and proves restorable no-PIN sessions reach the authenticated shell without credential or PIN UI",
           "Current-profile Native onboarding proves local, federated-handle, and Station-scoped discovery, reject-and-retry relationship convergence, one Direct identity, and the first exact plaintext exchange",
           "CHAT-UR08: Current-profile Native onboarding proves one selectable request-history row per counterparty PTID with current state and total attempt count",
@@ -337,6 +497,7 @@
         ],
         "unproven_scope": [
           "W8 remains unproven until all four environment-evidence gates pass",
+        "Presence and layout stability on Linux, Windows, and Mobile remain UNPROVEN until those runtime cells execute the dedicated journey",
           "CHAT-UR10 through CHAT-UR13 remain UNPROVEN until chat-lifecycle-direct-e2e passes on exact source",
           "The corrected friendship and Group creation projections remain Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source",
           "Cross-Station onboarding remains UNPROVEN until the continuity closure runs the onboarding Journey across distinct Station bindings"
@@ -353,7 +514,8 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
-        "chat-native-interactions-e2e"
+        "chat-native-interactions-e2e",
+        "chat-lifecycle-interactions-group-e2e"
       ],
       "synthetic_paths": [
         "model/domain/chat/command.proto",

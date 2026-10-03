@@ -83,7 +83,22 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
             background: token.colorFillSecondary,
           }}
         >
-          {item.state === 'MEDIA_READY' && item.renderUrl ? (
+          {item.state === 'MEDIA_READY'
+          && item.renderUrl
+          && item.mimeType?.startsWith('video/') ? (
+            <video
+              src={item.renderUrl}
+              controls
+              playsInline
+              style={{
+                display: 'block',
+                width: '100%',
+                height: '100%',
+                minHeight: single ? 180 : 108,
+                objectFit: 'cover',
+              }}
+            />
+          ) : item.state === 'MEDIA_READY' && item.renderUrl ? (
             <Image
               src={item.renderUrl}
               alt={item.altText || t('moments.private.media.ready.alt')}

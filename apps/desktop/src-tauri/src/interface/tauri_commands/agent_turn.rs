@@ -3,8 +3,8 @@ use crate::application::session_resolver;
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
     AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
-    AgentConversationUpdateInput, AgentEditAndResendInput, AgentExecuteTurnInput,
-    AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
+    AgentConversationRuntimeResetInput, AgentConversationUpdateInput, AgentEditAndResendInput,
+    AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
     AgentMessageTranslateInput, AgentRegenerateTurnInput, AgentRetryTurnInput,
     AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
     AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
@@ -354,6 +354,19 @@ pub fn agent_conversation_restore(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_turn::agent_conversation_restore(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_conversation_runtime_reset(
+    input: AgentConversationRuntimeResetInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_runtime_reset(input, &token)
 }
 
 #[tauri::command]

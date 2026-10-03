@@ -131,7 +131,7 @@ for (const line of content.split(/\r?\n/u)) {
   }
   if (
     status === 'needs audit'
-    && !/audit|verify|target|not yet|unproven|needs|must|should/iu.test(evidence)
+    && !/audit|verify|target|not yet|unproven|needs|must|should|require/iu.test(evidence)
   ) {
     rowErrors.push(`needs audit row lacks revisit/evidence wording: ${feature}`);
   }

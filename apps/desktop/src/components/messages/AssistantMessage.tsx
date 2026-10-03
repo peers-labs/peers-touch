@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, Tag, toast } from '@lobehub/ui';
-import { theme, Button } from 'antd';
+import { theme, Button, Modal } from 'antd';
 import {
   Copy,
   ChevronRight,
@@ -359,6 +359,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const retryMessage = useChatStore(s => s.retryMessage);
   const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
+  const resetExternalRuntime = useChatStore(s => s.resetExternalRuntime);
   const reconcileClientLease = useChatStore(s => s.reconcileClientLease);
   const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
   const syncTurnQueue = useChatStore(s => s.syncTurnQueue);
@@ -407,6 +408,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
         ? 'edit-queue'
         : message.resolution?.type === 'selectRuntime'
           ? 'select-runtime'
+        : message.resolution?.type === 'confirmReset'
+          ? 'confirm-reset'
         : message.resolution?.type === 'openPermissionSettings'
           ? 'open-permission-settings'
         : message.resolution?.type === 'retryLater'
@@ -598,6 +601,49 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     t,
   ]);
 
+  const handleConfirmRuntimeReset = useCallback(() => {
+    const resolution = message.resolution;
+    if (
+      resolution?.type !== 'confirmReset'
+      || !resolution.runtimeProfileId
+    ) {
+      toast.error(t('chat.message.resolution.actionFailed'));
+      return;
+    }
+    Modal.confirm({
+      title: t('agent.recovery.confirmReset', { ns: 'agent' }),
+      content: t('agent.recovery.confirmResetDescription', { ns: 'agent' }),
+      okText: t('agent.recovery.confirmReset', { ns: 'agent' }),
+      cancelText: t('chat.message.action.cancel', { ns: 'chat' }),
+      okButtonProps: {
+        danger: true,
+        'data-pt-agent-runtime-reset-confirm': currentSessionKey,
+      },
+      centered: true,
+      onOk: async () => {
+        try {
+          await resetExternalRuntime(currentSessionKey);
+          toast.success(
+            t('agent.recovery.runtimeResetCompleted', { ns: 'agent' }),
+          );
+        } catch (error) {
+          const messageText = error instanceof Error
+            ? error.message
+            : String(error);
+          toast.error(
+            messageText || t('chat.message.resolution.actionFailed'),
+          );
+          throw error;
+        }
+      },
+    });
+  }, [
+    currentSessionKey,
+    message.resolution,
+    resetExternalRuntime,
+    t,
+  ]);
+
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
   }, [deleteAndRegenerateMessage, message.id]);
@@ -683,6 +729,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
       data-pt-agent-error-runtime-kind={message.typedError?.details.runtime_kind}
+      data-pt-agent-error-runtime-profile-id={message.typedError?.details.runtime_profile_id}
       data-pt-agent-error-provider-id={message.typedError?.details.provider_id}
       data-pt-agent-error-model-id={message.typedError?.details.model_id}
       data-pt-agent-error-deadline={message.typedError?.details.deadline}
@@ -959,7 +1006,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       && message.resolution.type !== 'openResult'
                       && message.resolution.type !== 'editQueue'
                       && message.resolution.type !== 'selectRuntime'
-                              && message.resolution.type !== 'openPermissionSettings'
+                      && message.resolution.type !== 'openPermissionSettings'
                       && message.resolution.type !== 'retryLater'
                       && message.resolution.type !== 'retry'
                       && message.resolution.type !== 'inspectBudget'
@@ -988,6 +1035,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                             : message.resolution.type === 'retryLater'
                               ? <RotateCcw size={14} />
                             : message.resolution.type === 'retry'
+                              ? <RotateCcw size={14} />
+                            : message.resolution.type === 'confirmReset'
                               ? <RotateCcw size={14} />
                             : message.resolution.type === 'inspectBudget'
                               ? <Activity size={14} />
@@ -1028,6 +1077,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'selectRuntime') {
                           handleChooseCompatibleModel();
+                          return;
+                        }
+                        if (message.resolution!.type === 'confirmReset') {
+                          handleConfirmRuntimeReset();
                           return;
                         }
                         if (message.resolution!.type === 'openPermissionSettings') {

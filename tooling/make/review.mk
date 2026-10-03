@@ -1,6 +1,6 @@
 # ─── Code Review Framework ─────────────────────────────────────
 
-.PHONY: review review-route review-hard-rules review-frontend-runtime-registry review-knowledge review-skill-check quality-evidence review-submit acceptance-evidence-export acceptance-evidence-verify
+.PHONY: review review-route review-hard-rules review-structure-signals review-frontend-runtime-registry review-knowledge review-skill-check quality-evidence review-submit acceptance-evidence-export acceptance-evidence-verify
 
 REVIEW_RANGE ?= HEAD
 REVIEW_BASE ?= origin/master
@@ -13,6 +13,9 @@ review-route:
 
 review-hard-rules:
 	tooling/scripts/review/hard-rules.sh --range "$(REVIEW_RANGE)"
+
+review-structure-signals:
+	node tooling/skills/pt-code-structure-review/scripts/structure-signals.mjs --range "$(REVIEW_RANGE)"
 
 review-frontend-runtime-registry:
 	node tooling/scripts/check-frontend-runtime-registry.mjs --range "$(REVIEW_RANGE)"

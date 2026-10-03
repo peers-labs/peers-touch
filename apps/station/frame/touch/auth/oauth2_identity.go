@@ -96,9 +96,18 @@ func (s *OAuth2IdentityStore) BindActor(
 		log.Warnf(ctx, "[OAuth2IdentityStore.BindActor] get db: %v", err)
 		return err
 	}
+	return bindOAuthIdentity(ctx, rds, actorID, identity, primary)
+}
 
+func bindOAuthIdentity(
+	ctx context.Context,
+	rds *gorm.DB,
+	actorID uint64,
+	identity *coreauth.OAuth2Identity,
+	primary bool,
+) error {
 	var existing db.OAuth2IdentityBinding
-	err = rds.
+	err := rds.
 		Where("provider_id = ? AND provider_user_id = ?", string(identity.ProviderID), identity.ProviderUserID).
 		First(&existing).Error
 
@@ -117,6 +126,7 @@ func (s *OAuth2IdentityStore) BindActor(
 			DisplayName:    identity.DisplayName,
 			AvatarURL:      identity.AvatarURL,
 			Email:          identity.Email,
+			EmailVerified:  identity.EmailVerified,
 			IsPrimary:      primary,
 		}
 		if err = rds.Create(&row).Error; err != nil {
@@ -127,15 +137,20 @@ func (s *OAuth2IdentityStore) BindActor(
 			actorID, identity.ProviderID, identity.ProviderUserID)
 		return nil
 	}
+	if existing.ActorID != actorID {
+		return coreauth.ErrOAuthIdentityConflict
+	}
 
 	updates := map[string]interface{}{
-		"actor_id":       actorID,
 		"provider_union": identity.ProviderUnion,
 		"username":       identity.Username,
 		"display_name":   identity.DisplayName,
 		"avatar_url":     identity.AvatarURL,
 		"email":          identity.Email,
-		"is_primary":     primary,
+		"email_verified": identity.EmailVerified,
+	}
+	if primary {
+		updates["is_primary"] = true
 	}
 	if err = rds.Model(&existing).Updates(updates).Error; err != nil {
 		log.Warnf(ctx, "[OAuth2IdentityStore.BindActor] update: %v", err)
@@ -156,5 +171,6 @@ func rowToIdentity(row *db.OAuth2IdentityBinding) *coreauth.OAuth2Identity {
 		DisplayName:    row.DisplayName,
 		AvatarURL:      row.AvatarURL,
 		Email:          row.Email,
+		EmailVerified:  row.EmailVerified,
 	}
 }

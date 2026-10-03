@@ -1,21 +1,12 @@
 use std::sync::Arc;
 
-use prost::Message;
 use tauri::{State, Window};
 
 use crate::application::capability_authority::{self, EncodedRequestInput};
-use crate::application::desktop_executor_worker::CapabilityWorkerSupervisor;
 use crate::application::mcp as application_mcp;
 use crate::application::session_resolver;
-use crate::contracts::{
-    McpCreateInput, McpLifecycleOperationInput, McpNameInput, McpToggleInput, McpUpdateInput,
-    StubPayload,
-};
+use crate::contracts::{McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
-use crate::model::agent::{
-    CancelCapabilityOperationRequest, TakeOverCapabilityCleanupRequest,
-    TakeOverCapabilityOperationRequest,
-};
 use crate::state::AppState;
 
 fn authenticated_actor(
@@ -34,42 +25,10 @@ fn authenticated_actor(
     Ok((actor_ptid, token))
 }
 
-fn authenticated_operation_actor(
-    state: &State<'_, Arc<AppState>>,
-    window: &Window,
-) -> Result<(String, String), AppResult<Vec<u8>>> {
-    authenticated_actor(state, window).map_err(|error| AppResult {
-        ok: error.ok,
-        data: None,
-        error: error.error,
-    })
-}
-
-fn start_lifecycle(
-    actor_ptid: &str,
-    token: &str,
-    supervisor: &CapabilityWorkerSupervisor,
-    input: McpLifecycleOperationInput,
-) -> AppResult<Vec<u8>> {
-    let target = match supervisor.operation_target(actor_ptid) {
-        Ok(target) => target,
-        Err(error) => {
-            return AppResult::fail(ErrorCode::InvalidArgument, error, None);
-        }
-    };
-    application_mcp::mcp_start_lifecycle_operation(
-        actor_ptid,
-        token,
-        &target.device_id,
-        &target.capability_session_id,
-        input,
-    )
-}
-
 #[tauri::command]
 pub fn mcp_list_servers(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     match authenticated_actor(&state, &window) {
-        Ok((actor_ptid, _)) => application_mcp::mcp_list_servers(&actor_ptid),
+        Ok((actor_ptid, token)) => application_mcp::mcp_station_list_servers(&actor_ptid, &token),
         Err(error) => error,
     }
 }
@@ -81,7 +40,9 @@ pub fn mcp_get_server(
     window: Window,
 ) -> AppResult<StubPayload> {
     match authenticated_actor(&state, &window) {
-        Ok((actor_ptid, _)) => application_mcp::mcp_get_server(&actor_ptid, input),
+        Ok((actor_ptid, token)) => {
+            application_mcp::mcp_station_get_server(&actor_ptid, &token, input)
+        }
         Err(error) => error,
     }
 }
@@ -90,115 +51,65 @@ pub fn mcp_get_server(
 pub fn mcp_create_server(
     input: McpCreateInput,
     state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let (actor_ptid, token) = match authenticated_operation_actor(&state, &window) {
+) -> AppResult<StubPayload> {
+    let (actor_ptid, token) = match authenticated_actor(&state, &window) {
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    let target = match supervisor.operation_target(&actor_ptid) {
-        Ok(target) => target,
-        Err(error) => {
-            return AppResult::fail(ErrorCode::InvalidArgument, error, None);
-        }
-    };
-    application_mcp::mcp_create_server_with_lifecycle(
-        &actor_ptid,
-        &token,
-        &target.device_id,
-        &target.capability_session_id,
-        input,
-    )
+    application_mcp::mcp_station_create_server(&actor_ptid, &token, input)
 }
 
 #[tauri::command]
 pub fn mcp_update_server(
     input: McpUpdateInput,
     state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let (actor_ptid, token) = match authenticated_operation_actor(&state, &window) {
+) -> AppResult<StubPayload> {
+    let (actor_ptid, token) = match authenticated_actor(&state, &window) {
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    let target = match supervisor.operation_target(&actor_ptid) {
-        Ok(target) => target,
-        Err(error) => {
-            return AppResult::fail(ErrorCode::InvalidArgument, error, None);
-        }
-    };
-    application_mcp::mcp_update_server_with_lifecycle(
-        &actor_ptid,
-        &token,
-        &target.device_id,
-        &target.capability_session_id,
-        input,
-    )
+    application_mcp::mcp_station_update_server(&actor_ptid, &token, input)
 }
 
 #[tauri::command]
 pub fn mcp_delete_server(
     input: McpNameInput,
     state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let (actor_ptid, token) = match authenticated_operation_actor(&state, &window) {
+) -> AppResult<StubPayload> {
+    let (actor_ptid, token) = match authenticated_actor(&state, &window) {
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    start_lifecycle(
-        &actor_ptid,
-        &token,
-        &supervisor,
-        McpLifecycleOperationInput {
-            name: input.name,
-            operation_kind: "uninstall".to_string(),
-            idempotency_key: None,
-        },
-    )
+    application_mcp::mcp_station_delete_server(&actor_ptid, &token, input)
 }
 
 #[tauri::command]
 pub fn mcp_toggle_server(
     input: McpToggleInput,
     state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let (actor_ptid, token) = match authenticated_operation_actor(&state, &window) {
+) -> AppResult<StubPayload> {
+    let (actor_ptid, token) = match authenticated_actor(&state, &window) {
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    let target = match supervisor.operation_target(&actor_ptid) {
-        Ok(target) => target,
-        Err(error) => {
-            return AppResult::fail(ErrorCode::InvalidArgument, error, None);
-        }
-    };
-    application_mcp::mcp_toggle_server_with_lifecycle(
-        &actor_ptid,
-        &token,
-        &target.device_id,
-        &target.capability_session_id,
-        input,
-    )
+    application_mcp::mcp_station_toggle_server(&actor_ptid, &token, input)
 }
 
 #[tauri::command]
-pub fn mcp_start_lifecycle_operation(
-    input: McpLifecycleOperationInput,
+pub fn mcp_refresh_server(
+    input: McpNameInput,
     state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let (actor_ptid, token) = match authenticated_operation_actor(&state, &window) {
+) -> AppResult<StubPayload> {
+    let (actor_ptid, token) = match authenticated_actor(&state, &window) {
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    start_lifecycle(&actor_ptid, &token, &supervisor, input)
+    application_mcp::mcp_station_refresh_server(&actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -207,9 +118,13 @@ pub fn agent_capability_operation_get(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    match authenticated_operation_actor(&state, &window) {
+    match authenticated_actor(&state, &window) {
         Ok((_, token)) => capability_authority::get_operation(input, &token),
-        Err(error) => error,
+        Err(error) => AppResult {
+            ok: error.ok,
+            data: None,
+            error: error.error,
+        },
     }
 }
 
@@ -219,33 +134,13 @@ pub fn agent_capability_operation_cancel(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let request = match CancelCapabilityOperationRequest::decode(input.request_bytes.as_slice()) {
-        Ok(request) => request,
-        Err(_) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                "agent.capabilityOperationRequestInvalid",
-                None,
-            );
-        }
-    };
-    match authenticated_operation_actor(&state, &window) {
-        Ok((_, token)) => {
-            let result = capability_authority::cancel_operation(input, &token);
-            if result.ok {
-                if let Err(error) =
-                    application_mcp::cancel_lifecycle_operation(&request.operation_id)
-                {
-                    tracing::warn!(
-                        operation_id = %request.operation_id,
-                        error = %error,
-                        "Failed to interrupt cancelled MCP lifecycle process"
-                    );
-                }
-            }
-            result
-        }
-        Err(error) => error,
+    match authenticated_actor(&state, &window) {
+        Ok((_, token)) => capability_authority::cancel_operation(input, &token),
+        Err(error) => AppResult {
+            ok: error.ok,
+            data: None,
+            error: error.error,
+        },
     }
 }
 
@@ -255,9 +150,13 @@ pub fn agent_capability_operation_reconcile(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    match authenticated_operation_actor(&state, &window) {
+    match authenticated_actor(&state, &window) {
         Ok((_, token)) => capability_authority::reconcile_operation(input, &token),
-        Err(error) => error,
+        Err(error) => AppResult {
+            ok: error.ok,
+            data: None,
+            error: error.error,
+        },
     }
 }
 
@@ -265,26 +164,15 @@ pub fn agent_capability_operation_reconcile(
 pub fn agent_capability_operation_takeover(
     input: EncodedRequestInput,
     state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let (actor_ptid, _) = match authenticated_operation_actor(&state, &window) {
-        Ok(identity) => identity,
-        Err(error) => return error,
-    };
-    let request = match TakeOverCapabilityOperationRequest::decode(input.request_bytes.as_slice()) {
-        Ok(request) => request,
-        Err(_) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                "agent.capabilityOperationRequestInvalid",
-                None,
-            );
-        }
-    };
-    match supervisor.take_over_operation(&actor_ptid, request) {
-        Ok(response) => AppResult::success(response.encode_to_vec()),
-        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    match authenticated_actor(&state, &window) {
+        Ok((_, token)) => capability_authority::take_over_operation(input, &token),
+        Err(error) => AppResult {
+            ok: error.ok,
+            data: None,
+            error: error.error,
+        },
     }
 }
 
@@ -292,25 +180,14 @@ pub fn agent_capability_operation_takeover(
 pub fn agent_capability_operation_cleanup_takeover(
     input: EncodedRequestInput,
     state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let (actor_ptid, _) = match authenticated_operation_actor(&state, &window) {
-        Ok(identity) => identity,
-        Err(error) => return error,
-    };
-    let request = match TakeOverCapabilityCleanupRequest::decode(input.request_bytes.as_slice()) {
-        Ok(request) => request,
-        Err(_) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                "agent.capabilityOperationRequestInvalid",
-                None,
-            );
-        }
-    };
-    match supervisor.take_over_cleanup(&actor_ptid, request) {
-        Ok(response) => AppResult::success(response.encode_to_vec()),
-        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    match authenticated_actor(&state, &window) {
+        Ok((_, token)) => capability_authority::take_over_operation_cleanup(input, &token),
+        Err(error) => AppResult {
+            ok: error.ok,
+            data: None,
+            error: error.error,
+        },
     }
 }

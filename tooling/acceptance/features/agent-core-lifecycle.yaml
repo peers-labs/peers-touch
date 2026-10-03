@@ -10,37 +10,44 @@
   "truth_sources": [
     "Station agent CRUD API",
     "Desktop agent store",
-    "Station /sub-agent/agent/create + list + update"
+    "Station /sub-agent/agent/create + list + update + delete + duplicate + default",
+    "Station Agent conversation list"
   ],
   "visible_surfaces": [
     {"type": "api", "route": "/sub-agent/agent/create"},
     {"type": "api", "route": "/sub-agent/agent/list"},
     {"type": "api", "route": "/sub-agent/agent/update"},
-    {"type": "ui", "surface": "Desktop AgentSidebar + button"},
-    {"type": "ui", "surface": "Desktop AgentProfilePage"}
+    {"type": "api", "route": "/sub-agent/agent/delete"},
+    {"type": "ui", "surface": "Native Desktop Agent workbench roster and actions"},
+    {"type": "ui", "surface": "Native Desktop Agent profile editor"},
+    {"type": "ui", "surface": "Native Desktop Agent session composer"}
   ],
   "required_gates": ["agent-core-lifecycle-native-e2e"],
   "acceptance": {
     "service": [
-      "first login with no agents triggers auto-create of a default 'assistant' agent",
-      "clicking + button calls store.createAgent which persists to Station and returns the new agent",
-      "selecting an agent sets it as active and loads its chat surface with a composer",
-      "sending a message to a configured agent produces a streaming assistant response with content",
-      "creating a new topic resets the conversation and starts a fresh session",
-      "updating agent name persists to Station and refreshes the sidebar listing"
+      "the Native create control persists one new Agent and returns it in Station-backed list readback",
+      "selecting an Agent changes the active Agent and loads its native chat composer",
+      "editing the Agent title persists a higher Station version and refreshes the profile",
+      "duplicating an Agent repeatedly persists distinct Agents with deterministic unique names and copied configuration",
+      "setting the duplicate as default persists the choice and marks it in the native roster",
+      "starting a new empty session changes the client session without persisting a phantom Station conversation",
+      "a failed Station topic refresh preserves accepted topics and exposes retry; retry converges after transport recovery",
+      "deleting both disposable Agents removes them from the Station-backed roster and restores the original Agent selection"
     ],
     "visible": [
-      "the agent list shows at least one agent after first login (auto-created if empty)",
-      "the + button produces a new agent entry in the sidebar and navigates to profile",
-      "clicking an agent name shows ChatInput (data-agent-composer) ready for input",
-      "after sending, user message appears followed by assistant response with content",
-      "new topic shows an empty conversation surface",
-      "renamed agent shows updated name in the sidebar"
+      "the create control opens the newly persisted Agent profile",
+      "created and duplicated Agent rows are visible with stable Agent IDs",
+      "selecting an Agent shows the native composer",
+      "the edited name and default marker are visible in the roster",
+      "new session shows an empty composer with a distinct session key",
+      "topic refresh failure stays visible until retry succeeds",
+      "deleted Agent rows disappear"
     ]
   },
   "negative": [
-    "auto-create must not trigger if agents already exist",
-    "create must not succeed without a valid authenticated session",
-    "select must not load a chat surface for a non-existent agent ID"
+    "repeated duplicate actions must never create ambiguous Agent names or selection targets",
+    "an empty session start must not create a Station conversation",
+    "a deleted Agent ID must no longer be selectable from the native roster",
+    "missing lifecycle selectors or incomplete Station readback must fail the Gate closed"
   ]
 }

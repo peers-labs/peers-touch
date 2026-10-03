@@ -3,9 +3,6 @@
 //   schema management, and dispatch. Registers concrete handlers for:
 //   memory, skills_list, skill_view, skill_manage, delegate_task.
 //   Each handler bridges tool_call JSON arguments to the corresponding domain service.
-// 2026-06-17 — Agent rebuild P0-1: registered local_mcp as the Station-visible
-//   placeholder for Desktop-local MCP execution. TurnService intercepts it and
-//   routes execution through the Desktop Rust local tool bridge.
 // 2026-06-17 — Agent rebuild P1-5: registered schema-first Desktop-local builtin
 //   tool placeholders for file, clipboard, and safe workspace operations.
 // 2026-06-17 — Agent rebuild P5-4: registered OAuth connector access as a
@@ -50,42 +47,9 @@ func NewToolRegistryService(
 	r.registerSkillsListTool(skillSvc)
 	r.registerSkillViewTool(skillSvc)
 	r.registerSkillManageTool(skillSvc)
-	r.registerLocalMCPTool()
 	r.registerDesktopLocalBuiltinTools()
 
 	return r
-}
-
-func (r *ToolRegistryService) registerLocalMCPTool() {
-	schema := json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "server_name": {
-      "type": "string",
-      "description": "Configured local MCP server name"
-    },
-    "tool_name": {
-      "type": "string",
-      "description": "MCP tool name to execute on the local desktop"
-    },
-    "arguments": {
-      "type": "object",
-      "description": "Arguments passed to the MCP tool"
-    }
-  },
-  "required": ["server_name", "tool_name"]
-}`)
-
-	r.Register(&domain.ToolDefinition{
-		Name:        "local_mcp",
-		Description: "Execute a Desktop-local MCP tool through the secure local tool bridge.",
-		JSONSchema:  schema,
-		Handler: func(ctx context.Context, meta *domain.ToolCallMeta, raw json.RawMessage) (*domain.ToolResult, error) {
-			return &domain.ToolResult{
-				Content: "local_mcp is executed by the Agent turn loop local tool bridge",
-			}, nil
-		},
-	})
 }
 
 func (r *ToolRegistryService) registerDesktopLocalBuiltinTools() {

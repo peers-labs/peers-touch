@@ -40,16 +40,19 @@ product code, Acceptance contracts, Gates, manifests, or reports.
    ```bash
    python3 tooling/scripts/acceptance-gap-detect.py \
      --claim "<exact claim>" \
-     --range <range>
+     --range <range> \
+     --session <development-session.json>
    ```
 
 4. Apply the four-layer review from the procedure:
    product promise, Gate coverage, evidence integrity, failure honesty.
-5. If the detector or manual review finds a gap:
+5. For every multi-scenario Task, run `pt-acceptance-pipeline-auditor` and
+   carry lifecycle findings into the gap report.
+6. If the detector or manual review finds a gap:
    - keep the claim `UNPROVEN`;
    - record gap type, evidence, owner stage, and minimum closure;
    - dispatch closure through `pt-acceptance-engineering`.
-6. If no gaps remain, report the exact Gate and source artifact supporting the
+7. If no gaps remain, report the exact Gate and source artifact supporting the
    narrow claim. Do not generalize beyond that scope.
 
 ## Output

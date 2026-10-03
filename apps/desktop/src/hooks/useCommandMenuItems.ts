@@ -6,6 +6,7 @@ import { useCommandMenuStore } from '../store/commandMenu';
 import { fuzzyMatchMulti } from '../utils/fuzzyMatch';
 import type { CommandItem } from '../store/commandMenu';
 import type { Page } from '../types/navigation';
+import { openAgentCreateFlow } from '../components/agent/create';
 
 interface CommandMenuDeps {
   navigateTo: (page: Page) => void;
@@ -111,7 +112,10 @@ export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
         id: 'action:create-agent',
         titleKey: 'agent.commandMenu.createAgent',
         icon: 'PlusCircle',
-        action: () => navigateTo('marketplace'),
+        action: () =>
+          openAgentCreateFlow((agentName) =>
+            navigateToAgentSurface(agentName, 'profile'),
+          ),
       },
       {
         id: 'action:open-settings',

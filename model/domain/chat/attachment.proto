@@ -88,6 +88,13 @@ message EncryptedObjectDescriptor {
   repeated bytes chunk_ciphertext_sha256 = 11;
 }
 
+// End-to-end encrypted metadata for a locally recorded voice note.
+message VoiceNoteMetadata {
+  uint32 duration_ms = 1;
+  string codec = 2;
+  repeated uint32 waveform = 3;
+}
+
 message AttachmentPlaintextMetadata {
   string attachment_id = 1;
   string filename = 2;
@@ -99,6 +106,7 @@ message AttachmentPlaintextMetadata {
   EncryptedObjectDescriptor object = 8;
   AttachmentContentKind content_kind = 9;
   uint32 duration_ms = 10;
+  VoiceNoteMetadata voice_note = 11;
 }
 
 // The complete private message body encrypted by Double Ratchet or OpenMLS.

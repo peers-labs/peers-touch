@@ -26,6 +26,8 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_loop_budget_exhausted,
     evaluate_base_model_unavailable,
     evaluate_base_permission_denied,
+    evaluate_base_queue_full,
+    evaluate_base_rate_limit,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -124,6 +126,17 @@ def valid_capture() -> dict[str, object]:
             "deletedAfterSettlement": True,
         },
     }
+
+
+def valid_base_queue_full_capture() -> dict[str, object]:
+    capture = valid_capture()
+    queue = capture["queueSubmission"]
+    assert isinstance(queue, dict)
+    overflow = queue["overflow"]
+    assert isinstance(overflow, dict)
+    overflow["providerCallDelta"] = 0
+    capture["cleanup"] = {"status": "clean"}
+    return capture
 
 
 def valid_as_f07_capture() -> dict[str, object]:
@@ -2581,6 +2594,115 @@ def valid_model_unavailable_capture() -> dict[str, object]:
     }
 
 
+def valid_rate_limit_capture() -> dict[str, object]:
+    conversation_id = "conversation-rate-limit"
+    turn_id = "turn-rate-limit"
+    typed_error = {
+        "error": "agent.errors.providerRateLimit",
+        "error_type": "PROVIDER_RATE_LIMIT",
+        "locale_key": "agent.errors.providerRateLimit",
+        "retryable": True,
+        "terminal": True,
+        "details": {
+            "provider_id": "provider-rate-limit",
+            "retry_after_ms": "2000",
+        },
+    }
+    state_hash = "e" * 64
+    return {
+        "harnessAssertions": {
+            "typedProviderRateLimit": True,
+            "localizedRetryLaterVisible": True,
+            "retryAfterProjected": True,
+            "oneTerminalProviderAttempt": True,
+            "zeroSuccessfulCompletion": True,
+            "queueUnchanged": True,
+            "replayEqual": True,
+            "cleanupComplete": True,
+        },
+        "outcome": copy.deepcopy(typed_error),
+        "typedError": typed_error,
+        "resolution": {
+            "type": "retryLater",
+            "providerId": "provider-rate-limit",
+            "retryAfterMs": 2000,
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "The provider rate limit was reached.",
+            "expectedErrorText": "The provider rate limit was reached.",
+            "recoveryVisible": True,
+            "recoveryText": "Retry later",
+            "expectedRecoveryText": "Retry later",
+            "projectedRetryAfterMs": 2000,
+        },
+        "station": {
+            "conversationId": conversation_id,
+            "turnId": turn_id,
+            "providerId": "provider-rate-limit",
+            "modelId": "model-rate-limit",
+            "conversationVersion": 3,
+            "stateHash": state_hash,
+            "messageDelta": 2,
+            "traceDelta": 1,
+            "queueDelta": 0,
+            "queueStateBeforeHash": "f" * 64,
+            "queueStateAfterHash": "f" * 64,
+            "conversationVersionBefore": 1,
+            "conversationVersionAfter": 3,
+            "providerCallCount": 1,
+            "classifiedErrorCount": 1,
+            "classifiedRateLimit": True,
+            "completedAssistantCount": 0,
+        },
+        "providerFixture": {
+            "statusCode": 429,
+            "retryAfter": "2",
+            "requestCount": 1,
+            "noRequestsAfterRetryWindow": True,
+            "request": {
+                "path": "/v1/chat/completions",
+                "stream": True,
+                "model": "model-rate-limit",
+                "authorizationPresent": True,
+            },
+        },
+        "replay": {
+            "sourceHash": state_hash,
+            "replayHash": state_hash,
+            "equal": True,
+        },
+        "runtimeEvent": {
+            "eventId": "a" * 64,
+            "eventType": "error",
+            "sequence": 3,
+            "observedAt": "2026-09-28T00:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "b" * 64,
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": "c" * 64,
+            "errorType": "PROVIDER_RATE_LIMIT",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "d" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": turn_id,
+            "sourceSequence": 3,
+            "sourceEventType": "error",
+        },
+        "cleanup": {
+            "status": "clean",
+            "fixtureModelDeleted": True,
+            "fixtureProviderDeleted": True,
+            "agentRestored": True,
+            "disposableAgentDeleted": True,
+            "conversationDeleted": True,
+            "localProjectionCleared": True,
+        },
+    }
+
+
 class FoundationGroupOneScenariosTest(unittest.TestCase):
     def test_as_f06_accepts_source_bound_recovery_facts(self) -> None:
         assertions = evaluate_as_f06(
@@ -2592,6 +2714,80 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
 
         self.assertEqual(len(assertions), 12)
         self.assertTrue(all(assertions.values()))
+
+    def test_base_rate_limit_accepts_real_429_facts(self) -> None:
+        assertions = evaluate_base_rate_limit(valid_rate_limit_capture())
+
+        self.assertEqual(len(assertions), 10)
+        self.assertTrue(all(assertions.values()))
+
+    def test_base_rate_limit_rejects_hidden_retry(self) -> None:
+        capture = valid_rate_limit_capture()
+        provider_fixture = capture["providerFixture"]
+        assert isinstance(provider_fixture, dict)
+        provider_fixture["requestCount"] = 2
+        provider_fixture["noRequestsAfterRetryWindow"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "noHiddenRetry",
+        ):
+            evaluate_base_rate_limit(capture)
+
+    def test_base_rate_limit_rejects_queue_state_drift(self) -> None:
+        capture = valid_rate_limit_capture()
+        station = capture["station"]
+        assert isinstance(station, dict)
+        station["queueStateAfterHash"] = "0" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "queueUnchanged",
+        ):
+            evaluate_base_rate_limit(capture)
+
+    def test_base_rate_limit_rejects_harness_assertion_drift(self) -> None:
+        capture = valid_rate_limit_capture()
+        harness_assertions = capture["harnessAssertions"]
+        assert isinstance(harness_assertions, dict)
+        harness_assertions["cleanupComplete"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            r"Harness assertions are incomplete or failed: "
+            r"missing=\[\], unexpected=\[\], "
+            r"failed=\['cleanupComplete'\]",
+        ):
+            evaluate_base_rate_limit(capture)
+
+    def test_base_rate_limit_rejects_synthetic_status(self) -> None:
+        capture = valid_rate_limit_capture()
+        provider_fixture = capture["providerFixture"]
+        assert isinstance(provider_fixture, dict)
+        provider_fixture["statusCode"] = 200
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "realProvider429Observed",
+        ):
+            evaluate_base_rate_limit(capture)
+
+    def test_base_rate_limit_rejects_retry_after_drift(self) -> None:
+        capture = valid_rate_limit_capture()
+        typed_error = capture["typedError"]
+        assert isinstance(typed_error, dict)
+        details = typed_error["details"]
+        assert isinstance(details, dict)
+        details["retry_after_ms"] = "1000"
+        outcome = capture["outcome"]
+        assert isinstance(outcome, dict)
+        outcome["details"] = copy.deepcopy(details)
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "retryAfterProjected",
+        ):
+            evaluate_base_rate_limit(capture)
 
     def test_as_f06_accepts_wire_string_replay_sequences(self) -> None:
         capture = valid_as_f06_capture()
@@ -3105,6 +3301,52 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "historyAttachmentActionVisible",
         ):
             evaluate_as_f05(capture)
+
+    def test_base_queue_full_accepts_development_slice_facts(self) -> None:
+        assertions = evaluate_base_queue_full(valid_base_queue_full_capture())
+
+        self.assertEqual(len(assertions), 7)
+        self.assertTrue(all(assertions.values()))
+
+    def test_base_queue_full_rejects_queue_or_version_mutation(self) -> None:
+        capture = valid_base_queue_full_capture()
+        queue = capture["queueSubmission"]
+        assert isinstance(queue, dict)
+        overflow = queue["overflow"]
+        assert isinstance(overflow, dict)
+        overflow["conversationVersionAfterAction"] = 11
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "queueStateUnchanged",
+        ):
+            evaluate_base_queue_full(capture)
+
+    def test_base_queue_full_rejects_incomplete_cleanup(self) -> None:
+        capture = valid_base_queue_full_capture()
+        cleanup = capture["cleanup"]
+        assert isinstance(cleanup, dict)
+        cleanup["status"] = "failed"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_queue_full(capture)
+
+    def test_base_queue_full_rejects_provider_dispatch(self) -> None:
+        capture = valid_base_queue_full_capture()
+        queue = capture["queueSubmission"]
+        assert isinstance(queue, dict)
+        overflow = queue["overflow"]
+        assert isinstance(overflow, dict)
+        overflow["providerCallDelta"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroAutomaticResend",
+        ):
+            evaluate_base_queue_full(capture)
 
     def test_as_f02_accepts_complete_production_facts(self) -> None:
         assertions = evaluate_as_f02(valid_capture())

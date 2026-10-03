@@ -235,6 +235,10 @@ def write_manifest(
     lease_window_from_manifest: bool = False,
 ) -> Path:
     fixture = fixture_payload()
+    schema_workspace_id = payload["source"].get(
+        "source_evidence_workspace_id",
+        payload["source"]["workspace_id"],
+    )
     fixture_path = root / payload["fixture_manifest_ref"]["path"]
     fixture_path.parent.mkdir(parents=True, exist_ok=True)
     fixture_bytes = json.dumps(
@@ -302,7 +306,7 @@ def write_manifest(
             "reset_id": f"reset-{service['profile_id']}",
             "reset_intent": "SCHEMA_ACTIVATION",
             "source_commit": payload["source"]["commit"],
-            "workspace_id": payload["source"]["workspace_id"],
+            "workspace_id": schema_workspace_id,
             "profile_id": service["profile_id"],
             "deployment_environment": service["deployment_environment"],
             "destructive_scope": (
@@ -371,7 +375,7 @@ def write_manifest(
         schema_attestation = {
             "schema_version": 1,
             "source_commit": payload["source"]["commit"],
-            "workspace_id": payload["source"]["workspace_id"],
+            "workspace_id": schema_workspace_id,
             "profile_id": service["profile_id"],
             "deployment_environment": service["deployment_environment"],
             "destructive_scope": reset_manifest["destructive_scope"],
@@ -553,6 +557,60 @@ def load(
 
 
 class RuntimeManifestV3Test(unittest.TestCase):
+    def test_accepts_schema_provenance_from_explicit_source_workspace(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            payload = manifest_payload()
+            payload["source"]["source_evidence_workspace_id"] = (
+                "source-evidence-workspace"
+            )
+            binding = load(write_manifest(Path(temp), payload))
+
+            self.assertEqual(
+                "source-evidence-workspace",
+                binding.payload["source"]["source_evidence_workspace_id"],
+            )
+
+    def test_post_cut_binding_is_closed_and_optional(self) -> None:
+        bindings = {
+            profile: {
+                "result_digest": digest(f"result:{profile}"),
+                "reset_id": f"reset-{profile}",
+                "schema_attestation_digest": digest(f"schema:{profile}"),
+                "station_runtime_identity": f"runtime-{profile}",
+            }
+            for profile in ("four", "fiveArm")
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            payload = manifest_payload()
+            payload["post_cut_epoch_id"] = "post-cut-epoch"
+            payload["final_cut_bindings"] = bindings
+            path = write_manifest(root, payload)
+
+            loaded = load(path)
+
+            self.assertEqual(
+                "post-cut-epoch",
+                loaded.payload["post_cut_epoch_id"],
+            )
+            self.assertEqual(bindings, loaded.payload["final_cut_bindings"])
+
+        for missing in ("post_cut_epoch_id", "final_cut_bindings"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                payload = manifest_payload()
+                payload["post_cut_epoch_id"] = "post-cut-epoch"
+                payload["final_cut_bindings"] = bindings
+                payload.pop(missing)
+                path = write_manifest(root, payload)
+                with self.assertRaisesRegex(
+                    runtime_manifest.RuntimeManifestError,
+                    "must be declared together",
+                ):
+                    load(path)
+
     def test_rfc3339_nano_accepts_variable_fractional_precision(self) -> None:
         parsed = runtime_manifest._timestamp_for_code(
             "2026-09-20T18:34:17.98966Z",
@@ -1248,39 +1306,50 @@ class RuntimeManifestV3Test(unittest.TestCase):
                         automation_session_id=session_id,
                     )
 
-    def test_validates_attach_only_owner_continuation(self) -> None:
+    def test_validates_attach_only_owner_continuation_for_mobile_client_id(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            parent_path = write_manifest(root, manifest_payload())
-            parent = load(parent_path)
+            parent_payload = manifest_payload()
+            parent_payload["clients"][2]["id"] = "ios_alice"
+            parent_payload["clients"][2]["automation_attachment_ref"][
+                "session_id"
+            ] = "session-ios_alice"
+            client_ids = tuple(
+                "ios_alice" if client_id == "ios-alice" else client_id
+                for client_id, *_ in CLIENTS
+            )
+            parent_path = write_manifest(root, parent_payload)
+            parent = load(parent_path, clients=client_ids)
 
-            child_payload = copy.deepcopy(manifest_payload())
+            child_payload = copy.deepcopy(parent_payload)
             child_payload["run_id"] = "runtime-v3-child"
-            retained = child_payload["clients"][0]
-            previous = parent.client("desktop-alice")
+            retained = child_payload["clients"][2]
+            previous = parent.client("ios_alice")
             retained["boot_identity"] = digest(
-                "boot:desktop-alice:restarted"
+                "boot:ios_alice:restarted"
             )
             retained["session_generation"] = previous["session_generation"] + 1
             retained["automation_attachment_ref"]["session_id"] = (
-                "session-desktop-alice-restarted"
+                "session-ios_alice-restarted"
             )
             child_payload["continuation"] = {
                 "parent_manifest_digest": parent.sha256,
-                "restart_request_id": "restart-desktop-alice",
-                "retained_client_id": "desktop-alice",
+                "restart_request_id": "restart-ios-alice",
+                "retained_client_id": "ios_alice",
                 "retained_storage_identity_digest": previous[
                     "storage_identity_digest"
                 ],
                 "previous_boot_identity": previous["boot_identity"],
-                "runtime_owner_acknowledgement_id": "ack-desktop-alice",
+                "runtime_owner_acknowledgement_id": "ack-ios-alice",
                 "lease_evidence_ref": {
                     "path": "leases/runtime-v3-child.json",
                     "sha256": "0" * 64,
                 },
             }
             child_path = write_manifest(root, child_payload)
-            child = load(child_path)
+            child = load(child_path, clients=client_ids)
 
             expired_payload = copy.deepcopy(child_payload)
             expired_payload["run_id"] = "runtime-v3-expired-child"
@@ -1288,7 +1357,10 @@ class RuntimeManifestV3Test(unittest.TestCase):
             with self.assertRaises(
                 runtime_manifest.RuntimeManifestError
             ) as expired:
-                load(write_manifest(root, expired_payload))
+                load(
+                    write_manifest(root, expired_payload),
+                    clients=client_ids,
+                )
             self.assertEqual(
                 "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
                 expired.exception.code,
@@ -1298,8 +1370,8 @@ class RuntimeManifestV3Test(unittest.TestCase):
                 "schema_version": 1,
                 "kind": "secure-content-runtime-restart-request",
                 "run_id": parent.run_id,
-                "request_id": "restart-desktop-alice",
-                "client_id": "desktop-alice",
+                "request_id": "restart-ios-alice",
+                "client_id": "ios_alice",
                 "parent_runtime_manifest_digest": parent.sha256,
                 "expected_source_checkpoint": COMMIT,
                 "expected_profile": ["fiveArm", "four"],
@@ -1311,9 +1383,9 @@ class RuntimeManifestV3Test(unittest.TestCase):
             acknowledgement = {
                 "schema_version": 1,
                 "kind": runtime_manifest.CONTINUATION_ACKNOWLEDGEMENT_KIND,
-                "request_id": "restart-desktop-alice",
+                "request_id": "restart-ios-alice",
                 "owner_id": runtime_manifest.RUNTIME_OWNER_ID,
-                "acknowledgement_id": "ack-desktop-alice",
+                "acknowledgement_id": "ack-ios-alice",
                 "parent_runtime_manifest_digest": parent.sha256,
                 "child_runtime_manifest_digest": child.sha256,
                 "previous_boot_identity": previous["boot_identity"],

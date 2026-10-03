@@ -2086,6 +2086,13 @@ func newFriendRequestStation(
 	if err := socialStore.Migrate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	privateContentStore, err := infrastructure.NewGORMPrivateContentStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := privateContentStore.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	signer := stationSigner{
 		keyID:      stationKey.keyID,
 		privateKey: stationKey.privateKey,

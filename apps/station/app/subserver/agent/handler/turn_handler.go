@@ -16,6 +16,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
@@ -125,9 +126,6 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	if req.GetAgentId() == "" || req.GetUserInput() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
 			"agent_id and user_input are required", nil))
-	}
-	if err := validateFrozenDirectModelRequest(req); err != nil {
-		return nil, toHandlerError(err)
 	}
 
 	createdConversation := false
@@ -288,13 +286,6 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		_ = writeTurnStreamEvent(resp, "error", map[string]any{
 			"type":  "error",
 			"error": "agent_id and user_input are required",
-		})
-		return nil
-	}
-	if err := validateFrozenDirectModelRequest(&input); err != nil {
-		_ = writeTurnStreamEvent(resp, "error", map[string]any{
-			"type":  "error",
-			"error": err.Error(),
 		})
 		return nil
 	}
@@ -506,6 +497,18 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		done <- turnStreamResult{turn: domainTurnToProto(turn), err: err}
 	}()
 
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	return serveTurnStream(ctx, resp, events, done, heartbeat.C)
+}
+
+func serveTurnStream(
+	ctx context.Context,
+	resp server.Response,
+	events <-chan service.TurnEvent,
+	done <-chan turnStreamResult,
+	heartbeat <-chan time.Time,
+) error {
 	for {
 		select {
 		case event, ok := <-events:
@@ -527,6 +530,10 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				return nil
 			}
 			return nil
+		case <-heartbeat:
+			if err := writeTurnStreamHeartbeat(resp); err != nil {
+				return nil
+			}
 		case <-ctx.Done():
 			return nil
 		}
@@ -692,23 +699,6 @@ func (h *TurnHandlers) turnConfigFromRequest(
 	}, nil
 }
 
-func validateFrozenDirectModelRequest(req *model.ExecuteTurnRequest) error {
-	if req == nil {
-		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"turn request is required", nil)
-	}
-	provider := strings.ToLower(strings.TrimSpace(req.GetProvider()))
-	switch provider {
-	case "trae-cli", "codex-cli", "claude-cli", "cursor-cli",
-		"trae", "codex", "claude", "cursor":
-		return errcode.NewRuntimeUnavailable(
-			"direct_model",
-			"runtime_not_advertised",
-		)
-	}
-	return nil
-}
-
 func writeTurnStreamEvent(resp server.Response, event string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -718,6 +708,13 @@ func writeTurnStreamEvent(resp server.Response, event string, payload any) error
 		return err
 	}
 	if _, err := resp.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
+		return err
+	}
+	return resp.Flush()
+}
+
+func writeTurnStreamHeartbeat(resp server.Response) error {
+	if _, err := resp.Write([]byte(": heartbeat\n\n")); err != nil {
 		return err
 	}
 	return resp.Flush()

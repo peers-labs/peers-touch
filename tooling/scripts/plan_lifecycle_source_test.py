@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
 import tempfile
@@ -77,6 +78,7 @@ def _manifest(first: str, second: str) -> dict[str, object]:
 def _document(manifest: dict[str, object], suffix: str = "") -> str:
     return (
         "# Test Plan\n\n"
+        f"> **Status**: {manifest['status']}\n\n"
         "## Plan Package\n\n"
         "```json\n"
         + json.dumps(manifest, separators=(",", ":"), sort_keys=True)
@@ -128,6 +130,40 @@ class PlanLifecycleSourceTest(unittest.TestCase):
         self.assertEqual(control, projection.control_head)
         self.assertEqual(64, len(projection.transition_digest))
 
+    def test_accepts_block_and_reactivation_lifecycle_commits(self) -> None:
+        blocked = _manifest("in_progress", "pending")
+        blocked["status"] = "blocked"
+        blocked["tasks"][0]["status"] = "blocked"
+        blocked["tasks"][0]["blocker"] = {
+            "code": "TIMEOUT",
+            "owner": "runtime",
+            "evidenceRef": "runtime/timeout",
+        }
+        blocked["exhaustion"] = {
+            "recordedAt": "2026-09-28T10:53:20.000Z",
+            "blockedTaskIds": ["first"],
+            "decisionRefs": ["bounded-retry-exhausted"],
+            "evidenceRefs": ["runtime/timeout"],
+        }
+        self._commit(blocked)
+
+        reactivated = copy.deepcopy(blocked)
+        reactivated["status"] = "active"
+        reactivated["tasks"][0]["status"] = "in_progress"
+        reactivated["tasks"][0]["blocker"] = None
+        reactivated["exhaustion"] = None
+        control = self._commit(reactivated)
+
+        projection = validate_plan_lifecycle_source(
+            repo_root=self.root,
+            plan_path=PLAN_PATH,
+            runtime_source_commit=self.runtime_source,
+            control_head=control,
+        )
+
+        self.assertEqual(2, projection.transition_count)
+        self.assertEqual(control, projection.control_head)
+
     def test_rejects_non_plan_source_change(self) -> None:
         (self.root / "source.txt").write_text("changed\n", encoding="utf-8")
         _run(self.root, "add", "source.txt")
@@ -137,6 +173,45 @@ class PlanLifecycleSourceTest(unittest.TestCase):
         with self.assertRaisesRegex(
             PlanLifecycleSourceError,
             "outside the bound Plan",
+        ):
+            validate_plan_lifecycle_source(
+                repo_root=self.root,
+                plan_path=PLAN_PATH,
+                runtime_source_commit=self.runtime_source,
+                control_head=control,
+            )
+
+    def test_rejects_status_metadata_that_does_not_match_manifest(self) -> None:
+        manifest = _manifest("done", "in_progress")
+        document = _document(manifest).replace(
+            "> **Status**: active",
+            "> **Status**: blocked",
+        )
+        self.plan.write_text(document, encoding="utf-8")
+        _run(self.root, "add", PLAN_PATH)
+        _run(self.root, "commit", "-m", "mismatched status metadata")
+        control = _run(self.root, "rev-parse", "HEAD")
+
+        with self.assertRaisesRegex(
+            PlanLifecycleSourceError,
+            "Status metadata does not match",
+        ):
+            validate_plan_lifecycle_source(
+                repo_root=self.root,
+                plan_path=PLAN_PATH,
+                runtime_source_commit=self.runtime_source,
+                control_head=control,
+            )
+
+    def test_rejects_non_lifecycle_plan_content_change(self) -> None:
+        control = self._commit(
+            _manifest("done", "in_progress"),
+            suffix="\nChanged narrative.\n",
+        )
+
+        with self.assertRaisesRegex(
+            PlanLifecycleSourceError,
+            "outside lifecycle state",
         ):
             validate_plan_lifecycle_source(
                 repo_root=self.root,

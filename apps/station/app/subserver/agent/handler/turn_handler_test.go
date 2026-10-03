@@ -92,12 +92,13 @@ func (r *fakeTurnRequest) Path() string              { return "/agent/turns/stre
 func (r *fakeTurnRequest) Body() []byte              { return r.body }
 
 type fakeStreamResponse struct {
-	headers  map[string]string
-	body     bytes.Buffer
-	status   int
-	flushed  bool
-	writeErr error
-	flushErr error
+	headers     map[string]string
+	body        bytes.Buffer
+	status      int
+	flushed     bool
+	flushSignal chan struct{}
+	writeErr    error
+	flushErr    error
 }
 
 func (r *fakeStreamResponse) Header() map[string]string {
@@ -120,6 +121,12 @@ func (r *fakeStreamResponse) Write(data []byte) (int, error) {
 
 func (r *fakeStreamResponse) Flush() error {
 	r.flushed = true
+	if r.flushSignal != nil {
+		select {
+		case r.flushSignal <- struct{}{}:
+		default:
+		}
+	}
 	return r.flushErr
 }
 
@@ -180,6 +187,49 @@ func TestWriteTurnStreamEvent(t *testing.T) {
 	}
 	if !resp.flushed {
 		t.Fatal("expected SSE frame to flush")
+	}
+}
+
+func TestWriteTurnStreamHeartbeat(t *testing.T) {
+	resp := &fakeStreamResponse{}
+
+	if err := writeTurnStreamHeartbeat(resp); err != nil {
+		t.Fatalf("writeTurnStreamHeartbeat returned error: %v", err)
+	}
+
+	if got := resp.body.String(); got != ": heartbeat\n\n" {
+		t.Fatalf("heartbeat frame = %q", got)
+	}
+	if !resp.flushed {
+		t.Fatal("expected heartbeat frame to flush")
+	}
+}
+
+func TestServeTurnStreamKeepsIdleClientAlive(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	flushSignal := make(chan struct{}, 1)
+	resp := &fakeStreamResponse{flushSignal: flushSignal}
+	events := make(chan service.TurnEvent)
+	done := make(chan turnStreamResult)
+	heartbeat := make(chan time.Time, 1)
+	exited := make(chan error, 1)
+
+	go func() {
+		exited <- serveTurnStream(ctx, resp, events, done, heartbeat)
+	}()
+	heartbeat <- time.Now()
+
+	select {
+	case <-flushSignal:
+	case <-time.After(time.Second):
+		t.Fatal("idle turn stream did not flush a heartbeat")
+	}
+	cancel()
+	if err := <-exited; err != nil {
+		t.Fatalf("serveTurnStream returned error: %v", err)
+	}
+	if got := resp.body.String(); got != ": heartbeat\n\n" {
+		t.Fatalf("heartbeat frame = %q", got)
 	}
 }
 

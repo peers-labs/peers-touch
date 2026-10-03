@@ -27,7 +27,8 @@ test('normalizes Cursor without confusing tool cwd with execution roots', () => 
   );
   assert.equal(event.valid, true);
   assert.equal(event.event, 'PRE_TOOL_USE');
-  assert.equal(event.stableConversationId, 'conversation-1');
+  assert.equal(event.bindingIdentity.rootChatId, 'conversation-1');
+  assert.equal(event.bindingIdentity.executionSessionId, 'conversation-1');
   assert.equal(event.executionRootHints[0], '/workspace/a');
   assert.equal(event.toolWorkingDirectory, '/workspace/b');
 });
@@ -36,6 +37,7 @@ test('normalizes TRAE session identity and hook names', () => {
   const event = normalizeHostPayload(
     {
       hook_event_name: 'PreToolUse',
+      chat_session_id: 'visible-chat-1',
       session_id: 'session-1',
       repo_working_dir: '/workspace',
       tool_name: 'Read',
@@ -45,7 +47,8 @@ test('normalizes TRAE session identity and hook names', () => {
   );
   assert.equal(event.valid, true);
   assert.equal(event.event, 'PRE_TOOL_USE');
-  assert.equal(event.stableConversationId, 'session-1');
+  assert.equal(event.bindingIdentity.rootChatId, 'visible-chat-1');
+  assert.equal(event.bindingIdentity.executionSessionId, 'session-1');
   assert.equal(event.executionRootHints[0], '/workspace');
 });
 
@@ -76,7 +79,7 @@ test('ignores interaction overlays that try to widen execution policy', () => {
   assert.equal('authorization' in event, false);
 });
 
-test('rejects conflicting host conversation identifiers', () => {
+test('does not alias unrelated identity fields across hosts', () => {
   const event = normalizeHostPayload(
     {
       conversation_id: 'conversation-1',
@@ -84,8 +87,9 @@ test('rejects conflicting host conversation identifiers', () => {
     },
     { host: 'cursor', event: 'preToolUse' },
   );
-  assert.equal(event.valid, false);
-  assert.equal(event.code, 'HOST_CONVERSATION_ID_AMBIGUOUS');
+  assert.equal(event.valid, true);
+  assert.equal(event.bindingIdentity.rootChatId, 'conversation-1');
+  assert.equal(event.bindingIdentity.executionSessionId, 'conversation-1');
 });
 
 test('renders Cursor permission and continuation responses', () => {
@@ -206,4 +210,52 @@ test('normalizes PostToolUse action identity for terminal receipts', () => {
   assert.equal(event.valid, true);
   assert.equal(event.event, 'POST_TOOL_USE');
   assert.equal(event.actionId, 'tool-call-1');
+});
+
+test('normalizes TRAE child lifecycle and explicit assignment identity', () => {
+  const event = normalizeHostPayload(
+    {
+      chat_session_id: 'visible-chat',
+      session_id: 'child-session',
+      workflow_assignment_id: 'assignment-1',
+      agent_type: 'reviewer',
+      result: 'PASS',
+    },
+    { host: 'trae', event: 'SubagentStop' },
+  );
+  assert.equal(event.event, 'SUBAGENT_STOP');
+  assert.equal(event.bindingIdentity.rootChatId, 'visible-chat');
+  assert.equal(event.bindingIdentity.executionSessionId, 'child-session');
+  assert.equal(event.bindingIdentity.assignmentId, 'assignment-1');
+  assert.equal(event.agentType, 'reviewer');
+  assert.equal(event.childResult, 'PASS');
+});
+
+test('multi-root TRAE bootstrap location is not an authority hint', () => {
+  const event = normalizeHostPayload(
+    {
+      chat_session_id: 'visible-chat',
+      session_id: 'owner-session',
+      repo_working_dir: '/workspace/bootstrap',
+    },
+    {
+      host: 'trae',
+      event: 'PreToolUse',
+      installationRoot: '/workspace/bootstrap',
+      bootstrapRoot: '/workspace/bootstrap',
+      workspaceRoots: ['/workspace/bootstrap', '/workspace/target'],
+    },
+  );
+  assert.deepEqual(event.workspaceRoots, [
+    '/workspace/bootstrap',
+    '/workspace/target',
+  ]);
+  assert.equal(event.bootstrapRoot, '/workspace/bootstrap');
+  assert.equal(
+    event.executionRootHints.filter(
+      (candidate) => candidate === '/workspace/bootstrap',
+    ).length,
+    1,
+  );
+  assert.equal(event.executionRootHints.includes('/workspace/target'), false);
 });

@@ -52,9 +52,13 @@ def runtime_tuple(
             not_applicable=("contract-evidence", "guard-report"),
         ),
         runtime_attestation_profile=(
-            "direct_runtime_no_local_capability"
-            if platform == "browser"
-            else "direct_runtime"
+            "station_turn"
+            if "external-runtime" in row
+            else (
+                "direct_runtime_no_local_capability"
+                if platform == "browser"
+                else "direct_runtime"
+            )
         ),
     )
 
@@ -220,12 +224,55 @@ def capture(probe: DirectRuntimeProbeInput) -> dict[str, object]:
         attestation = result["runtimeAttestation"]
         del attestation["toolCallBinding"]
         attestation["clientSession"]["capabilities"] = []
+    if probe.cell == "BASE-RESUME-UNAVAILABLE":
+        attestation = result["runtimeAttestation"]
+        attestation.pop("clientSession", None)
+        attestation.pop("toolCallBinding", None)
+        attestation["conversationRuntimeBinding"].update(
+            {
+                "runtimeKind": "external_agent",
+                "providerId": "external-agent",
+                "modelId": "default",
+                "externalSessionId": "session-1",
+                "externalSessionEpoch": 1,
+            }
+        )
+        attestation["runtimeSnapshot"].update(
+            {
+                "runtimeKind": "external_agent",
+                "providerId": "external-agent",
+                "modelId": "default",
+                "externalSessionId": "session-1",
+                "externalSessionEpoch": 1,
+            }
+        )
+        attestation["turnAttempt"]["runtimeSnapshotHash"] = hashlib.sha256(
+            json.dumps(
+                attestation["runtimeSnapshot"],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
     return result
 
 
 class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
     def adapter(self, probe=capture) -> DirectRuntimeFoundationAdapter:
         return DirectRuntimeFoundationAdapter(probe)
+
+    def test_queue_full_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-QUEUE_FULL"],
+            {
+                "queueAtCapacity",
+                "typedQueueFull",
+                "localizedRecoveryVisible",
+                "editQueueFocused",
+                "queueStateUnchanged",
+                "zeroAutomaticResend",
+                "cleanupComplete",
+            },
+        )
 
     def test_forbidden_actor_requires_exact_assertion_contract(self) -> None:
         self.assertEqual(
@@ -387,6 +434,39 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
             },
         )
 
+    def test_provider_rate_limit_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-RATE_LIMIT"],
+            {
+                "typedProviderRateLimit",
+                "localizedRetryLaterVisible",
+                "retryAfterProjected",
+                "realProvider429Observed",
+                "oneTerminalProviderAttempt",
+                "noHiddenRetry",
+                "zeroSuccessfulCompletion",
+                "queueUnchanged",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
+    def test_resume_unavailable_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-RESUME-UNAVAILABLE"],
+            {
+                "typedResumeUnavailable",
+                "localizedConfirmResetVisible",
+                "oldEpochPreservedBeforeConfirmation",
+                "resetAdvancedExactlyOneEpoch",
+                "resetReplayIdempotent",
+                "freshSessionCreated",
+                "stationBindingAuthoritative",
+                "zeroClientOwnedExecution",
+                "cleanupComplete",
+            },
+        )
+
     def test_group_one_cells_are_explicitly_supported_on_both_receivers(self) -> None:
         adapter = self.adapter()
         producer = FoundationCandidateProducer(
@@ -400,8 +480,20 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
         )
         for cell in REQUIRED_ASSERTIONS:
             for row, platform, method in (
-                ("foundation-desktop-direct", "desktop_app", "observe_desktop_native"),
-                ("foundation-browser-direct", "browser", "observe_browser"),
+                (
+                    "foundation-z-desktop-external-runtime"
+                    if cell == "BASE-RESUME-UNAVAILABLE"
+                    else "foundation-desktop-direct",
+                    "desktop_app",
+                    "observe_desktop_native",
+                ),
+                (
+                    "foundation-z-browser-external-runtime"
+                    if cell == "BASE-RESUME-UNAVAILABLE"
+                    else "foundation-browser-direct",
+                    "browser",
+                    "observe_browser",
+                ),
             ):
                 item = runtime_tuple(cell, row=row, platform=platform)
                 observation = getattr(adapter, method)(item)
@@ -427,7 +519,12 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
             item.cell
             for item in load_foundation_tuples()
             if item.row
-            in {"foundation-desktop-direct", "foundation-browser-direct"}
+            in {
+                "foundation-desktop-direct",
+                "foundation-browser-direct",
+                "foundation-z-desktop-external-runtime",
+                "foundation-z-browser-external-runtime",
+            }
         }
 
         self.assertEqual(set(REQUIRED_ASSERTIONS) - matrix_cells, set())
@@ -439,19 +536,6 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
         ):
             self.adapter().observe_desktop_native(
                 runtime_tuple("AS-F99")
-            )
-
-    def test_other_base_cells_remain_fail_closed(self) -> None:
-        with self.assertRaisesRegex(
-            DirectRuntimeEvidenceError,
-            "direct-runtime group is not implemented",
-        ):
-            self.adapter().observe_browser(
-                runtime_tuple(
-                    "BASE-QUEUE_FULL",
-                    row="foundation-browser-direct",
-                    platform="browser",
-                )
             )
 
     def test_missing_required_assertion_fails_closed(self) -> None:

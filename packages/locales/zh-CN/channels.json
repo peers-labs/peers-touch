@@ -73,7 +73,7 @@
   "channels.config.webhook.method.placeholder": "POST",
   "channels.config.webhook.secret.label": "HMAC 密钥",
   "channels.config.webhook.secret.placeholder": "signing-secret",
-  "channels.config.webhook.secret.help": "用于 HMAC-SHA256 签名载荷（X-Peers-Touch-Signature 请求头）",
+  "channels.config.webhook.secret.help": "用于 HMAC-SHA256 签名载荷（X-PeersTouch-Signature 请求头）",
 
   "channels.drawer.titleAdd": "添加频道",
   "channels.drawer.titleEdit": "编辑频道",

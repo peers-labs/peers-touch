@@ -139,6 +139,10 @@ class McpLifecycleCandidateTest(unittest.TestCase):
             ROOT
             / "apps/desktop/src/acceptance/agent/harness.ts"
         ).read_text(encoding="utf-8")
+        desktop_journey = harness[
+            harness.index("async function prepareMcpLifecycleDevelopmentJourney("):
+            harness.index("async function recoverMcpLifecycleDevelopmentJourney(")
+        ]
 
         self.assertIn('sys.argv[1:] == ["--formal-candidate"]', development)
         self.assertIn("async runMcpLifecycleScenario(", harness)
@@ -149,6 +153,22 @@ class McpLifecycleCandidateTest(unittest.TestCase):
         self.assertIn(
             "CapabilityAcceptanceRuntimeProfile.CLIENT_CAPABILITY_TURN",
             harness,
+        )
+        self.assertIn(
+            "'MCP cleanup Agent session surface'",
+            harness,
+        )
+        self.assertIn(
+            "'MCP Agent session surface'",
+            harness,
+        )
+        self.assertIn(
+            "'MCP unavailable cleanup Agent session surface'",
+            harness,
+        )
+        self.assertIn(
+            "await reconcileFoundationToolReceiver();",
+            desktop_journey,
         )
 
 

@@ -3,8 +3,15 @@ from __future__ import annotations
 import json
 import unittest
 
-from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
+from tooling.acceptance.core import (
+    ENVIRONMENTS_DIR,
+    EnvironmentContract,
+    GateError,
+)
 from tooling.acceptance.core.provisioning import ProvisioningState
+from tooling.acceptance.gates.station_access.desktop_oauth_layout_e2e import (
+    StationAccessDesktopOAuthLayoutGate,
+)
 from tooling.acceptance.provisioners import (
     StationAccessLoginBrowserProvisioner,
     get_provisioner,
@@ -52,6 +59,29 @@ class StationAccessDesktopOAuthLayoutAcceptanceTests(unittest.TestCase):
         gate = gates[GATE_ID]
         self.assertEqual(gate["environment"], ENVIRONMENT_ID)
         self.assertEqual(gate["provisioner"], ENVIRONMENT_ID)
+
+    def test_summary_assertion_detail_does_not_contradict_success(self) -> None:
+        gate = StationAccessDesktopOAuthLayoutGate()
+
+        gate._record_summary_assertions({"layout_is_stable": True})
+
+        self.assertTrue(gate.report.assertions[0].passed)
+        self.assertIsNone(gate.report.assertions[0].detail)
+
+    def test_summary_assertion_failure_retains_diagnostic(self) -> None:
+        gate = StationAccessDesktopOAuthLayoutGate()
+
+        with self.assertRaisesRegex(
+            GateError,
+            "journey assertion layout_is_stable was not proven",
+        ):
+            gate._record_summary_assertions({"layout_is_stable": False})
+
+        self.assertFalse(gate.report.assertions[0].passed)
+        self.assertEqual(
+            gate.report.assertions[0].detail,
+            "journey assertion layout_is_stable was not proven",
+        )
 
     def test_journey_covers_both_providers_viewports_and_geometry(self) -> None:
         driver = (

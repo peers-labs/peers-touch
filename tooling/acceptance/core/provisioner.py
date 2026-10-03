@@ -30,7 +30,12 @@ from .provisioning import (
     new_manifest,
 )
 
-PROFILE_SECRET_ENV_OVERRIDES = ("PT_AGENT_PROVIDER_API_KEY",)
+PROFILE_ENV_OVERRIDES = (
+    "PT_AGENT_PROVIDER_ID",
+    "PT_AGENT_PROVIDER_API_KEY",
+    "PT_AGENT_DEFAULT_MODEL_ID",
+    "PT_AGENT_PROVIDER_BASE_URL",
+)
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -114,7 +119,7 @@ def resolve_machine_profile_environment(
         ) from error
 
     values = load_env_file(profile_file)
-    for field in PROFILE_SECRET_ENV_OVERRIDES:
+    for field in PROFILE_ENV_OVERRIDES:
         injected = os.environ.get(field, "")
         if injected:
             values[field] = injected

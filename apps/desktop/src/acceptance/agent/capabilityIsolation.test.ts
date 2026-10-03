@@ -8,6 +8,8 @@ import {
   parseFoundationCapabilityFixtureJournal,
   parseFoundationCapabilityIsolationJournal,
   planFoundationCapabilityBindingRestoration,
+  resolveFoundationCapabilityBindingForCleanup,
+  resolveFoundationCapabilityIsolationAgent,
   restoreFoundationCapabilityBindings,
 } from './capabilityIsolation';
 import { CapabilityApprovalPolicy } from '../../gen/proto/domain/agent/capability_pb';
@@ -221,6 +223,93 @@ describe('planFoundationCapabilityBindingRestoration', () => {
       'agent.acceptance.foundationCapabilityBindingIdentityChanged',
     );
     expect(writes).toEqual(['binding-second']);
+  });
+});
+
+describe('resolveFoundationCapabilityBindingForCleanup', () => {
+  const expected = {
+    $typeName: 'peers_touch.model.agent.v1.AgentCapabilityBinding' as const,
+    bindingId: 'binding-cleanup',
+    ptid: 'ptid:v1:actor:peers:p:test:1220abc',
+    agentId: 'agent-1',
+    capabilityId: 'skill:cleanup',
+    capabilityVersion: '1',
+    enabled: true,
+    approvalPolicy: CapabilityApprovalPolicy.AUTO,
+    expectedAgentVersion: 2n,
+    revision: 4n,
+    tombstonedByPtid: '',
+    tombstoneReason: '',
+  };
+
+  it('accepts revision drift caused only by a parent Agent rebase', () => {
+    const rebased = {
+      ...expected,
+      expectedAgentVersion: 3n,
+      revision: 5n,
+    };
+
+    expect(
+      resolveFoundationCapabilityBindingForCleanup(expected, [rebased]),
+    ).toEqual(rebased);
+  });
+
+  it.each([
+    { revision: 5n },
+    { expectedAgentVersion: 3n, revision: 6n },
+    { enabled: false },
+    { approvalPolicy: CapabilityApprovalPolicy.DENY },
+  ])('rejects non-rebase binding state drift', (override) => {
+    expect(() => {
+      resolveFoundationCapabilityBindingForCleanup(expected, [{
+        ...expected,
+        ...override,
+      }]);
+    }).toThrow(
+      'agent.acceptance.foundationCapabilityBindingStateChanged',
+    );
+  });
+
+  it('returns null when cleanup already removed the binding', () => {
+    expect(
+      resolveFoundationCapabilityBindingForCleanup(expected, []),
+    ).toBeNull();
+  });
+});
+
+describe('resolveFoundationCapabilityIsolationAgent', () => {
+  const journal = {
+    agentId: 'agent-1',
+    agentVersion: 2,
+  };
+  const agent = {
+    id: 'agent-1',
+    name: 'assistant',
+    version: 2,
+  };
+
+  it('returns null only when the authoritative Agent no longer exists', () => {
+    expect(resolveFoundationCapabilityIsolationAgent(journal, [])).toBeNull();
+  });
+
+  it('preserves the strict Agent version fence for a live Agent', () => {
+    expect(resolveFoundationCapabilityIsolationAgent(journal, [agent]))
+      .toEqual(agent);
+    expect(() => resolveFoundationCapabilityIsolationAgent(journal, [{
+      ...agent,
+      version: 3,
+    }])).toThrow(
+      'agent.acceptance.foundationCapabilityIsolationAgentChanged',
+    );
+  });
+
+  it('rejects ambiguous identity matches', () => {
+    expect(() => resolveFoundationCapabilityIsolationAgent(journal, [
+      agent,
+      { id: '', name: 'agent-1', version: 2 },
+    ])).toThrow(
+      'agent.acceptance.foundationCapabilityIsolationAgentIdentityAmbiguous',
+    );
   });
 });
 

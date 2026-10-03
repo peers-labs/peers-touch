@@ -1,0 +1,46 @@
+{
+  "id": "agent-minimum-usable-chat",
+  "status": "active",
+  "initial_proof_status": "UNPROVEN",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/service/turn_service.go",
+    "apps/station/app/subserver/agent/service/capability_authority_service.go",
+    "apps/desktop/src/acceptance/agent/harness.ts",
+    "tooling/acceptance/gates/agent/native_agent_runner.py"
+  ],
+  "truth_sources": [
+    "Station Agent, conversation, message, Turn, capability binding, readiness, ToolCall, and receipt state",
+    "Actor-scoped Desktop MCP configuration and process lifecycle"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-tauri",
+      "surface": "Selected Direct Model Agent, governed MCP ToolCall, final Assistant response, and restart-restored conversation"
+    },
+    {
+      "type": "station-readback",
+      "surface": "Agent runtime binding, capability binding/readiness, ToolCall lineage, and persisted final response"
+    }
+  ],
+  "required_gates": [
+    "agent-minimum-usable-chat-native-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "one selected Direct Model Agent binds one ready MCP capability and completes one Station-governed invocation",
+      "the MCP result is incorporated into one persisted terminal Assistant response",
+      "the same Agent, capability binding, conversation, Turn, and final response survive Native Desktop restart"
+    ],
+    "visible": [
+      "the Native client shows the governed MCP ToolCall result and final Assistant response",
+      "after restart the Native client reopens the same conversation and shows the same terminal response"
+    ]
+  },
+  "negative": [
+    "the Gate must not invoke the 69, 86, 41, or 419 tuple matrices",
+    "mock, fallback, dual-write, test-only product paths, and fabricated completion are forbidden",
+    "Browser and Mobile remain UNPROVEN and do not block this Native minimum closure",
+    "missing receiver DOM, Station readback, final response, restart recovery, or cleanup evidence keeps the Gate UNPROVEN"
+  ]
+}

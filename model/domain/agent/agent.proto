@@ -556,6 +556,14 @@ enum RuntimeKind {
   RUNTIME_KIND_EXTERNAL_AGENT = 2;
 }
 
+enum ExternalRuntimeBindingState {
+  EXTERNAL_RUNTIME_BINDING_STATE_UNSPECIFIED = 0;
+  EXTERNAL_RUNTIME_BINDING_STATE_READY = 1;
+  EXTERNAL_RUNTIME_BINDING_STATE_RESUME_UNAVAILABLE = 2;
+  EXTERNAL_RUNTIME_BINDING_STATE_RESET_PREPARED = 3;
+  EXTERNAL_RUNTIME_BINDING_STATE_CLEANUP_FAILED = 4;
+}
+
 enum AgentTurnStatus {
   AGENT_TURN_STATUS_UNSPECIFIED = 0;
   AGENT_TURN_STATUS_SUBMITTED = 1;
@@ -703,6 +711,9 @@ message ConversationRuntimeBinding {
   string capability_snapshot_hash = 8;
   string config_snapshot_hash = 9;
   google.protobuf.Timestamp bound_at = 10;
+  ExternalRuntimeBindingState state = 11;
+  string last_error_code = 12;
+  google.protobuf.Timestamp updated_at = 13;
 }
 
 message RuntimeCapability {
@@ -1475,6 +1486,19 @@ message TombstoneMessageRequest {
 message TombstoneMessageResponse {
   Conversation conversation = 1;
   AgentMessage message = 2;
+}
+
+message ResetConversationRuntimeRequest {
+  string conversation_id = 1;
+  uint64 expected_conversation_version = 2;
+  string client_idempotency_key = 3;
+  bool destructive_confirmed = 4;
+}
+
+message ResetConversationRuntimeResponse {
+  Conversation conversation = 1;
+  uint64 closed_external_session_epoch = 2;
+  bool replayed = 3;
 }
 
 // ============================================================================

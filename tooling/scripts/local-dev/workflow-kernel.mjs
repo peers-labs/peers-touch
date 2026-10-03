@@ -7,17 +7,25 @@ import {
   renderWorkflowAnchor,
 } from './workflow-anchor.mjs';
 import {
-  bindConversation,
-  readConversationBinding,
-  releaseConversation,
-  writeAnchorReceipt,
-} from './workflow-conversation-binding.mjs';
+  recordWorkflowPreCompact,
+  releaseWorkflowOwner,
+  resolveEventWorkflowBinding,
+  terminalizeWorkflowChild,
+  verifyWorkflowPostCompact,
+  writeWorkflowAnchorReceipt,
+} from './workflow-binding-store.mjs';
+import {
+  projectWorkflowEventRoots,
+  selectOwnerExecutionRoot,
+} from './workflow-binding-projection.mjs';
 import {
   inspectStopContext,
   inspectWorkflowContext,
   resolveExecutionRoot,
+  resolveProjectRoot,
 } from './workflow-state-inspector.mjs';
 import {
+  issueWorkflowActionGrant,
   recordWorkflowAction,
   startWorkflowActionHeartbeat,
 } from './workflow-action-store.mjs';
@@ -147,6 +155,9 @@ function contextText(binding, inspection, enforcementMode) {
     `enforcement=${enforcementMode}`,
     `executionRoot=${binding?.executionRoot ?? 'pending'}`,
     `workspaceId=${binding?.workspaceId ?? 'pending'}`,
+    `bindingRole=${binding?.role ?? 'pending'}`,
+    `rootBindingDigest=${binding?.rootBindingDigest ?? 'pending'}`,
+    `bindingDigest=${binding?.bindingDigest ?? 'pending'}`,
     binding
       ? `entrySkill=${path.join(binding.executionRoot, 'tooling', 'skills', 'pt-ew', 'SKILL.md')}`
       : 'entrySkill=pending-first-pre-tool-use',
@@ -185,42 +196,64 @@ function deny(code, reason, binding = null) {
   };
 }
 
-function bindingDependencies(options) {
-  return {
-    read:
-      options.readConversationBinding ??
-      ((host, conversationId) =>
-        readConversationBinding(host, conversationId, {
-          machineRoot: options.machineRoot,
-        })),
-    bind:
-      options.bindConversation ??
-      ((host, conversationId, root) =>
-        bindConversation(host, conversationId, root, {
-          machineRoot: options.machineRoot,
-          now: options.now,
-        })),
-  };
-}
-
 async function resolveBinding(event, options) {
-  if (!event.stableConversationId) {
+  if (!event.bindingIdentity?.rootChatId) {
     return { mode: 'OBSERVE_ONLY', binding: null };
   }
-  const dependencies = bindingDependencies(options);
-  const existing = dependencies.read(event.host, event.stableConversationId);
-  if (existing !== null) return { mode: 'ENFORCED', binding: existing };
-  if (event.event !== 'PRE_TOOL_USE') {
-    return { mode: 'PREWARM', binding: null };
+  const resolver =
+    options.resolveEventWorkflowBinding ?? resolveEventWorkflowBinding;
+  const intent = (options.classifyToolIntent ?? classifyToolIntent)(event);
+  const targetPaths = intent.targets.map((target) =>
+    path.isAbsolute(target)
+      ? path.resolve(target)
+      : path.resolve(
+          event.toolWorkingDirectory ??
+            event.repositoryWorkingDirectory ??
+            process.cwd(),
+          target,
+        ));
+  const storeOptions = {
+    machineRoot: options.machineRoot,
+    now: options.now,
+  };
+  let root = options.executionRoot ?? null;
+  let resolved = resolver(event, root, storeOptions);
+  if (resolved.mode === 'NEEDS_ROOT') {
+    if (
+      !intent.mutating &&
+      (event.workspaceRoots ?? []).length > 1 &&
+      !event.explicitTaskRoot
+    ) {
+      return { mode: 'PREWARM', binding: null, executionRoot: null };
+    }
+    root = selectOwnerExecutionRoot(event, {
+      resolveProjectRoot,
+      targetPaths,
+    });
+    if (root === null) return { mode: 'OUTSIDE_PROJECT', binding: null };
+    resolved = resolver(event, root, storeOptions);
   }
-  const root = options.executionRoot ?? resolveExecutionRoot(event);
-  if (root === null) return { mode: 'OUTSIDE_PROJECT', binding: null };
-  const created = dependencies.bind(
-    event.host,
-    event.stableConversationId,
-    root,
-  );
-  return { mode: 'ENFORCED', binding: created.binding };
+  let projection = resolved.projection ?? null;
+  if (projection !== null) {
+    const toolRoot = resolveProjectRoot(event.toolWorkingDirectory);
+    const targetRoots = intent.targets
+      .map((target) =>
+        resolveProjectRoot(absoluteTarget(event, projection, target)))
+      .filter(Boolean);
+    const hintRoots = (event.executionRootHints ?? [])
+      .map((candidate) => resolveProjectRoot(candidate))
+      .filter(Boolean);
+    projection = projectWorkflowEventRoots(projection, {
+      toolRoot,
+      targetRoots,
+      subjectRoots: [...hintRoots, ...(toolRoot ? [toolRoot] : []), ...targetRoots],
+    });
+  }
+  return {
+    ...resolved,
+    storedBinding: resolved.binding ?? null,
+    binding: projection,
+  };
 }
 
 async function evaluateWorkflowEventInternal(event, options = {}) {
@@ -230,7 +263,15 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
       'Hook payload is missing a supported host or event.',
     );
   }
-  const resolved = await resolveBinding(event, options);
+  let resolved;
+  try {
+    resolved = await resolveBinding(event, options);
+  } catch (error) {
+    return deny(
+      error.code ?? 'WORKFLOW_BINDING_RESOLUTION_FAILED',
+      error.message ?? 'Workflow binding could not be resolved.',
+    );
+  }
   if (resolved.mode === 'OUTSIDE_PROJECT') return { action: 'NOOP' };
   if (resolved.mode === 'OBSERVE_ONLY') {
     if (event.event === 'SESSION_START' || event.event === 'BEFORE_PROMPT') {
@@ -266,7 +307,9 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
     };
   }
   if (resolved.mode === 'PREWARM') {
-    const root = resolveExecutionRoot(event);
+    const root = Object.hasOwn(resolved, 'executionRoot')
+      ? resolved.executionRoot
+      : resolveExecutionRoot(event);
     if (event.event !== 'SESSION_START' && event.event !== 'BEFORE_PROMPT') {
       return {
         action: 'ALLOW',
@@ -283,8 +326,56 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
   }
 
   const binding = resolved.binding;
+  if (
+    binding.role !== 'OWNER' &&
+    (binding.released || binding.childState !== 'LEASED')
+  ) {
+    return deny(
+      'WORKFLOW_CHILD_BINDING_NOT_LIVE',
+      'Assigned child is expired, terminal, or its owner is released.',
+      binding,
+    );
+  }
   const inspect = options.inspectWorkflowContext ?? inspectWorkflowContext;
-  if (event.event === 'SESSION_START' || event.event === 'BEFORE_PROMPT') {
+  if (
+    event.event === 'SESSION_START' ||
+    event.event === 'BEFORE_PROMPT' ||
+    event.event === 'SUBAGENT_START'
+  ) {
+    const inspection = await inspectStopContext(binding, inspect);
+    return {
+      action: 'CONTEXT',
+      additionalContext: contextText(binding, inspection, 'ENFORCED'),
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+  if (event.event === 'PRE_COMPACT' || event.event === 'POST_COMPACT') {
+    try {
+      if (event.event === 'PRE_COMPACT') {
+        (options.recordWorkflowPreCompact ?? recordWorkflowPreCompact)(
+          binding,
+          {
+            machineRoot: options.machineRoot,
+            now: options.now,
+          },
+        );
+      } else {
+        (options.verifyWorkflowPostCompact ?? verifyWorkflowPostCompact)(
+          binding,
+          {
+            machineRoot: options.machineRoot,
+            now: options.now,
+          },
+        );
+      }
+    } catch (error) {
+      return deny(
+        error?.code ?? 'WORKFLOW_COMPACT_LINEAGE_INVALID',
+        error?.message ?? 'Compact lineage could not be verified.',
+        binding,
+      );
+    }
     const inspection = await inspectStopContext(binding, inspect);
     return {
       action: 'CONTEXT',
@@ -296,6 +387,13 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
 
   if (event.event === 'PRE_TOOL_USE') {
     const intent = (options.classifyToolIntent ?? classifyToolIntent)(event);
+    if (binding.released && intent.mutating) {
+      return deny(
+        'WORKFLOW_OWNER_RELEASED',
+        'Released OWNER lineage cannot admit a new mutation.',
+        binding,
+      );
+    }
     if (intent.kind === 'DIRECT_RUNTIME_OWNER') {
       return deny(
         'DIRECT_RUNTIME_OWNER_DENIED',
@@ -405,6 +503,30 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
     };
   }
 
+  if (event.event === 'SUBAGENT_STOP') {
+    if (binding.role !== 'OWNER') {
+      const normalizedResult = String(event.childResult ?? 'PASS').toUpperCase();
+      const result = new Set(['PASS', 'FAIL', 'BLOCKED', 'CANCELLED']).has(
+        normalizedResult,
+      )
+        ? normalizedResult
+        : 'BLOCKED';
+      (options.terminalizeWorkflowChild ?? terminalizeWorkflowChild)(
+        resolved.storedBinding,
+        result,
+        {
+          machineRoot: options.machineRoot,
+          now: options.now,
+        },
+      );
+    }
+    return {
+      action: 'ALLOW',
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+
   const inspection = await inspectStopContext(binding, inspect);
   if (inspection.status === 'IDLE') {
     return {
@@ -420,10 +542,14 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
     inspection.currentTask?.status === 'in_progress' &&
     !STOPPABLE_SESSION_STATES.has(inspection.session.state.state);
   const anchor = renderWorkflowAnchor(binding, inspection);
-  (options.writeAnchorReceipt ?? writeAnchorReceipt)(binding, anchor, {
+  (options.writeWorkflowAnchorReceipt ?? writeWorkflowAnchorReceipt)(
+    resolved.owner,
+    anchor,
+    {
     machineRoot: options.machineRoot,
     now: options.now,
-  });
+    },
+  );
   if (active) {
     return {
       action: 'CONTINUE',
@@ -448,8 +574,15 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
       executionRoot: binding.executionRoot,
     };
   }
-  (options.releaseConversation ?? releaseConversation)(
-    binding,
+  if (binding.role !== 'OWNER') {
+    return {
+      action: 'ALLOW',
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+  (options.releaseWorkflowOwner ?? releaseWorkflowOwner)(
+    resolved.owner,
     anchor.digest,
     {
       machineRoot: options.machineRoot,
@@ -495,16 +628,22 @@ async function reportWorkflowAction(event, result, options) {
     !['PRE_TOOL_USE', 'POST_TOOL_USE', 'POST_TOOL_FAILURE'].includes(
       event.event,
     ) ||
-    !event.stableConversationId ||
+    !event.bindingIdentity?.rootChatId ||
     !result.executionRoot
   ) {
     return;
   }
   const intent = (options.classifyToolIntent ?? classifyToolIntent)(event);
   if (!intent.mutating && result.action !== 'DENY') return;
-  const dependencies = bindingDependencies(options);
-  const binding = dependencies.read(event.host, event.stableConversationId);
-  if (binding === null) return;
+  const resolved = await resolveBinding(event, options);
+  const binding = resolved.binding;
+  if (binding === null || resolved.mode !== 'ENFORCED') return;
+  if (
+    binding.released ||
+    (binding.role !== 'OWNER' && binding.childState !== 'LEASED')
+  ) {
+    return;
+  }
   let inspection = null;
   try {
     inspection = await (
@@ -533,8 +672,15 @@ async function reportWorkflowAction(event, result, options) {
   const recordInput = {
     machineRoot: options.machineRoot,
     host: binding.host,
-    conversationHash: binding.conversationHash,
-    bindingDigest: binding.digest,
+    rootBindingDigest: binding.rootBindingDigest,
+    actor: {
+      host: binding.host,
+      bindingDigest: binding.bindingDigest,
+      role: binding.role,
+      rootBindingDigest: binding.rootBindingDigest,
+      parentBindingDigest: binding.parentBindingDigest,
+      assignmentDigest: binding.assignmentDigest,
+    },
     binding: {
       workspaceId: binding.workspaceId,
       workItemId: inspection?.declaration?.workItemId ?? null,
@@ -558,6 +704,22 @@ async function reportWorkflowAction(event, result, options) {
   };
   try {
     const receipt = writer(recordInput);
+    const issueGrant =
+      options.issueWorkflowActionGrant === undefined
+        ? issueWorkflowActionGrant
+        : options.issueWorkflowActionGrant;
+    if (
+      receiptEvent === 'STARTED' &&
+      receipt?.actionId &&
+      recordInput.operation.family === 'OWNER_CONTROL' &&
+      recordInput.operation.label === 'skills' &&
+      issueGrant !== false
+    ) {
+      issueGrant(receipt, {
+        machineRoot: options.machineRoot,
+        now: options.now,
+      });
+    }
     const startHeartbeat =
       options.startWorkflowActionHeartbeat === undefined
         ? startWorkflowActionHeartbeat

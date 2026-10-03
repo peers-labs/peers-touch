@@ -484,6 +484,16 @@ func (s *PrivateContentService) projectPrivateComment(
 			"persisted private-content commitments diverge",
 		)
 	}
+	mentionRouting, err := decodePersistedMentionRouting(
+		read.Comment.MentionRoutingBytes,
+		read.Comment.MentionRoutingSHA256,
+		proof,
+		payloadBytes,
+		operation,
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &privatecontentpb.CommentResource{
 		Metadata: &privatecontentpb.CommentMetadata{
 			CommentId:        read.Comment.CommentID,
@@ -505,6 +515,9 @@ func (s *PrivateContentService) projectPrivateComment(
 				viewerEnvelope,
 				proof,
 				attestation,
+				mentionRouting,
+				nil,
+				nil,
 			),
 		},
 	}, nil

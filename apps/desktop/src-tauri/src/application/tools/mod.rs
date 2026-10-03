@@ -1,4 +1,4 @@
-use crate::application::{mcp, plugins};
+use crate::application::plugins;
 use crate::contracts::{SearchPrimaryInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use serde_json::{json, Value};
@@ -19,9 +19,7 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 
 pub fn tools_list_entries(actor_ptid: &str) -> Result<Vec<Value>, String> {
     let mut tools = builtin_tool_registry_entries();
-    if let Ok(mut mcp_tools) = mcp::mcp_tool_registry_entries(actor_ptid) {
-        tools.append(&mut mcp_tools);
-    }
+    let _ = actor_ptid;
     if let Ok(mut plugin_tools) = plugins::plugin_tool_registry_entries() {
         tools.append(&mut plugin_tools);
     }
@@ -30,17 +28,7 @@ pub fn tools_list_entries(actor_ptid: &str) -> Result<Vec<Value>, String> {
 
 pub fn tools_list(actor_ptid: &str) -> AppResult<StubPayload> {
     let mut tools = builtin_tool_registry_entries();
-    match mcp::mcp_tool_registry_entries(actor_ptid) {
-        Ok(mut mcp_tools) => tools.append(&mut mcp_tools),
-        Err(error) => {
-            tracing::error!(error = %error, "Failed to project MCP tools into tool registry");
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to list MCP tools: {error}"),
-                None,
-            );
-        }
-    }
+    let _ = actor_ptid;
     match plugins::plugin_tool_registry_entries() {
         Ok(mut plugin_tools) => tools.append(&mut plugin_tools),
         Err(error) => {

@@ -1,0 +1,52 @@
+{
+  "id": "oauth2-client-durability",
+  "status": "active",
+  "product_area": "oauth-login-broker",
+  "owners": [
+    "apps/oauth2-client/**",
+    "docs/architecture/oauth-login-broker/**",
+    "tooling/acceptance/gates/oauth2_client/**"
+  ],
+  "truth_sources": [
+    "OAuthStore authorization, identity, credential, and audit records",
+    "provider token endpoints",
+    "read-only administration projection"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "http",
+      "route": "/api/oauth/{provider}/{start|callback}"
+    },
+    {
+      "type": "operator",
+      "route": "/api/admin"
+    },
+    {
+      "type": "operator",
+      "route": "/api/admin/data"
+    }
+  ],
+  "required_gates": [
+    "oauth-login-broker-durable-login",
+    "oauth-login-broker-refresh-idempotency",
+    "oauth-login-broker-key-rotation",
+    "oauth-login-broker-operator"
+  ],
+  "acceptance": {
+    "service": [
+      "authorization state and PKCE survive independent process instances",
+      "provider credentials refresh atomically and idempotently",
+      "all durable records rotate between configured encryption keys"
+    ],
+    "visible": [
+      "authenticated operator HTML and JSON expose sanitized login state",
+      "unapproved redirects and unauthenticated administration fail closed"
+    ]
+  },
+  "negative": [
+    "raw authorization code or raw state must not be persisted",
+    "OAuth tokens, provider secrets, GitHub credentials, and encryption keys must not enter operator output or evidence",
+    "Vercel must not fall back to process memory",
+    "administration must not mutate durable OAuth records"
+  ]
+}

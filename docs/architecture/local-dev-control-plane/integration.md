@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-28
+> **Created**: 2026-09-13 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -76,6 +76,8 @@ Target command behavior:
 | `make dev-status-all` | Show all worktree declarations beside observed leases |
 | `make dev-check` | Verify current worktree/branch/HEAD owns a live declaration |
 | `make dev-release` | Release the work declaration after cleanup |
+| `make dev-resources-prepare` | Ask Dev Workflow to aggregate module impacts and atomically publish ready-target resource claims |
+| `make dev-resource-record` | Record a Runtime Owner result against the committed resource-plan fence |
 | `make plan-bind PLAN=<path>` | Create the current workspace's immutable Plan binding once |
 | `make plan-binding` | Resolve and validate only the bound Plan |
 | `make profile-authorize <name> SLOT=<n>` | Human-only interactive grant for one exact local compose profile |
@@ -107,6 +109,11 @@ It validates the canonical Profile-ID reset policy, authoritative binding,
 `allowedCapabilities`, exact active Development intent, remote tracked-clean
 topology, and exact reset scope before acquiring the OS lock. It does not
 implement deletion or consult a second human-authorization channel.
+
+For a claim introduced by DWF-D32 planning, the same lease admission also
+requires the matching machine-local resource plan to be `COMMITTED` and current.
+`RESERVING` plans cannot authorize physical work. Pre-existing claims are
+recorded separately as base intent and keep their original behavior.
 
 `make station` uses the same API with `station.deploy` and holds the lease
 across source synchronization, build, restart, deploy health readback, and the

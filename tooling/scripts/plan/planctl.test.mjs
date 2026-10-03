@@ -188,6 +188,20 @@ function taskSliceFor(entry) {
   };
 }
 
+function runtimeReuseContract() {
+  return {
+    scope: 'suite',
+    entryCheckId: 'functional-task-a',
+    scenarioIds: ['scenario-a', 'scenario-b'],
+    maxProvisioningRuns: 1,
+    maxClientLaunches: 2,
+    minWarmReuseRate: 0.5,
+    requireAttachOnlyScenarios: true,
+    requireReceiverVisibleProof: true,
+    allowClientReplacement: false,
+  };
+}
+
 function acceptanceForTasks(tasks) {
   const closures = {};
   const gates = [];
@@ -836,6 +850,65 @@ test('rejects closed-schema additions, duplicate IDs, cycles, current, and exhau
     );
   });
 
+  await t.test('functional Task accepts a closed runtime reuse contract', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        const task = taskSlices.get('task-a');
+        task.runtimeClass = 'native-desktop';
+        task.runtimeReuse = runtimeReuseContract();
+      },
+    });
+    const planPackage = await loadPlanPackage(fixture.planPath, {
+      repoRoot: fixture.root,
+    });
+    assert.deepEqual(
+      planPackage.taskSlices.get('task-a').runtimeReuse,
+      runtimeReuseContract(),
+    );
+  });
+
+  await t.test('runtime reuse rejects scenario scope', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        const task = taskSlices.get('task-a');
+        task.runtimeClass = 'native-desktop';
+        task.runtimeReuse = runtimeReuseContract();
+        task.runtimeReuse.scope = 'scenario';
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_SCHEMA_INVALID',
+    );
+  });
+
+  await t.test('runtime reuse rejects duplicate scenarios', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        const task = taskSlices.get('task-a');
+        task.runtimeClass = 'native-desktop';
+        task.runtimeReuse = runtimeReuseContract();
+        task.runtimeReuse.scenarioIds = ['scenario-a', 'scenario-a'];
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_DUPLICATE',
+    );
+  });
+
+  await t.test('runtime reuse rejects source-only runtime', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        taskSlices.get('task-a').runtimeReuse = runtimeReuseContract();
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_TASK_RUNTIME_INVALID',
+    );
+  });
+
   await t.test('Acceptance Execution schemaVersion is rejected', async (t) => {
     const fixture = await makeFixture(t, {
       mutateAcceptance(acceptance) {
@@ -987,7 +1060,7 @@ test('enforces manifest, task, snapshot, and history bounds', async (t) => {
 
 test('renderPlanDocument falls back to bounded compact JSON for a large manifest', () => {
   const manifest = manifestForStatus('prepared');
-  manifest.tasks = Array.from({ length: 20 }, (_, index) =>
+  manifest.tasks = Array.from({ length: 40 }, (_, index) =>
     taskEntry(`task-${index}`, `W${index}`, [], 'pending'),
   );
   const acceptance = acceptanceForTasks(manifest.tasks);
@@ -997,8 +1070,21 @@ test('renderPlanDocument falls back to bounded compact JSON for a large manifest
   );
 
   const rendered = renderPlanDocument(compactSource, manifest);
-  assert.ok(rendered.split('\n').length <= 300);
-  assert.ok(rendered.includes(JSON.stringify(manifest.tasks[19])));
+  const manifestBlock = rendered.match(
+    /## Plan Package\n\n```json\n([\s\S]*?)\n```/,
+  )[1];
+  assert.ok(manifestBlock.split('\n').length <= 300);
+  assert.ok(rendered.includes(JSON.stringify(manifest.tasks[39])));
+});
+
+test('renderPlanDocument applies manifest bounds only to the manifest block', () => {
+  const manifest = manifestForStatus('prepared');
+  const acceptance = acceptanceForTasks(manifest.tasks);
+  const surroundingContent = 'x'.repeat(21 * 1024);
+  const source = `${planMarkdown(manifest, acceptance)}\n${surroundingContent}\n`;
+
+  const rendered = renderPlanDocument(source, manifest);
+  assert.ok(rendered.endsWith(`${surroundingContent}\n`));
 });
 
 test('renderPlanDocument removes obsolete sibling worktree metadata', () => {

@@ -1,6 +1,9 @@
 pub mod adapter;
+pub mod private_comment;
+pub mod private_mention;
 pub mod proto;
 pub mod receiver;
+pub mod recovery;
 pub mod store;
 pub mod transport;
 pub mod worker;

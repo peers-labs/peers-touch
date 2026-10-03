@@ -602,22 +602,22 @@ message RepostResponse {
 //
 // Field semantics by Kind:
 //   PUBLIC         — visible to anyone (federated when ActivityPub lands).
-//                    target_id / actor_ptids / base_kind: unused.
+//                    target / actor_ptids / base_kind: unused.
 //   FOLLOWERS      — visible to author's followers + author. unused: as PUBLIC.
 //   FRIENDS        — visible to accepted Social relationship peers + author.
-//                    target_id / actor_ptids / base_kind: unused.
-//   CIRCLE         — visible to members of `target_id` circle (publisher-owned).
-//                    target_id required.
-//   GROUP          — visible to members of `target_id` chat.Group.
-//                    target_id required.
+//                    target / actor_ptids / base_kind: unused.
+//   CIRCLE         — visible to members of `circle_id` (publisher-owned).
+//                    circle_id required.
+//   GROUP          — visible to members of `group_conversation_id`.
+//                    group_conversation_id required.
 //   SELF           — author-only (private note). all others unused.
 //   CUSTOM_ALLOW   — visible only to `actor_ptids`. allow_list, length>=1.
 //                    base_kind: unused (the list IS the rule).
 //   CUSTOM_DENY    — visible per `base_kind` MINUS `actor_ptids`. base_kind
-//                    MUST be PUBLIC or FOLLOWERS, actor_ptids MUST be non-empty.
+//                    MUST be FOLLOWERS, actor_ptids MUST be non-empty.
 message Audience {
   reserved 5;
-  reserved "key_envelopes";
+  reserved "key_envelopes", "target_id";
 
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -631,12 +631,16 @@ message Audience {
     FRIENDS = 8;
   }
   Kind kind = 1;
-  // Required iff kind == CIRCLE or GROUP.
-  uint64 target_id = 2;
+  oneof target {
+    // Required iff kind == CIRCLE.
+    uint64 circle_id = 2;
+    // Required iff kind == GROUP.
+    string group_conversation_id = 6;
+  }
   // Required iff kind == CUSTOM_ALLOW or CUSTOM_DENY.
   repeated string actor_ptids = 3;
   // ONLY meaningful when kind == CUSTOM_DENY: the base set the deny list
-  // is subtracted from. MUST be PUBLIC or FOLLOWERS. For all other Kinds
+  // is subtracted from. MUST be FOLLOWERS. For all other Kinds
   // this field is silently ignored.
   Kind base_kind = 4;
 }

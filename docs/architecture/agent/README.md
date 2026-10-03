@@ -1,8 +1,8 @@
 # Agent 架构
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-04-11 | **Updated**: 2026-08-17
+> **Version**: v1.5
+> **Created**: 2026-04-11 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/station/app/subserver/agent/`, `apps/desktop/src-tauri/src/application/agent_turn/`, `apps/desktop/src-tauri/src/application/mcp/`
 
@@ -32,7 +32,12 @@
 
 | 文档 | 定位 |
 |---|---|
-| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub/Peers-Touch benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前处于正式 execution-plan review |
+| [design.md](./design.md) | Agent 根模块的当前所有权、运行时拓扑与能力边界 |
+| [decisions.md](./decisions.md) | 当前 Agent 根模块采用的已接受决策索引 |
+| [data-model.md](./data-model.md) | Agent、Conversation、Turn、Capability Binding 与 ToolCall 的权威模型 |
+| [module-layout.md](./module-layout.md) | Model、Station、Desktop 与 Acceptance 的模块职责 |
+| [integration.md](./integration.md) | 跨运行时集成、证据和迁移边界 |
+| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前最小交付由 Minimum Usable Agent Chat Plan 管理 |
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [provider-station-ownership/](./provider-station-ownership/) | **Provider Station Ownership** — Station 是所有 AI Provider 的唯一执行者和配置所有者；Desktop/Mobile 是编辑入口 + SSE 消费端；per-actor 凭证隔离；版本号防脑裂 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
@@ -53,7 +58,9 @@
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
-| Current | prepared / full alignment | [Modern Chat Agent V2 Alignment Plan Package](./execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | **当前唯一执行入口** — 按 V2-J01..V2-J06、X3 trusted catalog 和 aggregate Acceptance 的垂直闭环持续执行 |
+| Current | prepared | [MCP Dual Runtime](./execution-plans/20261003-mcp-dual-runtime/plan.md) | **当前执行入口** — Station-owned MCP 配置，Station-local 与 Desktop-local 双执行位置 hard cut |
+| Completed | completed | [Minimum Usable Agent Chat](./execution-plans/20261001-minimum-usable-agent-chat/plan.md) | Direct Model Agent Chat、Skill/MCP 注入、最终回复与重启恢复基线 |
+| Historical | completed / remaining scope descoped | [Modern Chat Agent V2 Alignment Plan Package](./execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | 2026-10-01 由 Product Owner 强制停止；未完成的外部 runtime、419-cell remediation 和 aggregate proof 全部退出首版路径 |
 | Historical | superseded | [Modern Chat Agent V2 overview](./execution-plans/20260817-modern-chat-agent-v2.md) · [Legacy formal execution DAG](./execution-plans/20260817-modern-chat-agent-v2-execution.md) | 保留产品、架构、历史依赖和证据输入；不再承担 current Task 或 active execution 状态 |
 | Amendment | owner approved | [Agent Delivery Recovery](./execution-plans/20260908-agent-delivery-recovery.md) | 2026-09-16 已批准 Home-first sequencing 与 C11 atomic activation；完整 G-F 不再阻塞 W2，未完成 `BASE-*` 作为 parked lane 保留 |
 | V1 | accepted baseline | [First Useful Answer](./execution-plans/20260815-v1-first-useful-answer.md) | 已提供 Direct Model → Agent Profile → New Topic → 真实流式回复 → Desktop 重启读回基线；当前不再替代 V2 Home 产品推进 |

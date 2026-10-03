@@ -1,8 +1,8 @@
 # Social Private Moments - Product Definition
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Social Product
 > **Module**: `apps/station/app/subserver/social/`, `apps/desktop/`, `apps/mobile/`
 
@@ -59,7 +59,7 @@ Desktop 与 Mobile 不再分别维护一套“看起来私密”的实现。
 
 | ID | Capability | Class | User value | Readiness claim |
 |---|---|---|---|---|
-| `SOC-SEC-C01` | Explicit audience semantics | required | 发布前知道谁可以看 | `PUBLIC`、`FOLLOWERS`、`FRIENDS`、`CIRCLE`、`GROUP`、`SELF`、自定义名单语义互不混淆 |
+| `SOC-SEC-C01` | Explicit audience semantics | required | 发布前知道谁可以看 | `PUBLIC`、`FOLLOWERS`、`FRIENDS`、`CIRCLE`、`GROUP`、`SELF`、自定义名单语义互不混淆；v1 的 `CUSTOM_DENY` 只支持以 `FOLLOWERS` 为基础受众 |
 | `SOC-SEC-C02` | Private content confidentiality | required | Station/OSS 泄漏不直接暴露私密内容 | 非公开正文、评论、结构化 payload 和媒体只以 ciphertext 离开设备 |
 | `SOC-SEC-C03` | Object-level authorization | required | 猜到 ID 也不能越权读取 | Post、Comment、媒体对象和 key envelope 都绑定当前 actor/device |
 | `SOC-SEC-C04` | Trusted-device read and recovery | required | 换设备或重启后结果可解释、可恢复 | 受信设备通过现有恢复短语恢复从未打开过的授权历史；缺密钥时明确失败 |
@@ -77,10 +77,10 @@ Desktop 与 Mobile 不再分别维护一套“看起来私密”的实现。
 | `FOLLOWERS` | 任何当前关注作者、且未被拉黑的账号可见 | allowed after following; UI 必须明确这一点 |
 | `FRIENDS` | 已完成双向 Friend Request 的好友可见 | denied |
 | `CIRCLE` | 发布者私有名单中的成员可见 | only listed members |
-| `GROUP` | 发布时属于目标 Conversation Group 的成员可见 | only eligible group members |
+| `GROUP` | 发布时属于目标 Conversation Group、且 Home Station 与发布者相同的成员可见；目标使用完整 canonical Conversation ID | only eligible same-Station group members |
 | `SELF` | 仅发布者自己的受信设备可见 | denied |
 | `CUSTOM_ALLOW` | 仅显式选择的账号可见 | only allow list |
-| `CUSTOM_DENY` | 基础受众减去显式排除账号 | denied when listed |
+| `CUSTOM_DENY` | v1 仅支持 `FOLLOWERS` 减去显式排除账号 | denied when listed; `PUBLIC` base unsupported |
 
 `FOLLOWERS` 不得在 UI 中翻译或呈现为“好友”。`FRIENDS` 是本次产品合同新增的
 required audience。Audience 创建后不可扩大；缩小受众通过删除并重新发布，或未来
@@ -88,6 +88,14 @@ required audience。Audience 创建后不可扩大；缩小受众通过删除并
 
 私密发布是有界能力：初始协议最多接受 256 个 recipient actors、合计 1000 个
 endpoint/recovery slots。超过限制时在加密前返回 `AUDIENCE_TOO_LARGE`，不得部分发布。
+
+`CUSTOM_DENY(PUBLIC)` 需要一个可枚举、带版本且覆盖联邦 Actor 的 PUBLIC recipient
+authority，当前产品没有该能力，因此 v1 在提交前返回 `PRIVATE_UNSUPPORTED`。
+`GROUP` 保留为 required audience，但只接受 Conversation 权威快照中全部 active
+成员均属于发布者 Home Station 的 Group；任何远端成员都使本次私密发布整体失败，
+不得忽略远端成员后对本地成员部分发布。
+同一限制适用于 FRIENDS、FOLLOWERS、CIRCLE 与 CUSTOM 产生的全部接收者；任何
+远端 Actor 都必须在 Content PreKey claim 前使本次发布整体失败。
 
 ## 5. Platform Matrix
 
@@ -103,7 +111,7 @@ endpoint/recovery slots。超过限制时在加密前返回 `AUDIENCE_TOO_LARGE`
 
 | Capability | Existing foundation | Missing closure | Smallest executable proof |
 |---|---|---|---|
-| `C01` | Audience proto、`CanRead`、Friend Request truth | `FRIENDS` audience 和准确 UI copy | Alice/Bob 成为好友，Eve 仅 follow；同一 Post 只对 Alice/Bob 可见 |
+| `C01` | Audience proto、`CanRead`、Friend Request truth、Conversation canonical group identity | typed CIRCLE/GROUP target、Conversation-owned same-Station membership snapshot、`CUSTOM_DENY(FOLLOWERS)` 和准确 UI copy | Alice/Bob 成为好友，Eve 仅 follow；同一 Post 只对 Alice/Bob 可见；Group 成员可读，远端成员与 `CUSTOM_DENY(PUBLIC)` 在提交前整体拒绝 |
 | `C02` | Messaging Core AES-GCM attachment crypto、Key Exchange、客户端 SQLCipher | 私密 Post/Comment payload 加密与共享 content-key contract | Station 数据库和日志只出现 ciphertext，Bob Native 显示精确明文 |
 | `C03` | JWT、`CanRead`、private repo 二次校验 | Optional auth、媒体 grant、viewer-scoped envelope | 匿名/过期 token/Eve 对同一资源均被拒绝，Bob 成功 |
 | `C04` | 设备身份、Key Exchange、Recovery 基础 | 独立的一次性 endpoint/recovery Content PreKey 与历史 recovery-envelope 查询 | Bob 重启成功；Bob2 用恢复短语读取从未打开过的授权历史 |
@@ -136,3 +144,7 @@ endpoint/recovery slots。超过限制时在加密前返回 `AUDIENCE_TOO_LARGE`
 4. 接受跨 Station 私密分享本次明确 deferred。
 5. 接受开发期旧私密明文不做服务端“伪迁移”；DESIGN 选择经再次授权后的精确范围 reset。
 6. 接受私密 audience 的初始 256 actor / 1000 slot 硬上限和显式失败。
+7. v1 的 `CUSTOM_DENY` 仅接受 `FOLLOWERS` 基础受众；`PUBLIC` 基础受众在具备完整、
+   可版本化的联邦 PUBLIC recipient authority 前保持 unsupported。
+8. `GROUP` 使用 canonical string Conversation ID。v1 仅支持全部 active 成员均在
+   发布者 Home Station 的 Group；包含远端成员时整体拒绝，不进行部分发布。

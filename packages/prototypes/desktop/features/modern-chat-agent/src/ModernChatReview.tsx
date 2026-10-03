@@ -9,6 +9,7 @@ type Scenario =
   | 'attachment-failure'
   | 'context-intelligence'
   | 'disconnect-recovery'
+  | 'external-runtime-reset'
   | 'branch-regenerate'
   | 'capability-degraded'
   | 'usage-diagnostics';
@@ -21,6 +22,7 @@ const scenarios: Array<{ id: Scenario; label: string; productIds: string }> = [
   { id: 'attachment-failure', label: 'Attachments', productIds: 'MCA-P06 - MCA-J06' },
   { id: 'context-intelligence', label: 'Context', productIds: 'MCA-P04 - MCA-J04' },
   { id: 'disconnect-recovery', label: 'Recovery', productIds: 'MCA-P07 - MCA-J07' },
+  { id: 'external-runtime-reset', label: 'External runtime', productIds: 'MCA-P12 - MCA-J10' },
   { id: 'branch-regenerate', label: 'Branches', productIds: 'MCA-P08 - MCA-J08' },
   { id: 'capability-degraded', label: 'Capability', productIds: 'MCA-P09 / MCA-P11 - MCA-J09' },
   { id: 'usage-diagnostics', label: 'Diagnostics', productIds: 'MCA-P10 - MCA-J09' },
@@ -78,6 +80,7 @@ export function ModernChatReview({ initialState, withTopicRail = false }: { init
         {scenario === 'attachment-failure' && <AttachmentScenario />}
         {scenario === 'context-intelligence' && <ContextScenario />}
         {scenario === 'disconnect-recovery' && <RecoveryScenario />}
+        {scenario === 'external-runtime-reset' && <ExternalRuntimeResetScenario />}
         {scenario === 'branch-regenerate' && <BranchScenario />}
         {scenario === 'capability-degraded' && <CapabilityScenario />}
         {scenario === 'usage-diagnostics' && <DiagnosticsScenario />}
@@ -340,6 +343,80 @@ function RecoveryScenario() {
         {state === 'connection-lost' && <button className="primary" type="button" onClick={() => setState('replaying')}>Reconnect</button>}
         {state === 'replaying' && <button className="primary" type="button" onClick={() => setState('reconciled')}>Apply replay and snapshot</button>}
         {state === 'reconciled' && <button type="button" onClick={() => setState('connection-lost')}>Reset review state</button>}
+      </article>
+    </div>
+  );
+}
+
+function ExternalRuntimeResetScenario() {
+  const [state, setState] = useState<
+    'resume-unavailable' | 'confirming' | 'ready' | 'fresh-session'
+  >('resume-unavailable');
+
+  return (
+    <div className="pt-modern-flow">
+      <StateHeading
+        title="External runtime recovery"
+        state={state}
+        description="Station preserves the failed session binding until the user confirms destructive reset."
+      />
+      <Message role="Research Agent" meta="external-agent - session ext-1042 - epoch 1">
+        The previous runtime session cannot be resumed. Conversation history is still available.
+      </Message>
+      <article
+        className="pt-modern-recovery"
+        data-pt-prototype-external-runtime-reset={state}
+      >
+        <div>
+          <span className="pt-modern-eyebrow">
+            Authority: Station conversation runtime binding
+          </span>
+          <strong>
+            {state === 'resume-unavailable' && 'Runtime session unavailable'}
+            {state === 'confirming' && 'Reset external runtime?'}
+            {state === 'ready' && 'Runtime reset complete'}
+            {state === 'fresh-session' && 'Fresh runtime session created'}
+          </strong>
+          <p>
+            {state === 'resume-unavailable'
+              && 'No replacement session was started. Reset is required before the next turn.'}
+            {state === 'confirming'
+              && 'The unavailable external session and its runtime files will be permanently removed. Conversation history is kept.'}
+            {state === 'ready'
+              && 'Epoch 2 is ready with no session handle. The next turn may create a new session.'}
+            {state === 'fresh-session'
+              && 'Station persisted session ext-2099 under epoch 2 before projecting output.'}
+          </p>
+        </div>
+        {state === 'resume-unavailable' && (
+          <div className="pt-modern-decision-actions">
+            <button
+              className="danger"
+              type="button"
+              onClick={() => setState('confirming')}
+            >
+              Confirm reset
+            </button>
+          </div>
+        )}
+        {state === 'confirming' && (
+          <div className="pt-modern-decision-actions" role="group" aria-label="Confirm external runtime reset">
+            <button type="button" onClick={() => setState('resume-unavailable')}>Cancel</button>
+            <button className="danger" type="button" onClick={() => setState('ready')}>Reset runtime</button>
+          </div>
+        )}
+        {state === 'ready' && (
+          <div className="pt-modern-result">
+            <span>Old session and runtime home cleaned exactly once.</span>
+            <button className="primary" type="button" onClick={() => setState('fresh-session')}>Send next turn</button>
+          </div>
+        )}
+        {state === 'fresh-session' && (
+          <div className="pt-modern-result">
+            <span>Conversation history preserved. New runtime state is isolated.</span>
+            <button type="button" onClick={() => setState('resume-unavailable')}>Reset review state</button>
+          </div>
+        )}
       </article>
     </div>
   );

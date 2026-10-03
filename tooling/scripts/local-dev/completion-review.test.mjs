@@ -22,11 +22,11 @@ import {
 import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
 import { DevSessionError } from './dev-session-schema.mjs';
 import { inspectGitWorkspace } from './git-workspace.mjs';
-import { bindConversation } from './workflow-conversation-binding.mjs';
 
 const FIXED_TIME = '2026-09-26T00:00:00.000Z';
 const EXECUTOR_DIGEST = 'a'.repeat(64);
 const REVIEWER_DIGEST = 'b'.repeat(64);
+const ASSIGNMENT_DIGEST = 'c'.repeat(64);
 
 function taskEntry(id, status, dependsOn = []) {
   return {
@@ -35,7 +35,14 @@ function taskEntry(id, status, dependsOn = []) {
     path: `tasks/${id}.md`,
     dependsOn,
     status,
-    blocker: null,
+    blocker:
+      status === 'blocked'
+        ? {
+            code: 'CHECKPOINT_REQUIRED',
+            owner: 'authorization',
+            evidenceRef: `evidence://${id}`,
+          }
+        : null,
   };
 }
 
@@ -80,7 +87,7 @@ function taskSlice(id) {
 
 function assessment(openFindingId = null) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'peers-touch-completion-review-assessment',
     findings: COMPLETION_REVIEW_CHECK_IDS.map((id) => ({
       id,
@@ -91,7 +98,10 @@ function assessment(openFindingId = null) {
   };
 }
 
-async function makeFixture(t, { finalTask = false } = {}) {
+async function makeFixture(
+  t,
+  { finalTask = false, fixedPointBlocked = false } = {},
+) {
   const root = await fsp.realpath(
     await fsp.mkdtemp(path.join(os.tmpdir(), 'completion-review-test-')),
   );
@@ -100,7 +110,13 @@ async function makeFixture(t, { finalTask = false } = {}) {
   const planPath = path.join(root, 'plan.md');
   const workspaceId = workspaceIdForRoot(root);
 
-  const tasks = finalTask
+  const tasks = fixedPointBlocked
+    ? [
+        taskEntry('task-a', 'in_progress'),
+        taskEntry('task-b', 'blocked'),
+        taskEntry('task-c', 'pending', ['task-b']),
+      ]
+    : finalTask
     ? [
         taskEntry('task-a', 'done'),
         taskEntry('task-b', 'in_progress', ['task-a']),
@@ -181,7 +197,7 @@ async function makeFixture(t, { finalTask = false } = {}) {
     ].join('\n'),
   );
   const session = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'peers-touch-development-session',
     state: {
       sessionId: `session-${current.id}`,
@@ -213,9 +229,21 @@ async function makeFixture(t, { finalTask = false } = {}) {
     workspaceDigest: `sha256:${'5'.repeat(64)}`,
   };
   let activeBinding = {
-    digest: EXECUTOR_DIGEST,
+    kind: 'peers-touch-workflow-binding-projection',
+    host: 'trae',
+    role: 'OWNER',
+    bindingDigest: EXECUTOR_DIGEST,
+    rootBindingDigest: EXECUTOR_DIGEST,
+    parentBindingDigest: null,
+    assignmentDigest: null,
+    workflowSessionId: null,
     executionRoot: root,
     workspaceId,
+    subjectRoots: [],
+    toolRoot: root,
+    targetRoots: [root],
+    released: false,
+    childState: null,
   };
   const dependencies = {
     machineRoot,
@@ -231,9 +259,25 @@ async function makeFixture(t, { finalTask = false } = {}) {
     inspectWorkspace() {
       return source;
     },
-    resolveConversationBinding({ excludedDigests }) {
-      assert.equal(excludedDigests.includes(activeBinding.digest), false);
+    resolveBindingProjection() {
       return activeBinding;
+    },
+    createWorkflowBindingAssignment() {
+      return {
+        assignment: {
+          kind: 'peers-touch-workflow-binding-assignment',
+          assignmentId: 'review-fixed',
+          role: 'REVIEWER',
+          rootBindingDigest: EXECUTOR_DIGEST,
+          parentBindingDigest: EXECUTOR_DIGEST,
+          workflowSessionId: session.state.sessionId,
+          operationId: 'review-fixed',
+          issuedAt: FIXED_TIME,
+          leaseUntil: '2026-09-26T01:00:00.000Z',
+          digest: ASSIGNMENT_DIGEST,
+        },
+        created: true,
+      };
     },
   };
   return {
@@ -246,14 +290,28 @@ async function makeFixture(t, { finalTask = false } = {}) {
     dependencies,
     useExecutor() {
       activeBinding = {
-        digest: EXECUTOR_DIGEST,
+        ...activeBinding,
+        role: 'OWNER',
+        bindingDigest: EXECUTOR_DIGEST,
+        rootBindingDigest: EXECUTOR_DIGEST,
+        parentBindingDigest: null,
+        assignmentDigest: null,
+        workflowSessionId: null,
+        childState: null,
         executionRoot: root,
         workspaceId,
       };
     },
     useReviewer() {
       activeBinding = {
-        digest: REVIEWER_DIGEST,
+        ...activeBinding,
+        role: 'REVIEWER',
+        bindingDigest: REVIEWER_DIGEST,
+        rootBindingDigest: EXECUTOR_DIGEST,
+        parentBindingDigest: EXECUTOR_DIGEST,
+        assignmentDigest: ASSIGNMENT_DIGEST,
+        workflowSessionId: session.state.sessionId,
+        childState: 'LEASED',
         executionRoot: root,
         workspaceId,
       };
@@ -327,6 +385,55 @@ test('stores immutable task request and independent PASS receipt', async (t) => 
   assert.deepEqual(await fsp.readFile(submitted.paths.receipt), before);
 });
 
+test('reviews a fixed-point blocked handoff without inventing a successor', async (t) => {
+  const fixture = await makeFixture(t, { fixedPointBlocked: true });
+  const prepared = await prepareCompletionReview(
+    {
+      repoRoot: fixture.root,
+      workItemId: 'DWF-REVIEW-WORK',
+      scope: 'task',
+    },
+    fixture.dependencies,
+  );
+  assert.match(prepared.request.candidatePlanDigest, /^[0-9a-f]{64}$/);
+  assert.deepEqual(prepared.candidateTransition, {
+    to: 'done',
+    nextTaskId: null,
+    exhaustion: {
+      recordedAt: FIXED_TIME,
+      blockedTaskIds: ['task-b'],
+      decisionRefs: ['DWF-D28'],
+      evidenceRefs: ['evidence://task-b'],
+    },
+  });
+
+  fixture.useReviewer();
+  const submitted = await submitCompletionReview(
+    {
+      repoRoot: fixture.root,
+      reviewId: prepared.request.reviewId,
+      verdict: 'PASS',
+    },
+    {
+      ...fixture.dependencies,
+      assessment: assessment(),
+    },
+  );
+  assert.equal(submitted.receipt.verdict, 'PASS');
+
+  const current = await requireCurrentCompletionReview(
+    {
+      repoRoot: fixture.root,
+      planPackage: fixture.planPackage,
+      session: fixture.session,
+      workItemId: 'DWF-REVIEW-WORK',
+      candidatePlanDigest: prepared.request.candidatePlanDigest,
+    },
+    fixture.dependencies,
+  );
+  assert.equal(current.state, 'PASS');
+});
+
 test('rejects self-review and caller-supplied reviewer identity', async (t) => {
   const fixture = await makeFixture(t);
   const prepared = await prepareCompletionReview(
@@ -336,10 +443,22 @@ test('rejects self-review and caller-supplied reviewer identity', async (t) => {
     },
     fixture.dependencies,
   );
-  fixture.dependencies.resolveConversationBinding = () => ({
-    digest: EXECUTOR_DIGEST,
+  fixture.dependencies.resolveBindingProjection = () => ({
+    kind: 'peers-touch-workflow-binding-projection',
+    host: 'trae',
+    role: 'OWNER',
+    bindingDigest: EXECUTOR_DIGEST,
+    rootBindingDigest: EXECUTOR_DIGEST,
+    parentBindingDigest: null,
+    assignmentDigest: null,
+    workflowSessionId: null,
     executionRoot: fixture.root,
     workspaceId: fixture.workspaceId,
+    subjectRoots: [],
+    toolRoot: fixture.root,
+    targetRoots: [],
+    released: false,
+    childState: null,
   });
   await expectReviewError(
     submitCompletionReview(
@@ -374,19 +493,60 @@ test('rejects self-review and caller-supplied reviewer identity', async (t) => {
   );
 });
 
-test('default binding resolver selects the independent active conversation', async (t) => {
+test('default binding resolver selects exact owner and reviewer action receipts', async (t) => {
   const fixture = await makeFixture(t);
-  const executor = bindConversation(
-    'trae',
-    'executor-default-path',
-    fixture.root,
-    {
-      machineRoot: fixture.machineRoot,
-      now: new Date(FIXED_TIME),
-    },
-  ).binding;
   const dependencies = { ...fixture.dependencies };
-  delete dependencies.resolveConversationBinding;
+  delete dependencies.resolveBindingProjection;
+  const ownerActor = {
+    host: 'trae',
+    bindingDigest: EXECUTOR_DIGEST,
+    role: 'OWNER',
+    rootBindingDigest: EXECUTOR_DIGEST,
+    parentBindingDigest: null,
+    assignmentDigest: null,
+  };
+  const reviewerActor = {
+    host: 'trae',
+    bindingDigest: REVIEWER_DIGEST,
+    role: 'REVIEWER',
+    rootBindingDigest: EXECUTOR_DIGEST,
+    parentBindingDigest: EXECUTOR_DIGEST,
+    assignmentDigest: ASSIGNMENT_DIGEST,
+  };
+  let actor = ownerActor;
+  let command = 'completion-review-prepare';
+  dependencies.readWorkspaceActions = () => [
+    {
+      actionId: 'current-review-action',
+      actor,
+      binding: {
+        workspaceId: fixture.workspaceId,
+        workItemId: 'DWF-REVIEW-WORK',
+        planId: 'DWF-REVIEW-TEST',
+        taskId: 'task-a',
+        sessionId: 'session-task-a',
+      },
+      event: 'STARTED',
+      result: 'RUNNING',
+      operation: { family: 'OWNER_CONTROL', label: command, targetRef: null },
+      at: FIXED_TIME,
+      leaseUntil: '2026-09-26T00:10:00.000Z',
+    },
+  ];
+  dependencies.readWorkflowProjectionByActor = (selected) => ({
+    kind: 'peers-touch-workflow-binding-projection',
+    ...selected,
+    bindingDigest: selected.bindingDigest,
+    executionRoot: fixture.root,
+    workspaceId: fixture.workspaceId,
+    workflowSessionId:
+      selected.role === 'OWNER' ? null : fixture.session.state.sessionId,
+    subjectRoots: [],
+    toolRoot: fixture.root,
+    targetRoots: [],
+    released: false,
+    childState: selected.role === 'OWNER' ? null : 'LEASED',
+  });
   const prepared = await prepareCompletionReview(
     {
       repoRoot: fixture.root,
@@ -394,17 +554,10 @@ test('default binding resolver selects the independent active conversation', asy
     },
     dependencies,
   );
-  assert.deepEqual(prepared.request.executorContextDigests, [executor.digest]);
+  assert.deepEqual(prepared.request.executorContextDigests, [EXECUTOR_DIGEST]);
 
-  const reviewer = bindConversation(
-    'trae',
-    'reviewer-default-path',
-    fixture.root,
-    {
-      machineRoot: fixture.machineRoot,
-      now: new Date('2026-09-26T00:00:01.000Z'),
-    },
-  ).binding;
+  actor = reviewerActor;
+  command = 'completion-review-submit';
   const submitted = await submitCompletionReview(
     {
       repoRoot: fixture.root,
@@ -416,7 +569,7 @@ test('default binding resolver selects the independent active conversation', asy
       assessment: assessment(),
     },
   );
-  assert.equal(submitted.receipt.reviewerContextDigest, reviewer.digest);
+  assert.equal(submitted.receipt.reviewerContextDigest, REVIEWER_DIGEST);
 });
 
 test('mandatory findings cannot be downgraded to non-blocking', async (t) => {
@@ -639,6 +792,49 @@ test('status prefers the latest pending request over older stale history', async
   );
 });
 
+test('v2 review namespace never reads pre-hard-cut review records', async (t) => {
+  const fixture = await makeFixture(t);
+  const legacy = path.join(
+    fixture.machineRoot,
+    'workspaces',
+    fixture.workspaceId,
+    'workflow',
+    'completion-reviews',
+    'review-legacy',
+  );
+  await fsp.mkdir(legacy, { recursive: true });
+  await fsp.writeFile(
+    path.join(legacy, 'request.json'),
+    '{"schemaVersion":1,"kind":"obsolete"}\n',
+  );
+  const prepared = await prepareCompletionReview(
+    {
+      repoRoot: fixture.root,
+      workItemId: 'DWF-REVIEW-WORK',
+    },
+    {
+      ...fixture.dependencies,
+      reviewId: 'review-current',
+    },
+  );
+  assert.match(prepared.paths.directory, /completion-reviews-v2/);
+  const result = await runCompletionReviewCli(
+    [
+      'status',
+      '--repo-root',
+      fixture.root,
+      '--work-item',
+      'DWF-REVIEW-WORK',
+    ],
+    fixture.dependencies,
+  );
+  assert.equal(result.state, 'PENDING');
+  assert.deepEqual(
+    result.reviews.map((review) => review.reviewId),
+    ['review-current'],
+  );
+});
+
 test('Social legacy omission fixture produces FAIL and cannot close work', async (t) => {
   const fixture = await makeFixture(t);
   const regression = JSON.parse(
@@ -712,12 +908,24 @@ test('final Task requires a Plan-scoped review while owner action stays Task-bou
   const fixture = await makeFixture(t, { finalTask: true });
   let ownerContext = null;
   const priorExecutor = 'c'.repeat(64);
-  fixture.dependencies.resolveConversationBinding = ({ context }) => {
+  fixture.dependencies.resolveBindingProjection = ({ context }) => {
     ownerContext = context;
     return {
-      digest: EXECUTOR_DIGEST,
+      kind: 'peers-touch-workflow-binding-projection',
+      host: 'trae',
+      role: 'OWNER',
+      bindingDigest: EXECUTOR_DIGEST,
+      rootBindingDigest: EXECUTOR_DIGEST,
+      parentBindingDigest: null,
+      assignmentDigest: null,
+      workflowSessionId: null,
       executionRoot: fixture.root,
       workspaceId: fixture.workspaceId,
+      subjectRoots: [],
+      toolRoot: fixture.root,
+      targetRoots: [],
+      released: false,
+      childState: null,
     };
   };
   fixture.dependencies.planImplementationContexts = () => ({
@@ -874,16 +1082,34 @@ test('source digest excludes the Plan lifecycle file but includes implementation
   assert.match(changed.workspaceDigest, /^sha256:[0-9a-f]{64}$/);
 });
 
-test('owner action receipts disambiguate executor and reviewer bindings', () => {
+test('exact action receipts ignore twenty stale child histories', () => {
   const executor = {
+    kind: 'peers-touch-workflow-binding-projection',
+    host: 'trae',
+    role: 'OWNER',
     executionRoot: '/workspace',
     workspaceId: '0123456789abcdef',
-    digest: '1'.repeat(64),
+    bindingDigest: '1'.repeat(64),
+    rootBindingDigest: '1'.repeat(64),
+    parentBindingDigest: null,
+    assignmentDigest: null,
+    workflowSessionId: null,
+    subjectRoots: [],
+    toolRoot: '/workspace',
+    targetRoots: [],
+    released: false,
+    childState: null,
   };
   const reviewer = {
+    ...executor,
+    role: 'REVIEWER',
     executionRoot: '/workspace',
     workspaceId: '0123456789abcdef',
-    digest: '2'.repeat(64),
+    bindingDigest: '2'.repeat(64),
+    parentBindingDigest: executor.bindingDigest,
+    assignmentDigest: ASSIGNMENT_DIGEST,
+    workflowSessionId: 'SESSION-1',
+    childState: 'LEASED',
   };
   const binding = {
     workspaceId: '0123456789abcdef',
@@ -892,49 +1118,148 @@ test('owner action receipts disambiguate executor and reviewer bindings', () => 
     taskId: 'TASK-1',
     sessionId: 'SESSION-1',
   };
-  const receipt = (actor, label, at) => ({
-    actor: { bindingDigest: actor.digest, host: 'trae' },
+  const receipt = (projection, label, at, leaseUntil) => ({
+    actionId: `${label}-${at}`,
+    actor: {
+      host: projection.host,
+      bindingDigest: projection.bindingDigest,
+      role: projection.role,
+      rootBindingDigest: projection.rootBindingDigest,
+      parentBindingDigest: projection.parentBindingDigest,
+      assignmentDigest: projection.assignmentDigest,
+    },
     binding,
+    event: 'STARTED',
     operation: { family: 'OWNER_CONTROL', label, targetRef: null },
     result: 'RUNNING',
     at,
+    leaseUntil,
   });
+  const stale = Array.from({ length: 20 }, (_, index) => ({
+    ...receipt(
+      {
+        ...reviewer,
+        bindingDigest: String(index + 10).padStart(64, '0'),
+        assignmentDigest: String(index + 40).padStart(64, '0'),
+      },
+      'completion-review-submit',
+      '2026-09-25T00:00:00.000Z',
+      '2026-09-25T00:00:10.000Z',
+    ),
+    actionId: `stale-${index}`,
+  }));
   const dependencies = {
     clock: () => new Date('2026-09-26T00:01:00.000Z'),
     readWorkspaceActions: () => [
+      ...stale,
       receipt(
         executor,
         'completion-review-prepare',
         '2026-09-26T00:00:30.000Z',
+        '2026-09-26T00:02:00.000Z',
       ),
       receipt(
         reviewer,
         'completion-review-submit',
         '2026-09-26T00:00:50.000Z',
+        '2026-09-26T00:02:00.000Z',
       ),
     ],
-    listActiveConversationBindings: () => [executor, reviewer],
+    readWorkflowProjectionByActor: (actorValue) =>
+      actorValue.role === 'OWNER' ? executor : reviewer,
   };
   const context = {
     ...binding,
     ownerCommand: 'completion-review-prepare',
+    expectedRole: 'OWNER',
   };
   assert.equal(
     resolveCompletionReviewBinding(
       '/workspace',
-      [],
       dependencies,
       context,
-    ).digest,
-    executor.digest,
+    ).bindingDigest,
+    executor.bindingDigest,
   );
   assert.equal(
     resolveCompletionReviewBinding(
       '/workspace',
-      [executor.digest],
       dependencies,
-      { ...context, ownerCommand: 'completion-review-submit' },
-    ).digest,
-    reviewer.digest,
+      {
+        ...context,
+        ownerCommand: 'completion-review-submit',
+        expectedRole: 'REVIEWER',
+        assignmentDigest: ASSIGNMENT_DIGEST,
+      },
+    ).bindingDigest,
+    reviewer.bindingDigest,
+  );
+});
+
+test('exact action receipt selection ignores a terminalized action', () => {
+  const executor = {
+    kind: 'peers-touch-workflow-binding-projection',
+    host: 'trae',
+    role: 'OWNER',
+    executionRoot: '/workspace',
+    workspaceId: '0123456789abcdef',
+    bindingDigest: '1'.repeat(64),
+    rootBindingDigest: '1'.repeat(64),
+    parentBindingDigest: null,
+    assignmentDigest: null,
+    workflowSessionId: null,
+    released: false,
+    childState: null,
+  };
+  const binding = {
+    workspaceId: '0123456789abcdef',
+    workItemId: 'WORK-1',
+    planId: 'PLAN-1',
+    taskId: 'TASK-1',
+    sessionId: 'SESSION-1',
+  };
+  const started = {
+    actionId: 'completed-review-action',
+    actor: {
+      host: executor.host,
+      bindingDigest: executor.bindingDigest,
+      role: executor.role,
+      rootBindingDigest: executor.rootBindingDigest,
+      parentBindingDigest: executor.parentBindingDigest,
+      assignmentDigest: executor.assignmentDigest,
+    },
+    binding,
+    event: 'STARTED',
+    operation: {
+      family: 'OWNER_CONTROL',
+      label: 'completion-review-prepare',
+      targetRef: null,
+    },
+    result: 'RUNNING',
+    at: '2026-09-26T00:00:30.000Z',
+    leaseUntil: '2026-09-26T00:02:00.000Z',
+  };
+  const dependencies = {
+    clock: () => new Date('2026-09-26T00:01:00.000Z'),
+    readWorkspaceActions: () => [
+      started,
+      {
+        ...started,
+        event: 'FINISHED',
+        result: 'PASS',
+        at: '2026-09-26T00:00:40.000Z',
+        leaseUntil: null,
+      },
+    ],
+    readWorkflowProjectionByActor: () => executor,
+  };
+  assert.throws(
+    () =>
+      resolveCompletionReviewBinding('/workspace', dependencies, {
+        ...binding,
+        ownerCommand: 'completion-review-prepare',
+        expectedRole: 'OWNER',
+      }),
+    (error) => error.code === 'COMPLETION_REVIEW_BINDING_REQUIRED',
   );
 });

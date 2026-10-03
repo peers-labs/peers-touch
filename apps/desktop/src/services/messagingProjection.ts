@@ -115,6 +115,11 @@ async function refreshProjection(
   if (!conversationId || !payload.eventId || payload.laneSequence <= 0n) return;
 
   let store = useSocialChatStore.getState();
+  const previousMessageIds = new Set(
+    (store.messages[conversationId] ?? []).map((message) => message.ulid),
+  );
+  await store.loadSessions();
+  store = useSocialChatStore.getState();
   let conversation = store.conversations.find(
     (candidate) => candidate.conversationId === conversationId,
   );
@@ -134,9 +139,6 @@ async function refreshProjection(
     return;
   }
 
-  const previousMessageIds = new Set(
-    (store.messages[conversationId] ?? []).map((message) => message.ulid),
-  );
   const badgeState = useNavigationBadgeStore.getState();
   const isActiveConversation = badgeState.chatSurfaceVisible
     && (

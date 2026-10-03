@@ -56,14 +56,14 @@ use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
     chat_command, conversation_event, ActorReadCursor, AttachmentContentKind,
     AttachmentTransferState, ChatCommand, ChatStorageOperationState, ChatStoragePolicy,
-    ChatStorageResult, ChatStorageScope, ChatStorageSnapshot, Conversation, ConversationCommandKind,
-    ConversationKind, ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
-    ConversationStatus, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
-    DissolveConversationIntent, DurableDeviceInboxItem, MemberRole, MessagingMembershipAction,
-    MlsLeaveIntent,
+    ChatStorageResult, ChatStorageScope, ChatStorageSnapshot, Conversation,
+    ConversationCommandKind, ConversationKind, ConversationMemberAuthorityAction,
+    ConversationMemberAuthorityCommand, ConversationStatus, CryptoEndpoint,
+    DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
+    DurableDeviceInboxItem, MemberRole, MessagingMembershipAction, MlsLeaveIntent,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PreparedEndpointPayloadKind, PublicEventMarker, SubmitConversationReadCursorRequest,
-    SubmitConversationTypingRequest, UpdateConversationIntent,
+    SubmitConversationTypingRequest, UpdateConversationIntent, VoiceNoteMetadata,
 };
 use messaging_core::proto::social::{
     AcceptSocialFriendRequestRequest, BlockSocialActorRequest, FriendRequestAction,
@@ -257,6 +257,7 @@ pub struct MessagingAttachmentStage {
     pub plaintext_size: u64,
     pub content_kind: i32,
     pub duration_ms: u32,
+    pub voice_note: Option<VoiceNoteMetadata>,
     pub completed: bool,
 }
 
@@ -273,6 +274,7 @@ struct StagedAttachment {
     plaintext_size: u64,
     content_kind: i32,
     duration_ms: u32,
+    voice_note: Option<VoiceNoteMetadata>,
     written_size: u64,
     completed: bool,
 }
@@ -338,7 +340,10 @@ fn validate_attachment_content_metadata(
 ) -> Result<(), String> {
     match AttachmentContentKind::try_from(content_kind) {
         Ok(AttachmentContentKind::Unspecified | AttachmentContentKind::File)
-            if duration_ms == 0 => Ok(()),
+            if duration_ms == 0 =>
+        {
+            Ok(())
+        }
         Ok(AttachmentContentKind::VoiceNote)
             if duration_ms > 0 && mime_type.to_ascii_lowercase().starts_with("audio/") =>
         {
@@ -1844,6 +1849,7 @@ impl MobileMessagingEngine {
         plaintext_size: u64,
         content_kind: i32,
         duration_ms: u32,
+        voice_note: Option<VoiceNoteMetadata>,
     ) -> Result<MessagingAttachmentStage, String> {
         if filename.trim().is_empty()
             || filename.len() > 1024
@@ -1855,6 +1861,10 @@ impl MobileMessagingEngine {
             return Err("mobile messaging attachment stage is invalid".to_string());
         }
         validate_attachment_content_metadata(mime_type, content_kind, duration_ms)?;
+        messaging_core::codec::private_content::validate_voice_note_metadata(
+            mime_type,
+            voice_note.as_ref(),
+        )?;
         let _guard = self
             .attachment_source_lock
             .lock()
@@ -1884,6 +1894,7 @@ impl MobileMessagingEngine {
             plaintext_size,
             content_kind,
             duration_ms,
+            voice_note,
             written_size: 0,
             completed: false,
         };
@@ -1898,6 +1909,7 @@ impl MobileMessagingEngine {
             plaintext_size,
             content_kind: stage.content_kind,
             duration_ms: stage.duration_ms,
+            voice_note: stage.voice_note,
             completed: false,
         })
     }
@@ -1941,6 +1953,7 @@ impl MobileMessagingEngine {
             plaintext_size: stage.plaintext_size,
             content_kind: stage.content_kind,
             duration_ms: stage.duration_ms,
+            voice_note: stage.voice_note.clone(),
             completed: false,
         })
     }
@@ -1974,6 +1987,7 @@ impl MobileMessagingEngine {
             plaintext_size: stage.plaintext_size,
             content_kind: stage.content_kind,
             duration_ms: stage.duration_ms,
+            voice_note: stage.voice_note.clone(),
             completed: true,
         })
     }
@@ -2279,6 +2293,7 @@ impl MobileMessagingEngine {
                     plaintext_size: attachment.plaintext_size,
                     content_kind: attachment.content_kind,
                     duration_ms: attachment.duration_ms,
+                    voice_note: attachment.voice_note.clone(),
                     written_size: attachment.plaintext_size,
                     completed: true,
                 };
@@ -3702,6 +3717,7 @@ fn prepare_local_attachment_upload(
         plaintext_sha256: blobs.sha256(source_local_ref)?.to_vec(),
         content_kind: stage.content_kind,
         duration_ms: stage.duration_ms,
+        voice_note: stage.voice_note.clone(),
     })
 }
 

@@ -9,8 +9,8 @@ use crate::application::{agent_workspace, error_resolver, tools};
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
     AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
-    AgentConversationUpdateInput, AgentEditAndResendInput, AgentExecuteTurnInput,
-    AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
+    AgentConversationRuntimeResetInput, AgentConversationUpdateInput, AgentEditAndResendInput,
+    AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
     AgentMessageTranslateInput, AgentRegenerateTurnInput, AgentRetryTurnInput,
     AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
     AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
@@ -2436,6 +2436,48 @@ pub fn agent_conversation_restore(
         Err(err) => {
             tracing::error!(command = "agent_conversation_restore", error = %err, "Conversation restore failed");
             err.into_app_result("Failed to restore agent conversation")
+        }
+    }
+}
+
+pub fn agent_conversation_runtime_reset(
+    input: AgentConversationRuntimeResetInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let conversation_id = input.conversation_id.trim().to_string();
+    let client_idempotency_key = input.client_idempotency_key.trim().to_string();
+    if conversation_id.is_empty()
+        || input.expected_conversation_version == 0
+        || client_idempotency_key.is_empty()
+        || !input.destructive_confirmed
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id, expected_conversation_version, client_idempotency_key, and destructive confirmation are required",
+            None,
+        );
+    }
+    let body = json!({
+        "conversation_id": conversation_id,
+        "expected_conversation_version": input.expected_conversation_version,
+        "client_idempotency_key": client_idempotency_key,
+        "destructive_confirmed": input.destructive_confirmed,
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/runtime/reset",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_conversation_runtime_reset", result),
+        Err(err) => {
+            tracing::error!(
+                command = "agent_conversation_runtime_reset",
+                error = %err,
+                "Conversation runtime reset failed",
+            );
+            err.into_app_result("Failed to reset agent conversation runtime")
         }
     }
 }

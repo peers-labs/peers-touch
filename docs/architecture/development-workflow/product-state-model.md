@@ -1,7 +1,7 @@
 # Peers Dev 产品状态模型
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`
 
@@ -13,9 +13,11 @@
 - Source invalidation 和受影响 closure 的重开只由 DWF-D24 定义的 Plan owner
   执行。
 - DWF-D25 Overlay 不得改变任何状态或转换。
-- Execution root 由 DWF-D26 conversation binding 约束。
+- Execution root 由 DWF-D33 OWNER-rooted BindingProjection 约束。
 - Workflow Snapshot、Completion Review 和 Action Receipt 分别由
   DWF-D27、DWF-D28、DWF-D29 定义；accepted 不等于 implemented 或 proven。
+- DWF-D32 的 Resource Plan 只投影跨模块 target 和资源准备状态，不替代
+  Plan/Task lifecycle 或物理 Runtime Owner 状态。
 
 ## 2. Worktree State
 
@@ -87,7 +89,23 @@ Snapshot 从 owner state 只读派生以下 continuation：
 缺失或冲突 owner 产生 typed finding。Snapshot 不修复、不补写、不选择替代
 workspace，也不从 branch、目录顺序或聊天内容推断 owner。
 
-## 6. Dev UI State
+## 6. Resource Plan State
+
+**Decision**：DWF-D32。
+
+| Projection | Meaning |
+|---|---|
+| `allocationState=READY` | 所有 target 已获得完整声明 claims |
+| `allocationState=PARTIALLY_READY` | 至少一个 target ready，至少一个 target 因容量或依赖 park |
+| `allocationState=PARKED` | 没有 target 可执行，且没有部分 target claim |
+| `runtimeState=PENDING` | Runtime Owner 尚未完成 build/restart/provision |
+| `runtimeState=READY` | 所有可执行 target 的资源已有 manifest-bound READY 结果 |
+| `runtimeState=QUARANTINED` | 至少一个资源被 owner 隔离，不能复用 |
+
+相同 request 和 source 保留 fencing token；request、source 或 allocation 改变
+都会推进 token。旧 token 的 Runtime Owner 结果不得改变当前状态。
+
+## 7. Dev UI State
 
 UI 必须支持：
 

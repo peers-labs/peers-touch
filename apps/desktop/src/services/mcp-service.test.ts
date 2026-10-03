@@ -1,13 +1,8 @@
-import { create } from '@bufbuild/protobuf';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  CapabilityOperationSchema,
-  CapabilityOperationStatus,
-} from '../gen/proto/domain/agent/capability_pb';
-
 const apiMock = vi.hoisted(() => ({
-  takeOverCapabilityOperation: vi.fn(),
+  createMCPServer: vi.fn(),
+  refreshMCPServer: vi.fn(),
 }));
 
 vi.mock('./desktop_api', () => ({
@@ -16,34 +11,33 @@ vi.mock('./desktop_api', () => ({
 
 import { mcpService } from './mcp-service';
 
-describe('MCP service recovery', () => {
+describe('MCP Station projection service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('does not manufacture external idempotency during takeover', async () => {
-    const disconnected = create(CapabilityOperationSchema, {
-      operationId: 'operation-1',
-      idempotencyKey: 'station-command-idempotency-key',
-      operationKind: 'connect',
-      status: CapabilityOperationStatus.DISCONNECTED,
-      revision: 4n,
-      sideEffectStartedAt: {
-        seconds: 1n,
-        nanos: 0,
-      },
+  it('creates through the Station-owned server command', async () => {
+    apiMock.createMCPServer.mockResolvedValue({ name: 'fixture' });
+
+    await mcpService.create({
+      name: 'fixture',
+      type: 'stdio',
+      executionOwner: 'station',
     });
-    apiMock.takeOverCapabilityOperation.mockResolvedValue(disconnected);
 
-    await mcpService.takeOverOperation(disconnected);
-
-    expect(apiMock.takeOverCapabilityOperation).toHaveBeenCalledWith(
+    expect(apiMock.createMCPServer).toHaveBeenCalledWith(
       expect.objectContaining({
-        operationId: 'operation-1',
-        expectedRevision: 4n,
-        cleanupOnly: false,
-        externalIdempotencyKey: '',
+        name: 'fixture',
+        executionOwner: 'station',
       }),
     );
+  });
+
+  it('refreshes tools through the execution owner selected by Station', async () => {
+    apiMock.refreshMCPServer.mockResolvedValue({ name: 'fixture' });
+
+    await mcpService.refresh('fixture');
+
+    expect(apiMock.refreshMCPServer).toHaveBeenCalledWith('fixture');
   });
 });

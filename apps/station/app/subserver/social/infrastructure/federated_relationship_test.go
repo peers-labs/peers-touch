@@ -8,11 +8,13 @@ import (
 	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 )
 
 func TestFederatedRelationshipBlockAndUnblockConvergeWithoutRestoringFollows(
@@ -21,6 +23,7 @@ func TestFederatedRelationshipBlockAndUnblockConvergeWithoutRestoringFollows(
 	fixture := newFederatedFriendRequestFixture(t)
 	seedRelationshipFollows(t, fixture.a)
 	seedRelationshipFollows(t, fixture.b)
+	seedPrivateRelationshipAccess(t, fixture.a)
 
 	block := signedRelationshipCommand(
 		t,
@@ -47,6 +50,7 @@ func TestFederatedRelationshipBlockAndUnblockConvergeWithoutRestoringFollows(
 		t.Fatalf("block result = %+v", result)
 	}
 	assertNoRelationshipFollows(t, fixture.a)
+	assertPrivateRelationshipAccessRevoked(t, fixture.a)
 
 	commandBytes, err := proto.MarshalOptions{
 		Deterministic: true,
@@ -170,6 +174,126 @@ func TestFederatedRelationshipBlockAndUnblockConvergeWithoutRestoringFollows(
 		remoteStatus.GetRelationship().GetFollowing() ||
 		remoteStatus.GetRelationship().GetFollowedBy() {
 		t.Fatalf("remote unblock restored relationship = %+v", remoteStatus)
+	}
+}
+
+func seedPrivateRelationshipAccess(
+	t *testing.T,
+	station *friendRequestStation,
+) {
+	t.Helper()
+	now := station.clock.Now()
+	post := dbmodel.SocialPrivateContentPost{
+		PostID:                    "01K5RELATIONSHIPBLOCK001A",
+		ContentID:                 "01K5RELATIONSHIPBLOCK001B",
+		AuthorPTID:                alicePTID,
+		Generation:                1,
+		AudienceSnapshotID:        "relationship-private-snapshot",
+		Kind:                      "TEXT",
+		EncryptedPayloadBytes:     []byte("ciphertext"),
+		EncryptedPayloadSHA256:    make([]byte, sha256.Size),
+		ObjectDescriptorSetSHA256: make([]byte, sha256.Size),
+		LifecycleState:            "ACTIVE",
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	}
+	if err := station.db.Create(&post).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := station.db.Create(&dbmodel.SocialPrivateAudienceSnapshot{
+		SnapshotID:              post.AudienceSnapshotID,
+		ResourceKind:            infrastructure.PrivateContentResourcePost,
+		ResourceID:              post.PostID,
+		PostID:                  post.PostID,
+		AudienceKind:            model.Audience_FRIENDS.String(),
+		SourceRevision:          1,
+		CanonicalSnapshotSHA256: make([]byte, sha256.Size),
+		CreatedAt:               now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := station.db.Create(&dbmodel.SocialPrivateRecipientGrant{
+		SnapshotID:    post.AudienceSnapshotID,
+		RecipientPTID: bobPTID,
+		GrantedAt:     now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	objectID := "relationship-private-object"
+	if err := station.db.Create(&dbmodel.SocialPrivateObjectAttachment{
+		ObjectID:                 objectID,
+		UploadID:                 "relationship-private-upload",
+		UploadGeneration:         1,
+		ContentID:                post.ContentID,
+		UploaderPTID:             alicePTID,
+		UploaderDeviceID:         alicePTID + ":device",
+		CanonicalDescriptorBytes: []byte("descriptor"),
+		DescriptorSHA256:         make([]byte, sha256.Size),
+		StorageKey:               "private/relationship-object",
+		TotalCiphertextSize:      1,
+		CiphertextSHA256:         make([]byte, sha256.Size),
+		State:                    dbmodel.SocialPrivateObjectAttached,
+		DomainCommitID:           post.PostID,
+		CreatedAt:                now,
+		UpdatedAt:                now,
+		ExpiresAt:                now.Add(time.Hour),
+		AttachedAt:               &now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := station.db.Create(&dbmodel.SocialPrivateObjectGrant{
+		ObjectID:          objectID,
+		PrincipalKind:     infrastructure.PrivateContentKeyKindEndpoint,
+		PrincipalPTID:     bobPTID,
+		PrincipalDeviceID: bobPTID + ":device",
+		DomainCommitID:    post.PostID,
+		GrantedAt:         now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := station.db.Create(&dbmodel.SocialPrivateDeliveryIntent{
+		IntentID:          "relationship-private-delivery",
+		ContentID:         post.ContentID,
+		DomainCommitID:    post.PostID,
+		RecipientPTID:     bobPTID,
+		RecipientDeviceID: bobPTID + ":device",
+		IdempotencyKey:    "relationship-private-delivery-key",
+		OpaquePayload:     []byte("delivery"),
+		PayloadSHA256:     make([]byte, sha256.Size),
+		State:             dbmodel.SocialPrivateDeliveryIntentStatePending,
+		CreatedAt:         now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertPrivateRelationshipAccessRevoked(
+	t *testing.T,
+	station *friendRequestStation,
+) {
+	t.Helper()
+	for name, query := range map[string]*gorm.DB{
+		"recipient grants": station.db.
+			Model(&dbmodel.SocialPrivateRecipientGrant{}).
+			Where("recipient_ptid = ? AND revoked_at IS NULL", bobPTID),
+		"object grants": station.db.
+			Model(&dbmodel.SocialPrivateObjectGrant{}).
+			Where("principal_ptid = ? AND revoked_at IS NULL", bobPTID),
+		"pending deliveries": station.db.
+			Model(&dbmodel.SocialPrivateDeliveryIntent{}).
+			Where(
+				"recipient_ptid = ? AND state = ?",
+				bobPTID,
+				dbmodel.SocialPrivateDeliveryIntentStatePending,
+			),
+	} {
+		var count int64
+		if err := query.Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s remain after block: %d", name, count)
+		}
 	}
 }
 

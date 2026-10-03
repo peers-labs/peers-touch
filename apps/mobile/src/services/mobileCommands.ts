@@ -580,14 +580,20 @@ export interface PrivateSocialAccountInput extends MessagingMutationScopeInput {
   activationGeneration: number;
 }
 
+export interface PrivateSocialRecoveryPhraseInput extends PrivateSocialAccountInput {
+  recoveryPhrase: string;
+  recoveryEpoch?: number;
+}
+
 export type PrivateSocialAudience =
   | { kind: 'FOLLOWERS' | 'FRIENDS' | 'SELF' }
-  | { kind: 'CIRCLE' | 'GROUP'; targetId: string }
+  | { kind: 'CIRCLE'; circleId: string }
+  | { kind: 'GROUP'; groupConversationId: string }
   | { kind: 'CUSTOM_ALLOW'; actorPtids: string[] }
   | {
     kind: 'CUSTOM_DENY';
     actorPtids: string[];
-    baseKind: 'PUBLIC' | 'FOLLOWERS';
+    baseKind: 'FOLLOWERS' | 'PUBLIC';
   };
 
 export interface PrivateSocialTextIntent {
@@ -597,8 +603,63 @@ export interface PrivateSocialTextIntent {
   audience: PrivateSocialAudience;
 }
 
+export type PrivateMomentKind =
+  | 'TEXT'
+  | 'IMAGE'
+  | 'VIDEO'
+  | 'LINK'
+  | 'POLL'
+  | 'REPOST'
+  | 'LOCATION';
+
+export interface PrivateMomentMention {
+  actorPtid: string;
+  offset: number;
+  length: number;
+  display: string;
+}
+
+export interface PrivateMomentFileIntent {
+  handle: string;
+  attachmentId: string;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+  altText?: string;
+}
+
+export interface PrivateSocialMomentIntent extends PrivateSocialTextIntent {
+  momentKind?: PrivateMomentKind;
+  mentions?: PrivateMomentMention[];
+  files?: PrivateMomentFileIntent[];
+  link?: {
+    url: string;
+    title: string;
+    description?: string;
+    imageUrl?: string;
+    siteName?: string;
+    faviconUrl?: string;
+  };
+  location?: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    address?: string;
+    placeId?: string;
+  };
+  poll?: {
+    question: string;
+    options: string[];
+    minChoices: number;
+    maxChoices: number;
+    expiresAtSeconds: number;
+  };
+  repost?: { sourcePostId: string };
+}
+
 export type PrivateSocialPublishState =
   | 'PREPARING'
+  | 'READY_PRIVATE'
   | 'PUBLISHING'
   | 'UNKNOWN_OUTCOME'
   | 'PUBLISHED'
@@ -618,23 +679,79 @@ export interface PrivateMomentProjection {
 
 export type PrivateSocialReadState =
   | 'RECOVERY_REQUIRED'
+  | 'RECOVERY_KEY_UNAVAILABLE'
   | 'CONTENT_READY'
   | 'AUTHENTICATION_REQUIRED'
   | 'NOT_FOUND_OR_NOT_AUTHORIZED'
   | 'INTEGRITY_FAILURE'
   | 'DELETED_OR_REVOKED';
 
-export interface PrivateTextReadContent {
-  kind: 'TEXT';
-  text: string;
+export type PrivateMediaState =
+  | 'MEDIA_PLACEHOLDER'
+  | 'MEDIA_GRANT_PENDING'
+  | 'MEDIA_DOWNLOADING'
+  | 'MEDIA_DECRYPTING'
+  | 'MEDIA_READY'
+  | 'MEDIA_ACCESS_DENIED'
+  | 'MEDIA_INTEGRITY_FAILURE'
+  | 'MEDIA_OFFLINE_RETRYABLE';
+
+export interface PrivateMomentMediaProjection {
+  attachmentId: string;
+  objectId: string;
+  state: PrivateMediaState;
+  mimeType: string;
+  width: number;
+  height: number;
+  durationMs: number;
+  altText: string;
+  plaintextSha256?: string;
+  plaintextSize?: number;
+  localPath?: string;
+  errorCode?: string;
 }
+
+export type PrivateMomentReadContent =
+  | { kind: 'TEXT'; text: string }
+  | { kind: 'IMAGE'; text: string; media: PrivateMomentMediaProjection[] }
+  | { kind: 'VIDEO'; text: string; media: PrivateMomentMediaProjection[] }
+  | { kind: 'LINK'; text: string; url: string; title: string }
+  | {
+    kind: 'POLL';
+    text: string;
+    question: string;
+    options: string[];
+    minChoices: number;
+    maxChoices: number;
+    expiresAtSeconds: number;
+  }
+  | {
+    kind: 'REPOST';
+    comment: string;
+    sourcePostId: string;
+    sourceAuthorPtid: string;
+    sourceKind: string;
+    sourceText: string;
+  }
+  | {
+    kind: 'LOCATION';
+    text: string;
+    name: string;
+    latitude: string;
+    longitude: string;
+    address: string;
+    media: PrivateMomentMediaProjection[];
+  };
+
 
 export type PrivateSocialReceiverAudience =
   | 'FRIENDS'
   | 'FOLLOWERS'
   | 'CIRCLE'
+  | 'GROUP'
   | 'SELF'
-  | 'CUSTOM_ALLOW';
+  | 'CUSTOM_ALLOW'
+  | 'CUSTOM_DENY';
 
 export interface PrivateMomentReadProjection {
   postId: string;
@@ -643,16 +760,74 @@ export interface PrivateMomentReadProjection {
   authorPtid: string;
   audienceKind: PrivateSocialReceiverAudience | 'UNKNOWN';
   state: PrivateSocialReadState;
-  content?: PrivateTextReadContent;
+  mentions?: PrivateMomentMention[];
+  content?: PrivateMomentReadContent;
   errorCode?: string;
   retryAfterSeconds?: number;
   createdAtMillis?: number;
   updatedAtMillis?: number;
 }
 
+export type PrivateCommentState =
+  | 'COMMENT_EDITING'
+  | 'COMMENT_ENCRYPTING'
+  | 'COMMENT_SUBMITTING'
+  | 'COMMENT_POSTED'
+  | 'COMMENT_FAILED'
+  | 'COMMENT_RATE_LIMITED'
+  | 'COMMENT_PARENT_UNAVAILABLE';
+
+export interface PrivateCommentIntent {
+  draftId: string;
+  draftRevision: number;
+  postId: string;
+  replyToCommentId?: string;
+  text: string;
+  mentions?: PrivateMomentMention[];
+}
+
+export interface PrivateCommentDraftProjection extends PrivateCommentIntent {
+  replyToCommentId: string;
+  mentions: PrivateMomentMention[];
+  state: PrivateCommentState;
+  commentId?: string;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+}
+
+export interface PrivateCommentProjection {
+  commentId: string;
+  contentId: string;
+  generation: string;
+  postId: string;
+  replyToCommentId: string;
+  authorPtid: string;
+  state: 'COMMENT_POSTED';
+  text?: string;
+  mentions: PrivateMomentMention[];
+  reactionsCount: number;
+  repliesCount: number;
+  createdAtMillis?: number;
+  updatedAtMillis?: number;
+}
+
+export interface PrivateCommentSubmitResult {
+  draft: PrivateCommentDraftProjection;
+  comment?: PrivateCommentProjection;
+}
+
+export interface PrivateCommentPage {
+  postId: string;
+  comments: PrivateCommentProjection[];
+  nextCursor: string;
+  hasMore: boolean;
+}
+
 export interface PrivateSocialNativeSnapshot {
   publishProjections: PrivateMomentProjection[];
   readProjections: PrivateMomentReadProjection[];
+  commentDrafts: PrivateCommentDraftProjection[];
+  comments: PrivateCommentProjection[];
 }
 
 export interface PrivateSocialRuntimeStatus {
@@ -667,6 +842,7 @@ export interface PrivateSocialRuntimeStatus {
 
 export interface PrivateSocialWorkerReport {
   endpointPrekeysAvailable: number;
+  recoveryPrekeysAvailable: number | null;
   submissionsProcessed: number;
   submissionsUnknown: number;
   submissionsTerminal: number;
@@ -682,16 +858,77 @@ export async function privateSocialStatus(): Promise<PrivateSocialRuntimeStatus>
   return invoke<PrivateSocialRuntimeStatus>('social_private_status');
 }
 
-export async function privateSocialPublishText(
+export async function privateSocialPrepareText(
   input: PrivateSocialAccountInput & PrivateSocialTextIntent,
 ): Promise<PrivateMomentProjection> {
-  return invoke<PrivateMomentProjection>('social_private_publish_text', { input });
+  return invoke<PrivateMomentProjection>('social_private_prepare_text', { input });
+}
+
+export async function privateSocialSubmitText(
+  input: PrivateSocialAccountInput & {
+    draftId: string;
+    draftRevision: number;
+  },
+): Promise<PrivateMomentProjection> {
+  return invoke<PrivateMomentProjection>('social_private_submit_text', { input });
+}
+
+export async function privateSocialPublish(
+  input: PrivateSocialAccountInput & PrivateSocialMomentIntent,
+): Promise<PrivateMomentProjection> {
+  return invoke<PrivateMomentProjection>('social_private_publish', { input });
 }
 
 export async function privateSocialReadText(
   input: PrivateSocialAccountInput & { postId: string },
 ): Promise<PrivateMomentReadProjection> {
   return invoke<PrivateMomentReadProjection>('social_private_read_text', { input });
+}
+
+export async function privateSocialRead(
+  input: PrivateSocialAccountInput & { postId: string },
+): Promise<PrivateMomentReadProjection> {
+  return invoke<PrivateMomentReadProjection>('social_private_read', { input });
+}
+
+export async function privateSocialOpenMedia(
+  input: PrivateSocialAccountInput & { postId: string; objectId: string },
+): Promise<PrivateMomentReadProjection> {
+  return invoke<PrivateMomentReadProjection>('social_private_open_media', { input });
+}
+
+export async function privateSocialStoreRecoveryPhrase(
+  input: PrivateSocialRecoveryPhraseInput,
+): Promise<void> {
+  return invoke<void>('social_private_store_recovery_phrase', { input });
+}
+
+export async function privateSocialRecoverText(
+  input: PrivateSocialAccountInput & { postId: string },
+): Promise<PrivateMomentReadProjection> {
+  return invoke<PrivateMomentReadProjection>('social_private_recover_text', { input });
+}
+
+export async function privateSocialRecover(
+  input: PrivateSocialAccountInput & { postId: string },
+): Promise<PrivateMomentReadProjection> {
+  return invoke<PrivateMomentReadProjection>('social_private_recover', { input });
+}
+
+export async function privateSocialCommentSubmit(
+  input: PrivateSocialAccountInput & PrivateCommentIntent,
+): Promise<PrivateCommentSubmitResult> {
+  return invoke<PrivateCommentSubmitResult>('social_private_comment_submit', { input });
+}
+
+export async function privateSocialComments(
+  input: PrivateSocialAccountInput & {
+    postId: string;
+    cursor?: string;
+    limit?: number;
+  },
+): Promise<PrivateCommentPage> {
+  return invoke<PrivateCommentPage>('social_private_comments', { input });
 }
 
 export async function privateSocialReconcile(
@@ -720,7 +957,7 @@ export async function socialFriendRequestSend(
     'social_friend_request_send',
     { input },
   );
-  notifyReliabilityCommandChanged();
+  notifyFriendRequestRecoveryIfNeeded(projection);
   return decodeReliableFriendRequestResult(
     projection,
     SendSocialFriendRequestResponseSchema,
@@ -735,7 +972,7 @@ export async function socialFriendRequestAccept(
     'social_friend_request_accept',
     { input },
   );
-  notifyReliabilityCommandChanged();
+  notifyFriendRequestRecoveryIfNeeded(projection);
   return decodeReliableFriendRequestResult(
     projection,
     AcceptSocialFriendRequestResponseSchema,
@@ -750,11 +987,17 @@ export async function socialFriendRequestReject(
     'social_friend_request_reject',
     { input },
   );
-  notifyReliabilityCommandChanged();
+  notifyFriendRequestRecoveryIfNeeded(projection);
   return decodeReliableFriendRequestResult(
     projection,
     RejectSocialFriendRequestResponseSchema,
   );
+}
+
+function notifyFriendRequestRecoveryIfNeeded(
+  projection: FriendRequestCommandProjection,
+): void {
+  if (!projection.checkpointReady) notifyReliabilityCommandChanged();
 }
 
 function decodeReliableFriendRequestResult<Desc extends DescMessage>(
@@ -935,7 +1178,7 @@ export async function messagingStageAttachment(
     voiceNote?: MessagingVoiceNoteMetadata;
   },
 ): Promise<MessagingAttachmentStageProjection> {
-  const stage = await invoke<Omit<MessagingAttachmentStageProjection, 'voiceNote'>>(
+  const stage = await invoke<MessagingAttachmentStageProjection>(
     'messaging_attachment_stage_begin',
     {
       input: {
@@ -944,8 +1187,7 @@ export async function messagingStageAttachment(
         filename: input.file.name,
         mimeType: input.file.type || 'application/octet-stream',
         plaintextSize: input.file.size,
-        contentKind: input.voiceNote ? 2 : 1,
-        durationMs: input.voiceNote?.durationMs ?? 0,
+        voiceNote: input.voiceNote,
       },
     },
   );
@@ -965,17 +1207,13 @@ export async function messagingStageAttachment(
       });
       offset = end;
     }
-    const completed = await invoke<Omit<MessagingAttachmentStageProjection, 'voiceNote'>>('messaging_attachment_stage_complete', {
+    return invoke<MessagingAttachmentStageProjection>('messaging_attachment_stage_complete', {
       input: {
         stationPeerId: input.stationPeerId,
         actorPtid: input.actorPtid,
         stageId: stage.stageId,
       },
     });
-    return {
-      ...completed,
-      ...(input.voiceNote ? { voiceNote: input.voiceNote } : {}),
-    };
   } catch (error) {
     await messagingDiscardAttachmentStage({
       stationPeerId: input.stationPeerId,

@@ -6,10 +6,10 @@ SDK 当前位于 `web/src/sdk/applet/`，作为主应用子模块。
 
 ## 后续计划
 
-- 迁移到 `packages/applet-sdk/` 或发布为 `@Peers-Touch/applet-sdk` 独立包
+- 迁移到 `packages/applet-sdk/` 或发布为 `@peers-touch/applet-sdk` 独立包
 - 便于独立版本管理、单元测试与复用
-- 主应用通过 `import { createAppletSDK } from '@Peers-Touch/applet-sdk'` 使用
+- 主应用通过 `import { createAppletSDK } from '@peers-touch/applet-sdk'` 使用
 
 ## 相关文档
 
-- `external/gdpa-Peers-Touch/docs/agent-applet-design.md` 第 0 节「小程序四层架构」
+- `docs/architecture/agent/` 第 0 节「小程序四层架构」

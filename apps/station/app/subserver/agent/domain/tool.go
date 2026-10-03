@@ -27,6 +27,7 @@ type ToolDefinition struct {
 
 // ToolCallMeta carries per-invocation context that handlers may need.
 type ToolCallMeta struct {
+	ActorID        string
 	AgentID        string
 	ConversationID string
 	TurnID         string

@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/usecase"
@@ -17,6 +16,10 @@ type OAuthHandler struct {
 }
 
 func (h *OAuthHandler) StartWithProvider(w http.ResponseWriter, r *http.Request, provider valueobject.Provider) {
+	setOAuthSecurityHeaders(w.Header())
+	if !requireGET(w, r) {
+		return
+	}
 	siteID := strings.TrimSpace(r.URL.Query().Get("site_id"))
 	if siteID == "" {
 		siteID = "default"
@@ -34,60 +37,63 @@ func (h *OAuthHandler) StartWithProvider(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *OAuthHandler) CallbackWithProvider(w http.ResponseWriter, r *http.Request, provider valueobject.Provider) {
+	setOAuthSecurityHeaders(w.Header())
+	if !requireGET(w, r) {
+		return
+	}
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
-	if state == "" || code == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_code_or_state"})
+	providerError := strings.TrimSpace(r.URL.Query().Get("error"))
+	if state == "" || (code == "" && providerError == "") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_callback_result_or_state"})
+		return
+	}
+	if code != "" && providerError != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_callback_result"})
 		return
 	}
 	out, err := h.HandleCallback.Execute(r.Context(), usecase.HandleCallbackInput{
-		Provider: provider,
-		State:    state,
-		Code:     code,
+		Provider:      provider,
+		State:         state,
+		Code:          code,
+		ProviderError: providerError,
 	})
 	if err != nil {
-		redirect, ok := h.buildErrorRedirect(r.URL.Query().Get("site_id"), state, err.Error())
-		if ok {
-			http.Redirect(w, r, redirect, http.StatusFound)
+		if out != nil && out.RedirectURL != "" {
+			http.Redirect(w, r, out.RedirectURL, http.StatusFound)
 			return
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error(), "state": state})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": usecase.PublicErrorCode(err)})
 		return
 	}
 	http.Redirect(w, r, out.RedirectURL, http.StatusFound)
 }
 
-func (h *OAuthHandler) Healthz(w http.ResponseWriter, _ *http.Request) {
+func (h *OAuthHandler) Healthz(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *OAuthHandler) buildErrorRedirect(siteID, state, message string) (string, bool) {
-	if siteID == "" {
-		siteID = "default"
+func requireGET(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method == http.MethodGet {
+		return true
 	}
-	site, ok := h.Sites.Get(siteID)
-	if !ok || strings.TrimSpace(site.ErrorURL) == "" {
-		return "", false
-	}
-	u, err := url.Parse(site.ErrorURL)
-	if err != nil {
-		return "", false
-	}
-	if state != "" {
-		q := u.Query()
-		q.Set("state", state)
-		u.RawQuery = q.Encode()
-	}
-	if message != "" {
-		q := u.Query()
-		q.Set("error", message)
-		u.RawQuery = q.Encode()
-	}
-	return u.String(), true
+	w.Header().Set("Allow", http.MethodGet)
+	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
+	return false
+}
+
+func setOAuthSecurityHeaders(header http.Header) {
+	header.Set("Cache-Control", "no-store")
+	header.Set("Pragma", "no-cache")
+	header.Set("Referrer-Policy", "no-referrer")
+	header.Set("X-Content-Type-Options", "nosniff")
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
 }

@@ -272,8 +272,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
                 and historical_read.get("textSha256") == _sha256(PRIVATE_TEXT),
                 "Bob could not reopen content from the prior recovery epoch",
             )
-            bob.call("clearLocalState")
-
         station_switch = _fixture_action(
             context,
             "station-switch",
@@ -294,17 +292,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             "account-switch fixture did not advance the session generation",
         )
 
-        context.write_bound_artifact_json(
-            "browser-private-handoff.json",
-            "secure-content-browser-private-handoff",
-            {
-                "postId": resume["postId"],
-                "postIdSha256": resume["postIdSha256"],
-                "publicTextSha256": resume["publicTextSha256"],
-                "publicMediaSha256": resume["publicMediaSha256"],
-                "textSha256": resume["textSha256"],
-            },
-        )
         return {
             "observations": {
                 "alicePublished": True,
@@ -479,10 +466,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
                 "publicMediaSha256": _sha256(PNG_BYTES),
             },
         )
-
-        alice.call("clearLocalState")
-        bob.call("clearLocalState")
-        eve.call("clearLocalState")
 
     context.request_restart(
         EXPECTED_CLIENTS[1],

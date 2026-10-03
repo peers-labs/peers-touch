@@ -297,13 +297,20 @@ class StationAttestationOwnerTests(unittest.TestCase):
             ) as transport_type:
                 resolved = open_reviewed_remote_tunnel(
                     "station-three",
+                    remote_host="10.0.0.3",
                     remote_port=18080,
+                    local_port=4101,
                     timeout=7,
                 )
 
         self.assertIs(resolved, tunnel)
         self.assertEqual(
-            {"remote_port": 18080, "timeout": 7},
+            {
+                "remote_host": "10.0.0.3",
+                "remote_port": 18080,
+                "local_port": 4101,
+                "timeout": 7,
+            },
             transport.start_local_forward.call_args.kwargs,
         )
         target = transport_type.call_args.args[0]

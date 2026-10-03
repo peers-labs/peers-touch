@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -39,22 +40,47 @@ func NewReactionService(gdb *gorm.DB, repos *infrastructure.Repos, publishers ..
 // reaction snapshot. Idempotent at the (post,viewer,kind) composite
 // key level — re-reacting with the same kind is a no-op.
 //
-// Visibility is implicitly enforced because the parent post must be
-// readable to land here — the handler calls MomentService.GetMoment
-// first; if that returns nil the reaction is rejected upstream.
+// Public visibility is checked by the handler. Private visibility is checked
+// atomically with the mutation by the private reaction repository.
 func (s *ReactionService) React(ctx context.Context, postIDStr, viewerPTID string, kind model.ReactionKind) ([]*model.ReactionSummary, error) {
-	postID, postAuthorPTID, postClass, err := s.resolvePostMeta(ctx, postIDStr, viewerPTID)
-	if err != nil {
-		return nil, err
-	}
-	if postID == 0 {
-		return nil, fmt.Errorf("post %s not found", postIDStr)
-	}
 	if viewerPTID == "" {
 		return nil, fmt.Errorf("authentication required to react")
 	}
 	if kind == model.ReactionKind_REACTION_UNSPECIFIED {
 		return nil, fmt.Errorf("reaction kind is required")
+	}
+	postID, publicPostID, postAuthorPTID, postClass, err :=
+		s.resolvePostMeta(ctx, postIDStr)
+	if err != nil {
+		return nil, err
+	}
+	if postClass == domain.PostClassPrivate {
+		postAuthorPTID, reactions, err := s.repos.Reactions.MutatePrivatePost(
+			ctx,
+			postID,
+			viewerPTID,
+			kind.String(),
+			false,
+		)
+		if err != nil {
+			return nil, mapPrivateStoreError(
+				"social.reaction.react",
+				err,
+			)
+		}
+		summaries, err := s.summarizeVisible(
+			ctx,
+			reactions,
+			postAuthorPTID,
+			viewerPTID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if s.publisher != nil {
+			s.publisher.PublishReacted(ctx, postID, viewerPTID, kind, false)
+		}
+		return s.toProtoSummaries(summaries), nil
 	}
 
 	if err := s.repos.Reactions.Add(ctx, &domain.Reaction{
@@ -66,7 +92,7 @@ func (s *ReactionService) React(ctx context.Context, postIDStr, viewerPTID strin
 		return nil, fmt.Errorf("add reaction: %w", err)
 	}
 
-	if err := s.refreshSnapshot(ctx, postID, postClass); err != nil {
+	if err := s.refreshSnapshot(ctx, postID, publicPostID, postClass); err != nil {
 		logger.Warn(ctx, "react: snapshot refresh failed", "post_id", postID, "error", err)
 	}
 
@@ -83,22 +109,51 @@ func (s *ReactionService) React(ctx context.Context, postIDStr, viewerPTID strin
 // Unreact removes `(post, viewer, kind)` and refreshes the snapshot.
 // No-op if the row doesn't exist.
 func (s *ReactionService) Unreact(ctx context.Context, postIDStr, viewerPTID string, kind model.ReactionKind) ([]*model.ReactionSummary, error) {
-	postID, postAuthorPTID, postClass, err := s.resolvePostMeta(ctx, postIDStr, viewerPTID)
+	if viewerPTID == "" {
+		return nil, fmt.Errorf("authentication required to unreact")
+	}
+	if kind == model.ReactionKind_REACTION_UNSPECIFIED {
+		return nil, fmt.Errorf("reaction kind is required")
+	}
+	postID, publicPostID, postAuthorPTID, postClass, err :=
+		s.resolvePostMeta(ctx, postIDStr)
 	if err != nil {
 		return nil, err
 	}
-	if postID == 0 {
-		return nil, fmt.Errorf("post %s not found", postIDStr)
-	}
-	if viewerPTID == "" {
-		return nil, fmt.Errorf("authentication required to unreact")
+	if postClass == domain.PostClassPrivate {
+		postAuthorPTID, reactions, err := s.repos.Reactions.MutatePrivatePost(
+			ctx,
+			postID,
+			viewerPTID,
+			kind.String(),
+			true,
+		)
+		if err != nil {
+			return nil, mapPrivateStoreError(
+				"social.reaction.unreact",
+				err,
+			)
+		}
+		summaries, err := s.summarizeVisible(
+			ctx,
+			reactions,
+			postAuthorPTID,
+			viewerPTID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if s.publisher != nil {
+			s.publisher.PublishReacted(ctx, postID, viewerPTID, kind, true)
+		}
+		return s.toProtoSummaries(summaries), nil
 	}
 
 	if err := s.repos.Reactions.Remove(ctx, postID, viewerPTID, kind.String()); err != nil {
 		return nil, fmt.Errorf("remove reaction: %w", err)
 	}
 
-	if err := s.refreshSnapshot(ctx, postID, postClass); err != nil {
+	if err := s.refreshSnapshot(ctx, postID, publicPostID, postClass); err != nil {
 		logger.Warn(ctx, "unreact: snapshot refresh failed", "post_id", postID, "error", err)
 	}
 
@@ -115,11 +170,20 @@ func (s *ReactionService) Unreact(ctx context.Context, postIDStr, viewerPTID str
 // Aggregate returns the reaction summaries for a post, with the
 // viewer-bound `reacted_by_viewer` flag populated. Callers that don't
 // need the viewer-bound flag may pass viewerID = 0.
-func (s *ReactionService) Aggregate(ctx context.Context, postID uint64, postAuthorPTID, viewerPTID string) ([]domain.ReactionSummary, error) {
+func (s *ReactionService) Aggregate(ctx context.Context, postID string, postAuthorPTID, viewerPTID string) ([]domain.ReactionSummary, error) {
 	reactions, err := s.repos.Reactions.ListByPost(ctx, postID)
 	if err != nil {
 		return nil, err
 	}
+	return s.summarizeVisible(ctx, reactions, postAuthorPTID, viewerPTID)
+}
+
+func (s *ReactionService) summarizeVisible(
+	ctx context.Context,
+	reactions []domain.Reaction,
+	postAuthorPTID string,
+	viewerPTID string,
+) ([]domain.ReactionSummary, error) {
 	visibility, err := buildInteractionVisibility(ctx, s.repos, viewerPTID, postAuthorPTID)
 	if err != nil {
 		return nil, err
@@ -155,23 +219,37 @@ func (s *ReactionService) Aggregate(ctx context.Context, postID uint64, postAuth
 // resolvePostMeta looks up the post's storage class. After the W11
 // hard-cut, only public posts are reachable through this path; new
 // private content uses the Secure Content pipeline.
-func (s *ReactionService) resolvePostMeta(ctx context.Context, postIDStr, viewerPTID string) (uint64, string, domain.PostClass, error) {
+func (s *ReactionService) resolvePostMeta(
+	ctx context.Context,
+	postIDStr string,
+) (string, uint64, string, domain.PostClass, error) {
 	postID := domain.ParseID(postIDStr)
-	if postID == 0 {
-		return 0, "", "", fmt.Errorf("invalid post_id %q", postIDStr)
+	if postID != 0 && strconv.FormatUint(postID, 10) == postIDStr {
+		pub, err := s.repos.PublicPosts.GetByID(ctx, postID)
+		if err != nil {
+			return "", 0, "", "", err
+		}
+		if pub != nil {
+			return postIDStr, postID, pub.AuthorPTID, domain.PostClassPublic, nil
+		}
+		return "", 0, "", "", fmt.Errorf("post %s not found", postIDStr)
 	}
-
-	pub, err := s.repos.PublicPosts.GetByID(ctx, postID)
-	if err != nil {
-		return 0, "", "", err
+	if err := domain.ValidatePrivateContentID(
+		postIDStr,
+		"post_id",
+		"social.reaction.resolve_post",
+	); err != nil {
+		return "", 0, "", "", err
 	}
-	if pub != nil {
-		return postID, pub.AuthorPTID, domain.PostClassPublic, nil
-	}
-	return 0, "", "", nil
+	return postIDStr, 0, "", domain.PostClassPrivate, nil
 }
 
-func (s *ReactionService) refreshSnapshot(ctx context.Context, postID uint64, class domain.PostClass) error {
+func (s *ReactionService) refreshSnapshot(
+	ctx context.Context,
+	postID string,
+	publicPostID uint64,
+	class domain.PostClass,
+) error {
 	summaries, err := s.repos.Reactions.Aggregate(ctx, postID)
 	if err != nil {
 		return err
@@ -186,7 +264,7 @@ func (s *ReactionService) refreshSnapshot(ctx context.Context, postID uint64, cl
 	}
 	switch class {
 	case domain.PostClassPublic:
-		return s.repos.PublicPosts.UpdateReactionsCount(ctx, postID, string(b))
+		return s.repos.PublicPosts.UpdateReactionsCount(ctx, publicPostID, string(b))
 	default:
 		return fmt.Errorf("unknown or unreachable post class %q", class)
 	}

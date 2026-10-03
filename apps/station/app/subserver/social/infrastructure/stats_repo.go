@@ -134,10 +134,23 @@ func (r *momentsStatsRepo) sumByColumn(
 
 func (r *momentsStatsRepo) countReactionsReceived(ctx context.Context, authorID uint64, actorPTID string) int64 {
 	var publicCount int64
+	publicPostIDExpression := "CAST(p.id AS TEXT)"
+	if r.db.Dialector.Name() == "mysql" {
+		publicPostIDExpression = "CAST(p.id AS CHAR)"
+	}
 	if err := r.db.WithContext(ctx).
 		Table("social_reactions AS r").
-		Joins("JOIN social_public_posts AS p ON p.id = r.post_id AND p.author_id = ? AND p.deleted_at IS NULL", authorID).
-		Where("r.actor_id <> ?", authorID).
+		Joins(
+			"JOIN social_public_posts AS p ON "+
+				publicPostIDExpression+
+				" = r.post_id AND p.author_id = ? AND p.deleted_at IS NULL",
+			authorID,
+		).
+		Where(
+			"r.actor_id <> ? AND r.post_class = ?",
+			authorID,
+			string(domain.PostClassPublic),
+		).
 		Count(&publicCount).Error; err != nil {
 		logger.Warn(ctx, "stats: count public reactions-received failed", "error", err, "author_ptid", actorPTID)
 		publicCount = 0

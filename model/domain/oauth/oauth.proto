@@ -3,7 +3,6 @@ syntax = "proto3";
 package peers_touch.model.oauth.v1;
 
 import "google/protobuf/timestamp.proto";
-import "domain/actor/actor.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -35,28 +34,4 @@ message OAuthToken {
   string client_id = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp expires_at = 8;
-}
-
-// OAuthBridgeRequest is the payload from the external OAuth gateway
-// to Station for silent registration / login.
-message OAuthBridgeRequest {
-  string provider         = 1;
-  string provider_user_id = 2;
-  string email            = 3;
-  string username         = 4;
-  string display_name     = 5;
-  string avatar_url       = 6;
-  string ts               = 7;  // RFC3339 timestamp for HMAC
-  string sig              = 8;  // HMAC-SHA256 hex signature
-}
-
-message OAuthBridgeResponse {
-  string session_id   = 1;
-  string access_token = 2;
-  string refresh_token = 3;
-  string token_type   = 4;
-  string expires_at   = 5;
-  reserved 6, 7, 8, 9, 10;
-  reserved "actor_id", "actor_id_num", "username", "display_name", "email";
-  peers_touch.model.actor.v1.ActorRef actor_ref = 11 [json_name = "actor_ref"];
 }

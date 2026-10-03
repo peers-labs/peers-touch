@@ -32,6 +32,7 @@ from tooling.acceptance.gates.agent.agent_v2_candidate_producer import (
     AgentV2RuntimeAttestation,
     AgentV2RuntimeTuple,
     AgentV2TupleObservation,
+    load_preprovisioned_runtime_manifest,
 )
 from tooling.acceptance.gates.agent.capability_binding_candidate import (
     _load_script,
@@ -43,6 +44,7 @@ from tooling.acceptance.gates.agent.capability_binding_development import (
     authenticate_native_client,
     confirm_native_actor_identity_enrollment,
     persist_native_actor_identity,
+    resolve_operation_scenario_actor,
     seed_native_actor_identity,
 )
 from tooling.acceptance.gates.agent.foundation_mobile_contract_adapter import (
@@ -248,6 +250,7 @@ class McpLifecycleRuntimeAdapter:
             station_accepted=enrollment["accepted"] is True,
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            allow_actor_rebinding=True,
         )
 
     def _client(
@@ -370,6 +373,9 @@ class McpLifecycleRuntimeAdapter:
                             },
                             "toolName": MCP_TOOL_NAME,
                             "expectedResult": MCP_RESULT_TEXT,
+                            "expectedAssistantResponse": (
+                                "MCP invocation completed."
+                            ),
                         },
                         timeout=900,
                     ),
@@ -748,17 +754,24 @@ def main() -> int:
     os.environ["PT_ACCEPTANCE_WORKSPACE_ID"] = store.workspace_id
     os.environ["PT_ACCEPTANCE_GATE_ID"] = AGENT_V2_MCP_GATE
     os.environ["PT_ACCEPTANCE_RUN_ID"] = run.run_id
-    _deploy_acceptance_station(profile_env, run.run_id)
-
-    provisioner = HomeStationProvisioner(
-        EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "home-station.yaml")
+    runtime_manifest = load_preprovisioned_runtime_manifest(
+        AGENT_V2_MCP_GATE,
+        repo_root=ROOT,
     )
-    provisioner._resolve_active_profile = lambda: (
-        profile_name,
-        profile_file,
-        slot,
-        dict(profile_env),
-    )
+    provisioner: HomeStationProvisioner | None = None
+    if runtime_manifest is None:
+        _deploy_acceptance_station(profile_env, run.run_id)
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
+        )
+        provisioner._resolve_active_profile = lambda: (
+            profile_name,
+            profile_file,
+            slot,
+            dict(profile_env),
+        )
     provider_fixture = OpenAIProviderFixture(
         tool_name="local_mcp",
         tool_arguments={
@@ -782,28 +795,33 @@ def main() -> int:
     primary_error: BaseException | None = None
     run_closed = False
     try:
-        manifest = provisioner.provision(AGENT_V2_MCP_GATE)
-        require(
-            manifest.state.value == "FIXTURE_READY",
-            "J04 provisioning blocked: "
-            f"{manifest.blocked_reason or manifest.state.value}",
-        )
+        if runtime_manifest is None:
+            assert provisioner is not None
+            manifest = provisioner.provision(AGENT_V2_MCP_GATE)
+            require(
+                manifest.state.value == "FIXTURE_READY",
+                "J04 provisioning blocked: "
+                f"{manifest.blocked_reason or manifest.state.value}",
+            )
+            runtime_manifest = manifest.to_dict()
         provider_fixture.start()
         provider_base_url = provider_bridge.start(
             provider_fixture.port,
             run.run_id,
         )
         runtime_pair = FoundationRuntimePair.from_manifest(
-            _build_client_manifest(manifest.to_dict()),
+            _build_client_manifest(runtime_manifest),
             profile_env=profile_env,
             startup_timeout=900,
         )
+        expected_actor_id = resolve_operation_scenario_actor(profile_env)
         seed_native_actor_identity(
             fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
             target_root=runtime_pair.native.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            expected_actor_id=expected_actor_id,
         )
         runtime_pair.start()
         observations = McpLifecycleCandidateProducer(
@@ -839,10 +857,11 @@ def main() -> int:
             provider_fixture.stop()
         except BaseException as error:
             cleanup_failures.append(f"provider fixture cleanup failed: {error}")
-        try:
-            provisioner.cleanup()
-        except BaseException as error:
-            cleanup_failures.append(f"provisioner cleanup failed: {error}")
+        if provisioner is not None:
+            try:
+                provisioner.cleanup()
+            except BaseException as error:
+                cleanup_failures.append(f"provisioner cleanup failed: {error}")
         if cleanup_failures:
             run.close()
             run_closed = True

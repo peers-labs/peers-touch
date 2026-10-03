@@ -298,197 +298,11 @@ func (x *OAuthToken) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// OAuthBridgeRequest is the payload from the external OAuth gateway
-// to Station for silent registration / login.
-type OAuthBridgeRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Provider       string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
-	ProviderUserId string                 `protobuf:"bytes,2,opt,name=provider_user_id,json=providerUserId,proto3" json:"provider_user_id,omitempty"`
-	Email          string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
-	Username       string                 `protobuf:"bytes,4,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName    string                 `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	AvatarUrl      string                 `protobuf:"bytes,6,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	Ts             string                 `protobuf:"bytes,7,opt,name=ts,proto3" json:"ts,omitempty"`   // RFC3339 timestamp for HMAC
-	Sig            string                 `protobuf:"bytes,8,opt,name=sig,proto3" json:"sig,omitempty"` // HMAC-SHA256 hex signature
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *OAuthBridgeRequest) Reset() {
-	*x = OAuthBridgeRequest{}
-	mi := &file_domain_oauth_oauth_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OAuthBridgeRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OAuthBridgeRequest) ProtoMessage() {}
-
-func (x *OAuthBridgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_oauth_oauth_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OAuthBridgeRequest.ProtoReflect.Descriptor instead.
-func (*OAuthBridgeRequest) Descriptor() ([]byte, []int) {
-	return file_domain_oauth_oauth_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *OAuthBridgeRequest) GetProvider() string {
-	if x != nil {
-		return x.Provider
-	}
-	return ""
-}
-
-func (x *OAuthBridgeRequest) GetProviderUserId() string {
-	if x != nil {
-		return x.ProviderUserId
-	}
-	return ""
-}
-
-func (x *OAuthBridgeRequest) GetEmail() string {
-	if x != nil {
-		return x.Email
-	}
-	return ""
-}
-
-func (x *OAuthBridgeRequest) GetUsername() string {
-	if x != nil {
-		return x.Username
-	}
-	return ""
-}
-
-func (x *OAuthBridgeRequest) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
-	}
-	return ""
-}
-
-func (x *OAuthBridgeRequest) GetAvatarUrl() string {
-	if x != nil {
-		return x.AvatarUrl
-	}
-	return ""
-}
-
-func (x *OAuthBridgeRequest) GetTs() string {
-	if x != nil {
-		return x.Ts
-	}
-	return ""
-}
-
-func (x *OAuthBridgeRequest) GetSig() string {
-	if x != nil {
-		return x.Sig
-	}
-	return ""
-}
-
-type OAuthBridgeResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	AccessToken   string                 `protobuf:"bytes,2,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
-	RefreshToken  string                 `protobuf:"bytes,3,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
-	TokenType     string                 `protobuf:"bytes,4,opt,name=token_type,json=tokenType,proto3" json:"token_type,omitempty"`
-	ExpiresAt     string                 `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	ActorRef      *ActorRef              `protobuf:"bytes,11,opt,name=actor_ref,proto3" json:"actor_ref,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OAuthBridgeResponse) Reset() {
-	*x = OAuthBridgeResponse{}
-	mi := &file_domain_oauth_oauth_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OAuthBridgeResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OAuthBridgeResponse) ProtoMessage() {}
-
-func (x *OAuthBridgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_oauth_oauth_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OAuthBridgeResponse.ProtoReflect.Descriptor instead.
-func (*OAuthBridgeResponse) Descriptor() ([]byte, []int) {
-	return file_domain_oauth_oauth_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *OAuthBridgeResponse) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *OAuthBridgeResponse) GetAccessToken() string {
-	if x != nil {
-		return x.AccessToken
-	}
-	return ""
-}
-
-func (x *OAuthBridgeResponse) GetRefreshToken() string {
-	if x != nil {
-		return x.RefreshToken
-	}
-	return ""
-}
-
-func (x *OAuthBridgeResponse) GetTokenType() string {
-	if x != nil {
-		return x.TokenType
-	}
-	return ""
-}
-
-func (x *OAuthBridgeResponse) GetExpiresAt() string {
-	if x != nil {
-		return x.ExpiresAt
-	}
-	return ""
-}
-
-func (x *OAuthBridgeResponse) GetActorRef() *ActorRef {
-	if x != nil {
-		return x.ActorRef
-	}
-	return nil
-}
-
 var File_domain_oauth_oauth_proto protoreflect.FileDescriptor
 
 const file_domain_oauth_oauth_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/oauth/oauth.proto\x12\x1apeers_touch.model.oauth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"\xf2\x01\n" +
+	"\x18domain/oauth/oauth.proto\x12\x1apeers_touch.model.oauth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf2\x01\n" +
 	"\vOAuthClient\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -520,29 +334,7 @@ const file_domain_oauth_oauth_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xf0\x01\n" +
-	"\x12OAuthBridgeRequest\x12\x1a\n" +
-	"\bprovider\x18\x01 \x01(\tR\bprovider\x12(\n" +
-	"\x10provider_user_id\x18\x02 \x01(\tR\x0eproviderUserId\x12\x14\n" +
-	"\x05email\x18\x03 \x01(\tR\x05email\x12\x1a\n" +
-	"\busername\x18\x04 \x01(\tR\busername\x12!\n" +
-	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x12\x1d\n" +
-	"\n" +
-	"avatar_url\x18\x06 \x01(\tR\tavatarUrl\x12\x0e\n" +
-	"\x02ts\x18\a \x01(\tR\x02ts\x12\x10\n" +
-	"\x03sig\x18\b \x01(\tR\x03sig\"\xd3\x02\n" +
-	"\x13OAuthBridgeResponse\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
-	"\faccess_token\x18\x02 \x01(\tR\vaccessToken\x12#\n" +
-	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\x12\x1d\n" +
-	"\n" +
-	"token_type\x18\x04 \x01(\tR\ttokenType\x12\x1d\n" +
-	"\n" +
-	"expires_at\x18\x05 \x01(\tR\texpiresAt\x12B\n" +
-	"\tactor_ref\x18\v \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_refJ\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
-	"J\x04\b\n" +
-	"\x10\vR\bactor_idR\factor_id_numR\busernameR\fdisplay_nameR\x05emailBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAtBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_oauth_oauth_proto_rawDescOnce sync.Once
@@ -556,27 +348,23 @@ func file_domain_oauth_oauth_proto_rawDescGZIP() []byte {
 	return file_domain_oauth_oauth_proto_rawDescData
 }
 
-var file_domain_oauth_oauth_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_domain_oauth_oauth_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_domain_oauth_oauth_proto_goTypes = []any{
 	(*OAuthClient)(nil),           // 0: peers_touch.model.oauth.v1.OAuthClient
 	(*OAuthAuthCode)(nil),         // 1: peers_touch.model.oauth.v1.OAuthAuthCode
 	(*OAuthToken)(nil),            // 2: peers_touch.model.oauth.v1.OAuthToken
-	(*OAuthBridgeRequest)(nil),    // 3: peers_touch.model.oauth.v1.OAuthBridgeRequest
-	(*OAuthBridgeResponse)(nil),   // 4: peers_touch.model.oauth.v1.OAuthBridgeResponse
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
-	(*ActorRef)(nil),              // 6: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
 }
 var file_domain_oauth_oauth_proto_depIdxs = []int32{
-	5, // 0: peers_touch.model.oauth.v1.OAuthClient.created_at:type_name -> google.protobuf.Timestamp
-	5, // 1: peers_touch.model.oauth.v1.OAuthAuthCode.expires_at:type_name -> google.protobuf.Timestamp
-	5, // 2: peers_touch.model.oauth.v1.OAuthToken.created_at:type_name -> google.protobuf.Timestamp
-	5, // 3: peers_touch.model.oauth.v1.OAuthToken.expires_at:type_name -> google.protobuf.Timestamp
-	6, // 4: peers_touch.model.oauth.v1.OAuthBridgeResponse.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	3, // 0: peers_touch.model.oauth.v1.OAuthClient.created_at:type_name -> google.protobuf.Timestamp
+	3, // 1: peers_touch.model.oauth.v1.OAuthAuthCode.expires_at:type_name -> google.protobuf.Timestamp
+	3, // 2: peers_touch.model.oauth.v1.OAuthToken.created_at:type_name -> google.protobuf.Timestamp
+	3, // 3: peers_touch.model.oauth.v1.OAuthToken.expires_at:type_name -> google.protobuf.Timestamp
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_domain_oauth_oauth_proto_init() }
@@ -584,14 +372,13 @@ func file_domain_oauth_oauth_proto_init() {
 	if File_domain_oauth_oauth_proto != nil {
 		return
 	}
-	file_domain_actor_actor_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_oauth_oauth_proto_rawDesc), len(file_domain_oauth_oauth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

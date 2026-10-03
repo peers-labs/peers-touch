@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-28
+> **Created**: 2026-09-13 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -29,6 +29,7 @@
 | LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 | LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
+| LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -69,6 +70,10 @@ The root needs one platform resolver and explicit separation from product data.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Worktree names and branches can change or collide, so machine allocation needs a stable identity derived from the actual root.
+
 ### Decision
 
 Bind profile and slot by `workspaceId = sha256(realpath(root))[0:16]`.
@@ -77,6 +82,10 @@ Bind profile and slot by `workspaceId = sha256(realpath(root))[0:16]`.
 
 Worktree basename and branch are mutable and non-unique. Canonical path identity
 matches existing worktree and Acceptance isolation conventions.
+
+### Alternatives Considered
+
+- Key allocations by branch or basename: rejected because both are mutable and may be shared by multiple worktrees.
 
 ### Consequences
 
@@ -88,6 +97,10 @@ re-registration. The old record remains stale until cleaned.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Shared environment topology and one machine's live allocation state have different owners, review boundaries, and lifecycles.
+
 ### Decision
 
 The sibling `env` repository owns deployable topology definitions.
@@ -98,6 +111,10 @@ observed runtime state.
 
 Environment definitions are shared and reviewable; machine allocations are
 mutable and private to one developer machine.
+
+### Alternatives Considered
+
+- Store machine allocations in the environment repository: rejected because private mutable state would become shared source.
 
 ### Consequences
 
@@ -125,6 +142,10 @@ Allocate slot per workspace in the machine registry. Treat profile
 Two worktrees may connect to the same Station while requiring different local
 Desktop/Mobile ports.
 
+### Alternatives Considered
+
+- Reuse the Profile-declared slot as authority: rejected because multiple worktrees and Profiles can collide on one local port range.
+
 ### Consequences
 
 Port computation moves behind machine binding resolution. Existing profile
@@ -134,6 +155,10 @@ files must eventually stop declaring authoritative slots.
 
 **Status**: accepted
 **Date**: 2026-09-13
+
+### Context
+
+Station connection, source deployment, and destructive reset have different exclusivity and authorization requirements.
 
 ### Decision
 
@@ -148,6 +173,10 @@ Represent Station use as:
 Connecting a client is not equivalent to replacing Station source or
 destructively resetting fixtures. One generic profile lock cannot express the
 risk boundary.
+
+### Alternatives Considered
+
+- Use one generic Station lock: rejected because read-only connections would be serialized with deployment and reset.
 
 ### Consequences
 
@@ -173,6 +202,10 @@ Create `~/.peers-touch/dev/registry.json` with
 
 This gives one visible ledger immediately without changing active profile,
 process, deploy, or reset behavior before architecture review.
+
+### Alternatives Considered
+
+- Promote the first inventory directly to authority: rejected because observed state may be incomplete or stale.
 
 ### Consequences
 
@@ -683,6 +716,14 @@ and run the source-aware Station ready closure before starting Desktop. Profile
 definitions do not duplicate source package graphs; source manifests and
 lockfiles remain their owner.
 
+### Rationale
+
+Explicit Profile selection is sufficient user intent for minimum safe registration, while destructive authority remains separately granted.
+
+### Alternatives Considered
+
+- Require every user to run the low-level registration command first: rejected because it exposes control-plane internals for the common path.
+
 ### Consequences
 
 - A fresh worktree can select an existing reviewed Profile with one command.
@@ -729,6 +770,10 @@ silently normalize incompatible registrations. Machine-local files produced by
 the superseded development code must be explicitly rewritten before using the
 corrected runtime.
 
+### Rationale
+
+Stable workspace identity and advancing source identity change independently and therefore require separate owners.
+
 ### Alternatives Considered
 
 - Refresh registry HEAD before selected runtime commands: rejected because it
@@ -750,3 +795,50 @@ corrected runtime.
 - Root or branch drift still returns `WORKTREE_IDENTITY_MISMATCH`.
 - `env-update` changes explicit binding fields; it no longer refreshes source
   commit identity.
+
+## LDCP-D18: Require Committed Resource-Plan Provenance For Planner-Owned Leases
+
+**Status**: accepted
+**Date**: 2026-09-30
+
+### Context
+
+DWF-D32 can atomically add concrete runtime claims to a Development
+declaration, but declaration publication and the machine-local resource-plan
+receipt are separate durable writes. A process interruption after declaration
+publication must not let a `RESERVING` plan authorize a physical lease.
+
+### Decision
+
+`machine-dev-registry.mjs` remains the physical Local Dev admission owner. When
+a requested claim was introduced by a `PlanResourcePlan`, lease admission also
+requires that plan to be `COMMITTED`, current for the workspace source, and
+matched by allocation digest and fencing token.
+
+The resource-plan receipt records `baseRuntimeClaims` separately from
+`plannedRuntimeClaims`. A claim that existed before planning keeps declaration
+authority and is never silently adopted or removed by the planner.
+
+### Rationale
+
+This closes the cross-file interruption window without creating a second lease
+manager. The existing machine declaration remains intent, the resource plan
+provides planning provenance, and the OS-held lease remains physical
+possession.
+
+### Alternatives Considered
+
+- Roll back declaration claims after a receipt-write failure: rejected because
+  rollback can fail or race after the original atomic update.
+- Treat every matching claim as planner-owned: rejected because replanning
+  would steal and later remove explicit pre-existing intent.
+- Move physical leases into Dev Workflow: rejected because it duplicates Local
+  Dev and Acceptance Suite Runtime ownership.
+
+### Consequences
+
+- `RESERVING` plans are visible and retryable but non-authorizing.
+- Runtime admission reads the plan receipt only when the selected declaration
+  claim is planner-owned.
+- Existing explicit `make station` owner actions and non-planned declarations
+  retain their current behavior.

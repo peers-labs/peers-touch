@@ -2,7 +2,7 @@
 
 > **Status**: confirmed
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -49,6 +49,7 @@ Required review coverage:
 | Branch/revision | MCA-P08, J08 | Retry vs regenerate vs edit-resend and branch navigation |
 | Capability/diagnostics | MCA-P09-P10, J09 | Degraded/blocked notices, usage, feedback, diagnostic detail |
 | Portability | MCA-P11 | Narrow-container semantics and explicit Desktop-only capability |
+| External runtime | MCA-P12, J10 | Resume-unavailable state, explicit destructive reset, epoch advance, fresh session |
 
 ## Focused Review URLs
 
@@ -63,6 +64,7 @@ Run `make run-prototype`, open the visible `Desktop` entry, then use:
 | Attachment failure | `?surface=chat&state=modern-attachment-failure` | Remove rejected input or choose a compatible model |
 | Context intelligence | `?surface=chat&state=modern-context-intelligence` | Inspect memory, skill, and knowledge attribution separately |
 | Disconnect recovery | `?surface=chat&state=modern-disconnect-recovery` | Reconnect -> replay -> reconcile |
+| External runtime reset | `?surface=chat&state=modern-external-runtime-reset` | Resume unavailable -> confirm reset -> ready epoch -> fresh session |
 | Branch/regenerate | `?surface=chat&state=modern-branch-regenerate` | Create and navigate immutable sibling branches |
 | Capability degradation | `?surface=chat&state=modern-capability-degraded` | Compare blocked input and degraded reasoning |
 | Usage/diagnostics | `?surface=chat&state=modern-usage-diagnostics` | Submit feedback and prepare redacted diagnostics |

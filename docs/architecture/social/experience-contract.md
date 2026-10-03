@@ -1,8 +1,8 @@
 # Social Private Moments - Experience Contract
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Social Product
 
 ---
@@ -41,6 +41,11 @@ Failure and recovery:
 - 某个 required recipient 没有可用 endpoint 或 recovery Content PreKey：
   不发布、不缩小受众，显示不可用接收者数量，
   Alice 可取消、移除该接收者或稍后重试。
+- `CUSTOM_DENY` 选择 `PUBLIC` 作为基础受众：v1 在 Content PreKey claim 前
+  显示不支持并保留草稿，不得枚举一个不完整的本地“公开受众”后发布。
+- `GROUP` 使用完整 canonical Conversation ID；Group 不存在、发布者不是 active
+  成员或任一 active 成员属于远端 Station 时，在 Content PreKey claim 前整体
+  显示不支持并保留草稿。
 - audience 超过 256 actors 或 1000 endpoint/recovery slots：在加密前拒绝，不部分发布。
 - 网络失败：保留草稿和 audience；不得把私密内容改成 PUBLIC 重试。
 - Browser：在提交前显示“此设备不支持私密发布”，不得发送明文。
@@ -148,7 +153,9 @@ Failure and recovery:
 - Browser 只支持 PUBLIC；私密入口在用户提交前拒绝。
 - App restart 不改变 audience、内容身份或授权结果。
 - Account switch 必须清空前一 actor 的解密投影和 key references。
-- Cross-Station private recipient 在本次能力完成前为明确 unsupported，不允许部分发布。
+- Cross-Station private recipient 在本次能力完成前为明确 unsupported，不允许部分发布；
+  必须在 Content PreKey claim 前失败，并使用另一个真实 Station 上的 Actor
+  身份证明，而不是场景内伪造 PTID。
 
 ## 5. Product Completion
 

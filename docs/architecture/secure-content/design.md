@@ -1,8 +1,8 @@
 # Secure Content - Architecture Design
 
 > **Status**: active
-> **Version**: v1.9
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v2.0
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -13,7 +13,7 @@
 | ID | Principle |
 |---|---|
 | `SC-A01` | Secure Content is a shared contract and implementation kernel, never a business authority. |
-| `SC-A02` | Social and Conversation independently own routes, UOWs, grants, persistence, and policy. |
+| `SC-A02` | Social and Conversation independently own routes, mutation UOWs, grants, persistence, and policy; an explicit owner-controlled read fence may wrap a caller's commit UOW. |
 | `SC-A03` | Private plaintext and content keys exist only in authenticated Native runtimes and encrypted local stores. |
 | `SC-A04` | Shared contracts are proto-first; Desktop and Mobile use one portable Rust implementation. |
 | `SC-A05` | Station persists only ciphertext, commitments, routing metadata, and domain-authorized grants. |
@@ -46,6 +46,9 @@
 | An allowlisted full private Development reset plus owner-mediated object deletion can remove mixed private state without touching public or Conversation truth | `accepted_decision` | accepted `SC-D23` | high | implementation and two-profile post-audit |
 | Recovery admission verifies the predecessor journal digest before terminalizing the predecessor, but the terminal row cannot reproduce that old digest after its state or failure projection changes | `verified_fact` | W12A FIVEARM reset chain and `GORMSecureContentResetStore` | high | accepted `SC-D27` receipt implementation |
 | `OBJECTS_DELETED` proves database commit and owner-mediated object deletion completed before deployment handoff begins | `verified_fact` | `SecureContentResetOwner.executeLocked` transition order | high | accepted `SC-D27` eligibility tests |
+| Social `Audience.target_id` is `uint64`, while canonical Conversation IDs are validated strings | `verified_fact` | `model/domain/social/post.proto`; Conversation `valueobject.ConversationID` | high | accepted `SC-D29` hard-cut contract |
+| `CUSTOM_DENY(PUBLIC)` cannot freeze a complete E2EE recipient set without an enumerable, revision-bound federated PUBLIC Actor authority | `verified_fact` | W8 audience result `b3890707...`; `GORMPrivateAudienceAuthority` | high | accepted v1 product narrowing and `SC-D29` |
+| W8 runs only `station-four` and publishes no owner-produced remote-recipient identity handle | `verified_fact` | W8 runtime manifest `221d49c7...`; `runtime_owner.py::_run_w8_scenario` | high | accepted `SC-D29` fixture contract |
 
 ## 3. Scope
 
@@ -89,8 +92,9 @@ Conversation Subserver ---------+
 ```
 
 There is no public `/secure-content/*` API and no shared Secure Content database.
-The shared components point downward; Social and Conversation never call or import
-each other.
+The shared components point downward. Social and Conversation never import each
+other's implementation or mutate each other's truth; cross-domain reads use
+explicit owner-provided capability ports.
 
 ## 5. Sources Of Truth
 
@@ -170,14 +174,41 @@ cannot begin or commit a transaction itself.
 | `PUBLIC` | explicit request | content command hash |
 | `FOLLOWERS` | Social follow graph | follow-graph revision |
 | `FRIENDS` | accepted `social_relationship_projections` | accepted-event projection revision/hash |
-| `CIRCLE` | Social Circle aggregate | circle membership revision |
-| `GROUP` | Conversation membership query port | conversation ID + membership epoch + head hash |
+| `CIRCLE` | Social Circle aggregate | typed numeric Circle ID + circle membership revision |
+| `GROUP` | Conversation membership query port | typed string Conversation ID + membership epoch + head hash |
 | `SELF` | Actor Identity active endpoints | actor profile version |
-| `CUSTOM_*` | explicit list plus base audience | canonical list hash + base revision |
+| `CUSTOM_ALLOW` | explicit actor list | canonical list hash |
+| `CUSTOM_DENY` | explicit deny list over `FOLLOWERS` | canonical deny-list hash + follow-graph revision |
 
 `friend_chat_friendships`, mutual-follow inference, and direct Conversation presence
 are not FRIENDS truth. Social replaces the production GROUP Noop with a narrow
 Conversation read port; it does not read Conversation tables.
+
+`Audience` uses a discriminated target: `circle_id` is a numeric Social
+aggregate identity and `group_conversation_id` is a canonical string
+Conversation identity. The retired ambiguous `target_id` name is reserved.
+The Conversation-owned query port prepares a snapshot through its own UOW.
+During submit it opens a read-only transaction, locks its canonical row,
+revalidates the snapshot, invokes the Social commit callback, and releases the
+fence afterward. The callback receives only the verified snapshot. The lock
+direction is Conversation fence then Social UOW, and Conversation operations
+never acquire Social locks. Social never imports Conversation persistence or
+mutates Conversation state.
+
+Before any Content PreKey claim, Actor Identity resolves the canonical Home
+Station for every recipient selected by FRIENDS, FOLLOWERS, CIRCLE, or CUSTOM;
+GROUP uses Conversation's member Home Station projection. Social binds the
+locality projection into the authorization snapshot. Actor Home Station is
+immutable for a canonical PTID in v1; submit verifies the stored locality
+commitment. Owner adapters are read-only and never call back into Social. Any
+remote recipient makes the entire v1 private publish unsupported; no audience
+path may drop remote recipients and continue.
+
+`CUSTOM_DENY(PUBLIC)` is unsupported in v1. A public route has no finite,
+revision-bound recipient set suitable for immutable E2EE envelope coverage.
+Adding it requires a later product and architecture decision that introduces a
+complete federated PUBLIC Actor authority; local Actor enumeration is forbidden
+as a substitute.
 
 ## 8. Private Publish
 
@@ -185,7 +216,9 @@ Conversation read port; it does not read Conversation tables.
 Native -> Social prepare(content_id, typed audience, command_id)
 Social:
   resolve recipient actors and current deny rules
-  query Conversation only for GROUP snapshot
+  query Conversation only for a same-Station GROUP snapshot
+  validate every recipient Home Station through Actor Identity
+  reject remote recipients and CUSTOM_DENY(PUBLIC) before PreKey claim
   persist PREPARING identity plus exact Key Exchange claim request
   claim one-time endpoint and recovery Content PreKeys from Key Exchange
   persist exact claim response, claimed slots and an expiring signed PREPARED plan
@@ -641,7 +674,8 @@ The old scope is never released outside the transaction that creates the new
 
 SC-D26 closes two narrow post-commit source-defect boundaries. The canonical
 `SocialPrivateContentPlan` model becomes the only schema owner for its table,
-including the four durable audience/subtype prepare-binding columns. When an
+including the six durable audience, Group-recipient-snapshot, and subtype
+prepare-binding columns. When an
 older reset is either unfailed at `OBJECTS_DELETED` or exactly
 `STATION_DEPLOYED` with `RESET_SCHEMA_TARGET_UNREVIEWED`, the corrected source
 may create a fresh manifest containing an immutable predecessor link. Fresh

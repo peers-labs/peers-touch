@@ -34,6 +34,9 @@ const CONNECTOR_MANIFEST_LIST_PATH: &str = "/sub-agent/agent/connector/manifest/
 const OPERATION_CANCEL_PATH: &str = "/sub-agent/agent/capability/operation/cancel";
 const OPERATION_GET_PATH: &str = "/sub-agent/agent/capability/operation/get";
 const OPERATION_RECONCILE_PATH: &str = "/sub-agent/agent/capability/operation/reconcile";
+const OPERATION_TAKEOVER_PATH: &str = "/sub-agent/agent/capability/operation/takeover";
+const OPERATION_CLEANUP_TAKEOVER_PATH: &str =
+    "/sub-agent/agent/capability/operation/cleanup/takeover";
 const KNOWLEDGE_DESCRIPTOR_CREATE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/create";
 const KNOWLEDGE_DESCRIPTOR_UPDATE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/update";
 const KNOWLEDGE_DESCRIPTOR_LIST_PATH: &str = "/sub-agent/agent/knowledge/descriptor/list";
@@ -369,6 +372,32 @@ pub fn reconcile_operation(input: EncodedRequestInput, token: &str) -> AppResult
         input,
         token,
         "agent.capabilityOperationReconcileFailed",
+        "agent.capabilityOperationRequestInvalid",
+    )
+}
+
+pub fn take_over_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::TakeOverCapabilityOperationRequest,
+        agent::TakeOverCapabilityOperationResponse,
+    >(
+        OPERATION_TAKEOVER_PATH,
+        input,
+        token,
+        "agent.capabilityOperationTakeoverFailed",
+        "agent.capabilityOperationRequestInvalid",
+    )
+}
+
+pub fn take_over_operation_cleanup(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::TakeOverCapabilityCleanupRequest,
+        agent::TakeOverCapabilityCleanupResponse,
+    >(
+        OPERATION_CLEANUP_TAKEOVER_PATH,
+        input,
+        token,
+        "agent.capabilityOperationCleanupTakeoverFailed",
         "agent.capabilityOperationRequestInvalid",
     )
 }

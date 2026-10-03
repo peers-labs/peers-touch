@@ -161,6 +161,18 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
             raise GateError("Desktop OAuth layout Runtime Manifest is invalid")
         return manifest
 
+    def _record_summary_assertions(self, assertions: dict[str, Any]) -> None:
+        for name, passed in assertions.items():
+            self.assert_condition(
+                str(name),
+                passed is True,
+                (
+                    None
+                    if passed is True
+                    else f"journey assertion {name} was not proven"
+                ),
+            )
+
     def run(self) -> dict[str, Any]:
         manifest = self._manifest()
         with tempfile.TemporaryDirectory(prefix="pt-desktop-oauth-layout-") as temp:
@@ -188,12 +200,7 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
             assertions = summary.get("assertions")
             if not isinstance(assertions, dict):
                 raise GateError("Desktop OAuth layout journey omitted assertions")
-            for name, passed in assertions.items():
-                self.assert_condition(
-                    str(name),
-                    passed is True,
-                    f"journey assertion {name} was not proven",
-                )
+            self._record_summary_assertions(assertions)
 
             artifacts = summary.get("artifacts")
             if not isinstance(artifacts, dict):

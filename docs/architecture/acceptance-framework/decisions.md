@@ -1628,3 +1628,63 @@ release/full-test user intent.
   estimated cost before implementation.
 - A changed path that implies an undeclared Gate fails with
   `ACCEPTANCE_PLAN_DRIFT`.
+
+---
+
+## D-21: Multi-Scenario Proof Uses One Suite Runtime
+
+**Status**: accepted
+**Date**: 2026-09-29
+
+### Context
+
+Product plans can group several related Scenarios behind the same services,
+actors, clients, devices, storage, and login state. A custom runner may still
+provision those resources independently for every Scenario, multiplying
+startup, cleanup, evidence, and Agent inspection cost. The same runner may then
+use an internal Harness for product actions and assertions, so the most
+expensive path produces weaker evidence than a real receiver-visible Journey.
+
+Environment Provisioning already separates runtime setup from Gate execution,
+but the Plan schema did not declare a reusable Suite lifecycle and no shared
+validator rejected Scenario-owned provisioning.
+
+### Decision
+
+- A functional Task with multiple shared-runtime Scenarios declares one closed
+  `runtimeReuse` contract in its Task Slice.
+- Acceptance Core owns the domain-neutral Suite Runtime ledger, lifecycle
+  validation, reuse metrics, report integrity, and fail-closed error semantics.
+- Build, deploy, service attestation, account provisioning, client/device
+  launch, isolated storage, login, and Fixture Epoch are Task/Suite scoped.
+- Scenario execution is attach-only after the first Scenario starts. Scenario
+  scope owns namespaced business data reset, real product actions,
+  receiver-visible assertions, and supporting observations.
+- Harness and API observations remain supporting evidence. They cannot satisfy
+  required UI actions or receiver assertions.
+- The Suite Runtime report is supporting lifecycle evidence. It never upgrades
+  a product claim to `FUNCTIONAL_PASS` or `PROVEN`.
+- Business Domains inject Scenario IDs, budgets, actors, concrete
+  Provisioners, Fixtures, Journeys, and assertions. Acceptance Core must not
+  import or encode those details.
+- `pt-acceptance-pipeline-auditor` is the canonical read-only audit entry. The
+  executable validator remains the authority; the Skill cannot waive it.
+
+### Consequences
+
+- Plans can reuse the same lifecycle contract without copying custom runtime
+  orchestration.
+- Resource efficiency becomes measurable through provisioning count, client
+  launch count, warm-reuse rate, action durations, and cleanup state.
+- Restart or replacement Journeys remain possible only through an explicit
+  `allowClientReplacement` contract and recorded replacement event.
+- Existing multi-scenario Tasks remain valid until amended, but they cannot
+  claim Suite reuse without a declared contract and valid runtime report.
+- Domain-specific runner code remains business injection and depends on Core;
+  Core never imports the runner.
+
+### Reversal Trigger
+
+Replace this decision only if every expensive Acceptance resource becomes
+stateless and negligible to recreate, while a stronger receiver-visible proof
+contract preserves the same source, isolation, and cleanup guarantees.

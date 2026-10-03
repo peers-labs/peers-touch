@@ -1,8 +1,8 @@
 # Acceptance Framework — 架构设计
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-06-03 | **Updated**: 2026-09-13
+> **Version**: v1.3
+> **Created**: 2026-06-03 | **Updated**: 2026-09-29
 
 
 > **Owner**: Architecture Team
@@ -26,6 +26,10 @@
 10. **Functional frontier before broad proof** — completion/full、
     generated-plan execution与Gap Detector必须先通过当前Plan/Task/Session准入；
     缺失或pre-functional Session在Evidence Store创建和Gate启动前失败。
+11. **Suite lifecycle before Scenario execution** — 共享服务、Actor、客户端、
+    设备、存储或登录态的多场景 Task 必须声明 `runtimeReuse`。昂贵资源在
+    Task/Suite scope 创建一次，Scenario attach-only，并以真实产品动作和
+    receiver-visible assertion 取证。
 
 ### 1.1 Runtime Provisioning 扩展证据账本
 
@@ -154,6 +158,35 @@ Acceptance Framework 由六层组成：
 | Gate Catalog | `tooling/acceptance/gates.yaml` | 定义稳定 gate 的命令、环境、超时和说明 |
 | Gate Implementation | `tooling/acceptance/gates/**/*.py` | 产生可重复 evidence，不承载业务真源 |
 | Evidence Report | D-11 Evidence Store `ArtifactRef` | 汇总 proven / unproven scope，供人审阅 |
+
+### 2.3 Reusable Suite Runtime
+
+`SuiteRuntimeLedger` 是 Acceptance Core 的 domain-neutral 生命周期账本。它不
+启动任何业务资源，也不理解产品语义，只校验业务注入提交的生命周期事件：
+
+```text
+Task / Suite
+  -> provision services and actors once
+  -> launch isolated clients and login once
+  -> freeze source digest and Fixture Epoch
+  -> Scenario A attach / reset / UI action / receiver assertion
+  -> Scenario B attach / reset / UI action / receiver assertion
+  -> ...
+  -> reverse cleanup once
+```
+
+Task Slice 的 `runtimeReuse` 声明 Scenario IDs、suite entry check、最大
+Provisioning 次数、最大客户端启动数、最低 warm-reuse rate、attach-only 和
+receiver-proof 要求。Runner 产生不可变 Suite Runtime report；Plan validator
+校验声明，pipeline auditor 校验声明与报告。
+
+责任边界：
+
+- Core：schema、ledger、计量、报告 digest、fail-closed 校验。
+- Business Domain：Actor、Fixture、Provisioner、Journey、selector、UI action、
+  receiver assertion。
+- Plan：选择 Scenario 集合、预算和唯一 suite entry check。
+- Harness：setup、diagnostics 和 supporting observation，不执行被验收的产品动作。
 
 ### 2.1 Native Desktop Runtime Cell 拓扑
 

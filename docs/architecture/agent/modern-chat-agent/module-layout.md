@@ -1,8 +1,8 @@
 # Modern Chat Agent — Module Layout
 
 > **Status**: accepted
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-09-17
+> **Version**: v1.3
+> **Created**: 2026-07-30 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -48,7 +48,12 @@ apps/station/app/subserver/agent/
 │   ├── prompt_assembly_service.go
 │   ├── runtime_resolver_service.go
 │   ├── provider_service.go
-│   ├── external_runtime_service.go
+│   ├── mcp_server_service.go       # Canonical config and Tool manifests
+│   ├── mcp_runtime.go              # Station-local stdio/http/sse executor
+│   ├── external_runtime_service.go # Binding/reset transaction owner
+│   ├── externalruntime/
+│   │   ├── manager.go              # Session/process/home lifecycle
+│   │   └── protocol.go             # Bounded session CLI JSONL adapter
 │   ├── tool_registry_service.go
 │   ├── tool_dispatch_service.go
 │   ├── client_capability_proof_service.go
@@ -81,7 +86,7 @@ apps/desktop/src-tauri/src/application/
 │   ├── resource_registry/      # Encrypted actor/device opaque-ref mapping
 │   └── recovery_signer/        # Actor-device signed terminal recovery only
 ├── capability_operation/      # Leased operation execution/reporting
-├── mcp/                        # Local MCP transport/execution
+├── mcp/                        # Desktop-local secret/process executor
 ├── skills_market/              # Signed catalog verify/cache/install bridge
 ├── tools/                      # Local builtin execution
 ├── workspace/                  # Device-local workspace/file policy
@@ -130,13 +135,16 @@ mechanical file creation.
 |---|---|
 | Shared contracts | `model/domain/agent/*.proto` |
 | Provider/model/runtime capabilities | Station catalog/runtime resolver |
+| External runtime binding/reset commands | Station ExternalRuntimeService |
+| External process/session/home lifecycle | Station `service/externalruntime` |
 | Turn state machine | Station TurnService |
 | Tool schemas and execution owner | Station ToolRegistryService |
 | Tool decision/claim/outbox/result/continuation | Station ToolDispatchService |
 | Capability command signature/nonce verification | Station ClientCapabilityProofService |
 | Receipt recovery credential/nonce | Station ReceiptRecoveryService and persistence |
 | Capability manifest/binding/readiness | Station Capability Manifest/Binding services |
-| Capability operation lifecycle | Station operation service; selected executor reports progress |
+| MCP Server config/tool discovery | Station MCP Server service |
+| Capability operation lifecycle | Station operation service; declared executor reports progress |
 | Connector resource manifests | Station Connector Manifest service; OAuth owner supplies scoped resources |
 | Home work projection | Station Home Projection service |
 | Evaluation run/result | Station Evaluation service |
@@ -189,7 +197,9 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 | `client_capability_proof_service` | Verify actor-device command proof and nonce/digest replay | Treat JWT/header/session IDs as device authority |
 | `receipt_recovery_service` | Issue scoped credentials, verify device signatures, consume nonce with terminal CAS | Authorize PREPARED, execution, lease renewal, pull, or continuation |
 | `capability_binding_service` | Versioned Agent capability bindings/policy | Store credentials or infer readiness |
-| `capability_operation_service` | Durable install/test/connect/cancel/reconnect lifecycle | Spawn local processes |
+| `capability_operation_service` | Durable non-MCP client capability operations | Own MCP Server config, manifests, readiness, or process execution |
+| `mcp_server_service` | MCP Server config revisions and per-Tool manifest publication | Store raw executor secrets |
+| Station `mcp_runtime` | Execute Station-owned stdio/http/sse and report fenced result | Read Desktop-local secrets or paths |
 | `connector_manifest_service` | Scope-bound Connector resource→tool manifests | Own OAuth tokens |
 | `home_projection_service` | Revisioned Agent/topic/task/capability projection | Become a write model |
 | `evaluation_service` | Benchmark/case/run/result/metrics aggregate | Use a parallel model execution path |
@@ -200,6 +210,7 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 | Client `agent_local_capability/resource_registry` | Resolve encrypted actor/device-scoped opaque refs | Expose raw path/native handle to Station or Web |
 | Client `agent_local_capability/recovery_signer` | Sign terminal recovery payload with actor-device identity | Start/repeat work or mutate replay policy |
 | Client `capability_operation` | Execute leased local operation and report progress/cleanup | Decide Station terminal truth |
+| Desktop `mcp` | Resolve Desktop-local secrets and execute client-owned MCP | Own Server catalog, binding, readiness, or Station-owned MCP |
 | Client local capability | Enforce local permissions/approval and execute | Persist Station turn truth |
 | `chatRuntime` | Stream/replay/reconcile message projection | Mutate durable truth locally |
 | `agentTopicRuntime` | Conversation and branch projection | Own messages or provider runtime |
@@ -219,7 +230,10 @@ Station turn event -> client bridge/gateway -> client runtime -> page
   proof verification.
 - Station and Web must not import Desktop resource-registry storage.
 - Home pages/stores must not aggregate durable truth outside `homeRuntime`.
-- Source-specific Tool/MCP/Connector stores must not claim global readiness.
+- Desktop MCP storage must not claim catalog, configuration, binding, or global
+  readiness truth.
+- MCP transport must not infer execution owner; owner comes only from the
+  pinned Server/Tool manifest.
 - Evaluation client code must not execute `quickCompletion` or infer terminal run state.
 - Station catalog transport must not sign or mutate publisher envelopes.
 - Desktop catalog code must not embed GitHub credentials or maintain a second
@@ -235,12 +249,14 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 | Active/queued turn | Station admission/turn services |
 | Direct provider request | Station Direct Runtime |
 | External runtime home/session/process | Station External Runtime Manager |
-| Local MCP/tool/native process | Owning client capability manager |
+| MCP Server catalog/config revision | Station MCP Server service |
+| Station-local MCP secret/process | Station MCP runtime |
+| Desktop-local MCP secret/process | Owning client capability manager |
 | Tool execution claim/outbox/result/continuation | Station ToolDispatch service |
 | PREPARED/terminal receipt ledger | Owning client capability kernel |
 | Recovery credential/nonce | Station ReceiptRecovery service |
 | Raw local resource ref mapping | Owning client capability kernel |
-| Capability operation | Station lifecycle; selected client executor owns local resources |
+| Capability operation | Station lifecycle; declared Station/client executor owns local resources |
 | Connector OAuth credential | OAuth subsystem |
 | Connector resource manifest | Station Connector Manifest service |
 | Home work projection | Station projection service; client runtime owns cached projection only |

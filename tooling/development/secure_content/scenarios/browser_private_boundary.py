@@ -50,8 +50,7 @@ def _private_handoff(context: ScenarioContext) -> Mapping[str, Any]:
         raise RunnerError("browser-private-boundary artifact root is unavailable")
     manifest = context.require_runtime_manifest()
     path = (
-        context.artifact_dir.parent.parent
-        / "desktop"
+        context.artifact_dir.parent
         / manifest.run_id
         / "browser-private-handoff.json"
     )
@@ -72,6 +71,7 @@ def _private_handoff(context: ScenarioContext) -> Mapping[str, Any]:
         producer_scenario_id="desktop-pilot",
         producer_journey_id="sc-dj-desktop-pilot",
         producer_runtime="desktop",
+        require_fresh_runtime_manifest=False,
     )
     post_id = payload.get("postId")
     if (

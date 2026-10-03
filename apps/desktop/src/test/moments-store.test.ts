@@ -64,6 +64,7 @@ import {
 import {
   socialStationModerationDelete,
   socialStationModerationUpsert,
+  type MomentDraft,
 } from '../services/social_api';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -123,15 +124,20 @@ function audience(): Audience {
   return create(AudienceSchema, { kind: 1 /* PUBLIC */ }) as Audience;
 }
 
-function installEventWindowStub(): void {
+function installEventWindowStub(): Array<() => void> {
   const target = new EventTarget();
+  const intervalCallbacks: Array<() => void> = [];
   vi.stubGlobal('window', {
     addEventListener: target.addEventListener.bind(target),
     removeEventListener: target.removeEventListener.bind(target),
     dispatchEvent: target.dispatchEvent.bind(target),
-    setInterval: vi.fn(() => 1),
+    setInterval: vi.fn((callback: () => void) => {
+      intervalCallbacks.push(callback);
+      return intervalCallbacks.length;
+    }),
     clearInterval: vi.fn(),
   });
+  return intervalCallbacks;
 }
 
 function dataOk(status: unknown) {
@@ -272,6 +278,97 @@ describe('moments store: syncProjection', () => {
     );
   });
 
+  it('composes authored Native private projections into HOME without copying plaintext', async () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:author', 7);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-author-post': {
+          postId: 'private-author-post',
+          contentId: 'private-author-post',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          content: {
+            kind: 'TEXT',
+            text: 'private author plaintext',
+          },
+          createdAtMillis: 2_000,
+          updatedAtMillis: 2_000,
+        },
+      },
+    });
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: {
+          posts: [{ id: 'public-home-post', authorPtid: 'ptid:author', type: PostType.TEXT }],
+          nextCursor: '',
+          hasMore: false,
+        },
+        publicTimeline: { posts: [], nextCursor: '', hasMore: false },
+      }),
+    );
+
+    await useMomentsStore.getState().syncProjection('private-author-recovery');
+
+    const state = useMomentsStore.getState();
+    expect(state.feeds.home.postIds).toEqual([
+      'private-author-post',
+      'public-home-post',
+    ]);
+    expect(state.postsById['private-author-post']).toMatchObject({
+      id: 'private-author-post',
+      authorPtid: 'ptid:author',
+      type: PostType.TEXT,
+      audience: { kind: Audience_Kind.FRIENDS },
+      content: { case: undefined },
+    });
+    expect(state.postsById['private-author-post']?.content.case).toBeUndefined();
+  });
+
+  it('composes authorized recipient Native private projections into HOME', async () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 7);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-recipient-post': {
+          postId: 'private-recipient-post',
+          contentId: 'private-recipient-post',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          content: {
+            kind: 'TEXT',
+            text: 'private recipient plaintext',
+          },
+          createdAtMillis: 2_000,
+          updatedAtMillis: 2_000,
+        },
+      },
+    });
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: { posts: [], nextCursor: '', hasMore: false },
+        publicTimeline: { posts: [], nextCursor: '', hasMore: false },
+      }),
+    );
+
+    await useMomentsStore.getState().syncProjection('private-recipient-recovery');
+
+    const state = useMomentsStore.getState();
+    expect(state.feeds.home.postIds).toEqual(['private-recipient-post']);
+    expect(state.postsById['private-recipient-post']).toMatchObject({
+      id: 'private-recipient-post',
+      authorPtid: 'ptid:author',
+      type: PostType.TEXT,
+      audience: { kind: Audience_Kind.FRIENDS },
+      content: { case: undefined },
+    });
+    expect(state.postsById['private-recipient-post']?.content.case).toBeUndefined();
+  });
+
   it('drops a projection response that completes after actor reset', async () => {
     let resolveResponse:
       | ((value: ReturnType<typeof bytesOk<typeof SyncMomentsProjectionResponseSchema>>) => void)
@@ -404,7 +501,7 @@ describe('moments store: createPost / deletePost', () => {
       renderer_generation: 1,
       draft_id: 'draft-private-image',
       draft_revision: 3,
-      audience_kind: 'FRIENDS',
+      audience: { kind: 'FRIENDS' },
       text: 'private family photo',
       files: [{ intent_id: 'image-1', file_path: '/private/family.png' }],
     });
@@ -420,9 +517,296 @@ describe('moments store: createPost / deletePost', () => {
       'oss_upload_encrypted_attachment_social',
       expect.anything(),
     );
+    expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pPRIVATE');
+    expect(useMomentsStore.getState().postsById.pPRIVATE).toMatchObject({
+      id: 'pPRIVATE',
+      authorPtid,
+      type: PostType.IMAGE,
+      audience: { kind: Audience_Kind.FRIENDS },
+      content: { case: undefined },
+    });
+    expect(useMomentsStore.getState().postsById.pPRIVATE?.content.case)
+      .toBeUndefined();
   });
 
-  it('preserves the exact CIRCLE audience in the Native publish intent', async () => {
+  it('createPost(private repost) delegates the source identity to Native', async () => {
+    const authorPtid = 'ptid:author';
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorPtid: authorPtid,
+        name: 'author',
+        email: '',
+        loginMethod: 'password',
+      },
+    });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor(authorPtid, 1);
+
+    let nativeInput: Record<string, unknown> | undefined;
+    enqueueMatch((cmd, args) => {
+      if (cmd !== 'social_private_moment_publish') return false;
+      nativeInput = (args as { input?: Record<string, unknown> }).input;
+      return true;
+    }, statusOk({
+      state: 'PUBLISHED',
+      draft_id: 'draft-private-repost',
+      post_id: 'private-repost',
+      projection: {
+        post_id: 'private-repost',
+        content_id: 'private-repost',
+        generation: '1',
+        author_ptid: authorPtid,
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        content: {
+          kind: 'REPOST',
+          comment: 'quoted source',
+          source_post_id: '701',
+          source_author_ptid: 'ptid:source',
+          source_kind: 'TEXT',
+          source_text: 'public source',
+        },
+      },
+    }));
+
+    const id = await useMomentsStore.getState().createPost({
+      kind: 'repost',
+      originalPostId: '701',
+      comment: 'quoted source',
+      audience: create(AudienceSchema, {
+        kind: Audience_Kind.FRIENDS,
+      }),
+      draftId: 'draft-private-repost',
+      draftRevision: 2,
+    });
+
+    expect(id).toBe('private-repost');
+    expect(nativeInput).toMatchObject({
+      moment_kind: 'REPOST',
+      text: 'quoted source',
+      files: [],
+      repost: { source_post_id: '701' },
+    });
+  });
+
+  it('routes every remaining private subtype through the production store', async () => {
+    const authorPtid = 'ptid:author';
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorPtid: authorPtid,
+        name: 'author',
+        email: '',
+        loginMethod: 'password',
+      },
+    });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor(authorPtid, 1);
+    const privateAudience = create(AudienceSchema, {
+      kind: Audience_Kind.FRIENDS,
+    });
+    const expiresAtSeconds = 4_000_000_000;
+    const cases: Array<{
+      draftId: string;
+      draft: MomentDraft;
+      projectionContent: Record<string, unknown>;
+      expectedNative: Record<string, unknown>;
+    }> = [
+      {
+        draftId: 'draft-private-video',
+        draft: {
+          kind: 'video',
+          text: 'private video',
+          audience: privateAudience,
+          localFiles: [{
+            intentId: 'video-source',
+            filePath: '/private/video.mp4',
+            previewSrc: 'asset://localhost/private/video.mp4',
+          }],
+        },
+        projectionContent: {
+          kind: 'VIDEO',
+          text: 'private video',
+          media: [],
+        },
+        expectedNative: {
+          moment_kind: 'VIDEO',
+          text: 'private video',
+          files: [{
+            intent_id: 'video-source',
+            file_path: '/private/video.mp4',
+          }],
+        },
+      },
+      {
+        draftId: 'draft-private-link',
+        draft: {
+          kind: 'link',
+          text: 'private link',
+          audience: privateAudience,
+          link: {
+            url: 'https://example.test/private',
+            title: 'Private link',
+            description: 'description',
+          },
+        },
+        projectionContent: {
+          kind: 'LINK',
+          text: 'private link',
+          url: 'https://example.test/private',
+          title: 'Private link',
+        },
+        expectedNative: {
+          moment_kind: 'LINK',
+          text: 'private link',
+          files: [],
+          link: {
+            url: 'https://example.test/private',
+            title: 'Private link',
+            description: 'description',
+          },
+        },
+      },
+      {
+        draftId: 'draft-private-poll',
+        draft: {
+          kind: 'poll',
+          text: 'private poll',
+          audience: privateAudience,
+          poll: {
+            question: 'Choose one',
+            options: ['First', 'Second'],
+            minChoices: 1,
+            maxChoices: 1,
+            expiresAtSeconds,
+            durationHours: 1,
+            multipleChoice: false,
+          },
+        },
+        projectionContent: {
+          kind: 'POLL',
+          text: 'private poll',
+          question: 'Choose one',
+          options: ['First', 'Second'],
+          min_choices: 1,
+          max_choices: 1,
+          expires_at_seconds: expiresAtSeconds,
+        },
+        expectedNative: {
+          moment_kind: 'POLL',
+          text: 'private poll',
+          files: [],
+          poll: {
+            question: 'Choose one',
+            options: ['First', 'Second'],
+            min_choices: 1,
+            max_choices: 1,
+            expires_at_seconds: expiresAtSeconds,
+          },
+        },
+      },
+      {
+        draftId: 'draft-private-location',
+        draft: {
+          kind: 'location',
+          text: 'private location',
+          audience: privateAudience,
+          location: {
+            name: 'Central Park',
+            latitude: 40.7829,
+            longitude: -73.9654,
+            address: 'New York',
+            placeId: 'central-park',
+          },
+        },
+        projectionContent: {
+          kind: 'LOCATION',
+          text: 'private location',
+          name: 'Central Park',
+          latitude: '40.7829',
+          longitude: '-73.9654',
+          address: 'New York',
+        },
+        expectedNative: {
+          moment_kind: 'LOCATION',
+          text: 'private location',
+          files: [],
+          location: {
+            name: 'Central Park',
+            latitude: 40.7829,
+            longitude: -73.9654,
+            address: 'New York',
+            place_id: 'central-park',
+          },
+        },
+      },
+    ];
+
+    for (const [index, item] of cases.entries()) {
+      let nativeInput: Record<string, unknown> | undefined;
+      enqueueMatch((cmd, args) => {
+        if (cmd !== 'social_private_moment_publish') return false;
+        nativeInput = (args as { input?: Record<string, unknown> }).input;
+        return true;
+      }, statusOk({
+        state: 'PUBLISHED',
+        draft_id: item.draftId,
+        post_id: `private-subtype-${index}`,
+        projection: {
+          post_id: `private-subtype-${index}`,
+          content_id: `private-subtype-${index}`,
+          generation: '1',
+          author_ptid: authorPtid,
+          audience_kind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          content: item.projectionContent,
+        },
+      }));
+
+      const id = await useMomentsStore.getState().createPost({
+        ...item.draft,
+        draftId: item.draftId,
+        draftRevision: 1,
+      });
+
+      expect(id).toBe(`private-subtype-${index}`);
+      expect(nativeInput).toMatchObject({
+        draft_id: item.draftId,
+        audience: { kind: 'FRIENDS' },
+        ...item.expectedNative,
+      });
+    }
+  });
+
+  it.each([
+    {
+      label: 'CIRCLE',
+      kind: Audience_Kind.CIRCLE,
+      target: { case: 'circleId' as const, value: 77n },
+      expectedAudience: { kind: 'CIRCLE', circleId: '77' },
+    },
+    {
+      label: 'GROUP',
+      kind: Audience_Kind.GROUP,
+      target: {
+        case: 'groupConversationId' as const,
+        value: '01J9Z7Y6M5N4P3Q2R1S0TUVWXY',
+      },
+      expectedAudience: {
+        kind: 'GROUP',
+        groupConversationId: '01J9Z7Y6M5N4P3Q2R1S0TUVWXY',
+      },
+    },
+  ])('preserves the exact $label audience in the Native publish intent', async ({
+    kind,
+    target,
+    expectedAudience,
+  }) => {
     const authorPtid = 'ptid:author';
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
@@ -445,34 +829,32 @@ describe('moments store: createPost / deletePost', () => {
       return true;
     }, statusOk({
       state: 'PUBLISHED',
-      draft_id: 'draft-circle',
-      post_id: 'circle-post',
+      draft_id: 'draft-targeted',
+      post_id: 'targeted-post',
       projection: {
-        post_id: 'circle-post',
-        content_id: 'circle-post',
+        post_id: 'targeted-post',
+        content_id: 'targeted-post',
         generation: '1',
         author_ptid: authorPtid,
-        audience_kind: 'CIRCLE',
+        audience_kind: expectedAudience.kind,
         state: 'CONTENT_READY',
-        content: { kind: 'TEXT', text: 'circle only' },
+        content: { kind: 'TEXT', text: 'targeted audience' },
       },
     }));
 
     await useMomentsStore.getState().createPost({
       kind: 'text',
-      text: 'circle only',
+      text: 'targeted audience',
       audience: create(AudienceSchema, {
-        kind: Audience_Kind.CIRCLE,
-        targetId: 77n,
+        kind,
+        target,
       }),
-      draftId: 'draft-circle',
+      draftId: 'draft-targeted',
       draftRevision: 1,
     });
 
     expect(nativeInput).toMatchObject({
-      audience_kind: 'CIRCLE',
-      audience_target_id: '77',
-      audience_actor_ptids: [],
+      audience: expectedAudience,
       moment_kind: 'TEXT',
     });
   });
@@ -497,6 +879,41 @@ describe('moments store: createPost / deletePost', () => {
       'social_create_moment',
       expect.anything(),
     );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'social_private_moment_publish',
+      expect.anything(),
+    );
+  });
+
+  it('rejects CUSTOM_DENY(PUBLIC) at the production audience boundary', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorPtid: 'ptid:author',
+        name: 'author',
+        email: '',
+        loginMethod: 'password',
+      },
+    });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:author', 3);
+
+    await expect(
+      useMomentsStore.getState().createPost({
+        kind: 'text',
+        text: 'unsupported public deny',
+        audience: create(AudienceSchema, {
+          kind: Audience_Kind.CUSTOM_DENY,
+          baseKind: Audience_Kind.PUBLIC,
+          actorPtids: ['ptid:eve'],
+        }),
+        draftId: 'draft-public-deny',
+        draftRevision: 1,
+      }),
+    ).rejects.toThrow('PRIVATE_AUDIENCE_INVALID');
+
     expect(invokeMock).not.toHaveBeenCalledWith(
       'social_private_moment_publish',
       expect.anything(),
@@ -544,6 +961,7 @@ describe('moments store: createPost / deletePost', () => {
           authorPtid: 'ptid:bob',
           audienceKind: 'FRIENDS',
           state: 'CONTENT_READY',
+          mentions: [],
           content: { kind: 'TEXT', text: 'private' },
         },
       },
@@ -576,6 +994,7 @@ describe('moments store: createPost / deletePost', () => {
           authorPtid: 'ptid:bob',
           audienceKind: 'FRIENDS',
           state: 'CONTENT_READY',
+          mentions: [],
           content: { kind: 'TEXT', text: 'private' },
         },
       },
@@ -737,6 +1156,7 @@ describe('private Moments Native projection', () => {
           authorPtid: 'ptid:author',
           audienceKind: 'FRIENDS',
           state: 'CONTENT_READY',
+          mentions: [],
           content: { kind: 'TEXT', text: 'secret' },
         },
       },
@@ -841,6 +1261,7 @@ describe('private Moments Native projection', () => {
           authorPtid: 'ptid:author',
           audienceKind: 'FRIENDS',
           state: 'CONTENT_READY',
+          mentions: [],
           content: {
             kind: 'IMAGE',
             text: 'secret',
@@ -940,6 +1361,12 @@ describe('moments store: comments', () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
     const draftId = '00000000-0000-4000-8000-000000000005';
+    const mentions = [{
+      actorPtid: 'ptid:bob',
+      offset: 0,
+      length: 5,
+      display: 'newer',
+    }];
     vi.stubGlobal('crypto', { randomUUID: () => draftId });
     let resolveBootstrap: ((value: ReturnType<typeof statusOk>) => void) | undefined;
     const bootstrapResponse = new Promise<ReturnType<typeof statusOk>>((resolve) => {
@@ -960,6 +1387,12 @@ describe('moments store: comments', () => {
       post_id: 'private-post',
       reply_to_comment_id: '',
       text: 'newer local text',
+      mentions: [{
+        actor_ptid: 'ptid:bob',
+        offset: 0,
+        length: 5,
+        display: 'newer',
+      }],
       state: 'COMMENT_EDITING',
     }));
     enqueue('social_private_comment_prepare', statusOk({
@@ -968,6 +1401,12 @@ describe('moments store: comments', () => {
       post_id: 'private-post',
       reply_to_comment_id: '',
       text: 'newer local text',
+      mentions: [{
+        actor_ptid: 'ptid:bob',
+        offset: 0,
+        length: 5,
+        display: 'newer',
+      }],
       state: 'COMMENT_SUBMITTING',
       publication_state: 'PENDING_PUBLICATION',
     }));
@@ -991,6 +1430,12 @@ describe('moments store: comments', () => {
         author_ptid: 'ptid:viewer',
         state: 'COMMENT_POSTED',
         text: 'newer local text',
+        mentions: [{
+          actor_ptid: 'ptid:bob',
+          offset: 0,
+          length: 5,
+          display: 'newer',
+        }],
         reactions_count: 0,
         replies_count: 0,
       },
@@ -999,6 +1444,21 @@ describe('moments store: comments', () => {
     await usePrivateCommentsStore.getState().submitComment(
       'private-post',
       'newer local text',
+      undefined,
+      mentions,
+    );
+    expect(invokeMock).toHaveBeenCalledWith(
+      'social_private_comment_stage',
+      {
+        input: expect.objectContaining({
+          mentions: [{
+            actor_ptid: 'ptid:bob',
+            offset: 0,
+            length: 5,
+            display: 'newer',
+          }],
+        }),
+      },
     );
     resolveBootstrap?.(statusOk({
       actor_ptid: 'ptid:viewer',
@@ -1025,6 +1485,9 @@ describe('moments store: comments', () => {
       text: '',
       publicationState: 'PUBLISHED',
     });
+    expect(
+      usePrivateCommentsStore.getState().threadsByPost['private-post']?.comments[0]?.mentions,
+    ).toEqual(mentions);
     expect(
       usePrivateCommentsStore.getState().activeDraftByPost['private-post'],
     ).toBeUndefined();
@@ -1725,6 +2188,89 @@ describe('station moderation bridge: moments projection signal', () => {
 });
 
 describe('moments runtime: realtime recovery', () => {
+  it('retries a failed native bootstrap on the periodic reconciliation tick', async () => {
+    const intervalCallbacks = installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorPtid: 'ptid:viewer',
+        name: 'Viewer',
+        email: '',
+        loginMethod: 'password',
+      },
+      restoring: false,
+      sessionEpoch: 9,
+    });
+    enqueue('social_private_moments_bootstrap', {
+      ok: false,
+      error: {
+        code: 'PRIVATE_NATIVE_COMMAND_FAILED',
+        message: 'secure content supervisor is not active',
+      },
+    });
+
+    momentsRuntime.install();
+
+    await vi.waitFor(() => {
+      expect(invokeMock.mock.calls.filter(
+        ([command]) => command === 'social_private_moments_bootstrap',
+      )).toHaveLength(1);
+    });
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'frontend_log',
+        {
+          input: expect.objectContaining({
+            message: 'moments projection bootstrap failed',
+          }),
+        },
+      );
+    });
+
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '2',
+      projections: [],
+    }));
+    enqueue('social_private_comments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '2',
+      drafts: [],
+      comments: [],
+    }));
+    enqueue('actor_get_my_profile', dataOk({
+      id: 'viewer',
+      displayName: 'Viewer',
+      username: 'viewer',
+      avatar: '',
+    }));
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: { posts: [], nextCursor: '', hasMore: false },
+        publicTimeline: { posts: [], nextCursor: '', hasMore: false },
+      }),
+    );
+    enqueue('social_circle_list_mine', bytesOk(ListMyCirclesResponseSchema, { circles: [] }));
+    enqueue('social_private_moments_reconcile', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '2',
+      projections: [],
+    }));
+
+    intervalCallbacks[0]?.();
+
+    await vi.waitFor(() => {
+      expect(usePrivateMomentsStore.getState().scope.nativeSessionGeneration).toBe('2');
+      expect(invokeMock.mock.calls.filter(
+        ([command]) => command === 'social_private_moments_bootstrap',
+      )).toHaveLength(2);
+    });
+  });
+
   it('refreshes the Moments projection after realtime reconnect', async () => {
     installEventWindowStub();
     useSessionStore.setState({

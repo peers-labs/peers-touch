@@ -29,6 +29,10 @@ TRAE_HOOK_EVENTS = (
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
     "Stop",
 )
 CURSOR_HOOK_EVENTS = (
@@ -41,7 +45,9 @@ WORKFLOW_KERNEL_FILES = (
     "tooling/scripts/architecture/module-governance.mjs",
     "tooling/scripts/local-dev/workflow-action-store.mjs",
     "tooling/scripts/local-dev/workflow-anchor.mjs",
-    "tooling/scripts/local-dev/workflow-conversation-binding.mjs",
+    "tooling/scripts/local-dev/workflow-binding-projection.mjs",
+    "tooling/scripts/local-dev/workflow-binding-store.mjs",
+    "tooling/scripts/local-dev/workflow-binding.mjs",
     "tooling/scripts/local-dev/workflow-host-adapters.mjs",
     "tooling/scripts/local-dev/workflow-kernel.mjs",
     "tooling/scripts/local-dev/workflow-state-inspector.mjs",
@@ -111,6 +117,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", required=True)
     parser.add_argument("--host", choices=("trae", "cursor", "codex"))
     parser.add_argument("--all-worktrees", action="store_true")
+    parser.add_argument("--workspace")
     return parser.parse_args()
 
 
@@ -168,6 +175,7 @@ def legacy_references(
 def host_projection_findings(
     root: Path,
     required_host: str | None,
+    workspace: str | None = None,
 ) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     canonical_names = sorted(
@@ -291,47 +299,83 @@ def host_projection_findings(
                             }
                         )
     elif required_host == "trae":
-        hooks_path = root / ".trae" / "hooks.json"
         try:
-            hooks_value = json.loads(hooks_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            control = integration_control_module()
+            workspace_file, workspace_roots, bootstrap_root = (
+                control.resolve_trae_workspace(root, workspace)
+            )
+        except Exception:
             findings.append(
-                {"path": ".trae/hooks.json", "issue": "trae-hooks-invalid"}
+                {
+                    "path": ".trae/hooks.json",
+                    "issue": "trae-workspace-bootstrap-invalid",
+                }
             )
         else:
-            hooks = hooks_value.get("hooks")
-            if not isinstance(hooks, dict):
-                findings.append(
-                    {"path": ".trae/hooks.json", "issue": "trae-hooks-invalid"}
+            for workspace_root in workspace_roots:
+                hooks_path = workspace_root / ".trae" / "hooks.json"
+                hook_label = (
+                    ".trae/hooks.json"
+                    if workspace_root == root
+                    else str(hooks_path)
                 )
-            else:
-                try:
-                    control = integration_control_module()
-                    for event in TRAE_HOOK_EVENTS:
-                        entries = hooks.get(event)
-                        managed = (
-                            [
-                                entry
-                                for entry in entries
-                                if control.is_managed_trae_hook_entry(entry)
-                            ]
-                            if isinstance(entries, list)
-                            else []
-                        )
-                        expected = control.canonical_trae_hook_entry(root, event)
-                        if managed == [expected]:
-                            continue
+                if not hooks_path.exists():
+                    if workspace_root == bootstrap_root:
                         findings.append(
                             {
-                                "path": ".trae/hooks.json",
-                                "issue": f"managed-hook-invalid:{event}",
+                                "path": hook_label,
+                                "issue": "trae-hooks-invalid",
                             }
                         )
-                except Exception:
+                    continue
+                try:
+                    hooks_value = json.loads(
+                        hooks_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError):
                     findings.append(
                         {
-                            "path": "tooling/scripts/agent-integration-control.py",
-                            "issue": "canonical-trae-hook-api-invalid",
+                            "path": hook_label,
+                            "issue": "trae-hooks-invalid",
+                        }
+                    )
+                    continue
+                hooks = hooks_value.get("hooks")
+                if not isinstance(hooks, dict):
+                    findings.append(
+                        {
+                            "path": hook_label,
+                            "issue": "trae-hooks-invalid",
+                        }
+                    )
+                    continue
+                for event in TRAE_HOOK_EVENTS:
+                    entries = hooks.get(event)
+                    managed = (
+                        [
+                            entry
+                            for entry in entries
+                            if control.is_managed_trae_hook_entry(entry)
+                        ]
+                        if isinstance(entries, list)
+                        else []
+                    )
+                    expected = control.canonical_trae_hook_entry(
+                        root,
+                        event,
+                        workspace_file,
+                    )
+                    valid = (
+                        managed == [expected]
+                        if workspace_root == bootstrap_root
+                        else managed == []
+                    )
+                    if valid:
+                        continue
+                    findings.append(
+                        {
+                            "path": hook_label,
+                            "issue": f"managed-hook-invalid:{event}",
                         }
                     )
     return findings
@@ -861,6 +905,7 @@ def acceptance_registry(root: Path) -> dict[str, object]:
 def installed_callback_probe(
     root: Path,
     host: str | None,
+    workspace: str | None = None,
 ) -> dict[str, object]:
     if host is None:
         return {"status": "NOT_REQUESTED"}
@@ -868,7 +913,15 @@ def installed_callback_probe(
         return {"status": "NOT_APPLICABLE"}
     try:
         control = integration_control_module()
-        proof = control.probe_installed_trae_hook(root, root / ".trae")
+        workspace_file, _, bootstrap_root = control.resolve_trae_workspace(
+            root,
+            workspace,
+        )
+        proof = control.probe_installed_trae_hook(
+            root,
+            bootstrap_root / ".trae",
+            workspace_file,
+        )
         expected = dict(control.TRAE_CALLBACK_PROOF)
     except Exception as error:
         return {"status": "BLOCKED", "code": str(error)}
@@ -963,7 +1016,11 @@ def integration_receipt(
     }
 
 
-def audit_root(root: Path, host: str | None = None) -> dict[str, object]:
+def audit_root(
+    root: Path,
+    host: str | None = None,
+    workspace: str | None = None,
+) -> dict[str, object]:
     if not (root / ".git").exists():
         return {"root": str(root), "status": "BLOCKED", "error": "not-a-worktree"}
     missing = [
@@ -980,7 +1037,7 @@ def audit_root(root: Path, host: str | None = None) -> dict[str, object]:
         else ()
     )
     catalog = canonical_integration_catalog(root)
-    callback_probe = installed_callback_probe(root, host)
+    callback_probe = installed_callback_probe(root, host, workspace)
     report = {
         "root": str(root),
         "status": "PASS",
@@ -990,7 +1047,11 @@ def audit_root(root: Path, host: str | None = None) -> dict[str, object]:
         "legacySourcePresent": legacy_source.exists(),
         "legacyReferences": legacy_references(root, bound_plan_paths),
         "host": host,
-        "hostProjectionFindings": host_projection_findings(root, host),
+        "hostProjectionFindings": host_projection_findings(
+            root,
+            host,
+            workspace,
+        ),
         "workflowIdentity": identity,
         "acceptanceRegistry": acceptance_registry(root),
         "installedCallbackProbe": callback_probe,
@@ -1035,7 +1096,10 @@ def main() -> int:
     options = parse_args()
     root = Path(os.path.realpath(os.path.abspath(options.root)))
     if options.all_worktrees:
-        reports = [audit_root(item, options.host) for item in worktree_roots(root)]
+        reports = [
+            audit_root(item, options.host, options.workspace)
+            for item in worktree_roots(root)
+        ]
         payload = {
             "status": (
                 "PASS"
@@ -1045,7 +1109,7 @@ def main() -> int:
             "worktrees": reports,
         }
     else:
-        payload = audit_root(root, options.host)
+        payload = audit_root(root, options.host, options.workspace)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0 if payload["status"] == "PASS" else 2
 

@@ -2,7 +2,7 @@
 name: "pt-context-anchor"
 description: "Reads verified tracked-work sources and renders one copyable chat projection for status, resume, handoff, blockers, readiness, or close. It never repairs or mutates workflow state."
 stage: "cross-stage"
-requires: ["valid Plan Package", "matching workspace active-work record", "verified worktree identity"]
+requires: ["canonical BindingProjection", "valid Plan Package", "matching workspace active-work record", "verified worktree identity"]
 produces: ["verified read-only Context Anchor"]
 ---
 
@@ -34,6 +34,7 @@ exist.
 
 This Skill may read:
 
+- the current canonical `BindingProjection`;
 - the current workspace's `workflow/active-work.json`;
 - compact Plan Package `plan.md`;
 - the manifest's current Task Slice;
@@ -103,22 +104,25 @@ not an input.
 
 1. Resolve the workspace's current machine Plan generation and read only that
    workspace's active-work record with `make active-work-status`.
-2. Verify the persisted worktree and Plan generation. Do not recapture a new
+2. Revalidate the current `BindingProjection`. Its role, binding/root/parent
+   digests, assignment, release/child state, and execution root must match the
+   invoking lineage. Never select a binding by enumerating a worktree.
+3. Verify the persisted worktree and Plan generation. Do not recapture a new
    baseline or replace an unfinished generation.
-3. Run `planctl validate`, `planctl current`, and `planctl status`.
-4. Read compact `plan.md`, only `current_task_path`, and matching
+4. Run `planctl validate`, `planctl current`, and `planctl status`.
+5. Read compact `plan.md`, only `current_task_path`, and matching
    `session.json`.
-5. Validate each projected field against its owner.
-6. Use `unknown` for ETA when critical-path or throughput evidence is
+6. Validate each projected field against its owner.
+7. Use `unknown` for ETA when critical-path or throughput evidence is
    insufficient.
-7. Require one source-backed Next Progress Slice for an active non-blocked
+8. Require one source-backed Next Progress Slice for an active non-blocked
    package. It must target the current Task's `in_progress -> done` boundary,
    copy `completedAfter` and `percentageAfter` from
    `planctl status.progress.nextProgressBoundary`, state the exact
    percentage-point and unlock delta, and identify the post-closure successor
    frontier or the Plan terminal state. Never derive the target by adding a
    rounded percentage or by counting unlocked Tasks as complete.
-8. Render one final chat block.
+9. Render one final chat block.
 
 When invoked by the Workflow Kernel at Stop, steps 1-8 are already represented
 by the supplied receipt. Emit its `content` byte-for-byte; do not append fields
@@ -190,6 +194,8 @@ Each error names the mismatched field and owning writer.
 
 - The Plan Package and matching locator exist.
 - Git identity matches persisted binding.
+- Binding role and lineage match the current canonical `BindingProjection`;
+  expired or terminal child state cannot support a status or final claim.
 - `planctl current`, current Task, Session, declaration, Git and workspace
   active-work agree.
 - Progress, completed delta, Next Progress Slice, projected progress after

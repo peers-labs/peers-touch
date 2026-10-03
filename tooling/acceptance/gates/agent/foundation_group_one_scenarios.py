@@ -191,6 +191,133 @@ def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
     return assertions
 
 
+def evaluate_base_queue_full(capture: Mapping[str, Any]) -> dict[str, bool]:
+    queue = _mapping(capture, "queueSubmission", scenario="BASE-QUEUE_FULL")
+    overflow = _mapping(queue, "overflow", scenario="BASE-QUEUE_FULL")
+    typed_error = _mapping(
+        overflow,
+        "typedError",
+        scenario="BASE-QUEUE_FULL",
+    )
+    details = _mapping(
+        typed_error,
+        "details",
+        scenario="BASE-QUEUE_FULL",
+    )
+    resolution = _mapping(
+        overflow,
+        "resolution",
+        scenario="BASE-QUEUE_FULL",
+    )
+    receiver = _mapping(
+        overflow,
+        "recovery",
+        scenario="BASE-QUEUE_FULL",
+    )
+    cleanup = _mapping(
+        capture,
+        "cleanup",
+        scenario="BASE-QUEUE_FULL",
+    )
+    queue_capacity = _positive_int(
+        queue,
+        "queueCapacity",
+        scenario="BASE-QUEUE_FULL",
+    )
+    entries = _list(queue, "entries", scenario="BASE-QUEUE_FULL")
+    positions = [
+        _positive_int(entry, "queue_position", scenario="BASE-QUEUE_FULL")
+        for entry in entries
+    ]
+    assertions = {
+        "queueAtCapacity": (
+            len(entries) == queue_capacity
+            and positions == list(range(1, queue_capacity + 1))
+            and _positive_int(
+                overflow,
+                "queueSize",
+                scenario="BASE-QUEUE_FULL",
+            ) == queue_capacity
+        ),
+        "typedQueueFull": (
+            overflow.get("errorCode") == "ADMISSION_QUEUE_FULL"
+            and typed_error.get("errorType") == "ADMISSION_QUEUE_FULL"
+            and typed_error.get("localeKey") == "agent.errors.queueFull"
+            and typed_error.get("retryable") is True
+            and typed_error.get("terminal") is True
+            and set(details) == {"conversation_id", "capacity"}
+            and _nonempty_string(
+                details,
+                "conversation_id",
+                scenario="BASE-QUEUE_FULL",
+            )
+            == _nonempty_string(
+                resolution,
+                "conversationId",
+                scenario="BASE-QUEUE_FULL",
+            )
+            and int(
+                _nonempty_string(
+                    details,
+                    "capacity",
+                    scenario="BASE-QUEUE_FULL",
+                )
+            )
+            == queue_capacity
+            and resolution.get("type") == "editQueue"
+            and _positive_int(
+                resolution,
+                "capacity",
+                scenario="BASE-QUEUE_FULL",
+            )
+            == queue_capacity
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("visible") is True
+            and typed_error.get("localeKey") == "agent.errors.queueFull"
+        ),
+        "editQueueFocused": receiver.get("queueFocused") is True,
+        "queueStateUnchanged": (
+            _positive_int(
+                overflow,
+                "queueSizeAfterAction",
+                scenario="BASE-QUEUE_FULL",
+            )
+            == queue_capacity
+            and _positive_int(
+                overflow,
+                "conversationVersionBeforeAction",
+                scenario="BASE-QUEUE_FULL",
+            )
+            == _positive_int(
+                overflow,
+                "conversationVersionAfterAction",
+                scenario="BASE-QUEUE_FULL",
+            )
+        ),
+        "zeroAutomaticResend": (
+            _nonnegative_int(
+                overflow,
+                "stationMessageDelta",
+                scenario="BASE-QUEUE_FULL",
+            ) == 0
+            and _nonnegative_int(
+                overflow,
+                "providerCallDelta",
+                scenario="BASE-QUEUE_FULL",
+            ) == 0
+        ),
+        "cleanupComplete": cleanup.get("status") == "clean",
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            "BASE-QUEUE_FULL production facts failed assertions: "
+            f"{failed}"
+        )
+    return assertions
+
+
 def evaluate_as_f03(capture: Mapping[str, Any]) -> dict[str, bool | None]:
     tool_isolation = _mapping(
         capture,
@@ -5708,6 +5835,332 @@ def evaluate_base_model_unavailable(
         "cleanupComplete": (
             cleanup.get("modelAdded") is True
             and cleanup.get("modelRemoved") is True
+            and cleanup.get("agentRestored") is True
+            and cleanup.get("disposableAgentDeleted") is True
+            and cleanup.get("conversationDeleted") is True
+            and cleanup.get("localProjectionCleared") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_base_rate_limit(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-RATE_LIMIT"
+    harness_assertions = _mapping(
+        capture,
+        "harnessAssertions",
+        scenario=scenario,
+    )
+    expected_harness_assertions = {
+        "typedProviderRateLimit",
+        "localizedRetryLaterVisible",
+        "retryAfterProjected",
+        "oneTerminalProviderAttempt",
+        "zeroSuccessfulCompletion",
+        "queueUnchanged",
+        "replayEqual",
+        "cleanupComplete",
+    }
+    actual_harness_assertions = set(harness_assertions)
+    missing_harness_assertions = sorted(
+        expected_harness_assertions - actual_harness_assertions
+    )
+    unexpected_harness_assertions = sorted(
+        actual_harness_assertions - expected_harness_assertions
+    )
+    failed_harness_assertions = sorted(
+        key
+        for key in expected_harness_assertions & actual_harness_assertions
+        if harness_assertions.get(key) is not True
+    )
+    if (
+        missing_harness_assertions
+        or unexpected_harness_assertions
+        or failed_harness_assertions
+    ):
+        raise GroupOneScenarioError(
+            f"{scenario} Harness assertions are incomplete or failed: "
+            f"missing={missing_harness_assertions}, "
+            f"unexpected={unexpected_harness_assertions}, "
+            f"failed={failed_harness_assertions}"
+        )
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    typed_error = _mapping(capture, "typedError", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    resolution = _mapping(capture, "resolution", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    provider_fixture = _mapping(
+        capture,
+        "providerFixture",
+        scenario=scenario,
+    )
+    provider_request = _mapping(
+        provider_fixture,
+        "request",
+        scenario=scenario,
+    )
+
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    turn_id = _nonempty_string(
+        station,
+        "turnId",
+        scenario=scenario,
+    )
+    provider_id = _nonempty_string(
+        station,
+        "providerId",
+        scenario=scenario,
+    )
+    model_id = _nonempty_string(
+        station,
+        "modelId",
+        scenario=scenario,
+    )
+    retry_after_raw = _nonempty_string(
+        details,
+        "retry_after_ms",
+        scenario=scenario,
+    )
+    if not retry_after_raw.isdigit():
+        raise GroupOneScenarioError(
+            f"{scenario} retry_after_ms must be a non-negative integer string"
+        )
+    retry_after_ms = int(retry_after_raw)
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+    replay_hash = _sha256_string(
+        replay,
+        "replayHash",
+        scenario=scenario,
+    )
+    queue_state_before_hash = _sha256_string(
+        station,
+        "queueStateBeforeHash",
+        scenario=scenario,
+    )
+    queue_state_after_hash = _sha256_string(
+        station,
+        "queueStateAfterHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedProviderRateLimit": (
+            outcome.get("error") == "agent.errors.providerRateLimit"
+            and outcome.get("error_type") == "PROVIDER_RATE_LIMIT"
+            and outcome.get("locale_key")
+            == "agent.errors.providerRateLimit"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is True
+            and typed_error == outcome
+            and sorted(details) == ["provider_id", "retry_after_ms"]
+            and details.get("provider_id") == provider_id
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType") == "PROVIDER_RATE_LIMIT"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            )
+            > 0
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "sourcePtidHash",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceConversationId") == conversation_id
+            and runtime_event.get("sourceTurnId") == turn_id
+            and _positive_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            > 0
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "localizedRetryLaterVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "retryAfterProjected": (
+            retry_after_ms == 2_000
+            and _nonnegative_int(
+                receiver,
+                "projectedRetryAfterMs",
+                scenario=scenario,
+            )
+            == retry_after_ms
+            and resolution.get("type") == "retryLater"
+            and resolution.get("providerId") == provider_id
+            and resolution.get("retryAfterMs") == retry_after_ms
+        ),
+        "realProvider429Observed": (
+            provider_fixture.get("statusCode") == 429
+            and provider_fixture.get("retryAfter") == "2"
+            and _nonnegative_int(
+                provider_fixture,
+                "requestCount",
+                scenario=scenario,
+            )
+            == 1
+            and provider_request.get("path") == "/v1/chat/completions"
+            and provider_request.get("stream") is True
+            and provider_request.get("authorizationPresent") is True
+            and provider_request.get("model") == model_id
+        ),
+        "oneTerminalProviderAttempt": (
+            _nonnegative_int(
+                station,
+                "traceDelta",
+                scenario=scenario,
+            )
+            == 1
+            and _nonnegative_int(
+                station,
+                "providerCallCount",
+                scenario=scenario,
+            )
+            == 1
+            and _nonnegative_int(
+                station,
+                "classifiedErrorCount",
+                scenario=scenario,
+            )
+            == 1
+            and station.get("classifiedRateLimit") is True
+            and _nonnegative_int(
+                station,
+                "messageDelta",
+                scenario=scenario,
+            )
+            == 2
+        ),
+        "noHiddenRetry": (
+            provider_fixture.get("noRequestsAfterRetryWindow") is True
+            and provider_fixture.get("requestCount") == 1
+        ),
+        "zeroSuccessfulCompletion": (
+            _nonnegative_int(
+                station,
+                "completedAssistantCount",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "queueUnchanged": (
+            _nonnegative_int(
+                station,
+                "queueDelta",
+                scenario=scenario,
+            )
+            == 0
+            and queue_state_after_hash == queue_state_before_hash
+            and _nonnegative_int(
+                station,
+                "conversationVersionAfter",
+                scenario=scenario,
+            )
+            >= _nonnegative_int(
+                station,
+                "conversationVersionBefore",
+                scenario=scenario,
+            )
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and source_hash == replay_hash
+            and source_hash
+            == _sha256_string(
+                station,
+                "stateHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("status") == "clean"
+            and cleanup.get("fixtureModelDeleted") is True
+            and cleanup.get("fixtureProviderDeleted") is True
             and cleanup.get("agentRestored") is True
             and cleanup.get("disposableAgentDeleted") is True
             and cleanup.get("conversationDeleted") is True

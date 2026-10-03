@@ -1,0 +1,388 @@
+{
+  "kind": "peers-touch-agent-impact-replay-fixture",
+  "schemaVersion": 1,
+  "source": "MCA-P04 Session and Git history forensic reconstruction",
+  "cases": [
+    {
+      "commit": "96403d3d01c036df7e201a73bb345c47a2628807",
+      "subject": "feat(agent): restore station-owned CLI provider execution",
+      "changedPaths": [
+        "apps/desktop/src/acceptance/agent/harness.ts",
+        "apps/station/app/subserver/agent/catalog/providers.default.yaml",
+        "apps/station/app/subserver/agent/handler/provider_handler_readiness_test.go",
+        "apps/station/app/subserver/agent/service/cli/executor.go",
+        "apps/station/app/subserver/agent/service/cli/executor_test.go",
+        "apps/station/app/subserver/agent/service/cli/prompt.go",
+        "apps/station/app/subserver/agent/service/cli/prompt_test.go",
+        "apps/station/app/subserver/agent/service/provider_config_service.go",
+        "apps/station/app/subserver/agent/service/provider_config_service_test.go",
+        "apps/station/app/subserver/agent/service/provider_service.go",
+        "apps/station/app/subserver/agent/service/provider_stream_test.go",
+        "apps/station/app/subserver/agent/service/runtime_admission_service.go",
+        "apps/station/app/subserver/agent/service/runtime_admission_service_test.go",
+        "apps/station/app/subserver/agent/service/turn_service.go",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "tooling/acceptance/capabilities/agent.yaml",
+        "tooling/acceptance/domains/agent.yaml",
+        "tooling/acceptance/features/agent-cli-provider-primary.yaml",
+        "tooling/acceptance/gates.yaml",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "tooling/acceptance/gates/agent/native_agent_runner_test.py",
+        "tooling/acceptance/matrices/agent-cli-provider-primary-native.yaml",
+        "tooling/acceptance/provisioners/home_station.py",
+        "tooling/acceptance/registry.yaml",
+        "tooling/acceptance/tests/test_provisioner_runtime.py",
+        "tooling/scripts/deploy/deploy.sh"
+      ],
+      "expected": {
+        "impactClasses": [
+          "ACCEPTANCE_HARNESS",
+          "DOCS_ONLY",
+          "STATION_RUNTIME"
+        ],
+        "targetSelectors": [
+          "acceptance-runtime-reprovision",
+          "acceptance-suite-runtime",
+          "station"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "21b13bd9c301203934cf112270bf7c5ea3f57df4",
+      "subject": "docs(agent): refresh plan gate coverage",
+      "changedPaths": [
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md"
+      ],
+      "expected": {
+        "impactClasses": [
+          "DOCS_ONLY"
+        ],
+        "targetSelectors": [],
+        "formalGateRequired": false,
+        "proofAction": "REUSE_CANDIDATE"
+      }
+    },
+    {
+      "commit": "e8b87859cafaec3f913c8c45064bfbe1a7761a07",
+      "subject": "fix(tooling): preserve zero-message CLI acceptance state",
+      "changedPaths": [
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "tooling/acceptance/gates/agent/native_agent_runner_test.py"
+      ],
+      "expected": {
+        "impactClasses": [
+          "ACCEPTANCE_HARNESS"
+        ],
+        "targetSelectors": [
+          "acceptance-suite-runtime"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "783d1d01529fa202e1f2120a06685a008baa0904",
+      "subject": "fix(agent): admit CLI providers through the direct model path",
+      "changedPaths": [
+        "apps/station/app/subserver/agent/handler/turn_handler.go",
+        "apps/station/app/subserver/agent/handler/turn_runtime_profile_test.go"
+      ],
+      "expected": {
+        "impactClasses": [
+          "STATION_RUNTIME"
+        ],
+        "targetSelectors": [
+          "station"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "0642c33aa12075e339115615ecdc9678d1ffe55b",
+      "subject": "fix(desktop): negotiate CLI thinking mode automatically",
+      "changedPaths": [
+        "apps/desktop/src/acceptance/agent/harness.ts",
+        "tooling/acceptance/gates/agent/native_agent_runner_test.py"
+      ],
+      "expected": {
+        "impactClasses": [
+          "ACCEPTANCE_HARNESS"
+        ],
+        "targetSelectors": [
+          "acceptance-suite-runtime"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "96c94dbd09e2f2d91ec8bbe26d8d21354e111d54",
+      "subject": "fix(tooling): preserve restored route during native restart",
+      "changedPaths": [
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "tooling/acceptance/gates/agent/native_agent_runner_test.py"
+      ],
+      "expected": {
+        "impactClasses": [
+          "ACCEPTANCE_HARNESS"
+        ],
+        "targetSelectors": [
+          "acceptance-suite-runtime"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "367891787dade8b75beccf17fba2e563f79aa595",
+      "subject": "fix(workflow): accept normalized gate pass status",
+      "changedPaths": [
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "tooling/scripts/local-dev/dev-session.mjs",
+        "tooling/scripts/local-dev/dev-session.test.mjs"
+      ],
+      "expected": {
+        "impactClasses": [
+          "DOCS_ONLY",
+          "WORKFLOW_TOOLING"
+        ],
+        "targetSelectors": [],
+        "formalGateRequired": false,
+        "proofAction": "REUSE_CANDIDATE"
+      }
+    },
+    {
+      "commit": "e2aeca8759ecc5ebe3f47ef334698e384fb66ab5",
+      "subject": "fix(agent): isolate CLI provider subprocesses",
+      "changedPaths": [
+        "apps/station/app/subserver/agent/service/cli/executor.go",
+        "apps/station/app/subserver/agent/service/cli/executor_test.go",
+        "apps/station/app/subserver/agent/service/cli/process_unix.go",
+        "apps/station/app/subserver/agent/service/cli/process_unix_test.go",
+        "apps/station/app/subserver/agent/service/cli/process_windows.go",
+        "apps/station/app/subserver/agent/service/provider_service.go",
+        "apps/station/app/subserver/agent/service/provider_stream_test.go"
+      ],
+      "expected": {
+        "impactClasses": [
+          "STATION_RUNTIME"
+        ],
+        "targetSelectors": [
+          "station"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "545c165eb6b31f6cf5559c10b0e7c87f22822adc",
+      "subject": "fix(tooling): support blocked completion review candidates",
+      "changedPaths": [
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "tooling/make/local-dev.mk",
+        "tooling/scripts/local-dev/completion-review.mjs",
+        "tooling/scripts/local-dev/completion-review.test.mjs"
+      ],
+      "expected": {
+        "impactClasses": [
+          "DOCS_ONLY",
+          "WORKFLOW_TOOLING"
+        ],
+        "targetSelectors": [],
+        "formalGateRequired": false,
+        "proofAction": "REUSE_CANDIDATE",
+        "ownershipSplitRequired": false
+      }
+    },
+    {
+      "commit": "9112be8c2d735841d6f5f3d61a98d95f95c527d6",
+      "subject": "fix(tooling): scope plan bounds to manifest content",
+      "changedPaths": [
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "tooling/scripts/plan/plan-package.mjs",
+        "tooling/scripts/plan/planctl.test.mjs"
+      ],
+      "expected": {
+        "impactClasses": [
+          "DOCS_ONLY",
+          "WORKFLOW_TOOLING"
+        ],
+        "targetSelectors": [],
+        "formalGateRequired": false,
+        "proofAction": "REUSE_CANDIDATE",
+        "ownershipSplitRequired": false
+      }
+    },
+    {
+      "commit": "85277b95e02787ed7cbc01e8040d4ba09534f9cd",
+      "subject": "test(agent): prove native CLI failure semantics",
+      "changedPaths": [
+        "apps/desktop/src/acceptance/agent/harness.ts",
+        "tooling/acceptance/features/agent-cli-provider-primary.yaml",
+        "tooling/acceptance/gates.yaml",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "tooling/acceptance/gates/agent/native_agent_runner_test.py",
+        "tooling/acceptance/matrices/agent-cli-provider-primary-native.yaml"
+      ],
+      "expected": {
+        "impactClasses": [
+          "ACCEPTANCE_HARNESS"
+        ],
+        "targetSelectors": [
+          "acceptance-suite-runtime"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "8310dc443b20c06a8445c8c1ac530725b8a502d6",
+      "subject": "fix(station): hide unavailable CLI providers",
+      "changedPaths": [
+        "apps/station/app/subserver/agent/handler/provider_handler.go",
+        "apps/station/app/subserver/agent/service/runtime_admission_service.go",
+        "apps/station/app/subserver/agent/service/runtime_admission_service_test.go"
+      ],
+      "expected": {
+        "impactClasses": [
+          "STATION_RUNTIME"
+        ],
+        "targetSelectors": [
+          "station"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "0a6e787af620f1f52aa2a5172f0977dd50c6954a",
+      "subject": "fix(desktop): delete unavailable CLI provider configs",
+      "changedPaths": [
+        "apps/desktop/src-tauri/src/application/provider/mod.rs",
+        "apps/desktop/src-tauri/src/application/provider/station_api.rs",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md"
+      ],
+      "expected": {
+        "impactClasses": [
+          "DESKTOP_HOST",
+          "DOCS_ONLY"
+        ],
+        "targetSelectors": [
+          "desktop-native"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "9e80ff0fececba48a9f2cfb8b433cdee95a6da41",
+      "subject": "fix(desktop): make CLI fixture cleanup idempotent",
+      "changedPaths": [
+        "apps/desktop/src/acceptance/agent/harness.ts",
+        "tooling/acceptance/gates/agent/native_agent_runner_test.py"
+      ],
+      "expected": {
+        "impactClasses": [
+          "ACCEPTANCE_HARNESS"
+        ],
+        "targetSelectors": [
+          "acceptance-suite-runtime"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "7c552b41b9ef8c99ea07f437922bf283f4281683",
+      "subject": "fix(station): close CLI process groups safely",
+      "changedPaths": [
+        "apps/station/app/subserver/agent/service/cli/executor.go",
+        "apps/station/app/subserver/agent/service/cli/process_unix_test.go"
+      ],
+      "expected": {
+        "impactClasses": [
+          "STATION_RUNTIME"
+        ],
+        "targetSelectors": [
+          "station"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED"
+      }
+    },
+    {
+      "commit": "c1556bb91ee8131b2ec670d2a131898b978b0bf9",
+      "subject": "fix(acceptance): audit remote CLI teardown",
+      "changedPaths": [
+        "tooling/acceptance/provisioners/home_station.py",
+        "tooling/acceptance/tests/test_provisioner_runtime.py"
+      ],
+      "expected": {
+        "impactClasses": [],
+        "targetSelectors": [],
+        "formalGateRequired": false,
+        "proofAction": "POLICY_REQUIRED"
+      }
+    },
+    {
+      "commit": "c2f6bb8662134934302776822b523a3a4a4a9b32",
+      "subject": "fix(station): close CLI provider review gaps",
+      "changedPaths": [
+        "apps/station/app/subserver/agent/service/cli/executor.go",
+        "apps/station/app/subserver/agent/service/cli/process_unix.go",
+        "apps/station/app/subserver/agent/service/cli/process_unix_test.go",
+        "apps/station/app/subserver/agent/service/cli/process_windows.go",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "tooling/scripts/acceptance-gap-detect.py"
+      ],
+      "expected": {
+        "impactClasses": [
+          "DOCS_ONLY",
+          "STATION_RUNTIME",
+          "WORKFLOW_TOOLING"
+        ],
+        "targetSelectors": [
+          "station"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED",
+        "ownershipSplitRequired": true
+      }
+    },
+    {
+      "commit": "70471744d0cee2a2370f5424ab1bbddd2ab36ff1",
+      "subject": "fix(station): close CLI provider review gaps",
+      "changedPaths": [
+        "apps/station/app/subserver/agent/service/cli/executor.go",
+        "apps/station/app/subserver/agent/service/cli/process_unix.go",
+        "apps/station/app/subserver/agent/service/cli/process_unix_test.go",
+        "apps/station/app/subserver/agent/service/cli/process_windows.go",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "tooling/scripts/acceptance-gap-detect-test.py",
+        "tooling/scripts/acceptance-gap-detect.py"
+      ],
+      "expected": {
+        "impactClasses": [
+          "DOCS_ONLY",
+          "STATION_RUNTIME",
+          "WORKFLOW_TOOLING"
+        ],
+        "targetSelectors": [
+          "station"
+        ],
+        "formalGateRequired": true,
+        "proofAction": "REPROVE_REQUIRED",
+        "ownershipSplitRequired": true
+      }
+    }
+  ]
+}

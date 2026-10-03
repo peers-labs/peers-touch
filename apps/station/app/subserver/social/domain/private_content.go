@@ -2,7 +2,9 @@ package domain
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -25,6 +27,8 @@ const (
 	MaximumPrivateRecipientActors        = 256
 	MaximumPrivateRecipientSlots         = 1000
 	MaximumPrivateObjects                = 10
+	MaximumPrivateMentionFacts           = 256
+	MaximumPrivatePollOptions            = 20
 	PrivateContentPlanLifetime           = 5 * time.Minute
 )
 
@@ -176,10 +180,235 @@ func (a PrivateContentAuthor) Validate(operation string) error {
 // The name is retained inside the W6 service surface, but Audience is the exact
 // Social authority descriptor and must never be inferred from the recipients.
 type FriendsSnapshot struct {
-	Audience         *actormodel.Audience
-	SourceRevision   uint64
-	SourceHeadSHA256 []byte
-	RecipientPTIDs   []string
+	Audience            *actormodel.Audience
+	SourceRevision      uint64
+	SourceHeadSHA256    []byte
+	RecipientPTIDs      []string
+	RecipientLocalities []RecipientLocality
+}
+
+// RecipientLocality binds one frozen recipient to its canonical Home Station.
+type RecipientLocality struct {
+	ActorPTID         string
+	HomeStationPeerID string
+}
+
+// GroupRecipientSnapshot is Social's value-only projection of Conversation
+// membership authority. It never carries a Conversation repository or UOW.
+type GroupRecipientSnapshot struct {
+	ConversationID      string
+	AuthorPTID          string
+	MembershipEpoch     uint64
+	AuthorityHeadSHA256 []byte
+	Members             []RecipientLocality
+}
+
+type canonicalGroupRecipientSnapshot struct {
+	FormatVersion       uint32                          `json:"format_version"`
+	ConversationID      string                          `json:"conversation_id"`
+	AuthorPTID          string                          `json:"author_ptid"`
+	MembershipEpoch     uint64                          `json:"membership_epoch"`
+	AuthorityHeadSHA256 []byte                          `json:"authority_head_sha256"`
+	Members             []canonicalGroupRecipientMember `json:"members"`
+}
+
+type canonicalGroupRecipientMember struct {
+	ActorPTID         string `json:"actor_ptid"`
+	HomeStationPeerID string `json:"home_station_peer_id"`
+}
+
+// CanonicalGroupRecipientSnapshotBytes encodes the exact Conversation-owned
+// prepare snapshot persisted by Social for submit-time fencing.
+func CanonicalGroupRecipientSnapshotBytes(
+	snapshot GroupRecipientSnapshot,
+) ([]byte, error) {
+	const operation = "social.private_content.canonical_group_snapshot"
+	if err := validateGroupRecipientSnapshot(operation, snapshot); err != nil {
+		return nil, err
+	}
+
+	members := make(
+		[]canonicalGroupRecipientMember,
+		0,
+		len(snapshot.Members),
+	)
+	for _, member := range snapshot.Members {
+		members = append(members, canonicalGroupRecipientMember{
+			ActorPTID:         member.ActorPTID,
+			HomeStationPeerID: member.HomeStationPeerID,
+		})
+	}
+	encoded, err := json.Marshal(canonicalGroupRecipientSnapshot{
+		FormatVersion:       PrivateContentFormatVersion,
+		ConversationID:      snapshot.ConversationID,
+		AuthorPTID:          snapshot.AuthorPTID,
+		MembershipEpoch:     snapshot.MembershipEpoch,
+		AuthorityHeadSHA256: cloneBytes(snapshot.AuthorityHeadSHA256),
+		Members:             members,
+	})
+	if err != nil {
+		return nil, WrapPrivateContentError(
+			PrivateContentInternal,
+			operation,
+			err,
+		)
+	}
+
+	return encoded, nil
+}
+
+// ParseCanonicalGroupRecipientSnapshot accepts only the exact canonical bytes
+// emitted by CanonicalGroupRecipientSnapshotBytes.
+func ParseCanonicalGroupRecipientSnapshot(
+	encoded []byte,
+) (GroupRecipientSnapshot, error) {
+	const operation = "social.private_content.parse_group_snapshot"
+	if len(encoded) == 0 {
+		return GroupRecipientSnapshot{}, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"group_snapshot",
+			"is required",
+		)
+	}
+
+	var persisted canonicalGroupRecipientSnapshot
+	if err := json.Unmarshal(encoded, &persisted); err != nil {
+		return GroupRecipientSnapshot{}, WrapPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			err,
+		)
+	}
+	if persisted.FormatVersion != PrivateContentFormatVersion {
+		return GroupRecipientSnapshot{}, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"format_version",
+			"is unsupported",
+		)
+	}
+	members := make([]RecipientLocality, 0, len(persisted.Members))
+	for _, member := range persisted.Members {
+		members = append(members, RecipientLocality{
+			ActorPTID:         member.ActorPTID,
+			HomeStationPeerID: member.HomeStationPeerID,
+		})
+	}
+	snapshot := GroupRecipientSnapshot{
+		ConversationID:      persisted.ConversationID,
+		AuthorPTID:          persisted.AuthorPTID,
+		MembershipEpoch:     persisted.MembershipEpoch,
+		AuthorityHeadSHA256: cloneBytes(persisted.AuthorityHeadSHA256),
+		Members:             members,
+	}
+	if err := validateGroupRecipientSnapshot(operation, snapshot); err != nil {
+		return GroupRecipientSnapshot{}, err
+	}
+	canonical, err := CanonicalGroupRecipientSnapshotBytes(snapshot)
+	if err != nil {
+		return GroupRecipientSnapshot{}, err
+	}
+	if !bytes.Equal(encoded, canonical) {
+		return GroupRecipientSnapshot{}, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"group_snapshot",
+			"is not canonically encoded",
+		)
+	}
+
+	return snapshot, nil
+}
+
+func validateGroupRecipientSnapshot(
+	operation string,
+	snapshot GroupRecipientSnapshot,
+) error {
+	if err := validateIdentifier(
+		snapshot.ConversationID,
+		255,
+		"conversation_id",
+		operation,
+	); err != nil {
+		return err
+	}
+	if err := validateIdentifier(
+		snapshot.AuthorPTID,
+		255,
+		"author_ptid",
+		operation,
+	); err != nil {
+		return err
+	}
+	if snapshot.MembershipEpoch == 0 {
+		return NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"membership_epoch",
+			"must be positive",
+		)
+	}
+	if len(snapshot.AuthorityHeadSHA256) != sha256.Size {
+		return NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"authority_head_sha256",
+			"must contain one SHA-256 digest",
+		)
+	}
+	if len(snapshot.Members) == 0 ||
+		len(snapshot.Members) > MaximumPrivateRecipientActors+1 {
+		return NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"members",
+			"must contain a bounded active Group membership",
+		)
+	}
+
+	previous := ""
+	authorFound := false
+	for _, member := range snapshot.Members {
+		if err := validateIdentifier(
+			member.ActorPTID,
+			255,
+			"members.actor_ptid",
+			operation,
+		); err != nil {
+			return err
+		}
+		if err := validateIdentifier(
+			member.HomeStationPeerID,
+			255,
+			"members.home_station_peer_id",
+			operation,
+		); err != nil {
+			return err
+		}
+		if member.ActorPTID <= previous {
+			return NewPrivateContentError(
+				PrivateContentConflict,
+				operation,
+				"members",
+				"must be unique and ordered by actor PTID",
+			)
+		}
+		if member.ActorPTID == snapshot.AuthorPTID {
+			authorFound = true
+		}
+		previous = member.ActorPTID
+	}
+	if !authorFound {
+		return NewPrivateContentError(
+			PrivateContentUnauthorized,
+			operation,
+			"author_ptid",
+			"is not an active Group member",
+		)
+	}
+
+	return nil
 }
 
 func NormalizeFriendsSnapshot(
@@ -238,10 +467,11 @@ func NormalizeFriendsSnapshot(
 	}
 
 	normalized := FriendsSnapshot{
-		Audience:         proto.Clone(snapshot.Audience).(*actormodel.Audience),
-		SourceRevision:   snapshot.SourceRevision,
-		SourceHeadSHA256: cloneBytes(snapshot.SourceHeadSHA256),
-		RecipientPTIDs:   append([]string(nil), snapshot.RecipientPTIDs...),
+		Audience:            proto.Clone(snapshot.Audience).(*actormodel.Audience),
+		SourceRevision:      snapshot.SourceRevision,
+		SourceHeadSHA256:    cloneBytes(snapshot.SourceHeadSHA256),
+		RecipientPTIDs:      append([]string(nil), snapshot.RecipientPTIDs...),
+		RecipientLocalities: append([]RecipientLocality(nil), snapshot.RecipientLocalities...),
 	}
 	sort.Strings(normalized.Audience.ActorPtids)
 	previousActor := ""
@@ -285,6 +515,53 @@ func NormalizeFriendsSnapshot(
 		}
 		previous = recipientPTID
 	}
+	sort.Slice(normalized.RecipientLocalities, func(left int, right int) bool {
+		return normalized.RecipientLocalities[left].ActorPTID <
+			normalized.RecipientLocalities[right].ActorPTID
+	})
+	if normalized.Audience.GetKind() == actormodel.Audience_SELF {
+		if len(normalized.RecipientLocalities) != 0 {
+			return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentConflict,
+				operation,
+				"recipient_localities",
+				"SELF audience must not contain recipient localities",
+			)
+		}
+	} else if len(normalized.RecipientLocalities) != len(normalized.RecipientPTIDs) {
+		return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentConflict,
+			operation,
+			"recipient_localities",
+			"must cover every recipient exactly once",
+		)
+	}
+	for index, locality := range normalized.RecipientLocalities {
+		if err := validateIdentifier(
+			locality.ActorPTID,
+			255,
+			"recipient_localities.actor_ptid",
+			operation,
+		); err != nil {
+			return FriendsSnapshot{}, [sha256.Size]byte{}, err
+		}
+		if err := validateIdentifier(
+			locality.HomeStationPeerID,
+			255,
+			"recipient_localities.home_station_peer_id",
+			operation,
+		); err != nil {
+			return FriendsSnapshot{}, [sha256.Size]byte{}, err
+		}
+		if locality.ActorPTID != normalized.RecipientPTIDs[index] {
+			return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentConflict,
+				operation,
+				"recipient_localities",
+				"must match the canonical recipient order",
+			)
+		}
+	}
 
 	audienceBytes, err := CanonicalProtoBytes(normalized.Audience)
 	if err != nil {
@@ -310,23 +587,34 @@ func NormalizeFriendsSnapshot(
 	for _, recipientPTID := range normalized.RecipientPTIDs {
 		canonical = appendStringField(canonical, 6, recipientPTID)
 	}
+	for _, locality := range normalized.RecipientLocalities {
+		localityBytes := appendStringField(nil, 1, locality.ActorPTID)
+		localityBytes = appendStringField(
+			localityBytes,
+			2,
+			locality.HomeStationPeerID,
+		)
+		canonical = appendBytesField(canonical, 7, localityBytes)
+	}
 	return normalized, sha256.Sum256(canonical), nil
 }
 
 type PrivatePrepareMaterial struct {
-	ResourceKind      PrivateContentResourceKind
-	ContentID         string
-	ParentPostID      string
-	ReplyToCommentID  string
-	CommandID         string
-	MomentKind        privatecontentpb.PrivateMomentKind
-	AudienceKind      actormodel.Audience_Kind
-	Audience          *actormodel.Audience
-	ObjectCount       uint32
-	CanonicalBytes    []byte
-	CanonicalSHA256   [sha256.Size]byte
-	DomainBinding     []byte
-	DomainBindingHash [sha256.Size]byte
+	ResourceKind                  PrivateContentResourceKind
+	ContentID                     string
+	ParentPostID                  string
+	ReplyToCommentID              string
+	CommandID                     string
+	MomentKind                    privatecontentpb.PrivateMomentKind
+	AudienceKind                  actormodel.Audience_Kind
+	Audience                      *actormodel.Audience
+	ObjectCount                   uint32
+	SubtypePrepareAuthorityBytes  []byte
+	SubtypePrepareAuthoritySHA256 [sha256.Size]byte
+	CanonicalBytes                []byte
+	CanonicalSHA256               [sha256.Size]byte
+	DomainBinding                 []byte
+	DomainBindingHash             [sha256.Size]byte
 }
 
 func CanonicalizePrivateMomentPrepare(
@@ -351,6 +639,15 @@ func CanonicalizePrivateMomentPrepare(
 		operation,
 	); err != nil {
 		return PrivatePrepareMaterial{}, err
+	}
+	if request.GetAudience().GetKind() == actormodel.Audience_CUSTOM_DENY &&
+		request.GetAudience().GetBaseKind() == actormodel.Audience_PUBLIC {
+		return PrivatePrepareMaterial{}, NewPrivateContentError(
+			PrivateContentUnsupported,
+			operation,
+			"audience.base_kind",
+			"CUSTOM_DENY(PUBLIC) is unsupported in v1",
+		)
 	}
 	if err := ValidateAudience(request.GetAudience()); err != nil {
 		return PrivatePrepareMaterial{}, WrapPrivateContentError(
@@ -422,21 +719,32 @@ func CanonicalizePrivateMomentPrepare(
 		)
 	}
 	audienceHash := sha256.Sum256(audienceBytes)
+	subtypeAuthorityBytes, subtypeAuthorityHash, err :=
+		canonicalizePrivatePrepareSubtypeAuthority(request)
+	if err != nil {
+		return PrivatePrepareMaterial{}, err
+	}
+	var subtypeAuthorityHashField []byte
+	if len(subtypeAuthorityBytes) > 0 {
+		subtypeAuthorityHashField = subtypeAuthorityHash[:]
+	}
 	hashInput := &privatecontentpb.PreparePrivateMomentHashInput{
-		FormatVersion:  PrivateContentFormatVersion,
-		CommandId:      request.GetCommandId(),
-		ContentId:      request.GetContentId(),
-		Kind:           request.GetKind(),
-		AudienceSha256: audienceHash[:],
-		ObjectCount:    request.GetObjectCount(),
+		FormatVersion:                 PrivateContentFormatVersion,
+		CommandId:                     request.GetCommandId(),
+		ContentId:                     request.GetContentId(),
+		Kind:                          request.GetKind(),
+		AudienceSha256:                audienceHash[:],
+		ObjectCount:                   request.GetObjectCount(),
+		SubtypePrepareAuthoritySha256: subtypeAuthorityHashField,
 	}
 	canonical, err := CanonicalProtoBytes(hashInput)
 	if err != nil {
 		return PrivatePrepareMaterial{}, err
 	}
 	domainBinding := &privatecontentpb.PrivateMomentDomainBinding{
-		FormatVersion: PrivateContentFormatVersion,
-		Kind:          request.GetKind(),
+		FormatVersion:                 PrivateContentFormatVersion,
+		Kind:                          request.GetKind(),
+		SubtypePrepareAuthoritySha256: subtypeAuthorityHashField,
 	}
 	domainBindingBytes, err := CanonicalProtoBytes(domainBinding)
 	if err != nil {
@@ -444,18 +752,205 @@ func CanonicalizePrivateMomentPrepare(
 	}
 
 	return PrivatePrepareMaterial{
-		ResourceKind:      PrivateContentResourcePost,
-		ContentID:         request.GetContentId(),
-		CommandID:         request.GetCommandId(),
-		MomentKind:        request.GetKind(),
-		AudienceKind:      request.GetAudience().GetKind(),
-		Audience:          audience,
-		ObjectCount:       request.GetObjectCount(),
-		CanonicalBytes:    canonical,
-		CanonicalSHA256:   sha256.Sum256(canonical),
-		DomainBinding:     domainBindingBytes,
-		DomainBindingHash: sha256.Sum256(domainBindingBytes),
+		ResourceKind:                  PrivateContentResourcePost,
+		ContentID:                     request.GetContentId(),
+		CommandID:                     request.GetCommandId(),
+		MomentKind:                    request.GetKind(),
+		AudienceKind:                  request.GetAudience().GetKind(),
+		Audience:                      audience,
+		ObjectCount:                   request.GetObjectCount(),
+		SubtypePrepareAuthorityBytes:  subtypeAuthorityBytes,
+		SubtypePrepareAuthoritySHA256: subtypeAuthorityHash,
+		CanonicalBytes:                canonical,
+		CanonicalSHA256:               sha256.Sum256(canonical),
+		DomainBinding:                 domainBindingBytes,
+		DomainBindingHash:             sha256.Sum256(domainBindingBytes),
 	}, nil
+}
+
+func canonicalizePrivatePrepareSubtypeAuthority(
+	request *privatecontentpb.PreparePrivateMomentRequest,
+) ([]byte, [sha256.Size]byte, error) {
+	const operation = "social.private_content.prepare_moment"
+	emptyHash := sha256.Sum256(nil)
+	switch request.GetKind() {
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL:
+		if request.GetPollAuthority() == nil ||
+			request.GetRepostAuthority() != nil {
+			return nil, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"poll_authority",
+				"POLL requires exactly one poll authority",
+			)
+		}
+		if err := ValidatePrivatePollAuthority(
+			request.GetPollAuthority(),
+			request.GetContentId(),
+			operation,
+		); err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		canonical, err := CanonicalProtoBytes(request.GetPollAuthority())
+		if err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		return canonical, sha256.Sum256(canonical), nil
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST:
+		if request.GetRepostAuthority() == nil ||
+			request.GetPollAuthority() != nil {
+			return nil, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"repost_authority",
+				"REPOST requires exactly one repost authority",
+			)
+		}
+		if err := ValidatePrivateRepostAuthority(
+			request.GetRepostAuthority(),
+			operation,
+		); err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		canonical, err := CanonicalProtoBytes(request.GetRepostAuthority())
+		if err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		return canonical, sha256.Sum256(canonical), nil
+	default:
+		if request.GetPollAuthority() != nil ||
+			request.GetRepostAuthority() != nil {
+			return nil, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"subtype_authority",
+				"is allowed only for POLL or REPOST",
+			)
+		}
+		return nil, emptyHash, nil
+	}
+}
+
+func ValidatePrivatePollAuthority(
+	authority *privatecontentpb.PrivatePollAuthority,
+	contentID string,
+	operation string,
+) error {
+	if authority == nil ||
+		authority.GetResource().GetOwnerDomain() !=
+			securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
+		authority.GetResource().GetContentId() != contentID ||
+		authority.GetResource().GetGeneration() != 1 ||
+		len(authority.GetOpaqueOptionIds()) < 2 ||
+		len(authority.GetOpaqueOptionIds()) > MaximumPrivatePollOptions ||
+		authority.GetMinChoices() < 1 ||
+		authority.GetMinChoices() > authority.GetMaxChoices() ||
+		authority.GetMaxChoices() >
+			uint32(len(authority.GetOpaqueOptionIds())) ||
+		authority.GetExpiresAt() == nil ||
+		!authority.GetExpiresAt().IsValid() {
+		return NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"poll_authority",
+			"is incomplete or outside the supported bounds",
+		)
+	}
+	optionSetBytes := make([]byte, 0)
+	previous := []byte(nil)
+	for index, optionID := range authority.GetOpaqueOptionIds() {
+		if len(optionID) != sha256.Size ||
+			(index > 0 && bytes.Compare(previous, optionID) >= 0) {
+			return NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"poll_authority.opaque_option_ids",
+				"must contain ordered unique 32-byte values",
+			)
+		}
+		optionSetBytes = appendBytesField(optionSetBytes, 1, optionID)
+		previous = optionID
+	}
+	optionSetHash := sha256.Sum256(optionSetBytes)
+	if !bytes.Equal(
+		authority.GetOptionSetSha256(),
+		optionSetHash[:],
+	) {
+		return NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"poll_authority.option_set_sha256",
+			"does not match the canonical option set",
+		)
+	}
+	return nil
+}
+
+func ValidatePrivateRepostAuthority(
+	authority *privatecontentpb.PrivateRepostAuthority,
+	operation string,
+) error {
+	source := authority.GetSource()
+	author := authority.GetSourceAuthor()
+	if source == nil ||
+		source.GetPostId() == "" ||
+		len(authority.GetRenderedSourceCommitment()) != sha256.Size ||
+		author == nil ||
+		author.GetPtid() == "" ||
+		author.GetPtid() != strings.TrimSpace(author.GetPtid()) {
+		return NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"repost_authority",
+			"is incomplete",
+		)
+	}
+	switch proof := authority.GetSourceProof().(type) {
+	case *privatecontentpb.PrivateRepostAuthority_PublicSource:
+		if source.GetPrivateContentId() != "" ||
+			source.GetPrivateGeneration() != 0 ||
+			proof.PublicSource == nil ||
+			len(proof.PublicSource.GetCanonicalPublicPostSha256()) !=
+				sha256.Size {
+			return NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"repost_authority.public_source",
+				"is invalid",
+			)
+		}
+	case *privatecontentpb.PrivateRepostAuthority_PrivateSource:
+		privateProof := proof.PrivateSource
+		if privateProof == nil ||
+			source.GetPrivateContentId() == "" ||
+			source.GetPrivateGeneration() == 0 ||
+			privateProof.GetSourceResource().GetOwnerDomain() !=
+				securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
+			privateProof.GetSourceResource().GetContentId() !=
+				source.GetPrivateContentId() ||
+			privateProof.GetSourceResource().GetGeneration() !=
+				source.GetPrivateGeneration() ||
+			len(privateProof.GetSourceAuthorizationSnapshotSha256()) !=
+				sha256.Size ||
+			len(privateProof.GetSourceEncryptedPayloadSha256()) !=
+				sha256.Size ||
+			len(privateProof.GetSourceCommitProofSha256()) != sha256.Size {
+			return NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"repost_authority.private_source",
+				"is invalid",
+			)
+		}
+	default:
+		return NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"repost_authority.source_proof",
+			"is required",
+		)
+	}
+	return nil
 }
 
 func CanonicalizePrivateCommentPrepare(
@@ -523,16 +1018,17 @@ func CanonicalizePrivateCommentPrepare(
 	}
 
 	return PrivatePrepareMaterial{
-		ResourceKind:      PrivateContentResourceComment,
-		ContentID:         request.GetCommentContentId(),
-		ParentPostID:      request.GetPostId(),
-		ReplyToCommentID:  request.GetReplyToCommentId(),
-		CommandID:         request.GetCommandId(),
-		ObjectCount:       request.GetObjectCount(),
-		CanonicalBytes:    canonical,
-		CanonicalSHA256:   sha256.Sum256(canonical),
-		DomainBinding:     domainBindingBytes,
-		DomainBindingHash: sha256.Sum256(domainBindingBytes),
+		ResourceKind:                  PrivateContentResourceComment,
+		ContentID:                     request.GetCommentContentId(),
+		ParentPostID:                  request.GetPostId(),
+		ReplyToCommentID:              request.GetReplyToCommentId(),
+		CommandID:                     request.GetCommandId(),
+		ObjectCount:                   request.GetObjectCount(),
+		SubtypePrepareAuthoritySHA256: sha256.Sum256(nil),
+		CanonicalBytes:                canonical,
+		CanonicalSHA256:               sha256.Sum256(canonical),
+		DomainBinding:                 domainBindingBytes,
+		DomainBindingHash:             sha256.Sum256(domainBindingBytes),
 	}, nil
 }
 
@@ -557,6 +1053,8 @@ type PrivateSubmitMaterial struct {
 	EncryptedPayloadBytes     []byte
 	EncryptedPayloadSHA256    [sha256.Size]byte
 	ObjectDescriptorSetSHA256 [sha256.Size]byte
+	MentionRouting            *privatecontentpb.SignedMentionRouting
+	MentionRoutingBytes       []byte
 	MentionRoutingSHA256      [sha256.Size]byte
 	SubtypeAuthoritySHA256    [sha256.Size]byte
 	Envelopes                 []PrivateEnvelopeMaterial
@@ -575,14 +1073,7 @@ func CanonicalizePrivateMomentSubmit(
 	if request == nil {
 		return PrivateSubmitMaterial{}, requiredMessageError(operation, "request")
 	}
-	if request.GetPollAuthority() != nil || request.GetRepostAuthority() != nil {
-		return PrivateSubmitMaterial{}, NewPrivateContentError(
-			PrivateContentUnsupported,
-			operation,
-			"subtype_authority",
-			"W6 does not accept poll or repost authority",
-		)
-	}
+	var subtypeAuthority proto.Message
 	switch kind {
 	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LINK,
@@ -615,6 +1106,53 @@ func CanonicalizePrivateMomentSubmit(
 			"unsupported PrivateMomentKind",
 		)
 	}
+	switch kind {
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL:
+		if request.GetPollAuthority() == nil ||
+			request.GetRepostAuthority() != nil {
+			return PrivateSubmitMaterial{}, NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"poll_authority",
+				"POLL requires exactly one poll authority",
+			)
+		}
+		if err := ValidatePrivatePollAuthority(
+			request.GetPollAuthority(),
+			request.GetPlan().GetResource().GetContentId(),
+			operation,
+		); err != nil {
+			return PrivateSubmitMaterial{}, err
+		}
+		subtypeAuthority = request.GetPollAuthority()
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST:
+		if request.GetRepostAuthority() == nil ||
+			request.GetPollAuthority() != nil {
+			return PrivateSubmitMaterial{}, NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"repost_authority",
+				"REPOST requires exactly one repost authority",
+			)
+		}
+		if err := ValidatePrivateRepostAuthority(
+			request.GetRepostAuthority(),
+			operation,
+		); err != nil {
+			return PrivateSubmitMaterial{}, err
+		}
+		subtypeAuthority = request.GetRepostAuthority()
+	default:
+		if request.GetPollAuthority() != nil ||
+			request.GetRepostAuthority() != nil {
+			return PrivateSubmitMaterial{}, NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				"subtype_authority",
+				"is allowed only for POLL or REPOST",
+			)
+		}
+	}
 	return canonicalizePrivateSubmit(
 		operation,
 		request,
@@ -624,6 +1162,7 @@ func CanonicalizePrivateMomentSubmit(
 		request.GetEnvelopes(),
 		request.GetObjects(),
 		request.GetMentionRouting(),
+		subtypeAuthority,
 		author,
 		policy,
 	)
@@ -649,6 +1188,7 @@ func CanonicalizePrivateCommentSubmit(
 		request.GetEnvelopes(),
 		request.GetObjects(),
 		request.GetMentionRouting(),
+		nil,
 		author,
 		policy,
 	)
@@ -663,6 +1203,7 @@ func canonicalizePrivateSubmit(
 	envelopes []*securecontentpb.PreparedContentKeyEnvelope,
 	objects []*securecontentpb.EncryptedObjectDescriptor,
 	mentionRouting *privatecontentpb.SignedMentionRouting,
+	subtypeAuthority proto.Message,
 	author *actormodel.ActorDeviceRef,
 	policy securecontentkernel.Policy,
 ) (PrivateSubmitMaterial, error) {
@@ -708,20 +1249,28 @@ func canonicalizePrivateSubmit(
 			"does not bind the prepared Social domain",
 		)
 	}
-	if mentionRouting != nil {
-		return PrivateSubmitMaterial{}, NewPrivateContentError(
-			PrivateContentUnsupported,
-			operation,
-			"mention_routing",
-			"W6 does not yet accept private mention routing",
-		)
-	}
 
 	payloadBytes, err := CanonicalProtoBytes(payload)
 	if err != nil {
 		return PrivateSubmitMaterial{}, err
 	}
 	payloadHash := sha256.Sum256(payloadBytes)
+	emptyHash := sha256.Sum256(nil)
+	mentionRoutingHash := emptyHash
+	var mentionRoutingBytes []byte
+	if mentionRouting != nil {
+		mentionRoutingBytes, mentionRoutingHash, err =
+			CanonicalizeSignedMentionRouting(
+				mentionRouting,
+				plan,
+				author,
+				payloadHash,
+				operation,
+			)
+		if err != nil {
+			return PrivateSubmitMaterial{}, err
+		}
+	}
 	objectMaterials, objectSetHash, err := CanonicalizePrivateObjects(
 		operation,
 		plan,
@@ -743,14 +1292,21 @@ func canonicalizePrivateSubmit(
 		return PrivateSubmitMaterial{}, err
 	}
 
-	emptyHash := sha256.Sum256(nil)
+	subtypeAuthorityHash := emptyHash
+	if subtypeAuthority != nil {
+		subtypeAuthorityBytes, err := CanonicalProtoBytes(subtypeAuthority)
+		if err != nil {
+			return PrivateSubmitMaterial{}, err
+		}
+		subtypeAuthorityHash = sha256.Sum256(subtypeAuthorityBytes)
+	}
 	hashInput := &privatecontentpb.SubmitPrivateContentHashInput{
 		FormatVersion:          PrivateContentFormatVersion,
 		CommandId:              commandID,
 		CanonicalPlanSha256:    cloneBytes(plan.GetCanonicalPlanSha256()),
 		EncryptedPayloadSha256: payloadHash[:],
-		MentionRoutingSha256:   emptyHash[:],
-		SubtypeAuthoritySha256: emptyHash[:],
+		MentionRoutingSha256:   mentionRoutingHash[:],
+		SubtypeAuthoritySha256: subtypeAuthorityHash[:],
 	}
 	for _, envelope := range envelopeMaterials {
 		hashInput.Envelopes = append(
@@ -785,11 +1341,197 @@ func canonicalizePrivateSubmit(
 		EncryptedPayloadBytes:     payloadBytes,
 		EncryptedPayloadSHA256:    payloadHash,
 		ObjectDescriptorSetSHA256: objectSetHash,
-		MentionRoutingSHA256:      emptyHash,
-		SubtypeAuthoritySHA256:    emptyHash,
+		MentionRouting:            cloneMentionRouting(mentionRouting),
+		MentionRoutingBytes:       mentionRoutingBytes,
+		MentionRoutingSHA256:      mentionRoutingHash,
+		SubtypeAuthoritySHA256:    subtypeAuthorityHash,
 		Envelopes:                 envelopeMaterials,
 		Objects:                   objectMaterials,
 	}, nil
+}
+
+// CanonicalizeSignedMentionRouting validates the Station-visible routing
+// bundle and returns the exact bytes committed by the submit command. The
+// author signature covers canonical_facts_sha256, whose input is the routing
+// bundle with the digest and signature fields omitted.
+func CanonicalizeSignedMentionRouting(
+	routing *privatecontentpb.SignedMentionRouting,
+	plan *securecontentpb.ContentEncryptionPlan,
+	author *actormodel.ActorDeviceRef,
+	payloadSHA256 [sha256.Size]byte,
+	operation string,
+) ([]byte, [sha256.Size]byte, error) {
+	if err := validateKnownMessage(routing, "mention_routing", operation); err != nil {
+		return nil, [sha256.Size]byte{}, err
+	}
+	if routing.GetFormatVersion() != PrivateContentFormatVersion {
+		return nil, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentUnsupported,
+			operation,
+			"mention_routing.format_version",
+			"is unsupported",
+		)
+	}
+	if !securecontentkernel.EqualResourceRef(
+		routing.GetResource(),
+		plan.GetResource(),
+	) {
+		return nil, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentConflict,
+			operation,
+			"mention_routing.resource",
+			"does not match the prepared resource",
+		)
+	}
+	if !bytes.Equal(
+		routing.GetAuthorizationSnapshotSha256(),
+		plan.GetAuthorizationSnapshotSha256(),
+	) {
+		return nil, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentConflict,
+			operation,
+			"mention_routing.authorization_snapshot_sha256",
+			"does not match the prepared authorization snapshot",
+		)
+	}
+	if !bytes.Equal(routing.GetEncryptedPayloadSha256(), payloadSHA256[:]) {
+		return nil, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentConflict,
+			operation,
+			"mention_routing.encrypted_payload_sha256",
+			"does not match the submitted encrypted payload",
+		)
+	}
+	if !proto.Equal(routing.GetSender(), author) {
+		return nil, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentUnauthorized,
+			operation,
+			"mention_routing.sender",
+			"does not match the authenticated endpoint",
+		)
+	}
+	if err := validateIdentifier(
+		routing.GetSenderSigningKeyId(),
+		255,
+		"mention_routing.sender_signing_key_id",
+		operation,
+	); err != nil {
+		return nil, [sha256.Size]byte{}, err
+	}
+	if len(routing.GetFacts()) == 0 ||
+		len(routing.GetFacts()) > MaximumPrivateMentionFacts {
+		return nil, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"mention_routing.facts",
+			"must contain between one and 256 canonical facts",
+		)
+	}
+
+	var previousActor []byte
+	var previousCommitment []byte
+	commitments := make(map[string]struct{}, len(routing.GetFacts()))
+	for index, fact := range routing.GetFacts() {
+		field := fmt.Sprintf("mention_routing.facts[%d]", index)
+		if err := validateKnownMessage(fact, field, operation); err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		actor := fact.GetMentionedActor()
+		if actor == nil ||
+			actor.GetKind() == actormodel.ActorKind_ACTOR_KIND_UNSPECIFIED {
+			return nil, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				field+".mentioned_actor",
+				"must contain a typed ActorRef",
+			)
+		}
+		if err := validateIdentifier(
+			actor.GetPtid(),
+			255,
+			field+".mentioned_actor.ptid",
+			operation,
+		); err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		if len(fact.GetMentionCommitment()) != sha256.Size {
+			return nil, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentInvalidArgument,
+				operation,
+				field+".mention_commitment",
+				"must be a SHA-256 commitment",
+			)
+		}
+		actorBytes, err := CanonicalProtoBytes(actor)
+		if err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		if index > 0 {
+			actorOrder := bytes.Compare(previousActor, actorBytes)
+			if actorOrder > 0 ||
+				(actorOrder == 0 &&
+					bytes.Compare(previousCommitment, fact.GetMentionCommitment()) >= 0) {
+				return nil, [sha256.Size]byte{}, NewPrivateContentError(
+					PrivateContentInvalidArgument,
+					operation,
+					"mention_routing.facts",
+					"must be strictly ordered by canonical actor and commitment bytes",
+				)
+			}
+		}
+		commitmentKey := string(fact.GetMentionCommitment())
+		if _, duplicate := commitments[commitmentKey]; duplicate {
+			return nil, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentConflict,
+				operation,
+				"mention_routing.facts",
+				"contains a duplicate mention commitment",
+			)
+		}
+		commitments[commitmentKey] = struct{}{}
+		previousActor = actorBytes
+		previousCommitment = fact.GetMentionCommitment()
+	}
+
+	signingInput := proto.Clone(routing).(*privatecontentpb.SignedMentionRouting)
+	signingInput.CanonicalFactsSha256 = nil
+	signingInput.SenderSignature = nil
+	signingBytes, err := CanonicalProtoBytes(signingInput)
+	if err != nil {
+		return nil, [sha256.Size]byte{}, err
+	}
+	signingDigest := sha256.Sum256(signingBytes)
+	if !bytes.Equal(routing.GetCanonicalFactsSha256(), signingDigest[:]) {
+		return nil, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"mention_routing.canonical_facts_sha256",
+			"does not match the canonical routing facts",
+		)
+	}
+	if len(routing.GetSenderSignature()) != ed25519.SignatureSize {
+		return nil, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"mention_routing.sender_signature",
+			"must be an Ed25519 signature",
+		)
+	}
+
+	canonical, err := CanonicalProtoBytes(routing)
+	if err != nil {
+		return nil, [sha256.Size]byte{}, err
+	}
+	return canonical, sha256.Sum256(canonical), nil
+}
+
+func cloneMentionRouting(
+	routing *privatecontentpb.SignedMentionRouting,
+) *privatecontentpb.SignedMentionRouting {
+	if routing == nil {
+		return nil
+	}
+	return proto.Clone(routing).(*privatecontentpb.SignedMentionRouting)
 }
 
 func CanonicalizePrivateObjects(

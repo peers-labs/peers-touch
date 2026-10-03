@@ -260,39 +260,6 @@ func validateSubmission(ctx context.Context, req *pb.SubmitAccessGateRequest) (*
 	}, nil
 }
 
-// ValidateLegacySubmission keeps non-Mobile clients on their existing typed
-// login/invite protocol until their owning Plan adopts the schema-bound
-// envelope. A Mobile attempt can never downgrade into this path.
-func ValidateLegacySubmission(ctx context.Context, req *pb.SubmitAccessGateRequest) error {
-	if req == nil {
-		return errors.New("access gate submission is required")
-	}
-	attempt, ok := findAttempt(ctx, strings.TrimSpace(req.GetAttemptId()))
-	if !ok {
-		return errAttemptNotFound
-	}
-	if strings.EqualFold(strings.TrimSpace(attempt.Platform), "mobile") ||
-		attempt.DeviceID != "" || attempt.LifecycleGeneration != 0 {
-		return errors.New("schema-bound access gate submission is required")
-	}
-	decision := DecisionForAttempt(ctx, attempt)
-	if decision == nil || decision.GetAttemptId() != req.GetAttemptId() {
-		return errors.New("access gate submission attempt does not match the current decision")
-	}
-	if decision.GetState() != pb.AccessDecisionState_ACCESS_DECISION_STATE_ACTION_REQUIRED ||
-		decision.GetCurrentGateId() != req.GetGateId() {
-		return errors.New("access gate submission does not match the current gate")
-	}
-	for _, gate := range decision.GetGates() {
-		if gate.GetGateId() == req.GetGateId() &&
-			gate.GetType() == req.GetType() &&
-			gate.GetState() == pb.AccessGateState_ACCESS_GATE_STATE_ACTION_REQUIRED {
-			return validateLegacyActionInput(req)
-		}
-	}
-	return errors.New("current access gate descriptor is unavailable")
-}
-
 func ValidateDecisionRead(
 	attempt *Attempt,
 	req *pb.GetAccessDecisionRequest,
@@ -325,22 +292,6 @@ func ValidateCancellation(
 	)
 }
 
-func validateLegacyActionInput(req *pb.SubmitAccessGateRequest) error {
-	switch req.GetType() {
-	case pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN:
-		if req.GetLogin() == nil {
-			return errors.New("login gate requires typed credentials")
-		}
-	case pb.AccessGateType_ACCESS_GATE_TYPE_INVITE_CODE:
-		if strings.TrimSpace(req.GetInviteCode()) == "" {
-			return errors.New("invite code gate requires a code")
-		}
-	default:
-		return fmt.Errorf("legacy access gate type is not submittable: %s", req.GetType())
-	}
-	return nil
-}
-
 func validateSubmissionScope(attempt *Attempt, req *pb.SubmitAccessGateRequest) error {
 	return validateAttemptScope(
 		attempt,
@@ -357,9 +308,6 @@ func validateAttemptScope(
 	lifecycleGeneration uint64,
 	operation string,
 ) error {
-	if attempt.DeviceID == "" && attempt.LifecycleGeneration == 0 {
-		return nil
-	}
 	if strings.TrimSpace(stationPeerID) != attempt.StationPeerID {
 		return fmt.Errorf("%s Station identity mismatch", operation)
 	}

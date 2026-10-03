@@ -1,4 +1,4 @@
-import { fromBinary, toBinary } from '@bufbuild/protobuf';
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -13,6 +13,10 @@ import {
   ObjectEncryptionSuite,
   ObjectNonceStrategy,
 } from '../gen/proto/domain/secure_content/object_pb';
+import {
+  AudienceSchema,
+  Audience_Kind,
+} from '../gen/proto/domain/social/post_pb';
 
 const vectorRoot = new URL(
   '../../../../model/domain/secure_content/testdata/',
@@ -28,6 +32,25 @@ const readVector = (name: string): Uint8Array => {
 };
 
 describe('Secure Content generated contracts', () => {
+  it('round-trips typed Circle and Group audience targets', () => {
+    const circle = create(AudienceSchema, {
+      kind: Audience_Kind.CIRCLE,
+      target: { case: 'circleId', value: 42n },
+    });
+    const group = create(AudienceSchema, {
+      kind: Audience_Kind.GROUP,
+      target: {
+        case: 'groupConversationId',
+        value: '01J9Z7Y6M5N4P3Q2R1S0TUVWXY',
+      },
+    });
+
+    expect(fromBinary(AudienceSchema, toBinary(AudienceSchema, circle)).target)
+      .toEqual(circle.target);
+    expect(fromBinary(AudienceSchema, toBinary(AudienceSchema, group)).target)
+      .toEqual(group.target);
+  });
+
   it('decodes and re-encodes the canonical encrypted payload', () => {
     const encoded = readVector('encrypted_payload');
     const payload = fromBinary(EncryptedPayloadSchema, encoded);

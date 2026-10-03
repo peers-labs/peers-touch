@@ -52,7 +52,10 @@ skills:
 	  case "$$choice" in 1) IDE_NAME=trae ;; 2) IDE_NAME=cursor ;; 3) IDE_NAME=codex ;; *) echo "Invalid choice. Aborted."; exit 1 ;; esac; \
 	fi; \
 	case "$$IDE_NAME" in trae|cursor|codex) ;; *) echo "Invalid IDE: $$IDE_NAME"; exit 1 ;; esac; \
-	/bin/bash tooling/scripts/install-agent-integration.sh --host "$$IDE_NAME" --root "$(CURDIR)"
+	/bin/bash tooling/scripts/install-agent-integration.sh \
+		--host "$$IDE_NAME" \
+		--root "$(CURDIR)" \
+		$(if $(WORKSPACE),--workspace "$(WORKSPACE)",)
 
 .PHONY: agent-integration-audit agent-integration-audit-all
 .PHONY: skill-overlay-install skill-overlay-list skill-overlay-enable

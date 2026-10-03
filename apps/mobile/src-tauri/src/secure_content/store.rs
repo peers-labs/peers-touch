@@ -10,6 +10,7 @@ use zeroize::Zeroize;
 use crate::secure_content::proto::secure_content::v1::ContentPreKeyKind;
 
 const ENDPOINT_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindEndpoint as i32 as i64;
+const RECOVERY_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32 as i64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i64)]
@@ -19,6 +20,7 @@ pub enum DurableState {
     UnknownOutcome = 3,
     Committed = 4,
     Terminal = 5,
+    Prepared = 6,
 }
 
 impl TryFrom<i64> for DurableState {
@@ -31,7 +33,51 @@ impl TryFrom<i64> for DurableState {
             3 => Ok(Self::UnknownOutcome),
             4 => Ok(Self::Committed),
             5 => Ok(Self::Terminal),
+            6 => Ok(Self::Prepared),
             _ => Err("private Social durable state is invalid".to_string()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(i64)]
+pub enum CommentState {
+    Editing = 1,
+    Encrypting = 2,
+    Submitting = 3,
+    Posted = 4,
+    Failed = 5,
+    RateLimited = 6,
+    ParentUnavailable = 7,
+}
+
+impl CommentState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Editing => "COMMENT_EDITING",
+            Self::Encrypting => "COMMENT_ENCRYPTING",
+            Self::Submitting => "COMMENT_SUBMITTING",
+            Self::Posted => "COMMENT_POSTED",
+            Self::Failed => "COMMENT_FAILED",
+            Self::RateLimited => "COMMENT_RATE_LIMITED",
+            Self::ParentUnavailable => "COMMENT_PARENT_UNAVAILABLE",
+        }
+    }
+}
+
+impl TryFrom<i64> for CommentState {
+    type Error = String;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Editing),
+            2 => Ok(Self::Encrypting),
+            3 => Ok(Self::Submitting),
+            4 => Ok(Self::Posted),
+            5 => Ok(Self::Failed),
+            6 => Ok(Self::RateLimited),
+            7 => Ok(Self::ParentUnavailable),
+            _ => Err("private Comment durable state is invalid".to_string()),
         }
     }
 }
@@ -43,6 +89,40 @@ pub struct StoredDraft {
     pub intent_sha256: [u8; 32],
     pub content_id: String,
     pub prepare_command_id: String,
+    pub mention_commitment_salt: Option<[u8; 32]>,
+    pub repost_commitment_salt: Option<[u8; 32]>,
+    pub object_material_seed: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredCommentDraft {
+    pub draft_id: String,
+    pub draft_revision: u64,
+    pub post_id: String,
+    pub reply_to_comment_id: String,
+    pub text: String,
+    pub mention_intent_json: String,
+    pub mention_commitment_salt: Option<[u8; 32]>,
+    pub intent_sha256: [u8; 32],
+    pub content_id: String,
+    pub prepare_command_id: String,
+    pub submit_command_id: Option<String>,
+    pub request_bytes: Option<Vec<u8>>,
+    pub request_sha256: Option<[u8; 32]>,
+    pub root_key: Option<[u8; 32]>,
+    pub generation: u64,
+    pub state: CommentState,
+    pub comment_id: Option<String>,
+    pub error_code: Option<String>,
+    pub retry_after_seconds: Option<u64>,
+}
+
+impl Drop for StoredCommentDraft {
+    fn drop(&mut self) {
+        if let Some(root_key) = self.root_key.as_mut() {
+            root_key.zeroize();
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -232,8 +312,9 @@ impl PrivateSocialStore {
             .execute(
                 "INSERT INTO mobile_private_social_drafts(
                    draft_id, draft_revision, intent_sha256, content_id,
-                   prepare_command_id, updated_at_unix_ms
-                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+                   prepare_command_id, mention_commitment_salt,
+                   repost_commitment_salt, object_material_seed, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT(draft_id, draft_revision) DO NOTHING",
                 params![
                     candidate.draft_id,
@@ -241,13 +322,27 @@ impl PrivateSocialStore {
                     candidate.intent_sha256.as_slice(),
                     candidate.content_id,
                     candidate.prepare_command_id,
+                    candidate
+                        .mention_commitment_salt
+                        .as_ref()
+                        .map(|salt| salt.as_slice()),
+                    candidate
+                        .repost_commitment_salt
+                        .as_ref()
+                        .map(|salt| salt.as_slice()),
+                    candidate
+                        .object_material_seed
+                        .as_ref()
+                        .map(|seed| seed.as_slice()),
                     now_unix_ms(),
                 ],
             )
             .map_err(|error| error.to_string())?;
         let stored = connection
             .query_row(
-                "SELECT draft_id, draft_revision, intent_sha256, content_id, prepare_command_id
+                "SELECT draft_id, draft_revision, intent_sha256, content_id,
+                        prepare_command_id, mention_commitment_salt,
+                        repost_commitment_salt, object_material_seed
                  FROM mobile_private_social_drafts
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![
@@ -257,10 +352,271 @@ impl PrivateSocialStore {
                 draft_from_row,
             )
             .map_err(|error| error.to_string())?;
-        if stored.intent_sha256 != candidate.intent_sha256 {
+        if stored.intent_sha256 != candidate.intent_sha256
+            || stored.prepare_command_id != candidate.prepare_command_id
+        {
             return Err("private Social draft replay conflict".to_string());
         }
         Ok(stored)
+    }
+
+    pub fn reserve_comment_draft(
+        &self,
+        candidate: &StoredCommentDraft,
+    ) -> Result<StoredCommentDraft, String> {
+        if candidate.draft_id.trim().is_empty()
+            || candidate.draft_revision == 0
+            || candidate.post_id.trim().is_empty()
+            || candidate.content_id.trim().is_empty()
+            || candidate.prepare_command_id.trim().is_empty()
+        {
+            return Err("private Comment draft reservation is invalid".to_string());
+        }
+        let connection = self.connection()?;
+        connection
+            .execute(
+                "INSERT INTO mobile_private_social_comment_drafts(
+                   draft_id, draft_revision, post_id, reply_to_comment_id, text,
+                   mention_intent_json, mention_commitment_salt, intent_sha256,
+                   content_id, prepare_command_id, state, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 ON CONFLICT(draft_id, draft_revision) DO NOTHING",
+                params![
+                    candidate.draft_id,
+                    to_i64(candidate.draft_revision, "comment draft revision")?,
+                    candidate.post_id,
+                    candidate.reply_to_comment_id,
+                    candidate.text,
+                    candidate.mention_intent_json,
+                    candidate
+                        .mention_commitment_salt
+                        .as_ref()
+                        .map(|salt| salt.as_slice()),
+                    candidate.intent_sha256.as_slice(),
+                    candidate.content_id,
+                    candidate.prepare_command_id,
+                    candidate.state as i64,
+                    now_unix_ms(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let stored = connection
+            .query_row(
+                "SELECT draft_id, draft_revision, post_id, reply_to_comment_id, text,
+                        mention_intent_json, mention_commitment_salt, intent_sha256,
+                        content_id, prepare_command_id, submit_command_id, request_bytes,
+                        request_sha256, root_key, generation, state, comment_id,
+                        error_code, retry_after_seconds
+                 FROM mobile_private_social_comment_drafts
+                 WHERE draft_id = ?1 AND draft_revision = ?2",
+                params![
+                    candidate.draft_id,
+                    to_i64(candidate.draft_revision, "comment draft revision")?
+                ],
+                comment_draft_from_row,
+            )
+            .map_err(|error| error.to_string())?;
+        if stored.intent_sha256 != candidate.intent_sha256
+            || stored.prepare_command_id != candidate.prepare_command_id
+        {
+            return Err("private Comment draft replay conflict".to_string());
+        }
+        Ok(stored)
+    }
+
+    pub fn comment_draft(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+    ) -> Result<Option<StoredCommentDraft>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT draft_id, draft_revision, post_id, reply_to_comment_id, text,
+                        mention_intent_json, mention_commitment_salt, intent_sha256,
+                        content_id, prepare_command_id, submit_command_id, request_bytes,
+                        request_sha256, root_key, generation, state, comment_id,
+                        error_code, retry_after_seconds
+                 FROM mobile_private_social_comment_drafts
+                 WHERE draft_id = ?1 AND draft_revision = ?2",
+                params![draft_id, to_i64(draft_revision, "comment draft revision")?],
+                comment_draft_from_row,
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn comment_drafts(&self) -> Result<Vec<StoredCommentDraft>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT draft_id, draft_revision, post_id, reply_to_comment_id, text,
+                        mention_intent_json, mention_commitment_salt, intent_sha256,
+                        content_id, prepare_command_id, submit_command_id, request_bytes,
+                        request_sha256, root_key, generation, state, comment_id,
+                        error_code, retry_after_seconds
+                 FROM mobile_private_social_comment_drafts
+                 ORDER BY updated_at_unix_ms DESC, draft_id, draft_revision",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], comment_draft_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn persist_comment_request(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        generation: u64,
+        submit_command_id: &str,
+        request_bytes: &[u8],
+        request_sha256: &[u8; 32],
+        root_key: &[u8; 32],
+    ) -> Result<(), String> {
+        if request_bytes.is_empty()
+            || Sha256::digest(request_bytes).as_slice() != request_sha256
+            || generation == 0
+            || submit_command_id.trim().is_empty()
+        {
+            return Err("private Comment prepared request is invalid".to_string());
+        }
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE mobile_private_social_comment_drafts
+                 SET generation = ?1, submit_command_id = ?2, request_bytes = ?3,
+                     request_sha256 = ?4, root_key = ?5, state = ?6,
+                     error_code = NULL, retry_after_seconds = NULL,
+                     updated_at_unix_ms = ?7
+                 WHERE draft_id = ?8 AND draft_revision = ?9
+                   AND intent_sha256 = (
+                     SELECT intent_sha256 FROM mobile_private_social_comment_drafts
+                     WHERE draft_id = ?8 AND draft_revision = ?9
+                   )",
+                params![
+                    to_i64(generation, "comment generation")?,
+                    submit_command_id,
+                    request_bytes,
+                    request_sha256.as_slice(),
+                    root_key.as_slice(),
+                    CommentState::Submitting as i64,
+                    now_unix_ms(),
+                    draft_id,
+                    to_i64(draft_revision, "comment draft revision")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 1 {
+            Ok(())
+        } else {
+            Err("private Comment draft is unavailable".to_string())
+        }
+    }
+
+    pub fn finish_comment(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        state: CommentState,
+        comment_id: Option<&str>,
+        error_code: Option<&str>,
+        retry_after_seconds: Option<u64>,
+    ) -> Result<(), String> {
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE mobile_private_social_comment_drafts
+                 SET state = ?1, comment_id = COALESCE(?2, comment_id), error_code = ?3,
+                     retry_after_seconds = ?4, updated_at_unix_ms = ?5
+                 WHERE draft_id = ?6 AND draft_revision = ?7",
+                params![
+                    state as i64,
+                    comment_id,
+                    error_code,
+                    retry_after_seconds.map(|value| value.min(i64::MAX as u64) as i64),
+                    now_unix_ms(),
+                    draft_id,
+                    to_i64(draft_revision, "comment draft revision")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 1 {
+            Ok(())
+        } else {
+            Err("private Comment draft is unavailable".to_string())
+        }
+    }
+
+    pub fn persist_comment_projection(
+        &self,
+        comment_id: &str,
+        post_id: &str,
+        projection_json: &[u8],
+    ) -> Result<(), String> {
+        if comment_id.trim().is_empty() || post_id.trim().is_empty() || projection_json.is_empty() {
+            return Err("private Comment projection is invalid".to_string());
+        }
+        self.connection()?
+            .execute(
+                "INSERT INTO mobile_private_social_comment_projections(
+                   comment_id, post_id, projection_json, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4)
+                 ON CONFLICT(comment_id) DO UPDATE SET
+                   post_id = excluded.post_id,
+                   projection_json = excluded.projection_json,
+                   updated_at_unix_ms = excluded.updated_at_unix_ms",
+                params![comment_id, post_id, projection_json, now_unix_ms()],
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn comment_projections(&self, post_id: &str) -> Result<Vec<Vec<u8>>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT projection_json FROM mobile_private_social_comment_projections
+                 WHERE post_id = ?1 ORDER BY updated_at_unix_ms, comment_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![post_id], |row| row.get(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    pub fn comment_projection(&self, comment_id: &str) -> Result<Option<Vec<u8>>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT projection_json FROM mobile_private_social_comment_projections
+                 WHERE comment_id = ?1",
+                params![comment_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn all_comment_projections(&self) -> Result<Vec<Vec<u8>>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT projection_json FROM mobile_private_social_comment_projections
+                 ORDER BY updated_at_unix_ms DESC, comment_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| row.get(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
     }
 
     pub fn persist_submission(&self, command: &StoredSubmission) -> Result<(), String> {
@@ -285,7 +641,7 @@ impl PrivateSocialStore {
                     command.request_sha256.as_slice(),
                     command.root_key.as_slice(),
                     command.projection_json,
-                    DurableState::Pending as i64,
+                    command.state as i64,
                     to_i64(self.generation()?, "session generation")?,
                     now_unix_ms(),
                 ],
@@ -369,12 +725,13 @@ impl PrivateSocialStore {
                 "UPDATE mobile_private_social_submissions
                  SET state = ?1, lease_generation = lease_generation + 1,
                      session_generation = ?2, updated_at_unix_ms = ?3
-                 WHERE command_id = ?4 AND state IN (?5, ?6)",
+                 WHERE command_id = ?4 AND state IN (?5, ?6, ?7)",
                 params![
                     DurableState::InFlight as i64,
                     to_i64(generation, "session generation")?,
                     now_unix_ms(),
                     command_id,
+                    DurableState::Prepared as i64,
                     DurableState::Pending as i64,
                     DurableState::UnknownOutcome as i64,
                 ],
@@ -459,10 +816,16 @@ impl PrivateSocialStore {
         command: &StoredPreKeyPublication,
         keys: &[(String, [u8; 32], [u8; 32])],
     ) -> Result<(), String> {
+        let key_kind = i64::from(command.key_kind);
+        let key_material_matches_kind = match key_kind {
+            ENDPOINT_PREKEY_KIND => !keys.is_empty(),
+            RECOVERY_PREKEY_KIND => keys.is_empty(),
+            _ => false,
+        };
         if command.command_id.trim().is_empty()
             || command.request_bytes.is_empty()
-            || keys.is_empty()
             || keys.len() > 100
+            || !key_material_matches_kind
             || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
         {
             return Err("private Social PreKey publication is invalid".to_string());
@@ -650,6 +1013,75 @@ impl PrivateSocialStore {
             .map_err(|error| error.to_string())
     }
 
+    pub fn store_recovery_master(
+        &self,
+        actor_ptid: &str,
+        recovery_epoch: u64,
+        master: &[u8; 32],
+    ) -> Result<(), String> {
+        if actor_ptid.trim().is_empty() || recovery_epoch == 0 {
+            return Err("private Social recovery master identity is invalid".to_string());
+        }
+        let connection = self.connection()?;
+        connection
+            .execute(
+                "INSERT INTO mobile_private_social_recovery_masters(
+                   actor_ptid, recovery_epoch, master_key, created_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4)
+                 ON CONFLICT(actor_ptid, recovery_epoch) DO NOTHING",
+                params![
+                    actor_ptid,
+                    to_i64(recovery_epoch, "recovery epoch")?,
+                    master.as_slice(),
+                    now_unix_ms(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let stored: Vec<u8> = connection
+            .query_row(
+                "SELECT master_key FROM mobile_private_social_recovery_masters
+                 WHERE actor_ptid = ?1 AND recovery_epoch = ?2",
+                params![actor_ptid, to_i64(recovery_epoch, "recovery epoch")?],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if stored.as_slice() != master {
+            return Err("private Social recovery master epoch conflict".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn recovery_master(
+        &self,
+        actor_ptid: &str,
+        recovery_epoch: u64,
+    ) -> Result<Option<[u8; 32]>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT master_key FROM mobile_private_social_recovery_masters
+                 WHERE actor_ptid = ?1 AND recovery_epoch = ?2",
+                params![actor_ptid, to_i64(recovery_epoch, "recovery epoch")?],
+                |row| fixed_32(row.get(0)?, "recovery master"),
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn latest_recovery_epoch(&self, actor_ptid: &str) -> Result<Option<u64>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT MAX(recovery_epoch)
+                 FROM mobile_private_social_recovery_masters
+                 WHERE actor_ptid = ?1",
+                params![actor_ptid],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .map_err(|error| error.to_string())?
+            .map(|epoch| from_i64(epoch, "recovery epoch"))
+            .transpose()
+            .map_err(|error| error.to_string())
+    }
+
     pub fn content_root(
         &self,
         content_id: &str,
@@ -751,6 +1183,87 @@ impl PrivateSocialStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_comment_receiver_projection(
+        &self,
+        expected_session_generation: u64,
+        content_id: &str,
+        generation: u64,
+        post_id: &str,
+        comment_id: &str,
+        root_key: &[u8; 32],
+        endpoint_prekey_id: Option<&str>,
+        projection_json: &[u8],
+    ) -> Result<(), String> {
+        if content_id.trim().is_empty()
+            || generation == 0
+            || post_id.trim().is_empty()
+            || comment_id.trim().is_empty()
+            || projection_json.is_empty()
+        {
+            return Err("private Comment receiver projection is invalid".to_string());
+        }
+        let mut connection = self.connection()?;
+        self.ensure_session_generation(expected_session_generation)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO mobile_private_social_roots(
+                   content_id, generation, post_id, root_key, committed_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(content_id, generation) DO NOTHING",
+                params![
+                    content_id,
+                    to_i64(generation, "comment generation")?,
+                    post_id,
+                    root_key.as_slice(),
+                    now_unix_ms(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let (stored_post_id, stored_root): (String, Vec<u8>) = transaction
+            .query_row(
+                "SELECT post_id, root_key FROM mobile_private_social_roots
+                 WHERE content_id = ?1 AND generation = ?2",
+                params![content_id, to_i64(generation, "comment generation")?],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|error| error.to_string())?;
+        if stored_post_id != post_id || stored_root.as_slice() != root_key {
+            return Err("private Comment receiver root replay conflict".to_string());
+        }
+        transaction
+            .execute(
+                "INSERT INTO mobile_private_social_comment_projections(
+                   comment_id, post_id, projection_json, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4)
+                 ON CONFLICT(comment_id) DO UPDATE SET
+                   post_id = excluded.post_id,
+                   projection_json = excluded.projection_json,
+                   updated_at_unix_ms = excluded.updated_at_unix_ms",
+                params![comment_id, post_id, projection_json, now_unix_ms()],
+            )
+            .map_err(|error| error.to_string())?;
+        if let Some(key_id) = endpoint_prekey_id {
+            let consumed = transaction
+                .execute(
+                    "DELETE FROM mobile_private_social_prekeys
+                     WHERE key_id = ?1 AND key_kind = ?2 AND published = 1",
+                    params![key_id, ENDPOINT_PREKEY_KIND],
+                )
+                .map_err(|error| error.to_string())?;
+            if consumed != 1 {
+                return Err(
+                    "private Comment root commit did not consume the exact endpoint PreKey"
+                        .to_string(),
+                );
+            }
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
     pub fn persist_receiver_failure(
         &self,
         expected_session_generation: u64,
@@ -770,6 +1283,18 @@ impl PrivateSocialStore {
             transaction
                 .execute(
                     "DELETE FROM mobile_private_social_roots WHERE post_id = ?1",
+                    params![post_id],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "DELETE FROM mobile_private_social_comment_projections WHERE post_id = ?1",
+                    params![post_id],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "DELETE FROM mobile_private_social_comment_drafts WHERE post_id = ?1",
                     params![post_id],
                 )
                 .map_err(|error| error.to_string())?;
@@ -845,6 +1370,10 @@ fn validate_submission(command: &StoredSubmission) -> Result<(), String> {
         || command.request_bytes.is_empty()
         || command.projection_json.is_empty()
         || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
+        || !matches!(
+            command.state,
+            DurableState::Prepared | DurableState::Pending
+        )
     {
         Err("private Social submission is invalid".to_string())
     } else {
@@ -895,8 +1424,51 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                intent_sha256 BLOB NOT NULL CHECK(length(intent_sha256) = 32),
                content_id TEXT NOT NULL,
                prepare_command_id TEXT NOT NULL,
+               mention_commitment_salt BLOB CHECK(
+                  mention_commitment_salt IS NULL
+                  OR length(mention_commitment_salt) = 32
+               ),
+               repost_commitment_salt BLOB CHECK(
+                  repost_commitment_salt IS NULL
+                  OR length(repost_commitment_salt) = 32
+               ),
+               object_material_seed BLOB CHECK(
+                  object_material_seed IS NULL
+                  OR length(object_material_seed) = 32
+               ),
                updated_at_unix_ms INTEGER NOT NULL,
                PRIMARY KEY(draft_id, draft_revision)
+             );
+             CREATE TABLE IF NOT EXISTS mobile_private_social_comment_drafts (
+               draft_id TEXT NOT NULL,
+               draft_revision INTEGER NOT NULL CHECK(draft_revision > 0),
+               post_id TEXT NOT NULL,
+               reply_to_comment_id TEXT NOT NULL,
+               text TEXT NOT NULL,
+               mention_intent_json TEXT NOT NULL,
+               mention_commitment_salt BLOB CHECK(
+                  mention_commitment_salt IS NULL OR length(mention_commitment_salt) = 32
+               ),
+               intent_sha256 BLOB NOT NULL CHECK(length(intent_sha256) = 32),
+               content_id TEXT NOT NULL,
+               prepare_command_id TEXT NOT NULL,
+               submit_command_id TEXT,
+               request_bytes BLOB,
+               request_sha256 BLOB CHECK(request_sha256 IS NULL OR length(request_sha256) = 32),
+               root_key BLOB CHECK(root_key IS NULL OR length(root_key) = 32),
+               generation INTEGER NOT NULL DEFAULT 0 CHECK(generation >= 0),
+               state INTEGER NOT NULL,
+               comment_id TEXT,
+               error_code TEXT,
+               retry_after_seconds INTEGER,
+               updated_at_unix_ms INTEGER NOT NULL,
+               PRIMARY KEY(draft_id, draft_revision)
+             );
+             CREATE TABLE IF NOT EXISTS mobile_private_social_comment_projections (
+               comment_id TEXT PRIMARY KEY,
+               post_id TEXT NOT NULL,
+               projection_json BLOB NOT NULL,
+               updated_at_unix_ms INTEGER NOT NULL
              );
              CREATE TABLE IF NOT EXISTS mobile_private_social_submissions (
                command_id TEXT PRIMARY KEY,
@@ -937,6 +1509,13 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                published INTEGER NOT NULL CHECK(published IN (0, 1)),
                created_at_unix_ms INTEGER NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS mobile_private_social_recovery_masters (
+               actor_ptid TEXT NOT NULL,
+               recovery_epoch INTEGER NOT NULL CHECK(recovery_epoch > 0),
+               master_key BLOB NOT NULL CHECK(length(master_key) = 32),
+               created_at_unix_ms INTEGER NOT NULL,
+               PRIMARY KEY(actor_ptid, recovery_epoch)
+             );
              CREATE TABLE IF NOT EXISTS mobile_private_social_roots (
                content_id TEXT NOT NULL,
                generation INTEGER NOT NULL CHECK(generation > 0),
@@ -953,7 +1532,37 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                updated_at_unix_ms INTEGER NOT NULL
              );",
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    for column in [
+        "mention_commitment_salt",
+        "repost_commitment_salt",
+        "object_material_seed",
+    ] {
+        let exists = {
+            let mut statement = connection
+                .prepare("PRAGMA table_info(mobile_private_social_drafts)")
+                .map_err(|error| error.to_string())?;
+            let columns = statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            columns.iter().any(|candidate| candidate == column)
+        };
+        if !exists {
+            connection
+                .execute(
+                    &format!(
+                        "ALTER TABLE mobile_private_social_drafts
+                         ADD COLUMN {column} BLOB
+                         CHECK({column} IS NULL OR length({column}) = 32)"
+                    ),
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 fn draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredDraft> {
@@ -963,6 +1572,54 @@ fn draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredDraft> {
         intent_sha256: fixed_32(row.get(2)?, "draft intent hash")?,
         content_id: row.get(3)?,
         prepare_command_id: row.get(4)?,
+        mention_commitment_salt: row
+            .get::<_, Option<Vec<u8>>>(5)?
+            .map(|value| fixed_32(value, "mention commitment salt"))
+            .transpose()?,
+        repost_commitment_salt: row
+            .get::<_, Option<Vec<u8>>>(6)?
+            .map(|value| fixed_32(value, "repost commitment salt"))
+            .transpose()?,
+        object_material_seed: row
+            .get::<_, Option<Vec<u8>>>(7)?
+            .map(|value| fixed_32(value, "object material seed"))
+            .transpose()?,
+    })
+}
+
+fn comment_draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCommentDraft> {
+    Ok(StoredCommentDraft {
+        draft_id: row.get(0)?,
+        draft_revision: from_i64(row.get(1)?, "comment draft revision")?,
+        post_id: row.get(2)?,
+        reply_to_comment_id: row.get(3)?,
+        text: row.get(4)?,
+        mention_intent_json: row.get(5)?,
+        mention_commitment_salt: row
+            .get::<_, Option<Vec<u8>>>(6)?
+            .map(|value| fixed_32(value, "comment mention commitment salt"))
+            .transpose()?,
+        intent_sha256: fixed_32(row.get(7)?, "comment intent hash")?,
+        content_id: row.get(8)?,
+        prepare_command_id: row.get(9)?,
+        submit_command_id: row.get(10)?,
+        request_bytes: row.get(11)?,
+        request_sha256: row
+            .get::<_, Option<Vec<u8>>>(12)?
+            .map(|value| fixed_32(value, "comment request hash"))
+            .transpose()?,
+        root_key: row
+            .get::<_, Option<Vec<u8>>>(13)?
+            .map(|value| fixed_32(value, "comment root key"))
+            .transpose()?,
+        generation: from_i64(row.get(14)?, "comment generation")?,
+        state: CommentState::try_from(row.get::<_, i64>(15)?).map_err(conversion_error)?,
+        comment_id: row.get(16)?,
+        error_code: row.get(17)?,
+        retry_after_seconds: row
+            .get::<_, Option<i64>>(18)?
+            .map(|value| from_i64(value, "comment retry after"))
+            .transpose()?,
     })
 }
 
@@ -1046,7 +1703,10 @@ mod tests {
             draft_revision: 1,
             intent_sha256: [hash; 32],
             content_id: "content-1".to_string(),
+            object_material_seed: Some([8; 32]),
             prepare_command_id: "prepare-1".to_string(),
+            mention_commitment_salt: Some([6; 32]),
+            repost_commitment_salt: Some([7; 32]),
         }
     }
 
@@ -1073,11 +1733,64 @@ mod tests {
     #[test]
     fn draft_reservation_is_exact_replay_only() {
         let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        let first = store.reserve_draft(&draft(1)).unwrap();
+        assert_eq!(first.content_id, "content-1");
+        assert_eq!(first.mention_commitment_salt, Some([6; 32]));
+        assert_eq!(first.repost_commitment_salt, Some([7; 32]));
+        assert_eq!(first.object_material_seed, Some([8; 32]));
+        let mut replay = draft(1);
+        replay.mention_commitment_salt = Some([9; 32]);
+        replay.repost_commitment_salt = Some([10; 32]);
+        replay.object_material_seed = Some([11; 32]);
+        let replayed = store.reserve_draft(&replay).unwrap();
         assert_eq!(
-            store.reserve_draft(&draft(1)).unwrap().content_id,
-            "content-1"
+            replayed.mention_commitment_salt,
+            first.mention_commitment_salt
         );
+        assert_eq!(
+            replayed.repost_commitment_salt,
+            first.repost_commitment_salt
+        );
+        assert_eq!(replayed.object_material_seed, first.object_material_seed);
         assert!(store.reserve_draft(&draft(2)).is_err());
+    }
+
+    #[test]
+    fn comment_draft_replay_preserves_the_original_salt() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        let candidate = StoredCommentDraft {
+            draft_id: "comment-draft-1".to_string(),
+            draft_revision: 1,
+            post_id: "post-1".to_string(),
+            reply_to_comment_id: String::new(),
+            text: "private reply".to_string(),
+            mention_intent_json: "[]".to_string(),
+            mention_commitment_salt: Some([5; 32]),
+            intent_sha256: [4; 32],
+            content_id: "comment-content-1".to_string(),
+            prepare_command_id: "comment-prepare-1".to_string(),
+            submit_command_id: None,
+            request_bytes: None,
+            request_sha256: None,
+            root_key: None,
+            generation: 0,
+            state: CommentState::Editing,
+            comment_id: None,
+            error_code: None,
+            retry_after_seconds: None,
+        };
+        let first = store.reserve_comment_draft(&candidate).unwrap();
+        let mut replay = candidate.clone();
+        replay.mention_commitment_salt = Some([6; 32]);
+        let replayed = store.reserve_comment_draft(&replay).unwrap();
+        assert_eq!(first.mention_commitment_salt, Some([5; 32]));
+        assert_eq!(
+            replayed.mention_commitment_salt,
+            first.mention_commitment_salt
+        );
+        let mut conflict = candidate;
+        conflict.intent_sha256 = [8; 32];
+        assert!(store.reserve_comment_draft(&conflict).is_err());
     }
 
     #[test]
@@ -1105,6 +1818,21 @@ mod tests {
     }
 
     #[test]
+    fn prepared_submission_waits_for_explicit_dispatch() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        store.bind_session_generation(7).unwrap();
+        let mut prepared = submission(3);
+        prepared.state = DurableState::Prepared;
+
+        store.persist_submission(&prepared).unwrap();
+
+        assert!(store.pending_submissions().unwrap().is_empty());
+        let acquired = store.acquire_submission("submit-1").unwrap();
+        assert_eq!(acquired.command.state, DurableState::InFlight);
+        assert!(!acquired.reconciles_unknown_outcome);
+    }
+
+    #[test]
     fn interrupted_dispatch_becomes_unknown_outcome() {
         let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
         store.bind_session_generation(2).unwrap();
@@ -1115,6 +1843,53 @@ mod tests {
             store.submission("draft-1", 1).unwrap().unwrap().state,
             DurableState::UnknownOutcome
         );
+    }
+
+    #[test]
+    fn recovery_publication_persists_only_the_command() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        let request_bytes = vec![1, 2, 3];
+        let command = StoredPreKeyPublication {
+            command_id: "recovery-publication-1".to_string(),
+            key_kind: ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32,
+            pool_epoch: 1,
+            request_sha256: Sha256::digest(&request_bytes).into(),
+            request_bytes,
+            state: DurableState::Pending,
+            lease_generation: 0,
+            session_generation: 0,
+        };
+
+        assert!(store
+            .persist_prekey_publication(
+                &command,
+                &[("recovery-key-1".to_string(), [7; 32], [8; 32])],
+            )
+            .is_err());
+        store.persist_prekey_publication(&command, &[]).unwrap();
+
+        let pending = store.pending_prekey_publications().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].command_id, command.command_id);
+        assert!(store.endpoint_prekey("recovery-key-1").unwrap().is_none());
+    }
+
+    #[test]
+    fn endpoint_publication_requires_durable_private_material() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        let request_bytes = vec![1, 2, 3];
+        let command = StoredPreKeyPublication {
+            command_id: "endpoint-publication-1".to_string(),
+            key_kind: ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+            pool_epoch: 1,
+            request_sha256: Sha256::digest(&request_bytes).into(),
+            request_bytes,
+            state: DurableState::Pending,
+            lease_generation: 0,
+            session_generation: 0,
+        };
+
+        assert!(store.persist_prekey_publication(&command, &[]).is_err());
     }
 
     #[test]
@@ -1156,5 +1931,31 @@ mod tests {
             .is_err());
         assert!(store.content_root("content-1", 1).unwrap().is_none());
         assert!(store.read_projection("post-1").unwrap().is_none());
+    }
+    #[test]
+    fn recovery_masters_are_epoch_bound_and_replay_safe() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        store
+            .store_recovery_master("ptid:alice", 3, &[3; 32])
+            .unwrap();
+        store
+            .store_recovery_master("ptid:alice", 4, &[4; 32])
+            .unwrap();
+        store
+            .store_recovery_master("ptid:alice", 4, &[4; 32])
+            .unwrap();
+
+        assert!(store
+            .store_recovery_master("ptid:alice", 4, &[5; 32])
+            .is_err());
+        assert_eq!(
+            store.recovery_master("ptid:alice", 3).unwrap(),
+            Some([3; 32])
+        );
+        assert_eq!(
+            store.recovery_master("ptid:alice", 4).unwrap(),
+            Some([4; 32])
+        );
+        assert_eq!(store.latest_recovery_epoch("ptid:alice").unwrap(), Some(4));
     }
 }

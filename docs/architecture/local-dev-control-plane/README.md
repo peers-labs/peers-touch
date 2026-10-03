@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-28
+> **Created**: 2026-09-13 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -68,6 +68,8 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 15. 同一仓库或 PR 可同步多个 Plan，但每个 workspace 只解析自己的不可变绑定。
 16. 现有非 stable Profile 的 reset 不要求人工授权；已有 Profile 的 deploy
     与 reset 都不得因内部能力刷新或执行边界重复询问。
+17. 对 Dev Workflow 计划器新增的 runtime claim，物理 lease 准入必须验证
+    当前 `COMMITTED` resource-plan fence；既有手工声明保持独立 provenance。
 
 ## 4. Runtime Authority
 
@@ -97,6 +99,13 @@ the authoritative binding. `make profile` creates that binding on first
 selection and updates it thereafter. OS-held leases under `leases/` are the
 only live owners for `local.slot`, `station.deploy`, and `station.reset`; JSON
 in a lock file is diagnostic metadata only.
+
+The authoritative binding deliberately excludes Git HEAD. Commands capture
+current source from Git at operation time; Development declarations and
+runtime build identity fence source-sensitive mutation.
+Planner-owned claims additionally require the matching committed DWF-D32
+resource-plan receipt. A `RESERVING`, stale, or mismatched receipt cannot
+authorize a Local Dev lease.
 
 The authoritative binding deliberately excludes Git HEAD. Commands capture
 current source from Git at operation time; Development declarations and

@@ -42,6 +42,9 @@ from tooling.acceptance.core.redaction import (
     is_sensitive_key,
     redact_value,
 )
+from tooling.acceptance.core.provisioner import (
+    resolve_machine_profile_environment,
+)
 
 
 TEST_ARTIFACT_REF = {
@@ -153,6 +156,56 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.credentials[0].id, "evidence-leak-canary")
         self.assertTrue(contract.credentials[0].generated_if_missing)
         self.assertIn("processes", contract.cleanup.resources)
+
+    def test_oauth2_local_provisioners_publish_declared_client_identity(self):
+        from tooling.acceptance.provisioners import oauth2_client_local
+
+        cases = (
+            (
+                "oauth2-client-local-service.yaml",
+                oauth2_client_local.OAuth2ClientLocalServiceProvisioner,
+            ),
+            (
+                "oauth2-client-local-browser.yaml",
+                oauth2_client_local.OAuth2ClientLocalBrowserProvisioner,
+            ),
+        )
+        for contract_file, provisioner_type in cases:
+            with self.subTest(contract_file=contract_file):
+                contract = EnvironmentContract.from_yaml(
+                    ENVIRONMENTS_DIR / contract_file
+                )
+                provisioner = provisioner_type(contract)
+                with (
+                    mock.patch.object(
+                        provisioner,
+                        "_git_workspace_digest",
+                        return_value="clean",
+                    ),
+                    mock.patch.object(
+                        oauth2_client_local.shutil,
+                        "which",
+                        return_value="/usr/bin/tool",
+                    ),
+                ):
+                    manifest = provisioner.provision("test-gate")
+
+                self.assertTrue(manifest.is_ready())
+                self.assertEqual(len(contract.clients), 1)
+                self.assertEqual(len(manifest.clients), 1)
+                declared = contract.clients[0]
+                provisioned = manifest.clients[0]
+                self.assertEqual(provisioned.id, declared.id)
+                self.assertEqual(provisioned.actor, declared.actor)
+                self.assertEqual(provisioned.runtime, declared.runtime)
+                self.assertEqual(
+                    provisioned.required_service_roles,
+                    declared.required_service_roles,
+                )
+                self.assertEqual(
+                    provisioned.service_bindings,
+                    declared.service_bindings,
+                )
 
     def test_load_local_desktop_gateway_contract(self):
         contract = EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "local-desktop-gateway.yaml")
@@ -1897,6 +1950,61 @@ class MultiStationBindingTests(unittest.TestCase):
         self.assertEqual(
             bob["service_bindings"]["station"]["service_id"], "station-home"
         )
+
+
+class MachineProfileEnvironmentTests(unittest.TestCase):
+    def test_agent_provider_fields_accept_explicit_environment_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            root.mkdir()
+            profile_file = Path(directory) / "two.env"
+            profile_file.write_text(
+                "PT_DEV_PROFILE=two\n"
+                "PT_STATION_MODE=remote\n",
+                encoding="utf-8",
+            )
+            machine_state = {
+                "authority": "machine-control-plane",
+                "binding": {"profile": "two", "slot": 1},
+                "profile": {
+                    "profileFile": str(profile_file),
+                    "sourceState": "tracked-clean",
+                },
+                "ports": {
+                    "desktopAppGateway": 3130,
+                    "desktopAppWeb": 3310,
+                    "desktopWebGateway": 3131,
+                    "desktopWebWeb": 3311,
+                    "mobileWeb": 5273,
+                },
+            }
+            overrides = {
+                "PT_AGENT_PROVIDER_ID": "ark",
+                "PT_AGENT_PROVIDER_API_KEY": "secret",
+                "PT_AGENT_DEFAULT_MODEL_ID": "model",
+                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+            }
+
+            with (
+                mock.patch(
+                    "tooling.acceptance.core.provisioner.subprocess.run",
+                    return_value=mock.Mock(
+                        returncode=0,
+                        stdout=json.dumps(machine_state),
+                        stderr="",
+                    ),
+                ),
+                mock.patch.dict(os.environ, overrides, clear=False),
+            ):
+                profile_name, resolved_file, slot, values = (
+                    resolve_machine_profile_environment(root)
+                )
+
+            self.assertEqual(profile_name, "two")
+            self.assertEqual(resolved_file, profile_file.resolve())
+            self.assertEqual(slot, 1)
+            for field, value in overrides.items():
+                self.assertEqual(values[field], value)
 
 
 if __name__ == "__main__":

@@ -140,7 +140,7 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
 SCENARIO = ScenarioDefinition(
     scenario_id="chat-attachment-mobile",
     journey_id="sc-dj-chat-attachment-mobile",
-    work_item_id="secure-content-w2b-mobile",
+    work_item_id="secure-content-w2",
     runtimes=frozenset({"mobile"}),
     evidence_path=Path("W2/mobile/result.json"),
     execute=_execute,

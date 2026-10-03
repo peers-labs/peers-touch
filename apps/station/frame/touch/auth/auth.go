@@ -168,6 +168,7 @@ type OAuthSessionBinding struct {
 	AccessAttemptID        string
 	StationPeerID          string
 	AccessDecisionRevision uint64
+	DeviceType             session.DeviceType
 	DeviceID               string
 	LifecycleGeneration    uint64
 }
@@ -178,6 +179,7 @@ type AccessGateSessionBinding struct {
 	AccessAttemptID        string
 	StationPeerID          string
 	AccessDecisionRevision uint64
+	DeviceType             session.DeviceType
 	DeviceID               string
 	LifecycleGeneration    uint64
 }
@@ -201,6 +203,9 @@ func PrepareOAuthSession(
 	if strings.TrimSpace(binding.CandidateID) == "" ||
 		strings.TrimSpace(binding.AccessAttemptID) == "" ||
 		strings.TrimSpace(binding.StationPeerID) == "" ||
+		(binding.DeviceType != session.DeviceTypeDesktop &&
+			binding.DeviceType != session.DeviceTypeMobile &&
+			binding.DeviceType != session.DeviceTypeWeb) ||
 		strings.TrimSpace(binding.DeviceID) == "" ||
 		binding.LifecycleGeneration == 0 ||
 		binding.AccessDecisionRevision == 0 {
@@ -226,7 +231,7 @@ func PrepareOAuthSession(
 		SessionID:              sessionID,
 		UserID:                 actor.ID,
 		Email:                  actor.Email,
-		DeviceType:             session.DeviceTypeMobile,
+		DeviceType:             binding.DeviceType,
 		OAuthCandidateID:       binding.CandidateID,
 		AccessAttemptID:        binding.AccessAttemptID,
 		StationPeerID:          binding.StationPeerID,
@@ -284,7 +289,7 @@ func AuthenticatePassword(ctx context.Context, credentials *Credentials) (*db.Ac
 	return &user, nil
 }
 
-// PrepareAccessGateSession creates one active Mobile session record and its
+// PrepareAccessGateSession creates one active device-scoped session record and its
 // credential response without persisting either. The Access Gate finalizer
 // persists both the session and the attempt binding in one transaction.
 func PrepareAccessGateSession(
@@ -303,6 +308,9 @@ func PrepareAccessGateSession(
 	}
 	if strings.TrimSpace(binding.AccessAttemptID) == "" ||
 		strings.TrimSpace(binding.StationPeerID) == "" ||
+		(binding.DeviceType != session.DeviceTypeDesktop &&
+			binding.DeviceType != session.DeviceTypeMobile &&
+			binding.DeviceType != session.DeviceTypeWeb) ||
 		strings.TrimSpace(binding.DeviceID) == "" ||
 		binding.LifecycleGeneration == 0 ||
 		binding.AccessDecisionRevision == 0 {
@@ -322,7 +330,7 @@ func PrepareAccessGateSession(
 		SessionID:              sessionID,
 		UserID:                 actor.ID,
 		Email:                  actor.Email,
-		DeviceType:             session.DeviceTypeMobile,
+		DeviceType:             binding.DeviceType,
 		IPAddress:              clientIP,
 		UserAgent:              userAgent,
 		AccessAttemptID:        binding.AccessAttemptID,

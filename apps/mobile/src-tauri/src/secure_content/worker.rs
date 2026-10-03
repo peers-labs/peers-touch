@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use prost::Message;
 use secure_content_core::prekey::{
-    ContentPreKeyEndpoint, ContentPreKeyKind as CorePreKeyKind, ContentPreKeyPair,
-    ContentPreKeyPrincipal, ContentPreKeySigningInput, CONTENT_PREKEY_SIGNING_FORMAT_VERSION,
+    ContentPreKeyActorRef, ContentPreKeyEndpoint, ContentPreKeyKind as CorePreKeyKind,
+    ContentPreKeyPair, ContentPreKeyPrincipal, ContentPreKeySigningInput,
+    CONTENT_PREKEY_SIGNING_FORMAT_VERSION,
 };
+use secure_content_core::recovery::{derive_recovery_prekey, RecoveryMaster};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use ulid::Ulid;
@@ -20,7 +22,8 @@ use crate::secure_content::store::{
     DurableState, PrivateSocialStore, StoredPreKeyPublication, StoredSubmission,
 };
 use crate::secure_content::transport::{
-    publication_command_id, NativeSocialTransport, TransportDisposition, TransportError,
+    canonical_publication_bytes, publication_command_id, NativeSocialTransport,
+    TransportDisposition, TransportError,
 };
 use crate::secure_content::NativeSocialSession;
 
@@ -30,6 +33,7 @@ const CONTENT_PREKEY_BATCH_LIMIT: u32 = 100;
 #[serde(rename_all = "camelCase")]
 pub struct PrivateSocialWorkerReport {
     pub endpoint_prekeys_available: u32,
+    pub recovery_prekeys_available: Option<u32>,
     pub submissions_processed: usize,
     pub submissions_unknown: usize,
     pub submissions_terminal: usize,
@@ -54,9 +58,23 @@ impl PrivateSocialWorker {
     }
 
     pub fn reconcile(&self) -> Result<PrivateSocialWorkerReport, String> {
-        let endpoint_prekeys_available = self.maintain_endpoint_prekeys()?;
+        self.reconcile_prekey_publications()?;
+        let endpoint_prekeys_available =
+            self.maintain_prekey_pool(wire::ContentPreKeyKind::ContentPrekeyKindEndpoint)?;
+        let recovery_prekeys_available = if self
+            .store
+            .latest_recovery_epoch(&self.session.scope.actor_ptid)?
+            .is_some()
+        {
+            Some(
+                self.maintain_prekey_pool(wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery)?,
+            )
+        } else {
+            None
+        };
         let mut report = PrivateSocialWorkerReport {
             endpoint_prekeys_available,
+            recovery_prekeys_available,
             submissions_processed: 0,
             submissions_unknown: 0,
             submissions_terminal: 0,
@@ -89,6 +107,38 @@ impl PrivateSocialWorker {
                     )
                 }
             };
+        if let Some(Ok(readback)) = unknown_submission_readback(
+            &command,
+            acquired.reconciles_unknown_outcome,
+            |content_id| self.transport.get_private_moment(content_id),
+        ) {
+            let submitted = social::SubmitPrivateMomentResponse {
+                post: readback.resource.clone(),
+                exact_replay: true,
+            };
+            return match verify_submit_readback(
+                self.session.as_ref(),
+                &command,
+                &request,
+                &submitted,
+                &readback,
+            ) {
+                Ok(post_id) => self.finish_submission(
+                    &command,
+                    DurableState::Committed,
+                    PrivatePublishState::Published,
+                    Some(post_id),
+                    None,
+                ),
+                Err(_) => self.finish_submission(
+                    &command,
+                    DurableState::Terminal,
+                    PrivatePublishState::PublishFailed,
+                    None,
+                    Some(20005),
+                ),
+            };
+        }
         match self.transport.submit_private_moment(&request) {
             Ok(submitted) => {
                 let readback = self.transport.get_private_moment(&command.content_id);
@@ -104,6 +154,7 @@ impl PrivateSocialWorker {
                         http_status: None,
                         stable_code: 20005,
                         typed_error: false,
+                        private_content_code: None,
                         retry_after_seconds: None,
                         disposition: TransportDisposition::UnknownOutcome,
                     })
@@ -173,32 +224,67 @@ impl PrivateSocialWorker {
         Ok(projection)
     }
 
-    fn maintain_endpoint_prekeys(&self) -> Result<u32, String> {
+    fn reconcile_prekey_publications(&self) -> Result<(), String> {
         for pending in self.store.pending_prekey_publications()? {
             self.dispatch_prekey_publication(&pending.command_id)?;
         }
-        let kind = wire::ContentPreKeyKind::ContentPrekeyKindEndpoint;
+        Ok(())
+    }
+
+    fn maintain_prekey_pool(&self, kind: wire::ContentPreKeyKind) -> Result<u32, String> {
         let inventory = match self.transport.inventory(kind) {
             Ok(inventory) => Some(inventory),
             Err(error) if error.disposition == TransportDisposition::PoolNotFound => None,
             Err(error) => return Err(error.to_string()),
         };
+        let expected_pool_epoch = inventory.as_ref().map_or(0, |value| value.current_epoch);
+        let latest_recovery_epoch =
+            if kind == wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery {
+                self.store
+                    .latest_recovery_epoch(&self.session.scope.actor_ptid)?
+            } else {
+                None
+            };
+        let rotation_pending =
+            latest_recovery_epoch.is_some_and(|epoch| epoch > expected_pool_epoch);
         if let Some(inventory) = inventory.as_ref() {
-            if !inventory.needs_replenishment {
+            if !inventory.needs_replenishment && !rotation_pending {
                 return Ok(inventory.available);
             }
         }
+        let pool_epoch = match kind {
+            wire::ContentPreKeyKind::ContentPrekeyKindEndpoint => self.session.profile_version,
+            wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery => {
+                let latest = latest_recovery_epoch
+                    .ok_or_else(|| "private Social recovery master is unavailable".to_string())?;
+                if expected_pool_epoch == 0 {
+                    1
+                } else if latest > expected_pool_epoch {
+                    expected_pool_epoch
+                        .checked_add(1)
+                        .ok_or_else(|| "private Social recovery epoch is exhausted".to_string())?
+                } else {
+                    expected_pool_epoch
+                }
+            }
+            wire::ContentPreKeyKind::ContentPrekeyKindUnspecified => {
+                return Err("private Social PreKey kind is required".to_string())
+            }
+        };
         let available = inventory.as_ref().map_or(0, |value| value.available);
         let capacity = inventory
             .as_ref()
             .map(|value| value.capacity)
             .filter(|capacity| *capacity > 0)
             .unwrap_or(CONTENT_PREKEY_BATCH_LIMIT);
-        let expected_pool_epoch = inventory.as_ref().map_or(0, |value| value.current_epoch);
-        let count = capacity
-            .saturating_sub(available)
-            .clamp(1, CONTENT_PREKEY_BATCH_LIMIT);
-        let command_id = self.create_endpoint_prekey_publication(expected_pool_epoch, count)?;
+        let count = if pool_epoch != expected_pool_epoch {
+            capacity
+        } else {
+            capacity.saturating_sub(available)
+        }
+        .clamp(1, CONTENT_PREKEY_BATCH_LIMIT);
+        let command_id =
+            self.create_prekey_publication(kind, pool_epoch, expected_pool_epoch, count)?;
         self.dispatch_prekey_publication(&command_id)?;
         self.transport
             .inventory(kind)
@@ -206,34 +292,78 @@ impl PrivateSocialWorker {
             .map_err(|error| error.to_string())
     }
 
-    fn create_endpoint_prekey_publication(
+    fn create_prekey_publication(
         &self,
+        kind: wire::ContentPreKeyKind,
+        pool_epoch: u64,
         expected_pool_epoch: u64,
         count: u32,
     ) -> Result<String, String> {
         let publisher = self.publisher();
-        let pool_epoch = self.session.profile_version;
-        let mut generated = (0..count)
-            .map(|_| {
-                (
-                    format!("mobile-content-endpoint-{}", Ulid::new()),
-                    ContentPreKeyPair::generate(),
-                )
-            })
-            .collect::<Vec<_>>();
+        let recovery_master = if kind == wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery {
+            let bytes = self
+                .store
+                .recovery_master(&self.session.scope.actor_ptid, pool_epoch)?
+                .ok_or_else(|| {
+                    "private Social recovery master is unavailable for epoch".to_string()
+                })?;
+            Some(RecoveryMaster::from_bytes(bytes))
+        } else {
+            None
+        };
+        let mut generated = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            let prefix = match kind {
+                wire::ContentPreKeyKind::ContentPrekeyKindEndpoint => "mobile-content-endpoint",
+                wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery => {
+                    "mobile-content-recovery"
+                }
+                wire::ContentPreKeyKind::ContentPrekeyKindUnspecified => {
+                    return Err("private Social PreKey kind is required".to_string())
+                }
+            };
+            let key_id = format!("{prefix}-{}", Ulid::new());
+            let pair = match recovery_master.as_ref() {
+                Some(master) => derive_recovery_prekey(
+                    master,
+                    &self.session.scope.actor_ptid,
+                    pool_epoch,
+                    &key_id,
+                )?,
+                None => ContentPreKeyPair::generate(),
+            };
+            generated.push((key_id, pair));
+        }
         generated.sort_by(|left, right| left.0.cmp(&right.0));
         let mut prekeys = Vec::with_capacity(generated.len());
         let mut private_material = Zeroizing::new(Vec::with_capacity(generated.len()));
         for (key_id, pair) in generated {
+            let principal = match kind {
+                wire::ContentPreKeyKind::ContentPrekeyKindEndpoint => {
+                    ContentPreKeyPrincipal::Endpoint(ContentPreKeyEndpoint::new(
+                        &self.session.scope.actor_ptid,
+                        &self.session.scope.device_id,
+                    ))
+                }
+                wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery => {
+                    ContentPreKeyPrincipal::RecoveryActor(ContentPreKeyActorRef::new(
+                        &self.session.scope.actor_ptid,
+                    ))
+                }
+                wire::ContentPreKeyKind::ContentPrekeyKindUnspecified => unreachable!(),
+            };
             let signing_input = ContentPreKeySigningInput {
                 format_version: CONTENT_PREKEY_SIGNING_FORMAT_VERSION,
-                kind: CorePreKeyKind::Endpoint,
+                kind: match kind {
+                    wire::ContentPreKeyKind::ContentPrekeyKindEndpoint => CorePreKeyKind::Endpoint,
+                    wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery => {
+                        CorePreKeyKind::ActorRecovery
+                    }
+                    wire::ContentPreKeyKind::ContentPrekeyKindUnspecified => unreachable!(),
+                },
                 key_id: key_id.clone(),
                 x25519_public_key: pair.public(),
-                principal: ContentPreKeyPrincipal::Endpoint(ContentPreKeyEndpoint::new(
-                    &self.session.scope.actor_ptid,
-                    &self.session.scope.device_id,
-                )),
+                principal,
                 pool_epoch,
                 expected_pool_epoch,
                 publisher: ContentPreKeyEndpoint::new(
@@ -248,21 +378,32 @@ impl PrivateSocialWorker {
                     .signing_bytes()
                     .map_err(|error| error.to_string())?,
             );
+            let principal = match kind {
+                wire::ContentPreKeyKind::ContentPrekeyKindEndpoint => {
+                    wire::content_one_time_pre_key::Principal::Endpoint(publisher.clone())
+                }
+                wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery => {
+                    wire::content_one_time_pre_key::Principal::RecoveryActor(
+                        publisher.actor.clone().unwrap_or_default(),
+                    )
+                }
+                wire::ContentPreKeyKind::ContentPrekeyKindUnspecified => unreachable!(),
+            };
             prekeys.push(wire::ContentOneTimePreKey {
-                kind: wire::ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+                kind: kind as i32,
                 key_id: key_id.clone(),
                 x25519_public_key: pair.public().as_bytes().to_vec(),
-                principal: Some(wire::content_one_time_pre_key::Principal::Endpoint(
-                    publisher.clone(),
-                )),
+                principal: Some(principal),
                 profile_or_recovery_epoch: pool_epoch,
                 issuer_signature: signature,
             });
-            private_material.push((
-                key_id,
-                pair.private().to_bytes(),
-                pair.public().as_bytes().to_owned(),
-            ));
+            if kind == wire::ContentPreKeyKind::ContentPrekeyKindEndpoint {
+                private_material.push((
+                    key_id,
+                    pair.private().to_bytes(),
+                    pair.public().as_bytes().to_owned(),
+                ));
+            }
         }
         let mut request = wire::PublishContentPreKeysRequest {
             publisher: Some(publisher),
@@ -273,11 +414,11 @@ impl PrivateSocialWorker {
             command_id: String::new(),
             proof: None,
         };
-        request.command_id = publication_command_id(&request);
-        let request_bytes = request.encode_to_vec();
+        request.command_id = publication_command_id(&request)?;
+        let request_bytes = canonical_publication_bytes(&request)?;
         let command = StoredPreKeyPublication {
             command_id: request.command_id.clone(),
-            key_kind: wire::ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+            key_kind: kind as i32,
             pool_epoch,
             request_sha256: Sha256::digest(&request_bytes).into(),
             request_bytes,
@@ -337,6 +478,17 @@ impl PrivateSocialWorker {
     }
 }
 
+fn unknown_submission_readback<F>(
+    command: &StoredSubmission,
+    reconciles_unknown_outcome: bool,
+    fetch: F,
+) -> Option<Result<social::GetMomentResourceResponse, TransportError>>
+where
+    F: FnOnce(&str) -> Result<social::GetMomentResourceResponse, TransportError>,
+{
+    reconciles_unknown_outcome.then(|| fetch(&command.content_id))
+}
+
 fn preserves_unknown_after_auth_rejection(
     reconciles_unknown_outcome: bool,
     error: &TransportError,
@@ -349,6 +501,44 @@ fn preserves_unknown_after_auth_rejection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+
+    use ed25519_dalek::{Signature, SigningKey};
+    use messaging_core::identity::DeviceSigningKey;
+
+    use crate::secure_content::recovery::store_recovery_phrase;
+    use crate::secure_content::{PrivateSocialScope, TrustedStationSigningKey};
+
+    const RECOVERY_PHRASE: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+
+    fn session(station_key: &SigningKey) -> Arc<NativeSocialSession> {
+        Arc::new(
+            NativeSocialSession::new(
+                PrivateSocialScope {
+                    profile_id: "profile-1".to_string(),
+                    station_peer_id: "station-1".to_string(),
+                    station_origin: "https://station.test".to_string(),
+                    actor_ptid: "ptid:alice".to_string(),
+                    device_id: "device-alice".to_string(),
+                },
+                Zeroizing::new("header.payload.signature".to_string()),
+                "session-1".to_string(),
+                "alice-signing-key".to_string(),
+                7,
+                DeviceSigningKey::from_parts(
+                    &[9; 32],
+                    Signature::from_bytes(&[0; 64]),
+                    "device-alice".to_string(),
+                ),
+                TrustedStationSigningKey {
+                    key_id: "station-key-current".to_string(),
+                    verifying_key: station_key.verifying_key(),
+                },
+            )
+            .unwrap(),
+        )
+    }
 
     #[test]
     fn auth_rejection_never_reclassifies_a_first_attempt_as_unknown() {
@@ -356,10 +546,115 @@ mod tests {
             http_status: Some(401),
             stable_code: 20001,
             typed_error: true,
+            private_content_code: None,
             retry_after_seconds: None,
             disposition: TransportDisposition::Terminal,
         };
         assert!(!preserves_unknown_after_auth_rejection(false, &error));
         assert!(preserves_unknown_after_auth_rejection(true, &error));
+    }
+
+    #[test]
+    fn unknown_submission_reads_authoritative_resource_before_retry() {
+        let observed_content_id = RefCell::new(String::new());
+        let command = StoredSubmission {
+            command_id: "command-1".to_string(),
+            draft_id: "draft-1".to_string(),
+            draft_revision: 1,
+            content_id: "content-1".to_string(),
+            generation: 1,
+            request_bytes: vec![1],
+            request_sha256: [2; 32],
+            root_key: [3; 32],
+            projection_json: vec![4],
+            state: DurableState::InFlight,
+            lease_generation: 1,
+            session_generation: 1,
+            post_id: None,
+            last_error_code: Some(20005),
+        };
+
+        let readback = unknown_submission_readback(&command, true, |content_id| {
+            observed_content_id.replace(content_id.to_string());
+            Ok(social::GetMomentResourceResponse::default())
+        });
+
+        assert_eq!(observed_content_id.into_inner(), "content-1");
+        assert!(matches!(readback, Some(Ok(_))));
+    }
+
+    #[test]
+    fn first_submission_does_not_probe_authoritative_readback() {
+        let command = StoredSubmission {
+            command_id: "command-1".to_string(),
+            draft_id: "draft-1".to_string(),
+            draft_revision: 1,
+            content_id: "content-1".to_string(),
+            generation: 1,
+            request_bytes: vec![1],
+            request_sha256: [2; 32],
+            root_key: [3; 32],
+            projection_json: vec![4],
+            state: DurableState::InFlight,
+            lease_generation: 1,
+            session_generation: 1,
+            post_id: None,
+            last_error_code: None,
+        };
+
+        let readback = unknown_submission_readback(&command, false, |_| {
+            panic!("first submission must not query authoritative readback")
+        });
+
+        assert!(readback.is_none());
+    }
+
+    #[test]
+    fn recovery_publication_derives_keys_without_persisting_private_material() {
+        let station_key = SigningKey::from_bytes(&[7; 32]);
+        let session = session(&station_key);
+        let store = Arc::new(PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap());
+        store.bind_session_generation(1).unwrap();
+        store_recovery_phrase(store.as_ref(), "ptid:alice", 1, RECOVERY_PHRASE).unwrap();
+        let worker = PrivateSocialWorker::new(session, store.clone()).unwrap();
+
+        let command_id = worker
+            .create_prekey_publication(
+                wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery,
+                1,
+                0,
+                2,
+            )
+            .unwrap();
+
+        let command = store
+            .pending_prekey_publications()
+            .unwrap()
+            .into_iter()
+            .find(|command| command.command_id == command_id)
+            .unwrap();
+        let request =
+            wire::PublishContentPreKeysRequest::decode(command.request_bytes.as_slice()).unwrap();
+        let master =
+            RecoveryMaster::from_bytes(store.recovery_master("ptid:alice", 1).unwrap().unwrap());
+        assert_eq!(request.prekeys.len(), 2);
+        for prekey in request.prekeys {
+            assert_eq!(
+                prekey.kind,
+                wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32
+            );
+            assert!(matches!(
+                prekey.principal.as_ref(),
+                Some(wire::content_one_time_pre_key::Principal::RecoveryActor(actor))
+                    if actor.ptid == "ptid:alice"
+            ));
+            let expected =
+                derive_recovery_prekey(&master, "ptid:alice", 1, &prekey.key_id).unwrap();
+            assert_eq!(
+                prekey.x25519_public_key,
+                expected.public().as_bytes().as_slice()
+            );
+            assert!(store.endpoint_prekey(&prekey.key_id).unwrap().is_none());
+        }
     }
 }

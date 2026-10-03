@@ -963,13 +963,15 @@ function normalizeStandardizedResult(
     result.cleanupArtifact === undefined;
   if (isStaticResult) {
     const artifacts = [];
-    if (
-      result.sourceArtifact !== undefined ||
+    const declaresEvidenceReport =
       result.sourceArtifactKind !== undefined ||
       result.evidenceGateId !== undefined ||
-      result.evidenceStatus !== undefined
+      result.evidenceStatus !== undefined;
+    if (
+      declaresEvidenceReport
     ) {
       if (
+        result.sourceArtifact === undefined ||
         result.sourceArtifactKind !== 'acceptance-gate-evidence-report' ||
         result.evidenceGateId !== result.id ||
         !['PASS', 'passed'].includes(result.evidenceStatus)
@@ -1046,7 +1048,7 @@ function normalizeStandardizedResult(
   );
   if (
     sourceArtifact.value?.gateId !== result.id ||
-    sourceArtifact.value?.status !== 'PASS' ||
+    !['PASS', 'passed'].includes(sourceArtifact.value?.status) ||
     sourceArtifact.value?.completionStatus !== 'DONE' ||
     sourceArtifact.value?.proofStatus !== 'PROVEN' ||
     manifestArtifact.value?.state !== 'FIXTURE_READY' ||

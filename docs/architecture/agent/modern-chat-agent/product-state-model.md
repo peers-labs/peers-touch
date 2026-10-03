@@ -1,8 +1,8 @@
 # Modern Chat Agent — Product State Model
 
 > **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -25,6 +25,7 @@ runtime representation.
 | Home command state | Home content/recovery rails | What can I resume or start now? |
 | Capability operation | Capability inventory/tool timeline | Is this capability bound, ready, running, or recoverable? |
 | Evaluation lifecycle | Evaluation Lab | What is being evaluated and is the result authoritative? |
+| External runtime lifecycle | Runtime context and recovery layer | Which external session owns this topic, and must I confirm a reset? |
 
 ## 2. Agent Readiness
 
@@ -234,7 +235,30 @@ RESTORING_EVAL -> EVAL_RUNNING | EVAL_COMPLETED | EVAL_FAILED
 | `CHILD_EVAL_PENDING` | Child run has a new durable ID and awaits execution |
 | `RESTORING_EVAL` | Restart/reconnect readback is in progress; no local terminal inference |
 
-## 14. Forbidden Product Transitions
+## 14. External Runtime Lifecycle
+
+```text
+UNBOUND -> STARTING -> ACTIVE
+ACTIVE -> RESUMING -> ACTIVE
+RESUMING -> RESUME_UNAVAILABLE -> AWAITING_RESET_CONFIRMATION
+AWAITING_RESET_CONFIRMATION -> RESETTING -> UNBOUND_NEW_EPOCH
+                                      \-> CLEANUP_FAILED
+CLEANUP_FAILED -> RESETTING
+```
+
+| State | Required visible behavior |
+|---|---|
+| `UNBOUND` | Runtime is selected, but no external session exists yet |
+| `STARTING` | First session creation is in progress and cancellable |
+| `ACTIVE` | Runtime profile, workspace identity, and current epoch are visible without exposing private paths or session handles |
+| `RESUMING` | The existing session is being resumed; no replacement session may start |
+| `RESUME_UNAVAILABLE` | Typed terminal failure preserves the old binding and offers `Confirm reset` |
+| `AWAITING_RESET_CONFIRMATION` | Consequences are explicit; cancel leaves the old epoch unchanged |
+| `RESETTING` | New Turn admission is blocked while old process/session/home cleanup runs |
+| `CLEANUP_FAILED` | Failure and retry are visible; no new epoch is claimed |
+| `UNBOUND_NEW_EPOCH` | Cleanup succeeded, epoch incremented, and the next accepted Turn may create a fresh session |
+
+## 15. Forbidden Product Transitions
 
 - `LOCAL_DRAFT -> ACTIVE` before Station accepts the first turn.
 - `WAITING_APPROVAL -> SUCCEEDED` without an authoritative decision and result.
@@ -247,3 +271,6 @@ RESTORING_EVAL -> EVAL_RUNNING | EVAL_COMPLETED | EVAL_FAILED
 - `DISCOVERED/BOUND -> READY` without compatibility and connection evidence.
 - `EVAL_RUNNING -> EVAL_COMPLETED` from Desktop-local loop completion without Station terminal readback.
 - `EVAL_CANCELLING -> EVAL_CANCELLED` before authoritative cancellation.
+- `RESUME_UNAVAILABLE -> ACTIVE` by silently creating another session.
+- `AWAITING_RESET_CONFIRMATION -> RESETTING` without explicit confirmation.
+- `CLEANUP_FAILED -> UNBOUND_NEW_EPOCH` without authoritative cleanup.

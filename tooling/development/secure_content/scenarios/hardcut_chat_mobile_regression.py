@@ -19,13 +19,13 @@ PLATFORM_CLIENTS = {
     "ios": frozenset(
         {
             "secure-content-hardcut-ios-alice",
-            "secure-content-hardcut-ios-bob",
+            "secure-content-hardcut-ios-remote_bob",
         }
     ),
     "android": frozenset(
         {
             "secure-content-hardcut-android-alice",
-            "secure-content-hardcut-android-bob",
+            "secure-content-hardcut-android-remote_bob",
         }
     ),
 }

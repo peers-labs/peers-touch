@@ -33,11 +33,6 @@ Before replying, scan the skills below. If one clearly matches your task,
 load it with skill_view(name) and follow its instructions.
 If a skill has issues, fix it with skill_manage(action='patch').`
 
-const localMCPGuidance = `## Local MCP Tools
-Use local_mcp only when a capability must run on the user's Desktop runtime.
-Arguments: server_name, tool_name, arguments. The Desktop local executor returns
-the tool result to this same turn before you continue.`
-
 const localBuiltinGuidance = `## Desktop-local Builtin Tools
 Use local_file_read, local_workspace_list, local_clipboard_read,
 local_clipboard_write, and local_shell_safe only for user-approved Desktop local
@@ -142,10 +137,6 @@ func (guidanceProcessor) process(in *promptBuildInput) ([]ContextSegment, error)
 	if hasToolAvailable(in.availableTools, "skill_view") || hasToolAvailable(in.availableTools, "skill_manage") {
 		parts = append(parts, skillsGuidance)
 		sourceRefs = append(sourceRefs, "guidance:skills")
-	}
-	if hasToolAvailable(in.availableTools, "local_mcp") {
-		parts = append(parts, localMCPGuidance)
-		sourceRefs = append(sourceRefs, "guidance:local_mcp")
 	}
 	if hasAnyToolAvailable(in.availableTools,
 		"local_file_read", "local_workspace_list",

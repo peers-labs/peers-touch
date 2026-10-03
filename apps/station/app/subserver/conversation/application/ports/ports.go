@@ -14,6 +14,23 @@ type EndpointRoute struct {
 	HomeStation valueobject.StationID
 }
 
+// GroupRecipientMember is the stable Conversation-owned recipient projection
+// exposed to co-located consumers.
+type GroupRecipientMember struct {
+	ActorPTID         string
+	HomeStationPeerID string
+}
+
+// GroupRecipientSnapshot freezes the active Group membership authority needed
+// by a caller without exposing Conversation repositories or transactions.
+type GroupRecipientSnapshot struct {
+	ConversationID      string
+	AuthorPTID          string
+	MembershipEpoch     uint64
+	AuthorityHeadSHA256 []byte
+	Members             []GroupRecipientMember
+}
+
 type DeviceInboxPayloadKind string
 
 const (

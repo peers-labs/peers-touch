@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Design
 
-> **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -46,15 +46,21 @@
     问题。
 18. **Personal policy stays local**: 用户专属的语言、措辞和 coaching 偏好只
     通过 machine-local Overlay 注入；共享 Skill 与项目执行语义不携带个人策略。
-19. **Conversation-bound execution**: 一个宿主 conversation 只绑定一个不可变
-    `executionRoot`；每次工具调用单独解析 `subjectRoot`，允许跨 worktree 读取，
-    拒绝跨 worktree 写入。
-20. **Capability-honest enforcement**: 只有稳定 conversation ID 和可阻断
+19. **Owner-rooted execution**: 一个可见开发会话只创建一个不可变 OWNER
+    binding；内部 WORKER/REVIEWER 通过显式 assignment 形成 child lineage，
+    不能升级为并列 owner。
+20. **Canonical binding projection**: 每次 hook、状态、handoff 和 completion
+    claim 都消费同一个 `BindingProjection`，其中分别给出 execution root、
+    subject roots、role、lineage、release 和 child liveness。
+21. **Capability-honest enforcement**: 只有宿主规定的稳定 root-chat identity 和可阻断
     `PreToolUse` 同时存在时才声明 `ENFORCED`；其他宿主只能明确标记为
     `OBSERVE_ONLY`。
-21. **No worktree as a workaround**: Agent 不得为了绕过 Plan binding、
+22. **No worktree as a workaround**: Agent 不得为了绕过 Plan binding、
     lifecycle 或并发错误自行创建 worktree；worktree 创建只来自用户明确选择的
     隔离或并行需求。
+23. **Aggregate before acquire**: 模块 Skill 只描述 `ModuleImpact`；Dev
+    Workflow 在任何 runtime acquisition 前统一解析 target、依赖、峰值容量和
+    资源复用，业务 Gate 只 attach 到已准备的 runtime manifest。
 
 ## 2. Evidence Ledger
 
@@ -72,6 +78,11 @@
 | digest-addressed installed copy 可隔离安装后的 source mutation | `accepted_decision` | DWF-D25 | high | control-plane unit tests |
 | hook `cwd` 同时承担聊天身份和工具作用路径会导致跨 worktree 权限漂移 | `verified_fact` | pre-DWF-D26 `workflow-guard.mjs`; adversarial kernel fixtures | high | none |
 | Cursor project hooks 提供稳定 `conversation_id`、`workspace_roots`、可阻断 `preToolUse` 和 `failClosed` | `verified_fact` | Cursor Hooks official documentation; adapter fixtures | high | live Cursor session |
+| TRAE payload 的 `chat_session_id` 标识可见顶层会话，而内部 reviewer/retry/subtask 可使用不同 `session_id` | `verified_fact` | high-chat 24-binding reproduction；TRAE hook payload capture | high | production regression |
+| 当前 binding schema 没有 role、root/parent lineage 或 child lifecycle | `verified_fact` | `workflow-conversation-binding.mjs`; 20 条 unreleased high-chat records | high | none |
+| `resolveActiveConversationBinding()` 将同 worktree 未 release 记录作为 peer owner，并强制全局唯一 | `verified_fact` | `workflow-conversation-binding.mjs`; `completion-review.mjs` | high | none |
+| 20 条冲突记录中多数 RUNNING Action Receipt lease 已过期，并不代表 live owner | `verified_fact` | workspace `95620934d3348d95` machine-store audit | high | none |
+| OWNER 不按通用 TTL 过期；child 由 assignment lease 与 terminal receipt 定义 liveness | `accepted_decision` | DWF-D33 | high | owner/child lifecycle tests |
 
 ## 3. System Architecture
 
@@ -121,12 +132,15 @@ accepted product + architecture
 | Current mutation source identity | Development Workflow | `DevelopmentResourceDeclaration.sourceHead` | machine-wide work ledger |
 | Runtime checkpoint source identity | Development Session | `SourceCheckpoint.commit/tree` | Context Anchor evidence |
 | Runtime allocation | Local Dev Control Plane | machine registry and live observation | session binding ref |
+| Cross-module resource intent | Development Workflow | machine-local `PlanResourcePlan` plus public declaration claims | Context Anchor / Peers Dev |
+| Physical account/service/client/device/Fixture lifecycle | owning Local Dev or Acceptance Suite Runtime | owner manifest and live lease | `PlanResourcePlan.resourceResults` |
 | Formal product proof | Acceptance Framework | Evidence Store | Task evidence refs |
 | Workspace Plan ownership | Development Workflow | machine-local generation records plus atomic current `plan-binding.json` | Plan/declaration/workspace active-work consistency checks |
 | Current tracked locator | Plan Package | current Task entry | workspace active-work + Context Anchor |
 | Distributed workflow implementation | `peers-dev-workflow` | canonical source and rollout receipts | installed worktree-local tools and Skills |
 | Read-only workflow projection | Peers Dev status owner | `apps/dev/server/status.mjs` | Workflow Snapshot CLI, Context Anchor, Doctor, UI |
-| Conversation execution identity | Workflow Kernel | machine-local immutable `execution-binding.json` | host adapter context |
+| Development conversation authority | Workflow Binding Store | one machine-local immutable OWNER binding rooted in host root-chat identity | canonical `BindingProjection` |
+| Worker/reviewer identity and liveness | Workflow Binding Store | assignment, child binding, lease and terminal receipt | canonical `BindingProjection` |
 | Tool action target | Workflow Kernel | normalized Tool Intent AST plus resolved `subjectRoot` | admission result |
 | Final handoff completeness | Workflow Kernel | rendered Anchor receipt plus create-once release receipt | host-native Stop continuation |
 | User interaction preferences | user Overlay registry | `~/.peers-touch/dev/skill-overlays/registry.json` + digest-addressed installed copy | `pt-ew` resolution |
@@ -148,6 +162,11 @@ No owner may copy another owner's complete state. In particular:
   consuming worktree.
 - Context Anchor does not read `archive/` or scan every task body.
 - Development records do not satisfy formal Acceptance proof.
+- Module Skills do not select concrete runtime resources or execute lifecycle
+  actions; they emit standard `ModuleImpact`.
+- `PlanResourcePlan` does not replace a physical lease or runtime manifest.
+- Business Gates do not build, provision, log in, clean up, or release
+  resources.
 
 ### 4.1 Methodology Runtime Boundaries
 
@@ -169,6 +188,10 @@ The runtime call direction is:
 God View -> Dev Workflow -> Scheduler -> Guardian -> Dev Workflow executes
                                |                         |
                                +------ read only --------+
+Module Skills -> ModuleImpact -> Dev Workflow Resource Aggregator
+                                      |
+                                      +-> public declaration claims
+                                      +-> Runtime/Suite Owner manifest
 Dev Workflow -> owner commands persist -> Context Anchor projects
 Dev Workflow -> Runtime Handoff -> project driver
 Dev Workflow -> admitted Host Capability Request -> optional Host Adapter
@@ -218,27 +241,43 @@ The Overlay control plane is distinct from canonical project agent integration:
   symlink, or digest mismatch is a typed failure and never degrades silently to
   passthrough.
 
-### 4.3 Conversation-Bound Workflow Kernel
+### 4.3 Owner-Rooted Workflow Kernel
 
 ```text
 TRAE / Cursor / Codex payload
   -> host adapter
+  -> host-specific root-chat / execution-session identity
+  -> BindingProjection
+       OWNER | assigned WORKER | assigned REVIEWER
+       rootBindingDigest + parentBindingDigest + child liveness
+       immutable executionRoot + per-event subjectRoots
   -> canonical HookEvent + ToolIntent AST
-  -> immutable conversation executionRoot
   -> independently resolved subjectRoot(s)
   -> workflow owner-state inspection
   -> ALLOW | typed DENY | machine-rendered continuation
 ```
 
-The first blockable `PreToolUse` atomically creates
-`~/.peers-touch/dev/conversations/<host>/<conversationHash>/execution-binding.json`.
-The raw conversation ID is never persisted. `SessionStart` and prompt hooks
-only prewarm context and cannot create or replace the binding.
+The first blockable `PreToolUse` atomically creates one OWNER binding from the
+host's root-chat identity. TRAE uses only `chat_session_id` for that identity;
+its `session_id` identifies an execution session and never creates another
+owner. Cursor and Codex each use their one documented root-chat field. Generic
+alias probing and process-global environment fallbacks are forbidden.
+
+A WORKER or REVIEWER exists only after the OWNER creates a bounded assignment.
+The child first atomically publishes one assignment-keyed claim for its
+execution-session hash, then publishes the child binding. Only the winning
+execution session can retry or use that assignment. The resulting child binding
+records `rootBindingDigest`, `parentBindingDigest`, role, Development Session
+identity, lease, and terminal receipt. Unassigned internal sessions inherit the
+OWNER projection for admission but cannot claim worker or reviewer independence.
+Assignment creation first validates that `active-work.json` and the canonical
+`session.json` identify the same current workspace, Work Item, Plan, Task,
+Session, and Development state.
 
 The Kernel distinguishes identity from action:
 
-- `executionRoot` comes from the installed project integration and remains
-  immutable for the conversation;
+- `executionRoot` comes from the OWNER binding and remains immutable for the
+  entire lineage;
 - `subjectRoot` comes from structured tool paths, shell working directory and
   parsed shell arguments;
 - reads may cross roots;
@@ -247,17 +286,41 @@ The Kernel distinguishes identity from action:
 - multiline commands, command substitution and unsupported shell operators
   fail closed instead of passing through regex classification.
 
-The Kernel does not mutate workflow owner state. Its only writes are its own
-conversation binding, latest rendered Anchor receipt, and create-once release
-receipt. Stop on an active Plan produces a continuation. Terminal or blocked
-Stop requires the exact machine-rendered Anchor to be observable before the
-release receipt is committed.
+The Kernel does not mutate Plan, Task, declaration, Development Session,
+active-work, runtime, or evidence state. Its machine-local writes are limited
+to atomically published OWNER bindings, assignments, assignment claims, child
+bindings, child terminal receipts, one current receipt per compacting binding
+lineage, exact installer-action grants, the latest rendered Anchor receipt, and
+OWNER release receipt. OWNER liveness is never inferred from a generic TTL.
+Child liveness is `ASSIGNED | LEASED | TERMINAL`; an expired or terminal child
+is diagnostic history and cannot participate in current ownership or Completion
+Review selection.
 
-TRAE and Codex use their native plugin-compatible hook response shape. Cursor
-uses project-native `sessionStart`, `beforeSubmitPrompt`, `preToolUse` and
-`stop` entries with `failClosed: true`. A host without a stable conversation ID
-or a blockable pre-tool event is reported as `OBSERVE_ONLY`; the project never
-mislabels that mode as enforcement.
+Every injection contains the binding role, root/parent digests, binding digest,
+release state, execution root, subject roots, tool root and target roots.
+Every status, readiness, handoff and final claim revalidates the same
+projection. Completion Review resolves the exact OWNER or assigned REVIEWER
+from the latest receipt for the current owner-command action ID; a terminal
+receipt suppresses every earlier STARTED or HEARTBEAT receipt. It never falls
+back to enumerating all unreleased bindings in a worktree. Canonical requests
+and receipts live only in the versioned `completion-reviews-v2` namespace;
+pre-hard-cut review records are neither read nor migrated.
+
+TRAE multi-root startup uses one workspace bootstrap hook selected from the
+workspace descriptor, not one competing hook owner per worktree. The bootstrap
+dispatches to the canonical installed integration for the selected target
+root. The bootstrap installation root is never an authority hint. On first
+`PreToolUse`, an explicit host task root wins when it is one of the declared
+workspace roots; otherwise all mutation targets must resolve to exactly one
+workspace root. Ambiguous or target-less selection returns
+`WORKTREE_SELECTION_REQUIRED`. Changing the workspace descriptor or writing
+that shared bootstrap is a separately declared cross-root rollout operation.
+
+This is a hard cut. Rollout completes fallible preflight, proves no live
+declaration/action, consumes the exact installer grant, publishes `INSTALLING`,
+then deletes the old conversation and workflow-action stores and installs the
+current bootstrap. Any reset or installation failure publishes `BLOCKED`. No
+old binding/action schema reader, importer, alias, or dual-write path exists.
 
 ## 5. Plan Package Contract
 
@@ -553,6 +616,14 @@ Missing or mismatched session state is explicit `SESSION_UNAVAILABLE` or
 - Independent source lanes inside one Task may run in parallel only after
   manifest/schema is frozen and write sets are disjoint. Different Tasks are
   not concurrently current in one worktree.
+- Runtime targets run only after one Plan-level aggregation pass. Each ready
+  target publishes its complete concrete claim set atomically in canonical key
+  order; physical owner actions never hold one lease while waiting for another.
+- Capacity shortage parks only the conflicting target and its dependents.
+  Independent target lanes continue. A global workflow lock is forbidden.
+- Reuse requires compatible source, artifact, runtime, health and owner
+  manifest identity. Quarantine is controlled by the physical resource owner
+  and cannot be cleared by the aggregator.
 - A plan migration is atomic to readers under a migration lock and journal:
   1. create a `prepared` package and byte-identical archive copy;
   2. record old/new hashes, the reviewed crosswalk digest, every live reference
@@ -679,11 +750,18 @@ The architecture is implemented only when:
   digest-verified `pt-ew` inputs;
 - with no enabled Overlay, `pt-ew` passes the original user intent to
   `pt-god-view` unchanged;
-- one conversation cannot change `executionRoot` after its first blockable
-  tool event; cross-worktree reads pass while writes fail with
+- one root chat cannot change `executionRoot` after its first blockable tool
+  event; cross-worktree reads pass while writes fail with
   `CROSS_WORKTREE_WRITE_DENIED`;
-- Session start does not create authority, missing stable conversation identity
-  reports `OBSERVE_ONLY`, and unsupported shell structure fails closed;
+- one OWNER plus two assigned child sessions retain exact lineage; expired
+  child leases and terminal child receipts never create owner ambiguity;
+- TRAE ignores `session_id` as owner identity and requires `chat_session_id`;
+  missing host-specific root identity reports `OBSERVE_ONLY`;
+- subject/tool/target roots and binding lineage are injected and revalidated
+  before status, handoff and final claims;
+- Completion Review remains resolvable with twenty stale historical child
+  records because it selects the current assigned reviewer exactly;
+- Session start does not create authority and unsupported shell structure fails closed;
 - terminal/blocked Stop cannot release until the machine-rendered Anchor is
   observed and a create-once release receipt is committed;
 - a deterministic runner PASS cannot coexist with a pre-functional Session

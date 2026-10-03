@@ -12,6 +12,7 @@
  */
 
 import {
+  create,
   fromBinary,
   toBinary,
   type DescMessage,
@@ -25,6 +26,7 @@ import {
   GetPostResponseSchema,
   GetTimelineResponseSchema,
   PostDetailOutcome,
+  PostAuthorSchema,
   ReactToPostResponseSchema,
   TimelinePageOutcome,
   UnreactToPostResponseSchema,
@@ -34,11 +36,16 @@ import {
   type TimelinePolicySummary,
 } from '../../gen/proto/domain/social/post_pb';
 import {
+  CommentSchema,
   CreateCommentResponseSchema,
   DeleteCommentResponseSchema,
-  GetCommentsResponseSchema,
   type Comment,
 } from '../../gen/proto/domain/social/comment_pb';
+import {
+  ListMomentCommentsResponseSchema,
+  type CommentResource,
+  type ListMomentCommentsResponse,
+} from '../../gen/proto/domain/social/private_content_pb';
 import { readableErrorMessage } from '../../features/social/socialTypes';
 import { buildMobileCreatePostRequest, type MobileMomentDraft } from '../../features/social/socialApiTypes';
 import {
@@ -230,7 +237,7 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
     },
 
     getPost: async (postId) => {
-      const path = `/api/v1/social/posts/${encodeURIComponent(postId)}`;
+      const path = `/api/v1/social/moments/${encodeURIComponent(postId)}`;
       const result = await commandProtoJson({
         method: 'GET',
         path,
@@ -241,7 +248,7 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
     reactToPost: (postId, reactionKind) =>
       commandProtoJson({
         method: 'POST',
-        path: `/api/v1/social/posts/${encodeURIComponent(postId)}/react`,
+        path: `/api/v1/social/moments/${encodeURIComponent(postId)}/react`,
         body: {
           post_id: postId,
           kind: reactionKind,
@@ -251,27 +258,30 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
     unreactToPost: (postId, reactionKind) =>
       commandProtoJson({
         method: 'POST',
-        path: `/api/v1/social/posts/${encodeURIComponent(postId)}/unreact`,
+        path: `/api/v1/social/moments/${encodeURIComponent(postId)}/unreact`,
         body: {
           post_id: postId,
           kind: reactionKind,
         },
       }, UnreactToPostResponseSchema, 'mobile.moments.reaction.error'),
 
-    fetchComments: (postId, cursor, limit) =>
-      commandProtoJson({
+    fetchComments: async (postId, cursor, limit) => {
+      const path = `/api/v1/social/moments/${encodeURIComponent(postId)}/comments`;
+      const result = await commandProtoJson({
         method: 'GET',
-        path: `/api/v1/social/posts/${encodeURIComponent(postId)}/comments`,
+        path,
         query: {
           cursor: cursor || undefined,
           limit,
         },
-      }, GetCommentsResponseSchema, 'mobile.moments.comment.error'),
+      }, ListMomentCommentsResponseSchema, 'mobile.moments.comment.error');
+      return projectPublicCommentPage(result, path);
+    },
 
     createComment: (postId, content, replyToCommentId) =>
       commandProtoJson({
         method: 'POST',
-        path: `/api/v1/social/posts/${encodeURIComponent(postId)}/comments`,
+        path: `/api/v1/social/moments/${encodeURIComponent(postId)}/comments`,
         body: {
           content,
           ...(replyToCommentId ? { reply_to_comment_id: replyToCommentId } : {}),
@@ -345,4 +355,59 @@ function invalidMomentsOutcome<T>(path: string): CommandOutcome<T> {
       path,
     },
   };
+}
+
+function projectPublicCommentPage(
+  result: CommandOutcome<ListMomentCommentsResponse>,
+  path: string,
+): CommandOutcome<CommentsPage> {
+  if (!result.ok) return result;
+  try {
+    return {
+      ok: true,
+      data: {
+        comments: result.data.comments.map(publicCommentFromResource),
+        nextCursor: result.data.nextCursor,
+        hasMore: result.data.hasMore,
+      },
+    };
+  } catch {
+    return {
+      ok: false,
+      error: {
+        code: 'INVALID_MOMENTS_RESPONSE',
+        message: 'mobile.moments.comment.error',
+        method: 'GET',
+        path,
+      },
+    };
+  }
+}
+
+function publicCommentFromResource(resource: CommentResource): Comment {
+  const metadata = resource.metadata;
+  if (!metadata || resource.body.case !== 'publicContent') {
+    throw new Error('PUBLIC_COMMENT_RESOURCE_INVALID');
+  }
+  const author = metadata.author;
+  if (!metadata.commentId || !metadata.postId || !author?.ptid) {
+    throw new Error('PUBLIC_COMMENT_RESOURCE_INVALID');
+  }
+  return create(CommentSchema, {
+    id: metadata.commentId,
+    postId: metadata.postId,
+    authorPtid: author.ptid,
+    content: resource.body.value.text,
+    createdAt: metadata.createdAt,
+    updatedAt: metadata.updatedAt,
+    isDeleted: metadata.isDeleted,
+    author: create(PostAuthorSchema, {
+      id: author.ptid,
+      username: author.acct,
+      displayName: author.acct,
+    }),
+    likesCount: metadata.reactionsCount,
+    replyToCommentId: metadata.replyToCommentId,
+    repliesCount: metadata.repliesCount,
+  });
 }

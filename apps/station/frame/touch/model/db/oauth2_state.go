@@ -17,6 +17,7 @@ type OAuth2IdentityBinding struct {
 	DisplayName    string    `gorm:"column:display_name;size:255"`
 	AvatarURL      string    `gorm:"column:avatar_url;size:512"`
 	Email          string    `gorm:"column:email;size:255"`
+	EmailVerified  bool      `gorm:"column:email_verified;not null;default:false"`
 	IsPrimary      bool      `gorm:"column:is_primary;not null;default:false;index:idx_oauth2_actor_provider,priority:1"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 	UpdatedAt      time.Time `gorm:"column:updated_at"`
@@ -84,4 +85,18 @@ func (m *OAuth2ConnectionState) BeforeCreate(tx *gorm.DB) error {
 		m.ID = id.NextID()
 	}
 	return nil
+}
+
+// OAuthBridgeAssertion records one consumed broker assertion. ID is a SHA-256
+// digest of the signed assertion identifier; the bearer value is never stored.
+type OAuthBridgeAssertion struct {
+	ID         string    `gorm:"column:id;primaryKey;size:64"`
+	Purpose    string    `gorm:"column:purpose;size:32;not null"`
+	ConsumedAt time.Time `gorm:"column:consumed_at;not null"`
+	ExpiresAt  time.Time `gorm:"column:expires_at;not null;index"`
+	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (*OAuthBridgeAssertion) TableName() string {
+	return "touch_oauth_bridge_assertion"
 }

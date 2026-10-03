@@ -1,8 +1,8 @@
 # Modern Chat Agent — Architecture Design
 
 > **Status**: accepted
-> **Version**: v1.3
-> **Created**: 2026-07-30 | **Updated**: 2026-09-25
+> **Version**: v1.5
+> **Created**: 2026-07-30 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -23,6 +23,7 @@
 | Desktop and Station already possess actor-device Ed25519 signing and verified-key resolution | `verified_fact` | `ActorDeviceIdentity`; `DeviceStore.ResolveSigningKey` | high | Native recovery acceptance |
 | A one-purpose signed recovery path can settle PREPARED work without restoring execution authority | `accepted_decision` | MCA-D19A in this document and `decisions.md` | high | G1-A/B implementation evidence |
 | One canonical device-signed command proof can bind every capability control-plane request without a second trust root | `accepted_decision` | MCA-D19B in this document and `decisions.md` | high | G1-A/B implementation evidence |
+| The existing runtime binding proto and Station persistence can carry external session identity but execution is Direct Model-only | `verified_fact` | `ConversationRuntimeBinding`; `runtime_authority_service.go`; exact-source `BASE-RESUME_UNAVAILABLE` run `20260930T193102500626Z-608146c5a247c33f1e99ea91a8756df5` | high | MCA-D29 implementation and P12 runtime proof |
 | Production restart cannot replay externally idempotent PREPARED work because the restored context has terminal-only authority | `verified_fact` | G1-C audit of `desktop_executor_worker/supervisor.rs` and `fenced_executor.rs` | high | None |
 | A new Station-fenced takeover can restore execution authority without broadening the recovery credential | `accepted_decision` | MCA-D19C in `decisions.md` | high | Deterministic takeover race evidence |
 | Provider/model filtering and TurnTrace cannot prove P12/CLI non-advertisement or zero local runtime side effects | `verified_fact` | XR-4 source audit and rejected weak adapter | high | Production snapshot implementation |
@@ -87,8 +88,8 @@ Non-goals:
                                 │ or browser HTTP/SSE gateway
 ┌───────────────────────────────▼─────────────────────────────────────┐
 │ Client Capability Kernel (Desktop Rust / Mobile Rust + plugins)     │
-│ Station API/SSE bridge, local MCP/builtin execution, local file      │
-│ handles, device policy, local audit projection                       │
+│ Station API/SSE bridge, device-local MCP/builtin execution, local    │
+│ file handles, device policy, local secret/process state              │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │ JWT + protobuf-aligned HTTP/SSE
 ┌───────────────────────────────▼─────────────────────────────────────┐
@@ -99,17 +100,21 @@ Non-goals:
 │                                                                      │
 │ Agent/Conversation/Turn/Message/ContextLedger/Trace/Feedback truth    │
 └──────────────┬─────────────────────────────┬─────────────────────────┘
-               │                             │
-               ▼                             ▼
+               │                 │                           │
+               ▼                 ▼                           ▼
 ┌──────────────────────────┐   ┌──────────────────────────────────────┐
 │ Direct Model Runtime     │   │ Registered External Agent Runtime   │
 │ Stateless HTTP/model CLI │   │ Conversation-bound runtime home,    │
 │ Station supplies context │   │ external session, resume/reset      │
 └──────────────────────────┘   └──────────────────────────────────────┘
-               │                             │
-               └──────────────┬──────────────┘
-                              ▼
-                    Provider / Agent process
+               │                 │   ┌────────────────────────────────┐
+               │                 │   │ Station MCP Runtime            │
+               │                 │   │ stdio / Station-reachable      │
+               │                 │   │ HTTP/SSE                       │
+               │                 │   └────────────────────────────────┘
+               └─────────────────┴───────────────┬────────────────────
+                                                ▼
+                                      Provider / Agent / MCP process
 ```
 
 ## 5. Sources Of Truth
@@ -123,7 +128,8 @@ Non-goals:
 | Provider/model catalog and capability facts | Station | Station catalog/discovery | Provider projection |
 | Package catalog snapshot | Verified publisher signature and pinned source registration | Desktop Rust verifier/cache | Desktop Marketplace projection |
 | Installed Agent/Skill state | Station | Station package/Skill services | Desktop Agent/Skill projections |
-| Installed MCP configuration | Actor-scoped Desktop Rust MCP store | Desktop Rust MCP service | Desktop MCP projection |
+| MCP Server catalog and sanitized configuration | Station | Version-gated Station MCP service | Desktop MCP projection |
+| MCP secret material and process state | Declared execution owner | Station MCP runtime or Desktop Rust MCP executor | Redacted Station status |
 | Credentials | Station | Client submission; Station runtime state | Status projection only |
 | Memory, skills, knowledge bindings | Station | Station services and authorized user/Agent actions | Capability projections |
 | Device-local endpoint/file handle | Owning client capability kernel | Authenticated local user | Station receives opaque capability/result |
@@ -165,6 +171,32 @@ writable runtime home or external session. Changing executor or provider
 requires a new conversation or an explicit destructive reset.
 
 An external Agent runtime is not modeled as a stateless provider adapter.
+
+MCA-D29 activates this optional path through one Station-owned External Runtime
+Manager. Registered adapters provide shell-free start, resume, and reset argv
+templates plus a bounded JSONL event translator. The manager derives the
+private runtime-home path from actor, Conversation, and epoch, while the
+binding exposes only an opaque `runtime_home_ref`.
+
+The first external Turn installs epoch `1`, starts one session, and persists
+the returned opaque handle before any model output is forwarded. A follow-up
+or post-Station-restart Turn resumes that exact handle. A missing or invalid
+handle produces the typed terminal `RUNTIME_RESUME_UNAVAILABLE` outcome; it
+never falls back to Direct Model or starts another session.
+
+Reset uses a durable two-phase command:
+
+```text
+READY / RESUME_UNAVAILABLE
+  -> RESET_PREPARED (DB fence)
+  -> external process/session/home cleanup
+  -> READY(session="", epoch+1) | CLEANUP_FAILED
+```
+
+New Turn admission is rejected while reset is prepared or cleanup has failed.
+Identical reset replay returns the original committed response; conflicting
+payload reuse is rejected. Startup recovery retries prepared cleanup through
+the same idempotent manager.
 
 ### 6.3 Local Capability Runtime
 
@@ -348,6 +380,8 @@ Forbidden:
 | Loop control | Repeat, ping-pong, step, time, and tool budgets terminate deterministically |
 | Persistence | Conversation, branch, runtime binding, terminal turn, and trace survive Station/Desktop restart |
 | Stateful runtime isolation | Two conversations never share runtime home or external session |
+| Stateful runtime continuity | Follow-up and post-Station-restart Turn resume the exact persisted session and epoch |
+| Destructive reset | No session/epoch/home mutation before confirmation; reset replay cleans once and advances one epoch |
 | Observability | Diagnostic export reconstructs context sources, attempts, tools, usage, and terminal reason |
 | Quality | Required fixed cases pass with no unsupported completion claim; failures remain visible and attributable |
 
@@ -366,7 +400,7 @@ accepted planning inputs. Production implementation and Gates remain
 | Capability catalog | Station Capability Manifest Registry | Desktop capability projection | Separate Tool/MCP/Connector inventories claiming readiness |
 | Agent binding/policy | Station Agent Capability Binding Service | Desktop configuration UI | `config_json` or local store as portable binding truth |
 | Runtime compatibility | Station admission snapshot plus active client capability lease | Client reports signed/typed local capability facts | Provider-name or UI-label inference |
-| MCP operation | Station operation/turn lineage | Owning client capability manager | Client-only terminal operation state |
+| MCP configuration mutation | Station `McpServerCommand` and immutable Server revision | Station MCP service with owner-local secret staging | Client-only catalog or duplicate config writes |
 | Connector resource tools | Station Connector Manifest Projection | OAuth owner/resource adapter | Connector display label as tool readiness |
 | Evaluation | Station Evaluation Service | Desktop Evaluation projection | localStorage dataset/run/result and `quickCompletion` terminal truth |
 
@@ -411,6 +445,12 @@ state, approval policy, expected Agent version, and binding revision.
 combines manifest, Agent binding, model/runtime compatibility, connection state,
 and selected client capability lease. Unknown or stale facts reject or degrade
 before provider/tool execution.
+
+For MCP, one Station-owned Server revision produces one manifest per discovered
+Tool. The manifest inherits the Server's concrete `STATION` or
+`CLIENT_CAPABILITY` owner. Only the latter requires a selected client
+capability lease. Transport (`stdio`, `http`, or `sse`) is independent of
+execution owner.
 
 Accepted Knowledge refinement (`MCA-D15K`):
 
@@ -461,28 +501,47 @@ ToolCall side-effect protocol:
 
 ## 21. MCP And Connector Operation Semantics
 
-Install, configure, test, connect, reconnect, and cancel are represented by a
-Station-owned `CapabilityOperation`. Desktop Rust executes local steps and
-reports typed progress/results with operation ID and attempt sequence.
+MCP Server create, update, refresh, enable/disable, and delete are represented
+by idempotent Station-owned `McpServerCommand` revisions. The declared
+execution owner performs discovery, and Station publishes the resulting
+per-Tool manifests. MCP does not use `CapabilityOperation`.
 
-Turn-time invocation is not a capability operation. It is a canonical
-`ToolCall` pinned to manifest/binding/readiness snapshots. This keeps install/
-connection lifecycle idempotency separate from exactly-once model tool
-execution.
+Connector connect, reconnect, cancel, and cleanup remain Station-owned
+`CapabilityOperation` records executed by their declared owner.
+
+Turn-time invocation for both MCP and Connector tools is a canonical
+`ToolCall` pinned to manifest/binding/readiness snapshots. This keeps config or
+connection idempotency separate from exactly-once model tool execution.
 
 Rules:
 
-- idempotency key prevents duplicate lifecycle mutations;
-- operation idempotency covers install/configure/test/connect/reconnect/
-  uninstall; ToolCall ID covers turn-time invoke;
-- cancellation is requested at Station and acknowledged by the executor;
-- process/port/secret cleanup is owned by the client capability manager;
+- MCP command idempotency prevents duplicate Server revisions;
+- Connector operation idempotency covers connect/reconnect/cancel/cleanup;
+  ToolCall ID covers turn-time invoke;
+- owner changes create a new MCP Server revision while admitted ToolCalls keep
+  their pinned revision and owner;
+- process/port/secret cleanup is owned by the declared execution owner;
 - terminal result is not inferred from process exit or Web state;
-- disconnect leaves the operation reconcilable, never silently successful;
-- actor/device/session/lease/payload mismatch rejects executor events;
-- first committed cancellation/result/timeout fence wins;
-- success commits only after required cleanup; cleanup failure commits failure;
-- late old-fence terminal/progress events are audit-only.
+- Desktop-owned MCP execution requires the pinned device/session/lease fence;
+  Station-owned MCP remains independent of client connectivity;
+- actor/owner/revision/payload mismatch always rejects;
+- first committed ToolCall result/timeout fence wins;
+- late old-fence receipts are audit-only.
+
+MCP configuration flow:
+
+```text
+Desktop/Web mutation
+  -> Station McpServer revision (sanitized config + secret refs)
+  -> owner-local secret material write
+  -> owner-local discovery
+  -> Station per-Tool CapabilityManifest publication
+  -> Agent binding/readiness
+```
+
+The Desktop runtime must not submit a private MCP tool inventory with a Turn.
+The Station manifest registry is the only source of provider-visible MCP Tool
+names and schemas.
 
 Connector OAuth connection remains owned by the OAuth subsystem.
 `ConnectorResourceManifest` maps an authorized resource and scopes to versioned
@@ -844,7 +903,7 @@ Run semantics:
 |---|---|
 | `agent-v2-home-command-center-e2e` | Home projection revision, duplicate Chat/Task submission idempotency, stale/partial/restart recovery, actor/account isolation |
 | `agent-v2-capability-binding-e2e` | One manifest/binding/readiness source; expected-version conflict; incompatible/stale requests reject before execution; manifest/Agent deletion behavior |
-| `agent-v2-mcp-lifecycle-e2e` | All-state settlement, lease/session takeover fencing, duplicate event replay, timeout/cancel race, late result rejection, secret/process/port cleanup and cleanup-failure visibility |
+| `agent-mcp-dual-runtime-source` | Station-owned MCP config, per-Tool manifests, explicit owner routing, standard stdio framing, and removal of the generic Desktop-only dispatch path |
 | `agent-v2-connector-invocation-e2e` | OAuth resource→manifest→binding→turn result, scope/version expiry, disconnect/resource removal, actor isolation |
 | `agent-v2-governed-tool-loop-e2e` | Unique decision/claim/result, PREPARED/APPLIED crash points, signed one-time recovery, idempotent replay or UNKNOWN_SIDE_EFFECT, lease renew/revoke, timeout/cancel/revoke and replay equality |
 | `agent-v2-evaluation-lab-e2e` | Durable run/case attempt/result/metrics, duplicate scheduler/mutation idempotency, cancel propagation/ack, retry uniqueness, restart, deletion/retention and actor isolation |
@@ -952,12 +1011,13 @@ The controller supports:
 - Desktop-local, Station-executor, Browser-unavailable, Mobile-unavailable,
   and Mobile-contract profiles without fabricated leases or runtime entities.
 
-Desktop Rust owns local receipt, MCP process, port, secret, Connector resource
-effect, and cleanup facts. Station owns Connector manifest, binding,
-readiness, ToolCall, decision, result, and replay truth. Provider fixture
-control is restricted to reviewed success/reject/timeout classes and never
-accepts or returns credentials. Release builds do not register Desktop
-executor hooks.
+The declared executor owns MCP process, port, secret, effect, and cleanup
+facts. Desktop Rust owns those facts only for `CLIENT_CAPABILITY`; Station MCP
+runtime owns them for `STATION`. Station owns MCP config/tool manifests,
+Connector manifests, bindings, readiness, ToolCall, decision, result, and
+replay truth. Provider fixture control is restricted to reviewed
+success/reject/timeout classes and never accepts or returns credentials.
+Release builds do not register Desktop executor hooks.
 
 The complete contract is defined in:
 
@@ -1016,7 +1076,7 @@ Pinned trust root + explicit transport
   -> authority-specific install
        Agent package -> Station atomic package import -> Station readback
        Skill         -> Station install/scan         -> Station readback
-       MCP           -> Desktop Rust MCP store       -> MCP readback
+       MCP           -> Station MCP service          -> Station readback
   -> projection ledger reconciliation
 ```
 

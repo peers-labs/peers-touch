@@ -1,7 +1,6 @@
 use super::fenced_executor::{CapabilityContract, CapabilityExecutor};
 use super::resource_registry::LocalResource;
 use crate::application::{mcp, oauth2, tools};
-use crate::contracts::McpExecuteToolInput;
 use crate::model::agent::ClientCapabilityRequest;
 use serde_json::Value;
 #[cfg(feature = "acceptance-webdriver")]
@@ -56,8 +55,8 @@ impl LocalCapabilityExecutor {
                     | "clipboard.read"
                     | "clipboard.write"
                     | "shell.execute"
-                    | "mcp.invoke"
-            ) && !is_connector_capability_id(&contract.capability_id)
+            ) && !is_mcp_capability_id(&contract.capability_id)
+                && !is_connector_capability_id(&contract.capability_id)
             {
                 return Err(format!(
                     "unsupported local capability contract: {}",
@@ -166,10 +165,11 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         &request.tool_call_id,
                     )?
                 }
-                "mcp.invoke" => {
+                capability_id if is_mcp_capability_id(capability_id) => {
                     record_side_effect_start()?;
-                    execute_mcp(
+                    execute_mcp_capability(
                         &self.actor_ptid,
+                        capability_id,
                         arguments,
                         workspace_root,
                         &allowed_roots,
@@ -278,6 +278,16 @@ fn is_connector_capability_id(capability_id: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn is_mcp_capability_id(capability_id: &str) -> bool {
+    let Some(hash) = capability_id.strip_prefix("mcp.tool.") else {
+        return false;
+    };
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn execute_builtin(
     tool_name: &str,
     arguments: Value,
@@ -295,35 +305,21 @@ fn execute_builtin(
     .map_err(|_| "CLIENT_CAPABILITY_EXECUTION_FAILED".to_string())
 }
 
-fn execute_mcp(
+fn execute_mcp_capability(
     actor_ptid: &str,
+    capability_id: &str,
     arguments: Value,
     workspace_root: Option<&str>,
     allowed_roots: &[String],
     tool_call_id: &str,
 ) -> Result<Value, String> {
-    let server_name = arguments
-        .get("server_name")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "CLIENT_CAPABILITY_MCP_SERVER_REQUIRED".to_string())?;
-    let tool_name = arguments
-        .get("tool_name")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "CLIENT_CAPABILITY_MCP_TOOL_REQUIRED".to_string())?;
-    let execution = mcp::mcp_execute_tool(
+    let execution = mcp::mcp_execute_capability(
         actor_ptid,
-        McpExecuteToolInput {
-            server_name: server_name.to_string(),
-            tool_name: tool_name.to_string(),
-            arguments: arguments.get("arguments").cloned(),
-            call_id: Some(tool_call_id.to_string()),
-            workspace_root: workspace_root.map(str::to_string),
-            allowed_roots: Some(allowed_roots.to_vec()),
-        },
+        capability_id,
+        arguments,
+        Some(tool_call_id.to_string()),
+        workspace_root.map(str::to_string),
+        Some(allowed_roots.to_vec()),
     );
     if !execution.ok {
         return Err("CLIENT_CAPABILITY_EXECUTION_FAILED".to_string());
@@ -394,7 +390,10 @@ mod tests {
         assert!(requires_local_resource("filesystem.read"));
         assert!(requires_local_resource("filesystem.list"));
         assert!(requires_local_resource("shell.execute"));
-        assert!(!requires_local_resource("mcp.invoke"));
+        assert!(!requires_local_resource(&format!(
+            "mcp.tool.{}",
+            "a".repeat(64)
+        )));
         assert!(!requires_local_resource("clipboard.read"));
 
         let executor = LocalCapabilityExecutor::new(

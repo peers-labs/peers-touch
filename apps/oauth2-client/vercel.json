@@ -1,5 +1,7 @@
 {
   "routes": [
+    { "src": "/api/admin", "dest": "/api/admin" },
+    { "src": "/api/admin/data", "dest": "/api/admin/data" },
     { "src": "/api/oauth/github/start", "dest": "/api/oauth/github/start" },
     { "src": "/api/oauth/google/start", "dest": "/api/oauth/google/start" },
     { "src": "/api/oauth/weixin/start", "dest": "/api/oauth/weixin/start" },

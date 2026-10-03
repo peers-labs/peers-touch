@@ -331,9 +331,9 @@ def _load_bound_environment(
     runtime_manifest: Mapping[str, Any],
     repo_root: Path,
 ) -> tuple[dict[str, str], dict[str, str], str, str, str, str]:
-    if os.environ.get("PT_AGENT_V2_ALLOW_STATION_RESTART") != "1":
+    if os.environ.get("PT_AGENT_ALLOW_STATION_RESTART") != "1":
         raise FoundationStationRestartError(
-            "PT_AGENT_V2_ALLOW_STATION_RESTART=1 is required for AS-F06"
+            "PT_AGENT_ALLOW_STATION_RESTART=1 is required for AS-F06"
         )
 
     profile = runtime_manifest.get("profile")

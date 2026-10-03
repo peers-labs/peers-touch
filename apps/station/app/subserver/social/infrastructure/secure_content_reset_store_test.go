@@ -1479,6 +1479,32 @@ func TestCanonicalPrivatePostSchemaRejectsDefinitionDrift(t *testing.T) {
 	}
 }
 
+func TestCanonicalPrivateSchemaRejectsLegacyReactionPostID(t *testing.T) {
+	database, _ := openSecureContentResetStore(t)
+	if err := database.Migrator().DropTable(&dbmodel.SocialReaction{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Exec(`
+CREATE TABLE social_reactions (
+	post_id INTEGER NOT NULL,
+	actor_id INTEGER NOT NULL,
+	kind TEXT NOT NULL,
+	post_class TEXT NOT NULL,
+	created_at DATETIME NOT NULL,
+	PRIMARY KEY (post_id, actor_id, kind)
+)`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := canonicalPrivateSchemaDigest(database)
+	if ResetCodeOf(err) != ResetCodeSchemaTargetUnreviewed {
+		t.Fatalf("schema validation error = %v", err)
+	}
+	if !strings.Contains(err.Error(), "social_reactions.post_id") {
+		t.Fatalf("schema validation error does not identify reaction post_id: %v", err)
+	}
+}
+
 func TestGORMSecureContentResetStoreResumesCompletionAfterPostAuditCrashFailpoint(
 	t *testing.T,
 ) {
@@ -2324,7 +2350,7 @@ func resetInvocationFixture(
 		ResetIntent:           manifest.ResetIntent,
 		ResetManifestDigest:   manifest.ManifestDigest,
 		PlanID:                SecureContentResetPlanID,
-		TaskID:                "W12A",
+		TaskID:                "W12D",
 		DeclarationDigest:     stringsRepeat("b", 64),
 		SourceCommit:          manifest.SourceCommit,
 		WorkspaceID:           manifest.WorkspaceID,

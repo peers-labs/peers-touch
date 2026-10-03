@@ -79,7 +79,6 @@ type capabilityBindingSeed struct {
 type legacyAgentChatConfig struct {
 	Tools              []string                     `json:"tools"`
 	Skills             []string                     `json:"skills"`
-	MCPServers         []string                     `json:"mcpServers"`
 	Connectors         []legacyAgentConnectorConfig `json:"connectors"`
 	KnowledgeResources json.RawMessage              `json:"knowledgeResources"`
 }
@@ -264,15 +263,6 @@ func (s *CapabilityBackfillService) scan(
 		return nil, nil, nil, nil, nil, nil, err
 	}
 	rejections = append(rejections, knowledgeRejects...)
-
-	mcpManifests, mcpBindings, mcpRejects, err :=
-		s.scanMCPBindings(ctx, agentByID, reports)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-	manifests = append(manifests, mcpManifests...)
-	bindings = append(bindings, mcpBindings...)
-	rejections = append(rejections, mcpRejects...)
 
 	configManifests, configBindings, configRejects :=
 		s.scanAgentConfigs(agents, manifests, reports)
@@ -647,50 +637,6 @@ func knowledgeReportSourceID(agentID string, legacyID string, index int) string 
 	return agentID + ":knowledge:" + shortCapabilityHash(legacyID)
 }
 
-func (s *CapabilityBackfillService) scanMCPBindings(
-	ctx context.Context,
-	agents map[string]persistence.Agent,
-	reports []CapabilityBackfillSourceReport,
-) ([]capabilityManifestSeed, []capabilityBindingSeed, []CapabilityBackfillRejection, error) {
-	var rows []persistence.AgentMcpBinding
-	if err := s.db.WithContext(ctx).Order("id").Find(&rows).Error; err != nil {
-		return nil, nil, nil, err
-	}
-	var manifests []capabilityManifestSeed
-	var bindings []capabilityBindingSeed
-	var rejections []CapabilityBackfillRejection
-	for _, row := range rows {
-		incrementBackfillScanned(reports, "mcp_binding")
-		agent, ok := agents[row.AgentID]
-		serverName := strings.TrimSpace(row.ServerName)
-		if !ok || serverName == "" {
-			rejections = append(rejections, backfillRejection(
-				"mcp_binding", row.ID, "missing_agent_or_server",
-			))
-			continue
-		}
-		capabilityID := "mcp:" + serverName
-		manifests = append(manifests, legacyManifestSeed(
-			"mcp_binding", row.ID, capabilityID,
-			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_MCP,
-			serverName, model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY,
-			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE,
-		))
-		bindings = append(bindings, capabilityBindingSeed{
-			source:            "mcp_binding",
-			sourceID:          row.ID,
-			ptid:              agent.OwnerActorPTID,
-			agentID:           agent.ID,
-			agentVersion:      uint64(agent.Version),
-			capabilityID:      capabilityID,
-			capabilityVersion: capabilityLegacyVersion,
-			enabled:           row.Enabled,
-			approvalPolicy:    model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL,
-		})
-	}
-	return manifests, bindings, rejections, nil
-}
-
 func (s *CapabilityBackfillService) scanAgentConfigs(
 	agents []persistence.Agent,
 	knownManifests []capabilityManifestSeed,
@@ -744,19 +690,6 @@ func (s *CapabilityBackfillService) scanAgentConfigs(
 			}
 			bindings = append(bindings, bindingFromManifest(
 				"agent_config", agent.ID+":skill:"+skillName, agent, manifest.manifest, true,
-			))
-		}
-		for _, serverName := range normalizedStrings(config.MCPServers) {
-			capabilityID := "mcp:" + serverName
-			manifest := legacyManifestSeed(
-				"agent_config", agent.ID+":mcp:"+serverName, capabilityID,
-				model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_MCP,
-				serverName, model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY,
-				model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE,
-			)
-			manifests = append(manifests, manifest)
-			bindings = append(bindings, bindingFromManifest(
-				"agent_config", manifest.sourceID, agent, manifest.manifest, true,
 			))
 		}
 		for _, connector := range config.Connectors {
@@ -881,15 +814,6 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 	requiredRuntimeCapabilities := []string{"native-tools"}
 	version := ""
 	switch {
-	case definition.Name == "local_mcp":
-		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_MCP
-		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
-		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
-		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
-		secretBoundary = "client"
-		capabilityID = "mcp.invoke"
-		requiredRuntimeCapabilities = nil
-		version = "2"
 	case strings.HasPrefix(definition.Name, "local_"):
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CLIENT_NATIVE
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
@@ -1026,8 +950,7 @@ func bindingFromManifest(
 		enabled:           enabled,
 		approvalPolicy:    manifest.GetDefaultApprovalPolicy(),
 		reconcileVersion: manifest.GetSourceKind() ==
-			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL ||
-			manifest.GetCapabilityId() == "mcp.invoke",
+			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL,
 	}
 }
 
@@ -1472,7 +1395,6 @@ func capabilityBackfillReports() []CapabilityBackfillSourceReport {
 		"custom_http_plugin",
 		"knowledge_binding",
 		"knowledge_resource",
-		"mcp_binding",
 		"skill",
 		"skill_binding",
 	}
@@ -1614,7 +1536,7 @@ func capabilitySecretBoundary(owner model.ToolExecutionOwner) string {
 
 func bindingSourcePriority(source string) int {
 	switch source {
-	case "knowledge_binding", "skill_binding", "mcp_binding":
+	case "knowledge_binding", "skill_binding":
 		return 0
 	case "agent_config":
 		return 1

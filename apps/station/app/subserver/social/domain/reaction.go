@@ -16,7 +16,7 @@ import (
 // 9); the ReactionService gates writes via `CanReact` which is just
 // `CanRead` with extra anti-bot checks deferred to a future phase.
 type Reaction struct {
-	PostID    uint64
+	PostID    string
 	PostClass PostClass
 
 	ActorPTID string

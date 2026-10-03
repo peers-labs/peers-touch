@@ -1,8 +1,8 @@
 # Acceptance Framework
 
 > **Status**: active
-> **Version**: v2.2
-> **Created**: 2026-06-03 | **Updated**: 2026-09-13
+> **Version**: v2.3
+> **Created**: 2026-06-03 | **Updated**: 2026-09-29
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -25,6 +25,8 @@
   capability，而不把secret或raw handle写入manifest、环境变量或Evidence Store。
 - 业务Capability如何声明required evidence finalizer，并在cleanup完成后、
   Evidence Store run finalize前执行detached只读验证。
+- 多场景 Task 如何通过 Suite Runtime 复用服务、Actor、客户端、设备、存储和
+  登录态，并保持 Scenario attach-only 与 receiver-visible proof。
 - Federation 与 Acceptance Framework 双边互验证的架构闭环。
 - 新产品域如何按统一标准接入项目级 acceptance。
 
@@ -73,6 +75,8 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 13. Chat 验收只承认 Conversation `/conversation/*` 入口；Device、Inbox、
     Recovery、Key Exchange 与 Federation 必须通过各自 resource-owner API
     取证。Desktop/Mobile 的 Device Messaging Engine 名称只描述内部 runtime。
+14. 共享昂贵资源的多场景 Task 必须声明 `runtimeReuse`，由 Suite Runtime
+    report 证明资源复用、attach-only、真实 UI/receiver 证据和最终清理。
 
 ---
 
@@ -81,7 +85,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | 文档 | 说明 |
 |------|------|
 | [design.md](./design.md) | 架构原则、分层模型、核心契约、Core Runtime 抽象和执行闭环 |
-| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-19） |
+| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-21） |
 | [data-model.md](./data-model.md) | Provisioning、Evidence Store、ArtifactRef、Run Manifest 与状态机 |
 | [module-layout.md](./module-layout.md) | Core Runtime 与 Environment Provisioning 的目标目录、职责和禁止依赖 |
 | [integration.md](./integration.md) | 现有变量/Profile/Fixture/Gate 到 runtime manifest 的映射与影响面 |
@@ -140,6 +144,13 @@ Accepted `PostCleanupEvidenceFinalizer` target architecture由`D-19`定义：
 - `EnvironmentContract.services` 与 `RuntimeManifest.services` 保持唯一服务拓扑真源；
 - 客户端只通过 stable service ID 绑定依赖，不保存第二份 endpoint；
 - Mobile、Federation 与 Native Desktop 的私有客户端—Station 映射必须迁移后删除。
+
+多场景资源复用由 accepted `D-21` 约束：
+
+- Plan Task Slice 以 closed `runtimeReuse` 声明 Suite 入口、场景集合和预算；
+- Acceptance Core 只拥有生命周期账本、计量和校验，不拥有业务注入；
+- Scenario 启动后禁止重复 build、deploy、account、client、device 或 login；
+- Suite Runtime PASS 只代表 supporting lifecycle evidence，不能替代产品证明。
 
 ---
 
