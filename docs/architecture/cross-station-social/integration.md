@@ -1,7 +1,7 @@
 # Cross-Station Private Social - Integration
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-03 | **Updated**: 2026-10-03
 > **Owner**: Social / Federation
 
@@ -17,6 +17,7 @@
 | Federation frames | `model/domain/federation/delivery.proto` | add four durable Social payload kinds |
 | Shared transport | `apps/station/frame/core/federation/delivery/` | register typed Social receivers; retain neutral mechanics |
 | Key Exchange authority | `apps/station/app/subserver/key_exchange/` | authenticated remote claim and exact replay |
+| Conversation Group authority | `apps/station/app/subserver/conversation/` | extend the existing snapshot with Federation ID; retain membership ownership and submit fence |
 | Social authority | `apps/station/app/subserver/social/` | source UOW, receiver projection, interaction, invalidation, object peer read |
 | Native crypto | `apps/desktop/src-tauri/src/secure_content/`, `social/` | consume remote proof/projection without new crypto |
 | Native projection | `apps/desktop/src/store/privateMoments.ts`, `runtimes/momentsRuntime.ts` | remote delivery and source-unavailable states |
@@ -103,10 +104,12 @@ separate `packages/model` SDK outputs.
 
 The existing Social prepare/submit UOW gains:
 
-1. verified recipient locality partition;
-2. local and remote Key Exchange claim ports;
-3. per-remote-actor frame construction;
-4. transaction-scoped shared Federation outbox writes.
+1. verified recipient locality and Federation partition;
+2. Conversation-owned `GROUP` snapshot with Federation ID and unchanged submit
+   fence;
+3. local and remote Key Exchange claim ports;
+4. per-remote-actor frame construction;
+5. transaction-scoped shared Federation outbox writes.
 
 The existing remote-recipient rejection stays active until the complete source
 and receiver path passes functional proof. Its deletion is part of the delivery
@@ -164,6 +167,7 @@ continuity regression. No Mobile gate is added to this plan.
 | Concern | New path | Old path removed or changed | Proof |
 |---|---|---|---|
 | Remote audience | verified locality + remote Key Exchange claim | unconditional remote-recipient rejection | supported remote audience succeeds; unsupported cases still fail before commit |
+| Federated Group | Conversation snapshot with Federation ID + unchanged submit fence | locality rejection for same-Federation remote members | mixed local/remote Group succeeds exactly once; stale/cross-Federation snapshots commit nothing |
 | Remote delivery | viewer-scoped Federation frame | local-only delivery intent | source/receiver UOW failpoints and duplicate corpus |
 | Object read | Social-authorized Federation peer stream | any direct remote/public fallback | wrong actor/device/object/range negatives |
 | Interaction | source-authority command/result | receiver-local authoritative mutation | exact replay and parent revoke tests |

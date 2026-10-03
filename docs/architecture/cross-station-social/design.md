@@ -1,7 +1,7 @@
 # Cross-Station Private Social - Architecture Design
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-10-03 | **Updated**: 2026-10-03
 > **Owner**: Social / Federation
 
@@ -24,18 +24,18 @@
 
 ## 2. Architecture Applicability Review
 
-| Case | Trigger | Disposition | Canonical source and binding |
-|---|---|---|---|
-| `AAR-C01` Shared Domain Contract | Cross-runtime Social, Federation, and Key Exchange messages | `adapted` | `docs/global/domain-model.md`; extend canonical proto roots and import Secure Content types, never hand-write a parallel DTO. |
-| `AAR-C02` Global Context / Runtime | Projection spans pages, login sessions, actor/Station switches, and background recovery | `adapted` | `global-context-kernel.md` + `runtime-projections.md`; GlobalContext owns lifecycle signals, `momentsRuntime` alone owns Social freshness. |
-| `AAR-C03` i18n | New visible pending, retry, unavailable, recovery, denial, and validation states | `reused` | `i18n-architecture.md` + `packages/locales`; reuse namespace/error-key loading and translate all supported locales. |
-| `AAR-C04` API / Handler Ownership | New peer routes, Social commands, and typed receiver handlers | `adapted` | API Ownership + Unified Handler; register one capability ID, canonical proto/route/truth owner, and reuse middleware. |
-| `AAR-C05` Event / Realtime Notification | Committed Social changes refresh hidden or unopened Desktop surfaces | `adapted` | Station event stream + Desktop kernel events; use typed wakes only, never a second truth or feature-private stream. |
-| `AAR-C06` Storage / Cache | New receiver tables, encrypted local projection, recovery, and purge | `adapted` | Unified Runtime Storage + Secure Content; preserve canonical/projection ownership, unified roots, bounded cleanup, and rebuildability. |
-| `AAR-C07` UI Foundation | Existing Moments UI gains remote states and Native-only registration | `reused` | Page/Component guide + `packages/ui`; reuse LobeUI, theme, icon, navigation, and feedback primitives. |
-| `AAR-C08` Identity / Security / Privacy | Cross-Station trust, credentials, private payloads, grants, and revocation | `reused` | Federation authentication + Key Exchange + Secure Content + Station authorization; plaintext stays Native-client owned. |
-| `AAR-C09` Logging / Metrics / Errors | Durable retry, replay, reconcile, rejection, recovery, and latency claims | `adapted` | Common logging and platform metrics; preserve typed errors, trace context, bounded metrics, and owner-attributable logs. |
-| `AAR-C10` Acceptance | New cross-Station product journeys and negative guarantees | `adapted` | Acceptance Framework/domain onboarding; extend Social Capability → Feature → Gate → Evidence and retain `UNPROVEN` on missing proof. |
+| Case | Trigger | Owner | Disposition | Integration contract | No parallel truth | Required evidence |
+|---|---|---|---|---|---|---|
+| `AAR-C01` Shared Domain Contract | Cross-runtime Social, Federation, and Key Exchange messages | Model owners for Social, Federation, Key Exchange, and Secure Content | `adapted` | Extend canonical proto roots and import Secure Content types; regenerate all scoped consumers from one source generation. | No hand-written wire DTO, duplicate enum, compatibility reader, or second generator. | Generator check, generated parity test, and `social-cross-station-contract`. |
+| `AAR-C02` Global Context / Runtime | Projection spans pages, login sessions, actor/Station switches, and background recovery | Desktop GlobalContext for lifecycle; `momentsRuntime` for Social freshness | `adapted` | GlobalContext emits actor/session/Station lifecycle; `momentsRuntime` bootstraps, reconciles, and tears down the scoped projection. | Pages, stores, and feature-private listeners never own long-lived freshness or lifecycle truth. | Runtime unit tests plus Native hidden-page, logout, actor-switch, and Station-switch receiver evidence. |
+| `AAR-C03` i18n | New pending, retry, unavailable, recovery, denial, and validation states | Shared locale packages and Desktop error presenter | `reused` | Add matching `moments` / `errors` keys to every supported locale and map typed errors through the existing resolver. | No React, Rust, or Go human-readable product error becomes a second copy source. | Locale parity check, error-mapping tests, and Native visible-state assertions. |
+| `AAR-C04` API / Handler Ownership | New peer routes, Social commands, and typed receiver handlers | Key Exchange owns PreKey routes; Social owns business commands; Federation owns peer transport | `adapted` | Register canonical capability IDs, proto request/response types, route owners, middleware, and typed receiver dispatch. | No Social transport, Federation business authorization, alias route, or duplicate handler owner. | API ownership Gate, route inventory tests, and wrong-owner negative tests. |
+| `AAR-C05` Event / Realtime Notification | Committed Social changes refresh hidden or unopened Desktop surfaces | Station event stream, Rust host adapter, Desktop kernel EventBus, then `momentsRuntime` | `adapted` | Publish typed wake metadata only after commit; bridge once into the kernel catalog; reconcile gaps from Station truth. | No payload-bearing event truth, direct Tauri-to-store mutation, module-private stream, or page-owned polling. | `social-cross-station-eventbus-contract` and Native hidden-page, duplicate, reorder, gap, and teardown proof. |
+| `AAR-C06` Storage / Cache | Receiver projection, encrypted local projection, recovery, and purge | Source Social for canonical rows; receiver Social for rebuildable projection; Desktop unified storage for local cache | `adapted` | Separate canonical/projection tables, actor-scoped encrypted local roots, monotonic tombstones, bounded purge, and source-authorized rebuild. | Cache never becomes business truth; recipient Social never becomes remote canonical authority. | Migration/repository tests, restart/recovery proof, purge assertions, and stale-delivery non-resurrection evidence. |
+| `AAR-C07` UI Foundation | Existing Moments UI gains remote states and Native-only registration | Existing Moments UI and shared UI packages | `reused` | Reuse LobeUI/theme/icons/navigation/feedback and existing Social page structure; add only required state rendering. | No duplicate component system, Browser fallback surface, or second Moments page. | Desktop type/tests, source registration scan, and Native user-visible assertions. |
+| `AAR-C08` Identity / Security / Privacy | Cross-Station trust, credentials, private payloads, grants, and revocation | Federation authentication, Key Exchange keys, Social authorization, Native key custody | `reused` | Authenticate Station peers, verify actor/device/resource bindings, use one-time PreKeys, and keep plaintext/content keys client-only. | No Station decryption, copied key pool, public object URL, client direct-remote call, or co-recipient disclosure. | Tamper/target/signature/grant negatives, database/log plaintext scan, and receiver-scoped envelope proof. |
+| `AAR-C09` Logging / Metrics / Errors | Durable retry, replay, reconcile, rejection, recovery, and latency claims | Federation and Social operation owners; Desktop runtime for client transitions | `adapted` | Preserve trace context, typed error codes, bounded labels, retry/replay/reject/resync counters, and latency histograms at owner boundaries. | Logs and metrics are observations only; they cannot become delivery state or expose payload, actor lists, keys, or secrets. | Deterministic metric/error tests plus exact-source runtime artifacts linking trace, disposition, retry, and visible state. |
+| `AAR-C10` Acceptance | New cross-Station journeys and negative guarantees | Acceptance Framework with Social Capability, Feature, Gate, and Evidence owners | `adapted` | Register fail-closed Social gates, one reusable two-Station Native Suite Runtime, receiver-visible assertions, and exact-source evidence. | Harness/API checks cannot substitute for Native UI evidence; missing/stale evidence remains `UNPROVEN`. | Plan/domain validation, runtime-reuse audit, Social focused Gates, gap audit, and immutable cleanup-complete reports. |
 
 No baseline case is `not_applicable`: this change crosses shared contracts, global lifecycle, user-visible UI, persistence, trust boundaries, background delivery, and product Acceptance. Domain-specific Federation, Secure Content, Key Exchange, and Social authority candidates are defined below.
 
@@ -117,6 +117,13 @@ select audience
 - Every recipient must resolve to one canonical ActorRef and Home Station.
 - All Home Stations must belong to the same active Federation selected by the
   source operation.
+- `GROUP` uses the Conversation-owned snapshot and submit fence from `SC-D29`.
+  That snapshot binds the canonical Federation ID, Conversation ID, membership
+  epoch, authority head, ordered active members, and member Home Stations.
+- Source Social revalidates the Group snapshot and Federation membership at
+  prepare and submit. Same-Federation remote Group members are admitted through
+  the same remote PreKey and viewer-scoped delivery path as other audiences;
+  Social does not query remote Conversation services or copy membership truth.
 - Required endpoint and recovery slots are frozen before encryption.
 - Any unresolved identity, missing required PreKey, cross-Federation recipient,
   unsupported audience, or size-limit breach rejects the whole publish.
