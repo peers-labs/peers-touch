@@ -1,8 +1,8 @@
 # Federated Human Social Activity — 集成关系
 
 > **Status**: draft
-> **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-09-06
+> **Version**: v0.3
+> **Created**: 2026-06-17 | **Updated**: 2026-10-03
 > **Owner**: Architecture Team
 
 ---
@@ -125,7 +125,8 @@ Station block integration boundary:
 
 - Existing Post / Comment / Reaction 仍是当前阶段核心对象。
 - Existing Audience 不改语义，只增加解释投影。
-- Existing Circle 仍是发布者私有关系分组，不联邦化。
+- Existing Circle 仍是发布者 Home Station 私有关系分组，不复制为联邦共享对象；
+  其成员可以引用同一 active Federation 内的远端 Actor。
 - Existing Moments runtime 保持投影 owner，后续可重命名但不以页面 fetch 替代。
 - Agent / A2A / Applet 文档仍有效，但不作为当前阶段实现依赖。
 
@@ -140,8 +141,127 @@ The D-07 implementation boundary is cross-domain but not cross-owned:
 | Federation | Station authentication, delivery, retry, dedup, bounded admission | no Friend Request policy or relationship mutation |
 | Receiver Social | idempotent materialization, accept/reject, relationship projection, result outbox | receiver Home Station is decision authority |
 | Conversation | create/reuse Direct only after accepted Social relationship | no Friend Request persistence |
-| Desktop/Mobile | call the same `/api/v1/social/*` API and render projection | no platform-specific protocol |
+| Native clients | call the same `/api/v1/social/*` API and render projection; Desktop is current, Mobile later | no platform-specific protocol |
 
 The dependency and deletion contract is owned by
 `docs/architecture/api-ownership/integration.md`. AO-D01 through AO-D06 and D-07
 were accepted on 2026-09-06; implementation follows the linked execution plan.
+
+---
+
+## 8. Cross-Station Private Social Integration
+
+### 8.1 Current Foundation And Missing Closure
+
+| Existing asset | Reuse | Missing closure |
+|---|---|---|
+| `station/frame/core/federation/delivery` | durable signed outbox/inbox, retry, dedup, ordering | four Social private payload kinds and receivers |
+| `social/application/private_content_service.go` | prepare/submit UOW, commit proof, grants, envelopes | remote locality admission and atomic remote outbox |
+| `social/private_content_ports.go` | remote endpoint-manifest resolution | grouped remote Content PreKey claim |
+| `key_exchange/content_prekey_capability.go` | one-time endpoint/recovery key authority | authenticated Federation inventory/claim peer routes |
+| `social/infrastructure/federated_*` | Social Friend Request and relationship delivery pattern | private resource/interaction receiver and stores |
+| `social/private_object_service.go` | source-owned encrypted object grant | Federation-authenticated ciphertext stream |
+| Desktop `privateMomentsNative` and `momentsRuntime` | local decrypt, SQLCipher projection, event/reconcile | remote source identity and pending delivery projection |
+
+### 8.2 Contract And Generation Impact
+
+Proto-first work touches:
+
+- `model/domain/social/private_federation.proto` (new);
+- `model/domain/federation/delivery.proto` (new payload kinds only);
+- `model/domain/key_exchange/key_exchange.proto` (federated Content PreKey wrappers);
+- `model/domain/error/error.proto` only if existing typed errors cannot express
+  remote pending, source unavailable or terminal federation rejection.
+
+Generated Go, Rust, Desktop TypeScript and Mobile TypeScript outputs must be
+regenerated together. Mobile generation is contract compatibility only and does
+not enable Mobile product code or readiness.
+
+### 8.3 Station Composition
+
+`apps/station/app/subserver/social` remains the business owner:
+
+- source-side coordinator groups recipients by Home Station;
+- source submit transaction persists canonical resource and Federation frames;
+- receiver registers typed Social private receivers before runtime seal;
+- receiver projection repository serves local authenticated Social reads;
+- interaction coordinator returns remote commands to source authority;
+- invalidation coordinator advances target projections monotonically.
+
+`apps/station/app/subserver/key_exchange` owns remote Content PreKey
+inventory/claim endpoint behavior. `station/frame/core/federation` owns only
+peer routes, authentication and domain-neutral transport.
+
+### 8.4 API Ownership
+
+Client-facing APIs remain under the canonical Social resource owner:
+
+```text
+/api/v1/social/moments/*
+/api/v1/social/private/*
+```
+
+Federation-owned peer routes are internal:
+
+```text
+/federation/key-exchange/content-prekeys/inventory
+/federation/key-exchange/content-prekeys/claim
+/federation/social/private/objects/:object_id
+```
+
+Durable private resource and interaction frames use
+`/federation/delivery`. No second public Social API family is introduced.
+
+### 8.5 Persistence
+
+Source Station:
+
+- retains canonical private Post/Comment/Reaction truth;
+- retains all audience grants and commit proof;
+- atomically inserts remote Federation outbox frames during submit/revoke.
+
+Recipient Station:
+
+- stores viewer-scoped remote resource/envelope projections;
+- stores local remote-command state for pending/retry/result presentation;
+- never writes source-authority Post/Comment tables;
+- can rebuild projections from replay/reconcile.
+
+### 8.6 Desktop Native
+
+Desktop Rust keeps one Social transport facade. It reads local and imported
+resources through the same Home Station API and validates source Station proof
+attestations before decryption. Desktop Web keeps `momentsRuntime` as projection
+owner and adds only typed states/actions for remote pending, source unavailable,
+retry and invalidation.
+
+No page mount fetch, direct remote Station URL, second Social store or Browser
+fallback is allowed.
+
+### 8.7 Browser Hard Cut
+
+The implementation inventory must remove or gate out Browser registrations for:
+
+- Moments page descriptors and navigation entries;
+- `momentsRuntime` installation;
+- Social publish/read/comment/reaction actions;
+- private key, recovery and encrypted object handlers.
+
+The public Station HTTP API and Federation peer routes remain available to
+Native clients and infrastructure. A source gate must prove Browser build
+entrypoints cannot reach Social product code.
+
+### 8.8 Migration And Cutover
+
+1. Add contracts and generated artifacts with old remote rejection still active.
+2. Add remote Content PreKey routes and exact replay tests.
+3. Add receiver projections, payload receivers and object stream.
+4. Add source outbox and remote interactions behind the existing locality guard.
+5. Add Desktop pending/retry/read/recovery projection.
+6. Run two-Station shadow tests while production behavior still rejects remote
+   recipients.
+7. Atomically remove the locality rejection and enable positive remote audience.
+8. Prove Browser zero registration and two-Station Native acceptance.
+
+No permanent feature flag, dual write or legacy remote-rejection fallback
+remains after cutover.

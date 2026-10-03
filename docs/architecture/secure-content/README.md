@@ -131,3 +131,9 @@ On 2026-10-01, the Owner narrowed the active hard-cut milestone to
 `DESKTOP_DEVELOPMENT_USABLE`: Desktop Native private Social plus the required
 two-Station schema activation. Browser, Mobile, Chat product runtime,
 `FINAL_CUT`, and formal release Acceptance remain explicit future scope.
+
+On 2026-10-03, the Owner selected Native Desktop cross-Station Social as the
+next product milestone, prohibited Browser Social, and deferred Mobile. Secure
+Content remains the crypto/validation substrate; Social and the shared
+Federation runtime own the new business and transport closures documented in
+[`../federated-social-activity/`](../federated-social-activity/README.md).
