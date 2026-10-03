@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-03
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -49,6 +49,10 @@
     profile, slot, and capability binding only. Current Git HEAD is read from
     the worktree for each operation and fenced by Development intent and
     runtime build identity where mutation occurs.
+15. **Shared immutable compilation, isolated outputs**: Rust compiler results
+    may be reused through one bounded machine `sccache`, while every worktree
+    retains its own Cargo target directory, incremental state, linked
+    artifacts, and final binaries.
 
 ## 2. System Architecture
 
@@ -96,6 +100,7 @@ The following roots remain separate:
 ~/.peers-touch/                                  product and Agent data
 ~/.peers-touch/dev/                              machine dev control plane
 ~/.peers-touch/dev/acceptance/                   Acceptance evidence
+~/.peers-touch/dev/cargo-cache/                  Shared bounded compiler cache
 ~/.peers-touch/dev/workspaces/<workspaceId>/     worktree-scoped development state
 ~/Library/Application Support/peers-touch/       Desktop runtime instances
 ~/Library/Application Support/PeersTouch/        formal product namespace
@@ -121,6 +126,8 @@ not remain as a symlink, fallback, or second read owner.
 | Station connection/deploy/reset permission | Machine Dev Control Plane | capability lease |
 | Live process and port state | OS observation | PID identity + listening socket |
 | Runtime evidence | Acceptance Evidence Store | `~/.peers-touch/dev/acceptance/` |
+| Reusable Rust compiler objects | Machine Dev Control Plane | `~/.peers-touch/dev/cargo-cache/data/` |
+| Rust target and final binaries | Current worktree | Cargo's worktree-local `target/` |
 | Peers Dev application source | Repository application layer | `apps/dev/` |
 | Live Peers Dev server ownership | Operating system | listener on `127.0.0.1:4177` |
 
@@ -357,6 +364,24 @@ A listener that does not return the exact supported identity fails closed as
 No PID file, dynamic fallback port, implicit process kill, host override, or
 port override participates in server ownership.
 
+### 4.10 Rust Compiler Cache
+
+Cargo discovers the repository `.cargo/config.toml` from any nested manifest
+and invokes one checked-in wrapper. The wrapper uses `sccache` when available,
+honors an explicit disable switch, and otherwise delegates directly to the
+Cargo-provided `rustc` executable.
+
+Machine setup installs the same wrapper under
+`~/.peers-touch/dev/cargo-cache/bin/` and references it from Cargo's user
+configuration so retained worktrees benefit before they synchronize the
+repository config. The wrapper sets a shared cache directory and bounded cache
+size only when the caller has not supplied explicit values.
+
+The integration never sets `CARGO_TARGET_DIR` or Cargo `build.target-dir`.
+Dependency versions, features, target triples, compiler versions, profiles and
+compiler arguments remain part of the compiler-cache key; incompatible
+artifacts therefore miss instead of being reused.
+
 ## 5. Resolution Contract
 
 Every mutating runtime command resolves in this order:
@@ -484,3 +509,9 @@ The target implementation must prove:
 - Existing non-stable Profile reset never requests human authorization; missing
   capability, declaration, scope, topology, identity, and lease failures remain
   separately typed and fail closed.
+- Two byte-identical crates built from different directories produce a
+  compiler-cache hit while retaining distinct target directories.
+- Missing or explicitly disabled `sccache` delegates to the exact
+  Cargo-provided compiler without breaking the build.
+- Machine setup preserves unrelated Cargo configuration and refuses ambiguous
+  duplicate ownership instead of rewriting it.

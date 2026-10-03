@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-03
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -30,6 +30,7 @@
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 | LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
 | LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | accepted |
+| LDCP-D19 | Share bounded Rust compiler results, never Cargo target directories | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -842,3 +843,61 @@ possession.
   claim is planner-owned.
 - Existing explicit `make station` owner actions and non-planned declarations
   retain their current behavior.
+
+## LDCP-D19: Shared Rust Compiler Cache With Isolated Targets
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+Concurrent Peers-Touch worktrees duplicate large Rust dependency compilation
+outputs. Sharing one writable Cargo target directory would reduce duplication
+but introduces lock contention, profile and feature collisions, stale final
+binaries, and cleanup ownership ambiguity.
+
+### Decision
+
+Use `sccache` as one machine-level, content-addressed Rust compiler cache.
+Repository Cargo configuration automatically invokes a checked-in wrapper from
+nested Desktop, Mobile, and tooling manifests. One setup command installs a
+machine copy of that wrapper and a Cargo user-config include so retained
+worktrees also benefit without shell environment setup.
+
+The wrapper:
+
+- delegates to `sccache` when it is installed;
+- delegates directly to the exact Cargo-provided `rustc` when unavailable or
+  explicitly disabled;
+- defaults cache storage to `~/.peers-touch/dev/cargo-cache/data`;
+- applies a bounded default cache size that callers may override.
+
+No integration may set a shared `CARGO_TARGET_DIR` or `build.target-dir`.
+Every worktree retains its own incremental state, linker outputs, bundles, and
+final binaries.
+
+### Rationale
+
+Compiler-object reuse captures the expensive common dependency work while
+Cargo and the linker retain normal worktree isolation. `sccache` keys include
+the compiler inputs, so differing toolchains, targets, features, profiles, and
+dependency source produce misses rather than unsafe reuse.
+
+### Alternatives Considered
+
+- One shared writable Cargo target directory: rejected because Cargo locks and
+  mutable final artifacts cross worktree ownership boundaries.
+- Manual `RUSTC_WRAPPER` exports: rejected because IDEs, nested scripts, and
+  retained worktrees do not consistently inherit interactive shell state.
+- Per-worktree compiler caches: rejected because they preserve the disk
+  duplication this decision removes.
+
+### Consequences
+
+- Machine setup owns one bounded cache and exposes setup/status/verification
+  commands.
+- A missing cache binary reduces performance but never breaks compilation.
+- Worktree cleanup may remove local targets independently without invalidating
+  the shared cache.
+- Cache eviction affects only future hit rate, never correctness or final
+  binary ownership.

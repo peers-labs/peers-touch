@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Module Layout
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-17 | **Updated**: 2026-09-30
+> **Version**: v1.2
+> **Created**: 2026-09-17 | **Updated**: 2026-10-03
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -36,6 +36,13 @@ tooling/scripts/local-dev/
 tooling/scripts/plan/
 ├── workspace-plan-binding.mjs
 └── workspace-plan-binding.test.mjs
+
+.cargo/
+└── config.toml
+
+tooling/scripts/
+├── cargo-cache.sh
+└── cargo-cache.test.mjs
 ```
 
 ## 2. File Responsibilities
@@ -55,6 +62,9 @@ tooling/scripts/plan/
 | `tooling/scripts/local-dev/dev-work-ledger.mjs` | Machine-wide Development intent authority |
 | `tooling/scripts/plan/workspace-plan-binding.mjs` | Immutable workspace Plan ownership under the machine Dev root |
 | `tooling/make/local-dev.mk` | Thin `make dev-ui` and `make dev-ui-snapshot` entry points |
+| `.cargo/config.toml` | Repository-wide automatic Cargo compiler-wrapper discovery without changing target ownership |
+| `tooling/scripts/cargo-cache.sh` | Shared cache setup, status, verification and Cargo wrapper entry point |
+| `tooling/scripts/cargo-cache.test.mjs` | Wrapper fallback/disable and nested Cargo-discovery regressions |
 
 ## 3. Dependency Direction
 

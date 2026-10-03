@@ -1,8 +1,8 @@
 # Local Dev Control Plane
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-03
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -19,6 +19,7 @@
 - Acceptance Evidence Store 的开发期持久化边界。
 - 每个 worktree 独立选择 profile、slot 和 Station 使用方式的身份模型。
 - 每个 workspace 独立且不可换绑的 Plan 所有权存储边界。
+- 跨 worktree Rust 编译缓存的机器级复用和容量边界。
 
 本文档集不定义：
 
@@ -70,6 +71,8 @@ Application Support namespace，不适合承载开发期产物；目标路径统
     与 reset 都不得因内部能力刷新或执行边界重复询问。
 17. 对 Dev Workflow 计划器新增的 runtime claim，物理 lease 准入必须验证
     当前 `COMMITTED` resource-plan fence；既有手工声明保持独立 provenance。
+18. Rust 编译只共享 content-addressed `sccache` 数据；每个 worktree 保留
+    独立 writable `target/`、增量状态、链接产物和最终二进制。
 
 ## 4. Runtime Authority
 

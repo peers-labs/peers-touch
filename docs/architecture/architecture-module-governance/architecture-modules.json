@@ -327,11 +327,16 @@
         "LDCP-D15",
         "LDCP-D16",
         "LDCP-D17",
-        "LDCP-D18"
+        "LDCP-D18",
+        "LDCP-D19"
       ],
       "governedPaths": [
+        ".cargo/config.toml",
         "apps/dev",
         "docs/architecture/local-dev-control-plane",
+        "tooling/make/setup.mk",
+        "tooling/scripts/cargo-cache.sh",
+        "tooling/scripts/cargo-cache.test.mjs",
         "tooling/make/local-dev.mk",
         "tooling/scripts/lib/machine-dev-paths.mjs",
         "tooling/scripts/lib/machine-dev-paths.test.mjs",

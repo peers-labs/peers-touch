@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-03
-covered_docs_hash: d9aa942f1f5e111d540cc657c0fc8f262dc06fb3da6279337b2b737379d03938
+covered_docs_hash: 163d4323e1d55c885b7066d164a3c344b15f2495e110439c6ac7a2492b3d5196
 
 covered_docs:
   - AGENTS.md
@@ -47,6 +47,14 @@ minimum-usable chat capability and current root documentation. Existing review
 rules already cover architecture ownership, source containment, exact-source
 evidence, and generated contracts, so no `SKILL.md` or fixture change is
 required.
+
+LDCP-D19 adds a bounded machine-level `sccache` while preserving worktree-local
+Cargo target directories and final binaries. Review must reject a shared
+writable target directory, silent replacement of unrelated Cargo user config,
+an unbounded cache, or a wrapper that breaks compilation when `sccache` is
+unavailable. The Local Dev decision, wrapper fallback tests, setup idempotency
+test, and cross-directory cache-hit proof cover the behavior; no
+`pt-github-review/SKILL.md` or generic fixture change is required.
 
 ## 2026-10-01 Review
 

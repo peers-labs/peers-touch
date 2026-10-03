@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-03
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -20,6 +20,8 @@
 | `/tmp/peers-touch-profile-leases/` | Legacy Acceptance/deploy live locks | Not used by canonical `make station`; replaced by one machine control-plane lease root |
 | `~/.peers-touch/dev/registry.json` | Observed snapshot until explicit promotion | Authoritative after `make env-register` |
 | `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json` | Absent before DWF-D18 | Development Workflow immutable Plan ownership |
+| Per-worktree Cargo `target/` directories | Independent mutable compiler/linker outputs | Remain worktree-local; reusable compiler objects move through bounded `sccache` |
+| `~/.peers-touch/dev/cargo-cache/` | Absent before LDCP-D19 | Machine wrapper, config include and shared compiler-cache data |
 | `~/Library/Application Support/PeersTouch/acceptance/` | Legacy Acceptance Evidence Store | One-time verified move to `~/.peers-touch/dev/acceptance/` |
 | `apps/dev/` | Peers Dev server, web UI, tests and package entry | Canonical application owner |
 
@@ -42,6 +44,10 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 │       └── receipts/
 ├── acceptance/
 │   └── <workspaceId>/<gateId>/<runId>/
+├── cargo-cache/
+│   ├── bin/peers-rustc-wrapper
+│   ├── config.toml
+│   └── data/
 ├── leases/
 │   ├── local-slot-<n>.lock
 │   ├── station-deploy-<environment>.lock
@@ -76,6 +82,9 @@ Target command behavior:
 | `make dev-status-all` | Show all worktree declarations beside observed leases |
 | `make dev-check` | Verify current worktree/branch/HEAD owns a live declaration |
 | `make dev-release` | Release the work declaration after cleanup |
+| `make cargo-cache-setup` | Install/configure the shared compiler cache and machine Cargo include |
+| `make cargo-cache-status` | Report wrapper, backend, cache location, capacity and statistics |
+| `make cargo-cache-verify` | Require a cross-directory cache hit while retaining separate target directories |
 | `make dev-resources-prepare` | Ask Dev Workflow to aggregate module impacts and atomically publish ready-target resource claims |
 | `make dev-resource-record` | Record a Runtime Owner result against the committed resource-plan fence |
 | `make plan-bind PLAN=<path>` | Create the current workspace's immutable Plan binding once |
@@ -122,6 +131,14 @@ descriptor and verifies its exact lease metadata before bypassing acquisition;
 an environment marker alone cannot establish possession. Direct Station
 deployment enters the same canonical lease path, while the old `/tmp` profile
 lease remains only for non-Station deployment roles.
+
+Cargo invoked beneath the repository discovers `.cargo/config.toml` and uses
+the tracked compiler wrapper automatically. `cargo-cache-setup` additionally
+installs a stable machine copy and a Cargo user-config include so older
+retained worktrees receive the same behavior. Existing unrelated user
+configuration is preserved; an ambiguous existing `include` owner fails
+closed with an explicit message. Neither path changes Cargo's target
+directory.
 
 ## 4. Bootstrap Snapshot Boundary
 
@@ -247,6 +264,12 @@ port overrides.
 The lease suite launches isolated child processes for every required lease
 class and proves contention plus release on success, command failure, signal,
 timeout, and stale metadata recovery. It does not contact a Station.
+
+Compiler-cache verification uses two temporary, byte-identical crates with
+different roots and target directories. Incremental compilation is disabled
+for the probe, `sccache` statistics are reset before the first build, and the
+second build must increase the cache-hit count. Repository Rust workspaces are
+not built by this verification.
 
 ## 7. Acceptance Root Closure Contract
 

@@ -145,6 +145,7 @@ function rejectsCode(code, operation) {
 test('current repository satisfies the module registry', () => {
   const result = validateArchitectureRegistry({ repoRoot: REPO_ROOT });
   assert.deepEqual(result.moduleIds, [
+    'agent',
     'architecture-module-governance',
     'chat-storage-governance',
     'development-workflow',
