@@ -111,6 +111,16 @@
       "dependsOn": [],
       "status": "in_progress",
       "blocker": null
+    },
+    {
+      "id": "LDCP-CARGO-CACHE-02",
+      "workstreamId": "LDCP-CARGO-CACHE",
+      "path": "tasks/LDCP-CARGO-CACHE-02.md",
+      "dependsOn": [
+        "LDCP-CARGO-CACHE-01"
+      ],
+      "status": "pending",
+      "blocker": null
     }
   ],
   "exhaustion": null,
@@ -139,7 +149,8 @@
 ```json
 {
   "closures": {
-    "cargo-cache-reuse": [
+    "cargo-cache-functional": [],
+    "cargo-cache-acceptance": [
       "acceptance-infra-validation",
       "acceptance-plan-self",
       "acceptance-runtime-provisioning-self",

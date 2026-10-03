@@ -12,7 +12,7 @@
   "workClass": "infrastructure",
   "completionClass": "functional",
   "executionMode": "build",
-  "closureId": "cargo-cache-reuse",
+  "closureId": "cargo-cache-functional",
   "journeyId": "LDCP-J-CARGO-CACHE",
   "runtimeClass": "source-only",
   "writeSet": [
@@ -53,11 +53,6 @@
       "id": "cargo-cache-cross-directory",
       "command": "bash tooling/scripts/cargo-cache.sh verify",
       "verificationClass": "FUNCTIONAL_CHECK"
-    },
-    {
-      "id": "cargo-cache-architecture",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-infra-validation --gate acceptance-plan-self --gate acceptance-runtime-provisioning-self --gate acceptance-workflow-contract --gate architecture-module-governance --gate dev-ui-browser-e2e --gate machine-dev-registry-self --gate peers-dev-product",
-      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [
@@ -117,3 +112,4 @@
 - Desktop and Mobile target paths remain worktree-local and unchanged.
 - The user authorized a checkpoint commit and pull request so the remaining
   clean-source browser Gate can run against an immutable source identity.
+- Formal Gate aggregation is owned by the dependent Acceptance Task.
