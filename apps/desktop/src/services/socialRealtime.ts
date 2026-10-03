@@ -54,7 +54,7 @@ let socialReconcileTimer: number | null = null;
 let externalHostReconcileTimer: number | null = null;
 let bootstrappedActorPtid: string | null = null;
 let bootstrapSequence = 0;
-let realtimeStreamActorPtid: string | null = null;
+let realtimeStreamScopeKey: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
 let socialRefreshInFlight: Promise<void> | null = null;
 let coldResyncInFlight = false;
@@ -308,19 +308,33 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
 }
 
 async function stopRealtimeStreamSupervisor(): Promise<void> {
-  if (!realtimeStreamActorPtid) return;
+  if (!realtimeStreamScopeKey) return;
+  realtimeStreamScopeKey = null;
   await stopEventStream();
-  realtimeStreamActorPtid = null;
 }
 
 async function startRealtimeStreamSupervisor(actorPtid: string): Promise<void> {
-  if (realtimeStreamActorPtid === actorPtid) return;
-  if (realtimeStreamActorPtid) {
+  const sessionEpoch = useSessionStore.getState().sessionEpoch;
+  const scopeKey = `${actorPtid}\0${sessionEpoch}`;
+  if (realtimeStreamScopeKey === scopeKey) return;
+  if (realtimeStreamScopeKey) {
     await stopRealtimeStreamSupervisor();
   }
   await installEventStreamBridge();
-  await startEventStream();
-  realtimeStreamActorPtid = actorPtid;
+  await startEventStream(sessionEpoch);
+  realtimeStreamScopeKey = scopeKey;
+}
+
+function restartRealtimeStreamForStationChange(): void {
+  realtimeStreamTransition = realtimeStreamTransition.then(async () => {
+    await stopRealtimeStreamSupervisor();
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (actorPtid) {
+      await startRealtimeStreamSupervisor(actorPtid);
+    }
+  }).catch((error) => {
+    log.warn('socialRealtime', 'realtime stream Station restart failed', error);
+  });
 }
 
 function reconcileAuthenticatedRuntime(): void {
@@ -798,6 +812,7 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),
     eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
     eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
+    eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, restartRealtimeStreamForStationChange),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
@@ -36,6 +37,46 @@ func (p *MomentEventPublisher) PublishCreated(ctx context.Context, postID uint64
 		Audience:         audienceKind(audience),
 		OccurredTsUnixMs: p.now().UTC().UnixMilli(),
 	})
+}
+
+func (p *MomentEventPublisher) StageImportedCreated(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	postID string,
+	authorPTID string,
+	targetActorPTID string,
+	audience model.Audience_Kind,
+	_ uint64,
+) error {
+	if p == nil || postID == "" || authorPTID == "" || targetActorPTID == "" {
+		return fmt.Errorf("imported Moment event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(
+		ctx,
+		transaction,
+		targetActorPTID,
+		&realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Moment{
+				Moment: &realtime.MomentEvent{
+					Kind:             realtime.MomentEvent_CREATED,
+					PostId:           postID,
+					AuthorActorPtid:  authorPTID,
+					ActorPtid:        targetActorPTID,
+					Audience:         audience.String(),
+					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+				},
+			},
+		},
+	)
+	return err
 }
 
 func (p *MomentEventPublisher) PublishDeleted(ctx context.Context, postID uint64, authorPTID string) {

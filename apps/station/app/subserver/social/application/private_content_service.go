@@ -197,6 +197,33 @@ type PrivateContentStationSigner interface {
 		string,
 		time.Time,
 	) (*securecontentpb.StationContentSigningKeyAttestation, error)
+	AttestContentProofVerificationKeyInTransaction(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		time.Time,
+	) (*securecontentpb.StationContentSigningKeyAttestation, error)
+	TrustImportedContentProofVerificationKeyInTransaction(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+		[]byte,
+		time.Time,
+	) error
+	AttestImportedContentProofVerificationKey(
+		context.Context,
+		string,
+		string,
+		time.Time,
+	) (*securecontentpb.StationContentSigningKeyAttestation, error)
+	AttestImportedContentProofVerificationKeyInTransaction(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+		time.Time,
+	) (*securecontentpb.StationContentSigningKeyAttestation, error)
 }
 
 // PrivateContentAuthorSignatureVerifier verifies author-device envelope
@@ -207,9 +234,19 @@ type PrivateContentAuthorSignatureVerifier interface {
 		federationdelivery.Transaction,
 		*actormodel.ActorDeviceRef,
 		string,
+		string,
 		[]byte,
 		[]byte,
+		time.Time,
 	) error
+	ResolveRetained(
+		context.Context,
+		federationdelivery.Transaction,
+		*actormodel.ActorDeviceRef,
+		string,
+		string,
+		time.Time,
+	) (*actormodel.VerifiedActorDeviceSigningKey, error)
 }
 
 type PrivateContentClock interface {
@@ -217,17 +254,20 @@ type PrivateContentClock interface {
 }
 
 type PrivateContentService struct {
-	store             PrivateContentStore
-	audiences         PrivateAudienceAuthority
-	reposts           PrivateRepostSourceAuthority
-	groups            GroupRecipientSnapshotReader
-	recipients        PrivateRecipientDirectory
-	keyExchange       PrivateContentKeyExchange
-	stationSigner     PrivateContentStationSigner
-	signatureVerifier PrivateContentAuthorSignatureVerifier
-	clock             PrivateContentClock
-	policy            securecontentkernel.Policy
-	metrics           federatedPrivateMetrics
+	store                PrivateContentStore
+	audiences            PrivateAudienceAuthority
+	reposts              PrivateRepostSourceAuthority
+	groups               GroupRecipientSnapshotReader
+	recipients           PrivateRecipientDirectory
+	keyExchange          PrivateContentKeyExchange
+	stationSigner        PrivateContentStationSigner
+	signatureVerifier    PrivateContentAuthorSignatureVerifier
+	clock                PrivateContentClock
+	policy               securecontentkernel.Policy
+	metrics              federatedPrivateMetrics
+	localStationPeerID   string
+	federationMembership PrivateContentFederationMembership
+	events               *MomentEventPublisher
 }
 
 func NewPrivateContentService(
@@ -1002,6 +1042,35 @@ func (s *PrivateContentService) GetPrivateMoment(
 		viewer.GetDeviceId(),
 	)
 	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentNotFound) {
+			var remoteResponse *privatecontentpb.GetMomentResourceResponse
+			remoteErr := s.store.ReadRemotePrivatePost(
+				ctx,
+				postID,
+				viewer.GetActor().GetPtid(),
+				viewer.GetDeviceId(),
+				func(
+					transaction federationdelivery.Transaction,
+					remote *infrastructure.RemotePrivatePostReadModel,
+				) error {
+					var projectErr error
+					remoteResponse, projectErr =
+						s.projectRemotePrivateMoment(
+							ctx,
+							transaction,
+							remote,
+						)
+					return projectErr
+				},
+			)
+			if remoteErr == nil {
+				return remoteResponse, nil
+			}
+			if socialdomain.PrivateContentCodeOf(remoteErr) != "" {
+				return nil, remoteErr
+			}
+			err = remoteErr
+		}
 		return nil, mapPrivateStoreError(operation, err)
 	}
 	payload := &securecontentpb.EncryptedPayload{}
@@ -1702,9 +1771,11 @@ func (s *PrivateContentService) submit(
 						ctx,
 						transaction,
 						envelope.Envelope.GetBinding().GetSender(),
+						plan.AuthorHomeStationPeerID,
 						envelope.SenderSigningKey,
 						envelope.SigningBytes,
 						envelope.Envelope.GetSenderSignature(),
+						committedAt,
 					); err != nil {
 						return infrastructure.SubmitMutationResult{},
 							socialdomain.WrapPrivateContentError(
@@ -1725,9 +1796,11 @@ func (s *PrivateContentService) submit(
 						ctx,
 						transaction,
 						material.MentionRouting.GetSender(),
+						plan.AuthorHomeStationPeerID,
 						material.MentionRouting.GetSenderSigningKeyId(),
 						material.MentionRouting.GetCanonicalFactsSha256(),
 						material.MentionRouting.GetSenderSignature(),
+						committedAt,
 					); err != nil {
 						return infrastructure.SubmitMutationResult{},
 							socialdomain.WrapPrivateContentError(
@@ -2004,7 +2077,11 @@ func (s *PrivateContentService) resolveCurrentSnapshot(
 		authorPTID,
 		authorHomeStationPeerID,
 		snapshot,
-		false,
+		prepared.ResourceKind == socialdomain.PrivateContentResourcePost &&
+			prepared.MomentKind ==
+				privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT &&
+			(prepared.Audience.GetKind() == actormodel.Audience_FRIENDS ||
+				prepared.Audience.GetKind() == actormodel.Audience_CUSTOM_ALLOW),
 	)
 	if err != nil {
 		return socialdomain.FriendsSnapshot{}, mapPrivateDependencyError(
@@ -2069,9 +2146,12 @@ func (s *PrivateContentService) bindRecipientLocalities(
 		}
 	}
 	audienceKind := snapshot.Audience.GetKind()
+	singleRemoteTextAudience :=
+		audienceKind == actormodel.Audience_FRIENDS ||
+			audienceKind == actormodel.Audience_CUSTOM_ALLOW
 	if remoteCount > 0 &&
 		(!allowRemoteAdmission ||
-			audienceKind != actormodel.Audience_CUSTOM_ALLOW ||
+			!singleRemoteTextAudience ||
 			len(snapshot.RecipientPTIDs) != 1 ||
 			remoteCount != 1) {
 		return socialdomain.FriendsSnapshot{},
@@ -2292,6 +2372,19 @@ func (s *PrivateContentService) persistMoment(
 			"social.private_content.persist_moment",
 			err,
 		)
+	}
+	if err := s.enqueueFederatedPrivatePost(
+		ctx,
+		tx,
+		plan,
+		snapshot,
+		request,
+		material,
+		proof,
+		committedAt,
+		postType,
+	); err != nil {
+		return nil, err
 	}
 	viewerEnvelope, err := viewerEnvelopeForAuthor(
 		plan,

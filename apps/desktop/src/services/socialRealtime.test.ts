@@ -56,7 +56,11 @@ const mocks = vi.hoisted(() => ({
   loadCurrentUserProfile: vi.fn(),
   loadPeerProfile: vi.fn(),
   resolveActorStations: vi.fn(),
+  startEventStream: vi.fn(),
+  stopEventStream: vi.fn(),
   currentActorPtid: null as string | null,
+  sessionEpoch: 1,
+  sessionListener: undefined as (() => void) | undefined,
   activeTab: 'group' as 'friend' | 'group',
   activeSessionUlid: null as string | null,
   conversations: [] as Array<{
@@ -74,7 +78,13 @@ const originalCustomEvent = globalThis.CustomEvent;
 vi.mock('../store/session', () => ({
   currentAuthenticatedActorPtid: () => mocks.currentActorPtid,
   useSessionStore: {
-    subscribe: vi.fn(() => () => undefined),
+    getState: () => ({ sessionEpoch: mocks.sessionEpoch }),
+    subscribe: vi.fn((listener: () => void) => {
+      mocks.sessionListener = listener;
+      return () => {
+        mocks.sessionListener = undefined;
+      };
+    }),
   },
 }));
 
@@ -164,8 +174,8 @@ vi.mock('./mediaRuntime', () => ({
 
 vi.mock('./eventStream', () => ({
   installEventStreamBridge: vi.fn(),
-  startEventStream: vi.fn(),
-  stopEventStream: vi.fn(),
+  startEventStream: mocks.startEventStream,
+  stopEventStream: mocks.stopEventStream,
 }));
 
 vi.mock('./desktop_api', () => ({
@@ -209,7 +219,10 @@ describe('social realtime group membership side effects', () => {
     mocks.loadCurrentUserProfile.mockResolvedValue(undefined);
     mocks.loadPeerProfile.mockResolvedValue(undefined);
     mocks.resolveActorStations.mockResolvedValue(undefined);
+    mocks.startEventStream.mockResolvedValue(undefined);
+    mocks.stopEventStream.mockResolvedValue(undefined);
     mocks.currentActorPtid = null;
+    mocks.sessionEpoch = 1;
     mocks.activeTab = 'group';
     mocks.activeSessionUlid = null;
     mocks.conversations = [];
@@ -474,6 +487,44 @@ describe('social realtime group membership side effects', () => {
       federationId: 'federation-1',
       username: 'bob',
     }]);
+  });
+
+  it('does not mutate Messaging-owned projections during social reconciliation', async () => {
+    mocks.currentActorPtid = 'ptid:self';
+
+    await refreshSocialProjection('ownership-test', true);
+
+    expect(mocks.loadFriendRequests).toHaveBeenCalledOnce();
+    expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:self', true);
+    expect(mocks.loadSessions).not.toHaveBeenCalled();
+    expect(mocks.loadGroups).not.toHaveBeenCalled();
+    expect(mocks.loadMessages).not.toHaveBeenCalled();
+    expect(mocks.loadGroupUnreadCounts).not.toHaveBeenCalled();
+    expect(mocks.loadConversationPreviews).not.toHaveBeenCalled();
+  });
+
+  it('restarts the scoped stream after session renewal and Station switch', async () => {
+    mocks.currentActorPtid = 'ptid:self';
+    mocks.sessionListener?.();
+    await vi.waitFor(() => {
+      expect(mocks.startEventStream).toHaveBeenCalledWith(1);
+    });
+
+    mocks.sessionEpoch = 2;
+    mocks.sessionListener?.();
+    await vi.waitFor(() => {
+      expect(mocks.stopEventStream).toHaveBeenCalledTimes(1);
+      expect(mocks.startEventStream).toHaveBeenLastCalledWith(2);
+    });
+
+    eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
+      stationUrl: 'https://station-b.test',
+    });
+    await vi.waitFor(() => {
+      expect(mocks.stopEventStream).toHaveBeenCalledTimes(2);
+      expect(mocks.startEventStream).toHaveBeenCalledTimes(3);
+      expect(mocks.startEventStream).toHaveBeenLastCalledWith(2);
+    });
   });
 });
 

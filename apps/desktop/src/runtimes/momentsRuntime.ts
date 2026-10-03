@@ -22,6 +22,7 @@ import type {
   MomentCreatedPayload,
   MomentDeletedPayload,
   MomentReactedPayload,
+  MomentRealtimeBasePayload,
   MomentResyncRequestedPayload,
   RelationshipChangedPayload,
   RealtimeConnectionStatePayload,
@@ -46,7 +47,8 @@ let stationIdentityHint: string | null = null;
 let projectionQueue: Promise<void> = Promise.resolve();
 let realtimeWasDisconnected = false;
 let lastReconnectRefreshAt = 0;
-const seenMomentEventIds = new Set<string>();
+const pendingMomentEventKeys = new Set<string>();
+const completedMomentEventKeys = new Set<string>();
 
 export interface MomentsRuntimeScope {
   readonly actorPtid: string;
@@ -122,7 +124,8 @@ function invalidateScope(): number {
   activeScope = null;
   realtimeWasDisconnected = false;
   lastReconnectRefreshAt = 0;
-  seenMomentEventIds.clear();
+  pendingMomentEventKeys.clear();
+  completedMomentEventKeys.clear();
   resetProjection(generation);
   return generation;
 }
@@ -157,15 +160,76 @@ export function captureMomentsRuntimeScope(): MomentsRuntimeScope | null {
   return activeScope ? { ...activeScope } : null;
 }
 
-function rememberMomentEvent(eventId: string): boolean {
-  if (!eventId) return true;
-  if (seenMomentEventIds.has(eventId)) return false;
-  seenMomentEventIds.add(eventId);
-  if (seenMomentEventIds.size > 500) {
-    const first = seenMomentEventIds.values().next().value;
-    if (first) seenMomentEventIds.delete(first);
+function momentEventMatchesScope(
+  scope: MomentsRuntimeScope,
+  payload: MomentRealtimeBasePayload,
+): boolean {
+  if (
+    payload.targetActorPtid !== scope.actorPtid
+    || payload.sessionEpoch !== scope.sessionEpoch
+  ) {
+    return false;
   }
-  return true;
+  if (scope.stationIdentity.startsWith('peer:')) {
+    return payload.stationPeerId === scope.stationIdentity.slice('peer:'.length);
+  }
+  if (scope.stationIdentity.startsWith('url:')) {
+    return payload.stationUrl === scope.stationIdentity.slice('url:'.length);
+  }
+  return false;
+}
+
+function claimMomentEvent(
+  scope: MomentsRuntimeScope,
+  eventId: string,
+): string | null {
+  if (!eventId) return '';
+  const key = `${scopeKey(scope)}\0${eventId}`;
+  if (
+    pendingMomentEventKeys.has(key)
+    || completedMomentEventKeys.has(key)
+  ) {
+    return null;
+  }
+  pendingMomentEventKeys.add(key);
+  return key;
+}
+
+function settleMomentEvent(key: string, completed: boolean): void {
+  if (!key) return;
+  pendingMomentEventKeys.delete(key);
+  if (!completed) return;
+  completedMomentEventKeys.add(key);
+  if (completedMomentEventKeys.size > 500) {
+    const first = completedMomentEventKeys.values().next().value;
+    if (first) completedMomentEventKeys.delete(first);
+  }
+}
+
+function runScopedMomentEvent(
+  payload: MomentRealtimeBasePayload,
+  label: string,
+  task: (scope: MomentsRuntimeScope) => Promise<void>,
+): void {
+  const scope = activeScope;
+  if (!scope || !momentEventMatchesScope(scope, payload)) return;
+  const eventKey = claimMomentEvent(scope, payload.eventId);
+  if (eventKey === null) return;
+  const work = enqueueProjectionWork(async () => {
+    if (!isCurrentScope(scope)) return false;
+    await task(scope);
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    return true;
+  }).then(
+    (completed) => {
+      settleMomentEvent(eventKey, completed);
+    },
+    (error) => {
+      settleMomentEvent(eventKey, false);
+      throw error;
+    },
+  );
+  runDetached(label, work);
 }
 
 async function preloadCircleMembers(scope: MomentsRuntimeScope): Promise<void> {
@@ -372,23 +436,21 @@ export async function ensureUserMomentsProjection(actorPtid: string): Promise<vo
 }
 
 function onMomentCreated(payload: MomentCreatedPayload): void {
-  if (!activeScope) return;
-  if (!rememberMomentEvent(payload.eventId)) return;
-  runDetached(
+  runScopedMomentEvent(
+    payload,
     'moment created projection refresh',
-    enqueueScopedProjection(async (scope) => {
+    async (scope) => {
       await ensureMomentDetailProjectionNow(scope, payload.postId);
       await refreshMomentsProjectionNow(scope, 'event:moment.created');
-    }).then(() => undefined),
+    },
   );
 }
 
 function onMomentDeleted(payload: MomentDeletedPayload): void {
-  if (!activeScope) return;
-  if (!rememberMomentEvent(payload.eventId)) return;
-  runDetached(
+  runScopedMomentEvent(
+    payload,
     'moment deleted projection refresh',
-    enqueueScopedProjection(async (scope) => {
+    async (scope) => {
       usePrivateCommentsStore.getState().markParentUnavailable(
         payload.postId,
         'COMMENT_PARENT_UNAVAILABLE',
@@ -396,29 +458,23 @@ function onMomentDeleted(payload: MomentDeletedPayload): void {
       await usePrivateMomentsStore.getState().purgeMoment(payload.postId);
       if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
       await refreshMomentsProjectionNow(scope, 'event:moment.deleted');
-    }).then(() => undefined),
+    },
   );
 }
 
 function onMomentCommented(payload: MomentCommentedPayload): void {
-  if (!activeScope) return;
-  if (!rememberMomentEvent(payload.eventId)) return;
-  runDetached(
+  runScopedMomentEvent(
+    payload,
     'moment commented projection refresh',
-    enqueueScopedProjection((scope) => (
-      ensureMomentDetailProjectionNow(scope, payload.postId)
-    )).then(() => undefined),
+    (scope) => ensureMomentDetailProjectionNow(scope, payload.postId),
   );
 }
 
 function onMomentReacted(payload: MomentReactedPayload): void {
-  if (!activeScope) return;
-  if (!rememberMomentEvent(payload.eventId)) return;
-  runDetached(
+  runScopedMomentEvent(
+    payload,
     'moment reacted projection refresh',
-    enqueueScopedProjection((scope) => (
-      ensureMomentDetailProjectionNow(scope, payload.postId)
-    )).then(() => undefined),
+    (scope) => ensureMomentDetailProjectionNow(scope, payload.postId),
   );
 }
 

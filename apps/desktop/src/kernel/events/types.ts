@@ -241,6 +241,14 @@ export interface RealtimeMessageMutationPayload {
 export interface MomentRealtimeBasePayload {
   /** Monotonic realtime cursor when the event comes from Station SSE. */
   eventId: string;
+  /** Authenticated actor whose Station stream carried this event. */
+  targetActorPtid: string;
+  /** Renderer session generation that opened the native stream. */
+  sessionEpoch: number;
+  /** Station peer ID captured when the native stream supervisor started. */
+  stationPeerId: string;
+  /** Normalized Station URL captured when the native stream supervisor started. */
+  stationUrl: string;
   postId: string;
   authorActorPtid?: string;
   occurredAtUnixMs: number;
