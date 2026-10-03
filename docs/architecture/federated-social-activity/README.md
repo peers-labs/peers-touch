@@ -1,8 +1,8 @@
 # Federated Human Social Activity
 
 > **Status**: draft
-> **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-09-06
+> **Version**: v0.3
+> **Created**: 2026-06-17 | **Updated**: 2026-10-03
 > **Owner**: Architecture Team
 >
 > **Friend Request federation amendment (accepted, 2026-09-06)**: D-07 defines
@@ -20,6 +20,8 @@
 - Human Actor 在 Peers-Touch 联邦网络中的社交产品模型。
 - Activity Feed 如何表达人、内容、Station、Federation、关系路径、可见范围和互动。
 - Human 社交对象、身份展示、关系图谱、可见性、投递、互动、搜索与发现的架构边界。
+- 同一 active Federation 内 Native Desktop 私密 Moment 的远端 PreKey、
+  viewer-scoped 投递、读取、互动、恢复和撤销闭环。
 - 当前阶段的执行计划、任务跟踪和 E2E 验收机制。
 - Agent / A2A / Applet 能力在未来如何接入本层的预留点。
 
@@ -30,6 +32,8 @@
 - 办公、项目管理、治理、研发协作等上层业务形态。
 - Federation Ledger 的底层治理账本细节，见 `docs/architecture/federation/`。
 - A2A 协议集成细节，见 `docs/architecture/agent/a2a/`。
+- Mobile Social 产品实现与验收；由后续独立计划负责。
+- Browser Social；Browser 不注册 Social 页面、runtime 或动作。
 
 ---
 
@@ -95,6 +99,8 @@ Agent、A2A、Applet 将来会接入同一社会活动层，但当前阶段只�
 5. 保持页面为 runtime projection 的纯渲染，不用页面刷新弥补投影新鲜度。
 6. 保留 Agent / A2A / Applet 的字段和 UI 插槽，但不在当前阶段实现其社交闭环。
 7. 建立覆盖多 Station、多用户、多关系、多可见范围的 E2E 验收机制。
+8. 让私密 Post、Comment、Attachment 和 Reaction 在两个真实 Station 间保持
+   E2EE、单一 Social authority、可恢复投递和可验证撤销。
 
 ---
 
@@ -109,7 +115,8 @@ Agent、A2A、Applet 将来会接入同一社会活动层，但当前阶段只�
 | [decisions.md](./decisions.md) | 当前阶段关键设计决策 |
 | [../api-ownership/README.md](../api-ownership/README.md) | API owner, shared Federation transport, and hard-cut governance |
 | [e2e-acceptance.md](./e2e-acceptance.md) | Human 联邦社交 E2E 验收机制 |
-| [execution-plans/20260617-federated-human-social-activity.md](./execution-plans/20260617-federated-human-social-activity.md) | 分阶段执行计划与任务跟踪 |
+| [execution-plans/20260617-federated-human-social-activity.md](./execution-plans/20260617-federated-human-social-activity.md) | 已 supersede 的早期公共 Feed / 产品语言计划；完成项保留为历史证据 |
+| [execution-plans/20261003-cross-station-social-native/plan.md](./execution-plans/20261003-cross-station-social-native/plan.md) | Native Desktop 跨 Station Social 正向投递、互动、恢复和正式验收后继计划 |
 
 ---
 
@@ -118,8 +125,14 @@ Agent、A2A、Applet 将来会接入同一社会活动层，但当前阶段只�
 本模块是当前阶段 Human 联邦社交活动层的架构真源。下游文档必须在本文允许的边界内展开：
 
 - Social / Moments 能力：`docs/architecture/social/`
+- Social Private Moments 产品合同：`docs/architecture/social/product-definition.md`
+- 私密加密、envelope、对象与恢复机制：`docs/architecture/secure-content/`
 - Federation 网络与治理账本：`docs/architecture/federation/`
 - Actor 身份模型：`docs/architecture/identity/unified-actor-system.md`
 - Desktop Runtime Projection：`docs/client/desktop/runtime-projections.md`
 - Agent / A2A 未来扩展：`docs/architecture/agent/`、`docs/architecture/agent/a2a/`
 - Applet 未来扩展：`docs/architecture/applet-runtime/`
+
+The 2026-06-17 execution plan is superseded for unfinished work. Its completed
+product-language and projection-contract outputs remain evidence; all remaining
+Desktop Native federation closure moves to the 2026-10-03 successor plan.

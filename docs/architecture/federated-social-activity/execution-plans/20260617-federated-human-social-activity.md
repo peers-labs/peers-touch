@@ -1,9 +1,15 @@
 # Federated Human Social Activity — 执行计划
 
-> **Status**: draft
+> **Status**: superseded
 > **Version**: v0.2
 > **Created**: 2026-06-17 | **Updated**: 2026-06-18
 > **Owner**: Architecture Team
+
+> **Superseded by**:
+> [`20261003-cross-station-social-native/plan.md`](./20261003-cross-station-social-native/plan.md).
+> Completed Phase 0-2 outputs remain valid evidence. Unfinished Desktop Native
+> projection/UI/interaction/E2E work is re-inventoried in the successor plan;
+> Mobile is deferred and Browser Social is removed from scope.
 
 ---
 

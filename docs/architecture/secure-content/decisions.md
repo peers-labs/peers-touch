@@ -2106,6 +2106,13 @@ requires a new wire decision and a hard-cut consumer inventory.
 The Owner authorized this choice on 2026-09-24 after W8 exact-source evidence
 exhausted the previous contract.
 
+**2026-10-03 successor note**: the same-Station restriction remains the current
+implementation guard until the Native Desktop cross-Station plan completes.
+Its removal is governed by `FHSA-D08..FHSA-D15` in
+`docs/architecture/federated-social-activity/decisions.md`. The typed Audience,
+frozen recipient set, `CUSTOM_DENY(PUBLIC)` rejection and no-partial-publish
+requirements remain unchanged.
+
 ---
 
 ## SC-D21: Product Evidence Uses Production-Delegating Barriers And Owner-Controlled Runtime Continuation
