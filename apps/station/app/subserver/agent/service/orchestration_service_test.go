@@ -5123,6 +5123,10 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
 		`CREATE TABLE agent_direct_runs (
                                   direct_run_id text PRIMARY KEY,
                                   task_id text,
+                                  goal_id text,
+                                  goal_node_id text,
+                                  step_id text,
+                                  attempt_id text,
                                   provider_id text NOT NULL,
                                   model_intent text NOT NULL,
                                   input_snapshot_json text,

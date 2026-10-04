@@ -153,6 +153,68 @@ func TestHomeProjectionUsesStationAgentsAndRecentConversations(t *testing.T) {
 	}
 }
 
+func TestHomeProjectionIncludesCanonicalGoalDirectModelResult(t *testing.T) {
+	now := time.Date(2026, 10, 4, 13, 0, 0, 0, time.UTC)
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{},
+		homeConversationListerStub{},
+		nil,
+		nil,
+		homeGoalExecutionListerStub{executions: []*GoalExecutionSnapshot{{
+			Node: &persistence.AgentGoalNode{
+				GoalID: "goal-result",
+				NodeID: "node-result",
+				TaskID: "task-result",
+				Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+			},
+			Task: &persistence.TaskRun{
+				TaskID:         "task-result",
+				Title:          "Prepare visible result",
+				Surface:        int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN),
+				Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+				OwnerActorPTID: "ptid:actor-1",
+				GoalID:         "goal-result",
+				GoalNodeID:     "node-result",
+				RootStepID:     "step-result",
+				UpdatedAt:      now,
+			},
+			Step: &persistence.ExecutionStep{
+				StepID:        "step-result",
+				TaskID:        "task-result",
+				AgentID:       "agent-result",
+				Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+				Attempt:       1,
+				AttemptID:     "attempt-result",
+				ResultSummary: "Durable model result",
+			},
+			Result: &GoalResultProjection{
+				DirectRunID: "direct-result",
+				State:       "succeeded",
+				Summary:     "Durable model result",
+				ArtifactID:  "artifact-result",
+			},
+		}}},
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if len(projection.GetActiveTasks()) != 1 ||
+		projection.GetActiveTasks()[0].GetStatus() !=
+			model.HomeTaskStatus_HOME_TASK_STATUS_COMPLETED {
+		t.Fatalf("terminal canonical TaskRun = %+v", projection.GetActiveTasks())
+	}
+	if len(projection.GetBriefItems()) != 1 ||
+		projection.GetBriefItems()[0].GetBriefId() !=
+			"goal-result:artifact-result" ||
+		projection.GetBriefItems()[0].GetSourceRef() != "task-result" ||
+		projection.GetBriefItems()[0].GetSummary() != "Durable model result" {
+		t.Fatalf("Goal result brief = %+v", projection.GetBriefItems())
+	}
+}
+
 func TestHomeProjectionIgnoresUnpinnedAgentReadinessFailure(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	svc := NewHomeProjectionService(

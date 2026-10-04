@@ -30,6 +30,7 @@ export function GoalRunSummary() {
           <Button
             aria-pressed={active}
             data-pt-goal-run={execution.taskId}
+            data-pt-goal-run-status={HomeTaskStatus[execution.status]}
             key={execution.taskId}
             onClick={() => selectTask(execution.taskId)}
             style={{
