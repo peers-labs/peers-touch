@@ -171,6 +171,94 @@ func TestPrivateAudienceAuthorityUsesAcceptedProjectionOnly(t *testing.T) {
 	}
 }
 
+func TestPrivateCommentSnapshotAllowsRemoteAuthorWithoutOwnedFriendRows(
+	t *testing.T,
+) {
+	database, err := gorm.Open(
+		sqlite.Open("file:remote_comment_audience?mode=memory&cache=shared"),
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(
+		&dbmodel.SocialPrivateContentPost{},
+		&dbmodel.SocialPrivateAudienceSnapshot{},
+		&dbmodel.SocialPrivateRecipientGrant{},
+		&federatedRelationshipProjectionModel{},
+		&socialDirectionalRelationshipModel{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	snapshotID := "remote-comment-parent-snapshot"
+	if err := database.Create(&dbmodel.SocialPrivateContentPost{
+		PostID:                    "remote-comment-parent",
+		ContentID:                 "remote-comment-parent",
+		AuthorPTID:                "ptid:alice",
+		Generation:                1,
+		AudienceSnapshotID:        snapshotID,
+		Kind:                      actormodel.PostType_TEXT.String(),
+		EncryptedPayloadBytes:     []byte{1},
+		EncryptedPayloadSHA256:    privateAuthorityDigest([]byte("payload")),
+		ObjectDescriptorSetSHA256: privateAuthorityDigest(nil),
+		LifecycleState:            privateContentLifecycleActive,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&dbmodel.SocialPrivateAudienceSnapshot{
+		SnapshotID:              snapshotID,
+		ResourceKind:            string(socialdomain.PrivateContentResourcePost),
+		ResourceID:              "remote-comment-parent",
+		PostID:                  "remote-comment-parent",
+		AudienceKind:            actormodel.Audience_FRIENDS.String(),
+		SourceRevision:          1,
+		CanonicalSnapshotSHA256: privateAuthorityDigest([]byte("parent")),
+		CreatedAt:               now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&dbmodel.SocialPrivateRecipientGrant{
+		SnapshotID:    snapshotID,
+		RecipientPTID: "ptid:bob",
+		GrantedAt:     now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&federatedRelationshipProjectionModel{
+		OwnerPTID:         "ptid:alice",
+		PeerPTID:          "ptid:bob",
+		RequestID:         "remote-comment-friendship",
+		AcceptedEventID:   "remote-comment-accepted",
+		AcceptedEventHash: privateAuthorityDigest([]byte("accepted")),
+		AcceptedAt:        now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	authority, err := NewGORMPrivateAudienceAuthority(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := authority.ResolvePrivateCommentSnapshot(
+		context.Background(),
+		nil,
+		"remote-comment-parent",
+		"",
+		"ptid:bob",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Audience.GetKind() != actormodel.Audience_CUSTOM_ALLOW ||
+		len(snapshot.RecipientPTIDs) != 1 ||
+		snapshot.RecipientPTIDs[0] != "ptid:alice" {
+		t.Fatalf("remote Comment snapshot = %+v", snapshot)
+	}
+}
+
 func TestPrivateRepostSourceAuthorityBindsCanonicalPublicSnapshot(t *testing.T) {
 	database, err := gorm.Open(
 		sqlite.Open("file:private_repost_public?mode=memory&cache=shared"),
