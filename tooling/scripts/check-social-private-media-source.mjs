@@ -11,7 +11,7 @@ export const REQUIRED_RUNNER_TEST =
   'private-media source runner rejects missing skipped duplicate and zero-result tests';
 
 export const REQUIRED_GO_TESTS = Object.freeze([
-  'TestFederatedPrivateTextCommitsSourceOutboxAndReceiverProjection',
+  'TestFederatedPrivateReconcileCommitsSourceOutboxAndReceiverProjection',
   'TestPeerClientPreservesPeerHopRequestIDThroughDirectAndRelayTransports',
   'TestFederatedPrivateObjectGrantBindingKnownAnswer',
   'TestFederatedPrivateObjectProtoReservations',
