@@ -150,26 +150,34 @@
   "closures": {
     "nonblocking-control-actions": [
       "acceptance-workflow-contract",
-      "development-workflow-control-plane"
+      "development-workflow-control-plane",
+      "peers-dev-product",
+      "peers-dev-ui-browser-e2e"
     ],
     "nonblocking-control-proof": [
       "acceptance-infra-validation",
       "acceptance-plan-self",
       "acceptance-workflow-contract",
-      "development-workflow-control-plane"
+      "development-workflow-control-plane",
+      "peers-dev-product",
+      "peers-dev-ui-browser-e2e"
     ]
   },
   "completion": [
     "acceptance-infra-validation",
     "acceptance-plan-self",
     "acceptance-workflow-contract",
-    "development-workflow-control-plane"
+    "development-workflow-control-plane",
+    "peers-dev-product",
+    "peers-dev-ui-browser-e2e"
   ],
   "full": [
     "acceptance-infra-validation",
     "acceptance-plan-self",
     "acceptance-workflow-contract",
-    "development-workflow-control-plane"
+    "development-workflow-control-plane",
+    "peers-dev-product",
+    "peers-dev-ui-browser-e2e"
   ]
 }
 ```

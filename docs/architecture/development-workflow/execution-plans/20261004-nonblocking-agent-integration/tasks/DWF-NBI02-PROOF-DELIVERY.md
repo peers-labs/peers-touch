@@ -51,7 +51,7 @@
     },
     {
       "id": "nonblocking-integration-acceptance",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-infra-validation --gate acceptance-plan-self --gate acceptance-workflow-contract --gate development-workflow-control-plane",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-infra-validation --gate acceptance-plan-self --gate acceptance-workflow-contract --gate development-workflow-control-plane --gate peers-dev-product --gate peers-dev-ui-browser-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
