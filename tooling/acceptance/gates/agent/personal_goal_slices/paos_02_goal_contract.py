@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 
 ROOT = Path(__file__).resolve().parents[5]
 if str(ROOT) not in sys.path:
@@ -52,8 +51,7 @@ class GoalContractJourneyError(RuntimeError):
 
 
 def replace_value(element: Any, value: str) -> None:
-    element.send_keys(Keys.COMMAND, "a")
-    element.send_keys(Keys.BACKSPACE)
+    element.clear()
     element.send_keys(value)
 
 

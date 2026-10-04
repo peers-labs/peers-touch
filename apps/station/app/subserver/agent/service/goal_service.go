@@ -596,7 +596,7 @@ func storeGoalCommandTx(
 		return goalInternal("Encode Goal command replay", err)
 	}
 	return tx.Create(&persistence.RevisionCommand{
-		ID:             "goalcmd_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		ID:             "gc_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
 		Ptid:           ownerPTID,
 		CommandKind:    commandKind,
 		IdempotencyKey: idempotencyKey,
