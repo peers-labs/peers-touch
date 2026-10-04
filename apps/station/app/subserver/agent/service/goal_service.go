@@ -33,6 +33,7 @@ const (
 
 	goalUpdateCommand = "update_agent_goal"
 	goalReviewCommand = "review_agent_goal"
+	goalCancelCommand = "cancel_agent_goal"
 )
 
 type goalUpdatePayload struct {
@@ -46,6 +47,11 @@ type goalUpdatePayload struct {
 }
 
 type goalReviewPayload struct {
+	GoalID           string `json:"goal_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+}
+
+type goalCancelPayload struct {
 	GoalID           string `json:"goal_id"`
 	ExpectedRevision uint64 `json:"expected_revision"`
 }
@@ -280,6 +286,45 @@ func (s *GoalService) Review(
 				model.AgentGoalStatus_AGENT_GOAL_STATUS_REVIEWING,
 			)
 			return nil
+		},
+	)
+}
+
+func (s *GoalService) Cancel(
+	ctx context.Context,
+	ownerPTID string,
+	req *model.CancelAgentGoalRequest,
+) (*model.AgentGoal, error) {
+	if err := validateGoalMutationInput(s, ownerPTID, req); err != nil {
+		return nil, err
+	}
+	payload := goalCancelPayload{
+		GoalID:           strings.TrimSpace(req.GetGoalId()),
+		ExpectedRevision: req.GetExpectedRevision(),
+	}
+	return s.runGoalMutation(
+		ctx,
+		strings.TrimSpace(ownerPTID),
+		payload.GoalID,
+		payload.ExpectedRevision,
+		goalCancelCommand,
+		strings.TrimSpace(req.GetIdempotencyKey()),
+		goalPayloadHash(payload),
+		func(record *persistence.AgentGoal) error {
+			switch model.AgentGoalStatus(record.Status) {
+			case model.AgentGoalStatus_AGENT_GOAL_STATUS_DRAFT,
+				model.AgentGoalStatus_AGENT_GOAL_STATUS_REVIEWING,
+				model.AgentGoalStatus_AGENT_GOAL_STATUS_READY:
+				record.Status = int32(
+					model.AgentGoalStatus_AGENT_GOAL_STATUS_CANCELLED,
+				)
+				return nil
+			default:
+				return goalInvalidState(
+					record.GoalID,
+					"Only a non-executing Goal can be cancelled",
+				)
+			}
 		},
 	)
 }

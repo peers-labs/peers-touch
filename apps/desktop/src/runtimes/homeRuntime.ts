@@ -65,7 +65,8 @@ function homeCommandKey(
     | 'goal-update'
     | 'goal-review'
     | 'goal-admit'
-    | 'goal-start',
+    | 'goal-start'
+    | 'goal-cancel',
 ): string {
   const id = globalThis.crypto?.randomUUID?.()
     || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -216,6 +217,7 @@ function projectGoalMutationFailure(
   error: unknown,
   generation: number,
   goalID: string,
+  failureKind: 'default' | 'cancel' = 'default',
 ): Error {
   const normalized = normalizeAgentTurnStreamError(error);
   if (
@@ -237,6 +239,8 @@ function projectGoalMutationFailure(
     );
   } else if (isAgentForbiddenActorError(normalized.typedError)) {
     draft.markForbidden(normalized.typedError.locale_key);
+  } else if (failureKind === 'cancel') {
+    draft.markCancelFailure(normalized.message);
   } else {
     draft.markFailure(normalized.message);
   }
@@ -370,6 +374,52 @@ export async function startHomeGoal(): Promise<AgentGoal> {
     return running;
   } catch (error) {
     throw projectGoalMutationFailure(error, generation, goalID);
+  }
+}
+
+export async function cancelHomeGoal(): Promise<AgentGoal> {
+  const state = useGoalDraftStore.getState();
+  if (!state.goalId || state.baseRevision === null) {
+    throw new Error('agent.home.goalContractMissing');
+  }
+  if (
+    state.status !== AgentGoalStatus.DRAFT
+    && state.status !== AgentGoalStatus.REVIEWING
+    && state.status !== AgentGoalStatus.READY
+  ) {
+    throw new Error('agent.home.goalNotCancellable');
+  }
+  const goalID = state.goalId;
+  const generation = runtimeGeneration;
+  const idempotencyKey =
+    state.cancelIdempotencyKey || homeCommandKey('goal-cancel');
+  state.beginMutation('cancel', idempotencyKey);
+  try {
+    const acknowledgement = await api.cancelAgentGoal({
+      goalId: goalID,
+      expectedRevision: state.baseRevision,
+      idempotencyKey,
+    });
+    if (generation !== runtimeGeneration) {
+      return acknowledgement;
+    }
+    const readback = await api.getAgentGoal(goalID);
+    if (
+      readback.status !== AgentGoalStatus.CANCELLED
+      || readback.revision !== acknowledgement.revision
+    ) {
+      throw new Error('agent.home.goalCancelReadbackInvalid');
+    }
+    if (
+      generation === runtimeGeneration
+      && useGoalDraftStore.getState().goalId === goalID
+    ) {
+      useHomeStore.getState().applyGoalDraft(readback, 'readback');
+      useGoalDraftStore.getState().applyMutation(readback);
+    }
+    return readback;
+  } catch (error) {
+    throw projectGoalMutationFailure(error, generation, goalID, 'cancel');
   }
 }
 

@@ -21,6 +21,7 @@ const updateAgentGoal = vi.hoisted(() => vi.fn());
 const reviewAgentGoal = vi.hoisted(() => vi.fn());
 const admitAgentGoal = vi.hoisted(() => vi.fn());
 const startAgentGoal = vi.hoisted(() => vi.fn());
+const cancelAgentGoal = vi.hoisted(() => vi.fn());
 const setAgentSurface = vi.hoisted(() => vi.fn());
 const setSelectedAgent = vi.hoisted(() => vi.fn());
 const selectSession = vi.hoisted(() => vi.fn());
@@ -68,6 +69,7 @@ vi.mock('../services/desktop_api', () => ({
     reviewAgentGoal,
     admitAgentGoal,
     startAgentGoal,
+    cancelAgentGoal,
   },
   isAgentForbiddenActorError: (error: { error_type?: string } | undefined) =>
     error?.error_type === 'OWNERSHIP_FORBIDDEN_ACTOR',
@@ -118,6 +120,7 @@ vi.mock('../utils/logger', () => ({
 }));
 
 import {
+  cancelHomeGoal,
   createHomeGoalDraft,
   homeGoalDraftByteLength,
   homeRuntime,
@@ -418,6 +421,92 @@ describe('homeRuntime', () => {
       baseRevision: 5n,
       status: AgentGoalStatus.RUNNING,
       mutationState: 'running',
+    });
+  });
+
+  it('waits for cancelled Station readback before projecting the terminal state', async () => {
+    const reviewed = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Cancellable Goal',
+      outcome: 'Stop before execution',
+      status: AgentGoalStatus.REVIEWING,
+      revision: 3n,
+    });
+    const cancelled = create(AgentGoalSchema, {
+      ...reviewed,
+      status: AgentGoalStatus.CANCELLED,
+      revision: 4n,
+    });
+    let resolveReadback!: (goal: AgentGoal) => void;
+    cancelAgentGoal.mockResolvedValue(cancelled);
+    getAgentGoal.mockReturnValueOnce(new Promise<AgentGoal>((resolve) => {
+      resolveReadback = resolve;
+    }));
+    useGoalDraftStore.getState().hydrate(reviewed);
+
+    const pending = cancelHomeGoal();
+    await vi.waitFor(() => expect(cancelAgentGoal).toHaveBeenCalledWith({
+      goalId: 'goal-1',
+      expectedRevision: 3n,
+      idempotencyKey: expect.stringMatching(/^home-goal-cancel-/),
+    }));
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      status: AgentGoalStatus.REVIEWING,
+      mutationState: 'cancelling',
+    });
+    expect(applyGoalDraft).not.toHaveBeenCalled();
+
+    resolveReadback(cancelled);
+    await expect(pending).resolves.toBe(cancelled);
+    expect(getAgentGoal).toHaveBeenCalledWith('goal-1');
+    expect(applyGoalDraft).toHaveBeenCalledWith(cancelled, 'readback');
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      baseRevision: 4n,
+      status: AgentGoalStatus.CANCELLED,
+      mutationState: 'cancelled',
+    });
+  });
+
+  it('keeps the prior Goal and retry key when cancellation fails', async () => {
+    const ready = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Cancellable Goal',
+      outcome: 'Keep this visible on failure',
+      status: AgentGoalStatus.READY,
+      revision: 4n,
+    });
+    const failure = new Error('agent.home.goalCancelFailed');
+    cancelAgentGoal.mockRejectedValueOnce(failure);
+    useGoalDraftStore.getState().hydrate(ready);
+
+    await expect(cancelHomeGoal()).rejects.toBe(failure);
+
+    expect(getAgentGoal).not.toHaveBeenCalled();
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      goalId: 'goal-1',
+      baseRevision: 4n,
+      status: AgentGoalStatus.READY,
+      mutationState: 'cancel-failed',
+      mutationError: 'agent.home.goalCancelFailed',
+      cancelIdempotencyKey: expect.stringMatching(/^home-goal-cancel-/),
+    });
+
+    const retryKey = useGoalDraftStore.getState().cancelIdempotencyKey;
+    const cancelled = create(AgentGoalSchema, {
+      ...ready,
+      status: AgentGoalStatus.CANCELLED,
+      revision: 5n,
+    });
+    cancelAgentGoal.mockResolvedValueOnce(cancelled);
+    getAgentGoal.mockResolvedValueOnce(cancelled);
+    await expect(cancelHomeGoal()).resolves.toBe(cancelled);
+
+    expect(cancelAgentGoal).toHaveBeenNthCalledWith(2, {
+      goalId: 'goal-1',
+      expectedRevision: 4n,
+      idempotencyKey: retryKey,
     });
   });
 

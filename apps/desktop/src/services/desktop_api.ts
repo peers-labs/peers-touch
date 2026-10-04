@@ -174,6 +174,8 @@ import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
 import {
   AdmitAgentGoalRequestSchema,
   AdmitAgentGoalResponseSchema,
+  CancelAgentGoalRequestSchema,
+  CancelAgentGoalResponseSchema,
   CreateAgentGoalRequestSchema,
   CreateAgentGoalResponseSchema,
   GetAgentGoalRequestSchema,
@@ -5538,6 +5540,23 @@ export const api = {
     );
     if (!response.goal) {
       throw new Error('agent.goalStartResponseMissing');
+    }
+    return response.goal;
+  },
+
+  cancelAgentGoal: async (input: {
+    goalId: string;
+    expectedRevision: bigint;
+    idempotencyKey: string;
+  }): Promise<AgentGoal> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_goal_cancel',
+      CancelAgentGoalRequestSchema,
+      CancelAgentGoalResponseSchema,
+      create(CancelAgentGoalRequestSchema, input),
+    );
+    if (!response.goal) {
+      throw new Error('agent.goalCancelResponseMissing');
     }
     return response.goal;
   },

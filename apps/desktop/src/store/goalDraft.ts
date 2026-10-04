@@ -27,6 +27,9 @@ export type GoalContractMutationState =
   | 'ready'
   | 'starting'
   | 'running'
+  | 'cancelling'
+  | 'cancelled'
+  | 'cancel-failed'
   | 'admission-rejected'
   | 'conflict'
   | 'forbidden'
@@ -49,6 +52,7 @@ interface GoalDraftState {
   reviewIdempotencyKey: string;
   admitIdempotencyKey: string;
   startIdempotencyKey: string;
+  cancelIdempotencyKey: string;
   admissionReasonCode: string;
   reloadLoading: boolean;
   hydrate: (goal: AgentGoal) => void;
@@ -63,7 +67,7 @@ interface GoalDraftState {
   ) => void;
   removeAcceptanceCriterion: (criterionId: string) => void;
   beginMutation: (
-    kind: 'update' | 'review' | 'admit' | 'start',
+    kind: 'update' | 'review' | 'admit' | 'start' | 'cancel',
     idempotencyKey: string,
   ) => void;
   applyMutation: (goal: AgentGoal) => void;
@@ -71,6 +75,7 @@ interface GoalDraftState {
   markConflict: (actualRevision: bigint, error: string) => void;
   markForbidden: (error: string) => void;
   markFailure: (error: string) => void;
+  markCancelFailure: (error: string) => void;
   beginReload: () => void;
   applyReloadPreservingEdits: (goal: AgentGoal) => void;
   failReload: (error: string) => void;
@@ -88,6 +93,7 @@ function draftFromGoal(goal: AgentGoal) {
   if (goal.status === AgentGoalStatus.REVIEWING) mutationState = 'reviewing';
   if (goal.status === AgentGoalStatus.READY) mutationState = 'ready';
   if (goal.status === AgentGoalStatus.RUNNING) mutationState = 'running';
+  if (goal.status === AgentGoalStatus.CANCELLED) mutationState = 'cancelled';
   return {
     goalId: goal.goalId,
     baseRevision: goal.revision,
@@ -117,6 +123,7 @@ function draftFromGoal(goal: AgentGoal) {
     reviewIdempotencyKey: '',
     admitIdempotencyKey: '',
     startIdempotencyKey: '',
+    cancelIdempotencyKey: '',
     admissionReasonCode: '',
     reloadLoading: false,
   };
@@ -136,6 +143,7 @@ function dirtyState() {
     reviewIdempotencyKey: '',
     admitIdempotencyKey: '',
     startIdempotencyKey: '',
+    cancelIdempotencyKey: '',
     admissionReasonCode: '',
   };
 }
@@ -159,6 +167,7 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
     reviewIdempotencyKey: '',
     admitIdempotencyKey: '',
     startIdempotencyKey: '',
+    cancelIdempotencyKey: '',
     admissionReasonCode: '',
     reloadLoading: false,
 
@@ -230,7 +239,9 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
           ? 'admitting'
           : kind === 'start'
             ? 'starting'
-            : 'saving',
+            : kind === 'cancel'
+              ? 'cancelling'
+              : 'saving',
       mutationError: null,
       conflictRevision: null,
       admissionReasonCode: '',
@@ -238,6 +249,7 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
       ...(kind === 'review' ? { reviewIdempotencyKey: idempotencyKey } : {}),
       ...(kind === 'admit' ? { admitIdempotencyKey: idempotencyKey } : {}),
       ...(kind === 'start' ? { startIdempotencyKey: idempotencyKey } : {}),
+      ...(kind === 'cancel' ? { cancelIdempotencyKey: idempotencyKey } : {}),
     }),
 
     applyMutation: (goal) => set(draftFromGoal(goal)),
@@ -267,6 +279,12 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
       conflictRevision: null,
     }),
 
+    markCancelFailure: (error) => set({
+      mutationState: 'cancel-failed',
+      mutationError: error,
+      conflictRevision: null,
+    }),
+
     beginReload: () => set({ reloadLoading: true }),
 
     applyReloadPreservingEdits: (goal) => set((state) => {
@@ -283,6 +301,7 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
         reviewIdempotencyKey: '',
         admitIdempotencyKey: '',
         startIdempotencyKey: '',
+        cancelIdempotencyKey: '',
         admissionReasonCode: '',
         reloadLoading: false,
       };
@@ -310,6 +329,7 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
       reviewIdempotencyKey: '',
       admitIdempotencyKey: '',
       startIdempotencyKey: '',
+      cancelIdempotencyKey: '',
       admissionReasonCode: '',
       reloadLoading: false,
     }),

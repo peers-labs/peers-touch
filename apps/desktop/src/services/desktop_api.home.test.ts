@@ -15,6 +15,8 @@ import {
   AdmitAgentGoalRequestSchema,
   AdmitAgentGoalResponseSchema,
   AgentGoalStatus,
+  CancelAgentGoalRequestSchema,
+  CancelAgentGoalResponseSchema,
   CreateAgentGoalRequestSchema,
   CreateAgentGoalResponseSchema,
   GetAgentGoalRequestSchema,
@@ -365,6 +367,48 @@ describe('Desktop Home projection API', () => {
       goalId: 'goal-1',
       expectedRevision: 4n,
       idempotencyKey: 'goal-start-1',
+    });
+  });
+
+  it('cancels the exact Station Goal revision', async () => {
+    const cancelledGoal = {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Cancellable Goal',
+      outcome: 'Stop before execution',
+      status: AgentGoalStatus.CANCELLED,
+      revision: 4n,
+    };
+    vi.mocked(invoke).mockResolvedValueOnce({
+      ok: true,
+      data: Array.from(toBinary(
+        CancelAgentGoalResponseSchema,
+        create(CancelAgentGoalResponseSchema, { goal: cancelledGoal }),
+      )),
+    });
+
+    const cancelled = await api.cancelAgentGoal({
+      goalId: 'goal-1',
+      expectedRevision: 3n,
+      idempotencyKey: 'goal-cancel-1',
+    });
+
+    expect(cancelled).toMatchObject({
+      status: AgentGoalStatus.CANCELLED,
+      revision: 4n,
+    });
+    const invocation = vi.mocked(invoke).mock.calls[0];
+    expect(invocation?.[0]).toBe('agent_home_goal_cancel');
+    const args = invocation?.[1] as {
+      input?: { requestBytes?: number[] };
+    } | undefined;
+    expect(fromBinary(
+      CancelAgentGoalRequestSchema,
+      new Uint8Array(args?.input?.requestBytes ?? []),
+    )).toMatchObject({
+      goalId: 'goal-1',
+      expectedRevision: 3n,
+      idempotencyKey: 'goal-cancel-1',
     });
   });
 });

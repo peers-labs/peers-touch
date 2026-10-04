@@ -345,6 +345,226 @@ func TestGoalUpdateAndReviewUseRevisionAndIdempotency(t *testing.T) {
 	}
 }
 
+func TestGoalCancelDraftReviewingAndReadyIsAuthoritativeAndIdempotent(
+	t *testing.T,
+) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, *GoalService) *model.AgentGoal
+	}{
+		{
+			name: "draft",
+			prepare: func(t *testing.T, goals *GoalService) *model.AgentGoal {
+				t.Helper()
+				created, err := goals.CreateDraft(
+					context.Background(),
+					"ptid:actor-1",
+					&model.CreateAgentGoalRequest{
+						Title:          "Cancellable draft",
+						Outcome:        "Cancel before review",
+						IdempotencyKey: "goal-create-cancel-draft",
+					},
+				)
+				if err != nil {
+					t.Fatalf("create draft Goal: %v", err)
+				}
+				return created
+			},
+		},
+		{
+			name: "reviewing",
+			prepare: func(t *testing.T, goals *GoalService) *model.AgentGoal {
+				t.Helper()
+				return createReviewedGoal(t, goals, "ptid:actor-1")
+			},
+		},
+		{
+			name: "ready",
+			prepare: func(t *testing.T, goals *GoalService) *model.AgentGoal {
+				t.Helper()
+				reviewed := createReviewedGoal(t, goals, "ptid:actor-1")
+				ready, err := NewGoalAdmissionService(goals).Admit(
+					context.Background(),
+					"ptid:actor-1",
+					&model.AdmitAgentGoalRequest{
+						GoalId:           reviewed.GetGoalId(),
+						ExpectedRevision: reviewed.GetRevision(),
+						IdempotencyKey:   "goal-admit-before-cancel",
+					},
+				)
+				if err != nil {
+					t.Fatalf("admit Goal before cancel: %v", err)
+				}
+				return ready
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := openGoalServiceTestDB(t)
+			goals := NewGoalService(db)
+			goals.newID = func() string { return "goal-cancel-" + test.name }
+			before := test.prepare(t, goals)
+			request := &model.CancelAgentGoalRequest{
+				GoalId:           before.GetGoalId(),
+				ExpectedRevision: before.GetRevision(),
+				IdempotencyKey:   "goal-cancel-" + test.name,
+			}
+
+			cancelled, err := goals.Cancel(
+				context.Background(),
+				"ptid:actor-1",
+				request,
+			)
+			if err != nil {
+				t.Fatalf("cancel %s Goal: %v", test.name, err)
+			}
+			if cancelled.GetStatus() !=
+				model.AgentGoalStatus_AGENT_GOAL_STATUS_CANCELLED ||
+				cancelled.GetRevision() != before.GetRevision()+1 {
+				t.Fatalf("cancelled Goal = %+v", cancelled)
+			}
+
+			replayed, err := goals.Cancel(
+				context.Background(),
+				"ptid:actor-1",
+				request,
+			)
+			if err != nil {
+				t.Fatalf("replay %s Goal cancellation: %v", test.name, err)
+			}
+			if replayed.GetStatus() != cancelled.GetStatus() ||
+				replayed.GetRevision() != cancelled.GetRevision() {
+				t.Fatalf("replayed cancellation = %+v, want %+v", replayed, cancelled)
+			}
+
+			reopened, err := goals.Get(
+				context.Background(),
+				"ptid:actor-1",
+				before.GetGoalId(),
+			)
+			if err != nil {
+				t.Fatalf("read cancelled Goal: %v", err)
+			}
+			if reopened.GetStatus() != cancelled.GetStatus() ||
+				reopened.GetRevision() != cancelled.GetRevision() {
+				t.Fatalf("readback Goal = %+v, want %+v", reopened, cancelled)
+			}
+
+			var taskRuns int64
+			if err := db.Model(&persistence.TaskRun{}).
+				Count(&taskRuns).Error; err != nil {
+				t.Fatalf("count TaskRuns: %v", err)
+			}
+			if taskRuns != 0 {
+				t.Fatalf("Goal cancellation wrote %d TaskRuns, want 0", taskRuns)
+			}
+		})
+	}
+}
+
+func TestGoalCancelRejectsRunningGoalWithoutMutation(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	goals := NewGoalService(db)
+	goals.newID = func() string { return "goal-cancel-running" }
+	reviewed := createReviewedGoal(t, goals, "ptid:actor-1")
+	admission := NewGoalAdmissionService(goals)
+	ready, err := admission.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		&model.AdmitAgentGoalRequest{
+			GoalId:           reviewed.GetGoalId(),
+			ExpectedRevision: reviewed.GetRevision(),
+			IdempotencyKey:   "goal-admit-cancel-running",
+		},
+	)
+	if err != nil {
+		t.Fatalf("admit Goal: %v", err)
+	}
+	running, err := admission.Start(
+		context.Background(),
+		"ptid:actor-1",
+		&model.StartAgentGoalRequest{
+			GoalId:           ready.GetGoalId(),
+			ExpectedRevision: ready.GetRevision(),
+			IdempotencyKey:   "goal-start-cancel-running",
+		},
+	)
+	if err != nil {
+		t.Fatalf("start Goal: %v", err)
+	}
+
+	_, err = goals.Cancel(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CancelAgentGoalRequest{
+			GoalId:           running.GetGoalId(),
+			ExpectedRevision: running.GetRevision(),
+			IdempotencyKey:   "goal-cancel-running",
+		},
+	)
+	assertGoalErrorCode(t, err, errcode.AgentInvalidSourceState)
+
+	reopened, err := goals.Get(
+		context.Background(),
+		"ptid:actor-1",
+		running.GetGoalId(),
+	)
+	if err != nil {
+		t.Fatalf("read running Goal: %v", err)
+	}
+	if reopened.GetStatus() != model.AgentGoalStatus_AGENT_GOAL_STATUS_RUNNING ||
+		reopened.GetRevision() != running.GetRevision() {
+		t.Fatalf("rejected cancellation mutated Goal: %+v", reopened)
+	}
+}
+
+func TestGoalCancelRejectsAnotherActorAndStaleRevisionWithoutMutation(
+	t *testing.T,
+) {
+	db := openGoalServiceTestDB(t)
+	goals := NewGoalService(db)
+	goals.newID = func() string { return "goal-cancel-guarded" }
+	reviewed := createReviewedGoal(t, goals, "ptid:actor-1")
+
+	_, err := goals.Cancel(
+		context.Background(),
+		"ptid:actor-2",
+		&model.CancelAgentGoalRequest{
+			GoalId:           reviewed.GetGoalId(),
+			ExpectedRevision: reviewed.GetRevision(),
+			IdempotencyKey:   "goal-cancel-other-actor",
+		},
+	)
+	assertGoalErrorCode(t, err, errcode.AgentOwnershipForbiddenActor)
+
+	_, err = goals.Cancel(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CancelAgentGoalRequest{
+			GoalId:           reviewed.GetGoalId(),
+			ExpectedRevision: reviewed.GetRevision() - 1,
+			IdempotencyKey:   "goal-cancel-stale",
+		},
+	)
+	assertGoalErrorCode(t, err, errcode.AgentLifecycleStaleVersion)
+
+	reopened, err := goals.Get(
+		context.Background(),
+		"ptid:actor-1",
+		reviewed.GetGoalId(),
+	)
+	if err != nil {
+		t.Fatalf("read guarded Goal: %v", err)
+	}
+	if reopened.GetStatus() !=
+		model.AgentGoalStatus_AGENT_GOAL_STATUS_REVIEWING ||
+		reopened.GetRevision() != reviewed.GetRevision() {
+		t.Fatalf("rejected cancellation mutated Goal: %+v", reopened)
+	}
+}
+
 func TestGoalUpdateRejectsStaleRevisionWithLatestRevision(t *testing.T) {
 	db := openGoalServiceTestDB(t)
 	svc := NewGoalService(db)

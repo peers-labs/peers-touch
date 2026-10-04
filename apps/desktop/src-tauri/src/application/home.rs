@@ -15,6 +15,7 @@ const GOAL_UPDATE_PATH: &str = "/sub-agent/agent/goal/update";
 const GOAL_REVIEW_PATH: &str = "/sub-agent/agent/goal/review";
 const GOAL_ADMIT_PATH: &str = "/sub-agent/agent/goal/admit";
 const GOAL_START_PATH: &str = "/sub-agent/agent/goal/start";
+const GOAL_CANCEL_PATH: &str = "/sub-agent/agent/goal/cancel";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -239,5 +240,29 @@ pub fn start_goal(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>>
     ) {
         Ok(response) => AppResult::success(response.encode_to_vec()),
         Err(error) => error.into_app_result("agent.goalStartFailed"),
+    }
+}
+
+pub fn cancel_goal(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    let request = match agent::CancelAgentGoalRequest::decode(input.request_bytes.as_slice()) {
+        Ok(request) => request,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "agent.goalCancelRequestInvalid",
+                None,
+            )
+        }
+    };
+
+    match station_client::request_proto::<_, agent::CancelAgentGoalResponse>(
+        Method::POST,
+        GOAL_CANCEL_PATH,
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => AppResult::success(response.encode_to_vec()),
+        Err(error) => error.into_app_result("agent.goalCancelFailed"),
     }
 }
