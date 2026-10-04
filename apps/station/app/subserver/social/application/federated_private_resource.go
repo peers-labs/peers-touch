@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +34,26 @@ type PrivateContentFederationMembership interface {
 		string,
 		string,
 	) error
+}
+
+type PrivateRelationshipRevoker interface {
+	RevokePrivateRelationship(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+		[]actormodel.Audience_Kind,
+		[]actormodel.Audience_Kind,
+		privatecontentpb.PrivateResourceInvalidationReason,
+	) error
+}
+
+type privateFederationFrameEnqueuer interface {
+	EnqueueFederationFrame(
+		context.Context,
+		*federationdelivery.Frame,
+		time.Time,
+	) (federationdelivery.EnqueueResult, error)
 }
 
 func (s *PrivateContentService) ConfigureFederatedPrivateDelivery(
@@ -620,6 +642,197 @@ func (s *PrivateContentService) signFederatedPrivateResourceFrame(
 	return frame, nil
 }
 
+func (s *PrivateContentService) RevokePrivateRelationship(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	localActorPTID string,
+	peerActorPTID string,
+	sourceAudienceKinds []actormodel.Audience_Kind,
+	suppressedAudienceKinds []actormodel.Audience_Kind,
+	reason privatecontentpb.PrivateResourceInvalidationReason,
+) error {
+	if transaction == nil || transaction.DB() == nil ||
+		transaction.Outbox() == nil ||
+		strings.TrimSpace(localActorPTID) == "" ||
+		strings.TrimSpace(peerActorPTID) == "" ||
+		localActorPTID == peerActorPTID {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentInvalidArgument,
+			"social.private_content.revoke_relationship",
+			"relationship",
+			"is incomplete",
+		)
+	}
+	now := s.now()
+	if _, err := s.store.SuppressRemotePrivateResources(
+		ctx,
+		transaction,
+		infrastructure.RemotePrivateSuppressionRequest{
+			ViewerPTID:    localActorPTID,
+			AuthorPTID:    peerActorPTID,
+			AudienceKinds: suppressedAudienceKinds,
+			Reason:        reason,
+			CommittedAt:   now,
+		},
+	); err != nil {
+		return mapPrivateStoreError(
+			"social.private_content.suppress_relationship",
+			err,
+		)
+	}
+	return s.stageFederatedPrivateInvalidations(
+		ctx,
+		transaction,
+		infrastructure.PrivateResourceInvalidationRequest{
+			LocalStationPeerID: s.localStationPeerID,
+			AuthorPTID:         localActorPTID,
+			RecipientPTID:      peerActorPTID,
+			AudienceKinds:      sourceAudienceKinds,
+			Reason:             reason,
+			CommittedAt:        now,
+		},
+	)
+}
+
+func (s *PrivateContentService) stageFederatedPrivateInvalidations(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	request infrastructure.PrivateResourceInvalidationRequest,
+) error {
+	messages, err := s.store.StagePrivateResourceInvalidations(
+		ctx,
+		transaction,
+		request,
+	)
+	if err != nil {
+		return mapPrivateStoreError(
+			"social.private_content.stage_invalidations",
+			err,
+		)
+	}
+	for _, message := range messages {
+		frame, err := s.signFederatedPrivateInvalidationFrame(
+			ctx,
+			transaction,
+			message,
+			request.CommittedAt,
+		)
+		if err != nil {
+			return err
+		}
+		var result federationdelivery.EnqueueResult
+		if enqueuer, ok := transaction.(privateFederationFrameEnqueuer); ok {
+			result, err = enqueuer.EnqueueFederationFrame(
+				ctx,
+				frame,
+				request.CommittedAt,
+			)
+		} else {
+			result, err = transaction.Outbox().Enqueue(
+				ctx,
+				frame,
+				request.CommittedAt,
+			)
+		}
+		if err != nil {
+			s.metrics.revocationTotal.Inc(
+				"source_enqueue",
+				"rejected",
+				"outbox",
+			)
+			return mapPrivateStoreError(
+				"social.private_content.enqueue_invalidation",
+				err,
+			)
+		}
+		outcome := "accepted"
+		if result.Duplicate {
+			outcome = "replay"
+		}
+		s.metrics.revocationTotal.Inc(
+			"source_enqueue",
+			outcome,
+			privateInvalidationMetricReason(message.GetReason()),
+		)
+	}
+	return nil
+}
+
+func (s *PrivateContentService) signFederatedPrivateInvalidationFrame(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	message *privatecontentpb.FederatedPrivateResourceInvalidation,
+	now time.Time,
+) (*federationdelivery.Frame, error) {
+	payload, err := socialdomain.CanonicalProtoBytes(message)
+	if err != nil {
+		return nil, err
+	}
+	resource := message.GetResource()
+	identity := deterministicPrivateID(
+		"federated-invalidation",
+		message.GetSourceStationPeerId(),
+		message.GetTargetStationPeerId(),
+		resource.GetContentId(),
+		strconv.FormatUint(resource.GetGeneration(), 10),
+		message.GetTargetActor().GetPtid(),
+		strconv.FormatUint(message.GetLifecycleRevision(), 10),
+	)
+	keyID, err := s.stationSigner.SigningKeyIDInTransaction(ctx, transaction)
+	if err != nil {
+		return nil, mapPrivateDependencyError(
+			"social.private_content.sign_federated_invalidation",
+			err,
+		)
+	}
+	frame := &federationdelivery.Frame{
+		FormatVersion:       federationdelivery.CurrentFormatVersion,
+		FrameId:             "social-private-invalidation-frame:" + identity,
+		SourceStationPeerId: message.GetSourceStationPeerId(),
+		TargetStationPeerId: message.GetTargetStationPeerId(),
+		IdempotencyKey:      "social-private-invalidation:" + identity,
+		PayloadKind:         federationdelivery.PayloadKindSocialPrivateInvalidation,
+		PayloadId:           identity,
+		OrderingKey: "social-private-resource:" +
+			resource.GetContentId() + ":" +
+			message.GetTargetActor().GetPtid(),
+		OrderingSequence: int64(message.GetLifecycleRevision()),
+		OpaquePayload:    payload,
+		PayloadSha256:    federationdelivery.PayloadSHA256(payload),
+		IssuedAt:         timestamppb.New(now.UTC()),
+		ExpiresAt: timestamppb.New(
+			now.Add(federatedPrivateResourceFrameLifetime).UTC(),
+		),
+		SigningKeyId: keyID,
+	}
+	signingBytes, err := federationdelivery.SigningBytes(frame)
+	if err != nil {
+		return nil, err
+	}
+	frame.StationSignature, err = s.stationSigner.SignInTransaction(
+		ctx,
+		transaction,
+		keyID,
+		signingBytes,
+	)
+	if err != nil {
+		return nil, mapPrivateDependencyError(
+			"social.private_content.sign_federated_invalidation",
+			err,
+		)
+	}
+	if err := federationdelivery.ValidateFrame(
+		frame,
+		federationdelivery.DefaultFramePolicy(
+			message.GetTargetStationPeerId(),
+		),
+		now,
+	); err != nil {
+		return nil, err
+	}
+	return frame, nil
+}
+
 func federatedViewerEnvelopes(
 	plan dbmodel.SocialPrivateContentPlan,
 	materials []socialdomain.PrivateEnvelopeMaterial,
@@ -774,6 +987,16 @@ func (s *PrivateContentService) ReceiveFederatedPrivateResource(
 		canonical,
 	)
 	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentStaleRevision) {
+			s.metrics.revocationTotal.Inc(
+				"receiver_delivery",
+				"rejected",
+				"tombstone",
+			)
+			return federationdelivery.TerminalResult(
+				federationdelivery.FrameErrorDomainRejected,
+			), nil
+		}
 		if errors.Is(err, infrastructure.ErrPrivateContentConflict) {
 			s.observeFederatedPrivateDelivery(
 				startedAt,
@@ -842,6 +1065,16 @@ func (s *PrivateContentService) ReceiveFederatedPrivateResource(
 		canonical,
 	)
 	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentStaleRevision) {
+			s.metrics.revocationTotal.Inc(
+				"receiver_delivery",
+				"rejected",
+				"tombstone",
+			)
+			return federationdelivery.TerminalResult(
+				federationdelivery.FrameErrorDomainRejected,
+			), nil
+		}
 		// A conflict that appears after the read-only identity preflight is a
 		// concurrent race. Returning an error rolls back the newly imported
 		// proof key and resource mutation; the retry will classify the stable
@@ -883,6 +1116,220 @@ func (s *PrivateContentService) ReceiveFederatedPrivateResource(
 	}
 	s.observeFederatedPrivateDelivery(startedAt, "receiver", "accepted", "none")
 	return federationdelivery.AcceptedResult(), nil
+}
+
+func (s *PrivateContentService) ReceiveFederatedPrivateInvalidation(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	message *privatecontentpb.FederatedPrivateResourceInvalidation,
+	frame *federationdelivery.Frame,
+) (federationdelivery.Result, error) {
+	if err := s.validateFederatedPrivateInvalidation(
+		ctx,
+		message,
+		frame,
+	); err != nil {
+		s.metrics.revocationTotal.Inc(
+			"receiver",
+			"rejected",
+			"domain",
+		)
+		return deliveryResultForPrivateContentError(err), nil
+	}
+	canonical, err := socialdomain.CanonicalProtoBytes(message)
+	if err != nil {
+		return federationdelivery.Result{}, err
+	}
+	result, err := s.store.ApplyRemotePrivateResourceInvalidation(
+		ctx,
+		transaction,
+		message,
+		canonical,
+	)
+	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentConflict) {
+			s.metrics.revocationTotal.Inc(
+				"receiver",
+				"conflict",
+				"identity",
+			)
+			return federationdelivery.PayloadHashConflictResult(), nil
+		}
+		return federationdelivery.Result{}, err
+	}
+	if result.Duplicate {
+		s.metrics.revocationTotal.Inc(
+			"receiver",
+			"replay",
+			privateInvalidationMetricReason(message.GetReason()),
+		)
+		return federationdelivery.DuplicateResult(), nil
+	}
+	if err := s.events.StageImportedRevoked(
+		ctx,
+		transaction,
+		result.PostID,
+		message.GetTargetActor().GetPtid(),
+		message.GetReason(),
+	); err != nil {
+		return federationdelivery.Result{}, err
+	}
+	s.metrics.revocationTotal.Inc(
+		"receiver",
+		"accepted",
+		privateInvalidationMetricReason(message.GetReason()),
+	)
+	return federationdelivery.AcceptedResult(), nil
+}
+
+func (s *PrivateContentService) validateFederatedPrivateInvalidation(
+	ctx context.Context,
+	message *privatecontentpb.FederatedPrivateResourceInvalidation,
+	frame *federationdelivery.Frame,
+) error {
+	const operation = "social.private_content.validate_federated_invalidation"
+	if s.localStationPeerID == "" ||
+		s.federationMembership == nil ||
+		s.events == nil {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrationGap,
+			operation,
+			"dependencies",
+			"federated private delivery is not configured",
+		)
+	}
+	if message == nil || frame == nil ||
+		message.GetFormatVersion() != socialdomain.PrivateContentFormatVersion ||
+		len(message.ProtoReflect().GetUnknown()) != 0 {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentInvalidArgument,
+			operation,
+			"invalidation",
+			"is invalid",
+		)
+	}
+	canonical, err := socialdomain.CanonicalProtoBytes(message)
+	if err != nil {
+		return err
+	}
+	resource := message.GetResource()
+	target := message.GetTargetActor()
+	expectedPayloadID := ""
+	expectedOrderingKey := ""
+	if resource != nil && target != nil {
+		expectedPayloadID = deterministicPrivateID(
+			"federated-invalidation",
+			message.GetSourceStationPeerId(),
+			message.GetTargetStationPeerId(),
+			resource.GetContentId(),
+			strconv.FormatUint(resource.GetGeneration(), 10),
+			target.GetPtid(),
+			strconv.FormatUint(message.GetLifecycleRevision(), 10),
+		)
+		expectedOrderingKey = "social-private-resource:" +
+			resource.GetContentId() + ":" + target.GetPtid()
+	}
+	if frame.GetPayloadKind() != federationdelivery.PayloadKindSocialPrivateInvalidation ||
+		frame.GetPayloadId() != expectedPayloadID ||
+		frame.GetSourceStationPeerId() != message.GetSourceStationPeerId() ||
+		frame.GetTargetStationPeerId() != message.GetTargetStationPeerId() ||
+		frame.GetOrderingKey() != expectedOrderingKey ||
+		frame.GetOrderingSequence() != int64(message.GetLifecycleRevision()) ||
+		!bytes.Equal(frame.GetOpaquePayload(), canonical) ||
+		!bytes.Equal(
+			frame.GetPayloadSha256(),
+			federationdelivery.PayloadSHA256(canonical),
+		) {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentInvalidArgument,
+			operation,
+			"frame",
+			"does not bind the canonical private invalidation",
+		)
+	}
+	for name, value := range map[string]string{
+		"federation_id":          message.GetFederationId(),
+		"source_station_peer_id": message.GetSourceStationPeerId(),
+		"target_station_peer_id": message.GetTargetStationPeerId(),
+	} {
+		if value == "" || value != strings.TrimSpace(value) {
+			return socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentInvalidArgument,
+				operation,
+				name,
+				"must be canonical",
+			)
+		}
+	}
+	if message.GetTargetStationPeerId() != s.localStationPeerID {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentUnauthorized,
+			operation,
+			"target_station_peer_id",
+			"does not match the receiving Station",
+		)
+	}
+	if resource == nil ||
+		resource.GetOwnerDomain() != securecontentpb.
+			SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
+		strings.TrimSpace(resource.GetContentId()) == "" ||
+		resource.GetGeneration() == 0 ||
+		target == nil ||
+		strings.TrimSpace(target.GetPtid()) == "" ||
+		target.GetKind() != actormodel.ActorKind_ACTOR_KIND_PERSON ||
+		message.GetLifecycleRevision() <= resource.GetGeneration() ||
+		message.GetLifecycleRevision() > math.MaxInt64 ||
+		!infrastructure.ValidPrivateInvalidationReason(message.GetReason()) ||
+		message.GetCommittedAt() == nil {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentInvalidArgument,
+			operation,
+			"invalidation",
+			"is incomplete",
+		)
+	}
+	if err := message.GetCommittedAt().CheckValid(); err != nil {
+		return socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentInvalidArgument,
+			operation,
+			err,
+		)
+	}
+	if err := s.federationMembership.ValidateActiveStationPair(
+		ctx,
+		message.GetFederationId(),
+		message.GetSourceStationPeerId(),
+		message.GetTargetStationPeerId(),
+	); err != nil {
+		if errors.Is(err, federationdomain.ErrInactiveStationPair) {
+			return socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				err,
+			)
+		}
+		return socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentDependency,
+			operation,
+			err,
+		)
+	}
+	return nil
+}
+
+func privateInvalidationMetricReason(
+	reason privatecontentpb.PrivateResourceInvalidationReason,
+) string {
+	switch reason {
+	case privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_RESOURCE_DELETED:
+		return "deleted"
+	case privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_RELATIONSHIP_REVOKED:
+		return "relationship"
+	case privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_RECIPIENT_BLOCKED:
+		return "blocked"
+	default:
+		return "invalid"
+	}
 }
 
 func (s *PrivateContentService) observeFederatedPrivateDelivery(
@@ -1086,6 +1533,16 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			transaction,
 			message,
 		); err != nil {
+			if errors.Is(
+				err,
+				infrastructure.ErrPrivateContentStaleRevision,
+			) {
+				return socialdomain.WrapPrivateContentError(
+					socialdomain.PrivateContentUnauthorized,
+					operation,
+					err,
+				)
+			}
 			if errors.Is(err, infrastructure.ErrPrivateContentNotFound) {
 				return socialdomain.WrapPrivateContentError(
 					socialdomain.PrivateContentDependency,
@@ -1103,6 +1560,23 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			operation,
 			"resource_kind",
 			"is unsupported",
+		)
+	}
+	blocked, err := s.store.RemotePrivateResourceBlocked(
+		ctx,
+		transaction,
+		target.GetPtid(),
+		resourceAuthor.GetPtid(),
+	)
+	if err != nil {
+		return mapPrivateStoreError(operation, err)
+	}
+	if blocked {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentUnauthorized,
+			operation,
+			"relationship",
+			"is blocked by receiver-local policy",
 		)
 	}
 	if audienceKind == actormodel.Audience_FRIENDS {

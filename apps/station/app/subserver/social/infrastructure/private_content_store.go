@@ -64,6 +64,8 @@ const (
 	PrivateContentBoundaryFederationOutbox  PrivateContentWriteBoundary = "federation_outbox"
 	PrivateContentBoundaryRemoteResource    PrivateContentWriteBoundary = "remote_resource"
 	PrivateContentBoundaryRemoteEnvelopes   PrivateContentWriteBoundary = "remote_envelopes"
+	PrivateContentBoundaryInvalidation      PrivateContentWriteBoundary = "private_invalidation"
+	PrivateContentBoundaryRemoteTombstone   PrivateContentWriteBoundary = "remote_tombstone"
 	PrivateContentBoundaryCommandReceipt    PrivateContentWriteBoundary = "command_receipt"
 	PrivateContentBoundaryPostDeleted       PrivateContentWriteBoundary = "post_deleted"
 	PrivateContentBoundaryCommentsDeleted   PrivateContentWriteBoundary = "comments_deleted"
@@ -252,6 +254,28 @@ type PrivateContentUnitOfWork interface {
 type PrivateContentStore interface {
 	PrivateContentUnitOfWork
 	Migrate(context.Context) error
+	StagePrivateResourceInvalidations(
+		context.Context,
+		federationdelivery.Transaction,
+		PrivateResourceInvalidationRequest,
+	) ([]*privatecontentpb.FederatedPrivateResourceInvalidation, error)
+	SuppressRemotePrivateResources(
+		context.Context,
+		federationdelivery.Transaction,
+		RemotePrivateSuppressionRequest,
+	) ([]string, error)
+	RemotePrivateResourceBlocked(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+	) (bool, error)
+	ApplyRemotePrivateResourceInvalidation(
+		context.Context,
+		federationdelivery.Transaction,
+		*privatecontentpb.FederatedPrivateResourceInvalidation,
+		[]byte,
+	) (RemotePrivateInvalidationResult, error)
 	InspectRemotePrivateResource(
 		context.Context,
 		federationdelivery.Transaction,
@@ -284,6 +308,7 @@ type PrivateContentStore interface {
 		string,
 		string,
 		time.Time,
+		...PrivatePostDeleteMutation,
 	) (bool, error)
 	ExpirePlan(context.Context, string, time.Time) error
 	GetPrivatePost(
@@ -340,11 +365,18 @@ type PrivateContentStore interface {
 	MarkPrepared(context.Context, PreparedPlan) (PreparedPlanResult, error)
 }
 
+type PrivatePostDeleteMutation func(
+	context.Context,
+	PrivateContentTransaction,
+	dbmodel.SocialPrivateContentPost,
+) error
+
 func (s *GORMPrivateContentStore) DeletePrivatePost(
 	ctx context.Context,
 	postID string,
 	authorPTID string,
 	deletedAt time.Time,
+	mutations ...PrivatePostDeleteMutation,
 ) (bool, error) {
 	if strings.TrimSpace(postID) == "" ||
 		strings.TrimSpace(authorPTID) == "" ||
@@ -356,12 +388,26 @@ func (s *GORMPrivateContentStore) DeletePrivatePost(
 	}
 
 	var deleted bool
+	var afterCommit []federationdelivery.AfterCommitFunc
 	err := s.withSerializedTransaction(
 		ctx,
 		[]string{"private-post:" + postID},
 		func(tx *gorm.DB) error {
+			outbox, err := federationdelivery.NewGORMRepository(
+				tx,
+				federationdelivery.SystemClock{},
+			)
+			if err != nil {
+				return err
+			}
+			bound := &gormPrivateContentTransaction{
+				db:        tx,
+				outbox:    outbox,
+				failpoint: s.failpoint,
+				parent:    s.federationTransaction,
+			}
 			var post dbmodel.SocialPrivateContentPost
-			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Where("post_id = ?", postID).
 				First(&post).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -375,6 +421,14 @@ func (s *GORMPrivateContentStore) DeletePrivatePost(
 			}
 			if post.AuthorPTID != authorPTID || post.DeletedAt != nil {
 				return nil
+			}
+			for _, mutate := range mutations {
+				if mutate == nil {
+					continue
+				}
+				if err := mutate(ctx, bound, post); err != nil {
+					return err
+				}
 			}
 
 			var comments []dbmodel.SocialPrivateContentComment
@@ -536,10 +590,14 @@ func (s *GORMPrivateContentStore) DeletePrivatePost(
 			}
 
 			deleted = true
+			afterCommit = append(afterCommit, bound.afterCommit...)
 			return nil
 		},
 	)
 	if err != nil {
+		return false, err
+	}
+	if err := runPrivateContentAfterCommit(ctx, afterCommit); err != nil {
 		return false, err
 	}
 	return deleted, nil

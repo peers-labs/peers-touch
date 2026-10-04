@@ -14,18 +14,34 @@ type FederatedPrivateResourceReceiver interface {
 		*privatecontentpb.FederatedPrivateResourceDelivery,
 		*delivery.Frame,
 	) (delivery.Result, error)
+	ReceiveFederatedPrivateInvalidation(
+		context.Context,
+		delivery.Transaction,
+		*privatecontentpb.FederatedPrivateResourceInvalidation,
+		*delivery.Frame,
+	) (delivery.Result, error)
 }
 
-func RegisterFederatedPrivateResourceReceiver(
+func RegisterFederatedPrivateResourceReceivers(
 	registry *delivery.Registry,
 	receiver FederatedPrivateResourceReceiver,
 ) error {
-	return delivery.RegisterProtoReceiver(
+	if err := delivery.RegisterProtoReceiver(
 		registry,
 		delivery.PayloadKindSocialPrivateResource,
 		func() *privatecontentpb.FederatedPrivateResourceDelivery {
 			return &privatecontentpb.FederatedPrivateResourceDelivery{}
 		},
 		receiver.ReceiveFederatedPrivateResource,
+	); err != nil {
+		return err
+	}
+	return delivery.RegisterProtoReceiver(
+		registry,
+		delivery.PayloadKindSocialPrivateInvalidation,
+		func() *privatecontentpb.FederatedPrivateResourceInvalidation {
+			return &privatecontentpb.FederatedPrivateResourceInvalidation{}
+		},
+		receiver.ReceiveFederatedPrivateInvalidation,
 	)
 }

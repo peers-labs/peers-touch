@@ -202,6 +202,24 @@ func (s *GORMPrivateContentStore) ValidateRemotePrivateCommentParent(
 		return fmt.Errorf("social remote private Comment parent read: %w", err)
 	}
 	if count != 1 {
+		var tombstoneCount int64
+		if err := transaction.DB().WithContext(ctx).
+			Model(&remotePrivateTombstoneModel{}).
+			Where(
+				"source_station_peer_id = ? AND content_id = ? AND target_actor_ptid = ?",
+				message.GetSourceStationPeerId(),
+				message.GetComment().GetPostId(),
+				message.GetTargetActor().GetPtid(),
+			).
+			Count(&tombstoneCount).Error; err != nil {
+			return fmt.Errorf(
+				"social remote private Comment parent tombstone read: %w",
+				err,
+			)
+		}
+		if tombstoneCount != 0 {
+			return ErrPrivateContentStaleRevision
+		}
 		return ErrPrivateContentNotFound
 	}
 	return nil

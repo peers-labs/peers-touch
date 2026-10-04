@@ -44,6 +44,12 @@ export const REQUIRED_PRIVATE_REACTION_KEYS = Object.freeze([
   'REACTION_REJECTED',
 ]);
 
+export const REQUIRED_PRIVATE_REVOCATION_REASONS = Object.freeze([
+  'RESOURCE_DELETED',
+  'RELATIONSHIP_REVOKED',
+  'RECIPIENT_BLOCKED',
+]);
+
 export const ALLOWED_METRIC_NAMES = new Set([
   'social_cross_station_delivery_latency_seconds',
   'social_cross_station_delivery_total',
@@ -315,6 +321,7 @@ export function validateSocialCrossStationOperability({
   mobileErrorText,
   errorResolverText,
   privateNativeText,
+  privateRevocationText,
   objectStreamMetricText,
   objectStreamUsageTexts = [],
   metricTexts = [],
@@ -329,6 +336,7 @@ export function validateSocialCrossStationOperability({
     'moments.private.state.',
     'moments.private.media.',
     'moments.reaction.status.',
+    'moments.private.revocation.',
   ]) {
     const enKeys = keysWithPrefix(enMoments, prefix);
     const zhKeys = keysWithPrefix(zhMoments, prefix);
@@ -381,6 +389,44 @@ export function validateSocialCrossStationOperability({
   for (const key of ['moments.reaction.retry', 'moments.reaction.retryUnavailable']) {
     requireLocaleKey(enMoments, 'English', key);
     requireLocaleKey(zhMoments, 'Chinese', key);
+  }
+  for (const reason of REQUIRED_PRIVATE_REVOCATION_REASONS) {
+    requireOccurrence(
+      privateRevocationText,
+      new RegExp(`'${reason}'`, 'gu'),
+      `typed private revocation reason ${reason}`,
+    );
+    requireLocaleKey(
+      enMoments,
+      'English',
+      `moments.private.revocation.${reason}.title`,
+    );
+    requireLocaleKey(
+      enMoments,
+      'English',
+      `moments.private.revocation.${reason}.description`,
+    );
+    requireLocaleKey(
+      zhMoments,
+      'Chinese',
+      `moments.private.revocation.${reason}.title`,
+    );
+    requireLocaleKey(
+      zhMoments,
+      'Chinese',
+      `moments.private.revocation.${reason}.description`,
+    );
+  }
+  for (const marker of [
+    'eventBus.publish(EVENT.MOMENT_REVOKED',
+    'eventBus.subscribe(EVENT.MOMENT_REVOKED',
+    'unknown-private-revocation',
+  ]) {
+    requireOccurrence(
+      privateRevocationText,
+      new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'gu'),
+      `private revocation EventBus marker ${marker}`,
+    );
   }
 
   const errorPattern = /ERROR_CODE_((?:CONTENT_PREKEY|SOCIAL_PRIVATE|FEDERATED_SOCIAL)_[A-Z0-9_]+)\s*=\s*(\d+)\s*;/gu;
@@ -464,6 +510,12 @@ export function checkSocialCrossStationOperability(projectRoot) {
     mobileErrorText: read('apps/mobile/src/gen/proto/domain/error/error_pb.ts'),
     errorResolverText: read('apps/desktop/src/i18n/error-resolver.ts'),
     privateNativeText: read('apps/desktop/src/services/privateMomentsNative.ts'),
+    privateRevocationText: [
+      read('apps/desktop/src/kernel/events/types.ts'),
+      read('apps/desktop/src/services/eventStream.ts'),
+      read('apps/desktop/src/runtimes/momentsRuntime.ts'),
+      read('apps/desktop/src/store/privateMoments.ts'),
+    ].join('\n'),
     objectStreamMetricText: read(objectStreamMetricPath),
     objectStreamUsageTexts: stationFiles
       .filter((file) => file !== path.join(projectRoot, objectStreamMetricPath))

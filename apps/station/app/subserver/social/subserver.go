@@ -199,6 +199,10 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 			err,
 		)
 	}
+	s.relationshipSvc.ConfigurePrivateRevocation(
+		s.privateContentSvc,
+		application.NewSocialGraphEventPublisher(),
+	)
 	dataDirectory, err := appdir.Resolve("station", "data")
 	if err != nil {
 		return fmt.Errorf("resolve Social private object data directory: %w", err)
@@ -270,7 +274,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize federated Social relationship service: %w", err)
 	}
-	s.federatedRelationshipSvc.WithActorDeviceKeyResolver(actorDeviceKeyPort{})
+	s.federatedRelationshipSvc.
+		WithActorDeviceKeyResolver(actorDeviceKeyPort{}).
+		WithPrivateContentRevoker(s.privateContentSvc)
 	if err := federationRuntime.RegisterReceivers(func(registry *delivery.Registry) error {
 		if err := infrastructure.RegisterFederatedFriendRequestReceivers(
 			registry,
@@ -284,7 +290,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		); err != nil {
 			return err
 		}
-		if err := infrastructure.RegisterFederatedPrivateResourceReceiver(
+		if err := infrastructure.RegisterFederatedPrivateResourceReceivers(
 			registry,
 			s.privateContentSvc,
 		); err != nil {
