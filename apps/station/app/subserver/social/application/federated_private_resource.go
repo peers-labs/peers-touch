@@ -1592,7 +1592,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 		friendSnapshot, friendErr := s.audiences.ResolveFriendsPostSnapshot(
 			ctx,
 			transaction,
-			resourceAuthor.GetPtid(),
+			target.GetPtid(),
 		)
 		if friendErr != nil {
 			return socialdomain.WrapPrivateContentError(
@@ -1603,7 +1603,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 		}
 		friendAuthorized := false
 		for _, recipientPTID := range friendSnapshot.RecipientPTIDs {
-			if recipientPTID == target.GetPtid() {
+			if recipientPTID == resourceAuthor.GetPtid() {
 				friendAuthorized = true
 				break
 			}
