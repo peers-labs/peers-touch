@@ -25,8 +25,14 @@
   ],
   "doneWhen": ["A legacy AgentTask opens from Home under deterministic Goal and TaskRun ids","Repeated migration and restart do not duplicate records","Ambiguous owner or terminal state appears as blocked migration","Source rows remain intact for rollback"],
   "failureBehavior": ["Do not dual-write legacy and canonical task state","Do not translate ambiguous completion into success"],
-  "updatedAt": "2026-10-04T21:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T21:08:35Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:f3e17289bc4306f17f023a9b72bc3e718a02fb25;development://personal-agent-os-convergence-20261003/artifacts/20261004T210750949687Z/paos-11-agenttask-migration/capture.json;manifest-sha256:78ca2a18e4e85edcdcc1bbe2e69bb8c50aeace9f048b1255daa872cf5f77d2a4"
+    }
+  ]
 }
 ```
 
@@ -40,9 +46,16 @@
 
 ## Current Snapshot
 
-Implementation complete. The idempotent Station migration preserves every
+Functional slice complete. The idempotent Station migration preserves every
 legacy source row, creates deterministic Goal/TaskRun/Step identities for
 valid rows, records invalid ownership or ambiguous terminal state as blocked,
 and exposes the migration state through the Home projection and badge.
-Focused Go, Desktop Vitest, TypeScript, proto generation, and diff checks pass.
-The Profile `two` native Development Journey remains pending.
+
+- Focused Go, Desktop Vitest, TypeScript, proto generation, and diff checks
+  pass.
+- Native Profile `two` readback preserved canonical IDs across repeated Home
+  reconciliation and retained the legacy source row.
+- The migrated badge rendered in the native Tauri product window.
+- Mobile generated contract compatibility was refreshed. Mobile's broad
+  TypeScript check remains blocked by the pre-existing React type duplication
+  baseline and is not part of this Desktop migration closure.
