@@ -458,11 +458,9 @@ Applet completion inference。
 ### Context
 
 Station 已有 `apps/station/app/subserver/events.EventBus` 作为全产品统一实时
-fan-out 和 `/events/stream` owner；Agent 子服务仍创建私有
-`MemoryEventBus`、维护 `EventStreamService` subscriber registry、暴露专属
-stream route，并允许多个 service/handler 直接 publish。当前
-`TaskEventWriter.Publish` 在部分 durable append 失败后仍继续发布，客户端可能
-看到不可重放的事件。
+fan-out 和 `/events/stream` owner。PAOS-D07 决策前，Agent 子服务还创建私有
+bus、维护 feature-owned subscriber registry、暴露专属 stream route，并允许
+多个 service/handler 直接 publish；这会让客户端看到不可重放的事件。
 
 ### Decision
 

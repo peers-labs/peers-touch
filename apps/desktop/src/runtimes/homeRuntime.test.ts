@@ -5,6 +5,7 @@ import {
   HomeTaskStatus,
   HomeWorkKind,
   HomeWorkProjectionSchema,
+  type HomeWorkProjection,
 } from '../gen/proto/domain/agent/home_pb';
 import { TaskSurface } from '../gen/proto/domain/agent/orchestration_pb';
 import {
@@ -12,6 +13,8 @@ import {
   AgentGoalStatus,
   type AgentGoal,
 } from '../gen/proto/domain/agent/goal_pb';
+import { EVENT } from '../kernel/events/catalog';
+import type { EventPayloadMap } from '../kernel/events/types';
 import { useGoalDraftStore } from '../store/goalDraft';
 import { useGoalExecutionStore } from '../store/goalExecution';
 
@@ -31,13 +34,19 @@ const selectSession = vi.hoisted(() => vi.fn());
 const setActiveTask = vi.hoisted(() => vi.fn());
 const applyProjection = vi.hoisted(() => vi.fn());
 const beginLoad = vi.hoisted(() => vi.fn());
+const beginResync = vi.hoisted(() => vi.fn());
+const markConnectionLost = vi.hoisted(() => vi.fn());
 const failLoad = vi.hoisted(() => vi.fn());
+const applyAgentDomainEvent = vi.hoisted(() => vi.fn(() => true));
 const beginGoalCreate = vi.hoisted(() => vi.fn());
 const applyGoalDraft = vi.hoisted(() => vi.fn());
 const failGoalCreate = vi.hoisted(() => vi.fn());
 const beginGoalReadback = vi.hoisted(() => vi.fn());
 const failGoalReadback = vi.hoisted(() => vi.fn());
 const reset = vi.hoisted(() => vi.fn());
+const eventHandlers = vi.hoisted(
+  () => new Map<string, (payload: unknown) => void>(),
+);
 
 const agentState = {
   setAgentSurface,
@@ -46,12 +55,17 @@ const agentState = {
 
 const homeState = {
   projection: null,
+  connectionState: 'fresh',
+  retryable: false,
   goalDraftTitle: '',
   goalDraftOutcome: '',
   goalDraftIdempotencyKey: '',
   savedGoal: null as AgentGoal | null,
   beginLoad,
+  beginResync,
+  markConnectionLost,
   applyProjection,
+  applyAgentDomainEvent,
   failLoad,
   beginGoalCreate,
   applyGoalDraft,
@@ -111,7 +125,13 @@ vi.mock('../store/home', () => ({
 
 vi.mock('../kernel/events/bus', () => ({
   eventBus: {
-    subscribe: vi.fn(() => vi.fn()),
+    subscribe: vi.fn((
+      type: string,
+      handler: (payload: unknown) => void,
+    ) => {
+      eventHandlers.set(type, handler);
+      return () => eventHandlers.delete(type);
+    }),
   },
 }));
 
@@ -141,6 +161,8 @@ describe('homeRuntime', () => {
   beforeEach(() => {
     homeRuntime.teardown();
     vi.clearAllMocks();
+    eventHandlers.clear();
+    applyAgentDomainEvent.mockReturnValue(true);
     selectSession.mockResolvedValue(undefined);
     getHomeWorkProjection.mockResolvedValue(create(HomeWorkProjectionSchema, {
       ptid: 'ptid:actor-1',
@@ -150,6 +172,8 @@ describe('homeRuntime', () => {
     homeState.goalDraftOutcome = '';
     homeState.goalDraftIdempotencyKey = '';
     homeState.savedGoal = null;
+    homeState.connectionState = 'fresh';
+    homeState.retryable = false;
     useGoalDraftStore.getState().reset();
     useGoalExecutionStore.getState().reset();
   });
@@ -164,6 +188,155 @@ describe('homeRuntime', () => {
     expect(applyProjection).toHaveBeenCalledWith(
       expect.objectContaining({ ptid: 'ptid:actor-1', revision: 7n }),
     );
+  });
+
+  it('reconciles accepted Agent events without a page remount', async () => {
+    homeRuntime.install();
+    await homeRuntime.bootstrap('ptid:actor-1');
+    getHomeWorkProjection.mockResolvedValueOnce(
+      create(HomeWorkProjectionSchema, {
+        ptid: 'ptid:actor-1',
+        revision: 8n,
+        activeTasks: [{
+          goalId: 'goal-1',
+          goalNodeId: 'node-1',
+          taskId: 'task-1',
+          stepId: 'step-1',
+          attemptId: 'attempt-1',
+          attempt: 1,
+          title: 'Live task',
+          status: HomeTaskStatus.RUNNING,
+          progressPercent: 25,
+          surface: TaskSurface.DIRECT_RUN,
+        }],
+      }),
+    );
+    const handler = eventHandlers.get(EVENT.REALTIME_AGENT_DOMAIN_EVENT) as
+      ((payload: EventPayloadMap[typeof EVENT.REALTIME_AGENT_DOMAIN_EVENT]) => void);
+
+    handler({
+      eventId: 'stream-2',
+      domainEventId: 'task-event-2',
+      domainSequence: 2n,
+      schemaVersion: 1,
+      eventType: 'agent.collaboration.node.running',
+      goalId: 'goal-1',
+      taskId: 'task-1',
+      goalRevision: 5n,
+      committedTsUnixMs: 2,
+    });
+
+    await vi.waitFor(() => expect(getHomeWorkProjection).toHaveBeenCalledTimes(2));
+    expect(applyAgentDomainEvent).toHaveBeenCalledOnce();
+    expect(useGoalExecutionStore.getState().executions).toEqual([
+      expect.objectContaining({
+        taskId: 'task-1',
+        status: HomeTaskStatus.RUNNING,
+        progressPercent: 25,
+      }),
+    ]);
+  });
+
+  it('ignores duplicate or older Agent events before projection readback', async () => {
+    applyAgentDomainEvent
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+    homeRuntime.install();
+    await homeRuntime.bootstrap('ptid:actor-1');
+    const handler = eventHandlers.get(EVENT.REALTIME_AGENT_DOMAIN_EVENT) as
+      ((payload: EventPayloadMap[typeof EVENT.REALTIME_AGENT_DOMAIN_EVENT]) => void);
+    const event = {
+      eventId: 'stream-2',
+      domainEventId: 'task-event-2',
+      domainSequence: 2n,
+      schemaVersion: 1,
+      eventType: 'agent.collaboration.node.running',
+      goalId: 'goal-1',
+      taskId: 'task-1',
+      goalRevision: 5n,
+      committedTsUnixMs: 2,
+    };
+
+    handler(event);
+    await vi.waitFor(() => expect(getHomeWorkProjection).toHaveBeenCalledTimes(2));
+    handler(event);
+    await Promise.resolve();
+
+    expect(getHomeWorkProjection).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs one trailing readback when an Agent event arrives in flight', async () => {
+    let resolveFirstEvent!: (projection: HomeWorkProjection) => void;
+    homeRuntime.install();
+    await homeRuntime.bootstrap('ptid:actor-1');
+    getHomeWorkProjection.mockReturnValueOnce(new Promise((resolve) => {
+      resolveFirstEvent = resolve;
+    }));
+    const handler = eventHandlers.get(EVENT.REALTIME_AGENT_DOMAIN_EVENT) as
+      ((payload: EventPayloadMap[typeof EVENT.REALTIME_AGENT_DOMAIN_EVENT]) => void);
+    const first = {
+      eventId: 'stream-2',
+      domainEventId: 'task-event-2',
+      domainSequence: 2n,
+      schemaVersion: 1,
+      eventType: 'agent.collaboration.node.running',
+      goalId: 'goal-1',
+      taskId: 'task-1',
+      goalRevision: 5n,
+      committedTsUnixMs: 2,
+    };
+
+    handler(first);
+    await vi.waitFor(() => expect(getHomeWorkProjection).toHaveBeenCalledTimes(2));
+    handler({
+      ...first,
+      eventId: 'stream-3',
+      domainEventId: 'task-event-3',
+      domainSequence: 3n,
+      eventType: 'agent.collaboration.task.completed',
+      committedTsUnixMs: 3,
+    });
+    expect(getHomeWorkProjection).toHaveBeenCalledTimes(2);
+
+    resolveFirstEvent(create(HomeWorkProjectionSchema, {
+      ptid: 'ptid:actor-1',
+      revision: 8n,
+    }));
+    await vi.waitFor(() => expect(getHomeWorkProjection).toHaveBeenCalledTimes(3));
+  });
+
+  it('preserves Home data while reconnecting and runs one resync readback', async () => {
+    homeRuntime.install();
+    await homeRuntime.bootstrap('ptid:actor-1');
+    const connectionHandler = eventHandlers.get(
+      EVENT.REALTIME_CONNECTION_STATE,
+    ) as (
+      payload: EventPayloadMap[typeof EVENT.REALTIME_CONNECTION_STATE],
+    ) => void;
+    const resyncHandler = eventHandlers.get(EVENT.REALTIME_RESYNC) as (
+      payload: EventPayloadMap[typeof EVENT.REALTIME_RESYNC],
+    ) => void;
+
+    connectionHandler({ connected: false, reason: 'network-lost' });
+    expect(markConnectionLost).toHaveBeenCalledOnce();
+    expect(getHomeWorkProjection).toHaveBeenCalledOnce();
+
+    connectionHandler({ connected: true, reason: 'connected' });
+    resyncHandler({ newestEventId: 'event-9', reason: 'cursor-gap' });
+    await vi.waitFor(() => expect(getHomeWorkProjection).toHaveBeenCalledTimes(2));
+
+    expect(beginResync).toHaveBeenCalledTimes(3);
+  });
+
+  it('blocks Home mutations while the projection is not fresh', async () => {
+    homeState.connectionState = 'stale';
+    homeState.goalDraftTitle = 'Blocked Goal';
+    homeState.goalDraftOutcome = 'Must not write';
+
+    await expect(createHomeGoalDraft()).rejects.toThrow(
+      'agent.home.projectionNotFresh',
+    );
+    expect(createAgentGoalDraft).not.toHaveBeenCalled();
   });
 
   it('opens the exact Station conversation for its owning Agent', async () => {

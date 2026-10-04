@@ -373,20 +373,7 @@ func (s *McpServerService) Upsert(
 		return nil, err
 	}
 	s.registerServerTools(result.GetServer())
-	for _, manifest := range oldManifests {
-		s.authority.publishManifestInvalidations(
-			ctx,
-			domain.AgentAuthorityInvalidationManifestRetired,
-			manifest,
-		)
-	}
-	for _, manifest := range result.GetManifests() {
-		s.authority.publishManifestInvalidations(
-			ctx,
-			domain.AgentAuthorityInvalidationManifestRegistered,
-			manifest,
-		)
-	}
+	_ = oldManifests
 	return result, nil
 }
 
@@ -604,13 +591,6 @@ func (s *McpServerService) Delete(
 	})
 	if err != nil {
 		return nil, err
-	}
-	for _, manifest := range result.GetRetiredManifests() {
-		s.authority.publishManifestInvalidations(
-			ctx,
-			domain.AgentAuthorityInvalidationManifestRetired,
-			manifest,
-		)
 	}
 	return result, nil
 }

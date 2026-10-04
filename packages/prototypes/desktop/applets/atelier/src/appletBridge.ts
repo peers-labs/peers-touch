@@ -9,6 +9,9 @@ import {
 } from './projection';
 import type { AtelierRuntimeBridge } from './bridgeRuntime';
 import {
+  assertPrototypeBridgeRuntimeValueHasNoForbiddenCapabilities,
+} from './prototypeBridgeRuntimeCallPolicy';
+import {
   ATELIER_ARTIFACT_BODY_REF_SHAPE,
   ATELIER_ARTIFACT_BODY_KINDS,
   ATELIER_ARTIFACT_SANDBOX_REF_SHAPE,
@@ -19,7 +22,6 @@ import {
   ATELIER_PROJECTION_CONTRACT,
   ATELIER_MEMORY_CANDIDATE_FEEDS,
   ATELIER_PROJECTION_EVENT_TOPIC,
-  ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
   ATELIER_PROVIDER_CAPABILITY_READ_ONLY,
   ATELIER_PROVIDER_CAPABILITY_SCOPES,
   ATELIER_WORKSPACE_OPEN_URI_SHAPE,
@@ -33,29 +35,9 @@ export interface AtelierAppletBridgeHost {
 
 export interface CreateAppletSdkAtelierBridgeOptions {
   projectionEventTopic?: string;
-  projectionStream?: {
-    agentId: string;
-    taskId?: string;
-    afterEventSeq?: number;
-  };
-  initialSnapshot?: AtelierProjectionSnapshot;
 }
 
 const DEFAULT_PROJECTION_EVENT_TOPIC = ATELIER_PROJECTION_EVENT_TOPIC;
-type ProjectionTaskIdSource = (typeof ATELIER_PROJECTION_CONTRACT.eventSubscription.taskIdSourcePriority)[number];
-
-type ProjectionTaskIdResolverInput = {
-  explicitTaskId?: string;
-  initialSnapshot?: AtelierProjectionSnapshot;
-};
-
-const projectionTaskIdResolvers = {
-  certificationCreatedSelectedTaskId: () => undefined,
-  explicitTaskId: ({ explicitTaskId }: ProjectionTaskIdResolverInput) => explicitTaskId,
-  controllerSelectedTaskId: () => undefined,
-  snapshotSelectedTaskId: ({ initialSnapshot }: ProjectionTaskIdResolverInput) => initialSnapshot?.selectedTaskId,
-  snapshotFirstTaskId: ({ initialSnapshot }: ProjectionTaskIdResolverInput) => initialSnapshot?.workspace.tasks[0]?.id,
-} satisfies Record<ProjectionTaskIdSource, (input: ProjectionTaskIdResolverInput) => string | undefined>;
 
 /**
  * Adapts the applet-sdk host shape to Atelier's projection runtime bridge.
@@ -78,6 +60,7 @@ export function createAppletSdkAtelierBridge(
         throw normalizeAtelierBridgeHostError(request.method, error);
       });
       throwIfAtelierBridgeErrorEnvelope(request.method, response);
+      assertPrototypeBridgeRuntimeValueHasNoForbiddenCapabilities(response, request.method);
       const nonSnapshotResponse = assertNonSnapshotRuntimeResponse(request.method, response, request.payload);
       if (nonSnapshotResponse !== undefined) return nonSnapshotResponse as AtelierRuntimeResponseByMethod[M];
       try {
@@ -89,44 +72,56 @@ export function createAppletSdkAtelierBridge(
       }
     },
     subscribeProjection(listener) {
-      if (!host.onEvent) return () => {};
+      if (!host.onEvent) {
+        throw Object.assign(
+          new Error('Atelier projection event bridge unavailable: host.onEvent missing'),
+          { code: 'CONNECTION_CLOSED' },
+        );
+      }
       let closed = false;
-      let unsubscribeEvent: (() => void) | undefined;
-      const closeAfterRejectedSubscribe = (method: 'events.subscribe' | typeof ATELIER_PROJECTION_SUBSCRIPTION_METHOD, error: unknown) => {
+      let topicSubscribed = false;
+      const unsubscribeEvent = host.onEvent(projectionEventTopic, (payload) => {
+        if (!closed) listener(payload);
+      });
+      if (typeof unsubscribeEvent !== 'function') {
+        closed = true;
+        throw new Error('Atelier projection event bridge returned malformed unsubscribe cleanup');
+      }
+      const unsubscribeTopic = () => {
+        if (!topicSubscribed) return;
+        topicSubscribed = false;
+        void invokeProjectionSubscription(host, 'events.unsubscribe', {
+          topic: projectionEventTopic,
+        }).catch(() => undefined);
+      };
+      const closeAfterRejectedSubscribe = (method: 'events.subscribe', error: unknown) => {
         if (closed) return;
         closed = true;
-        unsubscribeEvent?.();
+        unsubscribeEvent();
+        unsubscribeTopic();
+        const rejection = projectionSubscriptionRejection(method, error);
         listener({
           kind: 'atelier.projection.subscription-rejected',
           method,
-          reason: error instanceof Error ? error.message : String(error),
-          });
-        };
-        unsubscribeEvent = host.onEvent(projectionEventTopic, (payload) => {
-          if (!closed) listener(payload);
+          ...(rejection.code ? { code: rejection.code } : {}),
+          reason: rejection.reason,
         });
-      invokeProjectionSubscription(host, 'events.subscribe', { topic: projectionEventTopic }).catch((error: unknown) => {
-        closeAfterRejectedSubscribe('events.subscribe', error);
-      });
-      if (options.projectionStream) {
-          const taskId = projectionTaskIdFromSubscription({
-            explicitTaskId: options.projectionStream.taskId,
-            initialSnapshot: options.initialSnapshot,
-          });
-        const afterEventSeq = options.projectionStream.afterEventSeq ?? projectionAfterEventSeqFromSnapshot(options.initialSnapshot, taskId);
-        invokeProjectionSubscription(host, ATELIER_PROJECTION_SUBSCRIPTION_METHOD, compactProjectionStreamPayload({
-          agentId: options.projectionStream.agentId,
-          taskId,
-          afterEventSeq,
-        })).catch((error: unknown) => {
-          closeAfterRejectedSubscribe(ATELIER_PROJECTION_SUBSCRIPTION_METHOD, error);
-        });
-      }
-      return () => {
-        closed = true;
-        unsubscribeEvent?.();
-        void invokeProjectionSubscription(host, 'events.unsubscribe', { topic: projectionEventTopic }).catch(() => undefined);
       };
+      topicSubscribed = true;
+      const ready = invokeProjectionSubscription(host, 'events.subscribe', {
+        topic: projectionEventTopic,
+      }).catch((error: unknown) => {
+        closeAfterRejectedSubscribe('events.subscribe', error);
+        throw error;
+      });
+      void ready.catch(() => undefined);
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        unsubscribeEvent();
+        unsubscribeTopic();
+      };
+      return Object.assign(cleanup, { ready });
     },
   };
 }
@@ -134,17 +129,23 @@ export function createAppletSdkAtelierBridge(
 function throwIfAtelierBridgeErrorEnvelope(method: AtelierRuntimeMethod, response: unknown): void {
   const envelope = atelierBridgeHostErrorEnvelope(response);
   if (!envelope) return;
-  throw new Error(`Atelier bridge method ${method} failed: ${envelope.code} ${envelope.message}`, {
-    cause: response,
-  });
+  throw Object.assign(
+    new Error(`Atelier bridge method ${method} failed: ${envelope.code} ${envelope.message}`, {
+      cause: response,
+    }),
+    { code: envelope.code },
+  );
 }
 
 function normalizeAtelierBridgeHostError(method: AtelierRuntimeMethod, error: unknown): Error {
   const envelope = atelierBridgeHostErrorEnvelope(error) ?? (error instanceof Error ? atelierBridgeHostErrorEnvelope(error) : undefined);
   if (envelope) {
-    return new Error(`Atelier bridge method ${method} failed: ${envelope.code} ${envelope.message}`, {
-      cause: error,
-    });
+    return Object.assign(
+      new Error(`Atelier bridge method ${method} failed: ${envelope.code} ${envelope.message}`, {
+        cause: error,
+      }),
+      { code: envelope.code },
+    );
   }
   if (error instanceof Error) return error;
   return new Error(`Atelier bridge method ${method} failed: ${String(error)}`, {
@@ -447,43 +448,61 @@ function isNonNegativeFiniteNumber(value: unknown): value is number {
 
 function invokeProjectionSubscription(
   host: AtelierAppletBridgeHost,
-  method: 'events.subscribe' | typeof ATELIER_PROJECTION_SUBSCRIPTION_METHOD | 'events.unsubscribe',
+  method: 'events.subscribe' | 'events.unsubscribe',
   params: Record<string, unknown>,
 ): Promise<void> {
   return host.invoke(method, params).then(() => undefined).catch((error: unknown) => {
-    console.warn(`Atelier applet bridge ${method} rejected`, error);
+    console.warn(`Atelier applet bridge ${method} rejected`, {
+      reason: projectionSubscriptionRejection(method, error).reason,
+    });
     throw error;
   });
 }
 
-function projectionTaskIdFromSubscription(input: ProjectionTaskIdResolverInput): string | undefined {
-  for (const sourceKey of ATELIER_PROJECTION_CONTRACT.eventSubscription.taskIdSourcePriority) {
-    const taskId = projectionTaskIdResolvers[sourceKey](input);
-    if (taskId) return taskId;
-  }
-  return undefined;
-}
-
-function compactProjectionStreamPayload(input: {
-  agentId: string;
-  taskId?: string;
-  afterEventSeq?: number;
-}): { agentId: string; taskId?: string; afterEventSeq?: number } {
-  const payload: { agentId: string; taskId?: string; afterEventSeq?: number } = {
-    agentId: input.agentId,
+function projectionSubscriptionRejection(
+  method: 'events.subscribe',
+  error: unknown,
+): { code?: string; reason: string } {
+  const record = isRecord(error) ? error : undefined;
+  const code = typeof record?.code === 'string'
+    ? sanitizeProjectionSubscriptionCode(record.code)
+    : undefined;
+  const reason = sanitizeProjectionSubscriptionReason(
+    error instanceof Error ? error.message : String(error),
+  );
+  return {
+    ...(code ? { code } : {}),
+    reason,
   };
-  if (input.taskId) payload.taskId = input.taskId;
-  if (typeof input.afterEventSeq === 'number' && Number.isFinite(input.afterEventSeq) && input.afterEventSeq > 0) {
-    payload.afterEventSeq = input.afterEventSeq;
-  }
-  return payload;
 }
 
-function projectionAfterEventSeqFromSnapshot(
-  snapshot: AtelierProjectionSnapshot | undefined,
-  taskId: string | undefined,
-): number {
-  if (!snapshot || !taskId) return 0;
-  const nextEventSeq = snapshot.workspace.replay?.[taskId]?.nextEventSeq;
-  return typeof nextEventSeq === 'number' && Number.isFinite(nextEventSeq) && nextEventSeq > 0 ? nextEventSeq : 0;
+const forbiddenProjectionSubscriptionReasonPatterns = [
+  /provider\.invoke/i,
+  /providerInvoke/i,
+  /runtime\.execute/i,
+  /runtimeExecute/i,
+  /shell/i,
+  /shellExecute/i,
+  /memory\.write/i,
+  /input_snapshot/i,
+  /run\.execute/i,
+];
+
+function sanitizeProjectionSubscriptionReason(reason: string): string {
+  if (!reason.trim()) return 'Host projection subscription rejected';
+  if (forbiddenProjectionSubscriptionReasonPatterns.some((pattern) => pattern.test(reason))) {
+    return 'Host projection subscription rejected';
+  }
+  return reason;
+}
+
+function sanitizeProjectionSubscriptionCode(code: string): string | undefined {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode) return undefined;
+  return Object.prototype.hasOwnProperty.call(
+    ATELIER_PROJECTION_CONTRACT.viewSurface.bridgeRuntimeRecoveryCodeKindByCode,
+    normalizedCode,
+  )
+    ? normalizedCode
+    : undefined;
 }

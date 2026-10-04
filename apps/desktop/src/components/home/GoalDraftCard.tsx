@@ -27,6 +27,7 @@ export function GoalDraftCard() {
   const readbackRevision = useHomeStore((state) => state.goalReadbackRevision);
   const createError = useHomeStore((state) => state.goalCreateError);
   const readbackError = useHomeStore((state) => state.goalReadbackError);
+  const connectionState = useHomeStore((state) => state.connectionState);
   const setTitle = useHomeStore((state) => state.setGoalDraftTitle);
   const setOutcome = useHomeStore((state) => state.setGoalDraftOutcome);
 
@@ -88,6 +89,7 @@ export function GoalDraftCard() {
     || !outcome.trim()
     || titleTooLong
     || outcomeTooLong
+    || connectionState !== 'fresh'
     || creating;
 
   return (

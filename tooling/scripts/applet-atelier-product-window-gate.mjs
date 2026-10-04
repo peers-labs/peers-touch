@@ -20,7 +20,7 @@ const productWindowCoveredPaths = [
   'Desktop product-window route reports applet.product.rendered for peers.atelier',
   'official peers.atelier loads Station workspace through /v1/workspace service binding inside the real Desktop product window UI',
   'official peers.atelier sends createFromGoal through /v1/projects service binding and Station creates a durable task/node/provider-plan/event projection source inside the real Desktop product window UI',
-  'official peers.atelier starts Station projection event replay through atelier.events.subscribe -> /sub-agent/agent/events/subscribe inside the real Desktop product window UI',
+  'official peers.atelier starts Station projection event replay through events.subscribe -> /events/stream inside the real Desktop product window UI',
   'official peers.atelier reconnects after controlled post-first-replay SSE close and resumes from the persisted cursor inside the real Desktop product window UI',
   'official peers.atelier applies a Station projection event to rendered stream state inside the real Desktop product window UI',
   'official peers.atelier unsubscribes atelier.projection.event and cancels the Desktop Gateway projection subscription after product-window close',
@@ -287,7 +287,7 @@ async function main() {
             flowId: 'expert-hierarchy',
           }),
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS:
-            '/applets/atelier/v1/workspace,/applets/atelier/v1/projects,/sub-agent/agent/events/subscribe',
+            '/applets/atelier/v1/workspace,/applets/atelier/v1/projects,/events/stream',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS:
             process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '60000',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS:

@@ -60,10 +60,10 @@ import {
   stateFromAtelierProjectionEventApplyOutcome,
   stateFromMalformedAtelierProjectionEvent,
 } from './eventStreamEventGuard';
-import { deriveAtelierProjectionSubscriptionKey } from './atelierProjectionSubscriptionKey';
 import {
   applyAtelierProjectionEventWithResult,
   createAtelierProjectionRuntimeState,
+  reconcileAtelierSnapshot,
   stateFromAtelierSnapshot,
   type AtelierProjectionRuntimeState,
 } from './projectionReducer';
@@ -406,10 +406,7 @@ export function useAtelierController(): AtelierController {
     void load();
   }, [load]);
 
-  const subscriptionKey = deriveAtelierProjectionSubscriptionKey(state.snapshot, state.selectedTaskId);
-  const subscriptionTaskId = subscriptionKey.taskId;
-  const subscriptionAfterEventSeq = subscriptionKey.afterEventSeq;
-  const hasSnapshot = subscriptionKey.hasSnapshot;
+  const hasSnapshot = Boolean(state.snapshot);
 
   useEffect(() => {
     const intentResult = buildAtelierProviderCapabilityDiscoveryIntent({
@@ -450,10 +447,9 @@ export function useAtelierController(): AtelierController {
   useEffect(() => {
     void trackAtelierProjectionSubscriptionDiagnostic({
       stage: state.snapshot ? 'controller.effect-enter' : 'controller.effect-no-snapshot',
-      selectedTaskId: subscriptionTaskId,
+      selectedTaskId: state.selectedTaskId,
       snapshotSelectedTaskId: state.snapshot?.selectedTaskId,
       taskCount: state.snapshot?.workspace.tasks.length ?? 0,
-      afterEventSeq: subscriptionAfterEventSeq,
     }).catch(() => undefined);
 
     if (!state.snapshot) return undefined;
@@ -462,15 +458,57 @@ export function useAtelierController(): AtelierController {
     let unsubscribe: (() => void) | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retryAttempt = 0;
+    let reconcileInFlight = false;
+    let reconcileQueued = false;
+
+    const reconcileFromCanonicalEvent = () => {
+      if (disposed) return;
+      if (reconcileInFlight) {
+        reconcileQueued = true;
+        return;
+      }
+      reconcileInFlight = true;
+      setState((current) => ({
+        ...current,
+        eventStreamState: 'subscribing',
+        eventStreamError: '',
+        eventStreamErrorKind: '',
+      }));
+      void (async () => {
+        do {
+          reconcileQueued = false;
+          try {
+            const snapshot = await loadAtelierWorkspace();
+            if (disposed) return;
+            setState((current) => ({
+              ...current,
+              ...reconcileAtelierSnapshot(current, snapshot),
+              loading: false,
+              error: '',
+              errorKind: '',
+              eventStreamState: 'live',
+              eventStreamError: '',
+              eventStreamErrorKind: '',
+            }));
+          } catch (error) {
+            if (disposed) return;
+            setState((current) => ({
+              ...current,
+              ...stateFromAtelierEventStreamError(error, Boolean(current.snapshot)),
+            }));
+          }
+        } while (reconcileQueued && !disposed);
+        reconcileInFlight = false;
+      })();
+    };
 
     const connect = () => {
       if (disposed || !state.snapshot) return;
       void trackAtelierProjectionSubscriptionDiagnostic({
         stage: 'controller.connect',
-        selectedTaskId: subscriptionTaskId,
+        selectedTaskId: state.selectedTaskId,
         snapshotSelectedTaskId: state.snapshot.selectedTaskId,
         taskCount: state.snapshot.workspace.tasks.length,
-        afterEventSeq: subscriptionAfterEventSeq,
       }).catch(() => undefined);
       setState((current) => ({
         ...current,
@@ -486,10 +524,9 @@ export function useAtelierController(): AtelierController {
         });
         void trackAtelierProjectionSubscriptionDiagnostic({
           stage: 'controller.subscribe-rejected',
-          selectedTaskId: subscriptionTaskId,
+          selectedTaskId: state.selectedTaskId,
           snapshotSelectedTaskId: state.snapshot?.selectedTaskId,
           taskCount: state.snapshot?.workspace.tasks.length ?? 0,
-          afterEventSeq: subscriptionAfterEventSeq,
           error: error instanceof Error ? error.message : String(error),
           errorKind: normalized.errorKind,
           retryAttempt,
@@ -507,12 +544,15 @@ export function useAtelierController(): AtelierController {
       };
       void subscribeAtelierProjectionEvents(
         state.snapshot,
-        subscriptionTaskId,
+        state.selectedTaskId,
         (event) => {
           retryAttempt = 0;
           setState((current) => {
             const result = applyAtelierProjectionEventWithResult(current, event);
             const eventApplyUiState = stateFromAtelierProjectionEventApplyOutcome(result.outcome);
+            if (result.outcome === 'reconcile' || result.outcome === 'gap') {
+              queueMicrotask(reconcileFromCanonicalEvent);
+            }
             const artifactPreviewInvalidation =
               result.outcome === 'applied' &&
               event.patch.kind === 'artifact.upsert' &&
@@ -534,7 +574,12 @@ export function useAtelierController(): AtelierController {
               errorKind: '',
               ...eventApplyUiState,
               ...artifactPreviewInvalidation,
-              lastAppliedProjectionEvent: result.outcome === 'applied' ? event : current.lastAppliedProjectionEvent,
+              lastAppliedProjectionEvent:
+                result.outcome === 'applied'
+                || result.outcome === 'reconcile'
+                || result.outcome === 'gap'
+                  ? event
+                  : current.lastAppliedProjectionEvent,
               resolvingDecisionId:
                 event.patch.kind === 'decision.resolved' &&
                 event.patch.blockId === current.resolvingDecisionId &&
@@ -555,6 +600,7 @@ export function useAtelierController(): AtelierController {
           }));
         },
         handleSubscriptionRejected,
+        reconcileFromCanonicalEvent,
       )
         .then((release) => {
           if (disposed) {
@@ -580,7 +626,7 @@ export function useAtelierController(): AtelierController {
       if (retryTimer) clearTimeout(retryTimer);
       unsubscribe?.();
     };
-  }, [hasSnapshot, subscriptionTaskId, subscriptionAfterEventSeq]);
+  }, [hasSnapshot]);
 
   const selectTask = useCallback((taskId: string) => {
     setState((current) => ({

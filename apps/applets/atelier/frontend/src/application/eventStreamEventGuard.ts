@@ -27,7 +27,7 @@ export function stateFromMalformedAtelierProjectionEvent(): MalformedAtelierProj
 
 export interface AcceptedAtelierProjectionEventState {
   loading: false;
-  eventStreamState: 'live';
+  eventStreamState: 'live' | 'subscribing';
   eventStreamError: '';
   eventStreamErrorKind: '';
 }
@@ -44,7 +44,7 @@ export function stateFromAtelierProjectionEventApplyOutcome(
   }
   return {
     loading: false,
-    eventStreamState: 'live',
+    eventStreamState: outcome === 'reconcile' || outcome === 'gap' ? 'subscribing' : 'live',
     eventStreamError: '',
     eventStreamErrorKind: '',
   };

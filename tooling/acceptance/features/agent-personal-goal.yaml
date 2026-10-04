@@ -9,9 +9,18 @@
     "apps/station/app/subserver/agent/service/goal_service.go",
     "apps/station/app/subserver/agent/service/goal_admission_service.go",
     "apps/station/app/subserver/agent/service/goal_execution_service.go",
+    "apps/station/app/subserver/agent/service/task_event_writer.go",
+    "apps/station/app/subserver/agent/service/agent_realtime_relay.go",
+    "apps/station/app/subserver/events/",
     "apps/desktop/src/runtimes/homeRuntime.ts",
+    "apps/desktop/src/store/home.ts",
+    "apps/desktop/src/components/home/GoalProgressPanel.tsx",
+    "apps/desktop/src/components/home/GoalConnectionStatus.tsx",
     "apps/desktop/src/components/home/GoalReviewPanel.tsx",
-    "apps/desktop/src/components/home/GoalRunSummary.tsx"
+    "apps/desktop/src/components/home/GoalRunSummary.tsx",
+    "apps/applets/atelier/frontend/",
+    "apps/desktop/src-tauri/src/infrastructure/event_stream/",
+    "apps/desktop/src-tauri/src/application/applets/"
   ],
   "truth_sources": [
     "Station AgentGoal record and revision",
@@ -26,23 +35,37 @@
     {
       "type": "station-readback",
       "surface": "AgentGoal lifecycle, graph, TaskRun, ExecutionStep, and attempt identity"
+    },
+    {
+      "type": "native-tauri",
+      "surface": "Home live progress and reconnect/resync status"
+    },
+    {
+      "type": "desktop-applet",
+      "surface": "Atelier canonical Goal projection"
     }
   ],
   "required_gates": [
-    "agent-personal-goal-contract-source"
+    "agent-personal-goal-contract-source",
+    "agent-personal-goal-home-e2e",
+    "agent-personal-goal-event-fanout-e2e"
   ],
   "acceptance": {
     "service": [
       "Goal review validates admission completeness before making the contract read-only",
       "Goal admission commits REVIEWING to READY with expected revision and idempotency",
       "Goal admission creates no executable work",
-      "Goal start atomically commits READY to RUNNING and creates one linked GoalNode, TaskRun, ExecutionStep, and attempt identity"
+      "Goal start atomically commits READY to RUNNING and creates one linked GoalNode, TaskRun, ExecutionStep, and attempt identity",
+      "Durable Goal events reach the shared EventBus through the outbox relay"
     ],
     "visible": [
       "Home shows material assumptions before Start",
       "Home shows the Station-authored admission rejection reason",
       "Home renders the authoritative RUNNING revision",
-      "Home shows the first canonical TaskRun and exposes its Station identifiers after selection"
+      "Home shows the first canonical TaskRun and exposes its Station identifiers after selection",
+      "Home updates Goal progress from typed canonical events without a page remount",
+      "Home preserves accepted content across disconnect and converges after retry",
+      "Atelier receives canonical invalidations and reconciles to the Station snapshot"
     ]
   },
   "negative": [
@@ -50,6 +73,7 @@
     "stale, unauthorized, incomplete, or non-ready input must not start a Goal",
     "Goal start must not create AgentTask or CollaborationTask execution rows",
     "A failed TaskRun allocation must leave the Goal non-running",
-    "source proof does not replace the required PAOS-J01 Native functional run"
+    "Agent-private event buses, endpoints, Desktop commands, and applet stream ownership must not remain",
+    "source proof does not replace the required PAOS-J01/PAOS-J02 Native functional runs"
   ]
 }

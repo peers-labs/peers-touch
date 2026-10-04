@@ -20,8 +20,6 @@ const knowledgeTestActor = "ptid:person:knowledge-owner"
 func TestKnowledgeResourceCreateStoresBoundedContentAndManifestAtomically(t *testing.T) {
 	resourceService, authority := newKnowledgeResourceTestService(t, "knowledge-create")
 	seedCapabilityAuthorityAgent(t, authority.db, "agent-knowledge", knowledgeTestActor, 1)
-	eventBus := &recordingAgentEventBus{}
-	authority.SetEventBus(eventBus)
 
 	content := bytes.Repeat([]byte("k"), maxKnowledgeStationContentBytes)
 	request := stationKnowledgeCreateRequest("create-1", "Architecture", content)
@@ -61,10 +59,6 @@ func TestKnowledgeResourceCreateStoresBoundedContentAndManifestAtomically(t *tes
 	if !bytes.Equal(stored.Content, content) {
 		t.Fatal("stored content does not match the accepted payload")
 	}
-	if got := len(eventBus.snapshot()); got != 1 {
-		t.Fatalf("manifest invalidations = %d, want 1", got)
-	}
-
 	replayedDescriptor, replayedManifest, err := resourceService.Create(
 		context.Background(),
 		knowledgeTestActor,
@@ -77,10 +71,6 @@ func TestKnowledgeResourceCreateStoresBoundedContentAndManifestAtomically(t *tes
 		replayedManifest.GetCapabilityId() != manifest.GetCapabilityId() {
 		t.Fatalf("idempotent replay changed result: %+v %+v", replayedDescriptor, replayedManifest)
 	}
-	if got := len(eventBus.snapshot()); got != 1 {
-		t.Fatalf("replay published another invalidation: %d", got)
-	}
-
 	conflicting := stationKnowledgeCreateRequest("create-1", "Different", content)
 	if _, _, err := resourceService.Create(
 		context.Background(),

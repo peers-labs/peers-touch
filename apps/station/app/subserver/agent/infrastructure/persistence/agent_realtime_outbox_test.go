@@ -234,8 +234,8 @@ func openAgentRealtimeOutboxTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(
 		sqlite.Open(
-			"file:" + t.Name() + "-" +
-				time.Now().Format("150405.000000000") +
+			"file:"+t.Name()+"-"+
+				time.Now().Format("150405.000000000")+
 				"?mode=memory&cache=shared",
 		),
 		&gorm.Config{},

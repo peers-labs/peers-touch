@@ -1229,12 +1229,13 @@
       "description": "Quick completion: trigger, streaming response, inline acceptance."
     },
     "agent-event-stream-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey event-stream",
-      "timeout_seconds": 300,
+      "command": "python3 tooling/acceptance/gates/agent/personal_goal_event_fanout_e2e.py --mode development",
+      "timeout_seconds": 2400,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "Event stream: connect, subscribe, consume, reconnect, backpressure."
+      "description": "Canonical shared event stream: durable Agent fan-out to Native Home and official Atelier, reconnect, resync, and private transport deletion.",
+      "initial_proof_status": "UNPROVEN"
     },
     "agent-atelier-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey atelier",
@@ -1428,6 +1429,40 @@
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Validate the Station-owned Personal Goal contract, reviewed admission, revisioned start, atomic first TaskRun allocation, Desktop projection, visible rejection, and zero pre-admission executable-work boundary."
+    },
+    "agent-personal-goal-home-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/personal_goal_home_e2e.py --mode development",
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "Native Home Goal live progress, canonical event identity, disconnect preservation, retry, resync, and Station revision readback.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "runtime-events",
+        "replay",
+        "cleanup",
+        "source-identity"
+      ]
+    },
+    "agent-personal-goal-event-fanout-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/personal_goal_event_fanout_e2e.py --mode development",
+      "timeout_seconds": 2400,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "Canonical /events/stream fan-out to Native Home and the official Atelier product path after private publisher and consumer deletion.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "runtime-events",
+        "replay",
+        "cleanup",
+        "source-identity"
+      ]
     },
     "agent-v2-home-command-center-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-home-command-center-e2e",

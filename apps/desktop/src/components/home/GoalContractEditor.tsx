@@ -31,6 +31,7 @@ import {
   updateHomeGoalContract,
 } from '../../runtimes/homeRuntime';
 import { useGoalDraftStore } from '../../store/goalDraft';
+import { useHomeStore } from '../../store/home';
 import { goalAdmissionReasonKeys } from './goalAdmissionPresentation';
 
 const { useToken } = theme;
@@ -59,6 +60,7 @@ export function GoalContractEditor({ goal }: { goal: AgentGoal }) {
   );
   const conflictRevision = useGoalDraftStore((state) => state.conflictRevision);
   const reloadLoading = useGoalDraftStore((state) => state.reloadLoading);
+  const connectionState = useHomeStore((state) => state.connectionState);
   const setOutcome = useGoalDraftStore((state) => state.setOutcome);
   const setNonGoals = useGoalDraftStore((state) => state.setNonGoals);
   const setConstraints = useGoalDraftStore((state) => state.setConstraints);
@@ -89,7 +91,12 @@ export function GoalContractEditor({ goal }: { goal: AgentGoal }) {
       (criterion) =>
         !criterion.description.trim() || !criterion.evaluator.trim(),
     );
-  const disabled = reviewing || saving || conflict || forbidden;
+  const disabled =
+    connectionState !== 'fresh'
+    || reviewing
+    || saving
+    || conflict
+    || forbidden;
 
   return (
     <Flexbox

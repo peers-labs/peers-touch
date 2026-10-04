@@ -11,7 +11,7 @@ const evidenceDir = path.join(repoRoot, 'tooling/acceptance/evidence/applets', '
 const evidencePath = path.join(evidenceDir, 'atelier-real-product-gate.json');
 const realProductCoveredPaths = [
   '/v1/workspace',
-  'atelier.projection.event replay via /sub-agent/agent/events/subscribe',
+  'atelier.projection.event replay via /events/stream',
   'afterEventSeq cursor-filtered replay through Desktop Gateway and Station EventStreamService',
   'controlled Station SSE close before first replay followed by Desktop Gateway reconnect with afterEventSeq=0',
   'controlled Station SSE close after first replay followed by Desktop Gateway reconnect using persisted cursor',
@@ -182,9 +182,9 @@ async function main() {
           appletId: 'peers.atelier',
           service: 'atelier',
           productPath:
-            'Desktop Gateway network.request + atelier.events.subscribe -> Station-bundled Atelier official facade + Station agent event stream -> Station-owned AtelierProjectionService.LoadWorkspace + EventStreamService.ReplayTaskEvents -> sqlite-backed agent store',
+            'Desktop Gateway network.request + events.subscribe -> Station-bundled Atelier official facade + Station agent event stream -> Station-owned AtelierProjectionService.LoadWorkspace + EventStreamService.ReplayTaskEvents -> sqlite-backed agent store',
           stationMountPath: '/applets/atelier/v1',
-          stationEventPath: '/sub-agent/agent/events/subscribe',
+          stationEventPath: '/events/stream',
           desktopPublicPath: '/v1',
           coveredPaths: realProductCoveredPaths,
           claimBoundary: realProductClaimBoundary(realProductCoveredPaths),

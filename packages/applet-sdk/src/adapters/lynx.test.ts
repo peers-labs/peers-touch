@@ -67,7 +67,7 @@ describe('LynxBridgeAdapter', () => {
 
     const adapter = new LynxBridgeAdapter();
 
-    await expect(adapter.invoke('atelier.events.subscribe')).rejects.toMatchObject({
+    await expect(adapter.invoke('events.subscribe')).rejects.toMatchObject({
       name: 'AppletError',
       code: AppletErrorCode.PermissionDenied,
       message: 'subscription denied',

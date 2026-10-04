@@ -656,7 +656,7 @@ func TestAtelierProviderCapabilitiesWritesFullE2EProviderRuntimeEvidenceFromStat
 func TestTaskEventWriterPersistsProjectAcceptanceIndexes(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "atelier_project_acceptance_indexes")
 	injectOrchestrationServiceTestStore(t, db)
-	writer := NewTaskEventWriter(nil)
+	writer := NewTaskEventWriter()
 	ctx := context.Background()
 
 	if _, err := writer.Append(ctx, "evt_gate_failed_index", "task-acceptance-index", "", "", string(domain.EventTypeCollaborationGateResult), map[string]interface{}{
@@ -1136,7 +1136,7 @@ func TestTaskEventWriterAdvancesProjectStateMachineFromDurableEvidence(t *testin
 		t.Fatalf("seed artifact index: %v", err)
 	}
 
-	writer := NewTaskEventWriter(nil)
+	writer := NewTaskEventWriter()
 	if _, err := writer.Append(context.Background(), "evt-state-machine-gate", task.ID, node.ID, "", string(domain.EventTypeCollaborationGateResult), map[string]interface{}{
 		"block_kind":  "gate_result",
 		"gate_id":     "gate-contract",
@@ -1217,7 +1217,7 @@ func TestTaskEventWriterMaterializesPolicyDefectIndexes(t *testing.T) {
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{node})
 
-	writer := NewTaskEventWriter(nil)
+	writer := NewTaskEventWriter()
 	if _, err := writer.Append(context.Background(), "evt-policy-defect-gate", task.ID, node.ID, "", string(domain.EventTypeCollaborationGateResult), map[string]interface{}{
 		"block_kind":      "gate_result",
 		"gate_id":         "gate-policy",
@@ -1743,7 +1743,6 @@ func TestAtelierSendMessagePersistsTextOnlyUserEvent(t *testing.T) {
 	}})
 
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	service := NewAtelierProjectionService(orchestration)
 	if _, err := service.SendMessage(context.Background(), "actor-1", &SendAtelierMessageRequest{
 		TaskID: task.ID,
@@ -1916,24 +1915,16 @@ func TestAtelierDecisionResolvedUsesStructuredInterruptEventType(t *testing.T) {
 	if got := taskEventTypeForDomainEvent(string(domain.EventTypeCollaborationInterruptResolved)); got != model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_RESOLVED {
 		t.Fatalf("expected interrupt resolved task event type, got %s", got.String())
 	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_REQUESTED), nil); got != string(domain.EventTypeCollaborationInterruptRequested) {
-		t.Fatalf("expected interrupt requested domain event type, got %q", got)
-	}
 	payload := map[string]interface{}{
 		"block_kind":          "decision_resolved",
 		"resume_payload_json": `{"choice":"继续执行"}`,
 	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_RESOLVED), payload); got != string(domain.EventTypeCollaborationInterruptResolved) {
-		t.Fatalf("expected interrupt resolved domain event type, got %q", got)
-	}
+	_ = payload
 }
 
 func TestAtelierFeedbackRecordedIsTypedIntentNotStreamPatch(t *testing.T) {
 	if got := taskEventTypeForDomainEvent(string(domain.EventTypeCollaborationFeedbackRecorded)); got != model.TaskEventType_TASK_EVENT_TYPE_FEEDBACK_RECORDED {
 		t.Fatalf("expected feedback recorded task event type, got %s", got.String())
-	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_FEEDBACK_RECORDED), nil); got != string(domain.EventTypeCollaborationFeedbackRecorded) {
-		t.Fatalf("expected feedback recorded domain event type, got %q", got)
 	}
 	memoryStatus, _, memoryFeeds := atelierFeedbackMemoryCandidatePolicy("positive")
 	if memoryStatus != "candidate" {
@@ -2013,7 +2004,6 @@ func TestAtelierSubmitFeedbackPersistsStationOwnedPolicyEvent(t *testing.T) {
 	seedResumeCollaborationTask(t, db, task, nil)
 
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	service := NewAtelierProjectionService(orchestration)
 	response, err := service.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
 		TaskID:  task.ID,
@@ -2080,7 +2070,6 @@ func TestConfirmAtelierMemoryCandidateWritesStationOwnedMemory(t *testing.T) {
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	svc := NewAtelierProjectionService(orchestration, NewMemoryService(nil))
 
 	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
@@ -2168,7 +2157,6 @@ func TestConfirmAtelierMemoryCandidateRejectsNonCandidateFeedback(t *testing.T) 
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	svc := NewAtelierProjectionService(orchestration, NewMemoryService(nil))
 	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
 		TaskID:  task.ID,
@@ -2209,7 +2197,6 @@ func TestAtelierConfirmedMemoryFeedsPlannerRiskVerifierRetrieval(t *testing.T) {
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	memoryService := NewMemoryService(nil)
 	svc := NewAtelierProjectionService(orchestration, memoryService)
 
@@ -2301,7 +2288,6 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 		t.Fatalf("seed provider plan: %v", err)
 	}
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	svc := NewAtelierProjectionService(orchestration, NewMemoryService(nil))
 
 	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
@@ -2400,7 +2386,6 @@ func TestConfirmAtelierRerunRejectsNonRerunFeedback(t *testing.T) {
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	svc := NewAtelierProjectionService(orchestration, NewMemoryService(nil))
 	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
 		TaskID:  task.ID,
@@ -2546,10 +2531,6 @@ func TestGoalKeeperProjectionPayloadsMapToAtelierArtifactAndGate(t *testing.T) {
 			t.Fatalf("expected GoalKeeper artifact projection to redact raw field %s, got %s", forbidden, projectedArtifactJSON)
 		}
 	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_ARTIFACT_CREATED), artifactPayload); got != string(domain.EventTypeCollaborationArtifactCreated) {
-		t.Fatalf("expected artifact domain event type, got %q", got)
-	}
-
 	gatePayload := goalKeeperGatePayload(task, verdict, "collab_goalkeeper-final-summary")
 	gateEvent := &model.TaskEvent{
 		EventId:     "evt_goalkeeper_gate",
@@ -2565,12 +2546,6 @@ func TestGoalKeeperProjectionPayloadsMapToAtelierArtifactAndGate(t *testing.T) {
 	}
 	if projectedGate.Patch.Gate == nil || projectedGate.Patch.Gate.Status != "passed" {
 		t.Fatalf("unexpected gate projection: %+v", projectedGate.Patch.Gate)
-	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_GATE_RESULT), gatePayload); got != string(domain.EventTypeCollaborationGateResult) {
-		t.Fatalf("expected gate domain event type, got %q", got)
-	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_TURN_EVENT), gatePayload); got != string(domain.EventTypeCollaborationGateResult) {
-		t.Fatalf("expected legacy gate domain event type, got %q", got)
 	}
 }
 
@@ -2699,45 +2674,6 @@ func TestMergeAtelierProjectionReplayRecordsKeepsAnchorsAndTail(t *testing.T) {
 	}
 	if events[len(events)-1].GetEventSeq() != 101 {
 		t.Fatalf("expected latest tail event to be retained, got seq %d", events[len(events)-1].GetEventSeq())
-	}
-}
-
-func TestTaskEventRecordToDomainEventIncludesDurableEventEnvelopeMetadata(t *testing.T) {
-	createdAt := time.Date(2026, 7, 1, 12, 20, 0, 0, time.UTC)
-	record := &persistence.TaskEvent{
-		ID:        "evt_replay_envelope",
-		TaskID:    "collab_replay_envelope",
-		StepID:    "node_replay_envelope",
-		EventSeq:  42,
-		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_TURN_EVENT),
-		Payload:   `{"agent_id":"agent_replay_envelope","result_summary":"projection event"}`,
-		CreatedAt: createdAt,
-	}
-
-	event, ok := taskEventRecordToDomainEvent(record, "ptid:actor-replay", "agent_replay_envelope")
-	if !ok {
-		t.Fatal("expected replay record to map to domain event")
-	}
-	if event.EventID != record.ID {
-		t.Fatalf("expected domain event id %q, got %q", record.ID, event.EventID)
-	}
-	if event.ActorPTID != "ptid:actor-replay" {
-		t.Fatalf("expected actor PTID %q, got %q", "ptid:actor-replay", event.ActorPTID)
-	}
-	if event.AgentID != "agent_replay_envelope" {
-		t.Fatalf("expected agent id %q, got %q", "agent_replay_envelope", event.AgentID)
-	}
-	if event.Metadata["event_id"] != record.ID {
-		t.Fatalf("expected metadata event_id %q, got %q", record.ID, event.Metadata["event_id"])
-	}
-	if event.Metadata["event_seq"] != "42" {
-		t.Fatalf("expected metadata event_seq 42, got %q", event.Metadata["event_seq"])
-	}
-	if event.Metadata["task_id"] != record.TaskID {
-		t.Fatalf("expected metadata task_id %q, got %q", record.TaskID, event.Metadata["task_id"])
-	}
-	if event.Metadata["node_id"] != record.StepID {
-		t.Fatalf("expected metadata node_id %q, got %q", record.StepID, event.Metadata["node_id"])
 	}
 }
 

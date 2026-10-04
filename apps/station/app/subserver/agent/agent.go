@@ -26,14 +26,12 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/handler"
-	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
 	sharedevents "github.com/peers-labs/peers-touch/station/app/subserver/events"
 	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -212,9 +210,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	deviceIDWrapper := serverwrapper.DeviceID()
 	jwtWrapper := s.jwtWrapper
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
-	eventBus := agentevent.NewMemoryEventBus()
 
 	// Phase 7: Growth Metrics — must be created early since MemoryService,
 	// SkillService, ReviewService, and TurnService depend on it for event recording.
@@ -227,7 +222,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	memorySvc := service.NewMemoryService(growthMetricsSvc, memoryServiceOptionsFromConfig()...)
 	workspaceSvc := service.NewWorkspaceService()
 	offlineQueueSvc := service.NewOfflineQueueService()
-	eventStreamSvc := service.NewEventStreamService(eventBus)
 	skillsGuardSvc := service.NewSkillsGuardService()
 	skillSvc := service.NewSkillService(skillsGuardSvc, growthMetricsSvc)
 	errorClassifierSvc := service.NewErrorClassifierService()
@@ -302,7 +296,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		growthMetricsSvc,
 		convSvc,
 	)
-	turnSvc.SetEventBus(eventBus)
 	turnSvc.SetExternalRuntimeService(externalRuntimeSvc)
 
 	// Dogfood self-verification service.
@@ -312,14 +305,13 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	schedulerSvc := service.NewSchedulerService(reviewSvc, dogfoodSvc, memorySvc, growthMetricsSvc)
 	orchestrationSvc := service.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
 	schedulerSvc.SetOrchestrationService(orchestrationSvc)
-	orchestrationSvc.SetEventBus(eventBus)
 	orchestrationSvc.StartTaskRecovery(context.Background())
 
 	// Chat root task: Station owns the Chat surface as a long-lived task so a
 	// turn outlives the client connection. Reclaim interrupted steps on boot.
-	chatTaskSvc := service.NewChatTaskService(eventBus)
+	chatTaskSvc := service.NewChatTaskService()
 
-	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
+	agentHandlers := handler.NewAgentHandlers(agentSvc)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)
 	turnAdmissionSvc := service.NewTurnAdmissionService()
 	turnHandlers.SetAdmissionService(turnAdmissionSvc)
@@ -336,7 +328,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
 	workspaceHandlers := handler.NewWorkspaceHandlers(workspaceSvc)
 	offlineQueueHandlers := handler.NewOfflineQueueHandlers(offlineQueueSvc)
-	eventStreamHandlers := handler.NewEventStreamHandlers(eventStreamSvc)
 	skillHandlers := handler.NewSkillHandlers(skillSvc)
 	dogfoodHandlers := handler.NewDogfoodHandlers(dogfoodSvc)
 	schedulerHandlers := handler.NewSchedulerHandlers(schedulerSvc)
@@ -372,7 +363,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	toolDispatchSvc.SetCapabilityProofService(proofSvc)
 	toolDispatchSvc.SetConversationService(convSvc)
 	capabilityAuthoritySvc := service.NewCapabilityAuthorityService(s.agentDB)
-	capabilityAuthoritySvc.SetEventBus(eventBus)
 	capabilityReadinessSvc := service.NewCapabilityAuthorityReadinessService(
 		capabilityAuthoritySvc,
 		agentSvc,
@@ -446,7 +436,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	goalDirectModelExecutor := service.NewGoalDirectModelExecutor(
 		s.agentDB,
 		providerSvc,
-		eventBus,
 	)
 	goalAdmissionService := service.NewGoalAdmissionService(
 		goalService,
@@ -628,7 +617,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-atelier-memory-confirm-candidate", "/agent/atelier/memory/confirm-candidate", server.POST, atelierProjectionHandlers.HandleConfirmMemoryCandidate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-atelier-feedback-confirm-rerun", "/agent/atelier/feedback/confirm-rerun", server.POST, atelierProjectionHandlers.HandleConfirmRerun, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-atelier-artifact-body-fetch", "/agent/atelier/artifact/body/fetch", server.POST, atelierProjectionHandlers.HandleFetchArtifactBody, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("agent-events-subscribe", "/agent/events/subscribe", server.POST, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).
 		server.NewTypedHandler("agent-memory-list", "/agent/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
@@ -668,8 +656,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-offline-queue-ack", "/offline-queue/ack", server.POST, offlineQueueHandlers.HandleAckOperation, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-sync", "/offline-queue/sync", server.POST, offlineQueueHandlers.HandleSync, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-resolve", "/offline-queue/resolve", server.POST, offlineQueueHandlers.HandleResolveConflict, logIDWrapper, jwtWrapper),
-
-		server.NewHertzHandler("agent-events-stream", "/events/stream", server.GET, eventStreamHandlers.HandleSubscribeHertz, hertzJWTWrapper),
 
 		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-get", "/agent/skill/get", server.GET, skillHandlers.HandleGetSkill, logIDWrapper, jwtWrapper),

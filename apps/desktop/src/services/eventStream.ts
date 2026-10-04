@@ -135,7 +135,8 @@ export async function stopEventStream(): Promise<void> {
 }
 
 function isBrowserDevGateway(): boolean {
-  return typeof window !== 'undefined' && typeof (window as any).__PT_GATEWAY_BASE__ === 'string';
+  return typeof window !== 'undefined'
+    && typeof window.__PT_GATEWAY_BASE__ === 'string';
 }
 
 function startBrowserGatewayResyncFallback(): void {
@@ -387,6 +388,36 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         requestId: s.requestId,
         conversationId: s.conversationId,
         actorDisplayName: s.actorDisplayName,
+      });
+      return;
+    }
+    case 'agentDomainEvent': {
+      const agentEvent = kind.value;
+      if (
+        !agentEvent.domainEventId
+        || agentEvent.domainSequence <= 0n
+        || agentEvent.schemaVersion !== 1
+        || !agentEvent.eventType
+        || (!agentEvent.goalId && !agentEvent.taskId)
+      ) {
+        log.warn('eventStream', 'invalid AgentDomainEvent, dropping', {
+          domainEventId: agentEvent.domainEventId,
+          domainSequence: agentEvent.domainSequence.toString(),
+          schemaVersion: agentEvent.schemaVersion,
+          eventType: agentEvent.eventType,
+        });
+        return;
+      }
+      eventBus.publish(EVENT.REALTIME_AGENT_DOMAIN_EVENT, {
+        eventId,
+        domainEventId: agentEvent.domainEventId,
+        domainSequence: agentEvent.domainSequence,
+        schemaVersion: agentEvent.schemaVersion,
+        eventType: agentEvent.eventType,
+        goalId: agentEvent.goalId,
+        taskId: agentEvent.taskId,
+        goalRevision: agentEvent.goalRevision,
+        committedTsUnixMs: Number(agentEvent.committedTsUnixMs),
       });
       return;
     }

@@ -11,11 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
-	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
@@ -40,7 +38,6 @@ type capabilityAcceptanceMutationGuard interface {
 
 type CapabilityAuthorityService struct {
 	db                      *gorm.DB
-	eventBus                domain.EventBus
 	now                     func() time.Time
 	catalogIssuesMu         sync.RWMutex
 	catalogIssues           map[string][]*model.CapabilityCatalogIssue
@@ -54,10 +51,6 @@ func NewCapabilityAuthorityService(db *gorm.DB) *CapabilityAuthorityService {
 		now:           func() time.Time { return time.Now().UTC() },
 		catalogIssues: make(map[string][]*model.CapabilityCatalogIssue),
 	}
-}
-
-func (s *CapabilityAuthorityService) SetEventBus(eventBus domain.EventBus) {
-	s.eventBus = eventBus
 }
 
 func (s *CapabilityAuthorityService) SetAcceptanceMutationGuard(
@@ -75,19 +68,11 @@ func (s *CapabilityAuthorityService) RegisterManifest(
 		return nil, err
 	}
 	var created *model.CapabilityManifest
-	mutated := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var txErr error
-		created, mutated, txErr = s.registerManifestTx(tx, manifest)
+		created, _, txErr = s.registerManifestTx(tx, manifest)
 		return txErr
 	})
-	if err == nil && mutated {
-		s.publishManifestInvalidations(
-			ctx,
-			domain.AgentAuthorityInvalidationManifestRegistered,
-			created,
-		)
-	}
 	if err == nil {
 		s.clearCatalogIssue(
 			created.GetOwnerPtid(),
@@ -376,19 +361,11 @@ func (s *CapabilityAuthorityService) RetireManifest(
 	req *model.RetireCapabilityManifestRequest,
 ) (*model.CapabilityManifest, error) {
 	var result *model.CapabilityManifest
-	mutated := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var txErr error
-		result, mutated, txErr = s.retireManifestTx(tx, ptid, req)
+		result, _, txErr = s.retireManifestTx(tx, ptid, req)
 		return txErr
 	})
-	if err == nil && mutated {
-		s.publishManifestInvalidations(
-			ctx,
-			domain.AgentAuthorityInvalidationManifestRetired,
-			result,
-		)
-	}
 	return result, err
 }
 
@@ -602,9 +579,8 @@ func (s *CapabilityAuthorityService) UpsertBinding(
 		return nil, capabilityInternal("failed to hash binding command", err)
 	}
 	var result *model.AgentCapabilityBinding
-	mutated := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		binding, changed, upsertErr := s.upsertBindingCommandTx(
+		binding, _, upsertErr := s.upsertBindingCommandTx(
 			ctx,
 			tx,
 			ptid,
@@ -615,7 +591,6 @@ func (s *CapabilityAuthorityService) UpsertBinding(
 			return upsertErr
 		}
 		result = binding
-		mutated = changed
 		return nil
 	})
 	if err != nil {
@@ -631,13 +606,6 @@ func (s *CapabilityAuthorityService) UpsertBinding(
 			return replayed, nil
 		}
 		return nil, err
-	}
-	if mutated {
-		s.publishBindingInvalidation(
-			ctx,
-			domain.AgentAuthorityInvalidationBindingUpsert,
-			result,
-		)
 	}
 	return result, err
 }
@@ -708,7 +676,6 @@ func (s *CapabilityAuthorityService) DeleteBinding(
 		return nil, capabilityInternal("failed to hash binding delete command", err)
 	}
 	var result *model.AgentCapabilityBinding
-	mutated := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		replayed, replayErr := replayBindingCommand(
 			tx, ptid, capabilityBindingDeleteCommand, req.GetIdempotencyKey(), payloadHash,
@@ -762,7 +729,6 @@ func (s *CapabilityAuthorityService) DeleteBinding(
 			return commandErr
 		}
 		result = capabilityBindingModel(&record)
-		mutated = true
 		return nil
 	})
 	if err != nil {
@@ -778,13 +744,6 @@ func (s *CapabilityAuthorityService) DeleteBinding(
 			return replayed, nil
 		}
 		return nil, err
-	}
-	if mutated {
-		s.publishBindingInvalidation(
-			ctx,
-			domain.AgentAuthorityInvalidationBindingDelete,
-			result,
-		)
 	}
 	return result, err
 }
@@ -1176,95 +1135,6 @@ func recordBindingCommand(
 		return capabilityInternal("failed to record binding command", err)
 	}
 	return nil
-}
-
-func (s *CapabilityAuthorityService) publishBindingInvalidation(
-	ctx context.Context,
-	reason domain.AgentAuthorityInvalidationReason,
-	binding *model.AgentCapabilityBinding,
-) {
-	if s.eventBus == nil || binding == nil {
-		return
-	}
-	payload := domain.AgentAuthorityInvalidation{
-		Reason:          reason,
-		AgentID:         binding.GetAgentId(),
-		AgentVersion:    binding.GetExpectedAgentVersion(),
-		BindingID:       binding.GetBindingId(),
-		BindingRevision: binding.GetRevision(),
-	}
-	if err := s.eventBus.Publish(ctx, domain.DomainEvent{
-		EventID:    generateID("event"),
-		EventType:  string(domain.EventTypeAgentAuthorityInvalidated),
-		OccurredAt: s.now(),
-		ActorPTID:  binding.GetPtid(),
-		Payload:    payload,
-		Metadata: map[string]string{
-			"agent_id":   binding.GetAgentId(),
-			"binding_id": binding.GetBindingId(),
-		},
-	}); err != nil {
-		logger.Errorf(ctx, "failed to publish capability binding invalidation: actor_id=%s agent_id=%s binding_id=%s err=%v",
-			binding.GetPtid(), binding.GetAgentId(), binding.GetBindingId(), err)
-	}
-}
-
-func (s *CapabilityAuthorityService) publishManifestInvalidations(
-	ctx context.Context,
-	reason domain.AgentAuthorityInvalidationReason,
-	manifest *model.CapabilityManifest,
-) {
-	if s.eventBus == nil || manifest == nil {
-		return
-	}
-	var agents []persistence.Agent
-	query := s.db.WithContext(ctx).
-		Select("id", "owner_actor_ptid", "version").
-		Model(&persistence.Agent{})
-	if ownerPtid := strings.TrimSpace(manifest.GetOwnerPtid()); ownerPtid != "" {
-		query = query.Where("owner_actor_ptid = ?", ownerPtid)
-	}
-	if err := query.Find(&agents).Error; err != nil {
-		logger.Errorf(
-			ctx,
-			"failed to load agents for capability catalog invalidation: capability_id=%s capability_version=%s err=%v",
-			manifest.GetCapabilityId(),
-			manifest.GetVersion(),
-			err,
-		)
-		return
-	}
-	for i := range agents {
-		payload := domain.AgentAuthorityInvalidation{
-			Reason:            reason,
-			AgentID:           agents[i].ID,
-			AgentVersion:      uint64(agents[i].Version),
-			CapabilityID:      manifest.GetCapabilityId(),
-			CapabilityVersion: manifest.GetVersion(),
-		}
-		if err := s.eventBus.Publish(ctx, domain.DomainEvent{
-			EventID:    generateID("event"),
-			EventType:  string(domain.EventTypeAgentAuthorityInvalidated),
-			OccurredAt: s.now(),
-			ActorPTID:  agents[i].OwnerActorPTID,
-			Payload:    payload,
-			Metadata: map[string]string{
-				"agent_id":           agents[i].ID,
-				"capability_id":      manifest.GetCapabilityId(),
-				"capability_version": manifest.GetVersion(),
-			},
-		}); err != nil {
-			logger.Errorf(
-				ctx,
-				"failed to publish capability catalog invalidation: actor_id=%s agent_id=%s capability_id=%s capability_version=%s err=%v",
-				agents[i].OwnerActorPTID,
-				agents[i].ID,
-				manifest.GetCapabilityId(),
-				manifest.GetVersion(),
-				err,
-			)
-		}
-	}
 }
 
 func capabilityConflict(message string) error {

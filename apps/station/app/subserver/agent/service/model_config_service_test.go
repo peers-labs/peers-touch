@@ -18,7 +18,7 @@ func TestModelConfigCreateAndUpdatePersistCanonicalCapabilities(t *testing.T) {
 		Enabled:       true,
 		ContextWindow: 128000,
 		Capabilities: map[string]bool{
-			"streaming":   true,
+			"streaming":    true,
 			"native-tools": false,
 		},
 	})
@@ -41,7 +41,7 @@ func TestModelConfigCreateAndUpdatePersistCanonicalCapabilities(t *testing.T) {
 		Version:       created.Version,
 		ContextWindow: &contextWindow,
 		Capabilities: map[string]bool{
-			"streaming":  true,
+			"streaming":   true,
 			"image-input": true,
 		},
 	})

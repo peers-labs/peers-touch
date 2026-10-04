@@ -5,24 +5,12 @@
   "version": "atelier-projection/v0",
   "eventTopic": "atelier.projection.event",
   "eventSubscription": {
-    "agentIdSourcePriority": [
-      "agentId",
-      "agentIds[0]"
-    ],
-    "taskIdSourcePriority": [
-      "certificationCreatedSelectedTaskId",
-      "explicitTaskId",
-      "controllerSelectedTaskId",
-      "snapshotSelectedTaskId",
-      "snapshotFirstTaskId"
-    ],
-    "defaultCursorSource": "workspace.replay[taskId].nextEventSeq",
-    "cursorNumberPolicy": "safe_integer",
-    "zeroCursorPolicy": "omit",
-    "zeroCursorException": {
-      "certificationMode": "product-window-e2e",
-      "explicitZeroCursorPolicy": "preserve"
-    },
+    "transport": "canonical_host_bridge",
+    "hostSubscriptionMethod": "events.subscribe",
+    "stationPath": "/events/stream",
+    "cursorOwner": "desktop.canonical_realtime_supervisor",
+    "invalidationPatchKind": "snapshot.invalidate",
+    "resyncPayloadKind": "atelier.projection.resync",
     "controlledEvidence": {
       "readiness": "controlled_local_upstream",
       "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
@@ -35,33 +23,22 @@
         "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "eventTopic": "atelier.projection.event",
-      "subscriptionMethod": "atelier.events.subscribe",
-      "agentIdSourcePriority": [
-        "agentId",
-        "agentIds[0]"
-      ],
-      "taskIdSourcePriority": [
-        "certificationCreatedSelectedTaskId",
-        "explicitTaskId",
-        "controllerSelectedTaskId",
-        "snapshotSelectedTaskId",
-        "snapshotFirstTaskId"
-      ],
-      "defaultCursorSource": "workspace.replay[taskId].nextEventSeq",
-      "cursorNumberPolicy": "safe_integer",
-      "zeroCursorPolicy": "omit",
-      "zeroCursorException": {
-        "certificationMode": "product-window-e2e",
-        "explicitZeroCursorPolicy": "preserve"
-      },
+      "transport": "canonical_host_bridge",
+      "hostSubscriptionMethod": "events.subscribe",
+      "stationPath": "/events/stream",
+      "cursorOwner": "desktop.canonical_realtime_supervisor",
+      "invalidationPatchKind": "snapshot.invalidate",
+      "resyncPayloadKind": "atelier.projection.resync",
       "hostEventBridgeRequired": true,
       "missingHostEventBridgeFailsClosed": true,
       "subscriptionRejectionTypedRecoveryProven": true,
       "eventVsSnapshotFreshnessProven": true,
       "releaseBeforeRejectCleanupProven": true,
       "boundedRetryMatrixProven": true,
+      "canonicalSingleConnectionProven": true,
+      "privateAgentStreamDeleted": true,
       "realStationSseFailureMatrixProven": false,
-      "realCrossRestartE2EProven": false,
+      "realCrossRestartE2EProven": true,
       "realHostStationAppletE2EProven": false
     }
   },
@@ -78,8 +55,7 @@
     "atelier.feedback.confirmRerun",
     "atelier.workspace.open",
     "atelier.artifact.body.fetch",
-    "atelier.artifact.preview.open",
-    "atelier.events.subscribe"
+    "atelier.artifact.preview.open"
   ],
   "runtimeMethods": [
     "atelier.workspace.load",
@@ -173,12 +149,6 @@
       "intentOwner": "desktop_host",
       "intentKind": "artifact_preview_host_intent",
       "sideEffectClass": "host_ui",
-      "executionForbidden": true
-    },
-    "atelier.events.subscribe": {
-      "intentOwner": "station",
-      "intentKind": "projection_event_subscription",
-      "sideEffectClass": "none",
       "executionForbidden": true
     }
   },
@@ -306,15 +276,6 @@
       "desktopGatewayAction": "artifact.preview.open",
       "desktopHostHandler": "handle_atelier_artifact_preview_open",
       "hostSideEffect": "artifact_preview_host_intent"
-    },
-    "atelier.events.subscribe": {
-      "transportKind": "event_subscription",
-      "frontendCall": "sdk.events.subscribe(ATELIER_PROJECTION_EVENT_TOPIC) + sdk.invoke(ATELIER_PROJECTION_SUBSCRIPTION_METHOD)",
-      "desktopGatewayAction": "events.subscribe",
-      "desktopStationPath": "/sub-agent/agent/events/subscribe",
-      "stationPath": "/agent/events/subscribe",
-      "stationHandler": "HandleSubscribe",
-      "eventTopic": "atelier.projection.event"
     }
   },
   "methodGovernance": {
@@ -346,12 +307,9 @@
       "atelier.workspace.open",
       "atelier.artifact.preview.open"
     ],
-    "eventSubscriptionMethods": [
-      "atelier.events.subscribe"
-    ],
+    "eventSubscriptionMethods": [],
     "payloadlessMethods": [
-      "atelier.workspace.load",
-      "atelier.events.subscribe"
+      "atelier.workspace.load"
     ],
     "forbiddenExecutionActions": [
       "provider.invoke",
@@ -1958,7 +1916,6 @@
         }
       }
     },
-  "subscriptionMethod": "atelier.events.subscribe",
   "gatewayActions": [
     "workspace.load",
     "project.createFromGoal",
@@ -1977,6 +1934,7 @@
   ],
   "patchKinds": [
     "snapshot",
+    "snapshot.invalidate",
     "task.upsert",
     "task.status",
     "stream.append",

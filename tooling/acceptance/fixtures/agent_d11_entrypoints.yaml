@@ -509,24 +509,6 @@ entrypoints:
     target: agent_collaboration_list_events
     disposition: allowed-read
     expected_fragments: ["pub fn agent_collaboration_list_events", "AgentCollaborationListEventsInput", "application_agent_orchestration::agent_collaboration_list_events"]
-  - id: tauri-collaboration-subscribe
-    surface: tauri-commands
-    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
-    symbol: agent_collaboration_subscribe
-    command: agent_collaboration_subscribe
-    input_type: AgentCollaborationSubscribeInput
-    target: agent_collaboration_subscribe
-    disposition: allowed-read-stream
-    expected_fragments: ["pub fn agent_collaboration_subscribe", "AgentCollaborationSubscribeInput", "application_agent_orchestration::agent_collaboration_subscribe"]
-  - id: tauri-collaboration-cancel-stream
-    surface: tauri-commands
-    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
-    symbol: agent_collaboration_cancel_stream
-    command: agent_collaboration_cancel_stream
-    input_type: AgentCollaborationCancelInput
-    target: cancel_collaboration_stream
-    disposition: allowed-cleanup
-    expected_fragments: ["pub fn agent_collaboration_cancel_stream", "AgentCollaborationCancelInput", "application_agent_orchestration::cancel_collaboration_stream"]
   - id: tauri-collaboration-cancel-task
     surface: tauri-commands
     source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
@@ -730,7 +712,7 @@ entrypoints:
 atelier_aliases:
   source: apps/desktop/src-tauri/src/application/applets/mod.rs
   symbol: handle_atelier
-  expected_count: 31
+  expected_count: 29
   entries:
     - {alias: workspace.load, target: /sub-agent/agent/atelier/workspace/load, disposition: allowed-read}
     - {alias: workspaceLoad, target: /sub-agent/agent/atelier/workspace/load, disposition: allowed-read}
@@ -761,8 +743,6 @@ atelier_aliases:
     - {alias: artifactBodyFetch, target: /sub-agent/agent/atelier/artifact/body/fetch, disposition: allowed-read}
     - {alias: artifact.preview.open, target: handle_atelier_artifact_preview_open, disposition: allowed-read}
     - {alias: artifactPreviewOpen, target: handle_atelier_artifact_preview_open, disposition: allowed-read}
-    - {alias: events.subscribe, target: start_atelier_projection_event_stream, disposition: allowed-read-stream}
-    - {alias: eventsSubscribe, target: start_atelier_projection_event_stream, disposition: allowed-read-stream}
 
 tooling_only:
   - source: apps/station/app/subserver/official_applets/atelier_gate_server/main.go

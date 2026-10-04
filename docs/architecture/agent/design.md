@@ -175,9 +175,9 @@ Goal/Task mutation transaction
   -> idempotent Desktop/Applet projection
 ```
 
-The current Agent-private `MemoryEventBus`, `EventStreamService` subscriber
+The former Agent-private `MemoryEventBus`, `EventStreamService` subscriber
 registry, direct service/handler publishers, and Agent-specific stream routes
-must be removed by the cutover. Durable append failure blocks publication;
+were removed by the PAOS event hard cut. Durable append failure blocks publication;
 shared EventBus failure leaves the outbox pending. A crash after publish may
 redeliver, so projections deduplicate by stable domain event identity. Relay
 order is fenced per target actor, and persisted ownership plus authenticated

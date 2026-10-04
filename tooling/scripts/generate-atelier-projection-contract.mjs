@@ -52,7 +52,6 @@ function validateContract(value) {
   assertStringArray(value.methods, 'methods');
   assertStringArray(value.runtimeMethods, 'runtimeMethods');
   validateMethodIntents(value.methods, value.methodIntents);
-  assertString(value.subscriptionMethod, 'subscriptionMethod');
   assertStringArray(value.gatewayActions, 'gatewayActions');
   assertStringArray(value.patchKinds, 'patchKinds');
   assertStringArray(value.snapshotRequiredFields, 'snapshotRequiredFields');
@@ -1970,6 +1969,14 @@ function buildSchema(source) {
           snapshot: { $ref: '#/$defs/snapshot' },
         },
       },
+      snapshotInvalidatePatch: patchSchema('snapshot.invalidate', {
+        streamEventId: { type: 'string', minLength: 1 },
+        eventType: { type: 'string', minLength: 1 },
+        goalId: { type: 'string' },
+        taskId: { type: 'string' },
+        goalRevision: { type: 'number', minimum: 0 },
+        schemaVersion: { const: 1 },
+      }, ['kind', 'streamEventId', 'eventType', 'goalId', 'taskId', 'goalRevision', 'schemaVersion']),
       taskUpsertPatch: patchSchema('task.upsert', { task: { type: 'object' }, select: { type: 'boolean' } }, ['kind', 'task']),
       taskStatusPatch: patchSchema('task.status', { taskId: { type: 'string' }, status: { enum: source.taskLifecycle.states } }, ['kind', 'taskId', 'status']),
       streamAppendPatch: patchSchema('stream.append', { taskId: { type: 'string' }, blocks: { type: 'array', items: { type: 'object' } } }, ['kind', 'taskId', 'blocks']),
@@ -2039,47 +2046,23 @@ function validateEventSubscription(eventSubscription) {
   if (!isRecord(eventSubscription)) {
     throw new Error('eventSubscription must be an object');
   }
-  assertStringArray(eventSubscription.agentIdSourcePriority, 'eventSubscription.agentIdSourcePriority');
-  assertStringArray(eventSubscription.taskIdSourcePriority, 'eventSubscription.taskIdSourcePriority');
-  const expectedAgentIdSourcePriority = ['agentId', 'agentIds[0]'];
-  if (JSON.stringify(eventSubscription.agentIdSourcePriority) !== JSON.stringify(expectedAgentIdSourcePriority)) {
-    throw new Error('eventSubscription.agentIdSourcePriority must be agentId, agentIds[0]');
+  const expected = {
+    transport: 'canonical_host_bridge',
+    hostSubscriptionMethod: 'events.subscribe',
+    stationPath: '/events/stream',
+    cursorOwner: 'desktop.canonical_realtime_supervisor',
+    invalidationPatchKind: 'snapshot.invalidate',
+    resyncPayloadKind: 'atelier.projection.resync',
+  };
+  for (const [field, expectedValue] of Object.entries(expected)) {
+    if (eventSubscription[field] !== expectedValue) {
+      throw new Error(`eventSubscription.${field} must be ${expectedValue}`);
+    }
   }
-  const expectedTaskIdSourcePriority = [
-    'certificationCreatedSelectedTaskId',
-    'explicitTaskId',
-    'controllerSelectedTaskId',
-    'snapshotSelectedTaskId',
-    'snapshotFirstTaskId',
-  ];
-  if (JSON.stringify(eventSubscription.taskIdSourcePriority) !== JSON.stringify(expectedTaskIdSourcePriority)) {
-    throw new Error('eventSubscription.taskIdSourcePriority must match the official projection stream task fallback order');
-  }
-  assertString(eventSubscription.defaultCursorSource, 'eventSubscription.defaultCursorSource');
-  if (eventSubscription.defaultCursorSource !== 'workspace.replay[taskId].nextEventSeq') {
-    throw new Error('eventSubscription.defaultCursorSource must be workspace.replay[taskId].nextEventSeq');
-  }
-  assertString(eventSubscription.cursorNumberPolicy, 'eventSubscription.cursorNumberPolicy');
-  if (eventSubscription.cursorNumberPolicy !== 'safe_integer') {
-    throw new Error('eventSubscription.cursorNumberPolicy must be safe_integer');
-  }
-  assertString(eventSubscription.zeroCursorPolicy, 'eventSubscription.zeroCursorPolicy');
-  if (eventSubscription.zeroCursorPolicy !== 'omit') {
-    throw new Error('eventSubscription.zeroCursorPolicy must be omit');
-  }
-  validateZeroCursorException(eventSubscription.zeroCursorException, 'eventSubscription.zeroCursorException');
-  validateEventSubscriptionControlledEvidence(
-    eventSubscription,
-    expectedAgentIdSourcePriority,
-    expectedTaskIdSourcePriority,
-  );
+  validateEventSubscriptionControlledEvidence(eventSubscription, expected);
 }
 
-function validateEventSubscriptionControlledEvidence(
-  eventSubscription,
-  expectedAgentIdSourcePriority,
-  expectedTaskIdSourcePriority,
-) {
+function validateEventSubscriptionControlledEvidence(eventSubscription, expected) {
   const controlledEvidence = eventSubscription.controlledEvidence;
   if (!isRecord(controlledEvidence)) {
     throw new Error('eventSubscription.controlledEvidence must describe controlled projection subscription evidence');
@@ -2106,30 +2089,11 @@ function validateEventSubscriptionControlledEvidence(
   if (controlledEvidence.eventTopic !== 'atelier.projection.event') {
     throw new Error('eventSubscription.controlledEvidence.eventTopic must be atelier.projection.event');
   }
-  if (controlledEvidence.subscriptionMethod !== 'atelier.events.subscribe') {
-    throw new Error('eventSubscription.controlledEvidence.subscriptionMethod must be atelier.events.subscribe');
+  for (const [field, expectedValue] of Object.entries(expected)) {
+    if (controlledEvidence[field] !== expectedValue) {
+      throw new Error(`eventSubscription.controlledEvidence.${field} must be ${expectedValue}`);
+    }
   }
-  assertStringArray(controlledEvidence.agentIdSourcePriority, 'eventSubscription.controlledEvidence.agentIdSourcePriority');
-  if (JSON.stringify(controlledEvidence.agentIdSourcePriority) !== JSON.stringify(expectedAgentIdSourcePriority)) {
-    throw new Error('eventSubscription.controlledEvidence.agentIdSourcePriority must match eventSubscription.agentIdSourcePriority');
-  }
-  assertStringArray(controlledEvidence.taskIdSourcePriority, 'eventSubscription.controlledEvidence.taskIdSourcePriority');
-  if (JSON.stringify(controlledEvidence.taskIdSourcePriority) !== JSON.stringify(expectedTaskIdSourcePriority)) {
-    throw new Error('eventSubscription.controlledEvidence.taskIdSourcePriority must match eventSubscription.taskIdSourcePriority');
-  }
-  if (controlledEvidence.defaultCursorSource !== 'workspace.replay[taskId].nextEventSeq') {
-    throw new Error('eventSubscription.controlledEvidence.defaultCursorSource must be workspace.replay[taskId].nextEventSeq');
-  }
-  if (controlledEvidence.cursorNumberPolicy !== 'safe_integer') {
-    throw new Error('eventSubscription.controlledEvidence.cursorNumberPolicy must be safe_integer');
-  }
-  if (controlledEvidence.zeroCursorPolicy !== 'omit') {
-    throw new Error('eventSubscription.controlledEvidence.zeroCursorPolicy must be omit');
-  }
-  validateZeroCursorException(
-    controlledEvidence.zeroCursorException,
-    'eventSubscription.controlledEvidence.zeroCursorException',
-  );
   for (const [field, expected] of Object.entries({
     hostEventBridgeRequired: true,
     missingHostEventBridgeFailsClosed: true,
@@ -2137,8 +2101,10 @@ function validateEventSubscriptionControlledEvidence(
     eventVsSnapshotFreshnessProven: true,
     releaseBeforeRejectCleanupProven: true,
     boundedRetryMatrixProven: true,
+    canonicalSingleConnectionProven: true,
+    privateAgentStreamDeleted: true,
     realStationSseFailureMatrixProven: false,
-    realCrossRestartE2EProven: false,
+    realCrossRestartE2EProven: true,
     realHostStationAppletE2EProven: false,
   })) {
     if (controlledEvidence[field] !== expected) {
@@ -2169,7 +2135,6 @@ function buildTypeScript(source) {
       version: source.version,
       eventTopic: source.eventTopic,
       eventSubscription: source.eventSubscription,
-      subscriptionMethod: source.subscriptionMethod,
       methods: source.methods,
       runtimeMethods: source.runtimeMethods,
       methodIntents: source.methodIntents,
@@ -2201,7 +2166,7 @@ function buildTypeScript(source) {
     const workbenchSurfaceExports = `export const ATELIER_RECOVERY_KINDS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.kinds;\nexport type AtelierRecoveryKind = typeof ATELIER_RECOVERY_KINDS[number];\nexport const ATELIER_WORKBENCH_SURFACE = ATELIER_PROJECTION_CONTRACT.workbenchSurface;\nexport const ATELIER_TASK_INTENT_PRESETS = ATELIER_PROJECTION_CONTRACT.workbenchSurface.taskIntentPresets;\nexport const ATELIER_DEFAULT_TASK_INTENT_PRESET = ATELIER_PROJECTION_CONTRACT.workbenchSurface.defaultTaskIntentPreset;\nexport const ATELIER_RUN_TARGET_KINDS = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal'].allowedRunKinds;\nexport type AtelierRunTargetKind = typeof ATELIER_RUN_TARGET_KINDS[number];\nexport const ATELIER_DEFAULT_RUN_TARGET_KIND = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal'].defaultRunKind;\nexport const ATELIER_DIRECT_RUN_MODELS = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal'].allowedDirectRunModels;\nexport type AtelierDirectRunModel = typeof ATELIER_DIRECT_RUN_MODELS[number];\nexport const ATELIER_DEFAULT_DIRECT_RUN_MODEL = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal'].defaultDirectRunModel;\nexport const ATELIER_AGENT_FLOW_IDS = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal'].allowedAgentFlowIds;\nexport type AtelierAgentFlowId = typeof ATELIER_AGENT_FLOW_IDS[number];\nexport const ATELIER_DEFAULT_AGENT_FLOW_ID = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal'].defaultAgentFlowId;\nexport const ATELIER_AGENT_FLOW_DESCRIPTORS = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal'].agentFlowDescriptors;\nexport type AtelierAgentFlowDescriptor = typeof ATELIER_AGENT_FLOW_DESCRIPTORS[number];\nexport const ATELIER_FEEDBACK_SIGNALS = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.feedback.submit'].allowedSignals;\nexport type AtelierFeedbackSignal = typeof ATELIER_FEEDBACK_SIGNALS[number];\nexport const ATELIER_MEMORY_CONFIRMATION_MODE = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.memory.confirmCandidate'].allowedConfirmationMode;\nexport const ATELIER_RERUN_CONFIRMATION_MODE = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.feedback.confirmRerun'].allowedConfirmationMode;\nexport const ATELIER_WORKSPACE_OPEN_URI_SCHEMES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.workspace.open'].allowedUriSchemes;\nexport const ATELIER_WORKSPACE_OPEN_URI_SHAPE = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.workspace.open'].uriShape;\nexport const ATELIER_PROVIDER_CAPABILITY_SCOPES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.provider.capabilities'].allowedCapabilityScopes;\nexport const ATELIER_PROVIDER_CAPABILITY_READ_ONLY = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.provider.capabilities'].capabilityReadOnly;\nexport const ATELIER_CREATE_FROM_GOAL_INTENT_PRESET_MAPPING = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal'].intentPresetMapping;\nexport const ATELIER_TODO_STATUSES = ATELIER_PROJECTION_CONTRACT.workbenchSurface.todoStatuses;\nexport const ATELIER_CONTEXT_FILE_GROUPS = ATELIER_PROJECTION_CONTRACT.workbenchSurface.contextFileGroups;\nexport const ATELIER_DEFAULT_CONTEXT_FILE_GROUP = ATELIER_PROJECTION_CONTRACT.workbenchSurface.defaultContextFileGroup;\nexport const ATELIER_TASK_ORGANIZER_MODES = ATELIER_PROJECTION_CONTRACT.workbenchSurface.taskOrganizerModes;\nexport type AtelierTaskOrganizerMode = typeof ATELIER_TASK_ORGANIZER_MODES[number]['id'];\nexport const ATELIER_DEFAULT_TASK_ORGANIZER_MODE = ATELIER_PROJECTION_CONTRACT.workbenchSurface.defaultTaskOrganizerMode;\nexport const ATELIER_ARTIFACT_KINDS = ATELIER_PROJECTION_CONTRACT.workbenchSurface.artifactKinds;\nexport const ATELIER_ARTIFACT_BODY_KINDS = ATELIER_PROJECTION_CONTRACT.workbenchSurface.artifactBodyKinds;\nexport const ATELIER_GATE_STATUSES = ATELIER_PROJECTION_CONTRACT.workbenchSurface.gateStatuses;\nexport const ATELIER_GATE_CHECK_STATUSES = ATELIER_PROJECTION_CONTRACT.workbenchSurface.gateCheckStatuses;\n`;
   const budgetSurfaceExports = `export const ATELIER_BUDGET_SURFACE = ATELIER_PROJECTION_CONTRACT.budgetSurface;\nexport const ATELIER_BUDGET_STATUSES = ATELIER_PROJECTION_CONTRACT.budgetSurface.budgetStatuses;\n`;
   const providerCapabilityExports = `export const ATELIER_METHOD_GOVERNANCE = ATELIER_PROJECTION_CONTRACT.methodGovernance;\nexport const ATELIER_PROVIDER_CAPABILITY_SCOPE = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.provider.capabilities'].capabilityScope;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].defaultMode;\nexport const ATELIER_ARTIFACT_PREVIEW_TARGET_KINDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewTargetKinds;\n`;
-  return `// Generated from apps/applets/atelier/contracts/atelier-projection.contract.json.\n// Do not edit by hand. Run \`pnpm run atelier:projection-codegen\`.\n\nexport const ATELIER_PROJECTION_CONTRACT = ${json} as const;\n\nexport type AtelierProjectionVersion = typeof ATELIER_PROJECTION_CONTRACT.version;\nexport type AtelierProjectionPatchKind = typeof ATELIER_PROJECTION_CONTRACT.patchKinds[number];\nexport type AtelierArtifactPreviewHint = typeof ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewHints[number];\nexport type AtelierTaskLifecycleStatus = typeof ATELIER_PROJECTION_CONTRACT.taskLifecycle.states[number];\nexport type AtelierViewStatus = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.statuses[number];\nexport type AtelierEventStreamState = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.eventStreamStates[number];\nexport type AtelierTypedRecoveryKind = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.typedRecoveryKinds[number];\nexport type AtelierStatusNoticeKind = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.statusNoticeKinds[number];\nexport type AtelierRecoveryTone = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.tones[number];\nexport type AtelierPrototypeRecoverySeverity = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSeverityByStatus[AtelierViewStatus];\nexport type AtelierPrototypeRecoverySymbol = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSymbolByStatus[AtelierViewStatus];\nexport type AtelierBudgetStatus = typeof ATELIER_PROJECTION_CONTRACT.budgetSurface.budgetStatuses[number];\nexport type AtelierAgentRole = typeof ATELIER_PROJECTION_CONTRACT.agentRoleAuthority.roles[number];\n\nexport const ATELIER_PROJECTION_EVENT_TOPIC = ATELIER_PROJECTION_CONTRACT.eventTopic;\nexport const ATELIER_PROJECTION_SUBSCRIPTION_METHOD = ATELIER_PROJECTION_CONTRACT.subscriptionMethod;\nexport const ATELIER_METHOD_INTENTS = ATELIER_PROJECTION_CONTRACT.methodIntents;\nexport const ATELIER_TASK_LIFECYCLE = ATELIER_PROJECTION_CONTRACT.taskLifecycle;\nexport const ATELIER_TASK_LIFECYCLE_STATES = ATELIER_PROJECTION_CONTRACT.taskLifecycle.states;\nexport const ATELIER_AGENT_ROLE_AUTHORITY = ATELIER_PROJECTION_CONTRACT.agentRoleAuthority;\nexport const ATELIER_AGENT_ROLES = ATELIER_PROJECTION_CONTRACT.agentRoleAuthority.roles;\nexport const ATELIER_STREAM_BLOCK_KINDS = ATELIER_PROJECTION_CONTRACT.streamBlocks.allowedKinds;\nexport const ATELIER_STREAM_BLOCK_REQUIRED_FIELDS_BY_KIND = ATELIER_PROJECTION_CONTRACT.streamBlocks.requiredFieldsByKind;\nexport const ATELIER_DIFF_STREAM_SUMMARY_FIELDS = ATELIER_PROJECTION_CONTRACT.streamBlocks.diffSummaryFields;\nexport const ATELIER_VIEW_SURFACE = ATELIER_PROJECTION_CONTRACT.viewSurface;\nexport const ATELIER_VIEW_STATUSES = ATELIER_PROJECTION_CONTRACT.viewSurface.statuses;\nexport const ATELIER_EVENT_STREAM_STATES = ATELIER_PROJECTION_CONTRACT.viewSurface.eventStreamStates;\nexport const ATELIER_TYPED_RECOVERY_KINDS = ATELIER_PROJECTION_CONTRACT.viewSurface.typedRecoveryKinds;\nexport const ATELIER_STATUS_NOTICE_KINDS = ATELIER_PROJECTION_CONTRACT.viewSurface.statusNoticeKinds;\nexport const ATELIER_EMPTY_CTA_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.emptyCtaStatus;\nexport const ATELIER_RECONCILING_EVENT_STREAM_STATE = ATELIER_PROJECTION_CONTRACT.viewSurface.reconcilingEventStreamState;\nexport const ATELIER_DEGRADED_EVENT_STREAM_STATES = ATELIER_PROJECTION_CONTRACT.viewSurface.degradedEventStreamStates;\nexport const ATELIER_RECOVERY_TONES = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.tones;\nexport const ATELIER_RECOVERY_TONE_BY_KIND = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.toneByKind;\nexport const ATELIER_RECOVERY_RETRYABLE_KINDS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.retryableKinds;\nexport const ATELIER_PROTOTYPE_RECOVERY_SEVERITY_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSeverityByStatus;\nexport const ATELIER_PROTOTYPE_RECOVERY_SYMBOL_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSymbolByStatus;\nexport const ATELIER_STATUS_LABEL_KEY_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.statusLabelKeyByStatus;\n${projectSurfaceExports}${workbenchSurfaceExports}${budgetSurfaceExports}${providerCapabilityExports}export const ATELIER_ARTIFACT_PREVIEW_HINTS = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewHints;\nexport const ATELIER_ARTIFACT_METADATA_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.metadataFields;\nexport const ATELIER_ARTIFACT_PREVIEW_TARGET_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.previewTargetFields;\nexport const ATELIER_ARTIFACT_PREVIEW_TARGET_MODES = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewTargetModes;\nexport const ATELIER_ARTIFACT_BODY_REF_SCHEMES = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedBodyRefSchemes;\nexport const ATELIER_ARTIFACT_PREVIEW_TARGET_SANDBOX_REF_SCHEMES = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedSandboxRefSchemes;\nexport const ATELIER_ARTIFACT_BODY_REF_SHAPE = ATELIER_PROJECTION_CONTRACT.artifactPreview.bodyRefShape;\nexport const ATELIER_ARTIFACT_SANDBOX_REF_SHAPE = ATELIER_PROJECTION_CONTRACT.artifactPreview.sandboxRefShape;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_MODES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedModes;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_OWNERS = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedRendererOwner;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_MODES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedRendererMode;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_STATUSES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedRendererStatus;\nexport const ATELIER_ARTIFACT_FORBIDDEN_BODY_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.forbiddenBodyFields;\nexport const ATELIER_RUNTIME_LOG_STREAM = ATELIER_PROJECTION_CONTRACT.runtimeLogStream;\nexport const ATELIER_RUNTIME_LOG_STREAM_LEVELS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.levels;\nexport const ATELIER_RUNTIME_LOG_STREAM_FORBIDDEN_METHODS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.forbiddenMethods;\nexport const ATELIER_RUNTIME_LOG_STREAM_FORBIDDEN_FIELDS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.forbiddenFields;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT_REF_SHAPE = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.refShape;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT_REQUIRED_METADATA_FIELDS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.requiredMetadataFields;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT_FORBIDDEN_FIELDS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.forbiddenFields;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT_FORBIDDEN_METHODS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.forbiddenMethods;\n`;
+  return `// Generated from apps/applets/atelier/contracts/atelier-projection.contract.json.\n// Do not edit by hand. Run \`pnpm run atelier:projection-codegen\`.\n\nexport const ATELIER_PROJECTION_CONTRACT = ${json} as const;\n\nexport type AtelierProjectionVersion = typeof ATELIER_PROJECTION_CONTRACT.version;\nexport type AtelierProjectionPatchKind = typeof ATELIER_PROJECTION_CONTRACT.patchKinds[number];\nexport type AtelierArtifactPreviewHint = typeof ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewHints[number];\nexport type AtelierTaskLifecycleStatus = typeof ATELIER_PROJECTION_CONTRACT.taskLifecycle.states[number];\nexport type AtelierViewStatus = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.statuses[number];\nexport type AtelierEventStreamState = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.eventStreamStates[number];\nexport type AtelierTypedRecoveryKind = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.typedRecoveryKinds[number];\nexport type AtelierStatusNoticeKind = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.statusNoticeKinds[number];\nexport type AtelierRecoveryTone = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.tones[number];\nexport type AtelierPrototypeRecoverySeverity = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSeverityByStatus[AtelierViewStatus];\nexport type AtelierPrototypeRecoverySymbol = typeof ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSymbolByStatus[AtelierViewStatus];\nexport type AtelierBudgetStatus = typeof ATELIER_PROJECTION_CONTRACT.budgetSurface.budgetStatuses[number];\nexport type AtelierAgentRole = typeof ATELIER_PROJECTION_CONTRACT.agentRoleAuthority.roles[number];\n\nexport const ATELIER_PROJECTION_EVENT_TOPIC = ATELIER_PROJECTION_CONTRACT.eventTopic;\nexport const ATELIER_METHOD_INTENTS = ATELIER_PROJECTION_CONTRACT.methodIntents;\nexport const ATELIER_TASK_LIFECYCLE = ATELIER_PROJECTION_CONTRACT.taskLifecycle;\nexport const ATELIER_TASK_LIFECYCLE_STATES = ATELIER_PROJECTION_CONTRACT.taskLifecycle.states;\nexport const ATELIER_AGENT_ROLE_AUTHORITY = ATELIER_PROJECTION_CONTRACT.agentRoleAuthority;\nexport const ATELIER_AGENT_ROLES = ATELIER_PROJECTION_CONTRACT.agentRoleAuthority.roles;\nexport const ATELIER_STREAM_BLOCK_KINDS = ATELIER_PROJECTION_CONTRACT.streamBlocks.allowedKinds;\nexport const ATELIER_STREAM_BLOCK_REQUIRED_FIELDS_BY_KIND = ATELIER_PROJECTION_CONTRACT.streamBlocks.requiredFieldsByKind;\nexport const ATELIER_DIFF_STREAM_SUMMARY_FIELDS = ATELIER_PROJECTION_CONTRACT.streamBlocks.diffSummaryFields;\nexport const ATELIER_VIEW_SURFACE = ATELIER_PROJECTION_CONTRACT.viewSurface;\nexport const ATELIER_VIEW_STATUSES = ATELIER_PROJECTION_CONTRACT.viewSurface.statuses;\nexport const ATELIER_EVENT_STREAM_STATES = ATELIER_PROJECTION_CONTRACT.viewSurface.eventStreamStates;\nexport const ATELIER_TYPED_RECOVERY_KINDS = ATELIER_PROJECTION_CONTRACT.viewSurface.typedRecoveryKinds;\nexport const ATELIER_STATUS_NOTICE_KINDS = ATELIER_PROJECTION_CONTRACT.viewSurface.statusNoticeKinds;\nexport const ATELIER_EMPTY_CTA_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.emptyCtaStatus;\nexport const ATELIER_RECONCILING_EVENT_STREAM_STATE = ATELIER_PROJECTION_CONTRACT.viewSurface.reconcilingEventStreamState;\nexport const ATELIER_DEGRADED_EVENT_STREAM_STATES = ATELIER_PROJECTION_CONTRACT.viewSurface.degradedEventStreamStates;\nexport const ATELIER_RECOVERY_TONES = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.tones;\nexport const ATELIER_RECOVERY_TONE_BY_KIND = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.toneByKind;\nexport const ATELIER_RECOVERY_RETRYABLE_KINDS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.retryableKinds;\nexport const ATELIER_PROTOTYPE_RECOVERY_SEVERITY_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSeverityByStatus;\nexport const ATELIER_PROTOTYPE_RECOVERY_SYMBOL_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSymbolByStatus;\nexport const ATELIER_STATUS_LABEL_KEY_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.statusLabelKeyByStatus;\n${projectSurfaceExports}${workbenchSurfaceExports}${budgetSurfaceExports}${providerCapabilityExports}export const ATELIER_ARTIFACT_PREVIEW_HINTS = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewHints;\nexport const ATELIER_ARTIFACT_METADATA_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.metadataFields;\nexport const ATELIER_ARTIFACT_PREVIEW_TARGET_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.previewTargetFields;\nexport const ATELIER_ARTIFACT_PREVIEW_TARGET_MODES = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewTargetModes;\nexport const ATELIER_ARTIFACT_BODY_REF_SCHEMES = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedBodyRefSchemes;\nexport const ATELIER_ARTIFACT_PREVIEW_TARGET_SANDBOX_REF_SCHEMES = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedSandboxRefSchemes;\nexport const ATELIER_ARTIFACT_BODY_REF_SHAPE = ATELIER_PROJECTION_CONTRACT.artifactPreview.bodyRefShape;\nexport const ATELIER_ARTIFACT_SANDBOX_REF_SHAPE = ATELIER_PROJECTION_CONTRACT.artifactPreview.sandboxRefShape;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_MODES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedModes;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_OWNERS = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedRendererOwner;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_MODES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedRendererMode;\nexport const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_STATUSES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedRendererStatus;\nexport const ATELIER_ARTIFACT_FORBIDDEN_BODY_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.forbiddenBodyFields;\nexport const ATELIER_RUNTIME_LOG_STREAM = ATELIER_PROJECTION_CONTRACT.runtimeLogStream;\nexport const ATELIER_RUNTIME_LOG_STREAM_LEVELS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.levels;\nexport const ATELIER_RUNTIME_LOG_STREAM_FORBIDDEN_METHODS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.forbiddenMethods;\nexport const ATELIER_RUNTIME_LOG_STREAM_FORBIDDEN_FIELDS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.forbiddenFields;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT_REF_SHAPE = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.refShape;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT_REQUIRED_METADATA_FIELDS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.requiredMetadataFields;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT_FORBIDDEN_FIELDS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.forbiddenFields;\nexport const ATELIER_HOST_STORAGE_ATTACHMENT_FORBIDDEN_METHODS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.forbiddenMethods;\n`;
 }
 
 function validateAgentRoleAuthority(agentRoleAuthority) {
@@ -3347,7 +3312,7 @@ function validateMethodGovernance(methodGovernance, contract) {
   }
   const expectedAllowedIntentOwners = ['station', 'desktop_host'];
   const expectedAllowedSideEffectClasses = ['none', 'host_ui', 'station_transaction'];
-  const expectedPayloadlessMethods = ['atelier.workspace.load', contract.subscriptionMethod];
+  const expectedPayloadlessMethods = ['atelier.workspace.load'];
   const expectedServiceBindingMethods = contract.methods.filter((method) => contract.methodTransports[method]?.transportKind === 'service_binding');
   const expectedHostLocalMethods = contract.methods.filter((method) => contract.methodTransports[method]?.transportKind === 'desktop_gateway_host_local');
   const expectedEventSubscriptionMethods = contract.methods.filter((method) => contract.methodTransports[method]?.transportKind === 'event_subscription');

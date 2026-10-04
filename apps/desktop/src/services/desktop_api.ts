@@ -1146,13 +1146,6 @@ export interface AgentCollaborationStreamPayload {
   data: Record<string, any>;
 }
 
-export interface AgentAuthorityStreamPayload {
-  streamId: string;
-  agentId: string;
-  event: string;
-  data: Record<string, unknown>;
-}
-
 export function parseAgentChatConfig(agent: Agent): AgentChatConfig {
   if (!agent.chatConfig) return {};
   try { return JSON.parse(agent.chatConfig); } catch { return {}; }
@@ -5941,30 +5934,6 @@ export const api = {
       input,
     ),
 
-  startAgentCollaborationStream: (input: AgentCollaborationSubscribeInput) =>
-    invokeRustDataFromStatus<AgentCollaborationSubscribeInput, { stream_id: string }>(
-      'agent_collaboration_subscribe',
-      input,
-    ),
-
-  cancelAgentCollaborationStream: (streamId: string) =>
-    invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
-      'agent_collaboration_cancel_stream',
-      { stream_id: streamId },
-    ),
-
-  startAgentEventStream: (agentId: string, streamId: string) =>
-    invokeRustDataFromStatus<
-      { agent_id: string; stream_id: string },
-      { stream_id: string }
-    >('agent_events_subscribe', { agent_id: agentId, stream_id: streamId }),
-
-  cancelAgentEventStream: (streamId: string) =>
-    invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
-      'agent_events_cancel',
-      { stream_id: streamId },
-    ),
-
   cancelAgentCollaborationTask: (taskId: string) =>
     invokeRustDataFromStatus<AgentCollaborationCancelTaskInput, { task?: CollaborationTask }>(
       'agent_collaboration_cancel_task',
@@ -9734,111 +9703,37 @@ export function streamAgentTurnReplay(
 export function streamAgentCollaborationEvents(
   agentId: string,
   onEvent: (payload: AgentCollaborationStreamPayload) => void,
-  onError: (err: Error) => void,
+  _onError: (err: Error) => void,
   options: { taskId?: string; afterEventSeq?: number } = {},
 ): AbortController {
   const controller = new AbortController();
-  (async () => {
-    let unlisten: (() => void) | undefined;
-    try {
-      const { listen } = await import('@tauri-apps/api/event');
-      const streamId = `agent-collaboration-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      unlisten = await listen<AgentCollaborationStreamPayload>('agent:collaboration-event', (tauriEvent) => {
-        const payload = tauriEvent.payload;
-        if (payload.streamId !== streamId) return;
-        if (controller.signal.aborted) {
-          unlisten?.();
-          return;
-        }
-        if (payload.event === 'error') {
-          onError(new Error(String(payload.data?.error || 'agent.canvas.streamFailed')));
-          return;
-        }
-        onEvent(payload);
-      });
-
-      const result = await api.startAgentCollaborationStream({
-        stream_id: streamId,
-        agent_id: agentId,
-        task_id: options.taskId,
-        after_event_seq: options.afterEventSeq ?? 0,
-      });
-      if (result?.stream_id !== streamId) {
-        unlisten();
-        throw new Error('agent.canvas.streamIdMismatch');
-      }
-      if (controller.signal.aborted) {
-        api.cancelAgentCollaborationStream(streamId).catch((error) => {
-          log.warn('api', 'streamAgentCollaborationEvents cancel failed', { error: String(error) });
-        });
-        unlisten();
-        return;
-      }
-      controller.signal.addEventListener('abort', () => {
-        api.cancelAgentCollaborationStream(streamId).catch((error) => {
-          log.warn('api', 'streamAgentCollaborationEvents cancel failed', { error: String(error) });
-        });
-        unlisten?.();
-      }, { once: true });
-    } catch (err: unknown) {
-      unlisten?.();
-      onError(err instanceof Error ? err : new Error(String(err)));
-    }
-  })();
-  return controller;
-}
-
-export function streamAgentAuthorityEvents(
-  agentId: string,
-  onEvent: (payload: AgentAuthorityStreamPayload) => void,
-  onError: (error: Error) => void,
-): AbortController {
-  const controller = new AbortController();
-  void (async () => {
-    let unlisten: (() => void) | undefined;
-    const streamId = `agent-authority-${agentId}-${crypto.randomUUID()}`;
-    try {
-      const { listen } = await import('@tauri-apps/api/event');
-      unlisten = await listen<AgentAuthorityStreamPayload>(
-        'agent:event',
-        (tauriEvent) => {
-          const payload = tauriEvent.payload;
-          if (payload.streamId !== streamId || controller.signal.aborted) return;
-          if (payload.event === 'error') {
-            const detail =
-              typeof payload.data.error === 'string'
-                ? payload.data.error
-                : 'agent.capabilityEventStreamFailed';
-            onError(new Error(detail));
-            return;
-          }
-          onEvent(payload);
+  const afterEventSeq = BigInt(Math.max(0, options.afterEventSeq ?? 0));
+  const unsubscribe = eventBus.subscribe(EVENT.REALTIME_AGENT_DOMAIN_EVENT, (event) => {
+    if (controller.signal.aborted) return;
+    if (options.taskId && event.taskId !== options.taskId) return;
+    if (!event.eventType.startsWith('agent.collaboration.')) return;
+    if (event.eventType.startsWith('agent.collaboration.node.')) return;
+    if (event.domainSequence <= afterEventSeq) return;
+    onEvent({
+      streamId: event.eventId,
+      agentId,
+      event: event.eventType,
+      data: {
+        event_id: event.domainEventId,
+        metadata: {
+          task_id: event.taskId,
+          event_seq: event.domainSequence.toString(),
+          goal_id: event.goalId,
+          goal_revision: event.goalRevision.toString(),
         },
-      );
-      const result = await api.startAgentEventStream(agentId, streamId);
-      if (result.stream_id !== streamId) {
-        throw new Error('agent.capabilityEventStreamIdentityMismatch');
-      }
-      if (controller.signal.aborted) {
-        await api.cancelAgentEventStream(streamId);
-        unlisten();
-        return;
-      }
-      controller.signal.addEventListener('abort', () => {
-        void api.cancelAgentEventStream(streamId).catch((error) => {
-          log.warn('api', 'agent event stream cancellation failed', {
-            error: String(error),
-          });
-        });
-        unlisten?.();
-      }, { once: true });
-    } catch (error) {
-      unlisten?.();
-      if (!controller.signal.aborted) {
-        onError(error instanceof Error ? error : new Error(String(error)));
-      }
-    }
-  })();
+        payload: {
+          task_id: event.taskId,
+          goal_id: event.goalId,
+        },
+      },
+    });
+  });
+  controller.signal.addEventListener('abort', unsubscribe, { once: true });
   return controller;
 }
 

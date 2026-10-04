@@ -66,7 +66,7 @@ func TestGoalDirectModelSuccessRunsCanonicalAttemptAndPreservesGoalState(
 			FinishReason:    "stop",
 		},
 	}
-	executor := NewGoalDirectModelExecutor(db, nil, nil)
+	executor := NewGoalDirectModelExecutor(db, nil)
 	executor.provider = provider
 	admission, running := startGoalWithDirectModel(t, db, executor)
 
@@ -149,6 +149,40 @@ func TestGoalDirectModelSuccessRunsCanonicalAttemptAndPreservesGoalState(
 		usage.EventID == "" {
 		t.Fatalf("Direct Model usage = %+v", usage)
 	}
+
+	var realtimeEvents []persistence.AgentRealtimeOutbox
+	if err := db.Where("task_id = ?", taskID).
+		Order("domain_sequence ASC").
+		Find(&realtimeEvents).Error; err != nil {
+		t.Fatalf("read Direct Model realtime outbox: %v", err)
+	}
+	if len(realtimeEvents) == 0 {
+		t.Fatal("Direct Model task events were not queued for canonical realtime")
+	}
+	seenRunning := false
+	seenCompleted := false
+	var previousGoalRevision uint64
+	for _, event := range realtimeEvents {
+		if event.GoalID != running.GetGoalId() ||
+			event.GoalRevision == 0 ||
+			event.GoalRevision < previousGoalRevision ||
+			event.GoalRevision > running.GetRevision() ||
+			event.TargetActorPTID != "ptid:actor-1" {
+			t.Fatalf("Direct Model realtime identity = %+v", event)
+		}
+		previousGoalRevision = event.GoalRevision
+		switch event.EventType {
+		case string(domain.EventTypeCollaborationNodeRunning):
+			seenRunning = true
+		case string(domain.EventTypeCollaborationTaskCompleted):
+			seenCompleted = event.EventClass ==
+				persistence.AgentRealtimeClassTerminal &&
+				event.GoalRevision == running.GetRevision()
+		}
+	}
+	if !seenRunning || !seenCompleted {
+		t.Fatalf("Direct Model realtime events = %+v", realtimeEvents)
+	}
 }
 
 func TestGoalDirectModelProviderFailurePersistsFailureArtifactAndKeepsGoalRunning(
@@ -160,7 +194,7 @@ func TestGoalDirectModelProviderFailurePersistsFailureArtifactAndKeepsGoalRunnin
 		resp: nil,
 		err:  errors.New("provider unavailable"),
 	}
-	executor := NewGoalDirectModelExecutor(db, nil, nil)
+	executor := NewGoalDirectModelExecutor(db, nil)
 	executor.provider = provider
 	_, running := startGoalWithDirectModel(t, db, executor)
 	taskID := stableGoalExecutionID("task", running.GetGoalId())
@@ -211,7 +245,7 @@ func TestGoalDirectModelStartReplayDoesNotDispatchAgain(t *testing.T) {
 			Model:   "gpt-4.1",
 		},
 	}
-	executor := NewGoalDirectModelExecutor(db, nil, nil)
+	executor := NewGoalDirectModelExecutor(db, nil)
 	executor.provider = provider
 
 	goals := NewGoalService(db)

@@ -1404,30 +1404,6 @@ pub struct AgentCollaborationListEventsInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentCollaborationSubscribeInput {
-    pub stream_id: Option<String>,
-    pub agent_id: String,
-    pub task_id: Option<String>,
-    pub after_event_seq: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentEventSubscribeInput {
-    pub stream_id: Option<String>,
-    pub agent_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentEventCancelInput {
-    pub stream_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentCollaborationCancelInput {
-    pub stream_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCollaborationCancelTaskInput {
     pub task_id: String,
 }
