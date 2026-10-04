@@ -198,7 +198,7 @@ class AgentImpactTests(unittest.TestCase):
         self.assertEqual(agent_ui["changeKinds"], ["DESKTOP_UI"])
         self.assertEqual(
             agent_ui["requirements"]["targetSelectors"],
-            ["desktop-web"],
+            ["desktop-native"],
         )
         self.assertEqual(unrelated["state"], "POLICY_REQUIRED")
         self.assertEqual(

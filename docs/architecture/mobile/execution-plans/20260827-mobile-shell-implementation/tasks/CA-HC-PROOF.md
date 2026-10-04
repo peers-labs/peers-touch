@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "CA-HC-PROOF",
   "workstreamId": "CA-HC",
@@ -15,25 +15,48 @@
   "closureId": "CA-HC-proof",
   "journeyId": "CA-W6..CA-W7",
   "runtimeClass": "service",
-  "writeSet": ["docs/architecture/api-ownership", "tooling/acceptance"],
-  "readSet": ["apps/mobile", "apps/station", "packages/messaging-core", "docs/architecture/messaging-platform", "docs/architecture/mobile"],
-  "budgets": {"focusedCheckSeconds": 600, "functionalRunSeconds": 7200, "cleanupSeconds": 240},
-  "checks": [
-    {"id": "conversation-authority-proof-structure", "command": "python3 tooling/scripts/acceptance-validate.py --domain mobile", "verificationClass": "STRUCTURAL_CHECK"},
-    {"id": "conversation-authority-runtime", "command": "MOBILE_ACCEPTANCE_RESET=1 python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item mobile-shell-ca-hc-proof --station-profile station=chat-native-disposable --gate mobile-simulator-social-convergence-e2e --gate mobile-simulator-chat-contacts-e2e", "verificationClass": "FUNCTIONAL_CHECK"},
-    {"id": "conversation-authority-simulator-proof", "command": "MOBILE_ACCEPTANCE_RESET=1 python3 tooling/scripts/acceptance-run.py --station-profile station=chat-native-disposable --gate mobile-simulator-social-convergence-e2e --gate mobile-simulator-chat-contacts-e2e", "verificationClass": "ACCEPTANCE_PROOF"}
+  "writeSet": [
+    "docs/architecture/api-ownership",
+    "tooling/acceptance"
   ],
-  "doneWhen": ["CA-W6 exact-source same-Station receiver and contention evidence passes", "CA-W7 completion, documentation, knowledge, and zero-reference audit passes"],
-  "failureBehavior": ["Missing same-Station owner deployment or runtime resources remain BLOCKED", "Do not infer cross-Station or Relay-backed Conversation completion from same-Station evidence"],
-  "updatedAt": "2026-09-21T06:30:00Z",
-  "durableEvidence": [
-    {"verificationClass": "ACCEPTANCE_PROOF", "result": "BLOCKED", "ref": "docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md#L406-L427"},
-    {"verificationClass": "ACCEPTANCE_PROOF", "result": "BLOCKED", "ref": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3043"},
-    {"verificationClass": "SOURCE_CHECK", "result": "PASS", "ref": "tooling/acceptance/tests/test_mobile_simulator_provisioner.py"},
-    {"verificationClass": "SOURCE_CHECK", "result": "PASS", "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e_test.py"},
-    {"verificationClass": "FUNCTIONAL_CHECK", "result": "BLOCKED", "ref": "~/.peers-touch/dev/workspaces/b0a926025d2b25b9/workflow/mobile-shell-ca-hc-proof/artifacts/b0a926025d2b25b9/development-run/20260916T152924551579Z-23245f80859bd561986b7def97ef5079/reports/run.json"},
-    {"verificationClass": "FUNCTIONAL_CHECK", "result": "BLOCKED", "ref": "~/.peers-touch/dev/workspaces/b0a926025d2b25b9/workflow/mobile-shell-ca-hc-proof/artifacts/b0a926025d2b25b9/mobile-simulator-social-convergence-e2e/20260916T153424820637Z-ada2ce11f7a6c44661be2e3b4d752147/development/result.json"}
-  ]
+  "readSet": [
+    "apps/mobile",
+    "apps/station",
+    "packages/messaging-core",
+    "docs/architecture/messaging-platform",
+    "docs/architecture/mobile"
+  ],
+  "budgets": {
+    "focusedCheckSeconds": 600,
+    "functionalRunSeconds": 7200,
+    "cleanupSeconds": 240
+  },
+  "checks": [
+    {
+      "id": "conversation-authority-proof-structure",
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain mobile",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
+      "id": "conversation-authority-runtime",
+      "command": "MOBILE_ACCEPTANCE_RESET=1 python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item mobile-shell-ca-hc-proof --station-profile station=chat-native-disposable --gate mobile-simulator-social-convergence-e2e --gate mobile-simulator-chat-contacts-e2e",
+      "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "conversation-authority-simulator-proof",
+      "command": "MOBILE_ACCEPTANCE_RESET=1 python3 tooling/scripts/acceptance-run.py --station-profile station=chat-native-disposable --gate mobile-simulator-social-convergence-e2e --gate mobile-simulator-chat-contacts-e2e",
+      "verificationClass": "ACCEPTANCE_PROOF"
+    }
+  ],
+  "doneWhen": [
+    "CA-W6 exact-source same-Station receiver and contention evidence passes",
+    "CA-W7 completion, documentation, knowledge, and zero-reference audit passes"
+  ],
+  "failureBehavior": [
+    "Missing same-Station owner deployment or runtime resources remain BLOCKED",
+    "Do not infer cross-Station or Relay-backed Conversation completion from same-Station evidence"
+  ],
+  "updatedAt": "2026-09-21T06:30:00.000Z"
 }
 ```
 

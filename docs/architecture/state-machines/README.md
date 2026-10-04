@@ -11,7 +11,7 @@
 
 本文档定义：
 
-- 全系统**真·有限状态机（FSM）**的统一索引：前端（desktop-web / mobile）、桌面端 Rust（src-tauri）、后端 Station（Go）。
+- 全系统**真·有限状态机（FSM）**的统一索引：前端（Desktop embedded WebView / Mobile）、桌面端 Rust（src-tauri）、后端 Station（Go）。
 - 每个状态机的：状态集、触发/转换、Owner 代码模块、是否已有独立设计文档。
 - 对**已有设计文档**的状态机：索引过去。
 - 对**没有独立设计文档**的状态机：在本目录内给出**精简设计**（状态 / 触发 / 转换 / 不变量），并标注 Owner 模块，作为当前真源；待其复杂度增长时再拆分到对应业务模块的文档集。
@@ -45,7 +45,7 @@
 
 ---
 
-## 4. 前端状态机（desktop-web / mobile）
+## 4. 前端状态机（Desktop embedded WebView / Mobile）
 
 ### 4.1 Identity Lifecycle（身份/登录生命周期内核）✅ 已有设计
 

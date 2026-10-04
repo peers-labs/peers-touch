@@ -1,22 +1,17 @@
 # MCP Dual Runtime - Plan Package
 
-> **Status**: prepared
-> **Branch**: peers-touch-git
-> **Workspace ID**: 5f50d8bb381b0123
-> **Initial HEAD**: 584f87245d6bdfc87922c329df723bddad0a4f82
+> **Plan ID**: agent-mcp-dual-runtime-20261003
+> **Version ID**: agent-mcp-dual-runtime-20261003-v1
+> **Created**: 2026-10-03T02:30:00.000Z
 
-## Plan Package
+## Plan Version
 
 ```json
 {
-  "kind": "peers-touch-plan-package",
+  "kind": "peers-touch-plan-version",
   "planId": "agent-mcp-dual-runtime-20261003",
-  "status": "prepared",
-  "binding": {
-    "branch": "peers-touch-git",
-    "workspaceId": "5f50d8bb381b0123",
-    "initialHead": "584f87245d6bdfc87922c329df723bddad0a4f82"
-  },
+  "versionId": "agent-mcp-dual-runtime-20261003-v1",
+  "createdAt": "2026-10-03T02:30:00.000Z",
   "workClass": "product-behavior",
   "architecture": {
     "sources": [
@@ -89,9 +84,7 @@
       "id": "MCP-01-STATION-RUNTIME",
       "workstreamId": "MCP-DUAL-RUNTIME",
       "path": "tasks/MCP-01-STATION-RUNTIME.md",
-      "dependsOn": [],
-      "status": "pending",
-      "blocker": null
+      "dependsOn": []
     },
     {
       "id": "MCP-02-DESKTOP-RUNTIME",
@@ -99,9 +92,7 @@
       "path": "tasks/MCP-02-DESKTOP-RUNTIME.md",
       "dependsOn": [
         "MCP-01-STATION-RUNTIME"
-      ],
-      "status": "pending",
-      "blocker": null
+      ]
     },
     {
       "id": "MCP-03-HARD-CUT-PROOF",
@@ -109,12 +100,9 @@
       "path": "tasks/MCP-03-HARD-CUT-PROOF.md",
       "dependsOn": [
         "MCP-02-DESKTOP-RUNTIME"
-      ],
-      "status": "pending",
-      "blocker": null
+      ]
     }
   ],
-  "exhaustion": null,
   "authorization": {
     "checkpoint": {
       "localCommit": "allowed",

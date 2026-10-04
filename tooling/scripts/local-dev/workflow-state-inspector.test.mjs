@@ -110,6 +110,9 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
       sessionId: 'SESSION-1',
       planId: 'PLAN-1',
       planPath: 'docs/plan.md',
+      planVersionDigest: 'a'.repeat(64),
+      mountId: 'mount-1',
+      runId: 'run-1',
       taskId: 'TASK-1',
       workspaceId,
       branch,
@@ -136,6 +139,9 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
       sessionId: declaration.sessionId,
       planId: declaration.planId,
       planPath: declaration.planPath,
+      mountId: declaration.mountId,
+      runId: declaration.runId,
+      snapshotDigest: 'b'.repeat(64),
       currentTaskId: declaration.taskId,
       devState: session.state.state,
       branch,
@@ -151,29 +157,32 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
           assert.equal(file, '/machine/work.json');
           return { declarations: { declaration } };
         },
-        async resolveWorkspacePlanBinding(options) {
+        async resolvePlanExecution(options) {
           assert.equal(options.repoRoot, root);
           return {
-            planId: declaration.planId,
-            planPath: declaration.planPath,
-          };
-        },
-        async loadPlanPackage(planPath, options) {
-          assert.equal(planPath, path.join(root, 'docs/plan.md'));
-          assert.equal(options.repoRoot, root);
-          assert.equal(options.declaration, declaration);
-          return {
-            manifest: {
+            mount: {
               planId: declaration.planId,
-              status: 'active',
-              binding: { workspaceId, branch, initialHead: head },
-              tasks: [
-                {
-                  id: declaration.taskId,
-                  status: 'in_progress',
-                },
-              ],
+              planPath: declaration.planPath,
+              planVersionDigest: declaration.planVersionDigest,
+              mountId: declaration.mountId,
             },
+            snapshot: {
+              recordDigest: activeWork.snapshotDigest,
+              plan: {
+                tasks: [{ id: declaration.taskId }],
+              },
+            },
+            run: {
+              runId: declaration.runId,
+              currentTaskId: declaration.taskId,
+              taskStates: {
+                [declaration.taskId]: {
+                  state: 'in_progress',
+                  blocker: null,
+                },
+              },
+            },
+            planPackage: { path: path.join(root, 'docs/plan.md') },
           };
         },
         readActiveWorkRecord(options) {

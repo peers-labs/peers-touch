@@ -413,7 +413,7 @@ Runtime Resource Manifest:
 
 ```yaml
 gate_id: <gate-id>
-environment: <local|fedp5|home-station|local-desktop-gateway|native-tauri-embedded-webdriver>
+environment: <local|fedp5|home-station|native-tauri-embedded-webdriver>
 tier: <tier>
 profile:
   name: <profile>
@@ -558,7 +558,6 @@ Read each selected Gate's `environment`, `tier`, and timeout.
 |-------------|------------------|
 | `local` | Verify required toolchains/dependencies; do not start unrelated services |
 | `native-tauri-embedded-webdriver` | Activate profile, ready Station, build Acceptance binary, run Driver smoke, allocate isolated clients |
-| `local-desktop-gateway` | Activate profile, ready Station, start Desktop through `make desktop`, verify Gateway |
 | `home-station` | Activate the approved remote/local Station profile, ready and fingerprint Station, verify reset target |
 | `fedp5` | Use the existing Federation testnet Make/Gate workflow; verify all declared nodes before the proof Gate |
 

@@ -186,8 +186,8 @@ deliverables:
         - chat-native-multi-device-e2e
         - chat-native-recovery-e2e
         - chat-native-group-mls-e2e
-        - chat-desktop-gateway-e2e
-        - federation-desktop-gateway-smoke
+        - chat-lifecycle-onboarding-e2e
+        - station-access-federation-boundary-e2e
         - acceptance-plan-self
         - acceptance-infra-validation
         - acceptance-runtime-provisioning-self
@@ -206,6 +206,7 @@ gate_order:
   - messaging-platform-contract
   - desktop-check
   - chat-native-visible-static
+  - chat-native-product-closure-e2e
   - chat-native-two-client-e2e
   - chat-native-interactions-e2e
   - chat-contact-message-resilience-e2e
@@ -213,8 +214,8 @@ gate_order:
   - chat-native-multi-device-e2e
   - chat-native-recovery-e2e
   - chat-native-group-mls-e2e
-  - chat-desktop-gateway-e2e
-  - federation-desktop-gateway-smoke
+  - chat-lifecycle-onboarding-e2e
+  - station-access-federation-boundary-e2e
   - acceptance-plan-self
   - acceptance-infra-validation
   - acceptance-runtime-provisioning-self

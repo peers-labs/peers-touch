@@ -77,8 +77,7 @@
     "Do not claim remote deployment or Mobile MCP execution",
     "Return the first deterministic proof failure"
   ],
-  "updatedAt": "2026-10-03T02:30:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-03T02:30:00.000Z"
 }
 ```
 

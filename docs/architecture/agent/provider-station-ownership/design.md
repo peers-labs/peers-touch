@@ -120,7 +120,7 @@ JSON APIs in §5 and `data-model.md` are the protobuf JSON mapping representatio
 
 | Unit | Process | Owner | Lifecycle |
 |---|---|---|---|
-| Desktop Web (React) | Browser/WebView | Client | User session |
+| Desktop Renderer (React) | Embedded WebView | Client | User session |
 | Desktop Rust (Tauri) | Native process | Client | App lifecycle |
 | Station Agent Subserver | Go process | Station | Server uptime |
 | Station Provider Runtime | Go goroutines + subprocesses | Station | Per-turn |

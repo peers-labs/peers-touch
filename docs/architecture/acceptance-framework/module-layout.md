@@ -58,7 +58,6 @@ tooling/acceptance/
 │   │   ├── linux_x11.py            # X11 XTest/EWMH
 │   │   └── windows.py              # Win32 SendInput/UI Automation
 │   ├── chrome.py                   # [NEW] Selenium Chrome driver + CDP command bridge
-│   ├── station.py                  # [NEW] Station HTTP API driver
 │   └── mobile.py                   # [Phase 4] Mobile Tauri driver
 ├── transports/
 │   ├── __init__.py
@@ -67,7 +66,7 @@ tooling/acceptance/
 │   ├── chat_native_reset.py        # Chat 环境重置
 │   └── chat_native_actors.py       # Chat account/PTID actor manifest producer
 ├── environments/                   # 非 local Gate 的机器可读 provisioning contracts
-│   ├── local-desktop-gateway.yaml
+│   ├── native-tauri-embedded-webdriver.yaml
 │   └── home-station.yaml
 ├── runtime-cells/                  # Desktop platform capability contracts
 │   ├── desktop-macos-native.yaml
@@ -81,7 +80,6 @@ tooling/acceptance/
 │       └── xorg-dummy.conf         # fixed connected 1920x1080 output
 ├── provisioners/                   # 环境生命周期实现，不承载产品断言
 │   ├── __init__.py
-│   ├── local_desktop_gateway.py
 │   ├── home_station.py
 │   ├── native_desktop_macos.py
 │   ├── local_tunnel_supervisor.py # bounded local SSH-forward ownership
@@ -113,7 +111,7 @@ tooling/acceptance/
 │   │   ├── federation_visible_surface.py       # 重构使用 ChromeDriver
 │   │   └── federation_operational_drilldown.py
 │   ├── desktop/
-│   │   └── gateway_smoke.py                    # 重构使用 StationDriver + ChromeDriver
+│   │   └── primary_navigation_e2e.py           # Native Tauri navigation Gate
 │   ├── federation/
 │   │   ├── mutual_validation.py
 │   │   └── surface_smoke.py
@@ -189,7 +187,6 @@ tooling/acceptance/
 | `provisioners/remote_source_identity.py` | 通过 strict-known-host SSH 读取 remote Git commit/workspace/proto identity，并作为显式 provider 注入 Core attestation |
 | `tooling/scripts/deploy/source-sync.sh` | Station/Relay/Desktop 共用的 role-neutral incremental Git source sync |
 | `drivers/chrome.py` | Selenium Chrome/Chromium headless 驱动，支持 CDP command bridge；Dashboard 消费迁移由 WS5 完成 |
-| `drivers/station.py` | Station HTTP API 客户端，封装网关命令、认证、错误处理 |
 | `drivers/mobile.py` | Android/iOS Tauri Mobile 驱动（Phase 4 实现） |
 | `environments/*.yaml` | 把 Gate environment id 映射为 Profile、service、Fixture、credential reference、attestation 和 cleanup contract |
 | `runtime-cells/*.yaml` | 声明 Desktop OS、display、WebView、native adapter、source identity 与 cleanup capability |
@@ -236,7 +233,6 @@ drivers/tauri.py → core/drivers/base.py
 drivers/native/*.py → drivers/native/base.py + platform APIs
 transports/ssh.py → core/errors.py
 drivers/chrome.py → core/drivers/base.py
-drivers/station.py → core/drivers/base.py
 provisioners/*.py → core/provisioning.py + core/runtime_cell.py + transports/* + drivers/* + fixtures/*
 provisioners/remote_source_identity.py → core/errors.py + core/provisioner.py + transports/ssh.py
 provisioners/mobile_native.py → contracts/mobile/native_oauth.py

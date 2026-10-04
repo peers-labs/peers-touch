@@ -47,7 +47,7 @@ const momentsState = {
 };
 
 const privateState = {
-  platform: 'browser',
+  platform: 'native',
   scope: {
     actorPtid: 'ptid:test:alice',
     rendererGeneration: 9,
@@ -87,35 +87,6 @@ const sessionState = {
   } as { actorPtid: string } | null,
 };
 
-class FakeWebSocket extends EventTarget {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-
-  readonly url: string;
-  readyState = FakeWebSocket.CONNECTING;
-
-  constructor(url: string | URL) {
-    super();
-    this.url = String(url);
-  }
-
-  emitOpen() {
-    this.readyState = FakeWebSocket.OPEN;
-    this.dispatchEvent(new Event('open'));
-  }
-
-  emitMessage(data: string) {
-    this.dispatchEvent(new MessageEvent('message', { data }));
-  }
-
-  close() {
-    this.readyState = FakeWebSocket.CLOSED;
-    this.dispatchEvent(Object.assign(new Event('close'), { code: 1000 }));
-  }
-}
-
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
@@ -134,7 +105,6 @@ vi.mock('../../services/desktop_api', () => ({
     socialFriendRequestAccept: vi.fn(),
     socialFriendRequestList: vi.fn(),
     socialFriendRequestSend: vi.fn(),
-    stationList: vi.fn(),
   },
 }));
 
@@ -224,7 +194,7 @@ describe('Moments acceptance harness', () => {
     momentsState.reactToPost.mockReset();
     momentsState.unreactToPost.mockReset();
     momentsState.loadFeed.mockReset();
-    privateState.platform = 'browser';
+    privateState.platform = 'native';
     privateState.scope = {
       actorPtid: 'ptid:test:alice',
       rendererGeneration: 9,
@@ -243,6 +213,17 @@ describe('Moments acceptance harness', () => {
     sessionState.sessionEpoch = 7;
     sessionState.currentUser = { actorPtid: 'ptid:test:alice' };
     vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async () => ({
+      ok: true,
+      data: {
+        bootIdentitySha256: 'd'.repeat(64),
+        sessionGeneration: sessionState.sessionEpoch,
+        sourceCommit: __PT_SOURCE_COMMIT__,
+        executableSha256: 'a'.repeat(64),
+        stationRuntimeIdentitySha256: 'b'.repeat(64),
+        stationEndpointSha256: 'c'.repeat(64),
+      },
+    }));
     vi.mocked(api.ossResolveUrl).mockReset();
     vi.mocked(api.ossUploadAttachmentSocial).mockReset();
     vi.mocked(api.ossUploadEncryptedAttachmentSocial).mockReset();
@@ -258,20 +239,6 @@ describe('Moments acceptance harness', () => {
     vi.mocked(api.socialFriendRequestAccept).mockReset();
     vi.mocked(api.socialFriendRequestList).mockReset();
     vi.mocked(api.socialFriendRequestSend).mockReset();
-    vi.mocked(api.stationList).mockReset();
-    vi.mocked(api.stationList).mockResolvedValue({
-      active_url: 'https://station.invalid/',
-      binding: {
-        phase: 'bound',
-        bound_url: 'https://station.invalid',
-        generation: 1,
-      },
-      entries: [{
-        url: 'https://station.invalid',
-        peer_id: 'peer-station-four',
-        online: true,
-      }],
-    });
     vi.stubGlobal('window', {
       location: new URL('http://localhost:3210/'),
     });
@@ -282,7 +249,6 @@ describe('Moments acceptance harness', () => {
       getEntriesByType: vi.fn(() => []),
       mark: vi.fn(),
     });
-    vi.stubGlobal('WebSocket', FakeWebSocket);
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
       arrayBuffer: async () => new TextEncoder().encode('renderer bundle').buffer,
@@ -542,7 +508,7 @@ describe('Moments acceptance harness', () => {
   });
 
   it('keeps private draft plaintext and paths out of returned evidence', async () => {
-    const plaintext = 'private browser draft';
+    const plaintext = 'private native draft';
     const filePath = '/tmp/private-image.png';
 
     const staged = await harness().stageFriendsDraft({
@@ -614,11 +580,11 @@ describe('Moments acceptance harness', () => {
     );
   });
 
-  it('returns the store-owned Browser unsupported state without a publish fallback', async () => {
+  it('returns the store-owned unsupported state without a publish fallback', async () => {
     await harness().stageFriendsDraft({
       draftId: 'draft-2',
       revision: 3,
-      text: 'browser private publish',
+      text: 'native private publish',
     });
     momentsState.createPost.mockImplementation(async () => {
       privateState.publish = {
@@ -631,7 +597,7 @@ describe('Moments acceptance harness', () => {
     const result = await harness().publishFriendsDraft();
 
     expect(result).toMatchObject({
-      platform: 'browser',
+      platform: 'native',
       state: 'PRIVATE_UNSUPPORTED',
       errorCode: 'PRIVATE_UNSUPPORTED',
     });
@@ -1296,7 +1262,7 @@ describe('Moments acceptance harness', () => {
     );
   });
 
-  it('changes the live Browser artifact digest when renderer bytes change', async () => {
+  it('changes the native client artifact digest when renderer bytes change', async () => {
     const first = await harness().snapshot() as {
       clientArtifactSha256: string;
     };
@@ -1393,262 +1359,6 @@ describe('Moments acceptance harness', () => {
 
     await expect(harness().snapshot()).rejects.toThrow(
       'moments.acceptance.nativeRuntimeIdentityMissing',
-    );
-  });
-
-  it('persists a typed marker for the exact observed interval', async () => {
-    const nativeFetch = vi.fn(async (
-      _input: RequestInfo | URL,
-      _init?: RequestInit,
-    ) => ({
-      ok: true,
-      status: 200,
-      arrayBuffer: async () => new TextEncoder().encode('renderer bundle').buffer,
-    }));
-    vi.stubGlobal('fetch', nativeFetch);
-    installAcceptanceHarness();
-    const actionId = 'browser-private-read';
-    const runtimeManifestDigest = 'a'.repeat(64);
-    const capture = await harness().beginNetworkCapture({
-      actionId,
-      runtimeManifestDigest,
-    }) as {
-      captureId: string;
-      initialObserverSequence: number;
-    };
-    await fetch('https://station.invalid/api/v1/social/moments/control');
-    const socket = new WebSocket('wss://station.invalid/events') as unknown as FakeWebSocket;
-    socket.emitOpen();
-    socket.emitMessage('first');
-    socket.emitMessage('second');
-
-    const marker = await harness().emitTerminalMarker({
-      captureId: capture.captureId,
-      actionId,
-      finalObserverSequence: 999,
-      captureIntervalDigest: 'f'.repeat(64),
-    }) as {
-      schemaVersion: number;
-      captureId: string;
-      actionId: string;
-      runtimeManifestDigest: string;
-      finalObserverSequence: number;
-      openStreamIdentityDigests: string[];
-      captureIntervalDigest: string;
-      markerDigest: string;
-    };
-    const canonicalMarker = JSON.stringify({
-      actionId,
-      captureId: capture.captureId,
-      captureIntervalDigest: marker.captureIntervalDigest,
-      finalObserverSequence: marker.finalObserverSequence,
-      openStreamIdentityDigests: marker.openStreamIdentityDigests,
-      runtimeManifestDigest,
-      schemaVersion: 1,
-    });
-    const expectedMarkerDigest = await crypto.subtle.digest(
-      'SHA-256',
-      new TextEncoder().encode(canonicalMarker),
-    ).then((digest) => Array.from(new Uint8Array(digest))
-      .map((byte) => byte.toString(16).padStart(2, '0'))
-      .join(''));
-
-    expect(marker).toMatchObject({
-      schemaVersion: 1,
-      captureId: capture.captureId,
-      actionId,
-      runtimeManifestDigest,
-    });
-    expect(marker.finalObserverSequence).toBe(
-      capture.initialObserverSequence + 5,
-    );
-    expect(marker.finalObserverSequence).not.toBe(999);
-    expect(marker.openStreamIdentityDigests).toHaveLength(1);
-    expect(marker.openStreamIdentityDigests[0]).toMatch(/^[0-9a-f]{64}$/);
-    expect(marker.captureIntervalDigest).toMatch(/^[0-9a-f]{64}$/);
-    expect(marker.captureIntervalDigest).not.toBe('f'.repeat(64));
-    expect(marker.markerDigest).toBe(expectedMarkerDigest);
-
-    const markerCall = nativeFetch.mock.calls[nativeFetch.mock.calls.length - 1];
-    const markerUrl = new URL(String(markerCall?.[0]));
-    expect(markerUrl.origin).toBe(window.location.origin);
-    expect(markerUrl.pathname).toMatch(
-      /^\/__pt_acceptance\/network-terminal\/[A-Za-z0-9_-]+$/,
-    );
-    expect(markerCall?.[1]).toEqual({
-      cache: 'no-store',
-      credentials: 'same-origin',
-      method: 'GET',
-    });
-    const encoded = markerUrl.pathname.slice(
-      '/__pt_acceptance/network-terminal/'.length,
-    );
-    const padded = encoded.replace(/-/g, '+').replace(/_/g, '/')
-      .padEnd(Math.ceil(encoded.length / 4) * 4, '=');
-    expect(JSON.parse(atob(padded))).toEqual({
-      actionId,
-      captureId: capture.captureId,
-      captureIntervalDigest: marker.captureIntervalDigest,
-      finalObserverSequence: marker.finalObserverSequence,
-      openStreamIdentityDigests: marker.openStreamIdentityDigests,
-      runtimeManifestDigest,
-      schemaVersion: 1,
-    });
-
-    const persisted = JSON.stringify(marker);
-    socket.emitMessage('post-marker');
-    const nextCapture = await harness().beginNetworkCapture({
-      actionId: 'browser-empty-interval',
-      runtimeManifestDigest,
-    }) as {
-      captureId: string;
-      initialObserverSequence: number;
-    };
-    const nextMarker = await harness().emitTerminalMarker({
-      captureId: nextCapture.captureId,
-      actionId: 'browser-empty-interval',
-    }) as {
-      finalObserverSequence: number;
-      captureIntervalDigest: string;
-    };
-    expect(JSON.stringify(marker)).toBe(persisted);
-    expect(nextCapture.initialObserverSequence).toBe(
-      marker.finalObserverSequence + 3,
-    );
-    expect(nextMarker.finalObserverSequence).toBe(
-      nextCapture.initialObserverSequence,
-    );
-    expect(nextMarker.captureIntervalDigest).not.toBe(
-      marker.captureIntervalDigest,
-    );
-    await expect(harness().emitTerminalMarker({
-      captureId: capture.captureId,
-      actionId,
-    })).rejects.toThrow('moments.acceptance.captureIdentityMismatch');
-  });
-
-  it('reports an anonymous Browser identity without inventing an actor', async () => {
-    sessionState.currentUser = null;
-
-    const result = await harness().snapshot();
-
-    expect(result).toMatchObject({
-      platform: 'browser',
-      authenticationState: 'ANONYMOUS',
-    });
-    expect(
-      (result as { sessionIdentitySha256?: string }).sessionIdentitySha256,
-    ).toMatch(/^[0-9a-f]{64}$/);
-    expect(
-      (result as { stationRuntimeIdentitySha256?: string })
-        .stationRuntimeIdentitySha256,
-    ).toMatch(/^[0-9a-f]{64}$/);
-    expect(
-      (result as { stationEndpointSha256?: string }).stationEndpointSha256,
-    ).toMatch(/^[0-9a-f]{64}$/);
-    expect(result).not.toHaveProperty('actorPtidSha256');
-    expect(invoke).not.toHaveBeenCalled();
-  });
-
-  it('fails closed when Browser cannot resolve the active Station peer', async () => {
-    vi.mocked(api.stationList).mockResolvedValue({
-      active_url: 'https://station.invalid',
-      binding: {
-        phase: 'bound',
-        bound_url: 'https://station.invalid',
-        generation: 1,
-      },
-      entries: [{
-        url: 'https://station.invalid',
-        online: true,
-      }],
-    });
-
-    await expect(harness().snapshot()).rejects.toThrow(
-      'moments.acceptance.stationIdentityMissing',
-    );
-  });
-
-  it.each([
-    'unbound',
-    'connecting',
-    'access_gate',
-    'switching',
-    'failed',
-  ] as const)(
-    'fails closed when Browser Station binding phase is %s',
-    async (phase) => {
-      vi.mocked(api.stationList).mockResolvedValue({
-        active_url: 'https://station.invalid',
-        binding: {
-          phase,
-          bound_url: 'https://station.invalid',
-          generation: 2,
-        },
-        entries: [{
-          url: 'https://station.invalid',
-          peer_id: 'peer-station-four',
-          online: true,
-        }],
-      });
-
-      await expect(harness().snapshot()).rejects.toThrow(
-        'moments.acceptance.stationIdentityMissing',
-      );
-    },
-  );
-
-  it('fails closed when Browser active and bound Station URLs diverge', async () => {
-    vi.mocked(api.stationList).mockResolvedValue({
-      active_url: 'https://station-two.invalid',
-      binding: {
-        phase: 'bound',
-        bound_url: 'https://station-one.invalid',
-        generation: 2,
-      },
-      entries: [{
-        url: 'https://station-one.invalid',
-        peer_id: 'peer-station-four',
-        online: true,
-      }],
-    });
-
-    await expect(harness().snapshot()).rejects.toThrow(
-      'moments.acceptance.stationIdentityMissing',
-    );
-  });
-
-  it('fails closed when Browser Station binding changes during capture', async () => {
-    vi.mocked(api.stationList)
-      .mockResolvedValueOnce({
-        active_url: 'https://station-one.invalid',
-        binding: {
-          phase: 'bound',
-          bound_url: 'https://station-one.invalid',
-          generation: 2,
-        },
-        entries: [{
-          url: 'https://station-one.invalid',
-          peer_id: 'peer-station-one',
-          online: true,
-        }],
-      })
-      .mockResolvedValueOnce({
-        active_url: 'https://station-two.invalid',
-        binding: {
-          phase: 'bound',
-          bound_url: 'https://station-two.invalid',
-          generation: 3,
-        },
-        entries: [{
-          url: 'https://station-two.invalid',
-          peer_id: 'peer-station-two',
-          online: true,
-        }],
-      });
-
-    await expect(harness().snapshot()).rejects.toThrow(
-      'moments.acceptance.stationIdentityMissing',
     );
   });
 

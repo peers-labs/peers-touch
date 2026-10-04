@@ -1,5 +1,5 @@
 id: modern-chat-agent-v2-runtime-matrix
-version: 2026-10-01.1
+version: 2026-10-04.1
 status: plan-review
 tuple_expansion:
   mode: cartesian
@@ -298,11 +298,11 @@ rows:
       required: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay]
       not_applicable: [contract-evidence, guard-report]
     cell_sets: [foundation_core, foundation_errors, quantitative]
-  - id: foundation-browser-direct
+  - id: foundation-secondary-direct
     gate: agent-v2-kernel-foundation-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model
-    runtime_attestation_profile: direct_runtime_no_local_capability
+    runtime_attestation_profile: direct_runtime_secondary_native
     role_policy:
       always: [cell-results, runtime-attestation-set, cleanup]
       required: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay]
@@ -340,9 +340,9 @@ rows:
       required: [receiver-dom, station-readback, side-effect-count]
       not_applicable: [runtime-events, measurement-report, replay, contract-evidence, guard-report]
     cells: [AS-F13-NON_ADVERTISED]
-  - id: foundation-browser-cli-absent
+  - id: foundation-secondary-cli-absent
     gate: agent-v2-kernel-foundation-e2e
-    platform: browser
+    platform: secondary
     runtime: stateless_cli_absent
     runtime_attestation_profile: non_advertised
     role_policy:
@@ -360,9 +360,9 @@ rows:
       required: [receiver-dom, station-readback, side-effect-count]
       not_applicable: [runtime-events, measurement-report, replay, contract-evidence, guard-report]
     cells: [AS-F11-NON_ADVERTISED]
-  - id: foundation-browser-external-absent
+  - id: foundation-secondary-external-absent
     gate: agent-v2-kernel-foundation-e2e
-    platform: browser
+    platform: secondary
     runtime: external_agent_absent
     runtime_attestation_profile: non_advertised
     role_policy:
@@ -380,9 +380,9 @@ rows:
       required: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay]
       not_applicable: [contract-evidence, guard-report]
     cells: [BASE-RESUME-UNAVAILABLE]
-  - id: foundation-z-browser-external-runtime
+  - id: foundation-z-secondary-external-runtime
     gate: agent-v2-kernel-foundation-e2e
-    platform: browser
+    platform: secondary
     runtime: external_agent
     runtime_attestation_profile: station_turn
     role_policy:
@@ -400,9 +400,9 @@ rows:
       required: [receiver-dom, station-readback, command-ids, projection-revisions, measurement-report, side-effect-count, replay]
       not_applicable: [contract-evidence]
     cell_sets: [home]
-  - id: home-browser-direct
+  - id: home-secondary-direct
     gate: agent-v2-home-command-center-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model
     runtime_attestation_profile: station_command
     role_policy:
@@ -431,9 +431,9 @@ rows:
       required: [receiver-dom, station-readback, readiness-snapshots, zero-execution, measurement-report, side-effect-count, replay]
       not_applicable: [contract-evidence, guard-report]
     cell_sets: [binding, taxonomy]
-  - id: binding-browser-direct-remote
+  - id: binding-secondary-direct-remote
     gate: agent-v2-capability-binding-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_remote_session
     runtime_attestation_profile: station_control_plane
     role_policy:
@@ -506,9 +506,9 @@ rows:
       not_applicable: [executor-receipts, contract-evidence]
     cell_sets: [tool_ordered_execution]
     ordering_filter: [A]
-  - id: tool-browser-station
+  - id: tool-secondary-station
     gate: agent-v2-governed-tool-loop-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_station_executor
     runtime_attestation_profile: station_capability_turn
     role_policy:
@@ -516,9 +516,9 @@ rows:
       required: [receiver-dom, station-readback, executor-receipts, measurement-report, side-effect-count, replay]
       not_applicable: [contract-evidence, zero-execution]
     cell_sets: [tool_executed]
-  - id: tool-browser-station-race-executed
+  - id: tool-secondary-station-race-executed
     gate: agent-v2-governed-tool-loop-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_station_executor
     runtime_attestation_profile: station_capability_turn
     role_policy:
@@ -527,9 +527,9 @@ rows:
       not_applicable: [contract-evidence, zero-execution]
     cell_sets: [tool_ordered_execution]
     ordering_filter: [B]
-  - id: tool-browser-zero-execution
+  - id: tool-secondary-zero-execution
     gate: agent-v2-governed-tool-loop-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_station_executor
     runtime_attestation_profile: station_turn
     role_policy:
@@ -537,9 +537,9 @@ rows:
       required: [receiver-dom, station-readback, measurement-report, side-effect-count, zero-execution, replay]
       not_applicable: [executor-receipts, contract-evidence]
     cell_sets: [tool_zero_execution]
-  - id: tool-browser-race-zero-execution
+  - id: tool-secondary-race-zero-execution
     gate: agent-v2-governed-tool-loop-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_station_executor
     runtime_attestation_profile: station_turn
     role_policy:
@@ -569,9 +569,9 @@ rows:
       required: [receiver-dom, station-readback, executor-receipts, process-port-secret-canary, measurement-report, side-effect-count, replay]
       not_applicable: [contract-evidence, zero-execution]
     cell_sets: [mcp]
-  - id: mcp-browser-unavailable
+  - id: mcp-secondary-unavailable
     gate: agent-v2-mcp-lifecycle-e2e
-    platform: browser
+    platform: secondary
     runtime: local_mcp_unavailable
     runtime_attestation_profile: unavailable_runtime
     role_policy:
@@ -632,9 +632,9 @@ rows:
       not_applicable: [contract-evidence]
     cell_sets: [connector_ordered_execution]
     ordering_filter: [A]
-  - id: connector-browser-client-executed
+  - id: connector-secondary-client-executed
     gate: agent-v2-connector-invocation-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_client_connector
     runtime_attestation_profile: client_capability_turn
     role_policy:
@@ -642,9 +642,9 @@ rows:
       required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, replay]
       not_applicable: [contract-evidence, zero-execution]
     cell_sets: [connector_executed]
-  - id: connector-browser-client-race-executed
+  - id: connector-secondary-client-race-executed
     gate: agent-v2-connector-invocation-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_client_connector
     runtime_attestation_profile: client_capability_turn
     role_policy:
@@ -653,9 +653,9 @@ rows:
       not_applicable: [contract-evidence, zero-execution]
     cell_sets: [connector_ordered_execution]
     ordering_filter: [B]
-  - id: connector-browser-zero-execution
+  - id: connector-secondary-zero-execution
     gate: agent-v2-connector-invocation-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_connector_rejected
     runtime_attestation_profile: station_turn
     role_policy:
@@ -663,9 +663,9 @@ rows:
       required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, zero-execution, replay]
       not_applicable: [contract-evidence]
     cell_sets: [connector_zero_execution]
-  - id: connector-browser-race-zero-execution
+  - id: connector-secondary-race-zero-execution
     gate: agent-v2-connector-invocation-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model_connector_rejected
     runtime_attestation_profile: station_turn
     role_policy:
@@ -705,9 +705,9 @@ rows:
       required: [receiver-dom, station-readback, measurement-report, side-effect-count, replay]
       not_applicable: [runtime-events, turn-trace, metrics-lineage, contract-evidence]
     cell_sets: [evaluation_control_plane_rejection]
-  - id: evaluation-browser-direct
+  - id: evaluation-secondary-direct
     gate: agent-v2-evaluation-lab-e2e
-    platform: browser
+    platform: secondary
     runtime: direct_model
     runtime_attestation_profile: station_turn
     role_policy:
@@ -715,9 +715,9 @@ rows:
       required: [receiver-dom, station-readback, runtime-events, turn-trace, metrics-lineage, measurement-report, side-effect-count, replay]
       not_applicable: [contract-evidence]
     cell_sets: [evaluation_turn_backed]
-  - id: evaluation-browser-control-plane-rejection
+  - id: evaluation-secondary-control-plane-rejection
     gate: agent-v2-evaluation-lab-e2e
-    platform: browser
+    platform: secondary
     runtime: evaluation_control_plane_rejection
     runtime_attestation_profile: station_control_plane
     role_policy:

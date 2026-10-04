@@ -4,7 +4,6 @@ title: Canonical Profile ID solely owns reset policy
 status: active
 owns:
   - AGENTS.md
-  - apps/dev/
   - docs/architecture/local-dev-control-plane/
   - docs/global/local-dev-environment.md
   - tooling/devctl/
@@ -48,12 +47,12 @@ continuous Plan execution without adding a real safety boundary.
 
 ## How to verify
 
-- `rg -n 'AGENT_CONTROL|agentControl' AGENTS.md apps/dev docs tooling` returns
+- `rg -n 'AGENT_CONTROL|agentControl' AGENTS.md docs tooling` returns
   no reset-policy metadata readers.
 - Mixed-case `stable` Profile fixtures reject a reset capability.
 - Non-stable Profile fixtures accept reset only with matching binding,
   declaration, scope, and lease.
-- Peers Dev projects `resetPolicy`, never a stored control mode.
+- Machine Dev status projects `resetPolicy`, never a stored control mode.
 
 ## Crosswalks
 

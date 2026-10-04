@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W6B-WIRE",
   "workstreamId": "W6B",
@@ -49,19 +49,7 @@
     "Malformed Station payloads fail visibly",
     "Native receiver proof remains in W6B-PROOF"
   ],
-  "updatedAt": "2026-09-16T14:38:17Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/services/gateways/momentsGateway.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/services/gateways/gatewayTypes.ts"
-    }
-  ]
+  "updatedAt": "2026-09-16T14:38:17.000Z"
 }
 ```
 

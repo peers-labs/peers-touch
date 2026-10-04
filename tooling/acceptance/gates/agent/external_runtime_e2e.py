@@ -364,11 +364,11 @@ def main() -> int:
             pair.start()
             actor_ids = {
                 client.spec.runtime: _authenticate(client, profile_env)
-                for client in (pair.native, pair.browser)
+                for client in (pair.native, pair.secondary)
             }
             require(
                 len(set(actor_ids.values())) == 1,
-                "P12 Native and Browser clients authenticated different actors",
+                "P12 Native and Secondary clients authenticated different actors",
             )
             _set_locale(pair.native, "en")
             preparation = _mapping(
@@ -392,8 +392,8 @@ def main() -> int:
                 profile_env,
             )
             pair.native.restart()
-            pair.browser.restart()
-            for client in (pair.native, pair.browser):
+            pair.secondary.restart()
+            for client in (pair.native, pair.secondary):
                 _authenticate(client, profile_env)
             _set_locale(pair.native, "en")
             restart_turn = _mapping(
@@ -404,14 +404,14 @@ def main() -> int:
                 ),
                 "P12 restart Turn",
             )
-            _set_locale(pair.browser, "zh-CN")
-            browser_failure = _mapping(
-                pair.browser.harness(
+            _set_locale(pair.secondary, "zh-CN")
+            secondary_failure = _mapping(
+                pair.secondary.harness(
                     "triggerExternalRuntimeResumeUnavailable",
                     {"fixture": fixture},
                     timeout=180,
                 ),
-                "P12 Browser failure",
+                "P12 Secondary failure",
             )
             _set_locale(pair.native, "en")
             native_receiver = _mapping(
@@ -422,13 +422,13 @@ def main() -> int:
                 ),
                 "P12 Native receiver",
             )
-            _set_locale(pair.browser, "zh-CN")
+            _set_locale(pair.secondary, "zh-CN")
             reset = _mapping(
-                pair.browser.harness(
+                pair.secondary.harness(
                     "confirmExternalRuntimeReset",
                     {
                         "fixture": fixture,
-                        "resetIdempotencyKey": browser_failure[
+                        "resetIdempotencyKey": secondary_failure[
                             "resetIdempotencyKey"
                         ],
                     },
@@ -445,7 +445,7 @@ def main() -> int:
                 "P12 cleanup retry",
             )
             fresh = _mapping(
-                pair.browser.harness(
+                pair.secondary.harness(
                     "createFreshExternalRuntimeSession",
                     {"fixture": fixture},
                     timeout=180,
@@ -461,7 +461,7 @@ def main() -> int:
                 "P12 cancellation",
             )
             product_cleanup = _cleanup_product(
-                (pair.browser, pair.native),
+                (pair.secondary, pair.native),
                 fixture,
             )
             capture = {
@@ -471,7 +471,7 @@ def main() -> int:
                     "stationRestarted": True,
                     "turn": restart_turn,
                 },
-                "browserFailure": browser_failure,
+                "secondaryFailure": secondary_failure,
                 "nativeReceiver": native_receiver,
                 "reset": reset,
                 "cleanupRetry": cleanup_retry,
@@ -498,7 +498,7 @@ def main() -> int:
                     tuple(
                         client
                         for client in (
-                            pair.browser if pair else None,
+                            pair.secondary if pair else None,
                             pair.native if pair else None,
                         )
                         if client is not None
@@ -546,7 +546,7 @@ def main() -> int:
             "gate": (
                 "P12 requires Station-owned create, resume, restart, explicit "
                 "reset, retry, fresh epoch, isolation, and cleanup across "
-                "Native and Browser."
+                "Native and Secondary."
             ),
             "sampleEmissionAllowed": status == "passed",
             "source": source_identity(ROOT),
@@ -560,11 +560,11 @@ def main() -> int:
         role_payloads = {
             "receiver-dom": {
                 "native": capture.get("nativeReceiver", {}),
-                "browser": _mapping(
-                    capture.get("browserFailure"),
-                    "browser failure",
+                "secondary": _mapping(
+                    capture.get("secondaryFailure"),
+                    "secondary failure",
                 ).get("receiver", {})
-                if capture.get("browserFailure")
+                if capture.get("secondaryFailure")
                 else {},
             },
             "station-readback": {
@@ -572,7 +572,7 @@ def main() -> int:
                 for key in (
                     "preparation",
                     "restart",
-                    "browserFailure",
+                    "secondaryFailure",
                     "reset",
                     "cleanupRetry",
                     "fresh",
@@ -582,7 +582,7 @@ def main() -> int:
             "runtime-events": {
                 "preparation": capture.get("preparation", {}),
                 "restart": capture.get("restart", {}),
-                "failure": capture.get("browserFailure", {}),
+                "failure": capture.get("secondaryFailure", {}),
                 "cancellation": capture.get("cancellation", {}),
             },
             "side-effect-count": capture.get("adapterAudit", {}),

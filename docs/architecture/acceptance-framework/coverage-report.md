@@ -7,12 +7,12 @@
 
 | Domain | Features | Wired | Proven | Coverage |
 |--------|----------|-------|--------|----------|
-| Chat | 11 | 10 | 1 | 9% |
+| Chat | 9 | 8 | 1 | 11% |
 | Mobile | 9 | 9 | 0 | 0% |
 | Federation | 7 | 6 | 0 | 0% |
 | Applet | 1 | 1 | 0 | 0% |
 | Station Dashboard | 2 | 2 | 0 | 0% |
-| **Total** | 30 | 28 | 1 | 3% |
+| **Total** | 28 | 26 | 1 | 4% |
 
 ## Infra (Core Self-Validation)
 
@@ -24,13 +24,11 @@
 
 | Feature | Required Gates | Registered | Proven | Status |
 |---------|---------------|------------|--------|--------|
-| `chat-desktop-gateway-message-flow` | `chat-desktop-gateway-e2e` | 1/1 | 0/1 | WIRED |
 | `chat-direct-delivered-receipt` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-current-profile-two-client-e2e`, `chat-native-submitted-command-recovery-e2e`, `chat-native-two-client-e2e` | 7/7 | 4/7 | WIRED |
-| `chat-friend-request-gateway-lifecycle` | `chat-friend-request-gateway-e2e` | 1/1 | 0/1 | WIRED |
 | `chat-group-station-lifecycle` | `chat-group-station-e2e` | 0/1 | 0/1 | PARTIAL |
 | `chat-message-interactions` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-interactions-e2e` | 5/5 | 4/5 | WIRED |
 | `chat-native-friendship-projection` | `proto-build`, `desktop-check`, `chat-native-visible-static`, `chat-native-group-mls-e2e` | 4/4 | 3/4 | WIRED |
-| `chat-native-visible-clients` | `chat-native-visible-static`, `chat-native-current-profile-two-client-e2e`, `chat-native-two-client-e2e`, `chat-native-multi-device-e2e`, `chat-native-recovery-e2e`, `chat-native-group-mls-e2e` | 6/6 | 1/6 | WIRED |
+| `chat-native-visible-clients` | `chat-native-visible-static`, `chat-lifecycle-onboarding-e2e`, `chat-lifecycle-direct-e2e`, `chat-native-current-profile-two-client-e2e`, `chat-native-two-client-e2e`, `chat-native-multi-device-e2e`, `chat-native-recovery-e2e`, `chat-native-group-mls-e2e` | 8/8 | 1/8 | WIRED |
 | `chat-realtime-delivery` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check` | 3/3 | 3/3 | COMPLETE |
 | `chat-service-contract` | `proto-build`, `station-api-ownership`, `station-messaging-unit`, `messaging-platform-contract` | 4/4 | 3/4 | WIRED |
 | `chat-typing-presence` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-typing-e2e` | 5/5 | 4/5 | WIRED |
@@ -54,7 +52,7 @@
 
 | Feature | Required Gates | Registered | Proven | Status |
 |---------|---------------|------------|--------|--------|
-| `desktop-federation-surfaces` | `desktop-check`, `federation-desktop-gateway-smoke` | 2/2 | 1/2 | WIRED |
+| `desktop-federation-surfaces` | `desktop-check`, `station-access-federation-boundary-e2e` | 2/2 | 1/2 | WIRED |
 | `federation-dashboard-operations` | `station-dashboard-unit`, `federation-dashboard-operational-drilldown` | 2/2 | 0/2 | WIRED |
 | `federation-discovery-network` | `station-federation-unit`, `federation-surface-smoke` | 2/2 | 0/2 | WIRED |
 | `federation-full-lifecycle` | `station-build`, `desktop-typecheck` | 0/2 | 0/2 | PARTIAL |

@@ -24,12 +24,10 @@
   ],
   "visible_surfaces": [
     {"type": "native-desktop", "route": "access-gate"},
-    {"type": "browser", "route": "desktop-access-gate"},
     {"type": "native-mobile", "route": "access-gate"}
   ],
   "required_gates": [
     "station-access-capability-contract",
-    "station-access-desktop-oauth-layout-e2e",
     "station-access-desktop-oauth-native-e2e",
     "station-access-auth-e2e"
   ],

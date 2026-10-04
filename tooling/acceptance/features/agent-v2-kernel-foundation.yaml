@@ -19,7 +19,7 @@
   ],
   "visible_surfaces": [
     {"type": "native-tauri", "surface": "Desktop Agent setup, conversation, recovery, and diagnostics"},
-    {"type": "browser", "surface": "Station-backed Agent conversation outcomes"},
+    {"type": "secondary", "surface": "Station-backed Agent conversation outcomes"},
     {"type": "contract", "surface": "Mobile semantic compatibility and P12/CLI non-advertisement"}
   ],
   "required_gates": ["agent-v2-kernel-foundation-e2e"],
@@ -30,7 +30,7 @@
       "thinking mode is explicit and independent from reasoning effort; AS-F03 disables thinking through the production Turn contract before proving progressive answer text"
     ],
     "visible": [
-      "required Desktop and Browser receiver outcomes are observable in English and Simplified Chinese",
+      "required Desktop and Secondary receiver outcomes are observable in English and Simplified Chinese",
       "unsupported Mobile-local and CLI capabilities are explicitly unavailable before execution",
       "an absent or incomplete P12 adapter is not advertised, while the configured external runtime exposes the reviewed resume-unavailable recovery"
     ]

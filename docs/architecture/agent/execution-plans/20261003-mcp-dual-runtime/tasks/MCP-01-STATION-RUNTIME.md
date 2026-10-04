@@ -60,8 +60,7 @@
     "Do not add a parallel MCP dispatch protocol",
     "Return the first deterministic Station failure"
   ],
-  "updatedAt": "2026-10-03T02:30:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-03T02:30:00.000Z"
 }
 ```
 

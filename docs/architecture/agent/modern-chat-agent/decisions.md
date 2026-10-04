@@ -70,8 +70,8 @@ device-local executor. Client Web is a projection and interaction surface.
 
 ### Rationale
 
-One kernel prevents divergent behavior across Desktop App, browser gateway,
-Mobile, and future channels.
+One kernel prevents divergent behavior across Native Desktop, Mobile, and
+future channels.
 
 ### Alternatives Considered
 

@@ -1,8 +1,8 @@
 # Secure Content
 
 > **Status**: active
-> **Version**: v1.5
-> **Created**: 2026-09-13 | **Updated**: 2026-09-24
+> **Version**: v1.6
+> **Created**: 2026-09-13 | **Updated**: 2026-10-04
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -60,7 +60,7 @@ wire, storage, and recovery behavior.
 4. Station and OSS never receive private content plaintext or content keys.
 5. Every recipient response is scoped to the authenticated actor and device.
 6. Public and private content remain physically and behaviorally distinct.
-7. Desktop and Mobile use the same core; Browser fails closed for private content.
+7. Desktop and Mobile Native runtimes use the same core; Desktop has no browser runtime.
 8. Old Social and Chat generic-crypto paths are deleted in one governed hard cut.
 
 ## 4. Documents
@@ -103,9 +103,9 @@ Accepted product inputs:
   `SOC-SEC-AS01` through `SOC-SEC-AS16`.
 
 The product contract and `SC-D01` through `SC-D29` are accepted. `SC-D21`
-defines the deterministic lifecycle barriers, runtime-owner restart
-continuation, WebSocket/SSE terminal marker, and owner-provisioned fixture
-handles required to resume W7S; it was accepted by the Owner on 2026-09-16.
+defines deterministic Native lifecycle barriers, runtime-owner restart
+continuation, and owner-provisioned fixture handles required to resume W7S; its
+former Browser observation branch is retired by `DWF-D39`.
 `SC-D22` and `SC-D23` were accepted by the Owner on 2026-09-17 at checkpoint
 `bd8dad8b3a5e95c4f3bf002c244d605461c3517d`. They define the remaining multi-service Desktop/Mobile
 Development manifest, exact product evidence boundaries, canonical
@@ -129,5 +129,6 @@ execution plan and evidence gates.
 
 On 2026-10-01, the Owner narrowed the active hard-cut milestone to
 `DESKTOP_DEVELOPMENT_USABLE`: Desktop Native private Social plus the required
-two-Station schema activation. Browser, Mobile, Chat product runtime,
+two-Station schema activation. `DWF-D39` subsequently removed Desktop Browser
+from all current runtime and proof contracts. Mobile, Chat product runtime,
 `FINAL_CUT`, and formal release Acceptance remain explicit future scope.

@@ -30,17 +30,15 @@ stores; there is no compatibility reader or migration.
 | Promise ID | What must be true | Normal recovery |
 |---|---|---|
 | `dev.integration.installed` | The selected host has the exact current Skill and hook projection, callback proof, and install receipt. | Run `make skills IDE=<host>` at a durable boundary. |
-| `dev.plan.binding` | This worktree resolves one current Plan generation whose workspace and branch match current source. | Bind generation 1, or explicitly advance a completed and quiescent generation. |
+| `dev.plan.mount` | This worktree resolves one current Project Ledger mount, immutable Execution Plan snapshot, and mutable Execution Run. | Mount the frozen Plan Version or resolve the typed mount identity failure. |
 | `dev.workflow.current` | Plan, current Task, Development Session, declaration, active-work, and reduced Action Receipt state agree. | Repair the typed owner mismatch; never edit machine state directly. |
 | `dev.review.current` | Active work has no failed or stale review; completed work has a current independent `PASS`. | Run a fresh independent Completion Review after source or obligation drift. |
-| `dev.server.live` | The machine-wide Peers Dev endpoint is live and exposes compatible source freshness. | Run `make dev-ui`; stop a stale incompatible listener first. |
-| `dev.docs.executable` | This guide and `apps/dev/README.md` declare each public promise exactly once. | Update code and both guides in the same change. |
+| `dev.docs.executable` | This guide declares each public Workflow Doctor promise exactly once. | Update the executable contract and this guide in the same change. |
 
 <!-- workflow-doctor:dev.integration.installed -->
-<!-- workflow-doctor:dev.plan.binding -->
+<!-- workflow-doctor:dev.plan.mount -->
 <!-- workflow-doctor:dev.workflow.current -->
 <!-- workflow-doctor:dev.review.current -->
-<!-- workflow-doctor:dev.server.live -->
 <!-- workflow-doctor:dev.docs.executable -->
 
 ## 1) Read before coding

@@ -710,12 +710,12 @@ post-lock source validation, and OS lease exclusion remain mandatory. This
 exception never applies to `station.reset`; Agent-driven Plan work still
 declares runtime intent before invoking the command.
 
-`make desktop` and `make desktop-web` are complete developer entrypoints. They
-resolve runtime values from the selected Profile, prepare missing workspace
-packages from the committed `pnpm-lock.yaml` with frozen-lockfile semantics,
-and run the source-aware Station ready closure before starting Desktop. Profile
-definitions do not duplicate source package graphs; source manifests and
-lockfiles remain their owner.
+`make desktop` is the complete Native Desktop developer entrypoint. It resolves
+runtime values from the selected Profile, prepares missing workspace packages
+from the committed `pnpm-lock.yaml` with frozen-lockfile semantics, and runs the
+source-aware Station ready closure before starting Tauri. Desktop Web mode has
+been retired; profile definitions do not duplicate source package graphs, and
+source manifests and lockfiles remain their owner.
 
 ### Rationale
 

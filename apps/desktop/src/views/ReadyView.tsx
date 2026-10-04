@@ -43,7 +43,7 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
 
   useEffect(() => {
     markPhaseStart('firstPaint');
-    // The browser commits this paint after the current task resolves;
+    // The WebView commits this paint after the current task resolves;
     // mark the end on the next frame so the duration captures real
     // first-paint cost rather than just descriptor scheduling.
     const handle = window.requestAnimationFrame(() => markPhaseEnd('firstPaint'));

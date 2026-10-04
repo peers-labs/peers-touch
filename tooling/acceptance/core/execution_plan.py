@@ -1,4 +1,4 @@
-"""Resolve the immutable formal Plan binding for a Git worktree."""
+"""Resolve the mounted immutable formal Plan Version for a Git worktree."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from typing import Any
 
 
 PLAN_INPUT_REQUIRED = "EXECUTION_PLAN_INPUT_REQUIRED"
-PLAN_BINDING_REQUIRED = "WORKSPACE_PLAN_BINDING_REQUIRED"
-PLAN_BINDING_MISMATCH = "WORKSPACE_PLAN_BINDING_MISMATCH"
+PLAN_BINDING_REQUIRED = "PLAN_MOUNT_REQUIRED"
+PLAN_BINDING_MISMATCH = "PLAN_MOUNT_IDENTITY_MISMATCH"
 PLAN_INVALID = "EXECUTION_PLAN_INVALID"
 PLAN_COMPLETE = "EXECUTION_PLAN_COMPLETE"
 PLAN_BLOCKED = "EXECUTION_PLAN_BLOCKED"
@@ -189,28 +189,28 @@ def _closure_statuses(
     return (current[0] if current else None), statuses
 
 
-def _is_package_manifest(text: str) -> bool:
+def _is_plan_version(text: str) -> bool:
     return bool(
         re.search(
-            r'"kind"\s*:\s*"peers-touch-plan-package"',
+            r'"kind"\s*:\s*"peers-touch-plan-version"',
             text,
         )
     )
 
 
-def _package_status(path: Path) -> dict[str, Any]:
+def _mounted_plan_status(path: Path) -> dict[str, Any]:
     try:
         repository_root = Path(_git(path.parent, "rev-parse", "--show-toplevel"))
     except ExecutionPlanError as error:
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"cannot resolve repository for Plan Package {path}: {error}",
+            f"cannot resolve repository for Plan Version {path}: {error}",
         ) from error
     planctl = repository_root / "tooling" / "scripts" / "plan" / "planctl.mjs"
     if not planctl.is_file():
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"Plan Package parser is missing: {planctl}",
+            f"Plan Version parser is missing: {planctl}",
         )
     completed = subprocess.run(
         [
@@ -236,24 +236,24 @@ def _package_status(path: Path) -> dict[str, Any]:
         error = payload.get("error", payload)
         code = error.get("code", PLAN_INVALID)
         message = error.get("message") or completed.stderr.strip() or completed.stdout.strip()
-        raise ExecutionPlanError(code, message or f"Plan Package validation failed: {path}")
+        raise ExecutionPlanError(code, message or f"Plan Version validation failed: {path}")
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as error:
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"Plan Package parser returned invalid JSON for {path}: {error}",
+            f"Plan Version parser returned invalid JSON for {path}: {error}",
         ) from error
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"Plan Package parser returned an invalid result for {path}",
+            f"Plan Version parser returned an invalid result for {path}",
         )
     return payload
 
 
-def _load_package_plan(path: Path) -> FormalExecutionPlan:
-    payload = _package_status(path)
+def _load_plan_version(path: Path) -> FormalExecutionPlan:
+    payload = _mounted_plan_status(path)
     acceptance = payload.get("acceptance")
     if not isinstance(acceptance, dict):
         acceptance = {
@@ -266,7 +266,7 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
     if not isinstance(closures, dict) or not isinstance(closure_statuses, dict):
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"Plan Package status omitted Acceptance closures: {path}",
+            f"Plan Version status omitted Acceptance closures: {path}",
         )
     current_task_id = payload.get("currentTaskId")
     current_task_path = payload.get("currentTaskPath")
@@ -298,7 +298,7 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
     if missing:
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"Plan Package status omitted fields: {', '.join(missing)}",
+            f"Plan Version status omitted fields: {', '.join(missing)}",
         )
     source_claims = payload.get("sourceClaims")
     if (
@@ -313,12 +313,12 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
     ):
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"Plan Package status omitted valid source claims: {path}",
+            f"Plan Version status omitted valid source claims: {path}",
         )
     return FormalExecutionPlan(
         path=path,
         plan_id=required_text["planId"],
-        plan_format="package",
+        plan_format="version",
         status=required_text["status"],
         branch=required_text["branch"],
         workspace_id=required_text["workspaceId"],
@@ -336,8 +336,8 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
 def load_formal_plan(path: Path) -> FormalExecutionPlan:
     resolved = path.resolve(strict=True)
     text = resolved.read_text(encoding="utf-8")
-    if _is_package_manifest(text):
-        return _load_package_plan(resolved)
+    if _is_plan_version(text):
+        return _load_plan_version(resolved)
     metadata = _metadata(text)
     required = ["Status", "Branch", "Workspace ID", "Initial HEAD"]
     missing = [key for key in required if not metadata.get(key)]
@@ -379,18 +379,18 @@ def load_formal_plan(path: Path) -> FormalExecutionPlan:
     )
 
 
-def _workspace_plan_binding(root: Path) -> dict[str, str]:
-    script = root / "tooling" / "scripts" / "plan" / "workspace-plan-binding.mjs"
+def _workspace_plan_mount(root: Path) -> dict[str, str]:
+    script = root / "tooling" / "scripts" / "plan" / "plan-mount.mjs"
     if not script.is_file():
         raise ExecutionPlanError(
             PLAN_BINDING_REQUIRED,
-            f"workspace Plan binding resolver is missing: {script}",
+            f"workspace Plan mount resolver is missing: {script}",
         )
     completed = subprocess.run(
         [
             "node",
             str(script),
-            "resolve",
+            "status",
             "--repo-root",
             str(root),
         ],
@@ -410,31 +410,31 @@ def _workspace_plan_binding(root: Path) -> dict[str, str]:
             error.get("code", PLAN_BINDING_REQUIRED),
             error.get("message")
             or completed.stderr.strip()
-            or "workspace Plan binding is unavailable",
+            or "workspace Plan mount is unavailable",
         )
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as error:
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"workspace Plan binding resolver returned invalid JSON: {error}",
+            f"workspace Plan mount resolver returned invalid JSON: {error}",
         ) from error
-    binding = payload.get("binding")
+    mount = payload.get("mount")
     if (
         payload.get("ok") is not True
-        or not isinstance(binding, dict)
-        or not isinstance(binding.get("planId"), str)
-        or not binding["planId"]
-        or not isinstance(binding.get("planPath"), str)
-        or not binding["planPath"]
+        or not isinstance(mount, dict)
+        or not isinstance(mount.get("planId"), str)
+        or not mount["planId"]
+        or not isinstance(mount.get("planPath"), str)
+        or not mount["planPath"]
     ):
         raise ExecutionPlanError(
             PLAN_INVALID,
-            "workspace Plan binding resolver returned an invalid result",
+            "workspace Plan mount resolver returned an invalid result",
         )
     return {
-        "planId": binding["planId"],
-        "planPath": binding["planPath"],
+        "planId": mount["planId"],
+        "planPath": mount["planPath"],
     }
 
 
@@ -445,20 +445,20 @@ def discover_active_plan(
     validate_workspace: bool = True,
 ) -> FormalExecutionPlan:
     canonical = root.resolve(strict=True)
-    binding = _workspace_plan_binding(canonical)
+    mount = _workspace_plan_mount(canonical)
     try:
-        path = (canonical / binding["planPath"]).resolve(strict=True)
+        path = (canonical / mount["planPath"]).resolve(strict=True)
         path.relative_to(canonical)
     except (FileNotFoundError, ValueError) as error:
         raise ExecutionPlanError(
             PLAN_BINDING_MISMATCH,
-            "bound Plan path is missing or outside the current worktree",
+            "mounted Plan path is missing or outside the current worktree",
         ) from error
     plan = load_formal_plan(path)
-    if plan.plan_format != "package" or plan.plan_id != binding["planId"]:
+    if plan.plan_format != "version" or plan.plan_id != mount["planId"]:
         raise ExecutionPlanError(
             PLAN_BINDING_MISMATCH,
-            "bound Plan identity does not match the Plan Package",
+            "mounted Plan identity does not match the Plan Version",
         )
     selected_branch = branch or _git(
         canonical,

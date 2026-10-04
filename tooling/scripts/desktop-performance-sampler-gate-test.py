@@ -41,7 +41,7 @@ def complete_station_mirror() -> dict:
         "schemaVersion": 1,
         "source": "station-query",
         "stationUrl": "http://127.0.0.1:18080",
-        "filters": {"runtime": "browser-gateway"},
+        "filters": {"runtime": "tauri-webview-dev"},
         "summary": {"eventCount": 11, "rollupCount": 1, "maxP95DurationMs": 42},
         "rollups": [{"kind": "route.visible", "p50DurationMs": 30, "p95DurationMs": 42}],
         "events": [
@@ -202,6 +202,7 @@ class DesktopPerformanceSamplerGateTest(unittest.TestCase):
         self.assertNotIn(str(root), persisted)
         self.assertIn('"inputArtifactRefs"', persisted)
         self.assertIn('"workspaceId": "workspace"', persisted)
+        self.assertIn('"gateId": "desktop-telemetry-mirror-template-gate"', persisted)
 
     def test_missing_station_mirror_is_partial_unproven(self) -> None:
         module = load_sampler_module()
@@ -329,8 +330,11 @@ class DesktopPerformanceSamplerGateTest(unittest.TestCase):
                     "command": "make desktop",
                 },
                 {
-                    "purpose": "Run the live Gateway -> Station telemetry gate and write the Dev/CI mirror artifact.",
-                    "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py --mirror-prefix tooling/acceptance/reports/desktop-performance-latest",
+                    "purpose": "Query Station telemetry into an explicit Dev/CI mirror.",
+                    "command": (
+                        "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                        "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+                    ),
                 },
             ]
             evidence_details = [
@@ -403,7 +407,14 @@ class DesktopPerformanceSamplerGateTest(unittest.TestCase):
         self.assertEqual(station_source["sourceProofStatus"], "UNPROVEN")
         self.assertEqual(station_source["evidenceDetails"][0]["step"], "station-query-template")
         self.assertTrue(
-            any("desktop-telemetry-live-gate.py --mirror-prefix" in item["command"] for item in station_source["recommendedReviewCommands"])
+            any(
+                item["command"]
+                == (
+                    "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                    "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+                )
+                for item in station_source["recommendedReviewCommands"]
+            )
         )
 
     def test_dom_anchor_blocker_keeps_sampler_gate_unproven_before_station_mirror_sampling(self) -> None:
@@ -441,7 +452,7 @@ class DesktopPerformanceSamplerGateTest(unittest.TestCase):
                                 {
                                     "runtimeCell": "tauri-webview-dev",
                                     "blockedByStep": "tauri-webview-dev.dom_anchors",
-                                    "blockedByGate": "Browser and Tauri/WebView DOM automation must prove every required anchor by selector and count",
+                                    "blockedByGate": "Native Tauri DOM automation must prove every required anchor by selector and count",
                                     "proofStatus": "UNPROVEN",
                                     "provenCount": 0,
                                     "requiredCount": 9,

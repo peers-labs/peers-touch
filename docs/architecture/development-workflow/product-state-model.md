@@ -3,7 +3,7 @@
 > **Status**: active
 > **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
-> **Module**: `apps/dev/`
+> **Module**: `tooling/scripts/local-dev/workflow-snapshot.mjs`
 
 ---
 

@@ -10,7 +10,8 @@
 
 ## 1. Document Scope
 
-本目录是 Peers-Touch Agent 架构层正式入口，定义跨 Desktop Web、Desktop Rust、Station 的 Agent 能力边界、设计目标、执行计划和历史参考。
+本目录是 Peers-Touch Agent 架构层正式入口，定义跨 Desktop embedded
+WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标、执行计划和历史参考。
 
 本目录不定义：
 

@@ -110,12 +110,6 @@ per restart request. Reusing the parent manifest, observing the same boot
 identity, changing retained-storage identity, or missing owner acknowledgement
 is terminal evidence failure.
 
-Browser network capture remains finite even when WebSocket/SSE stays open. The
-observer persists all events under monotonic sequence numbers, then persists a
-same-event-loop terminal marker after the production action returns. The
-captured interval ends at the marker sequence. Quiet periods, sleeps, and
-stream closure are forbidden completion rules.
-
 Fixture acquisition occurs before scenario admission. Missing account,
 Station, revocation, or historical-recovery handles return
 `FIXTURE_CAPABILITY_UNAVAILABLE`. A scenario cannot repair that blocker by

@@ -14,7 +14,7 @@
 |---|---|---|---|---|
 | Station already owns turn persistence, prompt assembly, provider execution, tool iteration, messages, and TurnTrace | `verified_fact` | `TurnService`, persistence models, handlers | high | Full production E2E |
 | Station already has memory, skill, knowledge, compression, error recovery, growth, and review foundations | `verified_fact` | Agent service tree and architecture sources | high | Cross-capability E2E |
-| Desktop App has a Station SSE bridge while browser gateway mode still uses a one-shot turn path | `verified_fact` | Desktop Rust `agent_turn`; Web `streamAgentTurn` | high | Browser runtime trace |
+| Native Desktop uses the Station SSE bridge as its only product turn path | `verified_fact` | Desktop Rust `agent_turn`; renderer `streamAgentTurn` | high | Full Native runtime trace |
 | Desktop retains local CLI execution and in-memory Agent chat state that conflict with Station truth | `verified_fact` | Desktop `agent_turn`, provider, and chat modules | high | Consumer deletion audit |
 | Current client execution envelopes omit trusted replay policy and receipt-recovery authority | `verified_fact` | `model/domain/agent/agent.proto#ClientCapabilityRequest`; G1-C entry audit | high | None |
 | Current Station receipt validation rejects all receipts after the execution deadline | `verified_fact` | `ToolDispatchService.validateReceiptTuple` | high | Recovery-path implementation |
@@ -27,7 +27,7 @@
 | Production restart cannot replay externally idempotent PREPARED work because the restored context has terminal-only authority | `verified_fact` | G1-C audit of `desktop_executor_worker/supervisor.rs` and `fenced_executor.rs` | high | None |
 | A new Station-fenced takeover can restore execution authority without broadening the recovery credential | `accepted_decision` | MCA-D19C in `decisions.md` | high | Deterministic takeover race evidence |
 | Provider/model filtering and TurnTrace cannot prove P12/CLI non-advertisement or zero local runtime side effects | `verified_fact` | XR-4 source audit and rejected weak adapter | high | Production snapshot implementation |
-| Production-owned advertisement and monotonic activity snapshots make conditional-runtime absence falsifiable without enabling the runtime | `accepted_decision` | MCA-D19D in `decisions.md` | high | XR-4 Native/Browser evidence |
+| Production-owned advertisement and monotonic activity snapshots make conditional-runtime absence falsifiable without enabling the runtime | `accepted_decision` | MCA-D19D in `decisions.md` | high | XR-4 Native Desktop evidence |
 | J01-J06 rows currently force legacy client-bound ToolCall facts onto contract, control-plane, unavailable, Station-executor, and Evaluation paths | `verified_fact` | Runtime matrix plus `acceptance-validate.py` profile fallback | high | None |
 | Explicit runtime-truthful profiles and unique execution identity preserve tuple scope without fabricated evidence | `accepted_decision` | MCA-D21 in `decisions.md` | high | Full formal rerun |
 | One run-scoped Acceptance scenario authority can coordinate reviewed capability-operation barriers without becoming product truth | `accepted_decision` | MCA-D23 in `decisions.md` | high | J03-J05 formal candidates |

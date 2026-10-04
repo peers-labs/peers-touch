@@ -1,22 +1,17 @@
 # Nonblocking Agent Integration Control Actions
 
-> **Status**: active
-> **Branch**: fix/nonblocking-agent-integration
-> **Workspace ID**: 23d863a02a53c299
-> **Initial HEAD**: c7e712fb8c60197dcab9c265e3687f1e58c5a988
+> **Plan ID**: DWF-NONBLOCKING-INTEGRATION-20261004
+> **Version ID**: DWF-NONBLOCKING-INTEGRATION-20261004-v1
+> **Created**: 2026-10-04T14:35:00.000Z
 
-## Plan Package
+## Plan Version
 
 ```json
 {
-  "kind": "peers-touch-plan-package",
+  "kind": "peers-touch-plan-version",
   "planId": "DWF-NONBLOCKING-INTEGRATION-20261004",
-  "status": "active",
-  "binding": {
-    "branch": "fix/nonblocking-agent-integration",
-    "workspaceId": "23d863a02a53c299",
-    "initialHead": "c7e712fb8c60197dcab9c265e3687f1e58c5a988"
-  },
+  "versionId": "DWF-NONBLOCKING-INTEGRATION-20261004-v1",
+  "createdAt": "2026-10-04T14:35:00.000Z",
   "workClass": "infrastructure",
   "architecture": {
     "sources": [
@@ -119,9 +114,7 @@
       "id": "DWF-NBI01-CONTROL-ACTIONS",
       "workstreamId": "DWF-INTEGRATION-CONTROL",
       "path": "tasks/DWF-NBI01-CONTROL-ACTIONS.md",
-      "dependsOn": [],
-      "status": "done",
-      "blocker": null
+      "dependsOn": []
     },
     {
       "id": "DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER",
@@ -129,9 +122,7 @@
       "path": "tasks/DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER.md",
       "dependsOn": [
         "DWF-NBI01-CONTROL-ACTIONS"
-      ],
-      "status": "in_progress",
-      "blocker": null
+      ]
     },
     {
       "id": "DWF-NBI03-PROOF-DELIVERY",
@@ -139,12 +130,9 @@
       "path": "tasks/DWF-NBI03-PROOF-DELIVERY.md",
       "dependsOn": [
         "DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER"
-      ],
-      "status": "pending",
-      "blocker": null
+      ]
     }
   ],
-  "exhaustion": null,
   "authorization": {
     "checkpoint": {
       "localCommit": "allowed",

@@ -25,7 +25,7 @@
     ],
     "visible": [
       "MCP failures and cleanup failures remain visible and actionable",
-      "unsupported Browser and Mobile-local MCP behavior is disclosed before execution"
+      "unsupported Secondary and Mobile-local MCP behavior is disclosed before execution"
     ]
   },
   "negative": [

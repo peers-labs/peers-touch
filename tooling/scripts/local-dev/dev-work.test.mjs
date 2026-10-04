@@ -34,7 +34,6 @@ import {
   parseRuntimeClaims,
   RUNTIME_KINDS,
 } from './dev-work-schema.mjs';
-import { workspacePlanBindingPath } from '../plan/workspace-plan-binding.mjs';
 
 const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
 const CANONICAL_RUNTIME_KINDS = [
@@ -93,6 +92,7 @@ function options(scope, overrides = {}) {
     sourceClaims:
       'exclusive-write:tooling/scripts/local-dev;shared-read:docs/architecture',
     runtimeClaims: 'shared:station.connect:station-four',
+    planExecution: null,
     clock: clock(),
     ...overrides,
   };
@@ -142,7 +142,7 @@ test('publishes a closed declaration with owner-only storage', () => {
   }
 });
 
-test('publishes and validates an explicit Plan locator without rewriting legacy declarations', () => {
+test('publishes and validates an explicit closed Plan locator', () => {
   const scope = fixture();
   try {
     const planStatus = {
@@ -150,29 +150,40 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
       currentTaskId: 'DWF-T1',
       workspaceId: 'unused',
       branch: 'merge-desktop-prototype',
+      planVersionDigest: 'a'.repeat(64),
+      mountId: 'mount-test',
+      runId: 'run-test',
+      status: 'active',
+      taskStatuses: { 'DWF-T1': 'in_progress' },
     };
     planStatus.workspaceId = startOrUpdateDeclaration(options(scope)).workspaceId;
-    const planBinding = {
-      planId: planStatus.planId,
-      planPath: 'docs/architecture/example/execution-plans/test/plan.md',
+    const planExecution = {
+      mount: {
+        planId: planStatus.planId,
+        planPath: 'docs/architecture/example/execution-plans/test/plan.md',
+        planVersionDigest: planStatus.planVersionDigest,
+        mountId: planStatus.mountId,
+      },
+      run: { runId: planStatus.runId },
     };
     const legacy = statusCurrent({
       home: scope.home,
       workspaceRoot: scope.workspaceA,
       clock: clock(),
     }).declarations[0];
-    assert.equal(Object.hasOwn(legacy, 'planPath'), false);
+    assert.equal(Object.hasOwn(legacy, 'planPath'), true);
+    assert.equal(legacy.planPath, null);
 
     const tracked = startOrUpdateDeclaration(
       options(scope, {
         workItemId: 'tracked-task',
         sessionId: 'tracked-session',
-        sourceClaims: 'exclusive-write:apps/dev',
+        sourceClaims: 'exclusive-write:apps/desktop',
         runtimeClaims: '',
         planPath: 'docs/architecture/example/execution-plans/test/plan.md',
         taskId: 'DWF-T1',
         planStatus,
-        planBinding,
+        planExecution,
       }),
     );
     assert.deepEqual(
@@ -192,7 +203,7 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
       options(scope, {
         workItemId: 'tracked-task',
         sessionId: 'tracked-session',
-        sourceClaims: 'exclusive-write:apps/dev',
+        sourceClaims: 'exclusive-write:apps/desktop',
         runtimeClaims: '',
         planPath: tracked.planPath,
         planId: tracked.planId,
@@ -203,7 +214,7 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
           currentTaskId: null,
           taskStatuses: { 'DWF-T1': 'done' },
         },
-        planBinding,
+        planExecution,
       }),
       { requireExisting: true },
     );
@@ -219,7 +230,7 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
           planPath: 'docs/architecture/example/execution-plans/test/plan.md',
           taskId: 'DWF-T2',
           planStatus,
-          planBinding,
+          planExecution,
         }),
       ),
     );
@@ -238,7 +249,7 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
             ...planStatus,
             planId: 'FOREIGN-PLAN',
           },
-          planBinding,
+          planExecution,
         }),
       ),
     );
@@ -250,15 +261,16 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
 test('a Plan-bound workspace cannot publish untracked work', () => {
   const scope = fixture();
   try {
-    const bindingFile = workspacePlanBindingPath({
-      home: scope.home,
-      repoRoot: scope.workspaceA,
-    });
-    mkdirSync(path.dirname(bindingFile), { recursive: true });
-    writeFileSync(bindingFile, '{}\n');
-
     expectCode('WORKSPACE_PLAN_DECLARATION_REQUIRED', () =>
-      startOrUpdateDeclaration(options(scope)),
+      startOrUpdateDeclaration(
+        options(scope, {
+          planExecution: {
+            mount: { mountId: 'mount-test' },
+            snapshot: { planId: 'DWF-PLAN' },
+            run: { runId: 'run-test', state: 'active' },
+          },
+        }),
+      ),
     );
   } finally {
     scope.close();
@@ -663,7 +675,7 @@ test('source claims reject symlink escape through the nearest existing parent', 
   }
 });
 
-test('migrates legacy root claims only for terminal declarations', () => {
+test('rejects legacy root claims for terminal declarations', () => {
   const scope = fixture();
   try {
     const declaration = startOrUpdateDeclaration(options(scope));
@@ -685,15 +697,6 @@ test('migrates legacy root claims only for terminal declarations', () => {
     legacy.declarationDigest = digestDeclaration(legacy);
     writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
 
-    const migrated = readLedger(ledgerFile);
-    assert.deepEqual(
-      migrated.declarations[declaration.declarationId].sourceClaims,
-      [],
-    );
-
-    legacy.state = 'ACTIVE';
-    legacy.declarationDigest = digestDeclaration(legacy);
-    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
     expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
   } finally {
     scope.close();

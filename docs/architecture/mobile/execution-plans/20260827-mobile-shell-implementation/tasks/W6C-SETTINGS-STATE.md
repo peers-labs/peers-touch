@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W6C-SETTINGS-STATE",
   "workstreamId": "W6C",
@@ -58,29 +58,7 @@
     "Do not invent account-preference endpoints or media auto-download policy",
     "Owner-blocked block/unblock/list/status controls remain unavailable"
   ],
-  "updatedAt": "2026-09-17T04:07:00Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/runtimes/deviceSettingsRuntime.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/settings/SettingsPage.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/settings/SettingsSections.test.tsx"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/settings/useSettingsController.test.ts"
-    }
-  ]
+  "updatedAt": "2026-09-17T04:07:00.000Z"
 }
 ```
 

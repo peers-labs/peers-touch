@@ -34,8 +34,8 @@ Peers Touch Desktop 已经具备 `PageHost`、`PageDescriptor`、`RuntimeDescrip
 - 主侧栏和 Settings tabs 切换粘滞，说明隐藏 alive tree、宽 store 订阅或重 section 挂载在同一帧竞争。
 - Applet runtime 页面能跑，但容器产品语义不足，缺少独立运行、容器内全屏和浮动退出/隐藏控制的正式宿主模型。
 - 性能问题只能靠人工截图和体感反馈定位，缺少 route-to-visible、long task、hidden render、mount cost 等内建证据。
-- 历史上曾观察到 native 与 desktop-web 的性能差异；D-18 已删除
-  desktop-web 支持，该历史差异不能证明 WKWebView IPC、Rust handler、
+- 历史上曾观察到 Native 与非 Native baseline 的性能差异；D-18 已删除
+  非 Native Desktop runtime，该历史差异不能证明 WKWebView IPC、Rust handler、
   React/store 或日志/event 放大中的任何一项是唯一根因。
 
 这些问题不是传统 JS 层面的局部优化问题，而是大前端运行时问题：Shell、页面实例、业务投影、嵌入式运行容器、资源 lease、预热、保活、回收和观测必须由同一个架构模型管理。

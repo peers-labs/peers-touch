@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W7-RUNTIME-FENCING",
   "workstreamId": "W7",
@@ -64,34 +64,7 @@
     "Do not accept simulator evidence as physical native proof",
     "Required simulator platform proof remains in W7-PROOF; physical execution is optional diagnostics"
   ],
-  "updatedAt": "2026-09-17T02:55:00Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/runtimes/nativeLifecycleBridge.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/runtimes/mobileNativeEventBridge.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/runtimes/runtimeRegistry.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/scripts/ios_native_correctness_test.py"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src-tauri/src/platform/network_bridge.rs"
-    }
-  ]
+  "updatedAt": "2026-09-17T02:55:00.000Z"
 }
 ```
 

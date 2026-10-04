@@ -456,7 +456,7 @@ Phase 0 构建了 acceptance/dev telemetry pipeline：客户端采集 → Statio
 ### Rationale
 
 - 符合 [architecture.md](../../global/architecture.md) 的所有权规则：跨端共享证据由 Station 侧统一收敛；device-local runtime 仍只负责采集和本地调试缓冲。
-- 原始事件保留使得跨 runtime（browser-gateway vs tauri-webview-dev vs tauri-webview-packaged）、跨版本、跨设备的对比成为可能。
+- 原始事件保留使得跨 Native runtime（tauri-webview-dev vs tauri-webview-packaged）、跨版本、跨设备的对比成为可能。
 - 本地聚合无法支持多 runtime / 多版本场景下的一致 gate 判定。
 - D-06 要求"归因到 page/section/runtime/store subscription"，只有原始事件才能做到细粒度归因。
 
@@ -519,15 +519,16 @@ InvokeThrottler 的安全关键路径 bypass 必须是 **静态 allowlist**：
 
 ### Context
 
-用户持续观察到 Desktop native 的输入和标签切换明显慢于 desktop-web。
-该差异证明 native 与 browser/gateway runtime 之间存在性能边界差异，但不能
-单独证明 WKWebView IPC、同步 Rust handler、日志/event 放大、React/store、
-WebView 合成或 packaged runtime 中任一因素是唯一根因。
+用户持续观察到 Desktop native 的输入和标签切换延迟。历史 browser baseline
+曾用于辅助定位测量误差，但 D-18 生效后该 runtime 不再属于产品架构或当前证据
+矩阵。Native 证据必须直接区分 WKWebView IPC、同步 Rust handler、日志/event
+放大、React/store、WebView 合成和 packaged runtime。
 
 当前仓库证据进一步表明：
 
-- 正式 performance matrix 将 `tauri-webview-dev` / `tauri-webview-packaged` cells 标记为
-  `diagnostic incomplete`，browser 证据不能替代 native。
+- 正式 performance matrix 只包含 `tauri-webview-dev` /
+  `tauri-webview-packaged` cells，任一 Native cell 缺失都保持
+  `diagnostic incomplete`。
 - 现有 Tauri Playwright 证据只覆盖一次右键菜单交互，不覆盖输入、主导航和
   Settings/Cron tabs。
 - 一份标记为 `tauri-webview-dev` 的 Station mirror 报告只有 rollup，目标
@@ -546,9 +547,8 @@ Tauri-invoke-only、固定线程池或全 async rewrite 作为终态架构决策
 
 - `tauri-webview-dev`
 - packaged native
-- `browser-gateway`
 
-三类 runtime cell 的 interaction-linked raw evidence，并能区分：
+两类 Native runtime cell 的 interaction-linked raw evidence，并能区分：
 
 - input/intent 到 visible paint
 - React commit、store fanout、hidden render 和 long task
@@ -578,12 +578,13 @@ Tauri-invoke-only、固定线程池或全 async rewrite 作为终态架构决策
 
 ### Evidence Gate Resolution (2026-07-20)
 
-P0c-3 同 cohort evidence matrix (browser-gateway N=30, tauri-webview-dev N=30) 证明：
+历史 P0c-3 对照采样曾包含 browser baseline；该数据只保留为 2026-07-20
+根因调查记录，不再是当前 Desktop proof input。Native 样本证明：
 
-- text-input P95: browser=16ms, native=33ms (Δ=17ms, 全部为 setTimeout vs rAF 测量差)
-- primary-nav P95: browser=9ms, native=36ms (Δ=27ms, 含 32ms paint confirmation baseline)
-- secondary-tab P95: browser=41ms, native=52ms (Δ=11ms, minimal)
-- overlay P95: browser=0.1ms, native=1ms (equivalent)
+- text-input P95: native=33ms
+- primary-nav P95: native=36ms
+- secondary-tab P95: native=52ms
+- overlay P95: native=1ms
 
 **结论**: 不存在 native-specific transport/IPC 瓶颈。原始"native 很卡"的根因是
 `scheduleRouteVisible` 的 120ms setTimeout 兜底 bug（已修复为 `scheduleAfterPaint`）。

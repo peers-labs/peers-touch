@@ -201,7 +201,7 @@ Desktop Page
 Station delivery row created
   -> realtime event: moment.created
   -> desktop-rust event stream bridge
-  -> desktop-web eventBus
+  -> embedded WebView renderer eventBus
   -> momentsRuntime consumes
   -> momentsStore feed projection updated
   -> navigationBadge updated

@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W6B-FEED-RECOVERY",
   "workstreamId": "W6B",
@@ -50,19 +50,7 @@
     "Do not silently convert a failure into end-of-list",
     "Policy-hidden producer semantics remain owner-blocked"
   ],
-  "updatedAt": "2026-09-17T03:16:00Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/features/social/momentsFeedStore.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/MomentsPage.test.ts"
-    }
-  ]
+  "updatedAt": "2026-09-17T03:16:00.000Z"
 }
 ```
 

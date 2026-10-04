@@ -182,8 +182,8 @@ no GitHub Review `SKILL.md` rule change is required.
 
 Desktop navigation ownership now removes the standalone Notes host page and
 makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
-Palette access. The dedicated browser Gate has an exact-source Runtime Manifest
-and cleanup contract, while the official Note applet remains unchanged.
+Palette access. The dedicated Native Desktop Gate has an exact-source Runtime
+Manifest and cleanup contract, while the official Note applet remains unchanged.
 Existing Desktop, locale, source-of-truth, and Acceptance evidence rules already
 cover this change, so no `SKILL.md` or review fixture update is required.
 
@@ -198,8 +198,8 @@ credential storage, exact-source Acceptance, and evidence freshness, so no
 
 Desktop navigation ownership now removes the standalone Notes host page and
 makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
-Palette access. The dedicated browser Gate has an exact-source Runtime Manifest
-and cleanup contract, while the official Note applet remains unchanged.
+Palette access. The dedicated Native Desktop Gate has an exact-source Runtime
+Manifest and cleanup contract, while the official Note applet remains unchanged.
 Existing Desktop, locale, source-of-truth, and Acceptance evidence rules already
 cover this change, so no `SKILL.md` or review fixture update is required.
 
@@ -458,11 +458,13 @@ with profile occupancy retained as a secondary capacity view. PR review
 severity and fixtures remain unchanged; `review/skill-check.sh`, Plan tests,
 Local Dev tests, and dashboard tests own the executable contract.
 
-Peers Dev now owns that projection as a first-class `apps/dev` application with
-one fixed machine endpoint and a fail-closed server identity contract. Concurrent
-read-only lease observers use shared locks so they do not impersonate live
-exclusive holders. These changes preserve existing review severity and require
-no new review fixture.
+At that point Peers Dev owned the projection as a first-class browser
+application with one fixed machine endpoint and a fail-closed server identity
+contract. LDCP-D19 later retired that application and endpoint; the retained
+history does not authorize restoring either. Concurrent read-only lease
+observers use shared locks so they do not impersonate live exclusive holders.
+These changes preserve existing review severity and require no new review
+fixture.
 
 Plan-aware observability adds an explicit declaration-to-Plan locator, a
 read-only Development Session bridge for mixed-version rollout, typed legacy

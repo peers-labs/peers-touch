@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W6B-MEDIA-RENDER",
   "workstreamId": "W6B",
@@ -53,24 +53,7 @@
     "Do not duplicate media cryptography in Mobile",
     "Descriptor-bearing restored drafts and private-audience envelopes remain owner-blocked"
   ],
-  "updatedAt": "2026-09-17T03:40:00Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/services/gateways/momentMediaGateway.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/moments/MomentImage.test.tsx"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/moments/MomentFeedItem.test.ts"
-    }
-  ]
+  "updatedAt": "2026-09-17T03:40:00.000Z"
 }
 ```
 

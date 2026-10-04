@@ -59,7 +59,7 @@ peers-touch/
 | Tool | Purpose |
 |------|---------|
 | Go (latest stable) | Station backend |
-| Node.js + pnpm | Desktop web, tooling scripts |
+| Node.js + pnpm | Desktop embedded renderer, tooling scripts |
 | Rust + Cargo | Desktop/Mobile Tauri shell |
 | protoc + plugins | Proto generation |
 | PostgreSQL | Station database |
@@ -85,7 +85,7 @@ pnpm install
 # Station
 cd apps/station && go test ./...
 
-# Desktop web
+# Desktop embedded renderer
 cd apps/desktop && pnpm run check && pnpm run build
 
 # Proto generation

@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W6B-STATE",
   "workstreamId": "W6B",
@@ -47,19 +47,7 @@
     "Do not map an authoritative deletion to generic unavailable state",
     "Policy-hidden and encrypted-media owner contracts remain in W6B"
   ],
-  "updatedAt": "2026-09-16T14:45:15Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/features/social/momentsFeedStore.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/runtimes/socialProjectionRuntime.test.ts"
-    }
-  ]
+  "updatedAt": "2026-09-16T14:45:15.000Z"
 }
 ```
 

@@ -99,7 +99,7 @@ For any module-level or architecture-level demand, `.trae/documents/` is not suf
 This protocol applies when a request includes any of the following:
 
 - New product capability set or major feature rebuild.
-- Cross-layer work touching more than one of Desktop Web, Desktop Rust, Station, Model, packages, or applets.
+- Cross-layer work touching more than one of Desktop Renderer, Desktop Rust, Station, Model, packages, or applets.
 - Architecture landing, migration, domain decomposition, runtime ownership, persistence, public API, protocol, or directory boundary changes.
 - Large UI / UX redesign that changes product workflow or module ownership.
 - Benchmark-driven rebuilds from an external project, such as LobeHub-style Agent capability mapping.
@@ -128,12 +128,12 @@ Example:
 ## 4. Thinking Principles
 
 1. **Rationality over minimalism** — Architectural soundness is the goal, not minimum change.
-2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `dev-desktop-web.sh`, `pt.sh`, etc.).
+2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `pt.sh`, etc.).
 3. **Architecture design methodology** — For architecture design / system boundaries / ownership / contracts / topology / design decisions, **MUST** use `pt-architecture-design-methodology` skill before execution planning.
 4. **Architecture execution methodology** — For architecture landing / migration / domain decomposition, **MUST** use `pt-architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
 5. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.
 6. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
-7. **Desktop debug uses Make** — During investigation, lifecycle debugging, browser/app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop` (or `make desktop-web` only when the task explicitly needs the browser shell). Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
+7. **Desktop debug uses Make** — During investigation, lifecycle debugging, native app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop`. Desktop has no supported browser shell. Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
 8. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
 9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
 10. **Acceptance Infra ownership first** — Acceptance Core, planner, validator, runner, Evidence Store, lifecycle, and framework tooling work MUST use `pt-acceptance-infra-engineering`. Infra defines and validates injection contracts; it MUST NOT create, repair, weaken, or complete business Domain injection. Business Acceptance onboarding and proof remain with `pt-acceptance-engineering`.

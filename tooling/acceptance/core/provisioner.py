@@ -154,8 +154,6 @@ def resolve_machine_profile_environment(
     port_fields = {
         "desktopAppGateway": "PT_DESKTOP_APP_GATEWAY_PORT",
         "desktopAppWeb": "PT_DESKTOP_APP_WEB_PORT",
-        "desktopWebGateway": "PT_DESKTOP_WEB_GATEWAY_PORT",
-        "desktopWebWeb": "PT_DESKTOP_WEB_WEB_PORT",
         "mobileWeb": "PT_MOBILE_WEB_PORT",
     }
     values["PT_DEV_SLOT"] = str(slot)

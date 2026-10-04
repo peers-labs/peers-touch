@@ -32,6 +32,9 @@
     "apps/desktop/src/pages/login/views/**",
     "apps/station/app/conf/actor.yml",
     "apps/station/frame/touch/actor/seed.go",
+    "apps/station/app/subserver/social/handler.go",
+    "apps/station/app/subserver/social/domain/federated_friend_request.go",
+    "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
     "apps/station/app/subserver/conversation/application/command/projections.go",
     "packages/messaging-core/src/store/schema.rs"
   ],
@@ -51,6 +54,7 @@
       "current-profile parity proof launches peers-group-chat and peers-chat-high-chat as distinct synchronized worktrees, with peers-group-chat initiating the journey",
       "a restorable native account cold-launches into the authenticated shell without provider credentials, while PIN-protected and sessionless accounts retain their distinct gates",
       "native onboarding starts from canonical stranger state, shows stable local, federated-handle, and Station-scoped identity, and converges through reject, retry, accept, one Direct conversation, and exact plaintext",
+      "native onboarding submits, lists, rejects, retries, accepts, and reads back the friend-request lifecycle through the production Desktop and Station Social owners",
       "CHAT-UR08: Native Contacts consolidates request attempts by counterparty PTID, exposes current state and attempt count, and keeps terminal history selectable",
       "CHAT-UR09: Native contact identity renders the authoritative Station name in summaries and exposes raw identity values only in expandable copyable details",
       "CHAT-UR10: Direct Chat renders authoritative Station names and snapshot-plus-event presence, while keeping raw IDs in expandable technical details",

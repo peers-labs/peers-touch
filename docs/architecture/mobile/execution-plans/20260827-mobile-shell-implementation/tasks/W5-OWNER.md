@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W5-OWNER",
   "workstreamId": "W5",
@@ -98,44 +98,7 @@
     "Do not retain a retired Group fallback for rollback",
     "Required simulator runtime proof remains in W5-PROOF and W6A-PROOF; physical proof is optional diagnostics"
   ],
-  "updatedAt": "2026-09-19T05:50:00.000Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "docs/architecture/api-ownership/proposals/20260918-conversation-member-authority.md"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "pnpm --dir apps/mobile exec vitest run (91 files, 659 tests); focused Group/chat slice (11 files, 50 tests)"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib --offline messaging (77 tests); cargo test --manifest-path packages/messaging-core/Cargo.toml --offline (110 unit + 2 integration tests)"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "pnpm --dir apps/mobile run check"
-    },
-    {
-      "verificationClass": "STRUCTURAL_CHECK",
-      "result": "PASS",
-      "ref": "python3 -m unittest apps/mobile/scripts/check_mobile_shell_contracts_test.py; pnpm --dir apps/mobile run check:mobile-shell-contracts; zero production references to group_member_update, group_ownership_transfer, /group-chat/member/update, or /group-chat/ownership/transfer"
-    },
-    {
-      "verificationClass": "STRUCTURAL_CHECK",
-      "result": "PASS",
-      "ref": "AO-D10A accepted; generated Go/Desktop TS/Mobile TS contracts include member-authority proposal and local-or-proposal route envelopes"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "cd apps/station/app && go test -count=1 ./subserver/conversation/..."
-    }
-  ]
+  "updatedAt": "2026-09-19T05:50:00.000Z"
 }
 ```
 

@@ -82,7 +82,7 @@
         "desktop-ui-source"
       ],
       "targetSelectors": [
-        "desktop-web"
+        "desktop-native"
       ],
       "journeySelectors": [
         "agent-product-journey"

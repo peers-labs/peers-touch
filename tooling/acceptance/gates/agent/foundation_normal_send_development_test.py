@@ -5,6 +5,7 @@ import unittest
 
 from tooling.acceptance.gates.agent.foundation_normal_send_development import (
     NormalSendError,
+    ROOT,
     evaluate_normal_send,
 )
 
@@ -158,6 +159,16 @@ class NormalSendDevelopmentTest(unittest.TestCase):
             "clientRestartReplayMatches",
         ):
             evaluate_normal_send(capture)
+
+    def test_cleanup_uses_only_native_desktop_stop(self) -> None:
+        source = (
+            ROOT
+            / "tooling/acceptance/gates/agent/"
+            "foundation_normal_send_development.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"desktop", "stop"', source)
+        self.assertNotIn('"--mode"', source)
 
 
 if __name__ == "__main__":

@@ -128,7 +128,7 @@ handle.
 HomeStationProvisioner
   -> enables the existing capability scenario controller for one run
   -> launches an Acceptance-capable Desktop Rust executor when required
-  -> supplies one primary actor and distinct Native/Browser device identities
+  -> supplies one primary actor and distinct Native Desktop device identities
 
 Desktop Harness
   -> prepares one reviewed J03/J04/J05 tuple through Station

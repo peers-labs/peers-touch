@@ -20,11 +20,15 @@
     {"type": "desktop", "route": "federation governance page"},
     {"type": "desktop", "route": "find people modal"}
   ],
-  "required_gates": ["desktop-check", "federation-desktop-gateway-smoke"],
+  "required_gates": [
+    "desktop-check",
+    "station-access-federation-boundary-e2e"
+  ],
   "acceptance": {
-    "gateway": [
-      "active station points to the expected fedp5 station",
-      "station_probe returns online peer identity",
+    "native": [
+      "the native Desktop client consumes one explicit Federation context",
+      "scoped search and resolve preserve Federation and Home Station identity",
+      "Direct and Group creation use the selected Federation context",
       "Federation Catalog decodes the direct typed protobuf response"
     ],
     "visible": [
@@ -34,7 +38,7 @@
     ]
   },
   "negative": [
-    "Desktop must not silently connect to the wrong Station",
+    "Desktop must not silently select a different Federation or Station",
     "Federation Catalog must not decode a direct typed response as a PeersResponse envelope",
     "UI labels must not hide Station Federation or Actor identity context"
   ]

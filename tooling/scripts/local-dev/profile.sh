@@ -134,8 +134,6 @@ case "$cmd" in
     station_port=$((18080 + slot * 100))
     desktop_gw=$((3030 + slot * 100))
     desktop_web=$((3210 + slot * 100))
-    desktop_web_gw=$((3031 + slot * 100))
-    desktop_web_vite=$((3211 + slot * 100))
     mobile_web=$((5173 + slot * 100))
 
     temporary_profile="$(mktemp "$PROFILES_DIR/.${name}.XXXXXX")"
@@ -175,8 +173,6 @@ PT_BOOTSTRAP_NODES=
 # Desktop
 PT_DESKTOP_APP_GATEWAY_PORT=$desktop_gw
 PT_DESKTOP_APP_WEB_PORT=$desktop_web
-PT_DESKTOP_WEB_GATEWAY_PORT=$desktop_web_gw
-PT_DESKTOP_WEB_WEB_PORT=$desktop_web_vite
 
 # Mobile
 PT_MOBILE_WEB_PORT=$mobile_web

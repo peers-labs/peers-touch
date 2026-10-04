@@ -4,7 +4,6 @@ title: Active work state belongs to the consuming workspace
 status: active
 owns:
   - AGENTS.md
-  - apps/dev/
   - tooling/make/local-dev.mk
   - tooling/scripts/lib/machine-dev-paths.mjs
   - tooling/scripts/local-dev/active-work-store.mjs
@@ -36,10 +35,10 @@ and is the sole writer of:
 ```
 
 The record is a closed, revisioned, digest-protected projection derived from
-the immutable Plan binding, current Plan/Task, active declaration, Development
+the current PlanMount, Execution Run, active declaration, Development
 Session and Git HEAD. Callers cannot submit arbitrary progress JSON.
 
-Project memory, chat Context Anchors and Peers Dev are read-only projections.
+Project memory, chat Context Anchors and Workflow Snapshot are read-only projections.
 They may enumerate workspace records, but no operation may rewrite a shared
 cross-workspace `active_work` table or another workspace's record.
 
@@ -62,14 +61,14 @@ record instead of preserving worktree isolation.
   isolation tests pass.
 - `rg -n 'project_memory\\.md.*active_work|active_work.*project_memory\\.md' AGENTS.md tooling/skills docs/global/workflow.md`
   finds no normal runtime writer contract.
-- Peers Dev reads `active-work.json` records through
+- Workflow Snapshot reads `active-work.json` records through
   `readAllActiveWorkRecords`; it never writes them.
 - Rollout checks execute the installed implementation from at least two
   consuming worktrees and confirm disjoint record paths.
 
 ## Crosswalks
 
-- DWF-D18: immutable workspace Plan binding.
+- DWF-D38: PlanMount separates frozen design from execution ownership.
 - DWF-D19: advancing source identity stays outside tracked Plan content.
 - DWF-D22: workflow source distribution is separate from runtime-state
   ownership.

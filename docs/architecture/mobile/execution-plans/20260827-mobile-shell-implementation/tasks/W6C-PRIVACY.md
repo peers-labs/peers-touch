@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W6C-PRIVACY",
   "workstreamId": "W6C",
@@ -59,29 +59,7 @@
     "Blocked-user operations remain unavailable until W5-OWNER lands",
     "Native conflict proof remains in W6C-PROOF"
   ],
-  "updatedAt": "2026-09-16T14:32:52Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/services/gateways/profileGateway.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/settings/useSettingsController.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/settings/SettingsSections.test.tsx"
-    },
-    {
-      "verificationClass": "STRUCTURAL_CHECK",
-      "result": "PASS",
-      "ref": "packages/prototypes/mobile/chat/src/components/SettingDetailView.tsx"
-    }
-  ]
+  "updatedAt": "2026-09-16T14:32:52.000Z"
 }
 ```
 

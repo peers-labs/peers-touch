@@ -20,8 +20,7 @@ import {
   workspaceWorkflowPath,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
-import { loadPlanPackage } from '../plan/plan-package.mjs';
-import { resolveWorkspacePlanBinding } from '../plan/workspace-plan-binding.mjs';
+import { resolvePlanExecution } from '../plan/plan-mount.mjs';
 import { canonicalize, isObject } from './dev-work-schema.mjs';
 import { requireActiveDeclaration } from './dev-work-ledger.mjs';
 import { inspectGitWorkspace } from './git-workspace.mjs';
@@ -117,26 +116,19 @@ function assertPlanAndDeclaration(
   options,
   plan,
   declaration,
-  workspacePlanBinding,
 ) {
-  const { manifest, currentTask } = plan;
-  if (manifest.status !== 'active' || currentTask === null) {
+  const { currentTask, run } = plan;
+  if (run.state !== 'active' || currentTask === null) {
     sessionFail(
       'SESSION_PLAN_INVALID',
-      'Session requires an active package with one current Task',
-      { planId: manifest.planId, status: manifest.status },
+      'Session requires an active Execution Run with one current Task',
+      { planId: plan.plan.planId, status: run.state },
     );
   }
-  const currentEntries = manifest.tasks.filter(
-    (task) => task.status === 'in_progress',
-  );
-  if (
-    currentEntries.length !== 1 ||
-    currentEntries[0].id !== currentTask.taskId
-  ) {
+  if (run.currentTaskId !== currentTask.taskId) {
     sessionFail(
       'SESSION_PLAN_INVALID',
-      'manifest current Task does not match the loaded Task Slice',
+      'Execution Run current Task does not match the loaded Task Slice',
     );
   }
   if (options.taskId !== undefined && currentTask.taskId !== options.taskId) {
@@ -145,7 +137,7 @@ function assertPlanAndDeclaration(
       current: currentTask.taskId,
     });
   }
-  if (currentTask.planId !== manifest.planId) {
+  if (currentTask.planId !== plan.plan.planId) {
     sessionFail(
       'SESSION_IDENTITY_MISMATCH',
       'current Task does not match its Plan Package',
@@ -160,23 +152,27 @@ function assertPlanAndDeclaration(
       current: currentTask.journeyId,
     });
   }
-  const binding = manifest.binding;
   const planPath = repositoryRelative(plan.repoRoot, plan.path);
   const mismatches = {};
   for (const [field, actual] of [
     ['workspaceId', declaration.workspaceId],
     ['branch', declaration.branch],
   ]) {
-    if (binding[field] !== actual) {
-      mismatches[field] = { expected: binding[field], actual };
+    if (plan.executionBinding[field] !== actual) {
+      mismatches[field] = { expected: plan.executionBinding[field], actual };
     }
   }
   for (const [field, expected, actual] of [
-    ['declarationPlanId', manifest.planId, declaration.planId],
+    ['declarationPlanId', plan.plan.planId, declaration.planId],
     ['declarationPlanPath', planPath, declaration.planPath],
     ['declarationTaskId', currentTask.taskId, declaration.taskId],
-    ['boundPlanId', manifest.planId, workspacePlanBinding.planId],
-    ['boundPlanPath', planPath, workspacePlanBinding.planPath],
+    [
+      'planVersionDigest',
+      plan.planVersionDigest,
+      declaration.planVersionDigest,
+    ],
+    ['mountId', plan.mount.mountId, declaration.mountId],
+    ['runId', plan.run.runId, declaration.runId],
   ]) {
     if (expected !== actual) {
       mismatches[field] = { expected, actual };
@@ -255,7 +251,6 @@ async function loadBoundContext(options, dependencies = {}) {
   const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
   let declaration;
   let plan;
-  let workspacePlanBinding;
   try {
     declaration = requireActiveDeclaration({
       home: options.home,
@@ -266,43 +261,52 @@ async function loadBoundContext(options, dependencies = {}) {
       now: options.now,
       lockTimeoutMs: options.lockTimeoutMs,
     });
-    const loader = dependencies.loadPlanPackage ?? loadPlanPackage;
-    const planPath = options.planPath ?? declaration.planPath;
-    plan = await loader(planPath, {
-      repoRoot: workspaceRoot,
-      declaration,
-    });
-    const resolvePlanBinding =
-      dependencies.resolveWorkspacePlanBinding ?? resolveWorkspacePlanBinding;
-    workspacePlanBinding = await resolvePlanBinding({
+    const execution = await (
+      dependencies.resolvePlanExecution ?? resolvePlanExecution
+    )({
       repoRoot: workspaceRoot,
       home: options.home,
     });
+    const requestedPlan = options.planPath ?? declaration.planPath;
+    const requestedAbsolute = path.isAbsolute(requestedPlan)
+      ? path.resolve(requestedPlan)
+      : path.resolve(workspaceRoot, requestedPlan);
+    if (requestedAbsolute !== execution.planPackage.path) {
+      sessionFail(
+        'SESSION_IDENTITY_MISMATCH',
+        'requested Plan Version is not mounted in this workspace',
+      );
+    }
+    const currentTaskId = execution.run.currentTaskId;
+    plan = {
+      ...execution.planPackage,
+      currentTask: currentTaskId
+        ? execution.planPackage.taskSlices.get(currentTaskId)
+        : null,
+      run: execution.run,
+      mount: execution.mount,
+      executionBinding: execution.snapshot.executionBinding,
+    };
   } catch (error) {
     throw asSessionError(error);
   }
-  assertPlanAndDeclaration(
-    options,
-    plan,
-    declaration,
-    workspacePlanBinding,
-  );
+  assertPlanAndDeclaration(options, plan, declaration);
   const verifyBinding = dependencies.verifyBinding ?? defaultBindingVerifier;
   const verified = await verifyBinding({
     repoRoot: plan.repoRoot,
-    binding: plan.manifest.binding,
+    binding: plan.executionBinding,
     sourceHead: declaration.sourceHead,
   });
   if (
-    verified?.workspaceId !== plan.manifest.binding.workspaceId ||
-    verified?.branch !== plan.manifest.binding.branch ||
+    verified?.workspaceId !== plan.executionBinding.workspaceId ||
+    verified?.branch !== plan.executionBinding.branch ||
     verified?.head !== declaration.sourceHead
   ) {
     sessionFail(
       'WORKTREE_IDENTITY_MISMATCH',
       'worktree verifier result does not match Plan identity and declared source HEAD',
       {
-        binding: plan.manifest.binding,
+        binding: plan.executionBinding,
         sourceHead: declaration.sourceHead,
         verified,
       },
@@ -338,10 +342,10 @@ export async function startDevelopmentSession(options, dependencies = {}) {
     {
       sessionId: declaration.sessionId,
       workItemId: declaration.workItemId,
-      planId: plan.manifest.planId,
+      planId: plan.plan.planId,
       taskId: plan.currentTask.taskId,
-      workspaceId: plan.manifest.binding.workspaceId,
-      branch: plan.manifest.binding.branch,
+      workspaceId: plan.executionBinding.workspaceId,
+      branch: plan.executionBinding.branch,
       journeyId: plan.currentTask.journeyId,
       executionMode: plan.currentTask.executionMode,
     },
@@ -399,15 +403,15 @@ export async function transitionDevelopmentSession(options, dependencies = {}) {
   return transitionSessionStore({
     ...storeOptions(
       { ...options, workspaceRoot },
-      plan.manifest.binding.workspaceId,
+      plan.executionBinding.workspaceId,
     ),
     expected: {
       sessionId: declaration.sessionId,
       workItemId: declaration.workItemId,
-      planId: plan.manifest.planId,
+      planId: plan.plan.planId,
       taskId: plan.currentTask.taskId,
-      workspaceId: plan.manifest.binding.workspaceId,
-      branch: plan.manifest.binding.branch,
+      workspaceId: plan.executionBinding.workspaceId,
+      branch: plan.executionBinding.branch,
     },
     to: options.to,
     reason: options.reason,
@@ -415,7 +419,7 @@ export async function transitionDevelopmentSession(options, dependencies = {}) {
     context: {
       task: plan.currentTask,
       acceptance: plan.acceptance,
-      authorization: plan.manifest.authorization,
+      authorization: plan.plan.authorization,
     },
   });
 }
@@ -462,7 +466,6 @@ function functionalPassTransitions(
   }
   const runtimeBacked = [
     'service',
-    'browser',
     'native-desktop',
     'native-mobile',
   ].includes(context.task.runtimeClass);
@@ -718,7 +721,7 @@ function sealedTaskFunctionalResultUpdates(
   }
   if (
     result?.planId !== undefined &&
-    result.planId !== plan.manifest.planId
+    result.planId !== plan.plan.planId
   ) {
     invalid.push('planId');
   }
@@ -762,7 +765,7 @@ function sealedTaskFunctionalResultUpdates(
     schemaVersion: 1,
     workspaceId: current.workspaceId,
     workItemId: current.workItemId,
-    planId: plan.manifest.planId,
+    planId: plan.plan.planId,
     taskId: plan.currentTask.taskId,
     closureId: plan.currentTask.closureId,
     journeyId: current.journeyId,
@@ -1223,7 +1226,7 @@ function runDevelopmentClosure(
     workspaceWorkflowPath(declaration.workItemId, {
       home: options.home,
       repoRoot: workspaceRoot,
-      workspaceId: plan.manifest.binding.workspaceId,
+      workspaceId: plan.executionBinding.workspaceId,
     }),
     'control',
   );
@@ -1236,7 +1239,7 @@ function runDevelopmentClosure(
     const stationProfiles = [];
     const seenStationServices = new Set();
     const authorizedProfiles = new Set(
-      plan.manifest.authorization?.runtime?.deployProfiles ?? [],
+      plan.plan.authorization?.runtime?.deployProfiles ?? [],
     );
     const claimedProfiles = new Set(
       declaration.runtimeClaims
@@ -1426,7 +1429,7 @@ function taskFunctionalResultUpdates(
     schemaVersion: 1,
     workspaceId: current.workspaceId,
     workItemId: current.workItemId,
-    planId: plan.manifest.planId,
+    planId: plan.plan.planId,
     taskId: plan.currentTask.taskId,
     closureId: plan.currentTask.closureId,
     journeyId: current.journeyId,
@@ -1574,7 +1577,7 @@ function functionalResultUpdates(
     developmentManifest?.gateId !== aggregateRun.reference.gateId ||
     developmentManifest?.runId !== aggregateRun.reference.runId ||
     developmentManifest?.workItemId !== current.workItemId ||
-    developmentManifest?.planId !== plan.manifest.planId ||
+    developmentManifest?.planId !== plan.plan.planId ||
     resolvedPlanPath !== path.resolve(plan.path) ||
     developmentManifest?.taskId !== plan.currentTask.taskId ||
     developmentManifest?.closureId !== plan.currentTask.closureId ||
@@ -1693,7 +1696,6 @@ function functionalResultUpdates(
   const invalid = [];
   const runtimeBacked = [
     'service',
-    'browser',
     'native-desktop',
     'native-mobile',
   ].includes(options.context?.task?.runtimeClass);
@@ -1747,12 +1749,6 @@ function functionalResultUpdates(
         value.startsWith('tauri-android'),
     )
   ) invalid.push('runtimeIdentity.clientRuntime');
-  if (
-    options.context?.task?.runtimeClass === 'browser' &&
-    !runtimeNames.some(
-      (value) => value === 'browser' || value.startsWith('browser:'),
-    )
-  ) invalid.push('runtimeIdentity.clientRuntime');
   if (Date.parse(startedAt) < Date.parse(current.startedAt)) {
     invalid.push('artifactRunId');
   }
@@ -1788,7 +1784,7 @@ function functionalResultUpdates(
     schemaVersion: 1,
     workspaceId: current.workspaceId,
     workItemId: current.workItemId,
-    planId: plan.manifest.planId,
+    planId: plan.plan.planId,
     taskId: plan.currentTask.taskId,
     closureId: plan.currentTask.closureId,
     journeyId: current.journeyId,
@@ -1856,21 +1852,21 @@ export async function commitFunctionalResult(options, dependencies = {}) {
   const store = {
     ...storeOptions(
       { ...options, workspaceRoot },
-      plan.manifest.binding.workspaceId,
+      plan.executionBinding.workspaceId,
     ),
     expected: {
       sessionId: declaration.sessionId,
       workItemId: declaration.workItemId,
-      planId: plan.manifest.planId,
+      planId: plan.plan.planId,
       taskId: plan.currentTask.taskId,
-      workspaceId: plan.manifest.binding.workspaceId,
-      branch: plan.manifest.binding.branch,
+      workspaceId: plan.executionBinding.workspaceId,
+      branch: plan.executionBinding.branch,
     },
     reason: options.reason,
     context: {
       task: plan.currentTask,
       acceptance: plan.acceptance,
-      authorization: plan.manifest.authorization,
+      authorization: plan.plan.authorization,
     },
   };
   const preflightSession = loadSessionStore(store);

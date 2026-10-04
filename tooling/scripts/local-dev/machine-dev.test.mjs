@@ -85,8 +85,6 @@ function profileText({
     `PT_STATION_HEALTH_URL=${stationUrl}/sub-oss/healthz`,
     'PT_DESKTOP_APP_GATEWAY_PORT=3130',
     'PT_DESKTOP_APP_WEB_PORT=3310',
-    'PT_DESKTOP_WEB_GATEWAY_PORT=3131',
-    'PT_DESKTOP_WEB_WEB_PORT=3311',
     'PT_MOBILE_WEB_PORT=5273',
     '',
   ].join('\n');
@@ -504,6 +502,24 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
       currentTaskId: 'DWF-RESOURCE-T1',
       workspaceId: registered.workspaceId,
       branch: registered.branch,
+      planVersionDigest: 'a'.repeat(64),
+      mountId: 'mount-machine-dev-test',
+      runId: 'run-machine-dev-test',
+      status: 'active',
+      taskStatuses: {
+        'DWF-RESOURCE-T1': 'in_progress',
+      },
+    };
+    const planExecution = {
+      mount: {
+        planId: planStatus.planId,
+        planPath,
+        planVersionDigest: planStatus.planVersionDigest,
+        mountId: planStatus.mountId,
+      },
+      run: {
+        runId: planStatus.runId,
+      },
     };
     const declaration = startOrUpdateDeclaration({
       home: scope.home,
@@ -523,10 +539,7 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
       planPath,
       taskId: planStatus.currentTaskId,
       planStatus,
-      planBinding: {
-        planId: planStatus.planId,
-        planPath,
-      },
+      planExecution,
     });
     const file = planResourceReceiptPath({
       home: scope.home,
@@ -785,6 +798,9 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       {
         workspaceId: registered.workspaceId,
         workItemId: 'machine-dev-test',
+        mountId: 'mount-machine-dev-test',
+        runId: 'run-machine-dev-test',
+        snapshotDigest: 'a'.repeat(64),
         planId: 'MACHINE-DEV-PLAN',
         planPath:
           'docs/architecture/local-dev-control-plane/execution-plans/test/plan.md',

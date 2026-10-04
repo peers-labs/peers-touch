@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W2-RECOVERY",
   "workstreamId": "W2",
@@ -60,29 +60,7 @@
     "Do not infer non-OAuth credential finalization semantics",
     "Generic gate completion remains blocked in W2"
   ],
-  "updatedAt": "2026-09-17T02:31:30Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/features/auth/authSession.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/features/auth/authRuntime.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/features/auth/AccessGateHost.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/station/frame/touch/accessgate/attempt_store_test.go"
-    }
-  ]
+  "updatedAt": "2026-09-17T02:31:30.000Z"
 }
 ```
 

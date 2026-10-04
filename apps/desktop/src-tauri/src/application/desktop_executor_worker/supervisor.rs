@@ -57,38 +57,23 @@ pub struct CapabilityWorkerSupervisor {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ClientSurface {
     Desktop,
-    Browser,
 }
 
 impl ClientSurface {
     fn from_environment() -> Self {
-        match std::env::var("PT_CLIENT_SURFACE")
-            .unwrap_or_default()
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "browser" => Self::Browser,
-            _ => Self::Desktop,
-        }
+        Self::Desktop
     }
 
     fn platform(self) -> ClientPlatform {
-        match self {
-            Self::Desktop => ClientPlatform::Desktop,
-            Self::Browser => ClientPlatform::Browser,
-        }
+        ClientPlatform::Desktop
     }
 
     fn connection_prefix(self) -> &'static str {
-        match self {
-            Self::Desktop => "desktop",
-            Self::Browser => "browser",
-        }
+        "desktop"
     }
 
     fn starts_automatically(self) -> bool {
-        self == Self::Desktop
+        true
     }
 }
 
@@ -269,10 +254,6 @@ impl CapabilityWorkerSupervisor {
 
     pub fn starts_automatically(&self) -> bool {
         self.surface.starts_automatically()
-    }
-
-    pub fn is_browser_surface(&self) -> bool {
-        self.surface == ClientSurface::Browser
     }
 
     pub fn shutdown(&self) -> Result<(), String> {
@@ -1575,7 +1556,7 @@ mod tests {
             lease_revision,
             capability_set_hash: "capability-set".to_string(),
             device_signing_key_id: "signing-key".to_string(),
-            platform: ClientPlatform::Browser as i32,
+            platform: ClientPlatform::Desktop as i32,
             expires_at: Some(prost_types::Timestamp {
                 seconds: expires_at_ms / 1_000,
                 nanos: ((expires_at_ms % 1_000) * 1_000_000) as i32,
@@ -1716,16 +1697,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_surface_advertises_only_connector_capabilities() {
-        let contracts = local_contracts(ClientSurface::Browser, "ptid:person:test").unwrap();
-        assert!(contracts.is_empty());
-        assert_eq!(ClientSurface::Browser.platform(), ClientPlatform::Browser);
-        assert_eq!(ClientSurface::Browser.connection_prefix(), "browser");
-    }
-
-    #[test]
-    fn browser_surface_requires_explicit_lifecycle_start() {
-        assert!(!ClientSurface::Browser.starts_automatically());
+    fn desktop_surface_starts_automatically() {
         assert!(ClientSurface::Desktop.starts_automatically());
     }
 

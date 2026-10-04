@@ -131,7 +131,7 @@ async function makeFixture(
       kind: 'peers-touch-plan-package',
       planId: 'DWF-REVIEW-TEST',
       status: 'active',
-      binding: {
+      executionBinding: {
         branch: 'feat/review-test',
         workspaceId,
         initialHead: '1'.repeat(40),
@@ -161,6 +161,16 @@ async function makeFixture(
     },
     taskSlices: slices,
     currentTask: slices.get(current.id),
+    planVersionDigest: '6'.repeat(64),
+    execution: {
+      snapshot: {
+        recordDigest: '7'.repeat(64),
+      },
+      run: {
+        runId: 'run-review-test',
+        revision: 1,
+      },
+    },
     acceptance: {
       closures: Object.fromEntries(
         tasks.map((entry) => [`closure-${entry.id}`, []]),
@@ -202,7 +212,7 @@ async function makeFixture(
       planId: planPackage.manifest.planId,
       taskId: current.id,
       workspaceId,
-      branch: planPackage.manifest.binding.branch,
+      branch: planPackage.manifest.executionBinding.branch,
       journeyId: `journey-${current.id}`,
       executionMode: 'fix',
       state: 'DELIVERY_READY',
@@ -218,7 +228,7 @@ async function makeFixture(
   };
   const source = {
     workspaceId,
-    branch: planPackage.manifest.binding.branch,
+    branch: planPackage.manifest.executionBinding.branch,
     commit: '3'.repeat(40),
     tree: '4'.repeat(40),
     clean: false,
@@ -589,7 +599,7 @@ test('source, obligation, candidate, and evidence drift make PASS stale', async 
           .get('task-a')
           .doneWhen.push('A new obligation');
       } else if (drift === 'candidate') {
-        await fsp.appendFile(fixture.planPackage.path, '\nchanged\n');
+        fixture.planPackage.execution.run.revision += 1;
       } else {
         fixture.session.eventDigest = '7'.repeat(64);
       }

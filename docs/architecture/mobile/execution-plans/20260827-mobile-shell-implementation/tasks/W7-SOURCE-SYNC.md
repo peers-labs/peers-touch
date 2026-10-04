@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W7-SOURCE-SYNC",
   "workstreamId": "W7",
@@ -47,19 +47,7 @@
     "Do not claim APNs, scheduled background work, or media-picker completion",
     "Required simulator platform proof remains in W7-PROOF; physical execution is optional diagnostics"
   ],
-  "updatedAt": "2026-09-16T14:50:22Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/scripts/ios_native_correctness_test.py"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src-tauri/gen/apple/peers-touch-mobile.xcodeproj/project.pbxproj"
-    }
-  ]
+  "updatedAt": "2026-09-16T14:50:22.000Z"
 }
 ```
 

@@ -32,7 +32,6 @@ from tooling.acceptance.drivers.native import (
     NativeDesktopRuntimeBinding,
     resolve_native_desktop_runtime,
 )
-from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
     LOCAL_SOURCE_RUNTIME,
@@ -640,10 +639,7 @@ def enter_chat_page(client: TauriSession) -> None:
 
 def stop_client(client: TauriSession) -> None:
     try:
-        with StationDriver(
-            f"http://127.0.0.1:{client.gateway_port}"
-        ) as station:
-            station.auth_logout()
+        client.invoke_app_result("auth_logout")
     finally:
         client.stop()
 
@@ -769,27 +765,6 @@ def message_snapshot(client: TauriSession, text: str) -> dict[str, Any] | None:
         text,
     )
     return value if isinstance(value, dict) else None
-
-
-def gateway_command(
-    client: TauriSession,
-    command: str,
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    request = urllib.request.Request(
-        f"http://127.0.0.1:{client.gateway_port}",
-        data=json.dumps({"cmd": command, "args": args}).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        envelope = json.loads(response.read().decode("utf-8"))
-    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
-        raise GateError(f"{command} failed: {envelope}")
-    data = envelope.get("data")
-    if not isinstance(data, dict):
-        raise GateError(f"{command} returned invalid data")
-    return data
 
 
 def sql_literal(value: str) -> str:

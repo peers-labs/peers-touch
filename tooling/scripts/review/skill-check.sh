@@ -981,13 +981,6 @@ rm -f /tmp/pt-workflow-version-labels.$$
 if ! grep -Fq "No Invented Development Workflow Versions" "$agents_contract"; then
   fail "$agents_contract must define the unversioned internal workflow rule"
 fi
-if rg -n 'schemaVersion|protocolVersion' \
-  apps/dev/server/index.mjs apps/dev/server/status.mjs \
-  >/tmp/pt-peers-dev-version-labels.$$; then
-  cat /tmp/pt-peers-dev-version-labels.$$
-  fail "Peers Dev public payloads must not publish workflow versions"
-fi
-rm -f /tmp/pt-peers-dev-version-labels.$$
 while IFS= read -r plan_doc; do
   if grep -Fq '"schemaVersion"' "$plan_doc"; then
     fail "$plan_doc contains a versioned Plan/Task contract"

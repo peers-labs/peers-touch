@@ -82,6 +82,9 @@ function fixture({
   const sessionId = 'dwf-b1-session';
   const journeyId = 'DWF-AS03';
   const taskId = 'DWF-B1';
+  const planVersionDigest = 'a'.repeat(64);
+  const mountId = 'mount-fixture';
+  const runId = 'run-fixture';
   const task = {
     kind: 'peers-touch-task-slice',
     planId: 'mobile-shell',
@@ -142,7 +145,9 @@ function fixture({
   };
   const plan = {
     path: path.join(REPO_ROOT, 'fake-plan.md'),
+    planPath: 'fake-plan.md',
     repoRoot: REPO_ROOT,
+    plan: manifest,
     manifest,
     acceptance: {
       closures: { 'dwf-b1': gates },
@@ -152,6 +157,37 @@ function fixture({
     taskSlices: new Map([[taskId, task]]),
     currentTask: task,
     readyTasks: [],
+    planVersionDigest,
+  };
+  const executionBinding = {
+    mountId,
+    workspaceId: WORKSPACE_ID,
+    canonicalRoot: REPO_ROOT,
+    branch: BRANCH,
+    initialHead: INITIAL_HEAD,
+  };
+  const planExecution = {
+    mount: {
+      mountId,
+      planId: manifest.planId,
+      planPath: 'fake-plan.md',
+      planVersionDigest,
+    },
+    snapshot: {
+      executionBinding,
+    },
+    run: {
+      runId,
+      state: 'active',
+      currentTaskId: taskId,
+      taskStates: {
+        [taskId]: {
+          state: 'in_progress',
+          blocker: null,
+        },
+      },
+    },
+    planPackage: plan,
   };
   const dependencies = {
     async loadPlanPackage(planPath, options) {
@@ -171,13 +207,10 @@ function fixture({
         head: sourceHead,
       };
     },
-    async resolveWorkspacePlanBinding({ repoRoot, home: resolvedHome }) {
+    async resolvePlanExecution({ repoRoot, home: resolvedHome }) {
       assert.equal(repoRoot, REPO_ROOT);
       assert.equal(resolvedHome, home);
-      return {
-        planId: manifest.planId,
-        planPath: 'fake-plan.md',
-      };
+      return planExecution;
     },
     inspectSource() {
       return {
@@ -208,6 +241,7 @@ function fixture({
     sessionId,
     task,
     plan,
+    planExecution,
     runtimeClaims,
     dependencies,
     baseOptions,
@@ -238,11 +272,15 @@ function declarationOptions(scope, overrides = {}) {
       currentTaskId: scope.task.taskId,
       workspaceId: WORKSPACE_ID,
       branch: BRANCH,
+      status: 'active',
+      taskStatuses: {
+        [scope.task.taskId]: 'in_progress',
+      },
+      planVersionDigest: scope.plan.planVersionDigest,
+      mountId: scope.planExecution.mount.mountId,
+      runId: scope.planExecution.run.runId,
     },
-    planBinding: {
-      planId: scope.plan.manifest.planId,
-      planPath: 'fake-plan.md',
-    },
+    planExecution: scope.planExecution,
     clock: scope.clock,
     ...overrides,
   };
@@ -895,22 +933,24 @@ test('start rejects task, journey, declaration scope, and binding mismatch', asy
     locatorMismatch.close();
   }
 
-  const workspacePlanMismatch = fixture();
+  const planMountMismatch = fixture();
   try {
-    activateDeclaration(workspacePlanMismatch);
-    workspacePlanMismatch.dependencies.resolveWorkspacePlanBinding =
-      async () => ({
-        planId: 'FOREIGN-PLAN',
-        planPath: 'foreign-plan.md',
-      });
+    activateDeclaration(planMountMismatch);
+    planMountMismatch.dependencies.resolvePlanExecution = async () => ({
+      ...planMountMismatch.planExecution,
+      mount: {
+        ...planMountMismatch.planExecution.mount,
+        mountId: 'mount-foreign',
+      },
+    });
     await rejectCode('SESSION_IDENTITY_MISMATCH', () =>
       startDevelopmentSession(
-        workspacePlanMismatch.baseOptions,
-        workspacePlanMismatch.dependencies,
+        planMountMismatch.baseOptions,
+        planMountMismatch.dependencies,
       ),
     );
   } finally {
-    workspacePlanMismatch.close();
+    planMountMismatch.close();
   }
 
   const bindingScope = fixture();
@@ -1531,39 +1571,34 @@ test('functional result commit accepts the normal FUNCTIONAL_RUNNING state', asy
   }
 });
 
-test('functional result binds browser and mobile runtime classes', async () => {
-  for (const [runtimeClass, acceptedRuntime] of [
-    ['browser', 'browser'],
-    ['native-mobile', 'tauri-ios-simulator'],
-  ]) {
-    const scope = fixture({
-      workClass: 'product-behavior',
-      runtimeClass,
-      deployProfiles: ['dwf-local'],
-      gates: ['chat-gate'],
+test('functional result binds the native mobile runtime class', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-mobile',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
     });
-    try {
-      await start(scope);
-      await transition(scope, 'IMPLEMENTING');
-      await transition(scope, 'FOCUSED_CHECKING');
-      await transition(scope, 'FOCUSED_PASS', {
-        verification: verification('SOURCE_CHECK', 'PASS'),
-      });
-      await advanceRuntimeToFunctionalRunning(scope);
-      await rejectCode('SESSION_EVIDENCE_OUT_OF_SEQUENCE', () =>
-        commitFunctionalPass(scope),
-      );
-      assert.equal(
-        (
-          await commitFunctionalPass(scope, {
-            manifest: { clients: [{ runtime: acceptedRuntime }] },
-          })
-        ).state.state,
-        'FUNCTIONAL_PASS',
-      );
-    } finally {
-      scope.close();
-    }
+    await advanceRuntimeToFunctionalRunning(scope);
+    await rejectCode('SESSION_EVIDENCE_OUT_OF_SEQUENCE', () =>
+      commitFunctionalPass(scope),
+    );
+    assert.equal(
+      (
+        await commitFunctionalPass(scope, {
+          manifest: { clients: [{ runtime: 'tauri-ios-simulator' }] },
+        })
+      ).state.state,
+      'FUNCTIONAL_PASS',
+    );
+  } finally {
+    scope.close();
   }
 });
 

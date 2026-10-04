@@ -45,8 +45,8 @@ Reviewed runtime matrix:
 
 - `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml`
 - ID `modern-chat-agent-v2-runtime-matrix`
-- version `2026-10-01.1`
-- SHA-256 `4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142`
+- version `2026-10-04.1`
+- SHA-256 `ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58`
 
 ### 1.1 2026-09-16 Product-First Sequencing Amendment
 
@@ -659,7 +659,7 @@ python3 tooling/scripts/expand-agent-v2-runtime-matrix.py \
   --check \
   docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml
 printf '%s  %s\n' \
-  '4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142' \
+  'ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58' \
   'docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml' \
   | shasum -a 256 -c -
 test -x apps/mobile/node_modules/.bin/protoc-gen-es
@@ -3569,7 +3569,7 @@ canonical cutover. Complete G-F is not an entry condition.
 
 **Target roots**: Home proto, Station Home projection/command handlers,
 `apps/desktop/src/runtimes/homeRuntime.ts`,
-`apps/desktop/src/pages/HomePage*.tsx`, and browser-gateway contract tests.
+`apps/desktop/src/pages/HomePage*.tsx`, and desktop-http-gateway contract tests.
 
 Deliverables:
 

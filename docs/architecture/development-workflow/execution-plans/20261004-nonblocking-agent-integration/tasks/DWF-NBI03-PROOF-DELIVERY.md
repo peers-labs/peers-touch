@@ -69,8 +69,7 @@
     "Do not include docs/architecture/federation/data-model.md in the commit",
     "Do not merge or rewrite history"
   ],
-  "updatedAt": "2026-10-04T14:35:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T14:35:00.000Z"
 }
 ```
 

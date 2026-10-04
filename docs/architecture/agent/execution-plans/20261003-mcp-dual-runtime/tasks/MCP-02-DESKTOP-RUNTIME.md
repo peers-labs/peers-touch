@@ -62,8 +62,7 @@
     "Do not retain a fallback Desktop MCP catalog",
     "Return the first deterministic Desktop failure"
   ],
-  "updatedAt": "2026-10-03T02:30:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-03T02:30:00.000Z"
 }
 ```
 

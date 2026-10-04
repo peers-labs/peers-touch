@@ -1285,8 +1285,6 @@ export function slotPorts(slotValue) {
     station: 18_080 + slot * 100,
     desktopAppGateway: 3_030 + slot * 100,
     desktopAppWeb: 3_210 + slot * 100,
-    desktopWebGateway: 3_031 + slot * 100,
-    desktopWebWeb: 3_211 + slot * 100,
     mobileWeb: 5_173 + slot * 100,
   };
 }

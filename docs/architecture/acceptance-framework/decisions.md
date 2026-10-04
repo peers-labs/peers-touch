@@ -211,17 +211,16 @@ Station Dashboard 证明了普通管理面可以接入 acceptance，但它仍偏
 `/conversation/*` 是唯一 Chat 入口；Device、Inbox、Recovery、Key Exchange 与
 Federation 使用各自 resource-owner API，Desktop/Mobile Device Messaging Engine
 保留为内部 runtime 名称。Chat domain 覆盖 Station、realtime、Desktop typed
-surface 和 Desktop DOM visibility 能力，并保留 app-runtime optional evidence：
+surface 和 Native Desktop visibility 能力：
 
 - `chat-proto-service-contract`：Proto-first Conversation 与 resource-owner contracts。
-- `chat-desktop-gateway-message-flow`：运行中 Desktop HTTP gateway 上的 actor auth、key publication、direct conversation、E2EE send、hydrate 与 decrypt。
 - `chat-realtime-contract`：Station per-device queue / envelope 与 Desktop messaging lifecycle 的 typed contract。
 - `desktop-chat-typed-surface`：Desktop chat page/components/store 的 typed visible-surface contract。
-- `chat-native-visible-clients`：真实 native Desktop 的 two-client、multi-device、recovery 与 MLS 用户路径。
+- `chat-native-visible-clients`：真实 Native Desktop 的 onboarding、friend-request、two-client、multi-device、recovery 与 MLS 用户路径。
 
 ### Rationale
 
-Chat 同时具备事实源、传输面和用户可见面，适合验证 acceptance 是否能管理高频用户路径。Station-direct plaintext-shaped gates cannot prove the client-owned E2EE path, so they are removed instead of translated into a second transport. Gateway and native gates preserve the actual ownership boundary.
+Chat 同时具备事实源、传输面和用户可见面，适合验证 acceptance 是否能管理高频用户路径。Station-direct 或 localhost-gateway Gates 不能证明 client-owned Native E2EE path，因此直接删除，不翻译成第二套产品 transport。
 
 ### Alternatives Considered
 
@@ -230,9 +229,9 @@ Chat 同时具备事实源、传输面和用户可见面，适合验证 acceptan
 
 ### Consequences
 
-- Chat 变更会通过 registry 自动选择 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、`chat-desktop-gateway-e2e`、native gates 和 / 或 `desktop-check`。
+- Chat 变更会通过 registry 自动选择 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、Native Chat Gates 和 / 或 `desktop-check`。
 - Acceptance coverage report 现在能显示三个 active domains：Federation、Station Dashboard、Chat。
-- Chat 的未证明范围必须保持显式，不能用 typed checks 或 Desktop gateway command E2E 代替 native multi-client 用户消息收发体验。
+- Chat 的未证明范围必须保持显式，不能用 typed checks 代替 Native multi-client 用户消息收发体验。
 
 ---
 
@@ -283,7 +282,7 @@ Runtime Manifest作为durable runtime truth的地位，也不允许Gate自行准
 ### Review / Reversal Trigger
 
 若实现证明 Environment Provisioner 无法在不持有产品断言的前提下统一
-`local-desktop-gateway`、`home-station` 和 `fedp5`，应重新评审 contract 粒度；
+`native-tauri-embedded-webdriver`、`home-station` 和 `fedp5`，应重新评审 contract 粒度；
 不得退回 Agent 手工拼接。
 
 ---

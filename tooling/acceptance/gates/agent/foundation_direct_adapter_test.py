@@ -55,8 +55,8 @@ def runtime_tuple(
             "station_turn"
             if "external-runtime" in row
             else (
-                "direct_runtime_no_local_capability"
-                if platform == "browser"
+                "direct_runtime_secondary_native"
+                if platform == "secondary"
                 else "direct_runtime"
             )
         ),
@@ -220,7 +220,7 @@ def capture(probe: DirectRuntimeProbeInput) -> dict[str, object]:
             "status": "clean",
         },
     }
-    if probe.platform == "browser":
+    if probe.platform == "secondary":
         attestation = result["runtimeAttestation"]
         del attestation["toolCallBinding"]
         attestation["clientSession"]["capabilities"] = []
@@ -379,7 +379,7 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
                 "deniedLeaseObserved",
                 "localizedRecoveryVisible",
                 "permissionDetailOpened",
-                "browserCapabilityIsolation",
+                "secondaryCapabilityIsolation",
                 "zeroToolCallPersistence",
                 "zeroLocalExecution",
                 "zeroProviderContinuation",
@@ -472,7 +472,7 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
         producer = FoundationCandidateProducer(
             FoundationAdapters(
                 desktop_native=adapter,
-                browser=adapter,
+                secondary=adapter,
                 mobile_contract=adapter,
                 d11=adapter,
                 non_advertisement=adapter,
@@ -488,11 +488,11 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
                     "observe_desktop_native",
                 ),
                 (
-                    "foundation-z-browser-external-runtime"
+                    "foundation-z-secondary-external-runtime"
                     if cell == "BASE-RESUME-UNAVAILABLE"
-                    else "foundation-browser-direct",
-                    "browser",
-                    "observe_browser",
+                    else "foundation-secondary-direct",
+                    "secondary",
+                    "observe_secondary",
                 ),
             ):
                 item = runtime_tuple(cell, row=row, platform=platform)
@@ -521,9 +521,9 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
             if item.row
             in {
                 "foundation-desktop-direct",
-                "foundation-browser-direct",
+                "foundation-secondary-direct",
                 "foundation-z-desktop-external-runtime",
-                "foundation-z-browser-external-runtime",
+                "foundation-z-secondary-external-runtime",
             }
         }
 

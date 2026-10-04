@@ -3,7 +3,6 @@ kind: invariant
 title: Worktree observation is diagnostic, never authority
 status: active
 owns:
-  - apps/dev/
   - tooling/plugins/pt-ew-plugin/
   - tooling/scripts/local-dev/worktree-observation-store.mjs
   - tooling/scripts/local-dev/worktree-observe.mjs
@@ -29,7 +28,7 @@ Observation and `git worktree list` discovery MUST NOT register a workspace,
 allocate profile/slot, assert runtime activity, grant authorization, select a
 Plan, advance a Session, rewrite active-work, or count as Acceptance evidence.
 
-Peers Dev is a read-only union projection. Current Git discovery owns the row's
+Workflow Snapshot is a read-only union projection. Current Git discovery owns the row's
 branch and HEAD. Registration, declaration, active-work, observation, and
 snapshot check times remain separate clocks.
 
@@ -45,8 +44,7 @@ reconciliation provides visibility without changing control-plane ownership.
 - `node --test tooling/scripts/local-dev/worktree-observation-store.test.mjs`
   proves disjoint workspace paths, atomic records, monotonic time, and corrupt
   record isolation.
-- `node --test apps/dev/server/worktree-discovery.test.mjs
-  apps/dev/server/status.test.mjs` proves all Git worktrees remain visible and
+- `node --test tooling/scripts/local-dev/workflow-snapshot.test.mjs` proves
   stale Owner identity cannot override Git branch/HEAD.
 - Public snapshot tests assert canonical roots never appear.
 - `rg -n 'reportWorktreeObservation' tooling/plugins/pt-ew-plugin
@@ -55,5 +53,5 @@ reconciliation provides visibility without changing control-plane ownership.
 ## Crosswalks
 
 - LDCP-D08 separates discovery, registration, and runtime activity.
-- LDCP-D11 keeps Peers Dev read-only.
+- LDCP-D19 retires the browser dashboard and keeps the CLI projection read-only.
 - LDCP-D15 combines opportunity reports with periodic reconciliation.

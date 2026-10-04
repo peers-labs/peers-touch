@@ -107,7 +107,6 @@ class WorkItemProjectionTest(unittest.TestCase):
                 "sc-dj-canonical-schema-activation",
                 (
                     "shared-read:apps/desktop",
-                    "shared-read:apps/dev",
                     "shared-read:apps/station",
                     "shared-read:docs/architecture",
                     "shared-read:tooling",
@@ -129,7 +128,6 @@ class WorkItemProjectionTest(unittest.TestCase):
         self,
     ) -> None:
         forbidden_journeys = {
-            "sc-dj-browser-private-boundary",
             "sc-dj-mobile-matrix",
             "sc-dj-chat-attachment-atomic",
             "sc-dj-chat-attachment-mobile",
@@ -139,7 +137,6 @@ class WorkItemProjectionTest(unittest.TestCase):
             "sc-dj-acceptance-promotion",
         }
         forbidden_runtime_markers = (
-            "browser",
             "ios",
             "android",
             "chat",

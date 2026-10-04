@@ -138,7 +138,7 @@ def cleanup_clients(
     result = runtime_pair.stop(remove_storage=False)
     for runtime, client in (
         ("native", runtime_pair.native),
-        ("browser", runtime_pair.browser),
+        ("secondary", runtime_pair.secondary),
     ):
         if client.log_path.is_file():
             target = artifact_dir / runtime / client.log_path.name

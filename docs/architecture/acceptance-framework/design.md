@@ -79,7 +79,6 @@
 | Runtime Manifest 已记录隔离客户端，但客户端没有服务绑定字段 | `verified_fact` | `core/provisioning.py::ClientRuntime` | high | none |
 | 通用 Environment Contract parser 不消费 `clients` | `verified_fact` | `core/provisioning.py::EnvironmentContract.from_yaml` | high | none |
 | Mobile 通过业务常量维护 client 到 Station 的映射 | `verified_fact` | `gates/mobile/proof_contracts.py::CLIENT_SERVICE` | high | none |
-| Federation prerequisite 通过裸 URL 环境变量表达 authority/follower Station | `verified_fact` | `gates/chat/federated_browser_prereq.py::main` | high | none |
 | Native Desktop Provisioner 已提供同一 runtime cell 内多客户端隔离 | `verified_fact` | `provisioners/home_station.py::_clients`；Linux NDR-W7 evidence | high | multi-service binding |
 | 客户端依赖应成为 Environment Contract 和 Runtime Manifest 的 typed edge | `proposal` | D-18 | high | architecture re-review |
 
@@ -1516,7 +1515,7 @@ Chat managed domain 的边界：
   对 resource-owner API 的 typed contract。
 - Queue / envelope delivery 是 delivery contract，不是 message persistence truth。
 - Desktop typed surface 只能证明页面、store、service API 的编译期契约，不能替代 DOM 级可见性或 live realtime DOM event-consumption proof。
-- 当前 stable gates 是 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、`desktop-check` 和 `chat-native-visible-static`；`chat-desktop-gateway-e2e` 是 app-runtime gate，证明 desktop-rust messaging engine 的 E2EE direct-message 闭环；native multi-client gates 负责用户可见双客户端、multi-device、recovery 与 MLS 证据。
+- 当前 stable gates 是 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、`desktop-check` 和 `chat-native-visible-static`；Native onboarding、two-client、multi-device、recovery 与 MLS Gates 负责用户可见证据，localhost gateway 不构成 Desktop 产品证据。
 
 该 domain 的目标是反思并验证设计落地：acceptance 不能只覆盖管理面和 Federation，还必须能表达高频用户路径的事实源、传输面、可见面和未证明范围。
 
@@ -1527,13 +1526,13 @@ model/domain/chat/** + apps/station/app/subserver/conversation/** + resource-own
 tooling/acceptance/registry.yaml
           │
           ▼
-chat-service-contract / chat-desktop-gateway-message-flow / chat-realtime-delivery / desktop-chat-surface / chat-native-visible-clients
+chat-service-contract / chat-realtime-delivery / desktop-chat-surface / chat-native-visible-clients
           │
           ▼
 chat-proto-service-contract / chat-realtime-contract / desktop-chat-typed-surface / chat-native-visible-clients
           │
           ▼
-proto-build + station-messaging-unit + messaging-platform-contract + desktop-check + chat-native-visible-static (+ chat-desktop-gateway-e2e / native environment gates)
+proto-build + station-messaging-unit + messaging-platform-contract + desktop-check + chat-native-visible-static + native environment gates
           │
           ▼
 Evidence Store latest(`chat-domain-validation`)

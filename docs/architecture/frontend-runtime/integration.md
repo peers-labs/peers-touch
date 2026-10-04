@@ -125,7 +125,7 @@ only specialize storage, host events, and platform lifecycle.
 
 | Claim | Class | Evidence | Confidence | Missing proof |
 |-------|-------|----------|------------|---------------|
-| Desktop native 输入和标签切换明显慢于 desktop-web | `verified_fact` (user observation) | 多轮用户验收反馈 | medium | 同条件 paired trace |
+| Desktop Native 输入和标签切换曾明显慢于历史非 Native baseline | `verified_fact` (user observation) | 多轮用户验收反馈 | medium | Native interaction-linked trace |
 | 仓库存在大量同步 Tauri command wrapper | `verified_fact` | 2026-07-11 repository inventory: 420 command attributes, 411 sync | high | runtime thread attribution |
 | 同步 command 运行在 tokio worker | rejected prior claim | Tauri 2.5.5 macro `body_blocking` 直接调用 command function | high | 实际 host thread name |
 | `tauri-webview-dev` runtime cell 已证明输入/导航性能 | rejected prior claim | matrix cell is `diagnostic incomplete`; Playwright artifact only proves one overlay interaction | high | input/nav native samples |
@@ -135,8 +135,8 @@ only specialize storage, host events, and platform lifecycle.
 
 Evidence status:
 
-- D-18 retires desktop-web as a supported runtime. Browser rows above are
-  historical diagnostics and cannot enter current proof.
+- D-18 retires the non-Native Desktop baseline. Historical diagnostic rows
+  cannot enter current proof.
 - `DESIGN_EVIDENCE_BLOCKED` for native transport topology.
 - Existing frontend runtime ownership, visible-lane, lifecycle, budget, and
   evidence contracts remain active.

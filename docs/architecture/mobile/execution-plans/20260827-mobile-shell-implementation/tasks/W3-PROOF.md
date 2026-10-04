@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W3-PROOF",
   "workstreamId": "W3",
@@ -45,28 +45,66 @@
     "tooling/acceptance/provisioners",
     "packages/prototypes/mobile/chat/src/mobilePrototype.css"
   ],
-  "readSet": ["apps/mobile", "apps/station", "docs/architecture/frontend-runtime", "docs/architecture/mobile", "docs/client/mobile"],
-  "budgets": {"focusedCheckSeconds": 180, "functionalRunSeconds": 9600, "cleanupSeconds": 240},
-  "checks": [
-    {"id": "mobile-lifecycle-proof-structure", "command": "python3 tooling/scripts/acceptance-validate.py --domain mobile", "verificationClass": "STRUCTURAL_CHECK"},
-    {"id": "mobile-lifecycle-proof-contract", "command": "pnpm --dir apps/mobile exec vitest run src/acceptance/registry.test.ts && python3 -m unittest tooling.acceptance.gates.mobile.simulator_e2e_test tooling.acceptance.gates.mobile.simulator_lifecycle_e2e_test tooling.acceptance.gates.mobile.simulator_station_lifecycle_e2e_test && (cd apps/station/frame && go test ./touch/model/db) && (cd apps/station/app && go test ./tests -run '^TestAccessGate.*Migration')", "verificationClass": "SOURCE_CHECK"},
-    {"id": "mobile-lifecycle-runtime", "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item mobile-shell-w3-proof --gate mobile-simulator-station-lifecycle-e2e", "verificationClass": "FUNCTIONAL_CHECK"},
-    {"id": "mobile-lifecycle-contract", "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-contract-static", "verificationClass": "ACCEPTANCE_PROOF"},
-    {"id": "mobile-simulator-runtime-lifecycle", "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-runtime-lifecycle-e2e", "verificationClass": "ACCEPTANCE_PROOF"},
-    {"id": "mobile-simulator-station-lifecycle", "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-station-lifecycle-e2e", "verificationClass": "ACCEPTANCE_PROOF"},
-    {"id": "mobile-ios-layout-accessibility", "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-ios-simulator-layout-accessibility-e2e", "verificationClass": "ACCEPTANCE_PROOF"}
+  "readSet": [
+    "apps/mobile",
+    "apps/station",
+    "docs/architecture/frontend-runtime",
+    "docs/architecture/mobile",
+    "docs/client/mobile"
   ],
-  "doneWhen": ["Required dual-iOS Simulator runtime and Station lifecycle evidence is source-bound and clean", "Pinned layout/accessibility cells pass", "Focus, no-leak, takeover-revocation, and secure-store failure behavior pass in their required simulator scenarios"],
-  "failureBehavior": ["Missing required iOS Simulator or Station resources remain BLOCKED", "Optional Android or physical diagnostics cannot replace required iOS Simulator evidence", "A Gate/doneWhen semantic mismatch returns DESIGN_AMENDMENT_REQUIRED"],
-  "updatedAt": "2026-09-21T00:00:00Z",
-  "durableEvidence": [
-    {"verificationClass": "ACCEPTANCE_PROOF", "result": "PASS", "ref": "acceptance://mobile-contract-static/20260919T112614584868Z-40db60f7ab77989a5760426d92c7e30a"},
-    {"verificationClass": "FUNCTIONAL_CHECK", "result": "PASS", "ref": "acceptance://mobile-simulator-station-lifecycle-e2e/20260911T035616890352Z-60057e97ce9dd6c0cd61fe00a972859c"},
-    {"verificationClass": "ACCEPTANCE_PROOF", "result": "PASS", "ref": "acceptance://mobile-simulator-station-lifecycle-e2e/20260911T035616890352Z-60057e97ce9dd6c0cd61fe00a972859c"},
-    {"verificationClass": "ACCEPTANCE_PROOF", "result": "PASS", "ref": "acceptance://mobile-simulator-runtime-lifecycle-e2e/20260919T113311359546Z-221ed5ae6e252f4b695f56f5e9ae438a"},
-    {"verificationClass": "ACCEPTANCE_PROOF", "result": "PASS", "ref": "acceptance://mobile-ios-simulator-layout-accessibility-e2e/20260919T113119567649Z-9c16b179e4edb57cc3cd0a6019d3b0a9"},
-    {"verificationClass": "ACCEPTANCE_PROOF", "result": "BLOCKED", "ref": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3041"}
-  ]
+  "budgets": {
+    "focusedCheckSeconds": 180,
+    "functionalRunSeconds": 9600,
+    "cleanupSeconds": 240
+  },
+  "checks": [
+    {
+      "id": "mobile-lifecycle-proof-structure",
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain mobile",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
+      "id": "mobile-lifecycle-proof-contract",
+      "command": "pnpm --dir apps/mobile exec vitest run src/acceptance/registry.test.ts && python3 -m unittest tooling.acceptance.gates.mobile.simulator_e2e_test tooling.acceptance.gates.mobile.simulator_lifecycle_e2e_test tooling.acceptance.gates.mobile.simulator_station_lifecycle_e2e_test && (cd apps/station/frame && go test ./touch/model/db) && (cd apps/station/app && go test ./tests -run '^TestAccessGate.*Migration')",
+      "verificationClass": "SOURCE_CHECK"
+    },
+    {
+      "id": "mobile-lifecycle-runtime",
+      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item mobile-shell-w3-proof --gate mobile-simulator-station-lifecycle-e2e",
+      "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "mobile-lifecycle-contract",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-contract-static",
+      "verificationClass": "ACCEPTANCE_PROOF"
+    },
+    {
+      "id": "mobile-simulator-runtime-lifecycle",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-runtime-lifecycle-e2e",
+      "verificationClass": "ACCEPTANCE_PROOF"
+    },
+    {
+      "id": "mobile-simulator-station-lifecycle",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-station-lifecycle-e2e",
+      "verificationClass": "ACCEPTANCE_PROOF"
+    },
+    {
+      "id": "mobile-ios-layout-accessibility",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-ios-simulator-layout-accessibility-e2e",
+      "verificationClass": "ACCEPTANCE_PROOF"
+    }
+  ],
+  "doneWhen": [
+    "Required dual-iOS Simulator runtime and Station lifecycle evidence is source-bound and clean",
+    "Pinned layout/accessibility cells pass",
+    "Focus, no-leak, takeover-revocation, and secure-store failure behavior pass in their required simulator scenarios"
+  ],
+  "failureBehavior": [
+    "Missing required iOS Simulator or Station resources remain BLOCKED",
+    "Optional Android or physical diagnostics cannot replace required iOS Simulator evidence",
+    "A Gate/doneWhen semantic mismatch returns DESIGN_AMENDMENT_REQUIRED"
+  ],
+  "updatedAt": "2026-09-21T00:00:00.000Z"
 }
 ```
 

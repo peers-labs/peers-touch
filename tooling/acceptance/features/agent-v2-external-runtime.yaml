@@ -22,7 +22,7 @@
   ],
   "visible_surfaces": [
     {"type": "native-tauri", "surface": "External Agent response and Confirm reset recovery"},
-    {"type": "browser", "surface": "Station-backed External Agent response and Confirm reset recovery"},
+    {"type": "secondary", "surface": "Station-backed External Agent response and Confirm reset recovery"},
     {"type": "station-readback", "surface": "Conversation runtime binding, epoch, session, Turn events, and reset receipt"}
   ],
   "required_gates": ["agent-v2-external-runtime-e2e"],
@@ -40,7 +40,7 @@
       "permanent Conversation deletion uses the same external cleanup closure"
     ],
     "visible": [
-      "Native and Browser render the localized Confirm reset recovery",
+      "Native and Secondary render the localized Confirm reset recovery",
       "the destructive confirmation is visible before reset is submitted",
       "both clients reconcile to the same Station-owned binding after reset"
     ]

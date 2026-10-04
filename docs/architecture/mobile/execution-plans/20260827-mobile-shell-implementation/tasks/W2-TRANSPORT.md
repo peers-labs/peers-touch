@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W2-TRANSPORT",
   "workstreamId": "W2",
@@ -74,24 +74,7 @@
     "Transport failure must preserve typed operation context without leaking secrets",
     "Required simulator runtime proof remains in W2-PROOF; physical proof is optional diagnostics"
   ],
-  "updatedAt": "2026-09-18T14:05:00.000Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "pnpm --dir apps/mobile exec vitest run (91 files, 652 tests); cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib --offline (198 tests)"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "pnpm --dir apps/mobile run check"
-    },
-    {
-      "verificationClass": "STRUCTURAL_CHECK",
-      "result": "PASS",
-      "ref": "python3 -m unittest apps/mobile/scripts/check_mobile_shell_contracts_test.py && pnpm --dir apps/mobile run check:mobile-shell-contracts"
-    }
-  ]
+  "updatedAt": "2026-09-18T14:05:00.000Z"
 }
 ```
 

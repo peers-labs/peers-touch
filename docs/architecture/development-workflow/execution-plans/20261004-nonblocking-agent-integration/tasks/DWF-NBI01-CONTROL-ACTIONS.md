@@ -72,8 +72,7 @@
     "Do not delete Plan, Session, Completion Review, lease, or Acceptance stores",
     "Do not modify docs/architecture/federation/data-model.md"
   ],
-  "updatedAt": "2026-10-04T14:35:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T14:35:00.000Z"
 }
 ```
 

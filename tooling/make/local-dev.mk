@@ -1,30 +1,28 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: env-register env-update env-unregister env-check env-status-all dev-ui dev-ui-snapshot dev-observe workflow-snapshot workflow-doctor \
+.PHONY: env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
         dev-resources-prepare dev-resources-status dev-resource-record \
         dev-session-start dev-session-status dev-transition dev-functional-result \
         active-work-sync active-work-status active-work-status-all active-work-close \
         completion-review-prepare completion-review-submit completion-review-status \
-        plan-bind plan-binding plan-binding-advance plan-validate plan-status plan-current plan-next \
+        plan-mount plan-mount-status plan-unmount plan-validate plan-status plan-current plan-next \
         plan-activate plan-advance plan-reopen \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-stop desktop-restart \
-        desktop-web desktop-web-stop desktop-web-restart \
         mobile mobile-stop mobile-restart \
         status stop restart
 
 DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
 MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
-DEV_APP_SCRIPT := apps/dev/server/index.mjs
 WORKFLOW_SNAPSHOT_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-snapshot.mjs
 WORKFLOW_DOCTOR_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-doctor.mjs
 PLANCTL_SCRIPT := tooling/scripts/plan/planctl.mjs
-PLAN_BINDING_SCRIPT := tooling/scripts/plan/workspace-plan-binding.mjs
+PLAN_MOUNT_SCRIPT := tooling/scripts/plan/plan-mount.mjs
 ENV_REPO_ARG := $(or $(ENV_REPO),$(abspath ../env))
 PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
 SLOT_ARG := $(or $(SLOT),0)
@@ -87,12 +85,6 @@ env-check:
 env-status-all:
 	@node $(MACHINE_DEV_SCRIPT) status-all
 
-dev-ui:
-	@node $(DEV_APP_SCRIPT) serve --env-repo "$(ENV_REPO_ARG)"
-
-dev-ui-snapshot:
-	@node $(DEV_APP_SCRIPT) snapshot --env-repo "$(ENV_REPO_ARG)"
-
 dev-observe:
 	@node $(WORKTREE_OBSERVE_SCRIPT) --workspace-root "$(CURDIR)" --host cli --event manual
 
@@ -102,22 +94,22 @@ workflow-snapshot:
 workflow-doctor:
 	@node $(WORKFLOW_DOCTOR_SCRIPT) --host "$(or $(IDE),trae)"
 
-plan-bind:
-	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-bind PLAN=<package-plan.md>"; exit 1; fi
-	@node $(PLAN_BINDING_SCRIPT) bind \
+plan-mount:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-mount PLAN=<plan.md>"; exit 1; fi
+	@node $(PLAN_MOUNT_SCRIPT) mount \
 		--repo-root "$(CURDIR)" \
 		--plan "$(PLAN)" \
 		--owner "$(DEV_OWNER_ARG)"
 
-plan-binding:
-	@node $(PLAN_BINDING_SCRIPT) resolve --repo-root "$(CURDIR)"
+plan-mount-status:
+	@node $(PLAN_MOUNT_SCRIPT) status --repo-root "$(CURDIR)"
 
-plan-binding-advance:
-	@if [ -z "$(PLAN)" ] || [ -z "$(EXPECTED_GENERATION)" ]; then echo "Usage: make plan-binding-advance PLAN=<package-plan.md> EXPECTED_GENERATION=<n>"; exit 1; fi
-	@node $(PLAN_BINDING_SCRIPT) advance \
+plan-unmount:
+	@if [ -z "$(REASON)" ]; then echo "Usage: make plan-unmount REASON=<completed|cancelled|owner-unmount> [ALLOW_UNFINISHED=true]"; exit 1; fi
+	@node $(PLAN_MOUNT_SCRIPT) unmount \
 		--repo-root "$(CURDIR)" \
-		--plan "$(PLAN)" \
-		--expected-generation "$(EXPECTED_GENERATION)" \
+		--reason "$(REASON)" \
+		--allow-unfinished "$(or $(ALLOW_UNFINISHED),false)" \
 		--owner "$(DEV_OWNER_ARG)"
 
 plan-validate:
@@ -394,22 +386,13 @@ relay-restart:
 	@bash $(LOCAL_DEV_SCRIPTS)/restart.sh relay
 
 desktop:
-	@$(DEVCTL) desktop start --mode app
+	@$(DEVCTL) desktop start
 
 desktop-stop:
-	@$(DEVCTL) desktop stop --mode app
+	@$(DEVCTL) desktop stop
 
 desktop-restart:
-	@$(DEVCTL) desktop restart --mode app
-
-desktop-web:
-	@$(DEVCTL) desktop start --mode web
-
-desktop-web-stop:
-	@$(DEVCTL) desktop stop --mode web
-
-desktop-web-restart:
-	@$(DEVCTL) desktop restart --mode web
+	@$(DEVCTL) desktop restart
 
 mobile:
 	@bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh

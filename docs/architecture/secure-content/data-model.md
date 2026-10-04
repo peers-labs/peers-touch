@@ -1617,8 +1617,8 @@ Rules:
   client identity.
 - each required service role has exactly one binding to a same-manifest service
   whose kind matches `required_kind`;
-- client runtime kind is exactly `native-tauri`, `browser`,
-  `tauri-ios-simulator`, or `tauri-android-emulator`;
+- client runtime kind is exactly `native-tauri`, `tauri-ios-simulator`, or
+  `tauri-android-emulator`;
 - storage, boot, session, automation, Harness, actor, and Station identities
   are observed from the live client and bind to the runtime-owner allocation;
 - `endpoint` is the exact runtime connection route consumed by clients,

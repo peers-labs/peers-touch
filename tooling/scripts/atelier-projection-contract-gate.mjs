@@ -456,7 +456,7 @@ const files = {
   desktopAppletsStoreTest: 'apps/desktop/src/store/applets.test.ts',
   desktopIdentityRuntime: 'apps/desktop/src/kernel/identityRuntime.ts',
   desktopHashRouter: 'apps/desktop/src/hooks/useHashRouter.ts',
-  desktopBrowserEvents: 'apps/desktop/src/kernel/events/browser.ts',
+  desktopRendererEvents: 'apps/desktop/src/kernel/events/renderer.ts',
   rustGateway: 'apps/desktop/src-tauri/src/application/applets/mod.rs',
   atelierReadme: 'docs/architecture/atelier/README.md',
   officialAppletReadme: 'apps/applets/atelier/README.md',
@@ -11012,7 +11012,7 @@ expectIncludes(files.desktopIdentityRuntime, contents.desktopIdentityRuntime, 'w
 expectNotIncludes(files.desktopIdentityRuntime, contents.desktopIdentityRuntime, "window.history.replaceState(null, '', targetHash)", 'Desktop product-window launch must not silently replace hash without router notification');
 expectIncludes(files.desktopHashRouter, contents.desktopHashRouter, 'onWindowLocationChange', 'Desktop hash router must consume both popstate and hashchange updates');
 expectNotIncludes(files.desktopHashRouter, contents.desktopHashRouter, 'onWindowPopState', 'Desktop hash router must not ignore hashchange-only navigation');
-expectIncludes(files.desktopBrowserEvents, contents.desktopBrowserEvents, "window.addEventListener('hashchange', handler)", 'Desktop browser event adapter must expose hashchange for hash router navigation');
+expectIncludes(files.desktopRendererEvents, contents.desktopRendererEvents, "window.addEventListener('hashchange', handler)", 'Desktop renderer event adapter must expose hashchange for hash router navigation');
 expectIncludes(files.officialFrontendClient, contents.officialFrontendClient, 'ATELIER_PROJECTION_CONTRACT.eventSubscription.zeroCursorException', 'Official frontend stream config must preserve explicit afterEventSeq=0 through generated product-window zero cursor exception');
 expectIncludes(files.rustGateway, contents.rustGateway, 'replay_probe_request_replays_after_cursor(&replay_probe_requests, 1, 2)', 'Desktop Gateway Atelier test must prove reconnect request used persisted cursor without requiring an exact replay batch');
 

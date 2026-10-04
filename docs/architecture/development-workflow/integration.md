@@ -520,70 +520,9 @@ The pilot uses the package itself to exercise DWF-D14 before B5:
 - proof unavailability parks only the proof branch and does not rewrite source
   readiness as a functional claim.
 
-## 8. Mobile Shell Pilot
+## 8. Historical Plan Inputs
 
-The first migration uses:
-
-```text
-docs/architecture/mobile/execution-plans/
-├── 20260827-mobile-shell-implementation/
-│   ├── plan.md
-│   ├── tasks/
-│   └── archive/
-│       └── legacy-plan.md
-└── 20260827-mobile-shell-implementation.md  # removed after atomic cutover
-```
-
-Requirements:
-
-- every legacy byte is preserved in `archive/legacy-plan.md`;
-- before/after SHA-256 values match and `cmp -s` succeeds;
-- the migration inventory enumerates every legacy workstream, status, dependency,
-  Acceptance closure, evidence reference and live path reference;
-- current workstream state is reconstructed from the legacy status table and
-  current repository evidence, not blindly copied from the latest prose;
-- existing Acceptance Gate IDs and product assertions are unchanged;
-- `tooling/acceptance/plans/mobile-shell.json` points to package `plan.md`;
-- all docs references point to package `plan.md`;
-- tree-wide old-path search returns only archive history and migration evidence;
-- the migrated workspace binding resolves the intended package without scanning
-  other active Plans;
-- Mobile source changes remain untouched.
-
-Plan migration uses a non-blocking `PREPARED` journal for DWF-B4 review, then
-holds an owner-token machine lock only for
-`LOCKED/APPLYING/VERIFYING/ROLLING_BACK`. Recovery first acquires its own
-exclusive claim before taking over an abandoned matching lock, and lock release
-verifies ownership. Discovery derives the canonical machine path from the
-repository/workspace identity, fixes the locator at
-`workflow/plan-migration/{migration.json,migration.lock}`, rejects caller
-overrides and malformed phases, ignores library machine-home redirection, and
-fails closed in locked phases. Each package read captures journal/lock digests
-before reading and rechecks them after manifest validation and after the full
-Task/crosswalk window. The writer canonicalizes `repoRoot`, derives the
-workspace ID, and rejects mismatches before journal access. Immediately before
-locking and again before recovery, the engine revalidates the reviewed
-crosswalk digest, old-path reference inventory and `active_work` disposition.
-It probes atomic exchange and no-replace support on the package and journal
-filesystems before lock acquisition.
-
-Replacement paths are globally unique across target/prepared/backup roles.
-Prepared writes materialize the after-image carrier, durably journal a
-`pendingOperation` with hash, device/inode and size/mtime/ctime snapshots for
-both paths, then atomically exchange existing inodes and verify the resulting
-file objects. Absent targets use atomic no-replace creation. Legacy removal and
-rollback use the same journal-before-syscall protocol. Recovery can therefore
-classify pre-operation, completed-operation and conflicting states without
-guessing or overwriting a concurrent writer. Lock liveness binds PID to
-boot/start identity so PID reuse cannot preserve an abandoned owner.
-
-Terminal cleanup is one recoverable batch: capture every expected backup, run
-one final terminal target/archive fence plus capture-stability validation,
-persist `VALIDATED`, then delete captures. Any mismatch before validation moves
-all captures back to their source paths. Stale claim/lock takeover uses the
-same capture-before-validation rule. A changed or missing COMMITTED archive
-fails closed and is never repaired from a backup. These rules permit idempotent
-completion or rollback without a Git checkpoint.
+Completed legacy Plan migrations are retained only under each Plan Version's `archive/` directory. No executable migration journal, compatibility reader, or workspace binding path remains.
 
 ## 9. Migration Constraints
 

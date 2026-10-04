@@ -102,8 +102,8 @@
         "truth_sources": ["Station public Post and object paths"],
         "surfaces": ["Native Desktop publish plus anonymous HTTP read"],
         "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS10 without launching a Browser client"],
-        "unproven_scope": ["Browser UI continuity"]
+        "proven_scope": ["SOC-SEC-AS10 through Native Desktop plus anonymous HTTP read"],
+        "unproven_scope": ["Mobile UI continuity"]
       }
     },
     {
@@ -118,7 +118,7 @@
         "surfaces": ["Native Desktop Private Moments"],
         "proven_by": ["social-private-desktop-e2e"],
         "proven_scope": ["Desktop-applicable Social scenarios only"],
-        "unproven_scope": ["SOC-SEC-AS11 Browser private boundary and SOC-SEC-AS14 Mobile parity"]
+        "unproven_scope": ["SOC-SEC-AS14 Mobile parity"]
       }
     },
     {

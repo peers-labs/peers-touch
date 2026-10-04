@@ -22,7 +22,7 @@
 | `tooling/acceptance/gates/chat/desktop_dom_message_visible.py` (L93-L114) `async_harness` | `tooling/acceptance/core/harness.py` | 抽取通用 JS harness 桥接，支持命名空间 |
 | `tooling/acceptance/gates/chat/desktop_dom_message_visible.py` (L193-L204) `copy_app_log/save_dom` | `tooling/acceptance/core/gate.py` AcceptanceGate 基类方法 | 证据保存统一到基类 |
 | `tooling/acceptance/gates/dashboard/federation_visible_surface.py` (L51-L154) `CDPSession` | `tooling/acceptance/drivers/chrome.py` | WS5 将 Dashboard 消费者迁移到 Selenium ChromeDriver；完成前保留为未完成项，不声称已抽取 |
-| `tooling/acceptance/gates/chat/desktop_dom_message_visible.py` (L44-L68) `gateway_command` | `tooling/acceptance/drivers/station.py` | 抽取 Station HTTP API 客户端 |
+| Native Desktop Station binding | `tooling/acceptance/drivers/tauri.py` | 通过 embedded WebView 的 Tauri IPC 调用 `station_*` commands，不经过 localhost HTTP gateway |
 | `apps/desktop/src/acceptance/chatAcceptanceHarness.ts` | `apps/desktop/src/acceptance/chat/harness.ts` | Chat Harness 改为注册模式，迁移到子目录 |
 | `apps/desktop/src/main.tsx` (L44-L48) 硬编码导入 | `apps/desktop/src/acceptance/registry.ts` 自动注册 | 通用 Harness 注册机制 |
 | `tooling/scripts/applet-desktop-lifecycle-smoothness-gate.mjs` 等 | `tooling/acceptance/gates/applet/*.py` wrapper | Applet MJS 脚本通过 Python wrapper 接入 |
@@ -228,7 +228,7 @@ Provisioner prepares durable resources
 |------|---------|------|
 | `tooling/acceptance/gates/chat/*.py` | 中度重构 | 继承 AcceptanceGate，删除重复样板代码，业务逻辑不变 |
 | `tooling/acceptance/gates/dashboard/*.py` | 中度重构 | 使用 ChromeDriver，删除自建 CDPSession，业务逻辑不变 |
-| `tooling/acceptance/gates/desktop/gateway_smoke.py` | 中度重构 | 使用 StationDriver + ChromeDriver，删除手写 gateway_command 和 Tauri mock |
+| `tooling/acceptance/gates/desktop/primary_navigation_e2e.py` | 中度重构 | 使用 Native Tauri Driver，验证真实 Desktop 导航与生命周期 |
 | `tooling/acceptance/drivers/tauri_webdriver.py` | 重命名+重构 | 已移动到 tauri.py 并删除旧入口 |
 | `apps/desktop/src/acceptance/` | 重构 | 新增 registry.ts，chatAcceptanceHarness.ts 移动并改为注册模式 |
 | `apps/desktop/src/main.tsx` | 小改 | 改为动态 import registry 而非硬编码 chat harness |
@@ -333,10 +333,10 @@ Ephemeral launch context迁移禁止：
 4. 运行所有 Chat Gates 验证 PASS：
    - `CHAT_ACCEPTANCE_RESET=1 make acceptance-chat-domain-validation`
 
-### Phase 2: ChromeDriver + StationDriver + Dashboard/Desktop Gates
-1. ChromeDriver 实现 DomDriver；StationDriver 只实现 BaseDriver 生命周期
+### Phase 2: ChromeDriver + Native Tauri Driver + Dashboard/Native Desktop Gates
+1. ChromeDriver 实现 Dashboard DomDriver；Native Desktop 通过 Tauri IPC 和 WebDriver 组合驱动
 2. 抽取 StationAPIDriver，实现 HTTP 调用封装
-3. 重构 Dashboard federation_visible_surface 和 desktop gateway_smoke 使用新 Driver
+3. 重构 Dashboard federation_visible_surface，并将 Desktop surface proof 迁移到 Native Tauri Driver
 4. 运行所有 Dashboard/Federation Gates 验证 PASS：
    - `make acceptance-station-dashboard-domain-validation`
 

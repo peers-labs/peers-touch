@@ -71,8 +71,7 @@
     "Do not remove Tauri WebView rendering, system-browser OAuth handoff, or independent Web products",
     "Do not modify docs/architecture/federation/data-model.md"
   ],
-  "updatedAt": "2026-10-04T14:35:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T14:35:00.000Z"
 }
 ```
 

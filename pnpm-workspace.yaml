@@ -1,5 +1,4 @@
 packages:
-  - apps/dev
   - apps/mobile
   - apps/desktop
   - apps/desktop/applets-dev/*

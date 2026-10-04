@@ -314,7 +314,7 @@ business writes.
 | F-4 | Runtime bootstrap 同步阻塞 boot pipeline | Runtime bootstrap 必须异步化，超时进入降级模式，不能阻塞 shell first paint | D-09 |
 | F-5 | Store dispatch 触发超过 3 个组件重渲染并进入长期 blocking gate | Store fanout 必须通过 selector / batching 治理；该阈值在 D-08/D-12 accepted 前可先 warn-only | D-08, D-12 |
 | F-6 | 客户端本地聚合替代 Station mirror 验收/开发证据 | 验收/开发证据需要原始事件支持跨 runtime 归因；生产遥测策略另行 ADR | D-06, D-13 |
-| F-7 | 用历史 desktop-web/native 体感差异直接宣布某个 bridge 或线程模型是根因 | 历史差异不能替代 native interaction-linked trace | D-15, D-18 |
+| F-7 | 用历史非 Native baseline 与 Native 体感差异直接宣布某个 bridge 或线程模型是根因 | 历史差异不能替代 Native interaction-linked trace | D-15, D-18 |
 | F-11 | 为 Desktop 保留 browser launch、transport branch 或 proof matrix | Browser 不覆盖 native window/input/lifecycle，且会形成第二套产品合同 | D-18 |
 | F-8 | 无界 pending/inflight/worker queue 被描述为背压 | 狂点、慢依赖和大载荷会把卡顿从 bridge 转移到队列 | D-16 |
 | F-9 | 断线或超时后自动重放非幂等写 | 响应丢失时可能重复发消息、创建任务或提交操作 | D-16 |

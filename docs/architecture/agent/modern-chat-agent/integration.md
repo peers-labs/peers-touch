@@ -260,7 +260,7 @@ Architecture acceptance requires evidence plans for:
 
 - Direct model and registered stateless CLI runtime.
 - Stateful external Agent runtime if claimed in `MODERN_CHAT_AGENT_V1`.
-- Desktop App, browser gateway, and Mobile contract compatibility.
+- Native Desktop and Mobile contract compatibility.
 - Two actors and two conversations.
 - Five-turn continuity, compression, memory, skill, and knowledge attribution.
 - Tool approval, denial, timeout, loop, and cancellation.
@@ -708,11 +708,10 @@ Integration requirements:
    Acceptance-capable build bound to the active run; release builds omit them.
 5. Provider fixtures accept only server-selected reviewed response classes and
    never accept or return credentials.
-6. Desktop and Browser adapters execute one named cell, observe real DOM/API
+6. Native Desktop adapters execute one named cell, observe real product
    state, read canonical runtime facts, and perform idempotent cleanup.
-7. Station-executor rows never create a Browser client lease. Browser/Mobile
-   unavailable client-owned MCP rows create no process, operation claim, or
-   ToolCall.
+7. Station-executor rows never create a Desktop client lease. Unavailable
+   client-owned MCP rows create no process, operation claim, or ToolCall.
 8. J03-J05 barriers cover the accepted decision/outbox/receipt/effect,
    business/cleanup lease, timeout/reconnect, OAuth disconnect/provider revoke,
    and manifest/binding deletion boundaries.
@@ -720,7 +719,7 @@ Integration requirements:
    retry/metrics ordering, cancellation-ack deadline, evaluator availability,
    and actual Station restart.
 10. The J02 provisioner supplies one primary actor, one secondary actor, and
-   distinct Native/Browser device sessions.
+   distinct Native Desktop device sessions.
 11. Mobile runs one marker-bound generated-protobuf test process per tuple.
 12. The Custom Plugin retirement adapter runs scoped inventory, storage purge,
    Station migration, and redaction checks without claiming a runtime turn.

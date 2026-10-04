@@ -130,7 +130,7 @@ Acceptance 单元独立证明。
 |---|---|---|---|
 | DEV-C01 | DWF-D33 已定义 owner/child binding 约束 | 对目标源码、安装投影和宿主回调做当前验证 | 临时宿主目录安装加合成 `PreToolUse` |
 | DEV-C02 | Plan、Task、Session 和 lifecycle owner 已定义 | 实现并验证独立 request/receipt 与 closure guard | 缺失/陈旧 receipt 被拒，精确 receipt 通过 |
-| DEV-C03 | `apps/dev/` 是现有只读产品面 | 接入 owner snapshot、action reducer 与 review state | API contract 加桌面/窄屏动态验证 |
+| DEV-C03 | Workflow Snapshot 是按需只读投影 | 接入 owner snapshot、action reducer 与 review state | CLI/library contract 验证投影一致性 |
 | DEV-C04 | 架构文档和应用 README 已存在 | 确立唯一操作指南并将每条命令纳入 truth audit | 从干净 worktree 执行所有已声明命令 |
 | DEV-C05 | 现有 audit 可作为候选检查输入 | 组合为一个 typed Doctor 并验证公开承诺 | healthy fixture 与故障注入 fixture |
 | DEV-C08 | PlanMount 隔离同步进入仓库的外来 Plan | 增加 frozen version、snapshot、run 与显式 unmount | mount conflict、snapshot immutability 与并发测试 |

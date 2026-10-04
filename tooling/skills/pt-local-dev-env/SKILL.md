@@ -126,8 +126,6 @@ port conflicts:
 | Station | `18080 + slot * 100` |
 | Desktop App gateway | `3030 + slot * 100` |
 | Desktop App web | `3210 + slot * 100` |
-| Desktop Web gateway | `3031 + slot * 100` |
-| Desktop Web vite | `3211 + slot * 100` |
 | Mobile web | `5173 + slot * 100` |
 
 There is no implicit slot from Profile metadata. First explicit
@@ -219,8 +217,6 @@ PT_BOOTSTRAP_NODES=<multiaddr>
 # Desktop
 PT_DESKTOP_APP_GATEWAY_PORT=<port>
 PT_DESKTOP_APP_WEB_PORT=<port>
-PT_DESKTOP_WEB_GATEWAY_PORT=<port>
-PT_DESKTOP_WEB_WEB_PORT=<port>
 
 # Mobile
 PT_MOBILE_WEB_PORT=<port>

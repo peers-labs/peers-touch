@@ -39,8 +39,7 @@ export VITE_PORT=3000
 | 脚本 | 当前状态 | 主要用途 | 备注 |
 |---|---|---|---|
 | `preview-desktop.sh` | 推荐 | 本地启动 Desktop(Tauri) | 当前最稳定入口 |
-| `dev-desktop-app.sh` | 可用 | 启动 Native Desktop 开发运行时 | 显式设置 `PT_CLIENT_SURFACE=desktop`，允许 Desktop capability supervisor 随进程启动 |
-| `dev-desktop-web.sh` | 可用 | 启动 Browser + Desktop Rust Gateway 开发运行时 | 显式设置 `PT_CLIENT_SURFACE=browser`；Browser capability session 仅由 Web session runtime 在认证边打开 |
+| `dev-desktop-app.sh` | 可用 | 启动 Native Desktop 开发运行时 | Desktop capability supervisor 随原生进程启动 |
 | `_ensure-station.sh` | 内部依赖 | 检查/启动 station 并做健康探测 | 由 preview 脚本调用 |
 | `dev-clean.sh` | 推荐 | 清理开发进程 | 建议重启开发环境前执行 |
 | `dev-testnet-desktops.sh` | 可用 | 启动 testnet Desktop 多实例 | 支持 macOS 默认 Bash；通常通过 `make testnet-desktop NODES="a b"` 调用 |
@@ -51,7 +50,6 @@ export VITE_PORT=3000
 | `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
 | `local-dev/dev-resource-plan.mjs` | 内部 owner | 聚合标准 `ModuleImpact`、解析 target 依赖、计算峰值容量并把 ready target 的具体资源 claims 原子写入现有 Development declaration | 由 `make dev-resources-prepare/status` 与 `make dev-resource-record` 调用；不启动或清理物理资源，业务 Gate 只 attach 到 Runtime Owner manifest |
 | `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
-| `../../apps/dev/server/index.mjs` | 推荐 | 提供 Peers Dev 只读开发控制面 | `make dev-ui` 在固定 `127.0.0.1:4177` 上启动或复用机器唯一实例；应用源码与界面统一归属 `apps/dev/`，不暴露 canonical root、原始 profile/credential 或写接口 |
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
 | `check-frontend-runtime-registry.sh` | 可用 | 校验 Frontend Runtime registry 门禁 | 检查 registry 必填字段、alive/status 枚举、evidence、`needs audit` owner/revisit wording，并支持 review diff-range warning |
 | `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
@@ -75,8 +73,8 @@ export VITE_PORT=3000
 | `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
 | `acceptance-plan.py` | 推荐 | 根据 git diff 生成 Gate 影响投影，并与正式 Plan 校验 | `make acceptance-plan` 只投影当前 closure |
 | `acceptance-run.py` | 推荐 | 执行正式 Plan 当前 closure 的 Gate 并记录日志 | completion/full 必须显式请求 |
-| `execution-plan.py` | 推荐 | 解析当前 workspace 不可变绑定的 formal Plan；CI 需显式输入 | 校验 current closure，并在 PR 前执行 `--require-complete` |
-| `plan/workspace-plan-binding.mjs` | 推荐 | 建立/解析 generation-bound workspace Plan ownership | `make plan-bind PLAN=<path>` 创建首代；completed 且 quiescent 后用 `make plan-binding-advance` 显式推进 |
+| `execution-plan.py` | 推荐 | 解析当前 workspace 的 mounted Plan Version 与 Execution Run；CI 需显式输入 | 校验 current closure，并在 PR 前执行 `--require-complete` |
+| `plan/plan-mount.mjs` | 推荐 | 管理 Project Ledger PlanMount、immutable ExecutionPlanSnapshot 与 mutable ExecutionRun | `make plan-mount PLAN=<path>` 挂载，终态后用 `make plan-unmount` 释放 |
 | `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表 | CI 对每个声明路径执行 `execution-plan.py --plan`，不扫描 branch |
 | `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |
@@ -84,10 +82,9 @@ export VITE_PORT=3000
 | `acceptance-infra-boundary-test.py` | 推荐 | 校验 Acceptance Infra / 业务注入责任防火墙、Agent 开发手册路由和 Quality Evidence direction 隔离 | 由 `acceptance-runtime-provisioning-self` Gate 调用 |
 | `acceptance-coverage-report.py` | 推荐 | 从当前 workspace 的 durable latest manifests 汇总项目产品域接入状态；校验 proof/redaction/artifact identity，跨平台 Gate 只接受完整 runtime-cell matrix | 通过 `make acceptance-coverage-report` 调用；回归测试为 `acceptance-coverage-report-test.py` |
 | `acceptance-capability-report.py` | 推荐 | 汇总 feature contract、capability graph、mutual validation 与 gate 结果，产出产品能力验收报告 | 通过 `make acceptance-federation-report` 调用 |
-| `tooling/acceptance/gates/federation/surface_smoke.py` | 可用 | agent 主动验收 Federation app surface：Station 健康、Dashboard Federation bundle、Desktop gateway Station 绑定 | 通过 `make federation-surface-smoke` 调用 |
+| `tooling/acceptance/gates/federation/surface_smoke.py` | 可用 | agent 主动验收 Federation Station 健康与 Dashboard Federation bundle；Desktop 由 Native boundary Gate 验证 | 通过 `make federation-surface-smoke` 调用 |
 | `tooling/acceptance/gates/dashboard/federation_visible_surface.py` | 可用 | Headless Chrome 可见面验收 Dashboard；自动读取本地 `.localenv` 的 admin 环境变量，缺凭据时验收 login gate | 通过 `make federation-dashboard-visible-surface` 调用 |
 | `tooling/acceptance/gates/dashboard/federation_operational_drilldown.py` | 可用 | 验证 Dashboard Federation operations API 与 sync/recovery/discovery drilldown 可见面 | 通过 `make federation-dashboard-operational-drilldown` 调用 |
-| `tooling/acceptance/gates/desktop/gateway_smoke.py` | 可用 | 通过 Desktop gateway 校验 active Station，并保存 render diagnostic | 通过 `make federation-desktop-gateway-smoke` 调用 |
 | `tooling/acceptance/gates/federation/mutual_validation.py` | 可用（alias） | Federation domain validation 的兼容 wrapper；核心逻辑在 `acceptance-validate.py` | 通过 `make acceptance-federation-mutual-validation` 调用 |
 | `check-go-style.sh` | 可用（按参数） | Go 风格检查与 lint | 默认目录仍偏旧，建议传入明确目录 |
 | `create-generic-complex-applet.mjs` | 可用 | 生成 conforming complex applet fixture | 默认生成 `generic-complex-applet`；fixture 的 readiness flow 通过 SDK 发起 service/path network、upload/download、skills、AI/agent，以及 `skills.invoke` 的 Gateway-governed network/agent executor 和 `taskType: "network"` / `taskType: "agent"` 的 Gateway-governed task executor；可用 `--id` / `--name` / `--package-name` / `--description` / `--author` / `--targets desktop,web,android,ios,harmony` 生成不同 manifest identity / platform target 的 certification fixture，避免 readiness gates 只证明固定 applet id |

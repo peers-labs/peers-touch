@@ -70,7 +70,7 @@ or bypass the canonical capability services.
 |---|---|
 | Manifest, binding, readiness, revision, and typed failure truth | Station capability services |
 | Cross-platform contracts, enums, safe error details, and fixture commands | Model protobuf |
-| Native/Browser action and receiver observation | Desktop Harness through canonical Desktop APIs |
+| Native Desktop action and receiver observation | Desktop Harness through canonical Desktop APIs |
 | Mobile compatibility assertions | Mobile generated-protobuf contract tests |
 | Scenario preconditions, deterministic barriers, and fixture cleanup | Station acceptance scenario control |
 | Tuple expansion and role applicability | Reviewed runtime matrix |
@@ -195,7 +195,7 @@ The J02 provisioner allocates:
 
 - one primary actor used for the candidate-wide actor identity;
 - one secondary actor used only as a cross-scope target;
-- distinct Native and Browser device/session identities.
+- distinct Native Desktop device/session identities.
 
 AS-10 performs canonical cross-actor binding/read attempts and cross-device
 session attempts. Evidence records only hashes and typed rejection details.

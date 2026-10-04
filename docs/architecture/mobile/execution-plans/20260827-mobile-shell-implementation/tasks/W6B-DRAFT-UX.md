@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W6B-DRAFT-UX",
   "workstreamId": "W6B",
@@ -49,19 +49,7 @@
     "Do not mix newly selected media with owner-undefined restored media references",
     "Descriptor-bearing restored drafts and private-audience envelopes remain owner-blocked"
   ],
-  "updatedAt": "2026-09-17T03:30:00Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/features/social/useMomentsDraft.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/pages/moments/MomentComposer.test.ts"
-    }
-  ]
+  "updatedAt": "2026-09-17T03:30:00.000Z"
 }
 ```
 

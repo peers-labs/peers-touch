@@ -462,7 +462,6 @@ class BehaviorRuleTests(unittest.TestCase):
             "apps/desktop/src-tauri/src/messaging/direct.rs"
         )
         self.assertIn("chat-native-two-client-e2e", selected)
-        self.assertIn("chat-desktop-gateway-e2e", selected)
 
     def test_prekey_owner_selects_native_two_client(self) -> None:
         selected = self.selected_ids(
@@ -470,9 +469,8 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertIn("chat-native-current-profile-two-client-e2e", selected)
         self.assertIn("chat-native-two-client-e2e", selected)
-        self.assertIn("chat-desktop-gateway-e2e", selected)
 
-    def test_friend_request_owners_select_gateway_lifecycle(self) -> None:
+    def test_friend_request_owners_select_native_onboarding(self) -> None:
         for path in (
             "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
             "apps/station/app/subserver/social/domain/"
@@ -483,7 +481,7 @@ class BehaviorRuleTests(unittest.TestCase):
             with self.subTest(path=path):
                 selected = self.selected_ids(path)
                 self.assertIn(
-                    "chat-friend-request-gateway-e2e",
+                    "chat-lifecycle-onboarding-e2e",
                     selected,
                 )
 
@@ -515,12 +513,14 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertIn("station-api-ownership", selected)
 
-    def test_gateway_only_handler_does_not_select_native_two_client(self) -> None:
+    def test_gateway_only_handler_selects_no_desktop_product_gate(self) -> None:
         selected = self.selected_ids(
             "apps/desktop/src-tauri/src/interface/http_gateway/handler.rs"
         )
-        self.assertNotIn("chat-native-two-client-e2e", selected)
-        self.assertIn("chat-desktop-gateway-e2e", selected)
+        self.assertEqual(
+            selected,
+            {"chat-lifecycle-tree-zero-reference-e2e"},
+        )
 
     def test_mobile_social_gateway_selects_chat_and_contacts_gates(self) -> None:
         selected = self.selected_ids(

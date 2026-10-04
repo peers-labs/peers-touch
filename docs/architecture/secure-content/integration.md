@@ -254,7 +254,7 @@ Desktop and Mobile Native own key access, encryption, transfer checkpoints,
 decryption, local SQLCipher projection, and recovery. Web layers own plaintext
 composition/rendering but never cryptographic material or transfer state.
 
-Browser supports PUBLIC only and rejects private operations before network send.
+Desktop has no browser runtime or browser-specific private-content branch.
 
 Under accepted `SC-D20`, source-only W7A lands the Key Exchange routes,
 canonical protobuf/error projection, publication receipt and API registry
@@ -271,7 +271,6 @@ Under accepted `SC-D21`, W7 evidence integrates through existing owners:
 | durable publication state | Desktop Native encrypted store | acceptance-only callback after the production transaction commits |
 | request dispatch | Desktop Native production transport | acceptance-only callback after dispatch acceptance and before response projection |
 | trusted response | Desktop Native response validator/store | acceptance-only callback after validation and before the production state transaction |
-| Browser network interval | Browser network observer | monotonic event sequence plus same-loop terminal marker |
 | process restart | W7 runtime owner + machine control plane | typed request, lease-held restart, immutable child manifest |
 | account/device/recovery state | Actor Identity, session, Recovery, and Key Exchange provisioners | immutable fixture handles and typed owner actions |
 | Station binding | environment/runtime provisioner | approved binding handles in the fixture/runtime manifests |
@@ -304,7 +303,6 @@ canonical Acceptance service/client binding semantics:
 | `station-four` | Local Dev Control Plane + Station deploy owner | primary `four` service attestation; all single-Station Social Journeys bind here |
 | `station-five-arm` | Local Dev Control Plane + Station deploy owner | secondary `fiveArm` service attestation for multi-profile Chat/reset Journeys |
 | Desktop Native | Desktop runtime owner | isolated Tauri/WebDriver clients with production Moments/Chat Harness actions |
-| Browser | Browser runtime owner | isolated browser sessions with production public Social path and SC-D21 network observer |
 | iOS Simulator | Mobile runtime owner | embedded Tauri Mobile build, isolated Appium session/storage, production Mobile Rust + mobile-web actions |
 | Android Emulator | Mobile runtime owner | embedded Tauri Mobile build, isolated Appium session/storage, production Mobile Rust + mobile-web actions |
 | Business scenarios | Secure Content Development runner | validate/attach/invoke/assert only; no provisioning or topology inference |
@@ -391,14 +389,14 @@ Workstream evidence is partitioned as follows:
 | W12A source freeze | `source-freeze/<generation>` | `development/secure-content/W12A/source/<generation>/result.json` |
 | W12A activation | `schema-activation/{four,fiveArm}` | `development/secure-content/W12A/activation/<generation>/<profile>/<reset-id>/` |
 | W12A aggregate | `schema-activation-aggregate` | `development/secure-content/W12A/activation/<generation>/aggregate/result.json` |
-| W7 | `desktop-pilot`; `browser-private-boundary`; aggregate | `development/secure-content/W7/<generation>/<variant>/<run-id>/result.json` |
+| W7 | `desktop-pilot`; aggregate | `development/secure-content/W7/<generation>/<variant>/<run-id>/result.json` |
 | W8 | `social-expansion/{audience,comment,object,subtype,delete-block,bounds}`; aggregate | `development/secure-content/W8/<generation>/<variant>/<run-id>/result.json` |
 | W9 | `mobile-required-matrix/{ios,android,cross-platform}`; aggregate | `development/secure-content/W9/<generation>/<variant>/<run-id>/result.json` |
 | W2 | `chat-attachment/{desktop,ios,android}`; aggregate | `development/secure-content/W2/<generation>/<variant>/<run-id>/result.json` |
 | W10 | `chat-revalidation/{desktop,ios,android}`; aggregate | `development/secure-content/W10/<generation>/<variant>/<run-id>/result.json` |
 | W11 | `hard-cut-regression/<required-runtime-variant>`; aggregate | `development/secure-content/W11/<generation>/<variant>/<run-id>/result.json` |
 | W12 final cut | `final-cut/{four,fiveArm}` | `development/secure-content/W12/final-cut/<generation>/<profile>/<reset-id>/` |
-| W12 product children | `final-{desktop,browser,ios,android,chat-desktop,chat-ios,chat-android}` | `development/secure-content/W12/product/<generation>/<variant>/<run-id>/result.json` |
+| W12 product children | `final-{desktop,ios,android,chat-desktop,chat-ios,chat-android}` | `development/secure-content/W12/product/<generation>/<variant>/<run-id>/result.json` |
 | W12 aggregate | `final-cut-product-aggregate` | `development/secure-content/W12/aggregate/<generation>/result.json` |
 
 These are logical paths beneath the machine Development artifact root, never

@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "MOBILE-FRONTIER-PROOF",
   "workstreamId": "MOBILE-FRONTIER",
@@ -55,8 +55,7 @@
     "Do not substitute build, stale, sender-only, or source evidence for a real Journey",
     "Do not run formal Acceptance or prepare delivery from this Task"
   ],
-  "updatedAt": "2026-09-18T07:30:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-09-18T07:30:00.000Z"
 }
 ```
 

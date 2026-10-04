@@ -1,8 +1,8 @@
 # Secure Content - Architecture Design
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-24
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-10-04
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -40,7 +40,7 @@
 | The hard-cut plan's `one`/slot `0` commands conflict with the live `four`/slot `5` binding and machine-shaped work items | `verified_fact` | plan sections 4/8/12, work-item YAML, `make dev-check WORK_ITEM=secure-content-w11` | high | plan correction after decision acceptance |
 | W7 runtime admission conflates the ephemeral client connection endpoint with the canonical endpoint bound by W12A schema activation | `verified_fact` | W7 checkpoint `15c0a7858`; `runtime_owner.py::_resolve_canonical_private_schema_attestation`; `runtime_manifest.py::_validate_services` | high | none |
 | One owner-published service entry can carry separate connection and schema-attestation endpoints without creating another topology owner | `accepted_decision` | accepted `SC-D28` | high | implementation proof |
-| Development runtime-manifest validation supports Desktop and Browser clients but has no Mobile client kind and requires one top-level profile | `verified_fact` | `tooling/development/secure_content/run.py::RUNTIME_CLIENT_KINDS` and `_load_runtime_manifest` | high | accepted `SC-D22` implementation |
+| Development runtime-manifest validation admits Native Tauri Desktop plus Mobile simulator/emulator clients and rejects a Browser client kind | `verified_fact` | `tooling/development/secure_content/run.py::RUNTIME_CLIENT_KINDS` and `_load_runtime_manifest` | high | none |
 | Mobile has generated Secure Content contracts but no private Social Native runtime or attachable product actions | `verified_fact` | `apps/mobile/src/gen/proto/domain/{secure_content,social}`, `apps/mobile/src-tauri/src/secure_content`, Mobile Moments/runtime inventory | high | W9 implementation and product evidence |
 | `social_private_posts` is a mixed historical/canonical table name; the current migrator adds encrypted columns beside a possible plaintext-era schema | `verified_fact` | `migratePrivateContentPost`, `SocialPrivateContentPost`, W11 deletion commit `b8171e1f5` | high | accepted `SC-D23` and profile pre-audit |
 | An allowlisted full private Development reset plus owner-mediated object deletion can remove mixed private state without touching public or Conversation truth | `accepted_decision` | accepted `SC-D23` | high | implementation and two-profile post-audit |
@@ -318,10 +318,9 @@ authorization, crypto, persistence, or runtime lifecycle implementation.
 ```text
 External scenario
   -> attach through immutable runtime manifest
-  -> invoke production Desktop/Browser intent
+  -> invoke production Native Desktop intent
   -> wait on acceptance-only observation barrier
        -> production Native store/transport/store boundary
-       -> production Browser network observer event loop
   -> request runtime-owner action when restart is required
        -> runtime owner acquires lease and restarts
        -> fresh immutable child manifest
@@ -353,14 +352,6 @@ then publishes a fresh immutable runtime manifest. Continuation requires:
 - source, profile, client identity, and retained-storage identity still match;
 - Native boot identity changed and session generation did not regress;
 - the old manifest is never reused for post-restart commands.
-
-The Browser network observer assigns a monotonic sequence to every observed
-HTTP request and WebSocket/SSE open, frame, error, and close event. A capture
-ends only when an explicit terminal marker is enqueued on the same observer
-event loop after the production action resolves. Persisting that marker proves
-that every earlier queued event belongs to the closed capture interval.
-Socket closure, sleep, polling silence, and timeout expiry are not terminal
-evidence.
 
 Account switch, Station switch, publisher-device revocation, and historical
 recovery epoch enter a scenario only as immutable, digest-bound fixture handles:
@@ -571,7 +562,7 @@ Local Dev Control Plane
 Platform runtime owner
   -> deploy/attest station-four
   -> deploy/attest station-five-arm when the Journey requires it
-  -> launch isolated Desktop/Browser/iOS-Simulator/Android-Emulator clients
+  -> launch isolated Native Desktop/iOS-Simulator/Android-Emulator clients
   -> publish one immutable Development Runtime Manifest v3
                  |
                  v
@@ -595,11 +586,11 @@ while holding the declared resources, but it restores the canonical
 runner cannot create a profile, deploy a service, launch a client, allocate
 storage, or infer a Station from CLI order.
 
-Development client kinds are `native-tauri`, `browser`,
-`tauri-ios-simulator`, and `tauri-android-emulator`. Physical Mobile devices
-remain formal Acceptance resources. Missing platform support, source equality,
-service attestation, client isolation, live identity, or Fixture capability
-fails before the first product action.
+Development client kinds are `native-tauri`, `tauri-ios-simulator`, and
+`tauri-android-emulator`. Physical Mobile devices remain formal Acceptance
+resources. Missing platform support, source equality, service attestation,
+client isolation, live identity, or Fixture capability fails before the first
+product action.
 
 ### 13.2 Product evidence partition
 

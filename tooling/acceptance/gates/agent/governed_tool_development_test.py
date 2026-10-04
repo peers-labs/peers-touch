@@ -320,7 +320,7 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
             r"approvalBranchesComplete:\s+!candidateMode\s+"
             r"\|\| cell !== 'AS-05A'",
         )
-        self.assertIn("await api.closeBrowserCapabilitySession()", harness_source)
+        self.assertIn("await api.closeSecondaryCapabilitySession()", harness_source)
         self.assertIn("await api.startAgentClientExecutorSupervisor()", harness_source)
         self.assertRegex(
             harness_source,

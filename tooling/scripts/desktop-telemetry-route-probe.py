@@ -707,8 +707,12 @@ def recommended_review_commands(station: str) -> list[dict[str, str]]:
             "command": f"curl -fsS {station.rstrip('/')}{APP_META_VERSION_PATH}",
         },
         {
-            "purpose": "Run the live Gateway -> Station telemetry gate after route capability passes.",
-            "command": f"python3 tooling/scripts/desktop-telemetry-live-gate.py --station {station}",
+            "purpose": "Query Station telemetry into an explicit Dev/CI mirror after route capability passes.",
+            "command": (
+                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                f"--station-url {station} "
+                "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+            ),
         },
         {
             "purpose": "Re-run the full Phase 0 bundle and keep fail-closed evidence if runtime samples are still missing.",

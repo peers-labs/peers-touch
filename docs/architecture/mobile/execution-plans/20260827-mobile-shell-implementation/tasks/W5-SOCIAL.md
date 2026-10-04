@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W5-SOCIAL",
   "workstreamId": "W5",
@@ -84,34 +84,7 @@
     "Do not retain aliases, dual writes, or retired Friend Chat fallback calls",
     "Required simulator runtime proof remains in W5-PROOF; physical proof is optional diagnostics"
   ],
-  "updatedAt": "2026-09-18T22:55:09.000Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "cd apps/station && go test -race -count=1 ./app/subserver/social/... ./frame/core/federation/..."
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "pnpm --dir apps/mobile exec vitest run src/services/gateways src/features/social src/runtimes/socialProjectionRuntime.test.ts (18 files, 170 tests)"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib (204 tests)"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "pnpm --dir apps/mobile run check"
-    },
-    {
-      "verificationClass": "STRUCTURAL_CHECK",
-      "result": "PASS",
-      "ref": "station-api-ownership; mobile shell contract scanner; zero production Mobile /friend-chat/* or /group-chat/* callers"
-    }
-  ]
+  "updatedAt": "2026-09-18T22:55:09.000Z"
 }
 ```
 

@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "DWF-B",
   "workstreamId": "DWF-B",
@@ -65,18 +65,6 @@
     "Never activate both legacy and package plans"
   ],
   "updatedAt": "2026-09-16T00:00:00.000Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "PASS",
-      "ref": "acceptance://development-workflow-control-plane/20260916T130523369357Z-236b04fb2e493d336b373ea904c95f97"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/migration-crosswalk.json"
-    }
-  ],
   "completionClass": "functional"
 }
 ```

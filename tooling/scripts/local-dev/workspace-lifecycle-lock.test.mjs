@@ -97,7 +97,7 @@ test('takes over a stale legacy binding lock through an owner-token claim', () =
         now: NOW,
       },
     );
-    stale.kind = 'peers-touch-workspace-plan-binding-lock';
+    stale.kind = 'peers-touch-workspace-lifecycle-lock';
     stale.recordDigest = digestWorkspaceLifecycleLock(stale);
     writeFileSync(lockPath, `${JSON.stringify(stale)}\n`, { mode: 0o600 });
 

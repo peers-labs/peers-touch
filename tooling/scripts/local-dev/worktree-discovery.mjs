@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 
-import { workspaceIdForRoot } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
+import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
 
 export class WorktreeDiscoveryError extends Error {
   constructor(code, message, detail = {}) {

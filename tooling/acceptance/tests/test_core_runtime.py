@@ -551,25 +551,27 @@ class TauriDriverContractTests(unittest.TestCase):
         from tooling.acceptance.drivers.tauri import SCRIPT_TIMEOUT
         self.assertEqual(SCRIPT_TIMEOUT, 10.0)
 
+    def test_tauri_session_invokes_native_command_without_http_gateway(self):
+        from tooling.acceptance.drivers.tauri import TauriSession
 
-class StationDriverTests(unittest.TestCase):
-    def test_station_driver_inherits_basedriver(self):
-        from tooling.acceptance.drivers.station import StationDriver
-        self.assertTrue(issubclass(StationDriver, BaseDriver))
+        session = TauriSession(MagicMock())
+        native_driver = MagicMock()
+        web_driver = native_driver.driver
+        web_driver.execute_script.side_effect = [
+            None,
+            {"ok": True, "data": {"status": "{}"}},
+            None,
+        ]
+        session._driver = native_driver
 
-    def test_station_driver_has_no_dom_capabilities(self):
-        from tooling.acceptance.drivers.station import StationDriver
-        s = StationDriver("http://localhost:9999")
-        self.assertFalse(isinstance(s, DomDriver))
-        for method in (
-            "execute_script",
-            "execute_async_script",
-            "find_element",
-            "find_elements",
-            "save_screenshot",
-            "get_page_source",
-        ):
-            self.assertFalse(hasattr(s, method))
+        result = session.invoke_app_result("station_list")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(web_driver.execute_script.call_count, 3)
+        self.assertIn(
+            "window.__TAURI_INTERNALS__.invoke",
+            web_driver.execute_script.call_args_list[0].args[0],
+        )
 
 
 class ChromeDriverTests(unittest.TestCase):

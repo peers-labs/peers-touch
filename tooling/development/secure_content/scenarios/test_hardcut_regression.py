@@ -4,12 +4,10 @@ import unittest
 from typing import Any, Mapping
 
 from tooling.development.secure_content.scenarios import (
-    final_browser,
     final_chat,
     final_chat_mobile,
     final_desktop,
     final_mobile,
-    hardcut_browser_regression,
     hardcut_chat_mobile_regression,
     hardcut_chat_regression,
     hardcut_mobile_regression,
@@ -110,7 +108,6 @@ class HardcutRegressionScenarioTest(unittest.TestCase):
     def test_hardcut_scenarios_use_w11_owned_results(self) -> None:
         scenarios = (
             hardcut_regression.SCENARIO,
-            hardcut_browser_regression.SCENARIO,
             hardcut_mobile_regression.SCENARIO,
             hardcut_chat_regression.SCENARIO,
             hardcut_chat_mobile_regression.SCENARIO,
@@ -154,7 +151,6 @@ class HardcutRegressionScenarioTest(unittest.TestCase):
     def test_final_adapters_use_w12_owned_product_results(self) -> None:
         scenarios = (
             final_desktop.SCENARIO,
-            final_browser.SCENARIO,
             final_mobile.SCENARIO,
             final_chat.SCENARIO,
             final_chat_mobile.SCENARIO,

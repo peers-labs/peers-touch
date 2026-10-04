@@ -9,6 +9,6 @@ Native macOS product Acceptance lives under `tooling/acceptance/` and uses:
 Python gates -> Selenium -> embedded WebDriver -> native Tauri WKWebView
 ```
 
-`tests/performance-browser-collect.spec.ts` samples the browser performance
-cell. The remaining specs and shared fixtures are retained only for the
-performance evidence pipeline; they are not Acceptance gates.
+The retained specs sample only Native Tauri WebView development or packaged
+runtime cells. They belong to the performance evidence pipeline and are not
+product Acceptance gates.

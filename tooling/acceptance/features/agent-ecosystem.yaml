@@ -31,7 +31,7 @@
     ],
     "visible": [
       "Marketplace page is reachable from the primary sidebar navigation without keyboard shortcuts",
-      "ecosystem browser in Desktop shows groups",
+      "Desktop Marketplace shows ecosystem groups",
       "comments appear under shared agent profiles"
     ]
   },

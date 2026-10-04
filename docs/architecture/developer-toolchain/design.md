@@ -45,7 +45,7 @@
 - Profile list, initialization, activation, resolution, and redacted display.
 - Dependency and environment diagnostics.
 - Local Station health, start, status, stop, and restart.
-- Desktop App and Desktop Web start, status, stop, and restart.
+- Native Desktop start, status, stop, and restart.
 - Cross-platform source checks currently implemented in shell.
 - Make, package, and PowerShell adapters over the same command contract.
 - Structured runtime metadata and bounded cleanup.
@@ -205,12 +205,12 @@ the command contract.
 
 ### 7.4 Desktop Composition
 
-App mode starts one Vite renderer and one windowed Tauri process. Web mode
-starts one Vite renderer and one rendererless Tauri process. Both use separate
-profiles, storage roots, gateway ports, and web ports while sharing the selected
-Station.
+Desktop starts one Vite renderer and one windowed Tauri process. Each worktree
+uses an isolated profile, storage root, renderer port, and native runtime
+identity while connecting to the selected Station. No rendererless Web mode is
+supported.
 
-Applet assets are built once before the two Desktop processes start. Tauri's
+Applet assets are built once before the Desktop process starts. Tauri's
 internal `beforeDevCommand` is disabled only for the externally coordinated
 development invocation.
 

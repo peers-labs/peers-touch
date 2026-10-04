@@ -1,6 +1,6 @@
 {
   "id": "desktop-performance-telemetry",
-  "description": "Long-lived Desktop performance telemetry gates. This layer proves Desktop Gateway upload, Station ingest/query/rollup, local inspector diagnostics, and Station mirror sampler evidence.",
+  "description": "Long-lived Native Desktop performance telemetry gates. This layer proves Tauri command upload, Station ingest/query/rollup, local inspector diagnostics, and Station mirror sampler evidence.",
   "logic": {
     "layer": "telemetry",
     "question": "Can Desktop performance events flow through the product telemetry sink and return as queryable Station mirror evidence?",
@@ -9,7 +9,6 @@
   },
   "selected_gates": [
     "desktop-telemetry-mirror-static-gate",
-    "desktop-telemetry-live-gate",
     "desktop-telemetry-mirror-template-static-gate",
     "desktop-telemetry-mirror-template-gate",
     "desktop-local-telemetry-buffer-static-gate",

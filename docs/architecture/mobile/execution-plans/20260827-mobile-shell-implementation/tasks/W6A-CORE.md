@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "W6A-CORE",
   "workstreamId": "W6A",
@@ -56,24 +56,7 @@
     "Forward, delete, and retained-history budget remain outside this core slice",
     "Receiver and restart proof remains in W6A-PROOF"
   ],
-  "updatedAt": "2026-09-16T00:00:00.000Z",
-  "durableEvidence": [
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3045"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src/features/social/socialRequestPagination.test.ts"
-    },
-    {
-      "verificationClass": "SOURCE_CHECK",
-      "result": "PASS",
-      "ref": "apps/mobile/src-tauri/target/search-interaction-browser/results.json"
-    }
-  ]
+  "updatedAt": "2026-09-16T00:00:00.000Z"
 }
 ```
 

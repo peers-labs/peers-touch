@@ -31,7 +31,6 @@ docs/architecture/development-workflow/
 
 tooling/scripts/plan/
 ├── plan-package.mjs
-├── plan-migration.mjs
 ├── planctl.mjs
 ├── planctl.test.mjs
 ├── plan-mount.mjs
@@ -108,11 +107,6 @@ tooling/scripts/
     │   ├── session.lock
     │   ├── checks/
     │   └── artifacts/
-    └── plan-migration/
-        ├── migration.json
-        ├── migration.json.reviewed
-        ├── migration.lock
-        └── migration.lock.recovery
 
 ~/.peers-touch/dev/bindings/
 ├── owners/<host>/<rootChatHash>/
@@ -127,9 +121,7 @@ tooling/scripts/
 
 ## 2. File Responsibilities
 
-Responsibilities below describe the NBI02 cutover result. Until that Task
-lands, `workspace-plan-binding.mjs` remains only the superseded current
-implementation and must not be extended.
+Responsibilities below describe the NBI02 PlanMount cutover result.
 
 | Path | Responsibility |
 |---|---|
@@ -142,8 +134,7 @@ implementation and must not be extended.
 | `execution-plans/*/tasks/*.md` | One immutable Task Slice specification |
 | `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
 | `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
-| `plan-migration.mjs` | Locked, journaled migration with global path-role exclusion, atomic exchange/no-replace writes, takeover and recovery |
-| `planctl.mjs` | `validate/current/next/status/activate/advance/reopen/migrate` CLI |
+| `planctl.mjs` | `validate/current/next/status/activate/advance/reopen/invalidate-source` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
 | `plan-mount.mjs` | Project Ledger mount/unmount owner, immutable snapshot creation, live-worktree exclusion, and direct resolution |
 | `plan-mount.test.mjs` | Authoring/execution separation, idempotence, mount conflict, explicit unmount, snapshot, tamper, and concurrency regressions |

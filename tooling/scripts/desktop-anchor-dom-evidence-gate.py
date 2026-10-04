@@ -60,7 +60,7 @@ def build_report(
         "phase": "P0b-1",
         "bom": ["BOM-SMP-01"],
         "spec": ["SPEC-ANCHOR-01"],
-        "gate": "Browser and Tauri/WebView DOM automation must prove every required anchor by selector and count",
+        "gate": "Dev and packaged Native Tauri DOM automation must prove every required anchor by selector and count",
         "domAutomation": dom_evidence,
         "summary": {
             "status": status,
@@ -68,8 +68,8 @@ def build_report(
             "proofStatus": "PROVEN" if status == "pass" else "UNPROVEN",
             "sampleEmissionAllowed": status == "pass",
             "domAutomationStatus": dom_evidence.get("status"),
-            "browserProvenCount": dom_evidence.get("browser", {}).get("provenCount", 0),
-            "tauriProvenCount": dom_evidence.get("tauri", {}).get("provenCount", 0),
+            "tauriDevProvenCount": dom_evidence.get("tauriDev", {}).get("provenCount", 0),
+            "tauriPackagedProvenCount": dom_evidence.get("tauriPackaged", {}).get("provenCount", 0),
         },
     }
     issue_breakdown = dom_evidence.get("issue_breakdown", dom_evidence.get("issueBreakdown"))
@@ -108,27 +108,27 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Source Spec: `{', '.join(dom.get('sourceSpec', []))}`",
         f"- Source Gate: `{dom.get('sourceGate', 'n/a')}`",
         f"- Details: `{','.join(dom.get('details', []))}`",
-        f"- Browser anchors proven: `{dom.get('browser', {}).get('provenCount', 0)}`",
-        f"- Tauri anchors proven: `{dom.get('tauri', {}).get('provenCount', 0)}`",
+        f"- Dev native anchors proven: `{dom.get('tauriDev', {}).get('provenCount', 0)}`",
+        f"- Packaged native anchors proven: `{dom.get('tauriPackaged', {}).get('provenCount', 0)}`",
         "",
-        "| Anchor | Browser | Tauri |",
+        "| Anchor | Dev native | Packaged native |",
         "|---|---|---|",
     ]
     inventory = load_inventory_module()
-    browser_anchors = {
-        anchor["anchorId"]: anchor for anchor in dom.get("browser", {}).get("anchors", [])
+    tauri_dev_anchors = {
+        anchor["anchorId"]: anchor for anchor in dom.get("tauriDev", {}).get("anchors", [])
     }
-    tauri_anchors = {
-        anchor["anchorId"]: anchor for anchor in dom.get("tauri", {}).get("anchors", [])
+    tauri_packaged_anchors = {
+        anchor["anchorId"]: anchor for anchor in dom.get("tauriPackaged", {}).get("anchors", [])
     }
     for anchor in inventory.REQUIRED_ANCHORS:
-        browser = browser_anchors.get(anchor.anchor_id, {})
-        tauri = tauri_anchors.get(anchor.anchor_id, {})
+        tauri_dev = tauri_dev_anchors.get(anchor.anchor_id, {})
+        tauri_packaged = tauri_packaged_anchors.get(anchor.anchor_id, {})
         lines.append(
-            "| `{anchor}` | `{browser}` | `{tauri}` |".format(
+            "| `{anchor}` | `{tauri_dev}` | `{tauri_packaged}` |".format(
                 anchor=anchor.anchor_id,
-                browser=browser.get("status", "missing"),
-                tauri=tauri.get("status", "missing"),
+                tauri_dev=tauri_dev.get("status", "missing"),
+                tauri_packaged=tauri_packaged.get("status", "missing"),
             )
         )
     lines.extend(
@@ -137,7 +137,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "## Boundary",
             "",
             "- This gate validates an existing DOM evidence artifact.",
-            "- It does not launch browser or Tauri automation by itself.",
+            "- It does not launch Native Tauri automation by itself.",
             "- Missing or partial runtime evidence remains `PARTIAL/UNPROVEN`.",
         ]
     )

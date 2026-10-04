@@ -1,6 +1,6 @@
 //! Presence Tauri command — single entry point for all lifecycle triggers.
 //!
-//! Frontend modules (browser visibility hook, identity event bridge, network
+//! Frontend modules (renderer visibility hook, identity event bridge, network
 //! online/offline observer, periodic heartbeat) only ever call
 //! `presence_notify({ trigger })`. The Rust side resolves the actor for the
 //! invoking window, looks up the JWT, and hands both to the supervisor —
@@ -62,7 +62,7 @@ pub fn presence_query(
 /// non-throwing because **lifecycle hooks must never block the UI**.
 /// Triggers for unauthenticated windows or unknown wire-form strings are
 /// silently dropped (with a debug log), mirroring how `visibilitychange`
-/// fires regardless of auth state in the browser.
+/// fires regardless of auth state in the embedded WebView.
 #[tauri::command]
 pub fn presence_notify(
     input: PresenceNotifyInput,

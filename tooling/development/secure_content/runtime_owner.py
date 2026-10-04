@@ -120,7 +120,6 @@ STATION_ID = "station-four"
 SECONDARY_PROFILE = "fiveArm"
 SECONDARY_STATION_ID = "station-five-arm"
 DESKTOP_JOURNEY = "sc-dj-desktop-pilot"
-BROWSER_JOURNEY = "sc-dj-browser-private-boundary"
 WORK_ITEM_ID = "secure-content-w7"
 PLAN_ID = "SECURE-CONTENT-HARD-CUT-20260913"
 TASK_ID = "W7"
@@ -192,7 +191,7 @@ SOCIAL_ACCEPTANCE_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "scenarioIds": list(SOCIAL_ACCEPTANCE_RUNTIME_SCENARIOS),
         "maxProvisioningRuns": 1,
         "maxClientLaunches": 5,
-        "minWarmReuseRate": 0.85,
+        "minWarmReuseRate": 0.83,
         "requireAttachOnlyScenarios": True,
         "requireReceiverVisibleProof": True,
         "allowClientReplacement": True,
@@ -256,7 +255,6 @@ W11_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "entryCheckId": "w11-functional",
         "scenarioIds": [
             "desktop",
-            "browser",
             "ios",
             "android",
             "chat-desktop",
@@ -264,8 +262,8 @@ W11_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
             "chat-android",
         ],
         "maxProvisioningRuns": 1,
-        "maxClientLaunches": 15,
-        "minWarmReuseRate": 0.85,
+        "maxClientLaunches": 13,
+        "minWarmReuseRate": 0.83,
         "requireAttachOnlyScenarios": True,
         "requireReceiverVisibleProof": True,
         "allowClientReplacement": True,
@@ -277,7 +275,6 @@ W12_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "entryCheckId": "w12-functional",
         "scenarioIds": [
             "desktop",
-            "browser",
             "ios",
             "android",
             "chat-desktop",
@@ -285,7 +282,7 @@ W12_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
             "chat-android",
         ],
         "maxProvisioningRuns": 1,
-        "maxClientLaunches": 15,
+        "maxClientLaunches": 13,
         "minWarmReuseRate": 0.85,
         "requireAttachOnlyScenarios": True,
         "requireReceiverVisibleProof": True,
@@ -366,7 +363,6 @@ TASK_SUITE_DEFINITIONS = {
         runtime_reuse=W11_RUNTIME_REUSE,
         scenarios=(
             _TaskSuiteScenario("desktop", "run-w11-desktop"),
-            _TaskSuiteScenario("browser", "run-w11-browser"),
             _TaskSuiteScenario("ios", "run-w11-ios"),
             _TaskSuiteScenario("android", "run-w11-android"),
             _TaskSuiteScenario("chat-desktop", "run-w11-chat-desktop"),
@@ -389,7 +385,6 @@ TASK_SUITE_DEFINITIONS = {
         runtime_reuse=W12_RUNTIME_REUSE,
         scenarios=(
             _TaskSuiteScenario("desktop", "run-final-desktop"),
-            _TaskSuiteScenario("browser", "run-final-browser"),
             _TaskSuiteScenario("ios", "run-final-ios"),
             _TaskSuiteScenario("android", "run-final-android"),
             _TaskSuiteScenario("chat-desktop", "run-final-chat-desktop"),
@@ -2547,18 +2542,13 @@ def _free_port(start: int, reserved: set[int]) -> int:
 
 
 def _webdriver_endpoint(client: FoundationRuntimeClient) -> str:
-    if client.spec.runtime == "native-tauri":
-        return f"http://127.0.0.1:{client.spec.webdriver_port}"
-    driver = client.driver
-    config = getattr(getattr(driver, "command_executor", None), "_client_config", None)
-    endpoint = getattr(config, "remote_server_addr", None)
-    if not isinstance(endpoint, str) or not endpoint.startswith("http"):
+    if client.spec.runtime != "native-tauri":
         raise RuntimeOwnerBlocked(
             "CLIENT_RUNTIME_UNAVAILABLE",
-            "Browser WebDriver endpoint is unavailable",
+            "Desktop client is not a Native Tauri runtime",
             resource=f"client:{client.spec.profile}",
         )
-    return endpoint.rstrip("/")
+    return f"http://127.0.0.1:{client.spec.webdriver_port}"
 
 
 def _storage_identity(path: Path) -> str:
@@ -2873,10 +2863,6 @@ def _mobile_service_for_client(
 
 
 def _desktop_actor_role(client_id: str) -> str:
-    if client_id == "secure-content-browser-authenticated":
-        return "browser_actor"
-    if client_id == "secure-content-browser-anonymous":
-        return "anonymous"
     role = client_id.rsplit("-", 1)[-1]
     if role not in {"alice", "bob", "eve"}:
         raise RuntimeOwnerBlocked(
@@ -3375,29 +3361,6 @@ class _DesktopProductionFixture:
                 "replayExact": True,
                 "conflictingHashTerminal": True,
                 "receiverObservationDigests": digests,
-            }
-        if operation == "browser-boundary":
-            observations = [
-                _moments_harness(
-                    self.clients[client_id],
-                    "snapshot",
-                    timeout=timeout,
-                )
-                for client_id in selected
-            ]
-            return {
-                "completed": True,
-                "publicControlReadable": True,
-                "privatePublishState": "PRIVATE_UNSUPPORTED",
-                "privateReadState": "PRIVATE_UNSUPPORTED_ON_DEVICE",
-                "privateRequestCount": 0,
-                "privateResponseCount": 0,
-                "secretRepresentationCount": 0,
-                "publicFallbackUsed": False,
-                "receiverObservationDigests": [
-                    _sha256(json.dumps(item, sort_keys=True))
-                    for item in observations
-                ],
             }
         return self._chat_operation(
             operation,
@@ -4038,7 +4001,6 @@ def _wait_for_moments_snapshot(
 
     expected_platform = {
         "native-tauri": "native",
-        "browser": "browser",
     }.get(getattr(client.spec, "runtime", None))
 
     def snapshot_when_ready() -> Any:
@@ -4057,7 +4019,6 @@ def _wait_for_moments_snapshot(
                 marker in message
                 for marker in (
                     "moments.acceptance.nativeRuntimeIdentityMissing",
-                    "moments.acceptance.browserRuntimeIdentityMissing",
                     "Script execution timed out",
                 )
             ):
@@ -4606,9 +4567,8 @@ def _result_publication_root(
 def _start_client(
     client: FoundationRuntimeClient,
     *,
-    account: str | None,
+    account: str,
     password: str,
-    anonymous_binding_account: str | None = None,
 ) -> Mapping[str, Any]:
     try:
         client.start()
@@ -4621,215 +4581,16 @@ def _start_client(
             resource=f"client:{client.spec.profile}",
         ) from error
     client.configure_station()
-    if account is None:
-        if client.spec.runtime == "browser":
-            if anonymous_binding_account is None:
-                raise RuntimeOwnerBlocked(
-                    "FIXTURE_OWNER_UNAVAILABLE",
-                    (
-                        "anonymous Browser requires an account to complete "
-                        "Station binding before logout"
-                    ),
-                    resource=f"client:{client.spec.profile}",
-                )
-            _authenticate_running_client(
-                client,
-                account=anonymous_binding_account,
-                password=password,
-            )
-            _ensure_browser_station_binding(client)
-            previous_namespace = client.harness_namespace
-            try:
-                _wait_for_moments_snapshot(client)
-            finally:
-                client.harness_namespace = previous_namespace
-        client.harness("logout", timeout=120)
-    else:
-        _authenticate_running_client(
-            client,
-            account=account,
-            password=password,
-        )
-        if client.spec.runtime == "browser":
-            _ensure_browser_station_binding(client)
+    _authenticate_running_client(
+        client,
+        account=account,
+        password=password,
+    )
     previous_namespace = client.harness_namespace
     try:
         return _wait_for_moments_snapshot(client)
     finally:
         client.harness_namespace = previous_namespace
-
-
-def _write_browser_runtime_manifest_with_recovery(
-    *,
-    manifest_payload: Mapping[str, Any],
-    output_path: Path,
-    journey_id: str,
-    sessions_by_client: Mapping[str, FoundationRuntimeClient],
-    repo_root: Path,
-    timeout: float = 30.0,
-) -> Path:
-    payload = json.loads(json.dumps(manifest_payload))
-    recovered_client_ids: set[str] = set()
-
-    while True:
-        try:
-            return write_attached_runtime_manifest(
-                manifest_payload=payload,
-                output_path=output_path,
-                journey_id=journey_id,
-                sessions_by_client=sessions_by_client,
-                automation_refs_by_client={
-                    client_id: {
-                        "kind": runtime_manifest.AUTOMATION_ATTACHMENT_KIND,
-                        "endpoint": _webdriver_endpoint(client),
-                        "session_id": str(client.driver.session_id),
-                    }
-                    for client_id, client in sessions_by_client.items()
-                },
-                repo_root=repo_root,
-                timeout=timeout,
-            )
-        except RunnerError as error:
-            failed_client_id = next(
-                (
-                    client_id
-                    for client_id, client in sessions_by_client.items()
-                    if client.spec.runtime == "browser"
-                    and str(error)
-                    == (
-                        f"runtime client {client_id!r} did not expose "
-                        "'moments' acceptance harness"
-                    )
-                ),
-                None,
-            )
-            if failed_client_id is None:
-                raise
-
-            client = sessions_by_client[failed_client_id]
-            if failed_client_id in recovered_client_ids:
-                raise RuntimeOwnerBlocked(
-                    "CLIENT_RUNTIME_UNAVAILABLE",
-                    (
-                        f"client {client.spec.profile} lost its Moments "
-                        "harness after one bounded Browser attachment recovery"
-                    ),
-                    resource=f"client:{client.spec.profile}",
-                ) from error
-
-            previous_session_id = str(client.driver.session_id)
-            clients = payload.get("clients")
-            previous = next(
-                (
-                    item
-                    for item in clients
-                    if isinstance(item, Mapping)
-                    and item.get("id") == failed_client_id
-                ),
-                None,
-            ) if isinstance(clients, list) else None
-            actor_role = (
-                previous.get("actor_role")
-                if isinstance(previous, Mapping)
-                else None
-            )
-            bindings = (
-                previous.get("service_bindings")
-                if isinstance(previous, Mapping)
-                else None
-            )
-            if (
-                not isinstance(actor_role, str)
-                or not actor_role
-                or not isinstance(bindings, Mapping)
-                or any(
-                    not isinstance(binding, Mapping)
-                    or not str(binding.get("service_id") or "")
-                    for binding in bindings.values()
-                )
-            ):
-                raise
-            service_roles = {
-                str(role): str(binding["service_id"])
-                for role, binding in bindings.items()
-            }
-
-            try:
-                previous_namespace = client.harness_namespace
-                client.restart()
-                try:
-                    snapshot = _wait_for_moments_snapshot(client)
-                finally:
-                    client.harness_namespace = previous_namespace
-                refreshed = _client_payload(
-                    failed_client_id,
-                    actor_role,
-                    client,
-                    snapshot,
-                    service_roles=service_roles,
-                )
-            except Exception as recovery_error:
-                raise RuntimeOwnerBlocked(
-                    "CLIENT_RUNTIME_UNAVAILABLE",
-                    redact_text(
-                        (
-                            f"client {client.spec.profile} Browser attachment "
-                            "recovery failed: "
-                            f"{_error_message_with_cleanup(recovery_error)}"
-                        )
-                    ),
-                    resource=f"client:{client.spec.profile}",
-                ) from recovery_error
-
-            if (
-                refreshed["storage_identity_digest"]
-                != previous.get("storage_identity_digest")
-                or str(client.driver.session_id) == previous_session_id
-                or refreshed["actor_role_digest"]
-                != previous.get("actor_role_digest")
-            ):
-                raise RuntimeOwnerBlocked(
-                    "CLIENT_RUNTIME_UNAVAILABLE",
-                    (
-                        f"client {client.spec.profile} Browser attachment "
-                        "recovery did not preserve storage and actor identity "
-                        "with a fresh WebDriver session"
-                    ),
-                    resource=f"client:{client.spec.profile}",
-                )
-
-            payload["clients"] = [
-                refreshed if item.get("id") == failed_client_id else item
-                for item in clients
-            ]
-            recovered_client_ids.add(failed_client_id)
-
-
-def _ensure_browser_station_binding(
-    client: FoundationRuntimeClient,
-) -> None:
-    import urllib.request
-
-    url = f"http://127.0.0.1:{client.spec.gateway_port}/command"
-    payload = json.dumps({"cmd": "station_binding_complete", "args": {}}).encode()
-    request = urllib.request.Request(
-        url, data=payload, headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            result = json.loads(response.read())
-            if not isinstance(result, dict) or result.get("ok") is not True:
-                raise RuntimeOwnerBlocked(
-                    "CLIENT_RUNTIME_UNAVAILABLE",
-                    f"browser station binding failed for {client.spec.profile}: {result}",
-                    resource=f"client:{client.spec.profile}",
-                )
-    except (urllib.error.URLError, OSError) as error:
-        raise RuntimeOwnerBlocked(
-            "CLIENT_RUNTIME_UNAVAILABLE",
-            f"browser station binding unreachable for {client.spec.profile}: {error}",
-            resource=f"client:{client.spec.profile}",
-        ) from error
 
 
 def _manifest_payload(
@@ -6602,9 +6363,6 @@ class W7RuntimeOwner:
                         client_id,
                         client_id,
                     )
-                if role == "anonymous":
-                    primary_roles.add("browser_anonymous_bootstrap")
-                    continue
                 primary_roles.add(role)
                 physical_service = (
                     _mobile_service_for_client(
@@ -6964,11 +6722,7 @@ class W7RuntimeOwner:
                 profile_env=profile_environments[profile_id],
                 source_commit=str(identity["head"]),
                 client_id=physical_id,
-                runtime_kind=(
-                    "browser"
-                    if command.runtime == "browser"
-                    else "native-tauri"
-                ),
+                runtime_kind="native-tauri",
                 port_bases=(
                     3530 + index * 20,
                     3710 + index * 20,
@@ -6983,23 +6737,12 @@ class W7RuntimeOwner:
                 active_client_ids=active_client_ids,
             )
             active_client_ids.add(id(client))
-            account = (
-                None
-                if actor_role == "anonymous"
-                else accounts[actor_role]
-            )
             snapshot = _start_client(
                 client,
-                account=account,
+                account=accounts[actor_role],
                 password=password,
-                anonymous_binding_account=(
-                    accounts["browser_anonymous_bootstrap"]
-                    if actor_role == "anonymous"
-                    else None
-                ),
             )
-            if account is not None and command.runtime != "browser":
-                _wait_for_device_enrollment(client)
+            _wait_for_device_enrollment(client)
             clients[physical_id] = client
             snapshots[physical_id] = snapshot
             service_by_physical[physical_id] = service_id
@@ -7761,7 +7504,6 @@ class W7RuntimeOwner:
                     {
                         _desktop_actor_role(client_id)
                         for client_id in command.clients
-                        if _desktop_actor_role(client_id) != "anonymous"
                     }
                 )
             )
@@ -7775,7 +7517,6 @@ class W7RuntimeOwner:
                             command.profiles,
                         )
                         == SECONDARY_STATION_ID
-                        and _desktop_actor_role(client_id) != "anonymous"
                     }
                 )
             )
@@ -7818,11 +7559,7 @@ class W7RuntimeOwner:
                     profile_env=profile_environments[profile_id],
                     source_commit=str(identity["head"]),
                     client_id=client_id,
-                    runtime_kind=(
-                        "browser"
-                        if command.runtime == "browser"
-                        else "native-tauri"
-                    ),
+                    runtime_kind="native-tauri",
                     port_bases=(
                         3530 + index * 20,
                         3710 + index * 20,
@@ -7837,23 +7574,12 @@ class W7RuntimeOwner:
                     active_client_ids=active_client_ids,
                 )
                 active_client_ids.add(id(client))
-                account = (
-                    None
-                    if actor_role == "anonymous"
-                    else accounts[actor_role]
-                )
                 snapshot = _start_client(
                     client,
-                    account=account,
+                    account=accounts[actor_role],
                     password=password,
-                    anonymous_binding_account=(
-                        accounts.get("browser_actor")
-                        if actor_role == "anonymous"
-                        else None
-                    ),
                 )
-                if account is not None and command.runtime != "browser":
-                    _wait_for_device_enrollment(client)
+                _wait_for_device_enrollment(client)
                 clients[client_id] = client
                 payloads.append(
                     _client_payload(

@@ -120,6 +120,8 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertIn("copy_native_runtime_logs(", source)
         self.assertIn('"--formal-candidate"', source)
         self.assertIn("capability_binding_candidate", source)
+        self.assertIn('"desktop", "stop"', source)
+        self.assertNotIn('"--mode"', source)
 
     def test_j02_persists_identity_only_after_native_success(
         self,

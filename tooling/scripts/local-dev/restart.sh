@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # restart.sh — Restart current worktree dev service(s)
-# Usage: restart.sh [station|relay|desktop|desktop-web|mobile|all]
+# Usage: restart.sh [station|relay|desktop|mobile|all]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,11 +18,7 @@ case "$target" in
     ;;
   desktop)
     bash "$SCRIPT_DIR/stop.sh" desktop
-    bash "$SCRIPT_DIR/desktop-dev.sh" app
-    ;;
-  desktop-web)
-    bash "$SCRIPT_DIR/stop.sh" desktop
-    bash "$SCRIPT_DIR/desktop-dev.sh" web
+    bash "$SCRIPT_DIR/desktop-dev.sh"
     ;;
   mobile)
     bash "$SCRIPT_DIR/stop.sh" mobile
@@ -34,7 +30,7 @@ case "$target" in
     bash "$SCRIPT_DIR/relay-dev.sh"
     ;;
   *)
-    echo "[ERROR] Usage: restart.sh [station|relay|desktop|desktop-web|mobile|all]"
+    echo "[ERROR] Usage: restart.sh [station|relay|desktop|mobile|all]"
     exit 1
     ;;
 esac

@@ -95,8 +95,6 @@ function outputShell(resolved) {
     PT_MACHINE_SLOT: resolved.binding.slot,
     PT_MACHINE_DESKTOP_APP_GATEWAY_PORT: resolved.ports.desktopAppGateway,
     PT_MACHINE_DESKTOP_APP_WEB_PORT: resolved.ports.desktopAppWeb,
-    PT_MACHINE_DESKTOP_WEB_GATEWAY_PORT: resolved.ports.desktopWebGateway,
-    PT_MACHINE_DESKTOP_WEB_WEB_PORT: resolved.ports.desktopWebWeb,
     PT_MACHINE_MOBILE_WEB_PORT: resolved.ports.mobileWeb,
   };
   for (const [key, value] of Object.entries(values)) {

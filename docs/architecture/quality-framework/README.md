@@ -72,9 +72,9 @@ never belongs in the repository source tree.
   "review_profiles": ["station", "desktop"],
   "acceptance": {
     "impacted_features": ["chat-service-contract"],
-    "selected_gates": ["station-messaging-unit", "chat-desktop-gateway-e2e"],
+    "selected_gates": ["station-messaging-unit", "chat-native-two-client-e2e"],
     "run": ["station-messaging-unit"],
-    "not_run": ["chat-desktop-gateway-e2e"],
+    "not_run": ["chat-native-two-client-e2e"],
     "unproven_scope": ["native multi-client message delivery"]
   },
   "knowledge": {

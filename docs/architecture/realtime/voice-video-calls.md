@@ -521,7 +521,7 @@ the existing relay / TURN infrastructure.
 
 | Dimension | Review result | Reason |
 | --- | --- | --- |
-| Architecture consistency | Pass | The plan keeps `desktop-web -> desktop-rust -> station`, uses the canonical realtime stream, and keeps Desktop out of foreign Station access. |
+| Architecture consistency | Pass | The plan keeps `Native Tauri renderer -> desktop-rust -> Station`, uses the canonical realtime stream, and keeps Desktop out of foreign Station access. |
 | Industry fit | Pass | WebRTC + ICE + TURN is the standard one-to-one RTC stack; the design does not invent a media protocol. |
 | Existing infrastructure reuse | Pass with required hardening | Existing `turn` subserver, `/api/v1/turn/ice-servers`, `ice_get_servers`, `CallSignal`, and SSE fan-out are the right foundations. |
 | Security model | Pass with required authorization work | Signaling remains sealed and Station-opaque, but Station must add friend-session authorization before fan-out. |

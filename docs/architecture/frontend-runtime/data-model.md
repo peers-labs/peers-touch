@@ -218,7 +218,7 @@ not prove global backpressure.
 
 ```ts
 interface NativeEvidenceCohort {
-  runtime: 'tauri-webview-dev' | 'tauri-webview-packaged' | 'browser-gateway';
+  runtime: 'tauri-webview-dev' | 'tauri-webview-packaged';
   profile: string;
   account: string;
   dataRevision: string;

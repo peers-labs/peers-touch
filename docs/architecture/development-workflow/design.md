@@ -637,56 +637,6 @@ Missing or mismatched session state is explicit `SESSION_UNAVAILABLE` or
 - Reuse requires compatible source, artifact, runtime, health and owner
   manifest identity. Quarantine is controlled by the physical resource owner
   and cannot be cleared by the aggregator.
-- A plan migration is atomic to readers under a migration lock and journal:
-  1. create a `prepared` package and byte-identical archive copy;
-  2. record old/new hashes, the reviewed crosswalk digest, every live reference
-     and the directly observed `active_work` disposition in a non-blocking
-     `PREPARED` journal;
-  3. bind the journal to actual worktree identity and the frozen formal Gate
-     `workspaceDigest`, then validate package, archive hash, crosswalk,
-     reference rewrite set and projection precondition;
-  4. require the exact independently reviewed journal SHA-256 and preserve that
-     PREPARED input as `migration.json.reviewed`;
-  5. acquire an owner-token plan migration lock and enter `LOCKED`, making
-     discovery fail closed through the fixed
-     `workflow/plan-migration/{migration.json,migration.lock}` path; public
-     readers cannot override that locator, writers derive `workspaceId` from
-     the canonical repository root before journal access, and unknown journal
-     phases are rejected; each reader fences the journal/lock digests before
-     reading and rechecks that fence after manifest validation and again after
-     the complete Task/crosswalk read window;
-  6. preflight atomic exchange and no-replace support on both the package and
-     journal filesystems before acquiring the migration lock; require global
-     uniqueness across every target/prepared/backup path, materialize the
-     after-image carrier, journal the exact source/destination file snapshots
-     before the syscall, then use the platform atomic primitive and verify the
-     resulting file objects; an originally absent target uses atomic no-replace
-     creation, while legacy removal atomically moves the live path into its
-     backup before validating the captured bytes;
-  7. set the reviewed target status (`prepared`, `active` or `blocked`), verify
-     the caller-declared live-plan count and record the projection disposition;
-  8. rehash every applied target and mark the journal committed; initialize one
-     journaled cleanup batch, capture every expected backup, revalidate the full
-     terminal target/archive fence and every stable capture, persist
-     `VALIDATED`, then delete the captures and release only the owned lock.
-
-On interruption, the journal either completes the remaining idempotent replaces
-or restores backups with the same exchange/no-replace primitives under an
-exclusive recovery claim before releasing the owned lock. Every filesystem
-mutation has one durable `pendingOperation` containing hashes, device/inode and
-size/mtime/ctime version fences, so recovery distinguishes pre-syscall,
-post-syscall and conflicting states without guessing. Locks and recovery claims
-bind PID to boot/start identity, preventing PID reuse from impersonating a live
-owner. Stale claim and lock takeover atomically move the observed inode to a
-private capture before validating or discarding it. Cleanup first captures the
-whole backup set; a pre-validation mismatch restores every capture, while only
-a durable `VALIDATED` batch may delete captures. Rollback rehashes every
-restored target before `ROLLED_BACK`. A changed or missing COMMITTED archive
-fails closed; recovery never reconstructs reviewed history. Recovery
-revalidates reviewed-journal lineage, actual worktree binding, the
-registry-backed `active_work` observation, crosswalk, reference inventory and
-replacement hashes. No reader falls through to a partially migrated plan.
-- No compatibility alias may keep both old and new status owners live.
 
 ## 10. Allowed And Forbidden Relationships
 
@@ -718,7 +668,7 @@ Forbidden:
 
 The architecture is implemented only when:
 
-- a 4,000-line legacy plan migrates under lock/journal without content loss or
+- all current Plan sources parse as frozen Plan Versions with no executable legacy migration or
   dual active truth;
 - resume exposes only snapshot/run projection, current Task and current Session to agent context;
 - plan/task bounds fail closed mechanically;

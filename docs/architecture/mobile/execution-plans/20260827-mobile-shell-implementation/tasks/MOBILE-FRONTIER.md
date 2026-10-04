@@ -4,7 +4,7 @@
 
 ```json
 {
-    "kind": "peers-touch-task-slice",
+  "kind": "peers-touch-task-slice",
   "planId": "mobile-shell-20260827",
   "taskId": "MOBILE-FRONTIER",
   "workstreamId": "MOBILE-FRONTIER",
@@ -59,29 +59,7 @@
     "Do not invent Access Gate, Group, Social, push, background-task, private-media, or account-preference semantics",
     "Preserve unrelated dirty files and never bulk-stage, stash, reset, or create compatibility paths"
   ],
-  "updatedAt": "2026-09-17T11:03:00+08:00",
-  "durableEvidence": [
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/App.stationIdentity.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/features/station/stationRegistry.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/features/station/stationConnection.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/runtimes/runtimeRegistry.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/features/auth/mobileAuthIdentity.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/features/auth/authSession.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/runtimes/authRecovery.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/pages/chat/conversationSettingsState.test.tsx"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/features/group/groupStore.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/pages/MomentsPage.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/pages/settings/SettingsPage.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/pages/settings/SettingsSections.test.tsx"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/components/recovery/CommandRecoveryPanel.test.tsx"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/runtimes/mutationAdmission.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"apps/mobile/src/runtimes/nativeLifecycleBridge.test.ts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"pnpm --dir apps/mobile exec vitest run (88 files, 638 tests)"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml (171 tests)"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"pnpm mobile:check"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"pnpm --dir apps/mobile run check:mobile-shell-contracts"},
-    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"node tooling/scripts/plan/planctl.mjs validate --plan docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md --repo-root ."}
-  ]
+  "updatedAt": "2026-09-17T03:03:00.000Z"
 }
 ```
 

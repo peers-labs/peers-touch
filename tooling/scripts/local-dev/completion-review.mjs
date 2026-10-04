@@ -16,13 +16,7 @@ import {
   machineDevRoot,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
-import {
-  loadPlanPackage,
-  renderPlanDocument,
-} from '../plan/plan-package.mjs';
-import {
-  resolveWorkspacePlanBinding,
-} from '../plan/workspace-plan-binding.mjs';
+import { resolvePlanExecution } from '../plan/plan-mount.mjs';
 import { canonicalize } from './dev-work-schema.mjs';
 import {
   loadSessionStore,
@@ -529,13 +523,36 @@ async function readOwnedJson(file, validator, required = true) {
   return validator(value);
 }
 
+function projectExecution(execution) {
+  const lifecycleTasks = execution.snapshot.plan.tasks.map((task) => ({
+    ...task,
+    status: execution.run.taskStates[task.id].state,
+    blocker: execution.run.taskStates[task.id].blocker,
+  }));
+  return {
+    ...execution.planPackage,
+    manifest: {
+      ...execution.snapshot.plan,
+      status: execution.run.state,
+      tasks: lifecycleTasks,
+      exhaustion: execution.run.exhaustion,
+      executionBinding: execution.snapshot.executionBinding,
+    },
+    currentTask: execution.run.currentTaskId
+      ? execution.planPackage.taskSlices.get(execution.run.currentTaskId)
+      : null,
+    execution,
+  };
+}
+
 async function loadBoundPlan(root, dependencies = {}) {
   if (typeof dependencies.loadPlanContext === 'function') {
     return dependencies.loadPlanContext(root);
   }
-  const binding = await resolveWorkspacePlanBinding({ repoRoot: root });
-  const planPath = path.resolve(root, ...binding.planPath.split('/'));
-  return loadPlanPackage(planPath, { repoRoot: root });
+  const execution = await (
+    dependencies.resolvePlanExecution ?? resolvePlanExecution
+  )({ repoRoot: root, home: dependencies.home });
+  return projectExecution(execution);
 }
 
 function planRelativePath(planPackage) {
@@ -617,7 +634,7 @@ function evidenceFor(planPackage, scope, taskId, session) {
     implementationSession: session,
     taskEvidence: selected.map((entry) => ({
       taskId: entry.id,
-      durableEvidence: planPackage.taskSlices.get(entry.id).durableEvidence,
+      durableEvidence: [],
     })),
   };
 }
@@ -634,8 +651,8 @@ function assertSuccessfulSession(session, planPackage, current, workItemId) {
     state.workItemId !== workItemId ||
     state.planId !== planPackage.manifest.planId ||
     state.taskId !== current.id ||
-    state.workspaceId !== planPackage.manifest.binding.workspaceId ||
-    state.branch !== planPackage.manifest.binding.branch ||
+    state.workspaceId !== planPackage.manifest.executionBinding.workspaceId ||
+    state.branch !== planPackage.manifest.executionBinding.branch ||
     !SUCCESSFUL_SESSION_STATES.has(state.state) ||
     state.state !== expectedState
   ) {
@@ -667,14 +684,14 @@ async function loadCurrentSession(
   }
   return loadSessionStore({
     workspaceRoot: root,
-    workspaceId: planPackage.manifest.binding.workspaceId,
+    workspaceId: planPackage.manifest.executionBinding.workspaceId,
     workItemId,
     expected: {
       workItemId,
       planId: planPackage.manifest.planId,
       taskId: current.id,
-      workspaceId: planPackage.manifest.binding.workspaceId,
-      branch: planPackage.manifest.binding.branch,
+      workspaceId: planPackage.manifest.executionBinding.workspaceId,
+      branch: planPackage.manifest.executionBinding.branch,
     },
   });
 }
@@ -687,17 +704,17 @@ async function inspectSource(root, planPackage, dependencies) {
     excludeGlobs: [`${planPath}.lock*`],
   });
   if (
-    source.workspaceId !== planPackage.manifest.binding.workspaceId ||
-    source.branch !== planPackage.manifest.binding.branch ||
+    source.workspaceId !== planPackage.manifest.executionBinding.workspaceId ||
+    source.branch !== planPackage.manifest.executionBinding.branch ||
     source.stable !== true
   ) {
     fail(
       'COMPLETION_REVIEW_SOURCE_INVALID',
       'review source does not match the bound stable workspace',
       {
-        expectedWorkspaceId: planPackage.manifest.binding.workspaceId,
+        expectedWorkspaceId: planPackage.manifest.executionBinding.workspaceId,
         actualWorkspaceId: source.workspaceId ?? null,
-        expectedBranch: planPackage.manifest.binding.branch,
+        expectedBranch: planPackage.manifest.executionBinding.branch,
         actualBranch: source.branch ?? null,
         stable: source.stable ?? null,
       },
@@ -709,13 +726,6 @@ async function inspectSource(root, planPackage, dependencies) {
     tree: source.tree,
     workspaceDigest: source.workspaceDigest,
   };
-}
-
-async function planBytes(planPackage, dependencies) {
-  if (typeof dependencies.readPlanBytes === 'function') {
-    return dependencies.readPlanBytes(planPackage);
-  }
-  return fsp.readFile(planPackage.path);
 }
 
 function completionCandidateManifest(
@@ -817,23 +827,21 @@ async function completionCandidate(
   planPackage,
   requestedNextTaskId,
   recordedAt,
-  dependencies,
 ) {
-  const currentDocument = (await planBytes(
-    planPackage,
-    dependencies,
-  )).toString('utf8');
   const manifest = completionCandidateManifest(
     planPackage,
     requestedNextTaskId,
     recordedAt,
   );
-  const candidate = renderPlanDocument(
-    currentDocument,
-    manifest,
-  );
   return {
-    digest: digestCompletionCandidate(candidate),
+    digest: digestCompletionCandidate({
+      kind: 'peers-touch-execution-run-completion-candidate',
+      planVersionDigest: planPackage.planVersionDigest,
+      snapshotDigest: planPackage.execution.snapshot.recordDigest,
+      runId: planPackage.execution.run.runId,
+      runRevision: planPackage.execution.run.revision,
+      transition: describeCompletionCandidate(manifest),
+    }),
     transition: describeCompletionCandidate(manifest),
   };
 }
@@ -841,7 +849,9 @@ async function completionCandidate(
 async function currentReviewMaterial(options, dependencies = {}) {
   const root = await fsp.realpath(path.resolve(options.repoRoot ?? process.cwd()));
   const planPackage =
-    options.planPackage ?? (await loadBoundPlan(root, dependencies));
+    options.execution !== undefined
+      ? projectExecution(options.execution)
+      : options.planPackage ?? (await loadBoundPlan(root, dependencies));
   const current = currentTaskEntry(planPackage);
   const scope = expectedScope(planPackage, current);
   if (options.scope !== undefined && options.scope !== scope) {
@@ -870,7 +880,6 @@ async function currentReviewMaterial(options, dependencies = {}) {
           planPackage,
           options.nextTaskId,
           session.state.updatedAt,
-          dependencies,
         )
       : null;
   return {
@@ -917,7 +926,7 @@ async function planImplementationContexts(material, dependencies = {}) {
   if (typeof dependencies.planImplementationContexts === 'function') {
     return dependencies.planImplementationContexts(material);
   }
-  const workspaceId = material.planPackage.manifest.binding.workspaceId;
+  const workspaceId = material.planPackage.manifest.executionBinding.workspaceId;
   const reviewIds = await listReviewIds(workspaceId, dependencies);
   const implementationSessionIds = new Set();
   const implementationContextDigests = new Set();
@@ -1024,7 +1033,7 @@ export async function prepareCompletionReview(options, dependencies = {}) {
   validateCompletionReviewRequest(request);
   const paths = completionReviewPaths(
     material.source.workspaceId ??
-      material.planPackage.manifest.binding.workspaceId,
+      material.planPackage.manifest.executionBinding.workspaceId,
     request.reviewId,
     dependencies,
   );
@@ -1376,7 +1385,7 @@ async function listReviewIds(workspaceId, dependencies = {}) {
 }
 
 async function matchingReviewRecords(material, dependencies = {}) {
-  const workspaceId = material.planPackage.manifest.binding.workspaceId;
+  const workspaceId = material.planPackage.manifest.executionBinding.workspaceId;
   const ids = await listReviewIds(workspaceId, dependencies);
   const records = [];
   for (const reviewId of ids) {
@@ -1404,7 +1413,7 @@ async function historicalReviewRecords(
   taskId,
   dependencies = {},
 ) {
-  const workspaceId = planPackage.manifest.binding.workspaceId;
+  const workspaceId = planPackage.manifest.executionBinding.workspaceId;
   const ids = await listReviewIds(workspaceId, dependencies);
   const records = [];
   for (const reviewId of ids) {
@@ -1815,7 +1824,7 @@ export async function statusCompletionReviews(options, dependencies = {}) {
   const scope = expectedScope(planPackage, current);
   const taskId = scope === 'task' ? current.id : null;
   const workItemId = requireIdentifier(options.workItemId, 'workItemId');
-  const workspaceId = planPackage.manifest.binding.workspaceId;
+  const workspaceId = planPackage.manifest.executionBinding.workspaceId;
   const ids = await listReviewIds(workspaceId, dependencies);
   const reviews = [];
   let material;

@@ -299,7 +299,7 @@ class D11FoundationAdapterTest(unittest.TestCase):
         runner = RecordingRunner()
         adapter = self._adapter(runner)
         wrong_row = self._tuple()
-        object.__setattr__(wrong_row, "row", "foundation-browser-direct")
+        object.__setattr__(wrong_row, "row", "foundation-secondary-direct")
 
         with self.assertRaisesRegex(FoundationCandidateError, "cannot observe row"):
             adapter.observe_d11(wrong_row)

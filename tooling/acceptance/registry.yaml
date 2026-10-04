@@ -186,7 +186,6 @@
       },
       "require": [
         "station-access-capability-contract",
-        "station-access-desktop-oauth-layout-e2e",
         "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e"
@@ -265,18 +264,15 @@
           "tooling/acceptance/capabilities/station-access.yaml",
           "tooling/acceptance/features/station-access-*.yaml",
           "tooling/acceptance/environments/station-access-desktop-oauth-native.yaml",
-          "tooling/acceptance/environments/station-access-login-browser.yaml",
           "tooling/acceptance/environments/station-access-native.yaml",
           "tooling/acceptance/gates/station_access/**",
-          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
-          "tooling/acceptance/provisioners/station_access_login_browser.py"
+          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py"
         ]
       },
       "require": [
         "proto-build",
         "station-api-ownership",
         "station-access-capability-contract",
-        "station-access-desktop-oauth-layout-e2e",
         "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
@@ -285,28 +281,6 @@
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",
         "station-access-domain-validation"
-      ]
-    },
-    {
-      "id": "dev-ui-worktree-observability",
-      "features": [
-        "development-workflow-control-plane"
-      ],
-      "when": {
-        "paths": [
-          "apps/dev/**",
-          "docs/architecture/local-dev-control-plane/**",
-          "tooling/scripts/local-dev/worktree-observation-store.mjs",
-          "tooling/scripts/local-dev/worktree-observation-store.test.mjs",
-          "tooling/scripts/local-dev/worktree-observe.mjs",
-          "tooling/scripts/lib/machine-dev-paths.mjs",
-          "tooling/make/local-dev.mk"
-        ]
-      },
-      "require": [
-        "dev-ui-browser-e2e",
-        "acceptance-workflow-contract",
-        "acceptance-runtime-provisioning-self"
       ]
     },
     {
@@ -336,19 +310,19 @@
       ]
     },
     {
-      "id": "workspace-plan-generation",
+      "id": "workspace-plan-mount",
       "features": [
         "development-workflow-control-plane"
       ],
       "when": {
         "paths": [
-          "tooling/scripts/plan/workspace-plan-binding*.mjs",
-          "docs/knowledge/invariants/workspace-plan-binding-is-generation-bound.md",
+          "tooling/scripts/plan/plan-mount*.mjs",
+          "docs/knowledge/invariants/plan-mount-is-run-bound.md",
           "tooling/skills/pt-plan-and-document/**"
         ]
       },
       "require": [
-        "workspace-plan-generation-self",
+        "workspace-plan-mount-self",
         "acceptance-workflow-contract"
       ]
     },
@@ -713,27 +687,6 @@
       ]
     },
     {
-      "id": "chat-friend-request-gateway-lifecycle",
-      "features": [
-        "chat-friend-request-gateway-lifecycle"
-      ],
-      "when": {
-        "paths": [
-          "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
-          "apps/desktop/src/components/chat/FindPeopleModal.tsx",
-          "apps/station/app/subserver/social/handler.go",
-          "apps/station/app/subserver/social/domain/federated_friend_request.go",
-          "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
-          "apps/station/frame/touch/actor/seed_dev_federation.go",
-          "tooling/acceptance/gates/chat/friend_request_gateway_e2e.py",
-          "tooling/acceptance/features/chat-friend-request-gateway-lifecycle.yaml"
-        ]
-      },
-      "require": [
-        "chat-friend-request-gateway-e2e"
-      ]
-    },
-    {
       "id": "chat-native-friendship-projection",
       "features": [
         "chat-native-friendship-projection"
@@ -751,6 +704,11 @@
           "apps/station/app/subserver/social/infrastructure/follow_repo.go",
           "apps/station/app/subserver/social/application/relationship_service.go",
           "apps/station/app/subserver/social/application/relationship_service_test.go",
+          "apps/station/app/subserver/social/handler.go",
+          "apps/station/app/subserver/social/domain/federated_friend_request.go",
+          "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
+          "apps/desktop/src/components/chat/FindPeopleModal.tsx",
           "apps/desktop/src/store/federation.ts",
           "apps/desktop/src/store/relationships.ts",
           "apps/desktop/src/store/friendshipProjection.ts",
@@ -957,7 +915,6 @@
       "features": [
         "desktop-chat-surface",
         "chat-realtime-delivery",
-        "chat-desktop-gateway-message-flow",
         "chat-native-visible-clients"
       ],
       "when": {
@@ -1031,26 +988,6 @@
         "chat-native-multi-device-e2e",
         "chat-native-recovery-e2e",
         "chat-native-group-mls-e2e"
-      ]
-    },
-    {
-      "id": "desktop-chat-gateway",
-      "features": [
-        "chat-desktop-gateway-message-flow"
-      ],
-      "when": {
-        "paths": [
-          "apps/desktop/src-tauri/src/interface/http_gateway/**",
-          "apps/desktop/src-tauri/src/application/auth/service.rs",
-          "apps/desktop/src-tauri/src/messaging/**",
-          "apps/desktop/src/services/desktop_api.ts",
-          "apps/desktop/src/services/im-service.ts"
-        ]
-      },
-      "require": [
-        "messaging-platform-contract",
-        "desktop-check",
-        "chat-desktop-gateway-e2e"
       ]
     },
     {
@@ -1158,7 +1095,7 @@
       },
       "require": [
         "desktop-check",
-        "federation-desktop-gateway-smoke"
+        "station-access-federation-boundary-e2e"
       ]
     },
     {
@@ -2093,6 +2030,23 @@
       ]
     },
     {
+      "id": "agent-v2-mcp-lifecycle",
+      "features": [
+        "agent-v2-mcp-lifecycle"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src/store/mcp.ts",
+          "apps/desktop/src/services/mcp-service.ts",
+          "apps/desktop/src-tauri/src/application/mcp/**",
+          "apps/station/app/subserver/agent/**/capability_operation*"
+        ]
+      },
+      "require": [
+        "agent-v2-mcp-lifecycle-e2e"
+      ]
+    },
+    {
       "id": "agent-v2-connector-invocation",
       "features": [
         "agent-v2-connector-invocation"
@@ -2608,49 +2562,6 @@
         "station-agent-unit",
         "desktop-check",
         "agent-topic-comments-e2e"
-      ]
-    },
-    {
-      "id": "peers-dev-observability",
-      "features": [
-        "peers-dev-observability"
-      ],
-      "when": {
-        "paths": [
-          "apps/dev/**",
-          "tooling/scripts/local-dev/workflow-action-store*.mjs",
-          "tooling/scripts/local-dev/workflow-snapshot*.mjs",
-          "tooling/acceptance/gates/dev/**"
-        ]
-      },
-      "require": [
-        "acceptance-workflow-contract",
-        "peers-dev-ui-browser-e2e"
-      ]
-    },
-    {
-      "id": "peers-dev-product-truth",
-      "features": [
-        "development-workflow-control-plane",
-        "peers-dev-observability"
-      ],
-      "when": {
-        "paths": [
-          "apps/dev/**",
-          "docs/global/workflow.md",
-          "docs/architecture/development-workflow/**",
-          "tooling/scripts/local-dev/workflow-*.mjs",
-          "tooling/plugins/pt-ew-plugin/**",
-          "tooling/scripts/agent-integration-*.py",
-          "tooling/scripts/install-agent-integration.sh",
-          "tooling/make/local-dev.mk",
-          "tooling/make/setup.mk",
-          "tooling/acceptance/gates/dev/**",
-          "Makefile"
-        ]
-      },
-      "require": [
-        "peers-dev-product"
       ]
     },
     {

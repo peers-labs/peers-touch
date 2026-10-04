@@ -208,10 +208,6 @@ class ChatAttachmentDriverTest(unittest.TestCase):
                         "actor_role": "bob",
                         "runtime_kind": "native-tauri",
                     },
-                    "browser": {
-                        "actor_role": "anonymous",
-                        "runtime_kind": "browser",
-                    },
                 }
             ),
         )

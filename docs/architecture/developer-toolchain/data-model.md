@@ -35,8 +35,6 @@ interface DevProfile {
   PT_STATION_PORT: string;
   PT_DESKTOP_APP_GATEWAY_PORT: string;
   PT_DESKTOP_APP_WEB_PORT: string;
-  PT_DESKTOP_WEB_GATEWAY_PORT: string;
-  PT_DESKTOP_WEB_WEB_PORT: string;
 }
 ```
 
@@ -65,9 +63,7 @@ The active reference is worktree-specific. The file name and
 type ManagedService =
   | "station"
   | "desktop-app-vite"
-  | "desktop-app-tauri"
-  | "desktop-web-vite"
-  | "desktop-web-tauri";
+  | "desktop-app-tauri";
 
 interface RuntimeStateRecord {
   schemaVersion: 1;

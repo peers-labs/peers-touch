@@ -55,7 +55,7 @@ EVIDENCE_ROLES = tuple(
 )
 RuntimeAttestationProfile = Literal[
     "direct_runtime",
-    "direct_runtime_no_local_capability",
+    "direct_runtime_secondary_native",
     "station_turn",
     "contract_only",
     "orchestration_guard",
@@ -63,7 +63,7 @@ RuntimeAttestationProfile = Literal[
 ]
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
-    "direct_runtime_no_local_capability",
+    "direct_runtime_secondary_native",
     "station_turn",
     "contract_only",
     "orchestration_guard",
@@ -71,15 +71,15 @@ RUNTIME_ATTESTATION_PROFILES = {
 }
 ROW_ADAPTERS = {
     "foundation-desktop-direct": "desktop_native",
-    "foundation-browser-direct": "browser",
+    "foundation-secondary-direct": "secondary",
     "foundation-mobile-contract": "mobile_contract",
     "foundation-d11": "d11",
     "foundation-desktop-cli-absent": "non_advertisement",
-    "foundation-browser-cli-absent": "non_advertisement",
+    "foundation-secondary-cli-absent": "non_advertisement",
     "foundation-desktop-external-absent": "non_advertisement",
-    "foundation-browser-external-absent": "non_advertisement",
+    "foundation-secondary-external-absent": "non_advertisement",
     "foundation-z-desktop-external-runtime": "desktop_native",
-    "foundation-z-browser-external-runtime": "browser",
+    "foundation-z-secondary-external-runtime": "secondary",
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -161,8 +161,8 @@ class DesktopNativeFoundationAdapter(Protocol):
     ) -> FoundationTupleObservation: ...
 
 
-class BrowserFoundationAdapter(Protocol):
-    def observe_browser(
+class SecondaryFoundationAdapter(Protocol):
+    def observe_secondary(
         self, runtime_tuple: FoundationTuple
     ) -> FoundationTupleObservation: ...
 
@@ -188,7 +188,7 @@ class NonAdvertisementFoundationAdapter(Protocol):
 @dataclass(frozen=True)
 class FoundationAdapters:
     desktop_native: DesktopNativeFoundationAdapter
-    browser: BrowserFoundationAdapter
+    secondary: SecondaryFoundationAdapter
     mobile_contract: MobileContractFoundationAdapter
     d11: D11FoundationAdapter
     non_advertisement: NonAdvertisementFoundationAdapter
