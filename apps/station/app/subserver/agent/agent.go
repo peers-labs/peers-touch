@@ -473,6 +473,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-home-task-submit", "/agent/home/task/submit", server.POST, homeHandlers.HandleSubmitTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-goal-create", "/agent/goal/create", server.POST, goalHandlers.HandleCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-goal-get", "/agent/goal/get", server.POST, goalHandlers.HandleGet, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-update", "/agent/goal/update", server.POST, goalHandlers.HandleUpdate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-review", "/agent/goal/review", server.POST, goalHandlers.HandleReview, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),

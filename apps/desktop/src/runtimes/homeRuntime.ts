@@ -3,14 +3,20 @@ import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { HomeWorkKind } from '../gen/proto/domain/agent/home_pb';
 import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
-import { api } from '../services/desktop_api';
+import {
+  api,
+  isAgentForbiddenActorError,
+  isAgentLifecycleStaleVersionError,
+  normalizeAgentTurnStreamError,
+} from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
+import { useChatStore } from '../store/chat';
 import {
   useHomeStore,
   type HomePinnedAgentView,
   type HomeRecentWorkView,
 } from '../store/home';
-import { useChatStore } from '../store/chat';
+import { useGoalDraftStore } from '../store/goalDraft';
 import { useTaskStore } from '../store/tasks';
 import { log } from '../utils/logger';
 
@@ -47,7 +53,9 @@ export function validateHomeGoalDraftBytes(
   };
 }
 
-function homeCommandKey(kind: 'chat' | 'task' | 'goal'): string {
+function homeCommandKey(
+  kind: 'chat' | 'task' | 'goal' | 'goal-update' | 'goal-review',
+): string {
   const id = globalThis.crypto?.randomUUID?.()
     || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `home-${kind}-${id}`;
@@ -139,6 +147,7 @@ export async function createHomeGoalDraft(): Promise<AgentGoal> {
     });
     if (generation === runtimeGeneration) {
       useHomeStore.getState().applyGoalDraft(goal, 'create');
+      useGoalDraftStore.getState().hydrate(goal);
     }
     return goal;
   } catch (error) {
@@ -170,6 +179,7 @@ export function reopenHomeGoalDraft(): Promise<AgentGoal | null> {
         && useHomeStore.getState().savedGoal?.goalId === goalID
       ) {
         useHomeStore.getState().applyGoalDraft(goal, 'readback');
+        useGoalDraftStore.getState().applyReloadPreservingEdits(goal);
       }
       return goal;
     } catch (error) {
@@ -189,6 +199,132 @@ export function reopenHomeGoalDraft(): Promise<AgentGoal | null> {
   };
   void pending.then(clearPending, clearPending);
   return pending;
+}
+
+function projectGoalMutationFailure(
+  error: unknown,
+  generation: number,
+  goalID: string,
+): Error {
+  const normalized = normalizeAgentTurnStreamError(error);
+  if (
+    generation !== runtimeGeneration
+    || useGoalDraftStore.getState().goalId !== goalID
+  ) {
+    return normalized;
+  }
+  const draft = useGoalDraftStore.getState();
+  if (isAgentLifecycleStaleVersionError(normalized.typedError)) {
+    draft.markConflict(
+      BigInt(normalized.typedError.details.actual_revision),
+      normalized.typedError.locale_key,
+    );
+  } else if (isAgentForbiddenActorError(normalized.typedError)) {
+    draft.markForbidden(normalized.typedError.locale_key);
+  } else {
+    draft.markFailure(normalized.message);
+  }
+  return normalized;
+}
+
+export async function updateHomeGoalContract(): Promise<AgentGoal> {
+  const state = useGoalDraftStore.getState();
+  if (!state.goalId || state.baseRevision === null) {
+    throw new Error('agent.home.goalContractMissing');
+  }
+  const idempotencyKey =
+    state.updateIdempotencyKey || homeCommandKey('goal-update');
+  const generation = runtimeGeneration;
+  const goalID = state.goalId;
+  state.beginMutation('update', idempotencyKey);
+  try {
+    const goal = await api.updateAgentGoal({
+      goalId: goalID,
+      outcome: state.outcome.trim(),
+      nonGoals: state.nonGoals.map((item) => item.trim()).filter(Boolean),
+      constraints: state.constraints.map((item) => item.trim()).filter(Boolean),
+      budget: state.budget,
+      acceptanceCriteria: state.acceptanceCriteria.map((criterion) => ({
+        ...criterion,
+        description: criterion.description.trim(),
+        evaluator: criterion.evaluator.trim(),
+      })),
+      expectedRevision: state.baseRevision,
+      idempotencyKey,
+    });
+    if (
+      generation === runtimeGeneration
+      && useGoalDraftStore.getState().goalId === goalID
+    ) {
+      useHomeStore.getState().applyGoalDraft(goal, 'readback');
+      useGoalDraftStore.getState().applyMutation(goal);
+    }
+    return goal;
+  } catch (error) {
+    throw projectGoalMutationFailure(error, generation, goalID);
+  }
+}
+
+export async function reviewHomeGoalContract(): Promise<AgentGoal> {
+  if (useGoalDraftStore.getState().dirty) {
+    await updateHomeGoalContract();
+  }
+  const state = useGoalDraftStore.getState();
+  if (!state.goalId || state.baseRevision === null) {
+    throw new Error('agent.home.goalContractMissing');
+  }
+  const idempotencyKey =
+    state.reviewIdempotencyKey || homeCommandKey('goal-review');
+  const generation = runtimeGeneration;
+  const goalID = state.goalId;
+  state.beginMutation('review', idempotencyKey);
+  try {
+    const goal = await api.reviewAgentGoal({
+      goalId: goalID,
+      expectedRevision: state.baseRevision,
+      idempotencyKey,
+    });
+    if (
+      generation === runtimeGeneration
+      && useGoalDraftStore.getState().goalId === goalID
+    ) {
+      useHomeStore.getState().applyGoalDraft(goal, 'readback');
+      useGoalDraftStore.getState().applyMutation(goal);
+    }
+    return goal;
+  } catch (error) {
+    throw projectGoalMutationFailure(error, generation, goalID);
+  }
+}
+
+export async function reloadHomeGoalContract(): Promise<AgentGoal> {
+  const state = useGoalDraftStore.getState();
+  if (!state.goalId) {
+    throw new Error('agent.home.goalContractMissing');
+  }
+  const goalID = state.goalId;
+  const generation = runtimeGeneration;
+  state.beginReload();
+  try {
+    const goal = await api.getAgentGoal(goalID);
+    if (
+      generation === runtimeGeneration
+      && useGoalDraftStore.getState().goalId === goalID
+    ) {
+      useHomeStore.getState().applyGoalDraft(goal, 'readback');
+      useGoalDraftStore.getState().applyReloadPreservingEdits(goal);
+    }
+    return goal;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      generation === runtimeGeneration
+      && useGoalDraftStore.getState().goalId === goalID
+    ) {
+      useGoalDraftStore.getState().failReload(message);
+    }
+    throw error;
+  }
 }
 
 export async function openHomeConversation(work: HomeRecentWorkView): Promise<void> {
@@ -270,6 +406,7 @@ export const homeRuntime: RuntimeDescriptor = {
     goalReadbackInFlight = null;
     activeActorId = null;
     useHomeStore.getState().reset();
+    useGoalDraftStore.getState().reset();
   },
   async bootstrap(actorId) {
     if (!actorId) {
@@ -280,6 +417,7 @@ export const homeRuntime: RuntimeDescriptor = {
       }
       activeActorId = null;
       useHomeStore.getState().reset();
+      useGoalDraftStore.getState().reset();
       return;
     }
     if (activeActorId !== actorId) {
@@ -288,6 +426,7 @@ export const homeRuntime: RuntimeDescriptor = {
       reconcileInFlight = null;
       goalReadbackInFlight = null;
       useHomeStore.getState().reset();
+      useGoalDraftStore.getState().reset();
     }
     await loadHomeProjection('bootstrap');
   },

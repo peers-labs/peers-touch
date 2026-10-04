@@ -36,3 +36,25 @@ func (h *GoalHandlers) HandleGet(
 	}
 	return &model.GetAgentGoalResponse{Goal: goal}, nil
 }
+
+func (h *GoalHandlers) HandleUpdate(
+	ctx context.Context,
+	req *model.UpdateAgentGoalRequest,
+) (*model.UpdateAgentGoalResponse, error) {
+	goal, err := h.service.UpdateContract(ctx, subjectActorPTID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.UpdateAgentGoalResponse{Goal: goal}, nil
+}
+
+func (h *GoalHandlers) HandleReview(
+	ctx context.Context,
+	req *model.ReviewAgentGoalRequest,
+) (*model.ReviewAgentGoalResponse, error) {
+	goal, err := h.service.Review(ctx, subjectActorPTID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.ReviewAgentGoalResponse{Goal: goal}, nil
+}

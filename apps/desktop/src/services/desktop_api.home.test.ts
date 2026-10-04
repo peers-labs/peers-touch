@@ -17,6 +17,10 @@ import {
   CreateAgentGoalResponseSchema,
   GetAgentGoalRequestSchema,
   GetAgentGoalResponseSchema,
+  ReviewAgentGoalRequestSchema,
+  ReviewAgentGoalResponseSchema,
+  UpdateAgentGoalRequestSchema,
+  UpdateAgentGoalResponseSchema,
 } from '../gen/proto/domain/agent/goal_pb';
 import { api } from './desktop_api';
 
@@ -194,6 +198,99 @@ describe('Desktop Home projection API', () => {
       goalId: 'goal-1',
       status: AgentGoalStatus.DRAFT,
       revision: 1n,
+    });
+  });
+
+  it('updates and reviews the exact Station Goal revision', async () => {
+    const updatedGoal = {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Durable Goal',
+      outcome: 'Reviewed outcome',
+      nonGoals: ['Do not deploy'],
+      constraints: ['Stay within budget'],
+      budget: {
+        maxTokens: 120_000n,
+        maxCost: 12.5,
+        wallTimeMs: 3_600_000n,
+        maxParallelTasks: 2,
+      },
+      acceptanceCriteria: [{
+        criterionId: 'criterion-1',
+        description: 'Station readback matches',
+        evaluator: 'deterministic',
+        required: true,
+      }],
+      status: AgentGoalStatus.DRAFT,
+      revision: 2n,
+    };
+    const reviewedGoal = {
+      ...updatedGoal,
+      status: AgentGoalStatus.REVIEWING,
+      revision: 3n,
+    };
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({
+        ok: true,
+        data: Array.from(toBinary(
+          UpdateAgentGoalResponseSchema,
+          create(UpdateAgentGoalResponseSchema, { goal: updatedGoal }),
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: Array.from(toBinary(
+          ReviewAgentGoalResponseSchema,
+          create(ReviewAgentGoalResponseSchema, { goal: reviewedGoal }),
+        )),
+      });
+
+    const updated = await api.updateAgentGoal({
+      goalId: 'goal-1',
+      outcome: 'Reviewed outcome',
+      nonGoals: ['Do not deploy'],
+      constraints: ['Stay within budget'],
+      budget: updatedGoal.budget,
+      acceptanceCriteria: updatedGoal.acceptanceCriteria,
+      expectedRevision: 1n,
+      idempotencyKey: 'goal-update-1',
+    });
+    expect(updated.revision).toBe(2n);
+    const updateInvocation = vi.mocked(invoke).mock.calls[0];
+    expect(updateInvocation?.[0]).toBe('agent_home_goal_update');
+    const updateArgs = updateInvocation?.[1] as {
+      input?: { requestBytes?: number[] };
+    } | undefined;
+    expect(fromBinary(
+      UpdateAgentGoalRequestSchema,
+      new Uint8Array(updateArgs?.input?.requestBytes ?? []),
+    )).toMatchObject({
+      goalId: 'goal-1',
+      expectedRevision: 1n,
+      idempotencyKey: 'goal-update-1',
+    });
+
+    const reviewed = await api.reviewAgentGoal({
+      goalId: updated.goalId,
+      expectedRevision: updated.revision,
+      idempotencyKey: 'goal-review-1',
+    });
+    expect(reviewed).toMatchObject({
+      status: AgentGoalStatus.REVIEWING,
+      revision: 3n,
+    });
+    const reviewInvocation = vi.mocked(invoke).mock.calls[1];
+    expect(reviewInvocation?.[0]).toBe('agent_home_goal_review');
+    const reviewArgs = reviewInvocation?.[1] as {
+      input?: { requestBytes?: number[] };
+    } | undefined;
+    expect(fromBinary(
+      ReviewAgentGoalRequestSchema,
+      new Uint8Array(reviewArgs?.input?.requestBytes ?? []),
+    )).toMatchObject({
+      goalId: 'goal-1',
+      expectedRevision: 2n,
+      idempotencyKey: 'goal-review-1',
     });
   });
 });

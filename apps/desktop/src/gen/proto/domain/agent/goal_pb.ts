@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/agent/goal.proto.
  */
 export const file_domain_agent_goal: GenFile = /*@__PURE__*/
-  fileDesc("Chdkb21haW4vYWdlbnQvZ29hbC5wcm90bxIacGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEiewoPQWdlbnRHb2FsQnVkZ2V0EhIKCm1heF90b2tlbnMYASABKAQSFQoIbWF4X2Nvc3QYAiABKAFIAIgBARIUCgx3YWxsX3RpbWVfbXMYAyABKAQSGgoSbWF4X3BhcmFsbGVsX3Rhc2tzGAQgASgNQgsKCV9tYXhfY29zdCJuChxBZ2VudEdvYWxBY2NlcHRhbmNlQ3JpdGVyaW9uEhQKDGNyaXRlcmlvbl9pZBgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIRCglldmFsdWF0b3IYAyABKAkSEAoIcmVxdWlyZWQYBCABKAginAQKCUFnZW50R29hbBIPCgdnb2FsX2lkGAEgASgJEhIKCm93bmVyX3B0aWQYAiABKAkSGQoMd29ya3NwYWNlX2lkGAMgASgJSACIAQESDQoFdGl0bGUYBCABKAkSDwoHb3V0Y29tZRgFIAEoCRIRCglub25fZ29hbHMYBiADKAkSEwoLY29uc3RyYWludHMYByADKAkSOwoGYnVkZ2V0GAggASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRHb2FsQnVkZ2V0ElUKE2FjY2VwdGFuY2VfY3JpdGVyaWEYCSADKAsyOC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEdvYWxBY2NlcHRhbmNlQ3JpdGVyaW9uEjsKBnN0YXR1cxgKIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50R29hbFN0YXR1cxIQCghyZXZpc2lvbhgLIAEoBBIWCg5ncmFwaF9yZXZpc2lvbhgMIAEoBBIbChNhY2NlcHRhbmNlX3JldmlzaW9uGA0gASgEEi4KCmNyZWF0ZWRfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYDyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQg8KDV93b3Jrc3BhY2VfaWQimAEKFkNyZWF0ZUFnZW50R29hbFJlcXVlc3QSDQoFdGl0bGUYASABKAkSDwoHb3V0Y29tZRgCIAEoCRIZCgx3b3Jrc3BhY2VfaWQYAyABKAlIAIgBARIXCg9pZGVtcG90ZW5jeV9rZXkYBCABKAkSGQoRZXhwZWN0ZWRfcmV2aXNpb24YBSABKARCDwoNX3dvcmtzcGFjZV9pZCJOChdDcmVhdGVBZ2VudEdvYWxSZXNwb25zZRIzCgRnb2FsGAEgASgLMiUucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRHb2FsIiYKE0dldEFnZW50R29hbFJlcXVlc3QSDwoHZ29hbF9pZBgBIAEoCSJLChRHZXRBZ2VudEdvYWxSZXNwb25zZRIzCgRnb2FsGAEgASgLMiUucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRHb2FsKrMDCg9BZ2VudEdvYWxTdGF0dXMSIQodQUdFTlRfR09BTF9TVEFUVVNfVU5TUEVDSUZJRUQQABIbChdBR0VOVF9HT0FMX1NUQVRVU19EUkFGVBABEh8KG0FHRU5UX0dPQUxfU1RBVFVTX1JFVklFV0lORxACEhsKF0FHRU5UX0dPQUxfU1RBVFVTX1JFQURZEAMSHQoZQUdFTlRfR09BTF9TVEFUVVNfUlVOTklORxAEEiAKHEFHRU5UX0dPQUxfU1RBVFVTX05FRURTX1VTRVIQBRIgChxBR0VOVF9HT0FMX1NUQVRVU19SRVBMQU5OSU5HEAYSIAocQUdFTlRfR09BTF9TVEFUVVNfUkVDT1ZFUklORxAHEh8KG0FHRU5UX0dPQUxfU1RBVFVTX0FDQ0VQVElORxAIEh4KGkFHRU5UX0dPQUxfU1RBVFVTX0FDQ0VQVEVEEAkSHQoZQUdFTlRfR09BTF9TVEFUVVNfUEFSVElBTBAKEhwKGEFHRU5UX0dPQUxfU1RBVFVTX0ZBSUxFRBALEh8KG0FHRU5UX0dPQUxfU1RBVFVTX0NBTkNFTExFRBAMQktaSWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYWdlbnQvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Chdkb21haW4vYWdlbnQvZ29hbC5wcm90bxIacGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEiewoPQWdlbnRHb2FsQnVkZ2V0EhIKCm1heF90b2tlbnMYASABKAQSFQoIbWF4X2Nvc3QYAiABKAFIAIgBARIUCgx3YWxsX3RpbWVfbXMYAyABKAQSGgoSbWF4X3BhcmFsbGVsX3Rhc2tzGAQgASgNQgsKCV9tYXhfY29zdCJuChxBZ2VudEdvYWxBY2NlcHRhbmNlQ3JpdGVyaW9uEhQKDGNyaXRlcmlvbl9pZBgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIRCglldmFsdWF0b3IYAyABKAkSEAoIcmVxdWlyZWQYBCABKAginAQKCUFnZW50R29hbBIPCgdnb2FsX2lkGAEgASgJEhIKCm93bmVyX3B0aWQYAiABKAkSGQoMd29ya3NwYWNlX2lkGAMgASgJSACIAQESDQoFdGl0bGUYBCABKAkSDwoHb3V0Y29tZRgFIAEoCRIRCglub25fZ29hbHMYBiADKAkSEwoLY29uc3RyYWludHMYByADKAkSOwoGYnVkZ2V0GAggASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRHb2FsQnVkZ2V0ElUKE2FjY2VwdGFuY2VfY3JpdGVyaWEYCSADKAsyOC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEdvYWxBY2NlcHRhbmNlQ3JpdGVyaW9uEjsKBnN0YXR1cxgKIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50R29hbFN0YXR1cxIQCghyZXZpc2lvbhgLIAEoBBIWCg5ncmFwaF9yZXZpc2lvbhgMIAEoBBIbChNhY2NlcHRhbmNlX3JldmlzaW9uGA0gASgEEi4KCmNyZWF0ZWRfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYDyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQg8KDV93b3Jrc3BhY2VfaWQimAEKFkNyZWF0ZUFnZW50R29hbFJlcXVlc3QSDQoFdGl0bGUYASABKAkSDwoHb3V0Y29tZRgCIAEoCRIZCgx3b3Jrc3BhY2VfaWQYAyABKAlIAIgBARIXCg9pZGVtcG90ZW5jeV9rZXkYBCABKAkSGQoRZXhwZWN0ZWRfcmV2aXNpb24YBSABKARCDwoNX3dvcmtzcGFjZV9pZCJOChdDcmVhdGVBZ2VudEdvYWxSZXNwb25zZRIzCgRnb2FsGAEgASgLMiUucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRHb2FsIiYKE0dldEFnZW50R29hbFJlcXVlc3QSDwoHZ29hbF9pZBgBIAEoCSJLChRHZXRBZ2VudEdvYWxSZXNwb25zZRIzCgRnb2FsGAEgASgLMiUucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRHb2FsIqoCChZVcGRhdGVBZ2VudEdvYWxSZXF1ZXN0Eg8KB2dvYWxfaWQYASABKAkSDwoHb3V0Y29tZRgCIAEoCRIRCglub25fZ29hbHMYAyADKAkSEwoLY29uc3RyYWludHMYBCADKAkSOwoGYnVkZ2V0GAUgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRHb2FsQnVkZ2V0ElUKE2FjY2VwdGFuY2VfY3JpdGVyaWEYBiADKAsyOC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEdvYWxBY2NlcHRhbmNlQ3JpdGVyaW9uEhkKEWV4cGVjdGVkX3JldmlzaW9uGAcgASgEEhcKD2lkZW1wb3RlbmN5X2tleRgIIAEoCSJOChdVcGRhdGVBZ2VudEdvYWxSZXNwb25zZRIzCgRnb2FsGAEgASgLMiUucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRHb2FsIl0KFlJldmlld0FnZW50R29hbFJlcXVlc3QSDwoHZ29hbF9pZBgBIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgCIAEoBBIXCg9pZGVtcG90ZW5jeV9rZXkYAyABKAkiTgoXUmV2aWV3QWdlbnRHb2FsUmVzcG9uc2USMwoEZ29hbBgBIAEoCzIlLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50R29hbCqzAwoPQWdlbnRHb2FsU3RhdHVzEiEKHUFHRU5UX0dPQUxfU1RBVFVTX1VOU1BFQ0lGSUVEEAASGwoXQUdFTlRfR09BTF9TVEFUVVNfRFJBRlQQARIfChtBR0VOVF9HT0FMX1NUQVRVU19SRVZJRVdJTkcQAhIbChdBR0VOVF9HT0FMX1NUQVRVU19SRUFEWRADEh0KGUFHRU5UX0dPQUxfU1RBVFVTX1JVTk5JTkcQBBIgChxBR0VOVF9HT0FMX1NUQVRVU19ORUVEU19VU0VSEAUSIAocQUdFTlRfR09BTF9TVEFUVVNfUkVQTEFOTklORxAGEiAKHEFHRU5UX0dPQUxfU1RBVFVTX1JFQ09WRVJJTkcQBxIfChtBR0VOVF9HT0FMX1NUQVRVU19BQ0NFUFRJTkcQCBIeChpBR0VOVF9HT0FMX1NUQVRVU19BQ0NFUFRFRBAJEh0KGUFHRU5UX0dPQUxfU1RBVFVTX1BBUlRJQUwQChIcChhBR0VOVF9HT0FMX1NUQVRVU19GQUlMRUQQCxIfChtBR0VOVF9HT0FMX1NUQVRVU19DQU5DRUxMRUQQDEJLWklnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.AgentGoalBudget
@@ -252,6 +252,119 @@ export type GetAgentGoalResponse = Message<"peers_touch.model.agent.v1.GetAgentG
  */
 export const GetAgentGoalResponseSchema: GenMessage<GetAgentGoalResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_goal, 6);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateAgentGoalRequest
+ */
+export type UpdateAgentGoalRequest = Message<"peers_touch.model.agent.v1.UpdateAgentGoalRequest"> & {
+  /**
+   * @generated from field: string goal_id = 1;
+   */
+  goalId: string;
+
+  /**
+   * @generated from field: string outcome = 2;
+   */
+  outcome: string;
+
+  /**
+   * @generated from field: repeated string non_goals = 3;
+   */
+  nonGoals: string[];
+
+  /**
+   * @generated from field: repeated string constraints = 4;
+   */
+  constraints: string[];
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.AgentGoalBudget budget = 5;
+   */
+  budget?: AgentGoalBudget | undefined;
+
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.AgentGoalAcceptanceCriterion acceptance_criteria = 6;
+   */
+  acceptanceCriteria: AgentGoalAcceptanceCriterion[];
+
+  /**
+   * @generated from field: uint64 expected_revision = 7;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 8;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateAgentGoalRequest.
+ * Use `create(UpdateAgentGoalRequestSchema)` to create a new message.
+ */
+export const UpdateAgentGoalRequestSchema: GenMessage<UpdateAgentGoalRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_goal, 7);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateAgentGoalResponse
+ */
+export type UpdateAgentGoalResponse = Message<"peers_touch.model.agent.v1.UpdateAgentGoalResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.AgentGoal goal = 1;
+   */
+  goal?: AgentGoal | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateAgentGoalResponse.
+ * Use `create(UpdateAgentGoalResponseSchema)` to create a new message.
+ */
+export const UpdateAgentGoalResponseSchema: GenMessage<UpdateAgentGoalResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_goal, 8);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ReviewAgentGoalRequest
+ */
+export type ReviewAgentGoalRequest = Message<"peers_touch.model.agent.v1.ReviewAgentGoalRequest"> & {
+  /**
+   * @generated from field: string goal_id = 1;
+   */
+  goalId: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 2;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 3;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ReviewAgentGoalRequest.
+ * Use `create(ReviewAgentGoalRequestSchema)` to create a new message.
+ */
+export const ReviewAgentGoalRequestSchema: GenMessage<ReviewAgentGoalRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_goal, 9);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ReviewAgentGoalResponse
+ */
+export type ReviewAgentGoalResponse = Message<"peers_touch.model.agent.v1.ReviewAgentGoalResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.AgentGoal goal = 1;
+   */
+  goal?: AgentGoal | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ReviewAgentGoalResponse.
+ * Use `create(ReviewAgentGoalResponseSchema)` to create a new message.
+ */
+export const ReviewAgentGoalResponseSchema: GenMessage<ReviewAgentGoalResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_goal, 10);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.AgentGoalStatus

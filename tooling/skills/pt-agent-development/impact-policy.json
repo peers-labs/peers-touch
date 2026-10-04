@@ -312,6 +312,7 @@
         "apps/desktop/src/services/agent*.ts",
         "apps/desktop/src/services/desktop_api*.ts",
         "apps/desktop/src/store/agent*.ts",
+        "apps/desktop/src/store/goal*.ts",
         "apps/desktop/src/store/home*.ts",
         "packages/locales/*/agent.json"
       ],
