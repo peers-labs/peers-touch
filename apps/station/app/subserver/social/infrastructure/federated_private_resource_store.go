@@ -30,6 +30,7 @@ type remotePrivateResourceModel struct {
 	FederationID          string    `gorm:"column:federation_id;size:512;not null"`
 	DeliveryID            string    `gorm:"column:delivery_id;size:512;not null;uniqueIndex:uidx_social_remote_private_delivery,priority:3"`
 	TargetStationPeerID   string    `gorm:"column:target_station_peer_id;size:512;not null"`
+	ParentContentID       string    `gorm:"column:parent_content_id;size:128;not null;default:'';index"`
 	LifecycleRevision     uint64    `gorm:"column:lifecycle_revision;not null"`
 	ResourceKind          int32     `gorm:"column:resource_kind;not null"`
 	ViewerMetadataBytes   []byte    `gorm:"column:viewer_metadata_bytes;type:bytea;not null"`
@@ -68,11 +69,21 @@ func RemotePrivateContentModels() []any {
 	return []any{
 		&remotePrivateResourceModel{},
 		&remotePrivateEnvelopeModel{},
+		&federatedPrivateInteractionModel{},
 	}
 }
 
 type RemotePrivatePostReadModel struct {
 	Delivery *privatecontentpb.FederatedPrivateResourceDelivery
+}
+
+type RemotePrivateCommentReadModel struct {
+	Delivery *privatecontentpb.FederatedPrivateResourceDelivery
+}
+
+type RemotePrivateCommentPage struct {
+	Comments []*RemotePrivateCommentReadModel
+	HasMore  bool
 }
 
 func migrateRemotePrivateResources(database *gorm.DB) error {
@@ -150,9 +161,13 @@ func (s *GORMPrivateContentStore) ApplyRemotePrivateResource(
 		)
 	}
 	deliveryHash := sha256.Sum256(canonicalDelivery)
+	metadata, parentContentID, err := remotePrivateResourceMetadata(message)
+	if err != nil {
+		return false, err
+	}
 	metadataBytes, err := marshalRemotePrivateProjectionPart(
 		"viewer metadata",
-		message.GetPost(),
+		metadata,
 	)
 	if err != nil {
 		return false, err
@@ -195,6 +210,7 @@ func (s *GORMPrivateContentStore) ApplyRemotePrivateResource(
 		FederationID:          message.GetFederationId(),
 		DeliveryID:            message.GetDeliveryId(),
 		TargetStationPeerID:   message.GetTargetStationPeerId(),
+		ParentContentID:       parentContentID,
 		LifecycleRevision:     message.GetLifecycleRevision(),
 		ResourceKind:          int32(message.GetResourceKind()),
 		ViewerMetadataBytes:   metadataBytes,
@@ -289,6 +305,26 @@ func (s *GORMPrivateContentStore) ApplyRemotePrivateResource(
 		return false, err
 	}
 	return false, nil
+}
+
+func remotePrivateResourceMetadata(
+	message *privatecontentpb.FederatedPrivateResourceDelivery,
+) (proto.Message, string, error) {
+	switch message.GetResourceKind() {
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST:
+		if message.GetPost() == nil {
+			return nil, "", ErrPrivateContentInvalid
+		}
+		return message.GetPost(), "", nil
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT:
+		if message.GetComment() == nil ||
+			strings.TrimSpace(message.GetComment().GetPostId()) == "" {
+			return nil, "", ErrPrivateContentInvalid
+		}
+		return message.GetComment(), message.GetComment().GetPostId(), nil
+	default:
+		return nil, "", ErrPrivateContentInvalid
+	}
 }
 
 func classifyRemotePrivateResourceIdentity(
@@ -386,9 +422,10 @@ func loadRemotePrivatePost(
 	var rows []remotePrivateResourceModel
 	if err := database.WithContext(ctx).
 		Where(
-			"content_id = ? AND target_actor_ptid = ? AND state = ?",
+			"content_id = ? AND target_actor_ptid = ? AND resource_kind = ? AND state = ?",
 			postID,
 			viewerPTID,
+			int32(privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST),
 			remotePrivateResourceStateActive,
 		).
 		Limit(2).
@@ -404,15 +441,175 @@ func loadRemotePrivatePost(
 			ErrPrivateContentConflict,
 		)
 	}
-	row := rows[0]
-	post := &privatecontentpb.PostMetadata{}
-	if err := unmarshalRemotePrivateProjectionPart(
-		"viewer metadata",
-		row.ViewerMetadataBytes,
-		post,
-	); err != nil {
+	message, err := loadRemotePrivateDelivery(
+		ctx,
+		database,
+		rows[0],
+		viewerDeviceID,
+	)
+	if err != nil {
 		return nil, err
 	}
+	if message.GetPost() == nil {
+		return nil, ErrPrivateContentConflict
+	}
+	return &RemotePrivatePostReadModel{Delivery: message}, nil
+}
+
+func (s *GORMPrivateContentStore) ReadRemotePrivateComment(
+	ctx context.Context,
+	postID string,
+	commentID string,
+	viewerPTID string,
+	viewerDeviceID string,
+	read func(
+		delivery.Transaction,
+		*RemotePrivateCommentReadModel,
+	) error,
+) error {
+	if strings.TrimSpace(postID) == "" ||
+		strings.TrimSpace(commentID) == "" ||
+		strings.TrimSpace(viewerPTID) == "" ||
+		strings.TrimSpace(viewerDeviceID) == "" ||
+		read == nil {
+		return ErrPrivateContentInvalid
+	}
+	return s.db.WithContext(ctx).Transaction(func(database *gorm.DB) error {
+		row, err := loadRemotePrivateCommentRow(
+			ctx,
+			database,
+			postID,
+			commentID,
+			viewerPTID,
+		)
+		if err != nil {
+			return err
+		}
+		message, err := loadRemotePrivateDelivery(
+			ctx,
+			database,
+			row,
+			viewerDeviceID,
+		)
+		if err != nil {
+			return err
+		}
+		return read(
+			privateContentValidationTransaction{db: database},
+			&RemotePrivateCommentReadModel{Delivery: message},
+		)
+	})
+}
+
+func (s *GORMPrivateContentStore) ListRemotePrivateComments(
+	ctx context.Context,
+	query PrivateCommentListQuery,
+	read func(
+		delivery.Transaction,
+		RemotePrivateCommentPage,
+	) error,
+) error {
+	if strings.TrimSpace(query.PostID) == "" ||
+		strings.TrimSpace(query.ViewerPTID) == "" ||
+		strings.TrimSpace(query.ViewerDeviceID) == "" ||
+		query.Limit < 1 ||
+		query.Limit > 100 ||
+		(query.CursorCreatedAt.IsZero() != (query.CursorCommentID == "")) ||
+		read == nil {
+		return ErrPrivateContentInvalid
+	}
+	return s.db.WithContext(ctx).Transaction(func(database *gorm.DB) error {
+		if _, err := loadRemotePrivatePost(
+			ctx,
+			database,
+			query.PostID,
+			query.ViewerPTID,
+			query.ViewerDeviceID,
+		); err != nil {
+			return err
+		}
+		rowsQuery := database.WithContext(ctx).Where(
+			"parent_content_id = ? AND target_actor_ptid = ? AND resource_kind = ? AND state = ?",
+			query.PostID,
+			query.ViewerPTID,
+			int32(privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT),
+			remotePrivateResourceStateActive,
+		)
+		if !query.CursorCreatedAt.IsZero() {
+			rowsQuery = rowsQuery.Where(
+				"(committed_at < ?) OR (committed_at = ? AND content_id < ?)",
+				query.CursorCreatedAt.UTC(),
+				query.CursorCreatedAt.UTC(),
+				query.CursorCommentID,
+			)
+		}
+		var rows []remotePrivateResourceModel
+		if err := rowsQuery.
+			Order("committed_at DESC, content_id DESC").
+			Limit(query.Limit + 1).
+			Find(&rows).Error; err != nil {
+			return fmt.Errorf("social remote private Comment list: %w", err)
+		}
+		page := RemotePrivateCommentPage{HasMore: len(rows) > query.Limit}
+		if page.HasMore {
+			rows = rows[:query.Limit]
+		}
+		page.Comments = make([]*RemotePrivateCommentReadModel, 0, len(rows))
+		for _, row := range rows {
+			message, err := loadRemotePrivateDelivery(
+				ctx,
+				database,
+				row,
+				query.ViewerDeviceID,
+			)
+			if err != nil {
+				return err
+			}
+			page.Comments = append(
+				page.Comments,
+				&RemotePrivateCommentReadModel{Delivery: message},
+			)
+		}
+		return read(privateContentValidationTransaction{db: database}, page)
+	})
+}
+
+func loadRemotePrivateCommentRow(
+	ctx context.Context,
+	database *gorm.DB,
+	postID string,
+	commentID string,
+	viewerPTID string,
+) (remotePrivateResourceModel, error) {
+	var rows []remotePrivateResourceModel
+	if err := database.WithContext(ctx).Where(
+		"content_id = ? AND parent_content_id = ? AND target_actor_ptid = ? AND resource_kind = ? AND state = ?",
+		commentID,
+		postID,
+		viewerPTID,
+		int32(privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT),
+		remotePrivateResourceStateActive,
+	).Limit(2).Find(&rows).Error; err != nil {
+		return remotePrivateResourceModel{}, fmt.Errorf(
+			"social remote private Comment read: %w",
+			err,
+		)
+	}
+	if len(rows) == 0 {
+		return remotePrivateResourceModel{}, ErrPrivateContentNotFound
+	}
+	if len(rows) != 1 {
+		return remotePrivateResourceModel{}, ErrPrivateContentConflict
+	}
+	return rows[0], nil
+}
+
+func loadRemotePrivateDelivery(
+	ctx context.Context,
+	database *gorm.DB,
+	row remotePrivateResourceModel,
+	viewerDeviceID string,
+) (*privatecontentpb.FederatedPrivateResourceDelivery, error) {
 	payload := &securecontentpb.EncryptedPayload{}
 	if err := unmarshalRemotePrivateProjectionPart(
 		"encrypted payload",
@@ -457,17 +654,42 @@ func loadRemotePrivatePost(
 			Ptid: row.TargetActorPTID,
 			Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
 		},
-		ResourceKind:      privatecontentpb.FederatedPrivateResourceKind(row.ResourceKind),
-		Resource:          proto.Clone(payload.GetResource()).(*securecontentpb.SecureResourceRef),
-		LifecycleRevision: row.LifecycleRevision,
-		Metadata: &privatecontentpb.FederatedPrivateResourceDelivery_Post{
-			Post: post,
-		},
+		ResourceKind:        privatecontentpb.FederatedPrivateResourceKind(row.ResourceKind),
+		Resource:            proto.Clone(payload.GetResource()).(*securecontentpb.SecureResourceRef),
+		LifecycleRevision:   row.LifecycleRevision,
 		Payload:             payload,
 		Objects:             objectSet.GetObjects(),
 		Verification:        verification,
 		AudienceExplanation: audience,
 		CommittedAt:         timestamppb.New(row.CommittedAt.UTC()),
+	}
+	switch message.GetResourceKind() {
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST:
+		post := &privatecontentpb.PostMetadata{}
+		if err := unmarshalRemotePrivateProjectionPart(
+			"viewer metadata",
+			row.ViewerMetadataBytes,
+			post,
+		); err != nil {
+			return nil, err
+		}
+		message.Metadata = &privatecontentpb.FederatedPrivateResourceDelivery_Post{
+			Post: post,
+		}
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT:
+		comment := &privatecontentpb.CommentMetadata{}
+		if err := unmarshalRemotePrivateProjectionPart(
+			"viewer metadata",
+			row.ViewerMetadataBytes,
+			comment,
+		); err != nil {
+			return nil, err
+		}
+		message.Metadata = &privatecontentpb.FederatedPrivateResourceDelivery_Comment{
+			Comment: comment,
+		}
+	default:
+		return nil, ErrPrivateContentConflict
 	}
 	var envelopes []remotePrivateEnvelopeModel
 	if err := database.WithContext(ctx).
@@ -499,7 +721,7 @@ func loadRemotePrivatePost(
 			envelope,
 		)
 	}
-	return &RemotePrivatePostReadModel{Delivery: message}, nil
+	return message, nil
 }
 
 func marshalRemotePrivateProjectionPart(

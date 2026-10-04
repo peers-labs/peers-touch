@@ -239,9 +239,9 @@ func (s *subServer) handleSubmitPrivateComment(
 	if err != nil {
 		return nil, err
 	}
-	response, err := s.privateContentSvc.SubmitPrivateComment(
+	response, err := s.privateContentSvc.SubmitPrivateCommentForAuthor(
 		ctx,
-		author.Endpoint,
+		author,
 		req,
 	)
 	if err != nil {
@@ -1056,6 +1056,10 @@ func privateContentHandlerError(err error) error {
 		status = nethttp.StatusConflict
 		code = model.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED
 		message = "private-content recipient key is unavailable"
+	case domain.PrivateContentRateLimited:
+		status = nethttp.StatusTooManyRequests
+		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
+		message = "private-content interaction is rate limited"
 	}
 	return privateContentResponseError(status, code, message, err)
 }
@@ -1073,12 +1077,21 @@ func privateContentResponseError(
 			err,
 		)
 	}
+	headers := map[string]string(nil)
+	if retryAfter := domain.PrivateContentRetryAfter(cause); retryAfter > 0 {
+		headers = map[string]string{
+			"Retry-After": strconv.FormatInt(
+				max(int64(retryAfter.Seconds()), 1),
+				10,
+			),
+		}
+	}
 	handlerError := server.NewHandlerErrorWithResponse(
 		status,
 		message,
 		server.CanonicalProtobufContentType,
 		body,
-		nil,
+		headers,
 	)
 	handlerError.Err = cause
 	return handlerError

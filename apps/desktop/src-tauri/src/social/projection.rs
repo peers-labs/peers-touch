@@ -21,7 +21,7 @@ use crate::secure_content::SecureContentSession;
 use super::private_media::PrivateMediaAccessPath;
 use super::private_mention::{validated_mention_routing_hash, verify_decrypted_mentions};
 
-const STATION_ATTESTATION_DOMAIN: &[u8] =
+pub(super) const STATION_ATTESTATION_DOMAIN: &[u8] =
     b"peers-touch:secure-content:station-content-signing-key-attestation:v1\0";
 const CLOCK_SKEW_SECONDS: i64 = 60;
 const MAX_IDENTIFIER_BYTES: usize = 128;

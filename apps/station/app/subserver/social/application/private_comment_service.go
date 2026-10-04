@@ -9,6 +9,7 @@ import (
 	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
@@ -90,6 +91,40 @@ func (s *PrivateContentService) GetPrivateComment(
 		viewer.GetDeviceId(),
 	)
 	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentNotFound) {
+			var remoteResponse *privatecontentpb.GetMomentCommentResourceResponse
+			remoteErr := s.store.ReadRemotePrivateComment(
+				ctx,
+				postID,
+				commentID,
+				viewer.GetActor().GetPtid(),
+				viewer.GetDeviceId(),
+				func(
+					transaction federationdelivery.Transaction,
+					read *infrastructure.RemotePrivateCommentReadModel,
+				) error {
+					comment, projectErr := s.projectRemotePrivateComment(
+						ctx,
+						transaction,
+						read,
+					)
+					if projectErr == nil {
+						remoteResponse =
+							&privatecontentpb.GetMomentCommentResourceResponse{
+								Comment: comment,
+							}
+					}
+					return projectErr
+				},
+			)
+			if remoteErr == nil {
+				return remoteResponse, nil
+			}
+			if socialdomain.PrivateContentCodeOf(remoteErr) != "" {
+				return nil, remoteErr
+			}
+			err = remoteErr
+		}
 		return nil, mapPrivateStoreError(operation, err)
 	}
 	comment, err := s.projectPrivateComment(ctx, viewer, read, operation)
@@ -155,6 +190,71 @@ func (s *PrivateContentService) ListPrivateComments(
 		},
 	)
 	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentNotFound) {
+			var remoteResponse *privatecontentpb.ListMomentCommentsResponse
+			remoteErr := s.store.ListRemotePrivateComments(
+				ctx,
+				infrastructure.PrivateCommentListQuery{
+					PostID:          request.GetPostId(),
+					ViewerPTID:      viewerPTID,
+					ViewerDeviceID:  viewer.GetDeviceId(),
+					CursorCreatedAt: cursor.CreatedAt,
+					CursorCommentID: cursor.CommentID,
+					Limit:           int(request.GetLimit()),
+				},
+				func(
+					transaction federationdelivery.Transaction,
+					page infrastructure.RemotePrivateCommentPage,
+				) error {
+					comments := make(
+						[]*privatecontentpb.CommentResource,
+						0,
+						len(page.Comments),
+					)
+					for _, read := range page.Comments {
+						comment, projectErr := s.projectRemotePrivateComment(
+							ctx,
+							transaction,
+							read,
+						)
+						if projectErr != nil {
+							return projectErr
+						}
+						comments = append(comments, comment)
+					}
+					nextCursor := ""
+					if page.HasMore {
+						last := comments[len(comments)-1].GetMetadata()
+						encoded, encodeErr :=
+							socialdomain.EncodePrivateCommentCursor(
+								viewerPTID,
+								request.GetPostId(),
+								socialdomain.PrivateCommentCursor{
+									CreatedAt: last.GetCreatedAt().AsTime(),
+									CommentID: last.GetCommentId(),
+								},
+							)
+						if encodeErr != nil {
+							return encodeErr
+						}
+						nextCursor = encoded
+					}
+					remoteResponse = &privatecontentpb.ListMomentCommentsResponse{
+						Comments:   comments,
+						NextCursor: nextCursor,
+						HasMore:    page.HasMore,
+					}
+					return nil
+				},
+			)
+			if remoteErr == nil {
+				return remoteResponse, nil
+			}
+			if socialdomain.PrivateContentCodeOf(remoteErr) != "" {
+				return nil, remoteErr
+			}
+			err = remoteErr
+		}
 		return nil, mapPrivateStoreError(operation, err)
 	}
 	comments := make(
@@ -188,6 +288,100 @@ func (s *PrivateContentService) ListPrivateComments(
 		Comments:   comments,
 		NextCursor: nextCursor,
 		HasMore:    page.HasMore,
+	}, nil
+}
+
+func (s *PrivateContentService) projectRemotePrivateComment(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	read *infrastructure.RemotePrivateCommentReadModel,
+) (*privatecontentpb.CommentResource, error) {
+	const operation = "social.private_content.project_remote_comment"
+	if read == nil ||
+		read.Delivery == nil ||
+		read.Delivery.GetComment() == nil ||
+		read.Delivery.GetVerification() == nil {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"projection",
+			"is incomplete",
+		)
+	}
+	message := read.Delivery
+	verification := proto.Clone(
+		message.GetVerification(),
+	).(*privatecontentpb.PrivateContentVerification)
+	attestation, err :=
+		s.stationSigner.AttestImportedContentProofVerificationKey(
+			ctx,
+			message.GetSourceStationPeerId(),
+			verification.GetCommitProof().GetStationSigningKeyId(),
+			s.now(),
+		)
+	if err != nil {
+		return nil, socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentDependency,
+			operation,
+			err,
+		)
+	}
+	verification.StationSigningKeyAttestation = attestation
+	var viewerEnvelope *securecontentpb.ViewerContentKeyEnvelope
+	if len(message.GetTargetActorEnvelopes()) == 1 {
+		viewerEnvelope = proto.Clone(
+			message.GetTargetActorEnvelopes()[0],
+		).(*securecontentpb.ViewerContentKeyEnvelope)
+	}
+	if viewerEnvelope == nil || viewerEnvelope.GetBinding() == nil ||
+		viewerEnvelope.GetBinding().GetSender() == nil {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"viewer_envelope",
+			"is incomplete",
+		)
+	}
+	if verification.GetReceiverVerifiedSenderSigningKey() == nil {
+		authorKey, err := s.signatureVerifier.ResolveRetained(
+			ctx,
+			transaction,
+			verification.GetCommitProof().GetAuthor(),
+			message.GetSourceStationPeerId(),
+			viewerEnvelope.GetBinding().GetSenderSigningKeyId(),
+			message.GetCommittedAt().AsTime(),
+		)
+		if err != nil {
+			return nil, socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				err,
+			)
+		}
+		if authorKey == nil {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				"receiver_verified_sender_signing_key",
+				"is unavailable",
+			)
+		}
+		verification.ReceiverVerifiedSenderSigningKey = authorKey
+	}
+	return &privatecontentpb.CommentResource{
+		Metadata: proto.Clone(
+			message.GetComment(),
+		).(*privatecontentpb.CommentMetadata),
+		Body: &privatecontentpb.CommentResource_PrivateContent{
+			PrivateContent: &privatecontentpb.PrivateContentAccess{
+				Payload: proto.Clone(
+					message.GetPayload(),
+				).(*securecontentpb.EncryptedPayload),
+				ViewerEnvelope: viewerEnvelope,
+				Objects:        cloneEncryptedObjects(message.GetObjects()),
+				Verification:   verification,
+			},
+		},
 	}, nil
 }
 
