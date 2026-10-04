@@ -75,7 +75,9 @@ describe('GoalRunSummary', () => {
 
   it('remains visible when the actor has no pinned Agent', () => {
     expect(homeSource).toContain('data-pt-home-empty-goal-runs');
-    expect(homeSource).toContain('goalExecutions.length ?');
+    expect(homeSource).toContain(
+      'goalExecutions.length || goalResults.length ?',
+    );
     expect(homeSource).toContain('<GoalProgressPanel />');
   });
 });

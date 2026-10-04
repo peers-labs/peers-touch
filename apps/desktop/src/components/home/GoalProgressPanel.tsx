@@ -4,7 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 
 import { HomeTaskStatus } from '../../gen/proto/domain/agent/home_pb';
-import { useGoalExecutionStore } from '../../store/goalExecution';
+import {
+  type GoalExecutionView,
+  type GoalResultView,
+  useGoalExecutionStore,
+} from '../../store/goalExecution';
 import { useHomeStore } from '../../store/home';
 
 const { useToken } = theme;
@@ -16,13 +20,17 @@ export function GoalProgressPanel() {
   const savedGoal = useHomeStore((state) => state.savedGoal);
   const lastAgentEvent = useHomeStore((state) => state.lastAgentEvent);
   const executions = useGoalExecutionStore((state) => state.executions);
+  const results = useGoalExecutionStore((state) => state.results);
   const selectedTaskId = useGoalExecutionStore(
     (state) => state.selectedTaskId,
   );
   const selectTask = useGoalExecutionStore((state) => state.selectTask);
-  const current = executions.find(
-    (execution) => execution.taskId === selectedTaskId,
-  ) ?? executions[0];
+  const current = selectGoalProgressRun(
+    executions,
+    results,
+    selectedTaskId,
+    savedGoal?.goalId,
+  );
 
   if (!current) return null;
 
@@ -127,6 +135,19 @@ export function GoalProgressPanel() {
       ) : null}
     </Flexbox>
   );
+}
+
+export function selectGoalProgressRun(
+  executions: GoalExecutionView[],
+  results: GoalResultView[],
+  selectedTaskId: string | null,
+  savedGoalId?: string,
+): GoalExecutionView | GoalResultView | undefined {
+  const runs = [...executions, ...results];
+  return runs.find((run) => run.taskId === selectedTaskId)
+    ?? runs.find((run) => run.goalId === savedGoalId)
+    ?? executions[0]
+    ?? results[0];
 }
 
 function goalRunStatusLabel(
