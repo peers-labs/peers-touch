@@ -25,8 +25,16 @@
   ],
   "doneWhen": ["Direct Model executes through the TaskRun attempt","Home shows running then succeeded or failed with result summary","At least one durable artifact or failure artifact is linked","The executor cannot set Goal terminal state"],
   "failureBehavior": ["Provider failure remains a TaskRun failure with evidence","Do not bypass budget, policy, trace, or acceptance"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T15:53:25Z",
+  "durableEvidence": [
+    {
+      "kind": "development-native-journey",
+      "status": "passed",
+      "sourceCommit": "3860a4fca4fea75b0036d4efd9cde9c74f2684ae",
+      "artifact": "~/.peers-touch/dev/workspaces/872e6a11e6df33b5/workflow/personal-agent-os-convergence-20261003/artifacts/20261004T155222849819Z/paos-06-direct-model-result/capture.json",
+      "manifestDigest": "90fb3f2914020fa36db18a860c31e3a0fd0a4ddbb52c00f4032c067749307434"
+    }
+  ]
 }
 ```
 
@@ -40,4 +48,15 @@
 
 ## Current Snapshot
 
-DirectRun exists but is not yet attached to a first-class Goal lifecycle.
+Completed on source commit `3860a4fca4fea75b0036d4efd9cde9c74f2684ae`.
+
+- Goal Start atomically creates the canonical TaskRun attempt and its
+  Station-owned DirectRun binding without writing AgentTask or CollaborationTask.
+- The Direct Model adapter records ordered Task events, usage, gate evidence,
+  and a durable result or failure artifact.
+- Home reconstructs running and terminal Goal execution state after refresh and
+  shows the Station-authored result summary.
+- The executor updates TaskRun, ExecutionStep, and AgentGoalNode only; the Goal
+  remains RUNNING for independent acceptance.
+- Profile `two` native Tauri proof passed with a successful result, 769 tokens,
+  exact source/runtime identity, and clean resource teardown.
