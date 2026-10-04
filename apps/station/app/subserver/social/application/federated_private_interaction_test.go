@@ -195,6 +195,30 @@ func TestFederatedPrivateCommentSubmit(t *testing.T) {
 		&dbmodel.SocialPrivateContentComment{},
 		1,
 	)
+	sourcePage, err := fixture.source.service.ListPrivateComments(
+		fixture.ctx,
+		fixture.source.author.Endpoint,
+		&privatecontentpb.ListMomentCommentsRequest{
+			PostId: fixture.postID,
+			Limit:  20,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sourcePage.GetComments()) != 1 {
+		t.Fatalf("source Comment page = %+v", sourcePage)
+	}
+	sourceVerification := sourcePage.GetComments()[0].
+		GetPrivateContent().
+		GetVerification()
+	if sourcePage.GetComments()[0].GetMetadata().GetCommentId() != commentID ||
+		sourceVerification.GetReceiverVerifiedSenderSigningKey().
+			GetActorPtid() != "ptid:bob" ||
+		sourceVerification.GetReceiverVerifiedSenderSigningKey().
+			GetHomeStationPeerId() != "station-remote" {
+		t.Fatalf("source Comment page = %+v", sourcePage)
+	}
 	read, err := fixture.receiver.service.GetPrivateComment(
 		fixture.ctx,
 		fixture.receiver.bob,
@@ -947,7 +971,12 @@ func newFederatedPrivateCommentFixture(
 		},
 	}
 	source.service.recipients = &privateContentRemoteRecipientDirectory{
-		delegate: privateContentTestRecipients{author: bobAuthor.Endpoint},
+		delegate: privateContentTestRecipients{
+			author: bobAuthor.Endpoint,
+			devices: map[string]string{
+				"ptid:alice": "alice-device",
+			},
+		},
 		localities: append(
 			[]socialdomain.RecipientLocality(nil),
 			source.audiences.snapshot.RecipientLocalities...,
