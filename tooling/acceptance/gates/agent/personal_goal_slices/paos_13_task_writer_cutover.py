@@ -186,6 +186,132 @@ def active_task_id(client: FoundationRuntimeClient) -> str:
     return str(value.get("taskId") or "")
 
 
+def ensure_pinned_agent(client: FoundationRuntimeClient) -> dict[str, Any]:
+    result = client.driver.execute_async_script(
+        """
+        const done = arguments[0];
+        Promise.all([
+          import('/src/services/desktop_api.ts'),
+          import('/src/runtimes/homeRuntime.ts'),
+        ])
+          .then(async ([{ api }, { refreshHomeProjection }]) => {
+            const agents = await api.listAgents();
+            const agent = agents.find(
+              (candidate) => Boolean(candidate.id)
+                && Boolean(candidate.provider)
+                && Boolean(candidate.model),
+            );
+            if (!agent) {
+              throw new Error('Station has no configured Agent for Home');
+            }
+            const originallyPinned = agent.pinned === true;
+            const current = originallyPinned
+              ? agent
+              : await api.updateAgent(agent.id, {
+                pinned: true,
+                version: agent.version,
+              });
+            await refreshHomeProjection('paos-13-pin-agent');
+            done({
+              ok: true,
+              agentId: current.id,
+              originallyPinned,
+              version: current.version,
+            });
+          })
+          .catch((error) => done({
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          }));
+        """
+    )
+    require(
+        isinstance(result, Mapping) and result.get("ok") is True,
+        f"pin Home Agent fixture failed: {result}",
+    )
+    return dict(result)
+
+
+def pinned_agent_readiness(
+    client: FoundationRuntimeClient,
+    agent_id: str,
+) -> dict[str, str] | None:
+    result = client.driver.execute_async_script(
+        """
+        const [agentId, done] = arguments;
+        import('/src/services/desktop_api.ts')
+          .then(({ api }) => api.getHomeWorkProjection(0n))
+          .then((projection) => {
+            const pinned = projection.pinnedAgents.find(
+              (candidate) => candidate.agentId === agentId,
+            );
+            done(pinned ? {
+              ok: true,
+              agentId: pinned.agentId,
+              readinessSnapshotId: pinned.readinessSnapshotId,
+            } : { ok: true, missing: true });
+          })
+          .catch((error) => done({
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          }));
+        """,
+        agent_id,
+    )
+    require(
+        isinstance(result, Mapping) and result.get("ok") is True,
+        f"pinned Agent readiness failed: {result}",
+    )
+    if result.get("missing") is True or not result.get("readinessSnapshotId"):
+        return None
+    return {
+        "agentId": str(result.get("agentId") or ""),
+        "readinessSnapshotId": str(
+            result.get("readinessSnapshotId") or ""
+        ),
+    }
+
+
+def restore_agent_pin(
+    client: FoundationRuntimeClient,
+    fixture: Mapping[str, Any],
+) -> dict[str, Any]:
+    if fixture.get("originallyPinned") is True:
+        return {"status": "clean", "changed": False}
+    result = client.driver.execute_async_script(
+        """
+        const [agentId, done] = arguments;
+        import('/src/services/desktop_api.ts')
+          .then(async ({ api }) => {
+            const agents = await api.listAgents();
+            const agent = agents.find((candidate) => candidate.id === agentId);
+            if (!agent) throw new Error('pinned Agent fixture disappeared');
+            const restored = await api.updateAgent(agent.id, {
+              pinned: false,
+              version: agent.version,
+            });
+            done({
+              ok: true,
+              agentId: restored.id,
+              pinned: restored.pinned,
+            });
+          })
+          .catch((error) => done({
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          }));
+        """,
+        str(fixture.get("agentId") or ""),
+    )
+    require(
+        isinstance(result, Mapping)
+        and result.get("ok") is True
+        and result.get("pinned") is not True,
+        f"restore Home Agent pin failed: {result}",
+    )
+    return {"status": "clean", "changed": True}
+
+
 def submit_home_task(
     client: FoundationRuntimeClient,
     title: str,
@@ -282,7 +408,7 @@ def promote_chat(
     return dict(result)
 
 
-def run_journey(
+def run_cutover_journey(
     client: FoundationRuntimeClient,
     artifact_dir: Path,
     actor_ptid: str,
@@ -371,6 +497,39 @@ def run_journey(
             "nativeTaskSelectionMatchesReturnedIdentity": True,
         },
     }
+
+
+def run_journey(
+    client: FoundationRuntimeClient,
+    artifact_dir: Path,
+    actor_ptid: str,
+) -> dict[str, Any]:
+    navigate_to_hash(client, "home")
+    wait_until(
+        lambda: visible_element(client, "[data-pt-home]"),
+        "Home surface before Agent fixture setup",
+    )
+    fixture = ensure_pinned_agent(client)
+    readiness = wait_until(
+        lambda: pinned_agent_readiness(
+            client,
+            str(fixture.get("agentId") or ""),
+        ),
+        "pinned Home Agent readiness",
+    )
+    capture: dict[str, Any] | None = None
+    try:
+        capture = run_cutover_journey(client, artifact_dir, actor_ptid)
+    finally:
+        fixture_cleanup = restore_agent_pin(client, fixture)
+    require(capture is not None, "PAOS-13 Journey produced no capture")
+    capture["pinnedAgentFixture"] = {
+        "agentId": fixture.get("agentId"),
+        "originallyPinned": fixture.get("originallyPinned"),
+        "readinessSnapshotId": readiness.get("readinessSnapshotId"),
+    }
+    capture["fixtureCleanup"] = fixture_cleanup
+    return capture
 
 
 def main() -> int:
