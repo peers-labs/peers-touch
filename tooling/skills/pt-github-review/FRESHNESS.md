@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-03
-covered_docs_hash: efac9537bff6880c56c8677920c993b722c8693468bf445c24182b31557df60a
+covered_docs_hash: b600af920c1eb64d36e86b0e1c25be476d313b23fe6045addaf1b408cedae42d
 
 covered_docs:
   - AGENTS.md
@@ -41,8 +41,10 @@ later declaration-free installation. Existing review rules already reject
 parallel workflow authority and unguarded hook replacement; the installer
 regression covers concurrent declaration preservation. Stale missing folders
 in a multi-root descriptor are ignored only when valid roots remain and include
-the selected source worktree. No `SKILL.md` or generic review fixture change is
-required.
+the selected source worktree. The non-destructive concurrent path may bootstrap
+without an installer receipt only when no other workflow action is observable;
+declaration-free cleanup retains the exact-grant requirement. No `SKILL.md` or
+generic review fixture change is required.
 
 ## 2026-10-03 Review
 

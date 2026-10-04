@@ -534,8 +534,10 @@ After a governance-source update, follow
 `docs/architecture/development-workflow/host-neutral-agent-integration.md`.
 Installation may run beside unrelated live Development declarations because a
 declaration is durable intent, not an in-flight hook action. It still rejects
-every live child assignment, action-store lock, and workflow action except the
-current exact OWNER-bound `make skills` action. When declarations are live,
+every live child assignment, action-store lock, and non-installer workflow
+action. A concurrent non-destructive refresh may bootstrap without an Action
+Receipt when the installed hook cannot issue one; a declaration-free cleanup
+still requires the exact OWNER-bound `make skills` grant. When declarations are live,
 legacy conversation/action history is retained as inert data; cleanup runs only
 at a later declaration-free install. Run
 `make skills IDE=<host> [WORKSPACE=<absolute-.code-workspace-path>]`, restart

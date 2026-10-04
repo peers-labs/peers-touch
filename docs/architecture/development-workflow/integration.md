@@ -224,8 +224,10 @@ active Action Store lock. The sole action exception is one current, live OWNER
 `skills` Action Receipt bound to the selected source worktree. Live Development
 declarations do not block atomic hook/catalog replacement. When any declaration
 is live, legacy conversation/action history is retained as inert data and
-cleanup is deferred to a later declaration-free installation. There is no
-separate acknowledgement command;
+cleanup is deferred to a later declaration-free installation. This
+non-destructive path may bootstrap without an Action Receipt when the installed
+hook cannot issue one; the declaration-free cleanup path still requires the
+exact create-once OWNER grant. There is no separate acknowledgement command;
 restart the IDE only when the host cannot reload changed hooks, then rerun the
 audit.
 
