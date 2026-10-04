@@ -59,11 +59,36 @@ function fixture(overrides = {}) {
       ...REQUIRED_PRIVATE_MEDIA_KEYS.map((state) => `'${state}'`),
       'error_code ?? value.errorCode',
     ].join('\n'),
-    metricTexts: [[...ALLOWED_METRIC_NAMES].map((name) => (
-      name.endsWith('_seconds')
+    objectStreamMetricText: [
+      'stageRecipient = "recipient_proxy"',
+      'stageSource = "source_read"',
+      'outcomeAccepted = "accepted"',
+      'outcomeRejected = "rejected"',
+      'outcomeInterrupted = "interrupted"',
+      'outcomeRetryable = "retryable"',
+      'reasonNone = "none"',
+      'reasonNotFound = "not_found"',
+      'reasonRangeInvalid = "range_invalid"',
+      'reasonIntegrity = "integrity"',
+      'reasonDependency = "dependency"',
+      'reasonCancelled = "cancelled"',
+      'if !validFederatedPrivateObjectStreamObservation(stage, outcome, reason) {',
+      '  panic("invalid")',
+      '}',
+      'm.total.Inc(string(stage), string(outcome), string(reason))',
+      'm.latency.Observe(1, string(stage), string(outcome),)',
+    ].join('\n'),
+    metricTexts: [[...ALLOWED_METRIC_NAMES].map((name) => {
+      if (name === 'social_cross_station_object_stream_latency_seconds') {
+        return `metrics.Get().Histogram("${name}", "Latency histogram", []float64{1}, "stage", "outcome")`;
+      }
+      if (name === 'social_cross_station_object_stream_total') {
+        return `metrics.Get().Counter("${name}", "Transition counter", "stage", "outcome", "reason")`;
+      }
+      return name.endsWith('_seconds')
         ? `metrics.Get().Histogram("${name}", "Latency histogram", []float64{1}, "stage")`
-        : `metrics.Get().Counter("${name}", "Transition counter", "outcome")`
-    )).join('\n')],
+        : `metrics.Get().Counter("${name}", "Transition counter", "outcome")`;
+    }).join('\n')],
     logTexts: ['log.Infof(ctx, "[social] delivery completed")'],
     ...overrides,
   };
@@ -137,6 +162,29 @@ test('rejects unbounded metric names and labels', () => {
       },
     ], { requireComplete: false }),
     /unbounded or duplicate labels/,
+  );
+  assert.throws(
+    () => validateMetricDescriptors([
+      {
+        kind: 'counter',
+        name: 'social_cross_station_object_stream_total',
+        labels: ['outcome', 'reason'],
+      },
+    ], { requireComplete: false }),
+    /labels must be stage, outcome, reason/,
+  );
+});
+
+test('rejects direct private-object metric calls outside the validated helper', () => {
+  const values = fixture();
+  assert.throws(
+    () => validateSocialCrossStationOperability({
+      ...values,
+      objectStreamUsageTexts: [
+        'service.streamMetrics.total.Inc(stage, outcome, reason)',
+      ],
+    }),
+    /called directly outside the validated helper/,
   );
 });
 

@@ -69,6 +69,10 @@ export type PrivateMediaState =
   | 'MEDIA_INTEGRITY_FAILURE'
   | 'MEDIA_OFFLINE_RETRYABLE';
 
+export type PrivateMediaAccessPath =
+  | 'HOME_STATION_LOCAL_OBJECT'
+  | 'HOME_STATION_REMOTE_PEER_STREAM';
+
 export interface PrivateMomentMention {
   actorPtid: string;
   offset: number;
@@ -85,6 +89,8 @@ export interface PrivateMomentLocalFileIntent {
 export interface PrivateMomentMediaProjection {
   objectId: string;
   state: PrivateMediaState;
+  accessPath: PrivateMediaAccessPath;
+  retryable: boolean;
   renderUrl?: string;
   plaintextSha256?: string;
   plaintextSize?: number;
@@ -321,6 +327,10 @@ const MEDIA_STATES = new Set<PrivateMediaState>([
   'MEDIA_INTEGRITY_FAILURE',
   'MEDIA_OFFLINE_RETRYABLE',
 ]);
+const MEDIA_ACCESS_PATHS = new Set<PrivateMediaAccessPath>([
+  'HOME_STATION_LOCAL_OBJECT',
+  'HOME_STATION_REMOTE_PEER_STREAM',
+]);
 const PRIVATE_AUDIENCE_KINDS = new Set<PrivateAudienceKind>([
   'FRIENDS',
   'FOLLOWERS',
@@ -333,19 +343,22 @@ const PRIVATE_AUDIENCE_KINDS = new Set<PrivateAudienceKind>([
 
 export class PrivateMomentsNativeError extends Error {
   readonly code: string;
-  readonly state: PrivatePublishState | PrivateReadState;
+  readonly state: PrivatePublishState | PrivateReadState | PrivateMediaState;
+  readonly retryable: boolean;
   readonly retryAfterSeconds?: number;
 
   constructor(options: {
     code: string;
-    state: PrivatePublishState | PrivateReadState;
+    state: PrivatePublishState | PrivateReadState | PrivateMediaState;
     message?: string;
+    retryable?: boolean;
     retryAfterSeconds?: number;
   }) {
     super(options.message || options.code);
     this.name = 'PrivateMomentsNativeError';
     this.code = options.code;
     this.state = options.state;
+    this.retryable = options.retryable ?? false;
     this.retryAfterSeconds = options.retryAfterSeconds;
   }
 }
@@ -405,6 +418,23 @@ function normalizeMedia(value: unknown): PrivateMomentMediaProjection {
   if (!objectId || !MEDIA_STATES.has(state)) {
     throw privateProjectionContractError('private media projection identity or state is invalid');
   }
+  const rawAccessPath = stringField(value.access_path ?? value.accessPath);
+  const accessPath = (
+    rawAccessPath || 'HOME_STATION_LOCAL_OBJECT'
+  ) as PrivateMediaAccessPath;
+  if (!MEDIA_ACCESS_PATHS.has(accessPath)) {
+    throw privateProjectionContractError('private media access path is invalid');
+  }
+  const rawRetryable = value.retryable;
+  if (rawRetryable !== undefined && typeof rawRetryable !== 'boolean') {
+    throw privateProjectionContractError('private media retry state is invalid');
+  }
+  const retryable = typeof rawRetryable === 'boolean'
+    ? rawRetryable
+    : state === 'MEDIA_OFFLINE_RETRYABLE';
+  if (retryable !== (state === 'MEDIA_OFFLINE_RETRYABLE')) {
+    throw privateProjectionContractError('private media retry state disagrees with its status');
+  }
 
   const localPath = stringField(value.local_path ?? value.localPath);
   if (localPath) {
@@ -454,6 +484,8 @@ function normalizeMedia(value: unknown): PrivateMomentMediaProjection {
   return {
     objectId,
     state,
+    accessPath,
+    retryable,
     renderUrl,
     plaintextSha256: plaintextSha256 || undefined,
     plaintextSize,
@@ -789,14 +821,17 @@ function unpackNativeData(data: unknown): unknown {
 
 function stateFromNativeError(
   error: NativeCommandResult<unknown>['error'],
-  fallback: PrivatePublishState | PrivateReadState,
-): PrivatePublishState | PrivateReadState {
+  fallback: PrivatePublishState | PrivateReadState | PrivateMediaState,
+): PrivatePublishState | PrivateReadState | PrivateMediaState {
   const candidate = stringField(error?.details?.state).toUpperCase();
   if (PUBLISH_STATES.has(candidate as PrivatePublishState)) {
     return candidate as PrivatePublishState;
   }
   if (READ_STATES.has(candidate as PrivateReadState)) {
     return candidate as PrivateReadState;
+  }
+  if (MEDIA_STATES.has(candidate as PrivateMediaState)) {
+    return candidate as PrivateMediaState;
   }
   if (error?.code === 'UNAUTHORIZED') return 'AUTHENTICATION_REQUIRED';
   return fallback;
@@ -805,14 +840,17 @@ function stateFromNativeError(
 async function invokePrivateNative<T>(
   command: string,
   input: Record<string, unknown>,
-  fallbackState: PrivatePublishState | PrivateReadState,
+  fallbackState: PrivatePublishState | PrivateReadState | PrivateMediaState,
 ): Promise<T> {
   const result = await invoke<NativeCommandResult<T>>(command, { input });
   if (!result.ok || result.data === undefined) {
     throw new PrivateMomentsNativeError({
-      code: stringField(result.error?.code) || 'PRIVATE_NATIVE_COMMAND_FAILED',
+      code: stringField(result.error?.details?.native_error_code)
+        || stringField(result.error?.code)
+        || 'PRIVATE_NATIVE_COMMAND_FAILED',
       state: stateFromNativeError(result.error, fallbackState),
       message: stringField(result.error?.message) || `${command} failed`,
+      retryable: result.error?.details?.retryable === true,
       retryAfterSeconds: optionalNumber(result.error?.details?.retry_after_seconds),
     });
   }
@@ -965,7 +1003,7 @@ export const privateMomentsNative = {
         post_id: input.postId,
         object_id: input.objectId,
       },
-      'NOT_FOUND_OR_NOT_AUTHORIZED',
+      'MEDIA_OFFLINE_RETRYABLE',
     ));
   },
 

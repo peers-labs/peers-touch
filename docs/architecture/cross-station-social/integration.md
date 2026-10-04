@@ -1,8 +1,8 @@
 # Cross-Station Private Social - Integration
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-10-03 | **Updated**: 2026-10-03
+> **Version**: v1.2
+> **Created**: 2026-10-03 | **Updated**: 2026-10-04
 > **Owner**: Social / Federation
 
 ---
@@ -129,6 +129,26 @@ domain mutation are atomic.
 Federation exposes the authenticated peer route and bounded stream plumbing.
 Social supplies the authorization callback and ciphertext reader. Neither layer
 creates a public URL.
+
+Recipient Social first resolves the imported resource/object descriptor,
+validates the local viewer endpoint, computes the `CSS-D11` actor-scoped grant
+commitment, and partitions the requested Native range into exact one-MiB peer
+ranges. Source Social derives the actor's target Station from the committed
+recipient-locality snapshot and cross-checks every token/body/path binding
+before reading its object store.
+
+Direct Federation transport streams each range. Relay records the route limit
+with the pending request and checks it from the frame envelope before payload
+allocation. `Cancel`/`Cancelled` frames preserve bounded multiplexing; draining
+requests retain admission until a response or acknowledgement arrives, and
+request IDs never repeat within one TCP stream. Relay logs the private-object
+route category and fresh peer-hop request ID only.
+
+Recipient Social validates status, content type, length, range, ETag,
+descriptor digest, total size, and strict base64url canonical response metadata
+before committing Native-facing headers. It does not retry after response
+commitment; Desktop resumes from its durable checkpoint through the unchanged
+Home Station route.
 
 ## 5. Desktop Integration
 

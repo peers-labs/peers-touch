@@ -1,8 +1,8 @@
 # Cross-Station Private Social - Data Model
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-10-03 | **Updated**: 2026-10-03
+> **Version**: v1.2
+> **Created**: 2026-10-03 | **Updated**: 2026-10-04
 > **Owner**: Social / Federation
 
 ---
@@ -254,20 +254,54 @@ terminal.
 ## 7. Object Peer Read
 
 ```proto
+message FederatedPrivateObjectGrantBinding {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string delivery_id = 3;
+  string source_station_peer_id = 4;
+  string target_station_peer_id = 5;
+  string target_actor_ptid = 6;
+  peers_touch.model.secure_content.v1.SecureResourceRef resource = 7;
+  uint64 lifecycle_revision = 8;
+  string object_id = 9;
+  bytes descriptor_sha256 = 10;
+}
+
+message FederatedPrivateObjectRange {
+  uint64 start = 1;
+  uint64 end_exclusive = 2;
+}
+
 message ReadFederatedPrivateObjectRequest {
   uint32 format_version = 1;
   string federation_id = 2;
   peers_touch.model.actor.v1.ActorDeviceRef viewer = 3;
   peers_touch.model.secure_content.v1.SecureResourceRef resource = 4;
   string object_id = 5;
-  uint64 range_start = 6;
-  uint64 range_end_exclusive = 7;
+  reserved 6, 7;
+  reserved "range_start", "range_end_exclusive";
   bytes imported_grant_sha256 = 8;
+  FederatedPrivateObjectRange range = 9;
+}
+
+message ReadFederatedPrivateObjectResponse {
+  bytes descriptor_sha256 = 1;
+  FederatedPrivateObjectRange range = 2;
+  uint64 total_ciphertext_size = 3;
 }
 ```
 
-The response is a bounded ciphertext byte stream with descriptor identity and
-range metadata. It never contains an object key or plaintext.
+`imported_grant_sha256` is
+`SHA-256(CanonicalProtoBytes(FederatedPrivateObjectGrantBinding))`.
+`descriptor_sha256` includes `storage_ref` through the existing canonical
+descriptor projection. Source and recipient consume one checked-in
+known-answer fixture.
+
+Each peer request carries one canonical half-open range of at most 1 MiB. The
+response body is raw ciphertext. `ReadFederatedPrivateObjectResponse` is
+canonical-encoded, strict unpadded-base64url encoded, and placed in the bounded
+metadata header; its decoded/encoded maxima are 69/92 bytes. The body and
+metadata never contain an object key or plaintext.
 
 ## 8. Recipient Persistence
 

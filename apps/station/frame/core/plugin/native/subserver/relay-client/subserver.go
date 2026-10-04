@@ -502,13 +502,32 @@ func (s *SubServer) makeDispatcher() client.Dispatcher {
 				nil
 		}
 		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
+
+		maxBodyLen := uint32(protocol.MaxBodyLen)
+		if policy, ok := protocol.RoutePolicyForPath(req.Path); ok {
+			maxBodyLen = policy.MaxResponseBodyLen
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxBodyLen)+1))
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("read local response: %w", err)
+		}
+		if uint64(len(body)) > uint64(maxBodyLen) {
+			return 0, nil, nil, fmt.Errorf(
+				"%w: body length %d exceeds %d",
+				client.ErrResponseLimit,
+				len(body),
+				maxBodyLen,
+			)
+		}
 		hdrs := make(map[string]string, len(resp.Header))
 		for k, v := range resp.Header {
 			if len(v) == 0 || isHopByHop(k) {
 				continue
 			}
 			hdrs[k] = v[0]
+		}
+		if resp.ContentLength >= 0 {
+			hdrs["Content-Length"] = fmt.Sprintf("%d", resp.ContentLength)
 		}
 		return uint32(resp.StatusCode), hdrs, body, nil
 	}

@@ -2,6 +2,7 @@ package federation
 
 import (
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -79,6 +80,51 @@ func TestFederatedContentPreKeyRouteAndScopeAreCanonical(t *testing.T) {
 	for _, claim := range validationScope.Policy.AllowedClaimKeys {
 		if !expectedValidationClaims[claim] {
 			t.Fatalf("unexpected Content PreKey validation claim %q", claim)
+		}
+	}
+}
+
+func TestFederatedPrivateObjectRouteAndScopeAreCanonical(t *testing.T) {
+	scope.ResetForTest()
+	if err := RegisterPeerScopes(); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, ok := peerRouteSpecFor(PeerRouteSocialPrivateObjectRead)
+	if !ok {
+		t.Fatal("Social private-object peer route is not registered")
+	}
+	if spec.path !=
+		SocialPrivateObjectReadRoute ||
+		spec.method != server.POST ||
+		spec.scope != SocialPrivateObjectReadScope {
+		t.Fatalf("Social private-object peer route = %+v", spec)
+	}
+
+	registered, err := scope.Get(SocialPrivateObjectReadScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedClaims := map[string]bool{
+		ClaimFederationID:           true,
+		ClaimSourceStationPeerID:    true,
+		ClaimTargetStationPeerID:    true,
+		ClaimActorPTID:              true,
+		ClaimDeviceID:               true,
+		ClaimObjectID:               true,
+		ClaimCanonicalRequestSHA256: true,
+	}
+	if registered.Policy.TTLMax != time.Minute ||
+		!registered.Policy.AudienceRequired ||
+		len(registered.Policy.AllowedClaimKeys) != len(expectedClaims) {
+		t.Fatalf(
+			"Social private-object peer scope = %+v",
+			registered.Policy,
+		)
+	}
+	for _, claim := range registered.Policy.AllowedClaimKeys {
+		if !expectedClaims[claim] {
+			t.Fatalf("unexpected Social private-object peer claim %q", claim)
 		}
 	}
 }

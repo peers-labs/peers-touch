@@ -57,6 +57,8 @@ const (
 	RealtimeCallResolutionRoute = "/federation/realtime/call-resolution"
 	// GroupCallAuthorityJoinRoute requests a LiveKit grant from Conversation Authority.
 	GroupCallAuthorityJoinRoute = "/federation/realtime/group-call/join"
+	// SocialPrivateObjectReadRoute streams one bounded Social ciphertext range.
+	SocialPrivateObjectReadRoute = "/federation/social/private/objects/:object_id/read"
 )
 
 // PeerRoute identifies one Federation-owned peer HTTP capability.
@@ -84,6 +86,7 @@ const (
 	PeerRouteRealtimeCallResolution           PeerRoute = "realtime-call-resolution"
 	PeerRouteRealtimeSignal                   PeerRoute = "realtime-signal"
 	PeerRouteGroupCallAuthorityJoin           PeerRoute = "group-call-authority-join"
+	PeerRouteSocialPrivateObjectRead          PeerRoute = "social-private-object-read"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request
@@ -137,6 +140,7 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteRealtimeSignal, "federation-realtime-signal", RealtimeSignalRoute, server.POST, RealtimeSignalScope},
 	{PeerRouteRealtimeCallResolution, "federation-realtime-call-resolution", RealtimeCallResolutionRoute, server.POST, RealtimeCallResolutionScope},
 	{PeerRouteGroupCallAuthorityJoin, "federation-group-call-authority-join", GroupCallAuthorityJoinRoute, server.POST, GroupCallAuthorityJoinScope},
+	{PeerRouteSocialPrivateObjectRead, "federation-social-private-object-read", SocialPrivateObjectReadRoute, server.POST, SocialPrivateObjectReadScope},
 }
 
 // NewPeerRouteFactory validates and creates the Federation route owner.
@@ -339,6 +343,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteGroupCallAuthorityJoin),
 			f.wrappers[PeerRouteGroupCallAuthorityJoin],
+		),
+		server.NewSimpleHandler(
+			"federation-social-private-object-read",
+			SocialPrivateObjectReadRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteSocialPrivateObjectRead),
+			f.wrappers[PeerRouteSocialPrivateObjectRead],
 		),
 	}
 }

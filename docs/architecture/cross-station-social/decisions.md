@@ -1,8 +1,8 @@
 # Cross-Station Private Social - Design Decisions
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-10-03 | **Updated**: 2026-10-03
+> **Version**: v1.2
+> **Created**: 2026-10-03 | **Updated**: 2026-10-04
 > **Owner**: Social / Federation
 
 ---
@@ -21,6 +21,7 @@
 | `CSS-D08` | Current readiness is Native Desktop only | accepted |
 | `CSS-D09` | Federated GROUP extends the SC-D29 snapshot without replacing its authority | accepted |
 | `CSS-D10` | Remote Content PreKey submit validation uses a distinct read-only peer contract | accepted |
+| `CSS-D11` | Private objects use source-authorized bounded peer streams | accepted |
 
 ## CSS-D01: Receiver Home Station Owns Friend Request Decisions
 
@@ -492,3 +493,79 @@ validation-scope claims, and complete consumer checks explicit. Revisit this
 decision if product semantics require revocation and source commit to be
 globally serializable; that stronger guarantee requires a separate mutating
 reservation/finalization protocol rather than this read-only contract.
+
+## CSS-D11: Private Objects Use Source-Authorized Bounded Peer Streams
+
+**Status**: accepted
+**Date**: 2026-10-04
+
+### Context
+
+Recipient Social stores a viewer-scoped encrypted resource and object
+descriptors, but ciphertext remains solely at source Social. The local object
+route cannot read imported objects, and Federation has no Social object peer
+route. The existing request digest has no canonical input. Relay also buffers
+responses under a general 32 MiB body limit and lacks cancellation framing.
+
+### Decision
+
+Model adds a typed actor-scoped grant binding, half-open range, and fixed-size
+response metadata. The commitment is the SHA-256 of Social's descriptor-order
+canonical protobuf bytes and binds Federation, deterministic delivery, Station
+pair, actor, resource generation, lifecycle revision, object, and canonical
+descriptor digest. The source derives the target Station from its committed
+recipient-locality snapshot and never treats a caller digest as authority.
+
+Recipient Social validates the current local endpoint before minting a
+one-minute peer token. The token has one audience and binds issuer, audience,
+subject actor, device, object, Federation, Station pair, and canonical request
+digest. Source Social revalidates current membership, committed locality,
+resource authorization, exact actor/device object grant, descriptor, and range.
+Endpoint revocation after mint has an accepted maximum 65-second stale window,
+including five seconds of clock skew; source-side revoke remains immediate.
+
+Each peer request carries one exact half-open range of at most 1 MiB. Direct
+transport streams it. Relay checks a route-specific response limit before
+payload allocation and adds `Cancel`/`Cancelled` control frames. A cancelled
+slot retains its cap and concurrency admission until a terminal response or
+acknowledgement arrives. Request IDs never repeat within one TCP stream.
+
+Response metadata is canonical protobuf encoded as strict unpadded base64url,
+with a 69-byte decoded and 92-byte encoded maximum. Recipient Social validates
+all metadata and range headers before committing the outer response. It never
+retries after committing headers or body bytes.
+
+### Rationale
+
+This keeps ciphertext and authorization at source Social, preserves the
+existing Home Station-only Native route, prevents third-Station replay, and
+makes direct and Relay memory use bounded without introducing a second object
+store or public URL.
+
+### Alternatives Considered
+
+- Copy ciphertext to recipient Social: rejected because it creates a second
+  object authority and revocation surface.
+- Let Desktop call source Station: rejected because it bypasses Home Station
+  policy, identity, and retry ownership.
+- Put full descriptors in response headers: rejected because descriptors can
+  exceed the 8 KiB header budget.
+- Keep Relay's generic response allocation: rejected because an authenticated
+  malicious target could force a 32 MiB allocation per object response.
+- Use expiring cancellation tombstones only: rejected because late responses
+  and request-ID reuse can corrupt or terminate unrelated multiplexed calls.
+
+### Consequences
+
+- Federation auth enforces single audience plus required bounded `iat`/`exp`.
+- Relay protocol and both endpoints gain bounded cancellation control frames.
+- CSS-03 must provide shared Go/Rust known-answer vectors, strict wire/header
+  negatives, route ownership, bounded metrics, and fail-on-zero test discovery.
+- Native product readiness remains `UNPROVEN` until CSS-08A activation and
+  CSS-09 exact-source two-Station proof.
+
+### Review And Reversal Conditions
+
+Independent security, protocol, and Relay reviews passed on 2026-10-04. Revisit
+the stateless endpoint assertion only if product semantics require immediate
+cross-Station endpoint revocation; that requires introspection or a denylist.

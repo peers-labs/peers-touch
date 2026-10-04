@@ -1249,6 +1249,18 @@ capabilities:
     forbidden_aliases: []
     superseded_symbols: []
 
+  - id: federation.social.private_object.read
+    domain_owner: station.federation
+    truth_owner: social.private_object
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/social/private/objects/:object_id/read }
+    request_proto: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest
+    response_proto: peers_touch.model.social.v1.ReadFederatedPrivateObjectResponse
+    truth_stores: [social_private_content_posts, social_private_content_comments, social_private_objects, social_private_object_grants]
+    allowed_dependencies: [federation.auth.verify, federation.membership.read, social.private_object.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: federation.conversation.leave_intent.submit
     domain_owner: station.federation
     truth_owner: conversation.authority

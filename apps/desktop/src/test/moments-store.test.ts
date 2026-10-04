@@ -1331,6 +1331,8 @@ describe('private Moments Native projection', () => {
             media: [{
               objectId: 'object-1',
               state: 'MEDIA_READY',
+              accessPath: 'HOME_STATION_LOCAL_OBJECT',
+              retryable: false,
               renderUrl: 'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
             }],
           },

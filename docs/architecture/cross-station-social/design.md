@@ -1,8 +1,8 @@
 # Cross-Station Private Social - Architecture Design
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-10-03 | **Updated**: 2026-10-03
+> **Version**: v1.3
+> **Created**: 2026-10-03 | **Updated**: 2026-10-04
 > **Owner**: Social / Federation
 
 ---
@@ -214,15 +214,29 @@ Large object bytes remain at the source Social object authority.
 ```text
 Bob Desktop
   -> Station B Social checks Bob's imported projection
-  -> Station B Federation opens a target-bound peer stream
-  -> Station A Social revalidates source resource + actor grant + object/range
+  -> Station B validates Bob's active endpoint and mints a one-minute
+     actor/device/request-bound Federation token
+  -> Station B Federation opens bounded peer ranges
+  -> Station A derives Bob's Home Station from committed recipient locality
+  -> Station A revalidates membership, resource, exact actor/device grant,
+     descriptor, and range
   -> ciphertext range returns through Station B
   -> Bob Desktop verifies descriptor/hash and decrypts locally
 ```
 
-The peer capability binds source resource, target actor/device, object ID,
-range, expiry, and Federation identity. A capability cannot be replayed for
-another object, actor, or range.
+`CSS-D11` defines the peer request, grant commitment, canonical wire, response
+metadata, and Relay behavior. Each peer range is at most 1 MiB. Direct transport
+streams it; Relay bounds the response before allocation and propagates
+`Cancel`/`Cancelled` while retaining a draining request slot. Recipient Social
+validates the first peer response before committing Native-facing headers and
+never retries after response commitment.
+
+The peer capability binds Federation, Station pair, source resource, target
+actor/device, object, descriptor commitment, range, and expiry. The source
+derives target Station from committed locality rather than caller claims, so a
+third Federation member cannot replay the actor-scoped commitment. Endpoint
+revocation after token mint has a documented maximum 65-second stale window;
+source-side resource or grant revoke remains immediate.
 
 ## 7. Remote Interaction Lifecycle
 

@@ -478,6 +478,174 @@ func (x *FederatedPrivateObjectDescriptorSet) GetObjects() []*securecontent.Encr
 	return nil
 }
 
+type FederatedPrivateObjectGrantBinding struct {
+	state               protoimpl.MessageState           `protogen:"open.v1"`
+	FormatVersion       uint32                           `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	FederationId        string                           `protobuf:"bytes,2,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	DeliveryId          string                           `protobuf:"bytes,3,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
+	SourceStationPeerId string                           `protobuf:"bytes,4,opt,name=source_station_peer_id,json=sourceStationPeerId,proto3" json:"source_station_peer_id,omitempty"`
+	TargetStationPeerId string                           `protobuf:"bytes,5,opt,name=target_station_peer_id,json=targetStationPeerId,proto3" json:"target_station_peer_id,omitempty"`
+	TargetActorPtid     string                           `protobuf:"bytes,6,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
+	Resource            *securecontent.SecureResourceRef `protobuf:"bytes,7,opt,name=resource,proto3" json:"resource,omitempty"`
+	LifecycleRevision   uint64                           `protobuf:"varint,8,opt,name=lifecycle_revision,json=lifecycleRevision,proto3" json:"lifecycle_revision,omitempty"`
+	ObjectId            string                           `protobuf:"bytes,9,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
+	DescriptorSha256    []byte                           `protobuf:"bytes,10,opt,name=descriptor_sha256,json=descriptorSha256,proto3" json:"descriptor_sha256,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *FederatedPrivateObjectGrantBinding) Reset() {
+	*x = FederatedPrivateObjectGrantBinding{}
+	mi := &file_domain_social_private_federation_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FederatedPrivateObjectGrantBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FederatedPrivateObjectGrantBinding) ProtoMessage() {}
+
+func (x *FederatedPrivateObjectGrantBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_private_federation_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FederatedPrivateObjectGrantBinding.ProtoReflect.Descriptor instead.
+func (*FederatedPrivateObjectGrantBinding) Descriptor() ([]byte, []int) {
+	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetDeliveryId() string {
+	if x != nil {
+		return x.DeliveryId
+	}
+	return ""
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetSourceStationPeerId() string {
+	if x != nil {
+		return x.SourceStationPeerId
+	}
+	return ""
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetTargetStationPeerId() string {
+	if x != nil {
+		return x.TargetStationPeerId
+	}
+	return ""
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetTargetActorPtid() string {
+	if x != nil {
+		return x.TargetActorPtid
+	}
+	return ""
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetResource() *securecontent.SecureResourceRef {
+	if x != nil {
+		return x.Resource
+	}
+	return nil
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetLifecycleRevision() uint64 {
+	if x != nil {
+		return x.LifecycleRevision
+	}
+	return 0
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *FederatedPrivateObjectGrantBinding) GetDescriptorSha256() []byte {
+	if x != nil {
+		return x.DescriptorSha256
+	}
+	return nil
+}
+
+type FederatedPrivateObjectRange struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Start         uint64                 `protobuf:"varint,1,opt,name=start,proto3" json:"start,omitempty"`
+	EndExclusive  uint64                 `protobuf:"varint,2,opt,name=end_exclusive,json=endExclusive,proto3" json:"end_exclusive,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FederatedPrivateObjectRange) Reset() {
+	*x = FederatedPrivateObjectRange{}
+	mi := &file_domain_social_private_federation_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FederatedPrivateObjectRange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FederatedPrivateObjectRange) ProtoMessage() {}
+
+func (x *FederatedPrivateObjectRange) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_private_federation_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FederatedPrivateObjectRange.ProtoReflect.Descriptor instead.
+func (*FederatedPrivateObjectRange) Descriptor() ([]byte, []int) {
+	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *FederatedPrivateObjectRange) GetStart() uint64 {
+	if x != nil {
+		return x.Start
+	}
+	return 0
+}
+
+func (x *FederatedPrivateObjectRange) GetEndExclusive() uint64 {
+	if x != nil {
+		return x.EndExclusive
+	}
+	return 0
+}
+
 type FederatedPrivateResourceInvalidation struct {
 	state               protoimpl.MessageState            `protogen:"open.v1"`
 	FormatVersion       uint32                            `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
@@ -495,7 +663,7 @@ type FederatedPrivateResourceInvalidation struct {
 
 func (x *FederatedPrivateResourceInvalidation) Reset() {
 	*x = FederatedPrivateResourceInvalidation{}
-	mi := &file_domain_social_private_federation_proto_msgTypes[2]
+	mi := &file_domain_social_private_federation_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -507,7 +675,7 @@ func (x *FederatedPrivateResourceInvalidation) String() string {
 func (*FederatedPrivateResourceInvalidation) ProtoMessage() {}
 
 func (x *FederatedPrivateResourceInvalidation) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_federation_proto_msgTypes[2]
+	mi := &file_domain_social_private_federation_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -520,7 +688,7 @@ func (x *FederatedPrivateResourceInvalidation) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use FederatedPrivateResourceInvalidation.ProtoReflect.Descriptor instead.
 func (*FederatedPrivateResourceInvalidation) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{2}
+	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *FederatedPrivateResourceInvalidation) GetFormatVersion() uint32 {
@@ -606,7 +774,7 @@ type FederatedPrivateInteractionCommand struct {
 
 func (x *FederatedPrivateInteractionCommand) Reset() {
 	*x = FederatedPrivateInteractionCommand{}
-	mi := &file_domain_social_private_federation_proto_msgTypes[3]
+	mi := &file_domain_social_private_federation_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -618,7 +786,7 @@ func (x *FederatedPrivateInteractionCommand) String() string {
 func (*FederatedPrivateInteractionCommand) ProtoMessage() {}
 
 func (x *FederatedPrivateInteractionCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_federation_proto_msgTypes[3]
+	mi := &file_domain_social_private_federation_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -631,7 +799,7 @@ func (x *FederatedPrivateInteractionCommand) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use FederatedPrivateInteractionCommand.ProtoReflect.Descriptor instead.
 func (*FederatedPrivateInteractionCommand) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{3}
+	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FederatedPrivateInteractionCommand) GetFormatVersion() uint32 {
@@ -732,7 +900,7 @@ type FederatedPrivateInteractionResult struct {
 
 func (x *FederatedPrivateInteractionResult) Reset() {
 	*x = FederatedPrivateInteractionResult{}
-	mi := &file_domain_social_private_federation_proto_msgTypes[4]
+	mi := &file_domain_social_private_federation_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -744,7 +912,7 @@ func (x *FederatedPrivateInteractionResult) String() string {
 func (*FederatedPrivateInteractionResult) ProtoMessage() {}
 
 func (x *FederatedPrivateInteractionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_federation_proto_msgTypes[4]
+	mi := &file_domain_social_private_federation_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -757,7 +925,7 @@ func (x *FederatedPrivateInteractionResult) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use FederatedPrivateInteractionResult.ProtoReflect.Descriptor instead.
 func (*FederatedPrivateInteractionResult) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{4}
+	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *FederatedPrivateInteractionResult) GetFormatVersion() uint32 {
@@ -809,16 +977,15 @@ type ReadFederatedPrivateObjectRequest struct {
 	Viewer              *model.ActorDeviceRef            `protobuf:"bytes,3,opt,name=viewer,proto3" json:"viewer,omitempty"`
 	Resource            *securecontent.SecureResourceRef `protobuf:"bytes,4,opt,name=resource,proto3" json:"resource,omitempty"`
 	ObjectId            string                           `protobuf:"bytes,5,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
-	RangeStart          uint64                           `protobuf:"varint,6,opt,name=range_start,json=rangeStart,proto3" json:"range_start,omitempty"`
-	RangeEndExclusive   uint64                           `protobuf:"varint,7,opt,name=range_end_exclusive,json=rangeEndExclusive,proto3" json:"range_end_exclusive,omitempty"`
 	ImportedGrantSha256 []byte                           `protobuf:"bytes,8,opt,name=imported_grant_sha256,json=importedGrantSha256,proto3" json:"imported_grant_sha256,omitempty"`
+	Range               *FederatedPrivateObjectRange     `protobuf:"bytes,9,opt,name=range,proto3" json:"range,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ReadFederatedPrivateObjectRequest) Reset() {
 	*x = ReadFederatedPrivateObjectRequest{}
-	mi := &file_domain_social_private_federation_proto_msgTypes[5]
+	mi := &file_domain_social_private_federation_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -830,7 +997,7 @@ func (x *ReadFederatedPrivateObjectRequest) String() string {
 func (*ReadFederatedPrivateObjectRequest) ProtoMessage() {}
 
 func (x *ReadFederatedPrivateObjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_federation_proto_msgTypes[5]
+	mi := &file_domain_social_private_federation_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -843,7 +1010,7 @@ func (x *ReadFederatedPrivateObjectRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ReadFederatedPrivateObjectRequest.ProtoReflect.Descriptor instead.
 func (*ReadFederatedPrivateObjectRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{5}
+	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ReadFederatedPrivateObjectRequest) GetFormatVersion() uint32 {
@@ -881,25 +1048,78 @@ func (x *ReadFederatedPrivateObjectRequest) GetObjectId() string {
 	return ""
 }
 
-func (x *ReadFederatedPrivateObjectRequest) GetRangeStart() uint64 {
-	if x != nil {
-		return x.RangeStart
-	}
-	return 0
-}
-
-func (x *ReadFederatedPrivateObjectRequest) GetRangeEndExclusive() uint64 {
-	if x != nil {
-		return x.RangeEndExclusive
-	}
-	return 0
-}
-
 func (x *ReadFederatedPrivateObjectRequest) GetImportedGrantSha256() []byte {
 	if x != nil {
 		return x.ImportedGrantSha256
 	}
 	return nil
+}
+
+func (x *ReadFederatedPrivateObjectRequest) GetRange() *FederatedPrivateObjectRange {
+	if x != nil {
+		return x.Range
+	}
+	return nil
+}
+
+type ReadFederatedPrivateObjectResponse struct {
+	state               protoimpl.MessageState       `protogen:"open.v1"`
+	DescriptorSha256    []byte                       `protobuf:"bytes,1,opt,name=descriptor_sha256,json=descriptorSha256,proto3" json:"descriptor_sha256,omitempty"`
+	Range               *FederatedPrivateObjectRange `protobuf:"bytes,2,opt,name=range,proto3" json:"range,omitempty"`
+	TotalCiphertextSize uint64                       `protobuf:"varint,3,opt,name=total_ciphertext_size,json=totalCiphertextSize,proto3" json:"total_ciphertext_size,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ReadFederatedPrivateObjectResponse) Reset() {
+	*x = ReadFederatedPrivateObjectResponse{}
+	mi := &file_domain_social_private_federation_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadFederatedPrivateObjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadFederatedPrivateObjectResponse) ProtoMessage() {}
+
+func (x *ReadFederatedPrivateObjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_private_federation_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadFederatedPrivateObjectResponse.ProtoReflect.Descriptor instead.
+func (*ReadFederatedPrivateObjectResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_private_federation_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ReadFederatedPrivateObjectResponse) GetDescriptorSha256() []byte {
+	if x != nil {
+		return x.DescriptorSha256
+	}
+	return nil
+}
+
+func (x *ReadFederatedPrivateObjectResponse) GetRange() *FederatedPrivateObjectRange {
+	if x != nil {
+		return x.Range
+	}
+	return nil
+}
+
+func (x *ReadFederatedPrivateObjectResponse) GetTotalCiphertextSize() uint64 {
+	if x != nil {
+		return x.TotalCiphertextSize
+	}
+	return 0
 }
 
 var File_domain_social_private_federation_proto protoreflect.FileDescriptor
@@ -930,7 +1150,23 @@ const file_domain_social_private_federation_proto_rawDesc = "" +
 	"\n" +
 	"\bmetadata\"\x7f\n" +
 	"#FederatedPrivateObjectDescriptorSet\x12X\n" +
-	"\aobjects\x18\x01 \x03(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectDescriptorR\aobjects\"\xbf\x04\n" +
+	"\aobjects\x18\x01 \x03(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectDescriptorR\aobjects\"\xf4\x03\n" +
+	"\"FederatedPrivateObjectGrantBinding\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12#\n" +
+	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x12\x1f\n" +
+	"\vdelivery_id\x18\x03 \x01(\tR\n" +
+	"deliveryId\x123\n" +
+	"\x16source_station_peer_id\x18\x04 \x01(\tR\x13sourceStationPeerId\x123\n" +
+	"\x16target_station_peer_id\x18\x05 \x01(\tR\x13targetStationPeerId\x12*\n" +
+	"\x11target_actor_ptid\x18\x06 \x01(\tR\x0ftargetActorPtid\x12R\n" +
+	"\bresource\x18\a \x01(\v26.peers_touch.model.secure_content.v1.SecureResourceRefR\bresource\x12-\n" +
+	"\x12lifecycle_revision\x18\b \x01(\x04R\x11lifecycleRevision\x12\x1b\n" +
+	"\tobject_id\x18\t \x01(\tR\bobjectId\x12+\n" +
+	"\x11descriptor_sha256\x18\n" +
+	" \x01(\fR\x10descriptorSha256\"X\n" +
+	"\x1bFederatedPrivateObjectRange\x12\x14\n" +
+	"\x05start\x18\x01 \x01(\x04R\x05start\x12#\n" +
+	"\rend_exclusive\x18\x02 \x01(\x04R\fendExclusive\"\xbf\x04\n" +
 	"$FederatedPrivateResourceInvalidation\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12#\n" +
 	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x123\n" +
@@ -963,17 +1199,19 @@ const file_domain_social_private_federation_proto_rawDesc = "" +
 	"\x18canonical_command_sha256\x18\x03 \x01(\fR\x16canonicalCommandSha256\x12V\n" +
 	"\x04kind\x18\x04 \x01(\x0e2B.peers_touch.model.social.v1.FederatedPrivateInteractionResultKindR\x04kind\x12)\n" +
 	"\x10canonical_result\x18\x05 \x01(\fR\x0fcanonicalResult\x126\n" +
-	"\x17canonical_result_sha256\x18\x06 \x01(\fR\x15canonicalResultSha256\"\xa9\x03\n" +
+	"\x17canonical_result_sha256\x18\x06 \x01(\fR\x15canonicalResultSha256\"\xd6\x03\n" +
 	"!ReadFederatedPrivateObjectRequest\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12#\n" +
 	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x12B\n" +
 	"\x06viewer\x18\x03 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06viewer\x12R\n" +
 	"\bresource\x18\x04 \x01(\v26.peers_touch.model.secure_content.v1.SecureResourceRefR\bresource\x12\x1b\n" +
-	"\tobject_id\x18\x05 \x01(\tR\bobjectId\x12\x1f\n" +
-	"\vrange_start\x18\x06 \x01(\x04R\n" +
-	"rangeStart\x12.\n" +
-	"\x13range_end_exclusive\x18\a \x01(\x04R\x11rangeEndExclusive\x122\n" +
-	"\x15imported_grant_sha256\x18\b \x01(\fR\x13importedGrantSha256*\xa6\x01\n" +
+	"\tobject_id\x18\x05 \x01(\tR\bobjectId\x122\n" +
+	"\x15imported_grant_sha256\x18\b \x01(\fR\x13importedGrantSha256\x12N\n" +
+	"\x05range\x18\t \x01(\v28.peers_touch.model.social.v1.FederatedPrivateObjectRangeR\x05rangeJ\x04\b\x06\x10\aJ\x04\b\a\x10\bR\vrange_startR\x13range_end_exclusive\"\xd5\x01\n" +
+	"\"ReadFederatedPrivateObjectResponse\x12+\n" +
+	"\x11descriptor_sha256\x18\x01 \x01(\fR\x10descriptorSha256\x12N\n" +
+	"\x05range\x18\x02 \x01(\v28.peers_touch.model.social.v1.FederatedPrivateObjectRangeR\x05range\x122\n" +
+	"\x15total_ciphertext_size\x18\x03 \x01(\x04R\x13totalCiphertextSize*\xa6\x01\n" +
 	"\x1cFederatedPrivateResourceKind\x12/\n" +
 	"+FEDERATED_PRIVATE_RESOURCE_KIND_UNSPECIFIED\x10\x00\x12(\n" +
 	"$FEDERATED_PRIVATE_RESOURCE_KIND_POST\x10\x01\x12+\n" +
@@ -1008,7 +1246,7 @@ func file_domain_social_private_federation_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_social_private_federation_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_domain_social_private_federation_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_domain_social_private_federation_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_domain_social_private_federation_proto_goTypes = []any{
 	(FederatedPrivateResourceKind)(0),               // 0: peers_touch.model.social.v1.FederatedPrivateResourceKind
 	(PrivateResourceInvalidationReason)(0),          // 1: peers_touch.model.social.v1.PrivateResourceInvalidationReason
@@ -1016,50 +1254,56 @@ var file_domain_social_private_federation_proto_goTypes = []any{
 	(FederatedPrivateInteractionResultKind)(0),      // 3: peers_touch.model.social.v1.FederatedPrivateInteractionResultKind
 	(*FederatedPrivateResourceDelivery)(nil),        // 4: peers_touch.model.social.v1.FederatedPrivateResourceDelivery
 	(*FederatedPrivateObjectDescriptorSet)(nil),     // 5: peers_touch.model.social.v1.FederatedPrivateObjectDescriptorSet
-	(*FederatedPrivateResourceInvalidation)(nil),    // 6: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation
-	(*FederatedPrivateInteractionCommand)(nil),      // 7: peers_touch.model.social.v1.FederatedPrivateInteractionCommand
-	(*FederatedPrivateInteractionResult)(nil),       // 8: peers_touch.model.social.v1.FederatedPrivateInteractionResult
-	(*ReadFederatedPrivateObjectRequest)(nil),       // 9: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest
-	(*model.ActorRef)(nil),                          // 10: peers_touch.model.actor.v1.ActorRef
-	(*securecontent.SecureResourceRef)(nil),         // 11: peers_touch.model.secure_content.v1.SecureResourceRef
-	(*PostMetadata)(nil),                            // 12: peers_touch.model.social.v1.PostMetadata
-	(*CommentMetadata)(nil),                         // 13: peers_touch.model.social.v1.CommentMetadata
-	(*securecontent.EncryptedPayload)(nil),          // 14: peers_touch.model.secure_content.v1.EncryptedPayload
-	(*securecontent.ViewerContentKeyEnvelope)(nil),  // 15: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	(*securecontent.EncryptedObjectDescriptor)(nil), // 16: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	(*PrivateContentVerification)(nil),              // 17: peers_touch.model.social.v1.PrivateContentVerification
-	(*model.AudienceExplanation)(nil),               // 18: peers_touch.model.social.v1.AudienceExplanation
-	(*timestamppb.Timestamp)(nil),                   // 19: google.protobuf.Timestamp
-	(*model.ActorDeviceRef)(nil),                    // 20: peers_touch.model.actor.v1.ActorDeviceRef
+	(*FederatedPrivateObjectGrantBinding)(nil),      // 6: peers_touch.model.social.v1.FederatedPrivateObjectGrantBinding
+	(*FederatedPrivateObjectRange)(nil),             // 7: peers_touch.model.social.v1.FederatedPrivateObjectRange
+	(*FederatedPrivateResourceInvalidation)(nil),    // 8: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation
+	(*FederatedPrivateInteractionCommand)(nil),      // 9: peers_touch.model.social.v1.FederatedPrivateInteractionCommand
+	(*FederatedPrivateInteractionResult)(nil),       // 10: peers_touch.model.social.v1.FederatedPrivateInteractionResult
+	(*ReadFederatedPrivateObjectRequest)(nil),       // 11: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest
+	(*ReadFederatedPrivateObjectResponse)(nil),      // 12: peers_touch.model.social.v1.ReadFederatedPrivateObjectResponse
+	(*model.ActorRef)(nil),                          // 13: peers_touch.model.actor.v1.ActorRef
+	(*securecontent.SecureResourceRef)(nil),         // 14: peers_touch.model.secure_content.v1.SecureResourceRef
+	(*PostMetadata)(nil),                            // 15: peers_touch.model.social.v1.PostMetadata
+	(*CommentMetadata)(nil),                         // 16: peers_touch.model.social.v1.CommentMetadata
+	(*securecontent.EncryptedPayload)(nil),          // 17: peers_touch.model.secure_content.v1.EncryptedPayload
+	(*securecontent.ViewerContentKeyEnvelope)(nil),  // 18: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	(*securecontent.EncryptedObjectDescriptor)(nil), // 19: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	(*PrivateContentVerification)(nil),              // 20: peers_touch.model.social.v1.PrivateContentVerification
+	(*model.AudienceExplanation)(nil),               // 21: peers_touch.model.social.v1.AudienceExplanation
+	(*timestamppb.Timestamp)(nil),                   // 22: google.protobuf.Timestamp
+	(*model.ActorDeviceRef)(nil),                    // 23: peers_touch.model.actor.v1.ActorDeviceRef
 }
 var file_domain_social_private_federation_proto_depIdxs = []int32{
-	10, // 0: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	13, // 0: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
 	0,  // 1: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.resource_kind:type_name -> peers_touch.model.social.v1.FederatedPrivateResourceKind
-	11, // 2: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	12, // 3: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.post:type_name -> peers_touch.model.social.v1.PostMetadata
-	13, // 4: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.comment:type_name -> peers_touch.model.social.v1.CommentMetadata
-	14, // 5: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
-	15, // 6: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.target_actor_envelopes:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	16, // 7: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	17, // 8: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.verification:type_name -> peers_touch.model.social.v1.PrivateContentVerification
-	18, // 9: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.audience_explanation:type_name -> peers_touch.model.social.v1.AudienceExplanation
-	19, // 10: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.committed_at:type_name -> google.protobuf.Timestamp
-	16, // 11: peers_touch.model.social.v1.FederatedPrivateObjectDescriptorSet.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	10, // 12: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	11, // 13: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	1,  // 14: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.reason:type_name -> peers_touch.model.social.v1.PrivateResourceInvalidationReason
-	19, // 15: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.committed_at:type_name -> google.protobuf.Timestamp
-	20, // 16: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.actor:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	11, // 17: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.parent:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	2,  // 18: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.operation:type_name -> peers_touch.model.social.v1.FederatedPrivateInteractionOperation
-	3,  // 19: peers_touch.model.social.v1.FederatedPrivateInteractionResult.kind:type_name -> peers_touch.model.social.v1.FederatedPrivateInteractionResultKind
-	20, // 20: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.viewer:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	11, // 21: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	14, // 2: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	15, // 3: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.post:type_name -> peers_touch.model.social.v1.PostMetadata
+	16, // 4: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.comment:type_name -> peers_touch.model.social.v1.CommentMetadata
+	17, // 5: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
+	18, // 6: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.target_actor_envelopes:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	19, // 7: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	20, // 8: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.verification:type_name -> peers_touch.model.social.v1.PrivateContentVerification
+	21, // 9: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.audience_explanation:type_name -> peers_touch.model.social.v1.AudienceExplanation
+	22, // 10: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.committed_at:type_name -> google.protobuf.Timestamp
+	19, // 11: peers_touch.model.social.v1.FederatedPrivateObjectDescriptorSet.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	14, // 12: peers_touch.model.social.v1.FederatedPrivateObjectGrantBinding.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	13, // 13: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	14, // 14: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	1,  // 15: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.reason:type_name -> peers_touch.model.social.v1.PrivateResourceInvalidationReason
+	22, // 16: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.committed_at:type_name -> google.protobuf.Timestamp
+	23, // 17: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.actor:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	14, // 18: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.parent:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	2,  // 19: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.operation:type_name -> peers_touch.model.social.v1.FederatedPrivateInteractionOperation
+	3,  // 20: peers_touch.model.social.v1.FederatedPrivateInteractionResult.kind:type_name -> peers_touch.model.social.v1.FederatedPrivateInteractionResultKind
+	23, // 21: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.viewer:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	14, // 22: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	7,  // 23: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.range:type_name -> peers_touch.model.social.v1.FederatedPrivateObjectRange
+	7,  // 24: peers_touch.model.social.v1.ReadFederatedPrivateObjectResponse.range:type_name -> peers_touch.model.social.v1.FederatedPrivateObjectRange
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_private_federation_proto_init() }
@@ -1078,7 +1322,7 @@ func file_domain_social_private_federation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_social_private_federation_proto_rawDesc), len(file_domain_social_private_federation_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   6,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
