@@ -14,23 +14,16 @@
 ## Acceptance Execution
 
 ```json
-{"closures":{"PAOS-home-draft":[],"PAOS-goal-contract":[],"PAOS-goal-start":["agent-personal-goal-contract-source"],"PAOS-goal-cancel":[],"PAOS-first-taskrun":[],"PAOS-direct-model-result":[],"PAOS-durable-goal-events":[],"PAOS-home-live-progress":["agent-personal-goal-home-e2e"],"PAOS-home-resync":[],"PAOS-atelier-live-progress":[],"PAOS-event-publisher-hard-cut":[],"PAOS-event-consumer-hard-cut":["agent-personal-goal-event-fanout-e2e"],"PAOS-agenttask-migration":[],"PAOS-collab-task-migration":[],"PAOS-home-chat-writer-cutover":[],"PAOS-atelier-writer-cutover":["agent-personal-taskrun-cutover-source"],"PAOS-task-reader-cutover":[],"PAOS-ready-frontier":["agent-personal-goal-coordinator-e2e"],"PAOS-active-cancellation":[],"PAOS-needs-you":[],"PAOS-replan":[],"PAOS-budget-exhaustion":[],"PAOS-acceptance-contract":[],"PAOS-deterministic-verdict":["agent-personal-goal-acceptance-e2e"],"PAOS-human-verdict":[],"PAOS-atelier-goal-graph":[],"PAOS-atelier-evidence":["agent-personal-goal-atelier-e2e"],"PAOS-desktop-restart":[],"PAOS-station-restart":["agent-personal-goal-recovery-e2e"],"PAOS-atelier-state-matrix":[],"PAOS-agent-module-shell":[],"PAOS-external-runtime":["agent-mcp-dual-runtime-source","agent-v2-mcp-lifecycle-e2e","agent-v2-external-runtime-e2e"],"PAOS-legacy-task-deletion":["agent-personal-task-authority-hard-cut"],"PAOS-final-proof":["agent-personal-goal-architecture-guard","agent-personal-goal-os-e2e"]},"completion":["agent-personal-goal-contract-source","station-agent-unit","agent-personal-goal-home-e2e","agent-personal-goal-event-fanout-e2e","agent-personal-taskrun-cutover-source","agent-personal-goal-coordinator-e2e","agent-personal-goal-acceptance-e2e","agent-personal-goal-atelier-e2e","agent-personal-goal-recovery-e2e","agent-mcp-dual-runtime-source","agent-v2-mcp-lifecycle-e2e","agent-v2-external-runtime-e2e","agent-personal-task-authority-hard-cut","agent-personal-goal-architecture-guard","agent-personal-goal-os-e2e"],"full":["architecture-module-governance","proto-build","desktop-check","station-agent-unit","agent-v2-kernel-foundation-e2e","agent-mcp-dual-runtime-source","agent-v2-mcp-lifecycle-e2e","agent-v2-external-runtime-e2e","agent-orchestration-e2e","agent-personal-goal-contract-source","agent-personal-goal-home-e2e","agent-personal-goal-event-fanout-e2e","agent-personal-taskrun-cutover-source","agent-personal-goal-coordinator-e2e","agent-personal-goal-acceptance-e2e","agent-personal-goal-atelier-e2e","agent-personal-goal-recovery-e2e","agent-personal-task-authority-hard-cut","agent-personal-goal-architecture-guard","agent-personal-goal-os-e2e"]}
+{"closures":{"PAOS-home-draft":[],"PAOS-goal-contract":[],"PAOS-goal-start":["agent-personal-goal-contract-source"],"PAOS-goal-cancel":[],"PAOS-first-taskrun":[],"PAOS-direct-model-result":[],"PAOS-durable-goal-events":[],"PAOS-home-live-progress":["agent-personal-goal-home-e2e"],"PAOS-home-resync":[],"PAOS-atelier-live-progress":[],"PAOS-event-publisher-hard-cut":[],"PAOS-event-consumer-hard-cut":["agent-personal-goal-event-fanout-e2e"],"PAOS-agenttask-migration":[],"PAOS-collab-task-migration":[],"PAOS-home-chat-writer-cutover":[],"PAOS-atelier-writer-cutover":["agent-personal-taskrun-cutover-source"],"PAOS-task-reader-cutover":[],"PAOS-ready-frontier":["agent-personal-goal-coordinator-e2e"],"PAOS-active-cancellation":[],"PAOS-needs-you":[],"PAOS-replan":[],"PAOS-budget-exhaustion":[],"PAOS-acceptance-contract":[],"PAOS-deterministic-verdict":["agent-personal-goal-acceptance-e2e"],"PAOS-human-verdict":[],"PAOS-atelier-goal-graph":[],"PAOS-atelier-evidence":["agent-personal-goal-atelier-e2e"],"PAOS-desktop-restart":[],"PAOS-station-restart":["agent-personal-goal-recovery-e2e"],"PAOS-atelier-state-matrix":[],"PAOS-agent-module-shell":[],"PAOS-external-runtime":["agent-mcp-dual-runtime-source","agent-v2-mcp-lifecycle-e2e","agent-v2-external-runtime-e2e"],"PAOS-legacy-task-deletion":["agent-personal-task-authority-hard-cut"],"PAOS-final-proof":["agent-personal-goal-architecture-guard","agent-personal-goal-os-e2e"]},"completion":["agent-personal-goal-contract-source","station-agent-unit","agent-personal-goal-home-e2e","agent-personal-goal-event-fanout-e2e","agent-personal-taskrun-cutover-source","agent-personal-goal-coordinator-e2e","agent-personal-goal-acceptance-e2e","agent-personal-goal-atelier-e2e","agent-personal-goal-recovery-e2e","agent-mcp-dual-runtime-source","agent-v2-mcp-lifecycle-e2e","agent-v2-external-runtime-e2e","agent-personal-task-authority-hard-cut","agent-personal-goal-architecture-guard","agent-personal-goal-os-e2e"],"full":["architecture-module-governance","proto-build","desktop-check","station-agent-unit","agent-v2-kernel-foundation-e2e","agent-mcp-dual-runtime-source","agent-v2-mcp-lifecycle-e2e","agent-v2-external-runtime-e2e","agent-orchestration-e2e","agent-personal-goal-contract-source","agent-personal-goal-home-e2e","agent-personal-goal-event-fanout-e2e","agent-personal-taskrun-cutover-source","agent-personal-goal-coordinator-e2e","agent-personal-goal-acceptance-e2e","agent-personal-goal-atelier-e2e","agent-personal-goal-recovery-e2e","agent-personal-task-authority-hard-cut","agent-personal-goal-architecture-guard","agent-personal-goal-os-e2e","acceptance-infra-validation","acceptance-plan-self","acceptance-runtime-provisioning-self","acceptance-workflow-contract","agent-core-lifecycle-native-e2e","agent-marketplace-catalog-e2e","agent-native-knowledge-binding-e2e","agent-quick-completion-e2e","agent-stream-resilience-e2e","agent-v2-home-command-center-e2e","chat-desktop-gateway-e2e","chat-lifecycle-interactions-group-e2e","chat-lifecycle-tree-zero-reference-e2e","chat-native-interactions-e2e","chat-native-visible-static","chat-storage-desktop-batch-clear-e2e","chat-storage-mobile-batch-clear-e2e","chat-storage-zero-legacy-e2e","federation-three-node-e2e","messaging-platform-contract","mobile-hard-cut-static","mobile-ios-simulator-layout-accessibility-e2e","mobile-simulator-platform-e2e","oauth-login-broker-architecture","oauth-login-broker-contract","oauth-login-broker-handoff-contract","oauth-login-broker-provider-identity","station-access-auth-e2e","station-access-capability-contract","station-access-desktop-oauth-layout-e2e","station-access-desktop-oauth-native-e2e","station-access-federation-boundary-e2e","station-access-scope-isolation-e2e","station-api-ownership","station-federation-unit","station-messaging-unit"]}
 ```
 
 ## Goal And Slice Contract
 
-Deliver one Station-owned Personal Agent OS where a user creates, reviews,
-starts, observes, intervenes in, accepts, and reopens one durable Goal.
-
-Every Task is capped at four agent-hours and is incomplete unless it ends with:
-
-1. one real user action in Home or Atelier;
-2. one visible UI result, including the affected failure state;
-3. authoritative Station readback of the same identity and revision;
-4. one focused source or UX check plus one functional check.
-
-Schema, migration, outbox, relay, and deletion work is therefore embedded in a
-user-visible closure. It is not counted as a standalone delivery.
+Deliver one Station-owned Personal Agent OS where users create, review, start,
+observe, intervene in, accept, and reopen durable Goals. Each Task is capped at
+four agent-hours and closes with a real Home/Atelier action, visible success or
+failure, same-identity/revision Station readback, and focused plus functional
+checks. Infrastructure work must remain embedded in that visible closure.
 
 ## Delivery Cadence
 
@@ -59,12 +52,8 @@ user-visible closure. It is not counted as a standalone delivery.
 | 21 | `29` | Remove legacy authorities without losing visible work |
 | 22 | `30` | Complete exact-source Desktop and browser proof |
 
-Nominal work is `136 agent-hours`; three lanes yield `80-88h` wall-clock and
-the first usable result at hour 4. An incomplete MCP Plan adds `12-20h`.
-
-Closure requires one exact-source capture of the UI action, visible state, Goal
-id/revision, and Station readback. Unit/static checks cannot replace it. Formal
-Acceptance stays at milestone Gates to avoid shared-registry contention.
+Each closure requires exact-source UI action, visible state, Goal identity and
+revision, Station readback, and both checks.
 
 ## Parallel Ownership
 
@@ -81,14 +70,11 @@ Gate registries, and MCP integration are serialized.
 ## Atomic Cutovers
 
 - Goal creation moves from task metadata to `AgentGoal`.
-- Existing task rows migrate before writers and readers cut to `TaskRun`;
-  legacy authorities delete only after Home, Atelier, and restart proof.
-- Realtime moves atomically to domain/outbox commit -> leased relay -> shared
-  `EventBus.Publish` -> `/events/stream` -> idempotent projection.
-- Goal completion moves from summary/node inference to Station
-  `GoalAcceptanceService` over immutable evidence.
-- Rollback uses source/deployment rollback before destructive migration. No
-  permanent dual-write, dual-read, dual-fan-out, or polling truth remains.
+- Task rows migrate before writers/readers cut to `TaskRun`; legacy authorities
+  delete only after Home, Atelier, and restart proof.
+- Realtime cuts to outbox -> shared `EventBus` -> `/events/stream` -> projection.
+- Goal completion moves to Station `GoalAcceptanceService` over immutable evidence.
+- Rollback uses source/deployment rollback; no permanent dual truth remains.
 
 ## Release Criteria
 
