@@ -63,9 +63,13 @@ bootstrap. Its location is not an authority hint. The first mutating tool event
 must name one declared task root or have all mutation targets resolve to one
 workspace root; otherwise it fails with `WORKTREE_SELECTION_REQUIRED`.
 Managed per-worktree hook entries are not parallel authorities.
-Rollout is a hard cut: after proving the workflow idle, delete prior
-conversation and workflow-action stores before installing the current
-bootstrap. No legacy reader, importer, alias, or dual writer is allowed.
+Rollout atomically replaces the current integration after proving no child
+assignment, workflow action, or Action Store lock is in flight. A live
+Development declaration is not execution liveness and does not block the
+replacement. Prior conversation and workflow-action stores are deleted only
+when declarations are quiescent; otherwise they remain inert until a later
+declaration-free installation. No legacy reader, importer, alias, or dual
+writer is allowed.
 The sole live OWNER `skills` action is admissible only with its create-once
 Kernel grant, which the installer atomically consumes exactly once. Zero live
 actions are denied. Fallible path/workspace/catalog planning completes before
@@ -108,8 +112,9 @@ authority because a timer elapsed.
 - Active-editor mismatch and explicit New Task target fixtures bind the
   selected worktree or fail `WORKTREE_SELECTION_REQUIRED`; folder order never
   decides authority.
-- Rollout removes the old conversation/action stores and tree-wide search finds
-  no runtime import of `workflow-conversation-binding.mjs`.
+- Declaration-free rollout removes the old conversation/action stores;
+  concurrent-declaration rollout preserves them as inert history. Tree-wide
+  search finds no runtime import of `workflow-conversation-binding.mjs`.
 
 ## Crosswalks
 
