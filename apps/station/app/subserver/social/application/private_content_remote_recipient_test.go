@@ -12,6 +12,7 @@ import (
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -169,6 +170,75 @@ func TestRemoteRecipientAdmissionClaimsSingleRemoteFriendsAudience(
 		)
 	}
 	assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+}
+
+func TestRemoteRecipientAdmissionAllowsPrivateMediaWithoutBusinessCommit(
+	t *testing.T,
+) {
+	tests := []struct {
+		name string
+		kind privatecontentpb.PrivateMomentKind
+	}{
+		{
+			name: "image",
+			kind: privatecontentpb.
+				PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE,
+		},
+		{
+			name: "video",
+			kind: privatecontentpb.
+				PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newPrivateContentServiceFixture(t)
+			fixture.audiences.snapshot.RecipientLocalities = nil
+			recipients := &privateContentRemoteRecipientDirectory{
+				delegate: privateContentTestRecipients{
+					author: fixture.author.Endpoint,
+				},
+				localities: []socialdomain.RecipientLocality{{
+					ActorPTID:         "ptid:bob",
+					HomeStationPeerID: "station-remote",
+					FederationID:      "federation-one",
+				}},
+			}
+			fixture.service.recipients = recipients
+			request := privateMomentPrepareRequest(
+				"prepare-remote-"+testCase.name,
+				"content-remote-"+testCase.name,
+			)
+			request.Kind = testCase.kind
+			request.ObjectCount = 1
+
+			prepared, err := fixture.service.PreparePrivateMoment(
+				context.Background(),
+				fixture.author,
+				request,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(prepared.GetPlan().GetObjectIds()) != 1 {
+				t.Fatalf(
+					"remote %s object IDs = %v, want one",
+					testCase.name,
+					prepared.GetPlan().GetObjectIds(),
+				)
+			}
+			if recipients.preKeyTargetCalls != 1 ||
+				fixture.keyExchange.claimCalls != 1 {
+				t.Fatalf(
+					"remote %s target/claim calls = %d/%d, want 1/1",
+					testCase.name,
+					recipients.preKeyTargetCalls,
+					fixture.keyExchange.claimCalls,
+				)
+			}
+			assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+		})
+	}
 }
 
 type remoteValidationBoundaryStore struct {
