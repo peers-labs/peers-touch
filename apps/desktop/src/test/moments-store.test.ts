@@ -1044,6 +1044,47 @@ describe('moments store: createPost / deletePost', () => {
     expect(usePrivateMomentsStore.getState().postsById['private-post']).toBeUndefined();
   });
 
+  it('retains a typed revocation tombstone after Native material is purged', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:alice', 9);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-post': {
+          postId: 'private-post',
+          contentId: 'private-post',
+          generation: '1',
+          authorPtid: 'ptid:bob',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    enqueue('social_private_moment_purge', statusOk({ ok: true }));
+
+    await usePrivateMomentsStore.getState().revokeMoment(
+      'private-post',
+      'RECIPIENT_BLOCKED',
+    );
+
+    expect(usePrivateMomentsStore.getState().postsById['private-post']).toMatchObject({
+      state: 'DELETED_OR_REVOKED',
+      revocationReason: 'RECIPIENT_BLOCKED',
+      content: undefined,
+      errorCode: 'SOCIAL_PRIVATE_RECIPIENT_BLOCKED',
+    });
+    await usePrivateMomentsStore.getState().readMoment('private-post');
+    await usePrivateMomentsStore.getState().recoverMoment('private-post');
+    await usePrivateMomentsStore.getState().openMedia(
+      'private-post',
+      'object-stale',
+    );
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
   it('retains a cleanup tombstone when Native purge fails', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });

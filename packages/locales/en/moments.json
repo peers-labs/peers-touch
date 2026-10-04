@@ -271,5 +271,11 @@
   "moments.private.state.PRIVATE_UNSUPPORTED_ON_DEVICE.title": "Open in Desktop",
   "moments.private.state.PRIVATE_UNSUPPORTED_ON_DEVICE.description": "This device cannot open private posts.",
   "moments.private.state.DELETED_OR_REVOKED.title": "Post unavailable",
-  "moments.private.state.DELETED_OR_REVOKED.description": "This private post was deleted or access was revoked."
+  "moments.private.state.DELETED_OR_REVOKED.description": "This private post was deleted or access was revoked.",
+  "moments.private.revocation.RESOURCE_DELETED.title": "Post deleted",
+  "moments.private.revocation.RESOURCE_DELETED.description": "The author deleted this private post.",
+  "moments.private.revocation.RELATIONSHIP_REVOKED.title": "Access removed",
+  "moments.private.revocation.RELATIONSHIP_REVOKED.description": "Your relationship no longer grants access to this private post.",
+  "moments.private.revocation.RECIPIENT_BLOCKED.title": "Post hidden",
+  "moments.private.revocation.RECIPIENT_BLOCKED.description": "This private post is unavailable because the relationship is blocked."
 }

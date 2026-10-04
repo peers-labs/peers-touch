@@ -1182,11 +1182,32 @@ func (s *PrivateContentService) DeletePrivateMoment(
 			"is required",
 		)
 	}
+	deletedAt := s.now()
 	deleted, err := s.store.DeletePrivatePost(
 		ctx,
 		postID,
 		authorPTID,
-		s.now(),
+		deletedAt,
+		func(
+			ctx context.Context,
+			transaction infrastructure.PrivateContentTransaction,
+			post dbmodel.SocialPrivateContentPost,
+		) error {
+			if s.localStationPeerID == "" {
+				return nil
+			}
+			return s.stageFederatedPrivateInvalidations(
+				ctx,
+				transaction.ContentPreKeyValidationTransaction(),
+				infrastructure.PrivateResourceInvalidationRequest{
+					LocalStationPeerID: s.localStationPeerID,
+					AuthorPTID:         post.AuthorPTID,
+					PostID:             post.PostID,
+					Reason:             privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_RESOURCE_DELETED,
+					CommittedAt:        deletedAt,
+				},
+			)
+		},
 	)
 	if err != nil {
 		return false, mapPrivateStoreError(operation, err)

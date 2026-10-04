@@ -6,6 +6,7 @@ import { eventBus } from '../kernel/events';
 import {
   GroupMembershipChange_Kind,
   MomentEvent_Kind,
+  SocialGraphEvent_Kind,
   StreamEventSchema,
 } from '../gen/proto/domain/realtime/event_pb';
 import {
@@ -16,6 +17,8 @@ import {
 } from './eventStream';
 import type {
   MomentCreatedPayload,
+  MomentRevokedPayload,
+  RelationshipChangedPayload,
   RealtimeGroupFederationEventPayload,
   RealtimeGroupMembershipChangeKind,
 } from '../kernel/events/types';
@@ -217,6 +220,115 @@ describe('event stream group membership decode', () => {
     expect(payloads).toEqual([]);
   });
 
+  it('dispatches a typed private revocation and preserves its reason', async () => {
+    let realtimeHandler: TauriEventHandler = () => {
+      throw new Error('realtime:event handler was not installed');
+    };
+    listenMock.mockImplementation(async (eventName: string, handler: TauriEventHandler) => {
+      if (eventName === 'realtime:event') realtimeHandler = handler;
+      return () => undefined;
+    });
+    const payloads: MomentRevokedPayload[] = [];
+    const unsubscribe = eventBus.subscribe(EVENT.MOMENT_REVOKED, (payload) => {
+      payloads.push(payload);
+    });
+
+    await installEventStreamBridge();
+    realtimeHandler({
+      payload: {
+        actor_ptid: 'ptid:bob',
+        session_epoch: 7,
+        station_peer_id: 'station-b',
+        station_url: 'https://station-b.test/',
+        event_id: 'remote-private-revocation-1',
+        data_b64: privateMomentRevocationFrameBase64(
+          'PRIVATE_RESOURCE_INVALIDATION_REASON_RECIPIENT_BLOCKED',
+        ),
+      },
+    });
+    unsubscribe();
+
+    expect(payloads).toEqual([{
+      eventId: 'remote-private-event-1',
+      targetActorPtid: 'ptid:bob',
+      sessionEpoch: 7,
+      stationPeerId: 'station-b',
+      stationUrl: 'https://station-b.test',
+      postId: '01REMOTEPRIVATEPOST',
+      authorActorPtid: undefined,
+      occurredAtUnixMs: 456,
+      reason: 'RECIPIENT_BLOCKED',
+    }]);
+  });
+
+  it('requests reconciliation for an unknown private revocation reason', async () => {
+    let realtimeHandler: TauriEventHandler = () => {
+      throw new Error('realtime:event handler was not installed');
+    };
+    listenMock.mockImplementation(async (eventName: string, handler: TauriEventHandler) => {
+      if (eventName === 'realtime:event') realtimeHandler = handler;
+      return () => undefined;
+    });
+    const payloads: Array<{ newestEventId?: string; reason: string }> = [];
+    const unsubscribe = eventBus.subscribe(EVENT.MOMENT_RESYNC_REQUESTED, (payload) => {
+      payloads.push(payload);
+    });
+
+    await installEventStreamBridge();
+    realtimeHandler({
+      payload: {
+        actor_ptid: 'ptid:bob',
+        session_epoch: 7,
+        station_peer_id: 'station-b',
+        station_url: 'https://station-b.test/',
+        event_id: 'remote-private-revocation-unknown',
+        data_b64: privateMomentRevocationFrameBase64(
+          'PRIVATE_RESOURCE_INVALIDATION_REASON_FUTURE',
+        ),
+      },
+    });
+    unsubscribe();
+
+    expect(payloads).toEqual([{
+      newestEventId: 'remote-private-event-1',
+      reason: 'unknown-private-revocation',
+    }]);
+  });
+
+  it('maps relationship block events to the shared projection event', async () => {
+    let realtimeHandler: TauriEventHandler = () => {
+      throw new Error('realtime:event handler was not installed');
+    };
+    listenMock.mockImplementation(async (eventName: string, handler: TauriEventHandler) => {
+      if (eventName === 'realtime:event') realtimeHandler = handler;
+      return () => undefined;
+    });
+    const payloads: RelationshipChangedPayload[] = [];
+    const unsubscribe = eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, (payload) => {
+      payloads.push(payload);
+    });
+
+    await installEventStreamBridge();
+    realtimeHandler({
+      payload: {
+        actor_ptid: 'ptid:bob',
+        session_epoch: 7,
+        station_peer_id: 'station-b',
+        station_url: 'https://station-b.test/',
+        event_id: 'relationship-block-1',
+        data_b64: socialGraphFrameBase64(
+          SocialGraphEvent_Kind.RELATIONSHIP_BLOCKED,
+        ),
+      },
+    });
+    unsubscribe();
+
+    expect(payloads).toEqual([{
+      targetActorPtid: 'ptid:alice',
+      action: 'block',
+    }]);
+  });
+
   it('keeps browser gateway resync fallback low-frequency', async () => {
     vi.useFakeTimers();
     (window as any).__PT_GATEWAY_BASE__ = 'http://127.0.0.1:3031';
@@ -298,6 +410,38 @@ function privateMomentFrameBase64(): string {
         actorPtid: 'ptid:bob',
         audience: 'FRIENDS',
         occurredTsUnixMs: 456n,
+      },
+    },
+  });
+  return Buffer.from(toBinary(StreamEventSchema, event)).toString('base64');
+}
+
+function privateMomentRevocationFrameBase64(reason: string): string {
+  const event = create(StreamEventSchema, {
+    eventId: 'remote-private-event-1',
+    kind: {
+      case: 'moment',
+      value: {
+        kind: MomentEvent_Kind.DELETED,
+        postId: '01REMOTEPRIVATEPOST',
+        actorPtid: 'ptid:bob',
+        audience: reason,
+        occurredTsUnixMs: 456n,
+      },
+    },
+  });
+  return Buffer.from(toBinary(StreamEventSchema, event)).toString('base64');
+}
+
+function socialGraphFrameBase64(kind: SocialGraphEvent_Kind): string {
+  const event = create(StreamEventSchema, {
+    eventId: 'relationship-event-1',
+    kind: {
+      case: 'socialGraphEvent',
+      value: {
+        kind,
+        actorPtid: 'ptid:alice',
+        targetPtid: 'ptid:bob',
       },
     },
   });

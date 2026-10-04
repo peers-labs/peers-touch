@@ -21,6 +21,7 @@ import type {
   MomentCommentedPayload,
   MomentCreatedPayload,
   MomentDeletedPayload,
+  MomentRevokedPayload,
   MomentReactedPayload,
   MomentRealtimeBasePayload,
   MomentResyncRequestedPayload,
@@ -470,6 +471,30 @@ function onMomentDeleted(payload: MomentDeletedPayload): void {
   );
 }
 
+function onMomentRevoked(payload: MomentRevokedPayload): void {
+  runScopedMomentEvent(
+    payload,
+    'moment revocation projection refresh',
+    async (scope) => {
+      usePrivateCommentsStore.getState().markParentUnavailable(
+        payload.postId,
+        `SOCIAL_PRIVATE_${payload.reason}`,
+      );
+      await Promise.allSettled([
+        usePrivateMomentsStore.getState().revokeMoment(
+          payload.postId,
+          payload.reason,
+        ),
+      ]);
+      if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+      useMomentsStore.getState().hydratePrivateMoments(
+        Object.values(usePrivateMomentsStore.getState().postsById),
+      );
+      await refreshMomentsProjectionNow(scope, 'event:moment.revoked');
+    },
+  );
+}
+
 function onMomentCommented(payload: MomentCommentedPayload): void {
   runScopedMomentEvent(
     payload,
@@ -492,6 +517,25 @@ function onRelationshipChanged(payload: RelationshipChangedPayload): void {
     'relationship changed moments projection refresh',
     enqueueScopedProjection(async (scope) => {
       const relationships = useRelationshipsStore.getState();
+      if (payload.action === 'block') {
+        const privateMoments = usePrivateMomentsStore.getState();
+        const affectedPostIds = Object.values(privateMoments.postsById)
+          .filter((post) => post.authorPtid === payload.targetActorPtid)
+          .map((post) => post.postId);
+        for (const postId of affectedPostIds) {
+          usePrivateCommentsStore.getState().markParentUnavailable(
+            postId,
+            'SOCIAL_PRIVATE_RECIPIENT_BLOCKED',
+          );
+        }
+        await Promise.allSettled(affectedPostIds.map((postId) => (
+          usePrivateMomentsStore.getState().revokeMoment(
+            postId,
+            'RECIPIENT_BLOCKED',
+          )
+        )));
+        if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+      }
       await Promise.allSettled([
         relationships.loadRelationship(payload.targetActorPtid),
         relationships.loadFollowers(payload.targetActorPtid, true),
@@ -703,6 +747,7 @@ export const momentsRuntime: RuntimeDescriptor = {
       eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, onStationChanged),
       eventBus.subscribe(EVENT.MOMENT_CREATED, onMomentCreated),
       eventBus.subscribe(EVENT.MOMENT_DELETED, onMomentDeleted),
+      eventBus.subscribe(EVENT.MOMENT_REVOKED, onMomentRevoked),
       eventBus.subscribe(EVENT.MOMENT_COMMENTED, onMomentCommented),
       eventBus.subscribe(EVENT.MOMENT_REACTED, onMomentReacted),
       eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),

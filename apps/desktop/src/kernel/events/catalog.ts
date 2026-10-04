@@ -27,6 +27,7 @@ export const EVENT = {
   REALTIME_SOCIAL_GRAPH_EVENT: 'realtime.social_graph_event',
   MOMENT_CREATED: 'moment.created',
   MOMENT_DELETED: 'moment.deleted',
+  MOMENT_REVOKED: 'moment.revoked',
   MOMENT_COMMENTED: 'moment.commented',
   MOMENT_REACTED: 'moment.reacted',
   MOMENT_RESYNC_REQUESTED: 'moment.resync_requested',

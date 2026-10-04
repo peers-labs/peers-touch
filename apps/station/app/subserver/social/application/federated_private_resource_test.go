@@ -1132,6 +1132,9 @@ func newFederatedPrivateReceiverWithFailpoint(
 	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if err := infrastructure.MigrateIdentitySchema(database); err != nil {
+		t.Fatal(err)
+	}
 	deliveryStore, err := federationdelivery.NewGORMRepository(
 		database,
 		&privateContentTestClock{now: now},
@@ -1226,7 +1229,7 @@ func newFederatedPrivateReceiverWithFailpoint(
 		t.Fatal(err)
 	}
 	registry := federationdelivery.NewRegistry()
-	if err := infrastructure.RegisterFederatedPrivateResourceReceiver(
+	if err := infrastructure.RegisterFederatedPrivateResourceReceivers(
 		registry,
 		service,
 	); err != nil {

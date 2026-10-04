@@ -12,6 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -25,6 +26,7 @@ type FederatedRelationshipService struct {
 	clock          delivery.Clock
 	actorKeys      infrastructure.FriendRequestActorKeyResolver
 	events         *SocialGraphEventPublisher
+	privateRevoker PrivateRelationshipRevoker
 }
 
 func NewFederatedRelationshipService(
@@ -57,6 +59,13 @@ func (s *FederatedRelationshipService) WithActorDeviceKeyResolver(
 	resolver infrastructure.FriendRequestActorKeyResolver,
 ) *FederatedRelationshipService {
 	s.actorKeys = resolver
+	return s
+}
+
+func (s *FederatedRelationshipService) WithPrivateContentRevoker(
+	revoker PrivateRelationshipRevoker,
+) *FederatedRelationshipService {
+	s.privateRevoker = revoker
 	return s
 }
 
@@ -212,6 +221,16 @@ func (s *FederatedRelationshipService) SubmitRelationshipCommand(
 					return saveErr
 				}
 				if next.Blocked {
+					if effectsErr := s.revokeBlockedPrivateContent(
+						ctx,
+						transaction,
+						next.ActorPTID,
+						next.ActorHomeStationPeerID,
+						next.TargetActorPTID,
+						next.TargetHomeStationPeerID,
+					); effectsErr != nil {
+						return effectsErr
+					}
 					if effectsErr := transaction.ApplyBlockedRelationshipEffects(
 						ctx,
 						next.ActorPTID,
@@ -541,6 +560,16 @@ func (s *FederatedRelationshipService) ReceiveRelationshipEvent(
 		return delivery.Result{}, err
 	}
 	if next.Blocked {
+		if err := s.revokeBlockedPrivateContent(
+			ctx,
+			transaction,
+			next.ActorPTID,
+			next.ActorHomeStationPeerID,
+			next.TargetActorPTID,
+			next.TargetHomeStationPeerID,
+		); err != nil {
+			return delivery.Result{}, err
+		}
 		if err := transaction.ApplyBlockedRelationshipEffects(
 			ctx,
 			next.ActorPTID,
@@ -565,6 +594,52 @@ func (s *FederatedRelationshipService) ReceiveRelationshipEvent(
 		return delivery.Result{}, err
 	}
 	return delivery.AcceptedResult(), nil
+}
+
+func (s *FederatedRelationshipService) revokeBlockedPrivateContent(
+	ctx context.Context,
+	transaction infrastructure.FederatedRelationshipTransaction,
+	actorPTID string,
+	actorHomeStationPeerID string,
+	targetActorPTID string,
+	targetHomeStationPeerID string,
+) error {
+	if s.privateRevoker == nil {
+		return nil
+	}
+	deliveryTransaction, ok := transaction.(delivery.Transaction)
+	if !ok {
+		return domain.NewFederationError(
+			domain.FederationErrorPersistence,
+			"social.revoke_blocked_private_content",
+			"transaction",
+			"does not expose the Federation delivery transaction",
+		)
+	}
+	localActorPTID := actorPTID
+	peerActorPTID := targetActorPTID
+	switch {
+	case actorHomeStationPeerID == s.localStationID:
+	case targetHomeStationPeerID == s.localStationID:
+		localActorPTID = targetActorPTID
+		peerActorPTID = actorPTID
+	default:
+		return domain.NewFederationError(
+			domain.FederationErrorUnauthorized,
+			"social.revoke_blocked_private_content",
+			"home_station_peer_id",
+			"does not include the local Station",
+		)
+	}
+	return s.privateRevoker.RevokePrivateRelationship(
+		ctx,
+		deliveryTransaction,
+		localActorPTID,
+		peerActorPTID,
+		nil,
+		nil,
+		privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_RECIPIENT_BLOCKED,
+	)
 }
 
 func (s *FederatedRelationshipService) newSignedRelationshipFrame(

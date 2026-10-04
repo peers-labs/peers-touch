@@ -100,6 +100,7 @@ class CrossStationEventBusContractTest(unittest.TestCase):
             "resetProjection(",
             "eventBus.subscribe(EVENT.MOMENT_CREATED",
             "eventBus.subscribe(EVENT.MOMENT_DELETED",
+            "eventBus.subscribe(EVENT.MOMENT_REVOKED",
             "eventBus.subscribe(EVENT.MOMENT_COMMENTED",
             "eventBus.subscribe(EVENT.MOMENT_REACTED",
             "eventBus.subscribe(EVENT.MOMENT_RESYNC_REQUESTED",
