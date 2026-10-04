@@ -11,8 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from selenium.webdriver.common.by import By
-
 ROOT = Path(__file__).resolve().parents[5]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -335,13 +333,31 @@ def submit_home_task(
         ),
         "ready Home composer",
     )
-    task_mode = client.driver.find_element(
-        By.CSS_SELECTOR,
-        '.ant-segmented-item input[value="task"]',
+    current_submit = visible_element(
+        client,
+        '[data-pt-home-submit="chat"]',
     )
-    client.driver.execute_script(
-        "arguments[0].closest('label').click();",
-        task_mode,
+    mode_switch = client.driver.execute_script(
+        """
+        const card = arguments[0].closest('.ant-card');
+        const items = card?.querySelectorAll('.ant-segmented-item') || [];
+        if (items.length !== 2) {
+          return { clicked: false, itemCount: items.length };
+        }
+        items[1].click();
+        return { clicked: true, itemCount: items.length };
+        """,
+        current_submit,
+    )
+    require(
+        isinstance(mode_switch, Mapping)
+        and mode_switch.get("clicked") is True
+        and mode_switch.get("itemCount") == 2,
+        f"Home mode switch is malformed: {mode_switch}",
+    )
+    wait_until(
+        lambda: visible_element(client, '[data-pt-home-submit="task"]'),
+        "Home Task mode",
     )
     composer = visible_element(
         client,
