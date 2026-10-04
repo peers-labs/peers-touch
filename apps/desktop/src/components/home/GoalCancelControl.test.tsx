@@ -18,6 +18,7 @@ describe('GoalCancelControl contract', () => {
 
   it('confirms the named Goal and preserves focus ownership', () => {
     expect(source).toContain('data-pt-home-goal-cancel-confirm');
+    expect(source).toContain('data-pt-home-goal-cancel-dismiss');
     expect(source).toContain('goal.title');
     expect(source).toContain('focusTriggerAfterClose');
     expect(source).toContain('cancelledRef.current?.focus()');
