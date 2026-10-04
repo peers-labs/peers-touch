@@ -237,6 +237,97 @@ class ChangedPathsTests(unittest.TestCase):
             )
             run.assert_called_once()
 
+    def test_gate_catalog_diff_returns_only_changed_gate_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            acceptance = Path(tmp) / "acceptance"
+            acceptance.mkdir()
+            (acceptance / "gates.yaml").write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "changed-gate": {"command": "new"},
+                            "stable-gate": {"command": "stable"},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            baseline = subprocess.CompletedProcess(
+                args=["git", "show"],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "gates": {
+                            "changed-gate": {"command": "old"},
+                            "stable-gate": {"command": "stable"},
+                        }
+                    }
+                ),
+                stderr="",
+            )
+            with patch.object(
+                MODULE.subprocess,
+                "run",
+                return_value=baseline,
+            ):
+                self.assertEqual(
+                    MODULE.changed_gate_ids(acceptance, "a" * 40),
+                    ["changed-gate"],
+                )
+
+    def test_gate_catalog_change_does_not_expand_exact_file_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            acceptance = Path(tmp) / "acceptance"
+            acceptance.mkdir()
+            (acceptance / "registry.yaml").write_text(
+                json.dumps(
+                    {
+                        "rules": [
+                            {
+                                "id": "business-domain",
+                                "features": ["business"],
+                                "when": {"paths": ["acceptance/gates.yaml"]},
+                                "require": ["unrelated-business-gate"],
+                            },
+                            {
+                                "id": "acceptance-infra",
+                                "features": ["acceptance-infra"],
+                                "when": {"paths": ["acceptance/**"]},
+                                "require": ["infra-self-validation"],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (acceptance / "gates.yaml").write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "changed-gate": {"command": "changed"},
+                            "infra-self-validation": {"command": "infra"},
+                            "unrelated-business-gate": {"command": "business"},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = MODULE.plan(
+                acceptance,
+                ["acceptance/gates.yaml"],
+                catalog_changed_gate_ids=["changed-gate"],
+            )
+
+            self.assertEqual(
+                {gate["id"] for gate in result["selected_gates"]},
+                {"changed-gate", "infra-self-validation"},
+            )
+            self.assertNotIn(
+                "unrelated-business-gate",
+                {gate["id"] for gate in result["selected_gates"]},
+            )
+
     def test_self_check_uses_dedicated_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = EvidenceStore(Path(tmp) / "artifacts", worktree=ROOT)

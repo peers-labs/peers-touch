@@ -73,6 +73,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "tooling/devctl/test/station.test.mjs",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "tooling/make",
         "mode": "exclusive-write"
       },
@@ -82,6 +86,14 @@
       },
       {
         "pathPrefix": "tooling/scripts/architecture/module-governance.test.mjs",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/acceptance-plan.py",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/acceptance-plan-test.py",
         "mode": "exclusive-write"
       },
       {

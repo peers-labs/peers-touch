@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import subprocess
 import time
 import urllib.error
@@ -24,6 +25,7 @@ from tooling.acceptance.core.provisioning import (
 DEV_UI_ENDPOINT = "http://127.0.0.1:4177"
 MAX_RESPONSE_BYTES = 1024 * 1024
 FIXTURE_GATE_ID = "peers-dev-ui-browser-e2e"
+DEV_UI_DRIVER = REPO_ROOT / "apps" / "dev" / "server" / "index.mjs"
 FIXTURE_DRIVER = (
     REPO_ROOT
     / "tooling"
@@ -81,8 +83,9 @@ class DevUiLocalBrowserProvisioner(EnvironmentProvisioner):
         self._probe = probe or probe_dev_ui_server
         self._popen = popen
         self._process: subprocess.Popen[str] | None = None
+        self._cleanup_resource: str | None = None
 
-    def _stop_fixture(self) -> None:
+    def _stop_runtime(self) -> None:
         process = self._process
         self._process = None
         if process is None:
@@ -97,9 +100,16 @@ class DevUiLocalBrowserProvisioner(EnvironmentProvisioner):
         if process.stdout is not None:
             process.stdout.close()
 
-    def _start_fixture(self, source_commit: str) -> None:
+    def _start_runtime(
+        self,
+        command: list[str],
+        *,
+        source_commit: str,
+        resource: str,
+        label: str,
+    ) -> None:
         process = self._popen(
-            ["node", str(FIXTURE_DRIVER), "--serve-fixture"],
+            command,
             cwd=REPO_ROOT,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -107,7 +117,8 @@ class DevUiLocalBrowserProvisioner(EnvironmentProvisioner):
             text=True,
         )
         self._process = process
-        self.register_cleanup("peers-dev-fixture-runtime", self._stop_fixture)
+        self._cleanup_resource = resource
+        self.register_cleanup(resource, self._stop_runtime)
         deadline = time.monotonic() + 10
         last_error = "server did not become ready"
         while time.monotonic() < deadline:
@@ -115,10 +126,10 @@ class DevUiLocalBrowserProvisioner(EnvironmentProvisioner):
                 output = process.stdout.read().strip() if process.stdout else ""
                 raise BlockedError(
                     reason=(
-                        "Peers Dev fixture process exited before readiness: "
+                        f"{label} process exited before readiness: "
                         f"{output or process.returncode}"
                     ),
-                    resource="peers-dev-fixture:process",
+                    resource=f"{resource}:process",
                 )
             try:
                 identity = self._probe()
@@ -136,11 +147,37 @@ class DevUiLocalBrowserProvisioner(EnvironmentProvisioner):
                 and source.get("dirty") is False
             ):
                 return
-            last_error = "fixture source identity does not match the worktree"
+            last_error = "source identity does not match the worktree"
             time.sleep(0.1)
         raise BlockedError(
-            reason=f"Peers Dev fixture readiness timed out: {last_error}",
-            resource="peers-dev-fixture:readiness",
+            reason=f"{label} readiness timed out: {last_error}",
+            resource=f"{resource}:readiness",
+        )
+
+    def _start_fixture(self, source_commit: str) -> None:
+        self._start_runtime(
+            ["node", str(FIXTURE_DRIVER), "--serve-fixture"],
+            source_commit=source_commit,
+            resource="peers-dev-fixture-runtime",
+            label="Peers Dev fixture",
+        )
+
+    def _start_dev_ui(self, source_commit: str) -> None:
+        env_repo = os.environ.get(
+            "PT_ENV_REPO",
+            str(REPO_ROOT.parent / "env"),
+        )
+        self._start_runtime(
+            [
+                "node",
+                str(DEV_UI_DRIVER),
+                "serve",
+                "--env-repo",
+                env_repo,
+            ],
+            source_commit=source_commit,
+            resource="dev-ui-runtime",
+            label="Peers Dev",
         )
 
     def provision(self, gate_id: str) -> RuntimeManifest:
@@ -151,13 +188,18 @@ class DevUiLocalBrowserProvisioner(EnvironmentProvisioner):
                 profile_name="dev-ui-local",
                 slot=0,
             )
+            if manifest.workspace_digest != "clean":
+                raise BlockedError(
+                    reason="Peers Dev requires a clean worktree",
+                    resource="dev-ui:source",
+                )
             if gate_id == FIXTURE_GATE_ID:
-                if manifest.workspace_digest != "clean":
-                    raise BlockedError(
-                        reason="Peers Dev fixture requires a clean worktree",
-                        resource="peers-dev-fixture:source",
-                    )
                 self._start_fixture(manifest.source_commit)
+            else:
+                try:
+                    self._probe()
+                except BlockedError:
+                    self._start_dev_ui(manifest.source_commit)
             identity = self._probe()
             source = identity.get("source")
             if (
@@ -202,8 +244,8 @@ class DevUiLocalBrowserProvisioner(EnvironmentProvisioner):
                     ),
                 ),
                 cleanup_resources=(
-                    ("peers-dev-fixture-runtime",)
-                    if gate_id == FIXTURE_GATE_ID
+                    (self._cleanup_resource,)
+                    if self._cleanup_resource is not None
                     else ()
                 ),
             )

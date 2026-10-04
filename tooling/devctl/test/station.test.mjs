@@ -10,6 +10,15 @@ import { registerWorkspace } from '../../scripts/local-dev/machine-dev-registry.
 import { DevctlError, ERROR_CODES } from '../errors.mjs';
 import { startStation } from '../station.mjs';
 
+function removeTemporaryTree(directory) {
+  fs.rmSync(directory, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 50,
+  });
+}
+
 function fixtureProfile({
   name,
   mode,
@@ -34,7 +43,7 @@ function fixtureProfile({
 
 function temporaryRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devctl-station-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => removeTemporaryTree(root));
   return root;
 }
 
@@ -74,8 +83,8 @@ function machineEnvironment(t, root, slot = 0) {
   );
   fs.mkdirSync(profileDirectory, { recursive: true });
   fs.mkdirSync(path.join(home, '.peers-touch', 'dev'), { recursive: true });
-  t.after(() => fs.rmSync(envRepo, { recursive: true, force: true }));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => removeTemporaryTree(envRepo));
+  t.after(() => removeTemporaryTree(home));
 
   fs.writeFileSync(path.join(root, 'README.md'), 'fixture\n');
   git(root, 'init');

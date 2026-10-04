@@ -7,6 +7,7 @@ from pathlib import Path
 
 from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
 from tooling.acceptance.core.evidence_store import workspace_id
+from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioning import ProvisioningState
 from tooling.acceptance.gates.dev.dev_ui_browser_e2e import (
     GATE_ID,
@@ -101,6 +102,72 @@ class DevUiBrowserAcceptanceTests(unittest.TestCase):
         self.assertEqual(manifest.profile_resolved, "dev-ui-local")
         self.assertEqual(manifest.clients[0].runtime, "browser")
         self.assertEqual(manifest.clients[0].required_service_roles, ())
+
+    def test_provisioner_starts_and_owns_missing_dev_ui_runtime(self) -> None:
+        class FakeProcess:
+            stdout = None
+
+            def __init__(self) -> None:
+                self.returncode = None
+                self.terminated = False
+
+            def poll(self) -> int | None:
+                return self.returncode
+
+            def terminate(self) -> None:
+                self.terminated = True
+                self.returncode = 0
+
+            def wait(self, timeout: int) -> int:
+                return self.returncode or 0
+
+            def kill(self) -> None:
+                self.returncode = -9
+
+        process = FakeProcess()
+        calls = 0
+
+        def probe() -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise BlockedError(
+                    reason="server unavailable",
+                    resource="dev-ui:127.0.0.1:4177",
+                )
+            return {
+                "kind": "peers-touch-dev-server",
+                "endpoint": "http://127.0.0.1:4177",
+                "source": {
+                    "workspaceId": workspace_id(REPO_ROOT),
+                    "branch": "feature/dev-ui",
+                    "head": "a" * 40,
+                    "dirty": False,
+                },
+            }
+
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "dev-ui-local-browser.yaml"
+        )
+        popen_calls: list[tuple[object, ...]] = []
+        provisioner = DevUiLocalBrowserProvisioner(
+            contract,
+            popen=lambda *args, **kwargs: (
+                popen_calls.append(args) or process
+            ),
+            probe=probe,
+        )
+        provisioner._git_commit = lambda: "a" * 40
+        provisioner._git_workspace_digest = lambda: "clean"
+
+        manifest = provisioner.provision(GATE_ID)
+        completed = provisioner.cleanup()
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(manifest.cleanup_resources, ("dev-ui-runtime",))
+        self.assertEqual(popen_calls[0][0][2], "serve")
+        self.assertEqual(completed, ("dev-ui-runtime",))
+        self.assertTrue(process.terminated)
 
     def test_snapshot_requires_exact_source_and_four_clocks(self) -> None:
         commit = "a" * 40
