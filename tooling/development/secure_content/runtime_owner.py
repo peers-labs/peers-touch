@@ -250,6 +250,13 @@ SOCIAL_CROSS_STATION_CLIENT_BINDINGS = (
         SECONDARY_STATION_ID,
     ),
 )
+PRIVATE_PUBLISH_RECONCILING_STATES = frozenset(
+    {
+        "UNKNOWN_COMMIT",
+        "REMOTE_DELIVERY_PENDING",
+        "REMOTE_DELIVERY_RETRYING",
+    }
+)
 SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS = (
     "cross-station-social-alice",
     "cross-station-social-bob",
@@ -1164,12 +1171,15 @@ def _publish_friends_moment(
             "Social Desktop private draft was not retained",
             resource=f"fixture-draft:{draft_id}",
         )
-    for attempt in range(3):
+    for attempt in range(30):
         published = _moments_harness(client, "publishFriendsDraft")
-        if published.get("state") != "UNKNOWN_COMMIT":
+        if (
+            published.get("state")
+            not in PRIVATE_PUBLISH_RECONCILING_STATES
+        ):
             break
-        if attempt < 2:
-            time.sleep(0.25)
+        if attempt < 29:
+            time.sleep(1)
     post_id = published.get("transientPostId")
     if (
         published.get("state") != "PUBLISHED"
@@ -7171,7 +7181,10 @@ class W7RuntimeOwner:
                         alice,
                         "publishPrivateDraft",
                     )
-                    if result.get("state") != "UNKNOWN_COMMIT":
+                    if (
+                        result.get("state")
+                        not in PRIVATE_PUBLISH_RECONCILING_STATES
+                    ):
                         break
                     if attempt < 29:
                         time.sleep(1)
