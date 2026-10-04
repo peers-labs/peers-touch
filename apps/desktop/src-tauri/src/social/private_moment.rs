@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use ed25519_dalek::VerifyingKey;
@@ -40,12 +41,15 @@ use super::private_mention::{
     build_signed_mention_routing, canonical_private_mentions, PrivateMentionIntent,
 };
 use super::projection::{
-    decrypt_projection_from_response, object_descriptor_set_hash, private_poll_option_set_hash,
-    repost_source_material_from_response, sender_key_requirement,
-    verify_recovery_envelope_for_response, DecryptedPrivateMoment, PrivateMediaState,
-    PrivateMomentContentProjection, PrivateMomentProjection, PrivateMomentPublishResult,
-    PrivateMomentsSnapshot, PrivateProjectionFailureKind, PrivateRepostSourceMaterial,
+    canonical_identifier, checked_timestamp_millis, decrypt_projection_from_response,
+    object_descriptor_set_hash, private_poll_option_set_hash, repost_source_material_from_response,
+    sender_key_requirement, verify_recovery_envelope_for_response, DecryptedPrivateMoment,
+    PrivateMediaState, PrivateMomentContentProjection, PrivateMomentProjection,
+    PrivateMomentPublishResult, PrivateMomentsSnapshot, PrivateProjectionFailureKind,
+    PrivateRepostSourceMaterial,
 };
+
+const MAX_REMOTE_PRIVATE_REFERENCE_PAGES: usize = 100;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PrivateMomentFileIntent {
@@ -357,12 +361,65 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             };
             self.replay_submit(command)?;
         }
-        for post_id in post_ids {
-            if !post_id.trim().is_empty() {
-                self.read(post_id, revoke_media)?;
+        let mut reconciled_post_ids = post_ids
+            .iter()
+            .map(|post_id| post_id.trim())
+            .filter(|post_id| canonical_identifier(post_id))
+            .map(ToOwned::to_owned)
+            .collect::<BTreeSet<_>>();
+        match self.remote_private_moment_ids() {
+            Ok(discovered) => reconciled_post_ids.extend(discovered),
+            Err(error) if error == "secure content session generation is stale" => {
+                return Err(error)
+            }
+            Err(error) if reconciled_post_ids.is_empty() => return Err(error),
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "remote private Moment reference reconcile is unavailable"
+                );
             }
         }
+        for post_id in reconciled_post_ids {
+            self.ensure_current()?;
+            self.read(&post_id, revoke_media)?;
+        }
         self.snapshot()
+    }
+
+    fn remote_private_moment_ids(&self) -> Result<Vec<String>, String> {
+        let mut cursor = String::new();
+        let mut post_ids = BTreeSet::new();
+        for _ in 0..MAX_REMOTE_PRIVATE_REFERENCE_PAGES {
+            let response = self
+                .transport
+                .list_remote_private_moments(&cursor, 100)
+                .map_err(|error| error.to_string())?;
+            self.ensure_current()?;
+            for reference in response.moments {
+                if !canonical_identifier(&reference.post_id)
+                    || reference.lifecycle_revision == 0
+                    || checked_timestamp_millis(
+                        reference.updated_at.as_ref(),
+                        "remote private Moment reference updated_at",
+                    )
+                    .is_err()
+                {
+                    return Err("remote private Moment reference identity is invalid".to_string());
+                }
+                post_ids.insert(reference.post_id);
+            }
+            if !response.has_more {
+                return Ok(post_ids.into_iter().collect());
+            }
+            if response.next_cursor.trim().is_empty() || response.next_cursor == cursor {
+                return Err(
+                    "remote private Moment reference pagination did not advance".to_string()
+                );
+            }
+            cursor = response.next_cursor;
+        }
+        Err("remote private Moment reference pagination exceeded its bound".to_string())
     }
 
     pub fn publish(
@@ -919,6 +976,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         post_id: &str,
         revoke_media: &dyn Fn(&Path) -> Result<(), String>,
     ) -> Result<PrivateMomentProjection, String> {
+        self.ensure_current()?;
         let projection = match self.transport.get_private_moment(post_id) {
             Ok(response) => {
                 self.ensure_current()?;
@@ -978,7 +1036,13 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 if requires_private_resource_purge(&error) {
                     self.purge_private_resource(post_id, revoke_media)?;
                 }
-                private_transport_failure_projection(post_id, &error)
+                let cached = self
+                    .lease
+                    .store
+                    .projection(post_id)?
+                    .map(|bytes| PrivateMomentProjection::decode_local(&bytes))
+                    .transpose()?;
+                private_transport_failure_projection(post_id, &error, cached)
             }
         };
         self.save_projection_if_current(post_id, &projection.encode_local()?)?;
@@ -1105,7 +1169,15 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     self.purge_private_resource(post_id, revoke_media)?;
                 }
                 if matches!(error.http_status, Some(401 | 403 | 404 | 410)) {
-                    return Ok(private_transport_failure_projection(post_id, &error));
+                    let cached = self
+                        .lease
+                        .store
+                        .projection(post_id)?
+                        .map(|bytes| PrivateMomentProjection::decode_local(&bytes))
+                        .transpose()?;
+                    return Ok(private_transport_failure_projection(
+                        post_id, &error, cached,
+                    ));
                 }
                 return Err(PrivateMediaOpenError::dependency(
                     error.to_string(),
@@ -1377,7 +1449,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     .ok_or_else(|| "published private Moment projection is unavailable".to_string())
                     .and_then(|bytes| PrivateMomentProjection::decode_local(&bytes))?;
                 Ok(Some(PrivateMomentPublishResult {
-                    state: "PUBLISHED".to_string(),
+                    state: private_moment_publish_state(&projection),
                     draft_id: command.draft_id,
                     post_id: Some(post_id),
                     projection: Some(projection),
@@ -1477,7 +1549,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 })();
                 match verified {
                     Ok(projection) => Ok(PrivateMomentPublishResult {
-                        state: "PUBLISHED".to_string(),
+                        state: private_moment_publish_state(&projection),
                         draft_id: command.draft_id,
                         post_id: Some(projection.post_id.clone()),
                         projection: Some(projection),
@@ -1622,20 +1694,15 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 .reaction_revision
                 .parse::<u64>()
                 .map_err(|_| "private Reaction projection revision is invalid".to_string())?;
-            let existing_revision = existing
-                .reaction_revision
-                .parse::<u64>()
-                .map_err(|_| {
-                    "stored private Reaction projection revision is invalid".to_string()
-                })?;
+            let existing_revision = existing.reaction_revision.parse::<u64>().map_err(|_| {
+                "stored private Reaction projection revision is invalid".to_string()
+            })?;
             if projection.reactions_hydrated
                 && existing.reactions_hydrated
                 && incoming_revision == existing_revision
                 && projection.reactions != existing.reactions
             {
-                return Err(
-                    "private Reaction readback conflicts at the same revision".to_string(),
-                );
+                return Err("private Reaction readback conflicts at the same revision".to_string());
             }
             if !projection.reactions_hydrated || incoming_revision < existing_revision {
                 projection.reactions = existing.reactions;
@@ -2050,13 +2117,39 @@ fn apply_media_failure(
 fn private_transport_failure_projection(
     post_id: &str,
     error: &crate::secure_content::adapter::NativeTransportError,
+    cached: Option<PrivateMomentProjection>,
 ) -> PrivateMomentProjection {
+    let has_verified_cache = cached
+        .as_ref()
+        .is_some_and(|projection| projection.content.is_some());
     let state = match error.http_status {
         Some(401) => super::projection::PrivateReadState::AuthenticationRequired,
         Some(403 | 404) => super::projection::PrivateReadState::NotFoundOrNotAuthorized,
         Some(410) => super::projection::PrivateReadState::DeletedOrRevoked,
+        _ if matches!(
+            error.disposition,
+            NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
+        ) && has_verified_cache =>
+        {
+            super::projection::PrivateReadState::RemoteSourceUnavailable
+        }
+        _ if matches!(
+            error.disposition,
+            NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
+        ) =>
+        {
+            super::projection::PrivateReadState::WaitingForRemoteDelivery
+        }
         _ => super::projection::PrivateReadState::IntegrityFailure,
     };
+    if state == super::projection::PrivateReadState::RemoteSourceUnavailable {
+        if let Some(mut projection) = cached.filter(|projection| projection.content.is_some()) {
+            projection.state = state;
+            projection.error_code = Some("REMOTE_SOURCE_UNAVAILABLE".to_string());
+            projection.retry_after_seconds = error.retry_after_seconds;
+            return projection;
+        }
+    }
     PrivateMomentProjection {
         post_id: post_id.to_string(),
         content_id: format!("unavailable:{post_id}"),
@@ -2064,6 +2157,7 @@ fn private_transport_failure_projection(
         author_ptid: String::new(),
         audience_kind: "UNKNOWN".to_string(),
         state,
+        remote_delivery_state: None,
         mentions: Vec::new(),
         reactions: Vec::new(),
         reaction_revision: "0".to_string(),
@@ -2074,6 +2168,15 @@ fn private_transport_failure_projection(
         created_at_millis: None,
         updated_at_millis: None,
     }
+}
+
+fn private_moment_publish_state(projection: &PrivateMomentProjection) -> String {
+    match projection.remote_delivery_state {
+        Some(super::projection::PrivateRemoteDeliveryState::Pending) => "REMOTE_DELIVERY_PENDING",
+        Some(super::projection::PrivateRemoteDeliveryState::Retrying) => "REMOTE_DELIVERY_RETRYING",
+        _ => "PUBLISHED",
+    }
+    .to_string()
 }
 
 fn attach_recovery_envelope(
@@ -2171,6 +2274,7 @@ fn private_read_projection(
                 super::projection::PrivateReadState::IntegrityFailure
             }
         },
+        remote_delivery_state: None,
         mentions: Vec::new(),
         reactions: Vec::new(),
         reaction_revision: "0".to_string(),
@@ -3171,7 +3275,7 @@ mod tests {
             message: "ERROR_CODE_NOT_FOUND".to_string(),
         };
 
-        let projection = private_transport_failure_projection("post-1", &error);
+        let projection = private_transport_failure_projection("post-1", &error, None);
 
         assert_eq!(
             projection.state,
@@ -3179,6 +3283,63 @@ mod tests {
         );
         assert!(projection.content.is_none());
         assert!(projection.encode_local().is_ok());
+
+        let retryable = crate::secure_content::adapter::NativeTransportError {
+            http_status: Some(503),
+            stable_code: crate::model::error::ErrorCode::Undefined as i32,
+            retry_after_seconds: Some(5),
+            disposition: NativeErrorDisposition::Retryable,
+            message: "REMOTE_SOURCE_UNAVAILABLE".to_string(),
+        };
+        let waiting = private_transport_failure_projection("post-remote", &retryable, None);
+        assert_eq!(
+            waiting.state,
+            super::super::projection::PrivateReadState::WaitingForRemoteDelivery
+        );
+
+        let terminal = crate::secure_content::adapter::NativeTransportError {
+            disposition: NativeErrorDisposition::Terminal,
+            ..retryable
+        };
+        let rejected = private_transport_failure_projection("post-rejected", &terminal, None);
+        assert_eq!(
+            rejected.state,
+            super::super::projection::PrivateReadState::IntegrityFailure
+        );
+    }
+
+    #[test]
+    fn secure_content_remote_source_failure_preserves_verified_plaintext() {
+        let error = crate::secure_content::adapter::NativeTransportError {
+            http_status: Some(503),
+            stable_code: crate::model::error::ErrorCode::Undefined as i32,
+            retry_after_seconds: Some(5),
+            disposition: NativeErrorDisposition::Retryable,
+            message: "REMOTE_SOURCE_UNAVAILABLE".to_string(),
+        };
+        let mut cached = private_read_projection(
+            "post-1",
+            PrivateProjectionFailureKind::IntegrityFailure,
+            "unused",
+            None,
+        );
+        cached.content_id = "post-1".to_string();
+        cached.generation = "1".to_string();
+        cached.author_ptid = "ptid:alice".to_string();
+        cached.audience_kind = "FRIENDS".to_string();
+        cached.state = super::super::projection::PrivateReadState::ContentReady;
+        cached.content = Some(PrivateMomentContentProjection::Text {
+            text: "verified offline content".to_string(),
+        });
+
+        let projection = private_transport_failure_projection("post-1", &error, Some(cached));
+
+        assert_eq!(
+            projection.state,
+            super::super::projection::PrivateReadState::RemoteSourceUnavailable
+        );
+        assert!(projection.content.is_some());
+        assert_eq!(projection.retry_after_seconds, Some(5));
     }
 
     #[test]

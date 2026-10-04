@@ -317,9 +317,10 @@ async function refreshMomentsProjectionNow(
     ...privatePostIds(),
     ...Object.keys(usePrivateMomentsStore.getState().postsById),
   ])];
+  await moments.syncProjection(label);
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   await Promise.allSettled([
     discovery.loadMe(),
-    moments.syncProjection(label),
     moments.listMyCircles(),
   ]);
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
@@ -360,7 +361,7 @@ async function ensureMomentDetailProjectionNow(
   const privateMoments = usePrivateMomentsStore.getState();
   const privateComments = usePrivateCommentsStore.getState();
   const knownPost = moments.postsById[trimmedPostId];
-  log.info('momentsRuntime', 'moment detail projection refresh started', { postId: trimmedPostId });
+  log.info('momentsRuntime', 'moment detail projection refresh started');
   if (isPrivateMomentPost(knownPost)) {
     await privateMoments.readMoment(trimmedPostId);
     const projection = usePrivateMomentsStore.getState().postsById[trimmedPostId];
@@ -400,7 +401,7 @@ async function ensureMomentDetailProjectionNow(
     }
   }
   if (scope && !isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
-  log.info('momentsRuntime', 'moment detail projection refresh completed', { postId: trimmedPostId });
+  log.info('momentsRuntime', 'moment detail projection refresh completed');
 }
 
 export async function ensureMomentDetailProjection(postId: string): Promise<void> {
@@ -427,7 +428,7 @@ async function ensureUserMomentsProjectionNow(
   const moments = useMomentsStore.getState();
   const discovery = useDiscoveryStore.getState();
   const relationships = useRelationshipsStore.getState();
-  log.info('momentsRuntime', 'user moments projection refresh started', { actorPtid: trimmedActorPtid });
+  log.info('momentsRuntime', 'user moments projection refresh started');
   await Promise.allSettled([
     discovery.loadUserProfile(trimmedActorPtid, true),
     moments.loadUserFeed(trimmedActorPtid, true),
@@ -435,7 +436,7 @@ async function ensureUserMomentsProjectionNow(
     relationships.loadFollowing(trimmedActorPtid, true),
   ]);
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
-  log.info('momentsRuntime', 'user moments projection refresh completed', { actorPtid: trimmedActorPtid });
+  log.info('momentsRuntime', 'user moments projection refresh completed');
 }
 
 export async function ensureUserMomentsProjection(actorPtid: string): Promise<void> {

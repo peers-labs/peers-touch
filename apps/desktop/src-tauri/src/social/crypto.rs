@@ -91,7 +91,11 @@ pub(super) fn validate_content_plan(
                     "{resource_label} remote plan Station attestation is invalid"
                 ));
             }
-            verify_station_attestation(lease.session.as_ref(), attestation, now_ms / 1_000)?
+            verify_station_attestation(
+                lease.session.as_ref(),
+                attestation,
+                now_ms / 1_000,
+            )?
         };
     plan_verifying_key
         .verify(&signing_input.encode_to_vec(), &signature)

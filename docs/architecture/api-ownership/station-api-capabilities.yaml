@@ -16,6 +16,7 @@ governed_prefixes:
   - /key-exchange/
   - /api/v1/social/friend-request
   - /api/v1/social/friend-requests
+  - /api/v1/social/moments/remote-private
   - /api/v1/social/relationships/block
   - /api/v1/social/relationships/unblock
   - /api/v1/social/relationships/blocked
@@ -72,6 +73,18 @@ ddd_layers:
       - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
 
 capabilities:
+  - id: social.private_moment.remote_projection_list
+    domain_owner: station.social
+    truth_owner: social.remote_private_projection
+    exposure: client
+    canonical_route: { method: GET, path: /api/v1/social/moments/remote-private }
+    request_proto: peers_touch.model.social.v1.ListRemotePrivateMomentReferencesRequest
+    response_proto: peers_touch.model.social.v1.ListRemotePrivateMomentReferencesResponse
+    truth_stores: [social_remote_private_resources]
+    allowed_dependencies: [social.relationship.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: notification.push.register
     domain_owner: station.notification
     truth_owner: notification.push_registration

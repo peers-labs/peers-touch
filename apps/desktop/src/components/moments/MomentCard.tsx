@@ -21,6 +21,10 @@ import {
   useActivePrivateMomentsSlice,
 } from './useActiveMomentsStore';
 import {
+  isReadablePrivateMomentProjection,
+  privateDeliveryNoticeState,
+} from '../../services/privateMomentsNative';
+import {
   SocialTrustMeta,
   SocialActionBar,
   SocialPrivateState,
@@ -247,6 +251,14 @@ export function MomentCard({
       ? 'LOADING_AUTHORIZED_RESOURCE'
       : 'PRIVATE_UNSUPPORTED_ON_DEVICE'
   );
+  const deliveryNotice = privateDeliveryNoticeState(
+    privateProjection?.remoteDeliveryState,
+  );
+  const privateReadable = privateProjection
+    ? isReadablePrivateMomentProjection(privateProjection)
+    : false;
+  const remoteSourceUnavailable =
+    privateState === 'REMOTE_SOURCE_UNAVAILABLE';
   const privateBody = privateProjection?.content?.kind === 'REPOST'
     ? privateProjection.content.comment
     : privateProjection?.content?.text ?? '';
@@ -422,6 +434,11 @@ export function MomentCard({
               />
             </div>
           )}
+          {isPrivate && privateState === 'CONTENT_READY' && deliveryNotice && (
+            <div onClick={(event) => event.stopPropagation()}>
+              <SocialPrivateState state={deliveryNotice} compact />
+            </div>
+          )}
 
           {body && (
             <Paragraph
@@ -457,7 +474,7 @@ export function MomentCard({
           )}
 
           {isPrivate
-            && privateState === 'CONTENT_READY'
+            && privateReadable
             && (
               privateProjection?.content?.kind === 'IMAGE'
               || privateProjection?.content?.kind === 'VIDEO'
@@ -472,7 +489,7 @@ export function MomentCard({
             )}
 
           {isPrivate
-            && privateState === 'CONTENT_READY'
+            && privateReadable
             && privateRepost
             && (
               <div
@@ -495,7 +512,7 @@ export function MomentCard({
             )}
 
           {isPrivate
-            && privateState === 'CONTENT_READY'
+            && privateReadable
             && privateLink
             && (
               <div
@@ -522,7 +539,7 @@ export function MomentCard({
             )}
 
           {isPrivate
-            && privateState === 'CONTENT_READY'
+            && privateReadable
             && privatePoll
             && (
               <div style={{ marginTop: 10 }}>
@@ -650,10 +667,18 @@ export function MomentCard({
               reactions={visibleReactions}
               commentCount={commentsCount}
               loading={reactionSubmitting}
-              onReact={(kind) => handleReact(kind)}
-              onUnreact={handleUnreact}
+              onReact={
+                remoteSourceUnavailable
+                  ? undefined
+                  : (kind) => handleReact(kind)
+              }
+              onUnreact={remoteSourceUnavailable ? undefined : handleUnreact}
               reactionState={isPrivate ? privateReaction?.state : undefined}
-              onRetryReaction={isPrivate ? handleRetryReaction : undefined}
+              onRetryReaction={
+                isPrivate && !remoteSourceUnavailable
+                  ? handleRetryReaction
+                  : undefined
+              }
               onOpenComments={() => onOpenComments?.(post.id)}
             />
           </div>

@@ -1,6 +1,11 @@
 package application
 
-import "github.com/peers-labs/peers-touch/station/frame/core/metrics"
+import (
+	"context"
+
+	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	"github.com/peers-labs/peers-touch/station/frame/core/metrics"
+)
 
 const (
 	federatedPrivateMetricPreKeyClaimTotal   = "social_cross_station_prekey_claim_total"
@@ -98,5 +103,90 @@ func newFederatedPrivateMetrics() federatedPrivateMetrics {
 			"outcome",
 			"reason",
 		),
+	}
+}
+
+// ObserveDispatch maps persisted Federation transitions to bounded Social metrics.
+func (s *PrivateContentService) ObserveDispatch(
+	_ context.Context,
+	observation federationdelivery.DispatchObservation,
+) {
+	if observation.PayloadKind != federationdelivery.PayloadKindSocialPrivateResource {
+		return
+	}
+	outcome, reason := federatedPrivateDispatchMetricValues(observation)
+	s.metrics.deliveryTotal.Inc("dispatcher", outcome, reason)
+	s.metrics.deliveryLatency.Observe(
+		observation.Latency.Seconds(),
+		"dispatcher",
+		outcome,
+	)
+}
+
+func federatedPrivateDispatchMetricValues(
+	observation federationdelivery.DispatchObservation,
+) (string, string) {
+	outcome := string(observation.Transition)
+	reason := federatedPrivateDispatchReason(observation.Failure)
+	if observation.Transition == federationdelivery.DispatchTransitionDelivered {
+		reason = "none"
+	}
+	if !validFederatedPrivateDispatchObservation(outcome, reason) {
+		reason = "protocol"
+	}
+	return outcome, reason
+}
+
+func validFederatedPrivateDispatchObservation(outcome string, reason string) bool {
+	validReason := false
+	switch reason {
+	case "none", "transport", "protocol", "overloaded", "dependency",
+		"integrity", "authorization", "domain", "expired":
+		validReason = true
+	}
+	if !validReason {
+		return false
+	}
+	switch outcome {
+	case "delivered":
+		return reason == "none"
+	case "retrying":
+		return reason != "none" && reason != "expired"
+	case "terminal":
+		return reason != "none"
+	case "expired":
+		return reason == "expired"
+	default:
+		return false
+	}
+}
+
+func federatedPrivateDispatchReason(failure federationdelivery.FailureCode) string {
+	switch failure {
+	case "":
+		return "none"
+	case federationdelivery.FailureTransportUnavailable:
+		return "transport"
+	case federationdelivery.FailureInvalidResult,
+		federationdelivery.FailureUnsupportedPayload:
+		return "protocol"
+	case federationdelivery.FailureOverloaded:
+		return "overloaded"
+	case federationdelivery.FailureDomainDispatch,
+		federationdelivery.FailurePersistence,
+		federationdelivery.FailureLeaseFenced:
+		return "dependency"
+	case federationdelivery.FailureInvalidFrame,
+		federationdelivery.FailurePayloadHashConflict:
+		return "integrity"
+	case federationdelivery.FailureUnauthenticated,
+		federationdelivery.FailureWrongTarget:
+		return "authorization"
+	case federationdelivery.FailureDomainRejected:
+		return "domain"
+	case federationdelivery.FailureExpired:
+		return "expired"
+	default:
+		return "protocol"
 	}
 }

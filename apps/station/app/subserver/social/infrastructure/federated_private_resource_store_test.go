@@ -240,6 +240,10 @@ func remotePrivateDeliveryFixture(
 			Post: &privatecontentpb.PostMetadata{
 				PostId:    contentID,
 				ContentId: contentID,
+				Author: &actormodel.ActorRef{
+					Ptid: "ptid:alice",
+					Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+				},
 			},
 		},
 		Payload: &securecontentpb.EncryptedPayload{

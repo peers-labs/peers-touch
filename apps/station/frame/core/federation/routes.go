@@ -86,7 +86,7 @@ const (
 	PeerRouteRealtimeCallResolution           PeerRoute = "realtime-call-resolution"
 	PeerRouteRealtimeSignal                   PeerRoute = "realtime-signal"
 	PeerRouteGroupCallAuthorityJoin           PeerRoute = "group-call-authority-join"
-	PeerRouteSocialPrivateObjectRead          PeerRoute = "social-private-object-read"
+	PeerRouteSocialPrivateObjectRead           PeerRoute = "social-private-object-read"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request

@@ -434,6 +434,26 @@ message SubmitPrivateCommentResponse {
   bool exact_replay = 2;
 }
 
+enum FederatedPrivateDeliveryState {
+  FEDERATED_PRIVATE_DELIVERY_STATE_UNSPECIFIED = 0;
+  FEDERATED_PRIVATE_DELIVERY_STATE_NOT_REQUIRED = 1;
+  FEDERATED_PRIVATE_DELIVERY_STATE_PENDING = 2;
+  FEDERATED_PRIVATE_DELIVERY_STATE_RETRYING = 3;
+  FEDERATED_PRIVATE_DELIVERY_STATE_DELIVERED = 4;
+  FEDERATED_PRIVATE_DELIVERY_STATE_TERMINAL = 5;
+  FEDERATED_PRIVATE_DELIVERY_STATE_EXPIRED = 6;
+}
+
+message FederatedPrivateDeliveryStatus {
+  FederatedPrivateDeliveryState state = 1;
+  uint32 total_count = 2;
+  uint32 delivered_count = 3;
+  uint32 retrying_count = 4;
+  uint32 terminal_count = 5;
+  uint32 expired_count = 6;
+  google.protobuf.Timestamp next_attempt_at = 7;
+}
+
 message GetMomentResourceRequest {
   string post_id = 1;
 }
@@ -445,6 +465,24 @@ message GetMomentResourceResponse {
   .peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;
   PostResource resource = 3;
   uint64 reaction_projection_revision = 4;
+  FederatedPrivateDeliveryStatus remote_delivery = 5;
+}
+
+message ListRemotePrivateMomentReferencesRequest {
+  string cursor = 1;
+  uint32 limit = 2;
+}
+
+message RemotePrivateMomentReference {
+  string post_id = 1;
+  uint64 lifecycle_revision = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message ListRemotePrivateMomentReferencesResponse {
+  repeated RemotePrivateMomentReference moments = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
 }
 
 message GetMomentCommentResourceRequest {

@@ -45,7 +45,7 @@ const (
 	federatedPrivateEndpointBindingHex = "08011225706c616e2d65383833613536316536643633386264663432353861663232386431356664621a20e114c5c4fa0fe277983dadd8f83e35f9f943c1d271635f9d1717bd3f2f0416d722200802121a30314d32464a41324d305134384443524256583352564848465918012a25736c6f742d626561616635623634303830373165643439613335383239656136633162666230013a0c7072656b65792d30312d30314220a4c389e85e9c37c799cd03a3d9c0c05010d51a9a954c32ba91530ddc287dbb014a20426ac3ef84cfaa18d262b9853928b96d07d2bf7c3ca2a42a26443d938e6f69aa5220e6f8fdbe78f561d4c8e27082769201c6d7a185f6a80c5f8223bbab1d72b530745a20e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855620608cc8d9fd5066a320a22120a707469643a616c6963651a12616c6963654073746174696f6e2e746573742001120c616c6963652d646576696365720a617574686f722d6b6579"
 )
 
-func TestFederatedPrivateTextCommitsSourceOutboxAndReceiverProjection(
+func TestFederatedPrivateReconcileCommitsSourceOutboxAndReceiverProjection(
 	t *testing.T,
 ) {
 	ctx := context.Background()
@@ -142,8 +142,50 @@ func TestFederatedPrivateTextCommitsSourceOutboxAndReceiverProjection(
 		t.Fatal(err)
 	}
 	if frame.GetPayloadKind() != federationdelivery.PayloadKindSocialPrivateResource ||
-		frame.GetTargetStationPeerId() != "station-remote" {
+		frame.GetTargetStationPeerId() != "station-remote" ||
+		frame.GetTraceId() == "" {
 		t.Fatalf("source frame = %+v", frame)
+	}
+	sourceRead, err := source.service.GetPrivateMoment(
+		ctx,
+		source.author.Endpoint,
+		submitted.GetPost().GetMetadata().GetPostId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourceRead.GetRemoteDelivery().GetState() !=
+		privatecontentpb.FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_PENDING ||
+		sourceRead.GetRemoteDelivery().GetTotalCount() != 1 {
+		t.Fatalf(
+			"source remote delivery status = %+v",
+			sourceRead.GetRemoteDelivery(),
+		)
+	}
+	if err := source.database.Model(&federationdelivery.OutboxRecord{}).
+		Where("frame_id = ?", frame.GetFrameId()).
+		Updates(map[string]any{
+			"state":           federationdelivery.OutboxStateRetryWait,
+			"attempt_count":   1,
+			"next_attempt_at": source.clock.now.Add(time.Second),
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	sourceRead, err = source.service.GetPrivateMoment(
+		ctx,
+		source.author.Endpoint,
+		submitted.GetPost().GetMetadata().GetPostId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourceRead.GetRemoteDelivery().GetState() !=
+		privatecontentpb.FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_RETRYING ||
+		sourceRead.GetRemoteDelivery().GetRetryingCount() != 1 {
+		t.Fatalf(
+			"source retrying delivery status = %+v",
+			sourceRead.GetRemoteDelivery(),
+		)
 	}
 	wire := &privatecontentpb.FederatedPrivateResourceDelivery{}
 	if err := proto.Unmarshal(frame.GetOpaquePayload(), wire); err != nil {
@@ -176,6 +218,40 @@ func TestFederatedPrivateTextCommitsSourceOutboxAndReceiverProjection(
 	}
 	if first.Disposition != federationdelivery.DispositionAccepted {
 		t.Fatalf("first receiver disposition = %+v", first)
+	}
+	if err := source.database.Model(&federationdelivery.OutboxRecord{}).
+		Where("frame_id = ?", frame.GetFrameId()).
+		Update("state", federationdelivery.OutboxStateDelivered).Error; err != nil {
+		t.Fatal(err)
+	}
+	sourceRead, err = source.service.GetPrivateMoment(
+		ctx,
+		source.author.Endpoint,
+		submitted.GetPost().GetMetadata().GetPostId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourceRead.GetRemoteDelivery().GetState() !=
+		privatecontentpb.FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_DELIVERED ||
+		sourceRead.GetRemoteDelivery().GetDeliveredCount() != 1 {
+		t.Fatalf(
+			"source delivered status = %+v",
+			sourceRead.GetRemoteDelivery(),
+		)
+	}
+	references, err := receiver.service.ListRemotePrivateMomentReferences(
+		ctx,
+		"ptid:bob",
+		&privatecontentpb.ListRemotePrivateMomentReferencesRequest{Limit: 100},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(references.GetMoments()) != 1 ||
+		references.GetMoments()[0].GetPostId() !=
+			wire.GetResource().GetContentId() {
+		t.Fatalf("receiver remote Moment references = %+v", references)
 	}
 	assertTableCount(t, receiver.database, "realtime_events", 1)
 	select {

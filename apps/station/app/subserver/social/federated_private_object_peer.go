@@ -38,7 +38,7 @@ func (p federatedPrivateObjectPeer) OpenFederatedPrivateObjectRange(
 				GetActor().
 				GetPtid(),
 			Claims: map[string]string{
-				federationruntime.ClaimFederationID:        request.GetFederationId(),
+				federationruntime.ClaimFederationID: request.GetFederationId(),
 				federationruntime.ClaimSourceStationPeerID: sourceStationPeerID,
 				federationruntime.ClaimTargetStationPeerID: p.runtime.LocalStationPeerID(),
 				federationruntime.ClaimActorPTID: request.GetViewer().
