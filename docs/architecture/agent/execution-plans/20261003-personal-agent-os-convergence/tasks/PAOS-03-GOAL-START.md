@@ -22,7 +22,7 @@
     {"id":"slice-runtime-capture","command":"python3 tooling/acceptance/gates/agent/personal_goal_slices/paos_03_goal_start.py --mode development --require-ui --require-station-readback","verificationClass":"FUNCTIONAL_CHECK"},
     {"id":"goal-start-source","command":"bash model/build.sh && git diff --check -- model/domain/agent apps/station/app/subserver/agent apps/desktop tooling/acceptance","verificationClass":"SOURCE_CHECK"},
     {"id":"goal-start-functional","command":"cd apps/station && go test ./app/subserver/agent/... -run 'Test.*Goal.*(Admission|Start)' -count=1 && cd ../.. && pnpm --dir apps/desktop exec vitest run src/components/home/GoalReviewPanel.test.tsx src/acceptance/agent/homeJourney.test.ts","verificationClass":"FUNCTIONAL_CHECK"},
-    {"id":"goal-start-proof","command":"python3 tooling/scripts/acceptance-run.py --gate agent-personal-goal-contract-source","verificationClass":"ACCEPTANCE_PROOF"}
+    {"id":"goal-start-contract","command":"python3 tooling/scripts/acceptance-run.py --gate agent-personal-goal-contract-source","verificationClass":"SOURCE_CHECK"}
   ],
   "doneWhen": ["Review exposes material assumptions before Start","Start commits READY to RUNNING with idempotency and expected revision","Rejected admission shows the blocking reason in Home","No TaskRun exists before admission commits"],
   "failureBehavior": ["Preserve the reviewed draft after admission failure","Do not start from stale, unauthorized, or incomplete input"],
