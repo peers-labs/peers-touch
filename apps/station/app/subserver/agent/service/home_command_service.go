@@ -34,18 +34,11 @@ type homeTurnStarter interface {
 }
 
 type homeTaskCreator interface {
-	CreateAndStartTask(
+	Create(
 		context.Context,
 		string,
-		string,
-		string,
-		uint64,
-		string,
-		string,
-		string,
-		string,
-		string,
-	) (*persistence.AgentTask, bool, error)
+		*model.CreateTaskRunRequest,
+	) (*model.CreateTaskRunResponse, error)
 }
 
 type HomeCommandService struct {
@@ -194,24 +187,40 @@ func (s *HomeCommandService) SubmitTask(
 	if err != nil {
 		return nil, err
 	}
-	task, _, err := s.tasks.CreateAndStartTask(
+	result, err := s.tasks.Create(
 		ctx,
 		ptid,
-		req.GetInput(),
-		req.GetAgentId(),
-		req.GetExpectedAgentVersion(),
-		req.GetRuntimeProfileId(),
-		req.GetReadinessSnapshotId(),
-		req.GetClientIdempotencyKey(),
-		payloadHash,
-		req.GetTopicRef(),
+		&model.CreateTaskRunRequest{
+			Title:                req.GetInput(),
+			Description:          req.GetInput(),
+			AgentId:              req.GetAgentId(),
+			Surface:              model.TaskSurface_TASK_SURFACE_DIRECT_RUN,
+			InitialStatus:        model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING,
+			ClientIdempotencyKey: req.GetClientIdempotencyKey(),
+			CommandPayloadHash:   payloadHash,
+			SourceRef:            req.GetTopicRef(),
+			Meta: map[string]string{
+				"agent_version":        strconv.FormatUint(req.GetExpectedAgentVersion(), 10),
+				"entrypoint":           "home",
+				"readiness_snapshot":   req.GetReadinessSnapshotId(),
+				"runtime_profile_id":   req.GetRuntimeProfileId(),
+				"task_command_version": "1",
+			},
+		},
 	)
 	if err != nil {
 		return nil, err
 	}
+	if result.GetTask() == nil || strings.TrimSpace(result.GetTask().GetTaskId()) == "" {
+		return nil, homeCommandInternal("Home Task writer returned no TaskRun", nil)
+	}
+	revision := uint64(s.now().UnixNano())
+	if result.GetTask().GetUpdatedAt() != nil {
+		revision = uint64(result.GetTask().GetUpdatedAt().AsTime().UnixNano())
+	}
 	return &model.SubmitHomeTaskCommandResponse{
-		TaskId:             task.ID,
-		ProjectionRevision: uint64(task.UpdatedAt.UTC().UnixNano()),
+		TaskId:             result.GetTask().GetTaskId(),
+		ProjectionRevision: revision,
 	}, nil
 }
 

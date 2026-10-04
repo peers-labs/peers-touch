@@ -346,7 +346,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	ecosystemSvc := service.NewEcosystemService()
 	ecosystemHandlers := handler.NewEcosystemHandlers(ecosystemSvc)
 	agentTaskSvc := service.NewAgentTaskService()
-	agentTaskHandlers := handler.NewAgentTaskHandlers(agentTaskSvc)
+	taskRunCommandSvc := service.NewTaskRunCommandService(s.agentDB)
+	agentTaskHandlers := handler.NewAgentTaskHandlers(
+		agentTaskSvc,
+		taskRunCommandSvc,
+	)
 
 	providerHandlers := handler.NewProviderHandlers(
 		providerConfigSvc,
@@ -470,7 +474,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 			agentSvc,
 			turnAdmissionSvc,
 			turnSvc,
-			agentTaskSvc,
+			taskRunCommandSvc,
 		),
 	)
 	s.turnService = turnSvc

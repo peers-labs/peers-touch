@@ -69,6 +69,10 @@ func newHomeCommandTestService(t *testing.T) (*HomeCommandService, *gorm.DB, *ho
 	if err := db.AutoMigrate(
 		&persistence.AgentTask{},
 		&persistence.CapabilityReadinessSnapshot{},
+		&persistence.CollaborationTask{},
+		&persistence.ExecutionStep{},
+		&persistence.TaskEvent{},
+		&persistence.TaskRun{},
 	); err != nil {
 		t.Fatalf("migrate Home command models: %v", err)
 	}
@@ -88,7 +92,7 @@ func newHomeCommandTestService(t *testing.T) (*HomeCommandService, *gorm.DB, *ho
 		homeAgentGetterStub{agent: agent},
 		admission,
 		starter,
-		NewAgentTaskService(),
+		NewTaskRunCommandService(db),
 	)
 	service.db = db
 	service.now = func() time.Time {
@@ -191,7 +195,7 @@ func TestSubmitHomeChatRejectsIdempotencyPayloadMismatch(t *testing.T) {
 	}
 }
 
-func TestSubmitHomeTaskStartsOnceAndReplays(t *testing.T) {
+func TestSubmitHomeTaskCreatesCanonicalTaskRunOnceAndReplays(t *testing.T) {
 	service, db, _ := newHomeCommandTestService(t)
 	request := &model.SubmitHomeTaskCommandRequest{
 		AgentId:              "agent-1",
@@ -213,12 +217,80 @@ func TestSubmitHomeTaskStartsOnceAndReplays(t *testing.T) {
 	if first.GetTaskId() != second.GetTaskId() {
 		t.Fatalf("replay changed task id: %q != %q", first.GetTaskId(), second.GetTaskId())
 	}
-	var tasks []persistence.AgentTask
-	if err := db.Find(&tasks).Error; err != nil {
-		t.Fatalf("list tasks: %v", err)
+	var taskRuns []persistence.TaskRun
+	if err := db.Find(&taskRuns).Error; err != nil {
+		t.Fatalf("list TaskRuns: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].Status != "running" {
-		t.Fatalf("tasks = %+v", tasks)
+	if len(taskRuns) != 1 ||
+		taskRuns[0].TaskID != first.GetTaskId() ||
+		taskRuns[0].Surface != int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN) ||
+		taskRuns[0].Status != int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING) {
+		t.Fatalf("TaskRuns = %+v", taskRuns)
+	}
+	var steps []persistence.ExecutionStep
+	if err := db.Find(&steps).Error; err != nil {
+		t.Fatalf("list ExecutionSteps: %v", err)
+	}
+	if len(steps) != 1 ||
+		steps[0].TaskID != first.GetTaskId() ||
+		steps[0].AgentID != request.GetAgentId() ||
+		steps[0].Status != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
+		t.Fatalf("ExecutionSteps = %+v", steps)
+	}
+	var events int64
+	if err := db.Model(&persistence.TaskEvent{}).
+		Where("task_id = ?", first.GetTaskId()).
+		Count(&events).Error; err != nil {
+		t.Fatalf("count TaskRun events: %v", err)
+	}
+	if events != 1 {
+		t.Fatalf("TaskRun events = %d, want 1", events)
+	}
+	var legacy int64
+	if err := db.Model(&persistence.AgentTask{}).Count(&legacy).Error; err != nil {
+		t.Fatalf("count legacy AgentTasks: %v", err)
+	}
+	if legacy != 0 {
+		t.Fatalf("Home Task wrote %d legacy AgentTasks", legacy)
+	}
+}
+
+func TestSubmitHomeTaskRunRejectsIdempotencyPayloadMismatch(t *testing.T) {
+	service, db, _ := newHomeCommandTestService(t)
+	request := &model.SubmitHomeTaskCommandRequest{
+		AgentId:              "agent-1",
+		Input:                "Prepare the launch brief",
+		RuntimeProfileId:     modernChatAgentProfileID,
+		ClientIdempotencyKey: "home-task-conflict",
+		ExpectedAgentVersion: 3,
+		ReadinessSnapshotId:  "readiness-1",
+	}
+	if _, err := service.SubmitTask(
+		context.Background(),
+		"ptid:actor-1",
+		request,
+	); err != nil {
+		t.Fatalf("SubmitTask() error = %v", err)
+	}
+	request.Input = "Replace the launch brief"
+	if _, err := service.SubmitTask(
+		context.Background(),
+		"ptid:actor-1",
+		request,
+	); err == nil {
+		t.Fatal("SubmitTask() conflict error = nil")
+	}
+
+	var taskRuns int64
+	if err := db.Model(&persistence.TaskRun{}).Count(&taskRuns).Error; err != nil {
+		t.Fatalf("count TaskRuns: %v", err)
+	}
+	var steps int64
+	if err := db.Model(&persistence.ExecutionStep{}).Count(&steps).Error; err != nil {
+		t.Fatalf("count ExecutionSteps: %v", err)
+	}
+	if taskRuns != 1 || steps != 1 {
+		t.Fatalf("conflict persisted TaskRuns=%d ExecutionSteps=%d", taskRuns, steps)
 	}
 }
 
@@ -239,6 +311,10 @@ func TestSubmitHomeCommandRejectsStaleAgentVersionBeforePersistence(t *testing.T
 	db.Model(&persistence.AgentTask{}).Count(&count)
 	if count != 0 {
 		t.Fatalf("task count = %d, want 0", count)
+	}
+	db.Model(&persistence.TaskRun{}).Count(&count)
+	if count != 0 {
+		t.Fatalf("TaskRun count = %d, want 0", count)
 	}
 }
 

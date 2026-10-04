@@ -2,23 +2,32 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
-// AgentTaskHandlers exposes the user-created single-agent task lifecycle (O3),
-// backing the Desktop Tasks page. Station-owned truth replaces the prior
-// Desktop localStorage store.
+// AgentTaskHandlers keeps legacy read and mutation endpoints available for
+// migrated rows while routing every new work command to canonical TaskRun
+// execution state.
 type AgentTaskHandlers struct {
-	svc *service.AgentTaskService
+	svc    *service.AgentTaskService
+	writer *service.TaskRunCommandService
 }
 
-func NewAgentTaskHandlers(svc *service.AgentTaskService) *AgentTaskHandlers {
-	return &AgentTaskHandlers{svc: svc}
+func NewAgentTaskHandlers(
+	svc *service.AgentTaskService,
+	writer *service.TaskRunCommandService,
+) *AgentTaskHandlers {
+	return &AgentTaskHandlers{svc: svc, writer: writer}
 }
 
 // taskToJSON serializes a persisted task, decoding the subtasks JSON column so
@@ -59,6 +68,7 @@ func (h *AgentTaskHandlers) HandleCreateTask(ctx context.Context, req server.Req
 		AgentID     string `json:"agent_id"`
 		Priority    string `json:"priority"`
 		TopicKey    string `json:"topic_key"`
+		Idempotency string `json:"client_idempotency_key"`
 	}
 	if err := json.Unmarshal(req.Body(), &input); err != nil {
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
@@ -68,13 +78,118 @@ func (h *AgentTaskHandlers) HandleCreateTask(ctx context.Context, req server.Req
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "title and agent_id are required"})
 		return nil
 	}
-	task, err := h.svc.CreateTask(ctx, subjectActorID(ctx), input.Title, input.Description, input.AgentID, input.Priority, input.TopicKey)
+	if h.writer == nil {
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": "TaskRun writer is unavailable"})
+		return nil
+	}
+	idempotencyKey := strings.TrimSpace(input.Idempotency)
+	if idempotencyKey == "" && strings.TrimSpace(input.TopicKey) != "" {
+		idempotencyKey = "chat-promotion:" + strings.TrimSpace(input.TopicKey)
+	}
+	if idempotencyKey == "" {
+		idempotencyKey = "task-create:" + uuid.NewString()
+	}
+	entrypoint := "task_page"
+	if strings.TrimSpace(input.TopicKey) != "" {
+		entrypoint = "chat_promotion"
+	}
+	priority := strings.TrimSpace(input.Priority)
+	if priority == "" {
+		priority = "medium"
+	}
+	payloadHash := canonicalTaskCommandHash(
+		input.Title,
+		input.Description,
+		input.AgentID,
+		priority,
+		input.TopicKey,
+	)
+	result, err := h.writer.Create(ctx, subjectActorID(ctx), &model.CreateTaskRunRequest{
+		Title:                input.Title,
+		Description:          input.Description,
+		AgentId:              input.AgentID,
+		Surface:              model.TaskSurface_TASK_SURFACE_API,
+		InitialStatus:        model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING,
+		ClientIdempotencyKey: idempotencyKey,
+		CommandPayloadHash:   payloadHash,
+		SourceRef:            input.TopicKey,
+		Meta: map[string]string{
+			"entrypoint": entrypoint,
+			"priority":   priority,
+		},
+	})
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "task": taskToJSON(task)})
+	if result.GetTask() == nil || result.GetRootStep() == nil {
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": "TaskRun writer returned incomplete identity"})
+		return nil
+	}
+	writeJSON(resp, http.StatusOK, map[string]any{
+		"ok":      true,
+		"task":    taskRunCommandToJSON(result),
+		"created": result.GetCreated(),
+	})
 	return nil
+}
+
+func canonicalTaskCommandHash(values ...string) string {
+	normalized := make([]string, len(values))
+	for index := range values {
+		normalized[index] = strings.TrimSpace(values[index])
+	}
+	sum := sha256.Sum256([]byte(strings.Join(normalized, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+func taskRunCommandToJSON(result *model.CreateTaskRunResponse) map[string]any {
+	if result == nil || result.GetTask() == nil || result.GetRootStep() == nil {
+		return map[string]any{}
+	}
+	task := result.GetTask()
+	step := result.GetRootStep()
+	status := "pending"
+	progress := 0
+	switch task.GetStatus() {
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING:
+		status = "running"
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED:
+		status = "paused"
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED:
+		status = "completed"
+		progress = 100
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_FAILED:
+		status = "failed"
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED:
+		status = "cancelled"
+	}
+	item := map[string]any{
+		"id":          task.GetTaskId(),
+		"title":       task.GetTitle(),
+		"description": task.GetDescription(),
+		"agent_id":    step.GetAgentId(),
+		"status":      status,
+		"priority":    firstTaskMeta(task.GetMeta(), "priority", "medium"),
+		"progress":    progress,
+		"subtasks":    []map[string]any{},
+		"topic_key":   firstTaskMeta(task.GetMeta(), "source_ref", ""),
+		"result":      step.GetResultSummary(),
+		"error":       "",
+		"created_at":  task.GetCreatedAt().AsTime(),
+		"updated_at":  task.GetUpdatedAt().AsTime(),
+	}
+	if task.GetEndedAt() != nil {
+		item["completed_at"] = task.GetEndedAt().AsTime()
+	}
+	return item
+}
+
+func firstTaskMeta(meta map[string]string, key string, fallback string) string {
+	if value := strings.TrimSpace(meta[key]); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func (h *AgentTaskHandlers) HandleListTasks(ctx context.Context, req server.Request, resp server.Response) error {
