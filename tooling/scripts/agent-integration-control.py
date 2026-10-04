@@ -762,6 +762,8 @@ def authorize_installation(root: Path, current_workspace_id: str) -> bool:
     ]
     if non_installer or len(live_actions) > 1:
         raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live workflow action")
+    if len(live_actions) == 0 and live_declarations:
+        return False
     if len(live_actions) != 1:
         raise RuntimeError("WORKFLOW_ACTION_GRANT_UNAVAILABLE")
     exact_receipt = {

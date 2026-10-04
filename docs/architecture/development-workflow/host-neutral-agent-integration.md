@@ -143,9 +143,11 @@ translated, or copied into current authority.
    only when its canonical binding resolves to the selected source worktree and
    the Kernel issued a create-once grant for that exact action ID. The installer
    atomically consumes the grant, so a seeded receipt or second invocation
-   cannot reuse it. Expired actions are not live. The installer validates the
-   ledger, binding, and Action stores through their canonical owners while
-   holding the lock,
+   cannot reuse it. When declarations are live and legacy cleanup is skipped,
+   the installer may bootstrap without a receipt if the old integration cannot
+   issue one; any observed non-installer action still blocks replacement.
+   Expired actions are not live. The installer validates the ledger, binding,
+   and Action stores through their canonical owners while holding the lock,
    never reclaims another owner's stale ledger lock, waits while a live ledger
    owner holds an inode-bound recovery claim, reclaims only a dead recovery
    owner through PID/start identity, rejects host-root, retirement-root, reset,

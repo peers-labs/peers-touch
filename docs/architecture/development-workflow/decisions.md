@@ -1493,6 +1493,10 @@ history rather than a live ownership conflict.
   durable work intent and do not block installation. Live child assignments,
   Action Store locks, or workflow actions still block replacement, except for
   the current exact OWNER-bound installer command.
+- A concurrent non-destructive replacement may bootstrap without an installer
+  Action Receipt when the installed integration cannot issue one. A
+  declaration-free replacement remains destructive because it removes legacy
+  state and therefore requires the exact create-once OWNER grant.
 - When no Development declaration is live, the installer also deletes
   `~/.peers-touch/dev/conversations/` and every
   `~/.peers-touch/dev/workspaces/*/workflow/actions/` directory. When a

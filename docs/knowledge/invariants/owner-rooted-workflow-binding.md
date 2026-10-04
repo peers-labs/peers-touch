@@ -71,10 +71,14 @@ when declarations are quiescent; otherwise they remain inert until a later
 declaration-free installation. No legacy reader, importer, alias, or dual
 writer is allowed.
 The sole live OWNER `skills` action is admissible only with its create-once
-Kernel grant, which the installer atomically consumes exactly once. Zero live
-actions are denied. Fallible path/workspace/catalog planning completes before
-grant consumption. After consumption, the installer immediately persists
-`INSTALLING` before destructive reset and records `BLOCKED` if reset fails.
+Kernel grant, which the installer atomically consumes exactly once. A
+declaration-free installation requires that grant because it deletes legacy
+state. A concurrent installation that preserves legacy state may bootstrap
+with zero live actions when an old integration cannot issue the grant; any
+other live action remains a blocker. Fallible path/workspace/catalog planning
+completes before grant consumption. After authorization, the installer
+immediately persists `INSTALLING` before replacement and records `BLOCKED` if
+the operation fails.
 
 ## Why this is non-negotiable
 
@@ -102,7 +106,9 @@ authority because a timer elapsed.
 - Compact restoration fails when any persisted lineage field differs.
 - Concurrent lineage compactions preserve independent receipts.
 - A missing, seeded, or already-consumed installer action has no rollout
-  authority.
+  authority for declaration-free legacy cleanup.
+- A live declaration plus zero live actions permits only the non-destructive
+  replacement path and preserves legacy stores.
 - Failed destructive reset leaves a `BLOCKED` installation receipt.
 - BeforePrompt injects role, lineage, release, execution, subject, tool, and
   target roots; wrong-binding status/final claims fail closed.

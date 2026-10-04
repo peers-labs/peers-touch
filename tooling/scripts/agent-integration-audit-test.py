@@ -1253,7 +1253,6 @@ export function processStartIdentity() { return 'fixture'; }
         workspace_id = hashlib.sha256(
             str(self.root.resolve()).encode()
         ).hexdigest()[:16]
-        self.seed_live_workflow_state("installer-authorized")
         declaration = {
             "declarationId": f"WORK-01-{workspace_id}",
             "workItemId": "WORK-01",
