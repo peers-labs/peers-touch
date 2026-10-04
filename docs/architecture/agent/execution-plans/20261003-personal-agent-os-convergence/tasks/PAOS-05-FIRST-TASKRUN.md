@@ -26,7 +26,18 @@
   "doneWhen": ["Starting a Goal creates one GoalNode, TaskRun, ExecutionStep, and attempt identity","Home shows that TaskRun as pending or running","Selecting the row reads its canonical Station identifiers","No AgentTask or CollaborationTask is created for this new Goal"],
   "failureBehavior": ["A failed TaskRun allocation leaves the Goal non-running","Do not synthesize progress from elapsed time or local state"],
   "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "git:d0eee05ca9e3e25fd8f501d27054c8cbacdd3060;model-build:pass;agent-go-tests:pass;desktop-check-vitest-eslint:pass;personal-goal-source-gate:pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "development://personal-agent-os-convergence-20261003/artifacts/20261004T150950278013Z/paos-05-first-taskrun/capture.json;manifest-sha256:2d527f6cf860a7d85e617eaaf8f1dfb4773ee743ec7b53c7b48384cee87585c3"
+    }
+  ]
 }
 ```
 
