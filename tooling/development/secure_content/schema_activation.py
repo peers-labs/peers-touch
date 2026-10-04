@@ -127,6 +127,7 @@ class ActivationOwnerDescriptor:
     source_work_item_id: str
     source_workstream_id: str
     source_task_id: str
+    aggregate_workstream_id: str
     source_evidence_root: str
     journey_id: str
     activation_bindings: Mapping[str, ActivationWorkItemBinding]
@@ -141,6 +142,7 @@ SECURE_CONTENT_OWNER = ActivationOwnerDescriptor(
     source_work_item_id=SOURCE_WORK_ITEM_ID,
     source_workstream_id=SOURCE_TASK_ID,
     source_task_id=SOURCE_TASK_ID,
+    aggregate_workstream_id=SOURCE_TASK_ID,
     source_evidence_root=SOURCE_EVIDENCE_ROOT,
     journey_id=JOURNEY_ID,
     activation_bindings=MappingProxyType(
@@ -169,6 +171,7 @@ CROSS_STATION_SOCIAL_OWNER = ActivationOwnerDescriptor(
     source_work_item_id="cross-station-social-source-freeze",
     source_workstream_id="CSS-SCHEMA-SOURCE",
     source_task_id="CSS-08A-schema-activation",
+    aggregate_workstream_id="CSS-W-ACTIVATION",
     source_evidence_root="CSS-08A",
     journey_id="SOC-SEC-SCHEMA-ACTIVATION",
     activation_bindings=MappingProxyType(
@@ -2474,7 +2477,7 @@ class SchemaActivationOwner:
             {
                 "schema_version": SCHEMA_VERSION,
                 "kind": AGGREGATE_RESULT_KIND,
-                "workstream_id": task_id,
+                "workstream_id": self.owner_descriptor.aggregate_workstream_id,
                 "task_id": task_id,
                 "generation_id": generation,
                 "source_commit": generation,
@@ -3089,7 +3092,7 @@ class SchemaActivationOwner:
         expected = {
             "schema_version": SCHEMA_VERSION,
             "kind": AGGREGATE_RESULT_KIND,
-            "workstream_id": task_id,
+            "workstream_id": self.owner_descriptor.aggregate_workstream_id,
             "task_id": task_id,
             "generation_id": generation_id,
             "source_commit": generation_id,
