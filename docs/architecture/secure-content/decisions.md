@@ -1052,8 +1052,9 @@ targets or transaction semantics. The risk is material:
   reused by the accepted encrypted `SocialPrivateContentPost`, while migrated
   deployments may retain plaintext-era columns and rows.
 - canonical Secure Content uses fourteen `social_private_*` tables and a
-  Social-owned object backend; old private media used generic OSS metadata and
-  blobs.
+  Social-owned object backend; cross-Station private Social adds five
+  receiver-projection and invalidation tables; old private media used generic
+  OSS metadata and blobs.
 - old plaintext Comment/Reaction/Delivery rows live in shared Social tables.
 - a prefix-based table drop, best-effort object deletion, or count-only public
   check could delete canonical private schema or public/shared objects.
@@ -1088,7 +1089,7 @@ state are retained.
 
 The database allowlist is:
 
-1. clear all rows from exactly these fourteen canonical tables:
+1. clear all rows from exactly these nineteen private Social tables:
 
 ```text
 social_private_content_plans
@@ -1100,6 +1101,11 @@ social_private_audience_snapshots
 social_private_recipient_grants
 social_private_content_envelopes
 social_private_delivery_intents
+social_remote_private_commands
+social_remote_private_envelopes
+social_remote_private_resources
+social_remote_private_tombstones
+social_private_resource_invalidations
 social_private_object_uploads
 social_private_object_parts
 social_private_objects
@@ -1110,8 +1116,12 @@ social_private_commit_proofs
 2. delete `social_comments` rows where `post_class = 'private'`;
 3. delete `social_reactions` rows where `post_class = 'private'`;
 4. clear `social_moment_deliveries`;
-5. drop only the retired `social_private_audience_grants` table when present;
-6. rebuild `social_private_posts` to the canonical
+5. clear `social_remote_private_commands`,
+   `social_remote_private_envelopes`, `social_remote_private_resources`,
+   `social_remote_private_tombstones`, and
+   `social_private_resource_invalidations`;
+6. drop only the retired `social_private_audience_grants` table when present;
+7. rebuild `social_private_posts` to the canonical
    `SocialPrivateContentPost` schema after its rows are cleared, removing only
    these retired columns when present:
 
@@ -1145,6 +1155,11 @@ forbidden. The dependency order is:
 legacy social_reactions(post_class='private')
 legacy social_comments(post_class='private')
 social_moment_deliveries
+social_remote_private_commands
+social_remote_private_envelopes
+social_remote_private_resources
+social_remote_private_tombstones
+social_private_resource_invalidations
 social_private_object_grants
 social_private_objects
 social_private_object_parts
