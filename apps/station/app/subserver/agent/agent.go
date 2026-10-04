@@ -95,6 +95,9 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err = rds.AutoMigrate(persistence.AllModels()...); err != nil {
 		return err
 	}
+	if err = persistence.MigrateAgentTasks(rds); err != nil {
+		return err
+	}
 	if err = service.MigrateRuntimeSnapshotThinkingModes(rds); err != nil {
 		return err
 	}

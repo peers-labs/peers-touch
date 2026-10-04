@@ -10,6 +10,7 @@ import {
   useGoalExecutionStore,
 } from '../../store/goalExecution';
 import { useHomeStore } from '../../store/home';
+import { MigratedWorkBadge } from './MigratedWorkBadge';
 
 const { useToken } = theme;
 
@@ -58,6 +59,11 @@ export function GoalProgressPanel() {
       <Flexbox horizontal align="center" gap={8} wrap="wrap">
         <Typography.Text strong>{current.title}</Typography.Text>
         <Tag>{goalRunStatusLabel(current.status, t)}</Tag>
+        <MigratedWorkBadge
+          blockReason={current.migrationBlockReason}
+          sourceId={current.legacySourceId}
+          state={current.migrationState}
+        />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {t('agent.home.goalLiveRevision', {
             revision: projection?.revision.toString() ?? '0',

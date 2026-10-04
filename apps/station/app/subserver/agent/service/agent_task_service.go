@@ -231,6 +231,34 @@ func (s *AgentTaskService) ListTasks(ctx context.Context, ownerActorID, agentID 
 	return out, nil
 }
 
+func (s *AgentTaskService) ListTaskMigrationReadbacks(
+	ctx context.Context,
+	ownerActorID string,
+) ([]persistence.AgentTaskGoalMap, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := persistence.MigrateAgentTasks(db); err != nil {
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to migrate legacy Agent tasks",
+			err,
+		)
+	}
+	rows, err := persistence.ListAgentTaskGoalMaps(ctx, db, ownerActorID)
+	if err != nil {
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to read migrated Agent tasks",
+			err,
+		)
+	}
+	return rows, nil
+}
+
 func (s *AgentTaskService) loadOwned(ctx context.Context, db *gorm.DB, ownerActorID, id string) (*persistence.AgentTask, error) {
 	var row persistence.AgentTask
 	if err := db.WithContext(ctx).Where("id = ? AND owner_actor_id = ?", id, ownerActorID).First(&row).Error; err != nil {
