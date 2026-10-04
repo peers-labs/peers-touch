@@ -11,6 +11,7 @@ import {
 } from '../../runtimes/homeRuntime';
 import { useHomeStore } from '../../store/home';
 import { GoalContractEditor } from './GoalContractEditor';
+import { GoalReviewPanel } from './GoalReviewPanel';
 
 const { useToken } = theme;
 
@@ -67,7 +68,11 @@ export function GoalDraftCard() {
             type="warning"
           />
         ) : null}
-        <GoalContractEditor goal={savedGoal} />
+        {savedGoal.status === AgentGoalStatus.DRAFT ? (
+          <GoalContractEditor goal={savedGoal} />
+        ) : (
+          <GoalReviewPanel goal={savedGoal} />
+        )}
       </Card>
     );
   }

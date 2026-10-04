@@ -75,6 +75,12 @@ export function GoalContractEditor({ goal }: { goal: AgentGoal }) {
   const forbidden = mutationState === 'forbidden';
   const invalid =
     !outcome.trim()
+    || budget.maxTokens <= 0n
+    || budget.wallTimeMs <= 0n
+    || budget.maxParallelTasks < 1
+    || budget.maxParallelTasks > 64
+    || criteria.length === 0
+    || !criteria.some((criterion) => criterion.required)
     || criteria.some(
       (criterion) =>
         !criterion.description.trim() || !criterion.evaluator.trim(),
@@ -149,6 +155,14 @@ export function GoalContractEditor({ goal }: { goal: AgentGoal }) {
           message={t('agent.home.goalUpdateFailed')}
           showIcon
           type="error"
+        />
+      ) : null}
+      {mutationState === 'admission-rejected' ? (
+        <Alert
+          data-pt-home-goal-admission-error=""
+          message={t('agent.home.goalContractIncomplete')}
+          showIcon
+          type="warning"
         />
       ) : null}
       {reviewing ? (
@@ -346,6 +360,14 @@ export function GoalContractEditor({ goal }: { goal: AgentGoal }) {
       <Flexbox horizontal align="center" justify="flex-end" gap={token.marginSM}>
         {!reviewing ? (
           <>
+            {invalid ? (
+              <Typography.Text
+                data-pt-home-goal-contract-incomplete=""
+                type="secondary"
+              >
+                {t('agent.home.goalContractIncomplete')}
+              </Typography.Text>
+            ) : null}
             <Button
               data-pt-home-goal-update=""
               disabled={!dirty || invalid || disabled}

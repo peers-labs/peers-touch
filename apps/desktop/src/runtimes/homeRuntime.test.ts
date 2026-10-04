@@ -19,6 +19,8 @@ const createAgentGoalDraft = vi.hoisted(() => vi.fn());
 const getAgentGoal = vi.hoisted(() => vi.fn());
 const updateAgentGoal = vi.hoisted(() => vi.fn());
 const reviewAgentGoal = vi.hoisted(() => vi.fn());
+const admitAgentGoal = vi.hoisted(() => vi.fn());
+const startAgentGoal = vi.hoisted(() => vi.fn());
 const setAgentSurface = vi.hoisted(() => vi.fn());
 const setSelectedAgent = vi.hoisted(() => vi.fn());
 const selectSession = vi.hoisted(() => vi.fn());
@@ -64,12 +66,17 @@ vi.mock('../services/desktop_api', () => ({
     getAgentGoal,
     updateAgentGoal,
     reviewAgentGoal,
+    admitAgentGoal,
+    startAgentGoal,
   },
   isAgentForbiddenActorError: (error: { error_type?: string } | undefined) =>
     error?.error_type === 'OWNERSHIP_FORBIDDEN_ACTOR',
   isAgentLifecycleStaleVersionError: (
     error: { error_type?: string } | undefined,
   ) => error?.error_type === 'LIFECYCLE_STALE_VERSION',
+  isAgentGoalAdmissionRejectedError: (
+    error: { error_type?: string } | undefined,
+  ) => error?.error_type === 'GOAL_ADMISSION_REJECTED',
   normalizeAgentTurnStreamError: (error: unknown) => error,
 }));
 
@@ -117,6 +124,7 @@ import {
   openHomeConversation,
   reloadHomeGoalContract,
   reviewHomeGoalContract,
+  startHomeGoal,
   submitHomeChat,
   submitHomeTask,
   updateHomeGoalContract,
@@ -368,6 +376,112 @@ describe('homeRuntime', () => {
       baseRevision: 3n,
       mutationState: 'reviewing',
     });
+  });
+
+  it('admits and starts a reviewed Goal with exact Station revisions', async () => {
+    const reviewed = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Durable Goal',
+      outcome: 'Start the reviewed Goal',
+      status: AgentGoalStatus.REVIEWING,
+      revision: 3n,
+    });
+    const admitted = create(AgentGoalSchema, {
+      ...reviewed,
+      status: AgentGoalStatus.READY,
+      revision: 4n,
+    });
+    const running = create(AgentGoalSchema, {
+      ...admitted,
+      status: AgentGoalStatus.RUNNING,
+      revision: 5n,
+    });
+    useGoalDraftStore.getState().hydrate(reviewed);
+    admitAgentGoal.mockResolvedValue(admitted);
+    startAgentGoal.mockResolvedValue(running);
+
+    const result = await startHomeGoal();
+
+    expect(admitAgentGoal).toHaveBeenCalledWith({
+      goalId: 'goal-1',
+      expectedRevision: 3n,
+      idempotencyKey: expect.stringMatching(/^home-goal-admit-/),
+    });
+    expect(startAgentGoal).toHaveBeenCalledWith({
+      goalId: 'goal-1',
+      expectedRevision: 4n,
+      idempotencyKey: expect.stringMatching(/^home-goal-start-/),
+    });
+    expect(result).toBe(running);
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      baseRevision: 5n,
+      status: AgentGoalStatus.RUNNING,
+      mutationState: 'running',
+    });
+  });
+
+  it('keeps a reviewed Goal visible when admission rejects it', async () => {
+    const reviewed = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Durable Goal',
+      outcome: 'Start the reviewed Goal',
+      status: AgentGoalStatus.REVIEWING,
+      revision: 3n,
+    });
+    useGoalDraftStore.getState().hydrate(reviewed);
+    const rejected = Object.assign(
+      new Error('agent.errors.goalAdmissionRejected'),
+      {
+        typedError: {
+          error_type: 'GOAL_ADMISSION_REJECTED',
+          locale_key: 'agent.errors.goalAdmissionRejected',
+          details: { reason_code: 'max_tokens_missing' },
+        },
+      },
+    );
+    admitAgentGoal.mockRejectedValueOnce(rejected);
+
+    await expect(startHomeGoal()).rejects.toBe(rejected);
+
+    expect(startAgentGoal).not.toHaveBeenCalled();
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      goalId: 'goal-1',
+      baseRevision: 3n,
+      status: AgentGoalStatus.REVIEWING,
+      mutationState: 'admission-rejected',
+      admissionReasonCode: 'max_tokens_missing',
+    });
+  });
+
+  it('does not start the old Goal after the runtime actor changes', async () => {
+    const reviewed = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Durable Goal',
+      outcome: 'Do not cross actor sessions',
+      status: AgentGoalStatus.REVIEWING,
+      revision: 3n,
+    });
+    const admitted = create(AgentGoalSchema, {
+      ...reviewed,
+      status: AgentGoalStatus.READY,
+      revision: 4n,
+    });
+    let resolveAdmission!: (goal: AgentGoal) => void;
+    admitAgentGoal.mockReturnValueOnce(new Promise<AgentGoal>((resolve) => {
+      resolveAdmission = resolve;
+    }));
+    useGoalDraftStore.getState().hydrate(reviewed);
+
+    const pending = startHomeGoal();
+    homeRuntime.teardown();
+    resolveAdmission(admitted);
+
+    await expect(pending).resolves.toBe(admitted);
+    expect(startAgentGoal).not.toHaveBeenCalled();
+    expect(useGoalDraftStore.getState().goalId).toBeNull();
   });
 
   it('reloads a stale Goal revision without losing local edits', async () => {

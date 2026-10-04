@@ -12,6 +12,8 @@ import {
   SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
 import {
+  AdmitAgentGoalRequestSchema,
+  AdmitAgentGoalResponseSchema,
   AgentGoalStatus,
   CreateAgentGoalRequestSchema,
   CreateAgentGoalResponseSchema,
@@ -19,6 +21,8 @@ import {
   GetAgentGoalResponseSchema,
   ReviewAgentGoalRequestSchema,
   ReviewAgentGoalResponseSchema,
+  StartAgentGoalRequestSchema,
+  StartAgentGoalResponseSchema,
   UpdateAgentGoalRequestSchema,
   UpdateAgentGoalResponseSchema,
 } from '../gen/proto/domain/agent/goal_pb';
@@ -201,7 +205,7 @@ describe('Desktop Home projection API', () => {
     });
   });
 
-  it('updates and reviews the exact Station Goal revision', async () => {
+  it('updates, reviews, admits, and starts the exact Station Goal revision', async () => {
     const updatedGoal = {
       goalId: 'goal-1',
       ownerPtid: 'ptid:actor-1',
@@ -229,6 +233,16 @@ describe('Desktop Home projection API', () => {
       status: AgentGoalStatus.REVIEWING,
       revision: 3n,
     };
+    const admittedGoal = {
+      ...reviewedGoal,
+      status: AgentGoalStatus.READY,
+      revision: 4n,
+    };
+    const runningGoal = {
+      ...admittedGoal,
+      status: AgentGoalStatus.RUNNING,
+      revision: 5n,
+    };
     vi.mocked(invoke)
       .mockResolvedValueOnce({
         ok: true,
@@ -242,6 +256,20 @@ describe('Desktop Home projection API', () => {
         data: Array.from(toBinary(
           ReviewAgentGoalResponseSchema,
           create(ReviewAgentGoalResponseSchema, { goal: reviewedGoal }),
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: Array.from(toBinary(
+          AdmitAgentGoalResponseSchema,
+          create(AdmitAgentGoalResponseSchema, { goal: admittedGoal }),
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: Array.from(toBinary(
+          StartAgentGoalResponseSchema,
+          create(StartAgentGoalResponseSchema, { goal: runningGoal }),
         )),
       });
 
@@ -291,6 +319,52 @@ describe('Desktop Home projection API', () => {
       goalId: 'goal-1',
       expectedRevision: 2n,
       idempotencyKey: 'goal-review-1',
+    });
+
+    const admitted = await api.admitAgentGoal({
+      goalId: reviewed.goalId,
+      expectedRevision: reviewed.revision,
+      idempotencyKey: 'goal-admit-1',
+    });
+    expect(admitted).toMatchObject({
+      status: AgentGoalStatus.READY,
+      revision: 4n,
+    });
+    const admitInvocation = vi.mocked(invoke).mock.calls[2];
+    expect(admitInvocation?.[0]).toBe('agent_home_goal_admit');
+    const admitArgs = admitInvocation?.[1] as {
+      input?: { requestBytes?: number[] };
+    } | undefined;
+    expect(fromBinary(
+      AdmitAgentGoalRequestSchema,
+      new Uint8Array(admitArgs?.input?.requestBytes ?? []),
+    )).toMatchObject({
+      goalId: 'goal-1',
+      expectedRevision: 3n,
+      idempotencyKey: 'goal-admit-1',
+    });
+
+    const running = await api.startAgentGoal({
+      goalId: admitted.goalId,
+      expectedRevision: admitted.revision,
+      idempotencyKey: 'goal-start-1',
+    });
+    expect(running).toMatchObject({
+      status: AgentGoalStatus.RUNNING,
+      revision: 5n,
+    });
+    const startInvocation = vi.mocked(invoke).mock.calls[3];
+    expect(startInvocation?.[0]).toBe('agent_home_goal_start');
+    const startArgs = startInvocation?.[1] as {
+      input?: { requestBytes?: number[] };
+    } | undefined;
+    expect(fromBinary(
+      StartAgentGoalRequestSchema,
+      new Uint8Array(startArgs?.input?.requestBytes ?? []),
+    )).toMatchObject({
+      goalId: 'goal-1',
+      expectedRevision: 4n,
+      idempotencyKey: 'goal-start-1',
     });
   });
 });

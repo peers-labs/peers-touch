@@ -39,4 +39,18 @@ describe('GoalContractEditor contract', () => {
     expect(source).toContain('reloadHomeGoalContract');
     expect(source).toContain("mutationState === 'forbidden'");
   });
+
+  it('blocks review until admission assumptions are complete', () => {
+    for (const admissionBound of [
+      'budget.maxTokens <= 0n',
+      'budget.wallTimeMs <= 0n',
+      'budget.maxParallelTasks < 1',
+      'budget.maxParallelTasks > 64',
+      'criteria.length === 0',
+      'criterion.required',
+    ]) {
+      expect(source).toContain(admissionBound);
+    }
+    expect(source).toContain('data-pt-home-goal-contract-incomplete');
+  });
 });

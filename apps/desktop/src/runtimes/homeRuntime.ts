@@ -2,10 +2,14 @@ import type { RuntimeDescriptor } from '../kernel/runtime';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { HomeWorkKind } from '../gen/proto/domain/agent/home_pb';
-import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
+import {
+  AgentGoalStatus,
+  type AgentGoal,
+} from '../gen/proto/domain/agent/goal_pb';
 import {
   api,
   isAgentForbiddenActorError,
+  isAgentGoalAdmissionRejectedError,
   isAgentLifecycleStaleVersionError,
   normalizeAgentTurnStreamError,
 } from '../services/desktop_api';
@@ -54,7 +58,14 @@ export function validateHomeGoalDraftBytes(
 }
 
 function homeCommandKey(
-  kind: 'chat' | 'task' | 'goal' | 'goal-update' | 'goal-review',
+  kind:
+    | 'chat'
+    | 'task'
+    | 'goal'
+    | 'goal-update'
+    | 'goal-review'
+    | 'goal-admit'
+    | 'goal-start',
 ): string {
   const id = globalThis.crypto?.randomUUID?.()
     || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -219,6 +230,11 @@ function projectGoalMutationFailure(
       BigInt(normalized.typedError.details.actual_revision),
       normalized.typedError.locale_key,
     );
+  } else if (isAgentGoalAdmissionRejectedError(normalized.typedError)) {
+    draft.markAdmissionRejected(
+      normalized.typedError.locale_key,
+      normalized.typedError.details.reason_code,
+    );
   } else if (isAgentForbiddenActorError(normalized.typedError)) {
     draft.markForbidden(normalized.typedError.locale_key);
   } else {
@@ -292,6 +308,66 @@ export async function reviewHomeGoalContract(): Promise<AgentGoal> {
       useGoalDraftStore.getState().applyMutation(goal);
     }
     return goal;
+  } catch (error) {
+    throw projectGoalMutationFailure(error, generation, goalID);
+  }
+}
+
+export async function startHomeGoal(): Promise<AgentGoal> {
+  let state = useGoalDraftStore.getState();
+  if (!state.goalId || state.baseRevision === null) {
+    throw new Error('agent.home.goalContractMissing');
+  }
+  const goalID = state.goalId;
+  const generation = runtimeGeneration;
+
+  if (state.status === AgentGoalStatus.REVIEWING) {
+    const idempotencyKey =
+      state.admitIdempotencyKey || homeCommandKey('goal-admit');
+    state.beginMutation('admit', idempotencyKey);
+    try {
+      const admitted = await api.admitAgentGoal({
+        goalId: goalID,
+        expectedRevision: state.baseRevision,
+        idempotencyKey,
+      });
+      if (
+        generation !== runtimeGeneration
+        || useGoalDraftStore.getState().goalId !== goalID
+      ) {
+        return admitted;
+      }
+      useHomeStore.getState().applyGoalDraft(admitted, 'readback');
+      useGoalDraftStore.getState().applyMutation(admitted);
+      state = useGoalDraftStore.getState();
+    } catch (error) {
+      throw projectGoalMutationFailure(error, generation, goalID);
+    }
+  }
+
+  if (
+    state.status !== AgentGoalStatus.READY
+    || state.baseRevision === null
+  ) {
+    throw new Error('agent.home.goalNotReady');
+  }
+  const idempotencyKey =
+    state.startIdempotencyKey || homeCommandKey('goal-start');
+  state.beginMutation('start', idempotencyKey);
+  try {
+    const running = await api.startAgentGoal({
+      goalId: goalID,
+      expectedRevision: state.baseRevision,
+      idempotencyKey,
+    });
+    if (
+      generation === runtimeGeneration
+      && useGoalDraftStore.getState().goalId === goalID
+    ) {
+      useHomeStore.getState().applyGoalDraft(running, 'readback');
+      useGoalDraftStore.getState().applyMutation(running);
+    }
+    return running;
   } catch (error) {
     throw projectGoalMutationFailure(error, generation, goalID);
   }

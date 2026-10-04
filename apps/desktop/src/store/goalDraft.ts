@@ -23,6 +23,11 @@ export type GoalContractMutationState =
   | 'dirty'
   | 'saving'
   | 'reviewing'
+  | 'admitting'
+  | 'ready'
+  | 'starting'
+  | 'running'
+  | 'admission-rejected'
   | 'conflict'
   | 'forbidden'
   | 'failed';
@@ -42,6 +47,9 @@ interface GoalDraftState {
   conflictRevision: bigint | null;
   updateIdempotencyKey: string;
   reviewIdempotencyKey: string;
+  admitIdempotencyKey: string;
+  startIdempotencyKey: string;
+  admissionReasonCode: string;
   reloadLoading: boolean;
   hydrate: (goal: AgentGoal) => void;
   setOutcome: (outcome: string) => void;
@@ -54,8 +62,12 @@ interface GoalDraftState {
     updates: Partial<GoalAcceptanceCriterionDraft>,
   ) => void;
   removeAcceptanceCriterion: (criterionId: string) => void;
-  beginMutation: (kind: 'update' | 'review', idempotencyKey: string) => void;
+  beginMutation: (
+    kind: 'update' | 'review' | 'admit' | 'start',
+    idempotencyKey: string,
+  ) => void;
   applyMutation: (goal: AgentGoal) => void;
+  markAdmissionRejected: (error: string, reasonCode: string) => void;
   markConflict: (actualRevision: bigint, error: string) => void;
   markForbidden: (error: string) => void;
   markFailure: (error: string) => void;
@@ -72,6 +84,10 @@ const emptyBudget: GoalBudgetDraft = {
 };
 
 function draftFromGoal(goal: AgentGoal) {
+  let mutationState: GoalContractMutationState = 'idle';
+  if (goal.status === AgentGoalStatus.REVIEWING) mutationState = 'reviewing';
+  if (goal.status === AgentGoalStatus.READY) mutationState = 'ready';
+  if (goal.status === AgentGoalStatus.RUNNING) mutationState = 'running';
   return {
     goalId: goal.goalId,
     baseRevision: goal.revision,
@@ -94,12 +110,14 @@ function draftFromGoal(goal: AgentGoal) {
       required: criterion.required,
     })),
     dirty: false,
-    mutationState:
-      goal.status === AgentGoalStatus.REVIEWING ? 'reviewing' as const : 'idle' as const,
+    mutationState,
     mutationError: null,
     conflictRevision: null,
     updateIdempotencyKey: '',
     reviewIdempotencyKey: '',
+    admitIdempotencyKey: '',
+    startIdempotencyKey: '',
+    admissionReasonCode: '',
     reloadLoading: false,
   };
 }
@@ -116,6 +134,9 @@ function dirtyState() {
     conflictRevision: null,
     updateIdempotencyKey: '',
     reviewIdempotencyKey: '',
+    admitIdempotencyKey: '',
+    startIdempotencyKey: '',
+    admissionReasonCode: '',
   };
 }
 
@@ -136,6 +157,9 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
     conflictRevision: null,
     updateIdempotencyKey: '',
     reviewIdempotencyKey: '',
+    admitIdempotencyKey: '',
+    startIdempotencyKey: '',
+    admissionReasonCode: '',
     reloadLoading: false,
 
     hydrate: (goal) => set(draftFromGoal(goal)),
@@ -201,15 +225,29 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
     )),
 
     beginMutation: (kind, idempotencyKey) => set({
-      mutationState: 'saving',
+      mutationState:
+        kind === 'admit'
+          ? 'admitting'
+          : kind === 'start'
+            ? 'starting'
+            : 'saving',
       mutationError: null,
       conflictRevision: null,
-      ...(kind === 'update'
-        ? { updateIdempotencyKey: idempotencyKey }
-        : { reviewIdempotencyKey: idempotencyKey }),
+      admissionReasonCode: '',
+      ...(kind === 'update' ? { updateIdempotencyKey: idempotencyKey } : {}),
+      ...(kind === 'review' ? { reviewIdempotencyKey: idempotencyKey } : {}),
+      ...(kind === 'admit' ? { admitIdempotencyKey: idempotencyKey } : {}),
+      ...(kind === 'start' ? { startIdempotencyKey: idempotencyKey } : {}),
     }),
 
     applyMutation: (goal) => set(draftFromGoal(goal)),
+
+    markAdmissionRejected: (error, reasonCode) => set({
+      mutationState: 'admission-rejected',
+      mutationError: error,
+      admissionReasonCode: reasonCode,
+      conflictRevision: null,
+    }),
 
     markConflict: (actualRevision, error) => set({
       mutationState: 'conflict',
@@ -243,6 +281,9 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
         conflictRevision: null,
         updateIdempotencyKey: '',
         reviewIdempotencyKey: '',
+        admitIdempotencyKey: '',
+        startIdempotencyKey: '',
+        admissionReasonCode: '',
         reloadLoading: false,
       };
     }),
@@ -267,6 +308,9 @@ export const useGoalDraftStore = createDesktopStore<GoalDraftState>(
       conflictRevision: null,
       updateIdempotencyKey: '',
       reviewIdempotencyKey: '',
+      admitIdempotencyKey: '',
+      startIdempotencyKey: '',
+      admissionReasonCode: '',
       reloadLoading: false,
     }),
   }),

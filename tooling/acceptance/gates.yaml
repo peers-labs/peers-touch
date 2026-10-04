@@ -1422,6 +1422,13 @@
         "cleanup"
       ]
     },
+    "agent-personal-goal-contract-source": {
+      "command": "python3 tooling/acceptance/gates/agent/personal_goal_contract_source.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the Station-owned Personal Goal contract, reviewed admission, revisioned start, Desktop bridge, visible rejection, and zero pre-admission TaskRun boundary."
+    },
     "agent-v2-home-command-center-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-home-command-center-e2e",
       "timeout_seconds": 600,

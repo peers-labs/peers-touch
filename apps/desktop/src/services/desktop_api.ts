@@ -172,12 +172,16 @@ import {
 } from '../gen/proto/domain/agent/home_pb';
 import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
 import {
+  AdmitAgentGoalRequestSchema,
+  AdmitAgentGoalResponseSchema,
   CreateAgentGoalRequestSchema,
   CreateAgentGoalResponseSchema,
   GetAgentGoalRequestSchema,
   GetAgentGoalResponseSchema,
   ReviewAgentGoalRequestSchema,
   ReviewAgentGoalResponseSchema,
+  StartAgentGoalRequestSchema,
+  StartAgentGoalResponseSchema,
   UpdateAgentGoalRequestSchema,
   UpdateAgentGoalResponseSchema,
 } from '../gen/proto/domain/agent/goal_pb';
@@ -2738,6 +2742,10 @@ export const AGENT_LIFECYCLE_TERMINAL_MUTATION_ERROR_TYPE =
   'LIFECYCLE_TERMINAL_MUTATION';
 export const AGENT_LIFECYCLE_TERMINAL_MUTATION_LOCALE_KEY =
   'agent.errors.lifecycleTerminalMutation';
+export const AGENT_GOAL_ADMISSION_REJECTED_ERROR_TYPE =
+  'GOAL_ADMISSION_REJECTED';
+export const AGENT_GOAL_ADMISSION_REJECTED_LOCALE_KEY =
+  'agent.errors.goalAdmissionRejected';
 
 export type AgentForbiddenActorError = AgentTypedErrorPayload & {
   details: {
@@ -2857,6 +2865,14 @@ export type AgentLifecycleTerminalMutationError = AgentTypedErrorPayload & {
   details: {
     resource_id: string;
     terminal_status: AgentTerminalMutationStatus;
+  };
+};
+
+export type AgentGoalAdmissionRejectedError = AgentTypedErrorPayload & {
+  details: {
+    resource_kind: 'goal';
+    resource_id: string;
+    reason_code: string;
   };
 };
 
@@ -3072,6 +3088,20 @@ export function isAgentForbiddenActorError(
     && detailKeys[1] === 'resource_kind'
     && error.details.resource_kind.trim().length > 0
     && error.details.resource_id.trim().length > 0
+  );
+}
+
+export function isAgentGoalAdmissionRejectedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentGoalAdmissionRejectedError {
+  return Boolean(
+    error?.error_type === AGENT_GOAL_ADMISSION_REJECTED_ERROR_TYPE
+    && error.locale_key === AGENT_GOAL_ADMISSION_REJECTED_LOCALE_KEY
+    && !error.retryable
+    && error.terminal
+    && error.details.resource_kind === 'goal'
+    && error.details.resource_id?.trim()
+    && error.details.reason_code?.trim(),
   );
 }
 
@@ -5474,6 +5504,40 @@ export const api = {
     );
     if (!response.goal) {
       throw new Error('agent.goalReviewResponseMissing');
+    }
+    return response.goal;
+  },
+
+  admitAgentGoal: async (input: {
+    goalId: string;
+    expectedRevision: bigint;
+    idempotencyKey: string;
+  }): Promise<AgentGoal> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_goal_admit',
+      AdmitAgentGoalRequestSchema,
+      AdmitAgentGoalResponseSchema,
+      create(AdmitAgentGoalRequestSchema, input),
+    );
+    if (!response.goal) {
+      throw new Error('agent.goalAdmitResponseMissing');
+    }
+    return response.goal;
+  },
+
+  startAgentGoal: async (input: {
+    goalId: string;
+    expectedRevision: bigint;
+    idempotencyKey: string;
+  }): Promise<AgentGoal> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_goal_start',
+      StartAgentGoalRequestSchema,
+      StartAgentGoalResponseSchema,
+      create(StartAgentGoalRequestSchema, input),
+    );
+    if (!response.goal) {
+      throw new Error('agent.goalStartResponseMissing');
     }
     return response.goal;
   },

@@ -96,3 +96,29 @@ pub fn agent_home_goal_review(
     }
     home::review_goal(input, &token)
 }
+
+#[tauri::command]
+pub fn agent_home_goal_admit(
+    input: home::EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    home::admit_goal(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_home_goal_start(
+    input: home::EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    home::start_goal(input, &token)
+}

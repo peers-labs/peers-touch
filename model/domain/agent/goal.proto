@@ -98,3 +98,23 @@ message ReviewAgentGoalRequest {
 message ReviewAgentGoalResponse {
   AgentGoal goal = 1;
 }
+
+message AdmitAgentGoalRequest {
+  string goal_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message AdmitAgentGoalResponse {
+  AgentGoal goal = 1;
+}
+
+message StartAgentGoalRequest {
+  string goal_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message StartAgentGoalResponse {
+  AgentGoal goal = 1;
+}

@@ -708,6 +708,8 @@ fn main() {
             home::agent_home_goal_get,
             home::agent_home_goal_update,
             home::agent_home_goal_review,
+            home::agent_home_goal_admit,
+            home::agent_home_goal_start,
             evaluation::agent_evaluation_benchmark_create,
             evaluation::agent_evaluation_benchmark_update,
             evaluation::agent_evaluation_benchmark_delete,

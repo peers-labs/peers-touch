@@ -8,11 +8,18 @@ import (
 )
 
 type GoalHandlers struct {
-	service *service.GoalService
+	service   *service.GoalService
+	admission *service.GoalAdmissionService
 }
 
-func NewGoalHandlers(goalService *service.GoalService) *GoalHandlers {
-	return &GoalHandlers{service: goalService}
+func NewGoalHandlers(
+	goalService *service.GoalService,
+	admissionService *service.GoalAdmissionService,
+) *GoalHandlers {
+	return &GoalHandlers{
+		service:   goalService,
+		admission: admissionService,
+	}
 }
 
 func (h *GoalHandlers) HandleCreate(
@@ -57,4 +64,26 @@ func (h *GoalHandlers) HandleReview(
 		return nil, toHandlerError(err)
 	}
 	return &model.ReviewAgentGoalResponse{Goal: goal}, nil
+}
+
+func (h *GoalHandlers) HandleAdmit(
+	ctx context.Context,
+	req *model.AdmitAgentGoalRequest,
+) (*model.AdmitAgentGoalResponse, error) {
+	goal, err := h.admission.Admit(ctx, subjectActorPTID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.AdmitAgentGoalResponse{Goal: goal}, nil
+}
+
+func (h *GoalHandlers) HandleStart(
+	ctx context.Context,
+	req *model.StartAgentGoalRequest,
+) (*model.StartAgentGoalResponse, error) {
+	goal, err := h.admission.Start(ctx, subjectActorPTID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.StartAgentGoalResponse{Goal: goal}, nil
 }

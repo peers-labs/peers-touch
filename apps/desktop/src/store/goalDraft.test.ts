@@ -99,6 +99,59 @@ describe('Goal contract draft store', () => {
     });
   });
 
+  it('projects admitted and running Station states', () => {
+    const store = useGoalDraftStore.getState();
+    store.hydrate(create(AgentGoalSchema, {
+      ...goal(3n),
+      status: AgentGoalStatus.REVIEWING,
+    }));
+    store.beginMutation('admit', 'goal-admit-1');
+    store.applyMutation(create(AgentGoalSchema, {
+      ...goal(4n),
+      status: AgentGoalStatus.READY,
+    }));
+
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      baseRevision: 4n,
+      status: AgentGoalStatus.READY,
+      mutationState: 'ready',
+    });
+
+    useGoalDraftStore.getState().beginMutation('start', 'goal-start-1');
+    useGoalDraftStore.getState().applyMutation(create(AgentGoalSchema, {
+      ...goal(5n),
+      status: AgentGoalStatus.RUNNING,
+    }));
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      baseRevision: 5n,
+      status: AgentGoalStatus.RUNNING,
+      mutationState: 'running',
+    });
+  });
+
+  it('preserves the reviewed contract and admission reason after rejection', () => {
+    const reviewed = create(AgentGoalSchema, {
+      ...goal(3n),
+      status: AgentGoalStatus.REVIEWING,
+    });
+    const store = useGoalDraftStore.getState();
+    store.hydrate(reviewed);
+    store.beginMutation('admit', 'goal-admit-retry');
+    store.markAdmissionRejected(
+      'agent.errors.goalAdmissionRejected',
+      'max_tokens_missing',
+    );
+
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      goalId: reviewed.goalId,
+      baseRevision: reviewed.revision,
+      status: AgentGoalStatus.REVIEWING,
+      mutationState: 'admission-rejected',
+      admissionReasonCode: 'max_tokens_missing',
+      admitIdempotencyKey: 'goal-admit-retry',
+    });
+  });
+
   it('keeps unauthorized mutation terminal and preserves edits', () => {
     const store = useGoalDraftStore.getState();
     store.hydrate(goal(1n));

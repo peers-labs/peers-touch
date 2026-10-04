@@ -1,0 +1,48 @@
+{
+  "id": "agent-personal-goal-contract",
+  "status": "active",
+  "initial_proof_status": "UNPROVEN",
+  "product_area": "agent",
+  "owners": [
+    "model/domain/agent/goal.proto",
+    "apps/station/app/subserver/agent/service/goal_service.go",
+    "apps/station/app/subserver/agent/service/goal_admission_service.go",
+    "apps/desktop/src/runtimes/homeRuntime.ts",
+    "apps/desktop/src/components/home/GoalReviewPanel.tsx"
+  ],
+  "truth_sources": [
+    "Station AgentGoal record and revision",
+    "Station Goal command receipts"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-tauri",
+      "surface": "Home Goal contract review and start"
+    },
+    {
+      "type": "station-readback",
+      "surface": "AgentGoal lifecycle and revision"
+    }
+  ],
+  "required_gates": [
+    "agent-personal-goal-contract-source"
+  ],
+  "acceptance": {
+    "service": [
+      "Goal review validates admission completeness before making the contract read-only",
+      "Goal admission commits REVIEWING to READY with expected revision and idempotency",
+      "Goal start commits READY to RUNNING with expected revision and idempotency",
+      "No TaskRun is created by Goal admission or start"
+    ],
+    "visible": [
+      "Home shows material assumptions before Start",
+      "Home shows the Station-authored admission rejection reason",
+      "Home renders the authoritative RUNNING revision"
+    ]
+  },
+  "negative": [
+    "Desktop must not infer READY or RUNNING without Station readback",
+    "stale, unauthorized, incomplete, or non-ready input must not start a Goal",
+    "source proof does not replace the required PAOS-J01 Native functional run"
+  ]
+}
