@@ -289,7 +289,6 @@
       "id": "desktop-agent-host",
       "patterns": [
         "apps/desktop/src-tauri/build.rs",
-        "apps/desktop/src-tauri/src/application/agent_event_stream.rs",
         "apps/desktop/src-tauri/src/application/agent_growth/**",
         "apps/desktop/src-tauri/src/application/agent_orchestration/**",
         "apps/desktop/src-tauri/src/application/agent_scheduler/**",

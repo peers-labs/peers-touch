@@ -49,9 +49,9 @@ type ChatTaskService struct {
 
 // NewChatTaskService builds the service with a fresh per-process executor id so
 // recovery can recognise leases that belong to a previous (dead) process.
-func NewChatTaskService(eventBus domain.EventBus) *ChatTaskService {
+func NewChatTaskService() *ChatTaskService {
 	return &ChatTaskService{
-		eventWriter: NewTaskEventWriter(eventBus),
+		eventWriter: NewTaskEventWriter(),
 		executorID:  generateID("station"),
 	}
 }

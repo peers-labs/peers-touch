@@ -250,18 +250,8 @@ func (s *AgentPackageService) Import(
 		}
 		return nil, err
 	}
-	if !replayed {
-		for _, item := range mutation.knowledge {
-			s.knowledge.publishManifestInvalidationAfterCommit(ctx, *item)
-		}
-		for _, binding := range mutation.bindings {
-			s.authority.publishBindingInvalidation(
-				ctx,
-				domain.AgentAuthorityInvalidationBindingUpsert,
-				binding,
-			)
-		}
-	}
+	_ = mutation
+	_ = replayed
 	return response, nil
 }
 

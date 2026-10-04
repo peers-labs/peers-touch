@@ -107,6 +107,34 @@ describe('Atelier projection reducer', () => {
     expect(first.state.snapshot?.workspace.streams['task-a']).toEqual([{ id: 'block-a', kind: 'text', text: 'A' }]);
   });
 
+  it('deduplicates canonical invalidations and detects sequence gaps before readback', () => {
+    const current = stateFromAtelierSnapshot(snapshot([task('task-a')]));
+    const invalidation = (id: string, seq: number): AtelierProjectionEvent => event({
+      id,
+      seq,
+      taskId: 'task-a',
+      patch: {
+        kind: 'snapshot.invalidate',
+        streamEventId: `stream-${seq}`,
+        eventType: 'agent.task.running',
+        goalId: 'goal-1',
+        taskId: 'task-a',
+        goalRevision: seq,
+        schemaVersion: 1,
+      },
+    });
+
+    const first = applyAtelierProjectionEventWithResult(current, invalidation('domain-1', 1));
+    const duplicate = applyAtelierProjectionEventWithResult(first.state, invalidation('domain-1', 1));
+    const gap = applyAtelierProjectionEventWithResult(first.state, invalidation('domain-3', 3));
+
+    expect(first.outcome).toBe('reconcile');
+    expect(first.state.snapshot).toBe(current.snapshot);
+    expect(duplicate.outcome).toBe('duplicate');
+    expect(gap.outcome).toBe('gap');
+    expect(gap.state.lastSeqByScope['task:task-a']).toBe(3);
+  });
+
   it('rejects non-snapshot patches for unknown tasks while allowing selected task upsert', () => {
     const current = stateFromAtelierSnapshot(snapshot([task('task-a')]));
     const unknown = applyAtelierProjectionEventWithResult(current, event({

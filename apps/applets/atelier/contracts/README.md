@@ -130,10 +130,11 @@ atelier.workspace.open           -> handle_atelier_workspace_open
 atelier.artifact.preview.open    -> handle_atelier_artifact_preview_open
 ```
 
-`atelier.events.subscribe` is a mixed event transport: the applet subscribes to
-the Host event topic and the Host opens the Station event stream. The applet
-still does not own provider execution, artifact production, gate execution, or
-memory writes.
+`events.subscribe('atelier.projection.event')` is a Host-local topic
+subscription. Desktop's canonical realtime supervisor owns the single
+actor-scoped Station `/events/stream` connection, cursor, reconnect, and
+`Resync` behavior. The applet owns neither that connection nor provider
+execution, artifact production, gate execution, or memory writes.
 
 ## HTTP Mapping
 

@@ -454,10 +454,10 @@ async function main() {
           PEERS_APPLET_PRODUCT_WINDOW_E2E_LAUNCH_OPTIONS_JSON: JSON.stringify(launchOptions),
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS:
             resolveBlockingGate
-              ? '/applets/atelier/v1/workspace,/applets/atelier/v1/escalations:resolve,/sub-agent/agent/events/subscribe'
+              ? '/applets/atelier/v1/workspace,/applets/atelier/v1/escalations:resolve,/events/stream'
               : fetchArtifactBody
-                ? '/applets/atelier/v1/workspace,/applets/atelier/v1/artifact/body/fetch,/sub-agent/agent/events/subscribe'
-                : '/applets/atelier/v1/workspace,/sub-agent/agent/events/subscribe',
+                ? '/applets/atelier/v1/workspace,/applets/atelier/v1/artifact/body/fetch,/events/stream'
+                : '/applets/atelier/v1/workspace,/events/stream',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS:
             process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '30000',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS:

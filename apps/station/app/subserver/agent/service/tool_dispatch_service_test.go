@@ -4844,7 +4844,7 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 	if continuation.Status != persistence.ToolContinuationStatusReconciliationRequired {
 		t.Fatalf("continuation status = %q, want reconciliation_required", continuation.Status)
 	}
-	if err := NewChatTaskService(nil).RecoverRunningChatTasks(context.Background()); err != nil {
+	if err := NewChatTaskService().RecoverRunningChatTasks(context.Background()); err != nil {
 		t.Fatalf("recover chat task with reconciliable continuation: %v", err)
 	}
 	var persistedStep persistence.ExecutionStep
@@ -5005,7 +5005,7 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 		t.Fatalf("seed reconciliation-required continuation: %v", err)
 	}
 
-	service := NewChatTaskService(nil)
+	service := NewChatTaskService()
 	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
 		t.Fatalf("recover running chat tasks: %v", err)
 	}
@@ -5048,7 +5048,7 @@ func TestChatTaskServiceBindChatStepToTurn(t *testing.T) {
 		t.Fatalf("seed chat step lease: %v", err)
 	}
 
-	service := NewChatTaskService(nil)
+	service := NewChatTaskService()
 	if err := service.BindChatStepToTurn(context.Background(), step.TaskID, step.StepID, "turn-bind"); err != nil {
 		t.Fatalf("bind chat step to turn: %v", err)
 	}

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentCapabilitySessionList } from '../services/desktop_api';
 import {
-  authorityEventAgentId,
   browserCapabilitySessionNeedsRefresh,
   ensureFreshBrowserCapabilitySession,
   reconcileAgentCapabilityProjection,
@@ -139,23 +138,6 @@ describe('Browser capability session freshness', () => {
     expect(lifecycle.close).not.toHaveBeenCalled();
     expect(lifecycle.open).not.toHaveBeenCalled();
     expect(lifecycle.list).not.toHaveBeenCalled();
-  });
-});
-
-describe('authorityEventAgentId', () => {
-  it('accepts only the canonical authority invalidation envelope', () => {
-    expect(authorityEventAgentId({
-      streamId: 'stream-1',
-      agentId: 'agent-1',
-      event: 'agent.authority.invalidated',
-      data: { payload: { agent_id: 'agent-1' } },
-    })).toBe('agent-1');
-    expect(authorityEventAgentId({
-      streamId: 'stream-1',
-      agentId: 'agent-1',
-      event: 'agent.updated',
-      data: { payload: { agent_id: 'agent-1' } },
-    })).toBe('');
   });
 });
 

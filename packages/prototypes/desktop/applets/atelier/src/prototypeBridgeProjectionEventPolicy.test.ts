@@ -212,17 +212,17 @@ describe('prototype bridge projection event policy', () => {
   it('builds stable subscription rejection errors without exposing execution payloads', () => {
     const codedError = prototypeBridgeProjectionSubscriptionRejectedError({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'CONNECTION_CLOSED',
       reason: 'FORBIDDEN',
       providerInvoke: { provider: 'model' },
       runtimeExecute: { taskId: 'task-1' },
       input_snapshot: { prompt: 'must not leak' },
     });
-    expect(codedError?.message).toBe('Atelier projection stream subscription atelier.events.subscribe rejected: FORBIDDEN');
+    expect(codedError?.message).toBe('Atelier projection stream subscription events.subscribe rejected: FORBIDDEN');
     expect((codedError as Error & { cause?: unknown }).cause).toEqual({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'CONNECTION_CLOSED',
       reason: 'FORBIDDEN',
     });
@@ -250,17 +250,17 @@ describe('prototype bridge projection event policy', () => {
   it('sanitizes typed subscription rejection reason text before message and cause construction', () => {
     const codedError = prototypeBridgeProjectionSubscriptionRejectedError({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'CONNECTION_CLOSED',
       reason: 'providerInvoke runtimeExecute shellExecute input_snapshot should not leak',
     });
 
     expect(codedError?.message).toBe(
-      'Atelier projection stream subscription atelier.events.subscribe rejected: Host projection subscription rejected',
+      'Atelier projection stream subscription events.subscribe rejected: Host projection subscription rejected',
     );
     expect((codedError as Error & { cause?: unknown }).cause).toEqual({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'CONNECTION_CLOSED',
       reason: 'Host projection subscription rejected',
     });
@@ -272,28 +272,28 @@ describe('prototype bridge projection event policy', () => {
   it('keeps only known typed subscription rejection recovery codes in sanitized cause', () => {
     const normalizedError = prototypeBridgeProjectionSubscriptionRejectedError({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'connection_closed',
       reason: 'stream closed',
     });
 
     expect((normalizedError as Error & { cause?: unknown }).cause).toEqual({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'CONNECTION_CLOSED',
       reason: 'stream closed',
     });
 
     const hostileCodeError = prototypeBridgeProjectionSubscriptionRejectedError({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'providerInvoke runtimeExecute shellExecute input_snapshot should not leak',
       reason: 'host sent unknown code',
     });
 
     expect((hostileCodeError as Error & { cause?: unknown }).cause).toEqual({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       reason: 'host sent unknown code',
     });
     expect(JSON.stringify((hostileCodeError as Error & { cause?: unknown }).cause)).not.toMatch(

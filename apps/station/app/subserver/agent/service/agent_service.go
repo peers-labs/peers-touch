@@ -16,16 +16,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type AgentService struct {
-	eventBus domain.EventBus
-}
+type AgentService struct{}
 
 func NewAgentService() *AgentService {
 	return &AgentService{}
-}
-
-func (s *AgentService) SetEventBus(eventBus domain.EventBus) {
-	s.eventBus = eventBus
 }
 
 func (s *AgentService) ListAgents(ctx context.Context, options domain.AgentListOptions) ([]domain.Agent, int64, error) {
@@ -237,11 +231,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 		}
 		return nil, errcode.NewActiveMutationConflict(casLostResourceID, options.Version, actualRevision)
 	}
-	s.publishAuthorityInvalidation(ctx, domain.AgentAuthorityInvalidation{
-		Reason:       domain.AgentAuthorityInvalidationAgentUpdated,
-		AgentID:      updatedAgent.AgentID,
-		AgentVersion: uint64(updatedAgent.Version),
-	}, updatedAgent.OwnerActorPTID)
 	return &updatedAgent, nil
 }
 
@@ -381,29 +370,6 @@ func loadAuthoritativeAgentRevision(
 		return 0, err
 	}
 	return record.Version, nil
-}
-
-func (s *AgentService) publishAuthorityInvalidation(
-	ctx context.Context,
-	payload domain.AgentAuthorityInvalidation,
-	actorPTID string,
-) {
-	if s.eventBus == nil {
-		return
-	}
-	if err := s.eventBus.Publish(ctx, domain.DomainEvent{
-		EventID:    generateID("event"),
-		EventType:  string(domain.EventTypeAgentAuthorityInvalidated),
-		OccurredAt: time.Now().UTC(),
-		ActorPTID:  actorPTID,
-		Payload:    payload,
-		Metadata: map[string]string{
-			"agent_id": payload.AgentID,
-		},
-	}); err != nil {
-		logger.Errorf(ctx, "failed to publish agent authority invalidation: actor_ptid=%s agent_id=%s err=%v",
-			actorPTID, payload.AgentID, err)
-	}
 }
 
 func (s *AgentService) getDB(ctx context.Context) (*gorm.DB, error) {

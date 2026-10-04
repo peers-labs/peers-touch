@@ -106,7 +106,7 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 		}
 	}
 
-	service := NewChatTaskService(nil)
+	service := NewChatTaskService()
 	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
 		t.Fatalf("recover running chat tasks: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestRecoverRunningChatTasksCreatesInterruptedAssistantBeforeFirstText(t *te
 		}
 	}
 
-	service := NewChatTaskService(nil)
+	service := NewChatTaskService()
 	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
 		t.Fatalf("recover running chat tasks: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestRecoverRunningChatTasksDoesNotCreateAssistantBeforeAdmission(t *testing
 		}
 	}
 
-	service := NewChatTaskService(nil)
+	service := NewChatTaskService()
 	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
 		t.Fatalf("recover running chat tasks: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestRecoverRunningChatTasksConvergesAlreadyTerminalTurn(t *testing.T) {
 		}
 	}
 
-	service := NewChatTaskService(nil)
+	service := NewChatTaskService()
 	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
 		t.Fatalf("recover already-terminal turn: %v", err)
 	}

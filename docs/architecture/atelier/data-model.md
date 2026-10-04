@@ -146,7 +146,7 @@ AppletMethodTransport {                  // machine contract: methodTransports
     event_subscription                    // sdk.events topic + Host-opened Station stream
   }
   public_path            : string?         // /v1/... for service_binding
-  station_path           : string?         // /applets/atelier/v1/... or /agent/events/subscribe
+  station_path           : string?         // /applets/atelier/v1/...; realtime uses canonical /events/stream
   desktop_gateway_action : string?         // Host-local/event actions only
   station_handler        : string?         // Station handler/facade anchor
 }

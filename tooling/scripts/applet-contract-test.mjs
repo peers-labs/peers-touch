@@ -61,7 +61,6 @@ assert.ok(schema.definitions.capabilityMethod.enum.includes(CapabilityMethod.Dev
 assert.ok(schema.definitions.capabilityMethod.enum.includes(CapabilityMethod.ClipboardSetText));
 assert.ok(schema.definitions.capabilityMethod.enum.includes(CapabilityMethod.FileGetInfo));
 assert.ok(schema.definitions.capabilityMethod.enum.includes(CapabilityMethod.AtelierWorkspaceLoad));
-assert.ok(schema.definitions.capabilityMethod.enum.includes(CapabilityMethod.AtelierEventsSubscribe));
 assert.ok(schema.definitions.appletErrorCode.enum.includes('INVALID_SESSION'));
 assert.ok(schema.definitions.bridgeInvokeResponse.allOf.length > 0);
 

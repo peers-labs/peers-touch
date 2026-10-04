@@ -12,6 +12,7 @@ import {
   startHomeGoal,
 } from '../../runtimes/homeRuntime';
 import { useGoalDraftStore } from '../../store/goalDraft';
+import { useHomeStore } from '../../store/home';
 import { goalAdmissionReasonKeys } from './goalAdmissionPresentation';
 
 const { useToken } = theme;
@@ -28,6 +29,7 @@ export function GoalReviewPanel({ goal }: { goal: AgentGoal }) {
     (state) => state.conflictRevision,
   );
   const reloadLoading = useGoalDraftStore((state) => state.reloadLoading);
+  const connectionState = useHomeStore((state) => state.connectionState);
   const admitting = mutationState === 'admitting';
   const starting = mutationState === 'starting';
   const cancelling = mutationState === 'cancelling';
@@ -40,6 +42,7 @@ export function GoalReviewPanel({ goal }: { goal: AgentGoal }) {
     admitting
     || starting
     || cancelling
+    || connectionState !== 'fresh'
     || mutationState === 'conflict'
     || mutationState === 'forbidden';
 

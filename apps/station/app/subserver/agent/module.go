@@ -3,13 +3,11 @@ package agent
 import (
 	"context"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 type ModuleDeps struct {
 	DB           interface{}
-	EventBus     domain.EventBus
 	JWTWrapper   server.Wrapper
 	LogIDWrapper server.Wrapper
 	Config       *ModuleConfig

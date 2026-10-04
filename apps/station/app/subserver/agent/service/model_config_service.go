@@ -16,6 +16,7 @@ import (
 )
 
 type ModelConfigService struct{}
+
 func NewModelConfigService() *ModelConfigService {
 	return &ModelConfigService{}
 	return &ModelConfigService{}

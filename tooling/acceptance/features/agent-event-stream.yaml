@@ -3,34 +3,39 @@
   "status": "active",
   "product_area": "agent",
   "owners": [
-    "apps/station/app/subserver/agent/handler/event_stream_handler.go",
-    "apps/station/app/subserver/agent/service/event_stream_service.go",
-    "apps/desktop/src/store/agent.ts",
-    "apps/desktop/src/services/desktop_api.ts"
+    "apps/station/app/subserver/events/",
+    "apps/station/app/subserver/agent/service/agent_realtime_relay.go",
+    "apps/desktop/src-tauri/src/infrastructure/event_stream/",
+    "apps/desktop/src/services/eventStream.ts",
+    "apps/desktop/src/runtimes/homeRuntime.ts",
+    "apps/desktop/src-tauri/src/application/applets/mod.rs"
   ],
   "truth_sources": [
-    "running Station agent API",
-    "SSE connection lifecycle"
+    "Station AgentRealtimeOutbox and relay",
+    "shared Station EventBus and /events/stream",
+    "Desktop canonical realtime supervisor cursor"
   ],
   "visible_surfaces": [
-    {"type": "sse", "route": "/agent/events/subscribe"}
+    {"type": "sse", "route": "/events/stream"}
   ],
-  "required_gates": ["agent-event-stream-e2e"],
+  "required_gates": ["agent-personal-goal-event-fanout-e2e"],
   "acceptance": {
     "service": [
-      "SSE subscribe establishes a persistent server-sent events connection for real-time agent updates",
-      "events include conversation updates, turn progress, task state changes, and growth notifications",
-      "connection supports automatic reconnection with last-event-id for resumption without duplicates",
+      "Desktop establishes one actor-scoped /events/stream connection for real-time updates",
+      "durable Agent outbox events reach the shared EventBus before Desktop fan-out",
+      "connection supports automatic reconnection with last-event-id and Resync recovery",
       "events are scoped to the authenticated user and their agent instances"
     ],
     "visible": [
-      "Desktop receives real-time updates without polling when the event stream is connected",
-      "connection status indicator reflects SSE health in the agent workspace"
+      "Home receives real-time Goal updates without polling as the normal driver",
+      "Atelier receives canonical invalidations and reconciles from Station snapshots",
+      "connection status indicator reflects SSE health in Home"
     ]
   },
   "negative": [
     "the event stream must not deliver events belonging to other users",
     "reconnection must not replay already-acknowledged events",
+    "Agent-private publishers, endpoints, Desktop commands, and applet cursors must not exist",
     "event stream failure must not block or crash the agent chat loop"
   ]
 }

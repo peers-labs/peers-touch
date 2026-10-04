@@ -13,6 +13,7 @@ import {
   reloadHomeGoalContract,
 } from '../../runtimes/homeRuntime';
 import { useGoalDraftStore } from '../../store/goalDraft';
+import { useHomeStore } from '../../store/home';
 
 const { useToken } = theme;
 
@@ -29,7 +30,9 @@ export function GoalCancelControl({ goal }: { goal: AgentGoal }) {
   const cancelFailed = mutationState === 'cancel-failed';
   const conflict = mutationState === 'conflict';
   const forbidden = mutationState === 'forbidden';
-  const mutationBlocked = conflict || forbidden;
+  const connectionState = useHomeStore((state) => state.connectionState);
+  const mutationBlocked =
+    connectionState !== 'fresh' || conflict || forbidden;
   const cancelled = goal.status === AgentGoalStatus.CANCELLED;
   const cancellable =
     goal.status === AgentGoalStatus.DRAFT

@@ -50,8 +50,7 @@
     "atelier.feedback.confirmRerun",
     "atelier.workspace.open",
     "atelier.artifact.body.fetch",
-    "atelier.artifact.preview.open",
-    "atelier.events.subscribe"
+    "atelier.artifact.preview.open"
   ],
   "capabilities": [
     "atelier"

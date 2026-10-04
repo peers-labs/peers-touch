@@ -22,7 +22,7 @@ const crossRestartCoveredPaths = [
   'first packaged peers.atelier product-window launch creates a Station task and renders a projection event',
   'Desktop Gateway persists the Atelier projection cursor to the product-window storage root',
   'second packaged peers.atelier product-window launch reuses the same storage root with a new applet session',
-  'second launch subscribes through /sub-agent/agent/events/subscribe using the persisted cursor instead of afterEventSeq=0',
+  'second launch subscribes through /events/stream using the persisted cursor instead of afterEventSeq=0',
   'Station replay after cross-restart returns no already-applied projection events',
 ];
 const crossRestartDoesNotProve = [
@@ -268,7 +268,7 @@ async function main() {
       requiredUrls: [
         '/applets/atelier/v1/workspace',
         '/applets/atelier/v1/projects',
-        '/sub-agent/agent/events/subscribe',
+        '/events/stream',
       ],
       skipBuild: false,
       preserveStorageRoot: false,
@@ -300,7 +300,7 @@ async function main() {
       },
       requiredUrls: [
         '/applets/atelier/v1/workspace',
-        '/sub-agent/agent/events/subscribe',
+        '/events/stream',
       ],
       skipBuild: true,
       preserveStorageRoot: true,

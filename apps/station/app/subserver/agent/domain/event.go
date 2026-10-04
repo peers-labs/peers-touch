@@ -1,29 +1,5 @@
 package domain
 
-import (
-	"context"
-	"time"
-)
-
-type EventHandler func(ctx context.Context, event DomainEvent) error
-
-type EventBus interface {
-	Publish(ctx context.Context, event DomainEvent) error
-	Subscribe(eventType string, handler EventHandler)
-	SubscribeAll(handler EventHandler)
-	Unsubscribe(eventType string, handler EventHandler)
-}
-
-type DomainEvent struct {
-	EventID    string
-	EventType  string
-	OccurredAt time.Time
-	ActorPTID  string
-	AgentID    string
-	Payload    interface{}
-	Metadata   map[string]string
-}
-
 type EventType string
 
 const (
@@ -58,25 +34,3 @@ const (
 	EventTypeWorkspaceCreated                EventType = "agent.workspace.created"
 	EventTypeWorkspaceChanged                EventType = "agent.workspace.changed"
 )
-
-type AgentAuthorityInvalidationReason string
-
-const (
-	AgentAuthorityInvalidationAgentUpdated       AgentAuthorityInvalidationReason = "agent_updated"
-	AgentAuthorityInvalidationBindingUpsert      AgentAuthorityInvalidationReason = "capability_binding_upserted"
-	AgentAuthorityInvalidationBindingDelete      AgentAuthorityInvalidationReason = "capability_binding_deleted"
-	AgentAuthorityInvalidationManifestRegistered AgentAuthorityInvalidationReason = "capability_manifest_registered"
-	AgentAuthorityInvalidationManifestRetired    AgentAuthorityInvalidationReason = "capability_manifest_retired"
-)
-
-// AgentAuthorityInvalidation tells long-lived projections which authoritative
-// Agent capability state must be reloaded after a committed mutation.
-type AgentAuthorityInvalidation struct {
-	Reason            AgentAuthorityInvalidationReason `json:"reason"`
-	AgentID           string                           `json:"agent_id"`
-	AgentVersion      uint64                           `json:"agent_version"`
-	BindingID         string                           `json:"binding_id,omitempty"`
-	BindingRevision   uint64                           `json:"binding_revision,omitempty"`
-	CapabilityID      string                           `json:"capability_id,omitempty"`
-	CapabilityVersion string                           `json:"capability_version,omitempty"`
-}

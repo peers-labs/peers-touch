@@ -38,6 +38,9 @@
           "$ref": "#/$defs/snapshotPatch"
         },
         {
+          "$ref": "#/$defs/snapshotInvalidatePatch"
+        },
+        {
           "$ref": "#/$defs/taskUpsertPatch"
         },
         {
@@ -76,6 +79,45 @@
         },
         "snapshot": {
           "$ref": "#/$defs/snapshot"
+        }
+      }
+    },
+    "snapshotInvalidatePatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "streamEventId",
+        "eventType",
+        "goalId",
+        "taskId",
+        "goalRevision",
+        "schemaVersion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "snapshot.invalidate"
+        },
+        "streamEventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "eventType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "goalId": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "goalRevision": {
+          "type": "number",
+          "minimum": 0
+        },
+        "schemaVersion": {
+          "const": 1
         }
       }
     },

@@ -105,7 +105,7 @@ interface TransportSubscription {
 
 ### Phase 3: BackgroundTransport
 - New transport that calls `/agent/turn/execute` (non-streaming) + subscribes to event bus
-- Uses existing `/agent/events/subscribe` SSE endpoint for progress
+- Uses the shared `/events/stream` SSE endpoint for progress
 - Handles reconnection: on connect, fetches missed events
 - Suitable for orchestration tasks
 
@@ -120,7 +120,7 @@ interface TransportSubscription {
 
 Already available:
 - `/agent/turn/execute` — synchronous turn execution
-- `/agent/events/subscribe` — SSE event stream
+- `/events/stream` — shared SSE event stream
 - `/agent/collaboration/*` — task-based execution
 
 No new Station work needed for Phase 1-2. Phase 3 may need a `/agent/turn/execute-async` endpoint.

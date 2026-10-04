@@ -203,8 +203,7 @@ Canvas 创建 Goal graph 后，ready node 才产生 TaskRun。Atelier 只读取�
   发布后序 row。目标 actor/device 来自已持久化 owner 和认证 context，不接受
   client metadata 覆盖。
 - `EventBus.Publish` 与 canonical `/events/stream` 是唯一 live fan-out path。
-  Agent 私有 `MemoryEventBus`、subscriber map、直接 dispatch 和专属 SSE
-  不属于目标态。
+  Agent 私有 bus、subscriber map、直接 dispatch 和专属 SSE 已删除。
 - domain/outbox transaction 失败不发布；EventBus 发布失败保持 outbox
   pending/retryable，不能把未投影等同于业务提交失败，也不能丢失已提交事实。
 - subscriber queue、replay ring、ready frontier 和单次 replay 都有明确上限。

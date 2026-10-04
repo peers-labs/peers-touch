@@ -329,6 +329,15 @@ export interface AtelierProjectionSnapshot {
 
 export type AtelierProjectionPatch =
   | { kind: 'snapshot'; snapshot: AtelierProjectionSnapshot }
+  | {
+      kind: 'snapshot.invalidate';
+      streamEventId: string;
+      eventType: string;
+      goalId: string;
+      taskId: string;
+      goalRevision: number;
+      schemaVersion: number;
+    }
   | { kind: 'task.upsert'; task: AtelierTask; select?: boolean }
   | { kind: 'task.status'; taskId: string; status: string }
   | { kind: 'stream.append'; taskId: string; blocks: AtelierStreamBlock[] }
@@ -431,6 +440,16 @@ export function isAtelierProjectionPatch(value: unknown): value is AtelierProjec
   switch (value.kind) {
     case 'snapshot':
       return isAtelierProjectionSnapshot(value.snapshot);
+    case 'snapshot.invalidate':
+      return (
+        isNonEmptyString(value.streamEventId)
+        && isNonEmptyString(value.eventType)
+        && typeof value.goalId === 'string'
+        && typeof value.taskId === 'string'
+        && (value.goalId.length > 0 || value.taskId.length > 0)
+        && isNonNegativeSafeInteger(value.goalRevision)
+        && value.schemaVersion === 1
+      );
     case 'task.upsert':
       return isAtelierTask(value.task) && (value.select === undefined || typeof value.select === 'boolean');
     case 'task.status':
@@ -457,6 +476,11 @@ function isAtelierProjectionEventTaskScopeConsistent(
   patch: AtelierProjectionPatch,
 ): boolean {
   if (patch.kind === 'snapshot') return eventTaskId === undefined;
+  if (patch.kind === 'snapshot.invalidate') {
+    return patch.taskId
+      ? eventTaskId === patch.taskId
+      : eventTaskId === undefined;
+  }
   if (patch.kind === 'task.upsert') return eventTaskId === undefined || eventTaskId === patch.task.id;
   return eventTaskId === patch.taskId;
 }

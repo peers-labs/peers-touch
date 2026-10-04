@@ -36,6 +36,7 @@ import { EngineTrace } from './engineTrace';
 import { ArtifactsTray, PreviewPanel } from './preview';
 import { PLUGINS, DEFAULT_PLUGIN_ID, resolveTaskPlugin } from './plugins';
 import { derivePrototypePageSurface, derivePrototypeRecoveryView, prototypeStatusForScenario, resolvePrototypeStatusScenario } from './prototypeRecoveryView';
+import { buildPrototypeRunTarget } from './prototypeComposerSubmit';
 import {
   ATELIER_AGENT_FLOW_DESCRIPTORS,
   ATELIER_CONTEXT_FILE_GROUPS,
@@ -860,14 +861,11 @@ export function AtelierPage({ runtime = DEFAULT_RUNTIME }: { runtime?: AtelierRu
       newTask: () => {
         setPreview(null);
         setPurgeConfirmId('');
-        const run = runKind === 'model'
-          ? { kind: 'model' as const, model: state.model }
-          : { kind: 'agents' as const, model: state.model, flowId };
         void runtime.createProjectFromGoal({
           goal: '新任务',
           intentPreset: mode,
           project: selectedTask?.project ?? 'peers-touch',
-          run,
+          run: buildPrototypeRunTarget({ runKind, model: state.model, flowId }),
         }).then(applySnapshot);
       },
     }),

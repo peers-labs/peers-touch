@@ -54,7 +54,6 @@ type GoalDirectModelExecutor struct {
 func NewGoalDirectModelExecutor(
 	db *gorm.DB,
 	provider *ProviderService,
-	eventBus domain.EventBus,
 ) *GoalDirectModelExecutor {
 	var executor directRunProviderExecutor
 	if provider != nil {
@@ -63,7 +62,7 @@ func NewGoalDirectModelExecutor(
 	return &GoalDirectModelExecutor{
 		db:       db,
 		provider: executor,
-		writer:   NewTaskEventWriter(eventBus),
+		writer:   NewTaskEventWriter(),
 		now:      time.Now,
 	}
 }
@@ -180,7 +179,7 @@ func (e *GoalDirectModelExecutor) PrepareTx(
 
 	writer := e.writer
 	if writer == nil {
-		writer = NewTaskEventWriter(nil)
+		writer = NewTaskEventWriter()
 	}
 	_, err = writer.appendTx(
 		ctx,
@@ -232,15 +231,14 @@ func (e *GoalDirectModelExecutor) Execute(
 		return goalInternal("Goal Direct Model provider runtime is unavailable", nil)
 	}
 
-	runtime, claimed, events, err := e.claim(ctx, ownerPTID, taskID)
+	runtime, claimed, _, err := e.claim(ctx, ownerPTID, taskID)
 	if err != nil || !claimed {
 		return err
 	}
-	e.publish(ctx, events)
 
 	if runtime.Run.ProviderID == "" || runtime.Run.ModelIntent == "" ||
 		runtime.Step.AgentID == "" {
-		events, finishErr := e.finish(
+		_, finishErr := e.finish(
 			ctx,
 			runtime,
 			nil,
@@ -248,7 +246,6 @@ func (e *GoalDirectModelExecutor) Execute(
 			false,
 			"No configured Agent is available for this Goal.",
 		)
-		e.publish(ctx, events)
 		return finishErr
 	}
 
@@ -259,7 +256,7 @@ func (e *GoalDirectModelExecutor) Execute(
 		runtime.Run.ProviderID,
 	)
 	if err != nil {
-		events, finishErr := e.finish(
+		_, finishErr := e.finish(
 			ctx,
 			runtime,
 			nil,
@@ -267,14 +264,13 @@ func (e *GoalDirectModelExecutor) Execute(
 			false,
 			"Direct Model provider is unavailable.",
 		)
-		e.publish(ctx, events)
 		if finishErr != nil {
 			return finishErr
 		}
 		return err
 	}
 	if isCLIProviderRecord(provider) {
-		events, finishErr := e.finish(
+		_, finishErr := e.finish(
 			ctx,
 			runtime,
 			provider,
@@ -282,7 +278,6 @@ func (e *GoalDirectModelExecutor) Execute(
 			false,
 			"Direct Model requires a Station-hosted provider.",
 		)
-		e.publish(ctx, events)
 		return finishErr
 	}
 
@@ -314,7 +309,7 @@ func (e *GoalDirectModelExecutor) Execute(
 		},
 	)
 	if callErr != nil {
-		events, finishErr := e.finish(
+		_, finishErr := e.finish(
 			ctx,
 			runtime,
 			provider,
@@ -322,7 +317,6 @@ func (e *GoalDirectModelExecutor) Execute(
 			false,
 			"Direct Model provider execution failed.",
 		)
-		e.publish(ctx, events)
 		if finishErr != nil {
 			return finishErr
 		}
@@ -333,7 +327,7 @@ func (e *GoalDirectModelExecutor) Execute(
 		provider,
 		resp,
 	); budgetFailure != "" {
-		events, finishErr := e.finish(
+		_, finishErr := e.finish(
 			ctx,
 			runtime,
 			provider,
@@ -341,7 +335,6 @@ func (e *GoalDirectModelExecutor) Execute(
 			false,
 			budgetFailure,
 		)
-		e.publish(ctx, events)
 		return finishErr
 	}
 
@@ -349,8 +342,7 @@ func (e *GoalDirectModelExecutor) Execute(
 	if content == "" {
 		content = "Direct Model completed without a final response."
 	}
-	events, err = e.finish(ctx, runtime, provider, resp, true, content)
-	e.publish(ctx, events)
+	_, err = e.finish(ctx, runtime, provider, resp, true, content)
 	return err
 }
 
@@ -640,7 +632,7 @@ func (e *GoalDirectModelExecutor) appendEventTx(
 ) (*persistence.TaskEvent, error) {
 	writer := e.writer
 	if writer == nil {
-		writer = NewTaskEventWriter(nil)
+		writer = NewTaskEventWriter()
 	}
 	taskID := ""
 	stepID := ""
@@ -658,38 +650,6 @@ func (e *GoalDirectModelExecutor) appendEventTx(
 		string(eventType),
 		payload,
 	)
-}
-
-func (e *GoalDirectModelExecutor) publish(
-	ctx context.Context,
-	events []committedTaskEvent,
-) {
-	writer := e.writer
-	if writer == nil || writer.eventBus == nil {
-		return
-	}
-	for _, event := range events {
-		if event.Record == nil {
-			continue
-		}
-		metadata := map[string]string{
-			"agent_id":  strings.TrimSpace(event.AgentID),
-			"task_id":   event.Record.TaskID,
-			"event_id":  event.Record.ID,
-			"event_seq": fmt.Sprintf("%d", event.Record.EventSeq),
-		}
-		if event.Record.StepID != "" {
-			metadata["node_id"] = event.Record.StepID
-		}
-		_ = writer.eventBus.Publish(ctx, domain.DomainEvent{
-			EventID:   event.Record.ID,
-			EventType: event.EventType,
-			ActorPTID: runtimeActorPTID(event.Payload),
-			AgentID:   strings.TrimSpace(event.AgentID),
-			Payload:   event.Payload,
-			Metadata:  metadata,
-		})
-	}
 }
 
 func loadGoalDirectModelRuntimeTx(

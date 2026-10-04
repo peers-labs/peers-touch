@@ -11,7 +11,7 @@ import { TaskSurface } from '../../gen/proto/domain/agent/orchestration_pb';
 import { useGoalExecutionStore } from '../../store/goalExecution';
 
 const source = readFileSync(
-  fileURLToPath(new URL('./GoalRunSummary.tsx', import.meta.url)),
+  fileURLToPath(new URL('./GoalProgressPanel.tsx', import.meta.url)),
   'utf8',
 );
 const homeSource = readFileSync(
@@ -76,6 +76,6 @@ describe('GoalRunSummary', () => {
   it('remains visible when the actor has no pinned Agent', () => {
     expect(homeSource).toContain('data-pt-home-empty-goal-runs');
     expect(homeSource).toContain('goalExecutions.length ?');
-    expect(homeSource).toContain('<GoalRunSummary />');
+    expect(homeSource).toContain('<GoalProgressPanel />');
   });
 });

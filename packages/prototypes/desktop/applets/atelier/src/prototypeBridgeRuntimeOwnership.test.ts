@@ -4,10 +4,7 @@ import { createBridgeAtelierRuntime, type AtelierRuntimeBridge } from './bridgeR
 import { createAppletSdkAtelierBridge } from './appletBridge';
 import type { AtelierProjectionEvent, AtelierProjectionSnapshot, AtelierRuntimeCall } from './projection';
 import { ATELIER_PROJECTION_VERSION } from './projection';
-import {
-  ATELIER_PROJECTION_EVENT_TOPIC,
-  ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-} from './projection.contract.generated';
+import { ATELIER_PROJECTION_EVENT_TOPIC } from './projection.contract.generated';
 import type { AtelierProviderCapabilitiesResponse } from './runtime';
 import type { Task } from './types';
 
@@ -273,146 +270,66 @@ describe('prototype bridge runtime ownership isolation', () => {
     releaseSecond();
   });
 
-  it('ignores stale projection refresh failures after a newer subscription event', async () => {
+  it('reconciles canonical invalidation through authoritative workspace readback', async () => {
     const listeners: Array<(event: unknown) => void> = [];
-    const refresh = deferred<void>();
-    const loadedProjection = projection({
-      tasks: [task('task-1', 'Loaded Host projection')],
+    const authoritative = projection({
+      tasks: [task('task-1', 'Authoritative invalidation readback')],
     });
     const runtime = createBridgeAtelierRuntime({
       bridge: {
-        call(_request: AtelierRuntimeCall) {
-          return Promise.resolve(loadedProjection);
+        call(request: AtelierRuntimeCall) {
+          expect(request).toEqual({ method: 'atelier.workspace.load', payload: {} });
+          return Promise.resolve(authoritative);
         },
         subscribeProjection(listener) {
           listeners.push(listener);
           return () => undefined;
         },
-        refreshProjectionSubscription() {
-          return refresh.promise;
-        },
       },
       initialSnapshot: projection(),
     });
 
     const release = runtime.subscribe(() => undefined);
-    await runtime.loadWorkspace();
-    listeners[0](taskUpsertEvent('evt-newer-projection', 1, task('task-1', 'Newer subscription event')));
-    refresh.reject(new Error('stale refresh failure'));
+    listeners[0](invalidationEvent('evt-invalidate', 1));
+    await Promise.resolve();
     await Promise.resolve();
 
-    const next = runtime.getSnapshot();
-    expect(next.state.tasks[0].title).toBe('Newer subscription event');
-    expect(next.status?.kind).toBe('ready');
-    expect(next.status?.lastEventSeq).toBe(1);
-    expect(JSON.stringify(next)).not.toMatch(/stale refresh failure|provider\.invoke|runtime\.execute|shell|memory\.write|input_snapshot|run\.execute/);
+    expect(runtime.getSnapshot().state.tasks[0].title).toBe('Authoritative invalidation readback');
+    expect(runtime.getSnapshot().status?.kind).toBe('ready');
     release();
   });
 
-  it('keeps synchronous refresh projection events from being overwritten by non-promise settlement', async () => {
+  it('does not apply a gap event before authoritative workspace readback', async () => {
     const listeners: Array<(event: unknown) => void> = [];
-    const loadedProjection = projection({
-      tasks: [task('task-1', 'Loaded Host projection')],
-    });
+    const readback = deferred<AtelierProjectionSnapshot>();
     const runtime = createBridgeAtelierRuntime({
       bridge: {
-        call(_request: AtelierRuntimeCall) {
-          return Promise.resolve(loadedProjection);
+        call(request: AtelierRuntimeCall) {
+          expect(request).toEqual({ method: 'atelier.workspace.load', payload: {} });
+          return readback.promise;
         },
         subscribeProjection(listener) {
           listeners.push(listener);
           return () => undefined;
         },
-        refreshProjectionSubscription() {
-          listeners[0](taskUpsertEvent('evt-sync-refresh', 1, task('task-1', 'Synchronous refresh event')));
-        },
       },
       initialSnapshot: projection(),
     });
 
     const release = runtime.subscribe(() => undefined);
-    await runtime.loadWorkspace();
+    listeners[0](taskUpsertEvent('evt-seq-1', 1, task('task-1', 'Applied contiguous event')));
+    listeners[0](taskUpsertEvent('evt-seq-3', 3, task('task-1', 'Must wait for readback')));
 
-    const next = runtime.getSnapshot();
-    expect(next.state.tasks[0].title).toBe('Synchronous refresh event');
-    expect(next.status?.kind).toBe('ready');
-    expect(next.status?.lastEventSeq).toBe(1);
-    expect(JSON.stringify(next)).not.toMatch(/provider\.invoke|runtime\.execute|shell|memory\.write|input_snapshot|run\.execute/);
-    release();
-  });
-
-  it('keeps subscription rejection recovery from being overwritten by stale refresh success', async () => {
-    const listeners: Array<(event: unknown) => void> = [];
-    const refresh = deferred<void>();
-    const loadedProjection = projection({
-      tasks: [task('task-1', 'Loaded Host projection')],
-    });
-    const runtime = createBridgeAtelierRuntime({
-      bridge: {
-        call(_request: AtelierRuntimeCall) {
-          return Promise.resolve(loadedProjection);
-        },
-        subscribeProjection(listener) {
-          listeners.push(listener);
-          return () => undefined;
-        },
-        refreshProjectionSubscription() {
-          return refresh.promise;
-        },
-      },
-      initialSnapshot: projection(),
-    });
-
-    const release = runtime.subscribe(() => undefined);
-    await runtime.loadWorkspace();
-    listeners[0]({
-      kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
-      code: 'FORBIDDEN',
-      reason: 'opaque subscription denial',
-    });
-    refresh.resolve();
+    expect(runtime.getSnapshot().state.tasks[0].title).toBe('Applied contiguous event');
+    readback.resolve(projection({
+      tasks: [task('task-1', 'Authoritative gap readback')],
+    }));
+    await readback.promise;
     await Promise.resolve();
 
-    const next = runtime.getSnapshot();
-    expect(next.state.tasks[0].title).toBe('Loaded Host projection');
-    expect(next.status?.kind).toBe('auth-denied');
-    expect(JSON.stringify(next)).not.toMatch(/provider\.invoke|runtime\.execute|shell|memory\.write|input_snapshot|run\.execute/);
+    expect(runtime.getSnapshot().state.tasks[0].title).toBe('Authoritative gap readback');
+    expect(runtime.getSnapshot().status?.kind).toBe('ready');
     release();
-  });
-
-  it('keeps subscription cleanup recovery from being overwritten by stale refresh success', async () => {
-    const refresh = deferred<void>();
-    const loadedProjection = projection({
-      tasks: [task('task-1', 'Loaded Host projection')],
-    });
-    const runtime = createBridgeAtelierRuntime({
-      bridge: {
-        call(_request: AtelierRuntimeCall) {
-          return Promise.resolve(loadedProjection);
-        },
-        subscribeProjection() {
-          return () => {
-            throw new Error('projection cleanup disconnected');
-          };
-        },
-        refreshProjectionSubscription() {
-          return refresh.promise;
-        },
-      },
-      initialSnapshot: projection(),
-    });
-
-    const release = runtime.subscribe(() => undefined);
-    await runtime.loadWorkspace();
-    release();
-    refresh.resolve();
-    await Promise.resolve();
-
-    const next = runtime.getSnapshot();
-    expect(next.state.tasks[0].title).toBe('Loaded Host projection');
-    expect(next.status?.kind).toBe('disconnected');
-    expect(JSON.stringify(next)).not.toMatch(/provider\.invoke|runtime\.execute|shell|memory\.write|input_snapshot|run\.execute/);
   });
 
   it('keeps subscription rejection recovery from being overwritten by non-snapshot call success', async () => {
@@ -436,7 +353,7 @@ describe('prototype bridge runtime ownership isolation', () => {
     const capabilities = runtime.listProviderCapabilities({ taskId: 'task-1' });
     listeners[0]({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'FORBIDDEN',
       reason: 'opaque subscription denial',
     });
@@ -473,7 +390,7 @@ describe('prototype bridge runtime ownership isolation', () => {
     const capabilities = runtime.listProviderCapabilities({ taskId: 'task-1' });
     listeners[0]({
       kind: 'atelier.projection.subscription-rejected',
-      method: 'atelier.events.subscribe',
+      method: 'events.subscribe',
       code: 'FORBIDDEN',
       reason: 'opaque subscription denial',
     });
@@ -653,9 +570,6 @@ describe('prototype bridge runtime ownership isolation', () => {
       onEvent(_topic, _handler) {
         return () => undefined;
       },
-    }, {
-      projectionStream: { agentId: 'agent-reason-sanitize', taskId: 'task-reason-sanitize', afterEventSeq: 1 },
-      initialSnapshot: projection({ tasks: [task('task-reason-sanitize')] }),
     });
 
     const seen: unknown[] = [];
@@ -688,7 +602,6 @@ describe('prototype bridge runtime ownership isolation', () => {
     const unhandledRejections: unknown[] = [];
     const handlers = new Map<string, (payload: unknown) => void>();
     let rejectEventSubscribe!: (reason?: unknown) => void;
-    let rejectProjectionSubscribe!: (reason?: unknown) => void;
     const originalWarn = console.warn;
     const onUnhandledRejection = (reason: unknown) => {
       unhandledRejections.push(reason);
@@ -706,11 +619,6 @@ describe('prototype bridge runtime ownership isolation', () => {
               rejectEventSubscribe = reject;
             });
           }
-          if (method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD) {
-            return new Promise((_, reject) => {
-              rejectProjectionSubscribe = reject;
-            });
-          }
           return Promise.resolve(undefined);
         },
         onEvent(topic, handler) {
@@ -719,9 +627,6 @@ describe('prototype bridge runtime ownership isolation', () => {
             handlers.delete(topic);
           };
         },
-      }, {
-        projectionStream: { agentId: 'agent-release-before-reject', taskId: 'task-release-before-reject', afterEventSeq: 3 },
-        initialSnapshot: projection({ tasks: [task('task-release-before-reject')] }),
       });
 
       const seen: unknown[] = [];
@@ -733,18 +638,16 @@ describe('prototype bridge runtime ownership isolation', () => {
       unsubscribe();
       expect(handlers.has(ATELIER_PROJECTION_EVENT_TOPIC)).toBe(false);
       rejectEventSubscribe(new Error('late rejected events.subscribe'));
-      rejectProjectionSubscribe(new Error('late rejected atelier.events.subscribe'));
       await new Promise((resolve) => setTimeout(resolve, 0));
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(calls.map((call) => call.method)).toEqual([
         'events.subscribe',
-        ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
         'events.unsubscribe',
       ]);
       expect(seen).toEqual([]);
       expect(unhandledRejections).toHaveLength(0);
-      expect(warnings.filter((warning) => warning.includes('Atelier applet bridge'))).toHaveLength(2);
+      expect(warnings.filter((warning) => warning.includes('Atelier applet bridge'))).toHaveLength(1);
       expect(JSON.stringify({ calls, seen })).not.toMatch(/provider\.invoke|runtime\.execute|shell|memory\.write|input_snapshot|run\.execute/);
     } finally {
       console.warn = originalWarn;
@@ -769,6 +672,24 @@ function taskUpsertEvent(id: string, seq: number, nextTask: Task): AtelierProjec
     patch: {
       kind: 'task.upsert',
       task: nextTask,
+    },
+  };
+}
+
+function invalidationEvent(id: string, seq: number): AtelierProjectionEvent {
+  return {
+    id,
+    seq,
+    taskId: 'task-1',
+    receivedAt: '2026-10-04T00:00:00.000Z',
+    patch: {
+      kind: 'snapshot.invalidate',
+      streamEventId: `stream-${seq}`,
+      eventType: 'agent.task.running',
+      goalId: 'goal-1',
+      taskId: 'task-1',
+      goalRevision: seq,
+      schemaVersion: 1,
     },
   };
 }

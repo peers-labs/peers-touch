@@ -24,14 +24,12 @@ Current state:
   product flow remains `Project{state:draft}` first, with the first user
   message performing contract formation. Atelier does not infer Agents from
   model or flow state.
-  Projection stream subscription uses explicit `agentId` when provided and
-  otherwise uses the first explicit `agentIds[]` entry as the stream `agentId`;
-  it still never infers an Agent from flow or model state.
-    After `/v1/workspace` service load, the frontend uses the selected task replay
-  cursor (`workspace.replay[taskId].nextEventSeq`) as the default
-  `atelier.events.subscribe.afterEventSeq` when Host did not provide an
-  explicit cursor. The subscription is keyed by selected task and replay cursor
-  so normal projection patches do not cause a stream resubscribe loop.
+  Projection updates arrive through the generic
+  `events.subscribe('atelier.projection.event')` Host topic. Desktop owns the
+  single actor-scoped `/events/stream` connection, cursor, reconnect, and
+  `Resync` handling. Atelier receives canonical invalidations and reloads the
+  authoritative `/v1/workspace` snapshot; it never opens or configures a
+  feature-owned Station stream.
   The new-task form includes a run target selector. The direct model path writes
   only `run.kind=model` / `run.model`; the agents path writes only
   `run.kind=agents` / `run.agentIds` and optional `run.flowId`. Both branches are

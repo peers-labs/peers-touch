@@ -219,6 +219,15 @@ export interface AtelierReplayState {
 
 export type AtelierProjectionPatch =
   | { kind: 'snapshot'; snapshot: AtelierProjectionSnapshot }
+  | {
+      kind: 'snapshot.invalidate';
+      streamEventId: string;
+      eventType: string;
+      goalId: string;
+      taskId: string;
+      goalRevision: number;
+      schemaVersion: number;
+    }
   | { kind: 'task.upsert'; task: Task; select?: boolean }
   | { kind: 'task.status'; taskId: string; status: TaskStatus }
   | { kind: 'stream.append'; taskId: string; blocks: Block[] }
@@ -340,7 +349,7 @@ export function parseAtelierProjectionEvent(value: unknown): AtelierProjectionEv
 
   if (!isObject(value)) return null;
   if (typeof value.id !== 'string' || value.id.trim() === '') return null;
-  if (!isFiniteNumber(value.seq) || value.seq < 0) return null;
+  if (!isNonNegativeSafeInteger(value.seq)) return null;
   if (typeof value.receivedAt !== 'string' || value.receivedAt.trim() === '') return null;
   if (value.taskId !== undefined && !isNonEmptyString(value.taskId)) return null;
   if (!isProjectionPatch(value.patch)) return null;
@@ -595,12 +604,12 @@ function isReplayRecord(value: unknown, taskIds?: ReadonlySet<string>): value is
     if (!isObject(item)) return false;
     return (
       isNonEmptyString(item.source) &&
-      isNonNegativeFiniteNumber(item.eventCount) &&
-      isNonNegativeFiniteNumber(item.replayedEventCount) &&
-      isNonNegativeFiniteNumber(item.nextEventSeq) &&
+      isNonNegativeSafeInteger(item.eventCount) &&
+      isNonNegativeSafeInteger(item.replayedEventCount) &&
+      isNonNegativeSafeInteger(item.nextEventSeq) &&
       typeof item.hasMore === 'boolean' &&
       (item.checkpointId === undefined || isNonEmptyString(item.checkpointId)) &&
-      (item.checkpointEventSeq === undefined || isNonNegativeFiniteNumber(item.checkpointEventSeq))
+      (item.checkpointEventSeq === undefined || isNonNegativeSafeInteger(item.checkpointEventSeq))
     );
   });
 }
@@ -612,6 +621,16 @@ function isProjectionPatch(value: unknown): value is AtelierProjectionPatch {
   switch (value.kind) {
     case 'snapshot':
       return isProjectionSnapshot(value.snapshot);
+    case 'snapshot.invalidate':
+      return (
+        isNonEmptyString(value.streamEventId)
+        && isNonEmptyString(value.eventType)
+        && typeof value.goalId === 'string'
+        && typeof value.taskId === 'string'
+        && (value.goalId.length > 0 || value.taskId.length > 0)
+        && isNonNegativeSafeInteger(value.goalRevision)
+        && value.schemaVersion === 1
+      );
     case 'task.upsert':
       return isTaskProjection(value.task);
     case 'task.status':
@@ -633,6 +652,11 @@ function isProjectionPatch(value: unknown): value is AtelierProjectionPatch {
 
 function isProjectionEventTaskScopeConsistent(eventTaskId: unknown, patch: AtelierProjectionPatch): boolean {
   if (patch.kind === 'snapshot') return eventTaskId === undefined;
+  if (patch.kind === 'snapshot.invalidate') {
+    return patch.taskId
+      ? eventTaskId === patch.taskId
+      : eventTaskId === undefined;
+  }
   if (patch.kind === 'task.upsert') return eventTaskId === undefined || eventTaskId === patch.task.id;
   return eventTaskId === patch.taskId;
 }
@@ -960,4 +984,8 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isNonNegativeFiniteNumber(value: unknown): value is number {
   return isFiniteNumber(value) && value >= 0;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }

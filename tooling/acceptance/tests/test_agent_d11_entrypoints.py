@@ -35,7 +35,7 @@ class AgentD11EntrypointsTest(unittest.TestCase):
 
         self.assertEqual(report["status"], "pass")
         self.assertEqual(report["mode"], "inventory-only")
-        self.assertEqual(report["atelierAliasCount"], 31)
+        self.assertEqual(report["atelierAliasCount"], 29)
         self.assertEqual(report["knownDefectCount"], 0)
         self.assertEqual(report["knownDefects"], [])
 
@@ -53,7 +53,7 @@ class AgentD11EntrypointsTest(unittest.TestCase):
             item["alias"]: item for item in data["atelier_aliases"]["entries"]
         }
 
-        self.assertEqual(len(aliases), 31)
+        self.assertEqual(len(aliases), 29)
         self.assertEqual(
             aliases["provider.capabilities"]["disposition"],
             "allowed-nonexecution-mutation",

@@ -14,13 +14,12 @@ import type {
   AtelierViewStatus,
 } from './projection.contract.generated';
 import {
-    ATELIER_CREATE_FROM_GOAL_INTENT_PRESET_MAPPING,
-  ATELIER_DEFAULT_TASK_INTENT_PRESET,
   ATELIER_MEMORY_CONFIRMATION_MODE,
-    ATELIER_PROVIDER_CAPABILITY_READ_ONLY,
-    ATELIER_PROVIDER_CAPABILITY_SCOPE,
+  ATELIER_PROVIDER_CAPABILITY_READ_ONLY,
+  ATELIER_PROVIDER_CAPABILITY_SCOPE,
   ATELIER_RERUN_CONFIRMATION_MODE,
 } from './projection.contract.generated';
+import { buildPrototypeCreateProjectProjection } from './prototypeCreateProjectProjection';
 import type { AtelierState, Block, TaskStatus } from './types';
 export type { AtelierFeedbackSignal } from './projection.contract.generated';
 
@@ -252,11 +251,11 @@ export function createMockAtelierRuntime(seed: AtelierState = MOCK): AtelierRunt
   const snapshot = (): AtelierRuntimeSnapshot => ({
     state: cloneState(state),
     selectedTaskId,
-    status,
+    status: cloneStatus(status),
   });
 
   const replaceState = (next: AtelierState, nextSelectedTaskId = selectedTaskId) => {
-    state = next;
+    state = cloneState(next);
     selectedTaskId = nextSelectedTaskId;
     status = readyStatus(state);
     return snapshot();
@@ -269,57 +268,16 @@ export function createMockAtelierRuntime(seed: AtelierState = MOCK): AtelierRunt
     },
     async createProjectFromGoal(input) {
       const id = `t-${Date.now()}`;
-      const title = input.goal.trim() || '新任务';
-      const project = input.project ?? 'peers-touch';
-      const preset = intentPresetMetadata(input.intentPreset);
-      const now = formatTime(new Date());
-
-      return replaceState(
-        {
-          ...state,
-          selectedTaskId: id,
-          tasks: [
-            {
-              id,
-              project,
-              title,
-              status: 'active',
-              running: true,
-              intentPreset: preset.intentPreset,
-              providerStrategyPreset: preset.providerStrategyPreset,
-              gatePlanPreset: preset.gatePlanPreset,
-              workspaceOpenTarget: {
-                workspaceId: project,
-                workspaceUri: `pt-workspace://task/${encodeURIComponent(id)}?workspace=${encodeURIComponent(project)}`,
-                label: project,
-                ideHint: 'vscode',
-              },
-            },
-            ...state.tasks,
-          ],
-          stream: {
-            ...state.stream,
-            [id]: [
-              userBlock(id, title, now),
-              agentBlock(
-                `${id}-ack`,
-                input.run.kind === 'agents'
-                  ? '已收到目标。我会通过 peers-touch agent 编排层创建协作运行，并把计划、证据、产物和需要你拍板的事项投影到这里。'
-                  : '已收到目标。我会按当前模型直接推进，并把产物与验收结果投影到这里。',
-                now,
-              ),
-            ],
-          },
-          todos: { ...state.todos, [id]: [] },
-          artifacts: { ...state.artifacts, [id]: [] },
-          gates: { ...state.gates, [id]: [] },
-          context: {
-            ...state.context,
-            [id]: { usedPct: 8, files: [] },
-          },
-        },
-        id,
-      );
+      const next = buildPrototypeCreateProjectProjection({
+        state,
+        taskId: id,
+        now: formatTime(new Date()),
+        goal: input.goal,
+        project: input.project,
+        intentPreset: input.intentPreset,
+        runKind: input.run.kind,
+      });
+      return replaceState(next.state, next.selectedTaskId);
     },
     async sendMessage(input) {
       const text = input.text.trim();
@@ -496,6 +454,10 @@ function cloneState(state: AtelierState): AtelierState {
   return JSON.parse(JSON.stringify(state)) as AtelierState;
 }
 
+function cloneStatus(status: AtelierRuntimeStatus): AtelierRuntimeStatus {
+  return { ...status };
+}
+
 function userBlock(id: string, text: string, at: string): Block {
   return { kind: 'user', id, text, at };
 }
@@ -579,16 +541,5 @@ function mockProviderCapabilities(): AtelierProviderCapabilitiesResponse {
         readOnly: ATELIER_PROVIDER_CAPABILITY_READ_ONLY,
       },
     ],
-  };
-}
-
-function intentPresetMetadata(intentPreset: IntentPreset = ATELIER_DEFAULT_TASK_INTENT_PRESET) {
-  const mapping =
-    ATELIER_CREATE_FROM_GOAL_INTENT_PRESET_MAPPING[intentPreset] ??
-    ATELIER_CREATE_FROM_GOAL_INTENT_PRESET_MAPPING[ATELIER_DEFAULT_TASK_INTENT_PRESET];
-  return {
-    intentPreset,
-    providerStrategyPreset: mapping.providerStrategyPreset,
-    gatePlanPreset: mapping.gatePlanPreset,
   };
 }

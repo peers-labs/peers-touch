@@ -13,7 +13,13 @@ export interface AtelierProjectionRuntimeState {
   lastSeqByScope: Record<string, number>;
 }
 
-export type AtelierProjectionEventApplyOutcome = 'applied' | 'duplicate' | 'stale' | 'unknown-task';
+export type AtelierProjectionEventApplyOutcome =
+  | 'applied'
+  | 'reconcile'
+  | 'gap'
+  | 'duplicate'
+  | 'stale'
+  | 'unknown-task';
 
 export interface AtelierProjectionEventApplyResult {
   state: AtelierProjectionRuntimeState;
@@ -40,6 +46,18 @@ export function stateFromAtelierSnapshot(snapshot: AtelierProjectionSnapshot): A
   };
 }
 
+export function reconcileAtelierSnapshot(
+  current: AtelierProjectionRuntimeState,
+  snapshot: AtelierProjectionSnapshot,
+): AtelierProjectionRuntimeState {
+  return {
+    snapshot,
+    selectedTaskId: selectTaskId(snapshot, current.selectedTaskId),
+    seenEventKeys: current.seenEventKeys,
+    lastSeqByScope: current.lastSeqByScope,
+  };
+}
+
 export function applyAtelierProjectionEvent(
   current: AtelierProjectionRuntimeState,
   event: AtelierProjectionEvent,
@@ -55,7 +73,11 @@ export function applyAtelierProjectionEventWithResult(
   if (isStaleEvent(current, event)) return { state: current, outcome: 'stale' };
   if (!canApplyPatchToKnownTask(current.snapshot, event.patch)) return { state: current, outcome: 'unknown-task' };
 
-  const snapshot = applyAtelierProjectionPatch(current.snapshot, event);
+  const gap = hasSequenceGap(current, event);
+  const invalidatesSnapshot = event.patch.kind === 'snapshot.invalidate';
+  const snapshot = gap || invalidatesSnapshot
+    ? current.snapshot
+    : applyAtelierProjectionPatch(current.snapshot, event);
   const preferredSelectedTaskId =
     event.patch.kind === 'task.upsert' && event.patch.select
       ? event.patch.task.id
@@ -73,7 +95,7 @@ export function applyAtelierProjectionEventWithResult(
         [scope]: event.seq,
       },
     },
-    outcome: 'applied',
+    outcome: gap ? 'gap' : invalidatesSnapshot ? 'reconcile' : 'applied',
   };
 }
 
@@ -87,6 +109,8 @@ function applyAtelierProjectionPatch(
 
   const next = cloneSnapshot(current);
   switch (patch.kind) {
+    case 'snapshot.invalidate':
+      break;
     case 'task.upsert': {
       const exists = next.workspace.tasks.some((task) => task.id === patch.task.id);
       next.workspace.tasks = exists
@@ -140,7 +164,11 @@ function canApplyPatchToKnownTask(
   current: AtelierProjectionSnapshot | null,
   patch: AtelierProjectionEvent['patch'],
 ): boolean {
-  if (patch.kind === 'snapshot' || patch.kind === 'task.upsert') return true;
+  if (
+    patch.kind === 'snapshot'
+    || patch.kind === 'snapshot.invalidate'
+    || patch.kind === 'task.upsert'
+  ) return true;
   if (!current) return true;
   return current.workspace.tasks.some((task) => task.id === patch.taskId);
 }
@@ -154,6 +182,11 @@ function isStaleEvent(current: AtelierProjectionRuntimeState, event: AtelierProj
   return lastSeq !== undefined && event.seq <= lastSeq;
 }
 
+function hasSequenceGap(current: AtelierProjectionRuntimeState, event: AtelierProjectionEvent): boolean {
+  const lastSeq = current.lastSeqByScope[eventScope(event)];
+  return lastSeq !== undefined && event.seq > lastSeq + 1;
+}
+
 function rememberEventKey(keys: string[], key: string): string[] {
   const next = [...keys, key];
   return next.length > MAX_ATELIER_EVENT_KEYS ? next.slice(next.length - MAX_ATELIER_EVENT_KEYS) : next;
@@ -164,6 +197,11 @@ function eventKey(event: AtelierProjectionEvent): string {
 }
 
 function eventScope(event: AtelierProjectionEvent): string {
+  if (event.patch.kind === 'snapshot.invalidate') {
+    return event.patch.taskId
+      ? `task:${event.patch.taskId}`
+      : `goal:${event.patch.goalId}`;
+  }
   return event.taskId ?? 'workspace';
 }
 

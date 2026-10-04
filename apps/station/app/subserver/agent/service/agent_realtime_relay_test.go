@@ -171,8 +171,7 @@ func TestAgentRealtimeRelayPublishFailurePreservesGoalReadback(t *testing.T) {
 }
 
 func TestTaskEventWriterDomainCommitFailureDoesNotPublish(t *testing.T) {
-	eventBus := &recordingAgentEventBus{}
-	writer := NewTaskEventWriter(eventBus)
+	writer := NewTaskEventWriter()
 	writer.openDB = func(context.Context) (*gorm.DB, error) {
 		return nil, errors.New("injected domain commit failure")
 	}
@@ -187,9 +186,6 @@ func TestTaskEventWriterDomainCommitFailureDoesNotPublish(t *testing.T) {
 		"",
 		nil,
 	)
-	if events := eventBus.snapshot(); len(events) != 0 {
-		t.Fatalf("failed domain commit published %d receiver-visible events", len(events))
-	}
 }
 
 func enqueueRelayTestIntent(

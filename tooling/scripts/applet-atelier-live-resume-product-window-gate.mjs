@@ -239,7 +239,7 @@ async function main() {
             resolveDecisionChoice: gateChoice,
           }),
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS:
-            '/applets/atelier/v1/workspace,/applets/atelier/v1/escalations:resolve,/sub-agent/agent/events/subscribe',
+            '/applets/atelier/v1/workspace,/applets/atelier/v1/escalations:resolve,/events/stream',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS:
             process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '30000',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS:
