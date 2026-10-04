@@ -388,6 +388,44 @@
       }
     },
     {
+      "id": "agent-personal-goal-contract",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": [
+        "agent-personal-goal-contract"
+      ],
+      "required_gates": [
+        "agent-personal-goal-contract-source"
+      ],
+      "synthetic_paths": [
+        "model/domain/agent/goal.proto",
+        "apps/station/app/subserver/agent/service/goal_admission_service.go",
+        "apps/desktop/src/runtimes/homeRuntime.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station AgentGoal record and revision",
+          "Station Goal command receipts"
+        ],
+        "surfaces": [
+          "Native Home Goal contract review and start",
+          "Station Goal lifecycle readback"
+        ],
+        "proven_by": [
+          "agent-personal-goal-contract-source"
+        ],
+        "proven_scope": [
+          "PAOS-01 through PAOS-03 source contract for durable draft, reviewed assumptions, admission, start, revision conflict, idempotency, actor isolation, and zero pre-admission TaskRun"
+        ],
+        "unproven_scope": [
+          "PAOS-J01 Native product behavior remains UNPROVEN until the exact-source Development Journey passes",
+          "Goal graph creation and first TaskRun are owned by PAOS-05"
+        ]
+      }
+    },
+    {
       "id": "agent-v2-capability-binding",
       "domain": "agent",
       "direction": "acceptance_validates_product",

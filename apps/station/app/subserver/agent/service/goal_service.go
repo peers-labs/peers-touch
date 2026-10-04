@@ -273,6 +273,9 @@ func (s *GoalService) Review(
 				model.AgentGoalStatus_AGENT_GOAL_STATUS_DRAFT {
 				return goalInvalidState(record.GoalID, "Only a draft Goal can enter review")
 			}
+			if admissionErr := validateReviewedGoalAdmission(record); admissionErr != nil {
+				return admissionErr
+			}
 			record.Status = int32(
 				model.AgentGoalStatus_AGENT_GOAL_STATUS_REVIEWING,
 			)

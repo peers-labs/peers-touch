@@ -15,6 +15,7 @@
     "agent-v2-kernel-foundation",
     "agent-v2-external-runtime",
     "agent-v2-home-command-center",
+    "agent-personal-goal-contract",
     "agent-v2-capability-binding",
     "agent-v2-governed-tool-loop",
     "agent-v2-mcp-lifecycle",

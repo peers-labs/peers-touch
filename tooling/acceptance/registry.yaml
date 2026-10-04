@@ -2017,6 +2017,24 @@
       ]
     },
     {
+      "id": "agent-personal-goal-contract",
+      "features": [
+        "agent-personal-goal-contract"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/agent/goal.proto",
+          "apps/station/app/subserver/agent/**/goal*",
+          "apps/desktop/src/components/home/Goal*",
+          "apps/desktop/src/runtimes/homeRuntime.ts",
+          "apps/desktop/src/store/goalDraft.ts"
+        ]
+      },
+      "require": [
+        "agent-personal-goal-contract-source"
+      ]
+    },
+    {
       "id": "agent-v2-home-command-center",
       "features": [
         "agent-v2-home-command-center"

@@ -66,9 +66,11 @@ const (
 	AgentInternal                         Code = "AGENT_5000"
 
 	AgentAdmissionDuplicateConflict Code = "ADMISSION_DUPLICATE_CONFLICT"
+	AgentGoalAdmissionRejected      Code = "GOAL_ADMISSION_REJECTED"
 	AgentCanvasSingleAgentNotReady  Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
 
 	AgentAdmissionDuplicateConflictLocaleKey       = "agent.errors.duplicateConflict"
+	AgentGoalAdmissionRejectedLocaleKey            = "agent.errors.goalAdmissionRejected"
 	AgentNameConflictLocaleKey                     = "agent.errors.nameConflict"
 	AgentCanvasSingleAgentNotReadyLocaleKey        = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate     = "agent-v2-kernel-foundation-e2e"
@@ -794,6 +796,26 @@ func NewAdmissionDuplicateConflict(idempotencyKey, existingCommandID string) *Bi
 			Details: map[string]string{
 				"idempotency_key_hash": fmt.Sprintf("%x", idempotencyKeyHash),
 				"existing_command_id":  existingCommandID,
+			},
+		},
+	}
+}
+
+func NewGoalAdmissionRejected(goalID, reasonCode string) *BizError {
+	return &BizError{
+		Code:       AgentGoalAdmissionRejected,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentGoalAdmissionRejectedLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentGoalAdmissionRejectedLocaleKey,
+			ErrorType: string(AgentGoalAdmissionRejected),
+			LocaleKey: AgentGoalAdmissionRejectedLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_kind": "goal",
+				"resource_id":   goalID,
+				"reason_code":   reasonCode,
 			},
 		},
 	}
