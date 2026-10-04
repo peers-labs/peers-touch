@@ -169,7 +169,9 @@
       "pullRequest": "allowed"
     },
     "runtime": {
-      "deployProfiles": [],
+      "deployProfiles": [
+        "dev-ui-local"
+      ],
       "destructiveResetScopes": []
     },
     "history": {

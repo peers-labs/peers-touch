@@ -14,7 +14,7 @@
   "executionMode": "fix",
   "closureId": "nonblocking-control-actions",
   "journeyId": "DEV-J01",
-  "runtimeClass": "source-only",
+  "runtimeClass": "browser",
   "writeSet": [
     "AGENTS.md",
     "Makefile",
