@@ -157,10 +157,14 @@ def run_journey(
     require(execution.get("status") in (1, 2), "TaskRun is not pending/running")
 
     task_id = str(execution["taskId"])
-    visible_element(
-        client,
-        f'[data-pt-goal-run="{task_id}"]',
-    ).click()
+    task_row = wait_until(
+        lambda: visible_element(
+            client,
+            f'[data-pt-goal-run="{task_id}"]',
+        ),
+        "Home canonical Goal TaskRun row",
+    )
+    task_row.click()
     selected = wait_until(
         lambda: visible_element(client, "[data-pt-goal-run-readback]"),
         "selected Goal TaskRun identity",
