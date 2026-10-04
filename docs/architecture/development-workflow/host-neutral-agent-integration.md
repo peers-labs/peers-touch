@@ -128,7 +128,9 @@ translated, or copied into current authority.
    workspace bootstrap hook selected from the active `.code-workspace`
    descriptor, including `SubagentStart`, `SubagentStop`, `PreCompact`, and
    `PostCompact`. Per-worktree managed TRAE hook entries are removed. No
-   user-global hook file is modified.
+   user-global hook file is modified. Missing folders in a stale workspace
+   descriptor are ignored, while at least one existing folder and the selected
+   source worktree remain mandatory.
    When declarations are quiescent, this hard cut deletes prior machine-local
    conversation and workflow-action stores before publishing the bootstrap.
    When a declaration is live, the same stores remain inert and cleanup is

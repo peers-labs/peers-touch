@@ -71,6 +71,7 @@ test('loads ordered roots from the installed TRAE workspace descriptor', () => {
       JSON.stringify({
         folders: [
           { path: 'first' },
+          { path: 'missing' },
           { path: 'second' },
           { path: 'first' },
         ],

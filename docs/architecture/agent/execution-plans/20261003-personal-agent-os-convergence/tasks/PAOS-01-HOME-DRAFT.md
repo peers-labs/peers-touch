@@ -54,7 +54,9 @@
     "docs/knowledge/invariants/owner-rooted-workflow-binding.md",
     "tooling/scripts/agent-integration-control.py",
     "tooling/scripts/agent-integration-audit-test.py",
-    "tooling/skills/pt-github-review/FRESHNESS.md"
+    "tooling/skills/pt-github-review/FRESHNESS.md",
+    "tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs",
+    "tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs"
   ],
   "readSet": [
     "model/domain/agent/home.proto",

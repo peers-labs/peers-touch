@@ -118,12 +118,16 @@ def read_workspace_descriptor(path: Path) -> tuple[Path, tuple[Path, ...]]:
             raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
         try:
             candidate = (descriptor.parent / folder_path).resolve(strict=True)
+        except FileNotFoundError:
+            continue
         except OSError as error:
             raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID") from error
         if not candidate.is_dir():
-            raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
+            continue
         if candidate not in roots:
             roots.append(candidate)
+    if not roots:
+        raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
     return descriptor, tuple(roots)
 
 
