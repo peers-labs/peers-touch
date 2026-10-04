@@ -510,3 +510,71 @@ func TestRecoverRunningChatTasksConvergesAlreadyTerminalTurn(t *testing.T) {
 		t.Fatalf("terminal turn recovery event count = %d, want 1", terminalEvents)
 	}
 }
+
+func TestChatPromotionCreatesCanonicalTaskRunWithoutAgentTask(t *testing.T) {
+	db := openConversationAuthorityDB(t, "chat_promotion_taskrun")
+	if err := db.AutoMigrate(persistence.AllModels()...); err != nil {
+		t.Fatal(err)
+	}
+	writer := NewTaskRunCommandService(db)
+	request := &model.CreateTaskRunRequest{
+		Title:                "Promote launch conversation",
+		Description:          "Turn the agreed launch work into durable execution",
+		AgentId:              "agent-1",
+		Surface:              model.TaskSurface_TASK_SURFACE_API,
+		InitialStatus:        model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING,
+		ClientIdempotencyKey: "chat-promotion:topic-launch",
+		CommandPayloadHash:   "payload-chat-promotion",
+		SourceRef:            "topic-launch",
+		Meta: map[string]string{
+			"entrypoint": "chat_promotion",
+			"priority":   "high",
+		},
+	}
+
+	first, err := writer.Create(context.Background(), "ptid:actor-1", request)
+	if err != nil {
+		t.Fatalf("create promoted Chat TaskRun: %v", err)
+	}
+	replayed, err := writer.Create(context.Background(), "ptid:actor-1", request)
+	if err != nil {
+		t.Fatalf("replay promoted Chat TaskRun: %v", err)
+	}
+	if !first.GetCreated() || replayed.GetCreated() ||
+		first.GetTask().GetTaskId() != replayed.GetTask().GetTaskId() {
+		t.Fatalf("promotion replay = first:%+v replay:%+v", first, replayed)
+	}
+	if first.GetTask().GetSurface() != model.TaskSurface_TASK_SURFACE_API ||
+		first.GetTask().GetStatus() !=
+			model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING ||
+		first.GetRootStep().GetAgentId() != request.GetAgentId() ||
+		first.GetRootStep().GetTaskId() != first.GetTask().GetTaskId() {
+		t.Fatalf("canonical promotion result = %+v", first)
+	}
+
+	var taskRuns int64
+	if err := db.Model(&persistence.TaskRun{}).Count(&taskRuns).Error; err != nil {
+		t.Fatal(err)
+	}
+	var steps int64
+	if err := db.Model(&persistence.ExecutionStep{}).Count(&steps).Error; err != nil {
+		t.Fatal(err)
+	}
+	var events int64
+	if err := db.Model(&persistence.TaskEvent{}).Count(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	var legacy int64
+	if err := db.Model(&persistence.AgentTask{}).Count(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if taskRuns != 1 || steps != 1 || events != 1 || legacy != 0 {
+		t.Fatalf(
+			"promotion persistence TaskRun=%d Step=%d Event=%d AgentTask=%d",
+			taskRuns,
+			steps,
+			events,
+			legacy,
+		)
+	}
+}

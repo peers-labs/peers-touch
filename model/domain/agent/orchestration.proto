@@ -253,6 +253,24 @@ message ExecutionStep {
   string attempt_id = 20;
 }
 
+message CreateTaskRunRequest {
+  string title = 1;
+  string description = 2;
+  string agent_id = 3;
+  TaskSurface surface = 4;
+  CollaborationTaskStatus initial_status = 5;
+  string client_idempotency_key = 6;
+  string command_payload_hash = 7;
+  string source_ref = 8;
+  map<string, string> meta = 9;
+}
+
+message CreateTaskRunResponse {
+  TaskRun task = 1;
+  ExecutionStep root_step = 2;
+  bool created = 3;
+}
+
 message AgentGoalNode {
   string goal_id = 1;
   string node_id = 2;

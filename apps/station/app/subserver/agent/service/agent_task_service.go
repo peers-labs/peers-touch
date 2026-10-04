@@ -3,145 +3,24 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
-// AgentTaskService owns the user-created single-agent task lifecycle (O3):
-// create / list / status transitions (start/pause/cancel/complete/fail) /
-// delete / subtasks. Station is the source of truth, replacing the prior
-// Desktop localStorage store.
+// AgentTaskService keeps migrated legacy AgentTask rows readable and
+// maintainable until the final authority deletion. New work is created only by
+// TaskRunCommandService.
 type AgentTaskService struct{}
 
 func NewAgentTaskService() *AgentTaskService {
 	return &AgentTaskService{}
-}
-
-func (s *AgentTaskService) CreateAndStartTask(
-	ctx context.Context,
-	ownerActorID string,
-	title string,
-	agentID string,
-	expectedAgentVersion uint64,
-	runtimeProfileID string,
-	readinessSnapshotID string,
-	idempotencyKey string,
-	payloadHash string,
-	topicRef string,
-) (*persistence.AgentTask, bool, error) {
-	ownerActorID = strings.TrimSpace(ownerActorID)
-	title = strings.TrimSpace(title)
-	agentID = strings.TrimSpace(agentID)
-	idempotencyKey = strings.TrimSpace(idempotencyKey)
-	payloadHash = strings.TrimSpace(payloadHash)
-	if ownerActorID == "" || title == "" || agentID == "" ||
-		expectedAgentVersion == 0 || idempotencyKey == "" || payloadHash == "" {
-		return nil, false, errcode.New(
-			errcode.AgentInvalidRequest,
-			http.StatusBadRequest,
-			"actor, title, agent_id, expected_agent_version, idempotency_key and payload_hash are required",
-			nil,
-		)
-	}
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-
-	var task persistence.AgentTask
-	created := false
-	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		replay, replayErr := loadHomeTaskReplay(
-			tx,
-			ownerActorID,
-			idempotencyKey,
-			payloadHash,
-		)
-		if replayErr != nil {
-			return replayErr
-		}
-		if replay != nil {
-			task = *replay
-			return nil
-		}
-
-		now := time.Now().UTC()
-		key := idempotencyKey
-		task = persistence.AgentTask{
-			ID:                  homeCommandResourceID("task", ownerActorID, idempotencyKey),
-			Title:               title,
-			Description:         title,
-			AgentID:             agentID,
-			Status:              "running",
-			Priority:            "medium",
-			Progress:            0,
-			SubtasksJSON:        "[]",
-			TopicKey:            strings.TrimSpace(topicRef),
-			IdempotencyKey:      &key,
-			CommandPayloadHash:  payloadHash,
-			ReadinessSnapshotID: strings.TrimSpace(readinessSnapshotID),
-			RuntimeProfileID:    strings.TrimSpace(runtimeProfileID),
-			AgentVersion:        expectedAgentVersion,
-			OwnerActorID:        ownerActorID,
-			CreatedAt:           now,
-			UpdatedAt:           now,
-		}
-		if err := tx.Create(&task).Error; err != nil {
-			return err
-		}
-		created = true
-		return nil
-	})
-	if err == nil {
-		return &task, created, nil
-	}
-
-	replay, replayErr := loadHomeTaskReplay(
-		db.WithContext(ctx),
-		ownerActorID,
-		idempotencyKey,
-		payloadHash,
-	)
-	if replayErr == nil && replay != nil {
-		return replay, false, nil
-	}
-	return nil, false, errcode.New(
-		errcode.AgentInternal,
-		http.StatusInternalServerError,
-		"failed to create and start Home task",
-		err,
-	)
-}
-
-func loadHomeTaskReplay(
-	db *gorm.DB,
-	ownerActorID string,
-	idempotencyKey string,
-	payloadHash string,
-) (*persistence.AgentTask, error) {
-	var row persistence.AgentTask
-	err := db.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("owner_actor_id = ? AND idempotency_key = ?", ownerActorID, idempotencyKey).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if row.CommandPayloadHash != payloadHash {
-		return nil, errcode.NewAdmissionDuplicateConflict(idempotencyKey, row.ID)
-	}
-	return &row, nil
 }
 
 func (s *AgentTaskService) getDB(ctx context.Context) (*gorm.DB, error) {
@@ -178,37 +57,6 @@ func decodeSubtasks(raw string) []Subtask {
 		return nil
 	}
 	return out
-}
-
-func (s *AgentTaskService) CreateTask(ctx context.Context, ownerActorID, title, description, agentID, priority, topicKey string) (*persistence.AgentTask, error) {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return nil, err
-	}
-	title = strings.TrimSpace(title)
-	agentID = strings.TrimSpace(agentID)
-	if title == "" || agentID == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "title and agent_id are required", nil)
-	}
-	if priority == "" {
-		priority = "medium"
-	}
-	row := &persistence.AgentTask{
-		ID:           generateID("task"),
-		Title:        title,
-		Description:  description,
-		AgentID:      agentID,
-		Status:       "pending",
-		Priority:     priority,
-		Progress:     0,
-		SubtasksJSON: "[]",
-		TopicKey:     topicKey,
-		OwnerActorID: ownerActorID,
-	}
-	if err := db.WithContext(ctx).Create(row).Error; err != nil {
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create task", err)
-	}
-	return row, nil
 }
 
 func (s *AgentTaskService) ListTasks(ctx context.Context, ownerActorID, agentID string) ([]*persistence.AgentTask, error) {
