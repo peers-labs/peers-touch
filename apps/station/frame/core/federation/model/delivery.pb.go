@@ -252,6 +252,7 @@ type FederatedDomainFrameSigningInput struct {
 	IssuedAt            *timestamppb.Timestamp     `protobuf:"bytes,12,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	ExpiresAt           *timestamppb.Timestamp     `protobuf:"bytes,13,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	SigningKeyId        string                     `protobuf:"bytes,14,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	TraceId             string                     `protobuf:"bytes,15,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -384,6 +385,13 @@ func (x *FederatedDomainFrameSigningInput) GetSigningKeyId() string {
 	return ""
 }
 
+func (x *FederatedDomainFrameSigningInput) GetTraceId() string {
+	if x != nil {
+		return x.TraceId
+	}
+	return ""
+}
+
 type FederatedDomainFrame struct {
 	state               protoimpl.MessageState     `protogen:"open.v1"`
 	FormatVersion       uint32                     `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
@@ -401,6 +409,7 @@ type FederatedDomainFrame struct {
 	ExpiresAt           *timestamppb.Timestamp     `protobuf:"bytes,13,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	SigningKeyId        string                     `protobuf:"bytes,14,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
 	StationSignature    []byte                     `protobuf:"bytes,15,opt,name=station_signature,json=stationSignature,proto3" json:"station_signature,omitempty"`
+	TraceId             string                     `protobuf:"bytes,16,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -540,6 +549,13 @@ func (x *FederatedDomainFrame) GetStationSignature() []byte {
 	return nil
 }
 
+func (x *FederatedDomainFrame) GetTraceId() string {
+	if x != nil {
+		return x.TraceId
+	}
+	return ""
+}
+
 type DeliverFederatedDomainFrameRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Frame         *FederatedDomainFrame  `protobuf:"bytes,1,opt,name=frame,proto3" json:"frame,omitempty"`
@@ -640,7 +656,7 @@ var File_domain_federation_delivery_proto protoreflect.FileDescriptor
 
 const file_domain_federation_delivery_proto_rawDesc = "" +
 	"\n" +
-	" domain/federation/delivery.proto\x12\x1fpeers_touch.model.federation.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xae\x05\n" +
+	" domain/federation/delivery.proto\x12\x1fpeers_touch.model.federation.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc9\x05\n" +
 	" FederatedDomainFrameSigningInput\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x19\n" +
 	"\bframe_id\x18\x02 \x01(\tR\aframeId\x123\n" +
@@ -658,7 +674,8 @@ const file_domain_federation_delivery_proto_rawDesc = "" +
 	"\tissued_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
 	"expires_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12$\n" +
-	"\x0esigning_key_id\x18\x0e \x01(\tR\fsigningKeyId\"\xcf\x05\n" +
+	"\x0esigning_key_id\x18\x0e \x01(\tR\fsigningKeyId\x12\x19\n" +
+	"\btrace_id\x18\x0f \x01(\tR\atraceId\"\xea\x05\n" +
 	"\x14FederatedDomainFrame\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x19\n" +
 	"\bframe_id\x18\x02 \x01(\tR\aframeId\x123\n" +
@@ -677,7 +694,8 @@ const file_domain_federation_delivery_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12$\n" +
 	"\x0esigning_key_id\x18\x0e \x01(\tR\fsigningKeyId\x12+\n" +
-	"\x11station_signature\x18\x0f \x01(\fR\x10stationSignature\"q\n" +
+	"\x11station_signature\x18\x0f \x01(\fR\x10stationSignature\x12\x19\n" +
+	"\btrace_id\x18\x10 \x01(\tR\atraceId\"q\n" +
 	"\"DeliverFederatedDomainFrameRequest\x12K\n" +
 	"\x05frame\x18\x01 \x01(\v25.peers_touch.model.federation.v1.FederatedDomainFrameR\x05frame\"\xe8\x01\n" +
 	"#DeliverFederatedDomainFrameResponse\x12b\n" +

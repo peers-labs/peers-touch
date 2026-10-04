@@ -93,7 +93,10 @@ impl PrivateMediaOpenError {
         }
     }
 
-    pub(super) fn dependency(message: impl Into<String>, retry_after_seconds: Option<u64>) -> Self {
+    pub(super) fn dependency(
+        message: impl Into<String>,
+        retry_after_seconds: Option<u64>,
+    ) -> Self {
         Self {
             kind: PrivateMediaOpenFailureKind::Dependency,
             code: "MEDIA_DEPENDENCY_UNAVAILABLE",
@@ -257,7 +260,9 @@ mod tests {
         let bytes = URL_SAFE_NO_PAD
             .decode(value)
             .map_err(|_| "metadata header encoding is invalid".to_string())?;
-        if bytes.len() > MAX_METADATA_DECODED_BYTES || URL_SAFE_NO_PAD.encode(&bytes) != value {
+        if bytes.len() > MAX_METADATA_DECODED_BYTES
+            || URL_SAFE_NO_PAD.encode(&bytes) != value
+        {
             return Err("metadata header is not canonical base64url".to_string());
         }
         let metadata = social::ReadFederatedPrivateObjectResponse::decode(bytes.as_slice())
@@ -327,7 +332,8 @@ mod tests {
     #[test]
     fn remote_private_media_resume_preserves_object_identity() {
         let (resource, _descriptor, attachment) = object_fixture("social/object-01");
-        let first = new_download_record("ptid:bob", 9, "post-01", &resource, &attachment).unwrap();
+        let first =
+            new_download_record("ptid:bob", 9, "post-01", &resource, &attachment).unwrap();
         let resumed =
             new_download_record("ptid:bob", 9, "post-01", &resource, &attachment).unwrap();
         let response = social::GetMomentResourceResponse {

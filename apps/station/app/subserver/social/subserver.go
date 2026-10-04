@@ -199,6 +199,15 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 			err,
 		)
 	}
+	if err := federationRuntime.RegisterDeliveryObserver(
+		delivery.PayloadKindSocialPrivateResource,
+		s.privateContentSvc,
+	); err != nil {
+		return fmt.Errorf(
+			"register Social private Federation delivery observer: %w",
+			err,
+		)
+	}
 	s.relationshipSvc.ConfigurePrivateRevocation(
 		s.privateContentSvc,
 		application.NewSocialGraphEventPublisher(),

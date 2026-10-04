@@ -34,6 +34,8 @@ type HmacSha256 = Hmac<Sha256>;
 pub enum PrivateReadState {
     LoadingAuthorizedResource,
     WaitingForPrivateKey,
+    WaitingForRemoteDelivery,
+    RemoteSourceUnavailable,
     RecoveryRequired,
     RecoveryKeyUnavailable,
     Decrypting,
@@ -43,6 +45,17 @@ pub enum PrivateReadState {
     IntegrityFailure,
     PrivateUnsupportedOnDevice,
     DeletedOrRevoked,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PrivateRemoteDeliveryState {
+    NotRequired,
+    Pending,
+    Retrying,
+    Delivered,
+    Terminal,
+    Expired,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -176,6 +189,8 @@ pub struct PrivateMomentProjection {
     pub author_ptid: String,
     pub audience_kind: String,
     pub state: PrivateReadState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_delivery_state: Option<PrivateRemoteDeliveryState>,
     #[serde(default)]
     pub mentions: Vec<PrivateMentionProjection>,
     #[serde(default)]
@@ -446,6 +461,7 @@ fn decrypt_projection_from_response_at(
     let content = project_plaintext(&decoded, private, kind, access_path)?;
     let (reactions, reaction_revision, reactions_hydrated) =
         source_reaction_summaries(response, expected_post_id)?;
+    let remote_delivery_state = remote_delivery_state(response)?;
     let projection = PrivateMomentProjection {
         post_id: metadata.post_id.clone(),
         content_id: metadata.content_id.clone(),
@@ -457,6 +473,7 @@ fn decrypt_projection_from_response_at(
             .unwrap_or_default(),
         audience_kind: private_audience_kind(metadata.audience_kind)?.to_string(),
         state: PrivateReadState::ContentReady,
+        remote_delivery_state,
         mentions,
         reactions,
         reaction_revision,
@@ -473,6 +490,61 @@ fn decrypt_projection_from_response_at(
         content_key,
         consumed_prekey,
     })
+}
+
+fn remote_delivery_state(
+    response: &social::GetMomentResourceResponse,
+) -> Result<Option<PrivateRemoteDeliveryState>, String> {
+    let Some(status) = response.remote_delivery.as_ref() else {
+        return Ok(None);
+    };
+    let state = social::FederatedPrivateDeliveryState::try_from(status.state)
+        .map_err(|_| "private Moment remote delivery state is invalid".to_string())?;
+    let projected = match state {
+        social::FederatedPrivateDeliveryState::Unspecified => {
+            return Err("private Moment remote delivery state is unspecified".to_string())
+        }
+        social::FederatedPrivateDeliveryState::NotRequired => {
+            PrivateRemoteDeliveryState::NotRequired
+        }
+        social::FederatedPrivateDeliveryState::Pending => PrivateRemoteDeliveryState::Pending,
+        social::FederatedPrivateDeliveryState::Retrying => PrivateRemoteDeliveryState::Retrying,
+        social::FederatedPrivateDeliveryState::Delivered => PrivateRemoteDeliveryState::Delivered,
+        social::FederatedPrivateDeliveryState::Terminal => PrivateRemoteDeliveryState::Terminal,
+        social::FederatedPrivateDeliveryState::Expired => PrivateRemoteDeliveryState::Expired,
+    };
+    let completed = status
+        .delivered_count
+        .saturating_add(status.retrying_count)
+        .saturating_add(status.terminal_count)
+        .saturating_add(status.expired_count);
+    if completed > status.total_count {
+        return Err("private Moment remote delivery counts are invalid".to_string());
+    }
+    let pending_count = status.total_count - completed;
+    let state_matches_counts = match projected {
+        PrivateRemoteDeliveryState::NotRequired => status.total_count == 0,
+        PrivateRemoteDeliveryState::Pending => {
+            pending_count > 0
+                && status.retrying_count == 0
+                && status.terminal_count == 0
+                && status.expired_count == 0
+        }
+        PrivateRemoteDeliveryState::Retrying => {
+            status.retrying_count > 0 && status.terminal_count == 0 && status.expired_count == 0
+        }
+        PrivateRemoteDeliveryState::Delivered => {
+            status.total_count > 0 && status.delivered_count == status.total_count
+        }
+        PrivateRemoteDeliveryState::Terminal => status.terminal_count > 0,
+        PrivateRemoteDeliveryState::Expired => {
+            status.expired_count > 0 && status.terminal_count == 0
+        }
+    };
+    if !state_matches_counts {
+        return Err("private Moment remote delivery state disagrees with its counts".to_string());
+    }
+    Ok(Some(projected))
 }
 
 pub(super) fn canonical_reaction_summaries(
@@ -2018,6 +2090,40 @@ mod tests {
     use crate::secure_content::station_trust::TrustedStationSigningKey;
     use ed25519_dalek::{Signer, SigningKey};
 
+    #[test]
+    fn secure_content_remote_delivery_status_is_typed_and_bounded() {
+        let response = social::GetMomentResourceResponse {
+            remote_delivery: Some(social::FederatedPrivateDeliveryStatus {
+                state: social::FederatedPrivateDeliveryState::Retrying as i32,
+                total_count: 2,
+                delivered_count: 1,
+                retrying_count: 1,
+                terminal_count: 0,
+                expired_count: 0,
+                next_attempt_at: Some(prost_types::Timestamp {
+                    seconds: 1_800_000_001,
+                    nanos: 0,
+                }),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            remote_delivery_state(&response).unwrap(),
+            Some(PrivateRemoteDeliveryState::Retrying),
+        );
+
+        let invalid = social::GetMomentResourceResponse {
+            remote_delivery: Some(social::FederatedPrivateDeliveryStatus {
+                state: social::FederatedPrivateDeliveryState::Delivered as i32,
+                total_count: 1,
+                delivered_count: 2,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(remote_delivery_state(&invalid).is_err());
+    }
+
     fn session(trusted_signing_key: &SigningKey) -> SecureContentSession {
         SecureContentSession::new(
             crate::secure_content::SecureContentSessionKey {
@@ -2167,6 +2273,7 @@ mod tests {
             post: None,
             explanation: None,
             reaction_projection_revision: 0,
+            remote_delivery: None,
             resource: Some(social::PostResource {
                 metadata: Some(social::PostMetadata {
                     post_id: "post-1".to_string(),
@@ -2257,6 +2364,7 @@ mod tests {
             author_ptid: "ptid:alice".to_string(),
             audience_kind: "FRIENDS".to_string(),
             state: PrivateReadState::RecoveryRequired,
+            remote_delivery_state: None,
             mentions: Vec::new(),
             reactions: Vec::new(),
             reaction_revision: "0".to_string(),

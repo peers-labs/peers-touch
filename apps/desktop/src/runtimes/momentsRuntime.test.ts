@@ -579,6 +579,23 @@ describe('momentsRuntime identity fence', () => {
     expect(mocks.moments.syncProjection).toHaveBeenCalledWith('periodic reconcile');
   });
 
+  it('does not hide an authoritative sync failure during periodic resync', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+    mocks.moments.syncProjection.mockRejectedValueOnce(
+      new Error('station projection unavailable'),
+    );
+
+    intervalCallbacks[0]();
+    await vi.waitFor(() => {
+      expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
+        'periodic reconcile',
+      );
+    });
+    expect(mocks.privateMoments.reconcile).not.toHaveBeenCalled();
+  });
+
   it('clears the prior projection immediately and serializes a Station switch', async () => {
     let releaseFirstRefresh!: () => void;
     mocks.moments.syncProjection

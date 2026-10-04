@@ -304,6 +304,15 @@ impl SecureContentTransport {
         self.get_proto("/api/v1/social/moments/recoverable", Some(&query))
     }
 
+    pub fn list_remote_private_moments(
+        &self,
+        cursor: &str,
+        limit: u32,
+    ) -> Result<social::ListRemotePrivateMomentReferencesResponse, NativeTransportError> {
+        let query = [("cursor", cursor.to_string()), ("limit", limit.to_string())];
+        self.get_proto("/api/v1/social/moments/remote-private", Some(&query))
+    }
+
     fn publisher(&self) -> actor::ActorDeviceRef {
         actor::ActorDeviceRef {
             actor: Some(actor::ActorRef {

@@ -2071,10 +2071,14 @@ mod tests {
                                 actor_device_id: "bob-device".to_string(),
                                 home_station_peer_id: "station-remote".to_string(),
                                 signing_key_id: "bob-signing-key".to_string(),
-                                ed25519_public_key: signing_key.verifying_key().to_bytes().to_vec(),
+                                ed25519_public_key: signing_key
+                                    .verifying_key()
+                                    .to_bytes()
+                                    .to_vec(),
                                 profile_version: 1,
                                 verification_source:
-                                    actor::ActorSigningKeyVerificationSource::VerifiedProfile as i32,
+                                    actor::ActorSigningKeyVerificationSource::VerifiedProfile
+                                        as i32,
                                 valid_from_unix_ms: 1_000,
                                 revoked_at_unix_ms: 0,
                             },
@@ -2088,17 +2092,25 @@ mod tests {
         };
 
         assert_eq!(
-            receiver_verified_comment_sender_key(&resource, &sender, "bob-signing-key", 2_000,)
-                .unwrap(),
+            receiver_verified_comment_sender_key(
+                &resource,
+                &sender,
+                "bob-signing-key",
+                2_000,
+            )
+            .unwrap(),
             Some(signing_key.verifying_key()),
         );
-        assert!(
-            receiver_verified_comment_sender_key(&resource, &sender, "bob-signing-key", 2_000,)
-                .unwrap()
-                .unwrap()
-                .verify(signing_bytes, &Signature::from_slice(&signature).unwrap())
-                .is_ok()
-        );
+        assert!(receiver_verified_comment_sender_key(
+            &resource,
+            &sender,
+            "bob-signing-key",
+            2_000,
+        )
+        .unwrap()
+        .unwrap()
+        .verify(signing_bytes, &Signature::from_slice(&signature).unwrap())
+        .is_ok());
     }
 
     fn comment_draft(draft_id: &str, session_generation: u64) -> StoredCommentDraft {

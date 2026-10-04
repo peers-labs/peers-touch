@@ -194,6 +194,31 @@ func (r *Runtime) RegisterReceivers(registrar ReceiverRegistrar) error {
 	return registrar(r.registry)
 }
 
+// RegisterDeliveryObserver binds post-commit outbox telemetry before dispatch starts.
+func (r *Runtime) RegisterDeliveryObserver(
+	kind delivery.PayloadKind,
+	observer delivery.DispatchObserver,
+) error {
+	if r == nil || r.dispatcher == nil {
+		return delivery.NewError(
+			delivery.FailureInvalidArgument,
+			"register Federation delivery observer",
+			errors.New("runtime is unavailable"),
+		)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sealed {
+		return delivery.NewError(
+			delivery.FailureInvalidArgument,
+			"register Federation delivery observer",
+			errors.New("Federation runtime is sealed"),
+		)
+	}
+	return r.dispatcher.RegisterObserver(kind, observer)
+}
+
 // RegisterPeerEndpoint binds one app-owned capability implementation to a
 // Federation-owned authenticated route before the runtime is sealed.
 func (r *Runtime) RegisterPeerEndpoint(

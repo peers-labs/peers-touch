@@ -17,6 +17,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
@@ -612,6 +613,7 @@ func (s *PrivateContentService) signFederatedPrivateResourceFrame(
 			now.Add(federatedPrivateResourceFrameLifetime).UTC(),
 		),
 		SigningKeyId: keyID,
+		TraceId:      federatedPrivateTraceID(ctx, identity),
 	}
 	signingBytes, err := federationdelivery.SigningBytes(frame)
 	if err != nil {
@@ -640,6 +642,13 @@ func (s *PrivateContentService) signFederatedPrivateResourceFrame(
 		return nil, err
 	}
 	return frame, nil
+}
+
+func federatedPrivateTraceID(ctx context.Context, identity string) string {
+	if traceID := strings.TrimSpace(logger.GetTraceID(ctx)); traceID != "" {
+		return traceID
+	}
+	return "social-private-trace:" + deterministicPrivateID("trace", identity)
 }
 
 func (s *PrivateContentService) RevokePrivateRelationship(

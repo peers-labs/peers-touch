@@ -1282,6 +1282,38 @@ describe('private Moments Native projection', () => {
     expect(projection?.content).toBeUndefined();
   });
 
+  it('keeps verified content visible while a remote source retry is pending', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+    enqueue('social_private_moment_read', statusOk({
+      post_id: 'post-private-offline',
+      content_id: 'post-private-offline',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'REMOTE_SOURCE_UNAVAILABLE',
+      error_code: 'REMOTE_SOURCE_UNAVAILABLE',
+      content: {
+        kind: 'TEXT',
+        text: 'verified offline content',
+      },
+    }));
+
+    await usePrivateMomentsStore.getState().readMoment('post-private-offline');
+    const privateProjection =
+      usePrivateMomentsStore.getState().postsById['post-private-offline'];
+    expect(privateProjection?.content).toEqual({
+      kind: 'TEXT',
+      text: 'verified offline content',
+    });
+
+    useMomentsStore.getState().hydratePrivateMoments([privateProjection!]);
+    expect(useMomentsStore.getState().feeds.home.postIds)
+      .toContain('post-private-offline');
+  });
+
   it('refreshes Native private content and comments for a direct-link detail', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });

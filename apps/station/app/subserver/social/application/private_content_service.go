@@ -1562,9 +1562,18 @@ func (s *PrivateContentService) GetPrivateMoment(
 	if err != nil {
 		return nil, err
 	}
+	remoteDelivery, err := s.federatedPrivateDeliveryStatus(
+		ctx,
+		read,
+		viewer.GetActor().GetPtid(),
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &privatecontentpb.GetMomentResourceResponse{
 		Post:                       postProjection,
 		ReactionProjectionRevision: reactionProjectionRevision,
+		RemoteDelivery:             remoteDelivery,
 		Resource: &privatecontentpb.PostResource{
 			Metadata: metadata,
 			Body: &privatecontentpb.PostResource_PrivateContent{

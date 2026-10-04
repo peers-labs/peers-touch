@@ -124,6 +124,20 @@ Social registers handlers for the four new payload kinds during Station
 composition. Receiver handlers use the Federation inbox UOW hook so receipt and
 domain mutation are atomic.
 
+### Delivery resilience
+
+Federation persists the signed trace ID with each immutable frame, restores it
+into dispatcher and authenticated receiver contexts, and emits one typed
+post-transition observation to the registered payload owner. Social registers
+the private-resource observer and maps only finite transition and failure
+classes into its delivery metrics.
+
+Source-author point reads derive the exact remote frame IDs from the committed
+recipient-locality snapshot and return an aggregate outbox status. Recipient
+Stations expose an actor-scoped, cursor-paged list of active remote private
+Moment references at `GET /api/v1/social/moments/remote-private`; this is a
+Social-owned projection API and never exposes co-recipient or frame identity.
+
 ### Object peer route
 
 Federation exposes the authenticated peer route and bounded stream plumbing.
@@ -155,12 +169,15 @@ Home Station route.
 `momentsRuntime` remains the only freshness owner:
 
 - consumes remote delivery/invalidation events;
-- reconciles pending and imported resources;
+- asks the Native owner to enumerate Station-backed remote references, then
+  reconciles pending and imported resources even after an EventBus gap;
 - restores state after reconnect/restart;
 - clears actor-scoped state on account or Station switch.
 
 Pages only render projection and trigger commands. Remote states extend the
 existing private Moment state model; they do not create a second store.
+Verified plaintext remains visible when the source Station is temporarily
+unavailable, while new remote operations retain explicit retryable state.
 
 The browser-gateway boot path must not register the Moments page, runtime,
 module, navigation item, or Social action surface. Tauri WebView registration
