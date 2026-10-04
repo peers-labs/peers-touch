@@ -262,6 +262,7 @@ export async function openAtelierArtifactPreview(input: {
 export async function createAtelierProjectFromGoal(input: {
   goal: string;
   intentPreset?: AtelierIntentPreset;
+  clientIdempotencyKey?: string;
   model?: string;
   runKind?: AtelierRunTargetKind;
     flowId?: AtelierAgentFlowId;
@@ -285,6 +286,9 @@ export async function createAtelierProjectFromGoal(input: {
     agentIds,
     run,
   };
+  if (input.clientIdempotencyKey?.trim()) {
+    payload.clientIdempotencyKey = input.clientIdempotencyKey.trim();
+  }
   const project = input.project ?? config.project;
   if (project) {
     payload.project = project;

@@ -319,6 +319,7 @@ export function useAtelierController(): AtelierController {
         try {
           snapshot = await createAtelierProjectFromGoal({
             ...certificationCreate,
+            clientIdempotencyKey: certificationCreateKey,
             runKind,
           });
         } catch (error) {
@@ -670,7 +671,7 @@ export function useAtelierController(): AtelierController {
       pending: state.creatingProject,
     });
     if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
-    const { intent } = intentResult;
+    const { intent, submitKey } = intentResult;
 
     setState((current) => ({
       ...current,
@@ -680,7 +681,10 @@ export function useAtelierController(): AtelierController {
       purgeConfirmTaskId: '',
     }));
     try {
-      const snapshot = await createAtelierProjectFromGoal(intent);
+      const snapshot = await createAtelierProjectFromGoal({
+        ...intent,
+        clientIdempotencyKey: submitKey,
+      });
       setSelectedArtifactId('');
       setGoalDraft('');
       setGoalRevision((current) => current + 1);

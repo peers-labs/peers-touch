@@ -9,6 +9,9 @@
     "apps/station/app/subserver/agent/service/goal_service.go",
     "apps/station/app/subserver/agent/service/goal_admission_service.go",
     "apps/station/app/subserver/agent/service/goal_execution_service.go",
+    "apps/station/app/subserver/agent/service/task_run_command_service.go",
+    "apps/station/app/subserver/agent/service/orchestration_service.go",
+    "apps/station/app/subserver/agent/service/atelier_projection.go",
     "apps/station/app/subserver/agent/service/task_event_writer.go",
     "apps/station/app/subserver/agent/service/agent_realtime_relay.go",
     "apps/station/app/subserver/events/",
@@ -47,6 +50,7 @@
   ],
   "required_gates": [
     "agent-personal-goal-contract-source",
+    "agent-personal-taskrun-cutover-source",
     "agent-personal-goal-home-e2e",
     "agent-personal-goal-event-fanout-e2e"
   ],
@@ -56,6 +60,7 @@
       "Goal admission commits REVIEWING to READY with expected revision and idempotency",
       "Goal admission creates no executable work",
       "Goal start atomically commits READY to RUNNING and creates one linked GoalNode, TaskRun, ExecutionStep, and attempt identity",
+      "Atelier and optional Canvas work commands create or address one canonical Goal and TaskRun without inserting CollaborationTask execution rows",
       "Durable Goal events reach the shared EventBus through the outbox relay"
     ],
     "visible": [
@@ -65,13 +70,15 @@
       "Home shows the first canonical TaskRun and exposes its Station identifiers after selection",
       "Home updates Goal progress from typed canonical events without a page remount",
       "Home preserves accepted content across disconnect and converges after retry",
-      "Atelier receives canonical invalidations and reconciles to the Station snapshot"
+      "Atelier receives canonical invalidations and reconciles to the Station snapshot",
+      "Atelier opens the returned canonical TaskRun and preserves the same Goal and TaskRun identities on idempotent replay"
     ]
   },
   "negative": [
     "Desktop must not infer READY or RUNNING without Station readback",
     "stale, unauthorized, incomplete, or non-ready input must not start a Goal",
     "Goal start must not create AgentTask or CollaborationTask execution rows",
+    "Atelier and Canvas work commands must not create CollaborationTask execution rows",
     "A failed TaskRun allocation must leave the Goal non-running",
     "Agent-private event buses, endpoints, Desktop commands, and applet stream ownership must not remain",
     "source proof does not replace the required PAOS-J01/PAOS-J02 Native functional runs"

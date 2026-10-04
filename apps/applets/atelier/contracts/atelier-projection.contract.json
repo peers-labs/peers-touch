@@ -637,6 +637,7 @@
         "agentIds"
       ],
       "optionalFields": [
+        "clientIdempotencyKey",
         "intentPreset",
         "run.kind",
         "run.flowId",
@@ -768,6 +769,7 @@
           "agentIds"
         ],
         "optionalFields": [
+          "clientIdempotencyKey",
           "intentPreset",
           "run.kind",
           "run.flowId",

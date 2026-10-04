@@ -1514,7 +1514,8 @@ assert.ok(
     controllerSource.includes('selectedFlowId') &&
     controllerSource.includes('setSelectedFlowId') &&
     controllerSource.includes('buildAtelierProjectCreateIntent') &&
-    controllerSource.includes('createAtelierProjectFromGoal(intent)') &&
+    controllerSource.includes('clientIdempotencyKey: certificationCreateKey') &&
+    controllerSource.includes('clientIdempotencyKey: submitKey') &&
     projectCreateActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal']") &&
     projectCreateActionGuardsSource.includes('ATELIER_TASK_INTENT_PRESETS') &&
     projectCreateActionGuardsSource.includes('ATELIER_RUN_TARGET_KINDS') &&

@@ -398,6 +398,7 @@
       ],
       "required_gates": [
         "agent-personal-goal-contract-source",
+        "agent-personal-taskrun-cutover-source",
         "agent-personal-goal-home-e2e",
         "agent-personal-goal-event-fanout-e2e"
       ],
@@ -406,6 +407,10 @@
         "model/domain/agent/orchestration.proto",
         "apps/station/app/subserver/agent/service/goal_admission_service.go",
         "apps/station/app/subserver/agent/service/goal_execution_service.go",
+        "apps/station/app/subserver/agent/service/task_run_command_service.go",
+        "apps/station/app/subserver/agent/service/orchestration_service.go",
+        "apps/station/app/subserver/agent/service/atelier_projection.go",
+        "apps/applets/atelier/frontend/src/application/useAtelierController.ts",
         "apps/desktop/src/runtimes/homeRuntime.ts"
       ],
       "evidence": {
@@ -421,13 +426,15 @@
         ],
         "proven_by": [
           "agent-personal-goal-contract-source",
+          "agent-personal-taskrun-cutover-source",
           "agent-personal-goal-home-e2e",
           "agent-personal-goal-event-fanout-e2e"
         ],
         "proven_scope": [
           "PAOS-01 through PAOS-05 source contract for durable draft, reviewed assumptions, admission, atomic first TaskRun allocation, revision conflict, idempotency, actor isolation, and zero pre-admission executable work",
           "PAOS-08 and PAOS-09 Native Home live progress, disconnect preservation, retry, resync, and authoritative Station readback",
-          "PAOS-10 through PAOS-10C canonical /events/stream fan-out to Home and Atelier with private publisher and consumer deletion"
+          "PAOS-10 through PAOS-10C canonical /events/stream fan-out to Home and Atelier with private publisher and consumer deletion",
+          "PAOS-13 and PAOS-13B route Home, Chat, Atelier, and optional Canvas work creation to canonical TaskRun writers without new AgentTask or CollaborationTask execution rows"
         ],
         "unproven_scope": [
           "Proof remains UNPROVEN until the exact-source environment Gates pass and publish current evidence",

@@ -1430,6 +1430,13 @@
       "tier": "ci-cheap",
       "description": "Validate the Station-owned Personal Goal contract, reviewed admission, revisioned start, atomic first TaskRun allocation, Desktop projection, visible rejection, and zero pre-admission executable-work boundary."
     },
+    "agent-personal-taskrun-cutover-source": {
+      "command": "python3 tooling/acceptance/gates/agent/personal_taskrun_cutover_source.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the exact-source Home, Chat, Atelier, and optional Canvas writer cutover to canonical Goal-backed TaskRun state with no new CollaborationTask execution rows."
+    },
     "agent-personal-goal-home-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/personal_goal_home_e2e.py --mode development",
       "timeout_seconds": 1800,

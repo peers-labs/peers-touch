@@ -38,7 +38,6 @@ func TestCanvasReadinessGuardContract(t *testing.T) {
 func TestCanvasReadinessGuardRejectsBeforeDependencyOrStorageAccess(t *testing.T) {
 	ctx := context.Background()
 	orchestration := &OrchestrationService{}
-	atelier := &AtelierProjectionService{}
 	scheduler := &SchedulerService{}
 
 	cases := []struct {
@@ -119,15 +118,9 @@ func TestCanvasReadinessGuardRejectsBeforeDependencyOrStorageAccess(t *testing.T
 			},
 		},
 		{
-			name: "create Atelier project",
-			invoke: func() error {
-				_, err := atelier.CreateProjectFromGoal(ctx, "", nil)
-				return err
-			},
-		},
-		{
 			name: "resolve Atelier decision",
 			invoke: func() error {
+				atelier := &AtelierProjectionService{}
 				_, err := atelier.ResolveDecision(ctx, "", nil)
 				return err
 			},
@@ -135,6 +128,7 @@ func TestCanvasReadinessGuardRejectsBeforeDependencyOrStorageAccess(t *testing.T
 		{
 			name: "confirm Atelier rerun",
 			invoke: func() error {
+				atelier := &AtelierProjectionService{}
 				_, err := atelier.ConfirmRerun(ctx, "", nil)
 				return err
 			},
@@ -158,6 +152,20 @@ func TestCanvasReadinessGuardRejectsBeforeDependencyOrStorageAccess(t *testing.T
 	orchestration.recoverRunningTasks(ctx)
 	orchestration.startTaskExecution("", persistence.CollaborationTask{}, nil, "")
 	orchestration.startDirectRunExecution("", "", "")
+}
+
+func TestAtelierProjectCreationUsesCanonicalWriterWithoutCanvasReadiness(
+	t *testing.T,
+) {
+	atelier := NewAtelierProjectionService(&OrchestrationService{})
+	_, err := atelier.CreateProjectFromGoal(context.Background(), "", nil)
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) {
+		t.Fatalf("expected BizError, got %T: %v", err, err)
+	}
+	if biz.Code != errcode.AgentUnauthorized {
+		t.Fatalf("unexpected error code: %s", biz.Code)
+	}
 }
 
 func TestCanvasReadinessGuardProducesZeroDatabaseAndProviderMutations(t *testing.T) {

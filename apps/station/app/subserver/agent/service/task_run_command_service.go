@@ -30,6 +30,30 @@ type TaskRunCommandService struct {
 	now         func() time.Time
 }
 
+type GoalBackedTaskRunCommand struct {
+	ExistingGoalID       string
+	Title                string
+	Description          string
+	WorkspaceID          string
+	AgentID              string
+	Surface              model.TaskSurface
+	ClientIdempotencyKey string
+	CommandPayloadHash   string
+	SourceRef            string
+	Meta                 map[string]string
+	BudgetTokens         float64
+	BudgetMoney          float64
+	BudgetTimeMs         int64
+	ProviderPlan         *model.TaskProviderPlan
+}
+
+type GoalBackedTaskRunResult struct {
+	Goal     *model.AgentGoal
+	Task     *model.TaskRun
+	RootStep *model.ExecutionStep
+	Created  bool
+}
+
 func NewTaskRunCommandService(db *gorm.DB) *TaskRunCommandService {
 	return &TaskRunCommandService{
 		db:          db,
@@ -176,6 +200,321 @@ func (s *TaskRunCommandService) Create(
 	return taskRunCommandResponse(&task, &step, created), nil
 }
 
+// CreateGoalBacked creates one canonical Goal/TaskRun execution identity for
+// work entered through Atelier or the optional Canvas adapter. Legacy task
+// records are not written.
+func (s *TaskRunCommandService) CreateGoalBacked(
+	ctx context.Context,
+	ownerPTID string,
+	command *GoalBackedTaskRunCommand,
+) (*GoalBackedTaskRunResult, error) {
+	ownerPTID = strings.TrimSpace(ownerPTID)
+	if err := validateGoalBackedTaskRunCommand(ownerPTID, command); err != nil {
+		return nil, err
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	taskID := taskRunCommandID(
+		"task",
+		ownerPTID,
+		command.ClientIdempotencyKey,
+	)
+	var goal persistence.AgentGoal
+	var task persistence.TaskRun
+	var step persistence.ExecutionStep
+	created := false
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		replayedTask, replayedStep, replayErr := loadGoalBackedTaskRunReplayTx(
+			tx,
+			ownerPTID,
+			taskID,
+			command,
+		)
+		if replayErr != nil {
+			return replayErr
+		}
+		if replayedTask != nil {
+			task = *replayedTask
+			step = *replayedStep
+			return tx.Where(
+				"goal_id = ? AND owner_ptid = ?",
+				task.GoalID,
+				ownerPTID,
+			).First(&goal).Error
+		}
+
+		now := s.now().UTC()
+		goalCreated := strings.TrimSpace(command.ExistingGoalID) == ""
+		if goalCreated {
+			budgetJSON, marshalErr := json.Marshal(
+				goalBackedTaskRunBudget(command),
+			)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			criteriaJSON, marshalErr := json.Marshal(
+				[]*model.AgentGoalAcceptanceCriterion{{
+					CriterionId: "taskrun-terminal",
+					Description: "Canonical TaskRun reaches an authoritative terminal state",
+					Evaluator:   "taskrun_terminal",
+					Required:    true,
+				}},
+			)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			goal = persistence.AgentGoal{
+				GoalID:                 taskRunCommandID("goal", ownerPTID, command.ClientIdempotencyKey),
+				OwnerPTID:              ownerPTID,
+				WorkspaceID:            strings.TrimSpace(command.WorkspaceID),
+				Title:                  strings.TrimSpace(command.Title),
+				Outcome:                firstNonEmptyString(command.Description, command.Title),
+				NonGoalsJSON:           []byte("[]"),
+				ConstraintsJSON:        []byte("[]"),
+				BudgetJSON:             budgetJSON,
+				AcceptanceCriteriaJSON: criteriaJSON,
+				Status:                 int32(model.AgentGoalStatus_AGENT_GOAL_STATUS_RUNNING),
+				Revision:               1,
+				GraphRevision:          1,
+				AcceptanceRevision:     1,
+				CreateIdempotencyKey:   strings.TrimSpace(command.ClientIdempotencyKey),
+				CreatePayloadHash:      strings.TrimSpace(command.CommandPayloadHash),
+				CreatedAt:              now,
+				UpdatedAt:              now,
+			}
+			if err := tx.Create(&goal).Error; err != nil {
+				return err
+			}
+		} else {
+			loaded, loadErr := loadOwnedGoalTx(
+				tx,
+				ownerPTID,
+				strings.TrimSpace(command.ExistingGoalID),
+			)
+			if loadErr != nil {
+				return loadErr
+			}
+			goal = *loaded
+			goal.Status = int32(model.AgentGoalStatus_AGENT_GOAL_STATUS_RUNNING)
+			goal.Revision++
+			goal.GraphRevision++
+			goal.UpdatedAt = now
+			if err := tx.Model(&persistence.AgentGoal{}).
+				Where("goal_id = ? AND owner_ptid = ?", goal.GoalID, ownerPTID).
+				Updates(map[string]any{
+					"status":         goal.Status,
+					"revision":       goal.Revision,
+					"graph_revision": goal.GraphRevision,
+					"updated_at":     goal.UpdatedAt,
+				}).Error; err != nil {
+				return err
+			}
+		}
+
+		stepID := taskRunCommandID(
+			"step",
+			ownerPTID,
+			command.ClientIdempotencyKey,
+		)
+		attemptID := taskRunCommandID(
+			"attempt",
+			ownerPTID,
+			command.ClientIdempotencyKey,
+		)
+		goalNodeID := taskRunCommandID(
+			"gnode",
+			ownerPTID,
+			command.ClientIdempotencyKey,
+		)
+		meta := copyStringMap(command.Meta)
+		meta["agent_id"] = strings.TrimSpace(command.AgentID)
+		meta["attempt_id"] = attemptID
+		meta["client_idempotency_key"] = strings.TrimSpace(
+			command.ClientIdempotencyKey,
+		)
+		meta["command_payload_hash"] = strings.TrimSpace(
+			command.CommandPayloadHash,
+		)
+		meta["goal_id"] = goal.GoalID
+		meta["goal_node_id"] = goalNodeID
+		meta["root_step_id"] = stepID
+		meta["source_ref"] = strings.TrimSpace(command.SourceRef)
+		meta["task_run_id"] = taskID
+		meta["writer"] = taskRunCommandWriterVersion
+		metaJSON, marshalErr := json.Marshal(meta)
+		if marshalErr != nil {
+			return marshalErr
+		}
+
+		task = persistence.TaskRun{
+			TaskID:         taskID,
+			Title:          strings.TrimSpace(command.Title),
+			Description:    firstNonEmptyString(command.Description, command.Title),
+			Surface:        int32(command.Surface),
+			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING),
+			OwnerActorPTID: ownerPTID,
+			WorkspaceID:    strings.TrimSpace(command.WorkspaceID),
+			MetaJSON:       string(metaJSON),
+			CreatedAt:      now,
+			StartedAt:      now,
+			UpdatedAt:      now,
+			GoalID:         goal.GoalID,
+			GoalNodeID:     goalNodeID,
+			RootStepID:     stepID,
+		}
+		step = persistence.ExecutionStep{
+			StepID:            stepID,
+			TaskID:            taskID,
+			AgentID:           strings.TrimSpace(command.AgentID),
+			Role:              "executor",
+			Description:       task.Description,
+			Status:            int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+			Attempt:           1,
+			AttemptID:         attemptID,
+			EligibleExecutors: model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED.String(),
+			StartedAt:         now,
+		}
+		node := persistence.AgentGoalNode{
+			GoalID:                  goal.GoalID,
+			NodeID:                  goalNodeID,
+			TaskID:                  taskID,
+			Title:                   task.Title,
+			Description:             task.Description,
+			Status:                  int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+			PrerequisiteNodeIDsJSON: "[]",
+			CreatedAt:               now,
+			UpdatedAt:               now,
+		}
+		if err := tx.Create(&task).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&step).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&node).Error; err != nil {
+			return err
+		}
+		if command.ProviderPlan != nil {
+			providerPlan, planErr := taskProviderPlanRecordFromProto(
+				task.TaskID,
+				command.ProviderPlan,
+				now,
+			)
+			if planErr != nil {
+				return planErr
+			}
+			if err := tx.Create(providerPlan).Error; err != nil {
+				return err
+			}
+		}
+
+		goalEvents := NewGoalService(db)
+		goalEventType := goalUpdatedEvent
+		if goalCreated {
+			goalEventType = goalRunningEvent
+		}
+		if err := goalEvents.appendGoalEventTx(
+			ctx,
+			tx,
+			&goal,
+			goalEventType,
+			persistence.AgentRealtimeClassControl,
+		); err != nil {
+			return err
+		}
+		writer := s.eventWriter
+		if writer == nil {
+			writer = NewTaskEventWriter()
+		}
+		if _, err := writer.appendTx(
+			ctx,
+			tx,
+			taskRunCommandID(
+				"event",
+				ownerPTID,
+				command.ClientIdempotencyKey,
+			),
+			task.TaskID,
+			step.StepID,
+			"",
+			string(domain.EventTypeCollaborationTaskCreated),
+			taskRunCommandCreatedPayload(&task, &step, meta),
+		); err != nil {
+			return err
+		}
+		created = true
+		return nil
+	})
+	if err != nil {
+		var businessError *errcode.BizError
+		if errors.As(err, &businessError) {
+			return nil, err
+		}
+		replayedTask, replayedStep, replayErr := loadGoalBackedTaskRunReplayTx(
+			db.WithContext(ctx),
+			ownerPTID,
+			taskID,
+			command,
+		)
+		if replayErr == nil && replayedTask != nil {
+			var replayedGoal persistence.AgentGoal
+			if loadErr := db.WithContext(ctx).
+				Where(
+					"goal_id = ? AND owner_ptid = ?",
+					replayedTask.GoalID,
+					ownerPTID,
+				).
+				First(&replayedGoal).Error; loadErr == nil {
+				return goalBackedTaskRunResult(
+					&replayedGoal,
+					replayedTask,
+					replayedStep,
+					false,
+				)
+			}
+		}
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to create Goal-backed canonical TaskRun",
+			err,
+		)
+	}
+	goalModelValue, err := goalModel(&goal)
+	if err != nil {
+		return nil, err
+	}
+	response := taskRunCommandResponse(&task, &step, created)
+	return &GoalBackedTaskRunResult{
+		Goal:     goalModelValue,
+		Task:     response.GetTask(),
+		RootStep: response.GetRootStep(),
+		Created:  created,
+	}, nil
+}
+
+func goalBackedTaskRunResult(
+	goal *persistence.AgentGoal,
+	task *persistence.TaskRun,
+	step *persistence.ExecutionStep,
+	created bool,
+) (*GoalBackedTaskRunResult, error) {
+	goalModelValue, err := goalModel(goal)
+	if err != nil {
+		return nil, err
+	}
+	response := taskRunCommandResponse(task, step, created)
+	return &GoalBackedTaskRunResult{
+		Goal:     goalModelValue,
+		Task:     response.GetTask(),
+		RootStep: response.GetRootStep(),
+		Created:  created,
+	}, nil
+}
+
 func (s *TaskRunCommandService) getDB(ctx context.Context) (*gorm.DB, error) {
 	if s != nil && s.db != nil {
 		return s.db, nil
@@ -190,6 +529,83 @@ func (s *TaskRunCommandService) getDB(ctx context.Context) (*gorm.DB, error) {
 		)
 	}
 	return db, nil
+}
+
+func validateGoalBackedTaskRunCommand(
+	ownerPTID string,
+	command *GoalBackedTaskRunCommand,
+) error {
+	if command == nil {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"Goal-backed TaskRun command is required",
+			nil,
+		)
+	}
+	if ownerPTID == "" ||
+		strings.TrimSpace(command.Title) == "" ||
+		strings.TrimSpace(command.AgentID) == "" ||
+		strings.TrimSpace(command.ClientIdempotencyKey) == "" ||
+		strings.TrimSpace(command.CommandPayloadHash) == "" {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"actor, title, agent_id, client_idempotency_key and command_payload_hash are required",
+			nil,
+		)
+	}
+	switch command.Surface {
+	case model.TaskSurface_TASK_SURFACE_API,
+		model.TaskSurface_TASK_SURFACE_CANVAS,
+		model.TaskSurface_TASK_SURFACE_DIRECT_RUN:
+		return nil
+	default:
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"Goal-backed TaskRun surface must be API, CANVAS or DIRECT_RUN",
+			nil,
+		)
+	}
+}
+
+func goalBackedTaskRunBudget(
+	command *GoalBackedTaskRunCommand,
+) *model.AgentGoalBudget {
+	budget := &model.AgentGoalBudget{MaxParallelTasks: 1}
+	if command == nil {
+		return budget
+	}
+	if command.BudgetTokens > 0 {
+		budget.MaxTokens = uint64(command.BudgetTokens)
+	}
+	if command.BudgetMoney > 0 {
+		maxCost := command.BudgetMoney
+		budget.MaxCost = &maxCost
+	}
+	if command.BudgetTimeMs > 0 {
+		budget.WallTimeMs = uint64(command.BudgetTimeMs)
+	}
+	return budget
+}
+
+func loadGoalBackedTaskRunReplayTx(
+	tx *gorm.DB,
+	ownerPTID string,
+	taskID string,
+	command *GoalBackedTaskRunCommand,
+) (*persistence.TaskRun, *persistence.ExecutionStep, error) {
+	request := &model.CreateTaskRunRequest{
+		ClientIdempotencyKey: strings.TrimSpace(command.ClientIdempotencyKey),
+		CommandPayloadHash:   strings.TrimSpace(command.CommandPayloadHash),
+	}
+	return loadTaskRunCommandReplayTx(
+		tx,
+		ownerPTID,
+		taskID,
+		request,
+	)
 }
 
 func validateTaskRunCommand(

@@ -2355,6 +2355,15 @@ func TestAtelierConfirmedMemoryFeedsPlannerRiskVerifierRetrieval(t *testing.T) {
 
 func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "atelier_rerun_confirm_creates_task")
+	if err := db.AutoMigrate(
+		&persistence.AgentGoal{},
+		&persistence.AgentGoalNode{},
+		&persistence.AgentGoalEvent{},
+		&persistence.AgentRealtimeActorCursor{},
+		&persistence.AgentRealtimeOutbox{},
+	); err != nil {
+		t.Fatalf("migrate canonical Atelier writer tables: %v", err)
+	}
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
@@ -2415,15 +2424,16 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 	if confirmed.RerunTaskID == "" || confirmed.RerunTaskID == task.ID {
 		t.Fatalf("expected new rerun task id, got %+v", confirmed)
 	}
-	var rerunTask persistence.CollaborationTask
-	if err := db.First(&rerunTask, "id = ?", confirmed.RerunTaskID).Error; err != nil {
+	var rerunTask persistence.TaskRun
+	if err := db.First(&rerunTask, "task_id = ?", confirmed.RerunTaskID).Error; err != nil {
 		t.Fatalf("load rerun task: %v", err)
 	}
-	if rerunTask.GoalOwnerPTID != "actor-1" ||
+	if rerunTask.OwnerActorPTID != "actor-1" ||
 		rerunTask.Title != task.Title ||
 		rerunTask.Description != task.Description ||
 		rerunTask.WorkspaceID != task.WorkspaceID ||
-		model.CollaborationTaskStatus(rerunTask.Status) != model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING {
+		rerunTask.GoalID == "" ||
+		model.CollaborationTaskStatus(rerunTask.Status) != model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING {
 		t.Fatalf("unexpected rerun task: %+v", rerunTask)
 	}
 	meta := map[string]string{}
@@ -2437,11 +2447,11 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 		t.Fatalf("unexpected rerun meta: %+v", meta)
 	}
 	var nodeCount int64
-	if err := db.Model(&persistence.CollaborationTaskNode{}).Where("task_id = ?", confirmed.RerunTaskID).Count(&nodeCount).Error; err != nil {
+	if err := db.Model(&persistence.ExecutionStep{}).Where("task_id = ?", confirmed.RerunTaskID).Count(&nodeCount).Error; err != nil {
 		t.Fatalf("count rerun nodes: %v", err)
 	}
-	if nodeCount != 3 {
-		t.Fatalf("expected two provider nodes plus synthesizer, got %d", nodeCount)
+	if nodeCount != 1 {
+		t.Fatalf("expected one canonical root ExecutionStep, got %d", nodeCount)
 	}
 	var auditCount int64
 	if err := db.Model(&persistence.TaskEvent{}).
@@ -2463,11 +2473,103 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 		t.Fatalf("expected idempotent rerun confirmation, got %+v", again)
 	}
 	var rerunTaskCount int64
-	if err := db.Model(&persistence.CollaborationTask{}).Where("meta_json LIKE ?", "%"+feedback.FeedbackID+"%").Count(&rerunTaskCount).Error; err != nil {
+	if err := db.Model(&persistence.TaskRun{}).Where("meta_json LIKE ?", "%"+feedback.FeedbackID+"%").Count(&rerunTaskCount).Error; err != nil {
 		t.Fatalf("count rerun tasks: %v", err)
 	}
 	if rerunTaskCount != 1 {
 		t.Fatalf("expected one rerun task after idempotent confirmation, got %d", rerunTaskCount)
+	}
+	var collaborationTaskCount int64
+	if err := db.Model(&persistence.CollaborationTask{}).Count(&collaborationTaskCount).Error; err != nil {
+		t.Fatalf("count legacy collaboration tasks: %v", err)
+	}
+	if collaborationTaskCount != 1 {
+		t.Fatalf("rerun wrote a legacy CollaborationTask: count=%d", collaborationTaskCount)
+	}
+}
+
+func TestAtelierCreateProjectWritesGoalBackedTaskRunWithoutCollaborationTask(
+	t *testing.T,
+) {
+	db := openResumeCollaborationTaskDB(
+		t,
+		"atelier_create_goal_backed_taskrun",
+	)
+	if err := db.AutoMigrate(
+		&persistence.AgentGoal{},
+		&persistence.AgentGoalNode{},
+		&persistence.AgentGoalEvent{},
+		&persistence.AgentRealtimeActorCursor{},
+		&persistence.AgentRealtimeOutbox{},
+	); err != nil {
+		t.Fatalf("migrate canonical Atelier writer tables: %v", err)
+	}
+	injectOrchestrationServiceTestStore(t, db)
+	service := NewAtelierProjectionService(
+		NewOrchestrationService(nil, nil, nil),
+	)
+	request := &CreateAtelierProjectFromGoalRequest{
+		Goal:                 "Ship the canonical Atelier writer",
+		Project:              "peers-touch",
+		IntentPreset:         "work",
+		ClientIdempotencyKey: "atelier-create-taskrun-1",
+		AgentIDs:             []string{"agent-1"},
+		Run: AtelierRunTargetRequest{
+			Kind:     "agents",
+			FlowID:   "expert-hierarchy",
+			AgentIDs: []string{"agent-1"},
+		},
+	}
+
+	first, err := service.CreateProjectFromGoal(
+		context.Background(),
+		"actor-1",
+		request,
+	)
+	if err != nil {
+		t.Fatalf("create canonical Atelier TaskRun: %v", err)
+	}
+	replayed, err := service.CreateProjectFromGoal(
+		context.Background(),
+		"actor-1",
+		request,
+	)
+	if err != nil {
+		t.Fatalf("replay canonical Atelier TaskRun: %v", err)
+	}
+	if first.SelectedTaskID == "" ||
+		replayed.SelectedTaskID != first.SelectedTaskID {
+		t.Fatalf("Atelier TaskRun identity changed on replay: first=%q replay=%q", first.SelectedTaskID, replayed.SelectedTaskID)
+	}
+	var projected *AtelierTaskProjection
+	for index := range first.Workspace.Tasks {
+		if first.Workspace.Tasks[index].ID == first.SelectedTaskID {
+			projected = &first.Workspace.Tasks[index]
+			break
+		}
+	}
+	if projected == nil ||
+		projected.TaskRunID != first.SelectedTaskID ||
+		projected.GoalID == "" ||
+		projected.ProjectID != projected.GoalID {
+		t.Fatalf("Atelier did not open canonical Goal/TaskRun identity: %+v", projected)
+	}
+	for modelValue, want := range map[any]int64{
+		&persistence.CollaborationTask{}:     0,
+		&persistence.CollaborationTaskNode{}: 0,
+		&persistence.AgentGoal{}:             1,
+		&persistence.AgentGoalNode{}:         1,
+		&persistence.TaskRun{}:               1,
+		&persistence.ExecutionStep{}:         1,
+		&persistence.TaskProviderPlan{}:      1,
+	} {
+		var count int64
+		if err := db.Model(modelValue).Count(&count).Error; err != nil {
+			t.Fatalf("count %T: %v", modelValue, err)
+		}
+		if count != want {
+			t.Fatalf("%T count = %d, want %d", modelValue, count, want)
+		}
 	}
 }
 
