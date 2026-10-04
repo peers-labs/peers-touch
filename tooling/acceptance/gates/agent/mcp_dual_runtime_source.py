@@ -23,6 +23,12 @@ def forbid(content: str, needle: str, message: str) -> None:
 
 def main() -> int:
     proto = read("model/domain/agent/capability.proto")
+    generated_go = read(
+        "apps/station/app/subserver/agent/model/capability.pb.go"
+    )
+    generated_desktop_ts = read(
+        "apps/desktop/src/gen/proto/domain/agent/capability_pb.ts"
+    )
     station = read(
         "apps/station/app/subserver/agent/service/mcp_server_service.go"
     )
@@ -53,6 +59,26 @@ def main() -> int:
     )
 
     require(proto, "enum McpTransport", "MCP transport contract is missing")
+    require(
+        generated_go,
+        "type McpTransport int32",
+        "generated Go MCP transport contract is stale",
+    )
+    require(
+        generated_go,
+        "type McpServer struct",
+        "generated Go MCP server contract is stale",
+    )
+    require(
+        generated_desktop_ts,
+        "export enum McpTransport",
+        "generated Desktop MCP transport contract is stale",
+    )
+    require(
+        generated_desktop_ts,
+        "export const McpServerSchema",
+        "generated Desktop MCP server contract is stale",
+    )
     require(
         proto,
         "ToolExecutionOwner execution_owner",

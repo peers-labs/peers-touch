@@ -10,7 +10,51 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/federation/federation_projection_service.proto.
  */
 export const file_domain_federation_federation_projection_service: GenFile = /*@__PURE__*/
-  fileDesc("CjVkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3Byb2plY3Rpb25fc2VydmljZS5wcm90bxIfcGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MSJiChdMaXN0RmVkZXJhdGlvbnNSZXNwb25zZRJHCgtmZWRlcmF0aW9ucxgBIAMoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuRmVkZXJhdGlvblN1bW1hcnkinAIKEUZlZGVyYXRpb25TdW1tYXJ5EhUKDWZlZGVyYXRpb25faWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIOCgZzdGF0dXMYBCABKAkSEwoLcG9saWN5X3R5cGUYBSABKAkSEAoIaGVhZF9zZXEYBiABKAQSIQoZc2VxdWVuY2VyX3N0YXRpb25fcGVlcl9pZBgHIAEoCRIcChRtZW1iZXJfc3RhdGlvbl9jb3VudBgIIAEoDRIPCgdteV9yb2xlGAkgASgJEkQKCmNhcGFiaWxpdHkYCiABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkFjdG9yQ2FwYWJpbGl0eSLQAQoPQWN0b3JDYXBhYmlsaXR5EhIKCmNhbl9pbnZpdGUYASABKAgSGAoQY2FuX2FwcHJvdmVfam9pbhgCIAEoCBIZChFjYW5fdXBkYXRlX3BvbGljeRgDIAEoCBIXCg9jYW5fdmlld19sZWRnZXIYBCABKAgSGgoSY2FuX3JlbW92ZV9zdGF0aW9uGAUgASgIEhcKD2Nhbl9ncmFudF9hZG1pbhgGIAEoCBIRCgljYW5fbGVhdmUYByABKAgSEwoLY2FuX2FyY2hpdmUYCCABKAgiMgoZTGlzdE1lbWJlclN0YXRpb25zUmVxdWVzdBIVCg1mZWRlcmF0aW9uX2lkGAEgASgJImIKGkxpc3RNZW1iZXJTdGF0aW9uc1Jlc3BvbnNlEkQKCHN0YXRpb25zGAEgAygLMjIucGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MS5NZW1iZXJTdGF0aW9uVmlldyKdAQoRTWVtYmVyU3RhdGlvblZpZXcSFwoPc3RhdGlvbl9wZWVyX2lkGAEgASgJEhQKDHN0YXRpb25fbmFtZRgCIAEoCRITCgtzdGF0aW9uX3VybBgDIAEoCRIMCgRyb2xlGAQgASgJEg4KBnN0YXR1cxgFIAEoCRIRCglqb2luZWRfYXQYBiABKAkSEwoLc3luY19zdGF0dXMYByABKAkiUQoXQ3JlYXRlRmVkZXJhdGlvblJlcXVlc3QSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRITCgtwb2xpY3lfdHlwZRgDIAEoCSJ5ChhDcmVhdGVGZWRlcmF0aW9uUmVzcG9uc2USFQoNZmVkZXJhdGlvbl9pZBgBIAEoCRJGCgpmZWRlcmF0aW9uGAIgASgLMjIucGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MS5GZWRlcmF0aW9uU3VtbWFyeSJcChVKb2luRmVkZXJhdGlvblJlcXVlc3QSGwoTZmVkZXJhdGlvbl9lbmRwb2ludBgBIAEoCRIVCg1mZWRlcmF0aW9uX2lkGAIgASgJEg8KB21lc3NhZ2UYAyABKAkiPQoWSm9pbkZlZGVyYXRpb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJvcG9zYWxfaWQYAiABKAkiPwoWTGVhdmVGZWRlcmF0aW9uUmVxdWVzdBIVCg1mZWRlcmF0aW9uX2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSIqChdMZWF2ZUZlZGVyYXRpb25SZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIjAKF0RlbGV0ZUZlZGVyYXRpb25SZXF1ZXN0EhUKDWZlZGVyYXRpb25faWQYASABKAkiKwoYRGVsZXRlRmVkZXJhdGlvblJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAhCVFpSZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9mZWRlcmF0aW9uL3BiO2ZlZGVyYXRpb25wYmIGcHJvdG8z");
+  fileDesc("CjVkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3Byb2plY3Rpb25fc2VydmljZS5wcm90bxIfcGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MSJmCh5MaXN0RmVkZXJhdGlvbkNvbnRleHRzUmVzcG9uc2USRAoIY29udGV4dHMYASADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkZlZGVyYXRpb25Db250ZXh0IkgKEUZlZGVyYXRpb25Db250ZXh0EhUKDWZlZGVyYXRpb25faWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZzdGF0dXMYAyABKAkiYgoXTGlzdEZlZGVyYXRpb25zUmVzcG9uc2USRwoLZmVkZXJhdGlvbnMYASADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkZlZGVyYXRpb25TdW1tYXJ5IpwCChFGZWRlcmF0aW9uU3VtbWFyeRIVCg1mZWRlcmF0aW9uX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSDgoGc3RhdHVzGAQgASgJEhMKC3BvbGljeV90eXBlGAUgASgJEhAKCGhlYWRfc2VxGAYgASgEEiEKGXNlcXVlbmNlcl9zdGF0aW9uX3BlZXJfaWQYByABKAkSHAoUbWVtYmVyX3N0YXRpb25fY291bnQYCCABKA0SDwoHbXlfcm9sZRgJIAEoCRJECgpjYXBhYmlsaXR5GAogASgLMjAucGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MS5BY3RvckNhcGFiaWxpdHki0AEKD0FjdG9yQ2FwYWJpbGl0eRISCgpjYW5faW52aXRlGAEgASgIEhgKEGNhbl9hcHByb3ZlX2pvaW4YAiABKAgSGQoRY2FuX3VwZGF0ZV9wb2xpY3kYAyABKAgSFwoPY2FuX3ZpZXdfbGVkZ2VyGAQgASgIEhoKEmNhbl9yZW1vdmVfc3RhdGlvbhgFIAEoCBIXCg9jYW5fZ3JhbnRfYWRtaW4YBiABKAgSEQoJY2FuX2xlYXZlGAcgASgIEhMKC2Nhbl9hcmNoaXZlGAggASgIIjIKGUxpc3RNZW1iZXJTdGF0aW9uc1JlcXVlc3QSFQoNZmVkZXJhdGlvbl9pZBgBIAEoCSJiChpMaXN0TWVtYmVyU3RhdGlvbnNSZXNwb25zZRJECghzdGF0aW9ucxgBIAMoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuTWVtYmVyU3RhdGlvblZpZXcinQEKEU1lbWJlclN0YXRpb25WaWV3EhcKD3N0YXRpb25fcGVlcl9pZBgBIAEoCRIUCgxzdGF0aW9uX25hbWUYAiABKAkSEwoLc3RhdGlvbl91cmwYAyABKAkSDAoEcm9sZRgEIAEoCRIOCgZzdGF0dXMYBSABKAkSEQoJam9pbmVkX2F0GAYgASgJEhMKC3N5bmNfc3RhdHVzGAcgASgJIlEKF0NyZWF0ZUZlZGVyYXRpb25SZXF1ZXN0EgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSEwoLcG9saWN5X3R5cGUYAyABKAkieQoYQ3JlYXRlRmVkZXJhdGlvblJlc3BvbnNlEhUKDWZlZGVyYXRpb25faWQYASABKAkSRgoKZmVkZXJhdGlvbhgCIAEoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuRmVkZXJhdGlvblN1bW1hcnkiXAoVSm9pbkZlZGVyYXRpb25SZXF1ZXN0EhsKE2ZlZGVyYXRpb25fZW5kcG9pbnQYASABKAkSFQoNZmVkZXJhdGlvbl9pZBgCIAEoCRIPCgdtZXNzYWdlGAMgASgJIj0KFkpvaW5GZWRlcmF0aW9uUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJEhMKC3Byb3Bvc2FsX2lkGAIgASgJIj8KFkxlYXZlRmVkZXJhdGlvblJlcXVlc3QSFQoNZmVkZXJhdGlvbl9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAkiKgoXTGVhdmVGZWRlcmF0aW9uUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIwChdEZWxldGVGZWRlcmF0aW9uUmVxdWVzdBIVCg1mZWRlcmF0aW9uX2lkGAEgASgJIisKGERlbGV0ZUZlZGVyYXRpb25SZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIQlRaUmdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvZmVkZXJhdGlvbi9wYjtmZWRlcmF0aW9ucGJiBnByb3RvMw");
+
+/**
+ * @generated from message peers_touch.model.federation.v1.ListFederationContextsResponse
+ */
+export type ListFederationContextsResponse = Message<"peers_touch.model.federation.v1.ListFederationContextsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.federation.v1.FederationContext contexts = 1;
+   */
+  contexts: FederationContext[];
+};
+
+/**
+ * Describes the message peers_touch.model.federation.v1.ListFederationContextsResponse.
+ * Use `create(ListFederationContextsResponseSchema)` to create a new message.
+ */
+export const ListFederationContextsResponseSchema: GenMessage<ListFederationContextsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_federation_federation_projection_service, 0);
+
+/**
+ * @generated from message peers_touch.model.federation.v1.FederationContext
+ */
+export type FederationContext = Message<"peers_touch.model.federation.v1.FederationContext"> & {
+  /**
+   * @generated from field: string federation_id = 1;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string status = 3;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message peers_touch.model.federation.v1.FederationContext.
+ * Use `create(FederationContextSchema)` to create a new message.
+ */
+export const FederationContextSchema: GenMessage<FederationContext> = /*@__PURE__*/
+  messageDesc(file_domain_federation_federation_projection_service, 1);
 
 /**
  * @generated from message peers_touch.model.federation.v1.ListFederationsResponse
@@ -27,7 +71,7 @@ export type ListFederationsResponse = Message<"peers_touch.model.federation.v1.L
  * Use `create(ListFederationsResponseSchema)` to create a new message.
  */
 export const ListFederationsResponseSchema: GenMessage<ListFederationsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 0);
+  messageDesc(file_domain_federation_federation_projection_service, 2);
 
 /**
  * @generated from message peers_touch.model.federation.v1.FederationSummary
@@ -89,7 +133,7 @@ export type FederationSummary = Message<"peers_touch.model.federation.v1.Federat
  * Use `create(FederationSummarySchema)` to create a new message.
  */
 export const FederationSummarySchema: GenMessage<FederationSummary> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 1);
+  messageDesc(file_domain_federation_federation_projection_service, 3);
 
 /**
  * @generated from message peers_touch.model.federation.v1.ActorCapability
@@ -141,7 +185,7 @@ export type ActorCapability = Message<"peers_touch.model.federation.v1.ActorCapa
  * Use `create(ActorCapabilitySchema)` to create a new message.
  */
 export const ActorCapabilitySchema: GenMessage<ActorCapability> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 2);
+  messageDesc(file_domain_federation_federation_projection_service, 4);
 
 /**
  * @generated from message peers_touch.model.federation.v1.ListMemberStationsRequest
@@ -158,7 +202,7 @@ export type ListMemberStationsRequest = Message<"peers_touch.model.federation.v1
  * Use `create(ListMemberStationsRequestSchema)` to create a new message.
  */
 export const ListMemberStationsRequestSchema: GenMessage<ListMemberStationsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 3);
+  messageDesc(file_domain_federation_federation_projection_service, 5);
 
 /**
  * @generated from message peers_touch.model.federation.v1.ListMemberStationsResponse
@@ -175,7 +219,7 @@ export type ListMemberStationsResponse = Message<"peers_touch.model.federation.v
  * Use `create(ListMemberStationsResponseSchema)` to create a new message.
  */
 export const ListMemberStationsResponseSchema: GenMessage<ListMemberStationsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 4);
+  messageDesc(file_domain_federation_federation_projection_service, 6);
 
 /**
  * @generated from message peers_touch.model.federation.v1.MemberStationView
@@ -222,7 +266,7 @@ export type MemberStationView = Message<"peers_touch.model.federation.v1.MemberS
  * Use `create(MemberStationViewSchema)` to create a new message.
  */
 export const MemberStationViewSchema: GenMessage<MemberStationView> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 5);
+  messageDesc(file_domain_federation_federation_projection_service, 7);
 
 /**
  * @generated from message peers_touch.model.federation.v1.CreateFederationRequest
@@ -249,7 +293,7 @@ export type CreateFederationRequest = Message<"peers_touch.model.federation.v1.C
  * Use `create(CreateFederationRequestSchema)` to create a new message.
  */
 export const CreateFederationRequestSchema: GenMessage<CreateFederationRequest> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 6);
+  messageDesc(file_domain_federation_federation_projection_service, 8);
 
 /**
  * @generated from message peers_touch.model.federation.v1.CreateFederationResponse
@@ -271,7 +315,7 @@ export type CreateFederationResponse = Message<"peers_touch.model.federation.v1.
  * Use `create(CreateFederationResponseSchema)` to create a new message.
  */
 export const CreateFederationResponseSchema: GenMessage<CreateFederationResponse> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 7);
+  messageDesc(file_domain_federation_federation_projection_service, 9);
 
 /**
  * @generated from message peers_touch.model.federation.v1.JoinFederationRequest
@@ -298,7 +342,7 @@ export type JoinFederationRequest = Message<"peers_touch.model.federation.v1.Joi
  * Use `create(JoinFederationRequestSchema)` to create a new message.
  */
 export const JoinFederationRequestSchema: GenMessage<JoinFederationRequest> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 8);
+  messageDesc(file_domain_federation_federation_projection_service, 10);
 
 /**
  * @generated from message peers_touch.model.federation.v1.JoinFederationResponse
@@ -320,7 +364,7 @@ export type JoinFederationResponse = Message<"peers_touch.model.federation.v1.Jo
  * Use `create(JoinFederationResponseSchema)` to create a new message.
  */
 export const JoinFederationResponseSchema: GenMessage<JoinFederationResponse> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 9);
+  messageDesc(file_domain_federation_federation_projection_service, 11);
 
 /**
  * @generated from message peers_touch.model.federation.v1.LeaveFederationRequest
@@ -342,7 +386,7 @@ export type LeaveFederationRequest = Message<"peers_touch.model.federation.v1.Le
  * Use `create(LeaveFederationRequestSchema)` to create a new message.
  */
 export const LeaveFederationRequestSchema: GenMessage<LeaveFederationRequest> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 10);
+  messageDesc(file_domain_federation_federation_projection_service, 12);
 
 /**
  * @generated from message peers_touch.model.federation.v1.LeaveFederationResponse
@@ -359,7 +403,7 @@ export type LeaveFederationResponse = Message<"peers_touch.model.federation.v1.L
  * Use `create(LeaveFederationResponseSchema)` to create a new message.
  */
 export const LeaveFederationResponseSchema: GenMessage<LeaveFederationResponse> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 11);
+  messageDesc(file_domain_federation_federation_projection_service, 13);
 
 /**
  * @generated from message peers_touch.model.federation.v1.DeleteFederationRequest
@@ -376,7 +420,7 @@ export type DeleteFederationRequest = Message<"peers_touch.model.federation.v1.D
  * Use `create(DeleteFederationRequestSchema)` to create a new message.
  */
 export const DeleteFederationRequestSchema: GenMessage<DeleteFederationRequest> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 12);
+  messageDesc(file_domain_federation_federation_projection_service, 14);
 
 /**
  * @generated from message peers_touch.model.federation.v1.DeleteFederationResponse
@@ -393,4 +437,4 @@ export type DeleteFederationResponse = Message<"peers_touch.model.federation.v1.
  * Use `create(DeleteFederationResponseSchema)` to create a new message.
  */
 export const DeleteFederationResponseSchema: GenMessage<DeleteFederationResponse> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_projection_service, 13);
+  messageDesc(file_domain_federation_federation_projection_service, 15);

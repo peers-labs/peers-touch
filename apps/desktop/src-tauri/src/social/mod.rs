@@ -19,7 +19,7 @@ use tauri::{State, Window};
 use crate::application::station_binding::{self, StationBindingPhase, StationBindingState};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
-use crate::model::federation::FederationSelfView;
+use crate::model::actor::ActorProfile;
 use crate::secure_content::adapter::jwt_session_id;
 use crate::secure_content::station_trust::resolve_station_signing_key;
 use crate::secure_content::worker::maintain_content_prekeys;
@@ -687,31 +687,30 @@ fn activate(
     let station_peer_id = station_client::active_station_peer_id()
         .ok_or_else(|| "secure content active Station peer ID is unavailable".to_string())?;
     let station_url = station_client::station_base_url();
-    let federation_self =
-        station_client::request_peers_proto_no_body_for_device_at::<FederationSelfView>(
-            &station_url,
-            reqwest::Method::GET,
-            "/actor/federation/me",
-            &active.jwt,
-            None,
-            &engine.endpoint().device_id,
-        )
-        .map_err(|error| format!("load Secure Content Station identity: {error}"))?;
-    if federation_self.home_station_peer_id != station_peer_id
-        || federation_self
-            .actor_ref
+    let actor_profile = station_client::request_peers_proto_no_body_for_device_at::<ActorProfile>(
+        &station_url,
+        reqwest::Method::GET,
+        "/actor/profile",
+        &active.jwt,
+        None,
+        &engine.endpoint().device_id,
+    )
+    .map_err(|error| format!("load Secure Content Station identity: {error}"))?;
+    if actor_profile.home_station_peer_id != station_peer_id
+        || actor_profile
+            .r#ref
             .as_ref()
             .map(|actor| actor.ptid.as_str())
             != Some(actor_ptid)
-        || federation_self.federated_handle.trim().is_empty()
+        || actor_profile.federated_handle.trim().is_empty()
     {
-        return Err("secure content Federation self identity is inconsistent".to_string());
+        return Err("secure content Actor Profile identity is inconsistent".to_string());
     }
     let trusted_station_signing_key = resolve_station_signing_key(
         station_client::station_registry(),
         &station_url,
         &station_peer_id,
-        &federation_self.federated_handle,
+        &actor_profile.federated_handle,
         &active.jwt,
         &engine.endpoint().device_id,
     )?;

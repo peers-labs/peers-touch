@@ -122,12 +122,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('../../services/desktop_api', () => ({
   api: {
-    federationCreate: vi.fn(),
-    federationGetSelf: vi.fn(),
-    federationJoin: vi.fn(),
-    federationListFederations: vi.fn(),
-    federationListMemberStations: vi.fn(),
+    federationListContexts: vi.fn(),
     federationResolve: vi.fn(),
+    profileGet: vi.fn(),
     ossResolveUrl: vi.fn(),
     ossUploadAttachmentSocial: vi.fn(),
     ossUploadEncryptedAttachmentSocial: vi.fn(),
@@ -249,12 +246,9 @@ describe('Moments acceptance harness', () => {
     vi.mocked(socialBlockActor).mockReset();
     vi.mocked(socialFollow).mockReset();
     vi.mocked(socialUnblockActor).mockReset();
-    vi.mocked(api.federationCreate).mockReset();
-    vi.mocked(api.federationGetSelf).mockReset();
-    vi.mocked(api.federationJoin).mockReset();
-    vi.mocked(api.federationListFederations).mockReset();
-    vi.mocked(api.federationListMemberStations).mockReset();
+    vi.mocked(api.federationListContexts).mockReset();
     vi.mocked(api.federationResolve).mockReset();
+    vi.mocked(api.profileGet).mockReset();
     vi.mocked(api.socialFriendRequestAccept).mockReset();
     vi.mocked(api.socialFriendRequestList).mockReset();
     vi.mocked(api.socialFriendRequestSend).mockReset();
@@ -291,12 +285,11 @@ describe('Moments acceptance harness', () => {
   });
 
   it('creates an accepted friendship through Social authority', async () => {
-    vi.mocked(api.federationGetSelf).mockResolvedValue({
-      homeStationPeerId: 'station-four',
-      joinedFederations: [],
+    vi.mocked(api.profileGet).mockResolvedValue({
+      home_station_peer_id: 'station-four',
     } as never);
-    vi.mocked(api.federationListFederations).mockResolvedValue({
-      federations: [{
+    vi.mocked(api.federationListContexts).mockResolvedValue({
+      contexts: [{
         federationId: 'federation-1',
         status: 'active',
       }],
@@ -349,9 +342,15 @@ describe('Moments acceptance harness', () => {
   });
 
   it('reads and resolves a federated Actor identity through production APIs', async () => {
-    vi.mocked(api.federationGetSelf).mockResolvedValue({
-      federatedHandle: '@alice@four.invalid',
-      homeStationPeerId: 'station-four',
+    vi.mocked(api.profileGet).mockResolvedValue({
+      federated_handle: '@alice@four.invalid',
+      home_station_peer_id: 'station-four',
+    } as never);
+    vi.mocked(api.federationListContexts).mockResolvedValue({
+      contexts: [{
+        federationId: 'federation-1',
+        status: 'active',
+      }],
     } as never);
     vi.mocked(api.federationResolve).mockResolvedValue({
       federatedHandle: '@remote@five-arm.invalid',
@@ -374,44 +373,56 @@ describe('Moments acceptance harness', () => {
       homeStationPeerId: 'station-five-arm',
     });
     expect(api.federationResolve).toHaveBeenCalledWith(
+      'federation-1',
       '@remote@five-arm.invalid',
     );
   });
 
-  it('joins and verifies the shared Federation through production APIs', async () => {
-    vi.mocked(api.federationGetSelf).mockResolvedValue({
+  it('joins and verifies the shared Federation through an acceptance-only fixture boundary', async () => {
+    const snapshot = {
+      actorPtid: 'ptid:test:alice',
+      federatedHandle: '@alice@five-arm.invalid',
       homeStationPeerId: 'station-five-arm',
-    } as never);
-    vi.mocked(api.federationListFederations).mockResolvedValue({
+      homeStationDomain: 'five-arm.invalid',
       federations: [{
         federationId: 'federation-1',
         sequencerStationPeerId: 'station-four',
         status: 'active',
-      }],
-    } as never);
-    vi.mocked(api.federationJoin).mockResolvedValue({
-      status: 'active',
-      proposalId: 'proposal-1',
-    } as never);
-    vi.mocked(api.federationListMemberStations).mockResolvedValue({
-      stations: [
+        name: 'Development',
+        members: [
         {
           stationPeerId: 'station-five-arm',
+          stationName: 'Five',
           stationUrl: 'https://five-arm.invalid',
           status: 'active',
         },
         {
           stationPeerId: 'station-four',
+          stationName: 'Four',
           stationUrl: 'https://four.invalid',
           status: 'active',
         },
         {
           stationPeerId: 'station-retired',
+          stationName: 'Retired',
           stationUrl: 'https://retired.invalid',
           status: 'left',
         },
-      ],
-    } as never);
+        ],
+      }],
+    };
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'acceptance_federation_fixture_snapshot') {
+        return { ok: true, data: snapshot } as never;
+      }
+      if (command === 'acceptance_federation_fixture_join') {
+        return {
+          ok: true,
+          data: { status: 'active', proposalId: 'proposal-1' },
+        } as never;
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
 
     await expect(harness().federationJoinAuthority()).resolves.toEqual({
       federationEndpoint: 'https://four.invalid',
@@ -433,59 +444,69 @@ describe('Moments acceptance harness', () => {
       stationPeerIds: ['station-five-arm', 'station-four'],
     });
 
-    expect(api.federationJoin).toHaveBeenCalledWith({
-      federation_endpoint: 'https://four.invalid',
-      federation_id: 'federation-1',
-      message: 'secure-content-w8 remote recipient fixture',
-    });
-    expect(api.federationListMemberStations).toHaveBeenCalledWith(
-      'federation-1',
+    expect(invoke).toHaveBeenCalledWith(
+      'acceptance_federation_fixture_join',
+      {
+        input: {
+          federation_endpoint: 'https://four.invalid',
+          federation_id: 'federation-1',
+          message: 'secure-content-w8 remote recipient fixture',
+        },
+      },
     );
   });
 
   it('creates a Federation when active membership has no sequencer endpoint', async () => {
-    vi.mocked(api.federationGetSelf).mockResolvedValue({
-      homeStationPeerId: 'station-four',
-    } as never);
-    vi.mocked(api.federationListFederations).mockResolvedValue({
-      federations: [{
-        federationId: 'stale-federation',
-        sequencerStationPeerId: 'station-four',
-        status: 'active',
-      }],
-    } as never);
-    vi.mocked(api.federationListMemberStations)
-      .mockResolvedValueOnce({
-        stations: [{
-          stationPeerId: 'station-four',
-          stationUrl: '',
-          status: 'active',
-        }],
-      } as never)
-      .mockResolvedValueOnce({
-        stations: [{
-          stationPeerId: 'station-four',
-          stationUrl: 'https://four.invalid',
-          status: 'active',
-        }],
-      } as never);
-    vi.mocked(api.federationCreate).mockResolvedValue({
-      federationId: 'created-federation',
-    } as never);
+    let snapshotReads = 0;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'acceptance_federation_fixture_create') {
+        return {
+          ok: true,
+          data: { federationId: 'created-federation' },
+        } as never;
+      }
+      if (command === 'acceptance_federation_fixture_snapshot') {
+        snapshotReads += 1;
+        return {
+          ok: true,
+          data: {
+            actorPtid: 'ptid:test:alice',
+            federatedHandle: '@alice@four.invalid',
+            homeStationPeerId: 'station-four',
+            homeStationDomain: 'four.invalid',
+            federations: [{
+              federationId: snapshotReads === 1
+                ? 'stale-federation'
+                : 'created-federation',
+              name: 'Fixture',
+              sequencerStationPeerId: 'station-four',
+              status: 'active',
+              members: [{
+                stationPeerId: 'station-four',
+                stationName: 'Four',
+                stationUrl: snapshotReads === 1 ? '' : 'https://four.invalid',
+                status: 'active',
+              }],
+            }],
+          },
+        } as never;
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
 
     await expect(harness().federationJoinAuthority()).resolves.toEqual({
       federationEndpoint: 'https://four.invalid',
       federationId: 'created-federation',
       homeStationPeerId: 'station-four',
     });
-    expect(api.federationCreate).toHaveBeenCalledWith({
-      name: 'Secure Content W8 Fixture',
-      description: 'Acceptance-owned cross-Station Social fixture',
-      policy_type: 'single_admin',
-    });
-    expect(api.federationListMemberStations).toHaveBeenNthCalledWith(
-      2,
-      'created-federation',
+    expect(invoke).toHaveBeenCalledWith(
+      'acceptance_federation_fixture_create',
+      {
+        input: {
+          name: 'Secure Content W8 Fixture',
+          description: 'Acceptance-owned cross-Station Social fixture',
+        },
+      },
     );
   });
 
