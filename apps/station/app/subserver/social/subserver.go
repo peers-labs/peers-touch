@@ -14,6 +14,7 @@ import (
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
+	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -219,6 +220,25 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Social private object service: %w", err)
+	}
+	if err := s.privateObjectSvc.ConfigureFederatedRead(
+		federationRuntime.LocalStationPeerID(),
+		privateFederationMembership,
+		federatedPrivateObjectPeer{runtime: federationRuntime},
+	); err != nil {
+		return fmt.Errorf(
+			"configure Social private object Federation read: %w",
+			err,
+		)
+	}
+	if err := federationRuntime.RegisterPeerEndpoint(
+		federationruntime.PeerRouteSocialPrivateObjectRead,
+		s.handleFederatedPrivateObjectRead,
+	); err != nil {
+		return fmt.Errorf(
+			"register Social private object Federation endpoint: %w",
+			err,
+		)
 	}
 	clock := delivery.SystemClock{}
 	federatedStore, err := infrastructure.NewGORMFederatedFriendRequestStore(

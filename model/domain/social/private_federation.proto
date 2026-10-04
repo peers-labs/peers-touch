@@ -43,6 +43,24 @@ message FederatedPrivateObjectDescriptorSet {
   repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 1;
 }
 
+message FederatedPrivateObjectGrantBinding {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string delivery_id = 3;
+  string source_station_peer_id = 4;
+  string target_station_peer_id = 5;
+  string target_actor_ptid = 6;
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 7;
+  uint64 lifecycle_revision = 8;
+  string object_id = 9;
+  bytes descriptor_sha256 = 10;
+}
+
+message FederatedPrivateObjectRange {
+  uint64 start = 1;
+  uint64 end_exclusive = 2;
+}
+
 enum PrivateResourceInvalidationReason {
   PRIVATE_RESOURCE_INVALIDATION_REASON_UNSPECIFIED = 0;
   PRIVATE_RESOURCE_INVALIDATION_REASON_RESOURCE_DELETED = 1;
@@ -107,7 +125,14 @@ message ReadFederatedPrivateObjectRequest {
   .peers_touch.model.actor.v1.ActorDeviceRef viewer = 3;
   .peers_touch.model.secure_content.v1.SecureResourceRef resource = 4;
   string object_id = 5;
-  uint64 range_start = 6;
-  uint64 range_end_exclusive = 7;
+  reserved 6, 7;
+  reserved "range_start", "range_end_exclusive";
   bytes imported_grant_sha256 = 8;
+  FederatedPrivateObjectRange range = 9;
+}
+
+message ReadFederatedPrivateObjectResponse {
+  bytes descriptor_sha256 = 1;
+  FederatedPrivateObjectRange range = 2;
+  uint64 total_ciphertext_size = 3;
 }

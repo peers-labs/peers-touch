@@ -226,6 +226,7 @@
   "moments.private.media.MEDIA_ACCESS_DENIED": "Attachment unavailable",
   "moments.private.media.MEDIA_INTEGRITY_FAILURE": "Integrity check failed",
   "moments.private.media.MEDIA_OFFLINE_RETRYABLE": "Offline",
+  "moments.private.media.remoteRetryable": "Source temporarily unavailable",
   "moments.private.state.AUDIENCE_REQUIRED.title": "Choose an audience",
   "moments.private.state.AUDIENCE_REQUIRED.description": "Select who can view this post.",
   "moments.private.state.CHECKING_PRIVATE_READINESS.title": "Checking recipients",

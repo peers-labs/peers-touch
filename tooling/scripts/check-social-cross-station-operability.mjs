@@ -43,6 +43,8 @@ export const ALLOWED_METRIC_NAMES = new Set([
   'social_cross_station_delivery_total',
   'social_cross_station_interaction_latency_seconds',
   'social_cross_station_interaction_total',
+  'social_cross_station_object_stream_latency_seconds',
+  'social_cross_station_object_stream_total',
   'social_cross_station_prekey_claim_latency_seconds',
   'social_cross_station_prekey_claim_total',
   'social_cross_station_reconcile_total',
@@ -150,6 +152,19 @@ export function validateMetricDescriptors(
     ) {
       fail(`metric ${descriptor.name} has unbounded or duplicate labels`);
     }
+    const expectedObjectStreamLabels = {
+      social_cross_station_object_stream_latency_seconds: ['stage', 'outcome'],
+      social_cross_station_object_stream_total: ['stage', 'outcome', 'reason'],
+    }[descriptor.name];
+    if (
+      expectedObjectStreamLabels
+      && JSON.stringify(labels) !== JSON.stringify(expectedObjectStreamLabels)
+    ) {
+      fail(
+        `metric ${descriptor.name} labels must be `
+        + expectedObjectStreamLabels.join(', '),
+      );
+    }
   }
 }
 
@@ -242,6 +257,47 @@ function validatePrivacySafeLogs(texts) {
   }
 }
 
+function validateObjectStreamMetricContract(helperText, usageTexts) {
+  for (const value of [
+    'recipient_proxy',
+    'source_read',
+    'accepted',
+    'rejected',
+    'interrupted',
+    'retryable',
+    'none',
+    'not_found',
+    'range_invalid',
+    'integrity',
+    'dependency',
+    'cancelled',
+  ]) {
+    requireOccurrence(
+      helperText,
+      new RegExp(`= "${value}"`, 'gu'),
+      `typed private-object metric value ${value}`,
+    );
+  }
+  for (const fragment of [
+    'validFederatedPrivateObjectStreamObservation(stage, outcome, reason)',
+    'm.total.Inc(string(stage), string(outcome), string(reason))',
+    'string(stage),',
+    'string(outcome),',
+  ]) {
+    if (!helperText.includes(fragment)) {
+      fail(`private-object metric helper is missing ${fragment}`);
+    }
+  }
+  if (!helperText.includes('panic(')) {
+    fail('private-object metric helper does not fail closed on an invalid tuple');
+  }
+  for (const text of usageTexts) {
+    if (/streamMetrics\.(?:total|latency)\.(?:Inc|Observe)\s*\(/gu.test(text)) {
+      fail('private-object metrics are called directly outside the validated helper');
+    }
+  }
+}
+
 export function validateSocialCrossStationOperability({
   enMomentsText,
   zhMomentsText,
@@ -253,6 +309,8 @@ export function validateSocialCrossStationOperability({
   mobileErrorText,
   errorResolverText,
   privateNativeText,
+  objectStreamMetricText,
+  objectStreamUsageTexts = [],
   metricTexts = [],
   logTexts = [],
 }) {
@@ -336,6 +394,10 @@ export function validateSocialCrossStationOperability({
 
   const metricDescriptors = extractMetricDescriptors(metricTexts);
   validateMetricDescriptors(metricDescriptors);
+  validateObjectStreamMetricContract(
+    objectStreamMetricText,
+    objectStreamUsageTexts,
+  );
   validatePrivacySafeLogs(logTexts);
   return {
     status: 'PASS',
@@ -362,6 +424,8 @@ function filesUnder(root, relative) {
 
 export function checkSocialCrossStationOperability(projectRoot) {
   const read = (relative) => fs.readFileSync(path.join(projectRoot, relative), 'utf8');
+  const objectStreamMetricPath =
+    'apps/station/app/subserver/social/application/federated_private_object_metrics.go';
   const stationFiles = [
     ...filesUnder(projectRoot, 'apps/station/app/subserver/social'),
     ...filesUnder(projectRoot, 'apps/station/frame/core/federation'),
@@ -377,6 +441,10 @@ export function checkSocialCrossStationOperability(projectRoot) {
     mobileErrorText: read('apps/mobile/src/gen/proto/domain/error/error_pb.ts'),
     errorResolverText: read('apps/desktop/src/i18n/error-resolver.ts'),
     privateNativeText: read('apps/desktop/src/services/privateMomentsNative.ts'),
+    objectStreamMetricText: read(objectStreamMetricPath),
+    objectStreamUsageTexts: stationFiles
+      .filter((file) => file !== path.join(projectRoot, objectStreamMetricPath))
+      .map((file) => fs.readFileSync(file, 'utf8')),
     metricTexts: stationFiles.map((file) => fs.readFileSync(file, 'utf8')),
     logTexts: stationFiles.map((file) => fs.readFileSync(file, 'utf8')),
   });

@@ -49,6 +49,8 @@ type Runtime struct {
 	routes             *PeerRouteFactory
 	peerClient         *peerClient
 	peerKeys           authfed.PeerKeyStore
+	peerEndpoints      map[PeerRoute]server.EndpointHandler
+	fallbackEndpoint   PeerEndpointResolver
 	sealed             bool
 }
 
@@ -133,11 +135,22 @@ func NewRuntime(
 	if err != nil {
 		return nil, err
 	}
+	runtime := &Runtime{
+		localStationPeerID: config.LocalStationPeerID,
+		repository:         repository,
+		registry:           registry,
+		dispatcher:         dispatcher,
+		ephemeralTransport: transport,
+		signer:             signer,
+		peerKeys:           config.PeerKeys,
+		peerEndpoints:      make(map[PeerRoute]server.EndpointHandler),
+		fallbackEndpoint:   config.PeerEndpointResolver,
+	}
 	routes, err := NewPeerRouteFactory(PeerRouteFactoryConfig{
 		LocalStationPeerID: config.LocalStationPeerID,
 		PeerKeys:           config.PeerKeys,
 		DeliveryReceiver:   receiver,
-		EndpointResolver:   config.PeerEndpointResolver,
+		EndpointResolver:   runtime.resolvePeerEndpoint,
 	})
 	if err != nil {
 		return nil, err
@@ -152,18 +165,10 @@ func NewRuntime(
 	if err != nil {
 		return nil, err
 	}
+	runtime.routes = routes
+	runtime.peerClient = peerClient
 
-	return &Runtime{
-		localStationPeerID: config.LocalStationPeerID,
-		repository:         repository,
-		registry:           registry,
-		dispatcher:         dispatcher,
-		ephemeralTransport: transport,
-		signer:             signer,
-		routes:             routes,
-		peerClient:         peerClient,
-		peerKeys:           config.PeerKeys,
-	}, nil
+	return runtime, nil
 }
 
 // RegisterReceivers adds one domain's typed receivers before dispatch starts.
@@ -187,6 +192,65 @@ func (r *Runtime) RegisterReceivers(registrar ReceiverRegistrar) error {
 	}
 
 	return registrar(r.registry)
+}
+
+// RegisterPeerEndpoint binds one app-owned capability implementation to a
+// Federation-owned authenticated route before the runtime is sealed.
+func (r *Runtime) RegisterPeerEndpoint(
+	route PeerRoute,
+	endpoint server.EndpointHandler,
+) error {
+	if r == nil || route == "" || endpoint == nil {
+		return delivery.NewError(
+			delivery.FailureInvalidArgument,
+			"register Federation peer endpoint",
+			errors.New("runtime, route, and endpoint are required"),
+		)
+	}
+	if _, ok := peerRouteSpecFor(route); !ok {
+		return delivery.NewError(
+			delivery.FailureInvalidArgument,
+			"register Federation peer endpoint",
+			fmt.Errorf("peer route %q is not registered", route),
+		)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sealed {
+		return delivery.NewError(
+			delivery.FailureInvalidArgument,
+			"register Federation peer endpoint",
+			errors.New("peer endpoint registry is sealed"),
+		)
+	}
+	if _, exists := r.peerEndpoints[route]; exists {
+		return delivery.NewError(
+			delivery.FailureInvalidArgument,
+			"register Federation peer endpoint",
+			fmt.Errorf("peer route %q already has an endpoint", route),
+		)
+	}
+	r.peerEndpoints[route] = endpoint
+
+	return nil
+}
+
+func (r *Runtime) resolvePeerEndpoint(
+	route PeerRoute,
+) (server.EndpointHandler, error) {
+	r.mu.RLock()
+	endpoint := r.peerEndpoints[route]
+	fallback := r.fallbackEndpoint
+	r.mu.RUnlock()
+	if endpoint != nil {
+		return endpoint, nil
+	}
+	if fallback == nil {
+		return nil, fmt.Errorf("Federation peer route %q is unavailable", route)
+	}
+
+	return fallback(route)
 }
 
 // Seal prevents late receiver registration before concurrent dispatch begins.

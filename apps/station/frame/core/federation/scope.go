@@ -42,6 +42,8 @@ const (
 	RealtimeSignalScope = "realtime-signal-forward"
 	// GroupCallAuthorityJoinScope authenticates Conversation Authority token issuance.
 	GroupCallAuthorityJoinScope = "group-call-authority-join"
+	// SocialPrivateObjectReadScope authenticates one bounded private-object range read.
+	SocialPrivateObjectReadScope = "social-private-object-read"
 
 	ClaimFrameID                 = "frame_id"
 	ClaimIdempotencyKey          = "idempotency_key"
@@ -70,6 +72,7 @@ const (
 	ClaimSenderPTID              = "sender_ptid"
 	ClaimRecipientPTID           = "recipient_ptid"
 	ClaimSessionULID             = "session_ulid"
+	ClaimObjectID                = "object_id"
 )
 
 var peerScopes = []scope.Scope{
@@ -315,6 +318,23 @@ var peerScopes = []scope.Scope{
 				ClaimAuthorityEpoch,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
+		Name:        SocialPrivateObjectReadScope,
+		Description: "read one bounded source-authorized Social private-object range",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimFederationID,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+				ClaimActorPTID,
+				ClaimDeviceID,
+				ClaimObjectID,
+				ClaimCanonicalRequestSHA256,
 			},
 		},
 	},

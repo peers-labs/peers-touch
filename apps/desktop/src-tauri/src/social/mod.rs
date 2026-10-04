@@ -1,5 +1,6 @@
 mod crypto;
 mod private_comment;
+mod private_media;
 mod private_mention;
 mod private_moment;
 mod projection;
@@ -30,6 +31,7 @@ use self::private_comment::{
     PrivateCommentFailure, PrivateCommentIntent, PrivateCommentListInput,
     PrivateCommentOrchestrator, PrivateCommentSubmitInput,
 };
+use self::private_media::{PrivateMediaOpenError, PrivateMediaOpenFailureKind};
 use self::private_moment::{
     pending_device_recovery_projection, PrivateMomentOrchestrator, PrivateMomentPublishIntent,
     PrivateRecoveryFailureKind,
@@ -411,9 +413,11 @@ pub fn social_private_moment_media_open(
             .secure_content
             .revoke_private_media_path(&authority_key, path)
     };
-    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
-        .and_then(|service| service.open_media(&input.post_id, &input.object_id, &revoke_media))
-    {
+    let result = match PrivateMomentOrchestrator::new(&state.secure_content, lease) {
+        Ok(service) => service.open_media(&input.post_id, &input.object_id, &revoke_media),
+        Err(error) => Err(PrivateMediaOpenError::dependency(error, None)),
+    };
+    match result {
         Ok(mut projection) => {
             if let Err(error) = grant_private_media_preview(
                 &state.secure_content,
@@ -425,7 +429,7 @@ pub fn social_private_moment_media_open(
             }
             AppResult::success(json!(projection))
         }
-        Err(error) => native_failure(error, "MEDIA_OFFLINE_RETRYABLE"),
+        Err(error) => private_media_failure(error),
     }
 }
 
@@ -840,6 +844,28 @@ fn native_failure(message: String, state: &str) -> AppResult<Value> {
         Some(json!({
             "state": state,
             "native_error_code": code,
+        })),
+    )
+}
+
+fn private_media_failure(error: PrivateMediaOpenError) -> AppResult<Value> {
+    let state = error.state();
+    let retryable = error.retryable();
+    let app_code = match error.kind {
+        PrivateMediaOpenFailureKind::AccessDenied => ErrorCode::NotFound,
+        PrivateMediaOpenFailureKind::Integrity => ErrorCode::Conflict,
+        PrivateMediaOpenFailureKind::Dependency | PrivateMediaOpenFailureKind::Cancelled => {
+            ErrorCode::InternalError
+        }
+    };
+    AppResult::fail(
+        app_code,
+        error.message,
+        Some(json!({
+            "state": state,
+            "native_error_code": error.code,
+            "retryable": retryable,
+            "retry_after_seconds": error.retry_after_seconds,
         })),
     )
 }
