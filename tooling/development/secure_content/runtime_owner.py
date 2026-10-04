@@ -7077,55 +7077,65 @@ class W7RuntimeOwner:
                         secondary_schema,
                     )
                 )
-                services = {
-                    STATION_ID: _service_payload(
-                        primary_attestation,
-                        primary_ref,
-                        primary_schema_ref,
-                        profile_id=PROFILE,
-                        schema_attestation_endpoint=profile_env[
-                            "PT_STATION_URL"
-                        ],
+                attachment: dict[str, Any] = {
+                    "artifactKind": (
+                        "social-cross-station-client-attachment-manifest"
                     ),
-                    SECONDARY_STATION_ID: _service_payload(
-                        secondary_attestation,
-                        secondary_ref,
-                        secondary_schema_ref,
-                        profile_id=SECONDARY_PROFILE,
-                        schema_attestation_endpoint=secondary_profile_env[
-                            "PT_STATION_URL"
-                        ],
-                    ),
-                }
-                path = write_attached_runtime_manifest(
-                    manifest_payload=_manifest_payload(
-                        identity=identity,
-                        journey_id=SOCIAL_CROSS_STATION_JOURNEY,
-                        run_id=run_id,
-                        services=services,
-                        fixture_ref=fixture_ref,
-                        fixture_digest=fixture_digest,
-                        clients=selected_payloads,
-                        controller_profile=PROFILE,
-                        controller_slot=slot,
-                    ),
-                    output_path=runtime_dir / "runtime.json",
-                    journey_id=SOCIAL_CROSS_STATION_JOURNEY,
-                    sessions_by_client=selected_clients,
-                    automation_refs_by_client={
-                        client_id: {
-                            "kind": (
-                                runtime_manifest.AUTOMATION_ATTACHMENT_KIND
-                            ),
-                            "endpoint": _webdriver_endpoint(client),
-                            "session_id": str(client.driver.session_id),
-                        }
-                        for client_id, client in selected_clients.items()
+                    "schemaVersion": 1,
+                    "runId": run_id,
+                    "variant": variant,
+                    "journeyId": SOCIAL_CROSS_STATION_JOURNEY,
+                    "sourceCommit": str(identity["head"]),
+                    "controlCommit": control_commit,
+                    "workspaceId": str(identity["workspaceId"]),
+                    "worktreeSetDigest": str(identity["worktreeSetDigest"]),
+                    "controllerBinding": {
+                        "profileId": PROFILE,
+                        "slot": slot,
                     },
-                    repo_root=self.repo_root,
+                    "fixtureManifestRef": fixture_ref,
+                    "fixtureManifestDigest": fixture_digest,
+                    "services": {
+                        STATION_ID: {
+                            "profileId": PROFILE,
+                            "runtimeIdentitySha256": _sha256(
+                                primary_attestation.runtime_identity
+                            ),
+                            "attestationRef": primary_ref,
+                            "schemaAttestationRef": primary_schema_ref,
+                        },
+                        SECONDARY_STATION_ID: {
+                            "profileId": SECONDARY_PROFILE,
+                            "runtimeIdentitySha256": _sha256(
+                                secondary_attestation.runtime_identity
+                            ),
+                            "attestationRef": secondary_ref,
+                            "schemaAttestationRef": secondary_schema_ref,
+                        },
+                    },
+                    "clients": [
+                        {
+                            **dict(payload),
+                            "automationSessionIdSha256": _sha256(
+                                str(
+                                    selected_clients[str(payload["id"])]
+                                    .driver.session_id
+                                )
+                            ),
+                        }
+                        for payload in selected_payloads
+                    ],
+                }
+                attachment["manifestDigest"] = (
+                    runtime_manifest.canonical_digest(attachment)
                 )
-                manifest = json.loads(path.read_text(encoding="utf-8"))
-                manifest_digests[variant] = str(manifest["manifest_digest"])
+                path = _write_immutable_json(
+                    runtime_dir / "runtime.json",
+                    attachment,
+                )
+                manifest_digests[variant] = str(
+                    attachment["manifestDigest"]
+                )
                 supporting_artifacts.append(str(path))
                 return path
 
