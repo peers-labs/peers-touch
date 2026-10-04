@@ -48,6 +48,8 @@ const OWNER_TARGETS = new Set([
   'completion-review-submit',
   'completion-review-status',
   'skills',
+  'skills-hard-cut',
+  'skills-gc',
   'agent-integration-audit',
   'agent-integration-audit-all',
 ]);

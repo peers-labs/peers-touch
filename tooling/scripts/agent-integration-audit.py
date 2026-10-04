@@ -65,6 +65,7 @@ REQUIRED_INTEGRATION_MATCHERS = {
 INTEGRATION_RECEIPT_KEYS = {
     "kind",
     "state",
+    "operation",
     "workspaceId",
     "branch",
     "sourceHead",
@@ -983,6 +984,12 @@ def integration_receipt(
         findings.append("integration-kind-mismatch")
     if value.get("state") != "INSTALLED":
         findings.append("integration-state-mismatch")
+    if value.get("operation") not in {
+        "skills",
+        "skills-hard-cut",
+        "skills-gc",
+    }:
+        findings.append("integration-operation-mismatch")
     if value.get("host") != host:
         findings.append("integration-host-mismatch")
     expected_callback_proof = (

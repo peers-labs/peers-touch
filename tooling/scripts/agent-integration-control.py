@@ -60,7 +60,7 @@ WORKFLOW_KERNEL_FILES = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("install",))
+    parser.add_argument("action", choices=("install", "hard-cut", "gc"))
     parser.add_argument("--root", required=True)
     parser.add_argument("--host", required=True, choices=("trae", "cursor", "codex"))
     parser.add_argument("--workspace")
@@ -664,7 +664,7 @@ def inspect_workflow_liveness(
     return value
 
 
-def claim_installer_action_grant(
+def claim_action_grant(
     root: Path,
     receipt: dict[str, object],
     now: datetime,
@@ -706,7 +706,13 @@ def claim_installer_action_grant(
         )
 
 
-def require_global_idle(root: Path, current_workspace_id: str) -> None:
+def claim_control_action_grant(
+    root: Path,
+    current_workspace_id: str,
+    operation_label: str,
+    *,
+    require_idle: bool,
+) -> None:
     now = datetime.now(timezone.utc)
     ledger = validated_work_ledger(root)
     live_declarations = [
@@ -719,7 +725,7 @@ def require_global_idle(root: Path, current_workspace_id: str) -> None:
             or timestamp(item.get("expiresAt")) > now
         )
     ]
-    if live_declarations:
+    if require_idle and live_declarations:
         raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live declaration")
 
     liveness = inspect_workflow_liveness(root, now)
@@ -732,18 +738,18 @@ def require_global_idle(root: Path, current_workspace_id: str) -> None:
         or not isinstance(active_action_locks, list)
     ):
         raise RuntimeError("WORKFLOW_MACHINE_STATE_INVALID")
-    if live_assignments:
+    if require_idle and live_assignments:
         raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live child assignment")
-    if active_action_locks:
+    if require_idle and active_action_locks:
         raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: active workflow action lock")
 
-    non_installer = [
+    matching_actions = [
         receipt
         for receipt in live_actions
-        if not (
+        if (
             receipt.get("operation") == {
                 "family": "OWNER_CONTROL",
-                "label": "skills",
+                "label": operation_label,
                 "targetRef": None,
             }
             and isinstance(receipt.get("actor"), dict)
@@ -757,19 +763,22 @@ def require_global_idle(root: Path, current_workspace_id: str) -> None:
             and receipt["binding"].get("workspaceId") == current_workspace_id
         )
     ]
-    if non_installer or len(live_actions) > 1:
-        raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live workflow action")
-    if len(live_actions) != 1:
+    if require_idle:
+        if not matching_actions and live_actions:
+            raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live workflow action")
+        if len(matching_actions) > 1 or len(live_actions) > 1:
+            raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live workflow action")
+    if len(matching_actions) != 1:
         raise RuntimeError("WORKFLOW_ACTION_GRANT_UNAVAILABLE")
     exact_receipt = {
         key: value
-        for key, value in live_actions[0].items()
+        for key, value in matching_actions[0].items()
         if key != "actorProjection"
     }
-    claim_installer_action_grant(root, exact_receipt, now)
+    claim_action_grant(root, exact_receipt, now)
 
 
-def purge_legacy_binding_state() -> None:
+def legacy_binding_targets() -> tuple[Path, ...]:
     root = machine_root().resolve()
     targets = [root / "conversations"]
     workspaces = root / "workspaces"
@@ -786,8 +795,30 @@ def purge_legacy_binding_state() -> None:
         if hasattr(os, "getuid") and target.stat().st_uid != os.getuid():
             raise RuntimeError("LEGACY_BINDING_RESET_INVALID")
         existing.append(target)
-    for target in existing:
+    return tuple(existing)
+
+
+def purge_targets(targets: tuple[Path, ...]) -> None:
+    for target in targets:
         shutil.rmtree(target)
+
+
+def retired_projection_targets(target_root: Path) -> tuple[Path, ...]:
+    existing: list[Path] = []
+    for name in ("retired-project-skills", "retired-project-plugins"):
+        target = target_root / name
+        if not target.exists() and not target.is_symlink():
+            continue
+        if (
+            target.is_symlink()
+            or not target.is_dir()
+            or target.resolve(strict=True).parent != target_root
+        ):
+            raise RuntimeError(f"HOST_PROJECTION_ESCAPE: {target}")
+        if hasattr(os, "getuid") and target.stat().st_uid != os.getuid():
+            raise RuntimeError(f"HOST_PROJECTION_ESCAPE: {target}")
+        existing.append(target)
+    return tuple(existing)
 
 
 def host_root(root: Path, host: str) -> Path:
@@ -1127,6 +1158,7 @@ def write_installation_receipt(
     head: str,
     host: str,
     state: str,
+    operation: str,
     catalog: dict[str, object],
     callback_proof: dict[str, object],
 ) -> None:
@@ -1140,6 +1172,7 @@ def write_installation_receipt(
         {
             "kind": "peers-touch-agent-integration",
             "state": state,
+            "operation": operation,
             "workspaceId": workspace_id,
             "branch": branch,
             "sourceHead": head,
@@ -1191,19 +1224,24 @@ def install(
         if host == "cursor"
         else None
     )
-    require_global_idle(root, workspace_id)
+    claim_control_action_grant(
+        root,
+        workspace_id,
+        "skills",
+        require_idle=False,
+    )
     write_installation_receipt(
         workspace_id,
         branch,
         head,
         host,
         "INSTALLING",
+        "skills",
         catalog,
         {"status": "PENDING"},
     )
     skills_root = target_root / "skills"
     try:
-        purge_legacy_binding_state()
         if skills_root.is_symlink():
             skills_root.unlink()
         skills_root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -1243,6 +1281,7 @@ def install(
             head,
             host,
             "BLOCKED",
+            "skills",
             catalog,
             {"status": "BLOCKED", "code": str(error)},
         )
@@ -1253,6 +1292,7 @@ def install(
         head,
         host,
         "INSTALLED",
+        "skills",
         catalog,
         callback_proof,
     )
@@ -1269,20 +1309,117 @@ def install(
     )
 
 
+def cleanup(
+    root: Path,
+    host: str,
+    workspace_id: str,
+    branch: str,
+    head: str,
+    action: str,
+    workspace_file: str | None = None,
+) -> None:
+    _, _, catalog = canonical_integration_catalog(root)
+    target_root = host_root(root, host)
+    trae_workspace: Path | None = None
+    trae_bootstrap_root = target_root
+    if host == "trae":
+        trae_workspace, _, bootstrap_root = resolve_trae_workspace(
+            root,
+            workspace_file,
+        )
+        trae_bootstrap_root = host_root(bootstrap_root, "trae")
+    operation = "skills-hard-cut" if action == "hard-cut" else "skills-gc"
+    targets = (
+        legacy_binding_targets()
+        if action == "hard-cut"
+        else retired_projection_targets(target_root)
+    )
+    claim_control_action_grant(
+        root,
+        workspace_id,
+        operation,
+        require_idle=True,
+    )
+    write_installation_receipt(
+        workspace_id,
+        branch,
+        head,
+        host,
+        "INSTALLING",
+        operation,
+        catalog,
+        {"status": "PENDING"},
+    )
+    try:
+        purge_targets(targets)
+        callback_proof = (
+            probe_installed_trae_hook(
+                root,
+                trae_bootstrap_root,
+                trae_workspace,
+            )
+            if host == "trae"
+            else {"status": "NOT_APPLICABLE"}
+        )
+    except (OSError, RuntimeError, json.JSONDecodeError) as error:
+        write_installation_receipt(
+            workspace_id,
+            branch,
+            head,
+            host,
+            "BLOCKED",
+            operation,
+            catalog,
+            {"status": "BLOCKED", "code": str(error)},
+        )
+        raise
+    write_installation_receipt(
+        workspace_id,
+        branch,
+        head,
+        host,
+        "INSTALLED",
+        operation,
+        catalog,
+        callback_proof,
+    )
+    print(
+        json.dumps(
+            {
+                "status": "INSTALLED",
+                "operation": operation,
+                "removed": len(targets),
+                "path": str(receipt_path(workspace_id)),
+            }
+        )
+    )
+
+
 def main() -> int:
     options = parse_args()
     root = Path(os.path.realpath(os.path.abspath(options.root)))
     workspace_id, branch, head = identity(root)
     try:
         with WorkLedgerLock():
-            install(
-                root,
-                options.host,
-                workspace_id,
-                branch,
-                head,
-                options.workspace,
-            )
+            if options.action == "install":
+                install(
+                    root,
+                    options.host,
+                    workspace_id,
+                    branch,
+                    head,
+                    options.workspace,
+                )
+            else:
+                cleanup(
+                    root,
+                    options.host,
+                    workspace_id,
+                    branch,
+                    head,
+                    options.action,
+                    options.workspace,
+                )
     except (OSError, RuntimeError, json.JSONDecodeError) as error:
         print(json.dumps({"status": "BLOCKED", "code": str(error)}))
         return 2

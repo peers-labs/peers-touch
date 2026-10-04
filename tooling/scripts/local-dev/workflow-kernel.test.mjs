@@ -886,7 +886,7 @@ test('PreToolUse starts heartbeat and PostToolUse records terminal completion', 
   assert.equal(heartbeats[0].actionId, 'tool-call-1');
 });
 
-test('the exact OWNER skills action receives one installer grant', async () => {
+test('the exact OWNER integration control action receives one grant', async () => {
   const grants = [];
   const inspection = {
     status: 'READY',
@@ -903,26 +903,33 @@ test('the exact OWNER skills action receives one installer grant', async () => {
       state: { state: 'IMPLEMENTING' },
     },
   };
-  const result = await evaluateWorkflowEvent(
-    event({
-      actionId: 'skills-action',
-      toolWorkingDirectory: '/workspace',
-      toolName: 'Shell',
-      command: 'make skills IDE=codex',
-      toolInput: {
-        command: 'make skills IDE=codex',
-        working_directory: '/workspace',
-      },
-    }),
-    injectedBinding('/workspace', {
-      inspectWorkflowContext: async () => inspection,
-      recordWorkflowAction: () => ({ actionId: 'skills-action' }),
-      issueWorkflowActionGrant: (receipt) => grants.push(receipt.actionId),
-      startWorkflowActionHeartbeat: false,
-    }),
-  );
-  assert.equal(result.action, 'ALLOW');
-  assert.deepEqual(grants, ['skills-action']);
+  for (const label of ['skills', 'skills-hard-cut', 'skills-gc']) {
+    const actionId = `${label}-action`;
+    const result = await evaluateWorkflowEvent(
+      event({
+        actionId,
+        toolWorkingDirectory: '/workspace',
+        toolName: 'Shell',
+        command: `make ${label} IDE=codex`,
+        toolInput: {
+          command: `make ${label} IDE=codex`,
+          working_directory: '/workspace',
+        },
+      }),
+      injectedBinding('/workspace', {
+        inspectWorkflowContext: async () => inspection,
+        recordWorkflowAction: () => ({ actionId }),
+        issueWorkflowActionGrant: (receipt) => grants.push(receipt.actionId),
+        startWorkflowActionHeartbeat: false,
+      }),
+    );
+    assert.equal(result.action, 'ALLOW');
+  }
+  assert.deepEqual(grants, [
+    'skills-action',
+    'skills-hard-cut-action',
+    'skills-gc-action',
+  ]);
 });
 
 test('PostToolUse cannot create the first binding or emit an action receipt', async () => {

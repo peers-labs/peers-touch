@@ -67,6 +67,8 @@ test('recognizes only one structurally exact workflow owner command', () => {
     'completion-review-submit',
     'completion-review-status',
     'skills',
+    'skills-hard-cut',
+    'skills-gc',
   ]) {
     assert.equal(
       classifyToolIntent(shell(`make ${target} WORK_ITEM=WORK-01`)).kind,

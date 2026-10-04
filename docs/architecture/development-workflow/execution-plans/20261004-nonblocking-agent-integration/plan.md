@@ -1,8 +1,8 @@
 # Nonblocking Agent Integration Control Actions
 
-> **Status**: prepared
+> **Status**: active
 > **Branch**: fix/nonblocking-agent-integration
-> **Workspace ID**: 5f50d8bb381b0123
+> **Workspace ID**: 23d863a02a53c299
 > **Initial HEAD**: c7e712fb8c60197dcab9c265e3687f1e58c5a988
 
 ## Plan Package
@@ -11,10 +11,10 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "DWF-NONBLOCKING-INTEGRATION-20261004",
-  "status": "prepared",
+  "status": "active",
   "binding": {
     "branch": "fix/nonblocking-agent-integration",
-    "workspaceId": "5f50d8bb381b0123",
+    "workspaceId": "23d863a02a53c299",
     "initialHead": "c7e712fb8c60197dcab9c265e3687f1e58c5a988"
   },
   "workClass": "infrastructure",
@@ -108,7 +108,7 @@
       "workstreamId": "DWF-INTEGRATION-CONTROL",
       "path": "tasks/DWF-NBI01-CONTROL-ACTIONS.md",
       "dependsOn": [],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {

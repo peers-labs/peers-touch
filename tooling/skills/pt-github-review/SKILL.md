@@ -403,6 +403,11 @@ concurrency decisions, identity-based live-agent conflict detection, reserved
 write sets, integrator-owned reconciliation, and non-blocking Context Anchor
 projection.
 
+For Agent integration controls, reject ordinary projection that requires
+unrelated worktrees to be idle or deletes workflow state. Require separate
+exact OWNER grants for projection, legacy-store hard cut, and retired-projection
+GC; only the two destructive commands may require global idle.
+
 For Local Dev Profile changes, reject any stored reset-policy field or
 compatibility reader. The verified canonical Profile ID is the sole policy
 source: case-insensitive `stable` means reset-protected; all other reviewed

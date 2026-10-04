@@ -61,6 +61,11 @@ const WORKSPACE_ID = /^[0-9a-f]{16}$/;
 const OPERATION_TEXT = /^[A-Za-z0-9][A-Za-z0-9._:/ -]{0,127}$/;
 const TARGET_REF = /^[A-Za-z0-9][A-Za-z0-9._/@+-]*(?:\/[A-Za-z0-9._@+-]+)*$/;
 const ACTION_GRANT_KIND = 'peers-touch-workflow-action-grant';
+const INTEGRATION_CONTROL_LABELS = new Set([
+  'skills',
+  'skills-hard-cut',
+  'skills-gc',
+]);
 const ACTION_GRANT_KEYS = new Set([
   'actionId',
   'actorBindingDigest',
@@ -81,6 +86,10 @@ export class WorkflowActionError extends Error {
     this.code = code;
     this.detail = detail;
   }
+}
+
+export function isIntegrationControlLabel(value) {
+  return INTEGRATION_CONTROL_LABELS.has(value);
 }
 
 function fail(code, message, detail = {}) {
@@ -542,12 +551,12 @@ export function issueWorkflowActionGrant(receipt, options = {}) {
     receipt.result !== 'RUNNING' ||
     receipt.actor.role !== 'OWNER' ||
     receipt.operation.family !== 'OWNER_CONTROL' ||
-    receipt.operation.label !== 'skills' ||
+    !isIntegrationControlLabel(receipt.operation.label) ||
     receipt.operation.targetRef !== null
   ) {
     fail(
       'WORKFLOW_ACTION_GRANT_INVALID',
-      'Only the exact live OWNER skills action may receive a grant',
+      'Only an exact live OWNER integration control action may receive a grant',
     );
   }
   const unsigned = {

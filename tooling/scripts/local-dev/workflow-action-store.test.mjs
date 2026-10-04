@@ -212,6 +212,52 @@ test('an unrelated seeded installer receipt has no invocation authority', () => 
   }
 });
 
+test('each integration control label receives only its own exact grant', () => {
+  for (const [index, label] of [
+    'skills',
+    'skills-hard-cut',
+    'skills-gc',
+  ].entries()) {
+    const scope = fixture();
+    try {
+      const receipt = record(scope.home, {
+        actionId: `integration-control-${index}`,
+        leaseMs: 60_000,
+        operation: {
+          family: 'OWNER_CONTROL',
+          label,
+          targetRef: null,
+        },
+      });
+      const grant = issueWorkflowActionGrant(receipt, {
+        home: scope.home,
+        now: new Date('2026-09-26T00:00:00.000Z'),
+      });
+      assert.equal(grant.operationFingerprint, receipt.fingerprint);
+      const wrongLabel = {
+        ...receipt,
+        operation: {
+          family: 'OWNER_CONTROL',
+          label: label === 'skills' ? 'skills-gc' : 'skills',
+          targetRef: null,
+        },
+      };
+      assert.throws(
+        () =>
+          claimWorkflowActionGrant(wrongLabel, {
+            home: scope.home,
+            now: new Date('2026-09-26T00:00:01.000Z'),
+          }),
+        (error) =>
+          error.code === 'WORKFLOW_ACTION_INVALID' ||
+          error.code === 'WORKFLOW_ACTION_GRANT_INVALID',
+      );
+    } finally {
+      scope.close();
+    }
+  }
+});
+
 test('rejects symlinked stores and invalid operation references', () => {
   const scope = fixture();
   try {

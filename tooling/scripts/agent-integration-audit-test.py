@@ -143,7 +143,15 @@ export function createSessionStore(state, options) {
                 shell_quote_fixture / name,
             )
         (self.root / "tooling/scripts/local-dev/dev-work.mjs").write_text(
-            "",
+            """
+import { readFileSync } from 'node:fs';
+const ledger = JSON.parse(
+  readFileSync(process.env.PT_MACHINE_DEV_ROOT + '/work.json', 'utf8'),
+);
+console.log(JSON.stringify({
+  declarations: Object.values(ledger.declarations),
+}));
+""".lstrip(),
             encoding="utf-8",
         )
         ledger_validator.write_text(
@@ -300,6 +308,62 @@ export function processStartIdentity() { return 'fixture'; }
             check=False,
         )
 
+    def prepare_codex_projection(self) -> None:
+        self.seed_live_workflow_state("installer-authorized")
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        for actions in self.machine.glob("workspaces/*/workflow/actions"):
+            shutil.rmtree(actions)
+
+    def write_live_declaration(self, state: str) -> None:
+        now = "2026-10-04T02:00:00.000Z"
+        declaration = {
+            "declarationId": "OTHER-fedcba9876543210",
+            "workItemId": "OTHER",
+            "sessionId": "SESSION-OTHER",
+            "workspaceId": "fedcba9876543210",
+            "branch": "other",
+            "sourceHead": "a" * 40,
+            "owner": "other@test.invalid",
+            "purpose": "unrelated fixture",
+            "journeyId": None,
+            "state": state,
+            "createdAt": now,
+            "heartbeatAt": now,
+            "expiresAt": "2026-10-04T10:00:00.000Z",
+            "sourceClaims": [],
+            "runtimeClaims": [],
+            "planPath": None,
+            "planId": None,
+            "taskId": None,
+        }
+        serialized = json.dumps(
+            declaration,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+        declaration["declarationDigest"] = hashlib.sha256(serialized).hexdigest()
+        (self.machine / "work.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "kind": "peers-touch-development-work-ledger",
+                    "updatedAt": now,
+                    "declarations": {
+                        declaration["declarationId"]: declaration,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
     def seed_live_workflow_state(self, mode: str) -> None:
         self.machine.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.machine.chmod(0o700)
@@ -384,14 +448,20 @@ export function processStartIdentity() { return 'fixture'; }
             "},"
             "operation: {"
             "family: 'OWNER_CONTROL',"
-            "label: mode.startsWith('installer-') ? 'skills' : 'status',"
+            "label: mode.startsWith('installer-')"
+            " ? 'skills'"
+            " : mode.startsWith('hard-cut-')"
+            " ? 'skills-hard-cut'"
+            " : mode.startsWith('gc-')"
+            " ? 'skills-gc'"
+            " : 'status',"
             "targetRef: null"
             "},"
             "progressStamp: 'c'.repeat(64),"
             "leaseMs: 60_000,"
             "now"
             "});"
-            "if (mode === 'installer-authorized') {"
+            "if (mode.endsWith('-authorized')) {"
             "action.issueWorkflowActionGrant(receipt, { machineRoot, now });"
             "}"
             "}"
@@ -776,7 +846,7 @@ export function processStartIdentity() { return 'fixture'; }
             duplicate_audit.stdout,
         )
 
-    def test_trae_workspace_preflight_fails_before_hard_cut_reset(self) -> None:
+    def test_trae_workspace_preflight_never_resets_legacy_state(self) -> None:
         workspace = self.root / "fixture.code-workspace"
         workspace.write_text(
             json.dumps({"folders": [{"path": "missing"}]}),
@@ -803,12 +873,38 @@ export function processStartIdentity() { return 'fixture'; }
             check=False,
         )
         self.assertEqual(retried.returncode, 0, retried.stdout + retried.stderr)
-        self.assertFalse((self.machine / "conversations").exists())
+        self.assertTrue(legacy.exists())
+
+    def test_install_preserves_legacy_conversations_and_action_stores(self) -> None:
+        self.seed_live_workflow_state("installer-authorized")
+        conversation = self.machine / "conversations/trae/legacy"
+        action_store = (
+            self.machine
+            / "workspaces/0123456789abcdef/workflow/actions"
+        )
+        conversation.mkdir(parents=True)
+        action_store.mkdir(parents=True)
+        (conversation / "binding.json").write_text("{}\n", encoding="utf-8")
+        (action_store / "receipt.json").write_text("{}\n", encoding="utf-8")
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertTrue(conversation.is_dir())
+        self.assertTrue(action_store.is_dir())
 
     def test_hard_cut_purges_only_legacy_conversations_and_action_stores(
         self,
     ) -> None:
-        self.seed_live_workflow_state("installer-authorized")
+        self.prepare_codex_projection()
+        self.seed_live_workflow_state("hard-cut-authorized")
         conversations = self.machine / "conversations/trae/legacy"
         actions = self.machine / "workspaces/0123456789abcdef/workflow/actions"
         preserved = (
@@ -826,7 +922,7 @@ export function processStartIdentity() { return 'fixture'; }
         preserved.write_text('{"preserved":true}\n', encoding="utf-8")
 
         installed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -843,7 +939,7 @@ export function processStartIdentity() { return 'fixture'; }
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -860,7 +956,7 @@ export function processStartIdentity() { return 'fixture'; }
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -877,7 +973,7 @@ export function processStartIdentity() { return 'fixture'; }
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -889,12 +985,12 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertTrue(legacy.exists())
 
     def test_hard_cut_rejects_an_unrelated_seeded_installer_action(self) -> None:
-        self.seed_live_workflow_state("installer-action")
+        self.seed_live_workflow_state("hard-cut-action")
         legacy = self.machine / "conversations/trae/legacy"
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -906,12 +1002,13 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertTrue(legacy.exists())
 
     def test_hard_cut_accepts_the_exact_granted_installer_action_once(self) -> None:
-        self.seed_live_workflow_state("installer-authorized")
+        self.prepare_codex_projection()
+        self.seed_live_workflow_state("hard-cut-authorized")
         legacy = self.machine / "conversations/trae/legacy"
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -933,7 +1030,7 @@ export function processStartIdentity() { return 'fixture'; }
         action_store.write_text("{}\n", encoding="utf-8")
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -945,8 +1042,10 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertTrue(legacy.exists())
         self.assertTrue(action_store.exists())
 
-    def test_hard_cut_records_blocked_before_a_failed_purge(self) -> None:
-        self.seed_live_workflow_state("installer-authorized")
+    def test_hard_cut_rejects_an_unsafe_target_before_grant_consumption(
+        self,
+    ) -> None:
+        self.seed_live_workflow_state("hard-cut-authorized")
         external = self.root / "external-conversations"
         external.mkdir()
         (self.machine / "conversations").symlink_to(
@@ -955,7 +1054,7 @@ export function processStartIdentity() { return 'fixture'; }
         )
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -965,15 +1064,79 @@ export function processStartIdentity() { return 'fixture'; }
 
         self.assertEqual(completed.returncode, 2)
         self.assertIn("LEGACY_BINDING_RESET_INVALID", completed.stdout)
-        receipt = next(
-            self.machine.glob("workspaces/*/workflow/agent-integration.json")
+        self.assertFalse(
+            any(
+                self.machine.glob(
+                    "workspaces/*/workflow/agent-integration.json"
+                )
+            )
         )
-        receipt_value = json.loads(receipt.read_text(encoding="utf-8"))
-        self.assertEqual(receipt_value["state"], "BLOCKED")
-        self.assertIn(
-            "LEGACY_BINDING_RESET_INVALID",
-            receipt_value["callbackProof"]["code"],
+
+    def test_skills_gc_removes_only_retired_project_projections(self) -> None:
+        self.prepare_codex_projection()
+        self.seed_live_workflow_state("gc-authorized")
+        skills = self.root / ".agents/skills/pt-goal-orchestrator"
+        retired_skill = (
+            self.root
+            / ".agents/retired-project-skills/pt-goal-orchestrator.old"
         )
+        retired_plugin = (
+            self.root
+            / ".agents/retired-project-plugins/pt-ew-plugin.old"
+        )
+        retired_skill.mkdir(parents=True)
+        retired_plugin.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills-gc", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertTrue(skills.is_dir())
+        self.assertFalse(retired_skill.parent.exists())
+        self.assertFalse(retired_plugin.parent.exists())
+
+    def test_skills_gc_rejects_a_projection_grant(self) -> None:
+        self.seed_live_workflow_state("installer-authorized")
+        retired = self.root / ".agents/retired-project-skills/legacy"
+        retired.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills-gc", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
+        self.assertTrue(retired.is_dir())
+
+    def test_skills_gc_rejects_an_unrelated_live_declaration(self) -> None:
+        self.seed_live_workflow_state("gc-authorized")
+        self.write_live_declaration("ACTIVE")
+        retired = self.root / ".agents/retired-project-skills/legacy"
+        retired.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills-gc", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
+        self.assertTrue(retired.is_dir())
 
     def test_trae_audit_rejects_missing_pre_tool_use_matcher(self) -> None:
         installed = self.install_trae_fixture()
@@ -1121,6 +1284,8 @@ export function processStartIdentity() { return 'fixture'; }
             "#!/usr/bin/env node\nprocess.stdout.write('\\n{}\\n');\n",
             encoding="utf-8",
         )
+        for actions in self.machine.glob("workspaces/*/workflow/actions"):
+            shutil.rmtree(actions)
         self.seed_live_workflow_state("installer-authorized")
         failed = subprocess.run(
             ["make", "skills", "IDE=trae"],
@@ -1244,29 +1409,13 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
         self.assertIn("managed-hook-invalid:preToolUse", audit.stdout)
 
-    def test_install_rejects_every_live_worktree_declaration(self) -> None:
+    def test_install_with_live_declaration_is_nonblocking(self) -> None:
         machine = self.root / "machine"
-        machine.mkdir()
-        workspace_id = hashlib.sha256(
-            str(self.root.resolve()).encode()
-        ).hexdigest()[:16]
         for state in ("DECLARED", "ACTIVE", "RELEASING"):
             with self.subTest(state=state):
-                (machine / "work.json").write_text(
-                    json.dumps(
-                        {
-                            "declarations": {
-                                "active": {
-                                    "workspaceId": workspace_id,
-                                    "state": state,
-                                    "workItemId": "WORK-01",
-                                    "heartbeatAt": "2026-09-19T00:00:00.000Z",
-                                }
-                            }
-                        }
-                    ),
-                    encoding="utf-8",
-                )
+                shutil.rmtree(machine, ignore_errors=True)
+                self.seed_live_workflow_state("installer-authorized")
+                self.write_live_declaration(state)
                 completed = subprocess.run(
                     ["make", "skills", "IDE=codex"],
                     cwd=self.root,
@@ -1276,11 +1425,33 @@ export function processStartIdentity() { return 'fixture'; }
                     env=self.environment("installing-session"),
                     check=False,
                 )
-                self.assertEqual(completed.returncode, 2)
-                self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
-                self.assertFalse(
-                    (self.root / ".agents/skills/pt-goal-orchestrator").exists()
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
                 )
+                self.assertTrue(
+                    (self.root / ".agents/skills/pt-goal-orchestrator").is_symlink()
+                )
+
+    def test_install_with_unrelated_live_action_is_nonblocking(self) -> None:
+        self.seed_live_workflow_state("action")
+        self.seed_live_workflow_state("installer-authorized")
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            env=self.environment("installing-session"),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertTrue(
+            (self.root / ".agents/skills/pt-goal-orchestrator").is_symlink()
+        )
 
     def test_audit_rejects_a_versioned_integration_receipt(self) -> None:
         self.seed_live_workflow_state("installer-authorized")
