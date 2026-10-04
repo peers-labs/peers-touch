@@ -176,6 +176,10 @@ import {
   CreateAgentGoalResponseSchema,
   GetAgentGoalRequestSchema,
   GetAgentGoalResponseSchema,
+  ReviewAgentGoalRequestSchema,
+  ReviewAgentGoalResponseSchema,
+  UpdateAgentGoalRequestSchema,
+  UpdateAgentGoalResponseSchema,
 } from '../gen/proto/domain/agent/goal_pb';
 import * as EvaluationModel from '../gen/proto/domain/agent/evaluation_pb';
 import type {
@@ -5421,6 +5425,55 @@ export const api = {
     );
     if (!response.goal) {
       throw new Error('agent.goalGetResponseMissing');
+    }
+    return response.goal;
+  },
+
+  updateAgentGoal: async (input: {
+    goalId: string;
+    outcome: string;
+    nonGoals: string[];
+    constraints: string[];
+    budget: {
+      maxTokens: bigint;
+      maxCost?: number;
+      wallTimeMs: bigint;
+      maxParallelTasks: number;
+    };
+    acceptanceCriteria: Array<{
+      criterionId: string;
+      description: string;
+      evaluator: string;
+      required: boolean;
+    }>;
+    expectedRevision: bigint;
+    idempotencyKey: string;
+  }): Promise<AgentGoal> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_goal_update',
+      UpdateAgentGoalRequestSchema,
+      UpdateAgentGoalResponseSchema,
+      create(UpdateAgentGoalRequestSchema, input),
+    );
+    if (!response.goal) {
+      throw new Error('agent.goalUpdateResponseMissing');
+    }
+    return response.goal;
+  },
+
+  reviewAgentGoal: async (input: {
+    goalId: string;
+    expectedRevision: bigint;
+    idempotencyKey: string;
+  }): Promise<AgentGoal> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_goal_review',
+      ReviewAgentGoalRequestSchema,
+      ReviewAgentGoalResponseSchema,
+      create(ReviewAgentGoalRequestSchema, input),
+    );
+    if (!response.goal) {
+      throw new Error('agent.goalReviewResponseMissing');
     }
     return response.goal;
   },

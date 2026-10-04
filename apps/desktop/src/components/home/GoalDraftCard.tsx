@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Input, Tag, Typography, theme } from 'antd';
+import { Alert, Button, Card, Input, Typography, theme } from 'antd';
 import { RefreshCw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
@@ -10,6 +10,7 @@ import {
   validateHomeGoalDraftBytes,
 } from '../../runtimes/homeRuntime';
 import { useHomeStore } from '../../store/home';
+import { GoalContractEditor } from './GoalContractEditor';
 
 const { useToken } = theme;
 
@@ -56,36 +57,17 @@ export function GoalDraftCard() {
           />
         )}
         size="small"
-        title={t('agent.home.goalDraft')}
+        title={t('agent.home.goalContract')}
       >
-        <Flexbox gap={token.marginXS}>
-          {readbackError ? (
-            <Alert
-              message={t('agent.home.goalReadbackFailed')}
-              showIcon
-              type="warning"
-            />
-          ) : null}
-          <Flexbox horizontal align="center" gap={token.marginSM} wrap="wrap">
-            <Tag>{t('agent.home.goalStatusDraft')}</Tag>
-            <Typography.Text data-pt-home-goal-title-readback="" strong>
-              {savedGoal.title}
-            </Typography.Text>
-          </Flexbox>
-          <Typography.Paragraph
-            data-pt-home-goal-outcome-readback=""
-            style={{ margin: 0 }}
-            type="secondary"
-          >
-            {savedGoal.outcome}
-          </Typography.Paragraph>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('agent.home.goalSavedIdentity', {
-              id: savedGoal.goalId,
-              revision: savedGoal.revision.toString(),
-            })}
-          </Typography.Text>
-        </Flexbox>
+        {readbackError ? (
+          <Alert
+            message={t('agent.home.goalReadbackFailed')}
+            showIcon
+            style={{ marginBottom: token.marginSM }}
+            type="warning"
+          />
+        ) : null}
+        <GoalContractEditor goal={savedGoal} />
       </Card>
     );
   }

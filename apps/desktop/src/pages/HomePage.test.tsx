@@ -10,11 +10,15 @@ const homeDescriptorSource = fileURLToPath(
 const goalDraftSource = fileURLToPath(
   new URL('../components/home/GoalDraftCard.tsx', import.meta.url),
 );
+const goalContractSource = fileURLToPath(
+  new URL('../components/home/GoalContractEditor.tsx', import.meta.url),
+);
 
 describe('HomePage Goal draft contract', () => {
   it('keeps Goal persistence in the Home runtime and exposes stable UI selectors', () => {
     const pageSource = readFileSync(homePageSource, 'utf8');
     const goalSource = readFileSync(goalDraftSource, 'utf8');
+    const contractSource = readFileSync(goalContractSource, 'utf8');
 
     expect(pageSource).not.toContain('useEffect');
     expect(pageSource).toContain('<GoalDraftCard />');
@@ -23,7 +27,7 @@ describe('HomePage Goal draft contract', () => {
     );
     expect(goalSource).not.toContain('useState');
     expect(goalSource).toContain('createHomeGoalDraft');
-    expect(goalSource).toContain('reopenHomeGoalDraft');
+    expect(goalSource).toContain('<GoalContractEditor goal={savedGoal} />');
     for (const selector of [
       'data-pt-home-goal',
       'data-pt-home-goal-id',
@@ -34,7 +38,7 @@ describe('HomePage Goal draft contract', () => {
       'data-pt-home-goal-outcome',
       'data-pt-home-goal-create',
     ]) {
-      expect(goalSource).toContain(selector);
+      expect(`${goalSource}\n${contractSource}`).toContain(selector);
     }
   });
 

@@ -214,6 +214,246 @@ func TestGoalGetRejectsAnotherActor(t *testing.T) {
 	assertGoalErrorCode(t, err, errcode.AgentNotFound)
 }
 
+func TestGoalUpdateAndReviewUseRevisionAndIdempotency(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	svc := NewGoalService(db)
+	svc.newID = func() string { return "goal-contract-1" }
+	created, err := svc.CreateDraft(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CreateAgentGoalRequest{
+			Title:          "Ship the contract",
+			Outcome:        "Initial outcome",
+			IdempotencyKey: "goal-create-contract",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create Goal: %v", err)
+	}
+	maxCost := 12.5
+	update := &model.UpdateAgentGoalRequest{
+		GoalId:      created.GetGoalId(),
+		Outcome:     "A reviewed, durable Goal contract",
+		NonGoals:    []string{"Do not start execution"},
+		Constraints: []string{"Preserve Station ownership"},
+		Budget: &model.AgentGoalBudget{
+			MaxTokens:        120_000,
+			MaxCost:          &maxCost,
+			WallTimeMs:       3_600_000,
+			MaxParallelTasks: 2,
+		},
+		AcceptanceCriteria: []*model.AgentGoalAcceptanceCriterion{{
+			CriterionId: "criterion-1",
+			Description: "Station readback matches the reviewed contract",
+			Evaluator:   "deterministic",
+			Required:    true,
+		}},
+		ExpectedRevision: created.GetRevision(),
+		IdempotencyKey:   "goal-update-1",
+	}
+
+	updated, err := svc.UpdateContract(context.Background(), "ptid:actor-1", update)
+	if err != nil {
+		t.Fatalf("update Goal contract: %v", err)
+	}
+	if updated.GetRevision() != 2 ||
+		updated.GetOutcome() != update.GetOutcome() ||
+		len(updated.GetNonGoals()) != 1 ||
+		len(updated.GetConstraints()) != 1 ||
+		updated.GetBudget().GetMaxTokens() != 120_000 ||
+		len(updated.GetAcceptanceCriteria()) != 1 {
+		t.Fatalf("updated Goal = %+v", updated)
+	}
+
+	replayed, err := svc.UpdateContract(context.Background(), "ptid:actor-1", update)
+	if err != nil {
+		t.Fatalf("replay Goal update: %v", err)
+	}
+	if replayed.GetRevision() != updated.GetRevision() ||
+		replayed.GetOutcome() != updated.GetOutcome() {
+		t.Fatalf("replayed Goal = %+v, want %+v", replayed, updated)
+	}
+
+	changed := *update
+	changed.Outcome = "A conflicting payload"
+	_, err = svc.UpdateContract(context.Background(), "ptid:actor-1", &changed)
+	assertGoalErrorCode(t, err, errcode.AgentIdempotencyConflict)
+
+	review := &model.ReviewAgentGoalRequest{
+		GoalId:           updated.GetGoalId(),
+		ExpectedRevision: updated.GetRevision(),
+		IdempotencyKey:   "goal-review-1",
+	}
+	reviewed, err := svc.Review(context.Background(), "ptid:actor-1", review)
+	if err != nil {
+		t.Fatalf("review Goal: %v", err)
+	}
+	if reviewed.GetStatus() !=
+		model.AgentGoalStatus_AGENT_GOAL_STATUS_REVIEWING ||
+		reviewed.GetRevision() != 3 {
+		t.Fatalf("reviewed Goal = %+v", reviewed)
+	}
+	replayedReview, err := svc.Review(
+		context.Background(),
+		"ptid:actor-1",
+		review,
+	)
+	if err != nil {
+		t.Fatalf("replay Goal review: %v", err)
+	}
+	if replayedReview.GetRevision() != reviewed.GetRevision() ||
+		replayedReview.GetStatus() != reviewed.GetStatus() {
+		t.Fatalf(
+			"replayed reviewed Goal = %+v, want %+v",
+			replayedReview,
+			reviewed,
+		)
+	}
+	historicReplay, err := svc.UpdateContract(
+		context.Background(),
+		"ptid:actor-1",
+		update,
+	)
+	if err != nil {
+		t.Fatalf("replay historic Goal update: %v", err)
+	}
+	if historicReplay.GetRevision() != 2 ||
+		historicReplay.GetStatus() !=
+			model.AgentGoalStatus_AGENT_GOAL_STATUS_DRAFT {
+		t.Fatalf("historic Goal replay changed with current state: %+v", historicReplay)
+	}
+
+	var commands int64
+	if err := db.Model(&persistence.RevisionCommand{}).
+		Where("ptid = ?", "ptid:actor-1").
+		Count(&commands).Error; err != nil {
+		t.Fatalf("count Goal commands: %v", err)
+	}
+	if commands != 2 {
+		t.Fatalf("Goal command count = %d, want 2", commands)
+	}
+	var taskRuns int64
+	if err := db.Model(&persistence.TaskRun{}).Count(&taskRuns).Error; err != nil {
+		t.Fatalf("count TaskRuns: %v", err)
+	}
+	if taskRuns != 0 {
+		t.Fatalf("contract review wrote %d TaskRuns, want 0", taskRuns)
+	}
+}
+
+func TestGoalUpdateRejectsStaleRevisionWithLatestRevision(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	svc := NewGoalService(db)
+	svc.newID = func() string { return "goal-stale-1" }
+	created, err := svc.CreateDraft(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CreateAgentGoalRequest{
+			Title:          "Stale Goal",
+			Outcome:        "Initial outcome",
+			IdempotencyKey: "goal-create-stale",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create Goal: %v", err)
+	}
+	first := &model.UpdateAgentGoalRequest{
+		GoalId:           created.GetGoalId(),
+		Outcome:          "Authoritative outcome",
+		Budget:           &model.AgentGoalBudget{},
+		ExpectedRevision: 1,
+		IdempotencyKey:   "goal-update-authoritative",
+	}
+	if _, err := svc.UpdateContract(
+		context.Background(),
+		"ptid:actor-1",
+		first,
+	); err != nil {
+		t.Fatalf("update Goal: %v", err)
+	}
+
+	_, err = svc.UpdateContract(
+		context.Background(),
+		"ptid:actor-1",
+		&model.UpdateAgentGoalRequest{
+			GoalId:           created.GetGoalId(),
+			Outcome:          "Stale local outcome",
+			Budget:           &model.AgentGoalBudget{},
+			ExpectedRevision: 1,
+			IdempotencyKey:   "goal-update-stale",
+		},
+	)
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) ||
+		biz.Code != errcode.AgentLifecycleStaleVersion ||
+		biz.Payload.GetDetails()["expected_revision"] != "1" ||
+		biz.Payload.GetDetails()["actual_revision"] != "2" {
+		t.Fatalf("stale Goal error = %+v", err)
+	}
+
+	reopened, err := svc.Get(
+		context.Background(),
+		"ptid:actor-1",
+		created.GetGoalId(),
+	)
+	if err != nil {
+		t.Fatalf("read Goal after stale update: %v", err)
+	}
+	if reopened.GetOutcome() != "Authoritative outcome" ||
+		reopened.GetRevision() != 2 {
+		t.Fatalf("Goal mutated by stale request: %+v", reopened)
+	}
+}
+
+func TestGoalMutationRejectsAnotherActorWithoutRetry(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	svc := NewGoalService(db)
+	svc.newID = func() string { return "goal-private-mutation" }
+	created, err := svc.CreateDraft(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CreateAgentGoalRequest{
+			Title:          "Private Goal",
+			Outcome:        "Only the owner can mutate it",
+			IdempotencyKey: "goal-create-private-mutation",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create Goal: %v", err)
+	}
+
+	_, err = svc.UpdateContract(
+		context.Background(),
+		"ptid:actor-2",
+		&model.UpdateAgentGoalRequest{
+			GoalId:           created.GetGoalId(),
+			Outcome:          "Unauthorized replacement",
+			Budget:           &model.AgentGoalBudget{},
+			ExpectedRevision: created.GetRevision(),
+			IdempotencyKey:   "goal-update-other-actor",
+		},
+	)
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) ||
+		biz.Code != errcode.AgentOwnershipForbiddenActor ||
+		biz.Payload.GetRetryable() {
+		t.Fatalf("unauthorized Goal error = %+v", err)
+	}
+
+	reopened, err := svc.Get(
+		context.Background(),
+		"ptid:actor-1",
+		created.GetGoalId(),
+	)
+	if err != nil {
+		t.Fatalf("read private Goal: %v", err)
+	}
+	if reopened.GetOutcome() != created.GetOutcome() ||
+		reopened.GetRevision() != created.GetRevision() {
+		t.Fatalf("unauthorized request mutated Goal: %+v", reopened)
+	}
+}
+
 func openGoalServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	name := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
@@ -226,6 +466,7 @@ func openGoalServiceTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&persistence.AgentGoal{},
+		&persistence.RevisionCommand{},
 		&persistence.TaskRun{},
 	); err != nil {
 		t.Fatalf("migrate Goal test database: %v", err)

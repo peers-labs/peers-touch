@@ -10,12 +10,15 @@ import {
   AgentGoalStatus,
   type AgentGoal,
 } from '../gen/proto/domain/agent/goal_pb';
+import { useGoalDraftStore } from '../store/goalDraft';
 
 const getHomeWorkProjection = vi.hoisted(() => vi.fn());
 const submitHomeChatCommand = vi.hoisted(() => vi.fn());
 const submitHomeTaskCommand = vi.hoisted(() => vi.fn());
 const createAgentGoalDraft = vi.hoisted(() => vi.fn());
 const getAgentGoal = vi.hoisted(() => vi.fn());
+const updateAgentGoal = vi.hoisted(() => vi.fn());
+const reviewAgentGoal = vi.hoisted(() => vi.fn());
 const setAgentSurface = vi.hoisted(() => vi.fn());
 const setSelectedAgent = vi.hoisted(() => vi.fn());
 const selectSession = vi.hoisted(() => vi.fn());
@@ -59,7 +62,15 @@ vi.mock('../services/desktop_api', () => ({
     submitHomeTaskCommand,
     createAgentGoalDraft,
     getAgentGoal,
+    updateAgentGoal,
+    reviewAgentGoal,
   },
+  isAgentForbiddenActorError: (error: { error_type?: string } | undefined) =>
+    error?.error_type === 'OWNERSHIP_FORBIDDEN_ACTOR',
+  isAgentLifecycleStaleVersionError: (
+    error: { error_type?: string } | undefined,
+  ) => error?.error_type === 'LIFECYCLE_STALE_VERSION',
+  normalizeAgentTurnStreamError: (error: unknown) => error,
 }));
 
 vi.mock('../store/agent', () => ({
@@ -104,8 +115,11 @@ import {
   homeGoalDraftByteLength,
   homeRuntime,
   openHomeConversation,
+  reloadHomeGoalContract,
+  reviewHomeGoalContract,
   submitHomeChat,
   submitHomeTask,
+  updateHomeGoalContract,
   validateHomeGoalDraftBytes,
 } from './homeRuntime';
 
@@ -122,6 +136,7 @@ describe('homeRuntime', () => {
     homeState.goalDraftOutcome = '';
     homeState.goalDraftIdempotencyKey = '';
     homeState.savedGoal = null;
+    useGoalDraftStore.getState().reset();
   });
 
   it('loads the Station projection during actor bootstrap', async () => {
@@ -310,5 +325,118 @@ describe('homeRuntime', () => {
     resolveActorOne(actorOneGoal);
     await firstAcquire;
     expect(applyGoalDraft).toHaveBeenCalledOnce();
+  });
+
+  it('updates local edits and reviews the exact returned Station revision', async () => {
+    const initial = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Durable Goal',
+      outcome: 'Initial outcome',
+      status: AgentGoalStatus.DRAFT,
+      revision: 1n,
+    });
+    const updated = create(AgentGoalSchema, {
+      ...initial,
+      outcome: 'Local outcome',
+      status: AgentGoalStatus.DRAFT,
+      revision: 2n,
+    });
+    const reviewed = create(AgentGoalSchema, {
+      ...updated,
+      status: AgentGoalStatus.REVIEWING,
+      revision: 3n,
+    });
+    useGoalDraftStore.getState().hydrate(initial);
+    useGoalDraftStore.getState().setOutcome('Local outcome');
+    updateAgentGoal.mockResolvedValue(updated);
+    reviewAgentGoal.mockResolvedValue(reviewed);
+
+    const result = await reviewHomeGoalContract();
+
+    expect(updateAgentGoal).toHaveBeenCalledWith(expect.objectContaining({
+      goalId: 'goal-1',
+      outcome: 'Local outcome',
+      expectedRevision: 1n,
+    }));
+    expect(reviewAgentGoal).toHaveBeenCalledWith(expect.objectContaining({
+      goalId: 'goal-1',
+      expectedRevision: 2n,
+    }));
+    expect(result.revision).toBe(3n);
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      baseRevision: 3n,
+      mutationState: 'reviewing',
+    });
+  });
+
+  it('reloads a stale Goal revision without losing local edits', async () => {
+    const initial = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Durable Goal',
+      outcome: 'Initial outcome',
+      status: AgentGoalStatus.DRAFT,
+      revision: 1n,
+    });
+    useGoalDraftStore.getState().hydrate(initial);
+    useGoalDraftStore.getState().setOutcome('Local outcome');
+    const conflict = Object.assign(
+      new Error('agent.errors.lifecycleStaleVersion'),
+      {
+        typedError: {
+          error_type: 'LIFECYCLE_STALE_VERSION',
+          locale_key: 'agent.errors.lifecycleStaleVersion',
+          details: { actual_revision: '2' },
+        },
+      },
+    );
+    updateAgentGoal.mockRejectedValueOnce(conflict);
+
+    await expect(updateHomeGoalContract()).rejects.toBe(conflict);
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      outcome: 'Local outcome',
+      mutationState: 'conflict',
+      conflictRevision: 2n,
+    });
+
+    getAgentGoal.mockResolvedValue(create(AgentGoalSchema, {
+      ...initial,
+      outcome: 'Changed elsewhere',
+      revision: 2n,
+    }));
+    await reloadHomeGoalContract();
+
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      baseRevision: 2n,
+      outcome: 'Local outcome',
+      mutationState: 'dirty',
+    });
+  });
+
+  it('classifies forbidden review as non-retryable UI state', async () => {
+    const initial = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Durable Goal',
+      outcome: 'Initial outcome',
+      status: AgentGoalStatus.DRAFT,
+      revision: 1n,
+    });
+    useGoalDraftStore.getState().hydrate(initial);
+    const forbidden = Object.assign(new Error('agent.errors.forbiddenActor'), {
+      typedError: {
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        locale_key: 'agent.errors.forbiddenActor',
+        details: {},
+      },
+    });
+    reviewAgentGoal.mockRejectedValueOnce(forbidden);
+
+    await expect(reviewHomeGoalContract()).rejects.toBe(forbidden);
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      mutationState: 'forbidden',
+      mutationError: 'agent.errors.forbiddenActor',
+    });
   });
 });

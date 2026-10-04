@@ -73,3 +73,28 @@ message GetAgentGoalRequest {
 message GetAgentGoalResponse {
   AgentGoal goal = 1;
 }
+
+message UpdateAgentGoalRequest {
+  string goal_id = 1;
+  string outcome = 2;
+  repeated string non_goals = 3;
+  repeated string constraints = 4;
+  AgentGoalBudget budget = 5;
+  repeated AgentGoalAcceptanceCriterion acceptance_criteria = 6;
+  uint64 expected_revision = 7;
+  string idempotency_key = 8;
+}
+
+message UpdateAgentGoalResponse {
+  AgentGoal goal = 1;
+}
+
+message ReviewAgentGoalRequest {
+  string goal_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message ReviewAgentGoalResponse {
+  AgentGoal goal = 1;
+}

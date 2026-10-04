@@ -11,6 +11,8 @@ const HOME_CHAT_SUBMIT_PATH: &str = "/sub-agent/agent/home/chat/submit";
 const HOME_TASK_SUBMIT_PATH: &str = "/sub-agent/agent/home/task/submit";
 const GOAL_CREATE_PATH: &str = "/sub-agent/agent/goal/create";
 const GOAL_GET_PATH: &str = "/sub-agent/agent/goal/get";
+const GOAL_UPDATE_PATH: &str = "/sub-agent/agent/goal/update";
+const GOAL_REVIEW_PATH: &str = "/sub-agent/agent/goal/review";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -139,5 +141,53 @@ pub fn get_goal(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
     ) {
         Ok(response) => AppResult::success(response.encode_to_vec()),
         Err(error) => error.into_app_result("agent.goalGetFailed"),
+    }
+}
+
+pub fn update_goal(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    let request = match agent::UpdateAgentGoalRequest::decode(input.request_bytes.as_slice()) {
+        Ok(request) => request,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "agent.goalUpdateRequestInvalid",
+                None,
+            )
+        }
+    };
+
+    match station_client::request_proto::<_, agent::UpdateAgentGoalResponse>(
+        Method::POST,
+        GOAL_UPDATE_PATH,
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => AppResult::success(response.encode_to_vec()),
+        Err(error) => error.into_app_result("agent.goalUpdateFailed"),
+    }
+}
+
+pub fn review_goal(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    let request = match agent::ReviewAgentGoalRequest::decode(input.request_bytes.as_slice()) {
+        Ok(request) => request,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "agent.goalReviewRequestInvalid",
+                None,
+            )
+        }
+    };
+
+    match station_client::request_proto::<_, agent::ReviewAgentGoalResponse>(
+        Method::POST,
+        GOAL_REVIEW_PATH,
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => AppResult::success(response.encode_to_vec()),
+        Err(error) => error.into_app_result("agent.goalReviewFailed"),
     }
 }
