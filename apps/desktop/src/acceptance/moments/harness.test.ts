@@ -67,6 +67,18 @@ const privateState = {
 };
 
 const privateCommentsState = {
+  activeDraftByPost: {} as Record<string, string>,
+  draftsById: {} as Record<string, {
+    draftId: string;
+    draftRevision: number;
+    postId: string;
+    replyToCommentId: string;
+    text: string;
+    mentions: Array<Record<string, unknown>>;
+    state: string;
+    errorCode?: string;
+    publicationState?: string;
+  }>,
   threadsByPost: {} as Record<string, {
     comments: Array<Record<string, unknown>>;
     errorCode?: string;
@@ -77,6 +89,7 @@ const privateCommentsState = {
     state?: string;
   }>,
   submitComment: vi.fn(),
+  retryComment: vi.fn(),
   loadComments: vi.fn(),
 };
 
@@ -235,7 +248,10 @@ describe('Moments acceptance harness', () => {
     privateState.purgeMoment.mockReset();
     privateState.clearPublishState.mockClear();
     privateCommentsState.threadsByPost = {};
+    privateCommentsState.activeDraftByPost = {};
+    privateCommentsState.draftsById = {};
     privateCommentsState.submitComment.mockReset();
+    privateCommentsState.retryComment.mockReset();
     privateCommentsState.loadComments.mockReset();
     sessionState.sessionEpoch = 7;
     sessionState.currentUser = { actorPtid: 'ptid:test:alice' };
@@ -1217,6 +1233,66 @@ describe('Moments acceptance harness', () => {
       undefined,
       mentions,
     );
+  });
+
+  it('retries the same private Comment draft while federation result is pending', async () => {
+    vi.useFakeTimers();
+    const comment = {
+      authorPtid: 'ptid:test:bob',
+      commentId: 'comment-retried',
+      contentId: 'comment-content-retried',
+      generation: '1',
+      postId: 'post-retried',
+      replyToCommentId: '',
+      state: 'COMMENT_POSTED',
+      text: 'private retried comment',
+      mentions: [],
+      reactionsCount: 0,
+      repliesCount: 0,
+    };
+    privateCommentsState.submitComment.mockImplementation(async () => {
+      privateCommentsState.activeDraftByPost['post-retried'] = 'draft-retried';
+      privateCommentsState.draftsById['draft-retried'] = {
+        draftId: 'draft-retried',
+        draftRevision: 1,
+        postId: 'post-retried',
+        replyToCommentId: '',
+        text: comment.text,
+        mentions: [],
+        state: 'COMMENT_FAILED',
+        errorCode: 'SOCIAL_PRIVATE_DEPENDENCY_FAILURE',
+      };
+      throw new Error('federation result pending');
+    });
+    privateCommentsState.retryComment.mockImplementation(async () => {
+      privateCommentsState.threadsByPost['post-retried'] = {
+        comments: [comment],
+        hasMore: false,
+        loaded: true,
+        loading: false,
+        nextCursor: '',
+      };
+    });
+
+    try {
+      const pending = harness().submitPrivateCommentWithRetry({
+        postId: 'post-retried',
+        text: comment.text,
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      const submitted = await pending;
+
+      expect(submitted).toMatchObject({
+        state: 'COMMENT_POSTED',
+        textByteLength: comment.text.length,
+      });
+      expect(privateCommentsState.submitComment).toHaveBeenCalledTimes(1);
+      expect(privateCommentsState.retryComment).toHaveBeenCalledWith(
+        'post-retried',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('projects unauthorized private Comment reads without plaintext', async () => {

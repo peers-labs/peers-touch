@@ -7462,7 +7462,7 @@ class W7RuntimeOwner:
             )
             comment = _moments_harness(
                 current_bob,
-                "submitPrivateComment",
+                "submitPrivateCommentWithRetry",
                 {"postId": as20_post, "text": as20_comment},
             )
             reaction = _moments_harness(
