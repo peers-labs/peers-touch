@@ -134,16 +134,31 @@ def task_events(
             page_size: 20,
           }))
           .then((response) => {
+            const eventTypes = {
+              TASK_EVENT_TYPE_TASK_CREATED: 1,
+            };
             const created = (response.events || []).find(
-              (event) => event.taskId === taskId && event.type === 1,
+              (event) => {
+                const rawType = event.type
+                  ?? event.eventType
+                  ?? event.event_type;
+                const eventType = typeof rawType === 'string'
+                  ? (eventTypes[rawType] ?? Number(rawType))
+                  : Number(rawType);
+                const eventTaskId = event.taskId || event.task_id || '';
+                return eventTaskId === taskId && eventType === 1;
+              },
             );
             done(created ? {
               ok: true,
-              eventId: created.eventId,
-              taskId: created.taskId,
-              stepId: created.stepId,
-              eventSeq: Number(created.eventSeq),
-              payloadJson: created.payloadJson,
+              eventId: created.eventId || created.event_id || '',
+              taskId: created.taskId || created.task_id || '',
+              stepId: created.stepId || created.step_id || '',
+              eventSeq: Number(
+                created.eventSeq ?? created.event_seq ?? 0,
+              ),
+              payloadJson:
+                created.payloadJson || created.payload_json || '{}',
             } : { ok: true, missing: true });
           })
           .catch((error) => done({
