@@ -124,7 +124,7 @@ export const useGoalExecutionStore =
     applyProjection: (projection) => set((state) => {
       const executions = normalizeGoalExecutions(projection);
       const results = normalizeGoalResults(projection);
-      const selectedTaskId = executions.some(
+      const selectedTaskId = [...executions, ...results].some(
         (execution) => execution.taskId === state.selectedTaskId,
       )
         ? state.selectedTaskId
@@ -133,7 +133,7 @@ export const useGoalExecutionStore =
     }),
 
     selectTask: (taskId) => set((state) => ({
-      selectedTaskId: state.executions.some(
+      selectedTaskId: [...state.executions, ...state.results].some(
         (execution) => execution.taskId === taskId,
       )
         ? taskId

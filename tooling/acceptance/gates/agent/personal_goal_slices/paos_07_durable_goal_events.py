@@ -33,6 +33,7 @@ from tooling.acceptance.gates.agent.personal_goal_slices.paos_01_home_draft impo
     persisted_sensitive_profile_keys,
     require,
     runtime_profile_values,
+    set_realtime_stream,
     visible_element,
     wait_until,
     write_evidence_manifest,
@@ -95,32 +96,6 @@ def run_publish_failure_probe(artifact_dir: Path) -> dict[str, Any]:
             "committedGoalReadbackSurvivesPublishFailure": True,
         },
     }
-
-
-def set_realtime_stream(
-    client: FoundationRuntimeClient,
-    *,
-    running: bool,
-) -> None:
-    result = client.driver.execute_async_script(
-        """
-        const [running, done] = arguments;
-        import('/src/services/desktop_api.ts')
-          .then(({ api }) => (
-            running ? api.realtimeStreamStart() : api.realtimeStreamStop()
-          ))
-          .then(() => done({ ok: true, running }))
-          .catch((error) => done({
-            ok: false,
-            message: error instanceof Error ? error.message : String(error),
-          }));
-        """,
-        running,
-    )
-    require(
-        isinstance(result, Mapping) and result.get("ok") is True,
-        f"set realtime stream state failed: {result}",
-    )
 
 
 def run_journey(

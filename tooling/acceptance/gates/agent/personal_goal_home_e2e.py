@@ -31,6 +31,7 @@ from tooling.acceptance.gates.agent.personal_goal_slices.paos_01_home_draft impo
     persisted_sensitive_profile_keys,
     require,
     runtime_profile_values,
+    set_realtime_stream,
     visible_element,
     wait_until,
     write_evidence_manifest,
@@ -39,10 +40,6 @@ from tooling.acceptance.gates.agent.personal_goal_slices.paos_06_direct_model_re
     read_goal,
     run_journey as run_direct_model_journey,
 )
-from tooling.acceptance.gates.agent.personal_goal_slices.paos_07_durable_goal_events import (
-    set_realtime_stream,
-)
-
 WORK_ITEM_ID = "personal-agent-os-convergence-20261003"
 
 

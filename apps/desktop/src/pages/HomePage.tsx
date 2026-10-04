@@ -263,7 +263,7 @@ export function HomePage() {
               </Button>
             </Empty>
           </Card>
-          {goalExecutions.length ? (
+          {goalExecutions.length || goalResults.length ? (
             <Card
               data-pt-home-empty-goal-runs=""
               size="small"
@@ -470,7 +470,7 @@ export function HomePage() {
             </Card>
 
             <Card size="small" title={t('agent.home.activeTasks')}>
-              {goalExecutions.length || legacyActiveTasks.length ? (
+              {goalExecutions.length || goalResults.length || legacyActiveTasks.length ? (
                 <Flexbox gap={12}>
                   <GoalProgressPanel />
                   {legacyActiveTasks.map((task) => (

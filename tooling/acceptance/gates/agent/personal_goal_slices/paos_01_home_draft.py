@@ -85,6 +85,32 @@ def wait_until(
     raise HomeGoalDraftError(f"timed out waiting for {description}{suffix}")
 
 
+def set_realtime_stream(
+    client: FoundationRuntimeClient,
+    *,
+    running: bool,
+) -> None:
+    result = client.driver.execute_async_script(
+        """
+        const [running, done] = arguments;
+        import('/src/services/desktop_api.ts')
+          .then(({ api }) => (
+            running ? api.realtimeStreamStart() : api.realtimeStreamStop()
+          ))
+          .then(() => done({ ok: true, running }))
+          .catch((error) => done({
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          }));
+        """,
+        running,
+    )
+    require(
+        isinstance(result, Mapping) and result.get("ok") is True,
+        f"set realtime stream state failed: {result}",
+    )
+
+
 def visible_element(client: FoundationRuntimeClient, selector: str) -> Any:
     element = client.driver.find_element(By.CSS_SELECTOR, selector)
     return element if element.is_displayed() else None

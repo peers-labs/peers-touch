@@ -32,6 +32,7 @@ from tooling.acceptance.gates.agent.personal_goal_slices.paos_01_home_draft impo
     persisted_sensitive_profile_keys,
     require,
     runtime_profile_values,
+    set_realtime_stream,
     visible_element,
     wait_until,
     write_evidence_manifest,
@@ -284,38 +285,50 @@ def run_journey(
     reviewed_screenshot = artifact_dir / "goal-start-reviewed.png"
     client.driver.save_screenshot(str(reviewed_screenshot))
 
-    concurrent = admit_outside_projection(
-        client,
-        goal_id=goal_id,
-        expected_revision="3",
-        marker=marker,
-    )
-    require(concurrent.get("revision") == "4", "Goal admission revision mismatch")
-    require(concurrent.get("status") == 3, "Goal admission did not reach READY")
-    require(
-        active_task_ids(client) == baseline_task_ids,
-        "Goal admission created hidden active work",
-    )
+    set_realtime_stream(client, running=False)
+    try:
+        concurrent = admit_outside_projection(
+            client,
+            goal_id=goal_id,
+            expected_revision="3",
+            marker=marker,
+        )
+        require(concurrent.get("revision") == "4", "Goal admission revision mismatch")
+        require(concurrent.get("status") == 3, "Goal admission did not reach READY")
+        require(
+            active_task_ids(client) == baseline_task_ids,
+            "Goal admission created hidden active work",
+        )
 
-    visible_element(client, "[data-pt-home-goal-start]").click()
-    conflict = wait_until(
-        lambda: visible_element(client, "[data-pt-home-goal-conflict]"),
-        "stale Goal admission rejection",
-    )
-    require(
-        conflict.is_displayed(),
-        "stale Goal admission rejection is not visible",
-    )
-    conflict_screenshot = artifact_dir / "goal-start-stale-conflict.png"
-    client.driver.save_screenshot(str(conflict_screenshot))
+        visible_element(client, "[data-pt-home-goal-start]").click()
+        conflict = wait_until(
+            lambda: visible_element(client, "[data-pt-home-goal-conflict]"),
+            "stale Goal admission rejection",
+        )
+        require(
+            conflict.is_displayed(),
+            "stale Goal admission rejection is not visible",
+        )
+        conflict_screenshot = artifact_dir / "goal-start-stale-conflict.png"
+        client.driver.save_screenshot(str(conflict_screenshot))
 
-    visible_element(
-        client,
-        "[data-pt-home-goal-conflict-reload]",
-    ).click()
+        visible_element(
+            client,
+            "[data-pt-home-goal-conflict-reload]",
+        ).click()
+        wait_until(
+            lambda: goal_surface(client, revision="4", status="READY"),
+            "admitted Goal readback",
+        )
+    finally:
+        set_realtime_stream(client, running=True)
+
     wait_until(
-        lambda: goal_surface(client, revision="4", status="READY"),
-        "admitted Goal readback",
+        lambda: visible_element(
+            client,
+            '[data-pt-home-connection-state="fresh"]',
+        ),
+        "fresh Home connection after conflict readback",
     )
     visible_element(client, "[data-pt-home-goal-start]").click()
     running = wait_until(
