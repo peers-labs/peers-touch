@@ -47,6 +47,7 @@
     "tooling/acceptance/gates/agent/personal_goal_slices/paos_01_home_draft.py",
     "tooling/skills/pt-agent-development/impact-policy.json",
     "AGENTS.md",
+    "docs/global/architecture-document-standard.md",
     "docs/architecture/development-workflow/decisions.md",
     "docs/architecture/development-workflow/data-model.md",
     "docs/architecture/development-workflow/integration.md",
@@ -54,6 +55,7 @@
     "docs/knowledge/invariants/owner-rooted-workflow-binding.md",
     "tooling/scripts/agent-integration-control.py",
     "tooling/scripts/agent-integration-audit-test.py",
+    "tooling/skills/pt-architecture-design-methodology/SKILL.md",
     "tooling/skills/pt-github-review/FRESHNESS.md",
     "tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs",
     "tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs"
@@ -102,8 +104,19 @@
     "No local-only Goal placeholder is presented as saved",
     "Live child assignments, workflow actions, and action-store locks still block integration replacement"
   ],
-  "updatedAt": "2026-10-04T01:31:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T03:32:00Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "git:e1ec7c02931ac4c65fd57ad76901d3077a9aa5cd;model-build:pass;git-diff-check:pass;agent-integration-audit:38-pass;hook-entry:5-pass;skill-check:pass;plan-validate:pass;module-governance:pass;desktop-vitest:18-pass;desktop-typecheck:pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "development://personal-agent-os-convergence-20261003-r4/checks/functional-result-991f412d0a1d5107a6c08b939f79ca02f6f7b6cdd42766ba83b65fb1b5c92a27.json"
+    }
+  ]
 }
 ```
 
@@ -115,6 +128,10 @@
 - Lane: Station integration plus Home; this is the first serial foundation slice.
 - Scope guard: reuse the existing Home transport and projection shell; only
   create/get draft behavior lands here, with no review, start, or TaskRun work.
+- Evidence boundary: this `completionClass=functional` slice owns the
+  exact-source Development Journey. Formal Acceptance remains `UNPROVEN` and is
+  promoted by the later `PAOS-08-HOME-LIVE-PROGRESS` / `PAOS-30-FINAL-PROOF`
+  aggregate closures; the empty `PAOS-home-draft` Gate list is intentional.
 
 ## Current Snapshot
 
