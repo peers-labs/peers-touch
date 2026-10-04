@@ -67,7 +67,7 @@ func (x MessageReceipt_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MessageReceipt_Kind.Descriptor instead.
 func (MessageReceipt_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{3, 0}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{4, 0}
 }
 
 type CallSignal_Kind int32
@@ -152,7 +152,7 @@ func (x CallSignal_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CallSignal_Kind.Descriptor instead.
 func (CallSignal_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{6, 0}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{7, 0}
 }
 
 type MessageMutation_Kind int32
@@ -204,7 +204,7 @@ func (x MessageMutation_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MessageMutation_Kind.Descriptor instead.
 func (MessageMutation_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{9, 0}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{10, 0}
 }
 
 type GroupMembershipChange_Kind int32
@@ -265,7 +265,7 @@ func (x GroupMembershipChange_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GroupMembershipChange_Kind.Descriptor instead.
 func (GroupMembershipChange_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{10, 0}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{11, 0}
 }
 
 type ConversationSettingsChanged_Kind int32
@@ -314,7 +314,7 @@ func (x ConversationSettingsChanged_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConversationSettingsChanged_Kind.Descriptor instead.
 func (ConversationSettingsChanged_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{11, 0}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{12, 0}
 }
 
 type MomentEvent_Kind int32
@@ -369,7 +369,7 @@ func (x MomentEvent_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MomentEvent_Kind.Descriptor instead.
 func (MomentEvent_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{12, 0}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{13, 0}
 }
 
 type SocialGraphEvent_Kind int32
@@ -433,7 +433,7 @@ func (x SocialGraphEvent_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SocialGraphEvent_Kind.Descriptor instead.
 func (SocialGraphEvent_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{18, 0}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{19, 0}
 }
 
 // StreamEvent is the single envelope every realtime frame uses.
@@ -469,6 +469,7 @@ type StreamEvent struct {
 	//	*StreamEvent_EnvelopeDelivered
 	//	*StreamEvent_LedgerEventDelivered
 	//	*StreamEvent_SocialGraphEvent
+	//	*StreamEvent_AgentDomainEvent
 	Kind          isStreamEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -669,6 +670,15 @@ func (x *StreamEvent) GetSocialGraphEvent() *SocialGraphEvent {
 	return nil
 }
 
+func (x *StreamEvent) GetAgentDomainEvent() *AgentDomainEvent {
+	if x != nil {
+		if x, ok := x.Kind.(*StreamEvent_AgentDomainEvent); ok {
+			return x.AgentDomainEvent
+		}
+	}
+	return nil
+}
+
 type isStreamEvent_Kind interface {
 	isStreamEvent_Kind()
 }
@@ -737,6 +747,10 @@ type StreamEvent_SocialGraphEvent struct {
 	SocialGraphEvent *SocialGraphEvent `protobuf:"bytes,25,opt,name=social_graph_event,json=socialGraphEvent,proto3,oneof"`
 }
 
+type StreamEvent_AgentDomainEvent struct {
+	AgentDomainEvent *AgentDomainEvent `protobuf:"bytes,26,opt,name=agent_domain_event,json=agentDomainEvent,proto3,oneof"`
+}
+
 func (*StreamEvent_Hb) isStreamEvent_Kind() {}
 
 func (*StreamEvent_Message) isStreamEvent_Kind() {}
@@ -769,6 +783,112 @@ func (*StreamEvent_LedgerEventDelivered) isStreamEvent_Kind() {}
 
 func (*StreamEvent_SocialGraphEvent) isStreamEvent_Kind() {}
 
+func (*StreamEvent_AgentDomainEvent) isStreamEvent_Kind() {}
+
+// AgentDomainEvent projects one already-committed Agent domain event onto the
+// canonical realtime stream. domain_event_id + domain_sequence is the stable
+// consumer de-duplication identity; the outer StreamEvent event_id is the
+// durable shared-stream cursor and is preserved across relay retries.
+type AgentDomainEvent struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	DomainEventId     string                 `protobuf:"bytes,1,opt,name=domain_event_id,json=domainEventId,proto3" json:"domain_event_id,omitempty"`
+	DomainSequence    uint64                 `protobuf:"varint,2,opt,name=domain_sequence,json=domainSequence,proto3" json:"domain_sequence,omitempty"`
+	SchemaVersion     uint32                 `protobuf:"varint,3,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	EventType         string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	GoalId            string                 `protobuf:"bytes,5,opt,name=goal_id,json=goalId,proto3" json:"goal_id,omitempty"`
+	TaskId            string                 `protobuf:"bytes,6,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	GoalRevision      uint64                 `protobuf:"varint,7,opt,name=goal_revision,json=goalRevision,proto3" json:"goal_revision,omitempty"`
+	CommittedTsUnixMs int64                  `protobuf:"varint,8,opt,name=committed_ts_unix_ms,json=committedTsUnixMs,proto3" json:"committed_ts_unix_ms,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AgentDomainEvent) Reset() {
+	*x = AgentDomainEvent{}
+	mi := &file_domain_realtime_event_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentDomainEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentDomainEvent) ProtoMessage() {}
+
+func (x *AgentDomainEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_realtime_event_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentDomainEvent.ProtoReflect.Descriptor instead.
+func (*AgentDomainEvent) Descriptor() ([]byte, []int) {
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AgentDomainEvent) GetDomainEventId() string {
+	if x != nil {
+		return x.DomainEventId
+	}
+	return ""
+}
+
+func (x *AgentDomainEvent) GetDomainSequence() uint64 {
+	if x != nil {
+		return x.DomainSequence
+	}
+	return 0
+}
+
+func (x *AgentDomainEvent) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *AgentDomainEvent) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *AgentDomainEvent) GetGoalId() string {
+	if x != nil {
+		return x.GoalId
+	}
+	return ""
+}
+
+func (x *AgentDomainEvent) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *AgentDomainEvent) GetGoalRevision() uint64 {
+	if x != nil {
+		return x.GoalRevision
+	}
+	return 0
+}
+
+func (x *AgentDomainEvent) GetCommittedTsUnixMs() int64 {
+	if x != nil {
+		return x.CommittedTsUnixMs
+	}
+	return 0
+}
+
 // Heartbeat is emitted by the server every 15 seconds (default,
 // operator-tunable) so the client can detect a silent connection even
 // when no business event has occurred recently. Clients reset their
@@ -786,7 +906,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_domain_realtime_event_proto_msgTypes[1]
+	mi := &file_domain_realtime_event_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -798,7 +918,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[1]
+	mi := &file_domain_realtime_event_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -811,7 +931,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{1}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Heartbeat) GetFloorEventId() string {
@@ -846,7 +966,7 @@ type MessageEnvelope struct {
 
 func (x *MessageEnvelope) Reset() {
 	*x = MessageEnvelope{}
-	mi := &file_domain_realtime_event_proto_msgTypes[2]
+	mi := &file_domain_realtime_event_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -858,7 +978,7 @@ func (x *MessageEnvelope) String() string {
 func (*MessageEnvelope) ProtoMessage() {}
 
 func (x *MessageEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[2]
+	mi := &file_domain_realtime_event_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -871,7 +991,7 @@ func (x *MessageEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageEnvelope.ProtoReflect.Descriptor instead.
 func (*MessageEnvelope) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{2}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *MessageEnvelope) GetSenderActorPtid() string {
@@ -931,7 +1051,7 @@ type MessageReceipt struct {
 
 func (x *MessageReceipt) Reset() {
 	*x = MessageReceipt{}
-	mi := &file_domain_realtime_event_proto_msgTypes[3]
+	mi := &file_domain_realtime_event_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -943,7 +1063,7 @@ func (x *MessageReceipt) String() string {
 func (*MessageReceipt) ProtoMessage() {}
 
 func (x *MessageReceipt) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[3]
+	mi := &file_domain_realtime_event_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -956,7 +1076,7 @@ func (x *MessageReceipt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageReceipt.ProtoReflect.Descriptor instead.
 func (*MessageReceipt) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{3}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *MessageReceipt) GetSessionUlid() string {
@@ -1000,7 +1120,7 @@ type TypingState struct {
 
 func (x *TypingState) Reset() {
 	*x = TypingState{}
-	mi := &file_domain_realtime_event_proto_msgTypes[4]
+	mi := &file_domain_realtime_event_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1012,7 +1132,7 @@ func (x *TypingState) String() string {
 func (*TypingState) ProtoMessage() {}
 
 func (x *TypingState) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[4]
+	mi := &file_domain_realtime_event_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1025,7 +1145,7 @@ func (x *TypingState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TypingState.ProtoReflect.Descriptor instead.
 func (*TypingState) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{4}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TypingState) GetSessionUlid() string {
@@ -1061,7 +1181,7 @@ type PresenceFlip struct {
 
 func (x *PresenceFlip) Reset() {
 	*x = PresenceFlip{}
-	mi := &file_domain_realtime_event_proto_msgTypes[5]
+	mi := &file_domain_realtime_event_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1073,7 +1193,7 @@ func (x *PresenceFlip) String() string {
 func (*PresenceFlip) ProtoMessage() {}
 
 func (x *PresenceFlip) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[5]
+	mi := &file_domain_realtime_event_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1086,7 +1206,7 @@ func (x *PresenceFlip) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresenceFlip.ProtoReflect.Descriptor instead.
 func (*PresenceFlip) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{5}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PresenceFlip) GetActorPtid() string {
@@ -1130,7 +1250,7 @@ type CallSignal struct {
 
 func (x *CallSignal) Reset() {
 	*x = CallSignal{}
-	mi := &file_domain_realtime_event_proto_msgTypes[6]
+	mi := &file_domain_realtime_event_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1142,7 +1262,7 @@ func (x *CallSignal) String() string {
 func (*CallSignal) ProtoMessage() {}
 
 func (x *CallSignal) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[6]
+	mi := &file_domain_realtime_event_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1155,7 +1275,7 @@ func (x *CallSignal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallSignal.ProtoReflect.Descriptor instead.
 func (*CallSignal) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{6}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CallSignal) GetSessionUlid() string {
@@ -1227,7 +1347,7 @@ type GetFederatedCallResolutionRequest struct {
 
 func (x *GetFederatedCallResolutionRequest) Reset() {
 	*x = GetFederatedCallResolutionRequest{}
-	mi := &file_domain_realtime_event_proto_msgTypes[7]
+	mi := &file_domain_realtime_event_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1239,7 +1359,7 @@ func (x *GetFederatedCallResolutionRequest) String() string {
 func (*GetFederatedCallResolutionRequest) ProtoMessage() {}
 
 func (x *GetFederatedCallResolutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[7]
+	mi := &file_domain_realtime_event_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1252,7 +1372,7 @@ func (x *GetFederatedCallResolutionRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetFederatedCallResolutionRequest.ProtoReflect.Descriptor instead.
 func (*GetFederatedCallResolutionRequest) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{7}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetFederatedCallResolutionRequest) GetRequestingActorPtid() string {
@@ -1291,7 +1411,7 @@ type GetFederatedCallResolutionResponse struct {
 
 func (x *GetFederatedCallResolutionResponse) Reset() {
 	*x = GetFederatedCallResolutionResponse{}
-	mi := &file_domain_realtime_event_proto_msgTypes[8]
+	mi := &file_domain_realtime_event_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1303,7 +1423,7 @@ func (x *GetFederatedCallResolutionResponse) String() string {
 func (*GetFederatedCallResolutionResponse) ProtoMessage() {}
 
 func (x *GetFederatedCallResolutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[8]
+	mi := &file_domain_realtime_event_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1316,7 +1436,7 @@ func (x *GetFederatedCallResolutionResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use GetFederatedCallResolutionResponse.ProtoReflect.Descriptor instead.
 func (*GetFederatedCallResolutionResponse) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{8}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetFederatedCallResolutionResponse) GetCallId() string {
@@ -1408,7 +1528,7 @@ type MessageMutation struct {
 
 func (x *MessageMutation) Reset() {
 	*x = MessageMutation{}
-	mi := &file_domain_realtime_event_proto_msgTypes[9]
+	mi := &file_domain_realtime_event_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1420,7 +1540,7 @@ func (x *MessageMutation) String() string {
 func (*MessageMutation) ProtoMessage() {}
 
 func (x *MessageMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[9]
+	mi := &file_domain_realtime_event_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1433,7 +1553,7 @@ func (x *MessageMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageMutation.ProtoReflect.Descriptor instead.
 func (*MessageMutation) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{9}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *MessageMutation) GetSessionUlid() string {
@@ -1502,7 +1622,7 @@ type GroupMembershipChange struct {
 
 func (x *GroupMembershipChange) Reset() {
 	*x = GroupMembershipChange{}
-	mi := &file_domain_realtime_event_proto_msgTypes[10]
+	mi := &file_domain_realtime_event_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1514,7 +1634,7 @@ func (x *GroupMembershipChange) String() string {
 func (*GroupMembershipChange) ProtoMessage() {}
 
 func (x *GroupMembershipChange) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[10]
+	mi := &file_domain_realtime_event_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1527,7 +1647,7 @@ func (x *GroupMembershipChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupMembershipChange.ProtoReflect.Descriptor instead.
 func (*GroupMembershipChange) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{10}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GroupMembershipChange) GetEventId() string {
@@ -1581,7 +1701,7 @@ type ConversationSettingsChanged struct {
 
 func (x *ConversationSettingsChanged) Reset() {
 	*x = ConversationSettingsChanged{}
-	mi := &file_domain_realtime_event_proto_msgTypes[11]
+	mi := &file_domain_realtime_event_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1593,7 +1713,7 @@ func (x *ConversationSettingsChanged) String() string {
 func (*ConversationSettingsChanged) ProtoMessage() {}
 
 func (x *ConversationSettingsChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[11]
+	mi := &file_domain_realtime_event_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1606,7 +1726,7 @@ func (x *ConversationSettingsChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationSettingsChanged.ProtoReflect.Descriptor instead.
 func (*ConversationSettingsChanged) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{11}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ConversationSettingsChanged) GetContainerUlid() string {
@@ -1658,7 +1778,7 @@ type MomentEvent struct {
 
 func (x *MomentEvent) Reset() {
 	*x = MomentEvent{}
-	mi := &file_domain_realtime_event_proto_msgTypes[12]
+	mi := &file_domain_realtime_event_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1670,7 +1790,7 @@ func (x *MomentEvent) String() string {
 func (*MomentEvent) ProtoMessage() {}
 
 func (x *MomentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[12]
+	mi := &file_domain_realtime_event_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1683,7 +1803,7 @@ func (x *MomentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MomentEvent.ProtoReflect.Descriptor instead.
 func (*MomentEvent) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{12}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *MomentEvent) GetKind() MomentEvent_Kind {
@@ -1773,7 +1893,7 @@ type GroupFederationEvent struct {
 
 func (x *GroupFederationEvent) Reset() {
 	*x = GroupFederationEvent{}
-	mi := &file_domain_realtime_event_proto_msgTypes[13]
+	mi := &file_domain_realtime_event_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1785,7 +1905,7 @@ func (x *GroupFederationEvent) String() string {
 func (*GroupFederationEvent) ProtoMessage() {}
 
 func (x *GroupFederationEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[13]
+	mi := &file_domain_realtime_event_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1798,7 +1918,7 @@ func (x *GroupFederationEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupFederationEvent.ProtoReflect.Descriptor instead.
 func (*GroupFederationEvent) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{13}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GroupFederationEvent) GetGroupUlid() string {
@@ -1905,7 +2025,7 @@ type GroupSkdmEnvelopeDelivered struct {
 
 func (x *GroupSkdmEnvelopeDelivered) Reset() {
 	*x = GroupSkdmEnvelopeDelivered{}
-	mi := &file_domain_realtime_event_proto_msgTypes[14]
+	mi := &file_domain_realtime_event_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1917,7 +2037,7 @@ func (x *GroupSkdmEnvelopeDelivered) String() string {
 func (*GroupSkdmEnvelopeDelivered) ProtoMessage() {}
 
 func (x *GroupSkdmEnvelopeDelivered) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[14]
+	mi := &file_domain_realtime_event_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1930,7 +2050,7 @@ func (x *GroupSkdmEnvelopeDelivered) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupSkdmEnvelopeDelivered.ProtoReflect.Descriptor instead.
 func (*GroupSkdmEnvelopeDelivered) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{14}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GroupSkdmEnvelopeDelivered) GetGroupUlid() string {
@@ -2020,7 +2140,7 @@ type Resync struct {
 
 func (x *Resync) Reset() {
 	*x = Resync{}
-	mi := &file_domain_realtime_event_proto_msgTypes[15]
+	mi := &file_domain_realtime_event_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2032,7 +2152,7 @@ func (x *Resync) String() string {
 func (*Resync) ProtoMessage() {}
 
 func (x *Resync) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[15]
+	mi := &file_domain_realtime_event_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2045,7 +2165,7 @@ func (x *Resync) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resync.ProtoReflect.Descriptor instead.
 func (*Resync) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{15}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Resync) GetNewestEventId() string {
@@ -2087,7 +2207,7 @@ type EnvelopeDelivered struct {
 
 func (x *EnvelopeDelivered) Reset() {
 	*x = EnvelopeDelivered{}
-	mi := &file_domain_realtime_event_proto_msgTypes[16]
+	mi := &file_domain_realtime_event_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2099,7 +2219,7 @@ func (x *EnvelopeDelivered) String() string {
 func (*EnvelopeDelivered) ProtoMessage() {}
 
 func (x *EnvelopeDelivered) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[16]
+	mi := &file_domain_realtime_event_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2112,7 +2232,7 @@ func (x *EnvelopeDelivered) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnvelopeDelivered.ProtoReflect.Descriptor instead.
 func (*EnvelopeDelivered) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{16}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *EnvelopeDelivered) GetInboxItemId() string {
@@ -2211,7 +2331,7 @@ type LedgerEventDelivered struct {
 
 func (x *LedgerEventDelivered) Reset() {
 	*x = LedgerEventDelivered{}
-	mi := &file_domain_realtime_event_proto_msgTypes[17]
+	mi := &file_domain_realtime_event_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2223,7 +2343,7 @@ func (x *LedgerEventDelivered) String() string {
 func (*LedgerEventDelivered) ProtoMessage() {}
 
 func (x *LedgerEventDelivered) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[17]
+	mi := &file_domain_realtime_event_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2236,7 +2356,7 @@ func (x *LedgerEventDelivered) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LedgerEventDelivered.ProtoReflect.Descriptor instead.
 func (*LedgerEventDelivered) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{17}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LedgerEventDelivered) GetFederationId() string {
@@ -2363,7 +2483,7 @@ type SocialGraphEvent struct {
 
 func (x *SocialGraphEvent) Reset() {
 	*x = SocialGraphEvent{}
-	mi := &file_domain_realtime_event_proto_msgTypes[18]
+	mi := &file_domain_realtime_event_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2375,7 +2495,7 @@ func (x *SocialGraphEvent) String() string {
 func (*SocialGraphEvent) ProtoMessage() {}
 
 func (x *SocialGraphEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[18]
+	mi := &file_domain_realtime_event_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2388,7 +2508,7 @@ func (x *SocialGraphEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SocialGraphEvent.ProtoReflect.Descriptor instead.
 func (*SocialGraphEvent) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{18}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SocialGraphEvent) GetKind() SocialGraphEvent_Kind {
@@ -2437,7 +2557,7 @@ var File_domain_realtime_event_proto protoreflect.FileDescriptor
 
 const file_domain_realtime_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xe3\v\n" +
+	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xc4\f\n" +
 	"\vStreamEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1c\n" +
 	"\n" +
@@ -2458,8 +2578,19 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x1dgroup_skdm_envelope_delivered\x18\x16 \x01(\v29.peers_touch.model.realtime.v1.GroupSkdmEnvelopeDeliveredH\x00R\x1agroupSkdmEnvelopeDelivered\x12a\n" +
 	"\x12envelope_delivered\x18\x17 \x01(\v20.peers_touch.model.realtime.v1.EnvelopeDeliveredH\x00R\x11envelopeDelivered\x12k\n" +
 	"\x16ledger_event_delivered\x18\x18 \x01(\v23.peers_touch.model.realtime.v1.LedgerEventDeliveredH\x00R\x14ledgerEventDelivered\x12_\n" +
-	"\x12social_graph_event\x18\x19 \x01(\v2/.peers_touch.model.realtime.v1.SocialGraphEventH\x00R\x10socialGraphEventB\x06\n" +
-	"\x04kind\"1\n" +
+	"\x12social_graph_event\x18\x19 \x01(\v2/.peers_touch.model.realtime.v1.SocialGraphEventH\x00R\x10socialGraphEvent\x12_\n" +
+	"\x12agent_domain_event\x18\x1a \x01(\v2/.peers_touch.model.realtime.v1.AgentDomainEventH\x00R\x10agentDomainEventB\x06\n" +
+	"\x04kind\"\xb1\x02\n" +
+	"\x10AgentDomainEvent\x12&\n" +
+	"\x0fdomain_event_id\x18\x01 \x01(\tR\rdomainEventId\x12'\n" +
+	"\x0fdomain_sequence\x18\x02 \x01(\x04R\x0edomainSequence\x12%\n" +
+	"\x0eschema_version\x18\x03 \x01(\rR\rschemaVersion\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x04 \x01(\tR\teventType\x12\x17\n" +
+	"\agoal_id\x18\x05 \x01(\tR\x06goalId\x12\x17\n" +
+	"\atask_id\x18\x06 \x01(\tR\x06taskId\x12#\n" +
+	"\rgoal_revision\x18\a \x01(\x04R\fgoalRevision\x12/\n" +
+	"\x14committed_ts_unix_ms\x18\b \x01(\x03R\x11committedTsUnixMs\"1\n" +
 	"\tHeartbeat\x12$\n" +
 	"\x0efloor_event_id\x18\x01 \x01(\tR\ffloorEventId\"\xed\x01\n" +
 	"\x0fMessageEnvelope\x12*\n" +
@@ -2693,7 +2824,7 @@ func file_domain_realtime_event_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_realtime_event_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_domain_realtime_event_proto_goTypes = []any{
 	(MessageReceipt_Kind)(0),                   // 0: peers_touch.model.realtime.v1.MessageReceipt.Kind
 	(CallSignal_Kind)(0),                       // 1: peers_touch.model.realtime.v1.CallSignal.Kind
@@ -2703,54 +2834,56 @@ var file_domain_realtime_event_proto_goTypes = []any{
 	(MomentEvent_Kind)(0),                      // 5: peers_touch.model.realtime.v1.MomentEvent.Kind
 	(SocialGraphEvent_Kind)(0),                 // 6: peers_touch.model.realtime.v1.SocialGraphEvent.Kind
 	(*StreamEvent)(nil),                        // 7: peers_touch.model.realtime.v1.StreamEvent
-	(*Heartbeat)(nil),                          // 8: peers_touch.model.realtime.v1.Heartbeat
-	(*MessageEnvelope)(nil),                    // 9: peers_touch.model.realtime.v1.MessageEnvelope
-	(*MessageReceipt)(nil),                     // 10: peers_touch.model.realtime.v1.MessageReceipt
-	(*TypingState)(nil),                        // 11: peers_touch.model.realtime.v1.TypingState
-	(*PresenceFlip)(nil),                       // 12: peers_touch.model.realtime.v1.PresenceFlip
-	(*CallSignal)(nil),                         // 13: peers_touch.model.realtime.v1.CallSignal
-	(*GetFederatedCallResolutionRequest)(nil),  // 14: peers_touch.model.realtime.v1.GetFederatedCallResolutionRequest
-	(*GetFederatedCallResolutionResponse)(nil), // 15: peers_touch.model.realtime.v1.GetFederatedCallResolutionResponse
-	(*MessageMutation)(nil),                    // 16: peers_touch.model.realtime.v1.MessageMutation
-	(*GroupMembershipChange)(nil),              // 17: peers_touch.model.realtime.v1.GroupMembershipChange
-	(*ConversationSettingsChanged)(nil),        // 18: peers_touch.model.realtime.v1.ConversationSettingsChanged
-	(*MomentEvent)(nil),                        // 19: peers_touch.model.realtime.v1.MomentEvent
-	(*GroupFederationEvent)(nil),               // 20: peers_touch.model.realtime.v1.GroupFederationEvent
-	(*GroupSkdmEnvelopeDelivered)(nil),         // 21: peers_touch.model.realtime.v1.GroupSkdmEnvelopeDelivered
-	(*Resync)(nil),                             // 22: peers_touch.model.realtime.v1.Resync
-	(*EnvelopeDelivered)(nil),                  // 23: peers_touch.model.realtime.v1.EnvelopeDelivered
-	(*LedgerEventDelivered)(nil),               // 24: peers_touch.model.realtime.v1.LedgerEventDelivered
-	(*SocialGraphEvent)(nil),                   // 25: peers_touch.model.realtime.v1.SocialGraphEvent
+	(*AgentDomainEvent)(nil),                   // 8: peers_touch.model.realtime.v1.AgentDomainEvent
+	(*Heartbeat)(nil),                          // 9: peers_touch.model.realtime.v1.Heartbeat
+	(*MessageEnvelope)(nil),                    // 10: peers_touch.model.realtime.v1.MessageEnvelope
+	(*MessageReceipt)(nil),                     // 11: peers_touch.model.realtime.v1.MessageReceipt
+	(*TypingState)(nil),                        // 12: peers_touch.model.realtime.v1.TypingState
+	(*PresenceFlip)(nil),                       // 13: peers_touch.model.realtime.v1.PresenceFlip
+	(*CallSignal)(nil),                         // 14: peers_touch.model.realtime.v1.CallSignal
+	(*GetFederatedCallResolutionRequest)(nil),  // 15: peers_touch.model.realtime.v1.GetFederatedCallResolutionRequest
+	(*GetFederatedCallResolutionResponse)(nil), // 16: peers_touch.model.realtime.v1.GetFederatedCallResolutionResponse
+	(*MessageMutation)(nil),                    // 17: peers_touch.model.realtime.v1.MessageMutation
+	(*GroupMembershipChange)(nil),              // 18: peers_touch.model.realtime.v1.GroupMembershipChange
+	(*ConversationSettingsChanged)(nil),        // 19: peers_touch.model.realtime.v1.ConversationSettingsChanged
+	(*MomentEvent)(nil),                        // 20: peers_touch.model.realtime.v1.MomentEvent
+	(*GroupFederationEvent)(nil),               // 21: peers_touch.model.realtime.v1.GroupFederationEvent
+	(*GroupSkdmEnvelopeDelivered)(nil),         // 22: peers_touch.model.realtime.v1.GroupSkdmEnvelopeDelivered
+	(*Resync)(nil),                             // 23: peers_touch.model.realtime.v1.Resync
+	(*EnvelopeDelivered)(nil),                  // 24: peers_touch.model.realtime.v1.EnvelopeDelivered
+	(*LedgerEventDelivered)(nil),               // 25: peers_touch.model.realtime.v1.LedgerEventDelivered
+	(*SocialGraphEvent)(nil),                   // 26: peers_touch.model.realtime.v1.SocialGraphEvent
 }
 var file_domain_realtime_event_proto_depIdxs = []int32{
-	8,  // 0: peers_touch.model.realtime.v1.StreamEvent.hb:type_name -> peers_touch.model.realtime.v1.Heartbeat
-	9,  // 1: peers_touch.model.realtime.v1.StreamEvent.message:type_name -> peers_touch.model.realtime.v1.MessageEnvelope
-	10, // 2: peers_touch.model.realtime.v1.StreamEvent.receipt:type_name -> peers_touch.model.realtime.v1.MessageReceipt
-	11, // 3: peers_touch.model.realtime.v1.StreamEvent.typing:type_name -> peers_touch.model.realtime.v1.TypingState
-	12, // 4: peers_touch.model.realtime.v1.StreamEvent.presence:type_name -> peers_touch.model.realtime.v1.PresenceFlip
-	13, // 5: peers_touch.model.realtime.v1.StreamEvent.signaling:type_name -> peers_touch.model.realtime.v1.CallSignal
-	22, // 6: peers_touch.model.realtime.v1.StreamEvent.resync:type_name -> peers_touch.model.realtime.v1.Resync
-	16, // 7: peers_touch.model.realtime.v1.StreamEvent.mutation:type_name -> peers_touch.model.realtime.v1.MessageMutation
-	17, // 8: peers_touch.model.realtime.v1.StreamEvent.group_membership_change:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange
-	18, // 9: peers_touch.model.realtime.v1.StreamEvent.conversation_settings_changed:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged
-	19, // 10: peers_touch.model.realtime.v1.StreamEvent.moment:type_name -> peers_touch.model.realtime.v1.MomentEvent
-	20, // 11: peers_touch.model.realtime.v1.StreamEvent.group_federation_event:type_name -> peers_touch.model.realtime.v1.GroupFederationEvent
-	21, // 12: peers_touch.model.realtime.v1.StreamEvent.group_skdm_envelope_delivered:type_name -> peers_touch.model.realtime.v1.GroupSkdmEnvelopeDelivered
-	23, // 13: peers_touch.model.realtime.v1.StreamEvent.envelope_delivered:type_name -> peers_touch.model.realtime.v1.EnvelopeDelivered
-	24, // 14: peers_touch.model.realtime.v1.StreamEvent.ledger_event_delivered:type_name -> peers_touch.model.realtime.v1.LedgerEventDelivered
-	25, // 15: peers_touch.model.realtime.v1.StreamEvent.social_graph_event:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent
-	0,  // 16: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
-	1,  // 17: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
-	2,  // 18: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
-	3,  // 19: peers_touch.model.realtime.v1.GroupMembershipChange.kind:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange.Kind
-	4,  // 20: peers_touch.model.realtime.v1.ConversationSettingsChanged.kind:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
-	5,  // 21: peers_touch.model.realtime.v1.MomentEvent.kind:type_name -> peers_touch.model.realtime.v1.MomentEvent.Kind
-	6,  // 22: peers_touch.model.realtime.v1.SocialGraphEvent.kind:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent.Kind
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	9,  // 0: peers_touch.model.realtime.v1.StreamEvent.hb:type_name -> peers_touch.model.realtime.v1.Heartbeat
+	10, // 1: peers_touch.model.realtime.v1.StreamEvent.message:type_name -> peers_touch.model.realtime.v1.MessageEnvelope
+	11, // 2: peers_touch.model.realtime.v1.StreamEvent.receipt:type_name -> peers_touch.model.realtime.v1.MessageReceipt
+	12, // 3: peers_touch.model.realtime.v1.StreamEvent.typing:type_name -> peers_touch.model.realtime.v1.TypingState
+	13, // 4: peers_touch.model.realtime.v1.StreamEvent.presence:type_name -> peers_touch.model.realtime.v1.PresenceFlip
+	14, // 5: peers_touch.model.realtime.v1.StreamEvent.signaling:type_name -> peers_touch.model.realtime.v1.CallSignal
+	23, // 6: peers_touch.model.realtime.v1.StreamEvent.resync:type_name -> peers_touch.model.realtime.v1.Resync
+	17, // 7: peers_touch.model.realtime.v1.StreamEvent.mutation:type_name -> peers_touch.model.realtime.v1.MessageMutation
+	18, // 8: peers_touch.model.realtime.v1.StreamEvent.group_membership_change:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange
+	19, // 9: peers_touch.model.realtime.v1.StreamEvent.conversation_settings_changed:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged
+	20, // 10: peers_touch.model.realtime.v1.StreamEvent.moment:type_name -> peers_touch.model.realtime.v1.MomentEvent
+	21, // 11: peers_touch.model.realtime.v1.StreamEvent.group_federation_event:type_name -> peers_touch.model.realtime.v1.GroupFederationEvent
+	22, // 12: peers_touch.model.realtime.v1.StreamEvent.group_skdm_envelope_delivered:type_name -> peers_touch.model.realtime.v1.GroupSkdmEnvelopeDelivered
+	24, // 13: peers_touch.model.realtime.v1.StreamEvent.envelope_delivered:type_name -> peers_touch.model.realtime.v1.EnvelopeDelivered
+	25, // 14: peers_touch.model.realtime.v1.StreamEvent.ledger_event_delivered:type_name -> peers_touch.model.realtime.v1.LedgerEventDelivered
+	26, // 15: peers_touch.model.realtime.v1.StreamEvent.social_graph_event:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent
+	8,  // 16: peers_touch.model.realtime.v1.StreamEvent.agent_domain_event:type_name -> peers_touch.model.realtime.v1.AgentDomainEvent
+	0,  // 17: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
+	1,  // 18: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
+	2,  // 19: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
+	3,  // 20: peers_touch.model.realtime.v1.GroupMembershipChange.kind:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange.Kind
+	4,  // 21: peers_touch.model.realtime.v1.ConversationSettingsChanged.kind:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
+	5,  // 22: peers_touch.model.realtime.v1.MomentEvent.kind:type_name -> peers_touch.model.realtime.v1.MomentEvent.Kind
+	6,  // 23: peers_touch.model.realtime.v1.SocialGraphEvent.kind:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent.Kind
+	24, // [24:24] is the sub-list for method output_type
+	24, // [24:24] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_domain_realtime_event_proto_init() }
@@ -2775,6 +2908,7 @@ func file_domain_realtime_event_proto_init() {
 		(*StreamEvent_EnvelopeDelivered)(nil),
 		(*StreamEvent_LedgerEventDelivered)(nil),
 		(*StreamEvent_SocialGraphEvent)(nil),
+		(*StreamEvent_AgentDomainEvent)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2782,7 +2916,7 @@ func file_domain_realtime_event_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_realtime_event_proto_rawDesc), len(file_domain_realtime_event_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   19,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -76,6 +76,76 @@ func TestPublish_StampsEventIDAndTimestamp(t *testing.T) {
 	}
 }
 
+func TestPublishRetryPreservesCommittedEventID(t *testing.T) {
+	store := newTestDurableStore(t)
+	bus := newTestBus(t, WithDurableStore(store))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub, _, err := bus.Subscribe(ctx, "alice", "dev-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed := msg("stable")
+	committed.EventId = "committed-event-1"
+	committed.TsUnixMs = 123
+
+	first, err := bus.Publish("alice", committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := bus.Publish("alice", committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != committed.EventId || second != committed.EventId {
+		t.Fatalf("publish cursors = %q,%q, want %q", first, second, committed.EventId)
+	}
+	delivered := drainN(t, sub, 2, 50*time.Millisecond)
+	if len(delivered) != 2 ||
+		delivered[0].GetEventId() != committed.EventId ||
+		delivered[1].GetEventId() != committed.EventId {
+		t.Fatalf("retry live delivery = %#v", delivered)
+	}
+
+	var persisted int64
+	if err := store.(*gormEventStore).db.
+		Model(&realtimeEventModel{}).
+		Where("actor_ptid = ? AND event_id = ?", "alice", committed.EventId).
+		Count(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted != 1 {
+		t.Fatalf("persisted retry rows = %d, want 1", persisted)
+	}
+}
+
+func TestDurableReplayOrdersCommittedCursorByAppendPosition(t *testing.T) {
+	store := newTestDurableStore(t)
+	bus := newTestBus(t, WithDurableStore(store))
+	first, err := bus.Publish("alice", msg("first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed := msg("delayed")
+	committed.EventId = "00-committed-before-relay"
+	committed.TsUnixMs = 123
+	if _, err := bus.Publish("alice", committed); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub, _, err := bus.Subscribe(ctx, "alice", "dev-1", first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := drainN(t, sub, 1, 50*time.Millisecond)
+	if len(replayed) != 1 ||
+		replayed[0].GetEventId() != committed.EventId {
+		t.Fatalf("durable append-order replay = %#v", replayed)
+	}
+}
+
 func TestPublishEphemeral_DeliversLiveWithoutReplay(t *testing.T) {
 	bus := newTestBus(t)
 	liveContext, cancelLive := context.WithCancel(context.Background())

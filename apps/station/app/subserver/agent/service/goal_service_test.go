@@ -678,6 +678,175 @@ func TestGoalMutationRejectsAnotherActorWithoutRetry(t *testing.T) {
 	}
 }
 
+func TestGoalDomainCommitIncludesOrderedRealtimeOutbox(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	goals := NewGoalService(db)
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	goals.now = func() time.Time { return now }
+	goals.newID = func() string { return "goal-domain-commit" }
+
+	created, err := goals.CreateDraft(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CreateAgentGoalRequest{
+			Title:          "Durable progress",
+			Outcome:        "Every revision has a committed event",
+			WorkspaceId:    goalStringPointer("workspace-1"),
+			IdempotencyKey: "goal-domain-create",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create Goal: %v", err)
+	}
+
+	var event persistence.AgentGoalEvent
+	if err := db.First(&event, "goal_id = ?", created.GetGoalId()).Error; err != nil {
+		t.Fatalf("load Goal event: %v", err)
+	}
+	var outbox persistence.AgentRealtimeOutbox
+	if err := db.First(
+		&outbox,
+		"domain_event_id = ?",
+		event.DomainEventID,
+	).Error; err != nil {
+		t.Fatalf("load realtime outbox: %v", err)
+	}
+	if event.EventSeq != 1 || event.GoalRevision != created.GetRevision() ||
+		event.EventType != goalCreatedEvent ||
+		outbox.ActorSequence != 1 ||
+		outbox.TargetActorPTID != created.GetOwnerPtid() ||
+		outbox.State != persistence.AgentRealtimeOutboxPending {
+		t.Fatalf("committed event/outbox mismatch: event=%+v outbox=%+v", event, outbox)
+	}
+
+	if outbox.DomainEventID != event.DomainEventID ||
+		outbox.DomainSequence != event.EventSeq ||
+		outbox.GoalID != created.GetGoalId() ||
+		outbox.GoalRevision != created.GetRevision() {
+		t.Fatalf("realtime outbox = %+v, event=%+v", outbox, event)
+	}
+}
+
+func TestGoalDomainCommitRollsBackWhenRealtimeOutboxFails(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	goals := NewGoalService(db)
+	goals.newID = func() string { return "goal-domain-rollback" }
+	created, err := goals.CreateDraft(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CreateAgentGoalRequest{
+			Title:          "Atomic Goal",
+			Outcome:        "No partial revision",
+			IdempotencyKey: "goal-domain-rollback-create",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create Goal: %v", err)
+	}
+	if err := db.Migrator().DropTable(&persistence.AgentRealtimeOutbox{}); err != nil {
+		t.Fatalf("drop realtime outbox: %v", err)
+	}
+
+	_, err = goals.UpdateContract(
+		context.Background(),
+		"ptid:actor-1",
+		&model.UpdateAgentGoalRequest{
+			GoalId:           created.GetGoalId(),
+			Outcome:          "This mutation must roll back",
+			Budget:           &model.AgentGoalBudget{MaxTokens: 1},
+			ExpectedRevision: created.GetRevision(),
+			IdempotencyKey:   "goal-domain-rollback-update",
+		},
+	)
+	assertGoalErrorCode(t, err, errcode.AgentInternal)
+
+	reopened, err := goals.Get(
+		context.Background(),
+		"ptid:actor-1",
+		created.GetGoalId(),
+	)
+	if err != nil {
+		t.Fatalf("read Goal after rollback: %v", err)
+	}
+	if reopened.GetRevision() != created.GetRevision() ||
+		reopened.GetOutcome() != created.GetOutcome() {
+		t.Fatalf("failed outbox write leaked Goal mutation: %+v", reopened)
+	}
+	var eventCount int64
+	if err := db.Model(&persistence.AgentGoalEvent{}).
+		Where("goal_id = ?", created.GetGoalId()).
+		Count(&eventCount).Error; err != nil {
+		t.Fatalf("count Goal events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("failed mutation left %d Goal events, want 1", eventCount)
+	}
+}
+
+func TestGoalRealtimeBacklogReservesTerminalCapacity(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	goals := NewGoalService(db)
+	goals.realtimeLimits = persistence.AgentRealtimeBacklogLimits{
+		PendingLimit:    3,
+		TerminalReserve: 1,
+	}
+	nextID := 0
+	goals.newID = func() string {
+		nextID++
+		return "goal-backlog-" + string(rune('0'+nextID))
+	}
+	create := func(key string) (*model.AgentGoal, error) {
+		return goals.CreateDraft(
+			context.Background(),
+			"ptid:actor-1",
+			&model.CreateAgentGoalRequest{
+				Title:          "Backlog " + key,
+				Outcome:        "Bound pending realtime work",
+				WorkspaceId:    goalStringPointer("workspace-1"),
+				IdempotencyKey: key,
+			},
+		)
+	}
+
+	first, err := create("goal-backlog-create-1")
+	if err != nil {
+		t.Fatalf("create first Goal: %v", err)
+	}
+	second, err := create("goal-backlog-create-2")
+	if err != nil {
+		t.Fatalf("create second Goal: %v", err)
+	}
+	_, err = create("goal-backlog-create-3")
+	assertGoalErrorCode(t, err, errcode.AgentQueueFull)
+
+	cancelled, err := goals.Cancel(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CancelAgentGoalRequest{
+			GoalId:           first.GetGoalId(),
+			ExpectedRevision: first.GetRevision(),
+			IdempotencyKey:   "goal-backlog-cancel-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("terminal cancellation did not use reserved capacity: %v", err)
+	}
+	if cancelled.GetStatus() != model.AgentGoalStatus_AGENT_GOAL_STATUS_CANCELLED {
+		t.Fatalf("cancelled Goal = %+v", cancelled)
+	}
+
+	_, err = goals.Cancel(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CancelAgentGoalRequest{
+			GoalId:           second.GetGoalId(),
+			ExpectedRevision: second.GetRevision(),
+			IdempotencyKey:   "goal-backlog-cancel-2",
+		},
+	)
+	assertGoalErrorCode(t, err, errcode.AgentQueueFull)
+}
+
 func openGoalServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	name := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
@@ -690,6 +859,9 @@ func openGoalServiceTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&persistence.AgentGoal{},
+		&persistence.AgentGoalEvent{},
+		&persistence.AgentRealtimeActorCursor{},
+		&persistence.AgentRealtimeOutbox{},
 		&persistence.RevisionCommand{},
 		&persistence.TaskRun{},
 	); err != nil {

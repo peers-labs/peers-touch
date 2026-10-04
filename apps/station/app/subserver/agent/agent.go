@@ -30,6 +30,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
+	sharedevents "github.com/peers-labs/peers-touch/station/app/subserver/events"
 	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
@@ -59,6 +60,7 @@ type agentSubServer struct {
 	operationService       *service.CapabilityOperationService
 	evaluationService      *service.EvaluationService
 	externalRuntimeService *service.ExternalRuntimeService
+	realtimeRelay          *service.AgentRealtimeRelay
 	deviceKeys             *touchactor.DeviceStore
 	agentDB                *gorm.DB
 }
@@ -173,7 +175,9 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 			(s.operationService != nil &&
 				!s.turnService.RunExecutionWorker(s.operationService.RunDeadlineSweeper)) ||
 			(s.evaluationService != nil &&
-				!s.turnService.RunExecutionWorker(s.evaluationService.RunWorker)) {
+				!s.turnService.RunExecutionWorker(s.evaluationService.RunWorker)) ||
+			(s.realtimeRelay != nil &&
+				!s.turnService.RunExecutionWorker(s.realtimeRelay.Run)) {
 			_ = s.turnService.StopExecutionLifecycle(context.Background())
 			return fmt.Errorf("start Agent execution workers: lifecycle is stopping")
 		}
@@ -438,6 +442,12 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	capabilityAcceptanceScenarios.SetEvaluationService(evaluationSvc)
 	evaluationHandlers := handler.NewEvaluationHandlers(evaluationSvc)
 	goalService := service.NewGoalService(s.agentDB)
+	realtimeRelay := service.NewAgentRealtimeRelay(
+		s.agentDB,
+		func() service.AgentRealtimePublisher {
+			return sharedevents.GetBus()
+		},
+	)
 	goalHandlers := handler.NewGoalHandlers(
 		goalService,
 		service.NewGoalAdmissionService(goalService),
@@ -461,6 +471,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	s.operationService = operationSvc
 	s.evaluationService = evaluationSvc
 	s.externalRuntimeService = externalRuntimeSvc
+	s.realtimeRelay = realtimeRelay
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),

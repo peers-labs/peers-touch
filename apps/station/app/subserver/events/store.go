@@ -1,13 +1,18 @@
 package events
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"time"
 
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+var errDurableEventCursorNotFound = errors.New("events: durable cursor not found")
 
 // realtimeEventModel is the durable event log for the canonical realtime plane.
 // The in-memory ring buffer remains a hot cache; this table is the recovery
@@ -64,8 +69,23 @@ func (s *gormEventStore) Persist(actorPTID string, ev *realtime.StreamEvent) err
 		KindBytes: payload,
 		CreatedAt: now,
 	}
-	if err := s.db.Create(&item).Error; err != nil {
-		return fmt.Errorf("persist realtime event: %w", err)
+	result := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
+	if result.Error != nil {
+		return fmt.Errorf("persist realtime event: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		var existing realtimeEventModel
+		if err := s.db.
+			Where("actor_ptid = ? AND event_id = ?", actorPTID, ev.GetEventId()).
+			First(&existing).Error; err != nil {
+			return fmt.Errorf("load persisted realtime event: %w", err)
+		}
+		if !bytes.Equal(existing.KindBytes, payload) {
+			return fmt.Errorf(
+				"events: cursor %s replay payload conflicts with durable event",
+				ev.GetEventId(),
+			)
+		}
 	}
 	return nil
 }
@@ -74,10 +94,22 @@ func (s *gormEventStore) ReplayAfter(actorPTID, cursor string, limit int) ([]*re
 	if actorPTID == "" || cursor == "" {
 		return nil, nil
 	}
+	var cursorRow realtimeEventModel
+	cursorResult := s.db.
+		Select("id").
+		Where("actor_ptid = ? AND event_id = ?", actorPTID, cursor).
+		Limit(1).
+		Find(&cursorRow)
+	if cursorResult.Error != nil {
+		return nil, fmt.Errorf("load realtime cursor: %w", cursorResult.Error)
+	}
+	if cursorResult.RowsAffected == 0 {
+		return nil, errDurableEventCursorNotFound
+	}
 	var rows []realtimeEventModel
 	query := s.db.
-		Where("actor_ptid = ? AND event_id > ?", actorPTID, cursor).
-		Order("event_id ASC")
+		Where("actor_ptid = ? AND id > ?", actorPTID, cursorRow.ID).
+		Order("id ASC")
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -99,7 +131,7 @@ func (s *gormEventStore) NewestEventID(actorPTID string) (string, bool, error) {
 	var row realtimeEventModel
 	err := s.db.
 		Where("actor_ptid = ?", actorPTID).
-		Order("event_id DESC").
+		Order("id DESC").
 		Limit(1).
 		Find(&row).Error
 	if err != nil {

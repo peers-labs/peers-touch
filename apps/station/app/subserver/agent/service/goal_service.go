@@ -34,6 +34,13 @@ const (
 	goalUpdateCommand = "update_agent_goal"
 	goalReviewCommand = "review_agent_goal"
 	goalCancelCommand = "cancel_agent_goal"
+
+	goalCreatedEvent   = "agent.goal.created"
+	goalUpdatedEvent   = "agent.goal.updated"
+	goalReviewingEvent = "agent.goal.reviewing"
+	goalReadyEvent     = "agent.goal.ready"
+	goalRunningEvent   = "agent.goal.running"
+	goalCancelledEvent = "agent.goal.cancelled"
 )
 
 type goalUpdatePayload struct {
@@ -57,9 +64,10 @@ type goalCancelPayload struct {
 }
 
 type GoalService struct {
-	db    *gorm.DB
-	now   func() time.Time
-	newID func() string
+	db             *gorm.DB
+	now            func() time.Time
+	newID          func() string
+	realtimeLimits persistence.AgentRealtimeBacklogLimits
 }
 
 func NewGoalService(db *gorm.DB) *GoalService {
@@ -69,6 +77,7 @@ func NewGoalService(db *gorm.DB) *GoalService {
 		newID: func() string {
 			return "goal_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 		},
+		realtimeLimits: persistence.DefaultAgentRealtimeBacklogLimits(),
 	}
 }
 
@@ -143,6 +152,15 @@ func (s *GoalService) CreateDraft(
 			return goalInternal("Create Goal draft", result.Error)
 		}
 		if result.RowsAffected == 1 {
+			if eventErr := s.appendGoalEventTx(
+				ctx,
+				tx,
+				record,
+				goalCreatedEvent,
+				persistence.AgentRealtimeClassProgress,
+			); eventErr != nil {
+				return eventErr
+			}
 			selected = record
 			return nil
 		}
@@ -541,6 +559,21 @@ func (s *GoalService) runGoalMutation(
 		); storeErr != nil {
 			return storeErr
 		}
+		eventType, eventClass, eventErr := goalRealtimeEventForCommand(
+			commandKind,
+		)
+		if eventErr != nil {
+			return eventErr
+		}
+		if eventErr := s.appendGoalEventTx(
+			ctx,
+			tx,
+			record,
+			eventType,
+			eventClass,
+		); eventErr != nil {
+			return eventErr
+		}
 		selected = goal
 		return nil
 	})
@@ -561,6 +594,85 @@ func (s *GoalService) runGoalMutation(
 		return replayed, nil
 	}
 	return nil, err
+}
+
+func (s *GoalService) appendGoalEventTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	record *persistence.AgentGoal,
+	eventType string,
+	eventClass string,
+) error {
+	if record == nil {
+		return goalInternal("Append Goal event", nil)
+	}
+	var last persistence.AgentGoalEvent
+	result := tx.WithContext(ctx).
+		Where("goal_id = ?", record.GoalID).
+		Order("event_seq DESC").
+		Limit(1).
+		Find(&last)
+	if result.Error != nil {
+		return goalInternal("Read Goal event sequence", result.Error)
+	}
+	event := &persistence.AgentGoalEvent{
+		DomainEventID: generateID("gev"),
+		GoalID:        record.GoalID,
+		EventSeq:      last.EventSeq + 1,
+		EventType:     eventType,
+		GoalRevision:  record.Revision,
+		CreatedAt:     record.UpdatedAt.UTC(),
+	}
+	if err := tx.WithContext(ctx).Create(event).Error; err != nil {
+		return goalInternal("Append Goal event", err)
+	}
+	_, err := persistence.EnqueueAgentRealtimeTx(
+		ctx,
+		tx,
+		persistence.AgentRealtimeIntent{
+			DomainEventID:   event.DomainEventID,
+			DomainSequence:  event.EventSeq,
+			EventType:       event.EventType,
+			GoalID:          record.GoalID,
+			GoalRevision:    record.Revision,
+			TargetActorPTID: record.OwnerPTID,
+			WorkspaceID:     record.WorkspaceID,
+			EventClass:      eventClass,
+			CommittedAt:     event.CreatedAt,
+		},
+		s.realtimeLimits,
+	)
+	if errors.Is(err, persistence.ErrAgentRealtimeBacklogReserved) ||
+		errors.Is(err, persistence.ErrAgentRealtimeBacklogFull) {
+		return errcode.NewQueueFull(
+			record.GoalID,
+			uint32(s.realtimeLimits.PendingLimit),
+		)
+	}
+	if err != nil {
+		return goalInternal("Append Goal realtime outbox", err)
+	}
+	return nil
+}
+
+func goalRealtimeEventForCommand(commandKind string) (string, string, error) {
+	switch commandKind {
+	case goalUpdateCommand:
+		return goalUpdatedEvent, persistence.AgentRealtimeClassProgress, nil
+	case goalReviewCommand:
+		return goalReviewingEvent, persistence.AgentRealtimeClassControl, nil
+	case goalAdmitCommand:
+		return goalReadyEvent, persistence.AgentRealtimeClassControl, nil
+	case goalStartCommand:
+		return goalRunningEvent, persistence.AgentRealtimeClassControl, nil
+	case goalCancelCommand:
+		return goalCancelledEvent, persistence.AgentRealtimeClassTerminal, nil
+	default:
+		return "", "", goalInternal(
+			"Unknown Goal realtime event command "+commandKind,
+			nil,
+		)
+	}
 }
 
 func loadOwnedGoalTx(

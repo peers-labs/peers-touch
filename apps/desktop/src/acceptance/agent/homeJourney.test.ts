@@ -42,4 +42,29 @@ describe('PAOS-J01 Goal admission source journey', () => {
     expect(admission).toContain('AGENT_GOAL_STATUS_RUNNING');
     expect(admission).not.toContain('TaskRun');
   });
+
+  it('keeps committed Goal progress after publish failure', () => {
+    const goalService = read(
+      '../../../../station/app/subserver/agent/service/goal_service.go',
+    );
+    const relay = read(
+      '../../../../station/app/subserver/agent/service/agent_realtime_relay.go',
+    );
+    const taskWriter = read(
+      '../../../../station/app/subserver/agent/service/task_event_writer.go',
+    );
+    const sharedBus = read(
+      '../../../../station/app/subserver/events/bus.go',
+    );
+
+    expect(goalService).toContain('appendGoalEventTx');
+    expect(goalService).toContain('EnqueueAgentRealtimeTx');
+    expect(relay).toContain('releaseForRetry');
+    expect(relay).toContain('row.RealtimeEventID');
+    expect(relay).toContain('publisher.Publish(row.TargetActorPTID, envelope)');
+    expect(taskWriter).toMatch(
+      /if err != nil \{\s+logger\.Errorf[\s\S]*?\s+return\s+\}/,
+    );
+    expect(sharedBus).toContain('if cloned.EventId == ""');
+  });
 });
