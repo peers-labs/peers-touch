@@ -249,6 +249,38 @@ describe('momentsRuntime identity fence', () => {
     expect(mocks.privateMoments.readMoment).toHaveBeenCalledTimes(1);
   });
 
+  it('refreshes a hidden private Comment thread once per EventBus event', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+    const postId = '01REMOTECOMMENTPOST';
+    (mocks.privateMoments.postsById as Record<string, { state: string }>)[postId] = {
+      state: 'CONTENT_READY',
+    };
+    const wake = {
+      eventId: 'remote-private-comment-1',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId,
+      authorActorPtid: 'ptid:bob',
+      commentId: '01REMOTECOMMENT',
+      commentAuthorActorPtid: 'ptid:bob',
+      occurredAtUnixMs: 459,
+    };
+
+    eventBus.publish(EVENT.MOMENT_COMMENTED, wake);
+    await vi.waitFor(() => {
+      expect(mocks.privateMoments.readMoment).toHaveBeenCalledWith(postId);
+      expect(mocks.privateComments.loadComments).toHaveBeenCalledWith(postId, true);
+    });
+
+    eventBus.publish(EVENT.MOMENT_COMMENTED, wake);
+    await Promise.resolve();
+    expect(mocks.privateComments.loadComments).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects imported Moment wakes from another actor or Station scope', async () => {
     momentsRuntime.install();
     await flushRuntime();

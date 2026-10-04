@@ -251,6 +251,16 @@ message FederatedPrivateInteractionResult {
 `operation`. Unknown fields, mismatched operation types, or hash changes are
 terminal.
 
+Comment prepare and submit requests carry the actor signing-key ID and a
+device signature over the domain-separated operation plus canonical request
+bytes with the signature field cleared. The source Station verifies that
+signature after authenticating the actor's Home Station frame. A successful
+remote prepare also carries a source proof-key attestation; the Home Station
+re-attests that key before returning the source-signed plan to Native Desktop.
+For a Comment authored away from the source-resource Station, the source also
+embeds the actor key it verified at commit time so each receiver can validate
+the envelope without treating the source Station as the actor's Home Station.
+
 ## 7. Object Peer Read
 
 ```proto

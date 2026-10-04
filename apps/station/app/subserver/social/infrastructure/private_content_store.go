@@ -302,6 +302,25 @@ type PrivateContentStore interface {
 			*RemotePrivatePostReadModel,
 		) error,
 	) error
+	ReadRemotePrivateComment(
+		context.Context,
+		string,
+		string,
+		string,
+		string,
+		func(
+			federationdelivery.Transaction,
+			*RemotePrivateCommentReadModel,
+		) error,
+	) error
+	ListRemotePrivateComments(
+		context.Context,
+		PrivateCommentListQuery,
+		func(
+			federationdelivery.Transaction,
+			RemotePrivateCommentPage,
+		) error,
+	) error
 	GetPrivateComment(
 		context.Context,
 		string,
@@ -592,8 +611,9 @@ func (s *GORMPrivateContentStore) ExpirePlan(
 }
 
 type GORMPrivateContentStore struct {
-	db        *gorm.DB
-	failpoint PrivateContentFailpoint
+	db                    *gorm.DB
+	failpoint             PrivateContentFailpoint
+	federationTransaction federationdelivery.Transaction
 }
 
 type gormPrivateContentTransaction struct {
@@ -603,11 +623,14 @@ type gormPrivateContentTransaction struct {
 	plan           *dbmodel.SocialPrivateContentPlan
 	domainCommitID string
 	terminalErr    error
+	parent         federationdelivery.Transaction
+	afterCommit    []federationdelivery.AfterCommitFunc
 }
 
 type privateContentValidationTransaction struct {
 	db     *gorm.DB
 	outbox federationdelivery.OutboxWriter
+	parent federationdelivery.Transaction
 }
 
 var privateContentSQLiteLocks sync.Map
@@ -620,12 +643,39 @@ func (t privateContentValidationTransaction) Outbox() federationdelivery.OutboxW
 	return t.outbox
 }
 
+func (t privateContentValidationTransaction) AfterCommit(
+	callback federationdelivery.AfterCommitFunc,
+) error {
+	registrar, ok := t.parent.(federationdelivery.AfterCommitRegistrar)
+	if !ok {
+		return fmt.Errorf("private-content transaction cannot register post-commit callback")
+	}
+	return registrar.AfterCommit(callback)
+}
+
 func (tx *gormPrivateContentTransaction) ContentPreKeyValidationTransaction() federationdelivery.Transaction {
-	return privateContentValidationTransaction{db: tx.db, outbox: tx.outbox}
+	return tx
+}
+
+func (tx *gormPrivateContentTransaction) DB() *gorm.DB {
+	return tx.db
 }
 
 func (tx *gormPrivateContentTransaction) Outbox() federationdelivery.OutboxWriter {
 	return tx.outbox
+}
+
+func (tx *gormPrivateContentTransaction) AfterCommit(
+	callback federationdelivery.AfterCommitFunc,
+) error {
+	if callback == nil {
+		return fmt.Errorf("private-content post-commit callback is required")
+	}
+	if registrar, ok := tx.parent.(federationdelivery.AfterCommitRegistrar); ok {
+		return registrar.AfterCommit(callback)
+	}
+	tx.afterCommit = append(tx.afterCommit, callback)
+	return nil
 }
 
 func (tx *gormPrivateContentTransaction) EnqueueFederationFrame(
@@ -1512,7 +1562,8 @@ func (s *GORMPrivateContentStore) Execute(
 	if fn == nil {
 		return fmt.Errorf("%w: transaction callback is required", ErrPrivateContentInvalid)
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var afterCommit []federationdelivery.AfterCommitFunc
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		outbox, err := federationdelivery.NewGORMRepository(
 			tx,
 			federationdelivery.SystemClock{},
@@ -1520,12 +1571,22 @@ func (s *GORMPrivateContentStore) Execute(
 		if err != nil {
 			return err
 		}
-		return fn(&gormPrivateContentTransaction{
+		bound := &gormPrivateContentTransaction{
 			db:        tx,
 			outbox:    outbox,
 			failpoint: s.failpoint,
-		})
+			parent:    s.federationTransaction,
+		}
+		if err := fn(bound); err != nil {
+			return err
+		}
+		afterCommit = append(afterCommit, bound.afterCommit...)
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	return runPrivateContentAfterCommit(ctx, afterCommit)
 }
 
 // ExecuteSubmit serializes the plan and receipt identities, locks both rows,
@@ -1549,6 +1610,7 @@ func (s *GORMPrivateContentStore) ExecuteSubmit(
 	var (
 		result      SubmitResult
 		terminalErr error
+		afterCommit []federationdelivery.AfterCommitFunc
 	)
 	err := s.withSerializedTransaction(
 		ctx,
@@ -1639,6 +1701,7 @@ func (s *GORMPrivateContentStore) ExecuteSubmit(
 				failpoint:      s.failpoint,
 				plan:           &plan,
 				domainCommitID: command.DomainCommitID,
+				parent:         s.federationTransaction,
 			}
 			mutationResult, err := mutate(ctx, bound, clonePlan(plan))
 			if err != nil {
@@ -1702,14 +1765,34 @@ func (s *GORMPrivateContentStore) ExecuteSubmit(
 			if err := s.afterWrite(ctx, PrivateContentBoundaryCommandReceipt); err != nil {
 				return err
 			}
+			afterCommit = append(afterCommit, bound.afterCommit...)
 			result = SubmitResult{Receipt: cloneReceipt(receipt)}
 			return nil
 		},
 	)
+	if err == nil {
+		err = runPrivateContentAfterCommit(ctx, afterCommit)
+	}
 	if err == nil && terminalErr != nil {
 		return SubmitResult{}, terminalErr
 	}
 	return result, err
+}
+
+func runPrivateContentAfterCommit(
+	ctx context.Context,
+	callbacks []federationdelivery.AfterCommitFunc,
+) error {
+	var callbackErrors []error
+	for _, callback := range callbacks {
+		if err := callback(ctx); err != nil {
+			callbackErrors = append(callbackErrors, err)
+		}
+	}
+	if err := errors.Join(callbackErrors...); err != nil {
+		return fmt.Errorf("social private content post-commit callback: %w", err)
+	}
+	return nil
 }
 
 func (tx *gormPrivateContentTransaction) RejectStale(
@@ -1796,7 +1879,31 @@ func (tx *gormPrivateContentTransaction) PrivateCommentRetryAfter(
 	); err != nil {
 		return 0, err
 	}
+	return privateCommentRetryAfter(
+		ctx,
+		tx.db,
+		postID,
+		authorPTID,
+		admittedAt,
+		window,
+		actorLimit,
+		postLimit,
+	)
+}
+
+func privateCommentRetryAfter(
+	ctx context.Context,
+	database *gorm.DB,
+	postID string,
+	authorPTID string,
+	admittedAt time.Time,
+	window time.Duration,
+	actorLimit int64,
+	postLimit int64,
+) (time.Duration, error) {
 	if strings.TrimSpace(postID) == "" ||
+		strings.TrimSpace(authorPTID) == "" ||
+		database == nil ||
 		admittedAt.IsZero() ||
 		window <= 0 ||
 		actorLimit < 1 ||
@@ -1807,7 +1914,7 @@ func (tx *gormPrivateContentTransaction) PrivateCommentRetryAfter(
 		)
 	}
 	var parent dbmodel.SocialPrivateContentPost
-	if err := tx.db.WithContext(ctx).
+	if err := database.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where(
 			"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
@@ -1831,7 +1938,7 @@ func (tx *gormPrivateContentTransaction) PrivateCommentRetryAfter(
 	loadWindow := func(author string) (commentWindow, error) {
 		var result commentWindow
 		query := func() *gorm.DB {
-			current := tx.db.WithContext(ctx).
+			current := database.WithContext(ctx).
 				Model(&dbmodel.SocialPrivateContentComment{}).
 				Where(
 					"post_id = ? AND created_at > ?",

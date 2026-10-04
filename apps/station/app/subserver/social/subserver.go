@@ -284,7 +284,13 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		); err != nil {
 			return err
 		}
-		return infrastructure.RegisterFederatedPrivateResourceReceiver(
+		if err := infrastructure.RegisterFederatedPrivateResourceReceiver(
+			registry,
+			s.privateContentSvc,
+		); err != nil {
+			return err
+		}
+		return infrastructure.RegisterFederatedPrivateInteractionReceivers(
 			registry,
 			s.privateContentSvc,
 		)

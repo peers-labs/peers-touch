@@ -780,6 +780,7 @@ func CanonicalDatabaseResetTargets() []DatabaseResetTarget {
 		{Table: "social_reactions", Operation: ResetOperationDeletePrivatePostClass, Predicate: "post_class = 'private'"},
 		{Table: "social_comments", Operation: ResetOperationDeletePrivatePostClass, Predicate: "post_class = 'private'"},
 		{Table: "social_moment_deliveries", Operation: ResetOperationClearTable},
+		{Table: "social_remote_private_commands", Operation: ResetOperationClearTable},
 		{Table: "social_remote_private_envelopes", Operation: ResetOperationClearTable},
 		{Table: "social_remote_private_resources", Operation: ResetOperationClearTable},
 		{Table: "social_private_object_grants", Operation: ResetOperationClearTable},

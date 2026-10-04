@@ -41,10 +41,13 @@ message PreparePrivateCommentRequest {
   string reply_to_comment_id = 3;
   uint32 object_count = 4;
   string command_id = 5;
+  string actor_signing_key_id = 6;
+  bytes actor_device_signature = 7;
 }
 
 message PreparePrivateCommentResponse {
   .peers_touch.model.secure_content.v1.ContentEncryptionPlan plan = 1;
+  .peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation station_signing_key_attestation = 2;
 }
 
 message PrivateMomentContent {
@@ -422,6 +425,8 @@ message SubmitPrivateCommentRequest {
   SignedMentionRouting mention_routing = 5;
   string command_id = 6;
   string post_id = 7;
+  string actor_signing_key_id = 8;
+  bytes actor_device_signature = 9;
 }
 
 message SubmitPrivateCommentResponse {

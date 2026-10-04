@@ -51,8 +51,18 @@ func (s *PrivateContentService) ConfigureFederatedPrivateDelivery(
 			"local Station, Federation membership, and event publisher are required",
 		)
 	}
+	interactionStore, ok := s.store.(infrastructure.FederatedPrivateInteractionStore)
+	if !ok {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrationGap,
+			"social.private_content.configure_federated_delivery",
+			"interaction_store",
+			"private-content store does not support federated interactions",
+		)
+	}
 	s.localStationPeerID = localStationPeerID
 	s.federationMembership = membership
+	s.interactionStore = interactionStore
 	s.events = events
 	return nil
 }
@@ -349,6 +359,150 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 			"source_enqueue",
 			outcome,
 		)
+	}
+	return nil
+}
+
+func (s *PrivateContentService) enqueueFederatedPrivateComment(
+	ctx context.Context,
+	tx infrastructure.PrivateContentTransaction,
+	plan dbmodel.SocialPrivateContentPlan,
+	prepared socialdomain.PrivatePrepareMaterial,
+	snapshot socialdomain.FriendsSnapshot,
+	request *privatecontentpb.SubmitPrivateCommentRequest,
+	material socialdomain.PrivateSubmitMaterial,
+	proof *securecontentpb.ViewerContentCommitProof,
+	receiverVerifiedSenderKey *actormodel.VerifiedActorDeviceSigningKey,
+	committedAt time.Time,
+) error {
+	remote := make([]socialdomain.RecipientLocality, 0)
+	for _, locality := range snapshot.RecipientLocalities {
+		if locality.HomeStationPeerID != s.localStationPeerID {
+			remote = append(remote, locality)
+		}
+	}
+	if len(remote) == 0 {
+		return nil
+	}
+	if s.localStationPeerID == "" {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrationGap,
+			"social.private_content.enqueue_federated_comment",
+			"local_station_peer_id",
+			"is unavailable",
+		)
+	}
+	attestation, err :=
+		s.stationSigner.AttestContentProofVerificationKeyInTransaction(
+			ctx,
+			tx.ContentPreKeyValidationTransaction(),
+			proof.GetStationSigningKeyId(),
+			committedAt,
+		)
+	if err != nil {
+		return mapPrivateDependencyError(
+			"social.private_content.enqueue_federated_comment",
+			err,
+		)
+	}
+	for _, target := range remote {
+		if target.FederationID == "" {
+			return socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentConflict,
+				"social.private_content.enqueue_federated_comment",
+				"recipient_federation_id",
+				"is missing from a remote recipient",
+			)
+		}
+		envelopes, targetActor, err := federatedViewerEnvelopes(
+			plan,
+			material.Envelopes,
+			target.ActorPTID,
+		)
+		if err != nil {
+			return err
+		}
+		verification := &privatecontentpb.PrivateContentVerification{
+			CommitProof: proto.Clone(
+				proof,
+			).(*securecontentpb.ViewerContentCommitProof),
+			StationSigningKeyAttestation: proto.Clone(
+				attestation,
+			).(*securecontentpb.StationContentSigningKeyAttestation),
+		}
+		if receiverVerifiedSenderKey != nil {
+			verification.ReceiverVerifiedSenderSigningKey = proto.Clone(
+				receiverVerifiedSenderKey,
+			).(*actormodel.VerifiedActorDeviceSigningKey)
+		}
+		if request.GetMentionRouting() != nil {
+			verification.MentionRouting = proto.Clone(
+				request.GetMentionRouting(),
+			).(*privatecontentpb.SignedMentionRouting)
+		}
+		deliveryID := deterministicPrivateID(
+			"federated-resource",
+			plan.ContentID,
+			target.ActorPTID,
+		)
+		payload := &privatecontentpb.FederatedPrivateResourceDelivery{
+			FormatVersion:       socialdomain.PrivateContentFormatVersion,
+			FederationId:        target.FederationID,
+			DeliveryId:          deliveryID,
+			SourceStationPeerId: s.localStationPeerID,
+			TargetStationPeerId: target.HomeStationPeerID,
+			TargetActor:         targetActor,
+			ResourceKind: privatecontentpb.
+				FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT,
+			Resource: proto.Clone(
+				request.GetPlan().GetResource(),
+			).(*securecontentpb.SecureResourceRef),
+			LifecycleRevision: plan.Generation,
+			Metadata: &privatecontentpb.FederatedPrivateResourceDelivery_Comment{
+				Comment: &privatecontentpb.CommentMetadata{
+					CommentId:        plan.ContentID,
+					ContentId:        plan.ContentID,
+					PostId:           request.GetPostId(),
+					ReplyToCommentId: prepared.ReplyToCommentID,
+					Author: proto.Clone(
+						request.GetPlan().GetAuthor().GetActor(),
+					).(*actormodel.ActorRef),
+					CreatedAt: timestamppb.New(committedAt),
+					UpdatedAt: timestamppb.New(committedAt),
+				},
+			},
+			Payload: proto.Clone(
+				request.GetPayload(),
+			).(*securecontentpb.EncryptedPayload),
+			TargetActorEnvelopes: envelopes,
+			Objects:              federatedPrivateObjectDescriptors(material.Objects),
+			Verification:         verification,
+			AudienceExplanation: &actormodel.AudienceExplanation{
+				Kind:           snapshot.Audience.GetKind(),
+				ViewerIsMember: true,
+			},
+			CommittedAt: timestamppb.New(committedAt),
+		}
+		payloadBytes, err := socialdomain.CanonicalProtoBytes(payload)
+		if err != nil {
+			return err
+		}
+		frame, err := s.signFederatedPrivateResourceFrame(
+			ctx,
+			tx.ContentPreKeyValidationTransaction(),
+			payload,
+			payloadBytes,
+			committedAt,
+		)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.EnqueueFederationFrame(ctx, frame, committedAt); err != nil {
+			return mapPrivateStoreError(
+				"social.private_content.enqueue_federated_comment",
+				err,
+			)
+		}
 	}
 	return nil
 }
@@ -698,18 +852,33 @@ func (s *PrivateContentService) ReceiveFederatedPrivateResource(
 		s.observeFederatedPrivateDelivery(startedAt, "receiver", "replay", "exact")
 		return federationdelivery.DuplicateResult(), nil
 	}
-	post := projected.GetPost()
 	targetPTID := projected.GetTargetActor().GetPtid()
-	if err := s.events.StageImportedCreated(
-		ctx,
-		transaction,
-		post.GetPostId(),
-		post.GetAuthor().GetPtid(),
-		targetPTID,
-		post.GetAudienceKind(),
-		projected.GetLifecycleRevision(),
-	); err != nil {
-		return federationdelivery.Result{}, err
+	switch projected.GetResourceKind() {
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST:
+		post := projected.GetPost()
+		if err := s.events.StageImportedCreated(
+			ctx,
+			transaction,
+			post.GetPostId(),
+			post.GetAuthor().GetPtid(),
+			targetPTID,
+			post.GetAudienceKind(),
+			projected.GetLifecycleRevision(),
+		); err != nil {
+			return federationdelivery.Result{}, err
+		}
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT:
+		comment := projected.GetComment()
+		if err := s.events.StageImportedCommented(
+			ctx,
+			transaction,
+			comment.GetPostId(),
+			comment.GetCommentId(),
+			comment.GetAuthor().GetPtid(),
+			targetPTID,
+		); err != nil {
+			return federationdelivery.Result{}, err
+		}
 	}
 	s.observeFederatedPrivateDelivery(startedAt, "receiver", "accepted", "none")
 	return federationdelivery.AcceptedResult(), nil
@@ -836,19 +1005,12 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	}
 	resource := message.GetResource()
 	post := message.GetPost()
+	comment := message.GetComment()
 	target := message.GetTargetActor()
 	verification := message.GetVerification()
 	proof := verification.GetCommitProof()
 	sourceAttestation := verification.GetStationSigningKeyAttestation()
-	mediaObjectCountValid :=
-		(post.GetType() == actormodel.PostType_TEXT &&
-			len(message.GetObjects()) == 0) ||
-			((post.GetType() == actormodel.PostType_IMAGE ||
-				post.GetType() == actormodel.PostType_VIDEO) &&
-				len(message.GetObjects()) > 0)
-	if message.GetResourceKind() != privatecontentpb.
-		FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST ||
-		resource == nil ||
+	if resource == nil ||
 		resource.GetOwnerDomain() != securecontentpb.
 			SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
 		resource.GetGeneration() == 0 ||
@@ -858,14 +1020,6 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			resource.GetContentId(),
 			target.GetPtid(),
 		) ||
-		post == nil ||
-		post.GetPostId() != resource.GetContentId() ||
-		post.GetContentId() != resource.GetContentId() ||
-		!isFederatedPrivatePostType(post.GetType()) ||
-		!mediaObjectCountValid ||
-		!isFederatedPrivateAudienceKind(post.GetAudienceKind()) ||
-		post.GetAuthor() == nil ||
-		post.GetAuthor().GetPtid() == "" ||
 		target == nil ||
 		target.GetPtid() == "" ||
 		target.GetKind() != actormodel.ActorKind_ACTOR_KIND_PERSON ||
@@ -873,20 +1027,88 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 		!proto.Equal(message.GetPayload().GetResource(), resource) ||
 		proof == nil ||
 		sourceAttestation == nil ||
-		verification.GetReceiverVerifiedSenderSigningKey() != nil ||
 		message.GetCommittedAt() == nil {
 		return socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentInvalidArgument,
 			operation,
 			"resource",
-			"is not a complete supported viewer-scoped Post",
+			"is not a complete supported viewer-scoped resource",
 		)
 	}
-	if post.GetAudienceKind() == actormodel.Audience_FRIENDS {
+	var (
+		resourceAuthor *actormodel.ActorRef
+		audienceKind   actormodel.Audience_Kind
+	)
+	switch message.GetResourceKind() {
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST:
+		mediaObjectCountValid :=
+			(post.GetType() == actormodel.PostType_TEXT &&
+				len(message.GetObjects()) == 0) ||
+				((post.GetType() == actormodel.PostType_IMAGE ||
+					post.GetType() == actormodel.PostType_VIDEO) &&
+					len(message.GetObjects()) > 0)
+		if post == nil ||
+			post.GetPostId() != resource.GetContentId() ||
+			post.GetContentId() != resource.GetContentId() ||
+			!isFederatedPrivatePostType(post.GetType()) ||
+			!mediaObjectCountValid ||
+			!isFederatedPrivateAudienceKind(post.GetAudienceKind()) ||
+			post.GetAuthor() == nil ||
+			post.GetAuthor().GetPtid() == "" ||
+			verification.GetReceiverVerifiedSenderSigningKey() != nil {
+			return socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentInvalidArgument,
+				operation,
+				"resource",
+				"is not a complete supported viewer-scoped Post",
+			)
+		}
+		resourceAuthor = post.GetAuthor()
+		audienceKind = post.GetAudienceKind()
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT:
+		if comment == nil ||
+			comment.GetCommentId() != resource.GetContentId() ||
+			comment.GetContentId() != resource.GetContentId() ||
+			comment.GetPostId() == "" ||
+			comment.GetAuthor() == nil ||
+			comment.GetAuthor().GetPtid() == "" ||
+			len(message.GetObjects()) != 0 {
+			return socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentInvalidArgument,
+				operation,
+				"resource",
+				"is not a complete supported viewer-scoped Comment",
+			)
+		}
+		if err := s.interactionStore.ValidateRemotePrivateCommentParent(
+			ctx,
+			transaction,
+			message,
+		); err != nil {
+			if errors.Is(err, infrastructure.ErrPrivateContentNotFound) {
+				return socialdomain.WrapPrivateContentError(
+					socialdomain.PrivateContentDependency,
+					operation,
+					err,
+				)
+			}
+			return mapPrivateStoreError(operation, err)
+		}
+		resourceAuthor = comment.GetAuthor()
+		audienceKind = message.GetAudienceExplanation().GetKind()
+	default:
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentUnsupported,
+			operation,
+			"resource_kind",
+			"is unsupported",
+		)
+	}
+	if audienceKind == actormodel.Audience_FRIENDS {
 		friendSnapshot, friendErr := s.audiences.ResolveFriendsPostSnapshot(
 			ctx,
 			transaction,
-			post.GetAuthor().GetPtid(),
+			resourceAuthor.GetPtid(),
 		)
 		if friendErr != nil {
 			return socialdomain.WrapPrivateContentError(
@@ -951,7 +1173,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	}
 	if proof.GetDomainCommitId() != resource.GetContentId() ||
 		!proto.Equal(proof.GetResource(), resource) ||
-		proof.GetAuthor().GetActor().GetPtid() != post.GetAuthor().GetPtid() ||
+		proof.GetAuthor().GetActor().GetPtid() != resourceAuthor.GetPtid() ||
 		!bytes.Equal(
 			proof.GetEncryptedPayloadSha256(),
 			privateSHA256(payloadBytes),
@@ -997,7 +1219,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	}
 	explanation := message.GetAudienceExplanation()
 	if explanation == nil ||
-		explanation.GetKind() != post.GetAudienceKind() ||
+		explanation.GetKind() != audienceKind ||
 		explanation.GetViewerIsAuthor() ||
 		!explanation.GetViewerIsMember() {
 		return socialdomain.NewPrivateContentError(
@@ -1066,20 +1288,35 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 				err,
 			)
 		}
-		if err := s.signatureVerifier.Verify(
-			ctx,
-			transaction,
-			envelope.GetBinding().GetSender(),
-			message.GetSourceStationPeerId(),
-			envelope.GetBinding().GetSenderSigningKeyId(),
-			envelopeSigningBytes,
-			envelope.GetSenderSignature(),
-			message.GetCommittedAt().AsTime(),
-		); err != nil {
+		var signatureErr error
+		if message.GetResourceKind() == privatecontentpb.
+			FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT &&
+			verification.GetReceiverVerifiedSenderSigningKey() != nil {
+			signatureErr = verifyFederatedPrivateReceiverVerifiedSender(
+				verification.GetReceiverVerifiedSenderSigningKey(),
+				envelope.GetBinding().GetSender(),
+				envelope.GetBinding().GetSenderSigningKeyId(),
+				envelopeSigningBytes,
+				envelope.GetSenderSignature(),
+				message.GetCommittedAt().AsTime(),
+			)
+		} else {
+			signatureErr = s.signatureVerifier.Verify(
+				ctx,
+				transaction,
+				envelope.GetBinding().GetSender(),
+				message.GetSourceStationPeerId(),
+				envelope.GetBinding().GetSenderSigningKeyId(),
+				envelopeSigningBytes,
+				envelope.GetSenderSignature(),
+				message.GetCommittedAt().AsTime(),
+			)
+		}
+		if signatureErr != nil {
 			return socialdomain.WrapPrivateContentError(
 				socialdomain.PrivateContentIntegrityFailed,
 				operation,
-				err,
+				signatureErr,
 			)
 		}
 		switch recipient := envelope.GetRecipient().(type) {
@@ -1150,22 +1387,78 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 				"sender does not match the source proof",
 			)
 		}
-		if err := s.signatureVerifier.Verify(
-			ctx,
-			transaction,
-			routing.GetSender(),
-			message.GetSourceStationPeerId(),
-			routing.GetSenderSigningKeyId(),
-			routing.GetCanonicalFactsSha256(),
-			routing.GetSenderSignature(),
-			message.GetCommittedAt().AsTime(),
-		); err != nil {
+		var signatureErr error
+		if message.GetResourceKind() == privatecontentpb.
+			FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT &&
+			verification.GetReceiverVerifiedSenderSigningKey() != nil {
+			signatureErr = verifyFederatedPrivateReceiverVerifiedSender(
+				verification.GetReceiverVerifiedSenderSigningKey(),
+				routing.GetSender(),
+				routing.GetSenderSigningKeyId(),
+				routing.GetCanonicalFactsSha256(),
+				routing.GetSenderSignature(),
+				message.GetCommittedAt().AsTime(),
+			)
+		} else {
+			signatureErr = s.signatureVerifier.Verify(
+				ctx,
+				transaction,
+				routing.GetSender(),
+				message.GetSourceStationPeerId(),
+				routing.GetSenderSigningKeyId(),
+				routing.GetCanonicalFactsSha256(),
+				routing.GetSenderSignature(),
+				message.GetCommittedAt().AsTime(),
+			)
+		}
+		if signatureErr != nil {
 			return socialdomain.WrapPrivateContentError(
 				socialdomain.PrivateContentIntegrityFailed,
 				operation,
-				err,
+				signatureErr,
 			)
 		}
+	}
+	return nil
+}
+
+func verifyFederatedPrivateReceiverVerifiedSender(
+	key *actormodel.VerifiedActorDeviceSigningKey,
+	sender *actormodel.ActorDeviceRef,
+	signingKeyID string,
+	canonical []byte,
+	signature []byte,
+	committedAt time.Time,
+) error {
+	if key == nil ||
+		sender == nil ||
+		sender.GetActor() == nil ||
+		key.GetActorPtid() != sender.GetActor().GetPtid() ||
+		key.GetActorDeviceId() != sender.GetDeviceId() ||
+		strings.TrimSpace(key.GetHomeStationPeerId()) == "" ||
+		key.GetSigningKeyId() != signingKeyID ||
+		len(key.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
+		key.GetProfileVersion() <= 0 ||
+		key.GetValidFromUnixMs() <= 0 ||
+		key.GetValidFromUnixMs() > committedAt.UTC().UnixMilli() ||
+		(key.GetRevokedAtUnixMs() != 0 &&
+			(key.GetRevokedAtUnixMs() <= key.GetValidFromUnixMs() ||
+				committedAt.UTC().UnixMilli() >= key.GetRevokedAtUnixMs())) {
+		return errors.New("receiver-verified sender signing key is invalid")
+	}
+	switch key.GetVerificationSource() {
+	case actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION,
+		actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+		actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR:
+	default:
+		return errors.New("receiver-verified sender signing key source is invalid")
+	}
+	if !ed25519.Verify(
+		ed25519.PublicKey(key.GetEd25519PublicKey()),
+		canonical,
+		signature,
+	) {
+		return errors.New("receiver-verified sender signature is invalid")
 	}
 	return nil
 }

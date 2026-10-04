@@ -1192,9 +1192,13 @@ func newFederatedPrivateReceiverWithFailpoint(
 	if err != nil {
 		t.Fatal(err)
 	}
+	remoteEventSequence := 0
 	bus, err := events.NewDurableEventBus(
 		database,
-		events.WithIDGenerator(func() string { return "remote-event-1" }),
+		events.WithIDGenerator(func() string {
+			remoteEventSequence++
+			return fmt.Sprintf("remote-event-%d", remoteEventSequence)
+		}),
 		events.WithClock(func() time.Time { return now }),
 	)
 	if err != nil {
@@ -1223,6 +1227,12 @@ func newFederatedPrivateReceiverWithFailpoint(
 	}
 	registry := federationdelivery.NewRegistry()
 	if err := infrastructure.RegisterFederatedPrivateResourceReceiver(
+		registry,
+		service,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := infrastructure.RegisterFederatedPrivateInteractionReceivers(
 		registry,
 		service,
 	); err != nil {

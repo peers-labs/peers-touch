@@ -2300,6 +2300,7 @@ fn validate_plan(
     .encode_to_vec();
     validate_content_plan(
         plan,
+        None,
         lease,
         content_id,
         object_count,
@@ -3623,6 +3624,83 @@ mod tests {
             social::PrivateMomentKind::Text,
             0,
             &[],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn remote_private_comment_plan_accepts_home_station_attestation() {
+        let home_station_key = SigningKey::from_bytes(&[8; 32]);
+        let source_station_key = SigningKey::from_bytes(&[9; 32]);
+        let lease = lease(&home_station_key);
+        let mut plan = signed_plan(&source_station_key);
+        plan.station_signing_key_id = "source-station-key".to_string();
+        plan.canonical_plan_sha256.clear();
+        plan.station_signature.clear();
+        let mut hash_input = plan.clone();
+        hash_input.canonical_plan_sha256.clear();
+        hash_input.station_signature.clear();
+        plan.canonical_plan_sha256 = Sha256::digest(hash_input.encode_to_vec()).to_vec();
+        let mut signing_input = plan.clone();
+        signing_input.station_signature.clear();
+        plan.station_signature = source_station_key
+            .sign(&signing_input.encode_to_vec())
+            .to_bytes()
+            .to_vec();
+
+        let now = super::super::projection::current_unix_seconds();
+        let mut attestation = wire::StationContentSigningKeyAttestation {
+            format_version: 1,
+            station_peer_id: "station-1".to_string(),
+            proof_signing_key_id: plan.station_signing_key_id.clone(),
+            proof_ed25519_public_key: source_station_key.verifying_key().to_bytes().to_vec(),
+            attesting_signing_key_id: "station-key-current".to_string(),
+            issued_at: Some(prost_types::Timestamp {
+                seconds: now,
+                nanos: 0,
+            }),
+            expires_at: Some(prost_types::Timestamp {
+                seconds: now + 300,
+                nanos: 0,
+            }),
+            station_signature: Vec::new(),
+        };
+        let mut attestation_bytes = Vec::with_capacity(
+            super::super::projection::STATION_ATTESTATION_DOMAIN.len() + attestation.encoded_len(),
+        );
+        attestation_bytes.extend_from_slice(super::super::projection::STATION_ATTESTATION_DOMAIN);
+        attestation_bytes.extend_from_slice(&attestation.encode_to_vec());
+        attestation.station_signature = home_station_key
+            .sign(&attestation_bytes)
+            .to_bytes()
+            .to_vec();
+        let domain_binding = social::PrivateMomentDomainBinding {
+            format_version: 1,
+            kind: social::PrivateMomentKind::Text as i32,
+            subtype_prepare_authority_sha256: Vec::new(),
+        }
+        .encode_to_vec();
+
+        assert!(validate_content_plan(
+            &plan,
+            Some(&attestation),
+            &lease,
+            "content-1",
+            0,
+            &domain_binding,
+            "private Comment",
+        )
+        .is_ok());
+
+        attestation.proof_ed25519_public_key[0] ^= 1;
+        assert!(validate_content_plan(
+            &plan,
+            Some(&attestation),
+            &lease,
+            "content-1",
+            0,
+            &domain_binding,
+            "private Comment",
         )
         .is_err());
     }
