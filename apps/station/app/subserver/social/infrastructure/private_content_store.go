@@ -899,13 +899,14 @@ type PrivatePostReadModel struct {
 }
 
 type PrivateCommentReadModel struct {
-	Comment             dbmodel.SocialPrivateContentComment
-	Snapshot            dbmodel.SocialPrivateAudienceSnapshot
-	Envelope            *dbmodel.SocialPrivateContentEnvelope
-	Objects             []dbmodel.SocialPrivateObjectAttachment
-	CommitProof         dbmodel.SocialPrivateCommitProof
-	AuthorDeviceID      string
-	CanonicalPlanSHA256 []byte
+	Comment                 dbmodel.SocialPrivateContentComment
+	Snapshot                dbmodel.SocialPrivateAudienceSnapshot
+	Envelope                *dbmodel.SocialPrivateContentEnvelope
+	Objects                 []dbmodel.SocialPrivateObjectAttachment
+	CommitProof             dbmodel.SocialPrivateCommitProof
+	AuthorDeviceID          string
+	AuthorHomeStationPeerID string
+	CanonicalPlanSHA256     []byte
 }
 
 func (s *GORMPrivateContentStore) GetPrivatePost(
@@ -1225,13 +1226,14 @@ func loadPrivateCommentReadModel(
 		return nil, err
 	}
 	return &PrivateCommentReadModel{
-		Comment:             comment,
-		Snapshot:            snapshot,
-		Envelope:            envelope,
-		Objects:             objects,
-		CommitProof:         proof,
-		AuthorDeviceID:      plan.AuthorDeviceID,
-		CanonicalPlanSHA256: cloneBytes(plan.CanonicalPlanSHA256),
+		Comment:                 comment,
+		Snapshot:                snapshot,
+		Envelope:                envelope,
+		Objects:                 objects,
+		CommitProof:             proof,
+		AuthorDeviceID:          plan.AuthorDeviceID,
+		AuthorHomeStationPeerID: plan.AuthorHomeStationPeerID,
+		CanonicalPlanSHA256:     cloneBytes(plan.CanonicalPlanSHA256),
 	}, nil
 }
 
