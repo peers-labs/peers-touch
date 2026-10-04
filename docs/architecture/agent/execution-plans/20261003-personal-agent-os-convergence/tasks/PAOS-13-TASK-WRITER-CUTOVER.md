@@ -25,8 +25,14 @@
   ],
   "doneWhen": ["Home task and Chat promotion create only TaskRun execution state","Each command returns the canonical TaskRun identity","No new AgentTask execution row is written","Existing migrated work remains visible"],
   "failureBehavior": ["Legacy data remains readable until reader cutover and recovery pass","Missing migration identity fails closed"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T22:47:10Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:e81506b2af20825f5b926ff27799ca3081ecb1ed;development://personal-agent-os-convergence-20261003/artifacts/20261004T224616518986Z/paos-13-task-writer-cutover/capture.json;manifest-sha256:13286056d37a2f8a361cb43ed135f15aa26c7b18dd033a61dffc41fc03126fe7"
+    }
+  ]
 }
 ```
 
@@ -40,4 +46,21 @@
 
 ## Current Snapshot
 
-Three public creation paths still write different task authorities.
+Functional slice complete. Home Task and Chat promotion now share one
+idempotent `TaskRun + ExecutionStep + TaskEvent` writer, and production
+`AgentTask` creation methods have been removed.
+
+- Full Agent Station tests, focused Home/Chat TaskRun tests, Desktop TypeScript,
+  30 Desktop tests, Mobile Agent contract tests, proto generation, and diff
+  checks pass.
+- Native Profile `two` created Home TaskRun
+  `task_9bd257f6ba87634af2e51c35` and promoted Chat TaskRun
+  `task_5f166f3c32502aa0e53c258d`; both returned the same identity later read from
+  Station `TASK_CREATED` events.
+- Legacy AgentTask and CollaborationTask ID sets remained unchanged, and the
+  existing migrated Goal/TaskRun identity remained stable.
+- The temporary Agent pin was restored; native process, ports, profile, and
+  storage cleanup plus secret scan passed.
+- Mobile generated bindings are current. Mobile's broad TypeScript check
+  remains blocked by the pre-existing React 18/19 JSX type duplication
+  baseline; the affected Agent contract suite passes.
