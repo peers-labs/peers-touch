@@ -138,6 +138,37 @@ pub struct PrivateMentionProjection {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrivateReactionSummaryProjection {
+    pub kind: i32,
+    pub count: String,
+    pub reacted_by_viewer: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PrivateReactionOperation {
+    React,
+    Unreact,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct PrivateReactionCommandProjection {
+    pub command_id: String,
+    pub post_id: String,
+    pub kind: i32,
+    pub operation: PrivateReactionOperation,
+    pub state: String,
+    pub attempt_count: u32,
+    pub projection_revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_not_before_unix_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrivateMomentProjection {
     pub post_id: String,
     pub content_id: String,
@@ -147,6 +178,12 @@ pub struct PrivateMomentProjection {
     pub state: PrivateReadState,
     #[serde(default)]
     pub mentions: Vec<PrivateMentionProjection>,
+    #[serde(default)]
+    pub reactions: Vec<PrivateReactionSummaryProjection>,
+    #[serde(default = "zero_revision")]
+    pub reaction_revision: String,
+    #[serde(default)]
+    pub reactions_hydrated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<PrivateMomentContentProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -175,6 +212,7 @@ pub struct PrivateMomentsSnapshot {
     pub device_id: String,
     pub session_generation: String,
     pub projections: Vec<PrivateMomentProjection>,
+    pub reaction_commands: Vec<PrivateReactionCommandProjection>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -406,6 +444,8 @@ fn decrypt_projection_from_response_at(
         PrivateMediaAccessPath::HomeStationLocalObject
     };
     let content = project_plaintext(&decoded, private, kind, access_path)?;
+    let (reactions, reaction_revision, reactions_hydrated) =
+        source_reaction_summaries(response, expected_post_id)?;
     let projection = PrivateMomentProjection {
         post_id: metadata.post_id.clone(),
         content_id: metadata.content_id.clone(),
@@ -418,6 +458,9 @@ fn decrypt_projection_from_response_at(
         audience_kind: private_audience_kind(metadata.audience_kind)?.to_string(),
         state: PrivateReadState::ContentReady,
         mentions,
+        reactions,
+        reaction_revision,
+        reactions_hydrated,
         content: Some(content),
         error_code: None,
         retry_after_seconds: None,
@@ -430,6 +473,62 @@ fn decrypt_projection_from_response_at(
         content_key,
         consumed_prekey,
     })
+}
+
+pub(super) fn canonical_reaction_summaries(
+    reactions: &[social::ReactionSummary],
+) -> Result<Vec<PrivateReactionSummaryProjection>, String> {
+    if reactions.len() > 5 {
+        return Err("private Reaction summary exceeds the supported kind count".to_string());
+    }
+    let mut seen = [false; 6];
+    let mut projected = Vec::with_capacity(reactions.len());
+    for reaction in reactions {
+        let kind = social::ReactionKind::try_from(reaction.kind)
+            .map_err(|_| "private Reaction summary kind is invalid".to_string())?;
+        let index = kind as usize;
+        if kind == social::ReactionKind::ReactionUnspecified
+            || reaction.count < 0
+            || index >= seen.len()
+            || seen[index]
+        {
+            return Err("private Reaction summary is invalid".to_string());
+        }
+        seen[index] = true;
+        projected.push(PrivateReactionSummaryProjection {
+            kind: reaction.kind,
+            count: reaction.count.to_string(),
+            reacted_by_viewer: reaction.reacted_by_viewer,
+        });
+    }
+    projected.sort_by_key(|reaction| reaction.kind);
+    Ok(projected)
+}
+
+fn source_reaction_summaries(
+    response: &social::GetMomentResourceResponse,
+    expected_post_id: &str,
+) -> Result<(Vec<PrivateReactionSummaryProjection>, String, bool), String> {
+    let Some(post) = response.post.as_ref() else {
+        if response.reaction_projection_revision != 0 {
+            return Err("private Reaction readback revision has no post projection".to_string());
+        }
+        return Ok((Vec::new(), zero_revision(), false));
+    };
+    if post.id != expected_post_id || response.reaction_projection_revision == 0 {
+        return Err("private Reaction readback identity or revision is invalid".to_string());
+    }
+    canonical_reaction_summaries(&post.reactions).map(|reactions| {
+        (
+            reactions,
+            response.reaction_projection_revision.to_string(),
+            true,
+        )
+    })
+}
+
+fn zero_revision() -> String {
+    "0".to_string()
 }
 
 pub(super) fn sender_key_requirement(
@@ -2067,6 +2166,7 @@ mod tests {
         social::GetMomentResourceResponse {
             post: None,
             explanation: None,
+            reaction_projection_revision: 0,
             resource: Some(social::PostResource {
                 metadata: Some(social::PostMetadata {
                     post_id: "post-1".to_string(),
@@ -2158,6 +2258,9 @@ mod tests {
             audience_kind: "FRIENDS".to_string(),
             state: PrivateReadState::RecoveryRequired,
             mentions: Vec::new(),
+            reactions: Vec::new(),
+            reaction_revision: "0".to_string(),
+            reactions_hydrated: false,
             content: None,
             error_code: Some("RECOVERY_REQUIRED".to_string()),
             retry_after_seconds: None,
@@ -2170,6 +2273,50 @@ mod tests {
             PrivateMomentProjection::decode_local(&encoded).unwrap(),
             projection
         );
+    }
+
+    #[test]
+    fn private_reaction_readback_rejects_duplicates_and_preserves_large_counts() {
+        let response = social::GetMomentResourceResponse {
+            post: Some(social::Post {
+                id: "post-1".to_string(),
+                reactions: vec![
+                    social::ReactionSummary {
+                        kind: social::ReactionKind::ReactionLove as i32,
+                        count: i64::MAX,
+                        reacted_by_viewer: true,
+                    },
+                    social::ReactionSummary {
+                        kind: social::ReactionKind::ReactionLike as i32,
+                        count: 2,
+                        reacted_by_viewer: false,
+                    },
+                ],
+                ..Default::default()
+            }),
+            reaction_projection_revision: 7,
+            ..Default::default()
+        };
+        let (summaries, revision, hydrated) =
+            source_reaction_summaries(&response, "post-1").unwrap();
+        assert_eq!(summaries[0].kind, social::ReactionKind::ReactionLike as i32);
+        assert_eq!(summaries[1].count, i64::MAX.to_string());
+        assert_eq!(revision, "7");
+        assert!(hydrated);
+
+        assert!(canonical_reaction_summaries(&[
+            social::ReactionSummary {
+                kind: social::ReactionKind::ReactionLike as i32,
+                count: 1,
+                reacted_by_viewer: true,
+            },
+            social::ReactionSummary {
+                kind: social::ReactionKind::ReactionLike as i32,
+                count: 1,
+                reacted_by_viewer: true,
+            },
+        ])
+        .is_err());
     }
 
     #[test]

@@ -14,6 +14,8 @@ use crate::domain::storage::database::DatabaseOpenSpec;
 use crate::infrastructure::local_scope;
 use crate::infrastructure::storage::{self, key_provider::PlatformKeyProvider};
 
+const MAX_REACTION_RETRY_AFTER_SECONDS: u64 = 300;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i64)]
 pub enum PublicationState {
@@ -80,6 +82,44 @@ impl TryFrom<i64> for CommentState {
             6 => Ok(Self::RateLimited),
             7 => Ok(Self::ParentUnavailable),
             _ => Err("secure content Comment state is invalid".to_string()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(i64)]
+pub enum ReactionCommandState {
+    Pending = 1,
+    InFlight = 2,
+    UnknownCommit = 3,
+    Committed = 4,
+    Retrying = 5,
+    Rejected = 6,
+}
+
+impl ReactionCommandState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending | Self::UnknownCommit => "REACTION_PENDING",
+            Self::InFlight | Self::Retrying => "REACTION_RETRYING",
+            Self::Committed => "REACTION_COMMITTED",
+            Self::Rejected => "REACTION_REJECTED",
+        }
+    }
+}
+
+impl TryFrom<i64> for ReactionCommandState {
+    type Error = String;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Pending),
+            2 => Ok(Self::InFlight),
+            3 => Ok(Self::UnknownCommit),
+            4 => Ok(Self::Committed),
+            5 => Ok(Self::Retrying),
+            6 => Ok(Self::Rejected),
+            _ => Err("secure content Reaction command state is invalid".to_string()),
         }
     }
 }
@@ -167,6 +207,26 @@ pub struct StoredCommentDraft {
     pub session_generation: u64,
     pub comment_id: Option<String>,
     pub state: CommentState,
+    pub error_code: Option<String>,
+    pub retry_after_seconds: Option<u64>,
+    pub retry_not_before_unix_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredReactionCommand {
+    pub command_id: String,
+    pub post_id: String,
+    pub kind: i32,
+    pub remove: bool,
+    pub request_sha256: [u8; 32],
+    pub request_bytes: Vec<u8>,
+    pub result_sha256: Option<[u8; 32]>,
+    pub result_bytes: Option<Vec<u8>>,
+    pub state: ReactionCommandState,
+    pub session_generation: u64,
+    pub lease_generation: u64,
+    pub attempt_count: u32,
+    pub projection_revision: u64,
     pub error_code: Option<String>,
     pub retry_after_seconds: Option<u64>,
     pub retry_not_before_unix_ms: Option<i64>,
@@ -338,6 +398,19 @@ impl SecureContentStore {
                 ],
             )
             .map_err(|error| error.to_string())?;
+        let reactions = transaction
+            .execute(
+                "UPDATE secure_content_reaction_commands
+                 SET state = ?1, error_code = 'REACTION_RESULT_UNKNOWN',
+                     retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = unixepoch('subsec') * 1000
+                 WHERE state = ?2",
+                params![
+                    ReactionCommandState::UnknownCommit as i64,
+                    ReactionCommandState::InFlight as i64,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         transaction
             .execute(
                 "DELETE FROM secure_content_moment_drafts
@@ -348,7 +421,7 @@ impl SecureContentStore {
             )
             .map_err(|error| error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(publications + moments + comments)
+        Ok(publications + moments + comments + reactions)
     }
 
     pub fn checkpoint_session_generation(&self, session_generation: u64) -> Result<usize, String> {
@@ -396,8 +469,22 @@ impl SecureContentStore {
                 ],
             )
             .map_err(|error| error.to_string())?;
+        let reactions = transaction
+            .execute(
+                "UPDATE secure_content_reaction_commands
+                 SET state = ?1, error_code = 'REACTION_RESULT_UNKNOWN',
+                     retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = unixepoch('subsec') * 1000
+                 WHERE state = ?2 AND session_generation = ?3",
+                params![
+                    ReactionCommandState::UnknownCommit as i64,
+                    ReactionCommandState::InFlight as i64,
+                    session_generation,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(publications + moments + comments)
+        Ok(publications + moments + comments + reactions)
     }
 
     pub fn persist_prekey_publication(
@@ -1865,6 +1952,307 @@ impl SecureContentStore {
         Ok(rows)
     }
 
+    pub fn persist_reaction_command(
+        &self,
+        command: &StoredReactionCommand,
+    ) -> Result<StoredReactionCommand, String> {
+        if command.command_id.trim().is_empty()
+            || command.post_id.trim().is_empty()
+            || command.kind < 0
+            || command.request_bytes.is_empty()
+            || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
+            || command.state != ReactionCommandState::Pending
+            || command.result_bytes.is_some()
+            || command.result_sha256.is_some()
+            || command.session_generation == 0
+        {
+            return Err("secure content Reaction command journal input is invalid".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let active: Option<String> = transaction
+            .query_row(
+                "SELECT command_id FROM secure_content_reaction_commands
+                 WHERE post_id = ?1 AND state IN (?2, ?3, ?4, ?5)
+                 ORDER BY updated_at_unix_ms DESC LIMIT 1",
+                params![
+                    command.post_id,
+                    ReactionCommandState::Pending as i64,
+                    ReactionCommandState::InFlight as i64,
+                    ReactionCommandState::UnknownCommit as i64,
+                    ReactionCommandState::Retrying as i64,
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if active
+            .as_deref()
+            .is_some_and(|command_id| command_id != command.command_id)
+        {
+            return Err("secure content Reaction command is already pending".to_string());
+        }
+        transaction
+            .execute(
+                "INSERT INTO secure_content_reaction_commands(
+                    command_id, post_id, kind, remove_reaction, request_sha256,
+                    request_bytes, result_sha256, result_bytes, state,
+                    session_generation, lease_generation, attempt_count,
+                    projection_revision, error_code, retry_after_seconds,
+                    retry_not_before_unix_ms, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8, 0, 0, 0,
+                          NULL, NULL, NULL, ?9)
+                 ON CONFLICT(command_id) DO NOTHING",
+                params![
+                    command.command_id,
+                    command.post_id,
+                    command.kind,
+                    command.remove,
+                    command.request_sha256.as_slice(),
+                    command.request_bytes,
+                    ReactionCommandState::Pending as i64,
+                    to_i64(command.session_generation, "session generation")?,
+                    now_unix_ms(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let stored = transaction
+            .query_row(
+                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                        request_bytes, result_sha256, result_bytes, state,
+                        session_generation, lease_generation, attempt_count,
+                        projection_revision, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM secure_content_reaction_commands WHERE command_id = ?1",
+                params![command.command_id],
+                reaction_command_from_row,
+            )
+            .map_err(|error| error.to_string())?;
+        if stored.post_id != command.post_id
+            || stored.kind != command.kind
+            || stored.remove != command.remove
+            || stored.request_sha256 != command.request_sha256
+            || stored.request_bytes != command.request_bytes
+        {
+            return Err("secure content Reaction command replay conflict".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(stored)
+    }
+
+    pub fn reaction_command(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<StoredReactionCommand>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                        request_bytes, result_sha256, result_bytes, state,
+                        session_generation, lease_generation, attempt_count,
+                        projection_revision, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM secure_content_reaction_commands WHERE command_id = ?1",
+                params![command_id],
+                reaction_command_from_row,
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn reaction_commands(&self) -> Result<Vec<StoredReactionCommand>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                        request_bytes, result_sha256, result_bytes, state,
+                        session_generation, lease_generation, attempt_count,
+                        projection_revision, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM secure_content_reaction_commands AS command
+                 WHERE command.rowid = (
+                    SELECT MAX(latest.rowid)
+                    FROM secure_content_reaction_commands AS latest
+                    WHERE latest.post_id = command.post_id
+                 )
+                 ORDER BY command.updated_at_unix_ms DESC, command.rowid DESC",
+            )
+            .map_err(|error| error.to_string())?;
+        let commands = statement
+            .query_map([], reaction_command_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(commands)
+    }
+
+    pub fn acquire_reaction_command(
+        &self,
+        command_id: &str,
+        session_generation: u64,
+    ) -> Result<StoredReactionCommand, String> {
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let now = now_unix_ms();
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_reaction_commands
+                 SET state = ?1, session_generation = ?2,
+                     lease_generation = lease_generation + 1,
+                     attempt_count = attempt_count + 1,
+                     retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?3
+                 WHERE command_id = ?4 AND state IN (?5, ?6, ?7)
+                   AND (retry_not_before_unix_ms IS NULL OR retry_not_before_unix_ms <= ?3)",
+                params![
+                    ReactionCommandState::InFlight as i64,
+                    to_i64(session_generation, "session generation")?,
+                    now,
+                    command_id,
+                    ReactionCommandState::Pending as i64,
+                    ReactionCommandState::UnknownCommit as i64,
+                    ReactionCommandState::Retrying as i64,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("secure content Reaction command is not retryable yet".to_string());
+        }
+        let command = transaction
+            .query_row(
+                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                        request_bytes, result_sha256, result_bytes, state,
+                        session_generation, lease_generation, attempt_count,
+                        projection_revision, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM secure_content_reaction_commands WHERE command_id = ?1",
+                params![command_id],
+                reaction_command_from_row,
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(command)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn mark_reaction_failure(
+        &self,
+        command_id: &str,
+        lease_generation: u64,
+        session_generation: u64,
+        state: ReactionCommandState,
+        error_code: &str,
+        retry_after_seconds: Option<u64>,
+    ) -> Result<bool, String> {
+        if !matches!(
+            state,
+            ReactionCommandState::UnknownCommit
+                | ReactionCommandState::Retrying
+                | ReactionCommandState::Rejected
+        ) || error_code.trim().is_empty()
+        {
+            return Err("secure content Reaction failure transition is invalid".to_string());
+        }
+        let retry_after_seconds = retry_after_seconds
+            .map(|seconds| seconds.min(MAX_REACTION_RETRY_AFTER_SECONDS));
+        let updated_at_unix_ms = now_unix_ms();
+        let retry_not_before_unix_ms =
+            retry_deadline(updated_at_unix_ms, retry_after_seconds)?;
+        self.connection()?
+            .execute(
+                "UPDATE secure_content_reaction_commands
+                 SET state = ?1, error_code = ?2, retry_after_seconds = ?3,
+                     retry_not_before_unix_ms = ?4, updated_at_unix_ms = ?5
+                 WHERE command_id = ?6 AND state = ?7
+                   AND lease_generation = ?8 AND session_generation = ?9",
+                params![
+                    state as i64,
+                    error_code,
+                    retry_after_seconds
+                        .map(|value| to_i64(value, "Reaction retry after"))
+                        .transpose()?,
+                    retry_not_before_unix_ms,
+                    updated_at_unix_ms,
+                    command_id,
+                    ReactionCommandState::InFlight as i64,
+                    to_i64(lease_generation, "Reaction lease generation")?,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn mark_reaction_committed(
+        &self,
+        command_id: &str,
+        lease_generation: u64,
+        session_generation: u64,
+        result_bytes: &[u8],
+        result_sha256: &[u8; 32],
+        projection_revision: u64,
+        post_id: &str,
+        projection_bytes: &[u8],
+    ) -> Result<bool, String> {
+        if result_bytes.is_empty()
+            || Sha256::digest(result_bytes).as_slice() != result_sha256
+            || projection_revision == 0
+            || post_id.trim().is_empty()
+            || projection_bytes.is_empty()
+        {
+            return Err("secure content Reaction completion is invalid".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_reaction_commands
+                 SET result_sha256 = ?1, result_bytes = ?2, state = ?3,
+                     projection_revision = ?4, error_code = NULL,
+                     retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?5
+                 WHERE command_id = ?6 AND post_id = ?7 AND state = ?8
+                   AND lease_generation = ?9 AND session_generation = ?10",
+                params![
+                    result_sha256.as_slice(),
+                    result_bytes,
+                    ReactionCommandState::Committed as i64,
+                    to_i64(projection_revision, "Reaction projection revision")?,
+                    now_unix_ms(),
+                    command_id,
+                    post_id,
+                    ReactionCommandState::InFlight as i64,
+                    to_i64(lease_generation, "Reaction lease generation")?,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 1 {
+            let projection_changed = transaction
+                .execute(
+                    "UPDATE secure_content_moment_projections
+                     SET projection_bytes = ?1, updated_at_unix_ms = ?2
+                     WHERE post_id = ?3",
+                    params![projection_bytes, now_unix_ms(), post_id],
+                )
+                .map_err(|error| error.to_string())?;
+            if projection_changed != 1 {
+                return Err(
+                    "secure content Reaction completion has no private Moment projection"
+                        .to_string(),
+                );
+            }
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(changed == 1)
+    }
+
     pub fn object_transfers_for_resource(
         &self,
         post_id: &str,
@@ -2044,6 +2432,12 @@ impl SecureContentStore {
                       UNION
                       SELECT content_id FROM secure_content_moment_projections WHERE post_id = ?1
                     )",
+                params![post_id],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "DELETE FROM secure_content_reaction_commands WHERE post_id = ?1",
                 params![post_id],
             )
             .map_err(|error| error.to_string())?;
@@ -2572,6 +2966,39 @@ fn publication_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredPubli
     })
 }
 
+fn reaction_command_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<StoredReactionCommand> {
+    let result_sha256 = row
+        .get::<_, Option<Vec<u8>>>(6)?
+        .map(|value| fixed_32(value, "Reaction result hash"))
+        .transpose()?;
+    let retry_after_seconds = row
+        .get::<_, Option<i64>>(14)?
+        .map(|value| from_i64(value, "Reaction retry after"))
+        .transpose()?;
+    Ok(StoredReactionCommand {
+        command_id: row.get(0)?,
+        post_id: row.get(1)?,
+        kind: row.get(2)?,
+        remove: row.get(3)?,
+        request_sha256: fixed_32(row.get(4)?, "Reaction request hash")?,
+        request_bytes: row.get(5)?,
+        result_sha256,
+        result_bytes: row.get(7)?,
+        state: ReactionCommandState::try_from(row.get::<_, i64>(8)?)
+            .map_err(conversion_error)?,
+        session_generation: from_i64(row.get(9)?, "session generation")?,
+        lease_generation: from_i64(row.get(10)?, "Reaction lease generation")?,
+        attempt_count: u32::try_from(row.get::<_, i64>(11)?)
+            .map_err(|_| conversion_error("Reaction attempt count is invalid"))?,
+        projection_revision: from_i64(row.get(12)?, "Reaction projection revision")?,
+        error_code: row.get(13)?,
+        retry_after_seconds,
+        retry_not_before_unix_ms: row.get(15)?,
+    })
+}
+
 fn moment_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredMomentCommand> {
     Ok(StoredMomentCommand {
         draft_id: row.get(0)?,
@@ -2761,6 +3188,27 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 projection_bytes BLOB NOT NULL,
                 updated_at_unix_ms INTEGER NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS secure_content_reaction_commands (
+                command_id TEXT PRIMARY KEY,
+                post_id TEXT NOT NULL,
+                kind INTEGER NOT NULL,
+                remove_reaction INTEGER NOT NULL CHECK(remove_reaction IN (0, 1)),
+                request_sha256 BLOB NOT NULL CHECK(length(request_sha256) = 32),
+                request_bytes BLOB NOT NULL,
+                result_sha256 BLOB CHECK(result_sha256 IS NULL OR length(result_sha256) = 32),
+                result_bytes BLOB,
+                state INTEGER NOT NULL,
+                session_generation INTEGER NOT NULL,
+                lease_generation INTEGER NOT NULL DEFAULT 0,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                projection_revision INTEGER NOT NULL DEFAULT 0,
+                error_code TEXT,
+                retry_after_seconds INTEGER,
+                retry_not_before_unix_ms INTEGER,
+                updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_secure_content_reaction_commands_post
+               ON secure_content_reaction_commands(post_id, updated_at_unix_ms DESC);
              CREATE TABLE IF NOT EXISTS secure_content_comment_drafts (
                 draft_id TEXT NOT NULL,
                 draft_revision INTEGER NOT NULL,
@@ -4067,5 +4515,145 @@ mod tests {
             store.comment_projection("post-1", "comment-1").unwrap(),
             None,
         );
+    }
+
+    #[test]
+    fn private_reaction_unknown_outcome_retries_the_exact_durable_command() {
+        let store = SecureContentStore::in_memory().unwrap();
+        store
+            .commit_content_root(
+                "post-1",
+                1,
+                "post-1",
+                &[7; 32],
+                None,
+                br#"{"post_id":"post-1","reaction_revision":"0","reactions":[]}"#,
+            )
+            .unwrap();
+        let request_bytes = b"signed-private-reaction".to_vec();
+        let command = StoredReactionCommand {
+            command_id: "reaction-v1-command".to_string(),
+            post_id: "post-1".to_string(),
+            kind: 1,
+            remove: false,
+            request_sha256: Sha256::digest(&request_bytes).into(),
+            request_bytes: request_bytes.clone(),
+            result_sha256: None,
+            result_bytes: None,
+            state: ReactionCommandState::Pending,
+            session_generation: 1,
+            lease_generation: 0,
+            attempt_count: 0,
+            projection_revision: 0,
+            error_code: None,
+            retry_after_seconds: None,
+            retry_not_before_unix_ms: None,
+        };
+        store.persist_reaction_command(&command).unwrap();
+        let first = store.acquire_reaction_command(&command.command_id, 1).unwrap();
+        assert_eq!(first.request_bytes, request_bytes);
+        assert_eq!(first.attempt_count, 1);
+        assert!(store
+            .mark_reaction_failure(
+                &command.command_id,
+                first.lease_generation,
+                first.session_generation,
+                ReactionCommandState::UnknownCommit,
+                "REACTION_RESULT_UNKNOWN",
+                None,
+            )
+            .unwrap());
+
+        let retry = store.acquire_reaction_command(&command.command_id, 2).unwrap();
+        assert_eq!(retry.request_bytes, request_bytes);
+        assert_eq!(retry.request_sha256, command.request_sha256);
+        assert_eq!(retry.attempt_count, 2);
+        assert!(!store
+            .mark_reaction_failure(
+                &command.command_id,
+                first.lease_generation,
+                first.session_generation,
+                ReactionCommandState::Rejected,
+                "REACTION_REJECTED",
+                None,
+            )
+            .unwrap());
+
+        let result_bytes = b"committed-private-reaction".to_vec();
+        let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
+        let projection_bytes =
+            br#"{"post_id":"post-1","reaction_revision":"4","reactions":[]}"#;
+        assert!(store
+            .mark_reaction_committed(
+                &command.command_id,
+                retry.lease_generation,
+                retry.session_generation,
+                &result_bytes,
+                &result_sha256,
+                4,
+                "post-1",
+                projection_bytes,
+            )
+            .unwrap());
+        let committed = store
+            .reaction_command(&command.command_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(committed.state, ReactionCommandState::Committed);
+        assert_eq!(committed.result_bytes, Some(result_bytes));
+        assert_eq!(committed.result_sha256, Some(result_sha256));
+        assert_eq!(committed.projection_revision, 4);
+        assert_eq!(
+            store.projection("post-1").unwrap(),
+            Some(projection_bytes.to_vec())
+        );
+
+        let next_request_bytes = b"signed-private-unreaction".to_vec();
+        let next_command = StoredReactionCommand {
+            command_id: "reaction-v1-next".to_string(),
+            post_id: "post-1".to_string(),
+            kind: 1,
+            remove: true,
+            request_sha256: Sha256::digest(&next_request_bytes).into(),
+            request_bytes: next_request_bytes,
+            result_sha256: None,
+            result_bytes: None,
+            state: ReactionCommandState::Pending,
+            session_generation: 2,
+            lease_generation: 0,
+            attempt_count: 0,
+            projection_revision: 0,
+            error_code: None,
+            retry_after_seconds: None,
+            retry_not_before_unix_ms: None,
+        };
+        store.persist_reaction_command(&next_command).unwrap();
+
+        let commands = store.reaction_commands().unwrap();
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].command_id, next_command.command_id);
+
+        let oversized_retry = store
+            .acquire_reaction_command(&next_command.command_id, 2)
+            .unwrap();
+        assert!(store
+            .mark_reaction_failure(
+                &next_command.command_id,
+                oversized_retry.lease_generation,
+                oversized_retry.session_generation,
+                ReactionCommandState::Retrying,
+                "REACTION_RETRYABLE",
+                Some(u64::MAX),
+            )
+            .unwrap());
+        let retryable = store
+            .reaction_command(&next_command.command_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            retryable.retry_after_seconds,
+            Some(MAX_REACTION_RETRY_AFTER_SECONDS),
+        );
+        assert!(retryable.retry_not_before_unix_ms.is_some());
     }
 }

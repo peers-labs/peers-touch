@@ -1516,23 +1516,36 @@ func (s *PrivateContentService) GetPrivateMoment(
 	if err != nil {
 		return nil, err
 	}
+	metadata := &privatecontentpb.PostMetadata{
+		PostId:    read.Post.PostID,
+		ContentId: read.Post.ContentID,
+		Author: proto.Clone(
+			proof.GetAuthor().GetActor(),
+		).(*actormodel.ActorRef),
+		Type:         postType,
+		AudienceKind: parseStoredAudienceKind(read.Snapshot.AudienceKind),
+		CreatedAt:    timestamppb.New(read.Post.CreatedAt),
+		UpdatedAt:    timestamppb.New(read.Post.UpdatedAt),
+		Stats: &actormodel.PostStats{
+			CommentsCount: read.Post.CommentsCount,
+			LikesCount:    read.Post.ReactionsCount,
+		},
+	}
+	postProjection, reactionProjectionRevision, err := s.privateMomentPostProjection(
+		ctx,
+		nil,
+		s.localStationPeerID,
+		viewer.GetActor().GetPtid(),
+		metadata,
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &privatecontentpb.GetMomentResourceResponse{
+		Post:                       postProjection,
+		ReactionProjectionRevision: reactionProjectionRevision,
 		Resource: &privatecontentpb.PostResource{
-			Metadata: &privatecontentpb.PostMetadata{
-				PostId:    read.Post.PostID,
-				ContentId: read.Post.ContentID,
-				Author: proto.Clone(
-					proof.GetAuthor().GetActor(),
-				).(*actormodel.ActorRef),
-				Type:         postType,
-				AudienceKind: parseStoredAudienceKind(read.Snapshot.AudienceKind),
-				CreatedAt:    timestamppb.New(read.Post.CreatedAt),
-				UpdatedAt:    timestamppb.New(read.Post.UpdatedAt),
-				Stats: &actormodel.PostStats{
-					CommentsCount: read.Post.CommentsCount,
-					LikesCount:    read.Post.ReactionsCount,
-				},
-			},
+			Metadata: metadata,
 			Body: &privatecontentpb.PostResource_PrivateContent{
 				PrivateContent: privateContentAccess(
 					payload,

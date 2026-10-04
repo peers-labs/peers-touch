@@ -38,6 +38,12 @@ export const REQUIRED_PRIVATE_MEDIA_KEYS = Object.freeze([
   'MEDIA_OFFLINE_RETRYABLE',
 ]);
 
+export const REQUIRED_PRIVATE_REACTION_KEYS = Object.freeze([
+  'REACTION_PENDING',
+  'REACTION_RETRYING',
+  'REACTION_REJECTED',
+]);
+
 export const ALLOWED_METRIC_NAMES = new Set([
   'social_cross_station_delivery_latency_seconds',
   'social_cross_station_delivery_total',
@@ -319,7 +325,11 @@ export function validateSocialCrossStationOperability({
   const enErrors = parseJson(enErrorsText, 'English error locale');
   const zhErrors = parseJson(zhErrorsText, 'Chinese error locale');
 
-  for (const prefix of ['moments.private.state.', 'moments.private.media.']) {
+  for (const prefix of [
+    'moments.private.state.',
+    'moments.private.media.',
+    'moments.reaction.status.',
+  ]) {
     const enKeys = keysWithPrefix(enMoments, prefix);
     const zhKeys = keysWithPrefix(zhMoments, prefix);
     if (JSON.stringify(enKeys) !== JSON.stringify(zhKeys)) {
@@ -358,6 +368,19 @@ export function validateSocialCrossStationOperability({
     );
     requireLocaleKey(enMoments, 'English', `moments.private.media.${state}`);
     requireLocaleKey(zhMoments, 'Chinese', `moments.private.media.${state}`);
+  }
+  for (const state of REQUIRED_PRIVATE_REACTION_KEYS) {
+    requireOccurrence(
+      privateNativeText,
+      new RegExp(`'${state}'`, 'gu'),
+      `typed private Reaction state ${state}`,
+    );
+    requireLocaleKey(enMoments, 'English', `moments.reaction.status.${state}`);
+    requireLocaleKey(zhMoments, 'Chinese', `moments.reaction.status.${state}`);
+  }
+  for (const key of ['moments.reaction.retry', 'moments.reaction.retryUnavailable']) {
+    requireLocaleKey(enMoments, 'English', key);
+    requireLocaleKey(zhMoments, 'Chinese', key);
   }
 
   const errorPattern = /ERROR_CODE_((?:CONTENT_PREKEY|SOCIAL_PRIVATE|FEDERATED_SOCIAL)_[A-Z0-9_]+)\s*=\s*(\d+)\s*;/gu;

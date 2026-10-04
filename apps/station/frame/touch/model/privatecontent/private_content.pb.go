@@ -4199,11 +4199,12 @@ type GetMomentResourceResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Fields 1 and 2 intentionally preserve GetPostResponse wire semantics so
 	// existing Moment clients can keep decoding public reads during W6/W7.
-	Post          *model.Post                  `protobuf:"bytes,1,opt,name=post,proto3" json:"post,omitempty"`
-	Explanation   *model.FeedObjectExplanation `protobuf:"bytes,2,opt,name=explanation,proto3" json:"explanation,omitempty"`
-	Resource      *PostResource                `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Post                       *model.Post                  `protobuf:"bytes,1,opt,name=post,proto3" json:"post,omitempty"`
+	Explanation                *model.FeedObjectExplanation `protobuf:"bytes,2,opt,name=explanation,proto3" json:"explanation,omitempty"`
+	Resource                   *PostResource                `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
+	ReactionProjectionRevision uint64                       `protobuf:"varint,4,opt,name=reaction_projection_revision,json=reactionProjectionRevision,proto3" json:"reaction_projection_revision,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *GetMomentResourceResponse) Reset() {
@@ -4255,6 +4256,13 @@ func (x *GetMomentResourceResponse) GetResource() *PostResource {
 		return x.Resource
 	}
 	return nil
+}
+
+func (x *GetMomentResourceResponse) GetReactionProjectionRevision() uint64 {
+	if x != nil {
+		return x.ReactionProjectionRevision
+	}
+	return 0
 }
 
 type GetMomentCommentResourceRequest struct {
@@ -5248,11 +5256,12 @@ const file_domain_social_private_content_proto_rawDesc = "" +
 	"\acomment\x18\x01 \x01(\v2,.peers_touch.model.social.v1.CommentResourceR\acomment\x12!\n" +
 	"\fexact_replay\x18\x02 \x01(\bR\vexactReplay\"3\n" +
 	"\x18GetMomentResourceRequest\x12\x17\n" +
-	"\apost_id\x18\x01 \x01(\tR\x06postId\"\xef\x01\n" +
+	"\apost_id\x18\x01 \x01(\tR\x06postId\"\xb1\x02\n" +
 	"\x19GetMomentResourceResponse\x125\n" +
 	"\x04post\x18\x01 \x01(\v2!.peers_touch.model.social.v1.PostR\x04post\x12T\n" +
 	"\vexplanation\x18\x02 \x01(\v22.peers_touch.model.social.v1.FeedObjectExplanationR\vexplanation\x12E\n" +
-	"\bresource\x18\x03 \x01(\v2).peers_touch.model.social.v1.PostResourceR\bresource\"Y\n" +
+	"\bresource\x18\x03 \x01(\v2).peers_touch.model.social.v1.PostResourceR\bresource\x12@\n" +
+	"\x1creaction_projection_revision\x18\x04 \x01(\x04R\x1areactionProjectionRevision\"Y\n" +
 	"\x1fGetMomentCommentResourceRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12\x1d\n" +
 	"\n" +

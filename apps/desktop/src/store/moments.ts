@@ -7,6 +7,7 @@ import {
   PostAuthorSchema,
   PostSchema,
   PostType,
+  ReactionKind,
 } from '../gen/proto/domain/social/post_pb';
 import type {
   Audience,
@@ -14,7 +15,6 @@ import type {
   Mention,
   Post,
   PostAuthor,
-  ReactionKind,
   ReactionSummary,
 } from '../gen/proto/domain/social/post_pb';
 import type { Comment } from '../gen/proto/domain/social/comment_pb';
@@ -299,6 +299,7 @@ function privateMomentPostShell(
     audience: create(AudienceSchema, {
       kind: PRIVATE_AUDIENCE_KINDS[projection.audienceKind],
     }),
+    reactions: projection.reactions ?? [],
   });
 }
 
@@ -314,21 +315,27 @@ function projectPrivateMoments(
   projections: readonly PrivateMomentProjection[],
 ): Partial<MomentsState> {
   if (!actorPtid) return {};
-  const visible = projections
-    .filter((projection) => (
-      projection.state === 'CONTENT_READY'
-      && projection.audienceKind !== 'UNKNOWN'
-    ))
-    .map(privateMomentPostShell);
+  const visible = projections.filter((projection) => (
+    projection.state === 'CONTENT_READY'
+    && projection.audienceKind !== 'UNKNOWN'
+  ));
   if (visible.length === 0) return {};
 
   const postsById = { ...state.postsById };
-  for (const post of visible) {
+  const reactions = { ...state.reactions };
+  for (const projection of visible) {
+    const post = privateMomentPostShell(projection);
+    if (!projection.reactionsHydrated) {
+      post.reactions = reactions[post.id] ?? postsById[post.id]?.reactions ?? [];
+    }
     postsById[post.id] = post;
+    if (projection.reactionsHydrated) {
+      reactions[post.id] = post.reactions;
+    }
   }
   const postIds = [
     ...new Set([
-      ...visible.map((post) => post.id),
+      ...visible.map((projection) => projection.postId),
       ...state.feeds.home.postIds,
     ]),
   ];
@@ -340,6 +347,7 @@ function projectPrivateMoments(
   );
   return {
     postsById,
+    reactions,
     feeds: {
       ...state.feeds,
       home: {
@@ -396,6 +404,7 @@ interface MomentsState {
     options?: { refresh?: boolean; sort?: TimelineSort },
   ) => Promise<void>;
   syncProjection: (reason: string) => Promise<void>;
+  hydratePrivateMoments: (projections: readonly PrivateMomentProjection[]) => void;
   loadCircleFeed: (circleId: string, refresh?: boolean) => Promise<void>;
   loadUserFeed: (actorPtid: string, refresh?: boolean) => Promise<void>;
 
@@ -643,6 +652,15 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       log.warn(TAG, 'syncProjection failed', { reason, err: String(err) });
       throw err;
     }
+  },
+
+  hydratePrivateMoments: (projections) => {
+    const privateState = usePrivateMomentsStore.getState();
+    set((state) => projectPrivateMoments(
+      state,
+      privateState.scope.actorPtid,
+      projections,
+    ));
   },
 
   loadCircleFeed: async (circleId, refresh = false) => {
@@ -926,6 +944,24 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   reactToPost: async (postId, kind) => {
     const generation = storeGeneration;
     try {
+      const post = get().postsById[postId];
+      if (
+        post?.audience
+        && post.audience.kind !== Audience_Kind.PUBLIC
+        && post.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
+      ) {
+        const result = await usePrivateMomentsStore
+          .getState()
+          .reactToPost(postId, kind);
+        if (generation !== storeGeneration) return;
+        set((state) => ({
+          reactions: {
+            ...state.reactions,
+            [postId]: result.reactions,
+          },
+        }));
+        return;
+      }
       const resp = await socialReact(postId, kind);
       if (generation !== storeGeneration) return;
       // The server returns the post-wide reaction summary list; trust
@@ -943,6 +979,27 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   unreactToPost: async (postId, kind) => {
     const generation = storeGeneration;
     try {
+      const post = get().postsById[postId];
+      if (
+        post?.audience
+        && post.audience.kind !== Audience_Kind.PUBLIC
+        && post.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
+      ) {
+        const result = await usePrivateMomentsStore
+          .getState()
+          .unreactToPost(
+            postId,
+            kind ?? ReactionKind.REACTION_UNSPECIFIED,
+          );
+        if (generation !== storeGeneration) return;
+        set((state) => ({
+          reactions: {
+            ...state.reactions,
+            [postId]: result.reactions,
+          },
+        }));
+        return;
+      }
       const resp = await socialUnreact(postId, kind);
       if (generation !== storeGeneration) return;
       set((s) => ({

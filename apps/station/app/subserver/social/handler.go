@@ -130,8 +130,8 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),
 
 		// Reactions
-		server.NewTypedHandler("social-react", routeSocialMomentReact, server.POST, s.handleReact, cw, jw),
-		server.NewTypedHandler("social-unreact", routeSocialMomentUnreact, server.POST, s.handleUnreact, cw, jw),
+		server.NewTypedHandler("social-react", routeSocialMomentReact, server.POST, s.handleReact, cw, deviceIDWrapper, jw),
+		server.NewTypedHandler("social-unreact", routeSocialMomentUnreact, server.POST, s.handleUnreact, cw, deviceIDWrapper, jw),
 
 		// Comments
 		server.NewStrictTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleListMomentComments, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
@@ -1358,6 +1358,32 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
 		return nil, server.BadRequest("reaction kind is required")
 	}
+	if _, public := canonicalPublicSocialID(req.PostId); !public &&
+		s.privateContentSvc != nil {
+		remote, err := s.privateContentSvc.IsRemotePrivateMoment(
+			ctx,
+			req.PostId,
+			actorPTID,
+		)
+		if err != nil {
+			return nil, privateContentHandlerError(err)
+		}
+		if remote {
+			author, err := s.privateContentAuthor(ctx)
+			if err != nil {
+				return nil, err
+			}
+			response, err := s.privateContentSvc.ReactPrivateMoment(
+				ctx,
+				author,
+				req,
+			)
+			if err != nil {
+				return nil, privateContentHandlerError(err)
+			}
+			return response, nil
+		}
+	}
 	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err
 	}
@@ -1378,6 +1404,35 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 	}
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
+	}
+	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
+		return nil, server.BadRequest("reaction kind is required")
+	}
+	if _, public := canonicalPublicSocialID(req.PostId); !public &&
+		s.privateContentSvc != nil {
+		remote, err := s.privateContentSvc.IsRemotePrivateMoment(
+			ctx,
+			req.PostId,
+			actorPTID,
+		)
+		if err != nil {
+			return nil, privateContentHandlerError(err)
+		}
+		if remote {
+			author, err := s.privateContentAuthor(ctx)
+			if err != nil {
+				return nil, err
+			}
+			response, err := s.privateContentSvc.UnreactPrivateMoment(
+				ctx,
+				author,
+				req,
+			)
+			if err != nil {
+				return nil, privateContentHandlerError(err)
+			}
+			return response, nil
+		}
 	}
 	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err
