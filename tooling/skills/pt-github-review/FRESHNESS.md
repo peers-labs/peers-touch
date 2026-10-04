@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-04
-covered_docs_hash: 881df95e255f6de7c2074dc53a9cf35c27947542a26c090488a66d4743464cf8
+covered_docs_hash: a6a1bd3c07c305ca9cbf4b8e7f347191ac8da2ff93f9dfa2e0e2a4494d814e0f
 
 covered_docs:
   - AGENTS.md
@@ -33,13 +33,26 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 
 ## 2026-10-04 Review
 
-DWF-D34 separates non-destructive Agent integration projection from
-machine-wide legacy-store hard cut and retired-projection GC. Review now
-rejects ordinary projection that depends on unrelated-worktree idle state,
-implicit cleanup, interchangeable control-action grants, or destructive cleanup
-without global-idle proof. `SKILL.md`, the owner-rooted workflow invariant, and
-dedicated control/action-store fixtures cover these checks; no generic review
-fixture is required.
+DWF-D37 removes Completion Review from IDE Hook and Workflow Binding
+authorization. Review now requires a repository-native, request-scoped
+capability, internally derived delegation digest, assessment digest, and HMAC
+proof while preserving immutable current-source checks. Independent reviewer
+launch remains a Dev Workflow obligation because the machine proof establishes
+delegated assessment provenance, not cognitive independence.
+The generic PR review Skill needs no behavior change; the Completion Review
+owner, product contract, host-neutral invariant, and focused regression suite
+carry this boundary.
+
+DWF-D34 through DWF-D36 separate non-destructive Agent integration projection
+from machine-wide cleanup, project one equivalent canonical TRAE Hook into
+every participating root, and remove the projection's circular dependency on a
+grant issued by the Hook being installed. Review now rejects ordinary
+projection that depends on unrelated-worktree idle state or a Hook-issued
+grant, singleton bootstrap assumptions, implicit cleanup, interchangeable
+cleanup grants, or destructive cleanup without global-idle proof.
+`SKILL.md`, the owner-rooted workflow invariant, and dedicated multi-root,
+control, Kernel, and Action Store fixtures cover these checks; no generic
+review fixture is required.
 
 ## 2026-10-03 Review
 

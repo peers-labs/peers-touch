@@ -106,8 +106,9 @@ Accepted 决策定义目标合同，不等于实现或验收已经通过。在�
   unsupported contract。
 - Agent 活动可能产生噪声。DWF-D29 只保留有界收据，并由 DWF-D27 reducer
   归并为稳定状态。
-- 完成审查可能流于形式。DWF-D28 必须绑定 reviewer identity、source digest、
-  obligation digest、findings 和 verdict，并在漂移后失效。
+- 完成审查可能流于形式。DWF-D28/DWF-D37 必须绑定 source、obligation、
+  delegated assessment provenance、findings 和 verdict，并在漂移后失效；
+  独立 reviewer launch 由 Dev Workflow 编排。
 - Doctor 可能误把局部成功当作整体健康。DWF-D30 必须逐项检查产品承诺并以
   非零退出码暴露 required failure。
 

@@ -1,7 +1,7 @@
 # Host-Neutral Agent Integration
 
 > **Status**: accepted
-> **Created**: 2026-09-19 | **Updated**: 2026-10-01
+> **Created**: 2026-09-19 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
 
 ## Goal
@@ -18,11 +18,12 @@ semantic integration, not filesystem copying.
 The `peers-dev-workflow` repository owns the canonical implementation and
 distribution contract. It is not the runtime-state source for consuming
 worktrees. Each installed adapter contributes a canonical integration candidate.
-One workspace bootstrap receives every multi-root hook event and resolves the
-explicit target worktree before the first blockable event creates the immutable
-OWNER `executionRoot`.
+Equivalent Hooks in participating multi-root folders dispatch to the selected
+source root's same canonical integration. The Kernel resolves the explicit
+target worktree before the first blockable event creates the immutable OWNER
+`executionRoot`.
 
-The bootstrap's own filesystem location is never an execution-root hint. The
+The Hook's own filesystem location is never an execution-root hint. The
 first `PreToolUse` uses a host-provided task root only when it matches one
 declared workspace root. Without that field, every mutation target must map to
 the same single workspace root. Missing or conflicting evidence returns
@@ -71,8 +72,8 @@ admission and cannot claim child independence. WORKER/REVIEWER assignment is
 create-once, carries root/parent binding digests plus the Development Session
 and operation IDs, and has a bounded lease. Creation requires the exact current
 `active-work.json` and `session.json` identity. Terminal receipts close child
-liveness; expired or terminal children never participate in current owner or
-Completion Review selection.
+liveness; expired or terminal children never participate in current owner
+selection.
 
 TRAE `SubagentStart` and `SubagentStop` are the lifecycle boundaries for
 assignment claim and terminalization. `PreCompact` records the current
@@ -82,9 +83,11 @@ the same root, parent, assignment, Session, workspace, and execution root before
 restoring context. Task changes update only the projected Development Session
 identity; they do not create another OWNER.
 
-Completion Review schema v2 uses only the `completion-reviews-v2` machine
-namespace. Pre-hard-cut review records remain untouched and are never loaded,
-translated, or copied into current authority.
+Completion Review is repository-native and does not consume host bindings or
+Action Receipts. Schema v3 uses only the `completion-reviews-v3` machine
+namespace with a request-scoped reviewer capability. Earlier review records
+remain untouched and are never loaded, translated, or copied into current
+authority.
 
 ## Required Sequence
 
@@ -109,9 +112,9 @@ translated, or copied into current authority.
    references, and workflow identity mismatches. A bound workspace requires a
    tracked declaration locator; only an unbound pre-Plan workspace may carry an
    untracked declaration during this source-only audit.
-5. Release the active Development declaration, prove no live action except the
-   current exact OWNER-bound installer command, then install the current host
-   projection without prompting:
+5. Install the current non-destructive host projection without prompting. This
+   step does not release the active declaration and does not depend on a Hook
+   grant:
 
    ```bash
    make skills IDE=<trae|cursor|codex>
@@ -123,20 +126,20 @@ translated, or copied into current authority.
    every canonical `pt-*` Skill. Codex additionally receives
    `.agents/plugins/pt-ew-plugin`; Cursor receives merged project-native
    `.cursor/hooks.json` entries for `sessionStart`, `beforeSubmitPrompt`,
-   `preToolUse`, and `stop`, all with `failClosed: true`; TRAE receives one
-   workspace bootstrap hook selected from the active `.code-workspace`
-   descriptor, including `SubagentStart`, `SubagentStop`, `PreCompact`, and
-   `PostCompact`. Per-worktree managed TRAE hook entries are removed. No
+   `preToolUse`, and `stop`, all with `failClosed: true`; TRAE receives
+   equivalent canonical Hooks in the selected source root, descriptor
+   bootstrap root, and descriptor roots with an existing real `.trae`
+   directory, including `SubagentStart`, `SubagentStop`, `PreCompact`, and
+   `PostCompact`. Descriptor roots without `.trae` remain untouched. No
    user-global hook file is modified.
    Ordinary install never deletes conversation or workflow-action stores. It
-   runs while holding the machine work-ledger lock and consumes one live OWNER
-   `skills` Action Receipt only when its canonical binding resolves to the
-   selected source worktree and the Kernel issued a create-once grant for that
-   exact action ID. Unrelated live declarations, child assignments, workflow
-   actions, and Action Store activity do not participate in projection
-   admission.
+   runs while holding the machine work-ledger lock and does not require a
+   grant from the Hook it installs. Canonical source, host-root, workspace,
+   Hook-merge, symlink-boundary, and callback-proof checks remain fail closed.
+   Unrelated live declarations, child assignments, workflow actions, and
+   Action Store activity do not participate in projection admission.
    `skills-hard-cut` and `skills-gc` use separate OWNER_CONTROL labels and
-   create-once grants. Only those cleanup commands reject every live machine
+   create-once OWNER grants. Only those cleanup commands reject every live machine
    declaration, child assignment, unrelated canonical workflow action, and
    Action Store lock as `GLOBAL_WORKFLOW_NOT_IDLE`. The control plane validates
    the ledger, binding, and Action stores through their canonical owners while
@@ -163,7 +166,7 @@ translated, or copied into current authority.
    There is no acknowledgement command or session-hash bypass. Restart the IDE
    only when changed hooks cannot be reloaded by the current host, then rerun
    the audit. The audit verifies receipt schema/kind, workspace descriptor and
-   bootstrap root, branch, HEAD,
+   participating Hook roots, branch, HEAD,
    recursive catalog identity, dirty catalog status, callback proof, and every
    projected symlink's exact canonical target before it reports `PASS`. It also
    invokes the canonical
@@ -221,8 +224,8 @@ Required report fields:
   do not project a symlinked external implementation.
 - `CANONICAL_PLUGIN_SOURCE_INVALID`: restore the current worktree's canonical
   `tooling/plugins/pt-ew-plugin` source.
-- `TRAE_WORKSPACE_BOOTSTRAP_INVALID`: repair the one descriptor-selected
-  bootstrap hook without replacing unrelated hook entries.
+- `TRAE_WORKSPACE_BOOTSTRAP_INVALID`: repair the descriptor or participating
+  canonical Hook projections without replacing unrelated hook entries.
 - `CURSOR_HOOKS_INVALID`: repair the project hook file without replacing
   unrelated hook entries.
 - `WORKFLOW_BINDING_INVALID`: repair the owner-controlled current binding
@@ -235,7 +238,8 @@ Required report fields:
 
 Fleet integration is complete only when every selected active worktree reports
 audit `PASS`, no host discovery root exposes the legacy scheduler, the
-multi-root workspace has exactly one managed bootstrap, each owner lineage
+multi-root workspace has one exact managed Hook per event in every participating
+root, each owner lineage
 proves immutable execution-root binding and cross-root write denial, global
 hooks remain unchanged, and each resumed Plan advances at least one legal
 owner-controlled action. Stop proof additionally requires the exact

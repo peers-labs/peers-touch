@@ -44,6 +44,9 @@
 | DWF-D32 | Aggregate module impacts before resource acquisition | accepted |
 | DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | accepted |
 | DWF-D34 | Separate live integration install from global-idle cleanup | accepted |
+| DWF-D35 | Project one canonical TRAE hook into every participating workspace root | accepted |
+| DWF-D36 | Bootstrap non-destructive integration projection outside the Hook grant cycle | accepted |
+| DWF-D37 | Make Completion Review a repository-native reviewer handoff | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1236,9 +1239,10 @@ Passing implementation checks did not independently verify that the current sour
 ### Decision
 
 Every Task completion and final Plan completion requires a create-once
-Completion Review receipt with `PASS`, produced by a reviewer context distinct
-from the implementation context and bound to current source and obligation
-digests.
+Completion Review receipt with `PASS`, bound to current source and obligation
+digests. Dev Workflow must delegate the immutable request to an independent
+reviewer. The machine owner proves request-scoped delegation and assessment
+provenance; it does not claim to prove cognitive independence.
 
 ### Rationale
 
@@ -1251,7 +1255,7 @@ required work, deletions, and claim boundaries were included.
 
 ### Consequences
 
-Missing, failed, same-context, or stale receipts reject lifecycle completion.
+Missing, failed, undelegated, or stale receipts reject lifecycle completion.
 Source or obligation drift reopens the affected closure through the existing
 source-invalidation owner.
 
@@ -1481,22 +1485,22 @@ history rather than a live ownership conflict.
 - One pure `BindingProjection` joins host identity, owner or child binding,
   role, lineage, release state, execution root, and per-event subject/tool/
   target roots. Hook context, status, readiness, handoff, Stop, Action Receipt,
-  worker result, and Completion Review consume that projection.
-- Completion Review selects the exact OWNER or assigned REVIEWER from the
-  current owner-command Action Receipt. There is no worktree-wide active
-  binding fallback.
+  and worker result consume that projection.
+- Completion Review originally selected the exact OWNER or assigned REVIEWER
+  from the current owner-command Action Receipt. DWF-D37 supersedes this path
+  with a repository-native reviewer capability and no binding fallback.
 - `CROSS_WORKTREE_WRITE_DENIED` remains unchanged: all lineage members inherit
   the OWNER execution root, may read sibling roots, and cannot write them.
-- TRAE multi-root installations have one workspace bootstrap hook. That hook
-  dispatches to the selected canonical integration instead of installing
-  competing owner hooks in every worktree.
-- Rollout is a hard cut. After proving no live declaration, child assignment,
-  or workflow action exists on the machine other than the current exact
-  OWNER-bound installer command, the installer deletes
+- TRAE multi-root hook projection was originally limited to one workspace
+  bootstrap. DWF-D35 supersedes this projection detail without changing the
+  single OWNER binding or canonical Kernel authority defined here.
+- Rollout originally combined projection with a hard cut. DWF-D34 and DWF-D36
+  supersede that command boundary: ordinary projection is non-destructive and
+  ungranted, while explicit `skills-hard-cut` alone proves global idle and deletes
   `~/.peers-touch/dev/conversations/` and every
-  `~/.peers-touch/dev/workspaces/*/workflow/actions/` directory before
-  installing the new bootstrap. Plan/Session/Review/Acceptance stores remain.
-  No legacy schema reader, importer, alias, fallback, or dual-write is allowed.
+  `~/.peers-touch/dev/workspaces/*/workflow/actions/` directory.
+  Plan/Session/Review/Acceptance stores remain. No legacy schema reader,
+  importer, alias, fallback, or dual-write is allowed.
 
 ### Rationale
 
@@ -1518,17 +1522,18 @@ heuristic.
 
 ### Consequences
 
-- Internal worker/reviewer launchers must issue and terminalize assignments.
+- Internal worker launchers must issue and terminalize assignments. DWF-D37
+  owns Completion Review handoff separately.
 - A child without a valid assignment cannot claim independent worker or
   reviewer authority.
 - Machine-local conversation and Action Receipt history is intentionally
   discarded at rollout; closed Plan/Session/evidence owners remain unchanged.
-- Multi-root bootstrap installation is a separately declared cross-root
-  rollout operation and is not performed implicitly by source implementation.
-- Tests must cover one owner plus two child roles, nested parent linkage,
-  expired and terminal child behavior, compaction/task switching, subject-root
-  projection, exact Completion Review selection with twenty stale children,
-  and wrong-binding status/final claims.
+- Multi-root hook projection is a separately declared cross-root rollout
+  operation and is not performed implicitly by source implementation.
+- Tests must cover one owner plus child roles, nested parent linkage, expired
+  and terminal child behavior, compaction/task switching, subject-root
+  projection, Completion Review independence from stale children, and
+  wrong-binding status/final claims.
 
 ## DWF-D34: Separate Live Integration Install From Global-Idle Cleanup
 
@@ -1552,19 +1557,19 @@ to emit the exact OWNER Action Receipt required to close another workflow.
 
 ### Decision
 
-- `make skills IDE=<host>` is a non-destructive projection operation. It keeps
-  exact current OWNER `skills` grant consumption and the machine ledger lock,
-  but it does not require unrelated worktrees to be idle and never deletes
-  workflow stores.
+- `make skills IDE=<host>` is a non-destructive projection operation. DWF-D36
+  supersedes its original OWNER grant requirement; the machine ledger lock and
+  strict projection validation remain. It does not require unrelated worktrees
+  to be idle and never deletes workflow stores.
 - `make skills-hard-cut IDE=<host>` is the sole owner of legacy conversation
   and Action Receipt store deletion. It requires an exact current OWNER
   `skills-hard-cut` grant and global-idle proof before deleting anything.
 - `make skills-gc IDE=<host>` is the sole owner of retired project integration
   cleanup. It requires an exact current OWNER `skills-gc` grant and
   global-idle proof.
-- Each command has a distinct OWNER_CONTROL operation label. Grants are
-  create-once, exact-workspace, exact-root, and single-use. One command cannot
-  consume another command's grant.
+- Each command has a distinct OWNER_CONTROL operation label. Destructive
+  cleanup grants are create-once, exact-workspace, exact-root, and single-use.
+  One cleanup command cannot consume another command's grant.
 - Short machine-lock serialization remains because host projections and the
   machine receipt are shared mutation surfaces. Lock possession is not
   workflow-idle proof and cannot reject unrelated live declarations.
@@ -1578,8 +1583,8 @@ worktrees into a global upgrade lock.
 
 ### Alternatives Considered
 
-- Remove all installer grants: rejected because host hooks are an enforcement
-  boundary and must remain OWNER-authorized.
+- Remove all installer grants: rejected for destructive cleanup. DWF-D36 later
+  removes only the self-referential grant from non-destructive projection.
 - Keep the combined command and shorten declaration leases: rejected because
   unrelated liveness would still control source-local upgrades.
 - Let ordinary install opportunistically purge when the machine appears idle:
@@ -1594,3 +1599,202 @@ worktrees into a global upgrade lock.
   commands run during a globally idle window.
 - Tests and audit output must distinguish projection success from hard-cut or
   GC completion; installation success no longer claims machine cleanup.
+
+## DWF-D35: Project One Canonical TRAE Hook Into Every Participating Workspace Root
+
+**Status**: accepted
+**Date**: 2026-10-04
+
+### Context
+
+TRAE can open any folder from a multi-root workspace as an independent window.
+Limiting the managed Hook to the descriptor's first root leaves another source
+root unable to create its OWNER binding or exact `skills` grant. The installer
+then requires a grant that the current window can never emit, so the projection
+needed to repair the workflow is permanently self-blocked.
+
+The descriptor's folder order is not authority, and multiple transport entries
+do not imply multiple workflow owners. Every entry dispatches to the same
+worktree-local plugin and host-neutral Kernel, which resolves the execution
+root from explicit event evidence before creating one immutable OWNER binding.
+
+### Decision
+
+- TRAE projects an equivalent canonical managed Hook into the selected source
+  root, the descriptor bootstrap root, and every descriptor root that already
+  participates in TRAE through a real `.trae` directory.
+- The installer does not create `.trae` in otherwise untouched descriptor
+  roots. This bounds cross-root mutation while ensuring the current source
+  window and existing TRAE roots can authorize and enforce their own work.
+- All projected entries call the selected source root's same canonical plugin,
+  carry the same workspace descriptor, preserve unrelated Hook entries, and
+  remain transport only. They do not own binding, Plan, Session, or action
+  state.
+- Audit derives the same projection-root set, requires one exact managed entry
+  per event in each participating root, rejects managed entries outside that
+  set, and probes the selected source root directly.
+- Descriptor order, Hook file location, current editor, and Hook `cwd` never
+  select authority. The Kernel still requires an explicit declared task root
+  or a unique target-root resolution and otherwise returns
+  `WORKTREE_SELECTION_REQUIRED`.
+
+### Rationale
+
+A Hook is an event ingress, not an owner. Replicating the same fail-closed
+ingress at every participating root removes the bootstrap dependency without
+duplicating workflow truth or weakening exact root selection.
+
+### Alternatives Considered
+
+- Keep one descriptor-first bootstrap: rejected because independently opened
+  roots cannot trigger it and cannot bootstrap their required grant.
+- Create `.trae` in every descriptor root: rejected because it expands
+  cross-root mutation into folders that have not opted into TRAE projection.
+- Hand-write a receipt or bypass the grant for repair: rejected because it
+  would forge workflow authority and hide the broken bootstrap contract.
+
+### Consequences
+
+- A source root can repair or refresh its integration without IDE reload or
+  dependence on another workspace window.
+- Existing TRAE roots receive equivalent canonical Hook updates; untouched
+  roots remain untouched until they participate.
+- Tests must prove source/bootstrap/existing-root projection, untouched-root
+  preservation, folder-order neutrality, exact audit behavior, and direct
+  source-root callback proof.
+
+## DWF-D36: Bootstrap Non-Destructive Integration Projection Outside The Hook Grant Cycle
+
+**Status**: accepted
+**Date**: 2026-10-04
+
+### Context
+
+After DWF-D35 projected a canonical Hook into the current source root, the
+already-running TRAE window did not dynamically load the new project Hook.
+`make skills` still required an exact grant emitted only by `PreToolUse`, but
+that event could not reach the integration until `make skills` had installed
+the Hook and a new host session loaded it. The installer therefore depended on
+its own output and remained impossible to execute without Reload, a new
+session, or forged host identity.
+
+`skills` is non-destructive: it validates and projects repository-owned Skills,
+plugins, and merged project Hooks, preserves unrelated entries, and writes one
+installation lifecycle receipt. It never deletes workflow state. The two
+cleanup commands have materially different risk because they delete
+machine-local stores or retired projections.
+
+### Decision
+
+- `make skills IDE=<host>` does not require or consume a Workflow Action Grant.
+  It remains serialized by the machine ledger lock and fails closed on invalid
+  source, workspace descriptor, host root, symlink boundary, Hook merge, or
+  callback proof.
+- `skills` remains an `OWNER_CONTROL` label when observed through an active
+  Hook so activity and root-write enforcement stay visible. The Kernel and
+  Action Store do not issue a grant for that label.
+- `make skills-hard-cut` and `make skills-gc` remain the only grant-bearing
+  integration controls. Both require exact create-once OWNER grants and
+  global-idle proof before deletion.
+- Installation lifecycle receipts are evidence of projection outcome, not
+  authorization receipts. They may never substitute for cleanup grants.
+
+### Rationale
+
+A control cannot require authorization exclusively from the transport that
+the control installs. Removing that circular dependency from the bounded,
+non-destructive operation makes fresh installation and repair possible while
+retaining strict authority on every destructive path.
+
+### Alternatives Considered
+
+- Reload or open a new TRAE session after writing the Hook: rejected because
+  host restart is not a repository workflow primitive and can interrupt an
+  active Development Run.
+- Derive `chat_session_id` from `ICUBE_CODEMAIN_SESSION`: rejected because it
+  violates the host identity contract and would manufacture OWNER authority.
+- Keep a special bootstrap grant file: rejected because it creates a second
+  authorization truth and still needs an independent issuer.
+
+### Consequences
+
+- A clean worktree can run `make skills` before any Hook or OWNER binding
+  exists, and an active window can repair stale projection without Reload.
+- The ordinary projection command cannot authorize hard cut or GC.
+- Tests must prove ungranted projection success, no `skills` grant issuance,
+  exact grants for both cleanup labels, invalid-path fail closed behavior, and
+  truthful installation receipts.
+
+## DWF-D37: Make Completion Review A Repository-Native Reviewer Handoff
+
+**Status**: accepted
+**Date**: 2026-10-04
+
+### Context
+
+Completion Review preparation and submission required exact live
+`completion-review-prepare` and `completion-review-submit` Action Receipts.
+Those receipts are emitted only by an already-loaded IDE Hook. A source repair
+could install the canonical Hook without reload under DWF-D36, but the current
+host session still could not prepare its required review. The completion Gate
+therefore depended on host transport that the repository does not control and
+could deadlock a valid Plan Run after all source and functional proof passed.
+
+Completion Review needs independently delegated judgment and immutable
+current-source input. It does not need IDE write authorization:
+preparation only reads canonical Plan, Session, Git, and evidence state and
+writes an owner-private machine record; submission only consumes that bounded
+handoff and writes an immutable receipt.
+
+### Decision
+
+- Completion Review is a repository-native owner. `prepare` derives
+  implementation context digests from the successful Development Session and
+  inherited Task review records, not from a host binding.
+- `prepare` writes one immutable request and one owner-private, review-scoped
+  capability. The request stores only the capability digest. The handoff
+  returns the capability path for delivery to one independent reviewer.
+- `submit` requires that capability plus the owner-only assessment. It verifies
+  exact review and capability digests, derives delegation provenance
+  internally, and records an HMAC proof over the immutable request and
+  assessment. Callers cannot supply or override delegation provenance.
+- Request, capability, and receipt are create-once closed-shape records in the
+  `completion-reviews-v3` namespace. Earlier namespaces are inert history and
+  are never read, imported, migrated, or dual-written.
+- Current source, obligation, candidate Plan, evidence, mandatory finding,
+  derived-verdict, and immutable-receipt checks remain unchanged. Independent
+  reviewer launch remains an orchestration obligation because a repository
+  capability cannot prove cognitive or process independence.
+- DWF-D33 continues to govern IDE Hook authorization, OWNER/WORKER lineage,
+  cross-worktree writes, Action Receipts, status, handoff, and compaction. This
+  decision supersedes only its Completion Review binding and assignment path.
+
+### Rationale
+
+Independent review is a quality boundary, while host bindings are a tool
+authorization boundary. Binding the former to the latter made repository
+progress depend on whether an IDE dynamically reloaded integration files.
+A narrow cryptographic handoff keeps delegation provenance non-overridable and
+request-bound without making any host the Completion Review authority. It
+proves delegated assessment provenance, not reviewer independence.
+
+### Alternatives Considered
+
+- Require IDE reload or a new host session: rejected because host lifecycle is
+  not a repository workflow primitive and breaks continuous Plan Runs.
+- Let an OWNER binding submit review directly: rejected because it weakens the
+  independent-review boundary.
+- Keep Action Receipt binding as an optional fallback: rejected because it
+  leaves two review identity authorities and preserves host-dependent behavior.
+- Accept a caller-provided reviewer digest: rejected because arbitrary strings
+  do not prove possession of a request-scoped handoff.
+
+### Consequences
+
+- Completion Review works identically from TRAE, Cursor, Codex, CI, or a plain
+  shell after repository state is valid.
+- Reviewer launch remains agent-led; the owner passes only the bounded
+  capability path and immutable request to the independent reviewer.
+- Tests must prove operation without Hook receipts, wrong/missing capability
+  rejection, caller identity rejection, immutable concurrent submission,
+  inherited Plan contexts, source drift, and inert legacy namespaces.

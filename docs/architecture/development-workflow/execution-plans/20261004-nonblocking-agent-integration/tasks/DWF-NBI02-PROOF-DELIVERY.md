@@ -51,12 +51,12 @@
     },
     {
       "id": "nonblocking-integration-acceptance",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-infra-validation --gate acceptance-plan-self --gate acceptance-workflow-contract --gate development-workflow-control-plane --gate peers-dev-product --gate peers-dev-ui-browser-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-infra-validation --gate acceptance-plan-self --gate acceptance-runtime-provisioning-self --gate acceptance-workflow-contract --gate development-workflow-control-plane --gate dev-ui-browser-e2e --gate machine-dev-registry-self --gate peers-dev-product --gate peers-dev-ui-browser-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [
-    "All DWF-D34 source and Acceptance checks pass on exact source",
+    "All DWF-D34 through DWF-D37 source and Acceptance checks pass on exact source",
     "Architecture, invariant, command help, audit, and implementation agree",
     "Review finds no authorization weakening, cleanup escape, or compatibility shim",
     "Commit and pull request contain no pre-existing generated capability changes"

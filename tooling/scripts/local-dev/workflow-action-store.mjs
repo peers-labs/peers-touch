@@ -62,7 +62,6 @@ const OPERATION_TEXT = /^[A-Za-z0-9][A-Za-z0-9._:/ -]{0,127}$/;
 const TARGET_REF = /^[A-Za-z0-9][A-Za-z0-9._/@+-]*(?:\/[A-Za-z0-9._@+-]+)*$/;
 const ACTION_GRANT_KIND = 'peers-touch-workflow-action-grant';
 const INTEGRATION_CONTROL_LABELS = new Set([
-  'skills',
   'skills-hard-cut',
   'skills-gc',
 ]);

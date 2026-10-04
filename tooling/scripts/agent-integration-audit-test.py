@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -272,7 +273,6 @@ export function processStartIdentity() { return 'fixture'; }
         self,
         workspace: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        self.seed_live_workflow_state("installer-authorized")
         command = ["make", "skills", "IDE=trae"]
         if workspace is not None:
             command.append(f"WORKSPACE={workspace}")
@@ -309,7 +309,6 @@ export function processStartIdentity() { return 'fixture'; }
         )
 
     def prepare_codex_projection(self) -> None:
-        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -323,7 +322,11 @@ export function processStartIdentity() { return 'fixture'; }
             shutil.rmtree(actions)
 
     def write_live_declaration(self, state: str) -> None:
-        now = "2026-10-04T02:00:00.000Z"
+        now_value = datetime.now(timezone.utc)
+        now = now_value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        expires_at = (now_value + timedelta(minutes=10)).isoformat(
+            timespec="milliseconds",
+        ).replace("+00:00", "Z")
         declaration = {
             "declarationId": "OTHER-fedcba9876543210",
             "workItemId": "OTHER",
@@ -337,7 +340,7 @@ export function processStartIdentity() { return 'fixture'; }
             "state": state,
             "createdAt": now,
             "heartbeatAt": now,
-            "expiresAt": "2026-10-04T10:00:00.000Z",
+            "expiresAt": expires_at,
             "sourceClaims": [],
             "runtimeClaims": [],
             "planPath": None,
@@ -461,7 +464,8 @@ export function processStartIdentity() { return 'fixture'; }
             "leaseMs: 60_000,"
             "now"
             "});"
-            "if (mode.endsWith('-authorized')) {"
+            "if (mode.endsWith('-authorized') && "
+            "!mode.startsWith('installer-')) {"
             "action.issueWorkflowActionGrant(receipt, { machineRoot, now });"
             "}"
             "}"
@@ -546,7 +550,7 @@ export function processStartIdentity() { return 'fixture'; }
                 module.atomic_move_no_replace(Path("source"), Path("target"))
             )
 
-    def test_noninteractive_codex_install_retires_real_legacy_directory(self) -> None:
+    def test_ungranted_codex_install_retires_real_legacy_directory(self) -> None:
         legacy = self.root / ".agents/skills/pt-trae-goal-orchestrator"
         legacy.mkdir(parents=True)
         (legacy / "SKILL.md").write_text("legacy\n", encoding="utf-8")
@@ -554,7 +558,6 @@ export function processStartIdentity() { return 'fixture'; }
         unrelated.mkdir(parents=True)
         (unrelated / "keep.txt").write_text("keep\n", encoding="utf-8")
         environment = self.environment("installing-session")
-        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -770,13 +773,21 @@ export function processStartIdentity() { return 'fixture'; }
             },
         )
 
-    def test_trae_workspace_bootstrap_is_unique_and_folder_order_is_not_authority(
+    def test_trae_workspace_projects_bootstrap_source_and_existing_host_roots(
         self,
     ) -> None:
         bootstrap = self.root / "bootstrap"
+        connected = self.root / "connected"
         untouched = self.root / "untouched"
         bootstrap.mkdir()
+        connected.mkdir()
         untouched.mkdir()
+        connected_trae = connected / ".trae"
+        connected_trae.mkdir()
+        (connected_trae / "hooks.json").write_text(
+            json.dumps({"hooks": {}}),
+            encoding="utf-8",
+        )
         workspace = self.root / "fixture.code-workspace"
         workspace.write_text(
             json.dumps(
@@ -784,6 +795,7 @@ export function processStartIdentity() { return 'fixture'; }
                     "folders": [
                         {"path": "bootstrap"},
                         {"path": "."},
+                        {"path": "connected"},
                         {"path": "untouched"},
                     ]
                 }
@@ -814,13 +826,14 @@ export function processStartIdentity() { return 'fixture'; }
             (bootstrap / ".trae/hooks.json").read_text(encoding="utf-8")
         )
         self.assertIn("--workspace", json.dumps(bootstrap_hooks))
-        self.assertNotIn(
+        self.assertIn(
             "pt-ew-plugin",
             current_hooks.read_text(encoding="utf-8"),
         )
-        self.assertEqual(
-            json.loads(current_hooks.read_text(encoding="utf-8")),
-            {"hooks": {}},
+        self.assertIn("--workspace", current_hooks.read_text(encoding="utf-8"))
+        self.assertIn(
+            "pt-ew-plugin",
+            (connected_trae / "hooks.json").read_text(encoding="utf-8"),
         )
         self.assertFalse((untouched / ".trae").exists())
 
@@ -842,7 +855,7 @@ export function processStartIdentity() { return 'fixture'; }
         duplicate_audit = self.audit_trae_fixture(workspace)
         self.assertEqual(duplicate_audit.returncode, 2)
         self.assertIn(
-            "managed-hook-invalid:PreToolUse",
+            "managed-hook-invalid:SessionStart",
             duplicate_audit.stdout,
         )
 
@@ -1101,8 +1114,8 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertFalse(retired_skill.parent.exists())
         self.assertFalse(retired_plugin.parent.exists())
 
-    def test_skills_gc_rejects_a_projection_grant(self) -> None:
-        self.seed_live_workflow_state("installer-authorized")
+    def test_skills_gc_rejects_a_hard_cut_grant(self) -> None:
+        self.seed_live_workflow_state("hard-cut-authorized")
         retired = self.root / ".agents/retired-project-skills/legacy"
         retired.mkdir(parents=True)
 

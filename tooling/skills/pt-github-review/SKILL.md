@@ -405,8 +405,9 @@ projection.
 
 For Agent integration controls, reject ordinary projection that requires
 unrelated worktrees to be idle or deletes workflow state. Require separate
-exact OWNER grants for projection, legacy-store hard cut, and retired-projection
-GC; only the two destructive commands may require global idle.
+exact OWNER grants for legacy-store hard cut and retired-projection GC; only
+those two destructive commands may require global idle. Ordinary projection
+must not depend on a Hook-issued grant.
 
 For Local Dev Profile changes, reject any stored reset-policy field or
 compatibility reader. The verified canonical Profile ID is the sole policy

@@ -16,20 +16,26 @@
   "journeyId": "DEV-J01",
   "runtimeClass": "source-only",
   "writeSet": [
+    "AGENTS.md",
     "Makefile",
     "docs/architecture/architecture-module-governance/architecture-modules.json",
     "docs/architecture/development-workflow",
+    "docs/global/workflow.md",
+    "docs/knowledge/invariants/host-neutral-agent-execution.md",
     "docs/knowledge/invariants/owner-rooted-workflow-binding.md",
-    "tooling/make/setup.mk",
+    "tooling/acceptance",
+    "tooling/make",
     "tooling/plugins/pt-ew-plugin",
     "tooling/scripts/agent-integration-audit-test.py",
     "tooling/scripts/agent-integration-audit.py",
     "tooling/scripts/agent-integration-control.py",
+    "tooling/scripts/architecture/module-governance.test.mjs",
     "tooling/scripts/install-agent-integration.sh",
-    "tooling/scripts/local-dev"
+    "tooling/scripts/local-dev",
+    "tooling/skills/pt-dev-workflow",
+    "tooling/skills/pt-github-review"
   ],
   "readSet": [
-    "tooling/acceptance",
     "tooling/scripts/review"
   ],
   "budgets": {
@@ -55,32 +61,52 @@
     },
     {
       "id": "integration-control-acceptance",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-workflow-contract --gate development-workflow-control-plane",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-runtime-provisioning-self --gate acceptance-workflow-contract --gate development-workflow-control-plane --gate dev-ui-browser-e2e --gate machine-dev-registry-self",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [
-    "Ordinary skills install succeeds with its exact grant while an unrelated declaration is active",
+    "Ordinary skills install succeeds without a Hook-issued grant while an unrelated declaration is active",
     "Ordinary skills install preserves legacy conversation and Action Receipt stores",
     "Hard cut and GC use distinct exact OWNER_CONTROL grants",
     "Hard cut and GC reject unrelated live declarations, assignments, actions, and Action Store locks",
     "Hard cut deletes only legacy conversation and workflow-action stores",
     "GC deletes only retired project Skill and plugin projections",
-    "No combined install-and-purge path remains"
+    "No combined install-and-purge path remains",
+    "TRAE projects one equivalent canonical Hook into the source root, descriptor bootstrap, and existing TRAE roots while leaving untouched roots unchanged",
+    "Completion Review prepares and submits through a repository-native reviewer capability without Hook Action Receipts"
   ],
   "failureBehavior": [
     "Do not weaken OWNER binding or cross-worktree write enforcement",
-    "Do not allow cleanup with a skills projection grant",
+    "Do not issue a skills projection grant or allow its installation receipt to authorize cleanup",
+    "Do not accept caller-supplied delegation provenance or weaken immutable current-source review",
     "Do not treat a short machine lock as global-idle proof",
     "Do not delete Plan, Session, Completion Review, lease, or Acceptance stores",
     "Do not modify pre-existing generated capability files"
   ],
-  "updatedAt": "2026-10-04T01:50:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T09:48:20.000Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "ACCEPTANCE_PROOF",
+      "result": "PASS",
+      "ref": "acceptance://23d863a02a53c299/acceptance-run/20261004T093651691631Z-8e6a4ad727377d2f5735bec126df88e7#ac73734d4fd9f042ec3700910c103ea1c0c97c5f44cdca32686b2e85395e51e9"
+    },
+    {
+      "verificationClass": "ACCEPTANCE_PROOF",
+      "result": "PASS",
+      "ref": "acceptance://23d863a02a53c299/acceptance-workflow-contract/20261004T093651943719Z-746103261956754eecc518de5ac76105#3fea65ecb379b326c93f64aebf88deefd8030da9727f5d2951375cf18a86c3a1"
+    },
+    {
+      "verificationClass": "ACCEPTANCE_PROOF",
+      "result": "PASS",
+      "ref": "acceptance://23d863a02a53c299/development-workflow-control-plane/20261004T094402545251Z-00203e74e33744d0f2fe13e4974d7455#698d7445a4bdd98b34b1c6db540579d30b67f27fd32a203d0094fbca376a0e6e"
+    }
+  ]
 }
 ```
 
 ## Current Snapshot
 
-- State: pending.
-- Next: implement distinct operation labels and split projection from cleanup.
+- State: exact-source proof passed; Completion Review remediation in progress.
+- Next: close reviewer findings, obtain a current PASS receipt, and advance to
+  `DWF-NBI02-PROOF-DELIVERY`.

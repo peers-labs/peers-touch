@@ -335,12 +335,13 @@ completion-review-prepare:
 		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 completion-review-submit:
-	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
+	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ] || [ -z "$(CAPABILITY)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> CAPABILITY=<json-file> [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
 	@node $(COMPLETION_REVIEW_SCRIPT) submit \
 		--repo-root "$(CURDIR)" \
 		--review "$(REVIEW)" \
 		--verdict "$(VERDICT)" \
 		--assessment "$(ASSESSMENT)" \
+		--capability "$(CAPABILITY)" \
 		$(if $(NEXT),--next "$(NEXT)",) \
 		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
 		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \

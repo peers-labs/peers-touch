@@ -680,8 +680,12 @@ edits, status claims, and completion claims.
    reviewer authority.
 9. Revalidate the same `BindingProjection` after resume or compaction and
    before status, readiness, handoff, worker result, review, or completion
-   claims. Completion Review uses only the exact current owner-command Action
-   Receipt and assigned REVIEWER; it never enumerates worktree bindings.
+   claims. Completion Review is repository-native: it binds successful
+   Development Session provenance into an immutable request and delegates one
+   review-scoped capability. The capability proves assessment provenance, not
+   reviewer independence; independent reviewer launch is a Dev Workflow
+   obligation. Completion Review never consumes Action Receipts or worktree
+   bindings.
 10. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
    after a commit, rebase, or merge that the user explicitly authorized.
    Resume and context compaction verify the persisted values; they MUST NOT

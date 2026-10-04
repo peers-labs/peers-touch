@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Design
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-01
+> **Created**: 2026-09-13 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
 
 ---
@@ -83,6 +83,8 @@
 | `resolveActiveConversationBinding()` 将同 worktree 未 release 记录作为 peer owner，并强制全局唯一 | `verified_fact` | `workflow-conversation-binding.mjs`; `completion-review.mjs` | high | none |
 | 20 条冲突记录中多数 RUNNING Action Receipt lease 已过期，并不代表 live owner | `verified_fact` | workspace `95620934d3348d95` machine-store audit | high | none |
 | OWNER 不按通用 TTL 过期；child 由 assignment lease 与 terminal receipt 定义 liveness | `accepted_decision` | DWF-D33 | high | owner/child lifecycle tests |
+| TRAE Hook 是等价事件入口而非 owner authority；参与根共享一个 canonical Kernel | `accepted_decision` | DWF-D35 | high | multi-root projection regression |
+| 非破坏性 projection 不依赖待安装 Hook 的 grant；cleanup 仍需 exact OWNER grant | `accepted_decision` | DWF-D36 | high | ungranted install and cleanup-grant tests |
 
 ## 3. System Architecture
 
@@ -293,34 +295,38 @@ bindings, child terminal receipts, one current receipt per compacting binding
 lineage, exact installer-action grants, the latest rendered Anchor receipt, and
 OWNER release receipt. OWNER liveness is never inferred from a generic TTL.
 Child liveness is `ASSIGNED | LEASED | TERMINAL`; an expired or terminal child
-is diagnostic history and cannot participate in current ownership or Completion
-Review selection.
+is diagnostic history and cannot participate in current ownership.
 
 Every injection contains the binding role, root/parent digests, binding digest,
 release state, execution root, subject roots, tool root and target roots.
 Every status, readiness, handoff and final claim revalidates the same
-projection. Completion Review resolves the exact OWNER or assigned REVIEWER
-from the latest receipt for the current owner-command action ID; a terminal
-receipt suppresses every earlier STARTED or HEARTBEAT receipt. It never falls
-back to enumerating all unreleased bindings in a worktree. Canonical requests
-and receipts live only in the versioned `completion-reviews-v2` namespace;
-pre-hard-cut review records are neither read nor migrated.
+projection. Completion Review is a separate repository-native owner: it
+derives implementation context from successful Development Sessions and
+delegates through one request-scoped reviewer capability. It never reads
+Workflow Bindings or Action Receipts. Canonical requests, capabilities, and
+receipts live only in the versioned `completion-reviews-v3` namespace;
+earlier review records are neither read nor migrated.
 
-TRAE multi-root startup uses one workspace bootstrap hook selected from the
-workspace descriptor, not one competing hook owner per worktree. The bootstrap
-dispatches to the canonical installed integration for the selected target
-root. The bootstrap installation root is never an authority hint. On first
-`PreToolUse`, an explicit host task root wins when it is one of the declared
-workspace roots; otherwise all mutation targets must resolve to exactly one
-workspace root. Ambiguous or target-less selection returns
-`WORKTREE_SELECTION_REQUIRED`. Changing the workspace descriptor or writing
-that shared bootstrap is a separately declared cross-root rollout operation.
+TRAE multi-root startup projects equivalent event ingress into the selected
+source root, the descriptor bootstrap root, and descriptor roots with an
+existing real `.trae` directory. Every entry calls the selected source root's
+same canonical integration; Hook location is never owner authority or an
+execution-root hint. On first `PreToolUse`, an explicit host task root wins
+when it is one of the declared workspace roots; otherwise all mutation targets
+must resolve to exactly one workspace root. Ambiguous or target-less selection
+returns `WORKTREE_SELECTION_REQUIRED`. Changing the workspace descriptor or
+writing these cross-root projections remains a separately declared rollout
+operation. Descriptor roots without `.trae` remain untouched.
 
-This is a hard cut. Rollout completes fallible preflight, proves no live
-declaration/action, consumes the exact installer grant, publishes `INSTALLING`,
-then deletes the old conversation and workflow-action stores and installs the
-current bootstrap. Any reset or installation failure publishes `BLOCKED`. No
-old binding/action schema reader, importer, alias, or dual-write path exists.
+Ordinary `skills` projection is non-destructive. It completes fallible
+preflight, updates equivalent host projections under the machine install lock,
+and records truthful installation/callback state without requiring global idle
+or a Hook-issued grant. It never deletes workflow state.
+
+`skills-hard-cut` and `skills-gc` are separate destructive operations. Each
+requires its own exact OWNER grant and global-idle proof before deleting its
+bounded legacy store. A post-grant failure records `BLOCKED`; no old
+binding/action schema reader, importer, alias, or dual-write path exists.
 
 ## 5. Plan Package Contract
 

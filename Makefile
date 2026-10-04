@@ -84,7 +84,7 @@ help:
 	@echo "  make dev-transition WORK_ITEM=<id> TO=<state> REASON='<text>'"
 	@echo "  make dev-functional-result WORK_ITEM=<id> REASON='<text>' [RUNTIME_CELL=<cell>]"
 	@echo "  make completion-review-prepare WORK_ITEM=<id> [SCOPE=<task|plan>]"
-	@echo "  make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file>"
+	@echo "  make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> CAPABILITY=<json-file>"
 	@echo "  make completion-review-status WORK_ITEM=<id>"
 	@echo ""
 	@echo "  make status                    Show running services"

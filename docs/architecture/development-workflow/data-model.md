@@ -634,10 +634,10 @@ facts and never change authority. Status, readiness, handoff, Stop, worker
 result, and Completion Review use this same projection rather than searching
 for an arbitrary unreleased binding by worktree.
 
-For a new OWNER in a multi-root workspace, the bootstrap location is excluded
-from root selection. An explicit host task root must match one declared
-workspace root; otherwise all mutation targets must resolve to one root.
-Zero or multiple candidates produce `WORKTREE_SELECTION_REQUIRED`.
+For a new OWNER in a multi-root workspace, every Hook projection location is
+excluded from root selection. An explicit host task root must match one
+declared workspace root; otherwise all mutation targets must resolve to one
+root. Zero or multiple candidates produce `WORKTREE_SELECTION_REQUIRED`.
 
 The latest Anchor receipt is atomically replaceable because it projects current
 owner state:
@@ -697,33 +697,38 @@ the assistant response or host transcript. A conflicting second release fails
 closed. It does not terminate or revive a child; child terminal receipts own
 that lifecycle.
 
-This schema is a hard cut. Installation requires no live declaration, child
-assignment, or workflow action on the machine other than the current
-OWNER-bound installer command identified by its exact Action Receipt, then
-deletes exactly:
+This schema is a hard cut. Ordinary `skills` projection is non-destructive and
+does not require a Hook-issued Action Grant. It is serialized by the machine
+ledger lock and validates source, workspace, host paths, Hook shape, and
+callback proof before publishing its installation lifecycle receipt.
+
+`skills-hard-cut` requires no live declaration, child assignment, or workflow
+action on the machine other than the current OWNER-bound cleanup command
+identified by its exact Action Receipt, then deletes exactly:
 
 ```text
 ~/.peers-touch/dev/conversations/
 ~/.peers-touch/dev/workspaces/*/workflow/actions/
 ```
 
-The Kernel creates a create-once grant for that exact OWNER `skills` action.
-The installer completes fallible catalog, host-root, workspace, and hook
-preflight before consuming the grant. It then requires exactly one such live
-action, atomically consumes its grant, publishes `INSTALLING`, and only then
-starts destructive reset. A seeded receipt, missing action, another action ID,
-or a second invocation has no installation authority; reset failure publishes
-`BLOCKED`.
+The Kernel creates create-once grants only for exact OWNER `skills-hard-cut`
+and `skills-gc` actions. A cleanup command completes fallible catalog,
+host-root, workspace, and Hook preflight before consuming its grant. It then
+requires exactly one such live action, atomically consumes the grant, publishes
+`INSTALLING`, and only then starts deletion. A seeded receipt, missing action,
+another action ID, or a second invocation has no cleanup authority; failure
+publishes `BLOCKED`.
 
-Canonical Completion Review requests and receipts use schema version `2` under
-`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v2/`.
-The pre-hard-cut `completion-reviews/` namespace is not read, imported,
-migrated, or deleted.
+Canonical Completion Review requests, reviewer capabilities, and receipts use
+schema version `3` under
+`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v3/`.
+The `completion-reviews/` and `completion-reviews-v2/` namespaces are not read,
+imported, migrated, or deleted.
 
 It does not delete Plan bindings, Plan generations, active-work, Development
 Sessions, Completion Review records, runtime leases, or Acceptance evidence.
-After the reset it publishes the current bootstrap. No legacy parser, importer,
-alias, or dual-write exists.
+After the reset it publishes the current participating-root Hook projections.
+No legacy parser, importer, alias, or dual-write exists.
 
 ## 7. Development Work Item
 

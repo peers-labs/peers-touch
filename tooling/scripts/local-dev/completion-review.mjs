@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
-import { createHash, randomBytes } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -23,12 +28,6 @@ import {
   loadSessionStore,
 } from './dev-session-store.mjs';
 import { inspectGitWorkspace } from './git-workspace.mjs';
-import {
-  createWorkflowBindingAssignment,
-  readWorkflowProjectionByActor,
-} from './workflow-binding-store.mjs';
-import { readWorkspaceActions } from './workflow-action-store.mjs';
-
 export const COMPLETION_REVIEW_CHECK_IDS = Object.freeze([
   'plan-task-schema',
   'declared-evidence',
@@ -42,7 +41,8 @@ export const COMPLETION_REVIEW_CHECK_IDS = Object.freeze([
 const REQUEST_KIND = 'peers-touch-completion-review-request';
 const RECEIPT_KIND = 'peers-touch-completion-review-receipt';
 const ASSESSMENT_KIND = 'peers-touch-completion-review-assessment';
-const REVIEW_SCHEMA_VERSION = 2;
+const CAPABILITY_KIND = 'peers-touch-completion-review-capability';
+const REVIEW_SCHEMA_VERSION = 3;
 const REVIEW_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SHA = /^[0-9a-f]{40,64}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -56,9 +56,8 @@ const REQUEST_KEYS = new Set([
   'taskId',
   'workItemId',
   'implementationSessionIds',
-  'executorContextDigests',
-  'ownerBindingDigest',
-  'reviewerAssignmentDigest',
+  'implementationContextDigests',
+  'reviewerCapabilityDigest',
   'source',
   'obligationsDigest',
   'candidatePlanDigest',
@@ -71,10 +70,10 @@ const RECEIPT_KEYS = new Set([
   'kind',
   'reviewId',
   'requestDigest',
-  'reviewerContextDigest',
-  'rootBindingDigest',
-  'parentBindingDigest',
-  'assignmentDigest',
+  'reviewerDelegationDigest',
+  'reviewerCapabilityDigest',
+  'assessmentDigest',
+  'proofDigest',
   'verdict',
   'findings',
   'reviewedAt',
@@ -96,6 +95,14 @@ const ASSESSMENT_KEYS = new Set([
   'schemaVersion',
   'kind',
   'findings',
+]);
+const CAPABILITY_KEYS = new Set([
+  'schemaVersion',
+  'kind',
+  'reviewId',
+  'secret',
+  'issuedAt',
+  'capabilityDigest',
 ]);
 const SUCCESSFUL_SESSION_STATES = new Set([
   'SOURCE_READY',
@@ -288,13 +295,12 @@ export function validateCompletionReviewRequest(request) {
     request.implementationSessionIds,
     'implementationSessionIds',
   );
-  validateDigestArray(request.executorContextDigests, 'executorContextDigests');
-  if (
-    !SHA256.test(request.ownerBindingDigest) ||
-    !SHA256.test(request.reviewerAssignmentDigest) ||
-    !request.executorContextDigests.includes(request.ownerBindingDigest)
-  ) {
-    fail('COMPLETION_REVIEW_INVALID', 'request binding lineage is invalid');
+  validateDigestArray(
+    request.implementationContextDigests,
+    'implementationContextDigests',
+  );
+  if (!SHA256.test(request.reviewerCapabilityDigest)) {
+    fail('COMPLETION_REVIEW_INVALID', 'reviewerCapabilityDigest is invalid');
   }
   validateSource(request.source);
   for (const field of [
@@ -326,10 +332,10 @@ export function validateCompletionReviewReceipt(receipt) {
   requireIdentifier(receipt.reviewId, 'reviewId');
   for (const field of [
     'requestDigest',
-    'reviewerContextDigest',
-    'rootBindingDigest',
-    'parentBindingDigest',
-    'assignmentDigest',
+    'reviewerDelegationDigest',
+    'reviewerCapabilityDigest',
+    'assessmentDigest',
+    'proofDigest',
     'receiptDigest',
   ]) {
     if (!SHA256.test(receipt[field])) {
@@ -350,6 +356,33 @@ export function validateCompletionReviewReceipt(receipt) {
     fail('COMPLETION_REVIEW_INVALID', 'receipt digest does not match');
   }
   return receipt;
+}
+
+function validateCapability(capability) {
+  if (
+    !hasExactKeys(capability, CAPABILITY_KEYS) ||
+    capability.schemaVersion !== REVIEW_SCHEMA_VERSION ||
+    capability.kind !== CAPABILITY_KIND ||
+    !/^[0-9a-f]{64}$/.test(capability.secret)
+  ) {
+    fail(
+      'COMPLETION_REVIEW_CAPABILITY_INVALID',
+      'reviewer capability is invalid',
+    );
+  }
+  requireIdentifier(capability.reviewId, 'capability.reviewId');
+  validateTimestamp(capability.issuedAt, 'capability.issuedAt');
+  if (
+    !SHA256.test(capability.capabilityDigest) ||
+    digest(withoutDigest(capability, 'capabilityDigest')) !==
+      capability.capabilityDigest
+  ) {
+    fail(
+      'COMPLETION_REVIEW_CAPABILITY_INVALID',
+      'reviewer capability digest does not match',
+    );
+  }
+  return capability;
 }
 
 function validateAssessment(assessment) {
@@ -373,7 +406,7 @@ function reviewRoot(workspaceId, dependencies = {}) {
     'workspaces',
     workspaceId,
     'workflow',
-    'completion-reviews-v2',
+    'completion-reviews-v3',
   );
 }
 
@@ -387,6 +420,7 @@ export function completionReviewPaths(
   return {
     directory,
     request: path.join(directory, 'request.json'),
+    capability: path.join(directory, 'reviewer-capability.json'),
     receipt: path.join(directory, 'receipt.json'),
   };
 }
@@ -861,100 +895,6 @@ async function currentReviewMaterial(options, dependencies = {}) {
   };
 }
 
-export function resolveCompletionReviewBinding(
-  root,
-  dependencies = {},
-  context = null,
-) {
-  if (typeof dependencies.resolveBindingProjection === 'function') {
-    return dependencies.resolveBindingProjection({
-      root,
-      context,
-    });
-  }
-  if (!context?.workspaceId || !context?.ownerCommand) {
-    fail(
-      'COMPLETION_REVIEW_BINDING_REQUIRED',
-      'Completion Review requires an exact owner-command context',
-    );
-  }
-  const readActions =
-    dependencies.readWorkspaceActions ?? readWorkspaceActions;
-  const clock =
-    typeof dependencies.clock === 'function'
-      ? dependencies.clock()
-      : new Date();
-  const now = clock instanceof Date ? clock : new Date(clock);
-  const latestByAction = new Map();
-  for (const receipt of readActions({
-    machineRoot: dependencies.machineRoot,
-    workspaceId: context.workspaceId,
-  })) {
-    latestByAction.set(receipt.actionId, receipt);
-  }
-  const recent = [...latestByAction.values()]
-    .filter(
-      (receipt) =>
-        receipt.operation.family === 'OWNER_CONTROL' &&
-        receipt.operation.label === context.ownerCommand &&
-        ['STARTED', 'HEARTBEAT'].includes(receipt.event) &&
-        receipt.result === 'RUNNING' &&
-        receipt.binding.workItemId === context.workItemId &&
-        receipt.binding.planId === context.planId &&
-        receipt.binding.taskId === context.taskId &&
-        receipt.binding.sessionId === context.sessionId &&
-        receipt.actor.role === context.expectedRole &&
-        (context.assignmentDigest === undefined ||
-          receipt.actor.assignmentDigest === context.assignmentDigest) &&
-        receipt.leaseUntil !== null &&
-        Date.parse(receipt.leaseUntil) >= now.getTime(),
-    )
-    .sort((left, right) => right.at.localeCompare(left.at));
-  const selected = recent[0];
-  if (!selected) {
-    fail(
-      'COMPLETION_REVIEW_BINDING_REQUIRED',
-      'No live exact owner-command Action Receipt identifies this review action',
-      {
-        ownerCommand: context.ownerCommand,
-        expectedRole: context.expectedRole,
-      },
-    );
-  }
-  const projection = (
-    dependencies.readWorkflowProjectionByActor ??
-    readWorkflowProjectionByActor
-  )(selected.actor, {
-    machineRoot: dependencies.machineRoot,
-    now,
-  });
-  if (
-    projection.bindingDigest !== selected.actor.bindingDigest ||
-    projection.released ||
-    (projection.role !== 'OWNER' && projection.childState !== 'LEASED')
-  ) {
-    fail(
-      'COMPLETION_REVIEW_BINDING_INVALID',
-      'Owner-command Action Receipt does not resolve to a current binding',
-    );
-  }
-  return projection;
-}
-
-function assertBindingMatches(binding, material) {
-  if (
-    !isObject(binding) ||
-    !SHA256.test(binding.bindingDigest ?? '') ||
-    binding.executionRoot !== material.root ||
-    binding.workspaceId !== material.planPackage.manifest.binding.workspaceId
-  ) {
-    fail(
-      'COMPLETION_REVIEW_CONTEXT_INVALID',
-      'conversation binding does not match the review workspace',
-    );
-  }
-}
-
 function operationTime(dependencies = {}) {
   const now =
     typeof dependencies.clock === 'function'
@@ -971,7 +911,7 @@ async function planImplementationContexts(material, dependencies = {}) {
   if (material.scope !== 'plan') {
     return {
       implementationSessionIds: [],
-      executorContextDigests: [],
+      implementationContextDigests: [],
     };
   }
   if (typeof dependencies.planImplementationContexts === 'function') {
@@ -980,7 +920,7 @@ async function planImplementationContexts(material, dependencies = {}) {
   const workspaceId = material.planPackage.manifest.binding.workspaceId;
   const reviewIds = await listReviewIds(workspaceId, dependencies);
   const implementationSessionIds = new Set();
-  const executorContextDigests = new Set();
+  const implementationContextDigests = new Set();
   for (const reviewId of reviewIds) {
     const record = await readCompletionReview(
       workspaceId,
@@ -996,32 +936,47 @@ async function planImplementationContexts(material, dependencies = {}) {
     for (const sessionId of record.request.implementationSessionIds) {
       implementationSessionIds.add(sessionId);
     }
-    for (const digest of record.request.executorContextDigests) {
-      executorContextDigests.add(digest);
+    for (const digest of record.request.implementationContextDigests) {
+      implementationContextDigests.add(digest);
     }
   }
   return {
     implementationSessionIds: [...implementationSessionIds].sort(),
-    executorContextDigests: [...executorContextDigests].sort(),
+    implementationContextDigests: [...implementationContextDigests].sort(),
   };
+}
+
+function implementationContextDigest(session) {
+  return digest({
+    kind: 'peers-touch-completion-review-implementation-context',
+    session,
+  });
+}
+
+function createReviewerCapability(reviewId, issuedAt, dependencies = {}) {
+  const secret =
+    dependencies.capabilitySecret ?? randomBytes(32).toString('hex');
+  if (!/^[0-9a-f]{64}$/.test(secret)) {
+    fail(
+      'COMPLETION_REVIEW_CAPABILITY_INVALID',
+      'generated reviewer capability secret is invalid',
+    );
+  }
+  const unsigned = {
+    schemaVersion: REVIEW_SCHEMA_VERSION,
+    kind: CAPABILITY_KIND,
+    reviewId,
+    secret,
+    issuedAt,
+  };
+  return validateCapability({
+    ...unsigned,
+    capabilityDigest: digest(unsigned),
+  });
 }
 
 export async function prepareCompletionReview(options, dependencies = {}) {
   const material = await currentReviewMaterial(options, dependencies);
-  const executorBinding = resolveCompletionReviewBinding(
-    material.root,
-    dependencies,
-    {
-      workspaceId: material.planPackage.manifest.binding.workspaceId,
-      workItemId: material.workItemId,
-      planId: material.planPackage.manifest.planId,
-      taskId: material.current.id,
-      sessionId: material.session.state.sessionId,
-      ownerCommand: 'completion-review-prepare',
-      expectedRole: 'OWNER',
-    },
-  );
-  assertBindingMatches(executorBinding, material);
   const inheritedContexts = await planImplementationContexts(
     material,
     dependencies,
@@ -1029,22 +984,11 @@ export async function prepareCompletionReview(options, dependencies = {}) {
   const reviewId =
     dependencies.reviewId ??
     `review-${randomBytes(16).toString('hex')}`;
-  const assignmentResult = (
-    dependencies.createWorkflowBindingAssignment ??
-    createWorkflowBindingAssignment
-  )(
-    executorBinding,
-    {
-      assignmentId: reviewId,
-      role: 'REVIEWER',
-      workflowSessionId: material.session.state.sessionId,
-      operationId: reviewId,
-      leaseMs: dependencies.reviewerLeaseMs,
-    },
-    {
-      machineRoot: dependencies.machineRoot,
-      now: operationTime(dependencies),
-    },
+  const createdAt = operationTime(dependencies);
+  const capability = createReviewerCapability(
+    reviewId,
+    createdAt,
+    dependencies,
   );
   const unsigned = {
     schemaVersion: REVIEW_SCHEMA_VERSION,
@@ -1060,19 +1004,18 @@ export async function prepareCompletionReview(options, dependencies = {}) {
         material.session.state.sessionId,
       ]),
     ].sort(),
-    executorContextDigests: [
+    implementationContextDigests: [
       ...new Set([
-        ...inheritedContexts.executorContextDigests,
-        executorBinding.bindingDigest,
+        ...inheritedContexts.implementationContextDigests,
+        implementationContextDigest(material.session),
       ]),
     ].sort(),
-    ownerBindingDigest: executorBinding.rootBindingDigest,
-    reviewerAssignmentDigest: assignmentResult.assignment.digest,
+    reviewerCapabilityDigest: capability.capabilityDigest,
     source: material.source,
     obligationsDigest: material.obligationsDigest,
     candidatePlanDigest: material.candidatePlanDigest,
     evidenceDigest: material.evidenceDigest,
-    createdAt: operationTime(dependencies),
+    createdAt,
   };
   const request = {
     ...unsigned,
@@ -1085,10 +1028,14 @@ export async function prepareCompletionReview(options, dependencies = {}) {
     request.reviewId,
     dependencies,
   );
+  await publishImmutable(paths.capability, capability);
   await publishImmutable(paths.request, request);
   return {
     request,
     paths,
+    reviewerHandoff: {
+      capabilityPath: paths.capability,
+    },
     candidateTransition: material.candidateTransition,
   };
 }
@@ -1103,6 +1050,39 @@ async function readAssessment(file) {
   return readOwnedJson(path.resolve(file), validateAssessment);
 }
 
+async function readReviewerCapability(file, dependencies = {}) {
+  if (dependencies.capability !== undefined) {
+    return validateCapability(dependencies.capability);
+  }
+  const selected = file ?? dependencies.capabilityPath;
+  if (typeof selected !== 'string' || selected.length === 0) {
+    fail(
+      'COMPLETION_REVIEW_CAPABILITY_REQUIRED',
+      'review submission requires --capability',
+    );
+  }
+  return readOwnedJson(path.resolve(selected), validateCapability);
+}
+
+function equalDigest(left, right) {
+  if (!SHA256.test(left ?? '') || !SHA256.test(right ?? '')) return false;
+  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
+}
+
+function reviewProof(capability, requestDigest, assessmentDigest) {
+  return createHmac('sha256', Buffer.from(capability.secret, 'hex'))
+    .update(`${requestDigest}:${assessmentDigest}`)
+    .digest('hex');
+}
+
+function reviewerDelegationDigest(capabilityDigest, proofDigest) {
+  return digest({
+    kind: 'peers-touch-completion-review-reviewer-delegation',
+    capabilityDigest,
+    proofDigest,
+  });
+}
+
 export async function readCompletionReview(
   workspaceId,
   reviewId,
@@ -1113,18 +1093,48 @@ export async function readCompletionReview(
     paths.request,
     validateCompletionReviewRequest,
   );
+  const capability = await readOwnedJson(
+    paths.capability,
+    validateCapability,
+  );
   const receipt = await readOwnedJson(
     paths.receipt,
     validateCompletionReviewReceipt,
     false,
   );
   if (
+    capability.reviewId !== request.reviewId ||
+    !equalDigest(
+      capability.capabilityDigest,
+      request.reviewerCapabilityDigest,
+    )
+  ) {
+    fail(
+      'COMPLETION_REVIEW_INVALID',
+      'reviewer capability does not belong to its request',
+    );
+  }
+  const assessmentDigest =
+    receipt === null
+      ? null
+      : digest({
+          schemaVersion: REVIEW_SCHEMA_VERSION,
+          kind: ASSESSMENT_KIND,
+          findings: receipt.findings,
+        });
+  const proofDigest =
+    receipt === null
+      ? null
+      : reviewProof(capability, request.requestDigest, assessmentDigest);
+  if (
     receipt !== null &&
     (receipt.reviewId !== request.reviewId ||
       receipt.requestDigest !== request.requestDigest ||
-      receipt.rootBindingDigest !== request.ownerBindingDigest ||
-      receipt.parentBindingDigest !== request.ownerBindingDigest ||
-      receipt.assignmentDigest !== request.reviewerAssignmentDigest)
+      receipt.reviewerCapabilityDigest !== request.reviewerCapabilityDigest ||
+      receipt.assessmentDigest !== assessmentDigest ||
+      receipt.proofDigest !== proofDigest ||
+      receipt.reviewerDelegationDigest !==
+        reviewerDelegationDigest(capability.capabilityDigest, proofDigest))
   ) {
     fail(
       'COMPLETION_REVIEW_INVALID',
@@ -1168,15 +1178,8 @@ export function completionReviewState(record, material, options = {}) {
   }
   if (record.receipt === null) return 'PENDING';
   if (
-    record.receipt.rootBindingDigest !==
-      record.request.ownerBindingDigest ||
-    record.receipt.parentBindingDigest !==
-      record.request.ownerBindingDigest ||
-    record.receipt.assignmentDigest !==
-      record.request.reviewerAssignmentDigest ||
-    record.request.executorContextDigests.includes(
-      record.receipt.reviewerContextDigest,
-    ) ||
+    record.receipt.reviewerCapabilityDigest !==
+      record.request.reviewerCapabilityDigest ||
     record.receipt.verdict === 'FAIL' ||
     record.receipt.findings.some(
       (finding) => finding.blocking && finding.status === 'OPEN',
@@ -1189,15 +1192,18 @@ export function completionReviewState(record, material, options = {}) {
 
 function receiptMatchesSubmission(
   receipt,
-  reviewerBinding,
+  reviewerDelegation,
+  capabilityDigest,
+  assessmentDigest,
+  proofDigest,
   verdict,
   findings,
 ) {
   return (
-    receipt.reviewerContextDigest === reviewerBinding.bindingDigest &&
-    receipt.rootBindingDigest === reviewerBinding.rootBindingDigest &&
-    receipt.parentBindingDigest === reviewerBinding.parentBindingDigest &&
-    receipt.assignmentDigest === reviewerBinding.assignmentDigest &&
+    receipt.reviewerDelegationDigest === reviewerDelegation &&
+    receipt.reviewerCapabilityDigest === capabilityDigest &&
+    receipt.assessmentDigest === assessmentDigest &&
+    receipt.proofDigest === proofDigest &&
     receipt.verdict === verdict &&
     JSON.stringify(canonicalize(receipt.findings)) ===
       JSON.stringify(canonicalize(findings))
@@ -1238,34 +1244,35 @@ export async function submitCompletionReview(options, dependencies = {}) {
       { staleFields },
     );
   }
-  const reviewerBinding = resolveCompletionReviewBinding(
-    root,
+  const capability = await readReviewerCapability(
+    options.capability,
     dependencies,
-    {
-      workspaceId: material.planPackage.manifest.binding.workspaceId,
-      workItemId: material.workItemId,
-      planId: material.planPackage.manifest.planId,
-      taskId: material.current.id,
-      sessionId: material.session.state.sessionId,
-      ownerCommand: 'completion-review-submit',
-      expectedRole: 'REVIEWER',
-      assignmentDigest: record.request.reviewerAssignmentDigest,
-    },
   );
-  assertBindingMatches(reviewerBinding, material);
   if (
-    record.request.executorContextDigests.includes(
-      reviewerBinding.bindingDigest,
+    capability.reviewId !== record.request.reviewId ||
+    !equalDigest(
+      capability.capabilityDigest,
+      record.request.reviewerCapabilityDigest,
     )
   ) {
     fail(
-      'COMPLETION_REVIEW_SELF_REVIEW',
-      'implementation context cannot review its own completion',
+      'COMPLETION_REVIEW_CAPABILITY_INVALID',
+      'reviewer capability does not belong to this request',
     );
   }
   const assessment =
     dependencies.assessment ?? (await readAssessment(options.assessment));
   validateAssessment(assessment);
+  const assessmentDigest = digest(assessment);
+  const proofDigest = reviewProof(
+    capability,
+    record.request.requestDigest,
+    assessmentDigest,
+  );
+  const reviewerDelegation = reviewerDelegationDigest(
+    capability.capabilityDigest,
+    proofDigest,
+  );
   const verdict = assessment.findings.some(
     (finding) => finding.blocking && finding.status === 'OPEN',
   )
@@ -1281,7 +1288,10 @@ export async function submitCompletionReview(options, dependencies = {}) {
   if (record.receipt !== null) {
     if (!receiptMatchesSubmission(
       record.receipt,
-      reviewerBinding,
+      reviewerDelegation,
+      capability.capabilityDigest,
+      assessmentDigest,
+      proofDigest,
       verdict,
       assessment.findings,
     )) {
@@ -1298,10 +1308,10 @@ export async function submitCompletionReview(options, dependencies = {}) {
     kind: RECEIPT_KIND,
     reviewId: record.request.reviewId,
     requestDigest: record.request.requestDigest,
-    reviewerContextDigest: reviewerBinding.bindingDigest,
-    rootBindingDigest: reviewerBinding.rootBindingDigest,
-    parentBindingDigest: reviewerBinding.parentBindingDigest,
-    assignmentDigest: reviewerBinding.assignmentDigest,
+    reviewerDelegationDigest: reviewerDelegation,
+    reviewerCapabilityDigest: capability.capabilityDigest,
+    assessmentDigest,
+    proofDigest,
     verdict,
     findings: assessment.findings,
     reviewedAt: operationTime(dependencies),
@@ -1330,7 +1340,10 @@ export async function submitCompletionReview(options, dependencies = {}) {
       winner.receipt === null ||
       !receiptMatchesSubmission(
         winner.receipt,
-        reviewerBinding,
+        reviewerDelegation,
+        capability.capabilityDigest,
+        assessmentDigest,
+        proofDigest,
         verdict,
         assessment.findings,
       )
@@ -1426,7 +1439,7 @@ export async function requireCurrentCompletionReview(
   if (!passing) {
     fail(
       'COMPLETION_REVIEW_REQUIRED',
-      'Task or Plan completion requires a current independent PASS review',
+      'Task or Plan completion requires a current delegated PASS review',
       {
         planId: material.planPackage.manifest.planId,
         taskId: material.taskId,
@@ -1640,6 +1653,11 @@ function assessmentForSelfTest(openForbiddenFinding) {
 }
 
 export async function runCompletionReviewSelfTest() {
+  const capability = createReviewerCapability(
+    'review-self-test',
+    '2026-09-26T00:00:00.000Z',
+    { capabilitySecret: '3'.repeat(64) },
+  );
   const requestUnsigned = {
     schemaVersion: REVIEW_SCHEMA_VERSION,
     kind: REQUEST_KIND,
@@ -1649,9 +1667,8 @@ export async function runCompletionReviewSelfTest() {
     taskId: 'TASK-A',
     workItemId: 'WORK-A',
     implementationSessionIds: ['SESSION-A'],
-    executorContextDigests: ['a'.repeat(64)],
-    ownerBindingDigest: 'a'.repeat(64),
-    reviewerAssignmentDigest: '3'.repeat(64),
+    implementationContextDigests: ['a'.repeat(64)],
+    reviewerCapabilityDigest: capability.capabilityDigest,
     source: {
       branch: 'test',
       commit: 'b'.repeat(40),
@@ -1706,15 +1723,24 @@ export async function runCompletionReviewSelfTest() {
       'Social omission fixture did not produce the expected verdict',
     );
   }
+  const assessmentDigest = digest(assessment);
+  const proofDigest = reviewProof(
+    capability,
+    request.requestDigest,
+    assessmentDigest,
+  );
   const receiptUnsigned = {
     schemaVersion: REVIEW_SCHEMA_VERSION,
     kind: RECEIPT_KIND,
     reviewId: request.reviewId,
     requestDigest: request.requestDigest,
-    reviewerContextDigest: '2'.repeat(64),
-    rootBindingDigest: request.ownerBindingDigest,
-    parentBindingDigest: request.ownerBindingDigest,
-    assignmentDigest: request.reviewerAssignmentDigest,
+    reviewerDelegationDigest: reviewerDelegationDigest(
+      capability.capabilityDigest,
+      proofDigest,
+    ),
+    reviewerCapabilityDigest: capability.capabilityDigest,
+    assessmentDigest,
+    proofDigest,
     verdict,
     findings: assessment.findings,
     reviewedAt: '2026-09-26T00:00:01.000Z',
@@ -1728,11 +1754,10 @@ export async function runCompletionReviewSelfTest() {
     ok: true,
     checks: {
       requestDigest: 'PASS',
-      independentReviewer: request.executorContextDigests.includes(
-        receipt.reviewerContextDigest,
-      )
-        ? 'FAIL'
-        : 'PASS',
+      delegatedAssessment: receipt.reviewerDelegationDigest ===
+          reviewerDelegationDigest(capability.capabilityDigest, proofDigest)
+        ? 'PASS'
+        : 'FAIL',
       socialLegacyOmission: receipt.verdict === 'FAIL' ? 'PASS' : 'FAIL',
       mandatoryChecklist:
         receipt.findings.length >= COMPLETION_REVIEW_CHECK_IDS.length
@@ -1881,6 +1906,7 @@ export async function runCompletionReviewCli(
       ok: true,
       action: 'prepare',
       request: result.request,
+      reviewerHandoff: result.reviewerHandoff,
       candidateTransition: result.candidateTransition,
     };
   }
@@ -1890,6 +1916,7 @@ export async function runCompletionReviewCli(
       'review',
       'verdict',
       'assessment',
+      'capability',
       'next',
     ]);
     const result = await submitCompletionReview(
@@ -1898,6 +1925,7 @@ export async function runCompletionReviewCli(
         reviewId: requiredOption(options, 'review'),
         verdict: requiredOption(options, 'verdict'),
         assessment: requiredOption(options, 'assessment'),
+        capability: requiredOption(options, 'capability'),
         nextTaskId: options.next,
       },
       dependencies,

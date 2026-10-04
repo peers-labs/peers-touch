@@ -187,15 +187,19 @@ make completion-review-prepare WORK_ITEM=<stable-id> SCOPE=<task|plan>
 make completion-review-submit \
   REVIEW=<review-id> \
   VERDICT=PASS \
-  ASSESSMENT=<owner-only-json-file>
+  ASSESSMENT=<owner-only-json-file> \
+  CAPABILITY=<reviewer-capability-json-file>
 make dev-release WORK_ITEM=<stable-id>
 ```
 
-`completion-review-prepare` resolves the exact current OWNER Action Receipt and
-creates the REVIEWER assignment recorded by the immutable request.
-`completion-review-submit` accepts only a live child projection with that exact
-assignment. Stale, expired, terminal, unassigned, wrong-parent, and historical
-bindings never participate in selection.
+`completion-review-prepare` binds the current successful Development Session,
+source, obligations, candidate Plan, and evidence into an immutable request
+and returns one owner-private reviewer capability path.
+`completion-review-submit` accepts only that exact capability and derives the
+delegation digest and assessment proof internally. This proves request-scoped
+delegation, not reviewer independence; Dev Workflow must launch the independent
+reviewer. Completion Review does not depend on an IDE Hook, Action Receipt,
+Workflow Binding, or caller-provided identity.
 
 `make plan-advance` closes or parks a Task only after the required journal-backed
 Session and current Completion Review pass. `make plan-reopen` reopens the

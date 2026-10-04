@@ -39,6 +39,10 @@ A missing host capability degrades only that transport. It does not block a
 safe serial schedule or a project-native Journey. A deterministic
 `FUNCTIONAL_CHECK/PASS` must be committed to `FUNCTIONAL_PASS` before Task
 closure; a host debugger confirmation gate cannot replace that state owner.
+Completion Review preparation and submission are repository-native. They bind
+successful Development Session and current-source material to a create-once
+reviewer capability and never require an IDE Hook, Action Receipt, or host
+session identity.
 Runtime Handoff reports a missing capability and native-attempt state;
 `pt-goal-orchestrator` alone projects the Host Capability Request, and only Dev
 Workflow invokes an adapter after Guardian admission. Adapters never execute
@@ -103,3 +107,4 @@ of the project architecture.
 - DWF-D22 separates workflow source distribution from runtime-state ownership.
 - DWF-D33 roots IDE enforcement in one OWNER binding, assigns child lineage,
   and treats each hook target as a separate subject root.
+- DWF-D37 keeps Completion Review identity independent from host transport.

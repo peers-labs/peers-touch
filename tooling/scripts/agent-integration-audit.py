@@ -313,6 +313,13 @@ def host_projection_findings(
                 }
             )
         else:
+            projection_roots = set(
+                control.trae_hook_projection_roots(
+                    root,
+                    workspace_roots,
+                    bootstrap_root,
+                )
+            )
             for workspace_root in workspace_roots:
                 hooks_path = workspace_root / ".trae" / "hooks.json"
                 hook_label = (
@@ -321,7 +328,7 @@ def host_projection_findings(
                     else str(hooks_path)
                 )
                 if not hooks_path.exists():
-                    if workspace_root == bootstrap_root:
+                    if workspace_root in projection_roots:
                         findings.append(
                             {
                                 "path": hook_label,
@@ -368,7 +375,7 @@ def host_projection_findings(
                     )
                     valid = (
                         managed == [expected]
-                        if workspace_root == bootstrap_root
+                        if workspace_root in projection_roots
                         else managed == []
                     )
                     if valid:
@@ -914,13 +921,13 @@ def installed_callback_probe(
         return {"status": "NOT_APPLICABLE"}
     try:
         control = integration_control_module()
-        workspace_file, _, bootstrap_root = control.resolve_trae_workspace(
+        workspace_file, _, _ = control.resolve_trae_workspace(
             root,
             workspace,
         )
         proof = control.probe_installed_trae_hook(
             root,
-            bootstrap_root / ".trae",
+            root / ".trae",
             workspace_file,
         )
         expected = dict(control.TRAE_CALLBACK_PROOF)

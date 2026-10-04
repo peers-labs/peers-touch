@@ -25,17 +25,25 @@
       "docs/architecture/development-workflow/integration.md",
       "docs/architecture/development-workflow/host-neutral-agent-integration.md",
       "docs/architecture/development-workflow/module-layout.md",
+      "docs/knowledge/invariants/host-neutral-agent-execution.md",
       "docs/knowledge/invariants/owner-rooted-workflow-binding.md"
     ],
     "decisions": [
       "DWF-D21",
       "DWF-D22",
       "DWF-D33",
-      "DWF-D34"
+      "DWF-D34",
+      "DWF-D35",
+      "DWF-D36",
+      "DWF-D37"
     ]
   },
   "scope": {
     "sourceClaims": [
+      {
+        "pathPrefix": "AGENTS.md",
+        "mode": "exclusive-write"
+      },
       {
         "pathPrefix": "Makefile",
         "mode": "exclusive-write"
@@ -49,6 +57,14 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "docs/global/workflow.md",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs/knowledge/invariants/host-neutral-agent-execution.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "docs/knowledge/invariants/owner-rooted-workflow-binding.md",
         "mode": "exclusive-write"
       },
@@ -57,11 +73,15 @@
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "tooling/make/setup.mk",
+        "pathPrefix": "tooling/make",
         "mode": "exclusive-write"
       },
       {
         "pathPrefix": "tooling/plugins/pt-ew-plugin",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/architecture/module-governance.test.mjs",
         "mode": "exclusive-write"
       },
       {
@@ -90,6 +110,10 @@
       },
       {
         "pathPrefix": "tooling/skills/pt-github-review",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/skills/pt-dev-workflow",
         "mode": "exclusive-write"
       }
     ],
@@ -149,14 +173,20 @@
 {
   "closures": {
     "nonblocking-control-actions": [
+      "acceptance-runtime-provisioning-self",
       "acceptance-workflow-contract",
-      "development-workflow-control-plane"
+      "development-workflow-control-plane",
+      "dev-ui-browser-e2e",
+      "machine-dev-registry-self"
     ],
     "nonblocking-control-proof": [
       "acceptance-infra-validation",
       "acceptance-plan-self",
+      "acceptance-runtime-provisioning-self",
       "acceptance-workflow-contract",
       "development-workflow-control-plane",
+      "dev-ui-browser-e2e",
+      "machine-dev-registry-self",
       "peers-dev-product",
       "peers-dev-ui-browser-e2e"
     ]
@@ -164,16 +194,22 @@
   "completion": [
     "acceptance-infra-validation",
     "acceptance-plan-self",
+    "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
     "development-workflow-control-plane",
+    "dev-ui-browser-e2e",
+    "machine-dev-registry-self",
     "peers-dev-product",
     "peers-dev-ui-browser-e2e"
   ],
   "full": [
     "acceptance-infra-validation",
     "acceptance-plan-self",
+    "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
     "development-workflow-control-plane",
+    "dev-ui-browser-e2e",
+    "machine-dev-registry-self",
     "peers-dev-product",
     "peers-dev-ui-browser-e2e"
   ]
@@ -182,9 +218,9 @@
 
 ## Goal
 
-Remove the machine-wide idle dependency from ordinary Agent integration
-projection while preserving exact OWNER authorization and isolating destructive
-legacy-store and retired-projection cleanup behind explicit global-idle
+Remove the machine-wide idle and Hook-issued grant dependencies from ordinary
+Agent integration projection while isolating destructive legacy-store and
+retired-projection cleanup behind exact OWNER grants and explicit global-idle
 commands.
 
 ## Dependency DAG
@@ -200,7 +236,8 @@ DWF-NBI01-CONTROL-ACTIONS
 - `skills-hard-cut` becomes the only legacy conversation/action-store deletion
   command.
 - `skills-gc` becomes the only retired project projection deletion command.
-- All three commands receive distinct exact OWNER_CONTROL labels and grants.
+- All three commands retain distinct OWNER_CONTROL labels; only hard cut and
+  GC receive exact create-once OWNER grants.
 - Existing combined install-and-purge behavior is deleted; no compatibility
   alias or opportunistic cleanup remains.
 
@@ -208,6 +245,6 @@ DWF-NBI01-CONTROL-ACTIONS
 
 - Unrelated live work cannot block ordinary projection.
 - Hard cut and GC cannot run while unrelated work is live.
-- A grant cannot be reused or consumed by a different action label.
+- A cleanup grant cannot be reused or consumed by a different action label.
 - Machine lock serialization remains bounded and is not treated as idle proof.
 - Installation success makes no cleanup claim.

@@ -1,7 +1,7 @@
 # Completion Review 产品合同
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-01
+> **Created**: 2026-09-26 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
 
 ---
@@ -14,7 +14,8 @@ current-source Gate。它必须识别遗漏义务、残留 forbidden path、stal
 
 它不替代 focused check、functional verification、Acceptance 或 PR review。
 
-本能力由 canonical 决策 DWF-D28 定义。决策接受不构成实现落地或当前 proof。
+本能力由 canonical 决策 DWF-D28 和 DWF-D37 定义。决策接受不构成实现落地或
+当前 proof。
 
 ## 2. Ownership
 
@@ -28,10 +29,11 @@ current-source Gate。它必须识别遗漏义务、残留 forbidden path、stal
 | Review projection | DWF-D27 Workflow Snapshot |
 | Human merge judgment | PR reviewer |
 
-Implementation Session 不能签发关闭自身 Task 的 receipt。Review owner 必须从
-DWF-D33 OWNER binding 预先签发 REVIEWER assignment；reviewer child claim
-必须携带同一 assignment、root/parent lineage 和 Development Session identity。
-调用者不能提供或覆盖 reviewer binding digest。
+Review owner 从当前成功 Development Session 派生 implementation provenance，
+并签发 create-once、review-scoped capability。Dev Workflow 必须把 immutable
+request 和 capability 交给独立 reviewer 进行判断；机器 owner 只证明 delegated
+capability、request 和 assessment provenance，不能密码学证明 reviewer 的认知
+独立性。调用者不能提供或覆盖 delegation digest。
 
 ## 3. Request And Receipt
 
@@ -41,7 +43,7 @@ release label。
 
 ```ts
 interface CompletionReviewRequest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   kind: 'peers-touch-completion-review-request';
   reviewId: string;
   scope: 'task' | 'plan';
@@ -49,9 +51,8 @@ interface CompletionReviewRequest {
   taskId: string | null;
   workItemId: string;
   implementationSessionIds: string[];
-  executorContextDigests: string[];
-  ownerBindingDigest: string;
-  reviewerAssignmentDigest: string;
+  implementationContextDigests: string[];
+  reviewerCapabilityDigest: string;
   source: {
     branch: string;
     commit: string;
@@ -66,14 +67,14 @@ interface CompletionReviewRequest {
 }
 
 interface CompletionReviewReceipt {
-  schemaVersion: 2;
+  schemaVersion: 3;
   kind: 'peers-touch-completion-review-receipt';
   reviewId: string;
   requestDigest: string;
-  reviewerContextDigest: string;
-  rootBindingDigest: string;
-  parentBindingDigest: string;
-  assignmentDigest: string;
+  reviewerDelegationDigest: string;
+  reviewerCapabilityDigest: string;
+  assessmentDigest: string;
+  proofDigest: string;
   verdict: 'PASS' | 'FAIL';
   findings: Array<{
     id: string;
@@ -86,20 +87,22 @@ interface CompletionReviewReceipt {
 }
 ```
 
-Schema v2 records live only under
-`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v2/`.
-The pre-hard-cut `completion-reviews/` namespace is retained as inert history:
-the canonical owner never reads, imports, migrates, or rewrites it.
+Schema v3 records live only under
+`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v3/`.
+`completion-reviews/` and `completion-reviews-v2/` are retained as inert
+history: the canonical owner never reads, imports, migrates, or rewrites them.
 
 Request 和 receipt 都是 create-once。`obligationsDigest` 覆盖 Task 的
 `doneWhen`、`failureBehavior`、checks、read/write set、Acceptance closure
 以及 Plan-level deletion/quality obligations。
 
-`prepare` 只接受当前 `completion-review-prepare` Action Receipt 指向的 OWNER
-projection，并据此创建 REVIEWER assignment。`submit` 只接受当前
-`completion-review-submit` Action Receipt 指向的、与 request assignment
-精确相同且仍 live 的 REVIEWER child。任一路径缺少精确 receipt 都 fail
-closed；禁止回退为枚举 worktree 下所有未 release binding。
+`prepare` 从 successful Development Session、current source 和 obligation
+material 派生 implementation context，创建 immutable request 和 owner-private
+capability。`submit` 必须读取显式 capability path，验证 exact review/digest，
+再从 capability 与 assessment 内部派生 delegation digest 和 HMAC proof。
+调用者不能注入 delegation provenance；Completion Review 不读取 Action
+Receipt、Workflow Binding 或 host session。Capability possession 不等于独立
+判断，独立 reviewer launch 是 Dev Workflow 的编排义务。
 
 Reviewer 提交 owner-only assessment。至少包含以下 mandatory finding：
 
@@ -126,9 +129,8 @@ STALE -> PENDING
 Receipt 仅在以下条件全部成立时为 current：
 
 - Plan、Task、work item 和 implementation Session identity 匹配；
-- Reviewer context 与 request 覆盖的所有 implementation context 不同；
-- Reviewer role、assignment、root/parent lineage 和 Development Session
-  identity 与 request 完全匹配，且 child lease 未过期、未 terminal；
+- Reviewer capability、delegation digest、assessment digest 和 proof 与
+  request 精确匹配；
 - Branch、commit、tree 和 workspace digest 与当前 Git state 匹配；
 - Obligation digest 与当前 Plan/Task/Acceptance source 匹配；
 - Implementation source 和 obligation digest 与 reviewed request 匹配；

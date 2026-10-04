@@ -153,6 +153,22 @@ def resolve_trae_workspace(
     return descriptor, roots, roots[0]
 
 
+def trae_hook_projection_roots(
+    root: Path,
+    workspace_roots: tuple[Path, ...],
+    bootstrap_root: Path,
+) -> tuple[Path, ...]:
+    return tuple(
+        workspace_root
+        for workspace_root in workspace_roots
+        if (
+            workspace_root == root
+            or workspace_root == bootstrap_root
+            or (workspace_root / ".trae").exists()
+        )
+    )
+
+
 def canonical_integration_catalog(
     root: Path,
 ) -> tuple[list[Path], Path, dict[str, object]]:
@@ -1196,17 +1212,17 @@ def install(
     target_root = host_root(root, host)
     trae_workspace: Path | None = None
     trae_hook_targets: list[tuple[Path, dict[str, object]]] = []
-    trae_bootstrap_root = target_root
+    trae_probe_root = target_root
     if host == "trae":
         trae_workspace, workspace_roots, bootstrap_root = resolve_trae_workspace(
             root,
             workspace_file,
         )
-        trae_bootstrap_root = host_root(bootstrap_root, "trae")
-        for workspace_root in workspace_roots:
-            candidate = workspace_root / ".trae"
-            if workspace_root != bootstrap_root and not candidate.exists():
-                continue
+        for workspace_root in trae_hook_projection_roots(
+            root,
+            workspace_roots,
+            bootstrap_root,
+        ):
             hook_root = host_root(workspace_root, "trae")
             trae_hook_targets.append(
                 (
@@ -1215,21 +1231,16 @@ def install(
                         root,
                         hook_root,
                         trae_workspace,
-                        install=workspace_root == bootstrap_root,
                     ),
                 )
             )
+        trae_probe_root = host_root(root, "trae")
     cursor_hooks = (
         planned_cursor_hooks(root, target_root)
         if host == "cursor"
         else None
     )
-    claim_control_action_grant(
-        root,
-        workspace_id,
-        "skills",
-        require_idle=False,
-    )
+    validated_work_ledger(root)
     write_installation_receipt(
         workspace_id,
         branch,
@@ -1268,7 +1279,7 @@ def install(
         callback_proof = (
             probe_installed_trae_hook(
                 root,
-                trae_bootstrap_root,
+                trae_probe_root,
                 trae_workspace,
             )
             if host == "trae"
@@ -1321,13 +1332,13 @@ def cleanup(
     _, _, catalog = canonical_integration_catalog(root)
     target_root = host_root(root, host)
     trae_workspace: Path | None = None
-    trae_bootstrap_root = target_root
+    trae_probe_root = target_root
     if host == "trae":
-        trae_workspace, _, bootstrap_root = resolve_trae_workspace(
+        trae_workspace, _, _ = resolve_trae_workspace(
             root,
             workspace_file,
         )
-        trae_bootstrap_root = host_root(bootstrap_root, "trae")
+        trae_probe_root = host_root(root, "trae")
     operation = "skills-hard-cut" if action == "hard-cut" else "skills-gc"
     targets = (
         legacy_binding_targets()
@@ -1355,7 +1366,7 @@ def cleanup(
         callback_proof = (
             probe_installed_trae_hook(
                 root,
-                trae_bootstrap_root,
+                trae_probe_root,
                 trae_workspace,
             )
             if host == "trae"

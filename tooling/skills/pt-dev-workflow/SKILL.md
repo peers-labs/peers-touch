@@ -435,10 +435,12 @@ Plan Package.
 Review is an internal quality gate, not a default user handoff:
 
 1. Generate the owning methodology or delivery review prompt.
-2. Before `completion-review-prepare`, revalidate the current OWNER projection.
-   The command creates one REVIEWER assignment. The reviewer must claim that
-   assignment; `completion-review-submit` rejects an OWNER, unassigned,
-   expired, terminal, wrong-parent, or wrong-assignment projection.
+2. Run `completion-review-prepare` from the current successful Development
+   Session. The command creates one immutable request and one owner-private
+   reviewer capability. Pass the returned capability path to the independent
+   reviewer; `completion-review-submit` rejects a missing, wrong-review, or
+   wrong-digest capability and derives delegation provenance internally. The
+   capability proves request-scoped delegation, not reviewer independence.
 3. Invoke the applicable project review path, normally
    `route-change` -> `pt-code-structure-review` for authored source and record
    its source-bound decision -> `pt-quality-check` ->

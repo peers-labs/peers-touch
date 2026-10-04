@@ -926,7 +926,6 @@ test('the exact OWNER integration control action receives one grant', async () =
     assert.equal(result.action, 'ALLOW');
   }
   assert.deepEqual(grants, [
-    'skills-action',
     'skills-hard-cut-action',
     'skills-gc-action',
   ]);

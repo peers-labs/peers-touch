@@ -123,7 +123,7 @@ tooling/scripts/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D33 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D37 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
@@ -146,7 +146,7 @@ tooling/scripts/
 | `dev-session-store.mjs` | Atomic bounded event journal, multi-transition result commit, replay and snapshot materialization |
 | `dev-session.mjs` | Session `start/status/transition/functional-result` CLI |
 | `dev-session.test.mjs` | State, identity, guard, clock and symlink regressions |
-| `completion-review.mjs` | Independent current-source review request, assessment, receipt, and freshness owner |
+| `completion-review.mjs` | Repository-native current-source review request, reviewer capability, assessment proof, receipt, and freshness owner |
 | `workflow-action-store.mjs` | Bounded redacted Action Receipt chain and activity reduction |
 | `workflow-host-adapters.mjs` | TRAE/Cursor/Codex event normalization and native response rendering; no cross-host identity aliases |
 | `workflow-binding-projection.mjs` | Pure host-specific root/execution identity projection plus role, lineage and subject/tool/target roots |
@@ -174,7 +174,7 @@ tooling/scripts/
 | `tooling/skills/pt-dev-runtime-handoff/` | Project runtime, Journey, Session result, and cleanup owner |
 | `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |
 | `tooling/scripts/install-agent-integration.sh` | Non-interactive dispatch for projection, hard-cut, and retired-projection GC |
-| `tooling/scripts/agent-integration-audit.py` | Fail-closed source, workspace-bootstrap, recursive catalog, binding-store, receipt, and projection audit |
+| `tooling/scripts/agent-integration-audit.py` | Fail-closed source, participating-root Hook, recursive catalog, binding-store, receipt, and projection audit |
 | `tooling/scripts/agent-integration-control.py` | Work-ledger-locked projection plus separately authorized global-idle hard-cut and retired-projection GC owners |
 | `tooling/scripts/skill-overlay-control.py` | Machine-local user Overlay install/list/enable/disable/uninstall/resolve owner with immutable-copy and digest validation |
 | `tooling/scripts/skill-overlay-control-test.py` | Overlay lifecycle, ordering, collision, symlink, registry, and tamper regression coverage |
@@ -243,7 +243,7 @@ pt-ew-plugin
 
 Workflow Snapshot
   -> Plan / declaration / active-work / Session / Git owner reads
-  -> Completion Review + bounded Action Receipt reduction
+  -> Completion Review delegated receipt + bounded Action Receipt reduction
   -> CLI / Context Anchor / Workflow Doctor / Peers Dev
 
 Acceptance execution_plan.py

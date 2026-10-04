@@ -105,7 +105,7 @@
     },
     "machine-dev-registry-self": {
       "command": "node --test tooling/scripts/local-dev/machine-dev.test.mjs tooling/devctl/test/desktop.test.mjs tooling/devctl/test/process-adapter.test.mjs tooling/devctl/test/profile.test.mjs tooling/devctl/test/station.test.mjs",
-      "timeout_seconds": 360,
+      "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Validate explicit first-use Profile registration, authoritative workspace update, source-matched idempotent Station and Desktop startup, partial managed Desktop recovery, generated-source preparation, typed remote deployment failures, owner-checked unregister, profile policy, conflict detection, and OS-held runtime lease lifecycle."

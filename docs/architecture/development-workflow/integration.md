@@ -157,7 +157,7 @@ make active-work-status-all
 make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>
 make completion-review-prepare WORK_ITEM=<id> [SCOPE=<task|plan>]
 make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> \
-  ASSESSMENT=<json-file>
+  ASSESSMENT=<json-file> CAPABILITY=<reviewer-capability-json-file>
 make completion-review-status WORK_ITEM=<id>
 make workflow-snapshot
 make workflow-doctor IDE=<trae|cursor|codex>
@@ -218,13 +218,17 @@ make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
 ```
 
 This is the only canonical project Skill projector. Codex also receives the
-worktree-local `pt-ew-plugin`; TRAE receives one descriptor-selected multi-root
-workspace bootstrap. The installer removes managed per-worktree TRAE hooks,
-preserves unrelated host files, never edits global hooks, and consumes one
-current, live OWNER `skills` Action Receipt bound to the selected source
-worktree. Unrelated live declarations, child assignments, Action Receipts, and
-Action Store activity do not block this non-destructive projection. There is no
-separate acknowledgement command;
+worktree-local `pt-ew-plugin`; TRAE projects equivalent canonical Hooks into
+the selected source root, the descriptor bootstrap root, and descriptor roots
+with an existing real `.trae` directory. Untouched roots remain untouched.
+Every projected Hook calls the selected source root's same plugin and remains
+transport only; the Kernel owns root selection and the single OWNER binding.
+The installer preserves unrelated host files, never edits global hooks, and
+does not depend on a grant from the Hook it installs. The machine ledger lock,
+canonical source checks, path boundaries, workspace descriptor, merged Hook
+shape, and callback proof still fail closed. Unrelated live declarations,
+child assignments, Action Receipts, and Action Store activity do not block
+this non-destructive projection. There is no separate acknowledgement command;
 restart the IDE only when the host cannot reload changed hooks, then rerun the
 audit.
 
