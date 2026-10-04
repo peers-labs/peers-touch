@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from selenium.webdriver.common.by import By
+
 ROOT = Path(__file__).resolve().parents[5]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -174,18 +176,11 @@ def open_cancel_confirmation(
 
 
 def confirmation_is_closed(client: FoundationRuntimeClient) -> bool:
-    return bool(
-        client.driver.execute_script(
-            """
-            return !Array.from(document.querySelectorAll(
-              '[data-pt-home-goal-cancel-confirm]'
-            )).some((element) => {
-              const style = getComputedStyle(element);
-              return style.display !== 'none' && style.visibility !== 'hidden';
-            });
-            """
-        )
+    confirmations = client.driver.find_elements(
+        By.CSS_SELECTOR,
+        "[data-pt-home-goal-cancel-confirm]",
     )
+    return not any(element.is_displayed() for element in confirmations)
 
 
 def verify_confirmation_focus_return(
