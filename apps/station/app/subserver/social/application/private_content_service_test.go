@@ -2096,6 +2096,7 @@ func (a *privateContentTestAudience) ValidateSubmit(
 
 type privateContentTestRecipients struct {
 	author        *actormodel.ActorDeviceRef
+	devices       map[string]string
 	validationErr error
 }
 
@@ -2132,7 +2133,10 @@ func (r privateContentTestRecipients) ResolveContentPreKeyTargets(
 		len(actors)*2,
 	)
 	for _, actorPTID := range actors {
-		deviceID := "bob-device"
+		deviceID := r.devices[actorPTID]
+		if deviceID == "" {
+			deviceID = "bob-device"
+		}
 		if actorPTID == r.author.GetActor().GetPtid() {
 			deviceID = r.author.GetDeviceId()
 		}

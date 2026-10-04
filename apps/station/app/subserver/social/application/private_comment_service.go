@@ -128,12 +128,17 @@ func (s *PrivateContentService) GetPrivateComment(
 		}
 		return nil, mapPrivateStoreError(operation, err)
 	}
-	comment, err := s.projectPrivateComment(ctx, viewer, read, operation)
+	comments, err := s.projectPrivateComments(
+		ctx,
+		viewer,
+		[]*infrastructure.PrivateCommentReadModel{read},
+		operation,
+	)
 	if err != nil {
 		return nil, err
 	}
 	return &privatecontentpb.GetMomentCommentResourceResponse{
-		Comment: comment,
+		Comment: comments[0],
 	}, nil
 }
 
@@ -258,17 +263,14 @@ func (s *PrivateContentService) ListPrivateComments(
 		}
 		return nil, mapPrivateStoreError(operation, err)
 	}
-	comments := make(
-		[]*privatecontentpb.CommentResource,
-		0,
-		len(page.Comments),
+	comments, err := s.projectPrivateComments(
+		ctx,
+		viewer,
+		page.Comments,
+		operation,
 	)
-	for _, read := range page.Comments {
-		comment, err := s.projectPrivateComment(ctx, viewer, read, operation)
-		if err != nil {
-			return nil, err
-		}
-		comments = append(comments, comment)
+	if err != nil {
+		return nil, err
 	}
 	nextCursor := ""
 	if page.HasMore {
@@ -290,6 +292,51 @@ func (s *PrivateContentService) ListPrivateComments(
 		NextCursor: nextCursor,
 		HasMore:    page.HasMore,
 	}, nil
+}
+
+func (s *PrivateContentService) projectPrivateComments(
+	ctx context.Context,
+	viewer *actormodel.ActorDeviceRef,
+	reads []*infrastructure.PrivateCommentReadModel,
+	operation string,
+) ([]*privatecontentpb.CommentResource, error) {
+	requiresRetainedAuthorKey := false
+	for _, read := range reads {
+		if read != nil &&
+			s.localStationPeerID != "" &&
+			read.AuthorHomeStationPeerID != "" &&
+			read.AuthorHomeStationPeerID != s.localStationPeerID {
+			requiresRetainedAuthorKey = true
+			break
+		}
+	}
+	comments := make([]*privatecontentpb.CommentResource, 0, len(reads))
+	project := func(transaction federationdelivery.Transaction) error {
+		for _, read := range reads {
+			comment, err := s.projectPrivateComment(
+				ctx,
+				transaction,
+				viewer,
+				read,
+				operation,
+			)
+			if err != nil {
+				return err
+			}
+			comments = append(comments, comment)
+		}
+		return nil
+	}
+	if !requiresRetainedAuthorKey {
+		return comments, project(nil)
+	}
+	err := s.store.Execute(
+		ctx,
+		func(transaction infrastructure.PrivateContentTransaction) error {
+			return project(transaction.ContentPreKeyValidationTransaction())
+		},
+	)
+	return comments, err
 }
 
 func (s *PrivateContentService) projectRemotePrivateComment(
@@ -428,6 +475,7 @@ func (s *PrivateContentService) validatePrivateContentViewer(
 
 func (s *PrivateContentService) projectPrivateComment(
 	ctx context.Context,
+	transaction federationdelivery.Transaction,
 	viewer *actormodel.ActorDeviceRef,
 	read *infrastructure.PrivateCommentReadModel,
 	operation string,
@@ -698,6 +746,54 @@ func (s *PrivateContentService) projectPrivateComment(
 	if err != nil {
 		return nil, err
 	}
+	access := privateContentAccess(
+		payload,
+		objects,
+		viewerEnvelope,
+		proof,
+		attestation,
+		mentionRouting,
+		nil,
+		nil,
+	)
+	if s.localStationPeerID != "" &&
+		read.AuthorHomeStationPeerID != "" &&
+		read.AuthorHomeStationPeerID != s.localStationPeerID {
+		if transaction == nil ||
+			envelope == nil ||
+			envelope.GetBinding() == nil {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				"receiver_verified_sender_signing_key",
+				"is unavailable for a remote Comment author",
+			)
+		}
+		authorKey, err := s.signatureVerifier.ResolveRetained(
+			ctx,
+			transaction,
+			proof.GetAuthor(),
+			read.AuthorHomeStationPeerID,
+			envelope.GetBinding().GetSenderSigningKeyId(),
+			read.CommitProof.CommittedAt,
+		)
+		if err != nil {
+			return nil, socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				err,
+			)
+		}
+		if authorKey == nil {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				"receiver_verified_sender_signing_key",
+				"is unavailable for a remote Comment author",
+			)
+		}
+		access.Verification.ReceiverVerifiedSenderSigningKey = authorKey
+	}
 	return &privatecontentpb.CommentResource{
 		Metadata: &privatecontentpb.CommentMetadata{
 			CommentId:        read.Comment.CommentID,
@@ -713,16 +809,7 @@ func (s *PrivateContentService) projectPrivateComment(
 			RepliesCount:   read.Comment.RepliesCount,
 		},
 		Body: &privatecontentpb.CommentResource_PrivateContent{
-			PrivateContent: privateContentAccess(
-				payload,
-				objects,
-				viewerEnvelope,
-				proof,
-				attestation,
-				mentionRouting,
-				nil,
-				nil,
-			),
+			PrivateContent: access,
 		},
 	}, nil
 }
