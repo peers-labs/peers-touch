@@ -443,6 +443,16 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	evaluationHandlers := handler.NewEvaluationHandlers(evaluationSvc)
 	goalService := service.NewGoalService(s.agentDB)
 	goalExecutionService := service.NewGoalExecutionService(s.agentDB)
+	goalDirectModelExecutor := service.NewGoalDirectModelExecutor(
+		s.agentDB,
+		providerSvc,
+		eventBus,
+	)
+	goalAdmissionService := service.NewGoalAdmissionService(
+		goalService,
+		goalExecutionService,
+	)
+	goalAdmissionService.SetDirectModelExecutor(goalDirectModelExecutor)
 	realtimeRelay := service.NewAgentRealtimeRelay(
 		s.agentDB,
 		func() service.AgentRealtimePublisher {
@@ -451,7 +461,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	)
 	goalHandlers := handler.NewGoalHandlers(
 		goalService,
-		service.NewGoalAdmissionService(goalService, goalExecutionService),
+		goalAdmissionService,
 	)
 	homeHandlers := handler.NewHomeHandlers(
 		service.NewHomeProjectionService(

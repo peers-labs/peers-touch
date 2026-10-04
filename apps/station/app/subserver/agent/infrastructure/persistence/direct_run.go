@@ -6,6 +6,10 @@ import "time"
 type DirectRun struct {
 	DirectRunID       string    `gorm:"primaryKey;type:varchar(64)"`
 	TaskID            string    `gorm:"type:varchar(36);index:idx_agent_direct_runs_task"`
+	GoalID            string    `gorm:"type:varchar(64);index:idx_agent_direct_runs_goal"`
+	GoalNodeID        string    `gorm:"type:varchar(64);index:idx_agent_direct_runs_goal_node"`
+	StepID            string    `gorm:"type:varchar(36);index:idx_agent_direct_runs_step"`
+	AttemptID         string    `gorm:"type:varchar(36);index:idx_agent_direct_runs_attempt"`
 	ProviderID        string    `gorm:"not null;type:varchar(128);index:idx_agent_direct_runs_provider"`
 	ModelIntent       string    `gorm:"not null;type:varchar(128);index:idx_agent_direct_runs_model"`
 	InputSnapshotJSON string    `gorm:"type:text"`

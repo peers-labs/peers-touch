@@ -14,9 +14,10 @@ import (
 )
 
 type GoalExecutionSnapshot struct {
-	Node *persistence.AgentGoalNode
-	Task *persistence.TaskRun
-	Step *persistence.ExecutionStep
+	Node   *persistence.AgentGoalNode
+	Task   *persistence.TaskRun
+	Step   *persistence.ExecutionStep
+	Result *GoalResultProjection
 }
 
 type GoalExecutionService struct {
@@ -196,7 +197,16 @@ func loadGoalExecutionSnapshotTx(
 	).First(&step).Error; err != nil {
 		return nil, goalRecordError("Goal ExecutionStep", task.RootStepID, err)
 	}
-	return &GoalExecutionSnapshot{Node: &node, Task: task, Step: &step}, nil
+	result, err := loadGoalResultProjectionTx(tx, task, &step)
+	if err != nil {
+		return nil, goalInternal("Load Goal result projection", err)
+	}
+	return &GoalExecutionSnapshot{
+		Node:   &node,
+		Task:   task,
+		Step:   &step,
+		Result: result,
+	}, nil
 }
 
 func stableGoalExecutionID(prefix string, goalID string) string {

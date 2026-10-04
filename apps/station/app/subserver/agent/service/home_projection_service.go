@@ -247,20 +247,32 @@ func (s *HomeProjectionService) Get(
 					Surface:         model.TaskSurface(task.Surface),
 					WorkspaceId:     task.WorkspaceID,
 				}
+				// Keep every canonical Goal TaskRun in the wire projection so a
+				// Desktop restart can reconstruct both active and terminal work.
+				projection.ActiveTasks = append(
+					projection.ActiveTasks,
+					taskProjection,
+				)
 				switch status {
 				case model.HomeTaskStatus_HOME_TASK_STATUS_PENDING,
 					model.HomeTaskStatus_HOME_TASK_STATUS_RUNNING,
 					model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER:
-					projection.ActiveTasks = append(projection.ActiveTasks, taskProjection)
 				case model.HomeTaskStatus_HOME_TASK_STATUS_COMPLETED:
 					projection.BriefItems = append(projection.BriefItems, &model.HomeBriefItem{
-						BriefId:   "task:" + task.TaskID,
+						BriefId:   homeGoalResultBriefID(execution),
 						SourceRef: task.TaskID,
 						Title:     task.Title,
-						Summary:   firstNonEmpty(step.ResultSummary, "Task completed"),
+						Summary:   homeGoalResultSummary(execution, "Task completed"),
 						UpdatedAt: timestamppb.New(task.UpdatedAt.UTC()),
 					})
 				case model.HomeTaskStatus_HOME_TASK_STATUS_FAILED:
+					projection.BriefItems = append(projection.BriefItems, &model.HomeBriefItem{
+						BriefId:   homeGoalResultBriefID(execution),
+						SourceRef: task.TaskID,
+						Title:     task.Title,
+						Summary:   homeGoalResultSummary(execution, "Task failed"),
+						UpdatedAt: timestamppb.New(task.UpdatedAt.UTC()),
+					})
 					projection.NeedsUserItems = append(projection.NeedsUserItems, &model.HomeNeedsUserItem{
 						ItemId:     "task:" + task.TaskID,
 						SourceRef:  task.TaskID,

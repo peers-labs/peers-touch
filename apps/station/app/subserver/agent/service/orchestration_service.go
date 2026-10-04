@@ -362,13 +362,21 @@ func (s *OrchestrationService) ListTaskEvents(ctx context.Context, actorPTID str
 	if actorPTID == "" || taskID == "" {
 		return nil, 0, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_ptid and task_id are required", nil)
 	}
-	var task persistence.CollaborationTask
-	err = db.WithContext(ctx).Where("id = ? AND goal_owner_ptid = ?", taskID, actorPTID).First(&task).Error
-	if err == gorm.ErrRecordNotFound {
-		return nil, 0, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "collaboration task not found", err)
+	var taskCount int64
+	if err := db.WithContext(ctx).Model(&persistence.CollaborationTask{}).
+		Where("id = ? AND goal_owner_ptid = ?", taskID, actorPTID).
+		Count(&taskCount).Error; err != nil {
+		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to authorize task events", err)
 	}
-	if err != nil {
-		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get collaboration task", err)
+	if taskCount == 0 {
+		if err := db.WithContext(ctx).Model(&persistence.TaskRun{}).
+			Where("task_id = ? AND owner_actor_ptid = ?", taskID, actorPTID).
+			Count(&taskCount).Error; err != nil {
+			return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to authorize task events", err)
+		}
+	}
+	if taskCount == 0 {
+		return nil, 0, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "task not found", gorm.ErrRecordNotFound)
 	}
 	limit := int(req.GetPageSize())
 	if limit <= 0 || limit > 200 {

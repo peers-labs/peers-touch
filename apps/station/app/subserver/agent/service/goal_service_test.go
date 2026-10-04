@@ -866,6 +866,7 @@ func openGoalServiceTestDB(t *testing.T) *gorm.DB {
 		&persistence.TaskRun{},
 		&persistence.AgentGoalNode{},
 		&persistence.ExecutionStep{},
+		&persistence.DirectRun{},
 		&persistence.AgentTask{},
 		&persistence.CollaborationTask{},
 	); err != nil {

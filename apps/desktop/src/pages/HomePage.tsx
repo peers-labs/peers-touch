@@ -31,6 +31,7 @@ import {
 } from '../gen/proto/domain/agent/home_pb';
 import { usePageContext } from '../kernel/usePageContext';
 import { GoalDraftCard } from '../components/home/GoalDraftCard';
+import { GoalResultSummary } from '../components/home/GoalResultSummary';
 import { GoalRunSummary } from '../components/home/GoalRunSummary';
 import {
   openHomeConversation,
@@ -61,6 +62,7 @@ export function HomePage() {
   const loading = useHomeStore((state) => state.loading);
   const error = useHomeStore((state) => state.error);
   const goalExecutions = useGoalExecutionStore((state) => state.executions);
+  const goalResults = useGoalExecutionStore((state) => state.results);
   const [mode, setMode] = useState<HomeMode>('chat');
   const [draft, setDraft] = useState('');
   const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -76,6 +78,12 @@ export function HomePage() {
   const legacyActiveTasks = useMemo(
     () => projection?.activeTasks.filter((task) => !task.goalId) ?? [],
     [projection?.activeTasks],
+  );
+  const regularBriefItems = useMemo(
+    () => projection?.briefItems.filter(
+      (item) => !item.briefId.startsWith('goal-result:'),
+    ) ?? [],
+    [projection?.briefItems],
   );
   const firstReadyAgent = useMemo(
     () => pinnedAgents.find((agent) => {
@@ -256,6 +264,11 @@ export function HomePage() {
               title={t('agent.home.activeTasks')}
             >
               <GoalRunSummary />
+            </Card>
+          ) : null}
+          {goalResults.length ? (
+            <Card size="small" title={t('agent.home.goalResults')}>
+              <GoalResultSummary />
             </Card>
           ) : null}
         </Flexbox>
@@ -480,10 +493,16 @@ export function HomePage() {
               )}
             </Card>
 
+            {goalResults.length ? (
+              <Card size="small" title={t('agent.home.goalResults')}>
+                <GoalResultSummary />
+              </Card>
+            ) : null}
+
             <Card size="small" title={t('agent.home.brief')}>
-              {projection?.briefItems.length ? (
+              {regularBriefItems.length ? (
                 <Flexbox gap={10}>
-                  {projection.briefItems.slice(0, 4).map((item) => (
+                  {regularBriefItems.slice(0, 4).map((item) => (
                     <Flexbox horizontal gap={8} key={item.briefId}>
                       <CheckCircle2 color={token.colorSuccess} size={15} />
                       <Flexbox style={{ minWidth: 0 }}>

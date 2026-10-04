@@ -25,6 +25,17 @@ type goalAdmissionPayload struct {
 type GoalAdmissionService struct {
 	goals      *GoalService
 	executions *GoalExecutionService
+	executor   goalDirectModelStarter
+}
+
+type goalDirectModelStarter interface {
+	PrepareTx(
+		context.Context,
+		*gorm.DB,
+		*persistence.AgentGoal,
+		*GoalExecutionSnapshot,
+	) error
+	Start(ownerPTID string, taskID string)
 }
 
 func NewGoalAdmissionService(
@@ -38,6 +49,15 @@ func NewGoalAdmissionService(
 		service.executions = NewGoalExecutionService(goals.db)
 	}
 	return service
+}
+
+func (s *GoalAdmissionService) SetDirectModelExecutor(
+	executor goalDirectModelStarter,
+) {
+	if s == nil {
+		return
+	}
+	s.executor = executor
 }
 
 func (s *GoalAdmissionService) Admit(
@@ -95,7 +115,8 @@ func (s *GoalAdmissionService) Start(
 		GoalID:           strings.TrimSpace(req.GetGoalId()),
 		ExpectedRevision: req.GetExpectedRevision(),
 	}
-	return s.goals.runGoalMutationTx(
+	startedTaskID := ""
+	goal, err := s.goals.runGoalMutationTx(
 		ctx,
 		strings.TrimSpace(ownerPTID),
 		payload.GoalID,
@@ -114,13 +135,32 @@ func (s *GoalAdmissionService) Start(
 			if s.executions == nil {
 				return goalInternal("Goal execution is unavailable", nil)
 			}
-			if _, err := s.executions.AllocateFirstTx(ctx, tx, record); err != nil {
+			execution, err := s.executions.AllocateFirstTx(ctx, tx, record)
+			if err != nil {
 				return err
+			}
+			if s.executor != nil {
+				if err := s.executor.PrepareTx(
+					ctx,
+					tx,
+					record,
+					execution,
+				); err != nil {
+					return err
+				}
+				startedTaskID = execution.Task.TaskID
 			}
 			record.Status = int32(model.AgentGoalStatus_AGENT_GOAL_STATUS_RUNNING)
 			return nil
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+	if s.executor != nil && startedTaskID != "" {
+		s.executor.Start(strings.TrimSpace(ownerPTID), startedTaskID)
+	}
+	return goal, nil
 }
 
 func validateReviewedGoalAdmission(record *persistence.AgentGoal) error {
