@@ -25,8 +25,14 @@
   ],
   "doneWhen": ["A legacy collaboration project opens in Atelier under its canonical Goal id","Project and TaskRun links remain stable after repeated migration","Ambiguous metadata is shown as blocked instead of inferred","Legacy source rows remain readable until hard cut"],
   "failureBehavior": ["Do not make Atelier the migration authority","Do not mutate or delete source rows in this slice"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T22:07:25Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:8857cf3caa7dd07d9bd6dd38c325752df2dc7a17;development://personal-agent-os-convergence-20261003/artifacts/20261004T220656114191Z/paos-12-collab-task-migration/capture.json;manifest-sha256:59f5d47138f75eaa243455420bb9a369a6bd2e23fa114754ae56b86863e8a771"
+    }
+  ]
 }
 ```
 
@@ -40,4 +46,18 @@
 
 ## Current Snapshot
 
-Atelier project identity is still rooted in CollaborationTask.
+Functional slice complete. Station now materializes deterministic Goal,
+TaskRun, GoalNode, Step, and attempt identities without mutating legacy
+CollaborationTask rows. Atelier keeps the legacy task key for existing streams
+and actions while project identity resolves to the canonical Goal.
+
+- Ambiguous identity metadata is recorded and rendered as a blocking migration
+  instead of becoming inferred Goal state.
+- Existing DirectRun TaskRun and Step identities remain stable.
+- Full Agent Station tests, 98 Atelier tests, TypeScript, projection contract,
+  applet bundle, and diff checks pass.
+- Native Profile `two` readback preserved `collab_paos12_1791150834` as the
+  TaskRun/source key and exposed `goal_8d03c3a7b26525b73f34f201` as project
+  identity across repeated reads.
+- Native Tauri first-viewport UI displayed `Migrated` and the canonical Goal;
+  cleanup and secret scan passed.
