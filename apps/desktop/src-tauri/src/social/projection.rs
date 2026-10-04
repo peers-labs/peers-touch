@@ -492,7 +492,7 @@ fn decrypt_projection_from_response_at(
     })
 }
 
-fn remote_delivery_state(
+pub(super) fn remote_delivery_state(
     response: &social::GetMomentResourceResponse,
 ) -> Result<Option<PrivateRemoteDeliveryState>, String> {
     let Some(status) = response.remote_delivery.as_ref() else {
