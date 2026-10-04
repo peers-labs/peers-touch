@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
       draftId: string;
     }>>(),
     readMoment: vi.fn<() => Promise<void>>(),
+    revokeMoment: vi.fn<() => Promise<void>>(),
     purgeMoment: vi.fn<() => Promise<void>>(),
   };
   const privateComments = {
@@ -199,6 +200,7 @@ beforeEach(() => {
     draftId: 'draft-remote',
   });
   mocks.privateMoments.readMoment.mockResolvedValue(undefined);
+  mocks.privateMoments.revokeMoment.mockResolvedValue(undefined);
   mocks.privateMoments.purgeMoment.mockResolvedValue(undefined);
   mocks.privateComments.bootstrap.mockResolvedValue(undefined);
   mocks.privateComments.reconcile.mockResolvedValue(undefined);
@@ -325,6 +327,67 @@ describe('momentsRuntime identity fence', () => {
     eventBus.publish(EVENT.MOMENT_REACTED, wake);
     await Promise.resolve();
     expect(mocks.privateMoments.readMoment).toHaveBeenCalledTimes(1);
+  });
+
+  it('purges a hidden private projection once per typed revocation event', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+    const wake = {
+      eventId: 'remote-private-revocation-1',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId: '01REMOTEREVOKEDPOST',
+      occurredAtUnixMs: 461,
+      reason: 'RELATIONSHIP_REVOKED' as const,
+    };
+
+    eventBus.publish(EVENT.MOMENT_REVOKED, wake);
+    await vi.waitFor(() => {
+      expect(mocks.privateComments.markParentUnavailable).toHaveBeenCalledWith(
+        wake.postId,
+        'SOCIAL_PRIVATE_RELATIONSHIP_REVOKED',
+      );
+      expect(mocks.privateMoments.revokeMoment).toHaveBeenCalledWith(
+        wake.postId,
+        'RELATIONSHIP_REVOKED',
+      );
+      expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
+        'event:moment.revoked',
+      );
+    });
+
+    eventBus.publish(EVENT.MOMENT_REVOKED, wake);
+    await Promise.resolve();
+    expect(mocks.privateMoments.revokeMoment).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses cached private posts immediately on a relationship block', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+    (mocks.privateMoments.postsById as Record<string, unknown>)['private-bob'] = {
+      postId: 'private-bob',
+      authorPtid: 'ptid:bob',
+      state: 'CONTENT_READY',
+    };
+
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, {
+      targetActorPtid: 'ptid:bob',
+      action: 'block',
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.privateMoments.revokeMoment).toHaveBeenCalledWith(
+        'private-bob',
+        'RECIPIENT_BLOCKED',
+      );
+      expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
+        'event:relationship.changed:block',
+      );
+    });
   });
 
   it('rejects imported Moment wakes from another actor or Station scope', async () => {

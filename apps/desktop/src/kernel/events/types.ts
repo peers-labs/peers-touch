@@ -208,7 +208,14 @@ export interface RealtimeConversationSettingsChangedPayload {
 
 export interface RealtimeSocialGraphEventPayload {
   eventId: string;
-  kind: 'friend_request_received' | 'friend_request_accepted' | 'friend_request_rejected' | 'conversation_created' | 'unfriended';
+  kind:
+    | 'friend_request_received'
+    | 'friend_request_accepted'
+    | 'friend_request_rejected'
+    | 'conversation_created'
+    | 'unfriended'
+    | 'relationship_blocked'
+    | 'relationship_unblocked';
   actorPtid: string;
   targetPtid: string;
   requestId: string;
@@ -262,6 +269,15 @@ export interface MomentCreatedPayload extends MomentRealtimeBasePayload {
 
 export interface MomentDeletedPayload extends MomentRealtimeBasePayload {
   deletedByActorPtid?: string;
+}
+
+export type PrivateResourceRevocationReason =
+  | 'RESOURCE_DELETED'
+  | 'RELATIONSHIP_REVOKED'
+  | 'RECIPIENT_BLOCKED';
+
+export interface MomentRevokedPayload extends MomentRealtimeBasePayload {
+  reason: PrivateResourceRevocationReason;
 }
 
 export interface MomentCommentedPayload extends MomentRealtimeBasePayload {
@@ -328,6 +344,7 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_SOCIAL_GRAPH_EVENT]: RealtimeSocialGraphEventPayload;
   [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
   [EVENT.MOMENT_DELETED]: MomentDeletedPayload;
+  [EVENT.MOMENT_REVOKED]: MomentRevokedPayload;
   [EVENT.MOMENT_COMMENTED]: MomentCommentedPayload;
   [EVENT.MOMENT_REACTED]: MomentReactedPayload;
   [EVENT.MOMENT_RESYNC_REQUESTED]: MomentResyncRequestedPayload;

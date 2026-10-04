@@ -16,6 +16,7 @@ import {
   type PrivateReadState,
 } from '../services/privateMomentsNative';
 import type { ReactionKind } from '../gen/proto/domain/social/post_pb';
+import type { PrivateResourceRevocationReason } from '../kernel/events/types';
 import { emitFrontendTelemetryEvent } from '../kernel/frontendTelemetry';
 import { log } from '../utils/logger';
 
@@ -78,6 +79,10 @@ interface PrivateMomentsState {
     kind: ReactionKind,
   ) => Promise<PrivateReactionMutationResult>;
   retryReaction: (postId: string) => Promise<PrivateReactionMutationResult>;
+  revokeMoment: (
+    postId: string,
+    reason: PrivateResourceRevocationReason,
+  ) => Promise<void>;
   purgeMoment: (postId: string) => Promise<void>;
   removePost: (postId: string) => void;
   clearPublishState: () => void;
@@ -373,6 +378,8 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
   (set, get) => {
     let reactionMutationVersion = 0;
     const reactionMutationVersionByPost = new Map<string, number>();
+    const revocationReasonByPost =
+      new Map<string, PrivateResourceRevocationReason>();
     const markReactionMutation = (postId: string): void => {
       reactionMutationVersion += 1;
       reactionMutationVersionByPost.set(postId, reactionMutationVersion);
@@ -403,6 +410,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         );
         const postsById = advancedGeneration ? {} : { ...state.postsById };
         for (const projection of snapshot.projections) {
+          if (revocationReasonByPost.has(projection.postId)) continue;
           postsById[projection.postId] = mergeProjection(
             postsById[projection.postId],
             projection,
@@ -452,6 +460,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       rendererGeneration: number,
     ): boolean => {
       if (!isCurrentScope(get().scope, actorPtid, rendererGeneration)) return false;
+      if (revocationReasonByPost.has(projection.postId)) return false;
       set((state) => {
         if (!isCurrentScope(state.scope, actorPtid, rendererGeneration)) return state;
         return {
@@ -582,6 +591,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         publishOperationSequence += 1;
         reactionMutationVersion += 1;
         reactionMutationVersionByPost.clear();
+        revocationReasonByPost.clear();
         set({
           ...initialData(),
           platform: resolvePrivateMomentsPlatform(),
@@ -597,6 +607,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         publishOperationSequence += 1;
         reactionMutationVersion += 1;
         reactionMutationVersionByPost.clear();
+        revocationReasonByPost.clear();
         const previous = get().scope;
         set({
           ...initialData(),
@@ -851,6 +862,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         const scope = get().scope;
         const actorPtid = scope.actorPtid;
         if (!actorPtid) return;
+        if (revocationReasonByPost.has(postId)) return;
         if (get().platform !== 'native') {
           applyProjection(
             unsupportedProjection(postId, actorPtid),
@@ -913,7 +925,11 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       recoverMoment: async (postId) => {
         const scope = get().scope;
         const actorPtid = scope.actorPtid;
-        if (!actorPtid || get().platform !== 'native') return;
+        if (
+          !actorPtid
+          || revocationReasonByPost.has(postId)
+          || get().platform !== 'native'
+        ) return;
         try {
           const projection = await privateMomentsNative.recover({
             actorPtid,
@@ -946,7 +962,11 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       openMedia: async (postId, objectId) => {
         const scope = get().scope;
         const actorPtid = scope.actorPtid;
-        if (!actorPtid || get().platform !== 'native') return;
+        if (
+          !actorPtid
+          || revocationReasonByPost.has(postId)
+          || get().platform !== 'native'
+        ) return;
         const projection = get().postsById[postId];
         if (!projection) return;
         const opensRemotePeerStream = mediaProjection(projection, objectId)?.accessPath
@@ -1080,9 +1100,44 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         }
       },
 
+      revokeMoment: async (postId, reason) => {
+        const scope = get().scope;
+        const actorPtid = scope.actorPtid;
+        revocationReasonByPost.set(postId, reason);
+        markReactionMutation(postId);
+        set((state) => {
+          const current = state.postsById[postId];
+          if (!current) return state;
+          const reactionsByPost = { ...state.reactionsByPost };
+          delete reactionsByPost[postId];
+          return {
+            postsById: {
+              ...state.postsById,
+              [postId]: {
+                ...current,
+                state: 'DELETED_OR_REVOKED',
+                revocationReason: reason,
+                content: undefined,
+                errorCode: `SOCIAL_PRIVATE_${reason}`,
+              },
+            },
+            reactionsByPost,
+          };
+        });
+        if (actorPtid && get().platform === 'native') {
+          await privateMomentsNative.purge({
+            actorPtid,
+            rendererGeneration: scope.rendererGeneration,
+            postId,
+          });
+        }
+      },
+
       purgeMoment: async (postId) => {
         const scope = get().scope;
         const actorPtid = scope.actorPtid;
+        revocationReasonByPost.set(postId, 'RESOURCE_DELETED');
+        markReactionMutation(postId);
         set((state) => {
           const current = state.postsById[postId];
           if (!current) return state;
@@ -1127,6 +1182,9 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
 
       reset: () => {
         publishOperationSequence += 1;
+        reactionMutationVersion += 1;
+        reactionMutationVersionByPost.clear();
+        revocationReasonByPost.clear();
         set(initialData());
       },
     };

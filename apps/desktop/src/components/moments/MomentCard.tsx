@@ -415,6 +415,7 @@ export function MomentCard({
             <div onClick={(event) => event.stopPropagation()}>
               <SocialPrivateState
                 state={privateState}
+                revocationReason={privateProjection?.revocationReason}
                 compact
                 onRetry={() => void readPrivateMoment(post.id)}
                 onRecover={() => void recoverPrivateMoment(post.id)}

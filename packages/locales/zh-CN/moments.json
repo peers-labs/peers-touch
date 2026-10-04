@@ -271,5 +271,11 @@
   "moments.private.state.PRIVATE_UNSUPPORTED_ON_DEVICE.title": "请在桌面客户端打开",
   "moments.private.state.PRIVATE_UNSUPPORTED_ON_DEVICE.description": "当前设备无法打开私密动态。",
   "moments.private.state.DELETED_OR_REVOKED.title": "动态不可用",
-  "moments.private.state.DELETED_OR_REVOKED.description": "这条私密动态已删除或访问权限已撤销。"
+  "moments.private.state.DELETED_OR_REVOKED.description": "这条私密动态已删除或访问权限已撤销。",
+  "moments.private.revocation.RESOURCE_DELETED.title": "动态已删除",
+  "moments.private.revocation.RESOURCE_DELETED.description": "作者已删除这条私密动态。",
+  "moments.private.revocation.RELATIONSHIP_REVOKED.title": "访问权限已移除",
+  "moments.private.revocation.RELATIONSHIP_REVOKED.description": "当前关系已不再授予这条私密动态的访问权限。",
+  "moments.private.revocation.RECIPIENT_BLOCKED.title": "动态已隐藏",
+  "moments.private.revocation.RECIPIENT_BLOCKED.description": "由于关系已被屏蔽，这条私密动态当前不可用。"
 }

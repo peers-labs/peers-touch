@@ -7,9 +7,11 @@ import (
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -17,6 +19,8 @@ type RelationshipService struct {
 	followRepo     infrastructure.FollowRepository
 	blockRepo      infrastructure.BlockGraphRepository
 	moderationRepo domain.StationModerationRepository
+	privateRevoker PrivateRelationshipRevoker
+	events         *SocialGraphEventPublisher
 }
 
 func NewRelationshipService(
@@ -29,6 +33,14 @@ func NewRelationshipService(
 		moderationRepo = moderationRepos[0]
 	}
 	return &RelationshipService{followRepo: followRepo, blockRepo: blockRepo, moderationRepo: moderationRepo}
+}
+
+func (s *RelationshipService) ConfigurePrivateRevocation(
+	revoker PrivateRelationshipRevoker,
+	events *SocialGraphEventPublisher,
+) {
+	s.privateRevoker = revoker
+	s.events = events
 }
 
 func (s *RelationshipService) Follow(ctx context.Context, followerPTID, targetActorPTID string) (*model.Relationship, error) {
@@ -66,10 +78,41 @@ func (s *RelationshipService) Follow(ctx context.Context, followerPTID, targetAc
 func (s *RelationshipService) Unfollow(ctx context.Context, followerPTID, targetActorPTID string) error {
 	logger.Info(ctx, "Unfollow relationship accepted")
 
-	err := s.followRepo.Unfollow(ctx, followerPTID, targetActorPTID)
+	mutations := make([]infrastructure.RelationshipMutation, 0, 1)
+	if s.privateRevoker != nil {
+		mutations = append(
+			mutations,
+			func(
+				ctx context.Context,
+				transaction delivery.Transaction,
+			) error {
+				return s.privateRevoker.RevokePrivateRelationship(
+					ctx,
+					transaction,
+					followerPTID,
+					targetActorPTID,
+					[]model.Audience_Kind{model.Audience_FRIENDS},
+					[]model.Audience_Kind{
+						model.Audience_FRIENDS,
+						model.Audience_FOLLOWERS,
+					},
+					privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_RELATIONSHIP_REVOKED,
+				)
+			},
+		)
+	}
+	changed, err := s.followRepo.Unfollow(
+		ctx,
+		followerPTID,
+		targetActorPTID,
+		mutations...,
+	)
 	if err != nil {
 		logger.Error(ctx, "failed to unfollow", "error", err)
 		return err
+	}
+	if changed && s.events != nil {
+		s.events.PublishUnfriended(ctx, followerPTID, targetActorPTID)
 	}
 
 	return nil

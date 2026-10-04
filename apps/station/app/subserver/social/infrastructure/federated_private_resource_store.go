@@ -69,6 +69,8 @@ func RemotePrivateContentModels() []any {
 	return []any{
 		&remotePrivateResourceModel{},
 		&remotePrivateEnvelopeModel{},
+		&sourcePrivateInvalidationModel{},
+		&remotePrivateTombstoneModel{},
 		&federatedPrivateInteractionModel{},
 		&federatedPrivateReactionProjectionModel{},
 	}
@@ -120,6 +122,13 @@ func (s *GORMPrivateContentStore) InspectRemotePrivateResource(
 			ErrPrivateContentInvalid,
 		)
 	}
+	if err := rejectRemotePrivateDeliveryBehindTombstone(
+		ctx,
+		transaction.DB(),
+		message,
+	); err != nil {
+		return false, err
+	}
 	deliveryHash := sha256.Sum256(canonicalDelivery)
 	return classifyRemotePrivateResourceIdentity(
 		transaction.DB().WithContext(ctx),
@@ -160,6 +169,13 @@ func (s *GORMPrivateContentStore) ApplyRemotePrivateResource(
 			"%w: delivery resource and target are required",
 			ErrPrivateContentInvalid,
 		)
+	}
+	if err := rejectRemotePrivateDeliveryBehindTombstone(
+		ctx,
+		transaction.DB(),
+		message,
+	); err != nil {
+		return false, err
 	}
 	deliveryHash := sha256.Sum256(canonicalDelivery)
 	metadata, parentContentID, err := remotePrivateResourceMetadata(message)
@@ -442,6 +458,29 @@ func loadRemotePrivatePost(
 			ErrPrivateContentConflict,
 		)
 	}
+	post := &privatecontentpb.PostMetadata{}
+	if err := unmarshalRemotePrivateProjectionPart(
+		"viewer metadata",
+		rows[0].ViewerMetadataBytes,
+		post,
+	); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(post.GetAuthor().GetPtid()) == "" {
+		return nil, ErrPrivateContentConflict
+	}
+	blocked, err := remotePrivateRelationshipBlocked(
+		ctx,
+		database,
+		viewerPTID,
+		post.GetAuthor().GetPtid(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("read remote private relationship: %w", err)
+	}
+	if blocked {
+		return nil, ErrPrivateContentNotFound
+	}
 	message, err := loadRemotePrivateDelivery(
 		ctx,
 		database,
@@ -476,6 +515,15 @@ func (s *GORMPrivateContentStore) ReadRemotePrivateComment(
 		return ErrPrivateContentInvalid
 	}
 	return s.db.WithContext(ctx).Transaction(func(database *gorm.DB) error {
+		if _, err := loadRemotePrivatePost(
+			ctx,
+			database,
+			postID,
+			viewerPTID,
+			viewerDeviceID,
+		); err != nil {
+			return err
+		}
 		row, err := loadRemotePrivateCommentRow(
 			ctx,
 			database,

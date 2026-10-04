@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 )
 
@@ -158,6 +159,49 @@ func (p *MomentEventPublisher) StagePrivateReacted(
 					ActorPtid:        reactionActorPTID,
 					ReactionKind:     kind.String(),
 					Removed:          removed,
+					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+				},
+			},
+		},
+	)
+	return err
+}
+
+func (p *MomentEventPublisher) StageImportedRevoked(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	postID string,
+	targetActorPTID string,
+	reason privatecontentpb.PrivateResourceInvalidationReason,
+) error {
+	if p == nil ||
+		postID == "" ||
+		targetActorPTID == "" ||
+		reason == privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_UNSPECIFIED {
+		return fmt.Errorf("private revocation event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(
+		ctx,
+		transaction,
+		targetActorPTID,
+		&realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Moment{
+				Moment: &realtime.MomentEvent{
+					Kind:      realtime.MomentEvent_DELETED,
+					PostId:    postID,
+					ActorPtid: targetActorPTID,
+					// The canonical realtime schema has no separate revocation
+					// arm yet. Audience is otherwise unused for DELETED and
+					// carries the closed invalidation-reason enum.
+					Audience:         reason.String(),
 					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
 				},
 			},

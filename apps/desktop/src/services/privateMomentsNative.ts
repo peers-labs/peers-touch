@@ -5,6 +5,7 @@ import {
   ReactionSummarySchema,
   type ReactionSummary,
 } from '../gen/proto/domain/social/post_pb';
+import type { PrivateResourceRevocationReason } from '../kernel/events/types';
 
 export const PRIVATE_MOMENTS_COMMANDS = {
   bootstrap: 'social_private_moments_bootstrap',
@@ -193,6 +194,7 @@ export interface PrivateMomentProjection {
   authorPtid: string;
   audienceKind: PrivateAudienceKind | 'UNKNOWN';
   state: PrivateReadState;
+  revocationReason?: PrivateResourceRevocationReason;
   mentions: PrivateMomentMention[];
   reactions?: ReactionSummary[];
   reactionRevision?: string;

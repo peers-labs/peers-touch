@@ -12,6 +12,7 @@ import type {
   PrivatePublishState,
   PrivateReadState,
 } from '../../../services/privateMomentsNative';
+import type { PrivateResourceRevocationReason } from '../../../kernel/events/types';
 
 const { Text } = Typography;
 
@@ -19,6 +20,7 @@ type SocialPrivateStateValue = PrivatePublishState | PrivateReadState;
 
 export interface SocialPrivateStateProps {
   state: SocialPrivateStateValue;
+  revocationReason?: PrivateResourceRevocationReason;
   compact?: boolean;
   onRetry?: () => void;
   onRecover?: () => void;
@@ -79,6 +81,7 @@ function canRetry(state: SocialPrivateStateValue): boolean {
 
 export function SocialPrivateState({
   state,
+  revocationReason,
   compact = false,
   onRetry,
   onRecover,
@@ -112,6 +115,9 @@ export function SocialPrivateState({
           </Button>
         )
       : undefined;
+  const localePrefix = state === 'DELETED_OR_REVOKED' && revocationReason
+    ? `moments.private.revocation.${revocationReason}`
+    : `moments.private.state.${state}`;
 
   return (
     <Alert
@@ -129,11 +135,11 @@ export function SocialPrivateState({
           <StateIcon state={state} />
           <span>
             <Text strong style={{ fontSize: 13 }}>
-              {t(`moments.private.state.${state}.title`)}
+              {t(`${localePrefix}.title`)}
             </Text>
             <br />
             <Text type="secondary" style={{ fontSize: 12 }}>
-              {t(`moments.private.state.${state}.description`)}
+              {t(`${localePrefix}.description`)}
             </Text>
           </span>
         </Space>

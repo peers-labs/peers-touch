@@ -31,7 +31,11 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
-import type { RealtimeCallSignalKind, RealtimeSocialGraphEventPayload } from '../kernel/events/types';
+import type {
+  PrivateResourceRevocationReason,
+  RealtimeCallSignalKind,
+  RealtimeSocialGraphEventPayload,
+} from '../kernel/events/types';
 import {
   ConversationSettingsChanged_Kind,
   MomentEvent_Kind,
@@ -392,6 +396,21 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         conversationId: s.conversationId,
         actorDisplayName: s.actorDisplayName,
       });
+      if (
+        kindStr === 'relationship_blocked'
+        || kindStr === 'relationship_unblocked'
+      ) {
+        const streamActorPtid = raw.actor_ptid?.trim() ?? '';
+        const targetActorPtid = s.actorPtid === streamActorPtid
+          ? s.targetPtid
+          : s.actorPtid;
+        if (streamActorPtid && targetActorPtid) {
+          eventBus.publish(EVENT.RELATIONSHIP_CHANGED, {
+            targetActorPtid,
+            action: kindStr === 'relationship_blocked' ? 'block' : 'unblock',
+          });
+        }
+      }
       return;
     }
     case 'moment':
@@ -452,6 +471,21 @@ function dispatchMomentEvent(
       });
       return;
     case MomentEvent_Kind.DELETED:
+      if (event.audience) {
+        const reason = privateRevocationReasonFromWire(event.audience);
+        if (!reason) {
+          eventBus.publish(EVENT.MOMENT_RESYNC_REQUESTED, {
+            newestEventId: eventId,
+            reason: 'unknown-private-revocation',
+          });
+          return;
+        }
+        eventBus.publish(EVENT.MOMENT_REVOKED, {
+          ...base,
+          reason,
+        });
+        return;
+      }
       eventBus.publish(EVENT.MOMENT_DELETED, {
         ...base,
         deletedByActorPtid: event.actorPtid || undefined,
@@ -545,7 +579,24 @@ function socialGraphKindFromEnum(value: number): RealtimeSocialGraphEventPayload
     case 3: return 'friend_request_rejected';
     case 4: return 'conversation_created';
     case 5: return 'unfriended';
+    case 6: return 'relationship_blocked';
+    case 7: return 'relationship_unblocked';
     default: return null;
+  }
+}
+
+function privateRevocationReasonFromWire(
+  value: string,
+): PrivateResourceRevocationReason | null {
+  switch (value) {
+    case 'PRIVATE_RESOURCE_INVALIDATION_REASON_RESOURCE_DELETED':
+      return 'RESOURCE_DELETED';
+    case 'PRIVATE_RESOURCE_INVALIDATION_REASON_RELATIONSHIP_REVOKED':
+      return 'RELATIONSHIP_REVOKED';
+    case 'PRIVATE_RESOURCE_INVALIDATION_REASON_RECIPIENT_BLOCKED':
+      return 'RECIPIENT_BLOCKED';
+    default:
+      return null;
   }
 }
 

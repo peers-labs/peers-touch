@@ -783,6 +783,8 @@ func CanonicalDatabaseResetTargets() []DatabaseResetTarget {
 		{Table: "social_remote_private_commands", Operation: ResetOperationClearTable},
 		{Table: "social_remote_private_envelopes", Operation: ResetOperationClearTable},
 		{Table: "social_remote_private_resources", Operation: ResetOperationClearTable},
+		{Table: "social_remote_private_tombstones", Operation: ResetOperationClearTable},
+		{Table: "social_private_resource_invalidations", Operation: ResetOperationClearTable},
 		{Table: "social_private_object_grants", Operation: ResetOperationClearTable},
 		{Table: "social_private_objects", Operation: ResetOperationClearTable},
 		{Table: "social_private_object_parts", Operation: ResetOperationClearTable},

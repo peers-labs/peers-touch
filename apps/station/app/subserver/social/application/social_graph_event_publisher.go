@@ -67,6 +67,18 @@ func (p *SocialGraphEventPublisher) PublishRelationshipChanged(
 	})
 }
 
+func (p *SocialGraphEventPublisher) PublishUnfriended(
+	ctx context.Context,
+	actorPTID string,
+	targetPTID string,
+) {
+	p.publish(ctx, actorPTID, &realtime.SocialGraphEvent{
+		Kind:       realtime.SocialGraphEvent_UNFRIENDED,
+		ActorPtid:  actorPTID,
+		TargetPtid: targetPTID,
+	})
+}
+
 func (p *SocialGraphEventPublisher) publish(ctx context.Context, targetPTID string, ev *realtime.SocialGraphEvent) {
 	liveBus := p.bus()
 	if liveBus == nil {
