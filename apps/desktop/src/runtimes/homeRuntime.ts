@@ -15,6 +15,7 @@ import {
 } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
 import { useChatStore } from '../store/chat';
+import { useGoalExecutionStore } from '../store/goalExecution';
 import {
   useHomeStore,
   type HomePinnedAgentView,
@@ -86,6 +87,7 @@ async function loadHomeProjection(reason: string): Promise<void> {
       const projection = await api.getHomeWorkProjection(afterRevision);
       if (!installed || generation !== runtimeGeneration) return;
       useHomeStore.getState().applyProjection(projection);
+      useGoalExecutionStore.getState().applyProjection(projection);
       log.info('homeRuntime', 'Home projection reconciled', {
         reason,
         revision: projection.revision.toString(),
@@ -370,6 +372,7 @@ export async function startHomeGoal(): Promise<AgentGoal> {
     ) {
       useHomeStore.getState().applyGoalDraft(running, 'readback');
       useGoalDraftStore.getState().applyMutation(running);
+      await loadHomeProjection('goal-started');
     }
     return running;
   } catch (error) {
@@ -533,6 +536,7 @@ export const homeRuntime: RuntimeDescriptor = {
     activeActorId = null;
     useHomeStore.getState().reset();
     useGoalDraftStore.getState().reset();
+    useGoalExecutionStore.getState().reset();
   },
   async bootstrap(actorId) {
     if (!actorId) {
@@ -544,6 +548,7 @@ export const homeRuntime: RuntimeDescriptor = {
       activeActorId = null;
       useHomeStore.getState().reset();
       useGoalDraftStore.getState().reset();
+      useGoalExecutionStore.getState().reset();
       return;
     }
     if (activeActorId !== actorId) {
@@ -553,6 +558,7 @@ export const homeRuntime: RuntimeDescriptor = {
       goalReadbackInFlight = null;
       useHomeStore.getState().reset();
       useGoalDraftStore.getState().reset();
+      useGoalExecutionStore.getState().reset();
     }
     await loadHomeProjection('bootstrap');
   },

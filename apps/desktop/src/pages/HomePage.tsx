@@ -31,6 +31,7 @@ import {
 } from '../gen/proto/domain/agent/home_pb';
 import { usePageContext } from '../kernel/usePageContext';
 import { GoalDraftCard } from '../components/home/GoalDraftCard';
+import { GoalRunSummary } from '../components/home/GoalRunSummary';
 import {
   openHomeConversation,
   openHomeTask,
@@ -39,6 +40,7 @@ import {
   submitHomeTask,
 } from '../runtimes/homeRuntime';
 import { useHomeStore } from '../store/home';
+import { useGoalExecutionStore } from '../store/goalExecution';
 import { openAgentCreateFlow } from '../components/agent/create';
 
 const { useToken } = theme;
@@ -58,6 +60,7 @@ export function HomePage() {
   const projection = useHomeStore((state) => state.projection);
   const loading = useHomeStore((state) => state.loading);
   const error = useHomeStore((state) => state.error);
+  const goalExecutions = useGoalExecutionStore((state) => state.executions);
   const [mode, setMode] = useState<HomeMode>('chat');
   const [draft, setDraft] = useState('');
   const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -70,6 +73,10 @@ export function HomePage() {
     [projection?.pinnedAgents],
   );
   const recentWork = projection?.recentWork ?? [];
+  const legacyActiveTasks = useMemo(
+    () => projection?.activeTasks.filter((task) => !task.goalId) ?? [],
+    [projection?.activeTasks],
+  );
   const firstReadyAgent = useMemo(
     () => pinnedAgents.find((agent) => {
       const readiness = projection?.readiness.find(
@@ -433,9 +440,10 @@ export function HomePage() {
             </Card>
 
             <Card size="small" title={t('agent.home.activeTasks')}>
-              {projection?.activeTasks.length ? (
+              {goalExecutions.length || legacyActiveTasks.length ? (
                 <Flexbox gap={12}>
-                  {projection.activeTasks.map((task) => (
+                  <GoalRunSummary />
+                  {legacyActiveTasks.map((task) => (
                     <Flexbox key={task.taskId} gap={5}>
                       <Flexbox horizontal align="center" justify="space-between" gap={8}>
                         <Button

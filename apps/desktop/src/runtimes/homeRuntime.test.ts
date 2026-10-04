@@ -2,15 +2,18 @@ import { create } from '@bufbuild/protobuf';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  HomeTaskStatus,
   HomeWorkKind,
   HomeWorkProjectionSchema,
 } from '../gen/proto/domain/agent/home_pb';
+import { TaskSurface } from '../gen/proto/domain/agent/orchestration_pb';
 import {
   AgentGoalSchema,
   AgentGoalStatus,
   type AgentGoal,
 } from '../gen/proto/domain/agent/goal_pb';
 import { useGoalDraftStore } from '../store/goalDraft';
+import { useGoalExecutionStore } from '../store/goalExecution';
 
 const getHomeWorkProjection = vi.hoisted(() => vi.fn());
 const submitHomeChatCommand = vi.hoisted(() => vi.fn());
@@ -148,6 +151,7 @@ describe('homeRuntime', () => {
     homeState.goalDraftIdempotencyKey = '';
     homeState.savedGoal = null;
     useGoalDraftStore.getState().reset();
+    useGoalExecutionStore.getState().reset();
   });
 
   it('loads the Station projection during actor bootstrap', async () => {
@@ -403,6 +407,22 @@ describe('homeRuntime', () => {
     useGoalDraftStore.getState().hydrate(reviewed);
     admitAgentGoal.mockResolvedValue(admitted);
     startAgentGoal.mockResolvedValue(running);
+    getHomeWorkProjection.mockResolvedValue(create(HomeWorkProjectionSchema, {
+      ptid: 'ptid:actor-1',
+      revision: 6n,
+      activeTasks: [{
+        goalId: 'goal-1',
+        goalNodeId: 'node-1',
+        taskId: 'task-1',
+        stepId: 'step-1',
+        attemptId: 'attempt-1',
+        attempt: 1,
+        title: 'Durable Goal',
+        status: HomeTaskStatus.PENDING,
+        surface: TaskSurface.DIRECT_RUN,
+      }],
+    }));
+    homeRuntime.install();
 
     const result = await startHomeGoal();
 
@@ -422,6 +442,16 @@ describe('homeRuntime', () => {
       status: AgentGoalStatus.RUNNING,
       mutationState: 'running',
     });
+    expect(useGoalExecutionStore.getState().executions).toEqual([
+      expect.objectContaining({
+        goalId: 'goal-1',
+        nodeId: 'node-1',
+        taskId: 'task-1',
+        stepId: 'step-1',
+        attemptId: 'attempt-1',
+        attempt: 1,
+      }),
+    ]);
   });
 
   it('waits for cancelled Station readback before projecting the terminal state', async () => {

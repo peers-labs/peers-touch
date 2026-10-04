@@ -111,6 +111,7 @@ func AllModels() []interface{} {
 		&TaskGatePlan{},
 		&TaskGateResult{},
 		&TaskRun{},
+		&AgentGoalNode{},
 		&ExecutionStep{},
 		&ExecutorLease{},
 		&TaskCheckpoint{},

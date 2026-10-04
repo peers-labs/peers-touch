@@ -492,6 +492,30 @@ func (s *GoalService) runGoalMutation(
 	payloadHash string,
 	mutate func(*persistence.AgentGoal) error,
 ) (*model.AgentGoal, error) {
+	return s.runGoalMutationTx(
+		ctx,
+		ownerPTID,
+		goalID,
+		expectedRevision,
+		commandKind,
+		idempotencyKey,
+		payloadHash,
+		func(_ *gorm.DB, record *persistence.AgentGoal) error {
+			return mutate(record)
+		},
+	)
+}
+
+func (s *GoalService) runGoalMutationTx(
+	ctx context.Context,
+	ownerPTID string,
+	goalID string,
+	expectedRevision uint64,
+	commandKind string,
+	idempotencyKey string,
+	payloadHash string,
+	mutate func(*gorm.DB, *persistence.AgentGoal) error,
+) (*model.AgentGoal, error) {
 	var selected *model.AgentGoal
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		replayed, replayErr := loadGoalCommandReplayTx(
@@ -520,7 +544,7 @@ func (s *GoalService) runGoalMutation(
 				record.Revision,
 			)
 		}
-		if mutateErr := mutate(record); mutateErr != nil {
+		if mutateErr := mutate(tx, record); mutateErr != nil {
 			return mutateErr
 		}
 
@@ -536,6 +560,8 @@ func (s *GoalService) runGoalMutation(
 				"acceptance_criteria_json": record.AcceptanceCriteriaJSON,
 				"status":                   record.Status,
 				"revision":                 record.Revision,
+				"graph_revision":           record.GraphRevision,
+				"acceptance_revision":      record.AcceptanceRevision,
 				"updated_at":               record.UpdatedAt,
 			})
 		if update.Error != nil {

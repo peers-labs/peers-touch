@@ -93,7 +93,7 @@ func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorPTID, agentID
 		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		OwnerActorPTID: actorPTID,
-		ConversationID: conversationID,
+		ConversationID: persistence.NullableConversationID(conversationID),
 		CreatedAt:      now,
 		StartedAt:      now,
 		UpdatedAt:      now,

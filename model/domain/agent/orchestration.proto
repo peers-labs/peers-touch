@@ -225,6 +225,9 @@ message TaskRun {
   google.protobuf.Timestamp started_at = 12;
   google.protobuf.Timestamp updated_at = 13;
   google.protobuf.Timestamp ended_at = 14;
+  string goal_id = 15;
+  string goal_node_id = 16;
+  string root_step_id = 17;
 }
 
 message ExecutionStep {
@@ -247,6 +250,20 @@ message ExecutionStep {
   string result_summary = 17;
   google.protobuf.Timestamp started_at = 18;
   google.protobuf.Timestamp ended_at = 19;
+  string attempt_id = 20;
+}
+
+message AgentGoalNode {
+  string goal_id = 1;
+  string node_id = 2;
+  string task_id = 3;
+  string title = 4;
+  string description = 5;
+  TaskNodeStatus status = 6;
+  repeated string prerequisite_node_ids = 7;
+  int32 priority = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
 }
 
 message TaskEvent {

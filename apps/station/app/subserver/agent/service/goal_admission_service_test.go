@@ -10,7 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
 
-func TestGoalAdmissionAndStartUseRevisionAndIdempotency(t *testing.T) {
+func TestGoalAdmissionAndStartCreateOneCanonicalTaskRun(t *testing.T) {
 	db := openGoalServiceTestDB(t)
 	goals := NewGoalService(db)
 	goals.newID = func() string { return "goal-admission-1" }
@@ -81,8 +81,57 @@ func TestGoalAdmissionAndStartUseRevisionAndIdempotency(t *testing.T) {
 	if err := db.Model(&persistence.TaskRun{}).Count(&taskRuns).Error; err != nil {
 		t.Fatalf("count TaskRuns: %v", err)
 	}
-	if taskRuns != 0 {
-		t.Fatalf("Goal admission/start wrote %d TaskRuns, want 0", taskRuns)
+	if taskRuns != 1 {
+		t.Fatalf("Goal admission/start wrote %d TaskRuns, want 1", taskRuns)
+	}
+	var goalNodes int64
+	if err := db.Model(&persistence.AgentGoalNode{}).Count(&goalNodes).Error; err != nil {
+		t.Fatalf("count Goal nodes: %v", err)
+	}
+	if goalNodes != 1 {
+		t.Fatalf("Goal start wrote %d Goal nodes, want 1", goalNodes)
+	}
+	var steps int64
+	if err := db.Model(&persistence.ExecutionStep{}).Count(&steps).Error; err != nil {
+		t.Fatalf("count ExecutionSteps: %v", err)
+	}
+	if steps != 1 {
+		t.Fatalf("Goal start wrote %d ExecutionSteps, want 1", steps)
+	}
+
+	execution, err := admission.executions.GetForOwner(
+		context.Background(),
+		"ptid:actor-1",
+		stableGoalExecutionID("task", running.GetGoalId()),
+	)
+	if err != nil {
+		t.Fatalf("read Goal execution: %v", err)
+	}
+	if execution.Node.GoalID != running.GetGoalId() ||
+		execution.Node.TaskID != execution.Task.TaskID ||
+		execution.Task.GoalNodeID != execution.Node.NodeID ||
+		execution.Task.RootStepID != execution.Step.StepID ||
+		execution.Step.TaskID != execution.Task.TaskID ||
+		execution.Step.Attempt != 1 ||
+		execution.Step.AttemptID == "" {
+		t.Fatalf("Goal execution identity mismatch: %+v", execution)
+	}
+
+	var agentTasks int64
+	if err := db.Model(&persistence.AgentTask{}).Count(&agentTasks).Error; err != nil {
+		t.Fatalf("count AgentTasks: %v", err)
+	}
+	var collaborationTasks int64
+	if err := db.Model(&persistence.CollaborationTask{}).
+		Count(&collaborationTasks).Error; err != nil {
+		t.Fatalf("count CollaborationTasks: %v", err)
+	}
+	if agentTasks != 0 || collaborationTasks != 0 {
+		t.Fatalf(
+			"Goal start wrote legacy tasks: AgentTask=%d CollaborationTask=%d",
+			agentTasks,
+			collaborationTasks,
+		)
 	}
 }
 

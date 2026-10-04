@@ -5,14 +5,18 @@
   "product_area": "agent",
   "owners": [
     "model/domain/agent/goal.proto",
+    "model/domain/agent/orchestration.proto",
     "apps/station/app/subserver/agent/service/goal_service.go",
     "apps/station/app/subserver/agent/service/goal_admission_service.go",
+    "apps/station/app/subserver/agent/service/goal_execution_service.go",
     "apps/desktop/src/runtimes/homeRuntime.ts",
-    "apps/desktop/src/components/home/GoalReviewPanel.tsx"
+    "apps/desktop/src/components/home/GoalReviewPanel.tsx",
+    "apps/desktop/src/components/home/GoalRunSummary.tsx"
   ],
   "truth_sources": [
     "Station AgentGoal record and revision",
-    "Station Goal command receipts"
+    "Station Goal command receipts",
+    "Station AgentGoalNode, TaskRun, and ExecutionStep records"
   ],
   "visible_surfaces": [
     {
@@ -21,7 +25,7 @@
     },
     {
       "type": "station-readback",
-      "surface": "AgentGoal lifecycle and revision"
+      "surface": "AgentGoal lifecycle, graph, TaskRun, ExecutionStep, and attempt identity"
     }
   ],
   "required_gates": [
@@ -31,18 +35,21 @@
     "service": [
       "Goal review validates admission completeness before making the contract read-only",
       "Goal admission commits REVIEWING to READY with expected revision and idempotency",
-      "Goal start commits READY to RUNNING with expected revision and idempotency",
-      "No TaskRun is created by Goal admission or start"
+      "Goal admission creates no executable work",
+      "Goal start atomically commits READY to RUNNING and creates one linked GoalNode, TaskRun, ExecutionStep, and attempt identity"
     ],
     "visible": [
       "Home shows material assumptions before Start",
       "Home shows the Station-authored admission rejection reason",
-      "Home renders the authoritative RUNNING revision"
+      "Home renders the authoritative RUNNING revision",
+      "Home shows the first canonical TaskRun and exposes its Station identifiers after selection"
     ]
   },
   "negative": [
     "Desktop must not infer READY or RUNNING without Station readback",
     "stale, unauthorized, incomplete, or non-ready input must not start a Goal",
+    "Goal start must not create AgentTask or CollaborationTask execution rows",
+    "A failed TaskRun allocation must leave the Goal non-running",
     "source proof does not replace the required PAOS-J01 Native functional run"
   ]
 }
