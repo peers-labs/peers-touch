@@ -45,7 +45,7 @@
     },
     {
       "id": "integration-control-functional",
-      "command": "python3 tooling/scripts/agent-integration-audit-test.py -k 'install_with_live_declaration or hard_cut or skills_gc'",
+      "command": "python3 tooling/scripts/agent-integration-audit-test.py -k install_with_live_declaration && python3 tooling/scripts/agent-integration-audit-test.py -k hard_cut && python3 tooling/scripts/agent-integration-audit-test.py -k skills_gc",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
