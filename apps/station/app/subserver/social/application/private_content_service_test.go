@@ -1975,6 +1975,7 @@ INSERT INTO social_relationship_projections (
 type privateContentTestAudience struct {
 	snapshot           socialdomain.FriendsSnapshot
 	postCalls          int
+	lastPostAuthorPTID string
 	repostPrepareCalls int
 	repostSubmitCalls  int
 	repostPrepareErr   error
@@ -1982,11 +1983,12 @@ type privateContentTestAudience struct {
 }
 
 func (a *privateContentTestAudience) ResolveFriendsPostSnapshot(
-	context.Context,
-	federationdelivery.Transaction,
-	string,
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	authorPTID string,
 ) (socialdomain.FriendsSnapshot, error) {
 	a.postCalls++
+	a.lastPostAuthorPTID = authorPTID
 	return a.snapshot, nil
 }
 

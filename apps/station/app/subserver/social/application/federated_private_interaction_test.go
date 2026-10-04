@@ -872,8 +872,7 @@ func newFederatedPrivateCommentFixture(
 	postID := publishPrivateCommentParent(t, source, "federated-comment-parent")
 	receiverAudienceFixture := receiver.service.audiences.(*privateContentTestAudience)
 	receiverAudienceFixture.snapshot.RecipientPTIDs = []string{
-		"ptid:bob",
-		"ptid:charlie",
+		"ptid:alice",
 	}
 	parentFrame := federatedPrivateOutboxFrame(
 		t,

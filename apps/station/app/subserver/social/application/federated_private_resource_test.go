@@ -212,6 +212,13 @@ func TestFederatedPrivateReconcileCommitsSourceOutboxAndReceiverProjection(
 	); err != nil {
 		t.Fatalf("validate receiver delivery: %v", err)
 	}
+	receiverAudience := receiver.service.audiences.(*privateContentTestAudience)
+	if receiverAudience.lastPostAuthorPTID != "ptid:bob" {
+		t.Fatalf(
+			"receiver FRIENDS owner = %q, want local target ptid:bob",
+			receiverAudience.lastPostAuthorPTID,
+		)
+	}
 	first, err := receiver.receiver.Receive(ctx, frame)
 	if err != nil {
 		t.Fatal(err)
@@ -1253,7 +1260,7 @@ func newFederatedPrivateReceiverWithFailpoint(
 			SourceHeadSHA256: privateDigest(
 				"receiver-federated-friends",
 			),
-			RecipientPTIDs: []string{"ptid:bob"},
+			RecipientPTIDs: []string{"ptid:alice"},
 		},
 	}
 	clock := &privateContentTestClock{now: now}
