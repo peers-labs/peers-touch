@@ -276,6 +276,7 @@ type PrivateContentService struct {
 	metrics              federatedPrivateMetrics
 	localStationPeerID   string
 	federationMembership PrivateContentFederationMembership
+	interactionStore     infrastructure.FederatedPrivateInteractionStore
 	events               *MomentEventPublisher
 }
 
@@ -385,6 +386,16 @@ func (s *PrivateContentService) PreparePrivateComment(
 	author socialdomain.PrivateContentAuthor,
 	request *privatecontentpb.PreparePrivateCommentRequest,
 ) (*privatecontentpb.PreparePrivateCommentResponse, error) {
+	return s.preparePrivateComment(ctx, author, request, nil, true)
+}
+
+func (s *PrivateContentService) preparePrivateComment(
+	ctx context.Context,
+	author socialdomain.PrivateContentAuthor,
+	request *privatecontentpb.PreparePrivateCommentRequest,
+	transaction federationdelivery.Transaction,
+	allowRemoteRoute bool,
+) (*privatecontentpb.PreparePrivateCommentResponse, error) {
 	const operation = "social.private_content.prepare_comment"
 	if err := author.Validate(operation); err != nil {
 		return nil, err
@@ -401,19 +412,49 @@ func (s *PrivateContentService) PreparePrivateComment(
 		if err != nil {
 			return nil, err
 		}
-		return &privatecontentpb.PreparePrivateCommentResponse{
-			Plan: response.GetPlan(),
-		}, nil
+		return s.privateCommentPrepareResponse(
+			ctx,
+			transaction,
+			response.GetPlan(),
+		)
 	}
 	snapshot, err := s.audiences.ResolvePrivateCommentSnapshot(
 		ctx,
-		nil,
+		transaction,
 		material.ParentPostID,
 		material.ReplyToCommentID,
 		author.Endpoint.GetActor().GetPtid(),
 	)
 	if err != nil {
+		if allowRemoteRoute &&
+			socialdomain.IsPrivateContentCode(
+				err,
+				socialdomain.PrivateContentNotFound,
+			) {
+			return s.routeFederatedPrivateCommentPrepare(ctx, author, request)
+		}
 		return nil, mapPrivateDependencyError(operation, err)
+	}
+	if transaction != nil && s.interactionStore != nil {
+		retryAfter, err := s.interactionStore.FederatedPrivateCommentRetryAfter(
+			ctx,
+			transaction,
+			material.ParentPostID,
+			author.Endpoint.GetActor().GetPtid(),
+			s.now(),
+			privateCommentRateWindow,
+			privateCommentActorLimit,
+			privateCommentPostLimit,
+		)
+		if err != nil {
+			return nil, mapPrivateStoreError(operation, err)
+		}
+		if retryAfter > 0 {
+			return nil, socialdomain.NewPrivateContentRateLimitError(
+				operation,
+				retryAfter,
+			)
+		}
 	}
 	material.Audience = proto.Clone(
 		snapshot.Audience,
@@ -423,9 +464,37 @@ func (s *PrivateContentService) PreparePrivateComment(
 	if err != nil {
 		return nil, err
 	}
-	return &privatecontentpb.PreparePrivateCommentResponse{
-		Plan: response.GetPlan(),
-	}, nil
+	return s.privateCommentPrepareResponse(ctx, transaction, response.GetPlan())
+}
+
+func (s *PrivateContentService) privateCommentPrepareResponse(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	plan *securecontentpb.ContentEncryptionPlan,
+) (*privatecontentpb.PreparePrivateCommentResponse, error) {
+	const operation = "social.private_content.prepare_comment_response"
+	prepared := &privatecontentpb.PreparePrivateCommentResponse{Plan: plan}
+	var err error
+	if transaction != nil {
+		prepared.StationSigningKeyAttestation, err =
+			s.stationSigner.AttestContentProofVerificationKeyInTransaction(
+				ctx,
+				transaction,
+				prepared.GetPlan().GetStationSigningKeyId(),
+				s.now(),
+			)
+	} else {
+		prepared.StationSigningKeyAttestation, err =
+			s.stationSigner.AttestContentProofVerificationKey(
+				ctx,
+				prepared.GetPlan().GetStationSigningKeyId(),
+				s.now(),
+			)
+	}
+	if err != nil {
+		return nil, mapPrivateDependencyError(operation, err)
+	}
+	return prepared, nil
 }
 
 func (s *PrivateContentService) prepare(
@@ -440,11 +509,12 @@ func (s *PrivateContentService) prepare(
 	snapshot, err := s.bindRecipientLocalities(
 		ctx,
 		author.Endpoint.GetActor().GetPtid(),
-		author.HomeStationPeerID,
+		s.privateContentAuthorityStation(author.HomeStationPeerID),
 		snapshot,
-		material.ResourceKind == socialdomain.PrivateContentResourcePost &&
-			material.MomentKind == privatecontentpb.
-				PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
+		material.ResourceKind == socialdomain.PrivateContentResourceComment ||
+			(material.ResourceKind == socialdomain.PrivateContentResourcePost &&
+				material.MomentKind == privatecontentpb.
+					PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT),
 	)
 	if err != nil {
 		return nil, err
@@ -768,7 +838,7 @@ func (s *PrivateContentService) completePrepare(
 	claimStartedAt := time.Now()
 	claimResponse, err := s.keyExchange.ClaimContentPreKeys(
 		ctx,
-		persisted.AuthorHomeStationPeerID,
+		s.privateContentAuthorityStation(persisted.AuthorHomeStationPeerID),
 		claimLocalities,
 		persistedClaimRequest,
 	)
@@ -1062,6 +1132,31 @@ func (s *PrivateContentService) SubmitPrivateComment(
 		return nil, err
 	}
 	return response, nil
+}
+
+func (s *PrivateContentService) SubmitPrivateCommentForAuthor(
+	ctx context.Context,
+	author socialdomain.PrivateContentAuthor,
+	request *privatecontentpb.SubmitPrivateCommentRequest,
+) (*privatecontentpb.SubmitPrivateCommentResponse, error) {
+	if err := author.Validate("social.private_content.submit_comment"); err != nil {
+		return nil, err
+	}
+	if s.interactionStore != nil && request != nil {
+		if _, err := s.interactionStore.FindRemotePrivatePostAuthority(
+			ctx,
+			request.GetPostId(),
+			author.Endpoint.GetActor().GetPtid(),
+		); err == nil {
+			return s.routeFederatedPrivateCommentSubmit(ctx, author, request)
+		} else if !errors.Is(err, infrastructure.ErrPrivateContentNotFound) {
+			return nil, mapPrivateStoreError(
+				"social.private_content.submit_comment",
+				err,
+			)
+		}
+	}
+	return s.SubmitPrivateComment(ctx, author.Endpoint, request)
 }
 
 // DeletePrivateMoment revokes future Social access to one author-owned private
@@ -1661,7 +1756,9 @@ func (s *PrivateContentService) submit(
 	if preparation.Plan.State == dbmodel.SocialPrivatePlanStatePrepared {
 		remoteClaimValidationErr = s.keyExchange.ValidateRemoteContentPreKeyClaims(
 			ctx,
-			preparation.Plan.AuthorHomeStationPeerID,
+			s.privateContentAuthorityStation(
+				preparation.Plan.AuthorHomeStationPeerID,
+			),
 			preparedRecipientLocalities,
 			claimRequest,
 			claimResponse,
@@ -1851,7 +1948,9 @@ func (s *PrivateContentService) submit(
 				if err := s.keyExchange.ValidateContentPreKeyClaims(
 					ctx,
 					transaction,
-					plan.AuthorHomeStationPeerID,
+					s.privateContentAuthorityStation(
+						plan.AuthorHomeStationPeerID,
+					),
 					preparedRecipientLocalities,
 					claimRequest,
 					claimResponse,
@@ -2172,11 +2271,12 @@ func (s *PrivateContentService) resolveCurrentSnapshot(
 	snapshot, err = s.bindRecipientLocalities(
 		ctx,
 		authorPTID,
-		authorHomeStationPeerID,
+		s.privateContentAuthorityStation(authorHomeStationPeerID),
 		snapshot,
-		prepared.ResourceKind == socialdomain.PrivateContentResourcePost &&
-			prepared.MomentKind ==
-				privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
+		prepared.ResourceKind == socialdomain.PrivateContentResourceComment ||
+			(prepared.ResourceKind == socialdomain.PrivateContentResourcePost &&
+				prepared.MomentKind ==
+					privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT),
 	)
 	if err != nil {
 		return socialdomain.FriendsSnapshot{}, mapPrivateDependencyError(
@@ -2186,6 +2286,15 @@ func (s *PrivateContentService) resolveCurrentSnapshot(
 	}
 
 	return snapshot, nil
+}
+
+func (s *PrivateContentService) privateContentAuthorityStation(
+	authorHomeStationPeerID string,
+) string {
+	if s.localStationPeerID != "" {
+		return s.localStationPeerID
+	}
+	return authorHomeStationPeerID
 }
 
 func (s *PrivateContentService) bindRecipientLocalities(
@@ -2607,6 +2716,79 @@ func (s *PrivateContentService) persistComment(
 			err,
 		)
 	}
+	var receiverVerifiedSenderKey *actormodel.VerifiedActorDeviceSigningKey
+	if s.localStationPeerID != "" &&
+		plan.AuthorHomeStationPeerID != s.localStationPeerID {
+		if len(material.Envelopes) == 0 ||
+			material.Envelopes[0].Envelope.GetBinding() == nil {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				"social.private_content.persist_comment",
+				"sender_signing_key",
+				"is unavailable",
+			)
+		}
+		receiverVerifiedSenderKey, err = s.signatureVerifier.ResolveRetained(
+			ctx,
+			tx.ContentPreKeyValidationTransaction(),
+			request.GetPlan().GetAuthor(),
+			plan.AuthorHomeStationPeerID,
+			material.Envelopes[0].Envelope.GetBinding().GetSenderSigningKeyId(),
+			committedAt,
+		)
+		if err != nil {
+			return nil, socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				"social.private_content.persist_comment",
+				err,
+			)
+		}
+	}
+	if err := s.enqueueFederatedPrivateComment(
+		ctx,
+		tx,
+		plan,
+		prepared,
+		snapshot,
+		request,
+		material,
+		proof,
+		receiverVerifiedSenderKey,
+		committedAt,
+	); err != nil {
+		return nil, err
+	}
+	if s.events != nil && s.localStationPeerID != "" {
+		targets := make(map[string]struct{})
+		if plan.AuthorHomeStationPeerID == s.localStationPeerID {
+			targets[plan.AuthorPTID] = struct{}{}
+		}
+		for _, locality := range snapshot.RecipientLocalities {
+			if locality.HomeStationPeerID == s.localStationPeerID {
+				targets[locality.ActorPTID] = struct{}{}
+			}
+		}
+		targetActorPTIDs := make([]string, 0, len(targets))
+		for targetActorPTID := range targets {
+			targetActorPTIDs = append(targetActorPTIDs, targetActorPTID)
+		}
+		sort.Strings(targetActorPTIDs)
+		for _, targetActorPTID := range targetActorPTIDs {
+			if err := s.events.StageImportedCommented(
+				ctx,
+				tx.ContentPreKeyValidationTransaction(),
+				prepared.ParentPostID,
+				plan.ContentID,
+				plan.AuthorPTID,
+				targetActorPTID,
+			); err != nil {
+				return nil, mapPrivateDependencyError(
+					"social.private_content.persist_comment",
+					err,
+				)
+			}
+		}
+	}
 	viewerEnvelope, err := viewerEnvelopeForAuthor(
 		plan,
 		request.GetPlan().GetAuthor(),
@@ -2641,6 +2823,12 @@ func (s *PrivateContentService) persistComment(
 				),
 			},
 		},
+	}
+	if receiverVerifiedSenderKey != nil {
+		response.GetComment().GetPrivateContent().GetVerification().
+			ReceiverVerifiedSenderSigningKey = proto.Clone(
+			receiverVerifiedSenderKey,
+		).(*actormodel.VerifiedActorDeviceSigningKey)
 	}
 	return socialdomain.CanonicalProtoBytes(response)
 }

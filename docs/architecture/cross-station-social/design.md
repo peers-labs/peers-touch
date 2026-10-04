@@ -246,14 +246,15 @@ authority:
 ```text
 Bob Desktop -> Station B Social durable PREPARE command
   -> Station A Social revalidates parent and creates encryption plan
-  -> typed result returns to Bob
+  -> Station B re-attests the source plan key; typed result returns to Bob
   -> Bob encrypts Comment locally
   -> Station B Social durable SUBMIT command
   -> Station A Social commits canonical Comment + recipient deliveries
 ```
 
 Reaction and unreaction use typed mutation commands without a plaintext
-payload. Every command has one immutable command ID and canonical request hash.
+payload. Every command has one immutable command ID, canonical request hash,
+and actor-device signature verified by source Social.
 The source returns exact replay results; hash conflict is terminal.
 
 Unknown outcomes remain pending and retry with the same command ID. Comment
