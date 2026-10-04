@@ -75,6 +75,7 @@ function fixture(overrides = {}) {
       ...REQUIRED_PRIVATE_MEDIA_KEYS.map((state) => `'${state}'`),
       ...REQUIRED_PRIVATE_REACTION_KEYS.map((state) => `'${state}'`),
       'error_code ?? value.errorCode',
+      "projection.state === 'REMOTE_SOURCE_UNAVAILABLE'",
     ].join('\n'),
     privateRevocationText: [
       ...REQUIRED_PRIVATE_REVOCATION_REASONS.map((reason) => `'${reason}'`),
@@ -101,6 +102,28 @@ function fixture(overrides = {}) {
       'm.total.Inc(string(stage), string(outcome), string(reason))',
       'm.latency.Observe(1, string(stage), string(outcome),)',
     ].join('\n'),
+    dispatcherText: [
+      'ctx = logger.WithTraceID(ctx, traceID)',
+      'observer.ObserveDispatch(ctx, DispatchObservation{',
+    ].join('\n'),
+    deliveryFrameProtoText: 'string trace_id = 16;',
+    deliveryFrameText: 'TraceId:             frame.TraceId',
+    deliveryMetricText: [
+      's.metrics.deliveryTotal.Inc("dispatcher", outcome, reason)',
+      'observation.Latency.Seconds()',
+    ].join('\n'),
+    reconcileText:
+      's.metrics.reconcileTotal.Inc("accepted", "remote_reference")',
+    socialCompositionText: 'RegisterDeliveryObserver(',
+    desktopProjectionText: 'PrivateRemoteDeliveryState',
+    desktopOrchestratorText: [
+      '.list_remote_private_moments(&cursor, 100)',
+      'PrivateReadState::RemoteSourceUnavailable',
+    ].join('\n'),
+    desktopMomentStoreText:
+      "projection.state === 'REMOTE_SOURCE_UNAVAILABLE'",
+    desktopMomentCardText:
+      '<SocialPrivateState state={deliveryNotice} compact />',
     metricTexts: [[...ALLOWED_METRIC_NAMES].map((name) => {
       if (name === 'social_cross_station_object_stream_latency_seconds') {
         return `metrics.Get().Histogram("${name}", "Latency histogram", []float64{1}, "stage", "outcome")`;
@@ -255,6 +278,34 @@ test('rejects direct private-object metric calls outside the validated helper', 
       ],
     }),
     /called directly outside the validated helper/,
+  );
+});
+
+test('rejects missing dispatcher and reconcile emission wiring', () => {
+  const values = fixture();
+  assert.throws(
+    () => validateSocialCrossStationOperability({
+      ...values,
+      dispatcherText: '',
+    }),
+    /dispatcher transition observation is missing/,
+  );
+  assert.throws(
+    () => validateSocialCrossStationOperability({
+      ...values,
+      desktopOrchestratorText: values.desktopOrchestratorText.replace(
+        '.list_remote_private_moments(&cursor, 100)',
+        '',
+      ),
+    }),
+    /Station-backed Desktop reconcile is missing/,
+  );
+  assert.throws(
+    () => validateSocialCrossStationOperability({
+      ...values,
+      desktopMomentCardText: '',
+    }),
+    /remote delivery status rendering is missing/,
   );
 });
 

@@ -14,9 +14,13 @@ export const REQUIRED_PRIVATE_STATE_KEYS = Object.freeze([
   'AUDIENCE_TOO_LARGE',
   'PUBLISHING',
   'UNKNOWN_COMMIT',
+  'REMOTE_DELIVERY_PENDING',
+  'REMOTE_DELIVERY_RETRYING',
   'PUBLISH_FAILED',
   'LOADING_AUTHORIZED_RESOURCE',
   'WAITING_FOR_PRIVATE_KEY',
+  'WAITING_FOR_REMOTE_DELIVERY',
+  'REMOTE_SOURCE_UNAVAILABLE',
   'RECOVERY_REQUIRED',
   'RECOVERY_KEY_UNAVAILABLE',
   'DECRYPTING',
@@ -310,6 +314,40 @@ function validateObjectStreamMetricContract(helperText, usageTexts) {
   }
 }
 
+function validateDeliveryResilienceContract({
+  privateNativeText,
+  dispatcherText,
+  deliveryFrameProtoText,
+  deliveryFrameText,
+  deliveryMetricText,
+  reconcileText,
+  socialCompositionText,
+  desktopProjectionText,
+  desktopOrchestratorText,
+  desktopMomentCardText,
+}) {
+  const requiredFragments = [
+    [dispatcherText, 'observer.ObserveDispatch(ctx, DispatchObservation{', 'dispatcher transition observation'],
+    [dispatcherText, 'logger.WithTraceID(ctx, traceID)', 'dispatcher trace restoration'],
+    [deliveryFrameProtoText, 'string trace_id = 16;', 'durable delivery trace field'],
+    [deliveryFrameText, 'TraceId:             frame.TraceId', 'signed trace commitment'],
+    [deliveryMetricText, 's.metrics.deliveryTotal.Inc("dispatcher", outcome, reason)', 'dispatcher delivery counter'],
+    [deliveryMetricText, 'observation.Latency.Seconds()', 'end-to-end delivery latency'],
+    [reconcileText, 's.metrics.reconcileTotal.Inc("accepted", "remote_reference")', 'remote reference reconcile counter'],
+    [socialCompositionText, 'RegisterDeliveryObserver(', 'Social dispatcher observer registration'],
+    [desktopProjectionText, 'PrivateRemoteDeliveryState', 'Desktop delivery projection'],
+    [desktopOrchestratorText, '.list_remote_private_moments(&cursor, 100)', 'Station-backed Desktop reconcile'],
+    [desktopOrchestratorText, 'PrivateReadState::RemoteSourceUnavailable', 'source-unavailable projection'],
+    [privateNativeText, "projection.state === 'REMOTE_SOURCE_UNAVAILABLE'", 'offline-readable private Moment projection'],
+    [desktopMomentCardText, '<SocialPrivateState state={deliveryNotice} compact />', 'remote delivery status rendering'],
+  ];
+  for (const [text, fragment, label] of requiredFragments) {
+    if (!text.includes(fragment)) {
+      fail(`${label} is missing`);
+    }
+  }
+}
+
 export function validateSocialCrossStationOperability({
   enMomentsText,
   zhMomentsText,
@@ -324,6 +362,15 @@ export function validateSocialCrossStationOperability({
   privateRevocationText,
   objectStreamMetricText,
   objectStreamUsageTexts = [],
+  dispatcherText = '',
+  deliveryFrameProtoText = '',
+  deliveryFrameText = '',
+  deliveryMetricText = '',
+  reconcileText = '',
+  socialCompositionText = '',
+  desktopProjectionText = '',
+  desktopOrchestratorText = '',
+  desktopMomentCardText = '',
   metricTexts = [],
   logTexts = [],
 }) {
@@ -467,6 +514,18 @@ export function validateSocialCrossStationOperability({
     objectStreamMetricText,
     objectStreamUsageTexts,
   );
+  validateDeliveryResilienceContract({
+    privateNativeText,
+    dispatcherText,
+    deliveryFrameProtoText,
+    deliveryFrameText,
+    deliveryMetricText,
+    reconcileText,
+    socialCompositionText,
+    desktopProjectionText,
+    desktopOrchestratorText,
+    desktopMomentCardText,
+  });
   validatePrivacySafeLogs(logTexts);
   return {
     status: 'PASS',
@@ -499,6 +558,11 @@ export function checkSocialCrossStationOperability(projectRoot) {
     ...filesUnder(projectRoot, 'apps/station/app/subserver/social'),
     ...filesUnder(projectRoot, 'apps/station/frame/core/federation'),
   ];
+  const desktopLogFiles = [
+    'apps/desktop/src/runtimes/momentsRuntime.ts',
+    'apps/desktop/src/store/moments.ts',
+    'apps/desktop/src/store/privateMoments.ts',
+  ].map((relative) => path.join(projectRoot, relative));
   return validateSocialCrossStationOperability({
     enMomentsText: read('packages/locales/en/moments.json'),
     zhMomentsText: read('packages/locales/zh-CN/moments.json'),
@@ -520,8 +584,26 @@ export function checkSocialCrossStationOperability(projectRoot) {
     objectStreamUsageTexts: stationFiles
       .filter((file) => file !== path.join(projectRoot, objectStreamMetricPath))
       .map((file) => fs.readFileSync(file, 'utf8')),
+    dispatcherText: read('apps/station/frame/core/federation/delivery/dispatcher.go'),
+    deliveryFrameProtoText: read('model/domain/federation/delivery.proto'),
+    deliveryFrameText: read('apps/station/frame/core/federation/delivery/frame.go'),
+    deliveryMetricText: read(
+      'apps/station/app/subserver/social/application/federated_private_metrics.go',
+    ),
+    reconcileText: read(
+      'apps/station/app/subserver/social/application/federated_private_reconcile.go',
+    ),
+    socialCompositionText: read('apps/station/app/subserver/social/subserver.go'),
+    desktopProjectionText: read('apps/desktop/src-tauri/src/social/projection.rs'),
+    desktopOrchestratorText: read(
+      'apps/desktop/src-tauri/src/social/private_moment.rs',
+    ),
+    desktopMomentCardText: read(
+      'apps/desktop/src/components/moments/MomentCard.tsx',
+    ),
     metricTexts: stationFiles.map((file) => fs.readFileSync(file, 'utf8')),
-    logTexts: stationFiles.map((file) => fs.readFileSync(file, 'utf8')),
+    logTexts: [...stationFiles, ...desktopLogFiles]
+      .map((file) => fs.readFileSync(file, 'utf8')),
   });
 }
 

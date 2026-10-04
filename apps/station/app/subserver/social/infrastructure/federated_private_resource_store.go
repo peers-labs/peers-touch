@@ -23,24 +23,25 @@ const remotePrivateResourceStateActive = "ACTIVE"
 
 type remotePrivateResourceModel struct {
 	SourceStationPeerID string `gorm:"column:source_station_peer_id;primaryKey;size:512;uniqueIndex:uidx_social_remote_private_delivery,priority:1"`
-	ContentID           string `gorm:"column:content_id;primaryKey;size:128"`
+	ContentID           string `gorm:"column:content_id;primaryKey;size:128;index:idx_social_remote_private_reconcile,priority:5"`
 	Generation          uint64 `gorm:"column:generation;primaryKey"`
-	TargetActorPTID     string `gorm:"column:target_actor_ptid;primaryKey;size:255;uniqueIndex:uidx_social_remote_private_delivery,priority:2"`
+	TargetActorPTID     string `gorm:"column:target_actor_ptid;primaryKey;size:255;uniqueIndex:uidx_social_remote_private_delivery,priority:2;index:idx_social_remote_private_reconcile,priority:1"`
 
 	FederationID          string    `gorm:"column:federation_id;size:512;not null"`
 	DeliveryID            string    `gorm:"column:delivery_id;size:512;not null;uniqueIndex:uidx_social_remote_private_delivery,priority:3"`
 	TargetStationPeerID   string    `gorm:"column:target_station_peer_id;size:512;not null"`
+	AuthorPTID            string    `gorm:"column:author_ptid;size:255;not null;default:''"`
 	ParentContentID       string    `gorm:"column:parent_content_id;size:128;not null;default:'';index"`
 	LifecycleRevision     uint64    `gorm:"column:lifecycle_revision;not null"`
-	ResourceKind          int32     `gorm:"column:resource_kind;not null"`
+	ResourceKind          int32     `gorm:"column:resource_kind;not null;index:idx_social_remote_private_reconcile,priority:2"`
 	ViewerMetadataBytes   []byte    `gorm:"column:viewer_metadata_bytes;type:bytea;not null"`
 	EncryptedPayloadBytes []byte    `gorm:"column:encrypted_payload_bytes;type:bytea;not null"`
 	ObjectDescriptorBytes []byte    `gorm:"column:object_descriptor_set_bytes;type:bytea;not null"`
 	VerificationBytes     []byte    `gorm:"column:verification_bytes;type:bytea;not null"`
 	AudienceBytes         []byte    `gorm:"column:audience_explanation_bytes;type:bytea;not null"`
 	CanonicalDeliveryHash []byte    `gorm:"column:canonical_delivery_sha256;type:bytea;not null"`
-	State                 string    `gorm:"column:state;size:32;not null;index"`
-	CommittedAt           time.Time `gorm:"column:committed_at;not null"`
+	State                 string    `gorm:"column:state;size:32;not null;index;index:idx_social_remote_private_reconcile,priority:3"`
+	CommittedAt           time.Time `gorm:"column:committed_at;not null;index:idx_social_remote_private_reconcile,priority:4"`
 	UpdatedAt             time.Time `gorm:"column:updated_at;not null"`
 }
 
@@ -93,6 +94,31 @@ func migrateRemotePrivateResources(database *gorm.DB) error {
 	if err := database.AutoMigrate(RemotePrivateContentModels()...); err != nil {
 		return fmt.Errorf("social remote private resource migrate: %w", err)
 	}
+	return backfillRemotePrivateResourceAuthors(database)
+}
+
+func backfillRemotePrivateResourceAuthors(database *gorm.DB) error {
+	var rows []remotePrivateResourceModel
+	if err := database.Where("author_ptid = ''").Find(&rows).Error; err != nil {
+		return fmt.Errorf("list remote private resource author backfill: %w", err)
+	}
+	for _, row := range rows {
+		authorPTID, err := remotePrivateResourceAuthorPTID(row)
+		if err != nil {
+			return err
+		}
+		if err := database.Model(&remotePrivateResourceModel{}).
+			Where(
+				"source_station_peer_id = ? AND content_id = ? AND generation = ? AND target_actor_ptid = ?",
+				row.SourceStationPeerID,
+				row.ContentID,
+				row.Generation,
+				row.TargetActorPTID,
+			).
+			Update("author_ptid", authorPTID).Error; err != nil {
+			return fmt.Errorf("backfill remote private resource author: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -129,6 +155,14 @@ func (s *GORMPrivateContentStore) InspectRemotePrivateResource(
 	); err != nil {
 		return false, err
 	}
+	metadata, _, err := remotePrivateResourceMetadata(message)
+	if err != nil {
+		return false, err
+	}
+	authorPTID := remotePrivateMetadataAuthorPTID(metadata)
+	if strings.TrimSpace(authorPTID) == "" {
+		return false, ErrPrivateContentConflict
+	}
 	deliveryHash := sha256.Sum256(canonicalDelivery)
 	return classifyRemotePrivateResourceIdentity(
 		transaction.DB().WithContext(ctx),
@@ -138,6 +172,7 @@ func (s *GORMPrivateContentStore) InspectRemotePrivateResource(
 			Generation:            resource.GetGeneration(),
 			TargetActorPTID:       target.GetPtid(),
 			DeliveryID:            message.GetDeliveryId(),
+			AuthorPTID:            authorPTID,
 			LifecycleRevision:     message.GetLifecycleRevision(),
 			CanonicalDeliveryHash: deliveryHash[:],
 		},
@@ -227,6 +262,7 @@ func (s *GORMPrivateContentStore) ApplyRemotePrivateResource(
 		FederationID:          message.GetFederationId(),
 		DeliveryID:            message.GetDeliveryId(),
 		TargetStationPeerID:   message.GetTargetStationPeerId(),
+		AuthorPTID:            remotePrivateMetadataAuthorPTID(metadata),
 		ParentContentID:       parentContentID,
 		LifecycleRevision:     message.GetLifecycleRevision(),
 		ResourceKind:          int32(message.GetResourceKind()),
@@ -239,6 +275,9 @@ func (s *GORMPrivateContentStore) ApplyRemotePrivateResource(
 		State:                 remotePrivateResourceStateActive,
 		CommittedAt:           message.GetCommittedAt().AsTime().UTC(),
 		UpdatedAt:             message.GetCommittedAt().AsTime().UTC(),
+	}
+	if strings.TrimSpace(row.AuthorPTID) == "" {
+		return false, ErrPrivateContentConflict
 	}
 	database := transaction.DB().WithContext(ctx)
 	create := database.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
@@ -344,6 +383,46 @@ func remotePrivateResourceMetadata(
 	}
 }
 
+func remotePrivateResourceAuthorPTID(
+	row remotePrivateResourceModel,
+) (string, error) {
+	switch privatecontentpb.FederatedPrivateResourceKind(row.ResourceKind) {
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST:
+		post := &privatecontentpb.PostMetadata{}
+		if err := unmarshalRemotePrivateProjectionPart(
+			"viewer metadata",
+			row.ViewerMetadataBytes,
+			post,
+		); err != nil {
+			return "", err
+		}
+		return post.GetAuthor().GetPtid(), nil
+	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT:
+		comment := &privatecontentpb.CommentMetadata{}
+		if err := unmarshalRemotePrivateProjectionPart(
+			"viewer metadata",
+			row.ViewerMetadataBytes,
+			comment,
+		); err != nil {
+			return "", err
+		}
+		return comment.GetAuthor().GetPtid(), nil
+	default:
+		return "", ErrPrivateContentConflict
+	}
+}
+
+func remotePrivateMetadataAuthorPTID(metadata proto.Message) string {
+	switch value := metadata.(type) {
+	case *privatecontentpb.PostMetadata:
+		return value.GetAuthor().GetPtid()
+	case *privatecontentpb.CommentMetadata:
+		return value.GetAuthor().GetPtid()
+	default:
+		return ""
+	}
+}
+
 func classifyRemotePrivateResourceIdentity(
 	database *gorm.DB,
 	candidate remotePrivateResourceModel,
@@ -358,6 +437,7 @@ func classifyRemotePrivateResourceIdentity(
 	).First(&existing).Error
 	if resourceErr == nil {
 		if existing.DeliveryID == candidate.DeliveryID &&
+			existing.AuthorPTID == candidate.AuthorPTID &&
 			existing.LifecycleRevision == candidate.LifecycleRevision &&
 			bytes.Equal(
 				existing.CanonicalDeliveryHash,

@@ -3,9 +3,11 @@ package delivery
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	federationmodel "github.com/peers-labs/peers-touch/station/frame/core/federation/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -126,6 +128,9 @@ func (r *DeliveryReceiver) Receive(ctx context.Context, frame *Frame) (Result, e
 		return resultForVerificationError(err), nil
 	}
 	immutableFrame := proto.Clone(frame).(*Frame)
+	if traceID := strings.TrimSpace(immutableFrame.GetTraceId()); traceID != "" {
+		ctx = logger.WithTraceID(ctx, traceID)
+	}
 	registered, registeredKind := r.registry.lookup(immutableFrame.PayloadKind)
 	if registeredKind && registered.qos == QoSEphemeral {
 		return r.receiveEphemeral(ctx, registered.receiver, immutableFrame)

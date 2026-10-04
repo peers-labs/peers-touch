@@ -322,6 +322,8 @@ function isPublishState(value: string): value is PrivatePublishState {
     'AUDIENCE_TOO_LARGE',
     'PUBLISHING',
     'UNKNOWN_COMMIT',
+    'REMOTE_DELIVERY_PENDING',
+    'REMOTE_DELIVERY_RETRYING',
     'PUBLISHED',
     'PUBLISH_FAILED',
   ].includes(value);
@@ -331,6 +333,8 @@ function isReadState(value: string): value is PrivateReadState {
   return [
     'LOADING_AUTHORIZED_RESOURCE',
     'WAITING_FOR_PRIVATE_KEY',
+    'WAITING_FOR_REMOTE_DELIVERY',
+    'REMOTE_SOURCE_UNAVAILABLE',
     'RECOVERY_REQUIRED',
     'RECOVERY_KEY_UNAVAILABLE',
     'DECRYPTING',
@@ -877,7 +881,9 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           postsById: {
             ...state.postsById,
             [postId]: existing
-              ? { ...existing, state: 'LOADING_AUTHORIZED_RESOURCE', content: undefined }
+              ? existing.content
+                ? existing
+                : { ...existing, state: 'LOADING_AUTHORIZED_RESOURCE', content: undefined }
               : {
                   postId,
                   contentId: `loading:${postId}`,
@@ -905,13 +911,16 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           set((state) => {
             const current = state.postsById[postId];
             if (!current) return state;
+            const failureState = readFailureState(error);
             return {
               postsById: {
                 ...state.postsById,
                 [postId]: {
                   ...current,
-                  state: readFailureState(error),
-                  content: undefined,
+                  state: failureState,
+                  content: failureState === 'REMOTE_SOURCE_UNAVAILABLE'
+                    ? current.content
+                    : undefined,
                   errorCode: error instanceof PrivateMomentsNativeError
                     ? error.code
                     : 'PRIVATE_NATIVE_COMMAND_FAILED',

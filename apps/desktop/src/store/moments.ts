@@ -48,6 +48,7 @@ import type {
   PrivateMomentProjection,
   PrivateMomentPublishIntent,
 } from '../services/privateMomentsNative';
+import { isReadablePrivateMomentProjection } from '../services/privateMomentsNative';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
 
@@ -316,7 +317,7 @@ function projectPrivateMoments(
 ): Partial<MomentsState> {
   if (!actorPtid) return {};
   const visible = projections.filter((projection) => (
-    projection.state === 'CONTENT_READY'
+    isReadablePrivateMomentProjection(projection)
     && projection.audienceKind !== 'UNKNOWN'
   ));
   if (visible.length === 0) return {};
@@ -683,7 +684,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         },
       },
     }));
-    log.info(TAG, 'loadCircleFeed: noop (P3)', { circleId });
+    log.info(TAG, 'loadCircleFeed: noop (P3)');
   },
 
   loadUserFeed: async (actorPtid, refresh = false) => {
@@ -724,7 +725,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       });
     } catch (err) {
       if (generation !== storeGeneration) return;
-      log.warn(TAG, 'loadUserFeed failed', { actorPtid, err: String(err) });
+      log.warn(TAG, 'loadUserFeed failed', { err: String(err) });
       set((s) => ({
         userFeeds: {
           ...s.userFeeds,
@@ -758,7 +759,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       return post;
     } catch (err) {
       if (generation !== storeGeneration) return undefined;
-      log.warn(TAG, 'loadPost failed', { postId, err: String(err) });
+      log.warn(TAG, 'loadPost failed', { err: String(err) });
       throw err;
     }
   },
@@ -776,7 +777,14 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         throw new Error('MOMENTS_SESSION_STALE');
       }
       const postId = result.postId ?? result.projection?.postId;
-      if (result.state !== 'PUBLISHED' || !postId) {
+      if (
+        ![
+          'PUBLISHED',
+          'REMOTE_DELIVERY_PENDING',
+          'REMOTE_DELIVERY_RETRYING',
+        ].includes(result.state)
+        || !postId
+      ) {
         throw new Error('UNKNOWN_COMMIT');
       }
       const projection = result.projection;
@@ -832,7 +840,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       await usePrivateMomentsStore.getState().purgeMoment(postId);
     } catch (error) {
       log.warn(TAG, 'Native private Moment purge failed after delete', {
-        postId,
         error: String(error),
       });
     }
@@ -892,7 +899,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       });
     } catch (err) {
       if (generation !== storeGeneration) return;
-      log.warn(TAG, 'loadComments failed', { postId, err: String(err) });
+      log.warn(TAG, 'loadComments failed', { err: String(err) });
       set((s) => ({
         commentsLoading: { ...s.commentsLoading, [postId]: false },
       }));
@@ -971,7 +978,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       }));
     } catch (err) {
       if (generation !== storeGeneration) return;
-      log.warn(TAG, 'reactToPost failed', { postId, kind, err: String(err) });
+      log.warn(TAG, 'reactToPost failed', { kind, err: String(err) });
       throw err;
     }
   },
@@ -1007,7 +1014,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       }));
     } catch (err) {
       if (generation !== storeGeneration) return;
-      log.warn(TAG, 'unreactToPost failed', { postId, kind, err: String(err) });
+      log.warn(TAG, 'unreactToPost failed', { kind, err: String(err) });
       throw err;
     }
   },

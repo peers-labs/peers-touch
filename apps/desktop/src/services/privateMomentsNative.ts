@@ -53,12 +53,16 @@ export type PrivatePublishState =
   | 'AUDIENCE_TOO_LARGE'
   | 'PUBLISHING'
   | 'UNKNOWN_COMMIT'
+  | 'REMOTE_DELIVERY_PENDING'
+  | 'REMOTE_DELIVERY_RETRYING'
   | 'PUBLISHED'
   | 'PUBLISH_FAILED';
 
 export type PrivateReadState =
   | 'LOADING_AUTHORIZED_RESOURCE'
   | 'WAITING_FOR_PRIVATE_KEY'
+  | 'WAITING_FOR_REMOTE_DELIVERY'
+  | 'REMOTE_SOURCE_UNAVAILABLE'
   | 'RECOVERY_REQUIRED'
   | 'RECOVERY_KEY_UNAVAILABLE'
   | 'DECRYPTING'
@@ -68,6 +72,20 @@ export type PrivateReadState =
   | 'INTEGRITY_FAILURE'
   | 'PRIVATE_UNSUPPORTED_ON_DEVICE'
   | 'DELETED_OR_REVOKED';
+
+export type PrivateRemoteDeliveryState =
+  | 'NOT_REQUIRED'
+  | 'PENDING'
+  | 'RETRYING'
+  | 'DELIVERED'
+  | 'TERMINAL'
+  | 'EXPIRED';
+
+export type PrivateDeliveryNoticeState =
+  | 'REMOTE_DELIVERY_PENDING'
+  | 'REMOTE_DELIVERY_RETRYING'
+  | 'REMOTE_DELIVERY_FAILED'
+  | 'REMOTE_DELIVERY_EXPIRED';
 
 export type PrivateMediaState =
   | 'MEDIA_PLACEHOLDER'
@@ -194,6 +212,7 @@ export interface PrivateMomentProjection {
   authorPtid: string;
   audienceKind: PrivateAudienceKind | 'UNKNOWN';
   state: PrivateReadState;
+  remoteDeliveryState?: PrivateRemoteDeliveryState;
   revocationReason?: PrivateResourceRevocationReason;
   mentions: PrivateMomentMention[];
   reactions?: ReactionSummary[];
@@ -204,6 +223,33 @@ export interface PrivateMomentProjection {
   retryAfterSeconds?: number;
   createdAtMillis?: number;
   updatedAtMillis?: number;
+}
+
+export function privateDeliveryNoticeState(
+  state: PrivateRemoteDeliveryState | undefined,
+): PrivateDeliveryNoticeState | undefined {
+  switch (state) {
+    case 'PENDING':
+      return 'REMOTE_DELIVERY_PENDING';
+    case 'RETRYING':
+      return 'REMOTE_DELIVERY_RETRYING';
+    case 'TERMINAL':
+      return 'REMOTE_DELIVERY_FAILED';
+    case 'EXPIRED':
+      return 'REMOTE_DELIVERY_EXPIRED';
+    default:
+      return undefined;
+  }
+}
+
+export function isReadablePrivateMomentProjection(
+  projection: PrivateMomentProjection,
+): boolean {
+  return projection.state === 'CONTENT_READY'
+    || (
+      projection.state === 'REMOTE_SOURCE_UNAVAILABLE'
+      && projection.content !== undefined
+    );
 }
 
 export interface PrivateMomentsNativeSnapshot {
@@ -252,7 +298,14 @@ export interface PrivateMomentPublishIntent {
 }
 
 interface PrivateMomentPublishSuccess {
-  state: Extract<PrivatePublishState, 'READY_PRIVATE' | 'UNKNOWN_COMMIT' | 'PUBLISHED'>;
+  state: Extract<
+    PrivatePublishState,
+    | 'READY_PRIVATE'
+    | 'UNKNOWN_COMMIT'
+    | 'REMOTE_DELIVERY_PENDING'
+    | 'REMOTE_DELIVERY_RETRYING'
+    | 'PUBLISHED'
+  >;
   draftId: string;
   postId?: string;
   projection?: PrivateMomentProjection;
@@ -319,6 +372,8 @@ interface NativeProjectionWire {
   audience_kind?: unknown;
   audienceKind?: unknown;
   state?: unknown;
+  remote_delivery_state?: unknown;
+  remoteDeliveryState?: unknown;
   mentions?: unknown;
   reactions?: unknown;
   reaction_revision?: unknown;
@@ -347,6 +402,8 @@ const PUBLISH_STATES = new Set<PrivatePublishState>([
   'AUDIENCE_TOO_LARGE',
   'PUBLISHING',
   'UNKNOWN_COMMIT',
+  'REMOTE_DELIVERY_PENDING',
+  'REMOTE_DELIVERY_RETRYING',
   'PUBLISHED',
   'PUBLISH_FAILED',
 ]);
@@ -354,6 +411,8 @@ const PUBLISH_STATES = new Set<PrivatePublishState>([
 const READ_STATES = new Set<PrivateReadState>([
   'LOADING_AUTHORIZED_RESOURCE',
   'WAITING_FOR_PRIVATE_KEY',
+  'WAITING_FOR_REMOTE_DELIVERY',
+  'REMOTE_SOURCE_UNAVAILABLE',
   'RECOVERY_REQUIRED',
   'RECOVERY_KEY_UNAVAILABLE',
   'DECRYPTING',
@@ -363,6 +422,14 @@ const READ_STATES = new Set<PrivateReadState>([
   'INTEGRITY_FAILURE',
   'PRIVATE_UNSUPPORTED_ON_DEVICE',
   'DELETED_OR_REVOKED',
+]);
+const REMOTE_DELIVERY_STATES = new Set<PrivateRemoteDeliveryState>([
+  'NOT_REQUIRED',
+  'PENDING',
+  'RETRYING',
+  'DELIVERED',
+  'TERMINAL',
+  'EXPIRED',
 ]);
 
 const MEDIA_STATES = new Set<PrivateMediaState>([
@@ -791,6 +858,12 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
   const authorPtid = stringField(wire.author_ptid ?? wire.authorPtid);
   const audienceKind = stringField(wire.audience_kind ?? wire.audienceKind).toUpperCase();
   const state = stringField(wire.state).toUpperCase() as PrivateReadState;
+  const remoteDeliveryStateValue = stringField(
+    wire.remote_delivery_state ?? wire.remoteDeliveryState,
+  ).toUpperCase();
+  const remoteDeliveryState = remoteDeliveryStateValue
+    ? remoteDeliveryStateValue as PrivateRemoteDeliveryState
+    : undefined;
   const reactions = normalizeReactionSummaries(wire.reactions ?? []);
   const reactionRevision = generationField(
     wire.reaction_revision ?? wire.reactionRevision ?? '0',
@@ -831,21 +904,38 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
       && !(audienceKind === 'UNKNOWN' && state !== 'CONTENT_READY')
     )
     || !READ_STATES.has(state)
+    || (remoteDeliveryState !== undefined && !REMOTE_DELIVERY_STATES.has(remoteDeliveryState))
     || !reactionRevision
     || typeof reactionsHydrated !== 'boolean'
-    || (state === 'CONTENT_READY' && !authorPtid)
   ) {
     throw privateProjectionContractError('private Moment projection identity or state is invalid');
   }
 
   const content = normalizeContent(wire.content);
+  if (
+    (state === 'CONTENT_READY' || state === 'REMOTE_SOURCE_UNAVAILABLE')
+    && content
+    && !authorPtid
+  ) {
+    throw privateProjectionContractError(
+      'readable private Moment projection is missing its author',
+    );
+  }
   if (state === 'CONTENT_READY' && !content) {
     throw privateProjectionContractError('ready private Moment projection is missing decrypted content');
   }
-  if (state !== 'CONTENT_READY' && content) {
+  if (
+    state !== 'CONTENT_READY'
+    && state !== 'REMOTE_SOURCE_UNAVAILABLE'
+    && content
+  ) {
     throw privateProjectionContractError('non-ready private Moment projection exposed plaintext');
   }
-  if (state !== 'CONTENT_READY' && mentions.length > 0) {
+  if (
+    state !== 'CONTENT_READY'
+    && state !== 'REMOTE_SOURCE_UNAVAILABLE'
+    && mentions.length > 0
+  ) {
     throw privateProjectionContractError('non-ready private Moment projection exposed mentions');
   }
 
@@ -856,6 +946,7 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     authorPtid,
     audienceKind: audienceKind as PrivateAudienceKind | 'UNKNOWN',
     state,
+    remoteDeliveryState,
     mentions,
     reactions,
     reactionRevision,
@@ -990,6 +1081,8 @@ function normalizePublishResult(value: unknown): PrivateMomentPublishResult {
     state !== 'READY_PRIVATE'
     && state !== 'PUBLISHED'
     && state !== 'UNKNOWN_COMMIT'
+    && state !== 'REMOTE_DELIVERY_PENDING'
+    && state !== 'REMOTE_DELIVERY_RETRYING'
   ) {
     throw privateProjectionContractError('private publish result state is invalid');
   }

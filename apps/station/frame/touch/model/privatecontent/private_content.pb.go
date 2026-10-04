@@ -149,6 +149,67 @@ func (PrivateRenderedSourceKind) EnumDescriptor() ([]byte, []int) {
 	return file_domain_social_private_content_proto_rawDescGZIP(), []int{1}
 }
 
+type FederatedPrivateDeliveryState int32
+
+const (
+	FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_UNSPECIFIED  FederatedPrivateDeliveryState = 0
+	FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_NOT_REQUIRED FederatedPrivateDeliveryState = 1
+	FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_PENDING      FederatedPrivateDeliveryState = 2
+	FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_RETRYING     FederatedPrivateDeliveryState = 3
+	FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_DELIVERED    FederatedPrivateDeliveryState = 4
+	FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_TERMINAL     FederatedPrivateDeliveryState = 5
+	FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_EXPIRED      FederatedPrivateDeliveryState = 6
+)
+
+// Enum value maps for FederatedPrivateDeliveryState.
+var (
+	FederatedPrivateDeliveryState_name = map[int32]string{
+		0: "FEDERATED_PRIVATE_DELIVERY_STATE_UNSPECIFIED",
+		1: "FEDERATED_PRIVATE_DELIVERY_STATE_NOT_REQUIRED",
+		2: "FEDERATED_PRIVATE_DELIVERY_STATE_PENDING",
+		3: "FEDERATED_PRIVATE_DELIVERY_STATE_RETRYING",
+		4: "FEDERATED_PRIVATE_DELIVERY_STATE_DELIVERED",
+		5: "FEDERATED_PRIVATE_DELIVERY_STATE_TERMINAL",
+		6: "FEDERATED_PRIVATE_DELIVERY_STATE_EXPIRED",
+	}
+	FederatedPrivateDeliveryState_value = map[string]int32{
+		"FEDERATED_PRIVATE_DELIVERY_STATE_UNSPECIFIED":  0,
+		"FEDERATED_PRIVATE_DELIVERY_STATE_NOT_REQUIRED": 1,
+		"FEDERATED_PRIVATE_DELIVERY_STATE_PENDING":      2,
+		"FEDERATED_PRIVATE_DELIVERY_STATE_RETRYING":     3,
+		"FEDERATED_PRIVATE_DELIVERY_STATE_DELIVERED":    4,
+		"FEDERATED_PRIVATE_DELIVERY_STATE_TERMINAL":     5,
+		"FEDERATED_PRIVATE_DELIVERY_STATE_EXPIRED":      6,
+	}
+)
+
+func (x FederatedPrivateDeliveryState) Enum() *FederatedPrivateDeliveryState {
+	p := new(FederatedPrivateDeliveryState)
+	*p = x
+	return p
+}
+
+func (x FederatedPrivateDeliveryState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FederatedPrivateDeliveryState) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_private_content_proto_enumTypes[2].Descriptor()
+}
+
+func (FederatedPrivateDeliveryState) Type() protoreflect.EnumType {
+	return &file_domain_social_private_content_proto_enumTypes[2]
+}
+
+func (x FederatedPrivateDeliveryState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FederatedPrivateDeliveryState.Descriptor instead.
+func (FederatedPrivateDeliveryState) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{2}
+}
+
 type PreparePrivateMomentRequest struct {
 	state           protoimpl.MessageState  `protogen:"open.v1"`
 	ContentId       string                  `protobuf:"bytes,1,opt,name=content_id,json=contentId,proto3" json:"content_id,omitempty"`
@@ -4151,6 +4212,98 @@ func (x *SubmitPrivateCommentResponse) GetExactReplay() bool {
 	return false
 }
 
+type FederatedPrivateDeliveryStatus struct {
+	state          protoimpl.MessageState        `protogen:"open.v1"`
+	State          FederatedPrivateDeliveryState `protobuf:"varint,1,opt,name=state,proto3,enum=peers_touch.model.social.v1.FederatedPrivateDeliveryState" json:"state,omitempty"`
+	TotalCount     uint32                        `protobuf:"varint,2,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	DeliveredCount uint32                        `protobuf:"varint,3,opt,name=delivered_count,json=deliveredCount,proto3" json:"delivered_count,omitempty"`
+	RetryingCount  uint32                        `protobuf:"varint,4,opt,name=retrying_count,json=retryingCount,proto3" json:"retrying_count,omitempty"`
+	TerminalCount  uint32                        `protobuf:"varint,5,opt,name=terminal_count,json=terminalCount,proto3" json:"terminal_count,omitempty"`
+	ExpiredCount   uint32                        `protobuf:"varint,6,opt,name=expired_count,json=expiredCount,proto3" json:"expired_count,omitempty"`
+	NextAttemptAt  *timestamppb.Timestamp        `protobuf:"bytes,7,opt,name=next_attempt_at,json=nextAttemptAt,proto3" json:"next_attempt_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *FederatedPrivateDeliveryStatus) Reset() {
+	*x = FederatedPrivateDeliveryStatus{}
+	mi := &file_domain_social_private_content_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FederatedPrivateDeliveryStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FederatedPrivateDeliveryStatus) ProtoMessage() {}
+
+func (x *FederatedPrivateDeliveryStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_private_content_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FederatedPrivateDeliveryStatus.ProtoReflect.Descriptor instead.
+func (*FederatedPrivateDeliveryStatus) Descriptor() ([]byte, []int) {
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *FederatedPrivateDeliveryStatus) GetState() FederatedPrivateDeliveryState {
+	if x != nil {
+		return x.State
+	}
+	return FederatedPrivateDeliveryState_FEDERATED_PRIVATE_DELIVERY_STATE_UNSPECIFIED
+}
+
+func (x *FederatedPrivateDeliveryStatus) GetTotalCount() uint32 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
+}
+
+func (x *FederatedPrivateDeliveryStatus) GetDeliveredCount() uint32 {
+	if x != nil {
+		return x.DeliveredCount
+	}
+	return 0
+}
+
+func (x *FederatedPrivateDeliveryStatus) GetRetryingCount() uint32 {
+	if x != nil {
+		return x.RetryingCount
+	}
+	return 0
+}
+
+func (x *FederatedPrivateDeliveryStatus) GetTerminalCount() uint32 {
+	if x != nil {
+		return x.TerminalCount
+	}
+	return 0
+}
+
+func (x *FederatedPrivateDeliveryStatus) GetExpiredCount() uint32 {
+	if x != nil {
+		return x.ExpiredCount
+	}
+	return 0
+}
+
+func (x *FederatedPrivateDeliveryStatus) GetNextAttemptAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextAttemptAt
+	}
+	return nil
+}
+
 type GetMomentResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PostId        string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
@@ -4160,7 +4313,7 @@ type GetMomentResourceRequest struct {
 
 func (x *GetMomentResourceRequest) Reset() {
 	*x = GetMomentResourceRequest{}
-	mi := &file_domain_social_private_content_proto_msgTypes[48]
+	mi := &file_domain_social_private_content_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4172,7 +4325,7 @@ func (x *GetMomentResourceRequest) String() string {
 func (*GetMomentResourceRequest) ProtoMessage() {}
 
 func (x *GetMomentResourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[48]
+	mi := &file_domain_social_private_content_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4185,7 +4338,7 @@ func (x *GetMomentResourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMomentResourceRequest.ProtoReflect.Descriptor instead.
 func (*GetMomentResourceRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{48}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *GetMomentResourceRequest) GetPostId() string {
@@ -4199,17 +4352,18 @@ type GetMomentResourceResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Fields 1 and 2 intentionally preserve GetPostResponse wire semantics so
 	// existing Moment clients can keep decoding public reads during W6/W7.
-	Post                       *model.Post                  `protobuf:"bytes,1,opt,name=post,proto3" json:"post,omitempty"`
-	Explanation                *model.FeedObjectExplanation `protobuf:"bytes,2,opt,name=explanation,proto3" json:"explanation,omitempty"`
-	Resource                   *PostResource                `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
-	ReactionProjectionRevision uint64                       `protobuf:"varint,4,opt,name=reaction_projection_revision,json=reactionProjectionRevision,proto3" json:"reaction_projection_revision,omitempty"`
+	Post                       *model.Post                     `protobuf:"bytes,1,opt,name=post,proto3" json:"post,omitempty"`
+	Explanation                *model.FeedObjectExplanation    `protobuf:"bytes,2,opt,name=explanation,proto3" json:"explanation,omitempty"`
+	Resource                   *PostResource                   `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
+	ReactionProjectionRevision uint64                          `protobuf:"varint,4,opt,name=reaction_projection_revision,json=reactionProjectionRevision,proto3" json:"reaction_projection_revision,omitempty"`
+	RemoteDelivery             *FederatedPrivateDeliveryStatus `protobuf:"bytes,5,opt,name=remote_delivery,json=remoteDelivery,proto3" json:"remote_delivery,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *GetMomentResourceResponse) Reset() {
 	*x = GetMomentResourceResponse{}
-	mi := &file_domain_social_private_content_proto_msgTypes[49]
+	mi := &file_domain_social_private_content_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4221,7 +4375,7 @@ func (x *GetMomentResourceResponse) String() string {
 func (*GetMomentResourceResponse) ProtoMessage() {}
 
 func (x *GetMomentResourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[49]
+	mi := &file_domain_social_private_content_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4234,7 +4388,7 @@ func (x *GetMomentResourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMomentResourceResponse.ProtoReflect.Descriptor instead.
 func (*GetMomentResourceResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{49}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *GetMomentResourceResponse) GetPost() *model.Post {
@@ -4265,6 +4419,185 @@ func (x *GetMomentResourceResponse) GetReactionProjectionRevision() uint64 {
 	return 0
 }
 
+func (x *GetMomentResourceResponse) GetRemoteDelivery() *FederatedPrivateDeliveryStatus {
+	if x != nil {
+		return x.RemoteDelivery
+	}
+	return nil
+}
+
+type ListRemotePrivateMomentReferencesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cursor        string                 `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit         uint32                 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRemotePrivateMomentReferencesRequest) Reset() {
+	*x = ListRemotePrivateMomentReferencesRequest{}
+	mi := &file_domain_social_private_content_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRemotePrivateMomentReferencesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRemotePrivateMomentReferencesRequest) ProtoMessage() {}
+
+func (x *ListRemotePrivateMomentReferencesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_private_content_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRemotePrivateMomentReferencesRequest.ProtoReflect.Descriptor instead.
+func (*ListRemotePrivateMomentReferencesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *ListRemotePrivateMomentReferencesRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+func (x *ListRemotePrivateMomentReferencesRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type RemotePrivateMomentReference struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	PostId            string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	LifecycleRevision uint64                 `protobuf:"varint,2,opt,name=lifecycle_revision,json=lifecycleRevision,proto3" json:"lifecycle_revision,omitempty"`
+	UpdatedAt         *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *RemotePrivateMomentReference) Reset() {
+	*x = RemotePrivateMomentReference{}
+	mi := &file_domain_social_private_content_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemotePrivateMomentReference) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemotePrivateMomentReference) ProtoMessage() {}
+
+func (x *RemotePrivateMomentReference) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_private_content_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemotePrivateMomentReference.ProtoReflect.Descriptor instead.
+func (*RemotePrivateMomentReference) Descriptor() ([]byte, []int) {
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *RemotePrivateMomentReference) GetPostId() string {
+	if x != nil {
+		return x.PostId
+	}
+	return ""
+}
+
+func (x *RemotePrivateMomentReference) GetLifecycleRevision() uint64 {
+	if x != nil {
+		return x.LifecycleRevision
+	}
+	return 0
+}
+
+func (x *RemotePrivateMomentReference) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type ListRemotePrivateMomentReferencesResponse struct {
+	state         protoimpl.MessageState          `protogen:"open.v1"`
+	Moments       []*RemotePrivateMomentReference `protobuf:"bytes,1,rep,name=moments,proto3" json:"moments,omitempty"`
+	NextCursor    string                          `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	HasMore       bool                            `protobuf:"varint,3,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRemotePrivateMomentReferencesResponse) Reset() {
+	*x = ListRemotePrivateMomentReferencesResponse{}
+	mi := &file_domain_social_private_content_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRemotePrivateMomentReferencesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRemotePrivateMomentReferencesResponse) ProtoMessage() {}
+
+func (x *ListRemotePrivateMomentReferencesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_private_content_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRemotePrivateMomentReferencesResponse.ProtoReflect.Descriptor instead.
+func (*ListRemotePrivateMomentReferencesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *ListRemotePrivateMomentReferencesResponse) GetMoments() []*RemotePrivateMomentReference {
+	if x != nil {
+		return x.Moments
+	}
+	return nil
+}
+
+func (x *ListRemotePrivateMomentReferencesResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+func (x *ListRemotePrivateMomentReferencesResponse) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
+}
+
 type GetMomentCommentResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PostId        string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
@@ -4275,7 +4608,7 @@ type GetMomentCommentResourceRequest struct {
 
 func (x *GetMomentCommentResourceRequest) Reset() {
 	*x = GetMomentCommentResourceRequest{}
-	mi := &file_domain_social_private_content_proto_msgTypes[50]
+	mi := &file_domain_social_private_content_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4287,7 +4620,7 @@ func (x *GetMomentCommentResourceRequest) String() string {
 func (*GetMomentCommentResourceRequest) ProtoMessage() {}
 
 func (x *GetMomentCommentResourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[50]
+	mi := &file_domain_social_private_content_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4300,7 +4633,7 @@ func (x *GetMomentCommentResourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMomentCommentResourceRequest.ProtoReflect.Descriptor instead.
 func (*GetMomentCommentResourceRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{50}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *GetMomentCommentResourceRequest) GetPostId() string {
@@ -4326,7 +4659,7 @@ type GetMomentCommentResourceResponse struct {
 
 func (x *GetMomentCommentResourceResponse) Reset() {
 	*x = GetMomentCommentResourceResponse{}
-	mi := &file_domain_social_private_content_proto_msgTypes[51]
+	mi := &file_domain_social_private_content_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4338,7 +4671,7 @@ func (x *GetMomentCommentResourceResponse) String() string {
 func (*GetMomentCommentResourceResponse) ProtoMessage() {}
 
 func (x *GetMomentCommentResourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[51]
+	mi := &file_domain_social_private_content_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4351,7 +4684,7 @@ func (x *GetMomentCommentResourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMomentCommentResourceResponse.ProtoReflect.Descriptor instead.
 func (*GetMomentCommentResourceResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{51}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetMomentCommentResourceResponse) GetComment() *CommentResource {
@@ -4372,7 +4705,7 @@ type ListMomentCommentsRequest struct {
 
 func (x *ListMomentCommentsRequest) Reset() {
 	*x = ListMomentCommentsRequest{}
-	mi := &file_domain_social_private_content_proto_msgTypes[52]
+	mi := &file_domain_social_private_content_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4384,7 +4717,7 @@ func (x *ListMomentCommentsRequest) String() string {
 func (*ListMomentCommentsRequest) ProtoMessage() {}
 
 func (x *ListMomentCommentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[52]
+	mi := &file_domain_social_private_content_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4397,7 +4730,7 @@ func (x *ListMomentCommentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMomentCommentsRequest.ProtoReflect.Descriptor instead.
 func (*ListMomentCommentsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{52}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ListMomentCommentsRequest) GetPostId() string {
@@ -4432,7 +4765,7 @@ type ListMomentCommentsResponse struct {
 
 func (x *ListMomentCommentsResponse) Reset() {
 	*x = ListMomentCommentsResponse{}
-	mi := &file_domain_social_private_content_proto_msgTypes[53]
+	mi := &file_domain_social_private_content_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4444,7 +4777,7 @@ func (x *ListMomentCommentsResponse) String() string {
 func (*ListMomentCommentsResponse) ProtoMessage() {}
 
 func (x *ListMomentCommentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[53]
+	mi := &file_domain_social_private_content_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4457,7 +4790,7 @@ func (x *ListMomentCommentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMomentCommentsResponse.ProtoReflect.Descriptor instead.
 func (*ListMomentCommentsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{53}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ListMomentCommentsResponse) GetComments() []*CommentResource {
@@ -4492,7 +4825,7 @@ type PrivatePollOptionResult struct {
 
 func (x *PrivatePollOptionResult) Reset() {
 	*x = PrivatePollOptionResult{}
-	mi := &file_domain_social_private_content_proto_msgTypes[54]
+	mi := &file_domain_social_private_content_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4504,7 +4837,7 @@ func (x *PrivatePollOptionResult) String() string {
 func (*PrivatePollOptionResult) ProtoMessage() {}
 
 func (x *PrivatePollOptionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[54]
+	mi := &file_domain_social_private_content_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4517,7 +4850,7 @@ func (x *PrivatePollOptionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrivatePollOptionResult.ProtoReflect.Descriptor instead.
 func (*PrivatePollOptionResult) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{54}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *PrivatePollOptionResult) GetOpaqueOptionId() []byte {
@@ -4552,7 +4885,7 @@ type VotePrivatePollResponse struct {
 
 func (x *VotePrivatePollResponse) Reset() {
 	*x = VotePrivatePollResponse{}
-	mi := &file_domain_social_private_content_proto_msgTypes[55]
+	mi := &file_domain_social_private_content_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4564,7 +4897,7 @@ func (x *VotePrivatePollResponse) String() string {
 func (*VotePrivatePollResponse) ProtoMessage() {}
 
 func (x *VotePrivatePollResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[55]
+	mi := &file_domain_social_private_content_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4577,7 +4910,7 @@ func (x *VotePrivatePollResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VotePrivatePollResponse.ProtoReflect.Descriptor instead.
 func (*VotePrivatePollResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{55}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *VotePrivatePollResponse) GetOptions() []*PrivatePollOptionResult {
@@ -4611,7 +4944,7 @@ type ListRecoverablePrivateContentRequest struct {
 
 func (x *ListRecoverablePrivateContentRequest) Reset() {
 	*x = ListRecoverablePrivateContentRequest{}
-	mi := &file_domain_social_private_content_proto_msgTypes[56]
+	mi := &file_domain_social_private_content_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4623,7 +4956,7 @@ func (x *ListRecoverablePrivateContentRequest) String() string {
 func (*ListRecoverablePrivateContentRequest) ProtoMessage() {}
 
 func (x *ListRecoverablePrivateContentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[56]
+	mi := &file_domain_social_private_content_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4636,7 +4969,7 @@ func (x *ListRecoverablePrivateContentRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ListRecoverablePrivateContentRequest.ProtoReflect.Descriptor instead.
 func (*ListRecoverablePrivateContentRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{56}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *ListRecoverablePrivateContentRequest) GetCursor() string {
@@ -4663,7 +4996,7 @@ type PrivateCommentLocator struct {
 
 func (x *PrivateCommentLocator) Reset() {
 	*x = PrivateCommentLocator{}
-	mi := &file_domain_social_private_content_proto_msgTypes[57]
+	mi := &file_domain_social_private_content_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4675,7 +5008,7 @@ func (x *PrivateCommentLocator) String() string {
 func (*PrivateCommentLocator) ProtoMessage() {}
 
 func (x *PrivateCommentLocator) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[57]
+	mi := &file_domain_social_private_content_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4688,7 +5021,7 @@ func (x *PrivateCommentLocator) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrivateCommentLocator.ProtoReflect.Descriptor instead.
 func (*PrivateCommentLocator) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{57}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *PrivateCommentLocator) GetPostId() string {
@@ -4718,7 +5051,7 @@ type SocialPrivateContentLocator struct {
 
 func (x *SocialPrivateContentLocator) Reset() {
 	*x = SocialPrivateContentLocator{}
-	mi := &file_domain_social_private_content_proto_msgTypes[58]
+	mi := &file_domain_social_private_content_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4730,7 +5063,7 @@ func (x *SocialPrivateContentLocator) String() string {
 func (*SocialPrivateContentLocator) ProtoMessage() {}
 
 func (x *SocialPrivateContentLocator) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[58]
+	mi := &file_domain_social_private_content_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4743,7 +5076,7 @@ func (x *SocialPrivateContentLocator) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SocialPrivateContentLocator.ProtoReflect.Descriptor instead.
 func (*SocialPrivateContentLocator) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{58}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *SocialPrivateContentLocator) GetResource() isSocialPrivateContentLocator_Resource {
@@ -4799,7 +5132,7 @@ type RecoverablePrivateContent struct {
 
 func (x *RecoverablePrivateContent) Reset() {
 	*x = RecoverablePrivateContent{}
-	mi := &file_domain_social_private_content_proto_msgTypes[59]
+	mi := &file_domain_social_private_content_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4811,7 +5144,7 @@ func (x *RecoverablePrivateContent) String() string {
 func (*RecoverablePrivateContent) ProtoMessage() {}
 
 func (x *RecoverablePrivateContent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[59]
+	mi := &file_domain_social_private_content_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4824,7 +5157,7 @@ func (x *RecoverablePrivateContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverablePrivateContent.ProtoReflect.Descriptor instead.
 func (*RecoverablePrivateContent) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{59}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *RecoverablePrivateContent) GetResource() *securecontent.SecureResourceRef {
@@ -4866,7 +5199,7 @@ type ListRecoverablePrivateContentResponse struct {
 
 func (x *ListRecoverablePrivateContentResponse) Reset() {
 	*x = ListRecoverablePrivateContentResponse{}
-	mi := &file_domain_social_private_content_proto_msgTypes[60]
+	mi := &file_domain_social_private_content_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4878,7 +5211,7 @@ func (x *ListRecoverablePrivateContentResponse) String() string {
 func (*ListRecoverablePrivateContentResponse) ProtoMessage() {}
 
 func (x *ListRecoverablePrivateContentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_private_content_proto_msgTypes[60]
+	mi := &file_domain_social_private_content_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4891,7 +5224,7 @@ func (x *ListRecoverablePrivateContentResponse) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use ListRecoverablePrivateContentResponse.ProtoReflect.Descriptor instead.
 func (*ListRecoverablePrivateContentResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_private_content_proto_rawDescGZIP(), []int{60}
+	return file_domain_social_private_content_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ListRecoverablePrivateContentResponse) GetResources() []*RecoverablePrivateContent {
@@ -5254,14 +5587,37 @@ const file_domain_social_private_content_proto_rawDesc = "" +
 	"\x16actor_device_signature\x18\t \x01(\fR\x14actorDeviceSignature\"\x89\x01\n" +
 	"\x1cSubmitPrivateCommentResponse\x12F\n" +
 	"\acomment\x18\x01 \x01(\v2,.peers_touch.model.social.v1.CommentResourceR\acomment\x12!\n" +
-	"\fexact_replay\x18\x02 \x01(\bR\vexactReplay\"3\n" +
+	"\fexact_replay\x18\x02 \x01(\bR\vexactReplay\"\xf3\x02\n" +
+	"\x1eFederatedPrivateDeliveryStatus\x12P\n" +
+	"\x05state\x18\x01 \x01(\x0e2:.peers_touch.model.social.v1.FederatedPrivateDeliveryStateR\x05state\x12\x1f\n" +
+	"\vtotal_count\x18\x02 \x01(\rR\n" +
+	"totalCount\x12'\n" +
+	"\x0fdelivered_count\x18\x03 \x01(\rR\x0edeliveredCount\x12%\n" +
+	"\x0eretrying_count\x18\x04 \x01(\rR\rretryingCount\x12%\n" +
+	"\x0eterminal_count\x18\x05 \x01(\rR\rterminalCount\x12#\n" +
+	"\rexpired_count\x18\x06 \x01(\rR\fexpiredCount\x12B\n" +
+	"\x0fnext_attempt_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\rnextAttemptAt\"3\n" +
 	"\x18GetMomentResourceRequest\x12\x17\n" +
-	"\apost_id\x18\x01 \x01(\tR\x06postId\"\xb1\x02\n" +
+	"\apost_id\x18\x01 \x01(\tR\x06postId\"\x97\x03\n" +
 	"\x19GetMomentResourceResponse\x125\n" +
 	"\x04post\x18\x01 \x01(\v2!.peers_touch.model.social.v1.PostR\x04post\x12T\n" +
 	"\vexplanation\x18\x02 \x01(\v22.peers_touch.model.social.v1.FeedObjectExplanationR\vexplanation\x12E\n" +
 	"\bresource\x18\x03 \x01(\v2).peers_touch.model.social.v1.PostResourceR\bresource\x12@\n" +
-	"\x1creaction_projection_revision\x18\x04 \x01(\x04R\x1areactionProjectionRevision\"Y\n" +
+	"\x1creaction_projection_revision\x18\x04 \x01(\x04R\x1areactionProjectionRevision\x12d\n" +
+	"\x0fremote_delivery\x18\x05 \x01(\v2;.peers_touch.model.social.v1.FederatedPrivateDeliveryStatusR\x0eremoteDelivery\"X\n" +
+	"(ListRemotePrivateMomentReferencesRequest\x12\x16\n" +
+	"\x06cursor\x18\x01 \x01(\tR\x06cursor\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\rR\x05limit\"\xa1\x01\n" +
+	"\x1cRemotePrivateMomentReference\x12\x17\n" +
+	"\apost_id\x18\x01 \x01(\tR\x06postId\x12-\n" +
+	"\x12lifecycle_revision\x18\x02 \x01(\x04R\x11lifecycleRevision\x129\n" +
+	"\n" +
+	"updated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xbc\x01\n" +
+	")ListRemotePrivateMomentReferencesResponse\x12S\n" +
+	"\amoments\x18\x01 \x03(\v29.peers_touch.model.social.v1.RemotePrivateMomentReferenceR\amoments\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\x12\x19\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"Y\n" +
 	"\x1fGetMomentCommentResourceRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12\x1d\n" +
 	"\n" +
@@ -5325,7 +5681,15 @@ const file_domain_social_private_content_proto_rawDesc = "" +
 	"\"PRIVATE_RENDERED_SOURCE_KIND_VIDEO\x10\x03\x12%\n" +
 	"!PRIVATE_RENDERED_SOURCE_KIND_LINK\x10\x04\x12%\n" +
 	"!PRIVATE_RENDERED_SOURCE_KIND_POLL\x10\x05\x12)\n" +
-	"%PRIVATE_RENDERED_SOURCE_KIND_LOCATION\x10\x06B[ZYgithub.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent;privatecontentb\x06proto3"
+	"%PRIVATE_RENDERED_SOURCE_KIND_LOCATION\x10\x06*\xee\x02\n" +
+	"\x1dFederatedPrivateDeliveryState\x120\n" +
+	",FEDERATED_PRIVATE_DELIVERY_STATE_UNSPECIFIED\x10\x00\x121\n" +
+	"-FEDERATED_PRIVATE_DELIVERY_STATE_NOT_REQUIRED\x10\x01\x12,\n" +
+	"(FEDERATED_PRIVATE_DELIVERY_STATE_PENDING\x10\x02\x12-\n" +
+	")FEDERATED_PRIVATE_DELIVERY_STATE_RETRYING\x10\x03\x12.\n" +
+	"*FEDERATED_PRIVATE_DELIVERY_STATE_DELIVERED\x10\x04\x12-\n" +
+	")FEDERATED_PRIVATE_DELIVERY_STATE_TERMINAL\x10\x05\x12,\n" +
+	"(FEDERATED_PRIVATE_DELIVERY_STATE_EXPIRED\x10\x06B[ZYgithub.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent;privatecontentb\x06proto3"
 
 var (
 	file_domain_social_private_content_proto_rawDescOnce sync.Once
@@ -5339,233 +5703,243 @@ func file_domain_social_private_content_proto_rawDescGZIP() []byte {
 	return file_domain_social_private_content_proto_rawDescData
 }
 
-var file_domain_social_private_content_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_domain_social_private_content_proto_msgTypes = make([]protoimpl.MessageInfo, 61)
+var file_domain_social_private_content_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_domain_social_private_content_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
 var file_domain_social_private_content_proto_goTypes = []any{
 	(PrivateMomentKind)(0),                                    // 0: peers_touch.model.social.v1.PrivateMomentKind
 	(PrivateRenderedSourceKind)(0),                            // 1: peers_touch.model.social.v1.PrivateRenderedSourceKind
-	(*PreparePrivateMomentRequest)(nil),                       // 2: peers_touch.model.social.v1.PreparePrivateMomentRequest
-	(*PreparePrivateMomentResponse)(nil),                      // 3: peers_touch.model.social.v1.PreparePrivateMomentResponse
-	(*PreparePrivateCommentRequest)(nil),                      // 4: peers_touch.model.social.v1.PreparePrivateCommentRequest
-	(*PreparePrivateCommentResponse)(nil),                     // 5: peers_touch.model.social.v1.PreparePrivateCommentResponse
-	(*PrivateMomentContent)(nil),                              // 6: peers_touch.model.social.v1.PrivateMomentContent
-	(*PrivateTextContent)(nil),                                // 7: peers_touch.model.social.v1.PrivateTextContent
-	(*PrivateImageContent)(nil),                               // 8: peers_touch.model.social.v1.PrivateImageContent
-	(*PrivateVideoVariant)(nil),                               // 9: peers_touch.model.social.v1.PrivateVideoVariant
-	(*PrivateVideoContent)(nil),                               // 10: peers_touch.model.social.v1.PrivateVideoContent
-	(*PrivateLinkContent)(nil),                                // 11: peers_touch.model.social.v1.PrivateLinkContent
-	(*PrivatePollOption)(nil),                                 // 12: peers_touch.model.social.v1.PrivatePollOption
-	(*PrivatePollContent)(nil),                                // 13: peers_touch.model.social.v1.PrivatePollContent
-	(*SocialPostSourceRef)(nil),                               // 14: peers_touch.model.social.v1.SocialPostSourceRef
-	(*PublicRenderedSourceSnapshot)(nil),                      // 15: peers_touch.model.social.v1.PublicRenderedSourceSnapshot
-	(*PrivateRenderedSourceSnapshot)(nil),                     // 16: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot
-	(*RenderedSourceSnapshot)(nil),                            // 17: peers_touch.model.social.v1.RenderedSourceSnapshot
-	(*PrivateRepostContent)(nil),                              // 18: peers_touch.model.social.v1.PrivateRepostContent
-	(*PrivateLocationContent)(nil),                            // 19: peers_touch.model.social.v1.PrivateLocationContent
-	(*PrivateCommentContent)(nil),                             // 20: peers_touch.model.social.v1.PrivateCommentContent
-	(*PrivateAttachmentMetadata)(nil),                         // 21: peers_touch.model.social.v1.PrivateAttachmentMetadata
-	(*MentionRoutingFact)(nil),                                // 22: peers_touch.model.social.v1.MentionRoutingFact
-	(*SignedMentionRouting)(nil),                              // 23: peers_touch.model.social.v1.SignedMentionRouting
-	(*PrivatePollAuthority)(nil),                              // 24: peers_touch.model.social.v1.PrivatePollAuthority
-	(*PublicRepostSourceProof)(nil),                           // 25: peers_touch.model.social.v1.PublicRepostSourceProof
-	(*PrivateRepostSourceProof)(nil),                          // 26: peers_touch.model.social.v1.PrivateRepostSourceProof
-	(*PrivateRepostAuthority)(nil),                            // 27: peers_touch.model.social.v1.PrivateRepostAuthority
-	(*VotePrivatePollRequest)(nil),                            // 28: peers_touch.model.social.v1.VotePrivatePollRequest
-	(*PrivateMomentDomainBinding)(nil),                        // 29: peers_touch.model.social.v1.PrivateMomentDomainBinding
-	(*PrivateCommentDomainBinding)(nil),                       // 30: peers_touch.model.social.v1.PrivateCommentDomainBinding
-	(*PreparePrivateMomentHashInput)(nil),                     // 31: peers_touch.model.social.v1.PreparePrivateMomentHashInput
-	(*PreparePrivateCommentHashInput)(nil),                    // 32: peers_touch.model.social.v1.PreparePrivateCommentHashInput
-	(*EnvelopeSubmitCommitment)(nil),                          // 33: peers_touch.model.social.v1.EnvelopeSubmitCommitment
-	(*ObjectSubmitCommitment)(nil),                            // 34: peers_touch.model.social.v1.ObjectSubmitCommitment
-	(*SubmitPrivateContentHashInput)(nil),                     // 35: peers_touch.model.social.v1.SubmitPrivateContentHashInput
-	(*VotePrivatePollHashInput)(nil),                          // 36: peers_touch.model.social.v1.VotePrivatePollHashInput
-	(*PrivatePollProjection)(nil),                             // 37: peers_touch.model.social.v1.PrivatePollProjection
-	(*PrivateContentVerification)(nil),                        // 38: peers_touch.model.social.v1.PrivateContentVerification
-	(*PrivateContentAccess)(nil),                              // 39: peers_touch.model.social.v1.PrivateContentAccess
-	(*PostMetadata)(nil),                                      // 40: peers_touch.model.social.v1.PostMetadata
-	(*PublicPostContent)(nil),                                 // 41: peers_touch.model.social.v1.PublicPostContent
-	(*PostResource)(nil),                                      // 42: peers_touch.model.social.v1.PostResource
-	(*CommentMetadata)(nil),                                   // 43: peers_touch.model.social.v1.CommentMetadata
-	(*PublicCommentContent)(nil),                              // 44: peers_touch.model.social.v1.PublicCommentContent
-	(*CommentResource)(nil),                                   // 45: peers_touch.model.social.v1.CommentResource
-	(*SubmitPrivateMomentRequest)(nil),                        // 46: peers_touch.model.social.v1.SubmitPrivateMomentRequest
-	(*SubmitPrivateMomentResponse)(nil),                       // 47: peers_touch.model.social.v1.SubmitPrivateMomentResponse
-	(*SubmitPrivateCommentRequest)(nil),                       // 48: peers_touch.model.social.v1.SubmitPrivateCommentRequest
-	(*SubmitPrivateCommentResponse)(nil),                      // 49: peers_touch.model.social.v1.SubmitPrivateCommentResponse
-	(*GetMomentResourceRequest)(nil),                          // 50: peers_touch.model.social.v1.GetMomentResourceRequest
-	(*GetMomentResourceResponse)(nil),                         // 51: peers_touch.model.social.v1.GetMomentResourceResponse
-	(*GetMomentCommentResourceRequest)(nil),                   // 52: peers_touch.model.social.v1.GetMomentCommentResourceRequest
-	(*GetMomentCommentResourceResponse)(nil),                  // 53: peers_touch.model.social.v1.GetMomentCommentResourceResponse
-	(*ListMomentCommentsRequest)(nil),                         // 54: peers_touch.model.social.v1.ListMomentCommentsRequest
-	(*ListMomentCommentsResponse)(nil),                        // 55: peers_touch.model.social.v1.ListMomentCommentsResponse
-	(*PrivatePollOptionResult)(nil),                           // 56: peers_touch.model.social.v1.PrivatePollOptionResult
-	(*VotePrivatePollResponse)(nil),                           // 57: peers_touch.model.social.v1.VotePrivatePollResponse
-	(*ListRecoverablePrivateContentRequest)(nil),              // 58: peers_touch.model.social.v1.ListRecoverablePrivateContentRequest
-	(*PrivateCommentLocator)(nil),                             // 59: peers_touch.model.social.v1.PrivateCommentLocator
-	(*SocialPrivateContentLocator)(nil),                       // 60: peers_touch.model.social.v1.SocialPrivateContentLocator
-	(*RecoverablePrivateContent)(nil),                         // 61: peers_touch.model.social.v1.RecoverablePrivateContent
-	(*ListRecoverablePrivateContentResponse)(nil),             // 62: peers_touch.model.social.v1.ListRecoverablePrivateContentResponse
-	(*model.Audience)(nil),                                    // 63: peers_touch.model.social.v1.Audience
-	(*securecontent.ContentEncryptionPlan)(nil),               // 64: peers_touch.model.secure_content.v1.ContentEncryptionPlan
-	(*securecontent.StationContentSigningKeyAttestation)(nil), // 65: peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation
-	(*model.Mention)(nil),                                     // 66: peers_touch.model.social.v1.Mention
-	(*model.LinkPreview)(nil),                                 // 67: peers_touch.model.social.v1.LinkPreview
-	(*timestamppb.Timestamp)(nil),                             // 68: google.protobuf.Timestamp
-	(*model.ActorRef)(nil),                                    // 69: peers_touch.model.actor.v1.ActorRef
-	(*model.TextPost)(nil),                                    // 70: peers_touch.model.social.v1.TextPost
-	(*model.ImagePost)(nil),                                   // 71: peers_touch.model.social.v1.ImagePost
-	(*model.VideoPost)(nil),                                   // 72: peers_touch.model.social.v1.VideoPost
-	(*model.LinkPost)(nil),                                    // 73: peers_touch.model.social.v1.LinkPost
-	(*model.PollPost)(nil),                                    // 74: peers_touch.model.social.v1.PollPost
-	(*model.LocationPost)(nil),                                // 75: peers_touch.model.social.v1.LocationPost
-	(*model.Location)(nil),                                    // 76: peers_touch.model.social.v1.Location
-	(*securecontent.EncryptedObjectDescriptor)(nil),           // 77: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	(*securecontent.SecureResourceRef)(nil),                   // 78: peers_touch.model.secure_content.v1.SecureResourceRef
-	(*model.ActorDeviceRef)(nil),                              // 79: peers_touch.model.actor.v1.ActorDeviceRef
-	(*securecontent.ViewerContentCommitProof)(nil),            // 80: peers_touch.model.secure_content.v1.ViewerContentCommitProof
-	(*model.VerifiedActorDeviceSigningKey)(nil),               // 81: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
-	(*securecontent.EncryptedPayload)(nil),                    // 82: peers_touch.model.secure_content.v1.EncryptedPayload
-	(*securecontent.ViewerContentKeyEnvelope)(nil),            // 83: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	(model.PostType)(0),                                       // 84: peers_touch.model.social.v1.PostType
-	(model.Audience_Kind)(0),                                  // 85: peers_touch.model.social.v1.Audience.Kind
-	(*model.PostStats)(nil),                                   // 86: peers_touch.model.social.v1.PostStats
-	(*model.Post)(nil),                                        // 87: peers_touch.model.social.v1.Post
-	(*securecontent.PreparedContentKeyEnvelope)(nil),          // 88: peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope
-	(*model.FeedObjectExplanation)(nil),                       // 89: peers_touch.model.social.v1.FeedObjectExplanation
+	(FederatedPrivateDeliveryState)(0),                        // 2: peers_touch.model.social.v1.FederatedPrivateDeliveryState
+	(*PreparePrivateMomentRequest)(nil),                       // 3: peers_touch.model.social.v1.PreparePrivateMomentRequest
+	(*PreparePrivateMomentResponse)(nil),                      // 4: peers_touch.model.social.v1.PreparePrivateMomentResponse
+	(*PreparePrivateCommentRequest)(nil),                      // 5: peers_touch.model.social.v1.PreparePrivateCommentRequest
+	(*PreparePrivateCommentResponse)(nil),                     // 6: peers_touch.model.social.v1.PreparePrivateCommentResponse
+	(*PrivateMomentContent)(nil),                              // 7: peers_touch.model.social.v1.PrivateMomentContent
+	(*PrivateTextContent)(nil),                                // 8: peers_touch.model.social.v1.PrivateTextContent
+	(*PrivateImageContent)(nil),                               // 9: peers_touch.model.social.v1.PrivateImageContent
+	(*PrivateVideoVariant)(nil),                               // 10: peers_touch.model.social.v1.PrivateVideoVariant
+	(*PrivateVideoContent)(nil),                               // 11: peers_touch.model.social.v1.PrivateVideoContent
+	(*PrivateLinkContent)(nil),                                // 12: peers_touch.model.social.v1.PrivateLinkContent
+	(*PrivatePollOption)(nil),                                 // 13: peers_touch.model.social.v1.PrivatePollOption
+	(*PrivatePollContent)(nil),                                // 14: peers_touch.model.social.v1.PrivatePollContent
+	(*SocialPostSourceRef)(nil),                               // 15: peers_touch.model.social.v1.SocialPostSourceRef
+	(*PublicRenderedSourceSnapshot)(nil),                      // 16: peers_touch.model.social.v1.PublicRenderedSourceSnapshot
+	(*PrivateRenderedSourceSnapshot)(nil),                     // 17: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot
+	(*RenderedSourceSnapshot)(nil),                            // 18: peers_touch.model.social.v1.RenderedSourceSnapshot
+	(*PrivateRepostContent)(nil),                              // 19: peers_touch.model.social.v1.PrivateRepostContent
+	(*PrivateLocationContent)(nil),                            // 20: peers_touch.model.social.v1.PrivateLocationContent
+	(*PrivateCommentContent)(nil),                             // 21: peers_touch.model.social.v1.PrivateCommentContent
+	(*PrivateAttachmentMetadata)(nil),                         // 22: peers_touch.model.social.v1.PrivateAttachmentMetadata
+	(*MentionRoutingFact)(nil),                                // 23: peers_touch.model.social.v1.MentionRoutingFact
+	(*SignedMentionRouting)(nil),                              // 24: peers_touch.model.social.v1.SignedMentionRouting
+	(*PrivatePollAuthority)(nil),                              // 25: peers_touch.model.social.v1.PrivatePollAuthority
+	(*PublicRepostSourceProof)(nil),                           // 26: peers_touch.model.social.v1.PublicRepostSourceProof
+	(*PrivateRepostSourceProof)(nil),                          // 27: peers_touch.model.social.v1.PrivateRepostSourceProof
+	(*PrivateRepostAuthority)(nil),                            // 28: peers_touch.model.social.v1.PrivateRepostAuthority
+	(*VotePrivatePollRequest)(nil),                            // 29: peers_touch.model.social.v1.VotePrivatePollRequest
+	(*PrivateMomentDomainBinding)(nil),                        // 30: peers_touch.model.social.v1.PrivateMomentDomainBinding
+	(*PrivateCommentDomainBinding)(nil),                       // 31: peers_touch.model.social.v1.PrivateCommentDomainBinding
+	(*PreparePrivateMomentHashInput)(nil),                     // 32: peers_touch.model.social.v1.PreparePrivateMomentHashInput
+	(*PreparePrivateCommentHashInput)(nil),                    // 33: peers_touch.model.social.v1.PreparePrivateCommentHashInput
+	(*EnvelopeSubmitCommitment)(nil),                          // 34: peers_touch.model.social.v1.EnvelopeSubmitCommitment
+	(*ObjectSubmitCommitment)(nil),                            // 35: peers_touch.model.social.v1.ObjectSubmitCommitment
+	(*SubmitPrivateContentHashInput)(nil),                     // 36: peers_touch.model.social.v1.SubmitPrivateContentHashInput
+	(*VotePrivatePollHashInput)(nil),                          // 37: peers_touch.model.social.v1.VotePrivatePollHashInput
+	(*PrivatePollProjection)(nil),                             // 38: peers_touch.model.social.v1.PrivatePollProjection
+	(*PrivateContentVerification)(nil),                        // 39: peers_touch.model.social.v1.PrivateContentVerification
+	(*PrivateContentAccess)(nil),                              // 40: peers_touch.model.social.v1.PrivateContentAccess
+	(*PostMetadata)(nil),                                      // 41: peers_touch.model.social.v1.PostMetadata
+	(*PublicPostContent)(nil),                                 // 42: peers_touch.model.social.v1.PublicPostContent
+	(*PostResource)(nil),                                      // 43: peers_touch.model.social.v1.PostResource
+	(*CommentMetadata)(nil),                                   // 44: peers_touch.model.social.v1.CommentMetadata
+	(*PublicCommentContent)(nil),                              // 45: peers_touch.model.social.v1.PublicCommentContent
+	(*CommentResource)(nil),                                   // 46: peers_touch.model.social.v1.CommentResource
+	(*SubmitPrivateMomentRequest)(nil),                        // 47: peers_touch.model.social.v1.SubmitPrivateMomentRequest
+	(*SubmitPrivateMomentResponse)(nil),                       // 48: peers_touch.model.social.v1.SubmitPrivateMomentResponse
+	(*SubmitPrivateCommentRequest)(nil),                       // 49: peers_touch.model.social.v1.SubmitPrivateCommentRequest
+	(*SubmitPrivateCommentResponse)(nil),                      // 50: peers_touch.model.social.v1.SubmitPrivateCommentResponse
+	(*FederatedPrivateDeliveryStatus)(nil),                    // 51: peers_touch.model.social.v1.FederatedPrivateDeliveryStatus
+	(*GetMomentResourceRequest)(nil),                          // 52: peers_touch.model.social.v1.GetMomentResourceRequest
+	(*GetMomentResourceResponse)(nil),                         // 53: peers_touch.model.social.v1.GetMomentResourceResponse
+	(*ListRemotePrivateMomentReferencesRequest)(nil),          // 54: peers_touch.model.social.v1.ListRemotePrivateMomentReferencesRequest
+	(*RemotePrivateMomentReference)(nil),                      // 55: peers_touch.model.social.v1.RemotePrivateMomentReference
+	(*ListRemotePrivateMomentReferencesResponse)(nil),         // 56: peers_touch.model.social.v1.ListRemotePrivateMomentReferencesResponse
+	(*GetMomentCommentResourceRequest)(nil),                   // 57: peers_touch.model.social.v1.GetMomentCommentResourceRequest
+	(*GetMomentCommentResourceResponse)(nil),                  // 58: peers_touch.model.social.v1.GetMomentCommentResourceResponse
+	(*ListMomentCommentsRequest)(nil),                         // 59: peers_touch.model.social.v1.ListMomentCommentsRequest
+	(*ListMomentCommentsResponse)(nil),                        // 60: peers_touch.model.social.v1.ListMomentCommentsResponse
+	(*PrivatePollOptionResult)(nil),                           // 61: peers_touch.model.social.v1.PrivatePollOptionResult
+	(*VotePrivatePollResponse)(nil),                           // 62: peers_touch.model.social.v1.VotePrivatePollResponse
+	(*ListRecoverablePrivateContentRequest)(nil),              // 63: peers_touch.model.social.v1.ListRecoverablePrivateContentRequest
+	(*PrivateCommentLocator)(nil),                             // 64: peers_touch.model.social.v1.PrivateCommentLocator
+	(*SocialPrivateContentLocator)(nil),                       // 65: peers_touch.model.social.v1.SocialPrivateContentLocator
+	(*RecoverablePrivateContent)(nil),                         // 66: peers_touch.model.social.v1.RecoverablePrivateContent
+	(*ListRecoverablePrivateContentResponse)(nil),             // 67: peers_touch.model.social.v1.ListRecoverablePrivateContentResponse
+	(*model.Audience)(nil),                                    // 68: peers_touch.model.social.v1.Audience
+	(*securecontent.ContentEncryptionPlan)(nil),               // 69: peers_touch.model.secure_content.v1.ContentEncryptionPlan
+	(*securecontent.StationContentSigningKeyAttestation)(nil), // 70: peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation
+	(*model.Mention)(nil),                                     // 71: peers_touch.model.social.v1.Mention
+	(*model.LinkPreview)(nil),                                 // 72: peers_touch.model.social.v1.LinkPreview
+	(*timestamppb.Timestamp)(nil),                             // 73: google.protobuf.Timestamp
+	(*model.ActorRef)(nil),                                    // 74: peers_touch.model.actor.v1.ActorRef
+	(*model.TextPost)(nil),                                    // 75: peers_touch.model.social.v1.TextPost
+	(*model.ImagePost)(nil),                                   // 76: peers_touch.model.social.v1.ImagePost
+	(*model.VideoPost)(nil),                                   // 77: peers_touch.model.social.v1.VideoPost
+	(*model.LinkPost)(nil),                                    // 78: peers_touch.model.social.v1.LinkPost
+	(*model.PollPost)(nil),                                    // 79: peers_touch.model.social.v1.PollPost
+	(*model.LocationPost)(nil),                                // 80: peers_touch.model.social.v1.LocationPost
+	(*model.Location)(nil),                                    // 81: peers_touch.model.social.v1.Location
+	(*securecontent.EncryptedObjectDescriptor)(nil),           // 82: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	(*securecontent.SecureResourceRef)(nil),                   // 83: peers_touch.model.secure_content.v1.SecureResourceRef
+	(*model.ActorDeviceRef)(nil),                              // 84: peers_touch.model.actor.v1.ActorDeviceRef
+	(*securecontent.ViewerContentCommitProof)(nil),            // 85: peers_touch.model.secure_content.v1.ViewerContentCommitProof
+	(*model.VerifiedActorDeviceSigningKey)(nil),               // 86: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
+	(*securecontent.EncryptedPayload)(nil),                    // 87: peers_touch.model.secure_content.v1.EncryptedPayload
+	(*securecontent.ViewerContentKeyEnvelope)(nil),            // 88: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	(model.PostType)(0),                                       // 89: peers_touch.model.social.v1.PostType
+	(model.Audience_Kind)(0),                                  // 90: peers_touch.model.social.v1.Audience.Kind
+	(*model.PostStats)(nil),                                   // 91: peers_touch.model.social.v1.PostStats
+	(*model.Post)(nil),                                        // 92: peers_touch.model.social.v1.Post
+	(*securecontent.PreparedContentKeyEnvelope)(nil),          // 93: peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope
+	(*model.FeedObjectExplanation)(nil),                       // 94: peers_touch.model.social.v1.FeedObjectExplanation
 }
 var file_domain_social_private_content_proto_depIdxs = []int32{
-	63,  // 0: peers_touch.model.social.v1.PreparePrivateMomentRequest.audience:type_name -> peers_touch.model.social.v1.Audience
+	68,  // 0: peers_touch.model.social.v1.PreparePrivateMomentRequest.audience:type_name -> peers_touch.model.social.v1.Audience
 	0,   // 1: peers_touch.model.social.v1.PreparePrivateMomentRequest.kind:type_name -> peers_touch.model.social.v1.PrivateMomentKind
-	27,  // 2: peers_touch.model.social.v1.PreparePrivateMomentRequest.repost_authority:type_name -> peers_touch.model.social.v1.PrivateRepostAuthority
-	24,  // 3: peers_touch.model.social.v1.PreparePrivateMomentRequest.poll_authority:type_name -> peers_touch.model.social.v1.PrivatePollAuthority
-	64,  // 4: peers_touch.model.social.v1.PreparePrivateMomentResponse.plan:type_name -> peers_touch.model.secure_content.v1.ContentEncryptionPlan
-	64,  // 5: peers_touch.model.social.v1.PreparePrivateCommentResponse.plan:type_name -> peers_touch.model.secure_content.v1.ContentEncryptionPlan
-	65,  // 6: peers_touch.model.social.v1.PreparePrivateCommentResponse.station_signing_key_attestation:type_name -> peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation
-	7,   // 7: peers_touch.model.social.v1.PrivateMomentContent.text:type_name -> peers_touch.model.social.v1.PrivateTextContent
-	8,   // 8: peers_touch.model.social.v1.PrivateMomentContent.image:type_name -> peers_touch.model.social.v1.PrivateImageContent
-	10,  // 9: peers_touch.model.social.v1.PrivateMomentContent.video:type_name -> peers_touch.model.social.v1.PrivateVideoContent
-	11,  // 10: peers_touch.model.social.v1.PrivateMomentContent.link:type_name -> peers_touch.model.social.v1.PrivateLinkContent
-	13,  // 11: peers_touch.model.social.v1.PrivateMomentContent.poll:type_name -> peers_touch.model.social.v1.PrivatePollContent
-	18,  // 12: peers_touch.model.social.v1.PrivateMomentContent.repost:type_name -> peers_touch.model.social.v1.PrivateRepostContent
-	19,  // 13: peers_touch.model.social.v1.PrivateMomentContent.location:type_name -> peers_touch.model.social.v1.PrivateLocationContent
-	66,  // 14: peers_touch.model.social.v1.PrivateTextContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	21,  // 15: peers_touch.model.social.v1.PrivateImageContent.images:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
-	66,  // 16: peers_touch.model.social.v1.PrivateImageContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	21,  // 17: peers_touch.model.social.v1.PrivateVideoVariant.media:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
-	21,  // 18: peers_touch.model.social.v1.PrivateVideoContent.source:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
-	21,  // 19: peers_touch.model.social.v1.PrivateVideoContent.poster:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
-	9,   // 20: peers_touch.model.social.v1.PrivateVideoContent.variants:type_name -> peers_touch.model.social.v1.PrivateVideoVariant
-	66,  // 21: peers_touch.model.social.v1.PrivateVideoContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	67,  // 22: peers_touch.model.social.v1.PrivateLinkContent.link:type_name -> peers_touch.model.social.v1.LinkPreview
-	66,  // 23: peers_touch.model.social.v1.PrivateLinkContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	12,  // 24: peers_touch.model.social.v1.PrivatePollContent.options:type_name -> peers_touch.model.social.v1.PrivatePollOption
-	68,  // 25: peers_touch.model.social.v1.PrivatePollContent.expires_at:type_name -> google.protobuf.Timestamp
-	66,  // 26: peers_touch.model.social.v1.PrivatePollContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	14,  // 27: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.source:type_name -> peers_touch.model.social.v1.SocialPostSourceRef
-	69,  // 28: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.author:type_name -> peers_touch.model.actor.v1.ActorRef
-	68,  // 29: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.created_at:type_name -> google.protobuf.Timestamp
+	28,  // 2: peers_touch.model.social.v1.PreparePrivateMomentRequest.repost_authority:type_name -> peers_touch.model.social.v1.PrivateRepostAuthority
+	25,  // 3: peers_touch.model.social.v1.PreparePrivateMomentRequest.poll_authority:type_name -> peers_touch.model.social.v1.PrivatePollAuthority
+	69,  // 4: peers_touch.model.social.v1.PreparePrivateMomentResponse.plan:type_name -> peers_touch.model.secure_content.v1.ContentEncryptionPlan
+	69,  // 5: peers_touch.model.social.v1.PreparePrivateCommentResponse.plan:type_name -> peers_touch.model.secure_content.v1.ContentEncryptionPlan
+	70,  // 6: peers_touch.model.social.v1.PreparePrivateCommentResponse.station_signing_key_attestation:type_name -> peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation
+	8,   // 7: peers_touch.model.social.v1.PrivateMomentContent.text:type_name -> peers_touch.model.social.v1.PrivateTextContent
+	9,   // 8: peers_touch.model.social.v1.PrivateMomentContent.image:type_name -> peers_touch.model.social.v1.PrivateImageContent
+	11,  // 9: peers_touch.model.social.v1.PrivateMomentContent.video:type_name -> peers_touch.model.social.v1.PrivateVideoContent
+	12,  // 10: peers_touch.model.social.v1.PrivateMomentContent.link:type_name -> peers_touch.model.social.v1.PrivateLinkContent
+	14,  // 11: peers_touch.model.social.v1.PrivateMomentContent.poll:type_name -> peers_touch.model.social.v1.PrivatePollContent
+	19,  // 12: peers_touch.model.social.v1.PrivateMomentContent.repost:type_name -> peers_touch.model.social.v1.PrivateRepostContent
+	20,  // 13: peers_touch.model.social.v1.PrivateMomentContent.location:type_name -> peers_touch.model.social.v1.PrivateLocationContent
+	71,  // 14: peers_touch.model.social.v1.PrivateTextContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	22,  // 15: peers_touch.model.social.v1.PrivateImageContent.images:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
+	71,  // 16: peers_touch.model.social.v1.PrivateImageContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	22,  // 17: peers_touch.model.social.v1.PrivateVideoVariant.media:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
+	22,  // 18: peers_touch.model.social.v1.PrivateVideoContent.source:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
+	22,  // 19: peers_touch.model.social.v1.PrivateVideoContent.poster:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
+	10,  // 20: peers_touch.model.social.v1.PrivateVideoContent.variants:type_name -> peers_touch.model.social.v1.PrivateVideoVariant
+	71,  // 21: peers_touch.model.social.v1.PrivateVideoContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	72,  // 22: peers_touch.model.social.v1.PrivateLinkContent.link:type_name -> peers_touch.model.social.v1.LinkPreview
+	71,  // 23: peers_touch.model.social.v1.PrivateLinkContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	13,  // 24: peers_touch.model.social.v1.PrivatePollContent.options:type_name -> peers_touch.model.social.v1.PrivatePollOption
+	73,  // 25: peers_touch.model.social.v1.PrivatePollContent.expires_at:type_name -> google.protobuf.Timestamp
+	71,  // 26: peers_touch.model.social.v1.PrivatePollContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	15,  // 27: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.source:type_name -> peers_touch.model.social.v1.SocialPostSourceRef
+	74,  // 28: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.author:type_name -> peers_touch.model.actor.v1.ActorRef
+	73,  // 29: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.created_at:type_name -> google.protobuf.Timestamp
 	1,   // 30: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.kind:type_name -> peers_touch.model.social.v1.PrivateRenderedSourceKind
-	66,  // 31: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.typed_mentions:type_name -> peers_touch.model.social.v1.Mention
-	70,  // 32: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.text:type_name -> peers_touch.model.social.v1.TextPost
-	71,  // 33: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.image:type_name -> peers_touch.model.social.v1.ImagePost
-	72,  // 34: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.video:type_name -> peers_touch.model.social.v1.VideoPost
-	73,  // 35: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.link:type_name -> peers_touch.model.social.v1.LinkPost
-	74,  // 36: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.poll:type_name -> peers_touch.model.social.v1.PollPost
-	75,  // 37: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.location:type_name -> peers_touch.model.social.v1.LocationPost
-	14,  // 38: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.source:type_name -> peers_touch.model.social.v1.SocialPostSourceRef
-	69,  // 39: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.author:type_name -> peers_touch.model.actor.v1.ActorRef
-	68,  // 40: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.created_at:type_name -> google.protobuf.Timestamp
+	71,  // 31: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.typed_mentions:type_name -> peers_touch.model.social.v1.Mention
+	75,  // 32: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.text:type_name -> peers_touch.model.social.v1.TextPost
+	76,  // 33: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.image:type_name -> peers_touch.model.social.v1.ImagePost
+	77,  // 34: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.video:type_name -> peers_touch.model.social.v1.VideoPost
+	78,  // 35: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.link:type_name -> peers_touch.model.social.v1.LinkPost
+	79,  // 36: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.poll:type_name -> peers_touch.model.social.v1.PollPost
+	80,  // 37: peers_touch.model.social.v1.PublicRenderedSourceSnapshot.location:type_name -> peers_touch.model.social.v1.LocationPost
+	15,  // 38: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.source:type_name -> peers_touch.model.social.v1.SocialPostSourceRef
+	74,  // 39: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.author:type_name -> peers_touch.model.actor.v1.ActorRef
+	73,  // 40: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.created_at:type_name -> google.protobuf.Timestamp
 	1,   // 41: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.kind:type_name -> peers_touch.model.social.v1.PrivateRenderedSourceKind
-	7,   // 42: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.text:type_name -> peers_touch.model.social.v1.PrivateTextContent
-	8,   // 43: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.image:type_name -> peers_touch.model.social.v1.PrivateImageContent
-	10,  // 44: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.video:type_name -> peers_touch.model.social.v1.PrivateVideoContent
-	11,  // 45: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.link:type_name -> peers_touch.model.social.v1.PrivateLinkContent
-	13,  // 46: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.poll:type_name -> peers_touch.model.social.v1.PrivatePollContent
-	19,  // 47: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.location:type_name -> peers_touch.model.social.v1.PrivateLocationContent
-	15,  // 48: peers_touch.model.social.v1.RenderedSourceSnapshot.public_source:type_name -> peers_touch.model.social.v1.PublicRenderedSourceSnapshot
-	16,  // 49: peers_touch.model.social.v1.RenderedSourceSnapshot.private_source:type_name -> peers_touch.model.social.v1.PrivateRenderedSourceSnapshot
-	14,  // 50: peers_touch.model.social.v1.PrivateRepostContent.original_source:type_name -> peers_touch.model.social.v1.SocialPostSourceRef
-	17,  // 51: peers_touch.model.social.v1.PrivateRepostContent.rendered_source:type_name -> peers_touch.model.social.v1.RenderedSourceSnapshot
-	66,  // 52: peers_touch.model.social.v1.PrivateRepostContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	76,  // 53: peers_touch.model.social.v1.PrivateLocationContent.location:type_name -> peers_touch.model.social.v1.Location
-	21,  // 54: peers_touch.model.social.v1.PrivateLocationContent.images:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
-	66,  // 55: peers_touch.model.social.v1.PrivateLocationContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	66,  // 56: peers_touch.model.social.v1.PrivateCommentContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	77,  // 57: peers_touch.model.social.v1.PrivateAttachmentMetadata.object:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	69,  // 58: peers_touch.model.social.v1.MentionRoutingFact.mentioned_actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	78,  // 59: peers_touch.model.social.v1.SignedMentionRouting.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	22,  // 60: peers_touch.model.social.v1.SignedMentionRouting.facts:type_name -> peers_touch.model.social.v1.MentionRoutingFact
-	79,  // 61: peers_touch.model.social.v1.SignedMentionRouting.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	78,  // 62: peers_touch.model.social.v1.PrivatePollAuthority.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	68,  // 63: peers_touch.model.social.v1.PrivatePollAuthority.expires_at:type_name -> google.protobuf.Timestamp
-	78,  // 64: peers_touch.model.social.v1.PrivateRepostSourceProof.source_resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	14,  // 65: peers_touch.model.social.v1.PrivateRepostAuthority.source:type_name -> peers_touch.model.social.v1.SocialPostSourceRef
-	69,  // 66: peers_touch.model.social.v1.PrivateRepostAuthority.source_author:type_name -> peers_touch.model.actor.v1.ActorRef
-	25,  // 67: peers_touch.model.social.v1.PrivateRepostAuthority.public_source:type_name -> peers_touch.model.social.v1.PublicRepostSourceProof
-	26,  // 68: peers_touch.model.social.v1.PrivateRepostAuthority.private_source:type_name -> peers_touch.model.social.v1.PrivateRepostSourceProof
+	8,   // 42: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.text:type_name -> peers_touch.model.social.v1.PrivateTextContent
+	9,   // 43: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.image:type_name -> peers_touch.model.social.v1.PrivateImageContent
+	11,  // 44: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.video:type_name -> peers_touch.model.social.v1.PrivateVideoContent
+	12,  // 45: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.link:type_name -> peers_touch.model.social.v1.PrivateLinkContent
+	14,  // 46: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.poll:type_name -> peers_touch.model.social.v1.PrivatePollContent
+	20,  // 47: peers_touch.model.social.v1.PrivateRenderedSourceSnapshot.location:type_name -> peers_touch.model.social.v1.PrivateLocationContent
+	16,  // 48: peers_touch.model.social.v1.RenderedSourceSnapshot.public_source:type_name -> peers_touch.model.social.v1.PublicRenderedSourceSnapshot
+	17,  // 49: peers_touch.model.social.v1.RenderedSourceSnapshot.private_source:type_name -> peers_touch.model.social.v1.PrivateRenderedSourceSnapshot
+	15,  // 50: peers_touch.model.social.v1.PrivateRepostContent.original_source:type_name -> peers_touch.model.social.v1.SocialPostSourceRef
+	18,  // 51: peers_touch.model.social.v1.PrivateRepostContent.rendered_source:type_name -> peers_touch.model.social.v1.RenderedSourceSnapshot
+	71,  // 52: peers_touch.model.social.v1.PrivateRepostContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	81,  // 53: peers_touch.model.social.v1.PrivateLocationContent.location:type_name -> peers_touch.model.social.v1.Location
+	22,  // 54: peers_touch.model.social.v1.PrivateLocationContent.images:type_name -> peers_touch.model.social.v1.PrivateAttachmentMetadata
+	71,  // 55: peers_touch.model.social.v1.PrivateLocationContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	71,  // 56: peers_touch.model.social.v1.PrivateCommentContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	82,  // 57: peers_touch.model.social.v1.PrivateAttachmentMetadata.object:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	74,  // 58: peers_touch.model.social.v1.MentionRoutingFact.mentioned_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	83,  // 59: peers_touch.model.social.v1.SignedMentionRouting.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	23,  // 60: peers_touch.model.social.v1.SignedMentionRouting.facts:type_name -> peers_touch.model.social.v1.MentionRoutingFact
+	84,  // 61: peers_touch.model.social.v1.SignedMentionRouting.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	83,  // 62: peers_touch.model.social.v1.PrivatePollAuthority.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	73,  // 63: peers_touch.model.social.v1.PrivatePollAuthority.expires_at:type_name -> google.protobuf.Timestamp
+	83,  // 64: peers_touch.model.social.v1.PrivateRepostSourceProof.source_resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	15,  // 65: peers_touch.model.social.v1.PrivateRepostAuthority.source:type_name -> peers_touch.model.social.v1.SocialPostSourceRef
+	74,  // 66: peers_touch.model.social.v1.PrivateRepostAuthority.source_author:type_name -> peers_touch.model.actor.v1.ActorRef
+	26,  // 67: peers_touch.model.social.v1.PrivateRepostAuthority.public_source:type_name -> peers_touch.model.social.v1.PublicRepostSourceProof
+	27,  // 68: peers_touch.model.social.v1.PrivateRepostAuthority.private_source:type_name -> peers_touch.model.social.v1.PrivateRepostSourceProof
 	0,   // 69: peers_touch.model.social.v1.PrivateMomentDomainBinding.kind:type_name -> peers_touch.model.social.v1.PrivateMomentKind
 	0,   // 70: peers_touch.model.social.v1.PreparePrivateMomentHashInput.kind:type_name -> peers_touch.model.social.v1.PrivateMomentKind
-	33,  // 71: peers_touch.model.social.v1.SubmitPrivateContentHashInput.envelopes:type_name -> peers_touch.model.social.v1.EnvelopeSubmitCommitment
-	34,  // 72: peers_touch.model.social.v1.SubmitPrivateContentHashInput.objects:type_name -> peers_touch.model.social.v1.ObjectSubmitCommitment
-	56,  // 73: peers_touch.model.social.v1.PrivatePollProjection.options:type_name -> peers_touch.model.social.v1.PrivatePollOptionResult
-	80,  // 74: peers_touch.model.social.v1.PrivateContentVerification.commit_proof:type_name -> peers_touch.model.secure_content.v1.ViewerContentCommitProof
-	23,  // 75: peers_touch.model.social.v1.PrivateContentVerification.mention_routing:type_name -> peers_touch.model.social.v1.SignedMentionRouting
-	24,  // 76: peers_touch.model.social.v1.PrivateContentVerification.poll_authority:type_name -> peers_touch.model.social.v1.PrivatePollAuthority
-	27,  // 77: peers_touch.model.social.v1.PrivateContentVerification.repost_authority:type_name -> peers_touch.model.social.v1.PrivateRepostAuthority
-	65,  // 78: peers_touch.model.social.v1.PrivateContentVerification.station_signing_key_attestation:type_name -> peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation
-	81,  // 79: peers_touch.model.social.v1.PrivateContentVerification.receiver_verified_sender_signing_key:type_name -> peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
-	82,  // 80: peers_touch.model.social.v1.PrivateContentAccess.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
-	83,  // 81: peers_touch.model.social.v1.PrivateContentAccess.viewer_envelope:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	77,  // 82: peers_touch.model.social.v1.PrivateContentAccess.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	37,  // 83: peers_touch.model.social.v1.PrivateContentAccess.poll:type_name -> peers_touch.model.social.v1.PrivatePollProjection
-	38,  // 84: peers_touch.model.social.v1.PrivateContentAccess.verification:type_name -> peers_touch.model.social.v1.PrivateContentVerification
-	69,  // 85: peers_touch.model.social.v1.PostMetadata.author:type_name -> peers_touch.model.actor.v1.ActorRef
-	84,  // 86: peers_touch.model.social.v1.PostMetadata.type:type_name -> peers_touch.model.social.v1.PostType
-	85,  // 87: peers_touch.model.social.v1.PostMetadata.audience_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	68,  // 88: peers_touch.model.social.v1.PostMetadata.created_at:type_name -> google.protobuf.Timestamp
-	68,  // 89: peers_touch.model.social.v1.PostMetadata.updated_at:type_name -> google.protobuf.Timestamp
-	86,  // 90: peers_touch.model.social.v1.PostMetadata.stats:type_name -> peers_touch.model.social.v1.PostStats
-	87,  // 91: peers_touch.model.social.v1.PublicPostContent.post:type_name -> peers_touch.model.social.v1.Post
-	40,  // 92: peers_touch.model.social.v1.PostResource.metadata:type_name -> peers_touch.model.social.v1.PostMetadata
-	41,  // 93: peers_touch.model.social.v1.PostResource.public_content:type_name -> peers_touch.model.social.v1.PublicPostContent
-	39,  // 94: peers_touch.model.social.v1.PostResource.private_content:type_name -> peers_touch.model.social.v1.PrivateContentAccess
-	69,  // 95: peers_touch.model.social.v1.CommentMetadata.author:type_name -> peers_touch.model.actor.v1.ActorRef
-	68,  // 96: peers_touch.model.social.v1.CommentMetadata.created_at:type_name -> google.protobuf.Timestamp
-	68,  // 97: peers_touch.model.social.v1.CommentMetadata.updated_at:type_name -> google.protobuf.Timestamp
-	66,  // 98: peers_touch.model.social.v1.PublicCommentContent.mentions:type_name -> peers_touch.model.social.v1.Mention
-	43,  // 99: peers_touch.model.social.v1.CommentResource.metadata:type_name -> peers_touch.model.social.v1.CommentMetadata
-	44,  // 100: peers_touch.model.social.v1.CommentResource.public_content:type_name -> peers_touch.model.social.v1.PublicCommentContent
-	39,  // 101: peers_touch.model.social.v1.CommentResource.private_content:type_name -> peers_touch.model.social.v1.PrivateContentAccess
-	64,  // 102: peers_touch.model.social.v1.SubmitPrivateMomentRequest.plan:type_name -> peers_touch.model.secure_content.v1.ContentEncryptionPlan
-	82,  // 103: peers_touch.model.social.v1.SubmitPrivateMomentRequest.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
-	88,  // 104: peers_touch.model.social.v1.SubmitPrivateMomentRequest.envelopes:type_name -> peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope
-	77,  // 105: peers_touch.model.social.v1.SubmitPrivateMomentRequest.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	23,  // 106: peers_touch.model.social.v1.SubmitPrivateMomentRequest.mention_routing:type_name -> peers_touch.model.social.v1.SignedMentionRouting
-	24,  // 107: peers_touch.model.social.v1.SubmitPrivateMomentRequest.poll_authority:type_name -> peers_touch.model.social.v1.PrivatePollAuthority
-	27,  // 108: peers_touch.model.social.v1.SubmitPrivateMomentRequest.repost_authority:type_name -> peers_touch.model.social.v1.PrivateRepostAuthority
-	42,  // 109: peers_touch.model.social.v1.SubmitPrivateMomentResponse.post:type_name -> peers_touch.model.social.v1.PostResource
-	64,  // 110: peers_touch.model.social.v1.SubmitPrivateCommentRequest.plan:type_name -> peers_touch.model.secure_content.v1.ContentEncryptionPlan
-	82,  // 111: peers_touch.model.social.v1.SubmitPrivateCommentRequest.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
-	88,  // 112: peers_touch.model.social.v1.SubmitPrivateCommentRequest.envelopes:type_name -> peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope
-	77,  // 113: peers_touch.model.social.v1.SubmitPrivateCommentRequest.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	23,  // 114: peers_touch.model.social.v1.SubmitPrivateCommentRequest.mention_routing:type_name -> peers_touch.model.social.v1.SignedMentionRouting
-	45,  // 115: peers_touch.model.social.v1.SubmitPrivateCommentResponse.comment:type_name -> peers_touch.model.social.v1.CommentResource
-	87,  // 116: peers_touch.model.social.v1.GetMomentResourceResponse.post:type_name -> peers_touch.model.social.v1.Post
-	89,  // 117: peers_touch.model.social.v1.GetMomentResourceResponse.explanation:type_name -> peers_touch.model.social.v1.FeedObjectExplanation
-	42,  // 118: peers_touch.model.social.v1.GetMomentResourceResponse.resource:type_name -> peers_touch.model.social.v1.PostResource
-	45,  // 119: peers_touch.model.social.v1.GetMomentCommentResourceResponse.comment:type_name -> peers_touch.model.social.v1.CommentResource
-	45,  // 120: peers_touch.model.social.v1.ListMomentCommentsResponse.comments:type_name -> peers_touch.model.social.v1.CommentResource
-	56,  // 121: peers_touch.model.social.v1.VotePrivatePollResponse.options:type_name -> peers_touch.model.social.v1.PrivatePollOptionResult
-	59,  // 122: peers_touch.model.social.v1.SocialPrivateContentLocator.comment:type_name -> peers_touch.model.social.v1.PrivateCommentLocator
-	78,  // 123: peers_touch.model.social.v1.RecoverablePrivateContent.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	60,  // 124: peers_touch.model.social.v1.RecoverablePrivateContent.locator:type_name -> peers_touch.model.social.v1.SocialPrivateContentLocator
-	83,  // 125: peers_touch.model.social.v1.RecoverablePrivateContent.recovery_envelope:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	61,  // 126: peers_touch.model.social.v1.ListRecoverablePrivateContentResponse.resources:type_name -> peers_touch.model.social.v1.RecoverablePrivateContent
-	127, // [127:127] is the sub-list for method output_type
-	127, // [127:127] is the sub-list for method input_type
-	127, // [127:127] is the sub-list for extension type_name
-	127, // [127:127] is the sub-list for extension extendee
-	0,   // [0:127] is the sub-list for field type_name
+	34,  // 71: peers_touch.model.social.v1.SubmitPrivateContentHashInput.envelopes:type_name -> peers_touch.model.social.v1.EnvelopeSubmitCommitment
+	35,  // 72: peers_touch.model.social.v1.SubmitPrivateContentHashInput.objects:type_name -> peers_touch.model.social.v1.ObjectSubmitCommitment
+	61,  // 73: peers_touch.model.social.v1.PrivatePollProjection.options:type_name -> peers_touch.model.social.v1.PrivatePollOptionResult
+	85,  // 74: peers_touch.model.social.v1.PrivateContentVerification.commit_proof:type_name -> peers_touch.model.secure_content.v1.ViewerContentCommitProof
+	24,  // 75: peers_touch.model.social.v1.PrivateContentVerification.mention_routing:type_name -> peers_touch.model.social.v1.SignedMentionRouting
+	25,  // 76: peers_touch.model.social.v1.PrivateContentVerification.poll_authority:type_name -> peers_touch.model.social.v1.PrivatePollAuthority
+	28,  // 77: peers_touch.model.social.v1.PrivateContentVerification.repost_authority:type_name -> peers_touch.model.social.v1.PrivateRepostAuthority
+	70,  // 78: peers_touch.model.social.v1.PrivateContentVerification.station_signing_key_attestation:type_name -> peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation
+	86,  // 79: peers_touch.model.social.v1.PrivateContentVerification.receiver_verified_sender_signing_key:type_name -> peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
+	87,  // 80: peers_touch.model.social.v1.PrivateContentAccess.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
+	88,  // 81: peers_touch.model.social.v1.PrivateContentAccess.viewer_envelope:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	82,  // 82: peers_touch.model.social.v1.PrivateContentAccess.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	38,  // 83: peers_touch.model.social.v1.PrivateContentAccess.poll:type_name -> peers_touch.model.social.v1.PrivatePollProjection
+	39,  // 84: peers_touch.model.social.v1.PrivateContentAccess.verification:type_name -> peers_touch.model.social.v1.PrivateContentVerification
+	74,  // 85: peers_touch.model.social.v1.PostMetadata.author:type_name -> peers_touch.model.actor.v1.ActorRef
+	89,  // 86: peers_touch.model.social.v1.PostMetadata.type:type_name -> peers_touch.model.social.v1.PostType
+	90,  // 87: peers_touch.model.social.v1.PostMetadata.audience_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	73,  // 88: peers_touch.model.social.v1.PostMetadata.created_at:type_name -> google.protobuf.Timestamp
+	73,  // 89: peers_touch.model.social.v1.PostMetadata.updated_at:type_name -> google.protobuf.Timestamp
+	91,  // 90: peers_touch.model.social.v1.PostMetadata.stats:type_name -> peers_touch.model.social.v1.PostStats
+	92,  // 91: peers_touch.model.social.v1.PublicPostContent.post:type_name -> peers_touch.model.social.v1.Post
+	41,  // 92: peers_touch.model.social.v1.PostResource.metadata:type_name -> peers_touch.model.social.v1.PostMetadata
+	42,  // 93: peers_touch.model.social.v1.PostResource.public_content:type_name -> peers_touch.model.social.v1.PublicPostContent
+	40,  // 94: peers_touch.model.social.v1.PostResource.private_content:type_name -> peers_touch.model.social.v1.PrivateContentAccess
+	74,  // 95: peers_touch.model.social.v1.CommentMetadata.author:type_name -> peers_touch.model.actor.v1.ActorRef
+	73,  // 96: peers_touch.model.social.v1.CommentMetadata.created_at:type_name -> google.protobuf.Timestamp
+	73,  // 97: peers_touch.model.social.v1.CommentMetadata.updated_at:type_name -> google.protobuf.Timestamp
+	71,  // 98: peers_touch.model.social.v1.PublicCommentContent.mentions:type_name -> peers_touch.model.social.v1.Mention
+	44,  // 99: peers_touch.model.social.v1.CommentResource.metadata:type_name -> peers_touch.model.social.v1.CommentMetadata
+	45,  // 100: peers_touch.model.social.v1.CommentResource.public_content:type_name -> peers_touch.model.social.v1.PublicCommentContent
+	40,  // 101: peers_touch.model.social.v1.CommentResource.private_content:type_name -> peers_touch.model.social.v1.PrivateContentAccess
+	69,  // 102: peers_touch.model.social.v1.SubmitPrivateMomentRequest.plan:type_name -> peers_touch.model.secure_content.v1.ContentEncryptionPlan
+	87,  // 103: peers_touch.model.social.v1.SubmitPrivateMomentRequest.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
+	93,  // 104: peers_touch.model.social.v1.SubmitPrivateMomentRequest.envelopes:type_name -> peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope
+	82,  // 105: peers_touch.model.social.v1.SubmitPrivateMomentRequest.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	24,  // 106: peers_touch.model.social.v1.SubmitPrivateMomentRequest.mention_routing:type_name -> peers_touch.model.social.v1.SignedMentionRouting
+	25,  // 107: peers_touch.model.social.v1.SubmitPrivateMomentRequest.poll_authority:type_name -> peers_touch.model.social.v1.PrivatePollAuthority
+	28,  // 108: peers_touch.model.social.v1.SubmitPrivateMomentRequest.repost_authority:type_name -> peers_touch.model.social.v1.PrivateRepostAuthority
+	43,  // 109: peers_touch.model.social.v1.SubmitPrivateMomentResponse.post:type_name -> peers_touch.model.social.v1.PostResource
+	69,  // 110: peers_touch.model.social.v1.SubmitPrivateCommentRequest.plan:type_name -> peers_touch.model.secure_content.v1.ContentEncryptionPlan
+	87,  // 111: peers_touch.model.social.v1.SubmitPrivateCommentRequest.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
+	93,  // 112: peers_touch.model.social.v1.SubmitPrivateCommentRequest.envelopes:type_name -> peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope
+	82,  // 113: peers_touch.model.social.v1.SubmitPrivateCommentRequest.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	24,  // 114: peers_touch.model.social.v1.SubmitPrivateCommentRequest.mention_routing:type_name -> peers_touch.model.social.v1.SignedMentionRouting
+	46,  // 115: peers_touch.model.social.v1.SubmitPrivateCommentResponse.comment:type_name -> peers_touch.model.social.v1.CommentResource
+	2,   // 116: peers_touch.model.social.v1.FederatedPrivateDeliveryStatus.state:type_name -> peers_touch.model.social.v1.FederatedPrivateDeliveryState
+	73,  // 117: peers_touch.model.social.v1.FederatedPrivateDeliveryStatus.next_attempt_at:type_name -> google.protobuf.Timestamp
+	92,  // 118: peers_touch.model.social.v1.GetMomentResourceResponse.post:type_name -> peers_touch.model.social.v1.Post
+	94,  // 119: peers_touch.model.social.v1.GetMomentResourceResponse.explanation:type_name -> peers_touch.model.social.v1.FeedObjectExplanation
+	43,  // 120: peers_touch.model.social.v1.GetMomentResourceResponse.resource:type_name -> peers_touch.model.social.v1.PostResource
+	51,  // 121: peers_touch.model.social.v1.GetMomentResourceResponse.remote_delivery:type_name -> peers_touch.model.social.v1.FederatedPrivateDeliveryStatus
+	73,  // 122: peers_touch.model.social.v1.RemotePrivateMomentReference.updated_at:type_name -> google.protobuf.Timestamp
+	55,  // 123: peers_touch.model.social.v1.ListRemotePrivateMomentReferencesResponse.moments:type_name -> peers_touch.model.social.v1.RemotePrivateMomentReference
+	46,  // 124: peers_touch.model.social.v1.GetMomentCommentResourceResponse.comment:type_name -> peers_touch.model.social.v1.CommentResource
+	46,  // 125: peers_touch.model.social.v1.ListMomentCommentsResponse.comments:type_name -> peers_touch.model.social.v1.CommentResource
+	61,  // 126: peers_touch.model.social.v1.VotePrivatePollResponse.options:type_name -> peers_touch.model.social.v1.PrivatePollOptionResult
+	64,  // 127: peers_touch.model.social.v1.SocialPrivateContentLocator.comment:type_name -> peers_touch.model.social.v1.PrivateCommentLocator
+	83,  // 128: peers_touch.model.social.v1.RecoverablePrivateContent.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	65,  // 129: peers_touch.model.social.v1.RecoverablePrivateContent.locator:type_name -> peers_touch.model.social.v1.SocialPrivateContentLocator
+	88,  // 130: peers_touch.model.social.v1.RecoverablePrivateContent.recovery_envelope:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	66,  // 131: peers_touch.model.social.v1.ListRecoverablePrivateContentResponse.resources:type_name -> peers_touch.model.social.v1.RecoverablePrivateContent
+	132, // [132:132] is the sub-list for method output_type
+	132, // [132:132] is the sub-list for method input_type
+	132, // [132:132] is the sub-list for extension type_name
+	132, // [132:132] is the sub-list for extension extendee
+	0,   // [0:132] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_private_content_proto_init() }
@@ -5618,7 +5992,7 @@ func file_domain_social_private_content_proto_init() {
 		(*CommentResource_PublicContent)(nil),
 		(*CommentResource_PrivateContent)(nil),
 	}
-	file_domain_social_private_content_proto_msgTypes[58].OneofWrappers = []any{
+	file_domain_social_private_content_proto_msgTypes[62].OneofWrappers = []any{
 		(*SocialPrivateContentLocator_PostId)(nil),
 		(*SocialPrivateContentLocator_Comment)(nil),
 	}
@@ -5627,8 +6001,8 @@ func file_domain_social_private_content_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_social_private_content_proto_rawDesc), len(file_domain_social_private_content_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   61,
+			NumEnums:      3,
+			NumMessages:   65,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

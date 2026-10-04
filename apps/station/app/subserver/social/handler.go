@@ -125,6 +125,7 @@ func (s *subServer) Handlers() []server.Handler {
 
 		// Moments (read)
 		server.NewStrictTypedHandler("social-list-recoverable-private-content", routeSocialRecoverablePrivateContent, server.GET, s.handleListRecoverablePrivateContent, socialRecoverableQueryWrapper, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-list-remote-private-moments", routeSocialRemotePrivateMomentReferences, server.GET, s.handleListRemotePrivateMomentReferences, socialRecoverableQueryWrapper, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper),
 		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetMomentResource, socialMomentPathWrapper, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
 		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, ojw),
 		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),

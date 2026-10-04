@@ -304,6 +304,10 @@ func TestPrivateAndObjectRoutesPreserveOwnedSurfaces(t *testing.T) {
 			method: server.POST,
 			path:   routeSocialSubmitPrivateMoment,
 		},
+		"social-list-remote-private-moments": {
+			method: server.GET,
+			path:   routeSocialRemotePrivateMomentReferences,
+		},
 		"social-prepare-private-comment": {
 			method: server.POST,
 			path:   routeSocialPreparePrivateComment,
@@ -485,6 +489,11 @@ func TestPrivateContentRouteStackWritesProtobufAuthenticationErrors(t *testing.T
 			name:   "social-list-recoverable-private-content",
 			method: http.MethodGet,
 			path:   routeSocialRecoverablePrivateContent + "?limit=1",
+		},
+		{
+			name:   "social-list-remote-private-moments",
+			method: http.MethodGet,
+			path:   routeSocialRemotePrivateMomentReferences + "?limit=1",
 		},
 	}
 	for _, testCase := range routes {

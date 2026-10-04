@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	federatedPrivateObjectStreamTotalMetric   = "social_cross_station_object_stream_total"
-	federatedPrivateObjectStreamLatencyMetric = "social_cross_station_object_stream_latency_seconds"
+	federatedPrivateObjectStreamTotalMetric =
+		"social_cross_station_object_stream_total"
+	federatedPrivateObjectStreamLatencyMetric =
+		"social_cross_station_object_stream_latency_seconds"
 )
 
 type federatedPrivateObjectStreamStage string
@@ -18,7 +20,7 @@ type federatedPrivateObjectStreamReason string
 
 const (
 	federatedPrivateObjectStageRecipientProxy federatedPrivateObjectStreamStage = "recipient_proxy"
-	federatedPrivateObjectStageSourceRead     federatedPrivateObjectStreamStage = "source_read"
+	federatedPrivateObjectStageSourceRead      federatedPrivateObjectStreamStage = "source_read"
 
 	federatedPrivateObjectOutcomeAccepted    federatedPrivateObjectStreamOutcome = "accepted"
 	federatedPrivateObjectOutcomeRejected    federatedPrivateObjectStreamOutcome = "rejected"
@@ -38,7 +40,8 @@ type federatedPrivateObjectStreamMetrics struct {
 	latency metrics.Histogram
 }
 
-func newFederatedPrivateObjectStreamMetrics() federatedPrivateObjectStreamMetrics {
+func newFederatedPrivateObjectStreamMetrics(
+) federatedPrivateObjectStreamMetrics {
 	provider := metrics.Get()
 
 	return federatedPrivateObjectStreamMetrics{

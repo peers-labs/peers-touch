@@ -191,6 +191,32 @@ Metadata reuses the existing typed private-resource projections. Final field
 names and numbers are fixed before generation. Signed canonical messages reject
 unknown fields.
 
+### 4.1 Delivery Status Readback
+
+`GetMomentResourceResponse.remote_delivery` is present only when the authenticated
+viewer is the source author. Social derives the immutable remote frame IDs from
+the committed recipient-locality snapshot and reads their current states through
+the Federation outbox repository. The response contains only aggregate bounded
+counts and the earliest retry time; it never exposes recipient, Station, frame,
+or payload identity.
+
+The client projection keeps content state and delivery state orthogonal.
+`PENDING`, `RETRYING`, `TERMINAL`, and `EXPIRED` remain visible without replacing
+verified local plaintext. `DELIVERED` and `NOT_REQUIRED` remove the delivery
+notice.
+
+### 4.2 Missed-Event Reconcile
+
+`ListRemotePrivateMomentReferences` pages active receiver projections for the
+authenticated actor using a signed actor-scoped cursor. It exposes only Post ID,
+lifecycle revision, and update time. `momentsRuntime` consumes this list during
+bootstrap, reconnect, explicit resync, and periodic reconcile, then performs the
+normal authorized point read. The list is rebuildable projection discovery, not
+a second feed or business authority. Receiver rows retain the verified author
+PTID solely so this query can apply the existing either-direction block filter;
+the actor/kind/state/time/content composite index serves the periodic keyset
+scan.
+
 ## 5. Invalidation
 
 ```proto
@@ -395,6 +421,11 @@ PREPARED
 
 `DURABLY_ADMITTED` is the first state that may produce
 `REMOTE_DELIVERY_PENDING` in the UI.
+
+Every private resource frame also carries a signed `trace_id`. The dispatcher
+restores it into the delivery context after restart, and the receiver restores
+it only after frame authentication, so retry, disposition, receiver work, and
+latency remain correlated without adding high-cardinality metric labels.
 
 ### Interaction command
 
