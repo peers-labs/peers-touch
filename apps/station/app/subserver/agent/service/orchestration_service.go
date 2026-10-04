@@ -171,6 +171,14 @@ func (s *OrchestrationService) CreateCollaborationTask(
 	if err := enforce_canvas_single_agent_readiness(); err != nil {
 		return nil, nil, err
 	}
+	return s.createCollaborationTaskAfterCanvasReadiness(ctx, actorPTID, req)
+}
+
+func (s *OrchestrationService) createCollaborationTaskAfterCanvasReadiness(
+	ctx context.Context,
+	actorPTID string,
+	req *model.CreateCollaborationTaskRequest,
+) (*model.CollaborationTask, []*model.TaskNode, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -178,6 +186,9 @@ func (s *OrchestrationService) CreateCollaborationTask(
 	actorPTID = strings.TrimSpace(actorPTID)
 	if actorPTID == "" {
 		return nil, nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_ptid is required", nil)
+	}
+	if req == nil {
+		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "request is required", nil)
 	}
 	title := strings.TrimSpace(req.GetTitle())
 	if title == "" {
@@ -189,11 +200,7 @@ func (s *OrchestrationService) CreateCollaborationTask(
 	if err != nil {
 		return nil, nil, err
 	}
-	if s.agentService == nil || s.turnService == nil {
-		return nil, nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration runtime is not configured", nil)
-	}
 
-	now := time.Now()
 	engineType := normalizeEngineType(req.GetEngineType())
 	synthesizerAgentID := selectSynthesizerAgentID(meta, agentIDs)
 	if planSynthesizerAgentID := strings.TrimSpace(providerPlan.GetSynthesizerAgentId()); planSynthesizerAgentID != "" {
@@ -207,86 +214,96 @@ func (s *OrchestrationService) CreateCollaborationTask(
 	meta["synthesis_mode"] = "dedicated_node"
 	meta["agent_ids"] = mustJSONString(agentIDs)
 	meta["provider_plan_source"] = strings.TrimSpace(providerPlan.GetSource())
-	metaJSON, _ := json.Marshal(meta)
-	taskRecord := persistence.CollaborationTask{
-		ID:            generateID("collab"),
-		Title:         title,
-		Description:   description,
-		EngineType:    int32(engineType),
-		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		GoalOwnerPTID: actorPTID,
-		WorkspaceID:   strings.TrimSpace(req.GetWorkspaceId()),
+	meta["engine_type"] = strconv.FormatInt(int64(engineType), 10)
+	commandPayloadHash := goalPayloadHash(req)
+	clientIdempotencyKey := strings.TrimSpace(meta["client_idempotency_key"])
+	if clientIdempotencyKey == "" {
+		clientIdempotencyKey = "orchestration:" + commandPayloadHash
+	}
+	surface := model.TaskSurface_TASK_SURFACE_CANVAS
+	if strings.TrimSpace(providerPlan.GetSource()) ==
+		collaborationProviderPlanSourceDirectRun {
+		surface = model.TaskSurface_TASK_SURFACE_DIRECT_RUN
+	}
+	writer := NewTaskRunCommandService(db)
+	writer.eventWriter = s.eventWriter
+	result, err := writer.CreateGoalBacked(
+		ctx,
+		actorPTID,
+		&GoalBackedTaskRunCommand{
+			ExistingGoalID:       strings.TrimSpace(meta["goal_id"]),
+			Title:                title,
+			Description:          description,
+			WorkspaceID:          strings.TrimSpace(req.GetWorkspaceId()),
+			AgentID:              agentIDs[0],
+			Surface:              surface,
+			ClientIdempotencyKey: clientIdempotencyKey,
+			CommandPayloadHash:   commandPayloadHash,
+			SourceRef:            strings.TrimSpace(meta["source"]),
+			Meta:                 meta,
+			BudgetTokens:         req.GetBudgetTokens(),
+			BudgetMoney:          req.GetBudgetMoney(),
+			BudgetTimeMs:         req.GetBudgetTimeMs(),
+			ProviderPlan:         providerPlan,
+		},
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	task := canonicalTaskRunCollaborationProjection(result.Task, req)
+	nodes := []*model.TaskNode{
+		canonicalExecutionStepNodeProjection(result.RootStep),
+	}
+	return task, nodes, nil
+}
+
+func canonicalTaskRunCollaborationProjection(
+	task *model.TaskRun,
+	req *model.CreateCollaborationTaskRequest,
+) *model.CollaborationTask {
+	if task == nil {
+		return nil
+	}
+	meta := copyStringMap(task.GetMeta())
+	meta["goal_id"] = task.GetGoalId()
+	meta["goal_node_id"] = task.GetGoalNodeId()
+	meta["task_run_id"] = task.GetTaskId()
+	return &model.CollaborationTask{
+		TaskId:        task.GetTaskId(),
+		Title:         task.GetTitle(),
+		Description:   task.GetDescription(),
+		EngineType:    req.GetEngineType(),
+		Status:        task.GetStatus(),
+		GoalOwnerPtid: task.GetOwnerActorPtid(),
+		WorkspaceId:   task.GetWorkspaceId(),
 		BudgetTokens:  req.GetBudgetTokens(),
 		BudgetMoney:   req.GetBudgetMoney(),
 		BudgetTimeMs:  req.GetBudgetTimeMs(),
-		MetaJSON:      string(metaJSON),
-		CreatedAt:     now,
-		StartedAt:     now,
-		EndedAt:       now,
+		CreatedAt:     task.GetCreatedAt(),
+		StartedAt:     task.GetStartedAt(),
+		EndedAt:       task.GetEndedAt(),
+		Meta:          meta,
 	}
+}
 
-	nodeRecords := buildCollaborationTaskNodes(
-		taskRecord.ID,
-		description,
-		model.CollaborationEngineType(taskRecord.EngineType),
-		agentIDs,
-		synthesizerAgentID,
-		providerPlan,
-		now,
-	)
-	providerPlanRecord, err := taskProviderPlanRecordFromProto(taskRecord.ID, providerPlan, now)
-	if err != nil {
-		return nil, nil, err
+func canonicalExecutionStepNodeProjection(
+	step *model.ExecutionStep,
+) *model.TaskNode {
+	if step == nil {
+		return nil
 	}
-	directRunLifecycle, err := directRunLifecycleRecordsFromProviderPlan(&taskRecord, actorPTID, providerPlan, meta, now)
-	if err != nil {
-		return nil, nil, err
+	return &model.TaskNode{
+		NodeId:        step.GetStepId(),
+		TaskId:        step.GetTaskId(),
+		ParentNodeId:  step.GetParentStepId(),
+		AgentId:       step.GetAgentId(),
+		Role:          step.GetRole(),
+		Description:   step.GetDescription(),
+		Status:        step.GetStatus(),
+		ResultSummary: step.GetResultSummary(),
+		StartedAt:     step.GetStartedAt(),
+		EndedAt:       step.GetEndedAt(),
 	}
-
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&taskRecord).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(providerPlanRecord).Error; err != nil {
-			return err
-		}
-		writer := s.eventWriter
-		if writer == nil {
-			writer = NewTaskEventWriter()
-		}
-		if directRunLifecycle != nil {
-			if err := tx.Create(directRunLifecycle.Run).Error; err != nil {
-				return err
-			}
-			if err := tx.Create(directRunLifecycle.Task).Error; err != nil {
-				return err
-			}
-			if err := tx.Create(directRunLifecycle.Step).Error; err != nil {
-				return err
-			}
-			if _, err := writer.appendTx(ctx, tx, "", taskRecord.ID, directRunLifecycle.Step.StepID, "", string(domain.EventTypeCollaborationTaskCreated), directRunCreatedEventPayload(directRunLifecycle)); err != nil {
-				return err
-			}
-		} else {
-			if _, err := writer.appendTx(ctx, tx, "", taskRecord.ID, "", "", string(domain.EventTypeCollaborationTaskCreated), collaborationTaskCreatedEventPayload(&taskRecord, nodeRecords, providerPlan)); err != nil {
-				return err
-			}
-		}
-		return tx.Create(&nodeRecords).Error
-	}); err != nil {
-		logger.Errorf(ctx, "failed to create collaboration task: actor_ptid=%s err=%v", actorPTID, err)
-		return nil, nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create collaboration task", err)
-	}
-
-	nodes := nodeRecordsToProto(nodeRecords)
-	s.publishTaskCreated(ctx, taskRecordToProto(&taskRecord), nodes)
-	if directRunLifecycle == nil {
-		s.startTaskExecution(actorPTID, taskRecord, nodeRecords, "create")
-	} else {
-		s.startDirectRunExecution(actorPTID, taskRecord.ID, "create")
-	}
-
-	return taskRecordToProto(&taskRecord), nodes, nil
 }
 
 func (s *OrchestrationService) GetCollaborationTask(ctx context.Context, actorPTID, taskID string) (*model.CollaborationTask, []*model.TaskNode, error) {

@@ -245,6 +245,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "agentIds"
       ],
       "optionalFields": [
+        "clientIdempotencyKey",
         "intentPreset",
         "run.kind",
         "run.flowId",
@@ -376,6 +377,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "agentIds"
         ],
         "optionalFields": [
+          "clientIdempotencyKey",
           "intentPreset",
           "run.kind",
           "run.flowId",

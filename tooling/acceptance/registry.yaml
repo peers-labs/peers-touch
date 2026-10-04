@@ -2026,6 +2026,11 @@
           "model/domain/agent/goal.proto",
           "model/domain/agent/orchestration.proto",
           "apps/station/app/subserver/agent/**/goal*",
+          "apps/station/app/subserver/agent/service/task_run_command_service.go",
+          "apps/station/app/subserver/agent/service/orchestration_service.go",
+          "apps/station/app/subserver/agent/service/orchestration_service_test.go",
+          "apps/station/app/subserver/agent/service/atelier_projection.go",
+          "apps/station/app/subserver/agent/service/atelier_projection_test.go",
           "apps/station/app/subserver/agent/**/agent_realtime*",
           "apps/station/app/subserver/agent/**/task_event_writer*",
           "apps/station/app/subserver/events/**",
@@ -2042,6 +2047,7 @@
       },
       "require": [
         "agent-personal-goal-contract-source",
+        "agent-personal-taskrun-cutover-source",
         "agent-personal-goal-home-e2e",
         "agent-personal-goal-event-fanout-e2e"
       ]

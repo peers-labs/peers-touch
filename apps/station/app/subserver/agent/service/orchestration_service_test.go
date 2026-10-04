@@ -82,6 +82,84 @@ func injectOrchestrationServiceTestStore(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func TestOrchestrationAtelierTaskRunWriterSkipsLegacyExecutionRows(
+	t *testing.T,
+) {
+	db := openResumeCollaborationTaskDB(
+		t,
+		"orchestration_atelier_taskrun_writer",
+	)
+	if err := db.AutoMigrate(
+		&persistence.AgentGoal{},
+		&persistence.AgentGoalNode{},
+		&persistence.AgentGoalEvent{},
+		&persistence.AgentRealtimeActorCursor{},
+		&persistence.AgentRealtimeOutbox{},
+	); err != nil {
+		t.Fatalf("migrate canonical writer tables: %v", err)
+	}
+	injectOrchestrationServiceTestStore(t, db)
+	service := NewOrchestrationService(nil, nil, nil)
+	request := &model.CreateCollaborationTaskRequest{
+		Title:       "Canonical Atelier project",
+		Description: "Create Goal-backed TaskRun state",
+		EngineType:  model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_HIERARCHY,
+		Meta: map[string]string{
+			"source":                 "atelier.project.createFromGoal",
+			"client_idempotency_key": "atelier-canonical-create",
+		},
+		ProviderPlan: &model.TaskProviderPlan{
+			Source: "atelier.project.createFromGoal",
+			Providers: []*model.TaskProviderSpec{{
+				AgentId: "agent-1",
+				Role:    "executor",
+			}},
+			SynthesizerAgentId: "agent-1",
+		},
+	}
+
+	first, nodes, err := service.createCollaborationTaskAfterCanvasReadiness(
+		context.Background(),
+		"actor-1",
+		request,
+	)
+	if err != nil {
+		t.Fatalf("create canonical orchestration TaskRun: %v", err)
+	}
+	replayed, _, err := service.createCollaborationTaskAfterCanvasReadiness(
+		context.Background(),
+		"actor-1",
+		request,
+	)
+	if err != nil {
+		t.Fatalf("replay canonical orchestration TaskRun: %v", err)
+	}
+	if first.GetTaskId() == "" ||
+		replayed.GetTaskId() != first.GetTaskId() ||
+		first.GetMeta()["goal_id"] == "" ||
+		first.GetMeta()["task_run_id"] != first.GetTaskId() ||
+		len(nodes) != 1 ||
+		nodes[0].GetTaskId() != first.GetTaskId() {
+		t.Fatalf("unexpected canonical orchestration projection: task=%+v nodes=%+v replay=%+v", first, nodes, replayed)
+	}
+	for modelValue, want := range map[any]int64{
+		&persistence.CollaborationTask{}:     0,
+		&persistence.CollaborationTaskNode{}: 0,
+		&persistence.AgentGoal{}:             1,
+		&persistence.AgentGoalNode{}:         1,
+		&persistence.TaskRun{}:               1,
+		&persistence.ExecutionStep{}:         1,
+	} {
+		var count int64
+		if err := db.Model(modelValue).Count(&count).Error; err != nil {
+			t.Fatalf("count %T: %v", modelValue, err)
+		}
+		if count != want {
+			t.Fatalf("%T count = %d, want %d", modelValue, count, want)
+		}
+	}
+}
+
 func TestCollaborationEngineExecutionMode(t *testing.T) {
 	parallelEngines := []model.CollaborationEngineType{
 		model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_ROUNDTABLE,
