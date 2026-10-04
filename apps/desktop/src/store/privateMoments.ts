@@ -13,6 +13,7 @@ import {
   type PrivatePublishState,
   type PrivateReadState,
 } from '../services/privateMomentsNative';
+import { emitFrontendTelemetryEvent } from '../kernel/frontendTelemetry';
 import { log } from '../utils/logger';
 
 const TAG = 'private-moments-store';
@@ -114,8 +115,8 @@ function mergeProjection(
   if (generationOrder < 0) return current;
   if (
     generationOrder === 0
-    && incoming.content?.kind === 'IMAGE'
-    && current.content?.kind === 'IMAGE'
+    && (incoming.content?.kind === 'IMAGE' || incoming.content?.kind === 'VIDEO')
+    && incoming.content.kind === current.content?.kind
   ) {
     const currentMedia = new Map(
       current.content.media.map((media) => [media.objectId, media]),
@@ -174,6 +175,7 @@ function readFailureState(error: unknown): PrivateReadState {
 
 function mediaFailureState(error: unknown): PrivateMediaState {
   if (!(error instanceof PrivateMomentsNativeError)) return 'MEDIA_OFFLINE_RETRYABLE';
+  if (isMediaState(error.state)) return error.state;
   if (error.state === 'INTEGRITY_FAILURE') return 'MEDIA_INTEGRITY_FAILURE';
   if (
     error.state === 'NOT_FOUND_OR_NOT_AUTHORIZED'
@@ -183,6 +185,81 @@ function mediaFailureState(error: unknown): PrivateMediaState {
     return 'MEDIA_ACCESS_DENIED';
   }
   return 'MEDIA_OFFLINE_RETRYABLE';
+}
+
+function isMediaState(value: string): value is PrivateMediaState {
+  return [
+    'MEDIA_PLACEHOLDER',
+    'MEDIA_GRANT_PENDING',
+    'MEDIA_DOWNLOADING',
+    'MEDIA_DECRYPTING',
+    'MEDIA_READY',
+    'MEDIA_ACCESS_DENIED',
+    'MEDIA_INTEGRITY_FAILURE',
+    'MEDIA_OFFLINE_RETRYABLE',
+  ].includes(value);
+}
+
+type PrivateMediaMetricOutcome = 'accepted' | 'rejected' | 'interrupted' | 'retryable';
+type PrivateMediaMetricReason =
+  | 'none'
+  | 'not_found'
+  | 'range_invalid'
+  | 'integrity'
+  | 'dependency'
+  | 'cancelled';
+
+function mediaProjection(
+  projection: PrivateMomentProjection,
+  objectId: string,
+) {
+  if (
+    projection.content?.kind !== 'IMAGE'
+    && projection.content?.kind !== 'VIDEO'
+  ) {
+    return undefined;
+  }
+  return projection.content.media.find((media) => media.objectId === objectId);
+}
+
+function mediaMetricResult(
+  state: PrivateMediaState,
+  errorCode?: string,
+): { outcome: PrivateMediaMetricOutcome; reason: PrivateMediaMetricReason } {
+  if (state === 'MEDIA_READY') return { outcome: 'accepted', reason: 'none' };
+  if (errorCode === 'MEDIA_CANCELLED') {
+    return { outcome: 'interrupted', reason: 'cancelled' };
+  }
+  if (state === 'MEDIA_ACCESS_DENIED') {
+    return { outcome: 'rejected', reason: 'not_found' };
+  }
+  if (state === 'MEDIA_INTEGRITY_FAILURE') {
+    return {
+      outcome: 'rejected',
+      reason: errorCode === 'RANGE_INVALID' ? 'range_invalid' : 'integrity',
+    };
+  }
+  return { outcome: 'retryable', reason: 'dependency' };
+}
+
+function emitRemoteMediaMetric(
+  startedAt: number,
+  state: PrivateMediaState,
+  errorCode?: string,
+): void {
+  const { outcome, reason } = mediaMetricResult(state, errorCode);
+  emitFrontendTelemetryEvent({
+    kind: outcome === 'accepted' ? 'invoke.completed' : 'invoke.failed',
+    source: 'store',
+    module: 'social-private-media',
+    phase: 'interaction',
+    durationMs: Math.max(0, Date.now() - startedAt),
+    tags: {
+      stage: 'recipient_proxy',
+      outcome,
+      reason,
+    },
+  });
 }
 
 function isPublishState(value: string): value is PrivatePublishState {
@@ -236,7 +313,12 @@ function patchMedia(
       ...projection.content,
       media: projection.content.media.map((media) => (
         media.objectId === objectId
-          ? { ...media, state, errorCode }
+          ? {
+              ...media,
+              state,
+              retryable: state === 'MEDIA_OFFLINE_RETRYABLE',
+              errorCode,
+            }
           : media
       )),
     },
@@ -672,6 +754,9 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         if (!actorPtid || get().platform !== 'native') return;
         const projection = get().postsById[postId];
         if (!projection) return;
+        const opensRemotePeerStream = mediaProjection(projection, objectId)?.accessPath
+          === 'HOME_STATION_REMOTE_PEER_STREAM';
+        const startedAt = Date.now();
         set((state) => ({
           postsById: {
             ...state.postsById,
@@ -686,8 +771,26 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
             postId,
             objectId,
           });
+          if (opensRemotePeerStream) {
+            const result = mediaProjection(next, objectId);
+            emitRemoteMediaMetric(
+              startedAt,
+              result?.state ?? 'MEDIA_INTEGRITY_FAILURE',
+              result?.errorCode,
+            );
+          }
           applyProjection(next, actorPtid, scope.rendererGeneration);
         } catch (error) {
+          const failureState = mediaFailureState(error);
+          if (opensRemotePeerStream) {
+            emitRemoteMediaMetric(
+              startedAt,
+              failureState,
+              error instanceof PrivateMomentsNativeError
+                ? error.code
+                : 'PRIVATE_NATIVE_COMMAND_FAILED',
+            );
+          }
           if (!isCurrentScope(get().scope, actorPtid, scope.rendererGeneration)) return;
           set((state) => {
             const current = state.postsById[postId];
@@ -698,7 +801,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
                 [postId]: patchMedia(
                   current,
                   objectId,
-                  mediaFailureState(error),
+                  failureState,
                   error instanceof PrivateMomentsNativeError
                     ? error.code
                     : 'PRIVATE_NATIVE_COMMAND_FAILED',

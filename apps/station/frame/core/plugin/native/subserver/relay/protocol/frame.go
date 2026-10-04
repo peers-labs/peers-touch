@@ -19,6 +19,8 @@ import (
 //   0x03 Ping      — keepalive probe (no payload)
 //   0x04 Pong      — keepalive reply (no payload)
 //   0x05 Broadcast — pub/sub event (Tier C1)
+//   0x06 Cancel    — relay cancels an in-flight request
+//   0x07 Cancelled — station proves no response can follow
 //
 // Broadcast (Tier C1):
 //   Bidirectional. station → relay carries "publish on topic"; relay
@@ -48,6 +50,8 @@ const (
 	TypePing      byte = 0x03
 	TypePong      byte = 0x04
 	TypeBroadcast byte = 0x05
+	TypeCancel    byte = 0x06
+	TypeCancelled byte = 0x07
 
 	HeaderLen = 10 // version(1) + type(1) + requestID(4) + payloadLen(4)
 
@@ -91,6 +95,14 @@ type PongFrame struct {
 	RequestID uint32
 }
 
+type CancelFrame struct {
+	RequestID uint32
+}
+
+type CancelledFrame struct {
+	RequestID uint32
+}
+
 // BroadcastFrame carries a pub/sub event over the relay-station stream.
 //
 // Direction-dependent fields:
@@ -110,53 +122,131 @@ type BroadcastFrame struct {
 
 // ---- Read / Write helpers ----
 
-// ReadFrame reads exactly one frame from r and returns a typed struct.
-// Caller should type-switch on *RequestFrame, *ResponseFrame, *PingFrame, *PongFrame.
-func ReadFrame(r io.Reader) (interface{}, error) {
+// Envelope is the fixed-width frame header. Separating it from payload parsing
+// lets the Relay resolve a pending request's route cap before allocation.
+type Envelope struct {
+	Type       byte
+	RequestID  uint32
+	PayloadLen uint32
+}
+
+// ReadEnvelope reads and validates one frame envelope without reading or
+// allocating its payload.
+func ReadEnvelope(r io.Reader) (Envelope, error) {
 	var hdr [HeaderLen]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
-		return nil, fmt.Errorf("read header: %w", err)
+		return Envelope{}, fmt.Errorf("read header: %w", err)
 	}
 
 	ver := hdr[0]
 	if ver != FrameVersion {
-		return nil, fmt.Errorf("unsupported frame version 0x%02x", ver)
+		return Envelope{}, fmt.Errorf("unsupported frame version 0x%02x", ver)
 	}
 
-	typ := hdr[1]
-	reqID := binary.BigEndian.Uint32(hdr[2:6])
 	payloadLen := binary.BigEndian.Uint32(hdr[6:10])
-
 	if payloadLen > MaxPayloadLen {
-		return nil, fmt.Errorf("payload too large: %d > %d", payloadLen, MaxPayloadLen)
+		return Envelope{}, fmt.Errorf("payload too large: %d > %d", payloadLen, MaxPayloadLen)
+	}
+
+	return Envelope{
+		Type:       hdr[1],
+		RequestID:  binary.BigEndian.Uint32(hdr[2:6]),
+		PayloadLen: payloadLen,
+	}, nil
+}
+
+// ReadFramePayload reads and parses the payload for an already-read envelope.
+// maxPayloadLen may be narrower than MaxPayloadLen for route-specific frames.
+func ReadFramePayload(r io.Reader, envelope Envelope, maxPayloadLen uint32) (interface{}, error) {
+	if envelope.PayloadLen > maxPayloadLen {
+		return nil, fmt.Errorf(
+			"payload too large for request %d: %d > %d",
+			envelope.RequestID,
+			envelope.PayloadLen,
+			maxPayloadLen,
+		)
 	}
 
 	var payload []byte
-	if payloadLen > 0 {
-		payload = make([]byte, payloadLen)
+	if envelope.PayloadLen > 0 {
+		payload = make([]byte, envelope.PayloadLen)
 		if _, err := io.ReadFull(r, payload); err != nil {
 			return nil, fmt.Errorf("read payload: %w", err)
 		}
 	}
 
-	switch typ {
+	switch envelope.Type {
 	case TypeRequest:
-		return parseRequestPayload(reqID, payload)
+		if envelope.RequestID == 0 {
+			return nil, fmt.Errorf("request frame has zero request ID")
+		}
+		return parseRequestPayload(envelope.RequestID, payload)
 	case TypeResponse:
-		return parseResponsePayload(reqID, payload)
+		if envelope.RequestID == 0 {
+			return nil, fmt.Errorf("response frame has zero request ID")
+		}
+		return parseResponsePayload(envelope.RequestID, payload)
 	case TypePing:
-		return &PingFrame{RequestID: reqID}, nil
+		if len(payload) != 0 {
+			return nil, fmt.Errorf("ping frame has payload")
+		}
+		return &PingFrame{RequestID: envelope.RequestID}, nil
 	case TypePong:
-		return &PongFrame{RequestID: reqID}, nil
+		if len(payload) != 0 {
+			return nil, fmt.Errorf("pong frame has payload")
+		}
+		return &PongFrame{RequestID: envelope.RequestID}, nil
 	case TypeBroadcast:
+		if envelope.RequestID != 0 {
+			return nil, fmt.Errorf("broadcast frame has nonzero request ID")
+		}
 		return parseBroadcastPayload(payload)
+	case TypeCancel:
+		if envelope.RequestID == 0 || len(payload) != 0 {
+			return nil, fmt.Errorf("cancel frame is invalid")
+		}
+		return &CancelFrame{RequestID: envelope.RequestID}, nil
+	case TypeCancelled:
+		if envelope.RequestID == 0 || len(payload) != 0 {
+			return nil, fmt.Errorf("cancelled frame is invalid")
+		}
+		return &CancelledFrame{RequestID: envelope.RequestID}, nil
 	default:
-		return nil, fmt.Errorf("unknown frame type 0x%02x", typ)
+		return nil, fmt.Errorf("unknown frame type 0x%02x", envelope.Type)
 	}
+}
+
+// ReadFrame reads exactly one frame using the general protocol payload limit.
+func ReadFrame(r io.Reader) (interface{}, error) {
+	envelope, err := ReadEnvelope(r)
+	if err != nil {
+		return nil, err
+	}
+	return ReadFramePayload(r, envelope, MaxPayloadLen)
+}
+
+// DiscardPayload consumes a known payload without allocating it as one slice.
+func DiscardPayload(r io.Reader, payloadLen uint32) error {
+	var scratch [32 * 1024]byte
+	remaining := int64(payloadLen)
+	for remaining > 0 {
+		chunk := int64(len(scratch))
+		if remaining < chunk {
+			chunk = remaining
+		}
+		if _, err := io.ReadFull(r, scratch[:chunk]); err != nil {
+			return fmt.Errorf("discard payload: %w", err)
+		}
+		remaining -= chunk
+	}
+	return nil
 }
 
 // WriteRequestFrame serialises a full HTTP-over-stream request frame.
 func WriteRequestFrame(w io.Writer, reqID uint32, method, path string, headers map[string]string, body []byte) error {
+	if reqID == 0 {
+		return fmt.Errorf("request ID must be nonzero")
+	}
 	payload, err := buildRequestPayload(method, path, headers, body)
 	if err != nil {
 		return err
@@ -166,6 +256,9 @@ func WriteRequestFrame(w io.Writer, reqID uint32, method, path string, headers m
 
 // WriteResponseFrame serialises a full HTTP-over-stream response frame.
 func WriteResponseFrame(w io.Writer, reqID uint32, statusCode uint32, headers map[string]string, body []byte) error {
+	if reqID == 0 {
+		return fmt.Errorf("request ID must be nonzero")
+	}
 	payload, err := buildResponsePayload(statusCode, headers, body)
 	if err != nil {
 		return err
@@ -179,6 +272,20 @@ func WritePing(w io.Writer, reqID uint32) error {
 
 func WritePong(w io.Writer, reqID uint32) error {
 	return writeRaw(w, TypePong, reqID, nil)
+}
+
+func WriteCancel(w io.Writer, reqID uint32) error {
+	if reqID == 0 {
+		return fmt.Errorf("request ID must be nonzero")
+	}
+	return writeRaw(w, TypeCancel, reqID, nil)
+}
+
+func WriteCancelled(w io.Writer, reqID uint32) error {
+	if reqID == 0 {
+		return fmt.Errorf("request ID must be nonzero")
+	}
+	return writeRaw(w, TypeCancelled, reqID, nil)
 }
 
 // WriteBroadcastFrame serialises a pub/sub event. RequestID is unused
@@ -216,6 +323,9 @@ func UnmarshalHeaders(data []byte) (map[string]string, error) {
 // ---- internal ----
 
 func writeRaw(w io.Writer, typ byte, reqID uint32, payload []byte) error {
+	if uint64(len(payload)) > uint64(MaxPayloadLen) {
+		return fmt.Errorf("payload too large: %d > %d", len(payload), MaxPayloadLen)
+	}
 	var hdr [HeaderLen]byte
 	hdr[0] = FrameVersion
 	hdr[1] = typ
@@ -279,9 +389,12 @@ func parseRequestPayload(reqID uint32, data []byte) (*RequestFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, _, err := readLenPrefixed(data, "body", MaxBodyLen)
+	body, rest, err := readLenPrefixed(data, "body", MaxBodyLen)
 	if err != nil {
 		return nil, err
+	}
+	if len(rest) != 0 {
+		return nil, fmt.Errorf("request payload has %d trailing bytes", len(rest))
 	}
 
 	headers, err := UnmarshalHeaders(headersB)
@@ -333,9 +446,12 @@ func parseResponsePayload(reqID uint32, data []byte) (*ResponseFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, _, err := readLenPrefixed(data, "body", MaxBodyLen)
+	body, rest, err := readLenPrefixed(data, "body", MaxBodyLen)
 	if err != nil {
 		return nil, err
+	}
+	if len(rest) != 0 {
+		return nil, fmt.Errorf("response payload has %d trailing bytes", len(rest))
 	}
 
 	headers, err := UnmarshalHeaders(headersB)
@@ -407,9 +523,12 @@ func parseBroadcastPayload(data []byte) (*BroadcastFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, _, err := readLenPrefixedSized(data, "body", MaxBroadcastBodyLen)
+	body, rest, err := readLenPrefixedSized(data, "body", MaxBroadcastBodyLen)
 	if err != nil {
 		return nil, err
+	}
+	if len(rest) != 0 {
+		return nil, fmt.Errorf("broadcast payload has %d trailing bytes", len(rest))
 	}
 	return &BroadcastFrame{
 		Topic:        string(topic),

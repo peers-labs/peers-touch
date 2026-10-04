@@ -18,6 +18,7 @@ use crate::secure_content::adapter::SocialObjectCodec;
 use crate::secure_content::store::SecureContentStore;
 use crate::secure_content::SecureContentSession;
 
+use super::private_media::PrivateMediaAccessPath;
 use super::private_mention::{validated_mention_routing_hash, verify_decrypted_mentions};
 
 const STATION_ATTESTATION_DOMAIN: &[u8] =
@@ -61,6 +62,10 @@ pub enum PrivateMediaState {
 pub struct PrivateMomentMediaProjection {
     pub object_id: String,
     pub state: PrivateMediaState,
+    #[serde(default)]
+    pub access_path: PrivateMediaAccessPath,
+    #[serde(default)]
+    pub retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub render_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -392,7 +397,15 @@ fn decrypt_projection_from_response_at(
             .into());
     }
     let mentions = verified_private_mentions(&decoded, private)?;
-    let content = project_plaintext(&decoded, private, kind)?;
+    let access_path = if matches!(
+        kind,
+        social::PrivateMomentKind::Image | social::PrivateMomentKind::Video
+    ) {
+        PrivateMediaAccessPath::from_response(response, &session.key.station_peer_id)?
+    } else {
+        PrivateMediaAccessPath::HomeStationLocalObject
+    };
+    let content = project_plaintext(&decoded, private, kind, access_path)?;
     let projection = PrivateMomentProjection {
         post_id: metadata.post_id.clone(),
         content_id: metadata.content_id.clone(),
@@ -949,11 +962,13 @@ fn project_plaintext(
     content: &social::PrivateMomentContent,
     private: &social::PrivateContentAccess,
     kind: social::PrivateMomentKind,
+    access_path: PrivateMediaAccessPath,
 ) -> Result<PrivateMomentContentProjection, String> {
     fn project_media(
         metadata: &[social::PrivateAttachmentMetadata],
         objects: &[wire::EncryptedObjectDescriptor],
         label: &str,
+        access_path: PrivateMediaAccessPath,
     ) -> Result<Vec<PrivateMomentMediaProjection>, String> {
         if metadata.len() != objects.len() {
             return Err(format!("private {label} Moment object coverage mismatch"));
@@ -972,6 +987,8 @@ fn project_plaintext(
                 Ok(PrivateMomentMediaProjection {
                     object_id: descriptor.object_id.clone(),
                     state: PrivateMediaState::MediaPlaceholder,
+                    access_path,
+                    retryable: false,
                     render_url: None,
                     local_path: None,
                     plaintext_sha256: None,
@@ -998,7 +1015,7 @@ fn project_plaintext(
             if kind != social::PrivateMomentKind::Image {
                 return Err("private image Moment object coverage mismatch".to_string());
             }
-            let media = project_media(&image.images, &private.objects, "image")?;
+            let media = project_media(&image.images, &private.objects, "image", access_path)?;
             Ok(PrivateMomentContentProjection::Image {
                 text: image.text.clone(),
                 media,
@@ -1027,7 +1044,7 @@ fn project_plaintext(
                 }
                 attachments.push(media.clone());
             }
-            let media = project_media(&attachments, &private.objects, "video")?;
+            let media = project_media(&attachments, &private.objects, "video", access_path)?;
             Ok(PrivateMomentContentProjection::Video {
                 text: video.text.clone(),
                 media,
@@ -2235,7 +2252,13 @@ mod tests {
             mention_commitment_salt: Vec::new(),
         };
         assert!(matches!(
-            project_plaintext(&content, &private, social::PrivateMomentKind::Poll).unwrap(),
+            project_plaintext(
+                &content,
+                &private,
+                social::PrivateMomentKind::Poll,
+                PrivateMediaAccessPath::HomeStationLocalObject,
+            )
+            .unwrap(),
             PrivateMomentContentProjection::Poll { .. }
         ));
 
@@ -2244,7 +2267,13 @@ mod tests {
             unreachable!();
         };
         poll.options[0].opaque_option_id[0] ^= 1;
-        assert!(project_plaintext(&tampered, &private, social::PrivateMomentKind::Poll).is_err());
+        assert!(project_plaintext(
+            &tampered,
+            &private,
+            social::PrivateMomentKind::Poll,
+            PrivateMediaAccessPath::HomeStationLocalObject,
+        )
+        .is_err());
     }
 
     #[test]
@@ -2382,7 +2411,13 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            project_plaintext(&content, &private, social::PrivateMomentKind::Repost,).unwrap(),
+            project_plaintext(
+                &content,
+                &private,
+                social::PrivateMomentKind::Repost,
+                PrivateMediaAccessPath::HomeStationLocalObject,
+            )
+            .unwrap(),
             PrivateMomentContentProjection::Repost { .. }
         ));
 
@@ -2403,9 +2438,13 @@ mod tests {
             unreachable!();
         };
         text.text = "tampered".to_string();
-        assert!(
-            project_plaintext(&tampered, &private, social::PrivateMomentKind::Repost,).is_err()
-        );
+        assert!(project_plaintext(
+            &tampered,
+            &private,
+            social::PrivateMomentKind::Repost,
+            PrivateMediaAccessPath::HomeStationLocalObject,
+        )
+        .is_err());
     }
 
     #[test]

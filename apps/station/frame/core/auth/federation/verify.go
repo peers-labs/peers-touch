@@ -13,6 +13,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
 )
 
+const maximumPeerTokenFutureSkew = 5 * time.Second
+
 // VerifiedClaims is what handlers receive after a successful
 // Verify. Custom is the per-module claim payload as a flat
 // string→string map; modules cast / parse it as needed.
@@ -134,6 +136,9 @@ func Verify(
 		return nil, fmt.Errorf("federation: verify: scope mismatch: token=%q expected=%q",
 			full.Scope, expectedScope)
 	}
+	if err := validateRegisteredClaims(full, time.Now()); err != nil {
+		return nil, err
+	}
 
 	// Re-run the scope policy on the inbound side too. This
 	// catches a peer that minted with a TTL longer than our
@@ -205,8 +210,36 @@ func parseAndVerify(
 	return c, nil
 }
 
+func validateRegisteredClaims(claims *Claims, now time.Time) error {
+	if claims == nil {
+		return errors.New("federation: verify: registered claims are required")
+	}
+	if len(claims.Audience) != 1 {
+		return errors.New("federation: verify: exactly one audience is required")
+	}
+	if claims.IssuedAt == nil {
+		return errors.New("federation: verify: iat is required")
+	}
+	if claims.ExpiresAt == nil {
+		return errors.New("federation: verify: exp is required")
+	}
+	issuedAt := claims.IssuedAt.Time
+	expiresAt := claims.ExpiresAt.Time
+	if issuedAt.After(now.Add(maximumPeerTokenFutureSkew)) {
+		return errors.New("federation: verify: iat exceeds allowed future skew")
+	}
+	if !expiresAt.After(issuedAt) {
+		return errors.New("federation: verify: token TTL must be positive")
+	}
+	if !expiresAt.After(now) {
+		return errors.New("federation: verify: token is expired")
+	}
+
+	return nil
+}
+
 func (c *Claims) audienceSingle() string {
-	if len(c.Audience) == 0 {
+	if len(c.Audience) != 1 {
 		return ""
 	}
 	return c.Audience[0]
@@ -216,11 +249,8 @@ func (c *Claims) ttl() time.Duration {
 	if c.ExpiresAt == nil || c.IssuedAt == nil {
 		return 0
 	}
-	d := c.ExpiresAt.Sub(c.IssuedAt.Time)
-	if d < 0 {
-		return 0
-	}
-	return d
+
+	return c.ExpiresAt.Sub(c.IssuedAt.Time)
 }
 
 func asTime(n *jwt.NumericDate) time.Time {

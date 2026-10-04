@@ -180,12 +180,12 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 	if s.localStationPeerID == "" ||
 		s.localStationPeerID != plan.AuthorHomeStationPeerID ||
 		!isFederatedPrivateAudienceKind(snapshot.Audience.GetKind()) ||
-		postType != actormodel.PostType_TEXT {
+		!isFederatedPrivatePostType(postType) {
 		return socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentUnsupported,
 			"social.private_content.enqueue_federated_post",
 			"recipient_localities",
-			"federated delivery requires a supported private text audience",
+			"federated delivery requires a supported private Post audience",
 		)
 	}
 	federationID := remote[0].FederationID
@@ -245,7 +245,7 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 		}
 		deliveryID := deterministicPrivateID(
 			"federated-resource",
-			plan.DomainCommitID,
+			request.GetPlan().GetResource().GetContentId(),
 			target.ActorPTID,
 		)
 		payload := &privatecontentpb.FederatedPrivateResourceDelivery{
@@ -279,6 +279,7 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 				request.GetPayload(),
 			).(*securecontentpb.EncryptedPayload),
 			TargetActorEnvelopes: envelopes,
+			Objects:              federatedPrivateObjectDescriptors(material.Objects),
 			Verification:         verification,
 			AudienceExplanation: &actormodel.AudienceExplanation{
 				Kind:           snapshot.Audience.GetKind(),
@@ -350,6 +351,35 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 		)
 	}
 	return nil
+}
+
+func isFederatedPrivatePostType(kind actormodel.PostType) bool {
+	switch kind {
+	case actormodel.PostType_TEXT,
+		actormodel.PostType_IMAGE,
+		actormodel.PostType_VIDEO:
+		return true
+	default:
+		return false
+	}
+}
+
+func federatedPrivateObjectDescriptors(
+	objects []socialdomain.PrivateObjectMaterial,
+) []*securecontentpb.EncryptedObjectDescriptor {
+	descriptors := make(
+		[]*securecontentpb.EncryptedObjectDescriptor,
+		0,
+		len(objects),
+	)
+	for _, object := range objects {
+		descriptors = append(
+			descriptors,
+			proto.Clone(object.Descriptor).(*securecontentpb.EncryptedObjectDescriptor),
+		)
+	}
+
+	return descriptors
 }
 
 func isFederatedPrivateAudienceKind(kind actormodel.Audience_Kind) bool {
@@ -810,6 +840,12 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	verification := message.GetVerification()
 	proof := verification.GetCommitProof()
 	sourceAttestation := verification.GetStationSigningKeyAttestation()
+	mediaObjectCountValid :=
+		(post.GetType() == actormodel.PostType_TEXT &&
+			len(message.GetObjects()) == 0) ||
+			((post.GetType() == actormodel.PostType_IMAGE ||
+				post.GetType() == actormodel.PostType_VIDEO) &&
+				len(message.GetObjects()) > 0)
 	if message.GetResourceKind() != privatecontentpb.
 		FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST ||
 		resource == nil ||
@@ -817,10 +853,16 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
 		resource.GetGeneration() == 0 ||
 		message.GetLifecycleRevision() == 0 ||
+		message.GetDeliveryId() != deterministicPrivateID(
+			"federated-resource",
+			resource.GetContentId(),
+			target.GetPtid(),
+		) ||
 		post == nil ||
 		post.GetPostId() != resource.GetContentId() ||
 		post.GetContentId() != resource.GetContentId() ||
-		post.GetType() != actormodel.PostType_TEXT ||
+		!isFederatedPrivatePostType(post.GetType()) ||
+		!mediaObjectCountValid ||
 		!isFederatedPrivateAudienceKind(post.GetAudienceKind()) ||
 		post.GetAuthor() == nil ||
 		post.GetAuthor().GetPtid() == "" ||
@@ -829,7 +871,6 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 		target.GetKind() != actormodel.ActorKind_ACTOR_KIND_PERSON ||
 		message.GetPayload() == nil ||
 		!proto.Equal(message.GetPayload().GetResource(), resource) ||
-		len(message.GetObjects()) != 0 ||
 		proof == nil ||
 		sourceAttestation == nil ||
 		verification.GetReceiverVerifiedSenderSigningKey() != nil ||
@@ -838,7 +879,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			socialdomain.PrivateContentInvalidArgument,
 			operation,
 			"resource",
-			"is not a complete viewer-scoped text Post",
+			"is not a complete supported viewer-scoped Post",
 		)
 	}
 	if post.GetAudienceKind() == actormodel.Audience_FRIENDS {
@@ -888,6 +929,22 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			err,
 		)
 	}
+	objectIDs := make([]string, 0, len(message.GetObjects()))
+	for _, descriptor := range message.GetObjects() {
+		objectIDs = append(objectIDs, descriptor.GetObjectId())
+	}
+	_, objectSetHash, err := socialdomain.CanonicalizePrivateObjects(
+		operation,
+		&securecontentpb.ContentEncryptionPlan{
+			Resource:  resource,
+			ObjectIds: objectIDs,
+		},
+		message.GetObjects(),
+		s.policy,
+	)
+	if err != nil {
+		return err
+	}
 	payloadBytes, err := socialdomain.CanonicalProtoBytes(message.GetPayload())
 	if err != nil {
 		return err
@@ -899,7 +956,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			proof.GetEncryptedPayloadSha256(),
 			privateSHA256(payloadBytes),
 		) ||
-		!bytes.Equal(proof.GetObjectDescriptorSetSha256(), privateSHA256(nil)) ||
+		!bytes.Equal(proof.GetObjectDescriptorSetSha256(), objectSetHash[:]) ||
 		sourceAttestation.GetStationPeerId() != message.GetSourceStationPeerId() ||
 		sourceAttestation.GetProofSigningKeyId() != proof.GetStationSigningKeyId() ||
 		sourceAttestation.GetAttestingSigningKeyId() != frame.GetSigningKeyId() ||

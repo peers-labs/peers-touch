@@ -195,6 +195,19 @@ type PrivateObjectStore interface {
 		string,
 		[]byte,
 	) (PrivateObjectDownload, error)
+	AuthorizeFederatedPrivateObjectSource(
+		context.Context,
+		*securecontentpb.SecureResourceRef,
+		string,
+		string,
+		string,
+	) (FederatedPrivateObjectSource, error)
+	FindRemotePrivateObject(
+		context.Context,
+		string,
+		string,
+		[]byte,
+	) (RemotePrivateObjectProjection, error)
 	ClaimPrivateObjectCleanup(
 		context.Context,
 		string,

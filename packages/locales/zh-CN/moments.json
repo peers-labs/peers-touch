@@ -226,6 +226,7 @@
   "moments.private.media.MEDIA_ACCESS_DENIED": "附件不可用",
   "moments.private.media.MEDIA_INTEGRITY_FAILURE": "完整性校验失败",
   "moments.private.media.MEDIA_OFFLINE_RETRYABLE": "当前离线",
+  "moments.private.media.remoteRetryable": "来源暂时不可用",
   "moments.private.state.AUDIENCE_REQUIRED.title": "请选择受众",
   "moments.private.state.AUDIENCE_REQUIRED.description": "请选择可以查看这条动态的人。",
   "moments.private.state.CHECKING_PRIVATE_READINESS.title": "正在检查接收方",

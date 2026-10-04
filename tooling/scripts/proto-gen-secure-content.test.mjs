@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   CONTENT_PREKEY_CLIENT_PROTO_INPUTS,
@@ -300,6 +301,51 @@ test('content-prekey-client scope contains exactly its six declared outputs', ()
     );
   } finally {
     scope.close();
+  }
+});
+
+test('secure-content generator preserves federated private object reservations and parity', () => {
+  const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const proto = readFileSync(
+    path.join(projectRoot, 'model/domain/social/private_federation.proto'),
+    'utf8',
+  );
+  assert.match(proto, /reserved 6, 7;/u);
+  assert.match(proto, /reserved "range_start", "range_end_exclusive";/u);
+  assert.match(proto, /FederatedPrivateObjectRange range = 9;/u);
+
+  const generated = [
+    readFileSync(
+      path.join(
+        projectRoot,
+        'apps/station/frame/touch/model/privatecontent/private_federation.pb.go',
+      ),
+      'utf8',
+    ),
+    readFileSync(
+      path.join(
+        projectRoot,
+        'apps/desktop/src/gen/proto/domain/social/private_federation_pb.ts',
+      ),
+      'utf8',
+    ),
+    readFileSync(
+      path.join(
+        projectRoot,
+        'apps/mobile/src/gen/proto/domain/social/private_federation_pb.ts',
+      ),
+      'utf8',
+    ),
+  ];
+  for (const output of generated) {
+    for (const message of [
+      'FederatedPrivateObjectGrantBinding',
+      'FederatedPrivateObjectRange',
+      'ReadFederatedPrivateObjectResponse',
+    ]) {
+      assert.match(output, new RegExp(`\\b${message}\\b`, 'u'));
+    }
+    assert.doesNotMatch(output, /\brangeStart\b|\brangeEndExclusive\b/u);
   }
 });
 

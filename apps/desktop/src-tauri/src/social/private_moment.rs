@@ -35,6 +35,7 @@ use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 use super::crypto::{
     bounded_command_id, now_unix_ms, seal_content_envelopes, validate_content_plan,
 };
+use super::private_media::{verify_descriptor_binding, PrivateMediaOpenError};
 use super::private_mention::{
     build_signed_mention_routing, canonical_private_mentions, PrivateMentionIntent,
 };
@@ -1087,21 +1088,26 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         post_id: &str,
         object_id: &str,
         revoke_media: &dyn Fn(&Path) -> Result<(), String>,
-    ) -> Result<PrivateMomentProjection, String> {
+    ) -> Result<PrivateMomentProjection, PrivateMediaOpenError> {
         let response = match self.transport.get_private_moment(post_id) {
             Ok(response) => response,
             Err(error) => {
-                self.ensure_current()?;
+                self.ensure_current()
+                    .map_err(PrivateMediaOpenError::cancelled)?;
                 if requires_private_resource_purge(&error) {
                     self.purge_private_resource(post_id, revoke_media)?;
                 }
                 if matches!(error.http_status, Some(401 | 403 | 404 | 410)) {
                     return Ok(private_transport_failure_projection(post_id, &error));
                 }
-                return Err(error.to_string());
+                return Err(PrivateMediaOpenError::dependency(
+                    error.to_string(),
+                    error.retry_after_seconds,
+                ));
             }
         };
-        self.ensure_current()?;
+        self.ensure_current()
+            .map_err(PrivateMediaOpenError::cancelled)?;
         let private = response
             .resource
             .as_ref()
@@ -1164,7 +1170,11 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                         .as_ref()
                         .is_some_and(|descriptor| descriptor.object_id == object_id)
                 })
-                .ok_or_else(|| "private Moment media object is unavailable".to_string())?,
+                .ok_or_else(|| {
+                    PrivateMediaOpenError::access_denied(
+                        "private Moment media object is unavailable",
+                    )
+                })?,
             Some(social::private_moment_content::Body::Video(video)) => video
                 .source
                 .iter()
@@ -1181,13 +1191,23 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                         .as_ref()
                         .is_some_and(|descriptor| descriptor.object_id == object_id)
                 })
-                .ok_or_else(|| "private Moment media object is unavailable".to_string())?,
-            _ => return Err("private Moment has no encrypted media".to_string()),
+                .ok_or_else(|| {
+                    PrivateMediaOpenError::access_denied(
+                        "private Moment media object is unavailable",
+                    )
+                })?,
+            _ => {
+                return Err(PrivateMediaOpenError::access_denied(
+                    "private Moment has no encrypted media",
+                ))
+            }
         };
         if !(attachment.mime_type.starts_with("image/")
             || attachment.mime_type.starts_with("video/"))
         {
-            return Err("private Moment media type is invalid".to_string());
+            return Err(PrivateMediaOpenError::integrity(
+                "private Moment media type is invalid",
+            ));
         }
         let descriptor_wire = attachment
             .object
@@ -1208,12 +1228,13 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             &resource,
             attachment,
         )?;
-        self.lease.store.ensure_object_download_transfer(
-            &record,
-            &attachment.mime_type,
-            &cache_path,
-        )?;
-        let worker = new_download_worker(&self.lease, descriptor_wire)?;
+        verify_descriptor_binding(descriptor_wire, &record.descriptor_sha256)?;
+        self.lease
+            .store
+            .ensure_object_download_transfer(&record, &attachment.mime_type, &cache_path)
+            .map_err(|error| PrivateMediaOpenError::dependency(error, None))?;
+        let worker = new_download_worker(&self.lease, descriptor_wire)
+            .map_err(|error| PrivateMediaOpenError::dependency(error, None))?;
         let progress = worker.run_download_once(
             &record.transfer_id,
             &descriptor,
@@ -1225,7 +1246,11 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         let media = match projection.content.as_mut() {
             Some(PrivateMomentContentProjection::Image { media, .. })
             | Some(PrivateMomentContentProjection::Video { media, .. }) => media,
-            _ => return Err("private Moment has no encrypted media".to_string()),
+            _ => {
+                return Err(PrivateMediaOpenError::integrity(
+                    "private Moment has no encrypted media",
+                ))
+            }
         };
         let item = media
             .iter_mut()
@@ -1233,9 +1258,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .ok_or_else(|| "private Moment media object is unavailable".to_string())?;
         match progress {
             Ok(ObjectTransferProgress::Complete) => {
-                self.ensure_current()?;
+                self.ensure_current()
+                    .map_err(PrivateMediaOpenError::cancelled)?;
                 if !cache_path.is_file() {
-                    return Err("private Moment media cache is unavailable".to_string());
+                    return Err(PrivateMediaOpenError::integrity(
+                        "private Moment media cache is unavailable",
+                    ));
                 }
                 apply_ready_media(
                     item,
@@ -1252,6 +1280,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 item.plaintext_sha256 = None;
                 item.plaintext_size = None;
                 item.error_code = Some("MEDIA_OFFLINE_RETRYABLE".to_string());
+                item.retryable = true;
             }
             Ok(ObjectTransferProgress::Terminal { code }) => {
                 if code == ObjectTransferErrorCode::NotGranted {
@@ -1287,7 +1316,9 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             }
         }
         let persisted = scrub_persisted_media_projection(decrypted.projection.clone());
-        self.save_projection_if_current(post_id, &persisted.encode_local()?)?;
+        let encoded = persisted.encode_local()?;
+        self.save_projection_if_current(post_id, &encoded)
+            .map_err(|error| PrivateMediaOpenError::dependency(error, None))?;
         Ok(decrypted.projection)
     }
 
@@ -1924,6 +1955,7 @@ fn apply_ready_media(
     media.plaintext_sha256 = Some(hex::encode(plaintext_sha256));
     media.plaintext_size = Some(plaintext_size);
     media.error_code = None;
+    media.retryable = false;
 }
 
 fn apply_terminal_media_failure(
@@ -1935,6 +1967,7 @@ fn apply_terminal_media_failure(
     media.plaintext_sha256 = None;
     media.plaintext_size = None;
     media.error_code = Some(code.as_str().to_string());
+    media.retryable = false;
     media.state = if code == ObjectTransferErrorCode::NotGranted {
         PrivateMediaState::MediaAccessDenied
     } else {
@@ -1956,6 +1989,7 @@ fn scrub_persisted_media_projection(
                 if item.state == PrivateMediaState::MediaReady {
                     item.state = PrivateMediaState::MediaPlaceholder;
                 }
+                item.retryable = false;
             }
         }
         _ => {}
@@ -1972,6 +2006,7 @@ fn apply_media_failure(
         media.plaintext_sha256 = None;
         media.plaintext_size = None;
         media.error_code = Some("MEDIA_OFFLINE_RETRYABLE".to_string());
+        media.retryable = true;
     } else {
         apply_terminal_media_failure(media, failure.code);
     }
@@ -3597,6 +3632,9 @@ mod tests {
         let mut media = super::super::projection::PrivateMomentMediaProjection {
             object_id: "object-1".to_string(),
             state: PrivateMediaState::MediaDownloading,
+            access_path:
+                super::super::private_media::PrivateMediaAccessPath::HomeStationLocalObject,
+            retryable: false,
             render_url: None,
             local_path: None,
             plaintext_sha256: None,
