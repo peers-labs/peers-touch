@@ -11,8 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from selenium.webdriver.common.keys import Keys
-
 ROOT = Path(__file__).resolve().parents[5]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -196,7 +194,7 @@ def verify_confirmation_focus_return(
     title: str,
 ) -> None:
     open_cancel_confirmation(client, title=title)
-    client.driver.switch_to.active_element.send_keys(Keys.ESCAPE)
+    visible_element(client, "[data-pt-home-goal-cancel-dismiss]").click()
     wait_until(
         lambda: confirmation_is_closed(client),
         "closed Goal cancellation confirmation",
@@ -456,7 +454,7 @@ def run_journey(
     confirmation_screenshot = artifact_dir / "goal-cancel-confirmation.png"
     open_cancel_confirmation(client, title=draft_title)
     client.driver.save_screenshot(str(confirmation_screenshot))
-    client.driver.switch_to.active_element.send_keys(Keys.ESCAPE)
+    visible_element(client, "[data-pt-home-goal-cancel-dismiss]").click()
     wait_until(
         lambda: confirmation_is_closed(client),
         "closed Goal cancellation confirmation after capture",

@@ -89,6 +89,9 @@ export function GoalCancelControl({ goal }: { goal: AgentGoal }) {
       </Button>
       <Modal
         centered
+        cancelButtonProps={{
+          'data-pt-home-goal-cancel-dismiss': goal.goalId,
+        }}
         cancelText={t('agent.home.goalCancelKeep')}
         closable={!cancelling}
         confirmLoading={cancelling}
