@@ -713,6 +713,7 @@ export function processStartIdentity() { return 'fixture'; }
                 {
                     "folders": [
                         {"path": "bootstrap"},
+                        {"path": "missing"},
                         {"path": "."},
                         {"path": "untouched"},
                     ]

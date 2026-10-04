@@ -33,9 +33,9 @@ export function workspaceContext(workspaceFile) {
   if (!Array.isArray(parsed?.folders) || parsed.folders.length === 0) {
     throw new Error('TRAE_WORKSPACE_DESCRIPTOR_INVALID');
   }
-  let workspaceRoots;
+  const workspaceRoots = [];
   try {
-    workspaceRoots = parsed.folders.map((folder) => {
+    for (const folder of parsed.folders) {
       const value =
         typeof folder === 'string'
           ? folder
@@ -45,15 +45,22 @@ export function workspaceContext(workspaceFile) {
       if (typeof value !== 'string' || !value.trim()) {
         throw new Error('invalid workspace folder');
       }
-      const candidate = realpathSync(
-        path.resolve(path.dirname(descriptor), value),
-      );
-      if (!lstatSync(candidate).isDirectory()) {
-        throw new Error('workspace folder is not a directory');
+      let candidate;
+      try {
+        candidate = realpathSync(path.resolve(path.dirname(descriptor), value));
+      } catch (error) {
+        if (error?.code === 'ENOENT') continue;
+        throw error;
       }
-      return candidate;
-    });
+      if (!lstatSync(candidate).isDirectory()) {
+        continue;
+      }
+      workspaceRoots.push(candidate);
+    }
   } catch {
+    throw new Error('TRAE_WORKSPACE_DESCRIPTOR_INVALID');
+  }
+  if (workspaceRoots.length === 0) {
     throw new Error('TRAE_WORKSPACE_DESCRIPTOR_INVALID');
   }
   return {

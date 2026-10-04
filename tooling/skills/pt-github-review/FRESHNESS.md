@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-03
-covered_docs_hash: 418edd87d9787ca37bc22b973ccb0b8282ad5af8ce08883a345823da4c6f9205
+covered_docs_hash: efac9537bff6880c56c8677920c993b722c8693468bf445c24182b31557df60a
 
 covered_docs:
   - AGENTS.md
@@ -39,8 +39,10 @@ actions, and Action Store locks remain blocking. When declarations are live,
 legacy conversation/action history remains inert and cleanup is deferred to a
 later declaration-free installation. Existing review rules already reject
 parallel workflow authority and unguarded hook replacement; the installer
-regression covers concurrent declaration preservation, so no `SKILL.md` or
-generic review fixture change is required.
+regression covers concurrent declaration preservation. Stale missing folders
+in a multi-root descriptor are ignored only when valid roots remain and include
+the selected source worktree. No `SKILL.md` or generic review fixture change is
+required.
 
 ## 2026-10-03 Review
 
