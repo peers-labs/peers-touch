@@ -323,14 +323,18 @@ func TestGoalUpdateAndReviewUseRevisionAndIdempotency(t *testing.T) {
 		t.Fatalf("historic Goal replay changed with current state: %+v", historicReplay)
 	}
 
-	var commands int64
-	if err := db.Model(&persistence.RevisionCommand{}).
-		Where("ptid = ?", "ptid:actor-1").
-		Count(&commands).Error; err != nil {
-		t.Fatalf("count Goal commands: %v", err)
+	var commands []persistence.RevisionCommand
+	if err := db.Where("ptid = ?", "ptid:actor-1").
+		Find(&commands).Error; err != nil {
+		t.Fatalf("load Goal commands: %v", err)
 	}
-	if commands != 2 {
-		t.Fatalf("Goal command count = %d, want 2", commands)
+	if len(commands) != 2 {
+		t.Fatalf("Goal command count = %d, want 2", len(commands))
+	}
+	for _, command := range commands {
+		if len(command.ID) > 36 {
+			t.Fatalf("Goal command ID %q exceeds persistence width", command.ID)
+		}
 	}
 	var taskRuns int64
 	if err := db.Model(&persistence.TaskRun{}).Count(&taskRuns).Error; err != nil {
