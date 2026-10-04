@@ -851,6 +851,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         )
         self.assertEqual("CSS-SCHEMA-FOUR", four["workstream_id"])
         self.assertEqual("CSS-SCHEMA-FIVEARM", five_arm["workstream_id"])
+        self.assertEqual("CSS-W-ACTIVATION", aggregate["workstream_id"])
         self.assertEqual(descriptor.source_task_id, aggregate["task_id"])
         self.assertTrue(
             (
