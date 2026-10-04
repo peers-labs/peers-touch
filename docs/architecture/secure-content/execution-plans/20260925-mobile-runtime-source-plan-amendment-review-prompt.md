@@ -23,7 +23,7 @@ Review the mechanical Task split in:
 - `docs/architecture/social/product-state-model.md`
 - `docs/architecture/social/acceptance-matrix.md`
 - `docs/architecture/secure-content/decisions.md` (SC-D22)
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/secure-content/integration.md`
 
 ## Required Findings-First Checks

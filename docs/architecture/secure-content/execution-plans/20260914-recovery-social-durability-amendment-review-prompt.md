@@ -12,7 +12,7 @@ Review proposed `SC-D16` and `SC-D17` in:
 - `docs/architecture/secure-content/decisions.md`
 - `docs/architecture/secure-content/security.md`
 - `docs/architecture/secure-content/data-model.md`
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/secure-content/integration.md`
 - `docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/plan.md`
 

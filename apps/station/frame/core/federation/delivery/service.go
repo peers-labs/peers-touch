@@ -22,6 +22,10 @@ const (
 	PayloadKindConversationReadCursor       = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_READ_CURSOR
 	PayloadKindSocialRelationshipEvent      = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_RELATIONSHIP_EVENT
 	PayloadKindRealtimeCallSignal           = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_REALTIME_CALL_SIGNAL
+	PayloadKindSocialPrivateResource        = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_PRIVATE_RESOURCE
+	PayloadKindSocialPrivateInvalidation    = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_PRIVATE_INVALIDATION
+	PayloadKindSocialPrivateInteraction     = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_PRIVATE_INTERACTION_COMMAND
+	PayloadKindSocialPrivateResult          = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_PRIVATE_INTERACTION_RESULT
 
 	DispositionUnspecified         = federationmodel.FederatedDomainFrameDisposition_FEDERATED_DOMAIN_FRAME_DISPOSITION_UNSPECIFIED
 	DispositionAccepted            = federationmodel.FederatedDomainFrameDisposition_FEDERATED_DOMAIN_FRAME_DISPOSITION_ACCEPTED

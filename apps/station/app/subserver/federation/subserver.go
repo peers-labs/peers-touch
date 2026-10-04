@@ -256,6 +256,25 @@ func (s *subServer) FederationDeliveryRuntime() *federationruntime.Runtime {
 	return s.deliveryRuntime
 }
 
+// ValidateActiveStationPair exposes the Federation-owned membership decision
+// to peer capabilities without exposing repository access.
+func (s *subServer) ValidateActiveStationPair(
+	ctx context.Context,
+	federationID string,
+	sourceStationPeerID string,
+	targetStationPeerID string,
+) error {
+	if s == nil || s.projectionSvc == nil {
+		return fmt.Errorf("Federation membership projection is unavailable")
+	}
+	return s.projectionSvc.ValidateActiveStationPair(
+		ctx,
+		federationID,
+		sourceStationPeerID,
+		targetStationPeerID,
+	)
+}
+
 func (s *subServer) Handlers() []server.Handler {
 	jw := s.jwtWrapper
 	fw := s.federationWrapper

@@ -208,6 +208,42 @@ function privateMomentFiles(
     : [];
 }
 
+export function privateMomentPublishIntent(
+  draft: MomentDraft,
+): Omit<PrivateMomentPublishIntent, 'actorPtid' | 'rendererGeneration'> {
+  if (!draft.draftId || draft.draftRevision === undefined) {
+    throw new Error('PRIVATE_DRAFT_IDENTITY_REQUIRED');
+  }
+  return {
+    draftId: draft.draftId,
+    draftRevision: draft.draftRevision,
+    audience: privateMomentAudience(draft.audience),
+    momentKind: privateMomentKind(draft),
+    text: privateMomentText(draft),
+    mentions: (draft.mentions ?? []).map((mention) => ({
+      actorPtid: mention.actorPtid,
+      offset: mention.offset,
+      length: mention.length,
+      display: mention.display,
+    })),
+    files: privateMomentFiles(draft),
+    link: draft.kind === 'link' ? draft.link : undefined,
+    location: draft.kind === 'location' ? draft.location : undefined,
+    poll: draft.kind === 'poll'
+      ? {
+          question: draft.poll.question,
+          options: draft.poll.options,
+          minChoices: draft.poll.minChoices,
+          maxChoices: draft.poll.maxChoices,
+          expiresAtSeconds: draft.poll.expiresAtSeconds,
+        }
+      : undefined,
+    repost: draft.kind === 'repost'
+      ? { sourcePostId: draft.originalPostId }
+      : undefined,
+  };
+}
+
 const PRIVATE_AUDIENCE_KINDS: Record<
   PrivateMomentProjection['audienceKind'],
   Audience_Kind
@@ -715,37 +751,9 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       draft.audience.kind !== Audience_Kind.PUBLIC
       && draft.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
     ) {
-      if (!draft.draftId || draft.draftRevision === undefined) {
-        throw new Error('PRIVATE_DRAFT_IDENTITY_REQUIRED');
-      }
-      const result = await usePrivateMomentsStore.getState().publishMoment({
-        draftId: draft.draftId,
-        draftRevision: draft.draftRevision,
-        audience: privateMomentAudience(draft.audience),
-        momentKind: privateMomentKind(draft),
-        text: privateMomentText(draft),
-        mentions: (draft.mentions ?? []).map((mention) => ({
-          actorPtid: mention.actorPtid,
-          offset: mention.offset,
-          length: mention.length,
-          display: mention.display,
-        })),
-        files: privateMomentFiles(draft),
-        link: draft.kind === 'link' ? draft.link : undefined,
-        location: draft.kind === 'location' ? draft.location : undefined,
-        poll: draft.kind === 'poll'
-          ? {
-              question: draft.poll.question,
-              options: draft.poll.options,
-              minChoices: draft.poll.minChoices,
-              maxChoices: draft.poll.maxChoices,
-              expiresAtSeconds: draft.poll.expiresAtSeconds,
-            }
-          : undefined,
-        repost: draft.kind === 'repost'
-          ? { sourcePostId: draft.originalPostId }
-          : undefined,
-      });
+      const result = await usePrivateMomentsStore.getState().publishMoment(
+        privateMomentPublishIntent(draft),
+      );
       if (generation !== storeGeneration) {
         throw new Error('MOMENTS_SESSION_STALE');
       }

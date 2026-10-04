@@ -78,6 +78,13 @@ func (p *SocialGraphEventPublisher) publish(ctx context.Context, targetPTID stri
 	if _, err := liveBus.Publish(targetPTID, &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_SocialGraphEvent{SocialGraphEvent: ev},
 	}); err != nil {
-		logger.Warn(ctx, "social.realtime: publish failed", "target_ptid", targetPTID, "kind", ev.Kind.String(), "error", err)
+		logger.Warn(
+			ctx,
+			"social.realtime: publish failed",
+			"kind",
+			ev.Kind.String(),
+			"error",
+			err,
+		)
 	}
 }

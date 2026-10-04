@@ -16,7 +16,7 @@ use secure_content_core::ports::{ObjectBlob, ObjectTransferRepository};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::model::{secure_content as wire, social};
+use crate::model::{actor, secure_content as wire, social};
 use crate::secure_content::adapter::{NativeErrorDisposition, SecureContentTransport};
 use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::station_trust::{
@@ -138,6 +138,15 @@ pub struct PrivateMomentPublishIntent {
     pub poll: Option<PrivateMomentPollIntent>,
     #[serde(default)]
     pub repost: Option<PrivateMomentRepostIntent>,
+    #[serde(default)]
+    pub admission_only: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateMomentAdmissionResult {
+    pub state: &'static str,
+    pub draft_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -169,6 +178,7 @@ pub struct PrivateMomentPublishRejection {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum PrivateMomentPublishOutcome {
+    Ready(PrivateMomentAdmissionResult),
     Published(PrivateMomentPublishResult),
     Rejected(PrivateMomentPublishRejection),
 }
@@ -211,6 +221,7 @@ enum PrivatePublishFailure {
     Preserve(String),
     Cleanup(String),
     RejectedBeforePrepare { station_error_code: String },
+    RecipientUnavailable,
 }
 
 impl PrivatePublishFailure {
@@ -234,6 +245,9 @@ impl PrivatePublishFailure {
     }
 
     fn from_prepare_transport(error: crate::secure_content::adapter::NativeTransportError) -> Self {
+        if matches!(error.stable_code, 30203 | 30206 | 30209) {
+            return Self::RecipientUnavailable;
+        }
         if error.http_status == Some(400)
             && error.stable_code == crate::model::error::ErrorCode::InvalidRequest as i32
             && error.disposition == NativeErrorDisposition::Terminal
@@ -262,6 +276,7 @@ impl PrivatePublishFailure {
                 format!("private Moment prepare was rejected: {station_error_code}"),
                 true,
             ),
+            Self::RecipientUnavailable => ("RECIPIENT_KEY_UNAVAILABLE".to_string(), false),
         }
     }
 }
@@ -358,7 +373,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         let mut upload_transfer_ids = Vec::new();
         let mut content_id = None;
         match self.publish_new(intent, &mut upload_transfer_ids, &mut content_id) {
-            Ok(result) => Ok(result.into()),
+            Ok(result) => Ok(result),
             Err(failure) => {
                 self.finish_publish_failure(intent, failure, content_id, upload_transfer_ids)
             }
@@ -370,7 +385,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         intent: &PrivateMomentPublishIntent,
         upload_transfer_ids: &mut Vec<String>,
         cleanup_content_id: &mut Option<String>,
-    ) -> Result<PrivateMomentPublishResult, PrivatePublishFailure> {
+    ) -> Result<PrivateMomentPublishOutcome, PrivatePublishFailure> {
         let prepare_command_id =
             bounded_command_id("moment-prepare", &intent.draft_id, intent.draft_revision);
         let kind =
@@ -453,6 +468,14 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             &subtype_prepare_authority_sha256,
         )
         .map_err(PrivatePublishFailure::cleanup)?;
+        if intent.admission_only {
+            return Ok(PrivateMomentPublishOutcome::Ready(
+                PrivateMomentAdmissionResult {
+                    state: "READY_PRIVATE",
+                    draft_id: intent.draft_id.clone(),
+                },
+            ));
+        }
 
         let mut attachment_metadata = Vec::with_capacity(intent.files.len());
         let mut descriptors = Vec::with_capacity(intent.files.len());
@@ -662,6 +685,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .persist_moment_command(&command)
             .map_err(PrivatePublishFailure::preserve)?;
         self.replay_submit(command)
+            .map(PrivateMomentPublishOutcome::from)
             .map_err(PrivatePublishFailure::preserve)
     }
 
@@ -672,6 +696,18 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         content_id: Option<String>,
         upload_transfer_ids: Vec<String>,
     ) -> Result<PrivateMomentPublishOutcome, String> {
+        if intent.admission_only {
+            return Err(match failure {
+                PrivatePublishFailure::RejectedBeforePrepare { .. } => {
+                    "PRIVATE_UNSUPPORTED".to_string()
+                }
+                PrivatePublishFailure::RecipientUnavailable => {
+                    "RECIPIENT_KEY_UNAVAILABLE".to_string()
+                }
+                PrivatePublishFailure::Preserve(message)
+                | PrivatePublishFailure::Cleanup(message) => message,
+            });
+        }
         let station_error_code = match &failure {
             PrivatePublishFailure::RejectedBeforePrepare { station_error_code } => {
                 Some(station_error_code.clone())
@@ -1268,6 +1304,9 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         &self,
         intent: &PrivateMomentPublishIntent,
     ) -> Result<Option<PrivateMomentPublishResult>, String> {
+        if intent.admission_only {
+            return Ok(None);
+        }
         let existing = self
             .lease
             .store
@@ -1477,6 +1516,25 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         )? {
             return Ok(Some(key));
         }
+        if let Some(key) = receiver_verified_sender_signing_key(
+            response,
+            &requirement.sender,
+            signing_key_id,
+            requirement.committed_at_unix_ms,
+        )? {
+            return Ok(Some(key));
+        }
+        let source_station_peer_id = response
+            .explanation
+            .as_ref()
+            .and_then(|explanation| explanation.source.as_ref())
+            .map(|source| source.station_peer_id.as_str())
+            .unwrap_or_default();
+        if !source_station_peer_id.is_empty()
+            && source_station_peer_id != self.lease.session.key.station_peer_id
+        {
+            return Err("remote private Moment sender signing key is unavailable".to_string());
+        }
         let profile = self
             .transport
             .get_actor_federation_profile(
@@ -1680,6 +1738,66 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             Err("secure content session generation is stale".to_string())
         }
     }
+}
+
+pub(super) fn receiver_verified_sender_signing_key(
+    response: &social::GetMomentResourceResponse,
+    expected_sender: &actor::ActorDeviceRef,
+    expected_signing_key_id: &str,
+    committed_at_unix_ms: i64,
+) -> Result<Option<VerifyingKey>, String> {
+    let key = match response
+        .resource
+        .as_ref()
+        .and_then(|resource| resource.body.as_ref())
+        .and_then(|body| match body {
+            social::post_resource::Body::PrivateContent(private) => private.verification.as_ref(),
+            _ => None,
+        })
+        .and_then(|verification| verification.receiver_verified_sender_signing_key.as_ref())
+    {
+        Some(key) => key,
+        None => return Ok(None),
+    };
+    let expected_actor_ptid = expected_sender
+        .actor
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .unwrap_or_default();
+    let source_station_peer_id = response
+        .explanation
+        .as_ref()
+        .and_then(|explanation| explanation.source.as_ref())
+        .map(|source| source.station_peer_id.as_str())
+        .unwrap_or_default();
+    if expected_actor_ptid.is_empty()
+        || expected_sender.device_id.is_empty()
+        || expected_signing_key_id.is_empty()
+        || source_station_peer_id.is_empty()
+        || key.actor_ptid != expected_actor_ptid
+        || key.actor_device_id != expected_sender.device_id
+        || key.home_station_peer_id != source_station_peer_id
+        || key.signing_key_id != expected_signing_key_id
+        || key.ed25519_public_key.len() != 32
+        || key.profile_version <= 0
+        || key.valid_from_unix_ms <= 0
+        || key.valid_from_unix_ms > committed_at_unix_ms
+        || (key.revoked_at_unix_ms != 0
+            && (key.revoked_at_unix_ms <= key.valid_from_unix_ms
+                || committed_at_unix_ms >= key.revoked_at_unix_ms))
+        || !matches!(
+            actor::ActorSigningKeyVerificationSource::try_from(key.verification_source).ok(),
+            Some(actor::ActorSigningKeyVerificationSource::VerifiedProfile)
+                | Some(actor::ActorSigningKeyVerificationSource::VerifiedLocator)
+        )
+    {
+        return Err("receiver-verified private Moment sender signing key is invalid".to_string());
+    }
+    VerifyingKey::from_bytes(key.ed25519_public_key.as_slice().try_into().map_err(|_| {
+        "receiver-verified private Moment sender signing key is invalid".to_string()
+    })?)
+    .map(Some)
+    .map_err(|_| "receiver-verified private Moment sender signing key is invalid".to_string())
 }
 
 fn private_moment_intent_hash(intent: &PrivateMomentPublishIntent) -> Result<[u8; 32], String> {
@@ -2502,6 +2620,7 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         }
     }
 
@@ -2558,6 +2677,91 @@ mod tests {
     }
 
     #[test]
+    fn remote_sender_key_uses_receiver_verified_historical_projection() {
+        let sender_key = SigningKey::from_bytes(&[6; 32]);
+        let committed_at_unix_ms = 1_900_000_000_000;
+        let sender = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:alice".to_string(),
+                kind: actor::ActorKind::Person as i32,
+                ..Default::default()
+            }),
+            device_id: "alice-device".to_string(),
+        };
+        let mut response = social::GetMomentResourceResponse {
+            explanation: Some(social::FeedObjectExplanation {
+                source: Some(social::ActivitySource {
+                    kind: social::activity_source::Kind::ActivitySourceRemote as i32,
+                    station_peer_id: "station-a".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            resource: Some(social::PostResource {
+                body: Some(social::post_resource::Body::PrivateContent(
+                    social::PrivateContentAccess {
+                        verification: Some(social::PrivateContentVerification {
+                            receiver_verified_sender_signing_key: Some(
+                                actor::VerifiedActorDeviceSigningKey {
+                                    actor_ptid: "ptid:alice".to_string(),
+                                    actor_device_id: "alice-device".to_string(),
+                                    home_station_peer_id: "station-a".to_string(),
+                                    signing_key_id: "alice-signing-key".to_string(),
+                                    ed25519_public_key: sender_key
+                                        .verifying_key()
+                                        .to_bytes()
+                                        .to_vec(),
+                                    profile_version: 7,
+                                    verification_source:
+                                        actor::ActorSigningKeyVerificationSource::VerifiedProfile
+                                            as i32,
+                                    valid_from_unix_ms: committed_at_unix_ms - 60_000,
+                                    revoked_at_unix_ms: committed_at_unix_ms + 1,
+                                },
+                            ),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let resolved = receiver_verified_sender_signing_key(
+            &response,
+            &sender,
+            "alice-signing-key",
+            committed_at_unix_ms,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(resolved, sender_key.verifying_key());
+
+        response
+            .resource
+            .as_mut()
+            .and_then(|resource| resource.body.as_mut())
+            .and_then(|body| match body {
+                social::post_resource::Body::PrivateContent(private) => {
+                    private.verification.as_mut()
+                }
+                _ => None,
+            })
+            .and_then(|verification| verification.receiver_verified_sender_signing_key.as_mut())
+            .unwrap()
+            .revoked_at_unix_ms = committed_at_unix_ms;
+        assert!(receiver_verified_sender_signing_key(
+            &response,
+            &sender,
+            "alice-signing-key",
+            committed_at_unix_ms,
+        )
+        .is_err());
+    }
+
+    #[test]
     fn secure_content_private_publish_intent_validates_audience_kinds() {
         let valid = PrivateMomentPublishIntent {
             actor_ptid: "ptid:alice".to_string(),
@@ -2579,6 +2783,7 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         };
         assert!(validate_publish_intent(&valid).is_ok());
         for kind in &["FOLLOWERS", "SELF"] {
@@ -2777,10 +2982,18 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         };
         assert_eq!(
             private_moment_intent_hash(&intent).unwrap(),
             private_moment_intent_hash(&intent).unwrap()
+        );
+        let mut admission = intent.clone();
+        admission.admission_only = true;
+        assert_eq!(
+            private_moment_intent_hash(&intent).unwrap(),
+            private_moment_intent_hash(&admission).unwrap(),
+            "admission and publish must reuse one durable draft identity"
         );
 
         let mut changed = intent;
@@ -2792,6 +3005,82 @@ mod tests {
                 ..changed.clone()
             })
             .unwrap()
+        );
+    }
+
+    #[test]
+    fn remote_prekey_unavailable_preserves_the_admission_draft() {
+        let failure = PrivatePublishFailure::from_prepare_transport(
+            crate::secure_content::adapter::NativeTransportError {
+                http_status: Some(409),
+                stable_code: 30206,
+                retry_after_seconds: None,
+                disposition: NativeErrorDisposition::Terminal,
+                message: "CONTENT_PREKEY_POOL_DEPLETED".to_string(),
+            },
+        );
+        let (message, should_cleanup) = failure.into_parts();
+        assert_eq!(message, "RECIPIENT_KEY_UNAVAILABLE");
+        assert!(!should_cleanup);
+    }
+
+    #[test]
+    fn remote_prekey_admission_returns_only_typed_readiness() {
+        let value = serde_json::to_value(PrivateMomentPublishOutcome::Ready(
+            PrivateMomentAdmissionResult {
+                state: "READY_PRIVATE",
+                draft_id: "draft-remote".to_string(),
+            },
+        ))
+        .unwrap();
+        assert_eq!(value["state"], "READY_PRIVATE");
+        assert_eq!(value["draftId"], "draft-remote");
+        assert!(value.get("plan").is_none());
+        assert!(value.get("claims").is_none());
+    }
+
+    #[test]
+    fn remote_prekey_admission_never_replays_a_pending_publish() {
+        let station_key = SigningKey::from_bytes(&[8; 32]);
+        let lease = lease(&station_key);
+        let store = lease.store.clone();
+        let request_bytes = b"pending-private-publication".to_vec();
+        store
+            .persist_moment_command(&StoredMomentCommand {
+                draft_id: "draft-pending".to_string(),
+                draft_revision: 1,
+                content_id: "content-pending".to_string(),
+                generation: 1,
+                submit_command_id: "submit-pending".to_string(),
+                plan_bytes: vec![1],
+                request_sha256: Sha256::digest(&request_bytes).into(),
+                request_bytes,
+                root_key: [2; 32],
+                state: PublicationState::PendingPublication,
+                session_generation: lease.session.key.session_generation,
+                post_id: None,
+            })
+            .unwrap();
+        let supervisor = SecureContentSupervisor::new();
+        let orchestrator = PrivateMomentOrchestrator {
+            supervisor: &supervisor,
+            transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
+            lease,
+        };
+        let mut admission = publish_intent("draft-pending", 1);
+        admission.admission_only = true;
+
+        assert!(orchestrator
+            .existing_publish_result(&admission)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            store
+                .moment_command("draft-pending", 1)
+                .unwrap()
+                .unwrap()
+                .state,
+            PublicationState::PendingPublication,
         );
     }
 

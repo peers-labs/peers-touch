@@ -21,6 +21,7 @@ import { registerAgentGroupsPage } from './AgentGroupsPage.descriptor';
 import { registerCustomPluginsPage } from './CustomPluginsPage.descriptor';
 import { registerTasksPage } from './TasksPage.descriptor';
 import { registerEvaluationPage } from './EvaluationPage.descriptor';
+import { getDesktopHostPolicy } from '../kernel/hostPolicy';
 
 let registered = false;
 
@@ -35,7 +36,9 @@ export function registerKernelPages(): void {
   registerSettingsPage();
   registerAppletsPage();
   registerAppletRuntimePage();
-  registerMomentsPage();
+  if (getDesktopHostPolicy().nativeSocialEnabled) {
+    registerMomentsPage();
+  }
   registerMarketplacePage();
   registerAgentGroupsPage();
   registerCustomPluginsPage();

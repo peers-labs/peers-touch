@@ -1,0 +1,17 @@
+# CSS-06: Private Revocation
+
+## Task Slice
+
+```json
+{"kind":"peers-touch-task-slice","planId":"CROSS-STATION-SOCIAL-NATIVE-20261003","taskId":"CSS-06-private-revocation","workstreamId":"CSS-W-SOURCE","title":"Revoke remote private resources without resurrection","workClass":"product-behavior","completionClass":"source","executionMode":"build","closureId":"slice-private-revocation","journeyId":"SOC-SEC-AS22","runtimeClass":"source-only","writeSet":["apps/station/app/subserver/social","apps/desktop/src","apps/desktop/src-tauri/src/social","packages/locales","tooling/scripts/check-social-cross-station-operability.mjs","tooling/scripts/check-social-cross-station-operability.test.mjs","tooling/acceptance/gates/social"],"readSet":["apps/station/frame/core/federation","apps/station/frame/core/metrics","model/domain/social/private_federation.proto","docs/architecture/social-runtime/decisions.md","docs/architecture/cross-station-social","docs/client/desktop/runtime-projections.md"],"budgets":{"focusedCheckSeconds":1200,"functionalRunSeconds":1,"cleanupSeconds":300},"checks":[{"id":"private-revocation-source","command":"(cd apps/station && go test -race ./app/subserver/social/... -run 'TestFederatedPrivate(Invalidation|Tombstone)') && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml social:: -- revoke && pnpm --dir apps/desktop exec vitest run src/services/eventStream.test.ts src/runtimes/momentsRuntime.test.ts src/i18n -t 'delete|relationship|revocation|eventBus' && node --test tooling/scripts/check-social-cross-station-operability.test.mjs && node tooling/scripts/check-social-cross-station-operability.mjs && git diff --check","verificationClass":"SOURCE_CHECK"}],"doneWhen":["delete, friendship loss, and either-direction block revoke future access","recipient-local block suppresses immediately","source invalidation advances a monotonic tombstone","typed delete, relationship, and revocation events reach the single momentsRuntime owner before hidden receiver projections are reused","typed localized revoke states and bounded invalidation/rejection metrics pass the operability checker","stale delivery cannot resurrect content","one conventional commit records only this usable slice"],"failureBehavior":["feed/detail/comment/media/recovery share the same denial","lost invalidation remains repairable by reconcile","unknown or dropped EventBus enum arms fail the focused contract Gate","no result claims deletion of recipient-controlled plaintext copies and no log or metric leaks actor lists or payload","Native product behavior remains UNPROVEN until the CSS-08A activation and CSS-09 exact-source Suite."],"updatedAt":"2026-10-03T00:00:00Z","durableEvidence":[{"verificationClass":"SOURCE_CHECK","result":"NOT_RUN","ref":"pending CSS-06"}]}
+```
+
+## Current Snapshot
+
+Remote Post, media, Comment, and Reaction work, but receiver projections have
+no source-revision tombstone.
+
+## Timebox And Checkpoint
+
+Agent timebox: 3 hours. Commit:
+`feat(social): revoke cross-station private resources`.

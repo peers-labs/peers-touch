@@ -26,6 +26,7 @@ export interface SocialPrivateStateProps {
 
 const PROGRESS_STATES = new Set<SocialPrivateStateValue>([
   'CHECKING_PRIVATE_READINESS',
+  'CHECKING_REMOTE_READINESS',
   'PUBLISHING',
   'UNKNOWN_COMMIT',
   'LOADING_AUTHORIZED_RESOURCE',

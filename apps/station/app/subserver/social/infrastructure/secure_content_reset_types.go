@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	SecureContentResetSchemaVersion = 1
-	SecureContentResetPlanID        = "SECURE-CONTENT-HARD-CUT-20260913"
+	SecureContentResetSchemaVersion  = 1
+	SecureContentResetPlanID         = "SECURE-CONTENT-HARD-CUT-20260913"
+	CrossStationSocialResetPlanID    = "CROSS-STATION-SOCIAL-NATIVE-20261003"
+	CrossStationSocialActivationTask = "CSS-08A-schema-activation"
 
 	ResetIntentSchemaActivation ResetIntent = "SCHEMA_ACTIVATION"
 	ResetIntentFinalCut         ResetIntent = "FINAL_CUT"
@@ -468,10 +470,7 @@ func validateControlBinding(
 	declarationDigest string,
 	binding ResetInvocationBinding,
 ) error {
-	if planID != SecureContentResetPlanID {
-		return resetError(ResetCodeUnauthorizedTarget, "plan is not authorized")
-	}
-	expectedTask, allowed := expectedResetTask(intent, profileID)
+	expectedTask, allowed := expectedResetTask(planID, intent, profileID)
 	if !allowed || taskID != expectedTask {
 		return resetError(
 			ResetCodeUnauthorizedTarget,
@@ -524,17 +523,25 @@ func validateBoundedTimeWindow(issuedAt time.Time, expiresAt time.Time, now time
 	return nil
 }
 
-func expectedResetTask(intent ResetIntent, profileID string) (string, bool) {
-	switch intent {
-	case ResetIntentSchemaActivation:
-		switch profileID {
-		case "four", "fiveArm":
+func expectedResetTask(
+	planID string,
+	intent ResetIntent,
+	profileID string,
+) (string, bool) {
+	if profileID != "four" && profileID != "fiveArm" {
+		return "", false
+	}
+	switch planID {
+	case SecureContentResetPlanID:
+		switch intent {
+		case ResetIntentSchemaActivation:
 			return "W12D", true
-		}
-	case ResetIntentFinalCut:
-		switch profileID {
-		case "four", "fiveArm":
+		case ResetIntentFinalCut:
 			return "W12", true
+		}
+	case CrossStationSocialResetPlanID:
+		if intent == ResetIntentSchemaActivation {
+			return CrossStationSocialActivationTask, true
 		}
 	}
 
@@ -773,6 +780,8 @@ func CanonicalDatabaseResetTargets() []DatabaseResetTarget {
 		{Table: "social_reactions", Operation: ResetOperationDeletePrivatePostClass, Predicate: "post_class = 'private'"},
 		{Table: "social_comments", Operation: ResetOperationDeletePrivatePostClass, Predicate: "post_class = 'private'"},
 		{Table: "social_moment_deliveries", Operation: ResetOperationClearTable},
+		{Table: "social_remote_private_envelopes", Operation: ResetOperationClearTable},
+		{Table: "social_remote_private_resources", Operation: ResetOperationClearTable},
 		{Table: "social_private_object_grants", Operation: ResetOperationClearTable},
 		{Table: "social_private_objects", Operation: ResetOperationClearTable},
 		{Table: "social_private_object_parts", Operation: ResetOperationClearTable},

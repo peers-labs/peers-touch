@@ -1157,7 +1157,9 @@ export function installAcceptanceHarness(): void {
     },
 
     async reconnectRealtime() {
-      await api.realtimeStreamStart();
+      await api.realtimeStreamStart(
+        useSessionStore.getState().sessionEpoch,
+      );
       return { connected: true };
     },
 

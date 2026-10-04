@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-02
-covered_docs_hash: 33ad8584ac70604c14895b048949124a45560297a2f11ead4db12676dcc1baa1
+last_verified_at: 2026-10-03
+covered_docs_hash: 027752397318811e234e31737d52d3c7e42d115ea2b71882d3b6232835df8e59
 
 covered_docs:
   - AGENTS.md
@@ -36,6 +36,19 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-03 Social EventBus Acceptance Review
+
+Cross-Station Private Social now makes the accepted Desktop runtime projection
+contract explicit in its Plan and Acceptance Review. `pt-github-review` was
+updated because the escaped-defect pattern is reusable: a typed event may exist
+without a producer, consumer, unique runtime owner, reconcile path, scope
+teardown, or receiver-visible proof. Desktop Social review must trace the full
+producer-to-`momentsRuntime` path, reject direct module-private listener
+bypasses and duplicate owners, and require hidden-page plus missed-event
+recovery evidence. The plan-owned
+`social-cross-station-eventbus-contract` supplies the deterministic fixture;
+the Native two-client Gate remains the product-behavior proof.
 
 ## 2026-09-29 Suite Runtime Review
 

@@ -10,6 +10,11 @@ export interface SessionRevokedPayload {
   device_type?: string;
 }
 
+export interface StationActiveChangedPayload {
+  stationUrl: string;
+  label?: string;
+}
+
 export interface RealtimeMessageReceivedPayload {
   /** Server-assigned monotonic ULID; opaque to the UI. */
   eventId: string;
@@ -238,6 +243,14 @@ export interface RealtimeMessageMutationPayload {
 export interface MomentRealtimeBasePayload {
   /** Monotonic realtime cursor when the event comes from Station SSE. */
   eventId: string;
+  /** Authenticated actor whose Station stream carried this event. */
+  targetActorPtid: string;
+  /** Renderer session generation that opened the native stream. */
+  sessionEpoch: number;
+  /** Station peer ID captured when the native stream supervisor started. */
+  stationPeerId: string;
+  /** Normalized Station URL captured when the native stream supervisor started. */
+  stationUrl: string;
   postId: string;
   authorActorPtid?: string;
   occurredAtUnixMs: number;
@@ -299,6 +312,7 @@ export interface EventPayloadMap {
   [EVENT.GLOBAL_CONTEXT_PIPELINE_STARTED]: { name: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_FINISHED]: { name: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_FAILED]: { name: string; error: string; timestamp_ms: number };
+  [EVENT.STATION_ACTIVE_CHANGED]: StationActiveChangedPayload;
   [EVENT.REALTIME_MESSAGE_RECEIVED]: RealtimeMessageReceivedPayload;
   [EVENT.REALTIME_PRESENCE_FLIP]: RealtimePresenceFlipPayload;
   [EVENT.REALTIME_RESYNC]: RealtimeResyncPayload;

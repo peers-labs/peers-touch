@@ -65,7 +65,7 @@ v1.2 closes each one without introducing another source of truth:
 
 ## Accepted Architecture Baseline
 
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/secure-content/decisions.md`
   - especially `SC-D10`, `SC-D21`, `SC-D22`, `SC-D23`, and accepted `SC-D24`
 - `docs/architecture/secure-content/data-model.md`

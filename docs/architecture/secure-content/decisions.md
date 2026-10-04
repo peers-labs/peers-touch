@@ -1,8 +1,8 @@
 # Secure Content - Architecture Decisions
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-24
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-10-03
 > **Owner**: Architecture Team
 
 ---
@@ -2105,6 +2105,16 @@ requires a new wire decision and a hard-cut consumer inventory.
 
 The Owner authorized this choice on 2026-09-24 after W8 exact-source evidence
 exhausted the previous contract.
+
+**2026-10-03 successor note**: the same-Station restriction remains the current
+implementation guard until the Native Desktop cross-Station plan completes.
+Its removal is governed by `CSS-D02..CSS-D09` in
+`docs/architecture/cross-station-social/decisions.md`. The typed Audience,
+Conversation-owned Group snapshot and submit fence, frozen recipient set,
+`CUSTOM_DENY(PUBLIC)` rejection and no-partial-publish requirements remain
+unchanged. `CSS-D09` supersedes only the locality rejection for verified
+same-Federation remote Group members and adds the canonical Federation ID to
+the existing Conversation snapshot.
 
 ---
 

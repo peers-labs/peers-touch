@@ -3,7 +3,10 @@ from __future__ import annotations
 import dataclasses
 import os
 import re
+import shutil
+import socket
 import subprocess
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -36,11 +39,24 @@ _SERVICE_PROFILES = {
     "station-four": "four",
     "station-five": "fiveArm",
 }
+_CROSS_STATION_SOCIAL_SERVICE_PROFILES = {
+    "station-four": "four",
+    "station-five-arm": "fiveArm",
+}
+_CROSS_STATION_SOCIAL_GATE_ROLES = {
+    "social-cross-station-native-e2e": ("alice", "bob", "eve"),
+}
+_CROSS_STATION_SOCIAL_GATE_CLIENTS = {
+    "social-cross-station-native-e2e": ("alice", "bob", "eve", "bob2"),
+}
 PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     environment_id = "native-tauri-embedded-webdriver"
+    fixture_id = "chat-native-actors"
+    default_authorization_ref = "env:CHAT_ACCEPTANCE_RESET"
+    product_label = "Native Chat"
 
     def __init__(
         self,
@@ -72,7 +88,8 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 detail.append(f"unexpected={','.join(unexpected)}")
             raise BlockedError(
                 reason=(
-                    "Native Chat Station profiles must be specified at run time "
+                    f"{self.product_label} Station profiles must be specified "
+                    "at run time "
                     "with --station-profile SERVICE_ID=PROFILE "
                     f"({'; '.join(detail)})"
                 ),
@@ -154,7 +171,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             if not profile_path.is_file():
                 raise BlockedError(
                     reason=(
-                        f"Native Chat service {service_id!r} requires runtime "
+                        f"{self.product_label} service {service_id!r} requires runtime "
                         f"profile {profile_name!r}"
                     ),
                     resource=f"service-profile:{service_id}",
@@ -216,7 +233,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 if mode == "remote":
                     raise BlockedError(
                         reason=(
-                            f"Native Chat service {service_id!r} is not "
+                            f"{self.product_label} service {service_id!r} is not "
                             "healthy at its declared profile endpoint"
                         ),
                         resource=f"service-health:{service_id}",
@@ -347,7 +364,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             if len(service_ids) != 1:
                 raise BlockedError(
                     reason=(
-                        f"Native Chat actor role {role!r} must bind to exactly "
+                        f"{self.product_label} actor role {role!r} must bind to exactly "
                         "one fixture Station"
                     ),
                     resource=f"fixture-binding:{role}",
@@ -357,7 +374,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             if service is None:
                 raise BlockedError(
                     reason=(
-                        f"Native Chat actor role {role!r} binds unknown "
+                        f"{self.product_label} actor role {role!r} binds unknown "
                         f"service {service_id!r}"
                     ),
                     resource=f"fixture-binding:{role}",
@@ -390,17 +407,20 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 (
                     item
                     for item in self.contract.fixtures
-                    if item.id == "chat-native-actors"
+                    if item.id == self.fixture_id
                 ),
                 None,
             )
             if fixture is None:
                 raise BlockedError(
-                    reason="Native Chat contract is missing its actor fixture",
-                    resource="fixture:chat-native-actors",
+                    reason=(
+                        f"{self.product_label} contract is missing its "
+                        f"{self.fixture_id} fixture"
+                    ),
+                    resource=f"fixture:{self.fixture_id}",
                 )
             authorization_ref = (
-                fixture.authorization_ref or "env:CHAT_ACCEPTANCE_RESET"
+                fixture.authorization_ref or self.default_authorization_ref
             )
             authorization_name = authorization_ref.removeprefix("env:")
             reset_authorized = (
@@ -476,6 +496,131 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
         if roles is None:
             raise BlockedError(
                 reason=f"Native Chat has no actor allocation for {gate_id}",
+                resource=f"gate-environment:{gate_id}",
+            )
+        return roles
+
+
+class CrossStationSocialNativeProvisioner(
+    NativeTauriEmbeddedWebDriverProvisioner
+):
+    environment_id = "cross-station-social-native"
+    required_profile = "four"
+    required_slot = 13
+    fixture_id = "cross-station-social-actors"
+    default_authorization_ref = "env:SOCIAL_CROSS_STATION_ACCEPTANCE_RESET"
+    product_label = "Cross-Station Social"
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        station_profiles: Mapping[str, str] | None = None,
+    ) -> None:
+        super().__init__(
+            contract,
+            station_profiles=(
+                _CROSS_STATION_SOCIAL_SERVICE_PROFILES
+                if not station_profiles
+                else station_profiles
+            ),
+        )
+
+    def _resolve_active_profile(self) -> tuple[str, Path, int, dict[str, str]]:
+        profile, profile_path, slot, environment = (
+            super()._resolve_active_profile()
+        )
+        if profile != self.required_profile or slot != self.required_slot:
+            raise BlockedError(
+                reason=(
+                    "Cross-Station Social requires active profile four "
+                    "at slot 13"
+                ),
+                resource="profile:four",
+            )
+        return profile, profile_path, slot, environment
+
+    def _clients(
+        self,
+        gate_id: str,
+        run_id: str,
+        slot: int,
+    ) -> tuple[ClientRuntime, ...]:
+        roles = _CROSS_STATION_SOCIAL_GATE_CLIENTS.get(gate_id)
+        if roles is None:
+            raise BlockedError(
+                reason=(
+                    "Cross-Station Social has no client allocation for gate "
+                    f"{gate_id}"
+                ),
+                resource=f"gate-environment:{gate_id}",
+            )
+        contract_clients = {client.id: client for client in self.contract.clients}
+        missing_clients = sorted(set(roles) - set(contract_clients))
+        if missing_clients:
+            raise BlockedError(
+                reason=(
+                    "Environment contract has no allocation for clients: "
+                    f"{', '.join(missing_clients)}"
+                ),
+                resource=f"gate-environment:{gate_id}",
+            )
+
+        gateway_base = 3330 + slot * 100
+        renderer_base = 3510 + slot * 100
+        webdriver_base = 4445 + slot * 10
+        run_root = (
+            Path(tempfile.gettempdir())
+            / f"pt-social-cross-station-{run_id}-{gate_id}"
+        )
+        clients = tuple(
+            ClientRuntime(
+                actor=contract_clients[role].actor,
+                runtime="native-tauri",
+                worktree=str(REPO_ROOT),
+                gateway_port=gateway_base + index,
+                renderer_port=renderer_base + index,
+                webdriver_port=webdriver_base + index,
+                profile=f"social-cross-station-{role}",
+                storage_root=str(run_root / role / "storage"),
+                id=role,
+                required_service_roles=(
+                    contract_clients[role].required_service_roles
+                ),
+                service_bindings=contract_clients[role].service_bindings,
+            )
+            for index, role in enumerate(roles)
+        )
+        for client in clients:
+            for label, port in (
+                ("gateway", client.gateway_port),
+                ("renderer", client.renderer_port),
+                ("webdriver", client.webdriver_port),
+            ):
+                with socket.socket() as probe:
+                    if probe.connect_ex(("127.0.0.1", port)) == 0:
+                        raise BlockedError(
+                            reason=(
+                                f"{client.id} {label} port {port} is "
+                                "already in use"
+                            ),
+                            resource=f"client-isolation:{label}-port:{port}",
+                        )
+        self.register_cleanup(
+            f"client-storage:{run_root}",
+            lambda: shutil.rmtree(run_root, ignore_errors=True),
+        )
+        return clients
+
+    @staticmethod
+    def _actor_roles(gate_id: str) -> tuple[str, ...]:
+        roles = _CROSS_STATION_SOCIAL_GATE_ROLES.get(gate_id)
+        if roles is None:
+            raise BlockedError(
+                reason=(
+                    "Cross-Station Social has no actor allocation for gate "
+                    f"{gate_id}"
+                ),
                 resource=f"gate-environment:{gate_id}",
             )
         return roles

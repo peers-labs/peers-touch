@@ -46,6 +46,10 @@ const REALTIME_CONNECTION_STATE = 'realtime:connection-state';
 const BROWSER_GATEWAY_RESYNC_INTERVAL_MS = 30_000;
 
 interface RawRealtimeEnvelope {
+  actor_ptid?: string;
+  session_epoch?: number;
+  station_peer_id?: string;
+  station_url?: string;
   event_id?: string;
   data_b64?: string;
 }
@@ -113,10 +117,10 @@ export function teardownEventStreamBridge(): void {
  * Ask the Rust supervisor to open the SSE socket for the current
  * window's authenticated actor. Idempotent.
  */
-export async function startEventStream(): Promise<void> {
+export async function startEventStream(sessionEpoch: number): Promise<void> {
   startBrowserGatewayResyncFallback();
   try {
-    await api.realtimeStreamStart();
+    await api.realtimeStreamStart(sessionEpoch);
   } catch (error) {
     log.warn('eventStream', 'realtimeStreamStart failed', error);
   }
@@ -391,7 +395,14 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       return;
     }
     case 'moment':
-      dispatchMomentEvent(eventId, kind.value);
+      dispatchMomentEvent(
+        eventId,
+        raw.actor_ptid?.trim() ?? '',
+        raw.session_epoch ?? 0,
+        raw.station_peer_id?.trim() ?? '',
+        normalizeStationUrl(raw.station_url),
+        kind.value,
+      );
       return;
     default:
       return;
@@ -402,10 +413,32 @@ export function dispatchRealtimeFrameForAcceptance(raw: RawRealtimeEnvelope | un
   handleFrame(raw);
 }
 
-function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
+function dispatchMomentEvent(
+  eventId: string,
+  targetActorPtid: string,
+  sessionEpoch: number,
+  stationPeerId: string,
+  stationUrl: string,
+  event: MomentEvent,
+): void {
+  if (
+    !targetActorPtid
+    || (!stationPeerId && !stationUrl)
+    || event.actorPtid !== targetActorPtid
+  ) {
+    log.warn('eventStream', 'MomentEvent stream scope mismatch, dropping', {
+      targetActorPtid,
+      eventActorPtid: event.actorPtid,
+    });
+    return;
+  }
   const occurredAtUnixMs = Number(event.occurredTsUnixMs || 0n);
   const base = {
     eventId,
+    targetActorPtid,
+    sessionEpoch,
+    stationPeerId,
+    stationUrl,
     postId: event.postId,
     authorActorPtid: event.authorActorPtid || undefined,
     occurredAtUnixMs,
@@ -442,6 +475,10 @@ function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
     default:
       log.warn('eventStream', 'unknown MomentEvent kind, dropping', { kind: event.kind });
   }
+}
+
+function normalizeStationUrl(stationUrl: string | undefined): string {
+  return stationUrl?.trim().replace(/\/+$/, '') ?? '';
 }
 
 // Inverse of GroupMembershipChange.Kind enum. Align with proto:

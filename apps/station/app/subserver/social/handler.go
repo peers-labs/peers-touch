@@ -1052,6 +1052,10 @@ func privateContentHandlerError(err error) error {
 		status = nethttp.StatusConflict
 		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
 		message = "private-content command conflicts with current authority"
+	case domain.PrivateContentRecipientKeyUnavailable:
+		status = nethttp.StatusConflict
+		code = model.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED
+		message = "private-content recipient key is unavailable"
 	}
 	return privateContentResponseError(status, code, message, err)
 }
@@ -1169,15 +1173,13 @@ func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostR
 				"failed to delete private moment",
 				"error",
 				err,
-				"post_id",
-				req.PostId,
 			)
 			return nil, privateContentHandlerError(err)
 		}
 		return &model.DeletePostResponse{Success: true}, nil
 	}
 	if err := s.momentSvc.DeleteMoment(ctx, req.PostId, actorPTID); err != nil {
-		logger.Error(ctx, "failed to delete moment", "error", err, "post_id", req.PostId)
+		logger.Error(ctx, "failed to delete moment", "error", err)
 		return nil, server.InternalErrorWithCause("failed to delete moment", err)
 	}
 	return &model.DeletePostResponse{Success: true}, nil

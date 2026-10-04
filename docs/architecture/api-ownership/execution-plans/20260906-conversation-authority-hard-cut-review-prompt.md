@@ -26,11 +26,11 @@ stores, or platform-specific transport silos.
 - `docs/architecture/api-ownership/module-layout.md`
 - `docs/architecture/api-ownership/integration.md`
 - `docs/architecture/messaging-platform/`
-- `docs/architecture/federated-social-activity/decisions.md` (`D-07` only)
-- `docs/architecture/federated-social-activity/design.md` §4.1
-- `docs/architecture/federated-social-activity/integration.md` §7
+- `docs/architecture/cross-station-social/decisions.md` (`CSS-D01` only)
+- `docs/architecture/cross-station-social/design.md` §3
+- `docs/architecture/cross-station-social/integration.md` §2
 
-Accepted decisions: `AO-D01..AO-D06`, revised `MP-D30`, and Federated Social `D-07`.
+Accepted decisions: `AO-D01..AO-D06`, revised `MP-D30`, and `CSS-D01`.
 
 ## Plan Path
 

@@ -25,6 +25,8 @@ fn main() {
         "domain/federation/delivery.proto",
         "domain/key_exchange/key_exchange.proto",
         "domain/recovery/recovery.proto",
+        "domain/secure_content/content.proto",
+        "domain/secure_content/prekey.proto",
         "domain/social/relationship.proto",
     ]
     .iter()

@@ -18,6 +18,7 @@ import (
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type privateContentActorCapabilities interface {
@@ -45,11 +46,24 @@ type privateContentActorCapabilities interface {
 		deviceID string,
 		signingKeyID string,
 	) (*actormodel.VerifiedActorDeviceSigningKey, error)
+	ResolveRetainedActorDeviceSigningKey(
+		ctx context.Context,
+		transaction federationdelivery.Transaction,
+		actorPTID string,
+		deviceID string,
+		signingKeyID string,
+	) (*actormodel.VerifiedActorDeviceSigningKey, error)
 }
 
 type privateContentKeyExchangeCapabilities interface {
 	ClaimContentPreKeys(
 		context.Context,
+		*securecontentpb.ClaimContentPreKeysRequest,
+	) (*securecontentpb.ClaimContentPreKeysResponse, error)
+	ClaimRemoteContentPreKeys(
+		context.Context,
+		string,
+		string,
 		*securecontentpb.ClaimContentPreKeysRequest,
 	) (*securecontentpb.ClaimContentPreKeysResponse, error)
 	ValidateContentPreKeyClaims(
@@ -60,28 +74,57 @@ type privateContentKeyExchangeCapabilities interface {
 	) error
 }
 
+type privateContentFriendFederationResolver interface {
+	ResolveAcceptedFriendFederation(
+		context.Context,
+		string,
+		string,
+		string,
+		string,
+	) (string, error)
+}
+
+type privateContentFederationMembership interface {
+	ValidateActiveStationPair(
+		context.Context,
+		string,
+		string,
+		string,
+	) error
+}
+
 type privateContentRecipientDirectory struct {
-	actors  privateContentActorCapabilities
-	runtime *sharedfederation.Runtime
-	now     func() time.Time
+	actors      privateContentActorCapabilities
+	runtime     *sharedfederation.Runtime
+	friendships privateContentFriendFederationResolver
+	membership  privateContentFederationMembership
+	now         func() time.Time
 }
 
 func newPrivateContentRecipientDirectory(
 	actors privateContentActorCapabilities,
 	runtime *sharedfederation.Runtime,
+	friendships privateContentFriendFederationResolver,
+	membership privateContentFederationMembership,
 ) (*privateContentRecipientDirectory, error) {
-	if actors == nil || runtime == nil {
+	if actors == nil ||
+		runtime == nil ||
+		friendships == nil ||
+		membership == nil {
 		return nil, nil
 	}
 	return &privateContentRecipientDirectory{
-		actors:  actors,
-		runtime: runtime,
-		now:     time.Now,
+		actors:      actors,
+		runtime:     runtime,
+		friendships: friendships,
+		membership:  membership,
+		now:         time.Now,
 	}, nil
 }
 
 func (d *privateContentRecipientDirectory) ResolveRecipientLocalities(
 	ctx context.Context,
+	authorPTID string,
 	localStationPeerID string,
 	recipientPTIDs []string,
 ) ([]socialdomain.RecipientLocality, error) {
@@ -133,17 +176,35 @@ func (d *privateContentRecipientDirectory) ResolveRecipientLocalities(
 				"Actor Identity returned an invalid Home Station",
 			)
 		}
+		federationID := ""
 		if homeStationPeerID != localStationPeerID {
-			return nil, socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentUnsupported,
-				operation,
-				"recipient_home_station_peer_id",
-				"v1 private content does not support remote recipients",
+			federationID, err = d.friendships.ResolveAcceptedFriendFederation(
+				ctx,
+				authorPTID,
+				actorPTID,
+				localStationPeerID,
+				homeStationPeerID,
 			)
+			if err != nil {
+				return nil, err
+			}
+			if err := d.membership.ValidateActiveStationPair(
+				ctx,
+				federationID,
+				localStationPeerID,
+				homeStationPeerID,
+			); err != nil {
+				return nil, socialdomain.WrapPrivateContentError(
+					socialdomain.PrivateContentUnsupported,
+					operation,
+					err,
+				)
+			}
 		}
 		localities = append(localities, socialdomain.RecipientLocality{
 			ActorPTID:         actorPTID,
 			HomeStationPeerID: homeStationPeerID,
+			FederationID:      federationID,
 		})
 		previous = actorPTID
 	}
@@ -228,6 +289,16 @@ func (d *privateContentRecipientDirectory) ValidateActiveEndpoint(
 ) error {
 	if endpoint == nil || endpoint.GetActor() == nil {
 		return errors.New("active endpoint is required")
+	}
+	homeStationPeerID, err := d.actors.ResolveActorHomeStationPeerID(
+		ctx,
+		endpoint.GetActor().GetPtid(),
+	)
+	if err != nil {
+		return err
+	}
+	if homeStationPeerID != d.runtime.LocalStationPeerID() {
+		return application.ErrPrivateContentInactiveEndpoint
 	}
 	manifest, err := d.endpointManifest(
 		ctx,
@@ -317,13 +388,157 @@ type privateContentKeyExchangePort struct{}
 
 func (privateContentKeyExchangePort) ClaimContentPreKeys(
 	ctx context.Context,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
 	request *securecontentpb.ClaimContentPreKeysRequest,
 ) (*securecontentpb.ClaimContentPreKeysResponse, error) {
 	provider, err := resolvePrivateContentKeyExchange()
 	if err != nil {
 		return nil, err
 	}
-	return provider.ClaimContentPreKeys(ctx, request)
+	return claimContentPreKeyPartitions(
+		ctx,
+		provider,
+		sourceStationPeerID,
+		recipientLocalities,
+		request,
+	)
+}
+
+func claimContentPreKeyPartitions(
+	ctx context.Context,
+	provider privateContentKeyExchangeCapabilities,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+) (*securecontentpb.ClaimContentPreKeysResponse, error) {
+	localityByActor := make(
+		map[string]socialdomain.RecipientLocality,
+		len(recipientLocalities),
+	)
+	for _, locality := range recipientLocalities {
+		localityByActor[locality.ActorPTID] = locality
+	}
+	type claimPartition struct {
+		stationPeerID string
+		federationID  string
+		targets       []*securecontentpb.ContentPreKeyClaimTarget
+	}
+	partitionsByStation := map[string]*claimPartition{}
+	for _, target := range request.GetTargets() {
+		actorPTID := target.GetRecoveryActor().GetPtid()
+		if target.GetEndpoint() != nil {
+			actorPTID = target.GetEndpoint().GetActor().GetPtid()
+		}
+		locality, found := localityByActor[actorPTID]
+		stationPeerID := sourceStationPeerID
+		federationID := ""
+		if found {
+			stationPeerID = locality.HomeStationPeerID
+			if stationPeerID != sourceStationPeerID {
+				federationID = locality.FederationID
+			}
+		}
+		partition := partitionsByStation[stationPeerID]
+		if partition == nil {
+			partition = &claimPartition{
+				stationPeerID: stationPeerID,
+				federationID:  federationID,
+			}
+			partitionsByStation[stationPeerID] = partition
+		} else if partition.federationID != federationID {
+			return nil, errors.New(
+				"recipient claim partition has conflicting Federation identities",
+			)
+		}
+		partition.targets = append(
+			partition.targets,
+			proto.Clone(target).(*securecontentpb.ContentPreKeyClaimTarget),
+		)
+	}
+	stationIDs := make([]string, 0, len(partitionsByStation))
+	for stationPeerID := range partitionsByStation {
+		stationIDs = append(stationIDs, stationPeerID)
+	}
+	sort.Strings(stationIDs)
+	claimsByTarget := make(map[string]*securecontentpb.ClaimedContentPreKey)
+	exactReplay := true
+	for _, stationPeerID := range stationIDs {
+		partition := partitionsByStation[stationPeerID]
+		partitionRequest := &securecontentpb.ClaimContentPreKeysRequest{
+			PlanId: request.GetPlanId(),
+			PlanRequestSha256: append(
+				[]byte(nil),
+				request.GetPlanRequestSha256()...,
+			),
+			Targets: partition.targets,
+		}
+		var partitionResponse *securecontentpb.ClaimContentPreKeysResponse
+		var partitionErr error
+		if stationPeerID == sourceStationPeerID {
+			partitionResponse, partitionErr = provider.ClaimContentPreKeys(
+				ctx,
+				partitionRequest,
+			)
+		} else {
+			if partition.federationID == "" {
+				return nil, errors.New(
+					"remote recipient claim is missing a Federation identity",
+				)
+			}
+			partitionResponse, partitionErr = provider.ClaimRemoteContentPreKeys(
+				ctx,
+				partition.federationID,
+				stationPeerID,
+				partitionRequest,
+			)
+		}
+		if partitionErr != nil {
+			return nil, partitionErr
+		}
+		if partitionResponse == nil ||
+			len(partitionResponse.GetClaims()) != len(partition.targets) {
+			return nil, errors.New(
+				"Content PreKey partition returned an incomplete response",
+			)
+		}
+		exactReplay = exactReplay && partitionResponse.GetExactReplay()
+		for index, claim := range partitionResponse.GetClaims() {
+			if !proto.Equal(claim.GetTarget(), partition.targets[index]) {
+				return nil, errors.New(
+					"Content PreKey partition reordered a claim target",
+				)
+			}
+			targetBytes, marshalErr := proto.MarshalOptions{
+				Deterministic: true,
+			}.Marshal(claim.GetTarget())
+			if marshalErr != nil {
+				return nil, marshalErr
+			}
+			claimsByTarget[string(targetBytes)] = proto.Clone(
+				claim,
+			).(*securecontentpb.ClaimedContentPreKey)
+		}
+	}
+	response := &securecontentpb.ClaimContentPreKeysResponse{
+		ExactReplay: exactReplay,
+	}
+	for _, target := range request.GetTargets() {
+		targetBytes, marshalErr := proto.MarshalOptions{
+			Deterministic: true,
+		}.Marshal(target)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		claim := claimsByTarget[string(targetBytes)]
+		if claim == nil {
+			return nil, errors.New(
+				"Content PreKey partition omitted a claim target",
+			)
+		}
+		response.Claims = append(response.Claims, claim)
+	}
+	return response, nil
 }
 
 func (privateContentKeyExchangePort) ValidateContentPreKeyClaims(
@@ -353,6 +568,20 @@ func resolvePrivateContentKeyExchange() (
 	if !ok || provider == nil {
 		return nil, errors.New(
 			"canonical Key Exchange Content PreKey capability is unavailable",
+		)
+	}
+	return provider, nil
+}
+
+func resolvePrivateContentFederationMembership() (
+	privateContentFederationMembership,
+	error,
+) {
+	instance := server.GetOptions().SubserverInstances["federation"]
+	provider, ok := instance.(privateContentFederationMembership)
+	if !ok || provider == nil {
+		return nil, errors.New(
+			"canonical Federation membership capability is unavailable",
 		)
 	}
 	return provider, nil
@@ -500,6 +729,209 @@ func (s privateContentStationSigner) AttestContentProofVerificationKey(
 	)
 }
 
+func (s privateContentStationSigner) AttestContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	if s.proofKeyAuthority == nil ||
+		transaction == nil ||
+		transaction.DB() == nil {
+		return nil, errors.New(
+			"Social private transactional proof-key authority is unavailable",
+		)
+	}
+	proofKey, err :=
+		s.proofKeyAuthority.ResolveContentProofVerificationKeyInTransaction(
+			ctx,
+			transaction.DB(),
+			s.stationPeerID,
+			signingKeyID,
+		)
+	if err != nil {
+		return nil, err
+	}
+	return s.attestImportedContentProofVerificationKeyInTransaction(
+		ctx,
+		transaction,
+		signingKeyID,
+		proofKey,
+		now,
+	)
+}
+
+func (s privateContentStationSigner) TrustImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	sourceStationPeerID string,
+	signingKeyID string,
+	proofKey []byte,
+	observedAt time.Time,
+) error {
+	if s.proofKeyAuthority == nil ||
+		transaction == nil ||
+		transaction.DB() == nil {
+		return errors.New(
+			"Social private imported proof-key authority is unavailable",
+		)
+	}
+	return s.proofKeyAuthority.
+		TrustImportedContentProofVerificationKeyInTransaction(
+			ctx,
+			transaction.DB(),
+			sourceStationPeerID,
+			signingKeyID,
+			proofKey,
+			observedAt,
+		)
+}
+
+func (s privateContentStationSigner) AttestImportedContentProofVerificationKey(
+	ctx context.Context,
+	sourceStationPeerID string,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	if s.proofKeyAuthority == nil {
+		return nil, errors.New(
+			"Social private imported proof-key authority is unavailable",
+		)
+	}
+	proofKey, err := s.proofKeyAuthority.ResolveContentProofVerificationKey(
+		ctx,
+		sourceStationPeerID,
+		signingKeyID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestingKeyID, err := s.SigningKeyID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	attestation, signingBytes, err := importedProofKeyAttestation(
+		s.stationPeerID,
+		signingKeyID,
+		proofKey,
+		attestingKeyID,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	signature, err := s.Sign(ctx, attestingKeyID, signingBytes)
+	if err != nil {
+		return nil, err
+	}
+	attestation.StationSignature = signature
+	return attestation, nil
+}
+
+func (s privateContentStationSigner) AttestImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	sourceStationPeerID string,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	if s.proofKeyAuthority == nil ||
+		transaction == nil ||
+		transaction.DB() == nil {
+		return nil, errors.New(
+			"Social private transactional imported proof-key authority is unavailable",
+		)
+	}
+	proofKey, err :=
+		s.proofKeyAuthority.ResolveContentProofVerificationKeyInTransaction(
+			ctx,
+			transaction.DB(),
+			sourceStationPeerID,
+			signingKeyID,
+		)
+	if err != nil {
+		return nil, err
+	}
+	return s.attestImportedContentProofVerificationKeyInTransaction(
+		ctx,
+		transaction,
+		signingKeyID,
+		proofKey,
+		now,
+	)
+}
+
+func (s privateContentStationSigner) attestImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	signingKeyID string,
+	proofKey []byte,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	attestingKeyID, err := s.SigningKeyIDInTransaction(ctx, transaction)
+	if err != nil {
+		return nil, err
+	}
+	attestation, signingBytes, err := importedProofKeyAttestation(
+		s.stationPeerID,
+		signingKeyID,
+		proofKey,
+		attestingKeyID,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	signature, err := s.SignInTransaction(
+		ctx,
+		transaction,
+		attestingKeyID,
+		signingBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestation.StationSignature = signature
+	return attestation, nil
+}
+
+func importedProofKeyAttestation(
+	stationPeerID string,
+	proofSigningKeyID string,
+	proofKey []byte,
+	attestingSigningKeyID string,
+	now time.Time,
+) (
+	*securecontentpb.StationContentSigningKeyAttestation,
+	[]byte,
+	error,
+) {
+	if now.IsZero() {
+		return nil, nil, errors.New(
+			"Social private proof-key attestation time is required",
+		)
+	}
+	issuedAt := now.UTC()
+	attestation := &securecontentpb.StationContentSigningKeyAttestation{
+		FormatVersion:         authfed.ContentProofKeyAttestationFormatVersion,
+		StationPeerId:         stationPeerID,
+		ProofSigningKeyId:     proofSigningKeyID,
+		ProofEd25519PublicKey: append([]byte(nil), proofKey...),
+		AttestingSigningKeyId: attestingSigningKeyID,
+		IssuedAt:              timestamppb.New(issuedAt),
+		ExpiresAt: timestamppb.New(
+			issuedAt.Add(authfed.ContentProofKeyAttestationTTL),
+		),
+	}
+	signingBytes, err := authfed.ContentProofKeyAttestationSigningBytes(
+		attestation,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return attestation, signingBytes, nil
+}
+
 type privateContentAuthorSignatureVerifier struct {
 	actors             privateContentActorCapabilities
 	localStationPeerID string
@@ -509,50 +941,150 @@ func (v privateContentAuthorSignatureVerifier) Verify(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	sender *actormodel.ActorDeviceRef,
+	expectedHomeStationPeerID string,
 	signingKeyID string,
 	canonical []byte,
 	signature []byte,
+	committedAt time.Time,
 ) error {
 	if v.actors == nil ||
 		strings.TrimSpace(v.localStationPeerID) == "" ||
 		sender == nil ||
 		sender.GetActor() == nil ||
 		len(canonical) == 0 ||
-		len(signature) != ed25519.SignatureSize {
+		len(signature) != ed25519.SignatureSize ||
+		committedAt.IsZero() {
 		return errors.New("Social private author signature is incomplete")
 	}
 	actorPTID := sender.GetActor().GetPtid()
-	homeStationPeerID, err := v.actors.ResolveActorHomeStationPeerID(
-		ctx,
-		actorPTID,
-	)
-	if err != nil {
-		return err
-	}
-	if homeStationPeerID != v.localStationPeerID {
-		return errors.New("Social private author is not homed on this Station")
-	}
-	key, err := v.actors.ResolveVerifiedActorDeviceSigningKey(
+	key, err := v.actors.ResolveRetainedActorDeviceSigningKey(
 		ctx,
 		transaction,
 		actorPTID,
-		homeStationPeerID,
 		sender.GetDeviceId(),
 		signingKeyID,
 	)
 	if err != nil {
 		return err
 	}
-	if key == nil ||
-		len(key.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
-		!ed25519.Verify(
-			ed25519.PublicKey(key.GetEd25519PublicKey()),
-			canonical,
-			signature,
-		) {
+	if key == nil {
+		homeStationPeerID, err := v.actors.ResolveActorHomeStationPeerID(
+			ctx,
+			actorPTID,
+		)
+		if err != nil {
+			return err
+		}
+		if homeStationPeerID != expectedHomeStationPeerID {
+			return errors.New("Social private author Home Station changed")
+		}
+		key, err = v.actors.ResolveVerifiedActorDeviceSigningKey(
+			ctx,
+			transaction,
+			actorPTID,
+			homeStationPeerID,
+			sender.GetDeviceId(),
+			signingKeyID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	if err := validatePrivateContentAuthorKey(
+		key,
+		sender,
+		expectedHomeStationPeerID,
+		signingKeyID,
+		committedAt,
+	); err != nil {
+		return err
+	}
+	if !ed25519.Verify(
+		ed25519.PublicKey(key.GetEd25519PublicKey()),
+		canonical,
+		signature,
+	) {
 		return errors.New("Social private author signature is invalid")
 	}
 	return nil
+}
+
+func (v privateContentAuthorSignatureVerifier) ResolveRetained(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	sender *actormodel.ActorDeviceRef,
+	expectedHomeStationPeerID string,
+	signingKeyID string,
+	committedAt time.Time,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	if v.actors == nil ||
+		strings.TrimSpace(v.localStationPeerID) == "" ||
+		transaction == nil ||
+		sender == nil ||
+		sender.GetActor() == nil ||
+		committedAt.IsZero() {
+		return nil, errors.New(
+			"Social private retained author signing key request is incomplete",
+		)
+	}
+	actorPTID := sender.GetActor().GetPtid()
+	key, err := v.actors.ResolveRetainedActorDeviceSigningKey(
+		ctx,
+		transaction,
+		actorPTID,
+		sender.GetDeviceId(),
+		signingKeyID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePrivateContentAuthorKey(
+		key,
+		sender,
+		expectedHomeStationPeerID,
+		signingKeyID,
+		committedAt,
+	); err != nil {
+		return nil, err
+	}
+	return proto.Clone(key).(*actormodel.VerifiedActorDeviceSigningKey), nil
+}
+
+func validatePrivateContentAuthorKey(
+	key *actormodel.VerifiedActorDeviceSigningKey,
+	sender *actormodel.ActorDeviceRef,
+	expectedHomeStationPeerID string,
+	signingKeyID string,
+	committedAt time.Time,
+) error {
+	actorPTID := sender.GetActor().GetPtid()
+	committedAtUnixMS := committedAt.UTC().UnixMilli()
+	if key == nil ||
+		key.GetActorPtid() != actorPTID ||
+		key.GetActorDeviceId() != sender.GetDeviceId() ||
+		key.GetHomeStationPeerId() != expectedHomeStationPeerID ||
+		key.GetSigningKeyId() != signingKeyID ||
+		len(key.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
+		key.GetProfileVersion() <= 0 ||
+		key.GetValidFromUnixMs() <= 0 ||
+		key.GetValidFromUnixMs() > committedAtUnixMS ||
+		(key.GetRevokedAtUnixMs() != 0 &&
+			(key.GetRevokedAtUnixMs() <= key.GetValidFromUnixMs() ||
+				committedAtUnixMS >= key.GetRevokedAtUnixMs())) {
+		return errors.New(
+			"Social private retained author signing key is invalid at commit time",
+		)
+	}
+	switch key.GetVerificationSource() {
+	case actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION,
+		actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+		actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR:
+		return nil
+	default:
+		return errors.New(
+			"Social private retained author signing key has no trusted verification source",
+		)
+	}
 }
 
 type privateContentSystemClock struct{}
