@@ -82,6 +82,7 @@ from tooling.development.secure_content.runtime_owner import (
     _maintain_current_recovery_prekeys,
     _open_station_tunnels,
     _prepare_accepted_friendship,
+    _prepare_cross_station_social_fixture,
     _prepare_mobile_private_content_keys,
     _prepare_portable_recovery,
     _prepare_private_content_keys,
@@ -354,6 +355,47 @@ class RuntimeOwnerTest(unittest.TestCase):
             SOCIAL_CROSS_STATION_RUNTIME_REUSE.max_client_launches,
             len(SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS),
         )
+        cross_source = inspect.getsource(
+            W7RuntimeOwner.run_social_cross_station_suite
+        )
+        scenario_loop_start = cross_source.index(
+            'scenario_id="AS17"',
+        )
+        self.assertEqual(1, cross_source.count("SuiteRuntimeLedger("))
+        self.assertEqual(
+            1,
+            cross_source.count("SuiteRuntimeAction.PROVISION"),
+        )
+        self.assertLess(
+            cross_source.rindex("_start_client(", 0, scenario_loop_start),
+            scenario_loop_start,
+        )
+        for scenario_id in SOCIAL_CROSS_STATION_RUNTIME_REUSE.scenario_ids:
+            self.assertIn(
+                f'scenario_id="{scenario_id}"',
+                cross_source,
+            )
+        replacement = cross_source.index(
+            "SuiteRuntimeAction.CLIENT_REPLACEMENT"
+        )
+        self.assertGreater(
+            replacement,
+            cross_source.index('scenario_id="AS23"'),
+        )
+        cleanup = cross_source.index(
+            "ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)"
+        )
+        result_publication = cross_source.index(
+            "_write_immutable_json(result_path, result)"
+        )
+        self.assertLess(cleanup, result_publication)
+        self.assertNotIn("_activate_scenario_journey(", cross_source)
+        self.assertIn('"fixtureOnlyClients": ["eve"]', cross_source)
+        self.assertIn('"clientReplacements": ["bob2"]', cross_source)
+        source_admission = inspect.getsource(
+            runtime_owner_module._require_social_acceptance_source
+        )
+        self.assertIn("CSS-08A/activation", source_admission)
         self.assertEqual(14, len(SOCIAL_ACCEPTANCE_IDS))
         source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
         cleanup_complete = source.index(
@@ -2759,6 +2801,84 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         self.assertEqual("agent", alice.harness_namespace)
         self.assertEqual("agent", bob.harness_namespace)
+
+    def test_cross_station_fixture_uses_one_explicit_federation(self) -> None:
+        alice = MagicMock()
+        alice.harness_namespace = "agent"
+        alice.harness.side_effect = (
+            {
+                "actorPtid": "ptid:alice",
+                "federatedHandle": "@alice@four.invalid",
+                "homeStationPeerId": "station-four-peer",
+            },
+            {
+                "federationId": "federation-1",
+                "federationEndpoint": "https://four.invalid",
+            },
+            {"stationPeerIds": ["station-four-peer"]},
+            {
+                "stationPeerIds": [
+                    "station-four-peer",
+                    "station-five-arm-peer",
+                ]
+            },
+            {
+                "actorPtid": "ptid:bob",
+                "federatedHandle": "@bob@five-arm.invalid",
+                "homeStationPeerId": "station-five-arm-peer",
+            },
+            {"requestId": "friend-request-1"},
+            {"accepted": True},
+        )
+        bob = MagicMock()
+        bob.harness_namespace = "agent"
+        bob.harness.side_effect = (
+            {
+                "actorPtid": "ptid:bob",
+                "federatedHandle": "@bob@five-arm.invalid",
+                "homeStationPeerId": "station-five-arm-peer",
+            },
+            {
+                "federationId": "federation-1",
+                "status": "active",
+                "proposalId": "proposal-1",
+            },
+            {
+                "stationPeerIds": [
+                    "station-four-peer",
+                    "station-five-arm-peer",
+                ]
+            },
+            {"accepted": True, "requestId": "friend-request-1"},
+            {"accepted": True},
+        )
+
+        result = _prepare_cross_station_social_fixture(alice, bob)
+
+        self.assertEqual("federation-1", result["federationId"])
+        self.assertIn(
+            call(
+                "sendFriendRequest",
+                {
+                    "actorPtid": "ptid:bob",
+                    "federationId": "federation-1",
+                    "homeStationPeerId": "station-five-arm-peer",
+                },
+                timeout=120,
+            ),
+            alice.harness.call_args_list,
+        )
+        self.assertIn(
+            call(
+                "joinAcceptanceFederation",
+                {
+                    "federationEndpoint": "https://four.invalid",
+                    "federationId": "federation-1",
+                },
+                timeout=120,
+            ),
+            bob.harness.call_args_list,
+        )
 
     def test_friendship_projection_timeout_fails_closed(self) -> None:
         client = MagicMock()

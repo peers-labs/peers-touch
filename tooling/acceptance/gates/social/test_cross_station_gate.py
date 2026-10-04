@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import io
-import json
 import unittest
-from contextlib import redirect_stderr
 from unittest import mock
 
 from tooling.acceptance.gates.social.cross_station_gate import (
@@ -30,9 +27,12 @@ class CrossStationGateDispatcherTest(unittest.TestCase):
             set(GATE_MODULES),
         )
 
-    def test_registered_gate_without_implementation_fails_closed(self) -> None:
-        stderr = io.StringIO()
-        with redirect_stderr(stderr):
+    def test_registered_gate_dispatches_successfully(self) -> None:
+        handler = mock.Mock(return_value=0)
+        with mock.patch(
+            "tooling.acceptance.gates.social.cross_station_gate.resolve_gate",
+            return_value=handler,
+        ) as resolve:
             status = main(
                 [
                     "--gate",
@@ -40,16 +40,11 @@ class CrossStationGateDispatcherTest(unittest.TestCase):
                 ]
             )
 
-        self.assertEqual(2, status)
-        payload = json.loads(stderr.getvalue())
-        self.assertEqual(
-            "SOCIAL_CROSS_STATION_GATE_UNAVAILABLE",
-            payload["code"],
-        )
-        self.assertEqual(
+        self.assertEqual(0, status)
+        resolve.assert_called_once_with(
             "social-cross-station-contract",
-            payload["gateId"],
         )
+        handler.assert_called_once_with()
 
     def test_dispatches_only_callable_main(self) -> None:
         handler = mock.Mock(return_value=0)
