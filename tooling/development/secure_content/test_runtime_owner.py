@@ -40,6 +40,7 @@ from tooling.development.secure_content.run import RunnerError, ScenarioContext
 from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
     DESKTOP_CLIENTS,
+    PRIVATE_PUBLISH_RECONCILING_STATES,
     REQUIRED_FIXTURE_CAPABILITIES,
     SOCIAL_ACCEPTANCE_IDS,
     SOCIAL_ACCEPTANCE_JOURNEY,
@@ -159,6 +160,19 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_private_publish_waits_for_remote_delivery_reconciliation(
+        self,
+    ) -> None:
+        self.assertEqual(
+            {
+                "UNKNOWN_COMMIT",
+                "REMOTE_DELIVERY_PENDING",
+                "REMOTE_DELIVERY_RETRYING",
+            },
+            PRIVATE_PUBLISH_RECONCILING_STATES,
+        )
+        self.assertNotIn("PUBLISHED", PRIVATE_PUBLISH_RECONCILING_STATES)
+
     def test_w7_desktop_suite_contract_excludes_other_runtimes(self) -> None:
         self.assertEqual(
             ("desktop-pre-restart", "desktop-continuity"),
