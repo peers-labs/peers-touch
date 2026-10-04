@@ -511,10 +511,7 @@ func (s *PrivateContentService) prepare(
 		author.Endpoint.GetActor().GetPtid(),
 		s.privateContentAuthorityStation(author.HomeStationPeerID),
 		snapshot,
-		material.ResourceKind == socialdomain.PrivateContentResourceComment ||
-			(material.ResourceKind == socialdomain.PrivateContentResourcePost &&
-				material.MomentKind == privatecontentpb.
-					PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT),
+		allowsRemotePrivateRecipients(material),
 	)
 	if err != nil {
 		return nil, err
@@ -2316,10 +2313,7 @@ func (s *PrivateContentService) resolveCurrentSnapshot(
 		authorPTID,
 		s.privateContentAuthorityStation(authorHomeStationPeerID),
 		snapshot,
-		prepared.ResourceKind == socialdomain.PrivateContentResourceComment ||
-			(prepared.ResourceKind == socialdomain.PrivateContentResourcePost &&
-				prepared.MomentKind ==
-					privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT),
+		allowsRemotePrivateRecipients(prepared),
 	)
 	if err != nil {
 		return socialdomain.FriendsSnapshot{}, mapPrivateDependencyError(
@@ -2338,6 +2332,25 @@ func (s *PrivateContentService) privateContentAuthorityStation(
 		return s.localStationPeerID
 	}
 	return authorHomeStationPeerID
+}
+
+func allowsRemotePrivateRecipients(
+	material socialdomain.PrivatePrepareMaterial,
+) bool {
+	if material.ResourceKind == socialdomain.PrivateContentResourceComment {
+		return true
+	}
+	if material.ResourceKind != socialdomain.PrivateContentResourcePost {
+		return false
+	}
+	switch material.MomentKind {
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *PrivateContentService) bindRecipientLocalities(
