@@ -18,6 +18,7 @@
   "writeSet": [
     "AGENTS.md",
     "Makefile",
+    "docs/architecture/architecture-module-governance/architecture-modules.json",
     "docs/architecture/development-workflow",
     "docs/architecture/frontend-runtime",
     "docs/architecture/local-dev-control-plane",
@@ -60,15 +61,7 @@
     "Desktop browser mode and the Peers Dev 4177 browser dashboard are explicitly unsupported",
     "Native Desktop launch and native Acceptance are the only Desktop runtime and proof paths",
     "Tauri WebView, system-browser OAuth handoff, and independent Web products remain in scope",
-    "Ordinary skills install succeeds without a Hook-issued grant while an unrelated declaration is active",
-    "Ordinary skills install preserves legacy conversation and Action Receipt stores",
-    "Hard cut and GC use distinct exact OWNER_CONTROL grants",
-    "Hard cut and GC reject unrelated live declarations, assignments, actions, and Action Store locks",
-    "Hard cut deletes only legacy conversation and workflow-action stores",
-    "GC deletes only retired project Skill and plugin projections",
-    "No combined install-and-purge path remains",
-    "TRAE projects one equivalent canonical Hook into the source root, descriptor bootstrap, and existing TRAE roots while leaving untouched roots unchanged",
-    "Completion Review prepares and submits through a repository-native reviewer capability without Hook Action Receipts"
+    "Target module layout and knowledge explicitly identify NBI02 as the implementation cutover owner"
   ],
   "failureBehavior": [
     "Do not weaken OWNER binding or cross-worktree write enforcement",
@@ -86,7 +79,7 @@
 
 ## Current Snapshot
 
-- State: user-authorized architecture amendment in progress.
+- State: architecture source committed at `8e5d5040f`; reviewer remediation in progress.
 - The prior browser-backed runtime evidence is invalid for this closure.
-- Next: persist DWF-D38, DWF-D39, LDCP-D19, and D-18; validate the amended
-  package; then advance to `DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER`.
+- Next: close independent reviewer findings, then advance to
+  `DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER`.

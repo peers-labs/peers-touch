@@ -6,7 +6,7 @@ owns:
   - AGENTS.md
   - tooling/acceptance/core/execution_plan.py
   - tooling/scripts/local-dev/dev-work-ledger.mjs
-  - tooling/scripts/plan/plan-mount.mjs
+  - tooling/scripts/plan/
   - tooling/skills/pt-dev-workflow/
   - tooling/skills/pt-plan-and-document/
 referenced-by:

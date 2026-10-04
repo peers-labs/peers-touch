@@ -6,7 +6,12 @@
 
 ---
 
-## 1. Directory Tree
+## 1. Target Directory Tree
+
+This is the accepted DWF-D38 target. `DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER`
+creates these paths and deletes the superseded workspace-binding path. During
+the preceding source-only architecture Task, target paths are not implementation
+readiness claims.
 
 ```text
 docs/architecture/development-workflow/
@@ -121,6 +126,10 @@ tooling/scripts/
 ```
 
 ## 2. File Responsibilities
+
+Responsibilities below describe the NBI02 cutover result. Until that Task
+lands, `workspace-plan-binding.mjs` remains only the superseded current
+implementation and must not be extended.
 
 | Path | Responsibility |
 |---|---|
