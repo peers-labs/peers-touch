@@ -2220,6 +2220,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::social::ReactToPostRequest {
                 post_id: input.post_id.clone(),
                 kind: input.kind,
+                command_id: String::new(),
+                actor_signing_key_id: String::new(),
+                actor_device_signature: Vec::new(),
             };
             let path = format!("/api/v1/social/moments/{}/react", input.post_id);
             let resp = match station_client::request_proto::<
@@ -2251,6 +2254,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::social::UnreactToPostRequest {
                 post_id: input.post_id.clone(),
                 kind: input.kind,
+                command_id: String::new(),
+                actor_signing_key_id: String::new(),
+                actor_device_signature: Vec::new(),
             };
             let path = format!("/api/v1/social/moments/{}/unreact", input.post_id);
             let resp = match station_client::request_proto::<

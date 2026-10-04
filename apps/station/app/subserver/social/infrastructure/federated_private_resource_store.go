@@ -70,6 +70,7 @@ func RemotePrivateContentModels() []any {
 		&remotePrivateResourceModel{},
 		&remotePrivateEnvelopeModel{},
 		&federatedPrivateInteractionModel{},
+		&federatedPrivateReactionProjectionModel{},
 	}
 }
 

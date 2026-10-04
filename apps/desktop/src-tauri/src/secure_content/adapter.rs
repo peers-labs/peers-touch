@@ -204,6 +204,54 @@ impl SecureContentTransport {
         )
     }
 
+    pub fn submit_private_reaction(
+        &self,
+        post_id: &str,
+        request_bytes: &[u8],
+    ) -> Result<social::ReactToPostResponse, NativeTransportError> {
+        let request = social::ReactToPostRequest::decode(request_bytes)
+            .map_err(|_| invalid_local_request("private Reaction request bytes are malformed"))?;
+        if request.encode_to_vec() != request_bytes
+            || request.post_id != post_id
+            || request.command_id.trim().is_empty()
+            || request.actor_signing_key_id.trim().is_empty()
+            || request.actor_device_signature.len() != 64
+        {
+            return Err(invalid_local_request(
+                "private Reaction request bytes are not canonical",
+            ));
+        }
+        self.post_proto_bytes_with_retry_after(
+            &format!("/api/v1/social/moments/{post_id}/react"),
+            request_bytes,
+            RetryAfterSemantics::Exact,
+        )
+    }
+
+    pub fn submit_private_unreaction(
+        &self,
+        post_id: &str,
+        request_bytes: &[u8],
+    ) -> Result<social::UnreactToPostResponse, NativeTransportError> {
+        let request = social::UnreactToPostRequest::decode(request_bytes)
+            .map_err(|_| invalid_local_request("private unreaction request bytes are malformed"))?;
+        if request.encode_to_vec() != request_bytes
+            || request.post_id != post_id
+            || request.command_id.trim().is_empty()
+            || request.actor_signing_key_id.trim().is_empty()
+            || request.actor_device_signature.len() != 64
+        {
+            return Err(invalid_local_request(
+                "private unreaction request bytes are not canonical",
+            ));
+        }
+        self.post_proto_bytes_with_retry_after(
+            &format!("/api/v1/social/moments/{post_id}/unreact"),
+            request_bytes,
+            RetryAfterSemantics::Exact,
+        )
+    }
+
     pub fn get_private_comment(
         &self,
         post_id: &str,

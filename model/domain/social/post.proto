@@ -678,6 +678,9 @@ message Mention {
 message ReactToPostRequest {
   string post_id = 1;
   ReactionKind kind = 2;
+  string command_id = 3;
+  string actor_signing_key_id = 4;
+  bytes actor_device_signature = 5;
 }
 
 message ReactToPostResponse {
@@ -685,16 +688,25 @@ message ReactToPostResponse {
   // Updated summary reflecting the viewer's new reaction. May contain
   // counts for all kinds, not just the one just added.
   repeated ReactionSummary reactions = 2;
+  string command_id = 3;
+  bool exact_replay = 4;
+  uint64 projection_revision = 5;
 }
 
 message UnreactToPostRequest {
   string post_id = 1;
   ReactionKind kind = 2;
+  string command_id = 3;
+  string actor_signing_key_id = 4;
+  bytes actor_device_signature = 5;
 }
 
 message UnreactToPostResponse {
   bool success = 1;
   repeated ReactionSummary reactions = 2;
+  string command_id = 3;
+  bool exact_replay = 4;
+  uint64 projection_revision = 5;
 }
 
 message ListReactionsRequest {

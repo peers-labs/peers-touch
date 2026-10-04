@@ -3,6 +3,7 @@ mod private_comment;
 mod private_media;
 mod private_mention;
 mod private_moment;
+mod private_reaction;
 mod projection;
 
 use std::path::Path;
@@ -36,6 +37,10 @@ use self::private_moment::{
     pending_device_recovery_projection, PrivateMomentOrchestrator, PrivateMomentPublishIntent,
     PrivateRecoveryFailureKind,
 };
+use self::private_reaction::{
+    PrivateReactionMutationInput, PrivateReactionOrchestrator, PrivateReactionRetryInput,
+};
+use self::projection::PrivateReactionOperation;
 
 #[cfg(feature = "acceptance-webdriver")]
 static ACCEPTANCE_RUNTIME_BOOT_ID: OnceLock<String> = OnceLock::new();
@@ -122,6 +127,80 @@ pub struct PrivateMomentMediaOpenInput {
 pub struct PrivateMomentsTeardownInput {
     pub actor_ptid: String,
     pub renderer_generation: u64,
+}
+
+#[tauri::command]
+pub fn social_private_react(
+    input: PrivateReactionMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    private_reaction_mutation(
+        input,
+        PrivateReactionOperation::React,
+        state.inner(),
+        &window,
+    )
+}
+
+#[tauri::command]
+pub fn social_private_unreact(
+    input: PrivateReactionMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    private_reaction_mutation(
+        input,
+        PrivateReactionOperation::Unreact,
+        state.inner(),
+        &window,
+    )
+}
+
+#[tauri::command]
+pub fn social_private_reaction_retry(
+    input: PrivateReactionRetryInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "REACTION_REJECTED"),
+    };
+    match PrivateReactionOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.retry(&input))
+    {
+        Ok(result) => AppResult::success(json!(result)),
+        Err(error) => native_failure(error, "REACTION_REJECTED"),
+    }
+}
+
+fn private_reaction_mutation(
+    input: PrivateReactionMutationInput,
+    operation: PrivateReactionOperation,
+    state: &AppState,
+    window: &Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state,
+        window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "REACTION_REJECTED"),
+    };
+    match PrivateReactionOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.mutate(&input, operation))
+    {
+        Ok(result) => AppResult::success(json!(result)),
+        Err(error) => native_failure(error, "REACTION_REJECTED"),
+    }
 }
 
 #[tauri::command]

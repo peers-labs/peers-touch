@@ -334,6 +334,9 @@ async function refreshMomentsProjectionNow(
     scope.generation,
   );
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  moments.hydratePrivateMoments(
+    Object.values(usePrivateMomentsStore.getState().postsById),
+  );
   await usePrivateCommentsStore.getState().reconcile(
     privatePostIdsToReconcile,
     label,
@@ -360,6 +363,9 @@ async function ensureMomentDetailProjectionNow(
   if (isPrivateMomentPost(knownPost)) {
     await privateMoments.readMoment(trimmedPostId);
     const projection = usePrivateMomentsStore.getState().postsById[trimmedPostId];
+    moments.hydratePrivateMoments(
+      Object.values(usePrivateMomentsStore.getState().postsById),
+    );
     if (projection?.state === 'CONTENT_READY') {
       await privateComments.loadComments(trimmedPostId, true);
     } else if (
@@ -374,6 +380,9 @@ async function ensureMomentDetailProjectionNow(
     if (!post || isPrivateMomentPost(post)) {
       await usePrivateMomentsStore.getState().readMoment(trimmedPostId);
       const projection = usePrivateMomentsStore.getState().postsById[trimmedPostId];
+      moments.hydratePrivateMoments(
+        Object.values(usePrivateMomentsStore.getState().postsById),
+      );
       if (projection?.state === 'CONTENT_READY') {
         await usePrivateCommentsStore.getState().loadComments(trimmedPostId, true);
       } else if (

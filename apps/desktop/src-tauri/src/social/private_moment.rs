@@ -319,6 +319,13 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             device_id: self.lease.session.key.device_id.clone(),
             session_generation: self.lease.session.key.session_generation.to_string(),
             projections,
+            reaction_commands: self
+                .lease
+                .store
+                .reaction_commands()?
+                .iter()
+                .map(super::private_reaction::command_projection)
+                .collect::<Result<Vec<_>, _>>()?,
         })
     }
 
@@ -1608,12 +1615,40 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         &self,
         decrypted: &DecryptedPrivateMoment,
     ) -> Result<(), String> {
+        let mut projection = decrypted.projection.clone();
+        if let Some(existing) = self.lease.store.projection(&projection.post_id)? {
+            let existing = PrivateMomentProjection::decode_local(&existing)?;
+            let incoming_revision = projection
+                .reaction_revision
+                .parse::<u64>()
+                .map_err(|_| "private Reaction projection revision is invalid".to_string())?;
+            let existing_revision = existing
+                .reaction_revision
+                .parse::<u64>()
+                .map_err(|_| {
+                    "stored private Reaction projection revision is invalid".to_string()
+                })?;
+            if projection.reactions_hydrated
+                && existing.reactions_hydrated
+                && incoming_revision == existing_revision
+                && projection.reactions != existing.reactions
+            {
+                return Err(
+                    "private Reaction readback conflicts at the same revision".to_string(),
+                );
+            }
+            if !projection.reactions_hydrated || incoming_revision < existing_revision {
+                projection.reactions = existing.reactions;
+                projection.reaction_revision = existing.reaction_revision;
+                projection.reactions_hydrated = existing.reactions_hydrated;
+            }
+        }
         let generation = decrypted
             .projection
             .generation
             .parse::<u64>()
             .map_err(|_| "private Moment projection generation is invalid".to_string())?;
-        let projection_bytes = decrypted.projection.encode_local()?;
+        let projection_bytes = projection.encode_local()?;
         self.supervisor.with_current(&self.lease.session.key, |_| {
             self.lease.store.commit_content_root(
                 &decrypted.projection.content_id,
@@ -2030,6 +2065,9 @@ fn private_transport_failure_projection(
         audience_kind: "UNKNOWN".to_string(),
         state,
         mentions: Vec::new(),
+        reactions: Vec::new(),
+        reaction_revision: "0".to_string(),
+        reactions_hydrated: false,
         content: None,
         error_code: Some(error.message.clone()),
         retry_after_seconds: error.retry_after_seconds,
@@ -2134,6 +2172,9 @@ fn private_read_projection(
             }
         },
         mentions: Vec::new(),
+        reactions: Vec::new(),
+        reaction_revision: "0".to_string(),
+        reactions_hydrated: false,
         content: None,
         error_code: Some(error_code.to_string()),
         retry_after_seconds,

@@ -219,12 +219,16 @@ export function MomentCard({
     readPrivateMoment,
     recoverPrivateMoment,
     openPrivateMedia,
+    privateReaction,
+    retryPrivateReaction,
   } = useActivePrivateMomentsSlice((s) => ({
     privateProjection: s.postsById[post.id],
     privatePlatform: s.platform,
     readPrivateMoment: s.readMoment,
     recoverPrivateMoment: s.recoverMoment,
     openPrivateMedia: s.openMedia,
+    privateReaction: s.reactionsByPost[post.id],
+    retryPrivateReaction: s.retryReaction,
   }));
   const [expanded, setExpanded] = useState(false);
   const [reactionSubmitting, setReactionSubmitting] = useState(false);
@@ -261,6 +265,9 @@ export function MomentCard({
   const body = isPrivate ? privateBody : getBodyText(post);
   const images = isPrivate ? [] : getImages(post);
   const original = isPrivate ? undefined : getRepostOriginal(post);
+  const visibleReactions = isPrivate && privateProjection?.reactionsHydrated
+    ? privateProjection.reactions ?? []
+    : reactions ?? post.reactions ?? [];
   const longBody = body.length > 320;
   const visibleBody = expanded || !longBody ? body : `${body.slice(0, 320)}…`;
   const commentsCount = Number(post.stats?.commentsCount ?? 0n);
@@ -285,8 +292,8 @@ export function MomentCard({
     setReactionSubmitting(true);
     try {
       await onReact?.(post.id, kind);
-    } catch (err) {
-      message.error(String(err));
+    } catch {
+      message.error(t('moments.reaction.status.REACTION_REJECTED'));
     } finally {
       setReactionSubmitting(false);
     }
@@ -297,8 +304,20 @@ export function MomentCard({
     setReactionSubmitting(true);
     try {
       await onUnreact?.(post.id, kind);
-    } catch (err) {
-      message.error(String(err));
+    } catch {
+      message.error(t('moments.reaction.status.REACTION_REJECTED'));
+    } finally {
+      setReactionSubmitting(false);
+    }
+  };
+
+  const handleRetryReaction = async () => {
+    if (reactionSubmitting) return;
+    setReactionSubmitting(true);
+    try {
+      await retryPrivateReaction(post.id);
+    } catch {
+      message.error(t('moments.reaction.retryUnavailable'));
     } finally {
       setReactionSubmitting(false);
     }
@@ -627,11 +646,13 @@ export function MomentCard({
 
           <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
             <SocialActionBar
-              reactions={reactions ?? post.reactions ?? []}
+              reactions={visibleReactions}
               commentCount={commentsCount}
               loading={reactionSubmitting}
               onReact={(kind) => handleReact(kind)}
               onUnreact={handleUnreact}
+              reactionState={isPrivate ? privateReaction?.state : undefined}
+              onRetryReaction={isPrivate ? handleRetryReaction : undefined}
               onOpenComments={() => onOpenComments?.(post.id)}
             />
           </div>

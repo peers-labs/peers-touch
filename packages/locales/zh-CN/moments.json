@@ -119,6 +119,11 @@
   "moments.reaction.wow": "惊叹",
   "moments.reaction.celebrate": "庆祝",
   "moments.reaction.add": "互动",
+  "moments.reaction.retry": "重试",
+  "moments.reaction.retryUnavailable": "当前还不能重试这次互动。",
+  "moments.reaction.status.REACTION_PENDING": "互动结果待确认",
+  "moments.reaction.status.REACTION_RETRYING": "正在重试互动",
+  "moments.reaction.status.REACTION_REJECTED": "互动未生效",
 
   "moments.compose.title": "发布新动态",
   "moments.compose.placeholder": "此刻的想法…",

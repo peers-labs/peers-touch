@@ -444,6 +444,7 @@ message GetMomentResourceResponse {
   .peers_touch.model.social.v1.Post post = 1;
   .peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;
   PostResource resource = 3;
+  uint64 reaction_projection_revision = 4;
 }
 
 message GetMomentCommentResourceRequest {
