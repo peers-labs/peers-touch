@@ -122,6 +122,11 @@ type PeerCapabilities interface {
 		string,
 		*kemodel.ClaimFederatedContentPreKeysRequest,
 	) (*kemodel.ClaimFederatedContentPreKeysResponse, error)
+	ValidateFederatedContentPreKeyClaims(
+		context.Context,
+		string,
+		*kemodel.ValidateFederatedContentPreKeyClaimsRequest,
+	) (*kemodel.ValidateFederatedContentPreKeyClaimsResponse, error)
 }
 
 // Handlers registers only Key Exchange-owned client routes. Federation-owned

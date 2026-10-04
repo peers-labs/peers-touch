@@ -17,6 +17,7 @@ import (
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const federatedContentPreKeyFormatVersion = 1
@@ -128,6 +129,131 @@ func (s *subServer) ClaimRemoteContentPreKeys(
 		return nil, err
 	}
 	return proto.Clone(response).(*securecontentpb.ClaimContentPreKeysResponse), nil
+}
+
+// ValidateRemoteContentPreKeyClaims asks the recipient Key Exchange authority
+// to revalidate one exact remote claim partition without changing claim state.
+func (s *subServer) ValidateRemoteContentPreKeyClaims(
+	ctx context.Context,
+	federationID string,
+	targetStationPeerID string,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	const operation = "key_exchange.validate_remote_content_prekey_claims"
+	if s == nil {
+		return domain.NewError(
+			domain.ErrorCodeDependency,
+			operation,
+			"subserver",
+			"is unavailable",
+		)
+	}
+	if request == nil || response == nil {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"claim",
+			"request and response are required",
+		)
+	}
+	sourceStationPeerID := strings.TrimSpace(s.localStationID)
+	canonicalResponse := proto.Clone(
+		response,
+	).(*securecontentpb.ClaimContentPreKeysResponse)
+	canonicalResponse.ExactReplay = false
+	canonicalRequestBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
+	if err != nil {
+		return domain.WrapError(domain.ErrorCodeInternal, operation, err)
+	}
+	canonicalResponseBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		canonicalResponse,
+	)
+	if err != nil {
+		return domain.WrapError(domain.ErrorCodeInternal, operation, err)
+	}
+	requestDigest := sha256.Sum256(canonicalRequestBytes)
+	responseDigest := sha256.Sum256(canonicalResponseBytes)
+	wireRequest := &kemodel.ValidateFederatedContentPreKeyClaimsRequest{
+		FormatVersion:           federatedContentPreKeyFormatVersion,
+		SourceHomeStationPeerId: sourceStationPeerID,
+		TargetHomeStationPeerId: strings.TrimSpace(targetStationPeerID),
+		FederationId:            strings.TrimSpace(federationID),
+		Request:                 request,
+		Response:                canonicalResponse,
+		CanonicalRequestSha256:  requestDigest[:],
+		CanonicalResponseSha256: responseDigest[:],
+	}
+	normalized, err := normalizeFederatedContentPreKeyValidationRequest(
+		operation,
+		sourceStationPeerID,
+		targetStationPeerID,
+		wireRequest,
+	)
+	if err != nil {
+		return err
+	}
+	membership, runtime, err := resolveFederatedContentPreKeyDependencies()
+	if err != nil {
+		return domain.WrapError(domain.ErrorCodeDependency, operation, err)
+	}
+	if err := membership.ValidateActiveStationPair(
+		ctx,
+		normalized.GetFederationId(),
+		sourceStationPeerID,
+		normalized.GetTargetHomeStationPeerId(),
+	); err != nil {
+		return domain.WrapError(domain.ErrorCodeUnauthorized, operation, err)
+	}
+	wireResponse := &kemodel.ValidateFederatedContentPreKeyClaimsResponse{}
+	if err := runtime.CallPeer(ctx, sharedfederation.PeerCall{
+		TargetStationPeerID: normalized.GetTargetHomeStationPeerId(),
+		Route: sharedfederation.
+			PeerRouteKeyExchangeContentPreKeyValidate,
+		Subject: sourceStationPeerID,
+		Claims: map[string]string{
+			sharedfederation.ClaimFederationID: normalized.GetFederationId(),
+			sharedfederation.ClaimAuthorityPlanID: normalized.
+				GetRequest().
+				GetPlanId(),
+			sharedfederation.ClaimPlanRequestSHA256: hex.EncodeToString(
+				normalized.GetRequest().GetPlanRequestSha256(),
+			),
+			sharedfederation.ClaimCanonicalRequestSHA256: hex.EncodeToString(
+				normalized.GetCanonicalRequestSha256(),
+			),
+			sharedfederation.ClaimCanonicalResponseSHA256: hex.EncodeToString(
+				normalized.GetCanonicalResponseSha256(),
+			),
+			sharedfederation.ClaimSourceStationPeerID: sourceStationPeerID,
+			sharedfederation.ClaimTargetStationPeerID: normalized.
+				GetTargetHomeStationPeerId(),
+		},
+		Request:  normalized,
+		Response: wireResponse,
+	}); err != nil {
+		return mapFederatedContentPreKeyPeerError(operation, err)
+	}
+	if wireResponse.GetFormatVersion() != federatedContentPreKeyFormatVersion ||
+		wireResponse.GetPlanId() != normalized.GetRequest().GetPlanId() ||
+		!bytes.Equal(
+			wireResponse.GetCanonicalRequestSha256(),
+			normalized.GetCanonicalRequestSha256(),
+		) ||
+		!bytes.Equal(
+			wireResponse.GetCanonicalResponseSha256(),
+			normalized.GetCanonicalResponseSha256(),
+		) ||
+		wireResponse.GetValidatedAt() == nil ||
+		wireResponse.GetValidatedAt().CheckValid() != nil {
+		return domain.NewError(
+			domain.ErrorCodeInvalidMaterial,
+			operation,
+			"response",
+			"does not bind the completed remote validation",
+		)
+	}
+	return nil
 }
 
 func mapFederatedContentPreKeyPeerError(operation string, err error) error {
@@ -248,6 +374,63 @@ func claimFederatedContentPreKeys(
 	}, nil
 }
 
+// ValidateFederatedContentPreKeyClaims validates one exact remote claim
+// partition at the recipient Key Exchange authority.
+func (s *subServer) ValidateFederatedContentPreKeyClaims(
+	ctx context.Context,
+	authenticatedSourceStationPeerID string,
+	request *kemodel.ValidateFederatedContentPreKeyClaimsRequest,
+) (*kemodel.ValidateFederatedContentPreKeyClaimsResponse, error) {
+	const operation = "key_exchange.validate_federated_content_prekey_claims"
+	membership, _, err := resolveFederatedContentPreKeyDependencies()
+	if err != nil {
+		return nil, domain.WrapError(domain.ErrorCodeDependency, operation, err)
+	}
+	service, err := s.requireContentPreKeyService()
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := normalizeFederatedContentPreKeyValidationRequest(
+		operation,
+		authenticatedSourceStationPeerID,
+		s.localStationID,
+		request,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := membership.ValidateActiveStationPair(
+		ctx,
+		normalized.GetFederationId(),
+		normalized.GetSourceHomeStationPeerId(),
+		normalized.GetTargetHomeStationPeerId(),
+	); err != nil {
+		return nil, domain.WrapError(domain.ErrorCodeUnauthorized, operation, err)
+	}
+	localRequest := proto.Clone(
+		normalized.GetRequest(),
+	).(*securecontentpb.ClaimContentPreKeysRequest)
+	localRequest.PlanId = federatedContentPreKeyPlanID(
+		normalized.GetSourceHomeStationPeerId(),
+		normalized.GetTargetHomeStationPeerId(),
+		localRequest.GetPlanId(),
+	)
+	if err := service.ValidateContentPreKeyClaimsStandalone(
+		ctx,
+		localRequest,
+		normalized.GetResponse(),
+	); err != nil {
+		return nil, err
+	}
+	return &kemodel.ValidateFederatedContentPreKeyClaimsResponse{
+		FormatVersion:           federatedContentPreKeyFormatVersion,
+		PlanId:                  normalized.GetRequest().GetPlanId(),
+		CanonicalRequestSha256:  append([]byte(nil), normalized.GetCanonicalRequestSha256()...),
+		CanonicalResponseSha256: append([]byte(nil), normalized.GetCanonicalResponseSha256()...),
+		ValidatedAt:             timestamppb.Now(),
+	}, nil
+}
+
 func normalizeFederatedContentPreKeyRequest(
 	operation string,
 	authenticatedSourceStationPeerID string,
@@ -323,6 +506,101 @@ func normalizeFederatedContentPreKeyRequest(
 	).(*kemodel.ClaimFederatedContentPreKeysRequest), nil
 }
 
+func normalizeFederatedContentPreKeyValidationRequest(
+	operation string,
+	authenticatedSourceStationPeerID string,
+	localStationPeerID string,
+	request *kemodel.ValidateFederatedContentPreKeyClaimsRequest,
+) (*kemodel.ValidateFederatedContentPreKeyClaimsRequest, error) {
+	if request == nil ||
+		request.GetRequest() == nil ||
+		request.GetResponse() == nil ||
+		len(request.ProtoReflect().GetUnknown()) != 0 {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"request",
+			"must be present and contain no unknown fields",
+		)
+	}
+	sourceStationPeerID := strings.TrimSpace(request.GetSourceHomeStationPeerId())
+	targetStationPeerID := strings.TrimSpace(request.GetTargetHomeStationPeerId())
+	federationID := strings.TrimSpace(request.GetFederationId())
+	if request.GetFormatVersion() != federatedContentPreKeyFormatVersion ||
+		sourceStationPeerID == "" ||
+		sourceStationPeerID != strings.TrimSpace(authenticatedSourceStationPeerID) ||
+		targetStationPeerID == "" ||
+		targetStationPeerID != strings.TrimSpace(localStationPeerID) ||
+		sourceStationPeerID == targetStationPeerID ||
+		federationID == "" {
+		return nil, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			operation,
+			"federation_route",
+			"does not match the authenticated Station pair",
+		)
+	}
+	normalizedClaim, _, err := domain.NormalizeContentPreKeyClaimRequest(
+		operation,
+		request.GetRequest(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !proto.Equal(normalizedClaim, request.GetRequest()) {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"request.request",
+			"must use canonical target order",
+		)
+	}
+	canonicalResponse := proto.Clone(
+		request.GetResponse(),
+	).(*securecontentpb.ClaimContentPreKeysResponse)
+	canonicalResponse.ExactReplay = false
+	if err := validateFederatedContentPreKeyResponse(
+		operation,
+		normalizedClaim,
+		canonicalResponse,
+	); err != nil {
+		return nil, err
+	}
+	requestBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		normalizedClaim,
+	)
+	if err != nil {
+		return nil, domain.WrapError(domain.ErrorCodeInternal, operation, err)
+	}
+	responseBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		canonicalResponse,
+	)
+	if err != nil {
+		return nil, domain.WrapError(domain.ErrorCodeInternal, operation, err)
+	}
+	requestDigest := sha256.Sum256(requestBytes)
+	responseDigest := sha256.Sum256(responseBytes)
+	if !bytes.Equal(requestDigest[:], request.GetCanonicalRequestSha256()) ||
+		!bytes.Equal(responseDigest[:], request.GetCanonicalResponseSha256()) {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidMaterial,
+			operation,
+			"canonical_digest",
+			"does not match the exact claim request and response",
+		)
+	}
+	return &kemodel.ValidateFederatedContentPreKeyClaimsRequest{
+		FormatVersion:           federatedContentPreKeyFormatVersion,
+		SourceHomeStationPeerId: sourceStationPeerID,
+		TargetHomeStationPeerId: targetStationPeerID,
+		FederationId:            federationID,
+		Request:                 normalizedClaim,
+		Response:                canonicalResponse,
+		CanonicalRequestSha256:  requestDigest[:],
+		CanonicalResponseSha256: responseDigest[:],
+	}, nil
+}
+
 // ValidateFederatedContentPreKeyPeerClaims binds the canonical wrapper to the
 // authenticated Federation route before Key Exchange performs any mutation.
 func ValidateFederatedContentPreKeyPeerClaims(
@@ -359,6 +637,40 @@ func ValidateFederatedContentPreKeyPeerClaims(
 			claims.Audience {
 		return server.Forbidden(
 			"Federation claims do not match the Content PreKey claim",
+		)
+	}
+	return nil
+}
+
+// ValidateFederatedContentPreKeyValidationPeerClaims binds the validation-only
+// scope to the exact request and response digests.
+func ValidateFederatedContentPreKeyValidationPeerClaims(
+	claims *authfed.VerifiedClaims,
+	request *kemodel.ValidateFederatedContentPreKeyClaimsRequest,
+) error {
+	if claims == nil || request == nil {
+		return server.Forbidden(
+			"Federation claims do not match the Content PreKey validation",
+		)
+	}
+	normalized, err := normalizeFederatedContentPreKeyValidationRequest(
+		"key_exchange.validate_federated_content_prekey_peer_claims",
+		claims.Issuer,
+		claims.Audience,
+		request,
+	)
+	if err != nil ||
+		claims.Scope != sharedfederation.KeyExchangeContentPreKeyValidateScope ||
+		claims.Subject != claims.Issuer ||
+		claims.Custom[sharedfederation.ClaimFederationID] != normalized.GetFederationId() ||
+		claims.Custom[sharedfederation.ClaimAuthorityPlanID] != normalized.GetRequest().GetPlanId() ||
+		claims.Custom[sharedfederation.ClaimPlanRequestSHA256] != hex.EncodeToString(normalized.GetRequest().GetPlanRequestSha256()) ||
+		claims.Custom[sharedfederation.ClaimCanonicalRequestSHA256] != hex.EncodeToString(normalized.GetCanonicalRequestSha256()) ||
+		claims.Custom[sharedfederation.ClaimCanonicalResponseSHA256] != hex.EncodeToString(normalized.GetCanonicalResponseSha256()) ||
+		claims.Custom[sharedfederation.ClaimSourceStationPeerID] != claims.Issuer ||
+		claims.Custom[sharedfederation.ClaimTargetStationPeerID] != claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match the Content PreKey validation",
 		)
 	}
 	return nil

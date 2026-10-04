@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,6 +57,106 @@ func (s *PrivateContentService) ConfigureFederatedPrivateDelivery(
 	return nil
 }
 
+func (s *PrivateContentService) bindGroupRecipientFederation(
+	ctx context.Context,
+	authorHomeStationPeerID string,
+	group socialdomain.GroupRecipientSnapshot,
+) (socialdomain.GroupRecipientSnapshot, error) {
+	const operation = "social.private_content.group_recipient_federation"
+	if strings.TrimSpace(authorHomeStationPeerID) == "" ||
+		authorHomeStationPeerID != strings.TrimSpace(authorHomeStationPeerID) {
+		return socialdomain.GroupRecipientSnapshot{},
+			socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentInvalidArgument,
+				operation,
+				"author_home_station_peer_id",
+				"must be canonical",
+			)
+	}
+
+	bound := group
+	bound.Members = append(
+		[]socialdomain.RecipientLocality(nil),
+		group.Members...,
+	)
+	remoteStations := make(map[string]struct{})
+	authorHomeBound := false
+	for index := range bound.Members {
+		member := &bound.Members[index]
+		if member.ActorPTID == group.AuthorPTID {
+			if member.HomeStationPeerID != authorHomeStationPeerID {
+				return socialdomain.GroupRecipientSnapshot{},
+					socialdomain.NewPrivateContentError(
+						socialdomain.PrivateContentConflict,
+						operation,
+						"author_home_station_peer_id",
+						"does not match the Conversation snapshot",
+					)
+			}
+			authorHomeBound = true
+		}
+		if member.HomeStationPeerID == authorHomeStationPeerID {
+			member.FederationID = ""
+			continue
+		}
+		member.FederationID = group.FederationID
+		remoteStations[member.HomeStationPeerID] = struct{}{}
+	}
+	if !authorHomeBound {
+		return socialdomain.GroupRecipientSnapshot{},
+			socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"author_ptid",
+				"is not bound to the authenticated Home Station",
+			)
+	}
+	if len(remoteStations) == 0 {
+		return bound, nil
+	}
+	if s.localStationPeerID == "" ||
+		s.localStationPeerID != authorHomeStationPeerID ||
+		s.federationMembership == nil {
+		return socialdomain.GroupRecipientSnapshot{},
+			socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrationGap,
+				operation,
+				"federation",
+				"source Federation membership validation is unavailable",
+			)
+	}
+	stations := make([]string, 0, len(remoteStations))
+	for stationPeerID := range remoteStations {
+		stations = append(stations, stationPeerID)
+	}
+	sort.Strings(stations)
+	for _, stationPeerID := range stations {
+		if err := s.federationMembership.ValidateActiveStationPair(
+			ctx,
+			group.FederationID,
+			authorHomeStationPeerID,
+			stationPeerID,
+		); err != nil {
+			if !errors.Is(err, federationdomain.ErrInactiveStationPair) {
+				return socialdomain.GroupRecipientSnapshot{},
+					socialdomain.WrapPrivateContentError(
+						socialdomain.PrivateContentDependency,
+						operation,
+						err,
+					)
+			}
+			return socialdomain.GroupRecipientSnapshot{},
+				socialdomain.WrapPrivateContentError(
+					socialdomain.PrivateContentUnsupported,
+					operation,
+					err,
+				)
+		}
+	}
+
+	return bound, nil
+}
+
 func (s *PrivateContentService) enqueueFederatedPrivatePost(
 	ctx context.Context,
 	tx infrastructure.PrivateContentTransaction,
@@ -78,24 +179,33 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 	}
 	if s.localStationPeerID == "" ||
 		s.localStationPeerID != plan.AuthorHomeStationPeerID ||
-		len(remote) != 1 ||
-		snapshot.Audience.GetKind() != actormodel.Audience_FRIENDS ||
+		!isFederatedPrivateAudienceKind(snapshot.Audience.GetKind()) ||
 		postType != actormodel.PostType_TEXT {
 		return socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentUnsupported,
 			"social.private_content.enqueue_federated_post",
 			"recipient_localities",
-			"this slice delivers one selected remote friend text Post",
+			"federated delivery requires a supported private text audience",
 		)
 	}
-	target := remote[0]
-	envelopes, targetActor, err := federatedViewerEnvelopes(
-		plan,
-		material.Envelopes,
-		target.ActorPTID,
-	)
-	if err != nil {
-		return err
+	federationID := remote[0].FederationID
+	if federationID == "" {
+		return socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentConflict,
+			"social.private_content.enqueue_federated_post",
+			"recipient_federation_id",
+			"is missing from a remote recipient",
+		)
+	}
+	for _, target := range remote[1:] {
+		if target.FederationID != federationID {
+			return socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnsupported,
+				"social.private_content.enqueue_federated_post",
+				"recipient_federation_id",
+				"remote recipients span multiple Federations",
+			)
+		}
 	}
 	attestation, err :=
 		s.stationSigner.AttestContentProofVerificationKeyInTransaction(
@@ -110,99 +220,150 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 			err,
 		)
 	}
-	verification := &privatecontentpb.PrivateContentVerification{
-		CommitProof: proto.Clone(
-			proof,
-		).(*securecontentpb.ViewerContentCommitProof),
-		StationSigningKeyAttestation: attestation,
-	}
-	if request.GetMentionRouting() != nil {
-		verification.MentionRouting = proto.Clone(
-			request.GetMentionRouting(),
-		).(*privatecontentpb.SignedMentionRouting)
-	}
-	deliveryID := deterministicPrivateID(
-		"federated-resource",
-		plan.DomainCommitID,
-		target.ActorPTID,
-	)
-	payload := &privatecontentpb.FederatedPrivateResourceDelivery{
-		FormatVersion:       socialdomain.PrivateContentFormatVersion,
-		FederationId:        target.FederationID,
-		DeliveryId:          deliveryID,
-		SourceStationPeerId: plan.AuthorHomeStationPeerID,
-		TargetStationPeerId: target.HomeStationPeerID,
-		TargetActor:         targetActor,
-		ResourceKind: privatecontentpb.
-			FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST,
-		Resource: proto.Clone(
-			request.GetPlan().GetResource(),
-		).(*securecontentpb.SecureResourceRef),
-		LifecycleRevision: plan.Generation,
-		Metadata: &privatecontentpb.FederatedPrivateResourceDelivery_Post{
-			Post: &privatecontentpb.PostMetadata{
-				PostId:    plan.ContentID,
-				ContentId: plan.ContentID,
-				Author: proto.Clone(
-					request.GetPlan().GetAuthor().GetActor(),
-				).(*actormodel.ActorRef),
-				Type:         postType,
-				AudienceKind: snapshot.Audience.GetKind(),
-				CreatedAt:    timestamppb.New(committedAt),
-				UpdatedAt:    timestamppb.New(committedAt),
-				Stats:        &actormodel.PostStats{},
+	frames := make([]*federationdelivery.Frame, 0, len(remote))
+	for _, target := range remote {
+		envelopes, targetActor, envelopeErr := federatedViewerEnvelopes(
+			plan,
+			material.Envelopes,
+			target.ActorPTID,
+		)
+		if envelopeErr != nil {
+			return envelopeErr
+		}
+		verification := &privatecontentpb.PrivateContentVerification{
+			CommitProof: proto.Clone(
+				proof,
+			).(*securecontentpb.ViewerContentCommitProof),
+			StationSigningKeyAttestation: proto.Clone(
+				attestation,
+			).(*securecontentpb.StationContentSigningKeyAttestation),
+		}
+		if request.GetMentionRouting() != nil {
+			verification.MentionRouting = proto.Clone(
+				request.GetMentionRouting(),
+			).(*privatecontentpb.SignedMentionRouting)
+		}
+		deliveryID := deterministicPrivateID(
+			"federated-resource",
+			plan.DomainCommitID,
+			target.ActorPTID,
+		)
+		payload := &privatecontentpb.FederatedPrivateResourceDelivery{
+			FormatVersion:       socialdomain.PrivateContentFormatVersion,
+			FederationId:        target.FederationID,
+			DeliveryId:          deliveryID,
+			SourceStationPeerId: plan.AuthorHomeStationPeerID,
+			TargetStationPeerId: target.HomeStationPeerID,
+			TargetActor:         targetActor,
+			ResourceKind: privatecontentpb.
+				FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST,
+			Resource: proto.Clone(
+				request.GetPlan().GetResource(),
+			).(*securecontentpb.SecureResourceRef),
+			LifecycleRevision: plan.Generation,
+			Metadata: &privatecontentpb.FederatedPrivateResourceDelivery_Post{
+				Post: &privatecontentpb.PostMetadata{
+					PostId:    plan.ContentID,
+					ContentId: plan.ContentID,
+					Author: proto.Clone(
+						request.GetPlan().GetAuthor().GetActor(),
+					).(*actormodel.ActorRef),
+					Type:         postType,
+					AudienceKind: snapshot.Audience.GetKind(),
+					CreatedAt:    timestamppb.New(committedAt),
+					UpdatedAt:    timestamppb.New(committedAt),
+					Stats:        &actormodel.PostStats{},
+				},
 			},
-		},
-		Payload: proto.Clone(
-			request.GetPayload(),
-		).(*securecontentpb.EncryptedPayload),
-		TargetActorEnvelopes: envelopes,
-		Verification:         verification,
-		AudienceExplanation: &actormodel.AudienceExplanation{
-			Kind:           snapshot.Audience.GetKind(),
-			ViewerIsMember: true,
-		},
-		CommittedAt: timestamppb.New(committedAt),
+			Payload: proto.Clone(
+				request.GetPayload(),
+			).(*securecontentpb.EncryptedPayload),
+			TargetActorEnvelopes: envelopes,
+			Verification:         verification,
+			AudienceExplanation: &actormodel.AudienceExplanation{
+				Kind:           snapshot.Audience.GetKind(),
+				ViewerIsMember: true,
+			},
+			CommittedAt: timestamppb.New(committedAt),
+		}
+		payloadBytes, encodeErr := socialdomain.CanonicalProtoBytes(payload)
+		if encodeErr != nil {
+			return encodeErr
+		}
+		frame, signErr := s.signFederatedPrivateResourceFrame(
+			ctx,
+			tx.ContentPreKeyValidationTransaction(),
+			payload,
+			payloadBytes,
+			committedAt,
+		)
+		if signErr != nil {
+			return signErr
+		}
+		frames = append(frames, frame)
 	}
-	payloadBytes, err := socialdomain.CanonicalProtoBytes(payload)
-	if err != nil {
-		return err
+
+	observations := make([]struct {
+		elapsed   time.Duration
+		duplicate bool
+	}, 0, len(frames))
+	for _, frame := range frames {
+		startedAt := time.Now()
+		result, enqueueErr := tx.EnqueueFederationFrame(
+			ctx,
+			frame,
+			committedAt,
+		)
+		if enqueueErr != nil {
+			s.observeFederatedPrivateDelivery(
+				startedAt,
+				"source_enqueue",
+				"rejected",
+				"outbox",
+			)
+			return mapPrivateStoreError(
+				"social.private_content.enqueue_federated_post",
+				enqueueErr,
+			)
+		}
+		observations = append(observations, struct {
+			elapsed   time.Duration
+			duplicate bool
+		}{
+			elapsed:   time.Since(startedAt),
+			duplicate: result.Duplicate,
+		})
 	}
-	frame, err := s.signFederatedPrivateResourceFrame(
-		ctx,
-		tx.ContentPreKeyValidationTransaction(),
-		payload,
-		payloadBytes,
-		committedAt,
-	)
-	if err != nil {
-		return err
-	}
-	startedAt := time.Now()
-	result, err := tx.EnqueueFederationFrame(ctx, frame, committedAt)
-	outcome := "accepted"
-	reason := "none"
-	if err != nil {
-		outcome = "rejected"
-		reason = "outbox"
-	} else if result.Duplicate {
-		outcome = "replay"
-		reason = "exact"
-		s.metrics.replayTotal.Inc("private_resource", outcome, reason)
-	}
-	s.metrics.deliveryTotal.Inc("source_enqueue", outcome, reason)
-	s.metrics.deliveryLatency.Observe(
-		time.Since(startedAt).Seconds(),
-		"source_enqueue",
-		outcome,
-	)
-	if err != nil {
-		return mapPrivateStoreError(
-			"social.private_content.enqueue_federated_post",
-			err,
+	for _, observation := range observations {
+		outcome := "accepted"
+		reason := "none"
+		if observation.duplicate {
+			outcome = "replay"
+			reason = "exact"
+			s.metrics.replayTotal.Inc("private_resource", outcome, reason)
+		}
+		s.metrics.deliveryTotal.Inc("source_enqueue", outcome, reason)
+		s.metrics.deliveryLatency.Observe(
+			observation.elapsed.Seconds(),
+			"source_enqueue",
+			outcome,
 		)
 	}
 	return nil
+}
+
+func isFederatedPrivateAudienceKind(kind actormodel.Audience_Kind) bool {
+	switch kind {
+	case actormodel.Audience_FRIENDS,
+		actormodel.Audience_FOLLOWERS,
+		actormodel.Audience_CIRCLE,
+		actormodel.Audience_GROUP,
+		actormodel.Audience_CUSTOM_ALLOW,
+		actormodel.Audience_CUSTOM_DENY:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *PrivateContentService) signFederatedPrivateResourceFrame(
@@ -660,7 +821,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 		post.GetPostId() != resource.GetContentId() ||
 		post.GetContentId() != resource.GetContentId() ||
 		post.GetType() != actormodel.PostType_TEXT ||
-		post.GetAudienceKind() != actormodel.Audience_FRIENDS ||
+		!isFederatedPrivateAudienceKind(post.GetAudienceKind()) ||
 		post.GetAuthor() == nil ||
 		post.GetAuthor().GetPtid() == "" ||
 		target == nil ||
@@ -680,33 +841,35 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			"is not a complete viewer-scoped text Post",
 		)
 	}
-	friendSnapshot, err := s.audiences.ResolveFriendsPostSnapshot(
-		ctx,
-		transaction,
-		post.GetAuthor().GetPtid(),
-	)
-	if err != nil {
-		return socialdomain.WrapPrivateContentError(
-			socialdomain.PrivateContentUnauthorized,
-			operation,
-			err,
+	if post.GetAudienceKind() == actormodel.Audience_FRIENDS {
+		friendSnapshot, friendErr := s.audiences.ResolveFriendsPostSnapshot(
+			ctx,
+			transaction,
+			post.GetAuthor().GetPtid(),
 		)
-	}
-	friendAuthorized := false
-	for _, recipientPTID := range friendSnapshot.RecipientPTIDs {
-		if recipientPTID == target.GetPtid() {
-			friendAuthorized = true
-			break
+		if friendErr != nil {
+			return socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				friendErr,
+			)
 		}
-	}
-	if friendSnapshot.Audience.GetKind() != actormodel.Audience_FRIENDS ||
-		!friendAuthorized {
-		return socialdomain.NewPrivateContentError(
-			socialdomain.PrivateContentUnauthorized,
-			operation,
-			"friendship",
-			"has not converged on the receiving Station",
-		)
+		friendAuthorized := false
+		for _, recipientPTID := range friendSnapshot.RecipientPTIDs {
+			if recipientPTID == target.GetPtid() {
+				friendAuthorized = true
+				break
+			}
+		}
+		if friendSnapshot.Audience.GetKind() != actormodel.Audience_FRIENDS ||
+			!friendAuthorized {
+			return socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"friendship",
+				"has not converged on the receiving Station",
+			)
+		}
 	}
 	if err := message.GetCommittedAt().CheckValid(); err != nil {
 		return socialdomain.WrapPrivateContentError(

@@ -325,6 +325,14 @@ func TestPrivateRepostSourceAuthorityRejectsGrantWideningAndSubmitDeletion(
 		t.Fatal(err)
 	}
 	sourceAudienceHash := privateAuthorityDigest(sourceAudienceBytes)
+	sourceRecipientLocalities, err :=
+		socialdomain.CanonicalRecipientLocalitiesBytes(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRecipientLocalitiesHash := privateAuthorityDigest(
+		sourceRecipientLocalities,
+	)
 	emptyHash := privateAuthorityDigest(nil)
 	if err := database.Create(&dbmodel.SocialPrivateContentPlan{
 		PlanID:                        "private-source-plan",
@@ -342,6 +350,8 @@ func TestPrivateRepostSourceAuthorityRejectsGrantWideningAndSubmitDeletion(
 		CanonicalPrepareSHA256:        bytes.Repeat([]byte{0x61}, sha256.Size),
 		AudienceBytes:                 sourceAudienceBytes,
 		AudienceSHA256:                sourceAudienceHash,
+		RecipientLocalitiesBytes:      sourceRecipientLocalities,
+		RecipientLocalitiesSHA256:     sourceRecipientLocalitiesHash,
 		GroupRecipientSnapshotSHA256:  emptyHash,
 		SubtypePrepareAuthoritySHA256: emptyHash,
 		ClaimRequestBytes:             []byte{2},

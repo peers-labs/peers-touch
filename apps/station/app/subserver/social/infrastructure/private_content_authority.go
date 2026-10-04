@@ -1165,7 +1165,9 @@ func loadGroupSnapshot(
 	group socialdomain.GroupRecipientSnapshot,
 ) (socialdomain.FriendsSnapshot, error) {
 	const operation = "social.private_content.group_snapshot"
-	if strings.TrimSpace(group.ConversationID) == "" ||
+	if strings.TrimSpace(group.FederationID) == "" ||
+		group.FederationID != strings.TrimSpace(group.FederationID) ||
+		strings.TrimSpace(group.ConversationID) == "" ||
 		group.ConversationID != strings.TrimSpace(group.ConversationID) ||
 		group.AuthorPTID != authorPTID ||
 		group.MembershipEpoch == 0 ||
@@ -1216,13 +1218,15 @@ func loadGroupSnapshot(
 			)
 	}
 	for _, member := range group.Members {
-		if member.HomeStationPeerID != authorHomeStationPeerID {
+		remote := member.HomeStationPeerID != authorHomeStationPeerID
+		if (!remote && member.FederationID != "") ||
+			(remote && member.FederationID != group.FederationID) {
 			return socialdomain.FriendsSnapshot{},
 				socialdomain.NewPrivateContentError(
-					socialdomain.PrivateContentUnsupported,
+					socialdomain.PrivateContentConflict,
 					operation,
-					"recipient_home_station_peer_id",
-					"v1 private content requires every active Group member on the author Home Station",
+					"group_snapshot.members",
+					"must bind each remote member to the Group Federation",
 				)
 		}
 	}
@@ -1238,6 +1242,7 @@ func loadGroupSnapshot(
 
 	head := sha256.New()
 	writeSnapshotField(head, "group")
+	writeSnapshotField(head, group.FederationID)
 	writeSnapshotField(head, group.ConversationID)
 	writeSnapshotField(head, authorPTID)
 	writeSnapshotField(head, strconv.FormatUint(group.MembershipEpoch, 10))

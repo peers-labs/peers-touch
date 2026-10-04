@@ -118,6 +118,8 @@ type SubmitPreparation struct {
 type PrivatePrepareBinding struct {
 	AudienceBytes                 []byte
 	AudienceSHA256                []byte
+	RecipientLocalitiesBytes      []byte
+	RecipientLocalitiesSHA256     []byte
 	GroupRecipientSnapshotBytes   []byte
 	GroupRecipientSnapshotSHA256  []byte
 	SubtypePrepareAuthorityBytes  []byte
@@ -1289,6 +1291,12 @@ func (s *GORMPrivateContentStore) ClaimPreparing(
 	}
 	candidate.AudienceBytes = cloneBytes(binding.AudienceBytes)
 	candidate.AudienceSHA256 = cloneBytes(binding.AudienceSHA256)
+	candidate.RecipientLocalitiesBytes = cloneBytes(
+		binding.RecipientLocalitiesBytes,
+	)
+	candidate.RecipientLocalitiesSHA256 = cloneBytes(
+		binding.RecipientLocalitiesSHA256,
+	)
 	candidate.GroupRecipientSnapshotBytes = cloneBytes(
 		binding.GroupRecipientSnapshotBytes,
 	)
@@ -2634,6 +2642,13 @@ func validatePrepareBinding(binding PrivatePrepareBinding) error {
 	); err != nil {
 		return err
 	}
+	if err := validateExactDigest(
+		"prepare recipient localities",
+		binding.RecipientLocalitiesBytes,
+		binding.RecipientLocalitiesSHA256,
+	); err != nil {
+		return err
+	}
 	if err := validateOptionalExactDigest(
 		"prepare Group recipient snapshot",
 		binding.GroupRecipientSnapshotBytes,
@@ -2806,6 +2821,14 @@ func samePrepareBinding(left, right PrivatePrepareBinding) bool {
 	return bytes.Equal(left.AudienceBytes, right.AudienceBytes) &&
 		bytes.Equal(left.AudienceSHA256, right.AudienceSHA256) &&
 		bytes.Equal(
+			left.RecipientLocalitiesBytes,
+			right.RecipientLocalitiesBytes,
+		) &&
+		bytes.Equal(
+			left.RecipientLocalitiesSHA256,
+			right.RecipientLocalitiesSHA256,
+		) &&
+		bytes.Equal(
 			left.GroupRecipientSnapshotBytes,
 			right.GroupRecipientSnapshotBytes,
 		) &&
@@ -2839,6 +2862,8 @@ func loadPrivatePrepareBinding(
 			"plan_id",
 			"audience_bytes",
 			"audience_sha256",
+			"recipient_localities_bytes",
+			"recipient_localities_sha256",
 			"group_recipient_snapshot_bytes",
 			"group_recipient_snapshot_sha256",
 			"subtype_prepare_authority_bytes",
@@ -2854,6 +2879,12 @@ func loadPrivatePrepareBinding(
 	binding := PrivatePrepareBinding{
 		AudienceBytes:  cloneBytes(model.AudienceBytes),
 		AudienceSHA256: cloneBytes(model.AudienceSHA256),
+		RecipientLocalitiesBytes: cloneBytes(
+			model.RecipientLocalitiesBytes,
+		),
+		RecipientLocalitiesSHA256: cloneBytes(
+			model.RecipientLocalitiesSHA256,
+		),
 		GroupRecipientSnapshotBytes: cloneBytes(
 			model.GroupRecipientSnapshotBytes,
 		),
@@ -2994,6 +3025,12 @@ func clonePlan(plan dbmodel.SocialPrivateContentPlan) dbmodel.SocialPrivateConte
 	plan.CanonicalPrepareSHA256 = cloneBytes(plan.CanonicalPrepareSHA256)
 	plan.AudienceBytes = cloneBytes(plan.AudienceBytes)
 	plan.AudienceSHA256 = cloneBytes(plan.AudienceSHA256)
+	plan.RecipientLocalitiesBytes = cloneBytes(
+		plan.RecipientLocalitiesBytes,
+	)
+	plan.RecipientLocalitiesSHA256 = cloneBytes(
+		plan.RecipientLocalitiesSHA256,
+	)
 	plan.GroupRecipientSnapshotBytes = cloneBytes(
 		plan.GroupRecipientSnapshotBytes,
 	)
@@ -3019,6 +3056,12 @@ func clonePlan(plan dbmodel.SocialPrivateContentPlan) dbmodel.SocialPrivateConte
 func clonePrepareBinding(binding PrivatePrepareBinding) PrivatePrepareBinding {
 	binding.AudienceBytes = cloneBytes(binding.AudienceBytes)
 	binding.AudienceSHA256 = cloneBytes(binding.AudienceSHA256)
+	binding.RecipientLocalitiesBytes = cloneBytes(
+		binding.RecipientLocalitiesBytes,
+	)
+	binding.RecipientLocalitiesSHA256 = cloneBytes(
+		binding.RecipientLocalitiesSHA256,
+	)
 	binding.GroupRecipientSnapshotBytes = cloneBytes(
 		binding.GroupRecipientSnapshotBytes,
 	)

@@ -146,6 +146,25 @@ message ClaimFederatedContentPreKeysResponse {
   peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse response = 1;
 }
 
+message ValidateFederatedContentPreKeyClaimsRequest {
+  uint32 format_version = 1;
+  string source_home_station_peer_id = 2;
+  string target_home_station_peer_id = 3;
+  string federation_id = 4;
+  peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest request = 5;
+  peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse response = 6;
+  bytes canonical_request_sha256 = 7;
+  bytes canonical_response_sha256 = 8;
+}
+
+message ValidateFederatedContentPreKeyClaimsResponse {
+  uint32 format_version = 1;
+  string plan_id = 2;
+  bytes canonical_request_sha256 = 3;
+  bytes canonical_response_sha256 = 4;
+  google.protobuf.Timestamp validated_at = 5;
+}
+
 enum DirectKeyExchangePayloadKind {
   DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED = 0;
   DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE = 1;

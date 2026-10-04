@@ -921,6 +921,25 @@ func (s *ContentPreKeyStore) ValidateContentPreKeyClaims(
 	)
 }
 
+// ValidateContentPreKeyClaimsStandalone owns the short target-side transaction
+// used by the Federation read-only validation route.
+func (s *ContentPreKeyStore) ValidateContentPreKeyClaimsStandalone(
+	ctx context.Context,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+	principals []domain.ContentPreKeyPrincipal,
+) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.ValidateContentPreKeyClaims(
+			ctx,
+			contentPreKeyTransaction{db: tx},
+			request,
+			response,
+			principals,
+		)
+	})
+}
+
 func ensureAndLockContentPreKeyPool(
 	tx *gorm.DB,
 	principal domain.ContentPreKeyPrincipal,
