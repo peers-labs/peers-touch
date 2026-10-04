@@ -1,15 +1,15 @@
-# Peers Dev 产品定义
+# Development Workflow 产品定义
 
 > **Status**: active
 > **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
-> **Module**: `apps/dev/`
+> **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
 ---
 
 ## 1. 产品命题
 
-Peers Dev 是 Peers Touch 面向人类开发者与 Agent 并行研发的操作产品。它把
+Development Workflow 是 Peers Touch 面向人类开发者与 Agent 并行研发的操作产品。它把
 已经接受的产品、架构和计划工作投影为一个可观察、有边界、可由当前源码证据
 验证的交付闭环。
 
@@ -20,7 +20,7 @@ Peers Dev 是 Peers Touch 面向人类开发者与 Agent 并行研发的操作�
 - 需要核对完成声明是否匹配当前源码与义务的 reviewer；
 - 需要通过一份可执行指南理解工作流的维护者。
 
-Peers Dev 不是通用项目管理器、CI 替代品、IDE 或运行时部署平台。
+Development Workflow 不是通用项目管理器、CI 替代品、IDE 或运行时部署平台。
 
 ## 2. 产品承诺
 
@@ -48,7 +48,7 @@ Conversation 不得静默改变执行根。Task 或 Plan 不得因聊天文本�
 | DWF-D28 | Completion Review | 独立的当前源码完成审查 | accepted |
 | DWF-D29 | Action Receipt | 有界、脱敏的 Agent 动作收据 | accepted |
 | DWF-D30 | Workflow Doctor | 可执行的工作流自诊断 | accepted |
-| DWF-D31 | Plan generation advance | completed 且 quiescent 后复用 canonical owner workspace | accepted |
+| DWF-D38 | Frozen Plan Version and PlanMount | 项目设计与执行 worktree 分离，mount 在完整 Plan Run 期间占用 worktree | accepted |
 | DWF-D32 | Cross-module resource aggregation | runtime acquisition 前统一解析 target、复用、容量与 park | accepted |
 
 Accepted 决策定义目标合同，不等于实现或验收已经通过。在当前源码完成验证前，
@@ -60,12 +60,12 @@ Accepted 决策定义目标合同，不等于实现或验收已经通过。在�
 |---|---|---|---|---|
 | DEV-C01 | Owner-rooted execution | required | DWF-D33 | 首个可阻断工具事件绑定一个不可变 OWNER 执行根；内部会话必须携带 assignment；缺少强制能力时 fail closed |
 | DEV-C02 | Truthful completion review | required | DWF-D28 | Task 和 Plan 完成需要绑定当前源码与义务的独立审查收据 |
-| DEV-C03 | Live development observability | required | DWF-D27/DWF-D29 | Dev UI 展示 worktree、Plan、Task、活动、阻塞、漂移、循环和停滞 |
+| DEV-C03 | Development observability | required | DWF-D27/DWF-D29 | Workflow Snapshot 一次性输出 worktree、Plan、Task、活动、阻塞、漂移、循环和停滞 |
 | DEV-C04 | Human and agent operating guide | required | DWF-D30 | 人类指南中的可执行声明均有机器检查 |
-| DEV-C05 | Self-diagnosis | required | DWF-D30 | 一个 Doctor 入口检查安装、Hook、绑定、状态 owner、Dev UI 和完成 Gate |
-| DEV-C06 | Mutation from Dev UI | unsupported | DWF-D27 | Dev UI 保持只读，所有写入由 owner CLI 执行 |
+| DEV-C05 | Self-diagnosis | required | DWF-D30 | 一个 Doctor 入口检查安装、Hook、mount/run、状态 owner 和完成 Gate |
+| DEV-C06 | Mutation from Workflow Snapshot | unsupported | DWF-D27 | Snapshot 保持只读，所有写入由 owner CLI 执行 |
 | DEV-C07 | Cross-worktree writes | unsupported | DWF-D33 | OWNER lineage 可读取其他 worktree，但只能写入自己的不可变执行根 |
-| DEV-C08 | Sequential owner Plans | required | DWF-D31 | completed 且 quiescent 后在同一 canonical owner workspace 推进下一 Plan generation |
+| DEV-C08 | Plan mount occupancy | required | DWF-D38 | 一个 worktree 在完成、取消或显式 unmount 前只执行一个 frozen Plan Version |
 | DEV-C09 | Plan-level resource preparation | required | DWF-D32 | 多模块影响在 runtime acquisition 前聚合；复用、容量、冲突和 park 由一个资源计划裁决 |
 
 ## 5. 首次可用结果
@@ -73,8 +73,8 @@ Accepted 决策定义目标合同，不等于实现或验收已经通过。在�
 目标首次闭环是：
 
 1. 开发者运行 `make skills IDE=trae`；
-2. 运行 `make dev-ui` 打开 Peers Dev；
-3. 当前 worktree 显示一条由 owner state 推导的状态记录；
+2. 运行 `make workflow-snapshot`；
+3. 命令输出当前 worktree 由 owner state 推导的状态记录并退出；
 4. 安装路径的合成 `PreToolUse` 验证能够绑定新 conversation；
 5. Doctor 对缺失或不一致环节返回 typed failure，而不是伪报
    `INSTALLED`、`COMPLETE` 或 `HEALTHY`。
@@ -133,15 +133,15 @@ Acceptance 单元独立证明。
 | DEV-C03 | `apps/dev/` 是现有只读产品面 | 接入 owner snapshot、action reducer 与 review state | API contract 加桌面/窄屏动态验证 |
 | DEV-C04 | 架构文档和应用 README 已存在 | 确立唯一操作指南并将每条命令纳入 truth audit | 从干净 worktree 执行所有已声明命令 |
 | DEV-C05 | 现有 audit 可作为候选检查输入 | 组合为一个 typed Doctor 并验证公开承诺 | healthy fixture 与故障注入 fixture |
-| DEV-C08 | Workspace binding 已隔离同步进入仓库的外来 Plan | 增加显式 generation CAS、quiescence 与不可变历史 | completed advance、live-resource rejection 与并发测试 |
+| DEV-C08 | PlanMount 隔离同步进入仓库的外来 Plan | 增加 frozen version、snapshot、run 与显式 unmount | mount conflict、snapshot immutability 与并发测试 |
 | DEV-C09 | Machine ledger、Local Dev lease 和 Acceptance runtime manifest 已有明确 owner | 增加标准 ModuleImpact、target closure 与 fenced PlanResourcePlan | 多模块、复用、容量不足、all-or-none、quarantine replacement 与跨 Plan 冲突测试 |
 
 表中 `Canonical basis` 只说明可继续设计或实现的当前输入，不构成实现完成或
 Acceptance 通过证明。
 
-## 11. UI 证据边界
+## 11. Snapshot 证据边界
 
-Peers Dev 已有 `apps/dev/` 产品面，本合同在该产品面上演进信息层级：
+Workflow Snapshot 以一次性 JSON 保留以下信息层级：
 
 ```text
 worktree identity
@@ -150,5 +150,5 @@ worktree identity
           -> agent activity / blocker / review state
 ```
 
-无需创建平行 mock 产品，但最终界面仍须从目标源码重新取得静态、视觉和动态
-证据。其他 worktree 的截图、端口状态、测试计数或历史运行结果不能作为当前证明。
+Snapshot 不启动 server 或 browser，也不持有刷新状态。其他 worktree 的端口
+状态、测试计数或历史运行结果不能作为当前证明。

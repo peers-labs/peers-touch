@@ -22,9 +22,16 @@
     "sources": [
       "docs/architecture/development-workflow/README.md",
       "docs/architecture/development-workflow/decisions.md",
+      "docs/architecture/development-workflow/data-model.md",
+      "docs/architecture/development-workflow/design.md",
       "docs/architecture/development-workflow/integration.md",
       "docs/architecture/development-workflow/host-neutral-agent-integration.md",
       "docs/architecture/development-workflow/module-layout.md",
+      "docs/architecture/local-dev-control-plane/decisions.md",
+      "docs/architecture/local-dev-control-plane/design.md",
+      "docs/architecture/frontend-runtime/decisions.md",
+      "docs/architecture/frontend-runtime/design.md",
+      "docs/architecture/runtime/desktop-runtime-architecture.md",
       "docs/knowledge/invariants/host-neutral-agent-execution.md",
       "docs/knowledge/invariants/owner-rooted-workflow-binding.md"
     ],
@@ -35,7 +42,11 @@
       "DWF-D34",
       "DWF-D35",
       "DWF-D36",
-      "DWF-D37"
+      "DWF-D37",
+      "DWF-D38",
+      "DWF-D39",
+      "LDCP-D19",
+      "D-18"
     ]
   },
   "scope": {
@@ -49,23 +60,19 @@
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "docs/architecture/architecture-module-governance/architecture-modules.json",
+        "pathPrefix": "apps/desktop",
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "docs/architecture/development-workflow",
+        "pathPrefix": "apps/dev",
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "docs/global/workflow.md",
+        "pathPrefix": "apps/station/app/subserver/agent",
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "docs/knowledge/invariants/host-neutral-agent-execution.md",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "docs/knowledge/invariants/owner-rooted-workflow-binding.md",
+        "pathPrefix": "docs",
         "mode": "exclusive-write"
       },
       {
@@ -73,7 +80,11 @@
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "tooling/devctl/test/station.test.mjs",
+        "pathPrefix": "tooling/development/secure_content",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/devctl",
         "mode": "exclusive-write"
       },
       {
@@ -85,56 +96,21 @@
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "tooling/scripts/architecture/module-governance.test.mjs",
+        "pathPrefix": "tooling/scripts",
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "tooling/scripts/acceptance-plan.py",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/scripts/acceptance-plan-test.py",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/scripts/agent-integration-audit-test.py",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/scripts/agent-integration-audit.py",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/scripts/agent-integration-control.py",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/scripts/install-agent-integration.sh",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/scripts/local-dev",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/scripts/review",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/skills/pt-github-review",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/skills/pt-dev-workflow",
+        "pathPrefix": "tooling/skills",
         "mode": "exclusive-write"
       }
     ],
     "nonGoals": [
-      "Change Peers Touch end-user product behavior",
+      "Remove the Tauri WebView renderer used inside the native Desktop application",
+      "Remove system-browser OAuth handoff or independent Web products",
       "Weaken OWNER, child-lineage, cross-worktree write, or Completion Review checks",
       "Migrate or dual-read legacy conversation or Action Receipt schemas",
       "Delete Plan, Session, Completion Review, runtime lease, or Acceptance evidence",
-      "Modify the two pre-existing generated capability files in this worktree",
+      "Modify the pre-existing user change in docs/architecture/federation/data-model.md",
       "Merge histories, rewrite history, or run the real machine hard cut"
     ]
   },
@@ -148,11 +124,21 @@
       "blocker": null
     },
     {
-      "id": "DWF-NBI02-PROOF-DELIVERY",
-      "workstreamId": "DWF-INTEGRATION-DELIVERY",
-      "path": "tasks/DWF-NBI02-PROOF-DELIVERY.md",
+      "id": "DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER",
+      "workstreamId": "DWF-INTEGRATION-CONTROL",
+      "path": "tasks/DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER.md",
       "dependsOn": [
         "DWF-NBI01-CONTROL-ACTIONS"
+      ],
+      "status": "pending",
+      "blocker": null
+    },
+    {
+      "id": "DWF-NBI03-PROOF-DELIVERY",
+      "workstreamId": "DWF-INTEGRATION-DELIVERY",
+      "path": "tasks/DWF-NBI03-PROOF-DELIVERY.md",
+      "dependsOn": [
+        "DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER"
       ],
       "status": "pending",
       "blocker": null
@@ -169,9 +155,7 @@
       "pullRequest": "allowed"
     },
     "runtime": {
-      "deployProfiles": [
-        "dev-ui-local"
-      ],
+      "deployProfiles": [],
       "destructiveResetScopes": []
     },
     "history": {
@@ -186,23 +170,18 @@
 ```json
 {
   "closures": {
-    "nonblocking-control-actions": [
-      "acceptance-runtime-provisioning-self",
-      "acceptance-workflow-contract",
-      "development-workflow-control-plane",
-      "dev-ui-browser-e2e",
-      "machine-dev-registry-self"
-    ],
+    "nonblocking-control-actions": [],
+    "native-plan-mount-cutover": [],
     "nonblocking-control-proof": [
       "acceptance-infra-validation",
       "acceptance-plan-self",
       "acceptance-runtime-provisioning-self",
       "acceptance-workflow-contract",
       "development-workflow-control-plane",
-      "dev-ui-browser-e2e",
       "machine-dev-registry-self",
-      "peers-dev-product",
-      "peers-dev-ui-browser-e2e"
+      "desktop-check",
+      "desktop-dev-runtime-isolation-static",
+      "desktop-primary-navigation-e2e"
     ]
   },
   "completion": [
@@ -211,10 +190,10 @@
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
     "development-workflow-control-plane",
-    "dev-ui-browser-e2e",
     "machine-dev-registry-self",
-    "peers-dev-product",
-    "peers-dev-ui-browser-e2e"
+    "desktop-check",
+    "desktop-dev-runtime-isolation-static",
+    "desktop-primary-navigation-e2e"
   ],
   "full": [
     "acceptance-infra-validation",
@@ -222,10 +201,10 @@
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
     "development-workflow-control-plane",
-    "dev-ui-browser-e2e",
     "machine-dev-registry-self",
-    "peers-dev-product",
-    "peers-dev-ui-browser-e2e"
+    "desktop-check",
+    "desktop-dev-runtime-isolation-static",
+    "desktop-primary-navigation-e2e"
   ]
 }
 ```
@@ -241,7 +220,8 @@ commands.
 
 ```text
 DWF-NBI01-CONTROL-ACTIONS
-  -> DWF-NBI02-PROOF-DELIVERY
+  -> DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER
+  -> DWF-NBI03-PROOF-DELIVERY
 ```
 
 ## Atomic Cutover
@@ -254,6 +234,13 @@ DWF-NBI01-CONTROL-ACTIONS
   GC receive exact create-once OWNER grants.
 - Existing combined install-and-purge behavior is deleted; no compatibility
   alias or opportunistic cleanup remains.
+- Plan source is frozen independently of the execution worktree. A Plan mount
+  occupies one worktree until completion, cancellation, or explicit unmount.
+- Desktop supports only the native Tauri launch path. Browser-mode launch,
+  browser product proof, the Peers Dev 4177 dashboard, and their compatibility
+  aliases are deleted.
+- Workflow Snapshot remains a read-only CLI/API projection and does not own a
+  browser server.
 
 ## Review Focus
 
@@ -262,3 +249,7 @@ DWF-NBI01-CONTROL-ACTIONS
 - A cleanup grant cannot be reused or consumed by a different action label.
 - Machine lock serialization remains bounded and is not treated as idle proof.
 - Installation success makes no cleanup claim.
+- Native Desktop proof exercises a real application window and input path.
+- No current architecture, runtime class, command, Gate, provisioner, registry
+  entry, or product matrix treats browser as a Desktop client.
+- Plan mount, runtime lease, and atomic lock remain distinct resource classes.

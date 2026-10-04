@@ -43,7 +43,8 @@ Use this priority order:
 
 1. Repository-owned Make targets and runtime control plane.
 2. Repository-owned Acceptance Harness, embedded WebDriver, Appium, native
-   driver, accessibility driver, or browser driver required by the Journey.
+   driver, accessibility driver, or an independently owned Web-product driver
+   required by the Journey.
 3. A detected host adapter only for an interaction the project driver cannot
    perform.
 4. User interaction only when the remaining assertion is inherently
@@ -92,7 +93,6 @@ adapter without changing Journey or Session semantics.
 ## Runtime Selection
 
 - `make desktop`: interactive development runtime.
-- `make desktop-web`: browser debugging only, never product Acceptance.
 - `make acceptance-driver-build`: build the feature-gated native Acceptance
   binary.
 - `make acceptance-driver-smoke`: verify native URL, DOM, global Tauri API,
@@ -118,7 +118,7 @@ Agents MUST NOT start, access, or test against a Station on `127.0.0.1`,
 `localhost`, or another loopback address.
 
 Before any command that may ready or access Station, including `make station`,
-`make desktop`, `make desktop-web`, `make mobile`, restart targets, or an
+`make desktop`, `make mobile`, restart targets, or an
 environment-backed Acceptance Gate:
 
 1. Run `make config`.

@@ -148,7 +148,7 @@ packages/prototypes/
 原型登记和 Portal 展示必须按一级站点归属组织：
 
 ```text
-desktop            # Desktop App / desktop-web / applet 容器内体验
+desktop            # Native Desktop App / embedded renderer / applet 容器内体验
 mobile             # Mobile 端体验
 dashboard          # Station Dashboard / 管理台 / 运维台
 ```

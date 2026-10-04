@@ -29,8 +29,8 @@ tooling/scripts/plan/
 ├── plan-migration.mjs
 ├── planctl.mjs
 ├── planctl.test.mjs
-├── workspace-plan-binding.mjs
-└── workspace-plan-binding.test.mjs
+├── plan-mount.mjs
+└── plan-mount.test.mjs
 
 tooling/scripts/local-dev/
 ├── dev-work-schema.mjs
@@ -80,6 +80,10 @@ tooling/scripts/
 ~/.peers-touch/dev/
 ├── work.json
 ├── work.lock
+├── plan-mounts/
+│   ├── ledger.json
+│   ├── ledger.lock
+│   └── mounts/<mountId>.json
 ├── skill-overlays/
 │   ├── registry.json
 │   ├── registry.lock
@@ -87,13 +91,12 @@ tooling/scripts/
 │       ├── overlay.json
 │       └── SKILL.md
 └── workspaces/<workspaceId>/workflow/
-    ├── plan-binding.json
-    ├── plan-binding.lock
-    ├── plan-binding-history/generation-<N>.json
     ├── active-work.json
     ├── active-work.lock
     ├── agent-integration.json
     ├── <workItemId>/
+    │   ├── execution-plan-snapshot.json
+    │   ├── execution-run.json
     │   ├── session.json
     │   ├── events.ndjson
     │   ├── resource-plan.json
@@ -123,18 +126,18 @@ tooling/scripts/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D37 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D39 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
-| `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
-| `execution-plans/*/tasks/*.md` | One independently resumable Task Slice |
+| `execution-plans/*/plan.md` | Frozen Plan Version and Acceptance contract |
+| `execution-plans/*/tasks/*.md` | One immutable Task Slice specification |
 | `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
 | `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
 | `plan-migration.mjs` | Locked, journaled migration with global path-role exclusion, atomic exchange/no-replace writes, takeover and recovery |
 | `planctl.mjs` | `validate/current/next/status/activate/advance/reopen/migrate` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
-| `workspace-plan-binding.mjs` | Generation-bound workspace-to-Plan ownership, immutable history, quiescent advance, and direct resolution |
-| `workspace-plan-binding.test.mjs` | Isolation, idempotence, generation CAS, quiescence, migration, tamper, and concurrency regressions |
+| `plan-mount.mjs` | Project Ledger mount/unmount owner, immutable snapshot creation, live-worktree exclusion, and direct resolution |
+| `plan-mount.test.mjs` | Authoring/execution separation, idempotence, mount conflict, explicit unmount, snapshot, tamper, and concurrency regressions |
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
@@ -154,10 +157,10 @@ tooling/scripts/
 | `workflow-binding.mjs` | OWNER-authorized child assignment, terminalization, status, and hard-cut reset CLI |
 | `workflow-tool-intent.mjs` | Structured shell/tool intent parsing without regex command admission |
 | `workflow-anchor.mjs` | Deterministic Context Anchor rendering and response/transcript verification |
-| `workflow-state-inspector.mjs` | Read-only declaration, Plan binding, active-work, Session, Git and terminal-state validation |
+| `workflow-state-inspector.mjs` | Read-only mount, snapshot, run, declaration, active-work, Session, Git and terminal-state validation |
 | `workflow-kernel.mjs` | Host-neutral binding, subject-root, owner-state, source-scope, Stop and release policy |
-| `apps/dev/server/status.mjs` | Canonical read-only owner join consumed by Peers Dev and all workflow projections |
-| `workflow-snapshot.mjs` | Thin CLI/re-export over the canonical Peers Dev Snapshot owner |
+| `workflow-snapshot-core.mjs` | Canonical read-only owner join consumed by workflow projections |
+| `workflow-snapshot.mjs` | Thin CLI over Workflow Snapshot core |
 | `workflow-doctor.mjs` | Executable truth matrix for public workflow promises |
 | `tooling/plugins/pt-ew-plugin/` | Thin stdin/stdout adapter into the host-neutral Workflow Kernel |
 | `tooling/scripts/acceptance-run.py` | Shared Journey/provisioning execution with explicit non-publishing development and formal Acceptance policies |
@@ -191,13 +194,13 @@ continues to use its own immutable run layout and latest pointers.
 ```text
 planctl.mjs
   -> plan-package.mjs
-  -> repository Plan Package files
+  -> repository frozen Plan Version files
 
-workspace-plan-binding.mjs
+plan-mount.mjs
   -> plan-package.mjs
   -> machine-dev-paths.mjs
-  -> owner-state quiescence checks
-  -> immutable generation records + atomic current plan-binding.json
+  -> project mount ledger
+  -> immutable ExecutionPlanSnapshot + mutable ExecutionRun
 
 dev-session.mjs
   -> dev-session-store.mjs
@@ -208,7 +211,7 @@ dev-session.mjs
 dev-work.mjs
   -> dev-work-ledger.mjs
   -> dev-work-schema.mjs
-  -> workspace-plan-binding.mjs
+  -> plan-mount.mjs
   -> machine-dev-paths.mjs
 
 Module Skills
@@ -238,18 +241,18 @@ pt-ew-plugin
   -> canonical BindingProjection
   -> ToolIntent AST + subject/tool/target roots
   -> workflow-kernel.mjs
-       -> Plan binding / declaration / active-work / Session owner reads
+       -> Plan mount / run / declaration / active-work / Session owner reads
        -> machine-rendered Anchor + atomic release receipt
 
 Workflow Snapshot
-  -> Plan / declaration / active-work / Session / Git owner reads
+  -> mount / snapshot / run / declaration / active-work / Session / Git owner reads
   -> Completion Review delegated receipt + bounded Action Receipt reduction
-  -> CLI / Context Anchor / Workflow Doctor / Peers Dev
+  -> CLI / Context Anchor / Workflow Doctor
 
 Acceptance execution_plan.py
-  -> current workspace Plan generation
-  -> bound Plan Package manifest contract
-  -> current Task status
+  -> current workspace PlanMount
+  -> immutable ExecutionPlanSnapshot
+  -> ExecutionRun current Task status
 ```
 
 Forbidden dependencies:

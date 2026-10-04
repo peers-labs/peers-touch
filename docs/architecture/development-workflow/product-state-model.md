@@ -1,4 +1,4 @@
-# Peers Dev 产品状态模型
+# Development Workflow 产品状态模型
 
 > **Status**: active
 > **Created**: 2026-09-26 | **Updated**: 2026-10-01
@@ -105,21 +105,16 @@ workspace，也不从 branch、目录顺序或聊天内容推断 owner。
 相同 request 和 source 保留 fencing token；request、source 或 allocation 改变
 都会推进 token。旧 token 的 Runtime Owner 结果不得改变当前状态。
 
-## 7. Dev UI State
+## 7. Snapshot Projection State
 
-UI 必须支持：
+Workflow Snapshot projects:
 
-- PRODUCT、DESIGN、PLAN、EXECUTE、DELIVER 的 worktree stage strip；
-- 只由 completed Task closure 派生的 numeric Plan bar；
-- 由 Session 和 Completion Review 派生的非数值 current-Task stage strip；
-- 保持表格几何稳定的 loading；
-- live Snapshot；
-- 带 age 的 stale Snapshot；
-- 带 typed finding 的 partial owner failure；
-- 带 retry 的 disconnected server；
-- 纵向 worktree summary 的窄屏布局；
-- 带 review source identity 与时间的 terminal completed state。
+- PRODUCT、DESIGN、PLAN、EXECUTE、DELIVER stage;
+- numeric Plan progress derived only from completed Task closures;
+- current Task source/functional/acceptance/review state;
+- activity freshness and typed partial-owner failures;
+- review source identity and terminal timestamp.
 
-除非 Plan lifecycle 和 current Completion Review 同时授权，UI 不得显示
-`100%`、`complete` 或绿色 terminal state。DWF-D27..DWF-D29 未完成当前源码
-证明时，相关 UI 必须显示 `UNPROVEN`，不得借用历史结果填充。
+Unless ExecutionRun lifecycle and current Completion Review both authorize it,
+Snapshot cannot emit `COMPLETE` or `100%`. DWF-D27..DWF-D29 proof must come
+from current source; historical browser results cannot populate the projection.

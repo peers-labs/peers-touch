@@ -79,16 +79,17 @@ It is machine-visible source/runtime intent owned by Development Workflow, not
 Profile allocation or a live lease. Read-only intake may precede it; non-trivial
 tasks must publish and confirm it before the first write or runtime acquisition.
 
-Tracked Plan ownership is stored separately from both environment allocation
+Tracked Plan occupancy is stored separately from both environment allocation
 and mutable intent:
 
 ```text
-~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
+~/.peers-touch/dev/plan-mounts/
 ```
 
-`make plan-bind PLAN=<path>` creates this binding once. The same tuple is
-idempotent; a different Plan is rejected. A new Plan requires a new worktree.
-Repository/PR synchronization never changes the binding.
+`make plan-mount PLAN=<path>` binds one frozen Plan Version to the selected
+execution worktree for the complete run. A second live Plan is rejected until
+completion, cancellation, or explicit owner unmount. Repository/PR
+synchronization never changes the mount.
 
 ---
 
@@ -202,8 +203,6 @@ deploy-environment creation.
 | `PT_RELAY_DEPLOY_ENV` | if relay remote | `relay-1` | Maps to deploy env |
 | `PT_DESKTOP_APP_GATEWAY_PORT` | yes | `3030` | Desktop Tauri BFF port |
 | `PT_DESKTOP_APP_WEB_PORT` | yes | `3210` | Desktop Tauri web port |
-| `PT_DESKTOP_WEB_GATEWAY_PORT` | yes | `3031` | Desktop browser BFF port |
-| `PT_DESKTOP_WEB_WEB_PORT` | yes | `3211` | Desktop browser web port |
 | `PT_MOBILE_WEB_PORT` | if mobile | `5173` | Mobile dev server port |
 
 ### 2.5 Deploy Env Files
@@ -274,7 +273,6 @@ With profile active, the developer's machine runs:
 │ Developer Machine                                    │
 │                                                      │
 │  Desktop App (Tauri)  → localhost:3030 (BFF)         │
-│  Desktop Web (Browser)→ localhost:3031 (BFF)         │
 │  Mobile Dev Server    → localhost:5173               │
 │                                                      │
 │  [local mode only]                                   │
@@ -313,11 +311,10 @@ registered and its binding must resolve.
 | `make dev-check WORK_ITEM=<id>` | Verify current declaration before mutation |
 | `make dev-heartbeat WORK_ITEM=<id>` | Extend the current declaration expiry |
 | `make dev-release WORK_ITEM=<id>` | Release declaration after runtime cleanup |
-| `make plan-bind PLAN=<path>` | Bind this workspace once to one Plan Package |
-| `make plan-binding` | Resolve and validate the workspace's bound Plan |
+| `make plan-mount PLAN=<path>` | Mount one frozen Plan Version to this workspace |
+| `make plan-mount-status` | Resolve and validate the workspace's mount and run |
 | `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
 | `make desktop` | Start Desktop Tauri app |
-| `make desktop-web` | Start Desktop in browser |
 | `make mobile` | Start Mobile iOS simulator |
 
 Normal initial registration is explicit and one-step:
@@ -354,7 +351,7 @@ Root or branch changes remain explicit binding changes. Agent workflow must
 still update its Development declaration before another mutation or runtime
 acquisition so the declared `sourceHead` equals the live worktree HEAD.
 
-`make desktop` and `make desktop-web` are self-preparing. They resolve ports,
+`make desktop` is self-preparing. It resolves ports,
 Station topology, and runtime settings from the selected Profile; resolve
 package requirements from the repository manifests and `pnpm-lock.yaml`;
 install missing packages with `pnpm install --frozen-lockfile`; generate missing
@@ -364,6 +361,9 @@ Vite/Tauri pair is reused only when both records match the current Git commit.
 Partial or source-stale managed pairs are stopped as one owned runtime before
 ports are checked and the pair is restarted. A separate `pnpm install`,
 `make model-gen`, or `make station` is not required.
+
+There is no supported Desktop browser launch path. Native Tauri is the only
+Desktop development and product-proof runtime.
 
 Registration does not create or edit an environment definition. A later
 destructive wrapper uses the generic lease API after deriving Profile reset

@@ -10,17 +10,17 @@
 
 | Existing owner/path | Current role | Target relationship |
 |---|---|---|
-| `docs/global/workflow.md` | Outer development stages | Retains stages; points PLAN/EXECUTE to Plan Package and Session |
+| `docs/global/workflow.md` | Outer development stages | Retains stages; points PLAN/EXECUTE to Plan Version, mount, run, and Session |
 | `pt-god-view` | Methodology entry facade | Classifies intent and routes exactly one owner; never executes or persists |
 | `pt-dev-workflow` | Stage classification and dispatch | Sole intake-to-close Development Run application service |
 | `pt-architecture-execution-methodology` | Execution-plan analysis | Produces the vertical dependency model without writing files |
-| `pt-plan-and-document` | Document writer | Persists the accepted model as a bounded Plan Package and generation-bound workspace Plan binding |
+| `pt-plan-and-document` | Document writer | Persists the accepted model as a frozen Plan Version; explicit owner action mounts it for execution |
 | `pt-goal-orchestrator` | Host-neutral Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
 | `pt-dev-runtime-handoff` | Runtime verification owner | Selects project drivers, operates the Journey, commits Session results, and cleans up |
 | `pt-*-host-adapter` | Optional host transport | Invokes capabilities exposed by detected TRAE, Cursor, Codex, or future hosts |
 | `pt-execution-plan-guardian` | Plan-conformance guard | Returns a read-only allow/deny/escalate decision for one proposed action |
 | `pt-context-anchor` | Status adapter | Validates owners and renders a read-only chat projection |
-| `execution-plan.py` | Resolves local or explicit Plan input | Loads the current workspace Plan generation locally; CI validates every Plan path declared by the PR |
+| `execution-plan.py` | Resolves local or explicit Plan input | Loads the current PlanMount and immutable snapshot locally; CI validates explicit frozen Plan inputs |
 | `acceptance-plan.py` | Selects current closure Gates | Uses current Task `closureId` from package |
 | `tooling/scripts/local-dev/` | Make-backed runtime commands | Adds public declaration and Session commands |
 | Domain development Skills | Module-local impact policy | Emit standard `ModuleImpact`; never allocate or provision concrete resources |
@@ -28,19 +28,20 @@
 | `skill-overlay-control.py` | Machine-local user Overlay lifecycle | Installs immutable copies and resolves interaction-only policy for `pt-ew` |
 | `pt-ew` | Shared personal-workflow entry | Loads enabled user Overlays, then delegates project routing to `pt-god-view` |
 | `tooling/acceptance/` | Formal product proof | Runs only after functional promotion |
-| execution plans | Scope and current status | Stable manifest + bounded Task snapshots |
+| execution plans | Frozen execution specification | Immutable Plan Version + Task Slices |
 
 ## 2. Control-Plane Composition
 
 ```text
-workspace active-work pointer
+Project Ledger PlanMount
       |
       v
-Plan Package -> current Task -> Development Session
-      |              |                 |
-      |              |                 +-> transition / first failure
-      |              +-> closure and durable evidence refs
-      +-> DAG / global Acceptance contract
+ExecutionPlanSnapshot -> ExecutionRun -> current Task -> Development Session
+      |                    |                |                 |
+      |                    |                |                 +-> transition / first failure
+      |                    |                +-> closure
+      |                    +-> lifecycle / evidence refs
+      +-> immutable DAG / global Acceptance contract / executionBinding
                        |
              Local Dev + Git identity
                        |
@@ -51,8 +52,9 @@ Plan Package -> current Task -> Development Session
 
 No layer duplicates another:
 
-- Plan owns stable graph plus compact Task lifecycle/current selection.
-- Task owns one closure specification/snapshot, not lifecycle or transition history.
+- Plan Version and Task Slices own only immutable specification.
+- PlanMount owns worktree occupancy; ExecutionPlanSnapshot owns exact run input.
+- ExecutionRun owns Plan/Task lifecycle and evidence references.
 - Session event journal owns current transition/attempt; `session.json` is its projection.
 - Local Dev owns allocation, not task completion.
 - Acceptance owns proof, not development iteration.
@@ -78,8 +80,9 @@ make dev-resource-record WORK_ITEM=<id> RESOURCE_RESULT=<json-file>
 
 Tracked runs add `PLAN=<repository-relative-package-plan.md>` and
 `TASK=<current-task-id>` to `dev-start` and `dev-update`. Those commands
-validate the Plan locator against the workspace's immutable `plan-bind` record
-before publishing it. A bound workspace cannot publish locator-less work.
+validate the Plan locator and Task against the workspace's live PlanMount,
+snapshot, and ExecutionRun before publishing it. A mounted workspace cannot
+publish locator-less work.
 Heartbeat runs periodically before expiry and preserves the locator. During
 cleanup and delivery, a blocked/completed Plan retains its exact blocked/done
 Task locator until the declaration is released.
@@ -89,12 +92,10 @@ declaration source identity advances before the next mutation or runtime
 acquisition. The machine registration does not store Git HEAD and therefore
 requires no source refresh. Task handoff also updates the declaration's `TASK`.
 
-The declaration schema rolls out as a hard compatibility boundary. Repository
-source must be synchronized to every active worktree before the first writer
-publishes non-null Plan locator fields into the shared machine ledger. Until
-that synchronization completes, existing declarations retain their legacy
-shape and Peers Dev may use the validated Development Session only as a
-read-only locator bridge. The bridge never writes inferred fields back.
+The declaration schema is a hard compatibility boundary. Repository source
+must be synchronized before a writer publishes mount/run locator fields into
+the shared machine ledger. No legacy binding reader or inferred locator bridge
+exists.
 
 `dev-resources-prepare` runs after all affected module Skills emit
 `ModuleImpact` and before the first runtime acquisition. It resolves the
@@ -122,21 +123,20 @@ When a Local Dev lease request matches a planner-owned declaration claim,
 and current before lease acquisition. Claims present before planning remain
 base declaration claims and do not acquire or lose planner ownership.
 
-Plan Package:
+Plan Version and execution mount:
 
 ```bash
-make plan-bind PLAN=<package-plan.md>
-make plan-binding
-make plan-binding-advance PLAN=<next-package-plan.md> \
-  EXPECTED_GENERATION=<current-generation>
 make plan-validate PLAN=<package-plan.md>
-make plan-activate PLAN=<package-plan.md> TASK=<ready-id>
-make plan-current PLAN=<package-plan.md>
-make plan-next PLAN=<package-plan.md>
-make plan-status PLAN=<package-plan.md>
-make plan-advance PLAN=<package-plan.md> WORK_ITEM=<id> \
+make plan-mount PLAN=<package-plan.md>
+make plan-mount-status
+make plan-unmount MOUNT=<mount-id> REASON=<completed|cancelled|owner-unmount>
+make plan-run-activate RUN=<run-id> TASK=<ready-id>
+make plan-current RUN=<run-id>
+make plan-next RUN=<run-id>
+make plan-status RUN=<run-id>
+make plan-advance RUN=<run-id> WORK_ITEM=<id> \
   TASK=<current-id> TO=done NEXT=<ready-id> SESSION=<session.json>
-make plan-reopen PLAN=<package-plan.md> WORK_ITEM=<id>
+make plan-reopen RUN=<run-id> WORK_ITEM=<id>
 make plan-migrate LEGACY_PLAN=<legacy.md> PACKAGE=<package-plan.md>
 ```
 
@@ -176,14 +176,14 @@ All commands:
 - use atomic replacement, lock metadata and replayable migration/session journals.
 
 `active-work-sync` runs from the consuming worktree and derives its record from
-the current Plan generation, Plan/Task, active declaration, Session and Git. It
-does not accept arbitrary progress data. `active-work-status-all` and Peers Dev
+the current mount, snapshot, run/Task, active declaration, Session and Git. It
+does not accept arbitrary progress data. `active-work-status-all` and Workflow Snapshot
 only enumerate per-workspace records. The canonical implementation originates
 in `peers-dev-workflow`, but mutable records never report back to that source
 repository.
 
 `dev-functional-result` is the single run-and-commit path for deterministic
-Development proof. It derives the current closure from the bound Plan and
+Development proof. It derives the current closure from the mounted snapshot and
 starts the Development runner itself; callers cannot select one Gate or provide
 a result file. Under the Session lock it validates the aggregate run manifest,
 the exact Gate set, class-required source/runtime/cleanup artifacts, current Git
@@ -313,9 +313,10 @@ remains.
 
 - renders an accepted plan model into `plan.md` plus `tasks/*.md`;
 - enforces manifest/task/current-snapshot bounds;
-- creates generation 1 or explicitly advances a completed, quiescent workspace
-  Plan generation; after review, Dev Workflow publishes the
-  tracked declaration and derives workspace active-work from its owners;
+- freezes the Plan Version and, only with an explicitly selected execution
+  worktree, creates its PlanMount and immutable snapshot; after review, Dev
+  Workflow creates the ExecutionRun, publishes the tracked declaration, and
+  derives workspace active-work from its owners;
 - creates no Context Anchor section and no progress appendix;
 - uses archive only for migrated historical input.
 
@@ -361,7 +362,7 @@ continuation contract:
 - newly unlocked Tasks, execution mandate/autonomous horizon, evidence, and
   hard boundaries.
 
-The Anchor and Peers Dev copy `completedAfter` and `percentageAfter` from
+The Anchor and Workflow Snapshot copy `completedAfter` and `percentageAfter` from
 `planctl status.progress.nextProgressBoundary`. They never add rounded
 percentages locally or count unlocked pending Tasks as completed.
 
@@ -387,8 +388,9 @@ capability degrades to a safe serial or hybrid schedule.
 
 - owns runtime selection, launch, Journey operation, deterministic functional
   interpretation, Session result commit, and cleanup;
-- prefers repository-native Make, Harness, WebDriver, Appium, accessibility,
-  and browser drivers;
+- prefers repository-native Make, Harness, embedded WebDriver, Appium, and
+  native accessibility drivers; an independent Web product may use its own
+  driver but never as Desktop proof;
 - reports a typed missing capability without selecting a host or creating a
   request;
 - rejects PASS not committed to source-bound `FUNCTIONAL_PASS` as
@@ -418,9 +420,10 @@ Rejects:
 
 ## 5. Acceptance Integration
 
-`execution-plan.py` and `acceptance-plan.py` consume package manifests through a
-structured parser. Local execution loads only the current workspace generation's
-`planId + planPath`; synchronized foreign Plans are ignored. Pull-request CI
+`execution-plan.py` and `acceptance-plan.py` consume immutable snapshots through
+a structured parser. Local execution loads only the current workspace
+PlanMount's snapshot and run; synchronized foreign Plans are ignored.
+Pull-request CI
 reads `## Execution Plans / 执行计划` and invokes `--plan` once per declared
 path. The current closure is the current Task's `closureId`.
 

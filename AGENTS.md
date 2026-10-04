@@ -147,7 +147,7 @@ Example:
     first edit, bind the explicitly selected current worktree through
     `tooling/scripts/verify-worktree-binding.py` and resolve its canonical root,
     branch, `workspaceId`, immutable initial HEAD, and current expected HEAD.
-    Expected HEAD is advancing source identity outside the Plan Package; only
+    Expected HEAD is advancing source identity outside the frozen Plan Version; only
     an explicitly authorized refresh operation defined in §13.5.1 may change
     it.
 13. **Development declaration first** — Read-only intake may inspect any
@@ -493,7 +493,7 @@ Current project skills:
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
 | `pt-oauth2-client-2-vercel` | Publish and verify the OAuth2 Client on Vercel with fail-closed provider, environment, callback, and persistence checks |
-| `pt-plan-and-document` | Persist accepted models into canonical docs/Plan Packages, validate them, and create or advance the workspace Plan generation |
+| `pt-plan-and-document` | Persist accepted models into canonical frozen Plan Versions, validate them, and optionally mount one to an explicitly selected execution worktree |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
@@ -566,7 +566,7 @@ Any non-trivial development task (cross-module, new feature, architecture change
 |-------|----------------|--------------------|-----------------------|----------|
 | **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-dev-workflow` → `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + generation-bound Plan ownership + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Package |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (frozen Plan Version + optional explicit PlanMount + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Version |
 | **EXECUTE** | Plan accepted | `pt-dev-workflow` coordinates host-neutral scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-dev-workflow` → `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
@@ -694,31 +694,31 @@ edits, status claims, and completion claims.
 11. Do not run `git switch`, `git checkout`, `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
-    A Plan binding or lifecycle conflict is never implicit permission to create
+    A Plan mount or lifecycle conflict is never implicit permission to create
     another worktree.
-12. A repository or PR may contain multiple active Plan Packages. Each
-    workspace resolves only
-    `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json`;
-    branch scans, directory order, active status and synchronized foreign Plans
-    never select execution ownership.
-13. `make plan-bind PLAN=<path>` creates the workspace's first
-    `planId + planPath` generation. The same tuple is idempotent; a different
-    tuple returns `WORKSPACE_PLAN_REBIND_DENIED`.
-14. `make plan-binding-advance PLAN=<path> EXPECTED_GENERATION=<n>` is the only
-    next-Plan path for an existing workspace. It requires the current Plan to
-    be completed and the workspace to have no live declaration, active-work
-    projection, or runtime lease. It atomically advances one generation and
-    retains immutable history.
-15. Plan manifest, tracked declaration, workspace active-work record, Session
-    and Context Anchor must match the immutable binding. A bound workspace
-    cannot publish untracked work. CI has no machine binding and must receive
-    an explicit Plan.
+12. A repository or PR may contain multiple frozen Plan Versions. A Plan
+    Version contains no execution worktree identity; branch scans, directory
+    order, lifecycle state and synchronized foreign Plans never select
+    execution ownership.
+13. `make plan-mount PLAN=<path>` is an explicit owner action that binds one
+    frozen version digest to one selected execution `workspaceId` and creates
+    an immutable ExecutionPlanSnapshot with mount/workspace/branch/initial-HEAD
+    binding. The same tuple is idempotent; a second live Plan returns
+    `PLAN_MOUNT_CONFLICT`.
+14. A PlanMount has no TTL and occupies the worktree until completion,
+    cancellation, or explicit owner unmount. Agents may execute the snapshot
+    but MUST NOT amend the frozen Plan Version, switch its worktree, or unmount
+    it. Runtime leases and atomic locks are separate resource classes.
+15. ExecutionRun, tracked declaration, workspace active-work record, Session
+    and Context Anchor must match the mount and immutable snapshot. A mounted
+    workspace cannot publish untracked work. CI has no machine mount and must
+    receive an explicit Plan Version.
 
 Legacy shared `project_memory.md ## active_work` rows are not runtime state and
 cannot resume directly. The bounded Plan migration flow may read a declared
 legacy registry to verify a reviewed `NONE -> NONE` or source crosswalk, but no
 compatibility writer updates that Markdown. Resume requires the current
-worktree's Plan binding, declaration and Session owners to validate first, then
+worktree's PlanMount, ExecutionRun, declaration and Session owners to validate first, then
 `make active-work-sync WORK_ITEM=<id>` creates the workspace-owned record.
 Missing or contradictory owners fail closed; another workspace's record is
 never read as a fallback.
@@ -731,8 +731,8 @@ When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状
 
 1. `pt-god-view` classifies the intent and selects exactly one owner.
 2. Status/handoff routes to read-only `pt-context-anchor`.
-3. Continue/resume routes to `pt-dev-workflow`, which verifies binding,
-   reconciles Plan/Task/Session/workspace active-work, and starts or resumes the
+3. Continue/resume routes to `pt-dev-workflow`, which verifies mount/snapshot/run,
+   reconciles Task/Session/workspace active-work, and starts or resumes the
    authorized Plan Run.
 4. Dev Workflow asks `pt-goal-orchestrator` for the Ready/Parked schedule
    and concurrency lanes.
@@ -779,12 +779,12 @@ arbitrary replacement JSON.
 
 - **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a
   placeholder record or fabricate a plan path.
-- **First Plan created** → validate it, create generation 1, publish the tracked
-  declaration, then derive this workspace's record.
-- **Next Plan created** → after the current Plan is completed and declaration,
-  active-work, and runtime leases are released, explicitly advance the
-  generation with expected-generation CAS. Never create a worktree as an Agent
-  workaround.
+- **Plan Version frozen** → validate it; only after an owner explicitly selects
+  the execution worktree, create PlanMount and ExecutionPlanSnapshot, publish
+  the tracked declaration, then derive this workspace's record.
+- **Next Plan created** → mount it only after the prior mount is released by
+  completion, cancellation, or explicit owner unmount. Never create a worktree
+  as an Agent workaround.
 - **Worktree binding created** → record the verified `workspace_id`,
   `initial_head`, and `expected_head`; initially both HEAD fields are
   identical. Never derive identity from a skill path or copy it from another

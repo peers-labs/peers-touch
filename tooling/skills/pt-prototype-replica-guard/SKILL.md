@@ -496,10 +496,11 @@ cd apps/desktop && pnpm dev
 
 # Or use make targets:
 make run-prototype   # starts prototype
-make desktop-web     # starts desktop web dev
+make desktop         # starts native Desktop dev
 ```
 
-Open both in browser windows side-by-side at the same viewport width for pixel comparison.
+Compare the prototype browser window with the native Desktop window at the same
+content viewport dimensions.
 
 ---
 

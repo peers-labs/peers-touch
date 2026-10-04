@@ -24,11 +24,12 @@
    Task 的 Progress Slice，不是单条命令、检查或授权动作。
 10. **No zero-yield handoff**: Dev Workflow 在一个 Slice 内持续执行准备、诊断和
     修复，直到 Task 关闭并产生可计算进度，或到达真实 hard boundary。
-11. **Generation-bound Plan**: 仓库和 PR 可包含多个 active Plan；每个
-    workspace 在一个 generation 内只消费一次建立且不可换绑的 Plan foreign
-    key，前一 Plan 完成并释放全部 owner state 后才能显式推进下一 generation。
-12. **Stable Plan, advancing source**: Plan 只记录 immutable initial HEAD；
-    当前 Git HEAD、mutation source 与 runtime checkpoint 由外部 Owner 管理。
+11. **Frozen Plan, explicit mount**: PlanVersion 是不含 worktree 身份的不可变
+    设计输入；Project Ledger 通过 PlanMount 将它显式挂载到一个执行 worktree，
+    直到完成、取消或 Owner 显式 unmount。
+12. **Snapshot-bound execution**: 执行前复制 immutable PlanVersion 和
+    executionBinding 形成 ExecutionPlanSnapshot；当前 Git HEAD、mutation
+    source 与 runtime checkpoint 由执行 Owner 管理。
 13. **Continuous Plan Run**: 一次执行授权在 Plan 已接受范围内连续跨越多个
     Task、Goal Slice 和 agent review gate，直到 Plan 完成或命中真实 hard
     boundary。
@@ -55,12 +56,15 @@
 21. **Capability-honest enforcement**: 只有宿主规定的稳定 root-chat identity 和可阻断
     `PreToolUse` 同时存在时才声明 `ENFORCED`；其他宿主只能明确标记为
     `OBSERVE_ONLY`。
-22. **No worktree as a workaround**: Agent 不得为了绕过 Plan binding、
+22. **No worktree as a workaround**: Agent 不得为了绕过 Plan mount、
     lifecycle 或并发错误自行创建 worktree；worktree 创建只来自用户明确选择的
     隔离或并行需求。
 23. **Aggregate before acquire**: 模块 Skill 只描述 `ModuleImpact`；Dev
     Workflow 在任何 runtime acquisition 前统一解析 target、依赖、峰值容量和
     资源复用，业务 Gate 只 attach 到已准备的 runtime manifest。
+24. **Native Desktop only**: Desktop functional and formal proof uses one
+    native Tauri runtime. Browser launch, browser runtime classes, and browser
+    product proof do not exist.
 
 ## 2. Evidence Ledger
 
@@ -93,9 +97,14 @@ accepted product + architecture
               |
               v
 ┌──────────────────────────────────────────────────────────────┐
-│ Plan Package                                                 │
-│ plan.md: goal / scope / DAG / task index / global gates      │
-│ tasks/<id>.md: one resumable closure + durable current state │
+│ Frozen Plan Version                                          │
+│ plan.md + tasks: goal / scope / immutable DAG / gates        │
+└───────────────┬──────────────────────────────────────────────┘
+                │ explicit PlanMount
+                v
+┌──────────────────────────────────────────────────────────────┐
+│ ExecutionPlanSnapshot + ExecutionRun                         │
+│ immutable input + executionBinding / mutable Task lifecycle  │
 └───────────────┬──────────────────────────────────────────────┘
                 │ current task
                 v
@@ -126,21 +135,24 @@ accepted product + architecture
 |---|---|---|---|
 | Product behavior | Product/domain docs | accepted journeys and acceptance IDs | Task references |
 | Architecture | Architecture docs | `docs/architecture/**` | manifest references |
-| Stable goal, scope, DAG and Task lifecycle | Plan Package | `plan.md` machine block | `planctl status` |
-| One execution closure specification and durable snapshot | Task Slice | `tasks/<id>.md` machine block and snapshot | Context Anchor |
+| Stable goal, scope, DAG and authorization | Plan Version | frozen `plan.md` plus referenced Task Slices | execution snapshot |
+| Plan-to-worktree occupancy | Project Ledger | immutable `PlanMount` plus live mount index | workflow inspection |
+| Exact execution input | Development Workflow | immutable `ExecutionPlanSnapshot` | Context Anchor |
+| Plan and Task lifecycle | Execution Run | machine-local `execution-run.json` | `planctl status` |
+| One execution closure specification | Task Slice | frozen `tasks/<id>.md` machine block | execution snapshot |
 | Current execution transition | Development Session | machine event log + `session.json` projection | workspace active-work `devState` |
 | Attempt history and first failure | Development Session | bounded `events.ndjson` and artifacts | compact failure summary |
 | Current physical source identity | Git | commit/tree | declaration and Session verification |
 | Current mutation source identity | Development Workflow | `DevelopmentResourceDeclaration.sourceHead` | machine-wide work ledger |
 | Runtime checkpoint source identity | Development Session | `SourceCheckpoint.commit/tree` | Context Anchor evidence |
 | Runtime allocation | Local Dev Control Plane | machine registry and live observation | session binding ref |
-| Cross-module resource intent | Development Workflow | machine-local `PlanResourcePlan` plus public declaration claims | Context Anchor / Peers Dev |
+| Cross-module resource intent | Development Workflow | machine-local `PlanResourcePlan` plus public declaration claims | Context Anchor / Workflow Snapshot |
 | Physical account/service/client/device/Fixture lifecycle | owning Local Dev or Acceptance Suite Runtime | owner manifest and live lease | `PlanResourcePlan.resourceResults` |
 | Formal product proof | Acceptance Framework | Evidence Store | Task evidence refs |
-| Workspace Plan ownership | Development Workflow | machine-local generation records plus atomic current `plan-binding.json` | Plan/declaration/workspace active-work consistency checks |
-| Current tracked locator | Plan Package | current Task entry | workspace active-work + Context Anchor |
+| Current Plan ownership | Development Workflow | Project Ledger `PlanMount` | snapshot/declaration/active-work consistency checks |
+| Current tracked locator | Execution Run | current Task state | workspace active-work + Context Anchor |
 | Distributed workflow implementation | `peers-dev-workflow` | canonical source and rollout receipts | installed worktree-local tools and Skills |
-| Read-only workflow projection | Peers Dev status owner | `apps/dev/server/status.mjs` | Workflow Snapshot CLI, Context Anchor, Doctor, UI |
+| Read-only workflow projection | Workflow Snapshot | `workflow-snapshot-core.mjs` | CLI, Context Anchor, Doctor |
 | Development conversation authority | Workflow Binding Store | one machine-local immutable OWNER binding rooted in host root-chat identity | canonical `BindingProjection` |
 | Worker/reviewer identity and liveness | Workflow Binding Store | assignment, child binding, lease and terminal receipt | canonical `BindingProjection` |
 | Tool action target | Workflow Kernel | normalized Tool Intent AST plus resolved `subjectRoot` | admission result |
@@ -150,13 +162,13 @@ accepted product + architecture
 
 No owner may copy another owner's complete state. In particular:
 
-- `plan.md` owns compact Task lifecycle fields, not Task body/status narratives.
-- Task files do not copy current Task selection, Session events or raw output.
-- workspace active-work mirrors the manifest/session locator; disagreement
+- frozen Plan and Task files own no execution lifecycle, evidence, or worktree
+  identity.
+- Execution Run owns Plan/Task lifecycle but cannot alter its snapshot.
+- workspace active-work mirrors the run/session locator; disagreement
   fails sync and is repaired at the owning source before execution.
-- Plan, declaration and workspace active-work cannot select or replace the
-  workspace Plan binding. Only the binding owner may advance a completed,
-  quiescent generation by compare-and-swap.
+- Plan, declaration, Session and workspace active-work cannot select, replace,
+  or release a PlanMount.
 - Plan does not own an advancing HEAD. Declaration and Session own their
   distinct current-source responsibilities; workspace active-work projects
   them directly from Git.
@@ -177,7 +189,7 @@ No owner may copy another owner's complete state. In particular:
 | Facade/router | `pt-god-view` | No |
 | Development Run application service | `pt-dev-workflow` | Yes, only through the owning Plan/Task/Session/workspace active-work commands |
 | Vertical dependency modeling | `pt-architecture-execution-methodology` | No |
-| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents/package and generation-bound workspace Plan ownership |
+| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents and frozen Plan Versions; mount remains an explicit Project Ledger action |
 | Scheduler / WHAT runs next | `pt-goal-orchestrator` | No |
 | Policy / MAY this action run | `pt-execution-plan-guardian` | No |
 | Runtime launch, Journey operation and functional result commit | `pt-dev-runtime-handoff` | Yes, through runtime and Session owner commands |
@@ -328,7 +340,7 @@ requires its own exact OWNER grant and global-idle proof before deleting its
 bounded legacy store. A post-grant failure records `BLOCKED`; no old
 binding/action schema reader, importer, alias, or dual-write path exists.
 
-## 5. Plan Package Contract
+## 5. Frozen Plan And Execution Contract
 
 An active formal plan is a directory:
 
@@ -341,25 +353,20 @@ execution-plans/<date>-<slug>/
     └── <historical-input>.md
 ```
 
-`plan.md` owns:
+`plan.md` and referenced Task Slices own:
 
-- plan identity and its claimed worktree binding, verified against the
-  machine-local current workspace Plan generation;
-- immutable initial HEAD only, never the advancing source commit;
-- current-worktree binding only; sibling worktree inventory remains
-  non-authoritative machine topology;
+- immutable Plan identity and version digest;
 - stable goal, scope, non-scope and architecture references;
-- task ID/path/dependency graph, Task lifecycle status and compact blocker reference;
+- task ID/path/dependency graph without lifecycle state;
 - one machine-readable Acceptance Execution contract;
 - global authorization, completion gates and non-claims.
 
-The manifest is stable in scope and bounded in mutable state. Its Task index is
-the sole owner of `pending | in_progress | blocked | done`; exactly one
-`in_progress` entry identifies the current Task. It does not store Development
-transition state, first failure, per-attempt evidence or dated progress.
-When fixed-point exhaustion leaves no ready Task, package status becomes
-`blocked` with zero `in_progress` entries. Resume must re-audit the DAG before
-reactivating one Task.
+Project Ledger PlanMount explicitly selects one execution worktree. Before
+execution, Development Workflow copies the frozen version plus
+`mountId/workspaceId/branch/initialHead` into an immutable
+ExecutionPlanSnapshot. ExecutionRun exclusively owns
+`pending | in_progress | blocked | done`, current Task, blockers, and
+exhaustion. Neither owner may rewrite the snapshot.
 
 A Plan that permits source reopening declares one strict
 `Source Invalidation Policy` block beside the Package. The policy names one
@@ -380,10 +387,10 @@ Mechanical bounds:
 Archive files are excluded from discovery, status, dependency and resume parsing.
 They preserve history only.
 
-The repository may contain multiple active Plan Packages from independent
-worktrees synchronized into one PR. Discovery never scans that set to select an
-owner. `plan-binding.json` names the only Plan visible to the current workspace;
-foreign packages remain ordinary synchronized source files.
+The repository may contain multiple frozen Plan Versions synchronized into one
+PR. Discovery never scans that set to select an owner. The Project Ledger's
+live `PlanMount` names the only Plan Version executable in the current
+workspace; all other versions remain ordinary source files.
 
 ## 6. Task Slice Contract
 
@@ -485,8 +492,8 @@ accepted Plan + authorization envelope
   -> repeat until Plan terminal or hard boundary
 ```
 
-The Plan Run owns no duplicate durable state. `pt-dev-workflow` derives it from
-the user's execution intent, current workspace Plan generation, Plan DAG, active
+The Plan Run owns lifecycle only. `pt-dev-workflow` consumes the user's
+execution intent, PlanMount, immutable snapshot, ExecutionRun, active
 declaration, current Session, and accepted authorization. Task closure, review,
 Context Anchor output, and context compaction do not consume authorization.
 
@@ -578,19 +585,19 @@ baseline event with the prior log digest before admitting more transitions.
 Resume is deterministic and bounded:
 
 1. Verify worktree binding from persisted values.
-2. Resolve the workspace's immutable `planId + planPath` binding and load that
-   Plan Package directly. Missing or mismatched binding fails closed; no branch
-   scan or alternate Plan fallback runs.
-3. Run `planctl validate`; tooling may scan bounded machine blocks, but no Task
+2. Resolve the workspace's live PlanMount, immutable ExecutionPlanSnapshot, and
+   ExecutionRun. Missing or mismatched ownership fails closed; no branch scan
+   or alternate Plan fallback runs.
+3. Validate the snapshot; tooling may scan bounded machine blocks, but no Task
    body or archive content enters agent context.
-4. If package status is `blocked`, validate typed exhaustion and recompute the
+4. If run status is `blocked`, validate typed exhaustion and recompute the
    frontier without reading a Task body. Reactivate an explicit ready Task and
    clear exhaustion, or report no current Task.
-5. Otherwise resolve the manifest's one `in_progress` Task.
+5. Otherwise resolve the ExecutionRun's one `in_progress` Task.
 6. Read that Task only and replay/repair its matching Session store, if present.
 7. Reconcile workspace active-work `currentTaskId`, `currentTaskPath` and
    `devState`.
-8. Derive ready/parked next Tasks from the manifest DAG.
+8. Derive ready/parked next Tasks from the snapshot DAG and run states.
 9. Emit or update Context Anchor when due, then continue the next legal
    transition without waiting for confirmation.
 
@@ -713,27 +720,28 @@ The architecture is implemented only when:
 
 - a 4,000-line legacy plan migrates under lock/journal without content loss or
   dual active truth;
-- resume exposes only manifest, current Task and current Session to agent context;
+- resume exposes only snapshot/run projection, current Task and current Session to agent context;
 - plan/task bounds fail closed mechanically;
 - invalid DAG, duplicate current Task and dependency violations fail;
 - legal and illegal Session transitions are covered deterministically;
 - symlinked CLI invocation executes rather than silently returning success;
 - clock-dependent tests use an injected/current clock;
-- Acceptance current-closure selection reads the Plan Package;
+- Acceptance current-closure selection reads the immutable snapshot and run;
 - work-class-specific Tasks have legal completion paths without false product claims;
 - Context Anchor contains stable task pointers, not prose recovery state;
 - `planctl status` exposes deterministic Task-closure progress and the next
   closure's exact target count, target percentage, delta, and unlock effect;
-- tracked Development declarations publish the exact Plan Package and current
-  Task locator; Peers Dev never infers progress from a work item or branch;
+- tracked Development declarations publish the exact mount, snapshot, run, and
+  current Task locator; Workflow Snapshot never infers progress from a work
+  item or branch;
 - Dev Workflow heartbeats long-running declarations before expiry and refreshes
   the declaration after source HEAD changes; the machine registration does not
   persist source HEAD;
 - unrelated sibling worktree add/remove/prune operations do not invalidate the
   selected worktree's binding;
-- multiple active Plans may coexist in one repository/PR while each workspace
-  resolves only its current immutable generation; unfinished replacement and
-  discovery-based reassignment fail closed;
+- multiple frozen Plans may coexist in one repository/PR while each workspace
+  resolves only its live PlanMount; unfinished replacement and discovery-based
+  reassignment fail closed;
 - an authorized checkpoint can advance declaration, Session and workspace
   active-work source identity without editing the tracked Plan or dirtying the
   checkpoint;

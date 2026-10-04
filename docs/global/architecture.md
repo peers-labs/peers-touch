@@ -34,7 +34,7 @@ For those, follow:
 ┌──────────────────────────────────────────────────────────────┐
 │                       CLIENT LAYER                           │
 │                                                              │
-│  Desktop = desktop-web + desktop-rust + desktop-app         │
+│  Desktop = embedded renderer + desktop-rust + desktop-app   │
 │  Mobile  = mobile-web + mobile-rust + native plugins        │
 └──────────────────────────────┬───────────────────────────────┘
                                │
@@ -123,7 +123,7 @@ Desktop is not a single process and not a single layer.
 
 It consists of four runtime units:
 
-- `desktop-web`: React + TypeScript UI
+- embedded renderer: React + TypeScript UI inside the Tauri WebView
 - `desktop-rust`: local runtime / local BFF / command gateway
 - `desktop-app`: Tauri native shell and window host
 - `station`: remote shared business system
@@ -131,11 +131,13 @@ It consists of four runtime units:
 Desktop high-level runtime chain:
 
 ```text
-desktop-web -> desktop-rust -> station
-desktop-app -> hosts desktop-web and carries desktop-rust
+embedded renderer -> desktop-rust -> station
+desktop-app -> hosts the renderer and carries desktop-rust
 ```
 
 Desktop is the richer local runtime client. It may host local orchestration and device capabilities, but it does not replace Station as the shared business truth owner.
+Desktop has no browser launch mode; all product proof uses the native Tauri
+application.
 
 ### 4.2 Mobile
 

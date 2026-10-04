@@ -85,7 +85,7 @@ Default rule:
 Cross-worktree comparison is allowed for investigation, conflict analysis, and
 PR review, but write scope remains bound to the active worktree.
 
-Agents must not create a worktree merely to bypass Plan binding, lifecycle, or
+Agents must not create a worktree merely to bypass Plan mount, lifecycle, or
 resource conflicts. A worktree is created only when the user explicitly
 chooses isolation or concurrency.
 
@@ -93,23 +93,24 @@ Before an explicitly authorized worktree removal, stop its runtime resources,
 release its declaration, and run `make env-unregister` from that worktree.
 Never delete a machine registry row by hand.
 
-Plan binding is immutable within one generation:
+Plan source is frozen independently from execution placement. An explicit
+owner action mounts it to one selected execution worktree:
 
 ```bash
-make plan-bind PLAN=<package-plan.md>
-make plan-binding
+make plan-mount PLAN=<plan-version.md>
+make plan-mount-status
 ```
 
-After that Plan is `completed` and its declaration, active-work projection, and
-runtime leases are released, the same workspace may explicitly advance:
+The worktree remains occupied until the run completes, is cancelled, or the
+owner explicitly unmounts it:
 
 ```bash
-make plan-binding-advance \
-  PLAN=<next-package-plan.md> \
-  EXPECTED_GENERATION=<current-generation>
+make plan-unmount MOUNT=<mount-id> \
+  REASON=<completed|cancelled|owner-unmount>
 ```
 
-There is no unbind or discovery-based replacement path.
+Agents cannot amend the frozen version, change its execution worktree, or
+unmount an unfinished run. Repository discovery never replaces a mount.
 
 ---
 

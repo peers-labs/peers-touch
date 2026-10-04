@@ -29,6 +29,7 @@
 | D-15 | Native transport topology 必须通过同条件 runtime evidence gate 后决策 | accepted |
 | D-16 | Native responsiveness 由有界工作准入和完整失败语义定义，而非由某种 transport 定义 | accepted |
 | D-17 | Mobile runtime graph and command runtime refine existing cross-client contracts | accepted |
+| D-18 | Desktop runtime and proof use only the native Tauri application | accepted |
 
 ---
 
@@ -700,3 +701,55 @@ Mobile-specific secure storage, background suspension, and native wakeups.
 
 Review if Mobile can directly reuse a shared runtime implementation without
 losing native lifecycle, secure-storage, or evidence requirements.
+
+---
+
+## D-18: Desktop Runtime And Proof Use Only The Native Tauri Application
+
+**Status**: accepted
+**Date**: 2026-10-04
+
+### Context
+
+The browser-gateway path reused Desktop React code but did not reproduce the
+shipped application's window lifecycle, embedded WebView, Tauri command
+boundary, native focus/input, storage isolation, permissions, or process
+cleanup. Maintaining it as a supported Desktop runtime made diagnostics and
+Acceptance matrices larger while allowing non-native evidence to stand in for
+user behavior.
+
+### Decision
+
+- Desktop has one supported application topology:
+  `native Tauri window -> embedded WebView renderer -> desktop-rust -> Station`.
+- `make desktop` is the sole development launch entrypoint for that topology.
+- The renderer remains shared source inside the native application, but it is
+  not exposed as an independently supported browser client.
+- Desktop interaction, layout, lifecycle, and performance proof must run in a
+  native runtime cell. Chromium/CDP evidence is not a Desktop proof input.
+- Browser-gateway launch, transport branches, storage profiles, performance
+  matrix cells, and product variants are removed with no compatibility path.
+- System-browser OAuth handoff and separately owned Web applications remain
+  valid because neither claims to be the Desktop client.
+
+### Rationale
+
+Runtime evidence is useful only when it exercises the topology users run.
+Converging on the native application removes contradictory behavior and makes
+all Desktop regressions actionable against one owner.
+
+### Alternatives Considered
+
+- Retain browser mode for component debugging: rejected because component tests
+  already provide source-level feedback without creating a product runtime.
+- Retain browser-gateway as a performance baseline: rejected because it omits
+  the native lifecycle and repeatedly encouraged invalid comparisons.
+- Keep browser launch but ban it from Acceptance: rejected because the second
+  runtime still requires contracts, tests, profiles, and compatibility code.
+
+### Consequences
+
+- Native runtime startup and evidence tooling are the capacity path for all
+  Desktop product work.
+- Frontend code must not branch on a Desktop browser surface.
+- Historical browser measurements remain historical records only.

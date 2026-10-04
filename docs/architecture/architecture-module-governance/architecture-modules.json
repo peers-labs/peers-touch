@@ -121,7 +121,6 @@
         "DWF-D15",
         "DWF-D16",
         "DWF-D17",
-        "DWF-D18",
         "DWF-D19",
         "DWF-D20",
         "DWF-D21",
@@ -134,13 +133,14 @@
         "DWF-D28",
         "DWF-D29",
         "DWF-D30",
-        "DWF-D31",
         "DWF-D32",
         "DWF-D33",
         "DWF-D34",
         "DWF-D35",
         "DWF-D36",
-        "DWF-D37"
+        "DWF-D37",
+        "DWF-D38",
+        "DWF-D39"
       ],
       "governedPaths": [
         "docs/architecture/development-workflow",
@@ -324,17 +324,15 @@
         "LDCP-D07",
         "LDCP-D08",
         "LDCP-D09",
-        "LDCP-D11",
-        "LDCP-D12",
         "LDCP-D13",
         "LDCP-D14",
         "LDCP-D15",
         "LDCP-D16",
         "LDCP-D17",
-        "LDCP-D18"
+        "LDCP-D18",
+        "LDCP-D19"
       ],
       "governedPaths": [
-        "apps/dev",
         "docs/architecture/local-dev-control-plane",
         "tooling/make/local-dev.mk",
         "tooling/scripts/lib/machine-dev-paths.mjs",

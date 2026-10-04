@@ -15,7 +15,8 @@
 - Development、Local Dev、Acceptance 和 Quality 的所有权边界。
 - 所有 worktree 可见的机器级资源声明。
 - 跨模块 `ModuleImpact` 聚合、target 依赖、峰值容量和资源复用计划。
-- compact Plan Package、独立 Task Slice 和跨会话恢复协议。
+- frozen Plan Version、PlanMount、ExecutionPlanSnapshot、独立 Task Slice
+  和跨会话恢复协议。
 - checkpoint、部署、reset、push 和 branch rewrite 的授权模型。
 - 低噪声状态汇报和仓库外瞬态诊断记录。
 - 顶层开发会话与内部 worker/reviewer 会话的 binding lineage、liveness 和
@@ -58,10 +59,11 @@ Completion Review 使用独立的 repository-native reviewer handoff。
 2. 源码闭环以 `SOURCE_READY` 如实结束；运行时闭环通过 exact-source
    `FUNCTIONAL_PASS` 后再进入完整 Acceptance。
 3. 一次失败只产生一个首要失败点，不触发无界 Gate 扩散。
-4. Plan manifest 保持稳定、紧凑且可机械验证。
-5. 每个 Task Slice 独立可恢复，只包含当前闭环和 durable evidence 引用。
+4. Plan Version 冻结后不可变、紧凑且可机械验证，不含执行 worktree 身份。
+5. 每个 Task Slice 属于冻结版本；运行状态与 durable evidence 留在
+   ExecutionRun 和 Evidence Store。
 6. Dev Session 拥有瞬态状态、attempt 和 first failure，不回写运行日记。
-7. Context Anchor 只投影 active pointer、manifest、current task 和 session。
+7. Context Anchor 只投影 mount、snapshot、run、current task 和 session。
 8. 所有状态和结论绑定 source、workspace、task/Journey 和 runtime identity。
 9. 先用当前 Mobile Shell 计划完成真实迁移，再推广到其他 active plan。
 10. Context Anchor 的续作单位是可关闭一个 Task 的 Progress Slice，并明确
@@ -83,13 +85,14 @@ Completion Review 使用独立的 repository-native reviewer handoff。
 18. 每个 IDE conversation 在首次可阻断 `PreToolUse` 时原子绑定一个不可变
     `executionRoot`；工具目标作为独立 `subjectRoot` 校验，跨 worktree 只读
     允许、写入拒绝。
-19. Workflow Snapshot 是 CLI、Context Anchor、Doctor 与 Peers Dev 的统一
-    只读投影；Action Receipt 只描述活动，不替代 Task 进度。
+19. Workflow Snapshot 是 CLI、Context Anchor 与 Doctor 的统一只读投影；
+    它不启动 HTTP 服务或浏览器；Action Receipt 只描述活动，不替代 Task
+    进度。
 20. Task 和 Plan 完成必须有独立、当前源码绑定的 Completion Review。
    Review request 从成功 Development Session 派生，并通过 request-scoped
    capability 交给 reviewer；不得依赖 IDE Hook 或 Action Receipt。
-21. completed 且已释放的 workspace 通过显式 generation advance 承接下一
-    Plan；Agent 不得把新建 worktree 当作绕过绑定的手段。
+21. Project Ledger 显式挂载一个 frozen PlanVersion 到一个执行 worktree；
+    完成、取消或 Owner 显式 unmount 前，该 worktree 不承接其他 Plan。
 22. 模块 Skill 只输出影响与逻辑需求；Dev Workflow 在 runtime acquisition
     前形成唯一 `PlanResourcePlan`，具体资源生命周期仍由既有 Runtime/Suite
     Owner 管理。
@@ -101,41 +104,40 @@ Completion Review 使用独立的 repository-native reviewer handoff。
     机器锁与严格投影校验，且不要求无关 worktree idle；机器级 legacy store
     hard cut 与 retired projection GC 使用独立命令、独立 OWNER grant，并且
     只有这两类破坏性清理要求全局 idle。
+25. Desktop 只支持 native Tauri runtime；browser runtime、browser Gate 和
+    browser 产品矩阵不是开发或证明路径。
 
 ## 4. Document Navigation
 
 | Document | Purpose |
 |---|---|
-| [design.md](./design.md) | 控制面边界、Plan Package、Task Slice 和恢复数据流 |
+| [design.md](./design.md) | 控制面边界、Plan Version、mount、snapshot、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D37 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D39 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
 | [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33 的 Kernel、宿主投影和 rollout 流程 |
-| [product-definition.md](./product-definition.md) | Peers Dev 产品能力、用户和 Journey |
-| [experience-contract.md](./experience-contract.md) | Peers Dev 可见状态与交互合同 |
+| [product-definition.md](./product-definition.md) | Development Workflow 产品能力、用户和 Journey |
+| [experience-contract.md](./experience-contract.md) | Development Workflow 可见状态与交互合同 |
 | [product-state-model.md](./product-state-model.md) | Stage、Plan、Task、Review 与 Agent activity 状态 |
-| [acceptance-matrix.md](./acceptance-matrix.md) | Peers Dev 产品验收映射 |
+| [acceptance-matrix.md](./acceptance-matrix.md) | Development Workflow 产品验收映射 |
 | [completion-review.md](./completion-review.md) | 独立 Completion Review 合同 |
 | [progress-observability.md](./progress-observability.md) | Snapshot、Action Receipt 与 UI 投影边界 |
 | [Progress-bearing workflow plan](./execution-plans/20260917-progress-bearing-development-loop/plan.md) | Anchor、Goal、profile policy 与环境看板的落地计划 |
-| [Immutable workspace Plan binding](./execution-plans/20260918-immutable-workspace-plan-binding/plan.md) | 多 Plan 同仓库下的 workspace 单一不可换绑 hard cut |
-| [Mobile Shell plan](../mobile/execution-plans/20260827-mobile-shell-implementation.md) | `DWF-B` 自举闭环与首个真实 Plan Package pilot |
+| [Immutable workspace Plan binding](./execution-plans/20260918-immutable-workspace-plan-binding/plan.md) | 已被 DWF-D38 supersede 的历史 workspace-binding hard cut |
+| [Mobile Shell plan](../mobile/execution-plans/20260827-mobile-shell-implementation.md) | 历史 Plan Package pilot |
 
 ## 5. Current Status
 
-DWF-D01..DWF-D37 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
-workspace 只解析机器级当前 generation 指向的一个 Plan；同步进入分支的外来
-Plan 不参与本 workspace 的发现。completed 且 quiescent 的 generation 可由
-显式 owner command 原子推进，不能由 repository discovery 或 Agent 新建
-worktree 代替。Plan Package 只保留 immutable initial HEAD；当前
-source HEAD 由 Git、Development declaration、Session checkpoint 与
-消费 worktree 的 machine-local active-work projection 在各自生命周期中持有。
+DWF-D01..DWF-D39 已接受。仓库与 PR 可包含多个 frozen Plan Version；
+Project Ledger 的显式 PlanMount 是执行 worktree 唯一 Plan 占用真源。执行前
+生成 immutable ExecutionPlanSnapshot，并在其中绑定 mount、workspace、branch
+和 initial HEAD。Plan 完成、取消或 Owner 显式 unmount 前 worktree 持续被
+占用；repository discovery、声明、Session 或 Agent 新建 worktree 都不能替代
+该关系。当前 source HEAD 由 Git、Development declaration、Session checkpoint
+与消费 worktree 的 machine-local active-work projection 在各自生命周期中持有。
 `peers-dev-workflow` 只负责规范实现和 rollout，不持有消费 worktree 的可变
-运行时状态。Plan Package pilot 正在由唯一 active
-Mobile Shell 计划的
-`DWF-B` workstream 自举工具和最终迁移；该 pilot workspace 不会绑定第二个
-Plan。
+运行时状态。
 一次授权可在 accepted Plan 内连续跨越多个 Task 和 agent review gate；
 精确用户授权和 Plan `authorization` 字段在这些内部边界后仍然有效，不能因
 操作类别敏感而重复询问；
@@ -144,3 +146,6 @@ Plan。
 各自 workspace machine root。`pt-ew` 仅作为 Overlay host；用户专属行为由
 独立的 machine-local registry 和 digest-addressed installed copy 管理，未安装
 Overlay 的用户保持原始 `pt-god-view` 行为。
+Desktop development and Acceptance use the native Tauri application only.
+Workflow Snapshot remains an on-demand CLI/library projection; the Peers Dev
+4177 browser application is retired.

@@ -17,7 +17,6 @@ Prepare the development environment so the user can simply run:
 make station       # Ready Station (local start / remote deploy)
 make relay         # Ready Relay (remote deploy)
 make desktop       # Start Desktop (Tauri app)
-make desktop-web   # Start Desktop (browser)
 make mobile        # Start Mobile iOS Simulator
 make status        # Check what's running
 make stop          # Stop everything
@@ -62,7 +61,7 @@ Station whose active profile resolves to:
 - an empty or unapproved remote deploy environment.
 
 Before an agent runs `make station`, `make station-restart`, `make restart`,
-`make desktop`, `make desktop-web`, `make mobile`, or any test/Acceptance
+`make desktop`, `make mobile`, or any test/Acceptance
 command that may ready or access Station, it MUST:
 
 1. Run `make config`.
@@ -180,7 +179,6 @@ make relay-check                            # Health-check Relay only
 make relay-status                           # Relay deployment/runtime status
 make relay-logs                             # Relay logs
 make desktop                                # Desktop Tauri app
-make desktop-web                            # Desktop in browser
 make mobile                                 # Mobile iOS Simulator
 
 # Lifecycle
@@ -514,11 +512,13 @@ Source modes:
   deploy health, and final profile health readback.
 - Agent use of `make station` is remote-only and requires the safety preflight
   above. Local/compose Station execution is reserved for human developers.
-- `make desktop`, `make desktop-web`, `make mobile`, and restart targets may
+- `make desktop`, `make mobile`, and restart targets may
   ready Station indirectly, so the same agent preflight applies to them.
-- `make desktop` / `make desktop-web` install missing package dependencies with
+- `make desktop` installs missing package dependencies with
   frozen-lockfile semantics and always ensure Station is source-current before
   starting the client.
+- Desktop browser mode is unsupported; do not create or invoke a substitute
+  browser launcher.
 - `make mobile` always ensures Station is ready first.
 - Profile files own runtime topology and allocation inputs. Repository
   manifests and lockfiles own source package dependencies; do not duplicate

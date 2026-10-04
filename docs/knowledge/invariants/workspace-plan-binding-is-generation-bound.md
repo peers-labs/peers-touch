@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Workspace Plan binding is immutable within one generation
-status: active
+status: superseded-by:docs/knowledge/invariants/plan-mount-is-run-bound.md
 owns:
   - AGENTS.md
   - tooling/acceptance/core/execution_plan.py

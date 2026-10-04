@@ -3,7 +3,7 @@
 > **Status**: active
 > **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
-> **Module**: `apps/dev/`
+> **Module**: `tooling/scripts/local-dev/`
 
 ---
 
@@ -21,14 +21,14 @@ Completion Review 输入。决策接受不构成实现或 proof 声明。
 ## 2. Owner Join
 
 ```text
-Git + BindingProjection + Plan binding + Plan Package + current Task
+Git + BindingProjection + PlanMount + ExecutionPlanSnapshot + ExecutionRun
     + Development Session + Completion Review + resource declaration
     + runtime registration/leases + Action Receipts
                               |
                               v
                      Workflow Snapshot
                               |
-                  CLI / Context Anchor / Peers Dev
+                     CLI / Context Anchor / Doctor
 ```
 
 Snapshot 独立读取每个 upstream owner。缺失或冲突状态产生 typed finding；
@@ -113,45 +113,29 @@ drift -> blocked -> completed -> looping -> stalled -> waiting -> working -> idl
 阈值属于 DWF-D29 目标合同；实现必须通过 injected clock 测试，历史运行数据
 不能替代该证明。
 
-## 5. UI Contract
+## 5. Projection Contract
 
-每个 worktree row 展示：
+Each invocation emits one bounded redacted snapshot containing:
 
-- project/worktree identity 和 source status；
-- PRODUCT、DESIGN、PLAN、EXECUTE、DELIVER 的 project stage；
-- Plan title、status 和 closure progress bar；
-- current Task title，以及 source/functional/acceptance/review segmented state；
-- 当前 Agent state、last action、age 和 result；
-- Completion Review state 和 reviewer timestamp；
-- typed blocker 和 drift finding；
-- profile、Station、Relay 和 live lease summary。
+- project/worktree identity and source status;
+- PlanMount, Plan Version, ExecutionRun, and closure progress;
+- current Task and source/functional/acceptance/review state;
+- Agent state, last action, age, and result;
+- Completion Review state;
+- typed blocker and drift findings;
+- profile, Station, Relay, and live lease summary.
 
-布局以一个无嵌套卡片的 worktree band 表达一个项目，不显示用户主目录绝对路径。
-
-目标刷新合同为：
-
-- 可用时通过 server-sent events 推送；
-- 断开后回退到有界 polling；
-- server 端同一时刻最多构建一个 Snapshot；
-- 按 digest 去重并合并到最新值；
-- payload 上限 512 KiB，连接数有上限；
-- 初始发送完整 Snapshot，变化后最多每两秒发送一次；
-- 每十秒发送 keep-alive comment；
-- browser visible 时每五秒 fallback polling，hidden 时每三十秒；
-- request timeout 为四秒；
-- browser 不合并 owner state，也不发明 progress。
-
-这些值是待实现和验收的产品约束，不表示当前 server 已满足。
+The command computes one current view and exits. It has no server, browser,
+SSE, polling, keep-alive, cached last view, or retry lifecycle.
 
 ## 6. Quality Gates
 
 - Reducer 使用 injected clock 的 deterministic test。
 - Invalid、oversized、symlinked 或 foreign receipt 被拒绝。
 - 仅 Action Receipt 更新时，worktree/Plan/Task progress 保持稳定。
-- Worktree stage、Plan closure percentage 和 Task lifecycle 视觉上可区分；
-  只有 Plan 使用 numeric percentage。
-- Desktop 和 narrow viewport 无重叠或裁字。
-- Disconnect 保留最后 Snapshot 并显示其 age。
-- Completed Plan 在 Completion Review missing/stale 时不得显示绿色 terminal。
+- Worktree stage, Plan closure percentage, and Task lifecycle remain distinct
+  structured fields; only Plan progress uses numeric percentage.
+- Completed Plan cannot project `COMPLETE` while Completion Review is missing
+  or stale.
 - 所有 proof 必须从当前目标源码重新生成，不得引用来源 worktree 的端口、
   screenshot、test count、branch、commit 或 completion state。

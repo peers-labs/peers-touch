@@ -16,7 +16,7 @@
 4. **数据 freshness 属于 runtime** — 业务投影由 runtime/store 负责事件消费和 reconciliation，页面是纯 renderer，不能靠 mount effect 成为 freshness 真源。
 5. **隐藏树必须可治理** — alive tree 可以保留局部状态，但必须有 store selector 边界、context 稳定性、render budget 和 long-task 证据。
 6. **容器是一级运行单元** — Applet/Lynx 不是普通页面内容，而是嵌入式 app runtime；宿主拥有 shell、全屏、独立窗口、调试、lease 和恢复。
-7. **证据先于拓扑** — desktop-web/native 差异只能生成可证伪假设；在同账户、同数据、同 warmup、同交互的 native trace 完成前，不将 IPC、线程池、WebSocket、HTTP 或 React/store 任一因素写成唯一根因。
+7. **证据先于拓扑** — 历史 browser/native 差异只能作为诊断背景；当前结论必须来自同账户、同数据、同 warmup、同交互的 native trace，不能将 IPC、线程池、WebSocket、HTTP 或 React/store 任一因素直接写成唯一根因。
 8. **交互工作必须可治理** — 点击、输入、导航和 overlay 后触发的工作必须具备有界准入、优先级、取消/合并、公平性和明确失败语义；无界队列或自动重放不得被称为背压。
 
 ## 2. 系统架构
@@ -239,7 +239,7 @@ Rules:
 ```ts
 interface NativeInteractionEvidence {
   interactionId: string;
-  runtime: 'tauri-webview-dev' | 'tauri-webview-packaged' | 'browser-gateway';
+  runtime: 'tauri-webview-dev' | 'tauri-webview-packaged';
   scenario: 'text-input' | 'primary-nav' | 'secondary-tab' | 'overlay';
   inputAt: number;
   visibleAt?: number;
@@ -262,9 +262,9 @@ interface NativeInteractionEvidence {
 }
 ```
 
-Browser and native samples may be compared only when cohort identity matches.
-Runtime labels without interaction-linked raw events are diagnostic metadata,
-not proof of a native root cause.
+Historical browser samples are non-authoritative diagnostics. Runtime labels
+without interaction-linked native raw events are metadata, not proof of a
+native root cause.
 
 ## 4. 组件关系
 
@@ -314,7 +314,8 @@ business writes.
 | F-4 | Runtime bootstrap 同步阻塞 boot pipeline | Runtime bootstrap 必须异步化，超时进入降级模式，不能阻塞 shell first paint | D-09 |
 | F-5 | Store dispatch 触发超过 3 个组件重渲染并进入长期 blocking gate | Store fanout 必须通过 selector / batching 治理；该阈值在 D-08/D-12 accepted 前可先 warn-only | D-08, D-12 |
 | F-6 | 客户端本地聚合替代 Station mirror 验收/开发证据 | 验收/开发证据需要原始事件支持跨 runtime 归因；生产遥测策略另行 ADR | D-06, D-13 |
-| F-7 | 用 desktop-web/native 体感差异直接宣布某个 bridge 或线程模型是根因 | 比较差异只能定位边界，不能替代 native interaction-linked trace | D-15 |
+| F-7 | 用历史 desktop-web/native 体感差异直接宣布某个 bridge 或线程模型是根因 | 历史差异不能替代 native interaction-linked trace | D-15, D-18 |
+| F-11 | 为 Desktop 保留 browser launch、transport branch 或 proof matrix | Browser 不覆盖 native window/input/lifecycle，且会形成第二套产品合同 | D-18 |
 | F-8 | 无界 pending/inflight/worker queue 被描述为背压 | 狂点、慢依赖和大载荷会把卡顿从 bridge 转移到队列 | D-16 |
 | F-9 | 断线或超时后自动重放非幂等写 | 响应丢失时可能重复发消息、创建任务或提交操作 | D-16 |
 | F-10 | 大二进制/stream 与可见控制工作共享无优先级 FIFO | 大帧或长流会造成 head-of-line blocking，破坏输入和导航预算 | D-16 |

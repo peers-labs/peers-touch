@@ -32,26 +32,17 @@ type DevelopmentWorkClass =
 A product defect cannot be downgraded to infrastructure/documentation to avoid
 a runtime Journey.
 
-## 2. Plan Package Manifest
+## 2. Frozen Plan Version
 
-`plan.md` contains one fenced `Plan Package` JSON object:
+`plan.md` contains one fenced `Plan Version` JSON object. It is reviewed source,
+not execution state:
 
 ```ts
-interface PlanPackage {
-  kind: 'peers-touch-plan-package';
+interface PlanVersion {
+  kind: 'peers-touch-plan-version';
   planId: string;
-  status:
-    | 'draft'
-    | 'prepared'
-    | 'active'
-    | 'blocked'
-    | 'completed'
-    | 'superseded';
-  binding: {
-    branch: string;
-    workspaceId: string;
-    initialHead: string;
-  };
+  versionId: string;
+  createdAt: string;
   workClass: DevelopmentWorkClass;
   architecture: {
     sources: string[];
@@ -69,47 +60,38 @@ interface PlanPackage {
     workstreamId: string;
     path: string;
     dependsOn: string[];
-    status: 'pending' | 'in_progress' | 'blocked' | 'done';
-    blocker: null | {
-      code: string;
-      owner: string;
-      evidenceRef: string;
-    };
   }>;
-  exhaustion: null | {
-    recordedAt: string;
-    blockedTaskIds: string[];
-    decisionRefs: string[];
-    evidenceRefs: string[];
-  };
   authorization: ExecutionAuthorization;
 }
 ```
 
-The manifest is closed-schema and stable in scope. The Task index is its only
-mutable current-state field and atomically owns Task lifecycle/current selection.
-It does not store:
+The complete version digest is computed over canonical `PlanVersion`, every
+referenced Task Slice, `Acceptance Execution`, and optional source invalidation
+policy. Once frozen, no field or referenced Task file may change. A correction
+creates a new `versionId` and digest through an explicit owner amendment; an
+Agent cannot amend a mounted version.
 
+The Plan Version does not store:
+
+- execution worktree, branch, or initial HEAD;
+- Plan/Task lifecycle or current selection;
 - Development Session state;
 - first failure;
 - per-attempt evidence;
 - dated progress narratives.
 
-The manifest `workClass` classifies the package's overall delivery. Each Task
+The version `workClass` classifies the overall delivery. Each Task
 Slice independently classifies its own closure, and may use a different
 `workClass`; Session transition guards and claim vocabulary always use the
-current Task's class. This permits one product package to retain infrastructure,
+current Task's class. This permits one product version to retain infrastructure,
 refactor or documentation closures without downgrading product Tasks.
 
-Current Task derives from exactly one manifest Task entry with
-`status: in_progress`. Ready Tasks derive from the same manifest DAG and statuses.
-`initialHead` is the immutable audit baseline. Advancing source identity is
-owned outside tracked Plan content: Git is physical truth,
+Current and ready Tasks derive from the mounted `ExecutionRun`, whose immutable
+input is an `ExecutionPlanSnapshot`. Git remains physical source truth.
+`ExecutionPlanSnapshot.executionBinding.initialHead` is the run baseline,
 `DevelopmentResourceDeclaration.sourceHead` authorizes the current mutation
-slice, `DevelopmentSession.source.commit` identifies a clean runtime
-checkpoint, and the consuming workspace's active-work `expectedHead` is the
-durable resume projection.
-Sibling worktree inventory is machine topology and is not part of this binding.
+slice, and `DevelopmentSession.source.commit` identifies a clean runtime
+checkpoint.
 
 `planctl status` also derives a read-only progress projection:
 
@@ -134,7 +116,7 @@ interface PlanProgress {
 ```
 
 Plans that permit a completed source owner to reopen declare a separate strict
-block outside the Plan Package:
+block outside the Plan Version:
 
 ```ts
 interface SourceInvalidationPolicy {
@@ -147,14 +129,14 @@ interface SourceInvalidationPolicy {
 The policy is optional because most Plans never reopen source. When present,
 `planctl invalidate-source` derives the full transitive closure from
 `rootTaskIds`; callers cannot provide an owner or affected set. The command
-stores an immutable machine-local proof containing the prior manifest digest,
+stores an immutable machine-local proof containing the Plan Version digest,
 the first-failure reference, and every invalidated durable-evidence reference
-before atomically replacing the Plan lifecycle projection.
+before atomically replacing the Execution Run lifecycle projection.
 
-The projection is computed from manifest lifecycle and Task titles. It is not
-persisted. A non-blocked active package always exposes one
-`nextProgressBoundary`. Prepared, blocked, completed and superseded packages
-expose `null`.
+The projection is computed from the immutable Task DAG plus
+`ExecutionRun.taskStates`. It is not persisted. A non-blocked active run always
+exposes one `nextProgressBoundary`. Prepared, blocked, completed and cancelled
+runs expose `null`.
 
 The endpoint is derived from integer Task counts:
 
@@ -168,18 +150,9 @@ percentagePointDelta = round(percentageAfter - percentage, 2)
 `percentage`. Newly unlocked Tasks remain pending and do not contribute to
 `completedAfter`.
 
-Status rules:
-
-- `draft` and `prepared`: zero `in_progress` Tasks and `exhaustion=null`;
-- `active`: exactly one `in_progress` Task;
-- `blocked`: zero `in_progress` Tasks, at least one `blocked` Task, no ready
-  Task, and non-null fixed-point `exhaustion`;
-- `completed`: every Task is `done`;
-- `superseded`: zero `in_progress` Tasks and no live discovery.
-
-Markdown metadata is a discovery projection. `Status`, `Branch`, `Workspace ID`
-and `Initial HEAD` must equal the machine block; mismatch is invalid rather than
-resolved by precedence.
+Markdown metadata is a discovery projection. `Plan ID`, `Version ID`, and
+`Created` must equal the machine block. Execution status, branch, worktree, and
+source HEAD are never projected into the frozen Plan file.
 
 ## 3. Task Slice
 
@@ -200,7 +173,6 @@ interface TaskSlice {
   runtimeClass:
     | 'source-only'
     | 'service'
-    | 'browser'
     | 'native-desktop'
     | 'native-mobile';
   writeSet: string[];
@@ -234,16 +206,6 @@ interface TaskSlice {
   doneWhen: string[];
   failureBehavior: string[];
   updatedAt: string;
-  durableEvidence: Array<{
-    verificationClass:
-      | 'SOURCE_CHECK'
-      | 'STRUCTURAL_CHECK'
-      | 'UX_REVIEW'
-      | 'FUNCTIONAL_CHECK'
-      | 'ACCEPTANCE_PROOF';
-    result: 'PASS' | 'FAIL' | 'BLOCKED' | 'NOT_RUN';
-    ref: string;
-  }>;
 }
 ```
 
@@ -278,8 +240,8 @@ Task checks must make the Session path reachable:
   bounded output plus the stable Git/workspace content digest, and does not
   invoke an Acceptance Gate;
 - an `acceptance-aggregate` Task declares no `FUNCTIONAL_CHECK`, declares
-  `ACCEPTANCE_PROOF`, and owns a non-empty Acceptance closure; its
-  `runtimeClass` names the strongest runtime class in the aggregate;
+  `ACCEPTANCE_PROOF`, owns a non-empty Acceptance closure, and uses
+  `runtimeClass=source-only` because it orchestrates the Gate-owned runtime;
 - formal Gate ownership remains in `Acceptance Execution`; an
   `ACCEPTANCE_PROOF` record cannot substitute for `FUNCTIONAL_CHECK/PASS`.
 
@@ -288,9 +250,10 @@ Task checks must make the Session path reachable:
 closure reached `SOURCE_READY`; it does not imply that its workstream's
 functional proof Task is done.
 
-The Task does not own lifecycle status, current selection or transition event
-history. `updatedAt` changes only when a durable task snapshot changes, not for
-each command.
+The frozen Task does not own lifecycle status, current selection, durable
+evidence, or transition event history. Those belong to `ExecutionRun`,
+`TaskAttempt`, and Evidence. `updatedAt` changes only when a new Plan Version is
+authored, never during execution.
 
 Task closure is the only progress unit. Task weights and command-level progress
 percentages are forbidden. A Task that cannot be completed as one meaningful
@@ -346,51 +309,124 @@ Rules:
 - plain Acceptance runs only the current Task closure;
 - completion/full remain explicit and never derive from diff expansion.
 
-## 5.1 Generation-Bound Workspace Plan Binding
+## 5.1 Plan Mount Ledger
 
 ```ts
-interface WorkspacePlanBinding {
-  schemaVersion: 2;
-  kind: 'peers-touch-workspace-plan-binding';
-  generation: number;
+interface PlanMount {
+  kind: 'peers-touch-plan-mount';
+  mountId: string;
+  projectId: string;
+  planId: string;
+  planVersionId: string;
+  planVersionDigest: string;
+  planPath: string;
   workspaceId: string;
   canonicalRoot: string;
-  planId: string;
-  planPath: string;
-  boundAt: string;
-  boundBy: string;
+  state: 'mounted' | 'released';
+  mountedAt: string;
+  mountedBy: string;
+  releasedAt: string | null;
+  releaseReason: 'completed' | 'cancelled' | 'owner-unmount' | null;
   recordDigest: string;
 }
 ```
 
-The current pointer and immutable generation history are stored at:
+The machine Project Ledger stores immutable mount records and one atomic live
+index:
 
 ```text
-~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
-~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding-history/generation-<N>.json
+~/.peers-touch/dev/plan-mounts/ledger.json
+~/.peers-touch/dev/plan-mounts/mounts/<mountId>.json
 ```
 
 Rules:
 
-- generation 1 creation is explicit and atomic;
-- the same `planId + planPath` request is idempotent within the current
-  generation;
-- ordinary bind with a different tuple returns `WORKSPACE_PLAN_REBIND_DENIED`;
-- only explicit generation advance may change the tuple;
-- advance requires current status `completed`, expected-generation CAS, no live
-  declaration, no active-work record, and no live runtime lease;
-- every generation record is create-once, digest-verified, and owner-controlled;
-- the current pointer is atomically replaced only after the next immutable
-  generation record is durable;
-- a schema-1 record resolves as generation 1 without rewriting it and migrates
-  only during successful advance;
-- there is no unbind operation;
+- mount is explicit, owner-authorized, atomic, and idempotent for the same
+  `planVersionDigest + workspaceId`;
+- one workspace has at most one live mount and one Plan Version has at most one
+  live execution mount unless its Plan explicitly allows parallel runs;
+- a different live mount returns `PLAN_MOUNT_CONFLICT`;
+- normal release requires the corresponding run to be `completed` or
+  `cancelled`; an unfinished run requires explicit owner unmount;
+- mount has no TTL and is not a runtime lease;
+- ledger writes hold one short atomic lock; the lock is not Plan occupancy;
+- every mount record is create-once, digest-verified, and owner-controlled;
 - `planPath` is repository-relative and resolves inside `canonicalRoot`;
-- the referenced package must claim the same `workspaceId`;
-- repository/branch scans, Plan status and declaration recency never select a
-  Plan;
-- CI does not consume this machine-local record and requires an explicit Plan
-  input.
+- the referenced frozen version must match `planVersionDigest`;
+- repository/branch scans, active-work, Session, and declaration recency never
+  select or replace a mount;
+- there is no workspace-binding, generation-advance, dual-read, or migration
+  fallback path.
+
+## 5.2 Execution Plan Snapshot And Run
+
+```ts
+interface ExecutionPlanSnapshot {
+  kind: 'peers-touch-execution-plan-snapshot';
+  snapshotId: string;
+  capturedAt: string;
+  planId: string;
+  planVersionId: string;
+  planVersionDigest: string;
+  planPath: string;
+  plan: PlanVersion;
+  tasks: TaskSlice[];
+  acceptance: AcceptanceExecution;
+  executionBinding: {
+    mountId: string;
+    workspaceId: string;
+    canonicalRoot: string;
+    branch: string;
+    initialHead: string;
+  };
+  recordDigest: string;
+}
+
+interface ExecutionRun {
+  kind: 'peers-touch-execution-run';
+  runId: string;
+  snapshotId: string;
+  snapshotDigest: string;
+  mountId: string;
+  state: 'prepared' | 'active' | 'blocked' | 'completed' | 'cancelled';
+  taskStates: Record<string, {
+    state: 'pending' | 'in_progress' | 'blocked' | 'done';
+    blocker: null | {
+      code: string;
+      owner: string;
+      evidenceRef: string;
+    };
+  }>;
+  exhaustion: null | {
+    recordedAt: string;
+    blockedTaskIds: string[];
+    decisionRefs: string[];
+    evidenceRefs: string[];
+  };
+  currentTaskId: string | null;
+  updatedAt: string;
+  revision: number;
+  recordDigest: string;
+}
+```
+
+The snapshot is written once before execution and never updated. The mutable
+run owns Plan/Task lifecycle only; it cannot change the snapshot, mount, source
+scope, authorization, or Acceptance contract. Run storage is:
+
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/<runId>/execution-plan-snapshot.json
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/<runId>/execution-run.json
+```
+
+Status rules:
+
+- `prepared`: zero `in_progress` Tasks and `exhaustion=null`;
+- `active`: exactly one `in_progress` Task;
+- `blocked`: zero `in_progress` Tasks, at least one `blocked` Task, no ready
+  Task, and non-null fixed-point `exhaustion`;
+- `completed`: every Task is `done`;
+- `cancelled`: no Task is `in_progress`.
 
 ## 6. Workspace Active-Work Projection
 
@@ -404,9 +440,12 @@ interface WorkspaceActiveWork {
   revision: number;
   workspaceId: string;
   workItemId: string;
+  mountId: string;
+  runId: string;
+  snapshotDigest: string;
   planId: string;
   planPath: string;
-  planStatus: 'draft' | 'prepared' | 'active' | 'blocked' | 'completed' | 'superseded';
+  planStatus: 'prepared' | 'active' | 'blocked' | 'completed' | 'cancelled';
   currentTaskId: string;
   currentTaskPath: string;
   taskStatus: 'pending' | 'in_progress' | 'blocked' | 'done';
@@ -433,20 +472,21 @@ Ownership:
   not any consuming worktree's record.
 - The installed implementation derives `workspaceId` from the consuming
   worktree's canonical root.
-- `planId/planPath` must equal the current workspace Plan generation. The record
-  cannot establish, replace or repair that binding.
+- `mountId/runId/snapshotDigest/planId/planPath` must equal the current
+  PlanMount and ExecutionRun. The record cannot establish, replace, repair, or
+  release either owner.
 - `currentTaskId/currentTaskPath/taskStatus` mirror the declaration-selected
   Task and its manifest lifecycle.
 - `devState` is a projection of the current Development Session, or `null`
   before a Session exists.
-- `initialHead` comes from the immutable Plan; `expectedHead` comes from the
-  active declaration and must equal Git at sync time.
+- `initialHead` comes from the immutable execution binding; `expectedHead`
+  comes from the active declaration and must equal Git at sync time.
 - Every update holds a workspace-local lock, verifies optional CAS revision,
   increments `revision`, recalculates `recordDigest`, atomically replaces the
   file, fsyncs the directory and reads back the record.
 - On owner disagreement, sync fails closed; the projection never repairs its
   owners.
-- Project memory, Context Anchor and Peers Dev may read records but cannot write
+- Project memory, Context Anchor and Workflow Snapshot may read records but cannot write
   them. Legacy Markdown is migration-only input and has no compatibility
   writer.
 
@@ -725,8 +765,9 @@ schema version `3` under
 The `completion-reviews/` and `completion-reviews-v2/` namespaces are not read,
 imported, migrated, or deleted.
 
-It does not delete Plan bindings, Plan generations, active-work, Development
-Sessions, Completion Review records, runtime leases, or Acceptance evidence.
+It does not delete Plan mounts, ExecutionPlanSnapshots, ExecutionRuns,
+active-work, Development Sessions, Completion Review records, runtime leases,
+or Acceptance evidence.
 After the reset it publishes the current participating-root Hook projections.
 No legacy parser, importer, alias, or dual-write exists.
 
@@ -800,6 +841,9 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
   sessionId: string;
   planPath: string | null;
   planId: string | null;
+  planVersionDigest: string | null;
+  mountId: string | null;
+  runId: string | null;
   taskId: string | null;
   workspaceId: string;
   branch: string;
@@ -816,14 +860,12 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
 ```
 
 The Plan locator fields are an all-or-none tuple. Null means the declaration is
-explicitly untracked; it never means "discover a Plan". A non-null
-`planPath` is repository-relative, resolves inside the declared worktree, and
-must identify a package whose `planId`, binding, and current `taskId` match the
-declaration and current workspace Plan generation. Once a workspace is bound,
-locator-less declarations are rejected with
-`WORKSPACE_PLAN_DECLARATION_REQUIRED`. During the mixed-version rollout,
-legacy terminal records may omit the tuple; they are historical only and
-cannot authorize new mutation.
+explicitly untracked; it never means "discover a Plan". A non-null `planPath`
+is repository-relative, resolves inside the declared worktree, and must match
+the live `mountId`, immutable `planVersionDigest`, `runId`, `planId`, and the
+ExecutionRun's current `taskId`. Once a workspace is mounted, locator-less
+declarations are rejected with `WORKSPACE_PLAN_DECLARATION_REQUIRED`. There is
+no mixed-version binding fallback.
 
 Publication uses lock, closed-schema validation, atomic replace and digest
 readback. Declaration intent never substitutes for a live runtime lease.
@@ -1421,7 +1463,7 @@ Work-class/runtime variants:
   `FOCUSED_PASS -> SOURCE_READY`;
 - `completionClass=functional` with `source-only` refactor/infrastructure:
   `FOCUSED_PASS -> FUNCTIONAL_RUNNING -> FUNCTIONAL_PASS`;
-- `completionClass=functional` with `service|browser|native-*`:
+- `completionClass=functional` with `service|native-*`:
   `FOCUSED_PASS -> CHECKPOINTING -> ... -> FUNCTIONAL_PASS`;
 - `completionClass=acceptance-aggregate`:
   `FOCUSED_PASS -> ACCEPTANCE_RUNNING -> ACCEPTANCE_PASS -> DELIVERY_READY`;

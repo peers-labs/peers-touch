@@ -1,10 +1,10 @@
 # Local Dev Control Plane
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
-> **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
+> **Module**: `tooling/scripts/local-dev/`
 
 ---
 
@@ -18,7 +18,7 @@
 - `~/.peers-touch/dev/` 的机器级持久化边界。
 - Acceptance Evidence Store 的开发期持久化边界。
 - 每个 worktree 独立选择 profile、slot 和 Station 使用方式的身份模型。
-- 每个 workspace 独立且不可换绑的 Plan 所有权存储边界。
+- Project Ledger PlanMount 的执行 worktree 占用边界。
 
 本文档集不定义：
 
@@ -50,8 +50,8 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 3. 让每个 worktree 独立选择 profile 和本机 slot。
 4. 将环境拓扑定义与本机资源分配分离。
 5. 区分 Station 共享连接、独占部署和独占重置权限。
-6. 用统一开发看板按 worktree 展示需求/Journey、branch、profile、slot、
-   Station、Relay、database、进程和租约。
+6. 用 Workflow Snapshot 按 worktree 投影需求/Journey、branch、profile、
+   slot、Station、Relay、database、进程和租约。
 7. 将 Acceptance Evidence Store 收敛到同一 Dev Control Plane 根。
 8. 所有冲突 fail closed，不依赖人工记忆或 worktree 私有缓存。
 9. 让所有 worktree 在首次写入或运行前看到其它任务的资源意图。
@@ -59,13 +59,14 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 11. 仅由 canonical Profile ID 派生 reset 策略：大小写不敏感包含
     `stable` 的 Profile 禁止 Agent 自主 reset，其余已评审 Profile 允许
     Agent 在完整声明、能力、精确 scope 和 lease 约束下选择 reset。
-12. 在 `apps/dev/` 提供 Peers Dev 自开发管理应用，以 worktree 为主视图、
-    profile 占用为辅助视图，不复制控制面真源。
-13. 所有 worktree 通过固定的 `127.0.0.1:4177` 复用同一个 Peers Dev
-    Server；OS listener 是唯一在线 Owner。
-14. Peers Dev 通过显式 Plan locator 展示 Task closure 进度，并将工作状态与
-    环境健康分开；stale 声明可见但不拥有资源。
-15. 同一仓库或 PR 可同步多个 Plan，但每个 workspace 只解析自己的不可变绑定。
+12. Workflow Snapshot 通过按需 CLI/API 提供只读开发状态，不启动常驻服务、
+    不占用端口，也不成为控制面真源。
+13. 同一仓库或 PR 可同步多个 frozen Plan Version，但每个 workspace 只执行
+    Project Ledger 显式挂载的 PlanMount。
+14. Workflow Snapshot 将工作状态与环境健康分开；stale 声明可见但不拥有
+    资源。
+15. Peers Dev browser dashboard、固定 4177 endpoint 和 browser Gate 不属于
+    Local Dev Control Plane。
 16. 现有非 stable Profile 的 reset 不要求人工授权；已有 Profile 的 deploy
     与 reset 都不得因内部能力刷新或执行边界重复询问。
 17. 对 Dev Workflow 计划器新增的 runtime claim，物理 lease 准入必须验证
@@ -79,7 +80,7 @@ machine-local authority at:
 ```text
 ~/.peers-touch/dev/registry.json
 ~/.peers-touch/dev/leases/
-~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
+~/.peers-touch/dev/plan-mounts/
 ```
 
 An existing `authority: observed-snapshot` file remains diagnostic until an
@@ -118,7 +119,7 @@ runtime build identity fence source-sensitive mutation.
 | [design.md](./design.md) | Owner、控制面、租约和失败语义 |
 | [data-model.md](./data-model.md) | 机器注册表、worktree 绑定和租约模型 |
 | [integration.md](./integration.md) | 与 env 仓、现有 `.local` 和 Make 入口的关系 |
-| [module-layout.md](./module-layout.md) | `apps/dev` 与 control-plane 模块职责 |
+| [module-layout.md](./module-layout.md) | Workflow Snapshot 与 control-plane 模块职责 |
 | [decisions.md](./decisions.md) | 关键架构决策与替代方案 |
 
 Development task sequencing, Journey state and functional/Acceptance

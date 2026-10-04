@@ -27,7 +27,7 @@
 | DWF-D15 | Make a Task-closing Progress Slice the continuation unit | accepted |
 | DWF-D16 | Bind tracked declarations to an explicit Plan locator | accepted |
 | DWF-D17 | Bind the current worktree, not the sibling inventory | accepted |
-| DWF-D18 | Bind each workspace to one immutable current Plan generation | accepted |
+| DWF-D18 | Bind each workspace to one immutable current Plan generation | superseded by DWF-D38 |
 | DWF-D19 | Keep advancing source identity outside tracked Plan content | accepted |
 | DWF-D20 | Make an authorized Plan Run continuous across Tasks and agent review gates | accepted |
 | DWF-D21 | Keep orchestration and runtime verification host-neutral | accepted |
@@ -40,13 +40,15 @@
 | DWF-D28 | Require independent current-source Completion Review | accepted |
 | DWF-D29 | Derive agent activity from bounded Action Receipts | accepted |
 | DWF-D30 | Make documentation claims executable through Workflow Doctor | accepted |
-| DWF-D31 | Advance completed workspace bindings by explicit Plan generation | accepted |
+| DWF-D31 | Advance completed workspace bindings by explicit Plan generation | superseded by DWF-D38 |
 | DWF-D32 | Aggregate module impacts before resource acquisition | accepted |
 | DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | accepted |
 | DWF-D34 | Separate live integration install from global-idle cleanup | accepted |
 | DWF-D35 | Project one canonical TRAE hook into every participating workspace root | accepted |
 | DWF-D36 | Bootstrap non-destructive integration projection outside the Hook grant cycle | accepted |
 | DWF-D37 | Make Completion Review a repository-native reviewer handoff | accepted |
+| DWF-D38 | Separate frozen Plan versions from execution worktree mounts | accepted |
+| DWF-D39 | Permit only native Desktop runtime and product proof | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1798,3 +1800,119 @@ proves delegated assessment provenance, not reviewer independence.
 - Tests must prove operation without Hook receipts, wrong/missing capability
   rejection, caller identity rejection, immutable concurrent submission,
   inherited Plan contexts, source drift, and inert legacy namespaces.
+
+## DWF-D38: Separate Frozen Plan Versions From Execution Worktree Mounts
+
+**Status**: accepted
+**Date**: 2026-10-04
+**Supersedes**: DWF-D18, DWF-D31
+
+### Context
+
+DWF-D18 and DWF-D31 stored execution ownership as a permanent
+workspace-to-Plan generation binding. That joined two different lifecycles:
+the reviewed project design and one worktree selected to execute it. Long Plans
+could not move from an authoring worktree to an execution worktree, while a
+completed Plan required generation-specific replacement machinery before the
+same worktree could accept later work.
+
+### Decision
+
+- A `PlanVersion` is immutable reviewed source in Git. It contains product,
+  architecture, scope, Task DAG, authorization, and Acceptance contracts, but
+  no execution worktree identity.
+- The machine Project Ledger owns `PlanMount`. Mounting explicitly binds one
+  frozen `planId + planVersionDigest` to one `workspaceId`.
+- A worktree has at most one live mount. It remains occupied for the complete
+  Plan Run and becomes reusable only after Plan completion, cancellation, or an
+  explicit owner-authorized unmount.
+- Starting a run copies the frozen PlanVersion and its mount into one immutable
+  `ExecutionPlanSnapshot`. Its `executionBinding` contains `mountId`,
+  `workspaceId`, branch, and initial source HEAD.
+- Agents may execute a mounted snapshot but may not amend the PlanVersion,
+  switch its worktree, unmount it, or manufacture another binding. Those are
+  explicit owner actions.
+- Plan authoring and execution may occur in different worktrees. Branch scans,
+  directory order, active-work, Sessions, and expiring declarations never
+  infer or replace a mount.
+- Existing workspace Plan binding and generation-advance owners are deleted in
+  the hard cut. There is no dual reader, migration fallback, or alias.
+
+### Rationale
+
+The Plan is durable intent; the mount is resource allocation; the snapshot is
+the exact execution input. Separating them preserves long-running ownership
+without making Plan content depend on the worktree that happened to author it.
+
+### Alternatives Considered
+
+- Keep permanent workspace generations: rejected because it makes worktrees
+  disposable or requires binding mutation after every Plan.
+- Put the worktree back into Plan source: rejected because execution placement
+  is machine state and changes independently of reviewed design.
+- Infer the mount from a declaration or Session: rejected because both are
+  attempt-scoped and may expire or be replaced.
+
+### Consequences
+
+- `plan-bind`, `plan-binding`, and `plan-binding-advance` are replaced by
+  explicit mount/status/unmount operations.
+- Mount is the only long-lived worktree occupancy authority. Runtime lease and
+  atomic lock remain separate resource classes with shorter lifecycles.
+- Tests must cover authoring/execution worktree separation, one-live-mount
+  exclusion, immutable snapshots, explicit unmount, and crash-safe ledger
+  updates.
+
+## DWF-D39: Permit Only Native Desktop Runtime And Product Proof
+
+**Status**: accepted
+**Date**: 2026-10-04
+
+### Context
+
+Desktop browser mode and Chromium-based Gates exercised a different process,
+transport, storage, focus, window, input, and lifecycle topology from the
+shipped Tauri application. They could pass while native users still failed,
+and maintaining both paths expanded every product matrix without establishing
+the required native behavior.
+
+### Decision
+
+- `runtimeClass` has no `browser` member. Desktop Tasks use
+  `native-desktop`; source-only and non-Desktop service Tasks retain their
+  existing classes.
+- Desktop functional checks and Acceptance proofs launch a native Tauri
+  application through an approved native runtime cell and use real window,
+  input, screenshot, and receiver-visible evidence.
+- `make desktop-web`, devctl web mode, browser-only Desktop provisioners,
+  environments, Gates, feature clients, and product matrix variants are
+  deleted. Browser evidence cannot satisfy or supplement Desktop closure.
+- Peers Dev browser Gates are removed under LDCP-D19.
+- Tauri's internal WebView remains the native renderer. Opening a system
+  browser for OAuth and operating an independently owned Web product are not
+  Desktop browser mode and remain supported.
+- Historical evidence and completed Plans may describe removed browser runs,
+  but no current schema, registry, command, or proof path may execute them.
+
+### Rationale
+
+One supported Desktop topology aligns development, proof, and the user-facing
+application. Native evidence covers the behaviors that browser execution
+cannot represent.
+
+### Alternatives Considered
+
+- Keep browser mode for faster debugging: rejected because it repeatedly
+  became substitute product proof and retained a second runtime contract.
+- Keep browser Gates as optional diagnostics: rejected because registry
+  presence preserves dependencies and matrix obligations.
+- Rename browser mode to WebView mode: rejected because an external Chromium
+  process is not the embedded native WebView lifecycle.
+
+### Consequences
+
+- Browser-only failures no longer block Desktop delivery.
+- Native runtime capacity and permissions become explicit prerequisites for
+  Desktop product proof.
+- Browser compatibility code is removed rather than hidden behind flags or
+  deprecated aliases.

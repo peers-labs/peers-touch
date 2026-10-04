@@ -135,6 +135,8 @@ only specialize storage, host events, and platform lifecycle.
 
 Evidence status:
 
+- D-18 retires desktop-web as a supported runtime. Browser rows above are
+  historical diagnostics and cannot enter current proof.
 - `DESIGN_EVIDENCE_BLOCKED` for native transport topology.
 - Existing frontend runtime ownership, visible-lane, lifecycle, budget, and
   evidence contracts remain active.
@@ -168,7 +170,7 @@ accepted.
 
 | 验收项 | 证据 |
 |--------|------|
-| 主导航切换不卡 | 同 cohort 的 browser/dev-native/packaged-native route-to-visible P95/P99，long task < budget |
+| 主导航切换不卡 | dev-native/packaged-native route-to-visible P95/P99，long task < budget |
 | Settings tabs 不粘滞 | interaction-linked SectionHost、React commit、store fanout、bridge/handler evidence |
 | 任何文本/PIN 输入不卡 | input-to-paint P95 ≤50ms，并关联 native thread/bridge evidence |
 | 登录背景动画不停止 | login input/paint + runtime bootstrap + compositor/native evidence |

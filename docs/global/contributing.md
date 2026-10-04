@@ -36,7 +36,6 @@ peers-touch/
 │   ├── desktop/           # Tauri + React/TS + Rust
 │   ├── mobile/            # Tauri v2 Mobile
 │   ├── station/           # Go backend (app/ + frame/)
-│   └── dev/               # Development control plane UI
 ├── model/domain/          # Proto definitions (single source of truth)
 ├── packages/              # applet-sdk, applets, locales
 ├── tooling/
@@ -103,7 +102,6 @@ parameters to use.
 make profile <name>     # Create or switch profile
 make station            # Start Station through the active profile
 make desktop            # Start Desktop (Tauri app)
-make desktop-web        # Start Desktop (browser shell, for web-only work)
 ```
 
 Full profile system documentation:

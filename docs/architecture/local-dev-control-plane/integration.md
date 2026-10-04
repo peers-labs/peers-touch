@@ -4,7 +4,7 @@
 > **Version**: v1.3
 > **Created**: 2026-09-13 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
-> **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
+> **Module**: `tooling/scripts/local-dev/`
 
 ---
 
@@ -19,9 +19,9 @@
 | `<worktree>/.local/deploy/envs/` | Legacy imported deploy cache | Never deployment authority; deploy resolves a unique tracked-clean env-repository definition |
 | `/tmp/peers-touch-profile-leases/` | Legacy Acceptance/deploy live locks | Not used by canonical `make station`; replaced by one machine control-plane lease root |
 | `~/.peers-touch/dev/registry.json` | Observed snapshot until explicit promotion | Authoritative after `make env-register` |
-| `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json` | Absent before DWF-D18 | Development Workflow immutable Plan ownership |
+| `~/.peers-touch/dev/plan-mounts/` | Absent before DWF-D38 | Development Workflow PlanMount ledger and immutable execution input |
 | `~/Library/Application Support/PeersTouch/acceptance/` | Legacy Acceptance Evidence Store | One-time verified move to `~/.peers-touch/dev/acceptance/` |
-| `apps/dev/` | Peers Dev server, web UI, tests and package entry | Canonical application owner |
+| `tooling/scripts/local-dev/workflow-snapshot*.mjs` | Peers Dev server previously owned this projection | Canonical one-shot read-only Workflow Snapshot |
 
 The migration must be atomic at the runtime command boundary. There must not be
 permanent dual-read precedence between global registry and `.local/dev/active`.
@@ -35,6 +35,10 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 ├── registry.lock
 ├── work.json
 ├── work.lock
+├── plan-mounts/
+│   ├── ledger.json
+│   ├── ledger.lock
+│   └── mounts/<mountId>.json
 ├── authorizations/
 │   └── environment-creation/
 │       ├── pending/
@@ -49,7 +53,9 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 └── workspaces/
     └── <workspaceId>/
         ├── workflow/
-        │   └── plan-binding.json
+        │   └── <runId>/
+        │       ├── execution-plan-snapshot.json
+        │       └── execution-run.json
         ├── runtime/
         ├── pids/
         ├── logs/
@@ -78,17 +84,17 @@ Target command behavior:
 | `make dev-release` | Release the work declaration after cleanup |
 | `make dev-resources-prepare` | Ask Dev Workflow to aggregate module impacts and atomically publish ready-target resource claims |
 | `make dev-resource-record` | Record a Runtime Owner result against the committed resource-plan fence |
-| `make plan-bind PLAN=<path>` | Create the current workspace's immutable Plan binding once |
-| `make plan-binding` | Resolve and validate only the bound Plan |
+| `make plan-mount PLAN=<path>` | Mount one frozen Plan Version to the current execution workspace |
+| `make plan-mount-status` | Resolve the live mount, immutable snapshot, and ExecutionRun |
+| `make plan-unmount MOUNT=<id> REASON=<reason>` | Release a completed/cancelled run or consume explicit owner unmount authority |
 | `make profile-authorize <name> SLOT=<n>` | Human-only interactive grant for one exact local compose profile |
 | `make profile-init <name> SLOT=<n>` | Consume the exact pending grant and persist a digest-bound receipt |
 | `make profile <name>` | Call canonical `env-update` behavior for only the current `workspaceId` binding |
 | `make config` | Resolve current binding + env definition + allocation |
 | `make status` | Show current worktree declared and observed state |
 | `make env-status-all` | Show all registered worktrees, conflicts, processes and leases |
-| `make dev-ui` | Start the one machine-wide Peers Dev server or reuse the compatible existing instance |
-| `make dev-ui-snapshot` | Print the redacted Peers Dev projection without starting the server |
-| `make desktop[-web]` | Acquire current workspace `local.slot` lease |
+| `make workflow-snapshot` | Print one redacted workflow projection and exit |
+| `make desktop` | Acquire current workspace `local.slot` lease and start native Tauri Desktop |
 | `make mobile` | Acquire current workspace `local.slot` lease |
 | `make station-check` | Require `station.connect` |
 | `make station` / restart | Require exclusive `station.deploy` |
@@ -215,34 +221,30 @@ node --test --test-timeout=1200000 \
   tooling/scripts/local-dev/*.test.mjs
 ```
 
-Dashboard verification:
+Workflow Snapshot verification:
 
 ```bash
-node --test apps/dev/server/*.test.mjs
-node apps/dev/server/index.mjs snapshot \
-  --env-repo ../env
+node --test tooling/scripts/local-dev/workflow-snapshot*.test.mjs
+make workflow-snapshot
 ```
 
 The snapshot must contain only selected non-secret profile fields, machine
 registrations, work declarations, lease projections, a worktree-centric joined
 view and derived profile occupancy. The primary view must retain declaration-
 only workspaces, group active requirements and Journeys by `workspaceId`, and
-distinguish runtime intent from held leases. The served HTML must have no
-state-changing endpoint.
+distinguish runtime intent from held leases.
 
-Tracked declarations must also resolve their declared Plan Package through the
-registered worktree root and expose canonical Task-closure progress. Tests must
-cover a valid package, identifier mismatch, missing package, legacy plan,
-unregistered root, and an escaping path. Active and stale declarations remain
-visible, while only live declarations contribute intent or occupancy.
+Tracked declarations must resolve their declared PlanMount, immutable snapshot,
+ExecutionRun, and current Task through the registered worktree root. Tests must
+cover a valid mount, identifier mismatch, missing snapshot/run, unregistered
+root, and an escaping path. Active and stale declarations remain visible,
+while only live declarations contribute intent or occupancy.
 `workState` and `environmentHealth` are asserted independently so profile or
 registry problems cannot rewrite task lifecycle.
 
-Single-instance verification starts two Peers Dev servers concurrently against
-one free test port. Exactly one returns `started`; the other returns `existing`
-after validating `/api/server`. A foreign listener on the same port must
-produce `DEV_SERVER_PORT_CONFLICT`. Public `make dev-ui` does not expose host or
-port overrides.
+Lifecycle verification proves Workflow Snapshot emits one document and exits
+without opening a listener, browser, PID file, background process, or runtime
+lease.
 
 The lease suite launches isolated child processes for every required lease
 class and proves contention plus release on success, command failure, signal,

@@ -1,112 +1,68 @@
-# Peers Dev Worktree 治理 - 产品状态模型
+# Workflow Snapshot - Product State Model
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-09-23 | **Updated**: 2026-09-24
+> **Version**: v3.0
+> **Created**: 2026-09-23 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
-> **Module**: `apps/dev/`
+> **Module**: `tooling/scripts/local-dev/`
 
 ---
 
-## 1. Worktree Visibility State
-
-| 状态 | 进入条件 | 允许动作 | 禁止推断 |
-|---|---|---|---|
-| discovered | 本轮 `git worktree list` 存在 | 查看 Git 身份和关联状态 | 已注册、正在运行 |
-| observed-only | 有主动上报但未注册 | 查看 freshness | 拥有 profile/slot |
-| managed | 有显式 machine registration | 查看环境绑定 | 当前 active |
-| historical | 仅有 declaration/active-work 历史 | 查看旧状态和更新时间 | worktree 仍存在 |
-| missing | 历史存在但本轮 Git 未发现 | 查看诊断 | 自动删除机器状态 |
-
-## 2. Observation State
+## 1. Invocation State
 
 ```text
-unreported
-  -> fresh
-  -> recent
-  -> stale
+requested
+  -> reading
+  -> emitted
+  -> exited
 
-fresh|recent|stale
-  -> fresh       on a valid new self-report
-  -> invalid     on schema/digest failure
-  -> missing     when Git discovery no longer contains workspaceId
+reading
+  -> partial     one or more typed source failures
+  -> failed      root projection cannot be produced
 ```
 
-Dev UI 的周期性检查只更新 `checkedAt` 和 Git 事实，不伪造 `reportedAt`。
+There is no serving, refreshing, connected-client, or resident state.
 
-## 3. Server Source State
+## 2. Worktree Visibility
 
-| 状态 | 条件 | 用户可见结果 |
+| State | Condition | Allowed Claim |
 |---|---|---|
-| current | 启动 branch/HEAD/dirty 与当前服务源码 worktree 相同 | 正常 |
-| restart-required | HEAD 或 dirty 状态变化 | 顶部 warning，继续提供只读状态 |
-| source-unavailable | 无法重新读取服务源码 Git 身份 | typed warning |
+| discovered | Current `git worktree list` contains the root | Current Git identity |
+| observed-only | Observation exists without registration | Observation freshness only |
+| managed | Machine registration exists | Profile and slot binding |
+| mounted | One live PlanMount targets the workspace | Plan occupancy |
+| historical | Only released/terminal owner records remain | History only |
+| missing | Owner history exists but Git no longer discovers the root | Diagnostic only |
 
-Dev UI 不自行杀死或替换 4177 listener。
+## 3. Workflow Consistency
 
-## 4. Governance Activity State
+| State | Condition |
+|---|---|
+| consistent | Mount, snapshot, run, declaration, Session, active-work, and Git identities agree |
+| stale | An expiring projection is old but does not claim a live resource |
+| blocked | A required owner is absent or malformed |
+| conflict | Multiple live owners or identity mismatch |
+| unavailable | A bounded read failed |
 
-| 状态 | 进入条件 | 删除资格 |
-|---|---|---|
-| active | live conversation、live declaration、active-work 或 live lease 任一存在 | 禁止 |
-| idle | 已注册但无 live owner | 继续检查 Git 安全条件 |
-| unmanaged | 仅由 Git discovery 发现 | 继续检查 Git 安全条件 |
-| missing | Git 已不存在但仍有历史 Owner 记录 | 不执行 Git 删除，只允许独立诊断 |
+Snapshot never repairs or infers an owner.
 
-`fresh` observation、文件 mtime、最近 commit 或浏览器选中都不能把 worktree
-判定为 active。浏览器选中是页面状态，不是资源租约。
+## 4. Environment Health
 
-## 5. Metric State
+| State | Condition |
+|---|---|
+| ready | Required profile and observed runtime state agree |
+| warning | Non-authoritative observation is stale or unavailable |
+| blocked | Required registration, capability, or topology is absent |
+| conflict | Slot, lease, process, or source identity conflicts |
+| unregistered | Git worktree has no machine registration |
 
-```text
-checking
-  -> available
-  -> unavailable
+Environment health cannot change ExecutionRun or Task state.
 
-available|unavailable
-  -> checking   on explicit refresh or cache expiry
-```
+## 5. Durable Readback
 
-`createdAt` 必须附带 `source=filesystem-birthtime`。磁盘占用附带
-`checkedAt`。Git 距离附带实际 `baseRef`；缺失 base 时为 unavailable。
-
-## 6. Removal State
-
-```text
-not-requested
-  -> blocked             preflight returns blockers
-  -> confirmation-ready  preflight returns one short-lived ticket
-
-confirmation-ready
-  -> removing            exact text + ticket accepted
-  -> expired             ticket expires
-  -> stale               source fingerprint changed
-
-removing
-  -> removed
-  -> partial
-  -> failed
-```
-
-删除预检必须拒绝：
-
-- main worktree、服务源码 worktree或受保护分支；
-- detached 或 locked worktree；
-- live conversation、live declaration、active-work 或 live lease；
-- dirty worktree；
-- HEAD 未合入本地比较 ref；
-- 缺失或无法验证的 Git/文件系统身份。
-
-票据绑定 `workspaceId + root identity + branch + HEAD + dirty + baseRef +
-ahead/behind + Owner state`，一次性且短时有效。执行阶段必须重新计算并比较。
-删除只调用非 force `git worktree remove`，不删除 branch。
-
-## 7. Durable Readback
-
-- 主动上报读取自 workspace 独占文件。
-- Git 检查每次 snapshot 重新执行，不持久化为 authority。
-- `updatedAt` 是 projection，取已验证时间源中的最大值。
-- registration、declaration、active-work 和 lease 的 Owner 语义保持不变。
-- removal ticket 只存在于当前 Peers Dev 进程内，不是授权或可恢复状态。
-- 成功退役后清理该 workspace 的 registration 和 workspace-local machine
-  state；Acceptance Evidence 和 Git branch 不在删除范围。
+- Git facts are captured per invocation and are not persisted as authority.
+- Mount, run, declaration, Session, active-work, registry, and lease owners
+  retain their own schemas and stores.
+- Workflow Snapshot has no ticket, browser selection, service identity, PID,
+  endpoint, lease, or cache owner.
+- Output is a disposable redacted projection.

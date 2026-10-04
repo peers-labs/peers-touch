@@ -22,14 +22,15 @@
 | LDCP-D08 | Registration is explicit and activity is runtime-derived | accepted |
 | LDCP-D09 | Require human authorization for environment creation | accepted |
 | LDCP-D10 | Declare Agent control mode in each profile | superseded by LDCP-D15 |
-| LDCP-D11 | Provide one read-only Development Control Plane dashboard | accepted |
-| LDCP-D12 | Run one machine-wide Peers Dev application | accepted |
+| LDCP-D11 | Provide one read-only Development Control Plane dashboard | superseded by LDCP-D19 |
+| LDCP-D12 | Run one machine-wide Peers Dev application | superseded by LDCP-D19 |
 | LDCP-D13 | Project Plan progress separately from environment health | accepted |
 | LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | accepted |
 | LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 | LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
 | LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | accepted |
+| LDCP-D19 | Retire the Peers Dev browser service and keep Workflow Snapshot read-only | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -842,3 +843,53 @@ possession.
   claim is planner-owned.
 - Existing explicit `make station` owner actions and non-planned declarations
   retain their current behavior.
+
+## LDCP-D19: Retire The Peers Dev Browser Service And Keep Workflow Snapshot Read-Only
+
+**Status**: accepted
+**Date**: 2026-10-04
+**Supersedes**: LDCP-D11, LDCP-D12
+
+### Context
+
+The Peers Dev dashboard introduced a machine-wide HTTP server, fixed port 4177,
+browser assets, source-freshness logic, a dedicated profile, a provisioner, and
+three formal Gates for a read-only workflow projection. This created a strong
+global runtime conflict and made workflow proof depend on browser automation,
+even though the same authoritative state is already available from repository
+CLI and library projections.
+
+### Decision
+
+- Delete the Peers Dev web application, HTTP server, fixed 4177 endpoint,
+  `make dev-ui`, `dev-ui-local` profile, provisioner, environments, Gates, and
+  registry entries.
+- Keep Workflow Snapshot as a read-only repository CLI/API projection over the
+  existing Plan, mount, declaration, Session, active-work, and evidence owners.
+- Workflow Snapshot never starts a service, opens a browser, reserves a port,
+  or becomes a mutable control-plane owner.
+- Machine inspection remains on-demand. Consumers that need a current view
+  invoke the CLI or library directly and receive one bounded snapshot.
+- No compatibility server, redirect, command alias, or port probe remains.
+
+### Rationale
+
+A read-only projection does not justify a machine-wide resident product or
+exclusive port. Removing that layer eliminates a strong conflict resource and
+keeps authority with the underlying workflow stores.
+
+### Alternatives Considered
+
+- Keep the dashboard but move it to a dynamic port: rejected because browser
+  runtime and source-freshness lifecycle still remain.
+- Keep 4177 as an optional convenience: rejected because optional registered
+  products and Gates continue to impose maintenance and proof obligations.
+- Embed the dashboard in Desktop: rejected because workflow inspection is an
+  operator projection, not an end-user Desktop feature.
+
+### Consequences
+
+- Port 4177 is no longer a declared resource in Peers Touch.
+- `apps/dev` contains no browser UI or server owner after the hard cut.
+- Workflow status remains scriptable and host-neutral through Workflow
+  Snapshot.

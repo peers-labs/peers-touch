@@ -374,7 +374,7 @@ Check:
 
 Check:
 
-- `desktop-web -> desktop-rust -> station` remains the business path;
+- `native Tauri embedded renderer -> desktop-rust -> station` remains the business path;
 - pages are pure renderers and do not own long-lived freshness;
 - runtime-backed features have event consumption and reconciliation;
 - user-facing strings use locale keys;

@@ -28,10 +28,10 @@ Architecture source:
 | Product Journey and visible states | `pt-product-design-methodology` |
 | Architecture boundaries and contracts | `pt-architecture-design-methodology` |
 | Vertical dependency plan model | `pt-architecture-execution-methodology` |
-| Plan Package persistence and generation-bound workspace Plan binding | `pt-plan-and-document` |
+| Frozen Plan Version persistence and optional owner-authorized mount | `pt-plan-and-document` |
 | Ready/Parked selection and concurrency lanes | `pt-goal-orchestrator` |
 | Whether a proposed action may run | `pt-execution-plan-guardian` |
-| Plan/Task/Session/workspace active-work mutation order | `pt-dev-workflow` through their owning commands |
+| ExecutionRun/Task/Session/workspace active-work mutation order | `pt-dev-workflow` through their owning commands |
 | Domain-specific change classification | Module Skills emitting standard `ModuleImpact` |
 | Cross-module target and resource aggregation | `pt-dev-workflow` through `dev-resources-prepare` |
 | Physical build, restart, provision, health and quarantine | Local Dev or Acceptance Suite Runtime owner |
@@ -78,7 +78,7 @@ Never enter broad Acceptance while a required Journey is not
 ## Plan Run Authorization
 
 An explicit `continue`, `resume`, `execute the plan`, `finish the plan`, or
-equivalent request starts one **Plan Run** over the bound Plan's accepted scope
+equivalent request starts one **Plan Run** over the mounted snapshot's accepted scope
 and authorization envelope.
 
 The Plan Run is the user-facing execution horizon. It may cross Task closures,
@@ -137,15 +137,15 @@ Before mutation:
 3. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
    and expected HEAD with `tooling/scripts/verify-worktree-binding.py`.
    Unrelated sibling worktree inventory is not execution identity.
-4. Resolve the workspace's current Plan binding generation when present.
-   Repository or PR contents may contain many active Plans; only the bound
-   `planId + planPath` belongs to this workspace. Never scan by branch. Advance
-   only through the binding owner after the previous generation is completed
-   and quiescent.
+4. Resolve the workspace's current Project Ledger PlanMount when present.
+   Repository or PR contents may contain many Plan Versions; only the mounted
+   `planVersionDigest + planPath` belongs to this workspace. Never scan by
+   branch. Do not amend, rebind, or unmount it; release occurs only after
+   completion/cancellation or explicit owner action.
 5. Resolve user intent, authorization envelope, existing accepted sources, and
    whether the work is tracked.
 6. Preserve unrelated dirty files. Never switch branches or worktrees
-   implicitly. Never create a worktree to bypass a Plan binding, lifecycle
+   implicitly. Never create a worktree to bypass a Plan mount, lifecycle
    state, or resource conflict; only an explicit user-selected isolation or
    concurrency operation authorizes worktree creation.
 
@@ -170,8 +170,9 @@ Rules:
 
 - Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
 - A tracked run must publish `PLAN` and `TASK`; the declaration validates the
-  Plan ID, current workspace Plan generation, expected HEAD, and single current
-  Task. An unbound workspace may publish untracked pre-Plan work; a bound
+  Plan Version digest, current workspace PlanMount and ExecutionRun, expected
+  HEAD, and single current Task. An unmounted workspace may publish untracked
+  pre-Plan work; a mounted
   workspace cannot publish a locator-less declaration.
 - Run `make dev-update` before expanding scope/resources and after Task handoff.
 - Before a long action crosses half of the current heartbeat-to-expiry window,
@@ -271,7 +272,7 @@ Invoke the owning Skill and consume its typed output:
 | PRODUCT | accepted Journey/state/acceptance contract |
 | DESIGN | accepted ownership/contracts/failure semantics |
 | PLAN model | accepted vertical dependency model |
-| PLAN persistence | validated Plan Package and workspace active-work locator |
+| PLAN persistence | validated frozen Plan Version and optional explicit PlanMount |
 | EXECUTE | scheduler proposal plus Guardian policy decision |
 | ACCEPTANCE | formal evidence for required scope |
 | DELIVER | reviewed commit/PR result |
@@ -281,11 +282,12 @@ specialist's answer in place to bypass a blocked gate.
 
 ## 4. Tracked Execution Loop
 
-For an accepted Plan Package:
+For a mounted Plan Version:
 
-1. Validate the package and resolve its current Task.
+1. Validate the immutable ExecutionPlanSnapshot and resolve current Task from
+   the ExecutionRun.
 2. Verify workspace active-work `currentTaskId`, `currentTaskPath`, and
-   `devState` against the manifest, declaration and Development Session.
+   `devState` against the run, declaration and Development Session.
 3. Ask `pt-goal-orchestrator` for the bounded Ready/Parked schedule and
    concurrency lanes. The schedule must bind one Progress Slice to the current
    Task's `planctl status.progress.nextProgressBoundary`.
@@ -303,7 +305,7 @@ For an accepted Plan Package:
 8. Record the first actionable failure in the Session and stop that action.
 9. Persist meaningful results in owner order:
    - Session transition/evidence;
-   - Task snapshot and manifest lifecycle through `planctl`;
+   - Task and Plan lifecycle through the ExecutionRun owner;
    - workspace active-work locator projection through
      `make active-work-sync WORK_ITEM=<id>`.
 10. Recompute and continue the schedule across setup, authorization, diagnostic,
@@ -311,7 +313,7 @@ For an accepted Plan Package:
    until the current Task closes or only a hard boundary remains.
 11. Run the stage-appropriate Agent Review Loop before accepting the Task or
    stage gate.
-12. When the Task closes or parks, atomically advance the manifest through its
+12. When the Task closes or parks, atomically advance the ExecutionRun through its
     owner command, update the declaration's Task locator and workspace
     active-work record, ask the scheduler for `NEXT`, and activate a
     dependency-ready successor.
@@ -426,9 +428,10 @@ When execution finds drift:
 - accepted semantics but stale inventory/dependency/deliverable mapping ->
   `PLAN_AMENDMENT_REQUIRED`.
 
-Dev Workflow routes the amendment to its owner. `pt-plan-and-document` persists
-an accepted updated plan model. The Guardian and scheduler never self-amend the
-Plan Package.
+Dev Workflow stops at `PLAN_AMENDMENT_REQUIRED`. Only an explicit user/owner
+decision may authorize a new frozen Plan Version and mount transition;
+`pt-plan-and-document` then persists the accepted replacement. The Agent,
+Guardian, and scheduler never self-amend or rebind a mounted Plan.
 
 ## 7. Agent Review Loop
 
@@ -491,9 +494,9 @@ authorizations.
 
 ## Resume
 
-On resume, verify the persisted worktree and current Plan generation, run
-`make dev-check`, validate the bound Plan Package, reconcile current
-Task/Session/workspace active-work, then resume the earliest legal action and
+On resume, verify the persisted worktree, PlanMount, immutable snapshot, and
+ExecutionRun, run `make dev-check`, reconcile current Task/Session/workspace
+active-work, then resume the earliest legal action and
 continue the Plan Run. Synchronized foreign Plans are ignored. Do not pause
 merely to print the Anchor or after the first Task closes.
 
@@ -530,7 +533,7 @@ Never:
 - acquire one resource while waiting for another resource in the same target;
 - retry a parked target while an independent ready target can progress;
 - let God View execute or persist workflow state;
-- let the scheduler or Guardian mutate the Plan Package;
+- let the Agent, scheduler, or Guardian mutate the frozen Plan Version or PlanMount;
 - let Context Anchor repair workspace active-work;
 - write project memory or another workspace's active-work record;
 - write before declaration or outside declared scope;

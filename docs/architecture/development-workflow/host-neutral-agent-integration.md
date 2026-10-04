@@ -170,13 +170,13 @@ authority.
    recursive catalog identity, dirty catalog status, callback proof, and every
    projected symlink's exact canonical target before it reports `PASS`. It also
    invokes the canonical
-   Plan binding and Plan Package validators, checks the current Task and source
+   Plan mount and Plan Version validators, checks the current Task and source
    claims, and propagates malformed or blocked Acceptance registry state.
 7. Resume from the persisted Plan, Task, Session, workspace active-work record,
    and Context Anchor under the refreshed host catalog, then publish the new
    Development declaration.
 8. Verify the first resumed action is scheduled by `pt-goal-orchestrator` and
-   executed by `pt-dev-workflow`. Do not replace an unfinished Plan generation.
+   executed by `pt-dev-workflow`. Do not replace or unmount an unfinished Plan.
 
 ## Fleet Audit
 

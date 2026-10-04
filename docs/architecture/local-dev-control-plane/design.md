@@ -1,10 +1,10 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
-> **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
+> **Module**: `tooling/scripts/local-dev/`
 
 ---
 
@@ -36,15 +36,14 @@
     from autonomous reset; every other reviewed Profile is Agent-resettable.
     The policy never replaces declarations, capabilities, exact reset scope,
     leases, topology validation, or source identity.
-11. **One read-only development view**: the Development Control Plane dashboard
-    joins each worktree's requirements and Journeys with its topology, bindings,
-    declared resources, leases and observations without becoming a mutation or
-    truth owner.
-12. **One machine-wide app instance**: Peers Dev binds only
-    `127.0.0.1:4177`; the OS listener is the exclusivity authority and every
-    compatible worktree launch reuses that instance.
-13. **Immutable Plan ownership**: each workspace has one machine-local Plan
-    binding; repository/PR synchronization cannot replace it.
+11. **One read-only development projection**: Workflow Snapshot joins each
+    worktree's requirements and Journeys with topology, mounts, declarations,
+    leases, and observations without becoming a mutation or truth owner.
+12. **No dashboard runtime**: the projection is an on-demand CLI/library call;
+    it starts no server, opens no browser, and reserves no fixed port.
+13. **Explicit Plan occupancy**: Project Ledger PlanMount, not repository
+    discovery or a workspace binding file, selects the frozen Plan Version
+    executed by a worktree.
 14. **Stable binding, live source**: the registry owns durable root, branch,
     profile, slot, and capability binding only. Current Git HEAD is read from
     the worktree for each operation and fenced by Development intent and
@@ -63,7 +62,7 @@ Sibling env repository
 Machine Dev Control Plane
   ~/.peers-touch/dev/
   - workspace registry
-  - immutable workspace Plan bindings
+  - Project Ledger Plan mounts
   - public development work declarations
   - human environment-creation authorizations
   - local slot allocation
@@ -71,15 +70,6 @@ Machine Dev Control Plane
   - observed process/port projection
   - Acceptance Evidence Store
                  |
-                 | redacted projection
-                 v
-Peers Dev
-  apps/dev/
-  - one machine-wide HTTP server
-  - worktree/resource management UI
-                 |
-                 | workspaceId-scoped runtime resolution
-                 v
 Worktree
   - source and branch
   - independent active binding
@@ -115,14 +105,13 @@ not remain as a symlink, fallback, or second read owner.
 | Worktree registration identity | Canonical filesystem path + registered branch | `workspaceId = sha256(realpath(root))[0:16]` |
 | Current worktree source identity | Git | Current branch and HEAD captured at operation time |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
-| Worktree Plan ownership | Development Workflow | `workspaces/<workspaceId>/workflow/plan-binding.json` |
+| Worktree Plan occupancy | Development Workflow | Project Ledger `PlanMount` |
 | Development source/runtime intent | Development Workflow | `~/.peers-touch/dev/work.json` |
 | Local port slot | Machine Dev Control Plane | `bindings[workspaceId].slot` |
 | Station connection/deploy/reset permission | Machine Dev Control Plane | capability lease |
 | Live process and port state | OS observation | PID identity + listening socket |
 | Runtime evidence | Acceptance Evidence Store | `~/.peers-touch/dev/acceptance/` |
-| Peers Dev application source | Repository application layer | `apps/dev/` |
-| Live Peers Dev server ownership | Operating system | listener on `127.0.0.1:4177` |
+| Read-only workflow projection | Development Workflow | `workflow-snapshot-core.mjs` |
 
 Profile files may describe remote topology defaults, but they must not remain
 the authority for machine-local slot allocation.
@@ -241,8 +230,9 @@ Local Dev Control Plane leases remain the live exclusivity owner. A work
 declaration and lease may reference the same resource, but they answer different
 questions: planned use versus current possession.
 
-A tracked declaration must match the immutable workspace Plan binding. Once
-bound, the workspace cannot publish untracked declarations.
+A tracked declaration must match the live PlanMount, immutable snapshot,
+ExecutionRun, and current Task. Once mounted, the workspace cannot publish
+untracked declarations.
 
 ### 4.6 Lease Manager
 
@@ -303,59 +293,22 @@ Projects current OS facts:
 PID files are hints only. A PID must match process identity before it is treated
 as running.
 
-### 4.8 Peers Dev Application
+### 4.8 Workflow Snapshot
 
-The self-development application lives under `apps/dev/`. Its server and web UI
-form one product unit and serve a redacted snapshot assembled from:
+`workflow-snapshot-core.mjs` assembles one bounded, redacted, read-only view
+from reviewed profile definitions, machine registry bindings, Plan mounts and
+runs, active Development declarations, Sessions, active-work, runtime leases,
+and observations.
 
-- reviewed profile definitions;
-- machine registry bindings and profile trust state;
-- active Development work declarations and their requirement/Journey identity;
-- live and stale lease observations;
-- derived per-worktree profile, slot, Station, Relay, database, fixture and
-  other runtime-resource usage;
-- derived profile occupancy and conflicts as a secondary capacity view.
+The primary key is `workspaceId`, never basename. Work execution and
+environment readiness remain separate projections. A stale declaration may be
+visible but contributes no runtime intent, occupancy, or authorization.
 
-The primary row key is `workspaceId`, never basename. Registered workspaces use
-registry display metadata; declaration-only workspaces remain explicit as
-unregistered rather than disappearing from the board. Runtime claims describe
-planned use, while leases separately describe current possession.
-
-Each tracked declaration is also an explicit Plan foreign key:
-`planPath + planId + taskId`. The server resolves that locator only beneath the
-registered canonical root and delegates package interpretation to the canonical
-Plan Package parser. It returns selected identity, lifecycle, and Task-closure
-progress fields; canonical roots and absolute Plan paths remain private.
-
-Work execution and environment readiness are separate projections. An active
-Task can remain `in-progress` while a dirty profile, stale registry binding, or
-slot conflict is reported in `environmentHealth`. The newest stale declaration
-for a work item remains visible as `stale`, but contributes no runtime intent,
-occupancy, or authorization.
-
-The initial application has no mutation endpoint. It never reads or exposes
-credentials, raw profile values, product data, logs, canonical roots, or
-Acceptance payloads. Missing or malformed sources remain visible as typed
-unavailable/conflict states. Future mutation controls must call guarded
-`devctl` application services instead of writing control-plane files.
-
-### 4.9 Peers Dev Server
-
-The public endpoint is fixed at `http://127.0.0.1:4177`. Startup probes
-`GET /api/server` before binding. A compatible response makes startup
-idempotently successful; no new process is created. When the port is free, the
-new process binds it. `EADDRINUSE` after the probe is treated as a concurrent
-start race and followed by a bounded identity re-probe.
-
-The server identity contract includes protocol version, app kind, source
-`workspaceId`, branch, HEAD, and an explicit dirty flag. The flag prevents an
-uncommitted runtime from being mistaken for exact commit source without
-exposing filenames or diffs. The contract excludes canonical filesystem paths.
-A listener that does not return the exact supported identity fails closed as
-`DEV_SERVER_PORT_CONFLICT`.
-
-No PID file, dynamic fallback port, implicit process kill, host override, or
-port override participates in server ownership.
+The core never reads credentials, raw profile values, product data, logs,
+canonical roots, or Acceptance payloads. Missing or malformed sources remain
+typed unavailable/conflict states. `workflow-snapshot.mjs` prints the result
+and exits; there is no HTTP endpoint, browser asset, refresh loop, source
+freshness server, mutation endpoint, or resident owner.
 
 ## 5. Resolution Contract
 
@@ -413,11 +366,10 @@ Forbidden:
   declaration/capability/scope/lease checks.
 - A stable Profile is granted `station.reset` or reaches reset lease
   acquisition.
-- The dashboard writes registry, work ledger, lease, profile, workflow, or
-  runtime state.
-- Two Peers Dev processes listen concurrently, a worktree silently chooses
-  another port, or a launcher accepts a foreign listener.
-- A worktree kills or replaces the current Peers Dev owner implicitly.
+- Workflow Snapshot writes registry, mount ledger, work ledger, lease, profile,
+  workflow, or runtime state.
+- A workflow inspection command starts a server, opens a browser, or reserves a
+  fixed port.
 - An Agent runs `profile-authorize`, creates an authorization file, reuses a
   consumed grant, or edits an authorized local profile after receipt creation.
 - An arbitrary `PT_DEV_PROFILE_FILE` bypasses reviewed topology; only a
@@ -462,15 +414,12 @@ The target implementation must prove:
   ID and the resolved status projection exposes it.
 - Mixed-case `stable` IDs reject `station.reset`; IDs without `stable` admit it
   only when binding capability, declaration, exact scope, and lease all match.
-- The dashboard joins every worktree's active requirements/Journeys and
+- Workflow Snapshot joins every worktree's active requirements/Journeys and
   declared/held resources without exposing secret-bearing profile fields or
   providing mutation controls.
-- Two simultaneous `make dev-ui` calls result in exactly one listener; the
-  loser verifies the winner and exits successfully.
-- A compatible existing server is reused and exposes its source identity,
-  while a foreign listener fails with `DEV_SERVER_PORT_CONFLICT`.
-- Active source and docs contain no legacy dashboard implementation, command,
-  or asset path after cutover.
+- Active source and docs contain no dashboard server, browser asset, fixed
+  4177 resource, `make dev-ui`, or browser Gate after cutover.
+- Workflow Snapshot returns one bounded view and exits without a live process.
 - Evidence root migration preserves every manifest, latest pointer, content
   hash, workspace identity, and file count before deleting the legacy root.
 - Product Application Support contains no Acceptance writer, symlink, fallback,
