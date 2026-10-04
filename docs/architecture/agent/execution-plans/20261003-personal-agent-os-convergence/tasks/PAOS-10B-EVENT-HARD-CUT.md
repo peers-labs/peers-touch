@@ -25,8 +25,14 @@
   ],
   "doneWhen": ["A live Goal continues updating after private publishers are removed","Shared EventBus.Publish is the only Station fan-out entry","Direct publishers use the durable outbox relay","Private subscriber service and route registration are absent"],
   "failureBehavior": ["Do not bridge private and shared buses","Any live private publisher or subscriber blocks completion"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-05T04:43:00Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:9e943b9d68fdacc1fd9334c540a92ec5d6240290;development://personal-agent-os-convergence-20261003/artifacts/20261004T190722157746Z/paos-10b-event-hard-cut/capture.json;manifest-sha256:71fe2f52c312c6df5432b914d5665f0282dcd53ff83bf0794e5463b4ef8400b8"
+    }
+  ]
 }
 ```
 
@@ -41,4 +47,11 @@
 
 ## Current Snapshot
 
-The Agent subserver still owns a private event bus, service, handler, and Desktop command path.
+Functional slice complete.
+
+- Agent mutations publish through the durable outbox relay and shared EventBus.
+- The private Agent event bus, publisher service, and route registration are
+  absent from the production path.
+- Profile `two` Native proof observed live Goal delivery after the publisher
+  hard cut and matched the Station readback.
+- Final suite-lifecycle Acceptance remains owned by `PAOS-30`.

@@ -89,6 +89,39 @@ def active_task_ids(client: FoundationRuntimeClient) -> list[str]:
     return [str(task_id) for task_id in task_ids]
 
 
+def set_realtime_bridge(
+    client: FoundationRuntimeClient,
+    *,
+    installed: bool,
+) -> None:
+    result = client.driver.execute_async_script(
+        """
+        const [installed, done] = arguments;
+        import('/src/services/eventStream.ts')
+          .then(async ({
+            installEventStreamBridge,
+            teardownEventStreamBridge,
+          }) => {
+            if (installed) {
+              await installEventStreamBridge();
+            } else {
+              teardownEventStreamBridge();
+            }
+            done({ ok: true, installed });
+          })
+          .catch((error) => done({
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          }));
+        """,
+        installed,
+    )
+    require(
+        isinstance(result, Mapping) and result.get("ok") is True,
+        f"set realtime bridge state failed: {result}",
+    )
+
+
 def reject_incomplete_review(
     client: FoundationRuntimeClient,
 ) -> dict[str, Any]:
@@ -285,6 +318,7 @@ def run_journey(
     reviewed_screenshot = artifact_dir / "goal-start-reviewed.png"
     client.driver.save_screenshot(str(reviewed_screenshot))
 
+    set_realtime_bridge(client, installed=False)
     set_realtime_stream(client, running=False)
     try:
         concurrent = admit_outside_projection(
@@ -321,6 +355,7 @@ def run_journey(
             "admitted Goal readback",
         )
     finally:
+        set_realtime_bridge(client, installed=True)
         set_realtime_stream(client, running=True)
 
     wait_until(

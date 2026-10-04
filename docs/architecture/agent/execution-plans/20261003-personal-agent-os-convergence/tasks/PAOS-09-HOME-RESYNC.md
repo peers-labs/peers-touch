@@ -25,8 +25,19 @@
   ],
   "doneWhen": ["Home distinguishes reconnecting, resyncing, stale, fresh, and unauthorized","Stale accepted data remains visible while mutations are disabled","A cursor gap requests one authoritative snapshot and converges","Retry is available only for retryable failures"],
   "failureBehavior": ["Do not render a disconnect as an empty Goal list","Do not allow stale or unauthorized commands"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T19:10:00Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "UX_REVIEW",
+      "result": "PASS",
+      "ref": "vitest:eventStream+homeRuntime+homeStore+GoalConnectionStatus;tests:27/27"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "development://personal-agent-os-convergence-20261003/artifacts/20261004T190548557666Z/paos-09-home-resync/capture.json;manifest-sha256:adaa2b0f5b12b115830729bf375abb1dfa7ad9ad2176c35ea36ef6d97a55291f"
+    }
+  ]
 }
 ```
 
@@ -40,4 +51,12 @@
 
 ## Current Snapshot
 
-Home handles stale snapshots but does not expose the full connection-state lifecycle.
+Functional slice complete.
+
+- Explicit stream stop now publishes the canonical disconnected lifecycle
+  transition, and bridge installation is single-flight across boot callers.
+- Home visibly traverses reconnecting, stale, retry, and fresh while retaining
+  the last accepted Goal and TaskRun.
+- Profile `two` Native proof converged back to the exact Station revision and
+  released ports, storage, and runtime profile cleanly.
+- Final suite-lifecycle Acceptance remains owned by `PAOS-30`.

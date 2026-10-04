@@ -57,6 +57,7 @@ interface RawConnectionStatePayload {
 
 let unlistenRealtime: UnlistenFn | null = null;
 let unlistenConnState: UnlistenFn | null = null;
+let bridgeInstallInFlight: Promise<void> | null = null;
 let browserGatewayResyncTimer: number | null = null;
 
 /**
@@ -65,32 +66,47 @@ let browserGatewayResyncTimer: number | null = null;
  * once at boot; subsequent calls are no-ops.
  */
 export async function installEventStreamBridge(): Promise<void> {
-  if (unlistenRealtime || unlistenConnState) return;
+  if (unlistenRealtime && unlistenConnState) return;
+  if (bridgeInstallInFlight) return bridgeInstallInFlight;
 
-  try {
-    unlistenRealtime = await listen<RawRealtimeEnvelope>(REALTIME_EVENT, (event) => {
-      handleFrame(event.payload);
-    });
-  } catch (error) {
-    log.warn('eventStream', 'failed to install realtime:event listener', error);
-  }
-
-  try {
-    unlistenConnState = await listen<RawConnectionStatePayload>(
-      REALTIME_CONNECTION_STATE,
-      (event) => {
-        const payload = event.payload ?? { connected: false };
-        eventBus.publish(EVENT.REALTIME_CONNECTION_STATE, {
-          connected: Boolean(payload.connected),
-          reason: payload.reason ?? '',
+  const install = (async () => {
+    if (!unlistenRealtime) {
+      try {
+        unlistenRealtime = await listen<RawRealtimeEnvelope>(REALTIME_EVENT, (event) => {
+          handleFrame(event.payload);
         });
-      },
-    );
-  } catch (error) {
-    log.warn('eventStream', 'failed to install realtime:connection-state listener', error);
-  }
+      } catch (error) {
+        log.warn('eventStream', 'failed to install realtime:event listener', error);
+      }
+    }
 
-  log.info('eventStream', 'bridge installed');
+    if (!unlistenConnState) {
+      try {
+        unlistenConnState = await listen<RawConnectionStatePayload>(
+          REALTIME_CONNECTION_STATE,
+          (event) => {
+            const payload = event.payload ?? { connected: false };
+            eventBus.publish(EVENT.REALTIME_CONNECTION_STATE, {
+              connected: Boolean(payload.connected),
+              reason: payload.reason ?? '',
+            });
+          },
+        );
+      } catch (error) {
+        log.warn('eventStream', 'failed to install realtime:connection-state listener', error);
+      }
+    }
+
+    log.info('eventStream', 'bridge installed');
+  })();
+  bridgeInstallInFlight = install;
+  try {
+    await install;
+  } finally {
+    if (bridgeInstallInFlight === install) {
+      bridgeInstallInFlight = null;
+    }
+  }
 }
 
 /**

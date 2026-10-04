@@ -1,0 +1,29 @@
+{
+  "appletId": "peers.atelier",
+  "event": "atelier.projection.rendered",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "properties": {
+    "eventBlockIds": [
+      "atelier-real-product-event-4"
+    ],
+    "eventId": "atelier-real-product-event-4",
+    "eventSeq": 4,
+    "patchKind": "snapshot.invalidate",
+    "renderedBlockIds": [
+      "atelier-real-product-gate-task-summary",
+      "atelier-real-product-event-1",
+      "atelier-real-product-event-2",
+      "atelier-real-product-gate-decision",
+      "atelier-real-product-event-4"
+    ],
+    "replayLabel": "4/4 · seq 4",
+    "selectedTaskTitle": "Atelier Real Product Gate",
+    "streamCount": 5,
+    "taskId": "atelier-real-product-gate-task",
+    "viewStatus": "ready"
+  },
+  "recordedAt": 1791146548458,
+  "sessionId": "desktop-peers.atelier-apl-1791146508293-2"
+}

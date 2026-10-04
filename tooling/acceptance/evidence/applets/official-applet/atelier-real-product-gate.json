@@ -35,6 +35,6 @@
     "real Desktop product window UI"
   ],
   "command": "cargo test --bin peers-touch-desktop atelier_gateway_reaches_station_bundled_atelier_workspace -- --nocapture",
-  "startedAt": "2026-10-04T18:11:52.713Z",
-  "completedAt": "2026-10-04T18:12:07.477Z"
+  "startedAt": "2026-10-04T19:08:51.720Z",
+  "completedAt": "2026-10-04T19:09:12.666Z"
 }

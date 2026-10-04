@@ -25,8 +25,19 @@
   ],
   "doneWhen": ["Home applies typed Goal and TaskRun events without a page remount","Progress, current node, budget, and revision change visibly","Periodic reconcile remains only a missed-event safety net","The Home journey Gate is registered and receiver-visible"],
   "failureBehavior": ["Ignore duplicate or older event revisions","Do not use polling as the normal progress driver"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T19:10:00Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "UX_REVIEW",
+      "result": "PASS",
+      "ref": "vitest:homeRuntime+homeStore+GoalProgressPanel;desktop-check:pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:c6cf05c95c6f12cd1548f23a4840715cda62d90a;development://personal-agent-os-convergence-20261003/artifacts/20261004T185157672642Z/paos-08-home-live-progress/capture.json;manifest-sha256:69991e2f6e90a3fab400826afcc5637d0aa0e5ec86521af91b0c03469b764d48"
+    }
+  ]
 }
 ```
 
@@ -40,4 +51,12 @@
 
 ## Current Snapshot
 
-Home only reconciles periodically and does not consume Goal progress events.
+Functional slice complete.
+
+- Home consumes typed Agent domain events from the shared event stream and
+  deduplicates them by durable event identity and sequence.
+- The visible terminal TaskRun retains progress, current node, budget, and
+  authoritative projection revision without a page remount.
+- Profile `two` Native proof matched the visible and Station revisions with
+  clean runtime teardown.
+- Final suite-lifecycle Acceptance remains owned by `PAOS-30`.

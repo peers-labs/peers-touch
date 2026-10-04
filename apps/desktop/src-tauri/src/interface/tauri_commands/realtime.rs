@@ -78,9 +78,10 @@ pub fn realtime_stream_start(
 pub fn realtime_stream_stop(
     state: State<'_, Arc<AppState>>,
     window: Window,
+    app: AppHandle,
 ) -> AppResult<StubPayload> {
     if let Some(actor_ptid) = session_resolver::ptid_for_window(state.inner(), &window) {
-        event_stream::stop(&actor_ptid);
+        event_stream::stop_and_notify(&app, &actor_ptid);
         return to_stub("realtime_stream_stop", json!({ "actor_ptid": actor_ptid }));
     }
     to_stub("realtime_stream_stop", json!({ "actor_ptid": null }))

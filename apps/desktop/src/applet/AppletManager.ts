@@ -46,7 +46,7 @@ class AppletManager {
     this.rejectedDiagnostics.clear()
     this.indexDiagnostics = []
     try {
-      const response = await fetch(`${this.appletDir}/index.json`)
+      const response = await fetch(`${this.appletDir}/index.json`, { cache: 'no-store' })
       if (response.ok) {
         const indexData = await response.json() as unknown
         const indexCheck = parseAppletIndex(indexData)
@@ -224,6 +224,16 @@ class AppletManager {
     return this.appletInstances.get(appletId)?.sessionId
   }
 
+  public getDesktopEntryUrl(appletId: string): string | undefined {
+    const appletInfo = this.applets.get(appletId)
+    const entry = appletInfo?.load.desktop?.entry
+    const integrity = entry ? appletInfo?.integrity?.files[entry] : undefined
+    if (!appletInfo || !entry || !integrity?.startsWith('sha256:')) {
+      return undefined
+    }
+    return `${appletInfo.path}/${entry}?integrity=${encodeURIComponent(integrity.slice('sha256:'.length))}`
+  }
+
   public getDiagnostics(): AppletDiagnostic[] {
     const diagnostics: AppletDiagnostic[] = []
     if (this.indexDiagnostics.length > 0) {
@@ -348,7 +358,7 @@ class AppletManager {
       }
 
       try {
-        const response = await fetch(`${appletInfo.path}/${file}`)
+        const response = await fetch(`${appletInfo.path}/${file}`, { cache: 'no-store' })
         if (!response.ok) {
           issues.push(`integrity file fetch failed: ${file}`)
           continue
