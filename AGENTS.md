@@ -532,13 +532,15 @@ This keeps `tooling/skills/` as the single git-tracked truth and prevents skill 
 
 After a governance-source update, follow
 `docs/architecture/development-workflow/host-neutral-agent-integration.md`.
-Installation rejects every live machine declaration, child assignment, and
-workflow action except the current exact OWNER-bound `make skills` action.
-Persist a Context Anchor, release the declaration, run
+Installation may run beside unrelated live Development declarations because a
+declaration is durable intent, not an in-flight hook action. It still rejects
+every live child assignment, action-store lock, and workflow action except the
+current exact OWNER-bound `make skills` action. When declarations are live,
+legacy conversation/action history is retained as inert data; cleanup runs only
+at a later declaration-free install. Run
 `make skills IDE=<host> [WORKSPACE=<absolute-.code-workspace-path>]`, restart
-the IDE when hooks changed, audit, then resume. The hard cut deletes only the
-old conversation and workflow-action stores; it does not migrate or read them.
-Do not hot-swap Skills during an in-flight action.
+the IDE when hooks changed, audit, then resume. No current runtime reads the
+legacy stores. Do not hot-swap Skills during an in-flight action.
 
 ### 13.3 Hard Constraints
 

@@ -1244,43 +1244,98 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
         self.assertIn("managed-hook-invalid:preToolUse", audit.stdout)
 
-    def test_install_rejects_every_live_worktree_declaration(self) -> None:
+    def test_install_allows_live_declaration_without_purging_legacy_state(
+        self,
+    ) -> None:
         machine = self.root / "machine"
         machine.mkdir()
         workspace_id = hashlib.sha256(
             str(self.root.resolve()).encode()
         ).hexdigest()[:16]
-        for state in ("DECLARED", "ACTIVE", "RELEASING"):
-            with self.subTest(state=state):
-                (machine / "work.json").write_text(
-                    json.dumps(
-                        {
-                            "declarations": {
-                                "active": {
-                                    "workspaceId": workspace_id,
-                                    "state": state,
-                                    "workItemId": "WORK-01",
-                                    "heartbeatAt": "2026-09-19T00:00:00.000Z",
-                                }
-                            }
-                        }
-                    ),
-                    encoding="utf-8",
-                )
-                completed = subprocess.run(
-                    ["make", "skills", "IDE=codex"],
-                    cwd=self.root,
-                    stdin=subprocess.DEVNULL,
-                    capture_output=True,
-                    text=True,
-                    env=self.environment("installing-session"),
-                    check=False,
-                )
-                self.assertEqual(completed.returncode, 2)
-                self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
-                self.assertFalse(
-                    (self.root / ".agents/skills/pt-goal-orchestrator").exists()
-                )
+        self.seed_live_workflow_state("installer-authorized")
+        declaration = {
+            "declarationId": f"WORK-01-{workspace_id}",
+            "workItemId": "WORK-01",
+            "sessionId": "SESSION-1",
+            "workspaceId": workspace_id,
+            "branch": "main",
+            "sourceHead": "1" * 40,
+            "owner": "test@example.invalid",
+            "purpose": "Exercise concurrent declaration installation",
+            "journeyId": None,
+            "state": "ACTIVE",
+            "createdAt": "2099-09-19T00:00:00.000Z",
+            "heartbeatAt": "2099-09-19T00:00:00.000Z",
+            "expiresAt": "2099-09-19T08:00:00.000Z",
+            "sourceClaims": [
+                {
+                    "mode": "shared-read",
+                    "pathPrefix": "tooling/scripts",
+                }
+            ],
+            "runtimeClaims": [],
+            "planPath": None,
+            "planId": None,
+            "taskId": None,
+        }
+        declaration["declarationDigest"] = hashlib.sha256(
+            json.dumps(
+                declaration,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        (machine / "work.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "kind": "peers-touch-development-work-ledger",
+                    "updatedAt": "2099-09-19T00:00:00.000Z",
+                    "declarations": {
+                        declaration["declarationId"]: declaration,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        legacy = machine / "conversations/trae/legacy"
+        legacy.mkdir(parents=True)
+        (legacy / "execution-binding.json").write_text(
+            "{}\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-control.py",
+                "install",
+                "--root",
+                str(self.root),
+                "--host",
+                "codex",
+            ],
+            cwd=self.root,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            env=self.environment("installing-session"),
+            check=False,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stdout + completed.stderr,
+        )
+        self.assertIn(
+            "preserved inert legacy workflow history",
+            completed.stdout,
+        )
+        self.assertTrue((legacy / "execution-binding.json").is_file())
+        self.assertTrue(
+            (self.root / ".agents/skills/pt-goal-orchestrator").is_symlink()
+        )
 
     def test_audit_rejects_a_versioned_integration_receipt(self) -> None:
         self.seed_live_workflow_state("installer-authorized")
