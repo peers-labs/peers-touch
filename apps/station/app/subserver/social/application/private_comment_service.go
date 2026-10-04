@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
+	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
@@ -399,7 +400,16 @@ func (s *PrivateContentService) validatePrivateContentViewer(
 		)
 	}
 	if err := s.recipients.ValidateActiveEndpoint(ctx, viewer); err != nil {
-		if errors.Is(err, ErrPrivateContentInactiveEndpoint) {
+		switch {
+		case errors.Is(err, ErrPrivateContentInactiveEndpoint),
+			actoridentitydomain.IsCode(
+				err,
+				actoridentitydomain.ErrorCodeDeviceNotFound,
+			),
+			actoridentitydomain.IsCode(
+				err,
+				actoridentitydomain.ErrorCodeDeviceRevoked,
+			):
 			return socialdomain.NewPrivateContentError(
 				socialdomain.PrivateContentNotFound,
 				operation,

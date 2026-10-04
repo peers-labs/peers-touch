@@ -13,6 +13,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
+	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -1135,6 +1136,26 @@ func TestPrivateContentServiceGetPrivateMomentDistinguishesEndpointFailure(
 			validation: fmt.Errorf(
 				"test endpoint inactive: %w",
 				ErrPrivateContentInactiveEndpoint,
+			),
+			wantCode: socialdomain.PrivateContentNotFound,
+		},
+		{
+			name: "missing actor identity device stays private",
+			validation: actoridentitydomain.NewError(
+				actoridentitydomain.ErrorCodeDeviceNotFound,
+				"actor_identity.get_endpoint_manifest",
+				"active_endpoints",
+				"has no active locally verified device",
+			),
+			wantCode: socialdomain.PrivateContentNotFound,
+		},
+		{
+			name: "revoked actor identity device stays private",
+			validation: actoridentitydomain.NewError(
+				actoridentitydomain.ErrorCodeDeviceRevoked,
+				"actor_identity.get_endpoint_manifest",
+				"device",
+				"is revoked",
 			),
 			wantCode: socialdomain.PrivateContentNotFound,
 		},
