@@ -26,7 +26,18 @@
   "doneWhen": ["A Goal mutation and its outbox row commit atomically","Refreshing Home after a forced publish failure still shows committed progress","Relay retry keeps stable event id and per-actor order","Backlog admission is bounded with reserved terminal capacity"],
   "failureBehavior": ["Transaction failure emits no receiver-visible event","Committed terminal events remain pending until delivered"],
   "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "git:73a8827f2a062d4d12f109fa6ef876b642b70c33;focused-go-vitest-mobile-impact:pass;quality-evidence:20261004T142345199163Z-0f12bb912f8b4297c5fb9fdf6dcc66f9;code-structure:sha256:96777e"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "development://personal-agent-os-convergence-20261003-r12/checks/functional-result-939cb7b29e5a1d25b6441288a65df3124120a36f919aca7bc0b2ad8e67632d1c.json"
+    }
+  ]
 }
 ```
 
