@@ -1237,6 +1237,18 @@ capabilities:
     forbidden_aliases: []
     superseded_symbols: []
 
+  - id: federation.key_exchange.content_prekey.validate
+    domain_owner: station.federation
+    truth_owner: key_exchange.content_prekey_public_material
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/key-exchange/content-prekeys/validate }
+    request_proto: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsRequest
+    response_proto: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsResponse
+    truth_stores: [key_exchange_content_prekey_claim_receipts, key_exchange_content_prekey_pools]
+    allowed_dependencies: [federation.auth.verify, federation.membership.read, key_exchange.content_prekey.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: federation.conversation.leave_intent.submit
     domain_owner: station.federation
     truth_owner: conversation.authority

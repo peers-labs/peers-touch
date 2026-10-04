@@ -19,8 +19,16 @@ import {
   type Audience,
   type ImageAttachment,
 } from '../../gen/proto/domain/social/post_pb';
+import {
+  ConversationKind,
+  ConversationStatus,
+} from '../../gen/proto/domain/chat/conversation_pb';
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import { AudiencePicker } from './AudiencePicker';
+import {
+  audienceMayReachRemote,
+  isAudienceSelectionComplete,
+} from './audienceSelection';
 import { api, type SocialEncryptedMediaDescriptorWire } from '../../services/desktop_api';
 import {
   preparePrivateAudience,
@@ -36,6 +44,7 @@ import {
   useActiveMomentsFederationSlice,
   useActivePrivateMomentsSlice,
   useActiveRelationshipsSlice,
+  useActiveSocialChatSlice,
 } from './useActiveMomentsStore';
 
 const { TextArea } = Input;
@@ -125,11 +134,20 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   const { token } = theme.useToken();
 
   const me = useActiveDiscoverySlice((s) => s.me);
-  const { draft, setDraft, clearDraft, createPost } = useActiveMomentsSlice((s) => ({
+  const {
+    draft,
+    setDraft,
+    clearDraft,
+    createPost,
+    circles,
+    circleMembers,
+  } = useActiveMomentsSlice((s) => ({
     draft: s.composerDraft,
     setDraft: s.setComposerDraft,
     clearDraft: s.clearComposerDraft,
     createPost: s.createPost,
+    circles: s.circles,
+    circleMembers: s.circleMembers,
   }));
   const { privatePublish, clearPrivatePublishState } = useActivePrivateMomentsSlice((s) => ({
     privatePublish: s.publish,
@@ -138,7 +156,19 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   const localStationPeerId = useActiveMomentsFederationSlice(
     (s) => s.self?.homeStationPeerId.trim() ?? '',
   );
-  const mutualFriends = useActiveRelationshipsSlice((s) => s.mutualFriends);
+  const { mutualFriends, followersByActor } = useActiveRelationshipsSlice((s) => ({
+    mutualFriends: s.mutualFriends,
+    followersByActor: s.followersByActor,
+  }));
+  const {
+    conversations,
+    conversationMembers,
+    currentUserPtid,
+  } = useActiveSocialChatSlice((s) => ({
+    conversations: s.conversations,
+    conversationMembers: s.conversationMembers,
+    currentUserPtid: s.currentUserPtid,
+  }));
 
   const [text, setText] = useState<string>(() => draft?.text ?? '');
   const [audience, setAudience] = useState<Audience>(
@@ -193,14 +223,88 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
         };
       })
   ), [localStationPeerId, mutualFriends]);
+  const followers = currentUserPtid
+    ? followersByActor[currentUserPtid]?.items ?? []
+    : [];
+  const audiencePeople = useMemo(() => {
+    const people = new Map<string, { actorPtid: string; label: string }>();
+    for (const person of [...mutualFriends, ...followers]) {
+      const identity = person.displayName
+        || person.username
+        || person.federatedHandle
+        || person.actorPtid;
+      const station = person.homeStationDomain || person.homeStationPeerId;
+      people.set(person.actorPtid, {
+        actorPtid: person.actorPtid,
+        label: station ? `${identity} · ${station}` : identity,
+      });
+    }
+    return [...people.values()].sort(
+      (left, right) => left.actorPtid.localeCompare(right.actorPtid),
+    );
+  }, [followers, mutualFriends]);
+  const circleOptions = useMemo(
+    () => circles.map((circle) => ({
+      id: circle.id.toString(),
+      label: circle.name,
+    })),
+    [circles],
+  );
+  const groupOptions = useMemo(
+    () => conversations
+      .filter((conversation) => (
+        conversation.kind === ConversationKind.GROUP
+        && conversation.status === ConversationStatus.ACTIVE
+      ))
+      .map((conversation) => ({
+        conversationId: conversation.conversationId,
+        label: conversation.name || conversation.conversationId,
+      }))
+      .sort((left, right) => left.conversationId.localeCompare(right.conversationId)),
+    [conversations],
+  );
+  const remoteFriendPtids = useMemo(
+    () => new Set(remoteFriends.map((friend) => friend.actorPtid)),
+    [remoteFriends],
+  );
+  const remoteFollowerPtids = useMemo(
+    () => new Set(
+      followers
+        .filter((follower) => (
+          follower.homeStationPeerId
+          && follower.homeStationPeerId !== localStationPeerId
+        ))
+        .map((follower) => follower.actorPtid),
+    ),
+    [followers, localStationPeerId],
+  );
+  const selectedCircleMemberPtids = audience.kind === Audience_Kind.CIRCLE
+    && audience.target.case === 'circleId'
+    ? (circleMembers[audience.target.value.toString()] ?? [])
+      .map((member) => member.actorPtid)
+    : [];
+  const selectedGroupMembers = audience.kind === Audience_Kind.GROUP
+    && audience.target.case === 'groupConversationId'
+    ? conversationMembers[audience.target.value]
+    : undefined;
+  const selectedGroupHasRemote = !localStationPeerId
+    || !selectedGroupMembers?.length
+    || selectedGroupMembers.some((member) => (
+      member.ptid !== currentUserPtid
+      && (
+        !member.actorHomeStationPeerId
+        || member.actorHomeStationPeerId !== localStationPeerId
+      )
+    ));
   const slotsLeft = MAX_IMAGES_PER_POST - pending.length;
   const privateAudience = isPrivateAudience(audience);
-  const selectedRemoteFriend = audience.kind === Audience_Kind.CUSTOM_ALLOW
-    && audience.actorPtids.length === 1
-    && remoteFriends.some((friend) => friend.actorPtid === audience.actorPtids[0]);
-  const audienceComplete = audience.kind !== Audience_Kind.CUSTOM_ALLOW
-    || selectedRemoteFriend;
-  const requiresRemoteAdmission = selectedRemoteFriend;
+  const audienceComplete = isAudienceSelectionComplete(audience);
+  const requiresRemoteAdmission = audienceMayReachRemote(audience, {
+    remoteFriendPtids,
+    remoteFollowerPtids,
+    selectedCircleMemberPtids,
+    selectedGroupHasRemote,
+  });
   const privatePublishState = privatePublish.draftId === draftId
     ? privatePublish.state
     : 'IDLE';
@@ -622,7 +726,9 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
             </Space>
             <AudiencePicker
               value={audience}
-              remoteFriends={remoteFriends}
+              people={audiencePeople}
+              circles={circleOptions}
+              groups={groupOptions}
               onChange={(nextAudience) => {
                 setAudience(nextAudience);
                 persistDraft(text, nextAudience, pending);

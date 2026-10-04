@@ -34,6 +34,8 @@ const (
 	KeyExchangeMLSClaimScope = "key-exchange-mls-key-package-claim"
 	// KeyExchangeContentPreKeyClaimScope authenticates irreversible Content PreKey claims.
 	KeyExchangeContentPreKeyClaimScope = "key-exchange-content-prekey-claim"
+	// KeyExchangeContentPreKeyValidateScope authenticates read-only Content PreKey validation.
+	KeyExchangeContentPreKeyValidateScope = "key-exchange-content-prekey-validate"
 	// RealtimeSignalScope authenticates cross-Station realtime signal forwarding.
 	RealtimeSignalScope = "realtime-signal-forward"
 	// RealtimeCallResolutionScope authenticates caller readback at the callee Home Station.
@@ -41,32 +43,33 @@ const (
 	// GroupCallAuthorityJoinScope authenticates Conversation Authority token issuance.
 	GroupCallAuthorityJoinScope = "group-call-authority-join"
 
-	ClaimFrameID                = "frame_id"
-	ClaimIdempotencyKey         = "idempotency_key"
-	ClaimSourceStationPeerID    = "source_station_peer_id"
-	ClaimTargetStationPeerID    = "target_station_peer_id"
-	ClaimConversationID         = "conversation_id"
-	ClaimFollowerRequestSHA256  = "request_sha256"
-	ClaimFederationID           = "federation_id"
-	ClaimActorPTID              = "actor_ptid"
-	ClaimDeviceID               = "device_id"
-	ClaimIntentID               = "intent_id"
-	ClaimAuthorityEpoch         = "authority_epoch"
-	ClaimAttachmentAction       = "attachment_action"
-	ClaimAttachmentResourceID   = "attachment_resource_id"
-	ClaimTargetDeviceID         = "target_device_id"
-	ClaimRequestID              = "request_id"
-	ClaimRequesterPTID          = "requester_ptid"
-	ClaimRequesterDeviceID      = "requester_device_id"
-	ClaimAuthorityPlanID        = "authority_plan_id"
-	ClaimPlanExpiresAt          = "plan_expires_at"
-	ClaimPlanRequestSHA256      = "plan_request_sha256"
-	ClaimCanonicalRequestSHA256 = "canonical_request_sha256"
-	ClaimCallID                 = "call_id"
-	ClaimPresenceRequestSHA256  = "presence_request_sha256"
-	ClaimSenderPTID             = "sender_ptid"
-	ClaimRecipientPTID          = "recipient_ptid"
-	ClaimSessionULID            = "session_ulid"
+	ClaimFrameID                 = "frame_id"
+	ClaimIdempotencyKey          = "idempotency_key"
+	ClaimSourceStationPeerID     = "source_station_peer_id"
+	ClaimTargetStationPeerID     = "target_station_peer_id"
+	ClaimConversationID          = "conversation_id"
+	ClaimFollowerRequestSHA256   = "request_sha256"
+	ClaimFederationID            = "federation_id"
+	ClaimActorPTID               = "actor_ptid"
+	ClaimDeviceID                = "device_id"
+	ClaimIntentID                = "intent_id"
+	ClaimAuthorityEpoch          = "authority_epoch"
+	ClaimAttachmentAction        = "attachment_action"
+	ClaimAttachmentResourceID    = "attachment_resource_id"
+	ClaimTargetDeviceID          = "target_device_id"
+	ClaimRequestID               = "request_id"
+	ClaimRequesterPTID           = "requester_ptid"
+	ClaimRequesterDeviceID       = "requester_device_id"
+	ClaimAuthorityPlanID         = "authority_plan_id"
+	ClaimPlanExpiresAt           = "plan_expires_at"
+	ClaimPlanRequestSHA256       = "plan_request_sha256"
+	ClaimCanonicalRequestSHA256  = "canonical_request_sha256"
+	ClaimCanonicalResponseSHA256 = "canonical_response_sha256"
+	ClaimCallID                  = "call_id"
+	ClaimPresenceRequestSHA256   = "presence_request_sha256"
+	ClaimSenderPTID              = "sender_ptid"
+	ClaimRecipientPTID           = "recipient_ptid"
+	ClaimSessionULID             = "session_ulid"
 )
 
 var peerScopes = []scope.Scope{
@@ -248,6 +251,23 @@ var peerScopes = []scope.Scope{
 				ClaimAuthorityPlanID,
 				ClaimPlanRequestSHA256,
 				ClaimCanonicalRequestSHA256,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
+		Name:        KeyExchangeContentPreKeyValidateScope,
+		Description: "validate exact Content PreKey claims at their Home Station",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimFederationID,
+				ClaimAuthorityPlanID,
+				ClaimPlanRequestSHA256,
+				ClaimCanonicalRequestSHA256,
+				ClaimCanonicalResponseSHA256,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,
 			},

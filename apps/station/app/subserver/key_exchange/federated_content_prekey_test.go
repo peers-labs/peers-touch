@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
@@ -184,6 +185,130 @@ func TestFederatedContentPreKeyPeerClaimsBindRequest(t *testing.T) {
 		request,
 	); err == nil {
 		t.Fatal("changed authenticated plan identity was accepted")
+	}
+}
+
+func TestRemoteContentPreKeyValidationBindsExactClaimAndPreservesReplay(
+	t *testing.T,
+) {
+	fixture := newContentPreKeyOperationalFixture(t)
+	ctx := context.Background()
+	fixture.publish(
+		t,
+		ctx,
+		contentPreKeyEndpointRef(),
+		contentPreKeyTestSigningKey,
+		7,
+		0,
+		fixture.privateKey,
+		contentEndpointPreKey("federated-validate-endpoint", 7),
+	)
+	request := contentPreKeyClaimRequest(
+		"federated-validate-plan",
+		contentPreKeyEndpointTarget(),
+	)
+	membership := &federatedContentPreKeyMembership{}
+	claimed, err := claimFederatedContentPreKeys(
+		ctx,
+		fixture.capability.(*subServer).composition.contentPreKeyService,
+		membership,
+		"station-source",
+		contentPreKeyTestStation,
+		federatedContentPreKeyRequest(t, request),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation := federatedContentPreKeyValidationRequest(
+		t,
+		request,
+		claimed.GetResponse(),
+	)
+	normalized, err := normalizeFederatedContentPreKeyValidationRequest(
+		"test.remote_content_prekey_validation",
+		"station-source",
+		contentPreKeyTestStation,
+		validation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := federatedContentPreKeyValidationClaims(normalized)
+	if err := ValidateFederatedContentPreKeyValidationPeerClaims(
+		claims,
+		normalized,
+	); err != nil {
+		t.Fatal(err)
+	}
+	localRequest := proto.Clone(
+		normalized.GetRequest(),
+	).(*securecontentpb.ClaimContentPreKeysRequest)
+	localRequest.PlanId = federatedContentPreKeyPlanID(
+		"station-source",
+		contentPreKeyTestStation,
+		localRequest.GetPlanId(),
+	)
+	service := fixture.capability.(*subServer).composition.contentPreKeyService
+	if err := service.ValidateContentPreKeyClaimsStandalone(
+		ctx,
+		localRequest,
+		normalized.GetResponse(),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	updateContentPreKeyPublisher(
+		t,
+		fixture.db,
+		map[string]any{"profile_version": int64(8)},
+	)
+	err = service.ValidateContentPreKeyClaimsStandalone(
+		ctx,
+		localRequest,
+		normalized.GetResponse(),
+	)
+	assertContentPreKeyError(t, err, domain.ErrorCodeStaleMaterial)
+
+	replayed, err := claimFederatedContentPreKeys(
+		ctx,
+		service,
+		membership,
+		"station-source",
+		contentPreKeyTestStation,
+		federatedContentPreKeyRequest(t, request),
+	)
+	if err != nil {
+		t.Fatalf("claim replay after stale validation: %v", err)
+	}
+	if !replayed.GetResponse().GetExactReplay() {
+		t.Fatal("stale validation changed exact claim replay")
+	}
+}
+
+func TestRemoteContentPreKeyValidationRejectsResponseDigestTamper(t *testing.T) {
+	_, request, response := claimedEndpointForValidation(t)
+	wire := federatedContentPreKeyValidationRequest(t, request, response)
+	wire.CanonicalResponseSha256[0] ^= 0xff
+	if _, err := normalizeFederatedContentPreKeyValidationRequest(
+		"test.remote_content_prekey_validation",
+		"station-source",
+		contentPreKeyTestStation,
+		wire,
+	); domain.CodeOf(err) != domain.ErrorCodeInvalidMaterial {
+		t.Fatalf("response digest tamper error = %v", err)
+	}
+
+	validWire := federatedContentPreKeyValidationRequest(t, request, response)
+	claims := federatedContentPreKeyValidationClaims(validWire)
+	claims.Custom[sharedfederation.ClaimCanonicalResponseSHA256] = strings.Repeat(
+		"0",
+		sha256.Size*2,
+	)
+	if err := ValidateFederatedContentPreKeyValidationPeerClaims(
+		claims,
+		validWire,
+	); err == nil {
+		t.Fatal("changed authenticated response digest was accepted")
 	}
 }
 
@@ -370,4 +495,65 @@ func canonicalClaimRequestDigest(
 	}
 	digest := sha256.Sum256(canonical)
 	return digest[:]
+}
+
+func federatedContentPreKeyValidationRequest(
+	t *testing.T,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) *kemodel.ValidateFederatedContentPreKeyClaimsRequest {
+	t.Helper()
+	canonicalResponse := proto.Clone(
+		response,
+	).(*securecontentpb.ClaimContentPreKeysResponse)
+	canonicalResponse.ExactReplay = false
+	responseBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		canonicalResponse,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseDigest := sha256.Sum256(responseBytes)
+	return &kemodel.ValidateFederatedContentPreKeyClaimsRequest{
+		FormatVersion:           federatedContentPreKeyFormatVersion,
+		SourceHomeStationPeerId: "station-source",
+		TargetHomeStationPeerId: contentPreKeyTestStation,
+		FederationId:            "federation-one",
+		Request: proto.Clone(
+			request,
+		).(*securecontentpb.ClaimContentPreKeysRequest),
+		Response:                canonicalResponse,
+		CanonicalRequestSha256:  canonicalClaimRequestDigest(t, request),
+		CanonicalResponseSha256: responseDigest[:],
+	}
+}
+
+func federatedContentPreKeyValidationClaims(
+	request *kemodel.ValidateFederatedContentPreKeyClaimsRequest,
+) *authfed.VerifiedClaims {
+	return &authfed.VerifiedClaims{
+		Scope:    sharedfederation.KeyExchangeContentPreKeyValidateScope,
+		Issuer:   request.GetSourceHomeStationPeerId(),
+		Audience: request.GetTargetHomeStationPeerId(),
+		Subject:  request.GetSourceHomeStationPeerId(),
+		Custom: map[string]string{
+			sharedfederation.ClaimFederationID: request.GetFederationId(),
+			sharedfederation.ClaimAuthorityPlanID: request.
+				GetRequest().
+				GetPlanId(),
+			sharedfederation.ClaimPlanRequestSHA256: hex.EncodeToString(
+				request.GetRequest().GetPlanRequestSha256(),
+			),
+			sharedfederation.ClaimCanonicalRequestSHA256: hex.EncodeToString(
+				request.GetCanonicalRequestSha256(),
+			),
+			sharedfederation.ClaimCanonicalResponseSHA256: hex.EncodeToString(
+				request.GetCanonicalResponseSha256(),
+			),
+			sharedfederation.ClaimSourceStationPeerID: request.
+				GetSourceHomeStationPeerId(),
+			sharedfederation.ClaimTargetStationPeerID: request.
+				GetTargetHomeStationPeerId(),
+		},
+	}
 }

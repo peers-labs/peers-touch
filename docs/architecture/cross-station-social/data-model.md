@@ -66,7 +66,50 @@ source_home_station_peer_id
 + plan_request_sha256
 ```
 
-### 3.1 Federated Group Recipient Snapshot
+### 3.1 Remote Submit Validation
+
+`CSS-D10` defines a distinct read-only peer message pair:
+
+```proto
+message ValidateFederatedContentPreKeyClaimsRequest {
+  uint32 format_version = 1;
+  string source_home_station_peer_id = 2;
+  string target_home_station_peer_id = 3;
+  string federation_id = 4;
+  peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest request = 5;
+  peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse response = 6;
+  bytes canonical_request_sha256 = 7;
+  bytes canonical_response_sha256 = 8;
+}
+
+message ValidateFederatedContentPreKeyClaimsResponse {
+  uint32 format_version = 1;
+  string plan_id = 2;
+  bytes canonical_request_sha256 = 3;
+  bytes canonical_response_sha256 = 4;
+  google.protobuf.Timestamp validated_at = 5;
+}
+```
+
+The request and response digests bind the exact persisted pair without changing
+claim replay identity. The target derives the same namespaced local plan ID
+used by the federated claim route before loading its receipt. The dedicated
+validation scope binds the Federation, source/target Stations, authority plan,
+plan-request digest, canonical request digest, and canonical response digest.
+Success means the receipt and all current endpoint/recovery epochs matched in
+that target's validation transaction; `validated_at` reports that completed
+per-partition check and does not claim a global snapshot.
+
+Stale material, authenticated inactive-Federation rejection, and a missing
+receipt map to terminal `REJECTED_STALE`. Invalid peer authentication claims,
+malformed input or response, digest mismatch, and receipt/response mismatch
+also terminate as `REJECTED_STALE` while surfacing an integrity error; no new
+terminal plan state is introduced. Timeout, transport failure, peer
+unavailability, membership-store failure, and internal dependency failure
+preserve `PREPARED` for an exact retry. No validation response carries key
+material.
+
+### 3.2 Federated Group Recipient Snapshot
 
 The existing Conversation-owned in-process snapshot remains the only `GROUP`
 recipient authority and gains one canonical Federation field:
@@ -88,6 +131,25 @@ PTIDs, and member Home Stations participate in byte-for-byte prepare/submit
 equality. An empty or changed Federation ID, an inactive member Station, or a
 cross-Federation member rejects the whole plan before Content PreKey claim or
 Social commit.
+
+### 3.3 Durable Recipient Locality Binding
+
+The canonical `SocialPrivateContentPlan` authority row persists the normalized
+prepare-time recipient locality projection:
+
+```text
+recipient_localities_bytes
+recipient_localities_sha256
+```
+
+The versioned canonical bytes contain the ordered
+`actor_ptid + home_station_peer_id + federation_id` tuple for every recipient
+other than the author. Submit verifies the digest and canonical encoding before
+partitioning claims. Remote validation consumes this frozen projection before
+the Social transaction; local validation consumes the same projection inside
+the transaction and compares it with the freshly fenced audience snapshot.
+Submit never re-resolves mutable Actor Identity locality outside the authority
+fence.
 
 ## 4. Private Resource Delivery
 

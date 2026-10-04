@@ -147,6 +147,27 @@ The same tuple returns identical claims. Reusing the identity with another hash
 is terminal. Federation membership and target Station are verified before any
 claim is returned.
 
+### 5.2.1 Remote Submit Validation
+
+`CSS-D10` defines a second Key Exchange peer operation for read-only
+submit-time validation. Source Social sends each remote Station partition's
+exact persisted claim request and response with deterministic digests. The
+recipient Key Exchange verifies the authenticated Station pair, active
+Federation membership, exact claim receipt, current endpoint profiles, and
+current recovery epochs without consuming or rotating key material.
+
+Remote validation completes before the source Social transaction begins. Local
+claims remain fenced inside that transaction. Each target validation
+transaction has a separate per-partition linearization point, and its response
+carries evidence of successful completion. There is no global multi-Station
+snapshot. Lifecycle changes completed after a partition's validation point use
+normal receiver rejection, tombstone, and source invalidation semantics. No
+cross-Station lock or distributed transaction is implied.
+
+Claim replay and validation remain separate contracts. Replay recovers the same
+irreversibly consumed keys after an unknown outcome; validation proves that
+those exact claims are current at submit time.
+
 ### 5.3 Source Commit
 
 The Social UOW uses the shared Federation outbox repository as a

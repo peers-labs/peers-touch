@@ -86,7 +86,10 @@ describe('Desktop Moments interaction contract', () => {
     expect(admissionIndex).toBeGreaterThan(-1);
     expect(publishIndex).toBeGreaterThan(admissionIndex);
     expect(composerSource).toContain('privateMomentPublishIntent(privateDraft)');
-    expect(audiencePickerSource).toContain('data-moments-remote-friend-picker');
+    expect(audiencePickerSource).toContain('data-moments-audience-kind');
+    expect(audiencePickerSource).toContain('data-moments-audience-target="circle"');
+    expect(audiencePickerSource).toContain('data-moments-audience-target="group"');
+    expect(audiencePickerSource).toContain('data-moments-audience-actors');
     expect(composerSource).toContain('homeStationPeerId !== localStationPeerId');
     expect(composerSource).toContain('await preparePrivateAudience(intent)');
     expect(composerSource).toContain("privatePublishState === 'READY_PRIVATE'");

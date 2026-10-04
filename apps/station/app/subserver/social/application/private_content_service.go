@@ -163,9 +163,18 @@ type PrivateContentKeyExchange interface {
 		[]socialdomain.RecipientLocality,
 		*securecontentpb.ClaimContentPreKeysRequest,
 	) (*securecontentpb.ClaimContentPreKeysResponse, error)
+	ValidateRemoteContentPreKeyClaims(
+		context.Context,
+		string,
+		[]socialdomain.RecipientLocality,
+		*securecontentpb.ClaimContentPreKeysRequest,
+		*securecontentpb.ClaimContentPreKeysResponse,
+	) error
 	ValidateContentPreKeyClaims(
 		context.Context,
 		federationdelivery.Transaction,
+		string,
+		[]socialdomain.RecipientLocality,
 		*securecontentpb.ClaimContentPreKeysRequest,
 		*securecontentpb.ClaimContentPreKeysResponse,
 	) error
@@ -433,7 +442,9 @@ func (s *PrivateContentService) prepare(
 		author.Endpoint.GetActor().GetPtid(),
 		author.HomeStationPeerID,
 		snapshot,
-		true,
+		material.ResourceKind == socialdomain.PrivateContentResourcePost &&
+			material.MomentKind == privatecontentpb.
+				PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
 	)
 	if err != nil {
 		return nil, err
@@ -486,6 +497,14 @@ func (s *PrivateContentService) prepare(
 		return nil, err
 	}
 	audienceHash := sha256.Sum256(audienceBytes)
+	recipientLocalitiesBytes, err :=
+		socialdomain.CanonicalRecipientLocalitiesBytes(
+			normalizedSnapshot.RecipientLocalities,
+		)
+	if err != nil {
+		return nil, err
+	}
+	recipientLocalitiesHash := sha256.Sum256(recipientLocalitiesBytes)
 	groupSnapshotBytes, groupSnapshotHash, err :=
 		canonicalPrepareGroupSnapshot(
 			operation,
@@ -558,6 +577,8 @@ func (s *PrivateContentService) prepare(
 		infrastructure.PrivatePrepareBinding{
 			AudienceBytes:                audienceBytes,
 			AudienceSHA256:               audienceHash[:],
+			RecipientLocalitiesBytes:     recipientLocalitiesBytes,
+			RecipientLocalitiesSHA256:    recipientLocalitiesHash[:],
 			GroupRecipientSnapshotBytes:  groupSnapshotBytes,
 			GroupRecipientSnapshotSHA256: groupSnapshotHash[:],
 			SubtypePrepareAuthorityBytes: cloneApplicationBytes(
@@ -611,7 +632,59 @@ func (s *PrivateContentService) resumePrepare(
 			"does not match the durable prepare plan",
 		)
 	}
-	response, err := s.completePrepare(ctx, author, material, existing.Plan, nil)
+	claimLocalities, err := decodePersistedRecipientLocalities(existing.Binding)
+	if err != nil {
+		return nil, true, err
+	}
+	if material.Audience.GetKind() == actormodel.Audience_GROUP {
+		group, decodeErr := decodePersistedGroupSnapshot(
+			author.Endpoint.GetActor().GetPtid(),
+			material.Audience,
+			existing.Binding,
+		)
+		if decodeErr != nil {
+			return nil, true, decodeErr
+		}
+		boundGroup, bindErr := s.bindGroupRecipientFederation(
+			ctx,
+			author.HomeStationPeerID,
+			*group,
+		)
+		if bindErr != nil {
+			return nil, true, bindErr
+		}
+		currentRecipientLocalities := make(
+			[]socialdomain.RecipientLocality,
+			0,
+			len(boundGroup.Members),
+		)
+		for _, locality := range boundGroup.Members {
+			if locality.ActorPTID != existing.Plan.AuthorPTID {
+				currentRecipientLocalities = append(
+					currentRecipientLocalities,
+					locality,
+				)
+			}
+		}
+		if !sameRecipientLocalities(
+			claimLocalities,
+			currentRecipientLocalities,
+		) {
+			return nil, true, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentStalePlan,
+				"social.private_content.resume_prepare",
+				"recipient_localities",
+				"differ from the durable prepare binding",
+			)
+		}
+	}
+	response, err := s.completePrepare(
+		ctx,
+		author,
+		material,
+		existing.Plan,
+		claimLocalities,
+	)
 	return response, true, err
 }
 
@@ -1573,6 +1646,27 @@ func (s *PrivateContentService) submit(
 	if err != nil {
 		return err
 	}
+	preparedRecipientLocalities, err := decodePersistedRecipientLocalities(
+		preparation.Binding,
+	)
+	if err != nil {
+		return err
+	}
+
+	claimRequest, claimResponse, err := decodePersistedClaim(preparation.Plan)
+	if err != nil {
+		return err
+	}
+	var remoteClaimValidationErr error
+	if preparation.Plan.State == dbmodel.SocialPrivatePlanStatePrepared {
+		remoteClaimValidationErr = s.keyExchange.ValidateRemoteContentPreKeyClaims(
+			ctx,
+			preparation.Plan.AuthorHomeStationPeerID,
+			preparedRecipientLocalities,
+			claimRequest,
+			claimResponse,
+		)
+	}
 
 	domainCommitID := requestPlan.GetResource().GetContentId()
 	executeSubmit := func(
@@ -1690,6 +1784,9 @@ func (s *PrivateContentService) submit(
 				if !bytes.Equal(
 					snapshotHash[:],
 					requestPlan.GetAuthorizationSnapshotSha256(),
+				) || !sameRecipientLocalities(
+					normalizedSnapshot.RecipientLocalities,
+					preparedRecipientLocalities,
 				) ||
 					plan.AudienceSnapshotID !=
 						deterministicPrivateID("snapshot", plan.PlanID) {
@@ -1735,28 +1832,31 @@ func (s *PrivateContentService) submit(
 					}
 				}
 
-				claimRequest, claimResponse, err := decodePersistedClaim(
-					plan,
-				)
-				if err != nil {
-					return infrastructure.SubmitMutationResult{}, err
+				if remoteClaimValidationErr != nil {
+					if isTerminalContentPreKeyValidationError(
+						remoteClaimValidationErr,
+					) {
+						if rejectErr := tx.RejectStale(ctx); rejectErr != nil {
+							return infrastructure.SubmitMutationResult{},
+								mapPrivateStoreError(operation, rejectErr)
+						}
+						return infrastructure.SubmitMutationResult{}, nil
+					}
+					return infrastructure.SubmitMutationResult{},
+						mapPrivateDependencyError(
+							operation,
+							remoteClaimValidationErr,
+						)
 				}
 				if err := s.keyExchange.ValidateContentPreKeyClaims(
 					ctx,
 					transaction,
+					plan.AuthorHomeStationPeerID,
+					preparedRecipientLocalities,
 					claimRequest,
 					claimResponse,
 				); err != nil {
-					if keyexchangedomain.IsCode(
-						err,
-						keyexchangedomain.ErrorCodeStaleMaterial,
-					) || keyexchangedomain.IsCode(
-						err,
-						keyexchangedomain.ErrorCodeUnauthorized,
-					) || keyexchangedomain.IsCode(
-						err,
-						keyexchangedomain.ErrorCodeNotFound,
-					) {
+					if isTerminalContentPreKeyValidationError(err) {
 						if rejectErr := tx.RejectStale(ctx); rejectErr != nil {
 							return infrastructure.SubmitMutationResult{},
 								mapPrivateStoreError(operation, rejectErr)
@@ -1908,6 +2008,28 @@ func (s *PrivateContentService) submit(
 	return nil
 }
 
+func isTerminalContentPreKeyValidationError(err error) bool {
+	return keyexchangedomain.IsCode(
+		err,
+		keyexchangedomain.ErrorCodeStaleMaterial,
+	) || keyexchangedomain.IsCode(
+		err,
+		keyexchangedomain.ErrorCodeUnauthorized,
+	) || keyexchangedomain.IsCode(
+		err,
+		keyexchangedomain.ErrorCodeNotFound,
+	) || keyexchangedomain.IsCode(
+		err,
+		keyexchangedomain.ErrorCodeInvalidArgument,
+	) || keyexchangedomain.IsCode(
+		err,
+		keyexchangedomain.ErrorCodeInvalidMaterial,
+	) || keyexchangedomain.IsCode(
+		err,
+		keyexchangedomain.ErrorCodeConflict,
+	)
+}
+
 func (s *PrivateContentService) resolvePostSnapshot(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
@@ -1951,17 +2073,19 @@ func (s *PrivateContentService) resolvePostSnapshot(
 					"must be supplied by the Conversation-owned capability",
 				)
 		}
-		if err := validateGroupRecipientLocality(
+		validatedGroup, validateErr := s.bindGroupRecipientFederation(
+			ctx,
 			authorHomeStationPeerID,
 			*group,
-		); err != nil {
-			return socialdomain.FriendsSnapshot{}, err
+		)
+		if validateErr != nil {
+			return socialdomain.FriendsSnapshot{}, validateErr
 		}
 		snapshot, err = s.audiences.ResolveGroupPostSnapshot(
 			ctx,
 			transaction,
 			authorPTID,
-			*group,
+			validatedGroup,
 		)
 	case actormodel.Audience_SELF:
 		snapshot = socialdomain.FriendsSnapshot{
@@ -1991,33 +2115,6 @@ func (s *PrivateContentService) resolvePostSnapshot(
 	}
 
 	return snapshot, nil
-}
-
-func validateGroupRecipientLocality(
-	authorHomeStationPeerID string,
-	group socialdomain.GroupRecipientSnapshot,
-) error {
-	const operation = "social.private_content.group_recipient_locality"
-	if strings.TrimSpace(authorHomeStationPeerID) == "" {
-		return socialdomain.NewPrivateContentError(
-			socialdomain.PrivateContentInvalidArgument,
-			operation,
-			"author_home_station_peer_id",
-			"is required",
-		)
-	}
-	for _, member := range group.Members {
-		if member.HomeStationPeerID != authorHomeStationPeerID {
-			return socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentUnsupported,
-				operation,
-				"recipient_home_station_peer_id",
-				"v1 private content requires every active Group member on the author Home Station",
-			)
-		}
-	}
-
-	return nil
 }
 
 func (s *PrivateContentService) resolveCurrentSnapshot(
@@ -2079,9 +2176,7 @@ func (s *PrivateContentService) resolveCurrentSnapshot(
 		snapshot,
 		prepared.ResourceKind == socialdomain.PrivateContentResourcePost &&
 			prepared.MomentKind ==
-				privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT &&
-			(prepared.Audience.GetKind() == actormodel.Audience_FRIENDS ||
-				prepared.Audience.GetKind() == actormodel.Audience_CUSTOM_ALLOW),
+				privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
 	)
 	if err != nil {
 		return socialdomain.FriendsSnapshot{}, mapPrivateDependencyError(
@@ -2131,6 +2226,7 @@ func (s *PrivateContentService) bindRecipientLocalities(
 			)
 	}
 	remoteCount := 0
+	federationID := ""
 	for _, locality := range localities {
 		if locality.HomeStationPeerID != authorHomeStationPeerID {
 			remoteCount++
@@ -2143,23 +2239,26 @@ func (s *PrivateContentService) bindRecipientLocalities(
 						"remote recipient has no verified active Federation",
 					)
 			}
+			if federationID == "" {
+				federationID = locality.FederationID
+			} else if locality.FederationID != federationID {
+				return socialdomain.FriendsSnapshot{},
+					socialdomain.NewPrivateContentError(
+						socialdomain.PrivateContentUnsupported,
+						operation,
+						"recipient_federation_id",
+						"all remote recipients must share one active Federation",
+					)
+			}
 		}
 	}
-	audienceKind := snapshot.Audience.GetKind()
-	singleRemoteTextAudience :=
-		audienceKind == actormodel.Audience_FRIENDS ||
-			audienceKind == actormodel.Audience_CUSTOM_ALLOW
-	if remoteCount > 0 &&
-		(!allowRemoteAdmission ||
-			!singleRemoteTextAudience ||
-			len(snapshot.RecipientPTIDs) != 1 ||
-			remoteCount != 1) {
+	if remoteCount > 0 && !allowRemoteAdmission {
 		return socialdomain.FriendsSnapshot{},
 			socialdomain.NewPrivateContentError(
 				socialdomain.PrivateContentUnsupported,
 				operation,
 				"recipient_home_station_peer_id",
-				"this slice admits exactly one selected remote friend",
+				"remote recipients are unavailable for this private resource kind",
 			)
 	}
 	snapshot.RecipientLocalities = append(
@@ -2618,6 +2717,7 @@ func (s *PrivateContentService) persistSharedSubmitRows(
 
 	envelopes, deliveries, principals, err := persistenceEnvelopes(
 		plan,
+		snapshot.RecipientLocalities,
 		material.Envelopes,
 		committedAt,
 	)
@@ -2627,11 +2727,17 @@ func (s *PrivateContentService) persistSharedSubmitRows(
 	if err := tx.CreateEnvelopes(ctx, envelopes); err != nil {
 		return mapPrivateStoreError(operation, err)
 	}
+	localRecipientCount := 0
+	for _, locality := range snapshot.RecipientLocalities {
+		if locality.HomeStationPeerID == plan.AuthorHomeStationPeerID {
+			localRecipientCount++
+		}
+	}
 	if len(deliveries) > 0 {
 		if err := tx.CreateDeliveryIntents(ctx, deliveries); err != nil {
 			return mapPrivateStoreError(operation, err)
 		}
-	} else if snapshot.Audience.GetKind() != actormodel.Audience_SELF {
+	} else if localRecipientCount > 0 {
 		return socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentConflict,
 			operation,
@@ -2695,6 +2801,7 @@ type privateEnvelopePrincipal struct {
 
 func persistenceEnvelopes(
 	plan dbmodel.SocialPrivateContentPlan,
+	recipientLocalities []socialdomain.RecipientLocality,
 	materials []socialdomain.PrivateEnvelopeMaterial,
 	createdAt time.Time,
 ) (
@@ -2735,6 +2842,10 @@ func persistenceEnvelopes(
 		len(materials),
 	)
 	principals := make([]privateEnvelopePrincipal, 0, len(materials))
+	recipientStations := make(map[string]string, len(recipientLocalities))
+	for _, locality := range recipientLocalities {
+		recipientStations[locality.ActorPTID] = locality.HomeStationPeerID
+	}
 	for _, material := range materials {
 		binding := material.Envelope.GetBinding()
 		var claim *securecontentpb.ClaimedContentPreKey
@@ -2794,6 +2905,19 @@ func persistenceEnvelopes(
 		principals = append(principals, principal)
 		if keyKind == infrastructure.PrivateContentKeyKindEndpoint &&
 			principal.ActorPTID != plan.AuthorPTID {
+			homeStationPeerID, found := recipientStations[principal.ActorPTID]
+			if !found {
+				return nil, nil, nil,
+					socialdomain.NewPrivateContentError(
+						socialdomain.PrivateContentConflict,
+						"social.private_content.persist_envelopes",
+						"recipient_localities",
+						"do not cover an envelope recipient",
+					)
+			}
+			if homeStationPeerID != plan.AuthorHomeStationPeerID {
+				continue
+			}
 			deliveries = append(deliveries, dbmodel.SocialPrivateDeliveryIntent{
 				IntentID: deterministicPrivateID(
 					"delivery",
@@ -3597,6 +3721,46 @@ func canonicalPrepareGroupSnapshot(
 	return encoded, sha256.Sum256(encoded), nil
 }
 
+func decodePersistedRecipientLocalities(
+	binding infrastructure.PrivatePrepareBinding,
+) ([]socialdomain.RecipientLocality, error) {
+	const operation = "social.private_content.decode_recipient_localities"
+	localitiesHash := sha256.Sum256(binding.RecipientLocalitiesBytes)
+	if !bytes.Equal(
+		localitiesHash[:],
+		binding.RecipientLocalitiesSHA256,
+	) {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"recipient_localities",
+			"bytes do not match the durable hash",
+		)
+	}
+	localities, err := socialdomain.ParseCanonicalRecipientLocalities(
+		binding.RecipientLocalitiesBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return localities, nil
+}
+
+func sameRecipientLocalities(
+	left []socialdomain.RecipientLocality,
+	right []socialdomain.RecipientLocality,
+) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func decodePersistedGroupSnapshot(
 	authorPTID string,
 	audience *actormodel.Audience,
@@ -3692,6 +3856,9 @@ func decodePersistedPrepare(
 		audience,
 		binding,
 	); err != nil {
+		return socialdomain.PrivatePrepareMaterial{}, err
+	}
+	if _, err := decodePersistedRecipientLocalities(binding); err != nil {
 		return socialdomain.PrivatePrepareMaterial{}, err
 	}
 	switch plan.ResourceKind {

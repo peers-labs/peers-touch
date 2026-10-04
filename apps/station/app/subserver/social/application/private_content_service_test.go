@@ -599,6 +599,87 @@ func TestPrivateContentServiceRejectsStalePreKeyClaimsAtomically(t *testing.T) {
 	)
 }
 
+func TestPrivateContentServiceClassifiesPreKeyValidationFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		slug      string
+		code      keyexchangedomain.ErrorCode
+		wantState string
+	}{
+		{
+			name:      "invalid material is terminal",
+			slug:      "invalid-material",
+			code:      keyexchangedomain.ErrorCodeInvalidMaterial,
+			wantState: dbmodel.SocialPrivatePlanStateRejectedStale,
+		},
+		{
+			name:      "dependency failure is retryable",
+			slug:      "dependency",
+			code:      keyexchangedomain.ErrorCodeDependency,
+			wantState: dbmodel.SocialPrivatePlanStatePrepared,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newPrivateContentServiceFixture(t)
+			ctx := context.Background()
+			prepared, err := fixture.service.PreparePrivateMoment(
+				ctx,
+				fixture.author,
+				privateMomentPrepareRequest(
+					"prepare-validation-"+testCase.slug,
+					"content-validation-"+testCase.slug,
+				),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture.keyExchange.validationError = keyexchangedomain.NewError(
+				testCase.code,
+				"test.validate_content_prekey_claims",
+				"claim",
+				"validation failed",
+			)
+			submit := privateTextSubmitRequest(
+				t,
+				prepared.GetPlan(),
+				fixture.author.Endpoint,
+				fixture.authorPrivateKey,
+				"submit-validation-"+testCase.slug,
+				"ciphertext-validation-"+testCase.slug,
+			)
+			if _, err := fixture.service.SubmitPrivateMoment(
+				ctx,
+				fixture.author.Endpoint,
+				submit,
+			); err == nil {
+				t.Fatal("validation failure unexpectedly committed")
+			}
+			var plan dbmodel.SocialPrivateContentPlan
+			if err := fixture.database.First(
+				&plan,
+				"plan_id = ?",
+				prepared.GetPlan().GetPlanId(),
+			).Error; err != nil {
+				t.Fatal(err)
+			}
+			if plan.State != testCase.wantState {
+				t.Fatalf(
+					"validation failure plan state = %q, want %q",
+					plan.State,
+					testCase.wantState,
+				)
+			}
+			assertPrivateContentCount(
+				t,
+				fixture.database,
+				&dbmodel.SocialPrivateContentPost{},
+				0,
+			)
+		})
+	}
+}
+
 func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) {
 	fixture := newPrivateContentServiceFixture(t)
 	ctx := context.Background()
@@ -656,6 +737,14 @@ func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) 
 		t.Fatal(err)
 	}
 	audienceHash := sha256.Sum256(audienceBytes)
+	recipientLocalitiesBytes, err :=
+		socialdomain.CanonicalRecipientLocalitiesBytes(
+			fixture.audiences.snapshot.RecipientLocalities,
+		)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipientLocalitiesHash := sha256.Sum256(recipientLocalitiesBytes)
 	emptyGroupSnapshotHash := sha256.Sum256(nil)
 	emptySubtypeHash := sha256.Sum256(nil)
 	if _, err := fixture.store.ClaimPreparing(
@@ -686,6 +775,8 @@ func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) 
 		infrastructure.PrivatePrepareBinding{
 			AudienceBytes:                 audienceBytes,
 			AudienceSHA256:                audienceHash[:],
+			RecipientLocalitiesBytes:      recipientLocalitiesBytes,
+			RecipientLocalitiesSHA256:     recipientLocalitiesHash[:],
 			GroupRecipientSnapshotSHA256:  emptyGroupSnapshotHash[:],
 			SubtypePrepareAuthoritySHA256: emptySubtypeHash[:],
 		},
@@ -2068,14 +2159,19 @@ func (privateContentTestGroups) WithSubmitFence(
 }
 
 type privateContentTestKeyExchange struct {
-	request             *securecontentpb.ClaimContentPreKeysRequest
-	response            *securecontentpb.ClaimContentPreKeysResponse
-	sourceStationPeerID string
-	recipientLocalities []socialdomain.RecipientLocality
-	publicKeysByTarget  map[string][]byte
-	claimError          error
-	stale               bool
-	claimCalls          int
+	request                                   *securecontentpb.ClaimContentPreKeysRequest
+	response                                  *securecontentpb.ClaimContentPreKeysResponse
+	sourceStationPeerID                       string
+	recipientLocalities                       []socialdomain.RecipientLocality
+	publicKeysByTarget                        map[string][]byte
+	claimError                                error
+	validationError                           error
+	remoteValidationError                     error
+	remoteValidationCalls                     int
+	submitTransactionStarted                  *bool
+	remoteValidationObservedSubmitTransaction bool
+	stale                                     bool
+	claimCalls                                int
 }
 
 func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
@@ -2153,9 +2249,31 @@ func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 	return response, nil
 }
 
+func (k *privateContentTestKeyExchange) ValidateRemoteContentPreKeyClaims(
+	_ context.Context,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
+	_ *securecontentpb.ClaimContentPreKeysRequest,
+	_ *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	k.remoteValidationCalls++
+	if k.submitTransactionStarted != nil &&
+		*k.submitTransactionStarted {
+		k.remoteValidationObservedSubmitTransaction = true
+	}
+	for _, locality := range recipientLocalities {
+		if locality.HomeStationPeerID != sourceStationPeerID {
+			return k.remoteValidationError
+		}
+	}
+	return nil
+}
+
 func (k *privateContentTestKeyExchange) ValidateContentPreKeyClaims(
 	_ context.Context,
 	transaction federationdelivery.Transaction,
+	_ string,
+	_ []socialdomain.RecipientLocality,
 	request *securecontentpb.ClaimContentPreKeysRequest,
 	response *securecontentpb.ClaimContentPreKeysResponse,
 ) error {
@@ -2169,6 +2287,9 @@ func (k *privateContentTestKeyExchange) ValidateContentPreKeyClaims(
 			"claim",
 			"is stale",
 		)
+	}
+	if k.validationError != nil {
+		return k.validationError
 	}
 	if !proto.Equal(request, k.request) || !proto.Equal(response, k.response) {
 		return fmt.Errorf("claim request or response changed")
