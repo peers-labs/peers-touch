@@ -7166,15 +7166,15 @@ class W7RuntimeOwner:
                         resource="client:cross-station-social-alice",
                     )
                 result: Mapping[str, Any] = {}
-                for attempt in range(3):
+                for attempt in range(30):
                     result = _moments_harness(
                         alice,
                         "publishPrivateDraft",
                     )
                     if result.get("state") != "UNKNOWN_COMMIT":
                         break
-                    if attempt < 2:
-                        time.sleep(0.25)
+                    if attempt < 29:
+                        time.sleep(1)
                 post_id = result.get("transientPostId")
                 if (
                     result.get("state") != "PUBLISHED"
@@ -7183,7 +7183,11 @@ class W7RuntimeOwner:
                 ):
                     raise RuntimeOwnerBlocked(
                         "CLIENT_RUNTIME_UNAVAILABLE",
-                        f"{label} did not reach PUBLISHED",
+                        (
+                            f"{label} did not reach PUBLISHED "
+                            f"(state={result.get('state')!r}, "
+                            f"errorCode={result.get('errorCode')!r})"
+                        ),
                         resource="client:cross-station-social-alice",
                     )
                 return post_id
