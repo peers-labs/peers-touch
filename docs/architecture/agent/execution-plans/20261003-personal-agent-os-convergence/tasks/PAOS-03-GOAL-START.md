@@ -26,8 +26,11 @@
   ],
   "doneWhen": ["Review exposes material assumptions before Start","Start commits READY to RUNNING with idempotency and expected revision","Rejected admission shows the blocking reason in Home","No TaskRun exists before admission commits"],
   "failureBehavior": ["Preserve the reviewed draft after admission failure","Do not start from stale, unauthorized, or incomplete input"],
-  "updatedAt": "2026-10-04T10:54:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-04T11:17:00Z",
+  "durableEvidence": [
+    {"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"git:9d2cf846eab66af7c14cff97d2bbc0e92a2a3902;agent-personal-goal-contract-source:20261004T110258135875Z-2a9468a10cf6a934937faad80d91bb7e;code-structure:sha256:3abeeae3352b4f6af7c2c5738488e9456eeb768d93342f383a41124ad0b0285b"},
+    {"verificationClass":"FUNCTIONAL_CHECK","result":"PASS","ref":"development://personal-agent-os-convergence-20261003-r8/checks/functional-result-36ce22b742ef68bcec0f9e5821b8191b2a7ee59ad8dc722b69e4e6f0cbe851d7.json"}
+  ]
 }
 ```
 
@@ -47,5 +50,6 @@
 ## Current Snapshot
 
 Station owns separate `REVIEWING -> READY -> RUNNING` commands and Home renders
-their authoritative revisions. Completion review remediation is strengthening
-the rejection Journey and evidence attribution before this Task closes.
+their authoritative revisions. The exact-source r8 Native Journey covers
+Station-authored rejection, stale recovery, start, readback, evidence hashing,
+and cleanup; r9 binds those immutable results into this Task before final review.
