@@ -50,6 +50,19 @@ type homeTaskListerStub struct {
 	err   error
 }
 
+type homeGoalExecutionListerStub struct {
+	executions []*GoalExecutionSnapshot
+	err        error
+}
+
+func (s homeGoalExecutionListerStub) ListForOwner(
+	context.Context,
+	string,
+	int,
+) ([]*GoalExecutionSnapshot, error) {
+	return s.executions, s.err
+}
+
 func (s homeTaskListerStub) ListTasks(
 	context.Context,
 	string,
@@ -355,5 +368,66 @@ func TestHomeProjectionIncludesReadinessAndTaskSlices(t *testing.T) {
 	if len(projection.GetCapabilitySummaries()) != 1 ||
 		projection.GetCapabilitySummaries()[0].GetReadinessState() != "ready" {
 		t.Fatalf("capability summaries = %+v", projection.GetCapabilitySummaries())
+	}
+}
+
+func TestHomeProjectionIncludesCanonicalGoalTaskRun(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{},
+		homeConversationListerStub{},
+		nil,
+		nil,
+		homeGoalExecutionListerStub{executions: []*GoalExecutionSnapshot{{
+			Node: &persistence.AgentGoalNode{
+				GoalID: "goal-1",
+				NodeID: "node-1",
+				TaskID: "task-1",
+				Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+			},
+			Task: &persistence.TaskRun{
+				TaskID:         "task-1",
+				Title:          "Prepare durable result",
+				Surface:        int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN),
+				Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING),
+				OwnerActorPTID: "ptid:actor-1",
+				WorkspaceID:    "workspace-1",
+				GoalID:         "goal-1",
+				GoalNodeID:     "node-1",
+				RootStepID:     "step-1",
+				UpdatedAt:      now,
+			},
+			Step: &persistence.ExecutionStep{
+				StepID:    "step-1",
+				TaskID:    "task-1",
+				AgentID:   "agent-1",
+				Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+				Attempt:   1,
+				AttemptID: "attempt-1",
+			},
+		}}},
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if len(projection.GetActiveTasks()) != 1 {
+		t.Fatalf("active tasks = %+v", projection.GetActiveTasks())
+	}
+	task := projection.GetActiveTasks()[0]
+	if task.GetTaskId() != "task-1" ||
+		task.GetGoalId() != "goal-1" ||
+		task.GetGoalNodeId() != "node-1" ||
+		task.GetStepId() != "step-1" ||
+		task.GetAttemptId() != "attempt-1" ||
+		task.GetAttempt() != 1 ||
+		task.GetSurface() != model.TaskSurface_TASK_SURFACE_DIRECT_RUN {
+		t.Fatalf("canonical Goal TaskRun = %+v", task)
+	}
+	if len(projection.GetRecentWork()) != 1 ||
+		projection.GetRecentWork()[0].GetWorkId() != "task-1" {
+		t.Fatalf("recent work = %+v", projection.GetRecentWork())
 	}
 }

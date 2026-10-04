@@ -5822,7 +5822,8 @@ func validateDirectRunRuntimePreflight(records *directRunLifecycleRecords) error
 		strings.TrimSpace(step.TaskID) != strings.TrimSpace(run.TaskID) {
 		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "DirectRun runtime preflight task references must match", nil)
 	}
-	if task.Surface != int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN) || strings.TrimSpace(task.ConversationID) != "" {
+	if task.Surface != int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN) ||
+		strings.TrimSpace(string(task.ConversationID)) != "" {
 		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "DirectRun runtime preflight requires no-session TaskRun surface", nil)
 	}
 	if step.Status != int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING) || strings.TrimSpace(step.TurnID) != "" {

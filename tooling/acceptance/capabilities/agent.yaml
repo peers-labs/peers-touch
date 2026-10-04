@@ -401,27 +401,31 @@
       ],
       "synthetic_paths": [
         "model/domain/agent/goal.proto",
+        "model/domain/agent/orchestration.proto",
         "apps/station/app/subserver/agent/service/goal_admission_service.go",
+        "apps/station/app/subserver/agent/service/goal_execution_service.go",
         "apps/desktop/src/runtimes/homeRuntime.ts"
       ],
       "evidence": {
         "truth_sources": [
           "Station AgentGoal record and revision",
-          "Station Goal command receipts"
+          "Station Goal command receipts",
+          "Station AgentGoalNode, TaskRun, and ExecutionStep records"
         ],
         "surfaces": [
           "Native Home Goal contract review and start",
-          "Station Goal lifecycle readback"
+          "Native Home canonical TaskRun summary",
+          "Station Goal lifecycle and execution identity readback"
         ],
         "proven_by": [
           "agent-personal-goal-contract-source"
         ],
         "proven_scope": [
-          "PAOS-01 through PAOS-03 source contract for durable draft, reviewed assumptions, admission, start, revision conflict, idempotency, actor isolation, and zero pre-admission TaskRun"
+          "PAOS-01 through PAOS-05 source contract for durable draft, reviewed assumptions, admission, atomic first TaskRun allocation, revision conflict, idempotency, actor isolation, and zero pre-admission executable work"
         ],
         "unproven_scope": [
-          "PAOS-J01 Native product behavior remains UNPROVEN until the exact-source Development Journey passes",
-          "Goal graph creation and first TaskRun are owned by PAOS-05"
+          "PAOS-J01 and PAOS-J02 Native product behavior remains UNPROVEN until the exact-source Development Journeys pass",
+          "Direct Model execution and visible terminal result are owned by PAOS-06"
         ]
       }
     },

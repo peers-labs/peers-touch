@@ -442,6 +442,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	capabilityAcceptanceScenarios.SetEvaluationService(evaluationSvc)
 	evaluationHandlers := handler.NewEvaluationHandlers(evaluationSvc)
 	goalService := service.NewGoalService(s.agentDB)
+	goalExecutionService := service.NewGoalExecutionService(s.agentDB)
 	realtimeRelay := service.NewAgentRealtimeRelay(
 		s.agentDB,
 		func() service.AgentRealtimePublisher {
@@ -450,7 +451,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	)
 	goalHandlers := handler.NewGoalHandlers(
 		goalService,
-		service.NewGoalAdmissionService(goalService),
+		service.NewGoalAdmissionService(goalService, goalExecutionService),
 	)
 	homeHandlers := handler.NewHomeHandlers(
 		service.NewHomeProjectionService(
@@ -458,6 +459,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 			convSvc,
 			capabilityReadinessSvc,
 			agentTaskSvc,
+			goalExecutionService,
 		),
 		service.NewHomeCommandService(
 			agentSvc,

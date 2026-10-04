@@ -24,6 +24,8 @@ def forbid(content: str, needle: str, message: str) -> None:
 
 def main() -> int:
     proto = read("model/domain/agent/goal.proto")
+    orchestration_proto = read("model/domain/agent/orchestration.proto")
+    home_proto = read("model/domain/agent/home.proto")
     goal_service = read(
         "apps/station/app/subserver/agent/service/goal_service.go"
     )
@@ -33,6 +35,14 @@ def main() -> int:
     admission_tests = read(
         "apps/station/app/subserver/agent/service/"
         "goal_admission_service_test.go"
+    )
+    goal_execution = read(
+        "apps/station/app/subserver/agent/service/"
+        "goal_execution_service.go"
+    )
+    goal_execution_tests = read(
+        "apps/station/app/subserver/agent/service/"
+        "goal_execution_service_test.go"
     )
     handler = read(
         "apps/station/app/subserver/agent/handler/goal_handler.go"
@@ -47,6 +57,10 @@ def main() -> int:
     review_panel = read(
         "apps/desktop/src/components/home/GoalReviewPanel.tsx"
     )
+    run_summary = read(
+        "apps/desktop/src/components/home/GoalRunSummary.tsx"
+    )
+    execution_store = read("apps/desktop/src/store/goalExecution.ts")
 
     for message in (
         "message AdmitAgentGoalRequest",
@@ -78,14 +92,65 @@ def main() -> int:
     )
     require(
         admission,
-        "runGoalMutation(",
+        "runGoalMutationTx(",
         "Goal admission does not use revisioned idempotent mutation",
     )
-    forbid(
+    require(
         admission,
-        "TaskRun",
-        "Goal admission must not create hidden TaskRun work",
+        "AllocateFirstTx(ctx, tx, record)",
+        "Goal start does not atomically allocate its first TaskRun",
     )
+    for field in (
+        "message AgentGoalNode",
+        "string goal_id = 15",
+        "string goal_node_id = 16",
+        "string root_step_id = 17",
+        "string attempt_id = 20",
+    ):
+        require(
+            orchestration_proto,
+            field,
+            f"canonical Goal execution contract is missing: {field}",
+        )
+    for field in (
+        "string goal_id = 8",
+        "string goal_node_id = 9",
+        "string step_id = 10",
+        "string attempt_id = 11",
+    ):
+        require(
+            home_proto,
+            field,
+            f"Home Goal execution projection is missing: {field}",
+        )
+    for source, needle, message in (
+        (
+            goal_execution,
+            "stableGoalExecutionID",
+            "Goal execution does not preallocate stable identities",
+        ),
+        (
+            goal_execution,
+            "persistence.AgentGoalNode",
+            "Goal execution does not persist AgentGoalNode",
+        ),
+        (
+            goal_execution,
+            "persistence.TaskRun",
+            "Goal execution does not persist TaskRun",
+        ),
+        (
+            goal_execution,
+            "persistence.ExecutionStep",
+            "Goal execution does not persist ExecutionStep",
+        ),
+        (
+            execution_store,
+            "normalizeGoalExecutions",
+            "Desktop Goal execution projection store is missing",
+        ),
+    ):
+        require(source, needle, message)
 
     for source, needle, message in (
         (handler, "HandleAdmit", "Station Goal admit handler is missing"),
@@ -143,9 +208,23 @@ def main() -> int:
             selector,
             f"Goal review surface is missing {selector}",
         )
+    for selector in (
+        "data-pt-goal-run",
+        "data-pt-goal-run-readback",
+        "data-pt-goal-id",
+        "data-pt-goal-node-id",
+        "data-pt-goal-task-id",
+        "data-pt-goal-step-id",
+        "data-pt-goal-attempt-id",
+    ):
+        require(
+            run_summary,
+            selector,
+            f"Goal TaskRun surface is missing {selector}",
+        )
 
     for test_name in (
-        "TestGoalAdmissionAndStartUseRevisionAndIdempotency",
+        "TestGoalAdmissionAndStartCreateOneCanonicalTaskRun",
         "TestGoalAdmissionRejectsIncompleteReviewWithoutMutation",
         "TestGoalReviewRejectsIncompleteContractWhileItIsEditable",
         "TestGoalStartRejectsNonReadyStaleAndForeignActor",
@@ -155,10 +234,16 @@ def main() -> int:
             test_name,
             f"Goal admission coverage is missing {test_name}",
         )
+    require(
+        goal_execution_tests,
+        "TestGoalTaskRunAllocationFailureLeavesGoalReady",
+        "Goal TaskRun rollback coverage is missing",
+    )
 
     print(
         "PASS Personal Goal contract source: reviewed Goal admission is "
-        "typed, revisioned, idempotent, visible, and TaskRun-free."
+        "typed, revisioned, idempotent, visible, and atomically allocates "
+        "one canonical Goal TaskRun at start."
     )
     return 0
 

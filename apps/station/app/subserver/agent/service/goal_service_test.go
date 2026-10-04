@@ -864,6 +864,10 @@ func openGoalServiceTestDB(t *testing.T) *gorm.DB {
 		&persistence.AgentRealtimeOutbox{},
 		&persistence.RevisionCommand{},
 		&persistence.TaskRun{},
+		&persistence.AgentGoalNode{},
+		&persistence.ExecutionStep{},
+		&persistence.AgentTask{},
+		&persistence.CollaborationTask{},
 	); err != nil {
 		t.Fatalf("migrate Goal test database: %v", err)
 	}

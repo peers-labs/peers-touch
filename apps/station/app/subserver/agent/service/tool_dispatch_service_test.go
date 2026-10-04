@@ -4710,7 +4710,7 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		OwnerActorPTID: fixture.actorID,
-		ConversationID: authority.ConversationID,
+		ConversationID: persistence.NullableConversationID(authority.ConversationID),
 		CreatedAt:      fixture.now,
 		StartedAt:      fixture.now,
 		UpdatedAt:      fixture.now,

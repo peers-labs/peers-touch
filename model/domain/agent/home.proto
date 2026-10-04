@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.agent.v1;
 
 import "domain/agent/agent.proto";
+import "domain/agent/orchestration.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
@@ -89,6 +90,13 @@ message HomeTaskProjection {
   uint32 progress_percent = 5;
   google.protobuf.Timestamp updated_at = 6;
   string topic_ref = 7;
+  string goal_id = 8;
+  string goal_node_id = 9;
+  string step_id = 10;
+  string attempt_id = 11;
+  uint32 attempt = 12;
+  TaskSurface surface = 13;
+  string workspace_id = 14;
 }
 
 message HomeCapabilitySummary {

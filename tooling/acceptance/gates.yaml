@@ -1427,7 +1427,7 @@
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate the Station-owned Personal Goal contract, reviewed admission, revisioned start, Desktop bridge, visible rejection, and zero pre-admission TaskRun boundary."
+      "description": "Validate the Station-owned Personal Goal contract, reviewed admission, revisioned start, atomic first TaskRun allocation, Desktop projection, visible rejection, and zero pre-admission executable-work boundary."
     },
     "agent-v2-home-command-center-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-home-command-center-e2e",

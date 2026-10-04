@@ -4975,7 +4975,10 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                           created_at datetime NOT NULL,
                           started_at datetime NOT NULL,
                           updated_at datetime NOT NULL,
-                          ended_at datetime
+                          ended_at datetime,
+                          goal_id text NOT NULL DEFAULT '',
+                          goal_node_id text NOT NULL DEFAULT '',
+                          root_step_id text NOT NULL DEFAULT ''
                   )`,
 		`CREATE TABLE agent_execution_steps (
                           step_id text PRIMARY KEY,
@@ -4987,6 +4990,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                           status integer NOT NULL,
                           turn_id text,
                           attempt integer NOT NULL DEFAULT 1,
+                          attempt_id text NOT NULL DEFAULT '',
                           eligible_executors text,
                           result_summary text,
                           started_at datetime NOT NULL,

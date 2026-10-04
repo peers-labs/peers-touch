@@ -652,6 +652,13 @@ type HomeTaskProjection struct {
 	ProgressPercent uint32                 `protobuf:"varint,5,opt,name=progress_percent,json=progressPercent,proto3" json:"progress_percent,omitempty"`
 	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	TopicRef        string                 `protobuf:"bytes,7,opt,name=topic_ref,json=topicRef,proto3" json:"topic_ref,omitempty"`
+	GoalId          string                 `protobuf:"bytes,8,opt,name=goal_id,json=goalId,proto3" json:"goal_id,omitempty"`
+	GoalNodeId      string                 `protobuf:"bytes,9,opt,name=goal_node_id,json=goalNodeId,proto3" json:"goal_node_id,omitempty"`
+	StepId          string                 `protobuf:"bytes,10,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	AttemptId       string                 `protobuf:"bytes,11,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
+	Attempt         uint32                 `protobuf:"varint,12,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Surface         TaskSurface            `protobuf:"varint,13,opt,name=surface,proto3,enum=peers_touch.model.agent.v1.TaskSurface" json:"surface,omitempty"`
+	WorkspaceId     string                 `protobuf:"bytes,14,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -731,6 +738,55 @@ func (x *HomeTaskProjection) GetUpdatedAt() *timestamppb.Timestamp {
 func (x *HomeTaskProjection) GetTopicRef() string {
 	if x != nil {
 		return x.TopicRef
+	}
+	return ""
+}
+
+func (x *HomeTaskProjection) GetGoalId() string {
+	if x != nil {
+		return x.GoalId
+	}
+	return ""
+}
+
+func (x *HomeTaskProjection) GetGoalNodeId() string {
+	if x != nil {
+		return x.GoalNodeId
+	}
+	return ""
+}
+
+func (x *HomeTaskProjection) GetStepId() string {
+	if x != nil {
+		return x.StepId
+	}
+	return ""
+}
+
+func (x *HomeTaskProjection) GetAttemptId() string {
+	if x != nil {
+		return x.AttemptId
+	}
+	return ""
+}
+
+func (x *HomeTaskProjection) GetAttempt() uint32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *HomeTaskProjection) GetSurface() TaskSurface {
+	if x != nil {
+		return x.Surface
+	}
+	return TaskSurface_TASK_SURFACE_UNSPECIFIED
+}
+
+func (x *HomeTaskProjection) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
 	}
 	return ""
 }
@@ -1407,7 +1463,7 @@ var File_domain_agent_home_proto protoreflect.FileDescriptor
 
 const file_domain_agent_home_proto_rawDesc = "" +
 	"\n" +
-	"\x17domain/agent/home.proto\x12\x1apeers_touch.model.agent.v1\x1a\x18domain/agent/agent.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x02\n" +
+	"\x17domain/agent/home.proto\x12\x1apeers_touch.model.agent.v1\x1a\x18domain/agent/agent.proto\x1a domain/agent/orchestration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x02\n" +
 	"\x0fHomePinnedAgent\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1d\n" +
@@ -1449,7 +1505,7 @@ const file_domain_agent_home_proto_rawDesc = "" +
 	"\vaction_kind\x18\x04 \x01(\tR\n" +
 	"actionKind\x12\x1d\n" +
 	"\n" +
-	"action_ref\x18\x05 \x01(\tR\tactionRef\"\xa5\x02\n" +
+	"action_ref\x18\x05 \x01(\tR\tactionRef\"\x98\x04\n" +
 	"\x12HomeTaskProjection\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x14\n" +
@@ -1458,7 +1514,17 @@ const file_domain_agent_home_proto_rawDesc = "" +
 	"\x10progress_percent\x18\x05 \x01(\rR\x0fprogressPercent\x129\n" +
 	"\n" +
 	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1b\n" +
-	"\ttopic_ref\x18\a \x01(\tR\btopicRef\"\xd8\x01\n" +
+	"\ttopic_ref\x18\a \x01(\tR\btopicRef\x12\x17\n" +
+	"\agoal_id\x18\b \x01(\tR\x06goalId\x12 \n" +
+	"\fgoal_node_id\x18\t \x01(\tR\n" +
+	"goalNodeId\x12\x17\n" +
+	"\astep_id\x18\n" +
+	" \x01(\tR\x06stepId\x12\x1d\n" +
+	"\n" +
+	"attempt_id\x18\v \x01(\tR\tattemptId\x12\x18\n" +
+	"\aattempt\x18\f \x01(\rR\aattempt\x12A\n" +
+	"\asurface\x18\r \x01(\x0e2'.peers_touch.model.agent.v1.TaskSurfaceR\asurface\x12!\n" +
+	"\fworkspace_id\x18\x0e \x01(\tR\vworkspaceId\"\xd8\x01\n" +
 	"\x15HomeCapabilitySummary\x12#\n" +
 	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12-\n" +
 	"\x12capability_version\x18\x02 \x01(\tR\x11capabilityVersion\x12!\n" +
@@ -1579,7 +1645,8 @@ var file_domain_agent_home_proto_goTypes = []any{
 	(*SubmitHomeTaskCommandRequest)(nil),  // 17: peers_touch.model.agent.v1.SubmitHomeTaskCommandRequest
 	(*SubmitHomeTaskCommandResponse)(nil), // 18: peers_touch.model.agent.v1.SubmitHomeTaskCommandResponse
 	(*timestamppb.Timestamp)(nil),         // 19: google.protobuf.Timestamp
-	(*AgentAttachmentRef)(nil),            // 20: peers_touch.model.agent.v1.AgentAttachmentRef
+	(TaskSurface)(0),                      // 20: peers_touch.model.agent.v1.TaskSurface
+	(*AgentAttachmentRef)(nil),            // 21: peers_touch.model.agent.v1.AgentAttachmentRef
 }
 var file_domain_agent_home_proto_depIdxs = []int32{
 	1,  // 0: peers_touch.model.agent.v1.HomeRecentWork.kind:type_name -> peers_touch.model.agent.v1.HomeWorkKind
@@ -1587,24 +1654,25 @@ var file_domain_agent_home_proto_depIdxs = []int32{
 	19, // 2: peers_touch.model.agent.v1.HomeBriefItem.updated_at:type_name -> google.protobuf.Timestamp
 	2,  // 3: peers_touch.model.agent.v1.HomeTaskProjection.status:type_name -> peers_touch.model.agent.v1.HomeTaskStatus
 	19, // 4: peers_touch.model.agent.v1.HomeTaskProjection.updated_at:type_name -> google.protobuf.Timestamp
-	3,  // 5: peers_touch.model.agent.v1.HomeSliceError.code:type_name -> peers_touch.model.agent.v1.HomeErrorCode
-	19, // 6: peers_touch.model.agent.v1.HomeWorkProjection.generated_at:type_name -> google.protobuf.Timestamp
-	0,  // 7: peers_touch.model.agent.v1.HomeWorkProjection.freshness:type_name -> peers_touch.model.agent.v1.HomeProjectionFreshness
-	4,  // 8: peers_touch.model.agent.v1.HomeWorkProjection.pinned_agents:type_name -> peers_touch.model.agent.v1.HomePinnedAgent
-	5,  // 9: peers_touch.model.agent.v1.HomeWorkProjection.recent_work:type_name -> peers_touch.model.agent.v1.HomeRecentWork
-	6,  // 10: peers_touch.model.agent.v1.HomeWorkProjection.readiness:type_name -> peers_touch.model.agent.v1.HomeReadiness
-	7,  // 11: peers_touch.model.agent.v1.HomeWorkProjection.brief_items:type_name -> peers_touch.model.agent.v1.HomeBriefItem
-	8,  // 12: peers_touch.model.agent.v1.HomeWorkProjection.needs_user_items:type_name -> peers_touch.model.agent.v1.HomeNeedsUserItem
-	9,  // 13: peers_touch.model.agent.v1.HomeWorkProjection.active_tasks:type_name -> peers_touch.model.agent.v1.HomeTaskProjection
-	10, // 14: peers_touch.model.agent.v1.HomeWorkProjection.capability_summaries:type_name -> peers_touch.model.agent.v1.HomeCapabilitySummary
-	11, // 15: peers_touch.model.agent.v1.HomeWorkProjection.slice_errors:type_name -> peers_touch.model.agent.v1.HomeSliceError
-	12, // 16: peers_touch.model.agent.v1.GetHomeWorkProjectionResponse.projection:type_name -> peers_touch.model.agent.v1.HomeWorkProjection
-	20, // 17: peers_touch.model.agent.v1.SubmitHomeChatCommandRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	20, // 5: peers_touch.model.agent.v1.HomeTaskProjection.surface:type_name -> peers_touch.model.agent.v1.TaskSurface
+	3,  // 6: peers_touch.model.agent.v1.HomeSliceError.code:type_name -> peers_touch.model.agent.v1.HomeErrorCode
+	19, // 7: peers_touch.model.agent.v1.HomeWorkProjection.generated_at:type_name -> google.protobuf.Timestamp
+	0,  // 8: peers_touch.model.agent.v1.HomeWorkProjection.freshness:type_name -> peers_touch.model.agent.v1.HomeProjectionFreshness
+	4,  // 9: peers_touch.model.agent.v1.HomeWorkProjection.pinned_agents:type_name -> peers_touch.model.agent.v1.HomePinnedAgent
+	5,  // 10: peers_touch.model.agent.v1.HomeWorkProjection.recent_work:type_name -> peers_touch.model.agent.v1.HomeRecentWork
+	6,  // 11: peers_touch.model.agent.v1.HomeWorkProjection.readiness:type_name -> peers_touch.model.agent.v1.HomeReadiness
+	7,  // 12: peers_touch.model.agent.v1.HomeWorkProjection.brief_items:type_name -> peers_touch.model.agent.v1.HomeBriefItem
+	8,  // 13: peers_touch.model.agent.v1.HomeWorkProjection.needs_user_items:type_name -> peers_touch.model.agent.v1.HomeNeedsUserItem
+	9,  // 14: peers_touch.model.agent.v1.HomeWorkProjection.active_tasks:type_name -> peers_touch.model.agent.v1.HomeTaskProjection
+	10, // 15: peers_touch.model.agent.v1.HomeWorkProjection.capability_summaries:type_name -> peers_touch.model.agent.v1.HomeCapabilitySummary
+	11, // 16: peers_touch.model.agent.v1.HomeWorkProjection.slice_errors:type_name -> peers_touch.model.agent.v1.HomeSliceError
+	12, // 17: peers_touch.model.agent.v1.GetHomeWorkProjectionResponse.projection:type_name -> peers_touch.model.agent.v1.HomeWorkProjection
+	21, // 18: peers_touch.model.agent.v1.SubmitHomeChatCommandRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_home_proto_init() }
@@ -1613,6 +1681,7 @@ func file_domain_agent_home_proto_init() {
 		return
 	}
 	file_domain_agent_agent_proto_init()
+	file_domain_agent_orchestration_proto_init()
 	file_domain_agent_home_proto_msgTypes[11].OneofWrappers = []any{}
 	file_domain_agent_home_proto_msgTypes[13].OneofWrappers = []any{}
 	type x struct{}

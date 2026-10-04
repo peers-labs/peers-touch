@@ -902,6 +902,7 @@
   "agent.home.taskPending": "Pending",
   "agent.home.taskRunning": "Running",
   "agent.home.taskNeedsUser": "Needs you",
+  "agent.home.goalExecutionIdentity": "Node {{node}} · Step {{step}} · Attempt {{attempt}}",
   "agent.home.brief": "Brief",
   "agent.home.noBrief": "No completed work to summarize",
   "agent.home.ready": "Ready",

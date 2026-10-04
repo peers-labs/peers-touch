@@ -334,9 +334,11 @@ def run_journey(
     require(station_goal.get("outcome") == outcome, "Goal outcome changed")
     require(station_goal.get("revision") == "5", "Goal revision mismatch")
     require(station_goal.get("status") == 4, "Goal did not reach RUNNING")
+    final_task_ids = active_task_ids(client)
+    new_task_ids = sorted(set(final_task_ids) - set(baseline_task_ids))
     require(
-        active_task_ids(client) == baseline_task_ids,
-        "PAOS-03 created active work before PAOS-05",
+        len(new_task_ids) == 1,
+        f"Goal start did not create exactly one TaskRun: {new_task_ids}",
     )
     require(
         running.get_attribute("data-pt-home-goal-revision") == "5",
@@ -349,7 +351,8 @@ def run_journey(
         "ownerPtid": station_goal["ownerPtid"],
         "admissionRejection": rejected_review,
         "baselineTaskIds": baseline_task_ids,
-        "finalTaskIds": active_task_ids(client),
+        "finalTaskIds": final_task_ids,
+        "createdTaskId": new_task_ids[0],
         "screenshots": [
             str(admission_rejected_screenshot),
             str(reviewed_screenshot),
@@ -363,7 +366,8 @@ def run_journey(
             "admissionReachedReady": True,
             "startReachedRunning": True,
             "stationReadbackMatches": True,
-            "zeroNewActiveHomeWorkBeforeTaskRunSlice": True,
+            "zeroExecutableWorkBeforeStart": True,
+            "firstTaskRunCreatedAtStart": True,
         },
     }
 

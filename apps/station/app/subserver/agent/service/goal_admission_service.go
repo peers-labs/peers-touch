@@ -7,6 +7,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"gorm.io/gorm"
 )
 
 const (
@@ -22,11 +23,21 @@ type goalAdmissionPayload struct {
 }
 
 type GoalAdmissionService struct {
-	goals *GoalService
+	goals      *GoalService
+	executions *GoalExecutionService
 }
 
-func NewGoalAdmissionService(goals *GoalService) *GoalAdmissionService {
-	return &GoalAdmissionService{goals: goals}
+func NewGoalAdmissionService(
+	goals *GoalService,
+	executions ...*GoalExecutionService,
+) *GoalAdmissionService {
+	service := &GoalAdmissionService{goals: goals}
+	if len(executions) > 0 {
+		service.executions = executions[0]
+	} else if goals != nil {
+		service.executions = NewGoalExecutionService(goals.db)
+	}
+	return service
 }
 
 func (s *GoalAdmissionService) Admit(
@@ -84,7 +95,7 @@ func (s *GoalAdmissionService) Start(
 		GoalID:           strings.TrimSpace(req.GetGoalId()),
 		ExpectedRevision: req.GetExpectedRevision(),
 	}
-	return s.goals.runGoalMutation(
+	return s.goals.runGoalMutationTx(
 		ctx,
 		strings.TrimSpace(ownerPTID),
 		payload.GoalID,
@@ -92,13 +103,19 @@ func (s *GoalAdmissionService) Start(
 		goalStartCommand,
 		strings.TrimSpace(req.GetIdempotencyKey()),
 		goalPayloadHash(payload),
-		func(record *persistence.AgentGoal) error {
+		func(tx *gorm.DB, record *persistence.AgentGoal) error {
 			if model.AgentGoalStatus(record.Status) !=
 				model.AgentGoalStatus_AGENT_GOAL_STATUS_READY {
 				return goalInvalidState(
 					record.GoalID,
 					"Only an admitted Goal can start",
 				)
+			}
+			if s.executions == nil {
+				return goalInternal("Goal execution is unavailable", nil)
+			}
+			if _, err := s.executions.AllocateFirstTx(ctx, tx, record); err != nil {
+				return err
 			}
 			record.Status = int32(model.AgentGoalStatus_AGENT_GOAL_STATUS_RUNNING)
 			return nil
