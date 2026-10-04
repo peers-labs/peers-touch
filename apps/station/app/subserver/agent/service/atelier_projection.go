@@ -265,35 +265,45 @@ type atelierMaterializedTaskProjectionPayload struct {
 }
 
 type AtelierTaskProjection struct {
-	ID                  string                      `json:"id"`
-	Project             string                      `json:"project"`
-	ProjectID           string                      `json:"projectId,omitempty"`
-	Title               string                      `json:"title"`
-	Status              string                      `json:"status"`
-	Running             bool                        `json:"running,omitempty"`
-	Branch              string                      `json:"branch,omitempty"`
-	IntentPreset        string                      `json:"intentPreset,omitempty"`
-	ProviderStrategy    string                      `json:"providerStrategyPreset,omitempty"`
-	GatePlanPreset      string                      `json:"gatePlanPreset,omitempty"`
-	WorkspaceOpenTarget *AtelierWorkspaceOpenTarget `json:"workspaceOpenTarget,omitempty"`
+	ID                   string                      `json:"id"`
+	Project              string                      `json:"project"`
+	ProjectID            string                      `json:"projectId,omitempty"`
+	GoalID               string                      `json:"goalId,omitempty"`
+	TaskRunID            string                      `json:"taskRunId,omitempty"`
+	LegacySourceID       string                      `json:"legacySourceId,omitempty"`
+	MigrationState       string                      `json:"migrationState,omitempty"`
+	MigrationBlockReason string                      `json:"migrationBlockReason,omitempty"`
+	Title                string                      `json:"title"`
+	Status               string                      `json:"status"`
+	Running              bool                        `json:"running,omitempty"`
+	Branch               string                      `json:"branch,omitempty"`
+	IntentPreset         string                      `json:"intentPreset,omitempty"`
+	ProviderStrategy     string                      `json:"providerStrategyPreset,omitempty"`
+	GatePlanPreset       string                      `json:"gatePlanPreset,omitempty"`
+	WorkspaceOpenTarget  *AtelierWorkspaceOpenTarget `json:"workspaceOpenTarget,omitempty"`
 }
 
 type AtelierProjectProjection struct {
-	ID               string                      `json:"id"`
-	Goal             string                      `json:"goal"`
-	Title            string                      `json:"title"`
-	State            string                      `json:"state"`
-	WorkspaceRef     string                      `json:"workspaceRef"`
-	TraceRoot        string                      `json:"traceRoot,omitempty"`
-	GoalOwnerSignoff bool                        `json:"goalOwnerSignoff"`
-	ResidualRisks    []AtelierResidualRisk       `json:"residualRisks"`
-	OpenBlockers     []AtelierProjectBlocker     `json:"openBlockers"`
-	MemoryCandidates []AtelierMemoryCandidateRef `json:"memoryCandidates"`
-	Completion       AtelierProjectCompletion    `json:"completion"`
-	MilestoneTree    AtelierMilestoneTree        `json:"milestoneTree"`
-	TaskGraph        AtelierTaskGraph            `json:"taskGraph"`
-	Policy           *AtelierPolicyProjection    `json:"policy,omitempty"`
-	Defects          []AtelierDefectProjection   `json:"defects"`
+	ID                   string                      `json:"id"`
+	GoalID               string                      `json:"goalId,omitempty"`
+	TaskRunID            string                      `json:"taskRunId,omitempty"`
+	LegacySourceID       string                      `json:"legacySourceId,omitempty"`
+	MigrationState       string                      `json:"migrationState,omitempty"`
+	MigrationBlockReason string                      `json:"migrationBlockReason,omitempty"`
+	Goal                 string                      `json:"goal"`
+	Title                string                      `json:"title"`
+	State                string                      `json:"state"`
+	WorkspaceRef         string                      `json:"workspaceRef"`
+	TraceRoot            string                      `json:"traceRoot,omitempty"`
+	GoalOwnerSignoff     bool                        `json:"goalOwnerSignoff"`
+	ResidualRisks        []AtelierResidualRisk       `json:"residualRisks"`
+	OpenBlockers         []AtelierProjectBlocker     `json:"openBlockers"`
+	MemoryCandidates     []AtelierMemoryCandidateRef `json:"memoryCandidates"`
+	Completion           AtelierProjectCompletion    `json:"completion"`
+	MilestoneTree        AtelierMilestoneTree        `json:"milestoneTree"`
+	TaskGraph            AtelierTaskGraph            `json:"taskGraph"`
+	Policy               *AtelierPolicyProjection    `json:"policy,omitempty"`
+	Defects              []AtelierDefectProjection   `json:"defects"`
 }
 
 type AtelierProjectCompletion struct {
@@ -583,6 +593,14 @@ func (s *AtelierProjectionService) LoadWorkspace(
 		taskIDs = append(taskIDs, taskRecords[i].ID)
 		tasks = append(tasks, taskRecordToProto(&taskRecords[i]))
 	}
+	migrationRows, err := persistence.ListCollaborationTaskGoalMaps(ctx, db, actorPTID)
+	if err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to list Atelier task migrations", err)
+	}
+	migrationsByTask := make(map[string]persistence.CollaborationTaskGoalMap, len(migrationRows))
+	for index := range migrationRows {
+		migrationsByTask[migrationRows[index].LegacyTaskID] = migrationRows[index]
+	}
 
 	nodesByTask, err := loadAtelierNodesByTask(ctx, db, taskIDs)
 	if err != nil {
@@ -602,7 +620,7 @@ func (s *AtelierProjectionService) LoadWorkspace(
 		return nil, err
 	}
 
-	snapshot := buildAtelierProjectionSnapshot(tasks, nodesByTask, eventsByTask, replayByTask, materializedByTask, projectPersistenceByTask, req.SelectedTaskID)
+	snapshot := buildAtelierProjectionSnapshot(tasks, nodesByTask, eventsByTask, replayByTask, materializedByTask, projectPersistenceByTask, migrationsByTask, req.SelectedTaskID)
 	return &snapshot, nil
 }
 
@@ -1969,7 +1987,7 @@ func BuildAtelierProjectionSnapshot(
 	replayByTask map[string]AtelierReplayState,
 	selectedTaskID string,
 ) AtelierProjectionSnapshot {
-	return buildAtelierProjectionSnapshot(tasks, nodesByTask, eventsByTask, replayByTask, nil, nil, selectedTaskID)
+	return buildAtelierProjectionSnapshot(tasks, nodesByTask, eventsByTask, replayByTask, nil, nil, nil, selectedTaskID)
 }
 
 func buildAtelierProjectionSnapshot(
@@ -1979,6 +1997,7 @@ func buildAtelierProjectionSnapshot(
 	replayByTask map[string]AtelierReplayState,
 	materializedByTask map[string]atelierMaterializedTaskProjection,
 	projectPersistenceByTask map[string]atelierProjectPersistence,
+	migrationsByTask map[string]persistence.CollaborationTaskGoalMap,
 	selectedTaskID string,
 ) AtelierProjectionSnapshot {
 	workspace := AtelierWorkspaceProjection{
@@ -1996,9 +2015,10 @@ func buildAtelierProjectionSnapshot(
 		if task == nil {
 			continue
 		}
-		projectedTask := projectCollaborationTask(task)
+		migration := atelierCollaborationMigration(migrationsByTask, task.GetTaskId())
+		projectedTask := projectCollaborationTask(task, migration)
 		workspace.Tasks = append(workspace.Tasks, projectedTask)
-		workspace.Projects = append(workspace.Projects, projectAtelierProject(task, nodesByTask[task.GetTaskId()], eventsByTask[task.GetTaskId()], projectPersistenceByTask[task.GetTaskId()]))
+		workspace.Projects = append(workspace.Projects, projectAtelierProject(task, nodesByTask[task.GetTaskId()], eventsByTask[task.GetTaskId()], projectPersistenceByTask[task.GetTaskId()], migration))
 		workspace.BudgetCap += task.GetBudgetMoney()
 
 		taskID := task.GetTaskId()
@@ -2699,11 +2719,14 @@ func mergeAtelierProjectionReplayRecords(groups ...[]persistence.TaskEvent) []*m
 	return events
 }
 
-func projectCollaborationTask(task *model.CollaborationTask) AtelierTaskProjection {
+func projectCollaborationTask(
+	task *model.CollaborationTask,
+	migrations ...*persistence.CollaborationTaskGoalMap,
+) AtelierTaskProjection {
 	meta := task.GetMeta()
 	workspaceID := atelierFirstNonEmpty(task.GetWorkspaceId(), meta["workspace_id"], meta["project"], "peers-touch")
 	projectID := atelierFirstNonEmpty(meta["project_id"], task.GetTaskId())
-	return AtelierTaskProjection{
+	projected := AtelierTaskProjection{
 		ID:                  task.GetTaskId(),
 		Project:             atelierFirstNonEmpty(meta["project"], task.GetWorkspaceId(), "peers-touch"),
 		ProjectID:           projectID,
@@ -2716,9 +2739,28 @@ func projectCollaborationTask(task *model.CollaborationTask) AtelierTaskProjecti
 		GatePlanPreset:      meta["gate_plan_preset"],
 		WorkspaceOpenTarget: atelierWorkspaceOpenTarget(task.GetTaskId(), workspaceID, meta),
 	}
+	if len(migrations) == 0 || migrations[0] == nil {
+		return projected
+	}
+	migration := migrations[0]
+	projected.LegacySourceID = migration.LegacyTaskID
+	projected.MigrationState = migration.State
+	projected.MigrationBlockReason = migration.BlockReason
+	if migration.State == persistence.CollaborationTaskMigrationStateMigrated {
+		projected.ProjectID = migration.GoalID
+		projected.GoalID = migration.GoalID
+		projected.TaskRunID = migration.TaskID
+	}
+	return projected
 }
 
-func projectAtelierProject(task *model.CollaborationTask, nodes []*model.TaskNode, events []*model.TaskEvent, persisted atelierProjectPersistence) AtelierProjectProjection {
+func projectAtelierProject(
+	task *model.CollaborationTask,
+	nodes []*model.TaskNode,
+	events []*model.TaskEvent,
+	persisted atelierProjectPersistence,
+	migrations ...*persistence.CollaborationTaskGoalMap,
+) AtelierProjectProjection {
 	meta := task.GetMeta()
 	projectID := atelierFirstNonEmpty(meta["project_id"], task.GetTaskId())
 	workspaceID := atelierFirstNonEmpty(task.GetWorkspaceId(), meta["workspace_id"], meta["project"], "peers-touch")
@@ -2745,7 +2787,7 @@ func projectAtelierProject(task *model.CollaborationTask, nodes []*model.TaskNod
 	if len(defects) == 0 {
 		defects = projectAtelierDefects(events)
 	}
-	return AtelierProjectProjection{
+	projected := AtelierProjectProjection{
 		ID:               projectID,
 		Goal:             atelierFirstNonEmpty(task.GetDescription(), task.GetTitle()),
 		Title:            atelierFirstNonEmpty(task.GetTitle(), "Untitled task"),
@@ -2762,6 +2804,63 @@ func projectAtelierProject(task *model.CollaborationTask, nodes []*model.TaskNod
 		Policy:           policy,
 		Defects:          defects,
 	}
+	if len(migrations) == 0 || migrations[0] == nil {
+		return projected
+	}
+	migration := migrations[0]
+	projected.LegacySourceID = migration.LegacyTaskID
+	projected.MigrationState = migration.State
+	projected.MigrationBlockReason = migration.BlockReason
+	if migration.State == persistence.CollaborationTaskMigrationStateMigrated {
+		projected.ID = migration.GoalID
+		projected.GoalID = migration.GoalID
+		projected.TaskRunID = migration.TaskID
+		return projected
+	}
+	if migration.State == persistence.CollaborationTaskMigrationStateBlocked {
+		blocker := AtelierProjectBlocker{
+			ID:          "migration:" + migration.LegacyTaskID,
+			Owner:       "station",
+			Severity:    "block",
+			State:       "open",
+			EvidenceRef: "collaboration-task:" + migration.LegacyTaskID,
+			Reason:      migration.BlockReason,
+		}
+		projected.State = "blocked"
+		projected.Completion.NoOpenBlockers = false
+		projected.OpenBlockers = appendAtelierMigrationBlocker(projected.OpenBlockers, blocker)
+		for index := range projected.MilestoneTree.Milestones {
+			projected.MilestoneTree.Milestones[index].State = "blocked"
+			projected.MilestoneTree.Milestones[index].OpenBlockers = appendAtelierMigrationBlocker(
+				projected.MilestoneTree.Milestones[index].OpenBlockers,
+				blocker,
+			)
+		}
+	}
+	return projected
+}
+
+func atelierCollaborationMigration(
+	migrations map[string]persistence.CollaborationTaskGoalMap,
+	taskID string,
+) *persistence.CollaborationTaskGoalMap {
+	migration, ok := migrations[strings.TrimSpace(taskID)]
+	if !ok {
+		return nil
+	}
+	return &migration
+}
+
+func appendAtelierMigrationBlocker(
+	blockers []AtelierProjectBlocker,
+	migrationBlocker AtelierProjectBlocker,
+) []AtelierProjectBlocker {
+	for _, blocker := range blockers {
+		if blocker.ID == migrationBlocker.ID {
+			return blockers
+		}
+	}
+	return append(blockers, migrationBlocker)
 }
 
 func projectAtelierTaskGraph(task *model.CollaborationTask, nodes []*model.TaskNode, events []*model.TaskEvent, meta map[string]string) AtelierTaskGraph {

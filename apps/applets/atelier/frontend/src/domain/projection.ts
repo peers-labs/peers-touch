@@ -44,6 +44,11 @@ export interface AtelierTask {
   id: string;
   project: string;
   projectId?: string;
+  goalId?: string;
+  taskRunId?: string;
+  legacySourceId?: string;
+  migrationState?: 'migrated' | 'blocked';
+  migrationBlockReason?: string;
   title: string;
   status: string;
   branch?: string;
@@ -63,6 +68,11 @@ export interface AtelierWorkspaceOpenTarget {
 
 export interface AtelierProjectProjection {
   id: string;
+  goalId?: string;
+  taskRunId?: string;
+  legacySourceId?: string;
+  migrationState?: 'migrated' | 'blocked';
+  migrationBlockReason?: string;
   goal: string;
   title: string;
   state: string;
@@ -491,6 +501,7 @@ function isAtelierTask(value: unknown): value is AtelierTask {
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.project) &&
     (value.projectId === undefined || isNonEmptyString(value.projectId)) &&
+    isAtelierMigrationIdentity(value, value.projectId) &&
     isNonEmptyString(value.title) &&
     isAtelierTaskStatus(value.status) &&
     (value.branch === undefined || typeof value.branch === 'string') &&
@@ -510,6 +521,7 @@ function isAtelierProjectProjection(value: unknown): value is AtelierProjectProj
   return (
     isRecord(value) &&
     isNonEmptyString(value.id) &&
+    isAtelierMigrationIdentity(value, value.id) &&
     isNonEmptyString(value.goal) &&
     isNonEmptyString(value.title) &&
     isOneOfString(value.state, ATELIER_PROJECT_STATES) &&
@@ -528,6 +540,42 @@ function isAtelierProjectProjection(value: unknown): value is AtelierProjectProj
     (value.policy === undefined || isAtelierPolicyProjection(value.policy)) &&
     Array.isArray(value.defects) &&
     value.defects.every(isAtelierDefectProjection)
+  );
+}
+
+function isAtelierMigrationIdentity(
+  value: Record<string, unknown>,
+  projectedGoalId: unknown,
+): boolean {
+  if (value.migrationState === undefined) {
+    return (
+      value.goalId === undefined &&
+      value.taskRunId === undefined &&
+      value.legacySourceId === undefined &&
+      value.migrationBlockReason === undefined
+    );
+  }
+  if (
+    value.migrationState !== 'migrated' &&
+    value.migrationState !== 'blocked'
+  ) {
+    return false;
+  }
+  if (!isNonEmptyString(value.legacySourceId)) {
+    return false;
+  }
+  if (value.migrationState === 'blocked') {
+    return (
+      isNonEmptyString(value.migrationBlockReason) &&
+      value.goalId === undefined &&
+      value.taskRunId === undefined
+    );
+  }
+  return (
+    value.migrationBlockReason === undefined &&
+    isNonEmptyString(value.goalId) &&
+    isNonEmptyString(value.taskRunId) &&
+    projectedGoalId === value.goalId
   );
 }
 

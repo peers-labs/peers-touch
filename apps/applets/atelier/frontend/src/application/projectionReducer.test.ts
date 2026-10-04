@@ -4,6 +4,7 @@ import type {
   AtelierProjectionSnapshot,
   AtelierTask,
 } from '../domain/projection';
+import { isAtelierProjectionPatch } from '../domain/projection';
 import {
   applyAtelierProjectionEventWithResult,
   createAtelierProjectionRuntimeState,
@@ -48,6 +49,40 @@ function event(overrides: Partial<AtelierProjectionEvent>): AtelierProjectionEve
 }
 
 describe('Atelier projection reducer', () => {
+  it('accepts stable migration identities and rejects inferred canonical links', () => {
+    expect(isAtelierProjectionPatch({
+      kind: 'task.upsert',
+      task: {
+        ...task('legacy-task'),
+        projectId: 'goal-canonical',
+        goalId: 'goal-canonical',
+        taskRunId: 'legacy-task',
+        legacySourceId: 'legacy-task',
+        migrationState: 'migrated',
+      },
+    })).toBe(true);
+    expect(isAtelierProjectionPatch({
+      kind: 'task.upsert',
+      task: {
+        ...task('legacy-task'),
+        projectId: 'legacy-project',
+        goalId: 'goal-canonical',
+        taskRunId: 'legacy-task',
+        legacySourceId: 'legacy-task',
+        migrationState: 'migrated',
+      },
+    })).toBe(false);
+    expect(isAtelierProjectionPatch({
+      kind: 'task.upsert',
+      task: {
+        ...task('legacy-task'),
+        legacySourceId: 'legacy-task',
+        migrationState: 'blocked',
+        migrationBlockReason: 'identity_metadata_ambiguous',
+      },
+    })).toBe(true);
+  });
+
   it('initializes from snapshots and falls back to the first task when selected task is empty', () => {
     const state = stateFromAtelierSnapshot(snapshot([task('task-a'), task('task-b')], ''));
 

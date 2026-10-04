@@ -69,6 +69,7 @@ func AllModels() []interface{} {
 		&AgentThread{},
 		&AgentTask{},
 		&AgentTaskGoalMap{},
+		&CollaborationTaskGoalMap{},
 		&Memory{},
 		&MemoryEvent{},
 		&MemorySnapshot{},
