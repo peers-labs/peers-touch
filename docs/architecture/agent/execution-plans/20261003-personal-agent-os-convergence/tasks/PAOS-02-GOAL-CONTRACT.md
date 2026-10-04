@@ -15,8 +15,8 @@
   "closureId": "PAOS-goal-contract",
   "journeyId": "PAOS-J01",
   "runtimeClass": "native-desktop",
-  "writeSet": ["model/domain/agent/goal.proto","apps/station/app/subserver/agent/model/goal.pb.go","apps/desktop/src/gen/proto/domain/agent/goal_pb.ts","apps/station/app/subserver/agent/service/goal_service.go","apps/station/app/subserver/agent/service/goal_service_test.go","apps/desktop/src/components/home/GoalContractEditor.tsx","apps/desktop/src/components/home/GoalContractEditor.test.tsx","apps/desktop/src/store/goalDraft.ts","apps/desktop/src/store/goalDraft.test.ts","apps/desktop/src/pages/HomePage.tsx","packages/locales/en/agent.json","packages/locales/zh-CN/agent.json","tooling/acceptance/gates/agent/personal_goal_slices/paos_02_goal_contract.py"],
-  "readSet": ["apps/desktop/src/runtimes/homeRuntime.ts","docs/architecture/agent/proposals/20261003-personal-agent-os.md"],
+  "writeSet": ["model/domain/agent/goal.proto","apps/station/app/subserver/agent/model/goal.pb.go","apps/desktop/src/gen/proto/domain/agent/goal_pb.ts","apps/station/app/subserver/agent/service/goal_service.go","apps/station/app/subserver/agent/service/goal_service_test.go","apps/station/app/subserver/agent/handler/goal_handler.go","apps/station/app/subserver/agent/agent.go","apps/desktop/src-tauri/src/application/home.rs","apps/desktop/src-tauri/src/interface/tauri_commands/home.rs","apps/desktop/src-tauri/src/interface/http_gateway/mod.rs","apps/desktop/src-tauri/src/main.rs","apps/desktop/src/services/desktop_api.ts","apps/desktop/src/services/desktop_api.home.test.ts","apps/desktop/src/runtimes/homeRuntime.ts","apps/desktop/src/runtimes/homeRuntime.test.ts","apps/desktop/src/components/home/GoalDraftCard.tsx","apps/desktop/src/components/home/GoalContractEditor.tsx","apps/desktop/src/components/home/GoalContractEditor.test.tsx","apps/desktop/src/store/goalDraft.ts","apps/desktop/src/store/goalDraft.test.ts","apps/desktop/src/pages/HomePage.tsx","apps/desktop/src/pages/HomePage.test.tsx","packages/locales/en/agent.json","packages/locales/zh-CN/agent.json","tooling/acceptance/gates/agent/personal_goal_slices/paos_02_goal_contract.py"],
+  "readSet": ["docs/architecture/agent/proposals/20261003-personal-agent-os.md"],
   "budgets": {"focusedCheckSeconds":900,"functionalRunSeconds":1200,"cleanupSeconds":180},
   "checks": [
     {"id":"slice-runtime-capture","command":"python3 tooling/acceptance/gates/agent/personal_goal_slices/paos_02_goal_contract.py --mode development --require-ui --require-station-readback","verificationClass":"FUNCTIONAL_CHECK"},
@@ -25,7 +25,7 @@
   ],
   "doneWhen": ["User can edit outcome, non-goals, constraints, budget, and acceptance criteria","Review mode shows the exact Station revision that will be started","A stale revision renders conflict and reload actions without losing edits","Unauthorized mutation is visible and cannot be retried as if transient"],
   "failureBehavior": ["Reject stale writes with the latest Station revision","Never infer accepted contract fields from free-form output"],
-  "updatedAt": "2026-10-03T00:00:00Z",
+  "updatedAt": "2026-10-04T06:02:00Z",
   "durableEvidence": []
 }
 ```
