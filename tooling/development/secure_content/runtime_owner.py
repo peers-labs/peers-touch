@@ -7154,12 +7154,22 @@ class W7RuntimeOwner:
                 *,
                 label: str,
             ) -> str:
+                staged = _moments_harness(
+                    alice,
+                    "stagePrivateDraft",
+                    payload,
+                )
+                if staged.get("present") is not True:
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE",
+                        f"{label} draft was not retained",
+                        resource="client:cross-station-social-alice",
+                    )
                 result: Mapping[str, Any] = {}
                 for attempt in range(3):
                     result = _moments_harness(
                         alice,
-                        "publishTypedPrivateMoment",
-                        payload,
+                        "publishPrivateDraft",
                     )
                     if result.get("state") != "UNKNOWN_COMMIT":
                         break
