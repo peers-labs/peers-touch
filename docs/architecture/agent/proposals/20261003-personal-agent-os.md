@@ -167,15 +167,18 @@ Goal lifecycle:
 
 ```text
 DRAFT -> REVIEWING -> READY -> RUNNING
+DRAFT | REVIEWING | READY -> CANCELLED
 RUNNING -> NEEDS_USER | REPLANNING | RECOVERING
 RUNNING | REPLANNING | RECOVERING -> ACCEPTING
 ACCEPTING -> ACCEPTED | PARTIAL | FAILED
-READY | RUNNING | NEEDS_USER | REPLANNING | RECOVERING -> CANCELLED
+RUNNING | NEEDS_USER | REPLANNING | RECOVERING -> CANCELLED
 ```
 
 Required rules:
 
 - only `ACCEPTED` communicates complete success;
+- cancelling `DRAFT`, `REVIEWING`, or `READY` work is authoritative before
+  execution and creates no TaskRun;
 - client disconnect never implies `FAILED`;
 - `NEEDS_USER` names the decision, evidence, consequence, and allowed actions;
 - `REPLANNING` preserves accepted anchors and marks reset work;

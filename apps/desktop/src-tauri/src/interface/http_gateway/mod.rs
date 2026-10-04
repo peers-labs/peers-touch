@@ -4102,6 +4102,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_home::start_goal(input, &token))
         }
+        "agent_home_goal_cancel" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::cancel_goal(input, &token))
+        }
         "agent_evaluation_benchmark_create" => dispatch_evaluation(
             args,
             state,

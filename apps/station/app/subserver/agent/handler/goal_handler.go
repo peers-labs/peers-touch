@@ -87,3 +87,14 @@ func (h *GoalHandlers) HandleStart(
 	}
 	return &model.StartAgentGoalResponse{Goal: goal}, nil
 }
+
+func (h *GoalHandlers) HandleCancel(
+	ctx context.Context,
+	req *model.CancelAgentGoalRequest,
+) (*model.CancelAgentGoalResponse, error) {
+	goal, err := h.service.Cancel(ctx, subjectActorPTID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.CancelAgentGoalResponse{Goal: goal}, nil
+}

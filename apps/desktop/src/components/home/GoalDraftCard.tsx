@@ -11,6 +11,7 @@ import {
 } from '../../runtimes/homeRuntime';
 import { useHomeStore } from '../../store/home';
 import { GoalContractEditor } from './GoalContractEditor';
+import { GoalCancelControl } from './GoalCancelControl';
 import { GoalReviewPanel } from './GoalReviewPanel';
 
 const { useToken } = theme;
@@ -73,6 +74,7 @@ export function GoalDraftCard() {
         ) : (
           <GoalReviewPanel goal={savedGoal} />
         )}
+        <GoalCancelControl goal={savedGoal} />
       </Card>
     );
   }

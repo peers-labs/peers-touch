@@ -129,6 +129,35 @@ describe('Goal contract draft store', () => {
     });
   });
 
+  it('keeps cancellation pending until Station readback is applied', () => {
+    const reviewing = create(AgentGoalSchema, {
+      ...goal(3n),
+      status: AgentGoalStatus.REVIEWING,
+    });
+    const store = useGoalDraftStore.getState();
+    store.hydrate(reviewing);
+    store.beginMutation('cancel', 'goal-cancel-retry');
+
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      baseRevision: 3n,
+      status: AgentGoalStatus.REVIEWING,
+      mutationState: 'cancelling',
+      cancelIdempotencyKey: 'goal-cancel-retry',
+    });
+
+    useGoalDraftStore.getState().applyMutation(create(AgentGoalSchema, {
+      ...reviewing,
+      status: AgentGoalStatus.CANCELLED,
+      revision: 4n,
+    }));
+    expect(useGoalDraftStore.getState()).toMatchObject({
+      baseRevision: 4n,
+      status: AgentGoalStatus.CANCELLED,
+      mutationState: 'cancelled',
+      cancelIdempotencyKey: '',
+    });
+  });
+
   it('preserves the reviewed contract and admission reason after rejection', () => {
     const reviewed = create(AgentGoalSchema, {
       ...goal(3n),

@@ -481,6 +481,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-goal-review", "/agent/goal/review", server.POST, goalHandlers.HandleReview, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-goal-admit", "/agent/goal/admit", server.POST, goalHandlers.HandleAdmit, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-goal-start", "/agent/goal/start", server.POST, goalHandlers.HandleStart, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-cancel", "/agent/goal/cancel", server.POST, goalHandlers.HandleCancel, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),

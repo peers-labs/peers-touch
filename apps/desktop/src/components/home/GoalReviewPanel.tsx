@@ -30,13 +30,16 @@ export function GoalReviewPanel({ goal }: { goal: AgentGoal }) {
   const reloadLoading = useGoalDraftStore((state) => state.reloadLoading);
   const admitting = mutationState === 'admitting';
   const starting = mutationState === 'starting';
+  const cancelling = mutationState === 'cancelling';
   const running = goal.status === AgentGoalStatus.RUNNING;
   const ready = goal.status === AgentGoalStatus.READY;
   const reviewing = goal.status === AgentGoalStatus.REVIEWING;
+  const cancelled = goal.status === AgentGoalStatus.CANCELLED;
   const canStart = reviewing || ready;
   const startBlocked =
     admitting
     || starting
+    || cancelling
     || mutationState === 'conflict'
     || mutationState === 'forbidden';
 
@@ -50,12 +53,18 @@ export function GoalReviewPanel({ goal }: { goal: AgentGoal }) {
       gap={token.marginMD}
     >
       <Flexbox horizontal align="center" gap={token.marginSM} wrap="wrap">
-        <Tag color={running ? 'success' : ready ? 'cyan' : 'processing'}>
+        <Tag
+          color={
+            running ? 'success' : ready ? 'cyan' : cancelled ? 'default' : 'processing'
+          }
+        >
           {running
             ? t('agent.home.goalStatusRunning')
             : ready
               ? t('agent.home.goalStatusReady')
-              : t('agent.home.goalStatusReviewing')}
+              : cancelled
+                ? t('agent.home.goalStatusCancelled')
+                : t('agent.home.goalStatusReviewing')}
         </Tag>
         <Typography.Text data-pt-home-goal-title-readback="" strong>
           {goal.title}
@@ -127,7 +136,7 @@ export function GoalReviewPanel({ goal }: { goal: AgentGoal }) {
           showIcon
           type="success"
         />
-      ) : (
+      ) : cancelled ? null : (
         <Alert
           data-pt-home-goal-review-ready=""
           message={t('agent.home.goalReviewRevision', {

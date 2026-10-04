@@ -122,3 +122,16 @@ pub fn agent_home_goal_start(
     }
     home::start_goal(input, &token)
 }
+
+#[tauri::command]
+pub fn agent_home_goal_cancel(
+    input: home::EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    home::cancel_goal(input, &token)
+}

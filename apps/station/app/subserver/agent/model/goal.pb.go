@@ -1057,6 +1057,110 @@ func (x *StartAgentGoalResponse) GetGoal() *AgentGoal {
 	return nil
 }
 
+type CancelAgentGoalRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	GoalId           string                 `protobuf:"bytes,1,opt,name=goal_id,json=goalId,proto3" json:"goal_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *CancelAgentGoalRequest) Reset() {
+	*x = CancelAgentGoalRequest{}
+	mi := &file_domain_agent_goal_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelAgentGoalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelAgentGoalRequest) ProtoMessage() {}
+
+func (x *CancelAgentGoalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_goal_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelAgentGoalRequest.ProtoReflect.Descriptor instead.
+func (*CancelAgentGoalRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_goal_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CancelAgentGoalRequest) GetGoalId() string {
+	if x != nil {
+		return x.GoalId
+	}
+	return ""
+}
+
+func (x *CancelAgentGoalRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *CancelAgentGoalRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type CancelAgentGoalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Goal          *AgentGoal             `protobuf:"bytes,1,opt,name=goal,proto3" json:"goal,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelAgentGoalResponse) Reset() {
+	*x = CancelAgentGoalResponse{}
+	mi := &file_domain_agent_goal_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelAgentGoalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelAgentGoalResponse) ProtoMessage() {}
+
+func (x *CancelAgentGoalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_goal_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelAgentGoalResponse.ProtoReflect.Descriptor instead.
+func (*CancelAgentGoalResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_goal_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CancelAgentGoalResponse) GetGoal() *AgentGoal {
+	if x != nil {
+		return x.Goal
+	}
+	return nil
+}
+
 var File_domain_agent_goal_proto protoreflect.FileDescriptor
 
 const file_domain_agent_goal_proto_rawDesc = "" +
@@ -1137,6 +1241,12 @@ const file_domain_agent_goal_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"S\n" +
 	"\x16StartAgentGoalResponse\x129\n" +
+	"\x04goal\x18\x01 \x01(\v2%.peers_touch.model.agent.v1.AgentGoalR\x04goal\"\x87\x01\n" +
+	"\x16CancelAgentGoalRequest\x12\x17\n" +
+	"\agoal_id\x18\x01 \x01(\tR\x06goalId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"T\n" +
+	"\x17CancelAgentGoalResponse\x129\n" +
 	"\x04goal\x18\x01 \x01(\v2%.peers_touch.model.agent.v1.AgentGoalR\x04goal*\xb3\x03\n" +
 	"\x0fAgentGoalStatus\x12!\n" +
 	"\x1dAGENT_GOAL_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
@@ -1167,7 +1277,7 @@ func file_domain_agent_goal_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_agent_goal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_agent_goal_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_domain_agent_goal_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_domain_agent_goal_proto_goTypes = []any{
 	(AgentGoalStatus)(0),                 // 0: peers_touch.model.agent.v1.AgentGoalStatus
 	(*AgentGoalBudget)(nil),              // 1: peers_touch.model.agent.v1.AgentGoalBudget
@@ -1185,14 +1295,16 @@ var file_domain_agent_goal_proto_goTypes = []any{
 	(*AdmitAgentGoalResponse)(nil),       // 13: peers_touch.model.agent.v1.AdmitAgentGoalResponse
 	(*StartAgentGoalRequest)(nil),        // 14: peers_touch.model.agent.v1.StartAgentGoalRequest
 	(*StartAgentGoalResponse)(nil),       // 15: peers_touch.model.agent.v1.StartAgentGoalResponse
-	(*timestamppb.Timestamp)(nil),        // 16: google.protobuf.Timestamp
+	(*CancelAgentGoalRequest)(nil),       // 16: peers_touch.model.agent.v1.CancelAgentGoalRequest
+	(*CancelAgentGoalResponse)(nil),      // 17: peers_touch.model.agent.v1.CancelAgentGoalResponse
+	(*timestamppb.Timestamp)(nil),        // 18: google.protobuf.Timestamp
 }
 var file_domain_agent_goal_proto_depIdxs = []int32{
 	1,  // 0: peers_touch.model.agent.v1.AgentGoal.budget:type_name -> peers_touch.model.agent.v1.AgentGoalBudget
 	2,  // 1: peers_touch.model.agent.v1.AgentGoal.acceptance_criteria:type_name -> peers_touch.model.agent.v1.AgentGoalAcceptanceCriterion
 	0,  // 2: peers_touch.model.agent.v1.AgentGoal.status:type_name -> peers_touch.model.agent.v1.AgentGoalStatus
-	16, // 3: peers_touch.model.agent.v1.AgentGoal.created_at:type_name -> google.protobuf.Timestamp
-	16, // 4: peers_touch.model.agent.v1.AgentGoal.updated_at:type_name -> google.protobuf.Timestamp
+	18, // 3: peers_touch.model.agent.v1.AgentGoal.created_at:type_name -> google.protobuf.Timestamp
+	18, // 4: peers_touch.model.agent.v1.AgentGoal.updated_at:type_name -> google.protobuf.Timestamp
 	3,  // 5: peers_touch.model.agent.v1.CreateAgentGoalResponse.goal:type_name -> peers_touch.model.agent.v1.AgentGoal
 	3,  // 6: peers_touch.model.agent.v1.GetAgentGoalResponse.goal:type_name -> peers_touch.model.agent.v1.AgentGoal
 	1,  // 7: peers_touch.model.agent.v1.UpdateAgentGoalRequest.budget:type_name -> peers_touch.model.agent.v1.AgentGoalBudget
@@ -1201,11 +1313,12 @@ var file_domain_agent_goal_proto_depIdxs = []int32{
 	3,  // 10: peers_touch.model.agent.v1.ReviewAgentGoalResponse.goal:type_name -> peers_touch.model.agent.v1.AgentGoal
 	3,  // 11: peers_touch.model.agent.v1.AdmitAgentGoalResponse.goal:type_name -> peers_touch.model.agent.v1.AgentGoal
 	3,  // 12: peers_touch.model.agent.v1.StartAgentGoalResponse.goal:type_name -> peers_touch.model.agent.v1.AgentGoal
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	3,  // 13: peers_touch.model.agent.v1.CancelAgentGoalResponse.goal:type_name -> peers_touch.model.agent.v1.AgentGoal
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_goal_proto_init() }
@@ -1222,7 +1335,7 @@ func file_domain_agent_goal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_goal_proto_rawDesc), len(file_domain_agent_goal_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

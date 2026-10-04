@@ -118,3 +118,13 @@ message StartAgentGoalRequest {
 message StartAgentGoalResponse {
   AgentGoal goal = 1;
 }
+
+message CancelAgentGoalRequest {
+  string goal_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message CancelAgentGoalResponse {
+  AgentGoal goal = 1;
+}
