@@ -27,6 +27,8 @@
   "moduleDependencies": [],
   "ownershipRuleIds": [
     "agent-acceptance-driver",
+    "agent-realtime-contract",
+    "agent-shared-realtime-runtime",
     "station-agent-runtime",
     "agent-generated-client-contract",
     "desktop-agent-host",
@@ -240,6 +242,27 @@
       "replaceProofDimensionsExpectedToChange": [
         "runtimeProfileDigest"
       ]
+    },
+    {
+      "id": "agent-realtime-contract",
+      "patterns": [
+        "model/domain/realtime/**",
+        "apps/station/frame/touch/model/realtime/**",
+        "apps/desktop/src/gen/proto/domain/realtime/**"
+      ],
+      "impactClass": "SHARED_CONTRACT",
+      "addTargetSelectors": [
+        "station",
+        "desktop-native",
+        "mobile"
+      ]
+    },
+    {
+      "id": "agent-shared-realtime-runtime",
+      "patterns": [
+        "apps/station/app/subserver/events/**"
+      ],
+      "impactClass": "STATION_RUNTIME"
     },
     {
       "id": "station-agent-runtime",

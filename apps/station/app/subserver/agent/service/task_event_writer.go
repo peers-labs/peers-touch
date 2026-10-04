@@ -31,6 +31,7 @@ import (
 // per-task sequence and mirrors them onto the realtime event bus.
 type TaskEventWriter struct {
 	eventBus domain.EventBus
+	openDB   func(context.Context) (*gorm.DB, error)
 	mu       sync.Mutex
 }
 
@@ -48,11 +49,24 @@ type artifactBodyEvidence struct {
 
 // NewTaskEventWriter builds a writer bound to the given (optional) event bus.
 func NewTaskEventWriter(eventBus domain.EventBus) *TaskEventWriter {
-	return &TaskEventWriter{eventBus: eventBus}
+	return &TaskEventWriter{
+		eventBus: eventBus,
+		openDB: func(ctx context.Context) (*gorm.DB, error) {
+			return store.GetRDS(ctx, store.WithRDSDBName("agent"))
+		},
+	}
 }
 
 func (w *TaskEventWriter) getDB(ctx context.Context) (*gorm.DB, error) {
-	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if w == nil || w.openDB == nil {
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"agent event database is unavailable",
+			nil,
+		)
+	}
+	db, err := w.openDB(ctx)
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
@@ -1052,9 +1066,7 @@ func (w *TaskEventWriter) Publish(ctx context.Context, agentID, eventType string
 		record, err := w.Append(ctx, eventID, taskID, stepID, turnID, eventType, payload)
 		if err != nil {
 			logger.Errorf(ctx, "failed to append task event: task_id=%s event_type=%s err=%v", taskID, eventType, err)
-			if isInterruptEventType(eventType) {
-				return
-			}
+			return
 		} else {
 			eventID = record.ID
 			metadata["event_id"] = record.ID
@@ -1072,9 +1084,4 @@ func (w *TaskEventWriter) Publish(ctx context.Context, agentID, eventType string
 		Payload:   payload,
 		Metadata:  metadata,
 	})
-}
-
-func isInterruptEventType(eventType string) bool {
-	return eventType == string(domain.EventTypeCollaborationInterruptRequested) ||
-		eventType == string(domain.EventTypeCollaborationInterruptResolved)
 }

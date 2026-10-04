@@ -45,7 +45,23 @@ message StreamEvent {
     EnvelopeDelivered         envelope_delivered               = 23;
     LedgerEventDelivered      ledger_event_delivered           = 24;
     SocialGraphEvent          social_graph_event               = 25;
+    AgentDomainEvent          agent_domain_event               = 26;
   }
+}
+
+// AgentDomainEvent projects one already-committed Agent domain event onto the
+// canonical realtime stream. domain_event_id + domain_sequence is the stable
+// consumer de-duplication identity; the outer StreamEvent event_id is the
+// durable shared-stream cursor and is preserved across relay retries.
+message AgentDomainEvent {
+  string domain_event_id = 1;
+  uint64 domain_sequence = 2;
+  uint32 schema_version = 3;
+  string event_type = 4;
+  string goal_id = 5;
+  string task_id = 6;
+  uint64 goal_revision = 7;
+  int64 committed_ts_unix_ms = 8;
 }
 
 // Heartbeat is emitted by the server every 15 seconds (default,
