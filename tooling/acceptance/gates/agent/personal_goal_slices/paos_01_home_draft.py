@@ -244,6 +244,8 @@ def write_evidence_manifest(
     artifact_dir: Path,
     capture_path: Path,
     native_log_path: Path,
+    *,
+    generator_path: Path | None = None,
 ) -> tuple[Path, str]:
     evidence_paths = {
         capture_path,
@@ -260,7 +262,11 @@ def write_evidence_manifest(
         for path in sorted(evidence_paths)
         if path.is_file()
     ]
-    generator_path = Path(__file__).resolve()
+    generator_path = (
+        Path(__file__).resolve()
+        if generator_path is None
+        else generator_path.resolve()
+    )
     manifest = {
         "algorithm": "sha256",
         "generatedAt": datetime.now(timezone.utc).isoformat(),

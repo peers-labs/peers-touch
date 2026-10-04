@@ -88,6 +88,43 @@ def active_task_ids(client: FoundationRuntimeClient) -> list[str]:
     return [str(task_id) for task_id in task_ids]
 
 
+def reject_incomplete_review(
+    client: FoundationRuntimeClient,
+) -> dict[str, Any]:
+    result = client.driver.execute_async_script(
+        """
+        const done = arguments[0];
+        import('/src/runtimes/homeRuntime.ts')
+          .then(({ reviewHomeGoalContract }) => reviewHomeGoalContract())
+          .then((goal) => done({
+            ok: true,
+            goalId: goal.goalId,
+            revision: goal.revision.toString(),
+            status: goal.status,
+          }))
+          .catch((error) => done({
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+            errorType: error?.typedError?.error_type || '',
+            reasonCode: error?.typedError?.details?.reason_code || '',
+          }));
+        """
+    )
+    require(
+        isinstance(result, Mapping) and result.get("ok") is False,
+        f"incomplete Goal review unexpectedly succeeded: {result}",
+    )
+    require(
+        result.get("errorType") == "GOAL_ADMISSION_REJECTED",
+        f"incomplete Goal review error type mismatch: {result}",
+    )
+    require(
+        result.get("reasonCode") == "max_tokens_missing",
+        f"incomplete Goal review reason mismatch: {result}",
+    )
+    return dict(result)
+
+
 def admit_outside_projection(
     client: FoundationRuntimeClient,
     *,
@@ -158,6 +195,23 @@ def run_journey(
     )
     goal_id = str(created.get_attribute("data-pt-home-goal-id") or "")
     require(bool(goal_id), "created Goal has no identity")
+
+    rejected_review = reject_incomplete_review(client)
+    rejection = wait_until(
+        lambda: visible_element(
+            client,
+            '[data-pt-home-goal-admission-error="max_tokens_missing"]',
+        ),
+        "Station-authored admission rejection",
+    )
+    require(
+        rejection.is_displayed(),
+        "Station-authored admission rejection is not visible",
+    )
+    admission_rejected_screenshot = (
+        artifact_dir / "goal-start-admission-rejected.png"
+    )
+    client.driver.save_screenshot(str(admission_rejected_screenshot))
 
     replace_value(
         visible_element(client, "[data-pt-home-goal-outcome-readback]"),
@@ -252,8 +306,8 @@ def run_journey(
         conflict.is_displayed(),
         "stale Goal admission rejection is not visible",
     )
-    rejected_screenshot = artifact_dir / "goal-start-rejected.png"
-    client.driver.save_screenshot(str(rejected_screenshot))
+    conflict_screenshot = artifact_dir / "goal-start-stale-conflict.png"
+    client.driver.save_screenshot(str(conflict_screenshot))
 
     visible_element(
         client,
@@ -293,20 +347,23 @@ def run_journey(
         "goalId": goal_id,
         "revision": station_goal["revision"],
         "ownerPtid": station_goal["ownerPtid"],
+        "admissionRejection": rejected_review,
         "baselineTaskIds": baseline_task_ids,
         "finalTaskIds": active_task_ids(client),
         "screenshots": [
+            str(admission_rejected_screenshot),
             str(reviewed_screenshot),
-            str(rejected_screenshot),
+            str(conflict_screenshot),
             str(running_screenshot),
         ],
         "assertions": {
             "materialAssumptionsVisible": True,
-            "staleAdmissionRejectedVisibly": True,
+            "stationAdmissionRejectedVisibly": True,
+            "staleAdmissionConflictVisibly": True,
             "admissionReachedReady": True,
             "startReachedRunning": True,
             "stationReadbackMatches": True,
-            "zeroNewActiveWorkBeforeTaskRunSlice": True,
+            "zeroNewActiveHomeWorkBeforeTaskRunSlice": True,
         },
     }
 
@@ -419,6 +476,7 @@ def main() -> int:
         artifact_dir,
         capture_path,
         client.log_path,
+        generator_path=Path(__file__),
     )
     if failure is not None:
         raise GoalStartJourneyError(

@@ -53,4 +53,12 @@ describe('GoalContractEditor contract', () => {
     }
     expect(source).toContain('data-pt-home-goal-contract-incomplete');
   });
+
+  it('shows the Station-authored reason when review admission rejects', () => {
+    expect(source).toContain('goalAdmissionReasonKeys[admissionReasonCode]');
+    expect(source).toContain(
+      'data-pt-home-goal-admission-error={admissionReasonCode}',
+    );
+    expect(source).toContain("t(mutationError)");
+  });
 });

@@ -37,7 +37,7 @@ describe('GoalReviewPanel contract', () => {
     ]) {
       expect(source).toContain(selector);
     }
-    expect(source).toContain('admissionReasonKeys');
+    expect(source).toContain('goalAdmissionReasonKeys');
     expect(source).toContain('reloadHomeGoalContract');
   });
 });
