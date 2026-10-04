@@ -504,7 +504,7 @@ describe('momentsRuntime identity fence', () => {
     );
     expect(mocks.moments.reset).toHaveBeenCalled();
     expect(mocks.discovery.reset).toHaveBeenCalled();
-    expect(mocks.relationships.reset).toHaveBeenCalled();
+    expect(mocks.relationships.reset).not.toHaveBeenCalled();
     const calls = mocks.privateMoments.deactivate.mock.calls;
     expect(calls[calls.length - 1]?.[0]).toBeGreaterThan(previousGeneration);
   });

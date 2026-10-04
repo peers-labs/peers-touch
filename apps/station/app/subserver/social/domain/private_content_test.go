@@ -108,6 +108,50 @@ func TestCanonicalGroupRecipientSnapshotRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCanonicalRecipientLocalitiesRoundTrip(t *testing.T) {
+	localities := []RecipientLocality{
+		{
+			ActorPTID:         "ptid:carol",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		},
+		{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-local",
+		},
+	}
+	encoded, err := CanonicalRecipientLocalitiesBytes(localities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := ParseCanonicalRecipientLocalities(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != 2 ||
+		decoded[0].ActorPTID != "ptid:bob" ||
+		decoded[1].FederationID != "federation-one" {
+		t.Fatalf("decoded recipient localities = %+v", decoded)
+	}
+	reencoded, err := CanonicalRecipientLocalitiesBytes(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, reencoded) {
+		t.Fatal("recipient localities did not round-trip canonically")
+	}
+	if _, err := ParseCanonicalRecipientLocalities(
+		append([]byte(" "), encoded...),
+	); !IsPrivateContentCode(err, PrivateContentIntegrityFailed) {
+		t.Fatalf("non-canonical recipient localities error = %v", err)
+	}
+	if _, err := CanonicalRecipientLocalitiesBytes(
+		append(localities, localities[0]),
+	); !IsPrivateContentCode(err, PrivateContentConflict) {
+		t.Fatalf("duplicate recipient locality error = %v", err)
+	}
+}
+
 func TestCanonicalizePrivateMomentPrepareRejectsCustomDenyPublicAsUnsupported(
 	t *testing.T,
 ) {

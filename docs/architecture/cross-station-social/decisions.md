@@ -20,6 +20,7 @@
 | `CSS-D07` | Revocation combines local suppression with monotonic source invalidation | accepted |
 | `CSS-D08` | Current readiness is Native Desktop only | accepted |
 | `CSS-D09` | Federated GROUP extends the SC-D29 snapshot without replacing its authority | accepted |
+| `CSS-D10` | Remote Content PreKey submit validation uses a distinct read-only peer contract | accepted |
 
 ## CSS-D01: Receiver Home Station Owns Friend Request Decisions
 
@@ -373,3 +374,121 @@ Review this decision if Conversation no longer has a co-located authoritative
 snapshot, Actor Home Station becomes mutable, or Federation membership cannot
 be revalidated at submit. Any replacement must preserve one membership owner,
 one immutable recipient snapshot, and atomic no-partial-publish.
+
+## CSS-D10: Remote Content PreKey Submit Validation Uses A Distinct Read-Only Peer Contract
+
+**Status**: accepted
+**Date**: 2026-10-04
+
+### Context
+
+`SC-D17` requires Social to revalidate every claimed endpoint profile and
+actor-recovery epoch before submit. Local claims already use Key Exchange's
+transaction-bound `ValidateContentPreKeyClaims` capability. CSS-02D partitions
+remote claims through the accepted `CSS-D04` peer claim route, but its submit
+path currently validates only the local partition.
+
+The existing remote claim route cannot satisfy this requirement. Exact replay
+proves the persisted claim identity and bytes; it does not prove that the
+recipient's endpoint profile or recovery epoch is still current. Changing exact
+claim replay to reject stale material would also change the accepted
+`CSS-D04` crash-recovery contract.
+
+### Decision
+
+Key Exchange adds a distinct authenticated, read-only Federation peer contract
+for submit-time validation. Its canonical request binds:
+
+- source and target Home Station peer IDs plus the active Federation ID;
+- the original canonical `ClaimContentPreKeysRequest`;
+- the exact persisted `ClaimContentPreKeysResponse`;
+- deterministic request and response SHA-256 digests; and
+- the source Social plan ID and plan-request digest already carried by the
+  claim contract.
+
+The validation-only Federation scope binds `federation_id`,
+`authority_plan_id`, `plan_request_sha256`, `canonical_request_sha256`,
+`canonical_response_sha256`, `source_station_peer_id`, and
+`target_station_peer_id`. The authenticated issuer and audience must equal the
+source and target Station fields, and the subject must equal the issuer.
+
+The recipient Key Exchange maps the source plan ID to the same namespaced local
+claim-receipt identity used by remote claim, loads that exact receipt, locks and
+checks the current endpoint profile and recovery epochs in a local read-only
+validation transaction, and returns only a digest-bound validation result. It
+does not allocate, release, rotate, or reissue keys.
+
+Source Social validates every remote Station partition before entering its
+local Social commit callback. A missing, stale, malformed, unauthenticated, or
+unavailable validation rejects the submit with no Social resource rows. The
+existing local partition remains validated inside the Social transaction.
+
+Each target Key Exchange validation transaction has its own per-partition
+linearization point. Its response carries evidence that this transaction
+completed successfully; it is not itself a global linearization point. Multiple
+target Stations do not form one global snapshot. Revocation or epoch advancement
+completed after a partition's validation transaction is a post-validation
+lifecycle change and follows the accepted receiver rejection, tombstone, and
+source invalidation path. This contract does not claim a distributed lock,
+global snapshot, or atomic transaction across two Stations.
+
+Failure disposition is stable:
+
+| Key Exchange result | Social disposition |
+|---|---|
+| stale endpoint profile or recovery epoch | terminal `REJECTED_STALE` |
+| authenticated peer reports inactive Federation or unauthorized Station pair | terminal `REJECTED_STALE` |
+| missing exact claim receipt | terminal `REJECTED_STALE` |
+| invalid peer token/scope/claim binding, malformed request/response, digest mismatch, or receipt/response mismatch | terminal `REJECTED_STALE`, surfaced as an integrity failure |
+| timeout, transport failure, unavailable peer, membership-store failure, or internal dependency failure | retryable dependency failure; preserve `PREPARED` |
+
+`REJECTED_STALE` remains the only terminal pre-submit plan transition; this
+proposal adds no second terminal integrity state. The surfaced typed error still
+distinguishes stale authority from protocol-integrity rejection so operators do
+not misdiagnose malformed peer traffic as ordinary lifecycle drift.
+
+### Rationale
+
+A separate route preserves exact claim replay, keeps current-key truth at the
+recipient Key Exchange, and makes the weaker distributed consistency boundary
+explicit. It also avoids holding the source Social transaction open across a
+network call.
+
+### Alternatives Considered
+
+- Reuse exact claim replay as validation: rejected because replay identity is
+  not current endpoint/recovery proof and stale rejection would break
+  deterministic crash recovery.
+- Validate only the signed claimed key bytes at source: rejected because the
+  source does not own current remote endpoint or recovery epochs.
+- Add a distributed validation lease or two-phase commit: rejected for this
+  milestone because it mutates remote lifecycle state, adds timeout recovery,
+  and contradicts the accepted read-only `SC-D17` capability.
+- Skip remote validation and rely only on receiver rejection: rejected because
+  it knowingly permits source commit after a stale condition observed before
+  submit.
+
+### Consequences
+
+- `model/domain/key_exchange/key_exchange.proto`, Federation peer route/scope,
+  Key Exchange handlers, and Social's partitioned validation port require a
+  proto-first CSS-02D amendment.
+- Validation errors remain typed and privacy-safe; responses expose no key
+  material or co-recipient identity.
+- Remote partitions are validated in deterministic Station order and fail
+  closed before local commit.
+- The design guarantees point-in-time remote validation, not cross-Station
+  serializability. Exact-source tests must cover deterministic Station order,
+  stale endpoint, advanced recovery epoch, inactive membership, malformed
+  input, missing receipt, replay preservation, unavailable peer, mixed
+  partitions, terminal-versus-retryable disposition, and zero Social rows on
+  every pre-commit failure.
+
+### Review And Reversal Conditions
+
+Independent architecture review passed on 2026-10-04 after the design made
+per-partition linearization, exact terminal/retryable failure mapping,
+validation-scope claims, and complete consumer checks explicit. Revisit this
+decision if product semantics require revocation and source commit to be
+globally serializable; that stronger guarantee requires a separate mutating
+reservation/finalization protocol rather than this read-only contract.

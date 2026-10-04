@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
 	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
+	federationdomain "github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
@@ -20,10 +22,14 @@ import (
 )
 
 type recordingContentPreKeyPartitionProvider struct {
-	localRequests  []*securecontentpb.ClaimContentPreKeysRequest
-	remoteRequests []*securecontentpb.ClaimContentPreKeysRequest
-	federationID   string
-	targetStation  string
+	localRequests            []*securecontentpb.ClaimContentPreKeysRequest
+	remoteRequests           []*securecontentpb.ClaimContentPreKeysRequest
+	remoteValidationRequests []*securecontentpb.ClaimContentPreKeysRequest
+	remoteValidationStations []string
+	validationOrder          []string
+	remoteValidationErr      error
+	federationID             string
+	targetStation            string
 }
 
 func (p *recordingContentPreKeyPartitionProvider) ClaimContentPreKeys(
@@ -52,13 +58,114 @@ func (p *recordingContentPreKeyPartitionProvider) ClaimRemoteContentPreKeys(
 	return partitionClaimResponse("remote", request), nil
 }
 
-func (*recordingContentPreKeyPartitionProvider) ValidateContentPreKeyClaims(
+func (p *recordingContentPreKeyPartitionProvider) ValidateContentPreKeyClaims(
 	context.Context,
 	federationdelivery.Transaction,
 	*securecontentpb.ClaimContentPreKeysRequest,
 	*securecontentpb.ClaimContentPreKeysResponse,
 ) error {
+	p.validationOrder = append(p.validationOrder, "local")
 	return nil
+}
+
+func (p *recordingContentPreKeyPartitionProvider) ValidateRemoteContentPreKeyClaims(
+	_ context.Context,
+	_ string,
+	targetStationPeerID string,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	_ *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	p.remoteValidationStations = append(
+		p.remoteValidationStations,
+		targetStationPeerID,
+	)
+	p.validationOrder = append(p.validationOrder, targetStationPeerID)
+	p.remoteValidationRequests = append(
+		p.remoteValidationRequests,
+		proto.Clone(request).(*securecontentpb.ClaimContentPreKeysRequest),
+	)
+	return p.remoteValidationErr
+}
+
+func TestRemoteContentPreKeyValidationUsesDeterministicStationOrder(
+	t *testing.T,
+) {
+	provider := &recordingContentPreKeyPartitionProvider{}
+	request := &securecontentpb.ClaimContentPreKeysRequest{
+		PlanId:            "plan-validation-order",
+		PlanRequestSha256: make([]byte, 32),
+		Targets: []*securecontentpb.ContentPreKeyClaimTarget{
+			contentPreKeyEndpointTarget("ptid:local", "local-device"),
+			contentPreKeyEndpointTarget("ptid:zeta", "zeta-device"),
+			contentPreKeyEndpointTarget("ptid:alpha", "alpha-device"),
+		},
+	}
+	response := partitionClaimResponse("validation", request)
+	err := validateRemoteContentPreKeyPartitions(
+		context.Background(),
+		provider,
+		"station-local",
+		[]socialdomain.RecipientLocality{
+			{
+				ActorPTID:         "ptid:zeta",
+				HomeStationPeerID: "station-zeta",
+				FederationID:      "federation-one",
+			},
+			{
+				ActorPTID:         "ptid:alpha",
+				HomeStationPeerID: "station-alpha",
+				FederationID:      "federation-one",
+			},
+		},
+		request,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOrder := []string{"station-alpha", "station-zeta"}
+	if !slices.Equal(provider.validationOrder, wantOrder) {
+		t.Fatalf(
+			"validation order = %v, want %v",
+			provider.validationOrder,
+			wantOrder,
+		)
+	}
+}
+
+func TestRemoteContentPreKeyValidationFailureStopsBeforeLocalValidation(
+	t *testing.T,
+) {
+	provider := &recordingContentPreKeyPartitionProvider{
+		remoteValidationErr: errors.New("remote validation unavailable"),
+	}
+	request := &securecontentpb.ClaimContentPreKeysRequest{
+		PlanId:            "plan-validation-failure",
+		PlanRequestSha256: make([]byte, 32),
+		Targets: []*securecontentpb.ContentPreKeyClaimTarget{
+			contentPreKeyEndpointTarget("ptid:local", "local-device"),
+			contentPreKeyEndpointTarget("ptid:remote", "remote-device"),
+		},
+	}
+	err := validateRemoteContentPreKeyPartitions(
+		context.Background(),
+		provider,
+		"station-local",
+		[]socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:remote",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+		request,
+		partitionClaimResponse("validation", request),
+	)
+	if !errors.Is(err, provider.remoteValidationErr) {
+		t.Fatalf("validation error = %v", err)
+	}
+	if len(provider.validationOrder) != 1 ||
+		provider.validationOrder[0] != "station-remote" {
+		t.Fatalf("validation order = %v", provider.validationOrder)
+	}
 }
 
 func TestRemoteRecipientAdmissionPartitionsPreKeysByHomeStation(t *testing.T) {
@@ -114,6 +221,60 @@ func TestRemoteRecipientAdmissionPartitionsPreKeysByHomeStation(t *testing.T) {
 	for index, claim := range response.GetClaims() {
 		if !proto.Equal(claim.GetTarget(), request.GetTargets()[index]) {
 			t.Fatalf("combined claim %d was reordered", index)
+		}
+	}
+}
+
+func TestFederatedAudienceSubmitValidationKeepsRemoteClaimsOutOfLocalAuthority(
+	t *testing.T,
+) {
+	request := &securecontentpb.ClaimContentPreKeysRequest{
+		PlanId:            "plan-mixed-audience",
+		PlanRequestSha256: make([]byte, 32),
+		Targets: []*securecontentpb.ContentPreKeyClaimTarget{
+			contentPreKeyEndpointTarget("ptid:alice", "alice-device"),
+			contentPreKeyRecoveryTarget("ptid:alice"),
+			contentPreKeyEndpointTarget("ptid:bob", "bob-device"),
+			contentPreKeyRecoveryTarget("ptid:bob"),
+			contentPreKeyEndpointTarget("ptid:carol", "carol-device"),
+			contentPreKeyRecoveryTarget("ptid:carol"),
+		},
+	}
+	response := partitionClaimResponse("mixed", request)
+	localRequest, localResponse, err := localContentPreKeyClaimPartition(
+		"station-local",
+		[]socialdomain.RecipientLocality{
+			{
+				ActorPTID:         "ptid:bob",
+				HomeStationPeerID: "station-remote",
+				FederationID:      "federation-one",
+			},
+			{
+				ActorPTID:         "ptid:carol",
+				HomeStationPeerID: "station-local",
+			},
+		},
+		request,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(localRequest.GetTargets()) != 4 ||
+		len(localResponse.GetClaims()) != 4 {
+		t.Fatalf(
+			"local validation partition targets/claims = %d/%d, want 4/4",
+			len(localRequest.GetTargets()),
+			len(localResponse.GetClaims()),
+		)
+	}
+	for _, target := range localRequest.GetTargets() {
+		actorPTID := target.GetRecoveryActor().GetPtid()
+		if target.GetEndpoint() != nil {
+			actorPTID = target.GetEndpoint().GetActor().GetPtid()
+		}
+		if actorPTID == "ptid:bob" {
+			t.Fatal("remote recipient reached the local Key Exchange validator")
 		}
 	}
 }
@@ -347,6 +508,61 @@ func TestRemoteRecipientAdmissionResolvesAcceptedActiveFederation(t *testing.T) 
 		membership.sourceStation != "station-local" ||
 		membership.targetStation != "station-remote" {
 		t.Fatalf("membership check = %+v", membership)
+	}
+}
+
+func TestRemoteRecipientAdmissionClassifiesFederationMembershipFailures(
+	t *testing.T,
+) {
+	dependencyFailure := errors.New("membership repository unavailable")
+	tests := []struct {
+		name              string
+		membershipError   error
+		wantPrivateCode   socialdomain.PrivateContentErrorCode
+		wantOriginalError error
+	}{
+		{
+			name:            "inactive pair is unsupported",
+			membershipError: federationdomain.ErrInactiveStationPair,
+			wantPrivateCode: socialdomain.PrivateContentUnsupported,
+		},
+		{
+			name:              "dependency failure stays retryable",
+			membershipError:   dependencyFailure,
+			wantOriginalError: dependencyFailure,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			directory := &privateContentRecipientDirectory{
+				actors: &recordingPrivateContentActorCapabilities{
+					homeStationPeerID: "station-remote",
+				},
+				friendships: &recordingPrivateContentFriendFederation{
+					federationID: "federation-one",
+				},
+				membership: &recordingPrivateContentFederationMembership{
+					err: testCase.membershipError,
+				},
+			}
+			_, err := directory.ResolveRecipientLocalities(
+				context.Background(),
+				"ptid:author",
+				"station-local",
+				[]string{"ptid:remote"},
+			)
+			if testCase.wantPrivateCode != "" &&
+				!socialdomain.IsPrivateContentCode(
+					err,
+					testCase.wantPrivateCode,
+				) {
+				t.Fatalf("membership error = %v", err)
+			}
+			if testCase.wantOriginalError != nil &&
+				!errors.Is(err, testCase.wantOriginalError) {
+				t.Fatalf("membership dependency error = %v", err)
+			}
+		})
 	}
 }
 

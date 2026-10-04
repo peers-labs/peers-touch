@@ -9,6 +9,7 @@ import (
 	"time"
 
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
+	federationdomain "github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
@@ -66,6 +67,13 @@ type privateContentKeyExchangeCapabilities interface {
 		string,
 		*securecontentpb.ClaimContentPreKeysRequest,
 	) (*securecontentpb.ClaimContentPreKeysResponse, error)
+	ValidateRemoteContentPreKeyClaims(
+		context.Context,
+		string,
+		string,
+		*securecontentpb.ClaimContentPreKeysRequest,
+		*securecontentpb.ClaimContentPreKeysResponse,
+	) error
 	ValidateContentPreKeyClaims(
 		context.Context,
 		federationdelivery.Transaction,
@@ -194,6 +202,9 @@ func (d *privateContentRecipientDirectory) ResolveRecipientLocalities(
 				localStationPeerID,
 				homeStationPeerID,
 			); err != nil {
+				if !errors.Is(err, federationdomain.ErrInactiveStationPair) {
+					return nil, err
+				}
 				return nil, socialdomain.WrapPrivateContentError(
 					socialdomain.PrivateContentUnsupported,
 					operation,
@@ -544,6 +555,8 @@ func claimContentPreKeyPartitions(
 func (privateContentKeyExchangePort) ValidateContentPreKeyClaims(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
 	request *securecontentpb.ClaimContentPreKeysRequest,
 	response *securecontentpb.ClaimContentPreKeysResponse,
 ) error {
@@ -551,12 +564,227 @@ func (privateContentKeyExchangePort) ValidateContentPreKeyClaims(
 	if err != nil {
 		return err
 	}
-	return provider.ValidateContentPreKeyClaims(
-		ctx,
-		transaction,
+	localRequest, localResponse, err := localContentPreKeyClaimPartition(
+		sourceStationPeerID,
+		recipientLocalities,
 		request,
 		response,
 	)
+	if err != nil {
+		return err
+	}
+	return provider.ValidateContentPreKeyClaims(
+		ctx,
+		transaction,
+		localRequest,
+		localResponse,
+	)
+}
+
+func (privateContentKeyExchangePort) ValidateRemoteContentPreKeyClaims(
+	ctx context.Context,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	provider, err := resolvePrivateContentKeyExchange()
+	if err != nil {
+		return err
+	}
+	return validateRemoteContentPreKeyPartitions(
+		ctx,
+		provider,
+		sourceStationPeerID,
+		recipientLocalities,
+		request,
+		response,
+	)
+}
+
+func validateRemoteContentPreKeyPartitions(
+	ctx context.Context,
+	provider privateContentKeyExchangeCapabilities,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	remotePartitions, err := remoteContentPreKeyClaimPartitions(
+		sourceStationPeerID,
+		recipientLocalities,
+		request,
+		response,
+	)
+	if err != nil {
+		return err
+	}
+	for _, partition := range remotePartitions {
+		if err := provider.ValidateRemoteContentPreKeyClaims(
+			ctx,
+			partition.federationID,
+			partition.stationPeerID,
+			partition.request,
+			partition.response,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func localContentPreKeyClaimPartition(
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) (
+	*securecontentpb.ClaimContentPreKeysRequest,
+	*securecontentpb.ClaimContentPreKeysResponse,
+	error,
+) {
+	if request == nil ||
+		response == nil ||
+		len(request.GetTargets()) != len(response.GetClaims()) {
+		return nil, nil, errors.New(
+			"persisted Content PreKey claim is incomplete",
+		)
+	}
+	remoteActors := make(map[string]struct{}, len(recipientLocalities))
+	for _, locality := range recipientLocalities {
+		if locality.HomeStationPeerID != sourceStationPeerID {
+			remoteActors[locality.ActorPTID] = struct{}{}
+		}
+	}
+	localRequest := &securecontentpb.ClaimContentPreKeysRequest{
+		PlanId: request.GetPlanId(),
+		PlanRequestSha256: append(
+			[]byte(nil),
+			request.GetPlanRequestSha256()...,
+		),
+	}
+	localResponse := &securecontentpb.ClaimContentPreKeysResponse{
+		ExactReplay: response.GetExactReplay(),
+	}
+	for index, target := range request.GetTargets() {
+		claim := response.GetClaims()[index]
+		if !proto.Equal(target, claim.GetTarget()) {
+			return nil, nil, errors.New(
+				"persisted Content PreKey claim target order changed",
+			)
+		}
+		actorPTID := target.GetRecoveryActor().GetPtid()
+		if target.GetEndpoint() != nil {
+			actorPTID = target.GetEndpoint().GetActor().GetPtid()
+		}
+		if _, remote := remoteActors[actorPTID]; remote {
+			continue
+		}
+		localRequest.Targets = append(
+			localRequest.Targets,
+			proto.Clone(target).(*securecontentpb.ContentPreKeyClaimTarget),
+		)
+		localResponse.Claims = append(
+			localResponse.Claims,
+			proto.Clone(claim).(*securecontentpb.ClaimedContentPreKey),
+		)
+	}
+	if len(localRequest.GetTargets()) == 0 {
+		return nil, nil, errors.New(
+			"persisted Content PreKey claim omits the local author",
+		)
+	}
+
+	return localRequest, localResponse, nil
+}
+
+type remoteContentPreKeyClaimPartition struct {
+	stationPeerID string
+	federationID  string
+	request       *securecontentpb.ClaimContentPreKeysRequest
+	response      *securecontentpb.ClaimContentPreKeysResponse
+}
+
+func remoteContentPreKeyClaimPartitions(
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) ([]remoteContentPreKeyClaimPartition, error) {
+	if request == nil ||
+		response == nil ||
+		len(request.GetTargets()) != len(response.GetClaims()) {
+		return nil, errors.New("persisted Content PreKey claim is incomplete")
+	}
+	localityByActor := make(
+		map[string]socialdomain.RecipientLocality,
+		len(recipientLocalities),
+	)
+	for _, locality := range recipientLocalities {
+		localityByActor[locality.ActorPTID] = locality
+	}
+	partitions := map[string]*remoteContentPreKeyClaimPartition{}
+	for index, target := range request.GetTargets() {
+		claim := response.GetClaims()[index]
+		if !proto.Equal(target, claim.GetTarget()) {
+			return nil, errors.New(
+				"persisted Content PreKey claim target order changed",
+			)
+		}
+		actorPTID := target.GetRecoveryActor().GetPtid()
+		if target.GetEndpoint() != nil {
+			actorPTID = target.GetEndpoint().GetActor().GetPtid()
+		}
+		locality, found := localityByActor[actorPTID]
+		if !found || locality.HomeStationPeerID == sourceStationPeerID {
+			continue
+		}
+		if locality.FederationID == "" {
+			return nil, errors.New(
+				"remote recipient validation is missing a Federation identity",
+			)
+		}
+		partition := partitions[locality.HomeStationPeerID]
+		if partition == nil {
+			partition = &remoteContentPreKeyClaimPartition{
+				stationPeerID: locality.HomeStationPeerID,
+				federationID:  locality.FederationID,
+				request: &securecontentpb.ClaimContentPreKeysRequest{
+					PlanId: request.GetPlanId(),
+					PlanRequestSha256: append(
+						[]byte(nil),
+						request.GetPlanRequestSha256()...,
+					),
+				},
+				response: &securecontentpb.ClaimContentPreKeysResponse{
+					ExactReplay: response.GetExactReplay(),
+				},
+			}
+			partitions[locality.HomeStationPeerID] = partition
+		} else if partition.federationID != locality.FederationID {
+			return nil, errors.New(
+				"remote recipient validation has conflicting Federation identities",
+			)
+		}
+		partition.request.Targets = append(
+			partition.request.Targets,
+			proto.Clone(target).(*securecontentpb.ContentPreKeyClaimTarget),
+		)
+		partition.response.Claims = append(
+			partition.response.Claims,
+			proto.Clone(claim).(*securecontentpb.ClaimedContentPreKey),
+		)
+	}
+	stationIDs := make([]string, 0, len(partitions))
+	for stationPeerID := range partitions {
+		stationIDs = append(stationIDs, stationPeerID)
+	}
+	sort.Strings(stationIDs)
+	result := make([]remoteContentPreKeyClaimPartition, 0, len(stationIDs))
+	for _, stationPeerID := range stationIDs {
+		result = append(result, *partitions[stationPeerID])
+	}
+	return result, nil
 }
 
 func resolvePrivateContentKeyExchange() (

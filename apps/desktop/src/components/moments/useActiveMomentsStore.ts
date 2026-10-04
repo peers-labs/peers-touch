@@ -6,6 +6,7 @@ import { useMomentsStore } from '../../store/moments';
 import { usePrivateCommentsStore } from '../../store/privateComments';
 import { usePrivateMomentsStore } from '../../store/privateMoments';
 import { useRelationshipsStore } from '../../store/relationships';
+import { useSocialChatStore } from '../../store/socialChat';
 
 type DiscoveryState = ReturnType<typeof useDiscoveryStore.getState>;
 type FederationState = ReturnType<typeof useFederationStore.getState>;
@@ -13,6 +14,7 @@ type MomentsState = ReturnType<typeof useMomentsStore.getState>;
 type PrivateCommentsState = ReturnType<typeof usePrivateCommentsStore.getState>;
 type PrivateMomentsState = ReturnType<typeof usePrivateMomentsStore.getState>;
 type RelationshipsState = ReturnType<typeof useRelationshipsStore.getState>;
+type SocialChatState = ReturnType<typeof useSocialChatStore.getState>;
 
 export function useActiveMomentsStore<TSelected>(
   selector: (state: MomentsState) => TSelected,
@@ -49,4 +51,10 @@ export function useActiveMomentsFederationSlice<TSelected>(selector: (state: Fed
 
 export function useActiveRelationshipsSlice<TSelected>(selector: (state: RelationshipsState) => TSelected): TSelected {
   return usePageActiveStoreSelector(useRelationshipsStore, selector, shallow);
+}
+
+export function useActiveSocialChatSlice<TSelected>(
+  selector: (state: SocialChatState) => TSelected,
+): TSelected {
+  return usePageActiveStoreSelector(useSocialChatStore, selector, shallow);
 }

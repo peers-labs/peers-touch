@@ -89,6 +89,8 @@ func TestGORMPrivateContentStoreSchema(t *testing.T) {
 	for _, required := range []string{
 		"audience_bytes",
 		"audience_sha256",
+		"recipient_localities_bytes",
+		"recipient_localities_sha256",
 		"group_recipient_snapshot_bytes",
 		"group_recipient_snapshot_sha256",
 		"subtype_prepare_authority_bytes",
@@ -137,6 +139,12 @@ func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
 			created.Plan.AudienceBytes,
 			binding.AudienceBytes,
 			"audience binding",
+		)
+		assertBytesEqual(
+			t,
+			created.Plan.RecipientLocalitiesBytes,
+			binding.RecipientLocalitiesBytes,
+			"recipient locality binding",
 		)
 		assertBytesEqual(
 			t,
@@ -840,11 +848,16 @@ func preparingPlan(
 
 func prepareBinding(plan dbmodel.SocialPrivateContentPlan) PrivatePrepareBinding {
 	audience := []byte("audience-" + plan.PlanID)
+	recipientLocalities := []byte(
+		`{"format_version":1,"recipients":[]}`,
+	)
 	emptyGroupSnapshot := sha256.Sum256(nil)
 	emptySubtype := sha256.Sum256(nil)
 	return PrivatePrepareBinding{
 		AudienceBytes:                 audience,
 		AudienceSHA256:                digest(audience),
+		RecipientLocalitiesBytes:      recipientLocalities,
+		RecipientLocalitiesSHA256:     digest(recipientLocalities),
 		GroupRecipientSnapshotSHA256:  emptyGroupSnapshot[:],
 		SubtypePrepareAuthoritySHA256: emptySubtype[:],
 	}

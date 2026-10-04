@@ -1496,6 +1496,182 @@ func (x *ClaimFederatedContentPreKeysResponse) GetResponse() *securecontent.Clai
 	return nil
 }
 
+type ValidateFederatedContentPreKeyClaimsRequest struct {
+	state                   protoimpl.MessageState                     `protogen:"open.v1"`
+	FormatVersion           uint32                                     `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	SourceHomeStationPeerId string                                     `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	TargetHomeStationPeerId string                                     `protobuf:"bytes,3,opt,name=target_home_station_peer_id,json=targetHomeStationPeerId,proto3" json:"target_home_station_peer_id,omitempty"`
+	FederationId            string                                     `protobuf:"bytes,4,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	Request                 *securecontent.ClaimContentPreKeysRequest  `protobuf:"bytes,5,opt,name=request,proto3" json:"request,omitempty"`
+	Response                *securecontent.ClaimContentPreKeysResponse `protobuf:"bytes,6,opt,name=response,proto3" json:"response,omitempty"`
+	CanonicalRequestSha256  []byte                                     `protobuf:"bytes,7,opt,name=canonical_request_sha256,json=canonicalRequestSha256,proto3" json:"canonical_request_sha256,omitempty"`
+	CanonicalResponseSha256 []byte                                     `protobuf:"bytes,8,opt,name=canonical_response_sha256,json=canonicalResponseSha256,proto3" json:"canonical_response_sha256,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) Reset() {
+	*x = ValidateFederatedContentPreKeyClaimsRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidateFederatedContentPreKeyClaimsRequest) ProtoMessage() {}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidateFederatedContentPreKeyClaimsRequest.ProtoReflect.Descriptor instead.
+func (*ValidateFederatedContentPreKeyClaimsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) GetTargetHomeStationPeerId() string {
+	if x != nil {
+		return x.TargetHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) GetRequest() *securecontent.ClaimContentPreKeysRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) GetResponse() *securecontent.ClaimContentPreKeysResponse {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) GetCanonicalRequestSha256() []byte {
+	if x != nil {
+		return x.CanonicalRequestSha256
+	}
+	return nil
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsRequest) GetCanonicalResponseSha256() []byte {
+	if x != nil {
+		return x.CanonicalResponseSha256
+	}
+	return nil
+}
+
+type ValidateFederatedContentPreKeyClaimsResponse struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion           uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	PlanId                  string                 `protobuf:"bytes,2,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	CanonicalRequestSha256  []byte                 `protobuf:"bytes,3,opt,name=canonical_request_sha256,json=canonicalRequestSha256,proto3" json:"canonical_request_sha256,omitempty"`
+	CanonicalResponseSha256 []byte                 `protobuf:"bytes,4,opt,name=canonical_response_sha256,json=canonicalResponseSha256,proto3" json:"canonical_response_sha256,omitempty"`
+	ValidatedAt             *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=validated_at,json=validatedAt,proto3" json:"validated_at,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsResponse) Reset() {
+	*x = ValidateFederatedContentPreKeyClaimsResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidateFederatedContentPreKeyClaimsResponse) ProtoMessage() {}
+
+func (x *ValidateFederatedContentPreKeyClaimsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidateFederatedContentPreKeyClaimsResponse.ProtoReflect.Descriptor instead.
+func (*ValidateFederatedContentPreKeyClaimsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsResponse) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsResponse) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsResponse) GetCanonicalRequestSha256() []byte {
+	if x != nil {
+		return x.CanonicalRequestSha256
+	}
+	return nil
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsResponse) GetCanonicalResponseSha256() []byte {
+	if x != nil {
+		return x.CanonicalResponseSha256
+	}
+	return nil
+}
+
+func (x *ValidateFederatedContentPreKeyClaimsResponse) GetValidatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ValidatedAt
+	}
+	return nil
+}
+
 type SendDirectKeyExchangeRequest struct {
 	state                      protoimpl.MessageState       `protogen:"open.v1"`
 	Recipient                  *model.ActorDeviceRef        `protobuf:"bytes,1,opt,name=recipient,proto3" json:"recipient,omitempty"`
@@ -1510,7 +1686,7 @@ type SendDirectKeyExchangeRequest struct {
 
 func (x *SendDirectKeyExchangeRequest) Reset() {
 	*x = SendDirectKeyExchangeRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1522,7 +1698,7 @@ func (x *SendDirectKeyExchangeRequest) String() string {
 func (*SendDirectKeyExchangeRequest) ProtoMessage() {}
 
 func (x *SendDirectKeyExchangeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1535,7 +1711,7 @@ func (x *SendDirectKeyExchangeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendDirectKeyExchangeRequest.ProtoReflect.Descriptor instead.
 func (*SendDirectKeyExchangeRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{25}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SendDirectKeyExchangeRequest) GetRecipient() *model.ActorDeviceRef {
@@ -1589,7 +1765,7 @@ type SendDirectKeyExchangeResponse struct {
 
 func (x *SendDirectKeyExchangeResponse) Reset() {
 	*x = SendDirectKeyExchangeResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[26]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1601,7 +1777,7 @@ func (x *SendDirectKeyExchangeResponse) String() string {
 func (*SendDirectKeyExchangeResponse) ProtoMessage() {}
 
 func (x *SendDirectKeyExchangeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[26]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1614,7 +1790,7 @@ func (x *SendDirectKeyExchangeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendDirectKeyExchangeResponse.ProtoReflect.Descriptor instead.
 func (*SendDirectKeyExchangeResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{26}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SendDirectKeyExchangeResponse) GetEnvelopeId() string {
@@ -1642,7 +1818,7 @@ type DirectKeyExchangeDelivery struct {
 
 func (x *DirectKeyExchangeDelivery) Reset() {
 	*x = DirectKeyExchangeDelivery{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[27]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1654,7 +1830,7 @@ func (x *DirectKeyExchangeDelivery) String() string {
 func (*DirectKeyExchangeDelivery) ProtoMessage() {}
 
 func (x *DirectKeyExchangeDelivery) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[27]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1667,7 +1843,7 @@ func (x *DirectKeyExchangeDelivery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectKeyExchangeDelivery.ProtoReflect.Descriptor instead.
 func (*DirectKeyExchangeDelivery) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{27}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *DirectKeyExchangeDelivery) GetEnvelopeId() string {
@@ -1835,7 +2011,22 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\arequest\x18\x05 \x01(\v2?.peers_touch.model.secure_content.v1.ClaimContentPreKeysRequestR\arequest\x128\n" +
 	"\x18canonical_request_sha256\x18\x06 \x01(\fR\x16canonicalRequestSha256\"\x84\x01\n" +
 	"$ClaimFederatedContentPreKeysResponse\x12\\\n" +
-	"\bresponse\x18\x01 \x01(\v2@.peers_touch.model.secure_content.v1.ClaimContentPreKeysResponseR\bresponse\"\xf9\x02\n" +
+	"\bresponse\x18\x01 \x01(\v2@.peers_touch.model.secure_content.v1.ClaimContentPreKeysResponseR\bresponse\"\xa4\x04\n" +
+	"+ValidateFederatedContentPreKeyClaimsRequest\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\x12<\n" +
+	"\x1btarget_home_station_peer_id\x18\x03 \x01(\tR\x17targetHomeStationPeerId\x12#\n" +
+	"\rfederation_id\x18\x04 \x01(\tR\ffederationId\x12Y\n" +
+	"\arequest\x18\x05 \x01(\v2?.peers_touch.model.secure_content.v1.ClaimContentPreKeysRequestR\arequest\x12\\\n" +
+	"\bresponse\x18\x06 \x01(\v2@.peers_touch.model.secure_content.v1.ClaimContentPreKeysResponseR\bresponse\x128\n" +
+	"\x18canonical_request_sha256\x18\a \x01(\fR\x16canonicalRequestSha256\x12:\n" +
+	"\x19canonical_response_sha256\x18\b \x01(\fR\x17canonicalResponseSha256\"\xa3\x02\n" +
+	",ValidateFederatedContentPreKeyClaimsResponse\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x17\n" +
+	"\aplan_id\x18\x02 \x01(\tR\x06planId\x128\n" +
+	"\x18canonical_request_sha256\x18\x03 \x01(\fR\x16canonicalRequestSha256\x12:\n" +
+	"\x19canonical_response_sha256\x18\x04 \x01(\fR\x17canonicalResponseSha256\x12=\n" +
+	"\fvalidated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vvalidatedAt\"\xf9\x02\n" +
 	"\x1cSendDirectKeyExchangeRequest\x12H\n" +
 	"\trecipient\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\trecipient\x12B\n" +
 	"\x1erecipient_home_station_peer_id\x18\x02 \x01(\tR\x1arecipientHomeStationPeerId\x12\x1d\n" +
@@ -1878,79 +2069,84 @@ func file_domain_key_exchange_key_exchange_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_key_exchange_key_exchange_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_key_exchange_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_domain_key_exchange_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_domain_key_exchange_key_exchange_proto_goTypes = []any{
-	(DirectKeyExchangePayloadKind)(0),                 // 0: peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
-	(*DirectOneTimePreKey)(nil),                       // 1: peers_touch.model.key_exchange.v1.DirectOneTimePreKey
-	(*DirectKeyBundle)(nil),                           // 2: peers_touch.model.key_exchange.v1.DirectKeyBundle
-	(*UploadDirectKeyBundleRequest)(nil),              // 3: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest
-	(*UploadDirectKeyBundleResponse)(nil),             // 4: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse
-	(*FetchDirectKeyBundlesRequest)(nil),              // 5: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest
-	(*FetchDirectKeyBundlesResponse)(nil),             // 6: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse
-	(*FetchFederatedDirectKeyBundlesRequest)(nil),     // 7: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest
-	(*FetchFederatedDirectKeyBundlesResponse)(nil),    // 8: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse
-	(*ReplenishDirectOneTimePreKeysRequest)(nil),      // 9: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest
-	(*ReplenishDirectOneTimePreKeysResponse)(nil),     // 10: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysResponse
-	(*CountDirectOneTimePreKeysRequest)(nil),          // 11: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest
-	(*CountDirectOneTimePreKeysResponse)(nil),         // 12: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysResponse
-	(*MlsKeyPackageReservation)(nil),                  // 13: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
-	(*UploadMlsKeyPackageRequest)(nil),                // 14: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest
-	(*UploadMlsKeyPackageResponse)(nil),               // 15: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse
-	(*FetchMlsKeyPackageRequest)(nil),                 // 16: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest
-	(*FetchMlsKeyPackageResponse)(nil),                // 17: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse
-	(*FetchFederatedMlsKeyPackageRequest)(nil),        // 18: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest
-	(*FetchFederatedMlsKeyPackageResponse)(nil),       // 19: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse
-	(*CountMlsKeyPackagesRequest)(nil),                // 20: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest
-	(*CountMlsKeyPackagesResponse)(nil),               // 21: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesResponse
-	(*ClaimMlsKeyPackageRequest)(nil),                 // 22: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest
-	(*ClaimMlsKeyPackageResponse)(nil),                // 23: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse
-	(*ClaimFederatedContentPreKeysRequest)(nil),       // 24: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysRequest
-	(*ClaimFederatedContentPreKeysResponse)(nil),      // 25: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysResponse
-	(*SendDirectKeyExchangeRequest)(nil),              // 26: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest
-	(*SendDirectKeyExchangeResponse)(nil),             // 27: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeResponse
-	(*DirectKeyExchangeDelivery)(nil),                 // 28: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery
-	(*model.ActorDeviceRef)(nil),                      // 29: peers_touch.model.actor.v1.ActorDeviceRef
-	(*model.ActorRef)(nil),                            // 30: peers_touch.model.actor.v1.ActorRef
-	(*timestamppb.Timestamp)(nil),                     // 31: google.protobuf.Timestamp
-	(*securecontent.ClaimContentPreKeysRequest)(nil),  // 32: peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest
-	(*securecontent.ClaimContentPreKeysResponse)(nil), // 33: peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse
+	(DirectKeyExchangePayloadKind)(0),                    // 0: peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+	(*DirectOneTimePreKey)(nil),                          // 1: peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	(*DirectKeyBundle)(nil),                              // 2: peers_touch.model.key_exchange.v1.DirectKeyBundle
+	(*UploadDirectKeyBundleRequest)(nil),                 // 3: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest
+	(*UploadDirectKeyBundleResponse)(nil),                // 4: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse
+	(*FetchDirectKeyBundlesRequest)(nil),                 // 5: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest
+	(*FetchDirectKeyBundlesResponse)(nil),                // 6: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse
+	(*FetchFederatedDirectKeyBundlesRequest)(nil),        // 7: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest
+	(*FetchFederatedDirectKeyBundlesResponse)(nil),       // 8: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse
+	(*ReplenishDirectOneTimePreKeysRequest)(nil),         // 9: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest
+	(*ReplenishDirectOneTimePreKeysResponse)(nil),        // 10: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysResponse
+	(*CountDirectOneTimePreKeysRequest)(nil),             // 11: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest
+	(*CountDirectOneTimePreKeysResponse)(nil),            // 12: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysResponse
+	(*MlsKeyPackageReservation)(nil),                     // 13: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	(*UploadMlsKeyPackageRequest)(nil),                   // 14: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest
+	(*UploadMlsKeyPackageResponse)(nil),                  // 15: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse
+	(*FetchMlsKeyPackageRequest)(nil),                    // 16: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest
+	(*FetchMlsKeyPackageResponse)(nil),                   // 17: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse
+	(*FetchFederatedMlsKeyPackageRequest)(nil),           // 18: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest
+	(*FetchFederatedMlsKeyPackageResponse)(nil),          // 19: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse
+	(*CountMlsKeyPackagesRequest)(nil),                   // 20: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest
+	(*CountMlsKeyPackagesResponse)(nil),                  // 21: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesResponse
+	(*ClaimMlsKeyPackageRequest)(nil),                    // 22: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest
+	(*ClaimMlsKeyPackageResponse)(nil),                   // 23: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse
+	(*ClaimFederatedContentPreKeysRequest)(nil),          // 24: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysRequest
+	(*ClaimFederatedContentPreKeysResponse)(nil),         // 25: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysResponse
+	(*ValidateFederatedContentPreKeyClaimsRequest)(nil),  // 26: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsRequest
+	(*ValidateFederatedContentPreKeyClaimsResponse)(nil), // 27: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsResponse
+	(*SendDirectKeyExchangeRequest)(nil),                 // 28: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest
+	(*SendDirectKeyExchangeResponse)(nil),                // 29: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeResponse
+	(*DirectKeyExchangeDelivery)(nil),                    // 30: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery
+	(*model.ActorDeviceRef)(nil),                         // 31: peers_touch.model.actor.v1.ActorDeviceRef
+	(*model.ActorRef)(nil),                               // 32: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil),                        // 33: google.protobuf.Timestamp
+	(*securecontent.ClaimContentPreKeysRequest)(nil),     // 34: peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest
+	(*securecontent.ClaimContentPreKeysResponse)(nil),    // 35: peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse
 }
 var file_domain_key_exchange_key_exchange_proto_depIdxs = []int32{
-	29, // 0: peers_touch.model.key_exchange.v1.DirectKeyBundle.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 0: peers_touch.model.key_exchange.v1.DirectKeyBundle.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
 	1,  // 1: peers_touch.model.key_exchange.v1.DirectKeyBundle.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
-	29, // 2: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 2: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
 	1,  // 3: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
-	30, // 4: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	29, // 5: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.requester:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	32, // 4: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	31, // 5: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.requester:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
 	2,  // 6: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse.bundles:type_name -> peers_touch.model.key_exchange.v1.DirectKeyBundle
 	5,  // 7: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest.request:type_name -> peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest
 	6,  // 8: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse.response:type_name -> peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse
-	29, // 9: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 9: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
 	1,  // 10: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
-	29, // 11: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	29, // 12: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	29, // 13: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	30, // 14: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	29, // 15: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.requester:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 11: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 12: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 13: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	32, // 14: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	31, // 15: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.requester:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
 	13, // 16: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse.reservation:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
 	16, // 17: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest.request:type_name -> peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest
 	17, // 18: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse.response:type_name -> peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse
-	29, // 19: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	29, // 20: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	31, // 21: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.plan_expires_at:type_name -> google.protobuf.Timestamp
+	31, // 19: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 20: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	33, // 21: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.plan_expires_at:type_name -> google.protobuf.Timestamp
 	13, // 22: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse.reservation:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
-	32, // 23: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysRequest.request:type_name -> peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest
-	33, // 24: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysResponse.response:type_name -> peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse
-	29, // 25: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	0,  // 26: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.kind:type_name -> peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
-	29, // 27: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	29, // 28: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	0,  // 29: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.kind:type_name -> peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
-	30, // [30:30] is the sub-list for method output_type
-	30, // [30:30] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	34, // 23: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysRequest.request:type_name -> peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest
+	35, // 24: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysResponse.response:type_name -> peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse
+	34, // 25: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsRequest.request:type_name -> peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest
+	35, // 26: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsRequest.response:type_name -> peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse
+	33, // 27: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsResponse.validated_at:type_name -> google.protobuf.Timestamp
+	31, // 28: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	0,  // 29: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.kind:type_name -> peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+	31, // 30: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	31, // 31: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	0,  // 32: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.kind:type_name -> peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+	33, // [33:33] is the sub-list for method output_type
+	33, // [33:33] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_domain_key_exchange_key_exchange_proto_init() }
@@ -1964,7 +2160,7 @@ func file_domain_key_exchange_key_exchange_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_key_exchange_key_exchange_proto_rawDesc), len(file_domain_key_exchange_key_exchange_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   28,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

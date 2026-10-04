@@ -76,6 +76,7 @@ generated-only compatibility is not Mobile product implementation or evidence.
 | [integration.md](./integration.md) | Repository-backed impact map and cutovers |
 | [execution plan](./execution-plans/20261003-native-private-social/plan.md) | Ordered implementation and proof plan |
 | [review prompt](./execution-plans/20261003-native-private-social/review-prompt.md) | Independent review contract |
+| [remote PreKey validation amendment](./execution-plans/20261004-remote-prekey-submit-validation-amendment-review-prompt.md) | Accepted CSS-D10 independent review record |
 
 ## 6. Upstream Contracts
 

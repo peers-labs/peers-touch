@@ -40,7 +40,7 @@ const mocks = vi.hoisted(() => ({
   markGroupRead: vi.fn(),
   ingestRealtimeMessage: vi.fn(),
   loadMutualFriends: vi.fn(),
-  resetMutualFriends: vi.fn(),
+  resetRelationships: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
   setPeerOnline: vi.fn(),
@@ -86,7 +86,7 @@ vi.mock('../store/relationships', () => ({
   useRelationshipsStore: {
     getState: () => ({
       loadMutualFriends: mocks.loadMutualFriends,
-      resetMutualFriends: mocks.resetMutualFriends,
+      reset: mocks.resetRelationships,
       mutualFriends: [],
     }),
   },
@@ -390,6 +390,24 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.stopEventStream).toHaveBeenCalledTimes(2);
       expect(mocks.startEventStream).toHaveBeenCalledTimes(3);
       expect(mocks.startEventStream).toHaveBeenLastCalledWith(2);
+    });
+  });
+
+  it('clears relationship candidates when the authenticated actor changes', async () => {
+    mocks.currentActorPtid = 'ptid:alice';
+    mocks.sessionListener?.();
+    await vi.waitFor(() => {
+      expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:alice', true);
+    });
+    const resetsBeforeSwitch = mocks.resetRelationships.mock.calls.length;
+
+    mocks.currentActorPtid = 'ptid:bob';
+    mocks.sessionListener?.();
+    await vi.waitFor(() => {
+      expect(mocks.resetRelationships).toHaveBeenCalledTimes(
+        resetsBeforeSwitch + 1,
+      );
+      expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:bob', true);
     });
   });
 });

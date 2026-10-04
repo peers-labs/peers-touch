@@ -55,7 +55,8 @@ Key Exchange owns:
 - endpoint and actor-recovery Content PreKey pools;
 - claim validation and irreversible consumption;
 - exact replay receipts;
-- remote claim route authorization.
+- remote claim route authorization; and
+- the `CSS-D10` read-only remote submit-validation route.
 
 Social persists the exact claim request and consumes the typed result. Social
 never reads Key Exchange tables directly.
@@ -108,8 +109,10 @@ The existing Social prepare/submit UOW gains:
 2. Conversation-owned `GROUP` snapshot with Federation ID and unchanged submit
    fence;
 3. local and remote Key Exchange claim ports;
-4. per-remote-actor frame construction;
-5. transaction-scoped shared Federation outbox writes.
+4. `CSS-D10` remote claim validation before the local transaction,
+   with local claim validation retained inside that transaction;
+5. per-remote-actor frame construction;
+6. transaction-scoped shared Federation outbox writes.
 
 The existing remote-recipient rejection stays active until the complete source
 and receiver path passes functional proof. Its deletion is part of the delivery
@@ -168,6 +171,7 @@ continuity regression. No Mobile gate is added to this plan.
 | Concern | New path | Old path removed or changed | Proof |
 |---|---|---|---|
 | Remote audience | verified locality + remote Key Exchange claim | unconditional remote-recipient rejection | supported remote audience succeeds; unsupported cases still fail before commit |
+| Remote submit validation | digest-bound, read-only Key Exchange peer validation | local-only claim validation | stale endpoint/recovery and unavailable peer reject before source Social commit without changing claim replay |
 | Federated Group | Conversation snapshot with Federation ID + unchanged submit fence | locality rejection for same-Federation remote members | mixed local/remote Group succeeds exactly once; stale/cross-Federation snapshots commit nothing |
 | Remote delivery | viewer-scoped Federation frame | local-only delivery intent | source/receiver UOW failpoints and duplicate corpus |
 | Object read | Social-authorized Federation peer stream | any direct remote/public fallback | wrong actor/device/object/range negatives |

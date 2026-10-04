@@ -116,7 +116,6 @@ function resetProjection(generation: number): void {
   usePrivateCommentsStore.getState().deactivate(generation);
   useMomentsStore.getState().reset();
   useDiscoveryStore.getState().reset();
-  useRelationshipsStore.getState().reset();
 }
 
 function invalidateScope(): number {

@@ -205,7 +205,7 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
   await Promise.allSettled([
     chat.loadCurrentUserProfile(),
     chat.loadFriendRequests(),
-    useRelationshipsStore.getState().loadMutualFriends(actorPtid, true),
+    refreshFriendshipProjection(true),
     notifications.refreshUnreadCounts(),
   ]);
 
@@ -281,7 +281,7 @@ function reconcileAuthenticatedRuntime(): void {
       bootstrappedActorPtid = null;
       bootstrapSequence += 1;
     }
-    useRelationshipsStore.getState().resetMutualFriends();
+    useRelationshipsStore.getState().reset();
     return;
   }
 
@@ -291,6 +291,9 @@ function reconcileAuthenticatedRuntime(): void {
   startSocialReconcile();
 
   if (bootstrappedActorPtid === actorPtid) return;
+  if (bootstrappedActorPtid) {
+    useRelationshipsStore.getState().reset();
+  }
   bootstrappedActorPtid = actorPtid;
   const sequence = ++bootstrapSequence;
   runDetached('social projection bootstrap', () => bootstrapSocialProjection(actorPtid, sequence));

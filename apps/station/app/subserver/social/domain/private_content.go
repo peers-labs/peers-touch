@@ -195,6 +195,147 @@ type RecipientLocality struct {
 	FederationID      string
 }
 
+type canonicalRecipientLocalities struct {
+	FormatVersion uint32                       `json:"format_version"`
+	Recipients    []canonicalRecipientLocality `json:"recipients"`
+}
+
+type canonicalRecipientLocality struct {
+	ActorPTID         string `json:"actor_ptid"`
+	HomeStationPeerID string `json:"home_station_peer_id"`
+	FederationID      string `json:"federation_id,omitempty"`
+}
+
+// CanonicalRecipientLocalitiesBytes persists the prepare-time locality
+// projection needed to partition submit validation without re-reading mutable
+// Actor Identity state.
+func CanonicalRecipientLocalitiesBytes(
+	localities []RecipientLocality,
+) ([]byte, error) {
+	const operation = "social.private_content.canonical_recipient_localities"
+	if len(localities) > MaximumPrivateRecipientActors {
+		return nil, NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"recipient_localities",
+			"exceed the private recipient limit",
+		)
+	}
+	normalized := append([]RecipientLocality(nil), localities...)
+	sort.Slice(normalized, func(left int, right int) bool {
+		return normalized[left].ActorPTID < normalized[right].ActorPTID
+	})
+	recipients := make([]canonicalRecipientLocality, 0, len(normalized))
+	previousActorPTID := ""
+	for _, locality := range normalized {
+		if err := validateIdentifier(
+			locality.ActorPTID,
+			255,
+			"recipient_localities.actor_ptid",
+			operation,
+		); err != nil {
+			return nil, err
+		}
+		if locality.ActorPTID == previousActorPTID {
+			return nil, NewPrivateContentError(
+				PrivateContentConflict,
+				operation,
+				"recipient_localities.actor_ptid",
+				"must be unique",
+			)
+		}
+		if err := validateIdentifier(
+			locality.HomeStationPeerID,
+			255,
+			"recipient_localities.home_station_peer_id",
+			operation,
+		); err != nil {
+			return nil, err
+		}
+		if locality.FederationID != "" {
+			if err := validateIdentifier(
+				locality.FederationID,
+				255,
+				"recipient_localities.federation_id",
+				operation,
+			); err != nil {
+				return nil, err
+			}
+		}
+		recipients = append(recipients, canonicalRecipientLocality{
+			ActorPTID:         locality.ActorPTID,
+			HomeStationPeerID: locality.HomeStationPeerID,
+			FederationID:      locality.FederationID,
+		})
+		previousActorPTID = locality.ActorPTID
+	}
+	encoded, err := json.Marshal(canonicalRecipientLocalities{
+		FormatVersion: PrivateContentFormatVersion,
+		Recipients:    recipients,
+	})
+	if err != nil {
+		return nil, WrapPrivateContentError(
+			PrivateContentInternal,
+			operation,
+			err,
+		)
+	}
+	return encoded, nil
+}
+
+// ParseCanonicalRecipientLocalities accepts only bytes emitted by
+// CanonicalRecipientLocalitiesBytes.
+func ParseCanonicalRecipientLocalities(
+	encoded []byte,
+) ([]RecipientLocality, error) {
+	const operation = "social.private_content.parse_recipient_localities"
+	if len(encoded) == 0 {
+		return nil, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"recipient_localities",
+			"are required",
+		)
+	}
+	var persisted canonicalRecipientLocalities
+	if err := json.Unmarshal(encoded, &persisted); err != nil {
+		return nil, WrapPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			err,
+		)
+	}
+	if persisted.FormatVersion != PrivateContentFormatVersion {
+		return nil, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"format_version",
+			"is unsupported",
+		)
+	}
+	localities := make([]RecipientLocality, 0, len(persisted.Recipients))
+	for _, locality := range persisted.Recipients {
+		localities = append(localities, RecipientLocality{
+			ActorPTID:         locality.ActorPTID,
+			HomeStationPeerID: locality.HomeStationPeerID,
+			FederationID:      locality.FederationID,
+		})
+	}
+	canonical, err := CanonicalRecipientLocalitiesBytes(localities)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(encoded, canonical) {
+		return nil, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"recipient_localities",
+			"are not canonically encoded",
+		)
+	}
+	return localities, nil
+}
+
 // GroupRecipientSnapshot is Social's value-only projection of Conversation
 // membership authority. It never carries a Conversation repository or UOW.
 type GroupRecipientSnapshot struct {

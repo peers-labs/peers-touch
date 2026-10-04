@@ -61,7 +61,7 @@ If a feature only refreshes on component mount, tab switch, or button click, the
 
 - own the `/events/stream` supervisor lifecycle after authentication, independent of page or presence-hook mounts;
 - bootstrap current user profile, friend requests, relationship state,
-  notification counts, and notification list;
+  current-actor followers, notification counts, and notification list;
 - consume presence, social graph, and notification-derived social signals;
 - consume notification-derived social signals such as friend request and friend accepted notifications;
 - periodically reconcile friend requests, relationship state, peer identity,
@@ -228,7 +228,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated |
 | `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
 | `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route; `appletsRuntime` owns `acquirePage/releasePage` session lease |
-| `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments` | migrated |
+| `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments`, `social`, `messaging` | migrated |
 | `agent` | `pages/AgentChatPage.descriptor.tsx` | `agent-capability`, `agent-topic`, `agent-tool`, `social` | migrated (`preload: idle`, `keepAlive: forever`); page is a pure `AgentWorkbench` renderer |
 | `home` | `pages/HomePage.descriptor.tsx` | `home` | migrated (`preload: eager`, `keepAlive: forever`); page renders the Station Home projection |
 | `evaluation` | `pages/EvaluationPage.descriptor.tsx` | `evaluation`, `agent-capability` | migrated (`preload: on-visit`, `keepAlive: lru(1)`); page renders Station-owned Evaluation truth and runtime recovery |
