@@ -31,6 +31,7 @@ import {
   updateHomeGoalContract,
 } from '../../runtimes/homeRuntime';
 import { useGoalDraftStore } from '../../store/goalDraft';
+import { goalAdmissionReasonKeys } from './goalAdmissionPresentation';
 
 const { useToken } = theme;
 
@@ -53,6 +54,9 @@ export function GoalContractEditor({ goal }: { goal: AgentGoal }) {
   const dirty = useGoalDraftStore((state) => state.dirty);
   const mutationState = useGoalDraftStore((state) => state.mutationState);
   const mutationError = useGoalDraftStore((state) => state.mutationError);
+  const admissionReasonCode = useGoalDraftStore(
+    (state) => state.admissionReasonCode,
+  );
   const conflictRevision = useGoalDraftStore((state) => state.conflictRevision);
   const reloadLoading = useGoalDraftStore((state) => state.reloadLoading);
   const setOutcome = useGoalDraftStore((state) => state.setOutcome);
@@ -159,8 +163,14 @@ export function GoalContractEditor({ goal }: { goal: AgentGoal }) {
       ) : null}
       {mutationState === 'admission-rejected' ? (
         <Alert
-          data-pt-home-goal-admission-error=""
-          message={t('agent.home.goalContractIncomplete')}
+          data-pt-home-goal-admission-error={admissionReasonCode}
+          description={t(
+            goalAdmissionReasonKeys[admissionReasonCode]
+              ?? 'agent.home.goalAdmissionRejectedDescription',
+          )}
+          message={mutationError
+            ? t(mutationError)
+            : t('agent.home.goalContractIncomplete')}
           showIcon
           type="warning"
         />

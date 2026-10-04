@@ -12,18 +12,9 @@ import {
   startHomeGoal,
 } from '../../runtimes/homeRuntime';
 import { useGoalDraftStore } from '../../store/goalDraft';
+import { goalAdmissionReasonKeys } from './goalAdmissionPresentation';
 
 const { useToken } = theme;
-
-const admissionReasonKeys: Record<string, string> = {
-  outcome_missing: 'agent.home.goalAdmissionOutcomeMissing',
-  max_tokens_missing: 'agent.home.goalAdmissionMaxTokensMissing',
-  wall_time_missing: 'agent.home.goalAdmissionWallTimeMissing',
-  parallelism_invalid: 'agent.home.goalAdmissionParallelismInvalid',
-  acceptance_missing: 'agent.home.goalAdmissionAcceptanceMissing',
-  required_acceptance_missing:
-    'agent.home.goalAdmissionRequiredAcceptanceMissing',
-};
 
 export function GoalReviewPanel({ goal }: { goal: AgentGoal }) {
   const { t } = useTranslation('agent');
@@ -81,7 +72,7 @@ export function GoalReviewPanel({ goal }: { goal: AgentGoal }) {
         <Alert
           data-pt-home-goal-admission-error={admissionReasonCode}
           description={t(
-            admissionReasonKeys[admissionReasonCode]
+            goalAdmissionReasonKeys[admissionReasonCode]
               ?? 'agent.home.goalAdmissionRejectedDescription',
           )}
           message={mutationError ? t(mutationError) : t('agent.home.goalAdmissionRejected')}
