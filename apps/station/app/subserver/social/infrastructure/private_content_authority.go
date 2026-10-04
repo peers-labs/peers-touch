@@ -279,7 +279,7 @@ func (a *GORMPrivateAudienceAuthority) ResolvePrivateCommentSnapshot(
 			)
 	}
 
-	friendSnapshot, err := loadFriendsSnapshot(
+	friendSnapshot, err := loadFriendsSnapshotAllowEmpty(
 		ctx,
 		database,
 		commentAuthorPTID,
@@ -972,6 +972,25 @@ func loadFriendsSnapshot(
 	database *gorm.DB,
 	authorPTID string,
 ) (socialdomain.FriendsSnapshot, error) {
+	snapshot, err := loadFriendsSnapshotAllowEmpty(
+		ctx,
+		database,
+		authorPTID,
+	)
+	if err != nil {
+		return socialdomain.FriendsSnapshot{}, err
+	}
+	return requireNonEmptyAudienceSnapshot(
+		"social.private_content.friends_snapshot",
+		snapshot,
+	)
+}
+
+func loadFriendsSnapshotAllowEmpty(
+	ctx context.Context,
+	database *gorm.DB,
+	authorPTID string,
+) (socialdomain.FriendsSnapshot, error) {
 	authorPTID = strings.TrimSpace(authorPTID)
 	if authorPTID == "" {
 		return socialdomain.FriendsSnapshot{}, fmt.Errorf(
@@ -1009,15 +1028,6 @@ func loadFriendsSnapshot(
 		writeSnapshotField(head, row.AcceptedEventID)
 		writeSnapshotBytes(head, row.AcceptedEventHash)
 		writeSnapshotField(head, row.AcceptedAt.UTC().Format(time.RFC3339Nano))
-	}
-	if len(recipients) == 0 {
-		return socialdomain.FriendsSnapshot{},
-			socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentInvalidArgument,
-				"social.private_content.friends_snapshot",
-				"recipients",
-				"contains no accepted, unblocked FRIENDS recipients",
-			)
 	}
 	return socialdomain.FriendsSnapshot{
 		Audience:         &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
