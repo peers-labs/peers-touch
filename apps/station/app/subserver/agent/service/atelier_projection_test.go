@@ -150,6 +150,107 @@ func TestBuildAtelierProjectionSnapshotMapsCollaborationTask(t *testing.T) {
 	}
 }
 
+func TestAtelierProjectionCollaborationTaskMigrationUsesCanonicalGoalIdentity(t *testing.T) {
+	task := &model.CollaborationTask{
+		TaskId:      "collab-migrated",
+		Title:       "Migrated Atelier project",
+		Description: "Open through the canonical Goal.",
+		Status:      model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING,
+		WorkspaceId: "workspace-1",
+		Meta: map[string]string{
+			"project":    "peers-touch",
+			"project_id": "legacy-project-id",
+		},
+	}
+	migration := persistence.CollaborationTaskGoalMap{
+		LegacyTaskID: task.TaskId,
+		GoalID:       "goal-canonical",
+		TaskID:       task.TaskId,
+		State:        persistence.CollaborationTaskMigrationStateMigrated,
+	}
+
+	snapshot := buildAtelierProjectionSnapshot(
+		[]*model.CollaborationTask{task},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		map[string]persistence.CollaborationTaskGoalMap{task.TaskId: migration},
+		task.TaskId,
+	)
+
+	projectedTask := snapshot.Workspace.Tasks[0]
+	if projectedTask.ID != task.TaskId ||
+		projectedTask.ProjectID != migration.GoalID ||
+		projectedTask.GoalID != migration.GoalID ||
+		projectedTask.TaskRunID != migration.TaskID ||
+		projectedTask.LegacySourceID != task.TaskId ||
+		projectedTask.MigrationState != persistence.CollaborationTaskMigrationStateMigrated {
+		t.Fatalf("unexpected migrated task projection: %+v", projectedTask)
+	}
+	project := snapshot.Workspace.Projects[0]
+	if project.ID != migration.GoalID ||
+		project.GoalID != migration.GoalID ||
+		project.TaskRunID != migration.TaskID ||
+		project.LegacySourceID != task.TaskId ||
+		project.MigrationState != persistence.CollaborationTaskMigrationStateMigrated {
+		t.Fatalf("unexpected migrated project projection: %+v", project)
+	}
+}
+
+func TestAtelierProjectionCollaborationTaskMigrationShowsAmbiguousMetadataBlocked(t *testing.T) {
+	task := &model.CollaborationTask{
+		TaskId:      "collab-blocked",
+		Title:       "Blocked Atelier project",
+		Description: "Do not infer ambiguous identity.",
+		Status:      model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING,
+		Meta: map[string]string{
+			"goal_id":    "goal-one",
+			"project_id": "goal-two",
+		},
+	}
+	migration := persistence.CollaborationTaskGoalMap{
+		LegacyTaskID: task.TaskId,
+		GoalID:       "goal-candidate",
+		TaskID:       task.TaskId,
+		State:        persistence.CollaborationTaskMigrationStateBlocked,
+		BlockReason:  "identity_metadata_ambiguous",
+	}
+
+	snapshot := buildAtelierProjectionSnapshot(
+		[]*model.CollaborationTask{task},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		map[string]persistence.CollaborationTaskGoalMap{task.TaskId: migration},
+		task.TaskId,
+	)
+
+	projectedTask := snapshot.Workspace.Tasks[0]
+	if projectedTask.GoalID != "" ||
+		projectedTask.TaskRunID != "" ||
+		projectedTask.MigrationState != persistence.CollaborationTaskMigrationStateBlocked ||
+		projectedTask.MigrationBlockReason != migration.BlockReason {
+		t.Fatalf("unexpected blocked task projection: %+v", projectedTask)
+	}
+	project := snapshot.Workspace.Projects[0]
+	if project.GoalID != "" ||
+		project.TaskRunID != "" ||
+		project.State != "blocked" ||
+		project.MigrationState != persistence.CollaborationTaskMigrationStateBlocked ||
+		project.MigrationBlockReason != migration.BlockReason {
+		t.Fatalf("unexpected blocked project projection: %+v", project)
+	}
+	if project.Completion.NoOpenBlockers ||
+		len(project.OpenBlockers) != 1 ||
+		project.OpenBlockers[0].Reason != migration.BlockReason {
+		t.Fatalf("expected migration blocker in project readback: %+v", project)
+	}
+}
+
 func TestProjectAtelierMilestoneTreeDefaultsAcceptancePredicateIDs(t *testing.T) {
 	task := &model.CollaborationTask{
 		TaskId: "task-default-predicate",
@@ -2775,6 +2876,7 @@ func TestAtelierMaterializedCheckpointProjectionFoldsPostCheckpointEvents(t *tes
 		},
 		materializedByTask,
 		nil,
+		nil,
 		"",
 	)
 
@@ -2848,6 +2950,7 @@ func TestAtelierProjectionSnapshotFoldsInterruptRequestAndResolution(t *testing.
 		map[string]AtelierReplayState{
 			"collab_interrupt": buildAtelierReplayStateWithWindow(events, 22, nil, true, len(events)),
 		},
+		nil,
 		nil,
 		nil,
 		"",

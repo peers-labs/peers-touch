@@ -388,6 +388,23 @@ export function AtelierAppletPage() {
             <StatusPill status={controller.viewStatus} />
           </view>
           <BudgetBar budget={snapshot?.workspace.budget} fallbackPercent={controller.budgetPercent} label={budgetLabel} />
+          {controller.selectedTask?.migrationState ? (
+            <view
+              data-pt-collaboration-migration={controller.selectedTask.migrationState}
+              data-pt-migration-goal-id={controller.selectedTask.goalId}
+              data-pt-migration-source-id={controller.selectedTask.legacySourceId}
+              style={{ backgroundColor: controller.selectedTask.migrationState === 'blocked' ? colors.warningSoft : colors.successSoft, borderRadius: px(8), marginTop: px(10), padding: px(8) }}
+            >
+              <text style={{ color: controller.selectedTask.migrationState === 'blocked' ? colors.warning : colors.success, fontSize: px(11), fontWeight: '700' }}>
+                {t(`atelier.migration.${controller.selectedTask.migrationState}`)}
+              </text>
+              <text style={{ color: colors.muted, fontSize: px(10), marginTop: px(3) }}>
+                {controller.selectedTask.migrationState === 'migrated'
+                  ? `${t('atelier.migration.goalId')}: ${controller.selectedTask.goalId}`
+                  : `${t('atelier.migration.blockReason')}: ${controller.selectedTask.migrationBlockReason}`}
+              </text>
+            </view>
+          ) : null}
         </view>
 
         {pageSurface.globalErrorVisible ? (
@@ -1049,7 +1066,12 @@ function TaskRow({
   const busy = actionId === task.id;
   const confirmingPurge = status === 'deleted' && purgeConfirmTaskId === task.id;
   return (
-    <view style={{ backgroundColor: selected ? colors.primarySoft : colors.elevated, borderColor: selected ? '#bfdbfe' : colors.border, borderRadius: px(12), borderWidth: px(1), marginBottom: px(8), padding: px(10) }}>
+    <view
+      data-pt-collaboration-migration={task.migrationState}
+      data-pt-migration-goal-id={task.goalId}
+      data-pt-migration-source-id={task.legacySourceId}
+      style={{ backgroundColor: selected ? colors.primarySoft : colors.elevated, borderColor: selected ? '#bfdbfe' : colors.border, borderRadius: px(12), borderWidth: px(1), marginBottom: px(8), padding: px(10) }}
+    >
       <view bindtap={onTap}>
         <view style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: px(4) }}>
           <text style={{ color: colors.text, flex: 1, fontSize: px(13), fontWeight: '700', marginRight: px(8) }}>{task.title || t('atelier.task.untitled')}</text>
@@ -1057,6 +1079,18 @@ function TaskRow({
         </view>
         <text style={{ color: colors.muted, fontSize: px(11) }}>{task.project} · {status}</text>
         {task.branch ? <text style={{ color: colors.subtle, fontSize: px(11), marginTop: px(3) }}>{task.branch}</text> : null}
+        {task.migrationState ? (
+          <view style={{ marginTop: px(5) }}>
+            <text style={{ color: task.migrationState === 'blocked' ? colors.warning : colors.success, fontSize: px(10), fontWeight: '700' }}>
+              {t(`atelier.migration.${task.migrationState}`)}
+            </text>
+            <text style={{ color: colors.subtle, fontSize: px(10), lineHeight: px(15), marginTop: px(2) }}>
+              {task.migrationState === 'migrated'
+                ? `${t('atelier.migration.goalId')}: ${task.goalId}`
+                : `${t('atelier.migration.blockReason')}: ${task.migrationBlockReason}`}
+            </text>
+          </view>
+        ) : null}
       </view>
       <view style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: px(8) }}>
         <TaskActionChip
@@ -1879,6 +1913,19 @@ function ProjectHealthPanel({ project }: { project: AtelierProjectProjection }) 
       </text>
       <text style={{ color: colors.text, fontSize: px(12), fontWeight: '700', lineHeight: px(18), marginBottom: px(6) }}>{project.title}</text>
       <PreviewLine label={t('atelier.projectHealth.workspace')} value={project.workspaceRef} />
+      {project.migrationState ? (
+        <view
+          data-pt-project-migration={project.migrationState}
+          data-pt-migration-goal-id={project.goalId}
+          data-pt-migration-source-id={project.legacySourceId}
+        >
+          <PreviewLine label={t('atelier.migration.state')} value={t(`atelier.migration.${project.migrationState}`)} />
+          <PreviewLine
+            label={project.migrationState === 'migrated' ? t('atelier.migration.goalId') : t('atelier.migration.blockReason')}
+            value={project.migrationState === 'migrated' ? project.goalId ?? '' : project.migrationBlockReason ?? ''}
+          />
+        </view>
+      ) : null}
       <PreviewLine label={t('atelier.projectHealth.signoff')} value={project.goalOwnerSignoff ? t('atelier.projectHealth.yes') : t('atelier.projectHealth.no')} />
       <view style={{ marginTop: px(8) }}>
         <text style={{ color: colors.subtle, fontSize: px(10), fontWeight: '700', marginBottom: px(5) }}>{t('atelier.projectHealth.completion')}</text>
