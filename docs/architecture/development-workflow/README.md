@@ -1,7 +1,7 @@
 # Development Workflow Control Plane
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-01
+> **Created**: 2026-09-13 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
 
 ---
@@ -95,6 +95,9 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
     assignment 创建 child binding，并以 lease/terminal receipt 管理生命周期。
     状态和完成声明只能消费当前事件的 `BindingProjection`，不能枚举同
     worktree 的历史 binding 猜 owner。
+24. 普通 Agent integration 投影只消费精确 OWNER grant 和短期机器锁，不要求
+    无关 worktree idle；机器级 legacy store hard cut 与 retired projection GC
+    使用独立命令、独立 grant，并且只有这两类破坏性清理要求全局 idle。
 
 ## 4. Document Navigation
 
@@ -102,7 +105,7 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 |---|---|
 | [design.md](./design.md) | 控制面边界、Plan Package、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D33 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D34 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
 | [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33 的 Kernel、宿主投影和 rollout 流程 |
@@ -118,7 +121,7 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 
 ## 5. Current Status
 
-DWF-D01..DWF-D33 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
+DWF-D01..DWF-D34 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
 workspace 只解析机器级当前 generation 指向的一个 Plan；同步进入分支的外来
 Plan 不参与本 workspace 的发现。completed 且 quiescent 的 generation 可由
 显式 owner command 原子推进，不能由 repository discovery 或 Agent 新建

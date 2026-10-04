@@ -128,26 +128,27 @@ translated, or copied into current authority.
    descriptor, including `SubagentStart`, `SubagentStop`, `PreCompact`, and
    `PostCompact`. Per-worktree managed TRAE hook entries are removed. No
    user-global hook file is modified.
-   This hard cut deletes prior machine-local conversation and workflow-action
-   stores before publishing the bootstrap. The installer has no legacy reader,
-   importer, alias, or dual-write path.
-   The complete install runs while holding the
-   machine work-ledger lock, rejects every live machine declaration, child
-   assignment, canonical workflow action, and Action Store lock as
-   `GLOBAL_WORKFLOW_NOT_IDLE`. One live OWNER `skills` Action Receipt is allowed
-   only when its canonical binding resolves to the selected source worktree and
-   the Kernel issued a create-once grant for that exact action ID. The installer
-   atomically consumes the grant, so a seeded receipt or second invocation
-   cannot reuse it. Expired actions are not live. The installer validates the
-   ledger, binding, and Action stores through their canonical owners while
+   Ordinary install never deletes conversation or workflow-action stores. It
+   runs while holding the machine work-ledger lock and consumes one live OWNER
+   `skills` Action Receipt only when its canonical binding resolves to the
+   selected source worktree and the Kernel issued a create-once grant for that
+   exact action ID. Unrelated live declarations, child assignments, workflow
+   actions, and Action Store activity do not participate in projection
+   admission.
+   `skills-hard-cut` and `skills-gc` use separate OWNER_CONTROL labels and
+   create-once grants. Only those cleanup commands reject every live machine
+   declaration, child assignment, unrelated canonical workflow action, and
+   Action Store lock as `GLOBAL_WORKFLOW_NOT_IDLE`. The control plane validates
+   the ledger, binding, and Action stores through their canonical owners while
    holding the lock,
    never reclaims another owner's stale ledger lock, waits while a live ledger
    owner holds an inode-bound recovery claim, reclaims only a dead recovery
    owner through PID/start identity, rejects host-root, retirement-root, reset,
    and canonical-source symlink escape, and validates every reset target before
    deleting any store. It completes fallible path, workspace, catalog, and hook
-   planning before consuming the grant. After consumption it immediately writes
-   one strict current machine receipt in `INSTALLING`, performs destructive
+   planning before consuming a grant. After consumption it immediately writes
+   one strict current machine receipt for the selected operation, performs
+   only that operation's bounded mutation,
    reset inside the guarded lifecycle, runs the host-aware audit and exact
    installed callback proof, then publishes `INSTALLED` or `BLOCKED`. A reset
    failure therefore cannot leave an absent or stale lifecycle receipt. The

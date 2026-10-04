@@ -136,7 +136,8 @@
         "DWF-D30",
         "DWF-D31",
         "DWF-D32",
-        "DWF-D33"
+        "DWF-D33",
+        "DWF-D34"
       ],
       "governedPaths": [
         "docs/architecture/development-workflow",

@@ -63,14 +63,16 @@ bootstrap. Its location is not an authority hint. The first mutating tool event
 must name one declared task root or have all mutation targets resolve to one
 workspace root; otherwise it fails with `WORKTREE_SELECTION_REQUIRED`.
 Managed per-worktree hook entries are not parallel authorities.
-Rollout is a hard cut: after proving the workflow idle, delete prior
-conversation and workflow-action stores before installing the current
-bootstrap. No legacy reader, importer, alias, or dual writer is allowed.
-The sole live OWNER `skills` action is admissible only with its create-once
-Kernel grant, which the installer atomically consumes exactly once. Zero live
-actions are denied. Fallible path/workspace/catalog planning completes before
-grant consumption. After consumption, the installer immediately persists
-`INSTALLING` before destructive reset and records `BLOCKED` if reset fails.
+Projection and cleanup are separate actions. Ordinary `skills` consumes one
+exact create-once OWNER grant and may update the selected host projection while
+unrelated worktrees remain active; it never deletes workflow state.
+`skills-hard-cut` is the only legacy conversation/action-store reset owner, and
+`skills-gc` is the only retired-projection cleanup owner. Each consumes its own
+exact create-once OWNER grant and proves global idle before deletion. No legacy
+reader, importer, alias, or dual writer is allowed. Fallible
+path/workspace/catalog planning completes before grant consumption. After
+consumption, each command persists its operation state and records `BLOCKED`
+if its bounded mutation fails.
 
 ## Why this is non-negotiable
 
@@ -97,9 +99,12 @@ authority because a timer elapsed.
 - Pre-hard-cut Completion Review records cannot block current status or review.
 - Compact restoration fails when any persisted lineage field differs.
 - Concurrent lineage compactions preserve independent receipts.
-- A missing, seeded, or already-consumed installer action has no rollout
-  authority.
-- Failed destructive reset leaves a `BLOCKED` installation receipt.
+- A missing, seeded, wrong-label, or already-consumed control action has no
+  projection or cleanup authority.
+- Ordinary install succeeds with an exact grant while an unrelated declaration
+  remains active and does not remove legacy stores.
+- Hard cut and GC reject unrelated live work and leave a `BLOCKED` operation
+  receipt on failure.
 - BeforePrompt injects role, lineage, release, execution, subject, tool, and
   target roots; wrong-binding status/final claims fail closed.
 - Sibling-worktree reads pass and writes fail with
@@ -108,8 +113,9 @@ authority because a timer elapsed.
 - Active-editor mismatch and explicit New Task target fixtures bind the
   selected worktree or fail `WORKTREE_SELECTION_REQUIRED`; folder order never
   decides authority.
-- Rollout removes the old conversation/action stores and tree-wide search finds
-  no runtime import of `workflow-conversation-binding.mjs`.
+- Explicit hard cut removes the old conversation/action stores; ordinary
+  install does not. Tree-wide search finds no runtime import of
+  `workflow-conversation-binding.mjs`.
 
 ## Crosswalks
 

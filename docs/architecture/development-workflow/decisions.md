@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-01
+> **Created**: 2026-09-13 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
 
 ---
@@ -43,6 +43,7 @@
 | DWF-D31 | Advance completed workspace bindings by explicit Plan generation | accepted |
 | DWF-D32 | Aggregate module impacts before resource acquisition | accepted |
 | DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | accepted |
+| DWF-D34 | Separate live integration install from global-idle cleanup | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1528,3 +1529,68 @@ heuristic.
   expired and terminal child behavior, compaction/task switching, subject-root
   projection, exact Completion Review selection with twenty stale children,
   and wrong-binding status/final claims.
+
+## DWF-D34: Separate Live Integration Install From Global-Idle Cleanup
+
+**Status**: accepted
+**Date**: 2026-10-04
+
+### Context
+
+The DWF-D33 rollout installer combined two operations with different safety
+boundaries:
+
+- projecting current Skills, plugins, and host hooks into one selected
+  worktree; and
+- deleting machine-wide legacy conversation and Action Receipt stores.
+
+Because the second operation is destructive and machine-wide, the combined
+command required every worktree declaration, child assignment, Action Receipt,
+and Action Store lock to be idle. A live but unrelated worktree therefore
+blocked a source-local integration update. This can prevent the update needed
+to emit the exact OWNER Action Receipt required to close another workflow.
+
+### Decision
+
+- `make skills IDE=<host>` is a non-destructive projection operation. It keeps
+  exact current OWNER `skills` grant consumption and the machine ledger lock,
+  but it does not require unrelated worktrees to be idle and never deletes
+  workflow stores.
+- `make skills-hard-cut IDE=<host>` is the sole owner of legacy conversation
+  and Action Receipt store deletion. It requires an exact current OWNER
+  `skills-hard-cut` grant and global-idle proof before deleting anything.
+- `make skills-gc IDE=<host>` is the sole owner of retired project integration
+  cleanup. It requires an exact current OWNER `skills-gc` grant and
+  global-idle proof.
+- Each command has a distinct OWNER_CONTROL operation label. Grants are
+  create-once, exact-workspace, exact-root, and single-use. One command cannot
+  consume another command's grant.
+- Short machine-lock serialization remains because host projections and the
+  machine receipt are shared mutation surfaces. Lock possession is not
+  workflow-idle proof and cannot reject unrelated live declarations.
+
+### Rationale
+
+Authorization answers who may perform one control action. Global-idle proof
+answers whether a machine-wide destructive cleanup is safe. Keeping those
+checks separate preserves precise authority without turning unrelated
+worktrees into a global upgrade lock.
+
+### Alternatives Considered
+
+- Remove all installer grants: rejected because host hooks are an enforcement
+  boundary and must remain OWNER-authorized.
+- Keep the combined command and shorten declaration leases: rejected because
+  unrelated liveness would still control source-local upgrades.
+- Let ordinary install opportunistically purge when the machine appears idle:
+  rejected because one command would retain two safety contracts and race with
+  newly admitted work.
+
+### Consequences
+
+- Ordinary integration updates can proceed while independent worktrees are
+  active.
+- Legacy stores and retired projections persist until their explicit cleanup
+  commands run during a globally idle window.
+- Tests and audit output must distinguish projection success from hard-cut or
+  GC completion; installation success no longer claims machine cleanup.

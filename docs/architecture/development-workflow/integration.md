@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-01
+> **Created**: 2026-09-13 | **Updated**: 2026-10-04
 > **Owner**: Platform Team
 
 ---
@@ -212,27 +212,30 @@ Agent integration:
 ```bash
 make skills IDE=<trae|cursor|codex>
 make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>
+make skills-hard-cut IDE=<trae|cursor|codex>
+make skills-gc IDE=<trae|cursor|codex>
 make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
 ```
 
 This is the only canonical project Skill projector. Codex also receives the
 worktree-local `pt-ew-plugin`; TRAE receives one descriptor-selected multi-root
 workspace bootstrap. The installer removes managed per-worktree TRAE hooks,
-preserves unrelated host files, never edits global hooks, and cannot run while
-the machine has a live declaration, live child assignment, active canonical
-Action Receipt, or active Action Store lock. The sole exception is one
+preserves unrelated host files, never edits global hooks, and consumes one
 current, live OWNER `skills` Action Receipt bound to the selected source
-worktree. There is no separate acknowledgement command;
+worktree. Unrelated live declarations, child assignments, Action Receipts, and
+Action Store activity do not block this non-destructive projection. There is no
+separate acknowledgement command;
 restart the IDE only when the host cannot reload changed hooks, then rerun the
 audit.
 
-The TRAE rollout is a machine-store hard cut: while holding the installation
-lock it completes fallible path/workspace/catalog planning, consumes the exact
-installer grant, publishes `INSTALLING`, deletes the old conversation and
-workflow-action stores inside the guarded lifecycle, installs the new
-OWNER/child binding store contract, and then publishes the one bootstrap. Reset
-or installation failure publishes `BLOCKED`. No legacy binding/action reader or
-dual writer remains.
+`skills-hard-cut` is the only machine-store reset path. It consumes an exact
+OWNER `skills-hard-cut` grant, proves global idle, validates every reset target,
+then deletes only the old conversation and workflow-action stores.
+`skills-gc` consumes an exact OWNER `skills-gc` grant, proves global idle, and
+removes only retired project Skill/plugin projections. Neither cleanup runs
+implicitly during `skills`. Reset, GC, or installation failure publishes a
+bounded `BLOCKED` receipt. No legacy binding/action reader or dual writer
+remains.
 
 ## 4. Skill Integration
 

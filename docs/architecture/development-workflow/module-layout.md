@@ -173,9 +173,9 @@ tooling/scripts/
 | `tooling/skills/pt-goal-orchestrator/` | Host-neutral Goal scheduling contract, template, and review rubric |
 | `tooling/skills/pt-dev-runtime-handoff/` | Project runtime, Journey, Session result, and cleanup owner |
 | `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |
-| `tooling/scripts/install-agent-integration.sh` | Non-interactive Skill/plugin projection plus one TRAE multi-root workspace bootstrap |
+| `tooling/scripts/install-agent-integration.sh` | Non-interactive dispatch for projection, hard-cut, and retired-projection GC |
 | `tooling/scripts/agent-integration-audit.py` | Fail-closed source, workspace-bootstrap, recursive catalog, binding-store, receipt, and projection audit |
-| `tooling/scripts/agent-integration-control.py` | Work-ledger-locked hard-cut installer, binding/action-store reset, bootstrap preservation guard, path containment, and source/session-bound receipt |
+| `tooling/scripts/agent-integration-control.py` | Work-ledger-locked projection plus separately authorized global-idle hard-cut and retired-projection GC owners |
 | `tooling/scripts/skill-overlay-control.py` | Machine-local user Overlay install/list/enable/disable/uninstall/resolve owner with immutable-copy and digest validation |
 | `tooling/scripts/skill-overlay-control-test.py` | Overlay lifecycle, ordering, collision, symlink, registry, and tamper regression coverage |
 | `tooling/skills/pt-ew/` | Shared Overlay host and mandatory delegation boundary to `pt-god-view` |
