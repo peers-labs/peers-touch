@@ -31,6 +31,12 @@ enum HomeTaskStatus {
   HOME_TASK_STATUS_CANCELLED = 6;
 }
 
+enum HomeTaskMigrationState {
+  HOME_TASK_MIGRATION_STATE_UNSPECIFIED = 0;
+  HOME_TASK_MIGRATION_STATE_MIGRATED = 1;
+  HOME_TASK_MIGRATION_STATE_BLOCKED = 2;
+}
+
 enum HomeErrorCode {
   HOME_ERROR_CODE_UNSPECIFIED = 0;
   HOME_ERROR_CODE_PROJECTION_STALE = 1;
@@ -97,6 +103,9 @@ message HomeTaskProjection {
   uint32 attempt = 12;
   TaskSurface surface = 13;
   string workspace_id = 14;
+  string legacy_source_id = 15;
+  HomeTaskMigrationState migration_state = 16;
+  string migration_block_reason = 17;
 }
 
 message HomeCapabilitySummary {

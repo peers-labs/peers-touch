@@ -1,4 +1,5 @@
 import {
+  HomeTaskMigrationState,
   HomeTaskStatus,
   type HomeTaskProjection,
   type HomeWorkProjection,
@@ -19,6 +20,9 @@ export interface GoalExecutionView {
   status: HomeTaskStatus;
   progressPercent: number;
   surface: TaskSurface;
+  legacySourceId: string;
+  migrationState: HomeTaskMigrationState;
+  migrationBlockReason: string;
 }
 
 export interface GoalResultView extends GoalExecutionView {
@@ -71,6 +75,9 @@ export function normalizeGoalExecutions(
       status: task.status,
       progressPercent: task.progressPercent,
       surface: task.surface,
+      legacySourceId: task.legacySourceId,
+      migrationState: task.migrationState,
+      migrationBlockReason: task.migrationBlockReason,
     }));
 }
 
@@ -109,6 +116,9 @@ export function normalizeGoalResults(
         status: task.status,
         progressPercent: task.progressPercent,
         surface: task.surface,
+        legacySourceId: task.legacySourceId,
+        migrationState: task.migrationState,
+        migrationBlockReason: task.migrationBlockReason,
         summary: brief?.summary ?? '',
         artifactId,
       };

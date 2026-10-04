@@ -15,7 +15,7 @@
   "closureId": "PAOS-agenttask-migration",
   "journeyId": "PAOS-J02-MIGRATION",
   "runtimeClass": "native-desktop",
-  "writeSet": ["apps/station/app/subserver/agent/infrastructure/persistence/migrations/020_agent_task_goal_map.sql","apps/station/app/subserver/agent/infrastructure/persistence/agent_task_migration.go","apps/station/app/subserver/agent/infrastructure/persistence/agent_task_migration_test.go","apps/station/app/subserver/agent/service/home_projection_service.go","apps/desktop/src/components/home/MigratedWorkBadge.tsx","apps/desktop/src/components/home/MigratedWorkBadge.test.tsx","tooling/acceptance/gates/agent/personal_goal_slices/paos_11_agenttask_migration.py"],
+  "writeSet": ["model/domain/agent/home.proto","apps/station/app/subserver/agent/model/home.pb.go","apps/desktop/src/gen/proto/domain/agent/home_pb.ts","apps/mobile/src/gen/proto/domain/agent/home_pb.ts","apps/mobile/src/gen/proto/domain/agent/orchestration_pb.ts","apps/station/app/subserver/agent/agent.go","apps/station/app/subserver/agent/infrastructure/persistence/models.go","apps/station/app/subserver/agent/infrastructure/persistence/migrations/020_agent_task_goal_map.sql","apps/station/app/subserver/agent/infrastructure/persistence/agent_task_migration.go","apps/station/app/subserver/agent/infrastructure/persistence/agent_task_migration_test.go","apps/station/app/subserver/agent/service/agent_task_service.go","apps/station/app/subserver/agent/service/home_projection_service.go","apps/station/app/subserver/agent/service/home_projection_service_test.go","apps/desktop/src/store/goalExecution.ts","apps/desktop/src/components/home/GoalProgressPanel.tsx","apps/desktop/src/components/home/MigratedWorkBadge.tsx","apps/desktop/src/components/home/MigratedWorkBadge.test.tsx","packages/locales/en/agent.json","packages/locales/zh-CN/agent.json","tooling/acceptance/gates/agent/personal_goal_slices/paos_11_agenttask_migration.py"],
   "readSet": ["apps/station/app/subserver/agent/infrastructure/persistence/agent_task.go","apps/desktop/src/pages/HomePage.tsx"],
   "budgets": {"focusedCheckSeconds":900,"functionalRunSeconds":1500,"cleanupSeconds":180},
   "checks": [
@@ -25,7 +25,7 @@
   ],
   "doneWhen": ["A legacy AgentTask opens from Home under deterministic Goal and TaskRun ids","Repeated migration and restart do not duplicate records","Ambiguous owner or terminal state appears as blocked migration","Source rows remain intact for rollback"],
   "failureBehavior": ["Do not dual-write legacy and canonical task state","Do not translate ambiguous completion into success"],
-  "updatedAt": "2026-10-03T00:00:00Z",
+  "updatedAt": "2026-10-04T21:00:00Z",
   "durableEvidence": []
 }
 ```
@@ -40,4 +40,9 @@
 
 ## Current Snapshot
 
-Legacy AgentTask rows have no durable one-to-one Goal mapping.
+Implementation complete. The idempotent Station migration preserves every
+legacy source row, creates deterministic Goal/TaskRun/Step identities for
+valid rows, records invalid ownership or ambiguous terminal state as blocked,
+and exposes the migration state through the Home projection and badge.
+Focused Go, Desktop Vitest, TypeScript, proto generation, and diff checks pass.
+The Profile `two` native Development Journey remains pending.

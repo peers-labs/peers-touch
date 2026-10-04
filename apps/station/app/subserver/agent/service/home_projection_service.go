@@ -33,6 +33,13 @@ type homeTaskLister interface {
 	ListTasks(context.Context, string, string) ([]*persistence.AgentTask, error)
 }
 
+type homeTaskMigrationLister interface {
+	ListTaskMigrationReadbacks(
+		context.Context,
+		string,
+	) ([]persistence.AgentTaskGoalMap, error)
+}
+
 type homeGoalExecutionLister interface {
 	ListForOwner(context.Context, string, int) ([]*GoalExecutionSnapshot, error)
 }
@@ -95,6 +102,32 @@ func (s *HomeProjectionService) Get(
 		Revision:    1,
 		GeneratedAt: timestamppb.New(s.now().UTC()),
 		Freshness:   model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_FRESH,
+	}
+	migrationsBySourceID := make(map[string]persistence.AgentTaskGoalMap)
+	migrationsByTaskID := make(map[string]persistence.AgentTaskGoalMap)
+	if migrationReader, ok := s.tasks.(homeTaskMigrationLister); ok {
+		migrations, migrationErr := migrationReader.ListTaskMigrationReadbacks(
+			ctx,
+			ptid,
+		)
+		if migrationErr != nil {
+			projection.Freshness = model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_PARTIAL
+			projection.SliceErrors = append(projection.SliceErrors, &model.HomeSliceError{
+				SliceId:        "task_migration",
+				Code:           model.HomeErrorCode_HOME_ERROR_CODE_SLICE_UNAVAILABLE,
+				Retryable:      true,
+				RecoveryAction: "retry",
+			})
+		} else {
+			for _, migration := range migrations {
+				migrationsBySourceID[migration.LegacyTaskID] = migration
+				migrationsByTaskID[migration.TaskID] = migration
+				projection.Revision = maxHomeRevision(
+					projection.Revision,
+					migration.UpdatedAt,
+				)
+			}
+		}
 	}
 	capabilitySummarySeen := make(map[string]struct{})
 	for i := range agents {
@@ -247,6 +280,19 @@ func (s *HomeProjectionService) Get(
 					Surface:         model.TaskSurface(task.Surface),
 					WorkspaceId:     task.WorkspaceID,
 				}
+				if migration, ok := migrationsByTaskID[task.TaskID]; ok {
+					taskProjection.LegacySourceId = migration.LegacyTaskID
+					if migration.State == persistence.AgentTaskMigrationStateBlocked {
+						taskProjection.Status =
+							model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER
+						taskProjection.MigrationState =
+							model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_BLOCKED
+						taskProjection.MigrationBlockReason = migration.BlockReason
+					} else {
+						taskProjection.MigrationState =
+							model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_MIGRATED
+					}
+				}
 				// Keep every canonical Goal TaskRun in the wire projection so a
 				// Desktop restart can reconstruct both active and terminal work.
 				projection.ActiveTasks = append(
@@ -299,6 +345,51 @@ func (s *HomeProjectionService) Get(
 			for _, task := range tasks {
 				if task == nil {
 					continue
+				}
+				if migration, ok := migrationsBySourceID[task.ID]; ok {
+					if migration.State == persistence.AgentTaskMigrationStateMigrated {
+						continue
+					}
+					if migration.State == persistence.AgentTaskMigrationStateBlocked {
+						if _, canonical := canonicalTaskIDs[migration.TaskID]; canonical {
+							continue
+						}
+						projection.Revision = maxHomeRevision(
+							projection.Revision,
+							migration.UpdatedAt,
+						)
+						projection.RecentWork = append(
+							projection.RecentWork,
+							&model.HomeRecentWork{
+								WorkId:    migration.TaskID,
+								Kind:      model.HomeWorkKind_HOME_WORK_KIND_TASK,
+								AgentId:   task.AgentID,
+								Title:     task.Title,
+								UpdatedAt: timestamppb.New(task.UpdatedAt.UTC()),
+							},
+						)
+						projection.ActiveTasks = append(
+							projection.ActiveTasks,
+							&model.HomeTaskProjection{
+								TaskId:               migration.TaskID,
+								AgentId:              task.AgentID,
+								Title:                task.Title,
+								Status:               model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER,
+								ProgressPercent:      uint32(min(max(task.Progress, 0), 100)),
+								UpdatedAt:            timestamppb.New(task.UpdatedAt.UTC()),
+								GoalId:               migration.GoalID,
+								GoalNodeId:           migration.GoalNodeID,
+								StepId:               migration.StepID,
+								AttemptId:            migration.AttemptID,
+								Attempt:              1,
+								Surface:              model.TaskSurface_TASK_SURFACE_API,
+								LegacySourceId:       migration.LegacyTaskID,
+								MigrationState:       model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_BLOCKED,
+								MigrationBlockReason: migration.BlockReason,
+							},
+						)
+						continue
+					}
 				}
 				if _, canonical := canonicalTaskIDs[task.ID]; canonical {
 					continue

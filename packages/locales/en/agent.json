@@ -904,6 +904,8 @@
   "agent.home.taskNeedsUser": "Needs you",
   "agent.home.taskCompleted": "Succeeded",
   "agent.home.taskFailed": "Failed",
+  "agent.home.migratedWork": "Migrated",
+  "agent.home.migrationBlocked": "Migration blocked",
   "agent.home.goalExecutionIdentity": "Node {{node}} · Step {{step}} · Attempt {{attempt}}",
   "agent.home.goalLiveRevision": "Live projection r{{revision}}",
   "agent.home.goalLiveBudget": "Budget: {{budget}}",

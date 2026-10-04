@@ -68,6 +68,7 @@ func AllModels() []interface{} {
 		&RevisionCommand{},
 		&AgentThread{},
 		&AgentTask{},
+		&AgentTaskGoalMap{},
 		&Memory{},
 		&MemoryEvent{},
 		&MemorySnapshot{},

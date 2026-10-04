@@ -904,6 +904,8 @@
   "agent.home.taskNeedsUser": "需要你处理",
   "agent.home.taskCompleted": "已成功",
   "agent.home.taskFailed": "失败",
+  "agent.home.migratedWork": "已迁移",
+  "agent.home.migrationBlocked": "迁移受阻",
   "agent.home.goalExecutionIdentity": "节点 {{node}} · 步骤 {{step}} · 第 {{attempt}} 次尝试",
   "agent.home.goalLiveRevision": "实时投影 r{{revision}}",
   "agent.home.goalLiveBudget": "预算：{{budget}}",
