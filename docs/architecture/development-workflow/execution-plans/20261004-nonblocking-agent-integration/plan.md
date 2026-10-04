@@ -150,9 +150,7 @@
   "closures": {
     "nonblocking-control-actions": [
       "acceptance-workflow-contract",
-      "development-workflow-control-plane",
-      "peers-dev-product",
-      "peers-dev-ui-browser-e2e"
+      "development-workflow-control-plane"
     ],
     "nonblocking-control-proof": [
       "acceptance-infra-validation",
