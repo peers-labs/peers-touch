@@ -248,7 +248,8 @@
       "patterns": [
         "model/domain/realtime/**",
         "apps/station/frame/touch/model/realtime/**",
-        "apps/desktop/src/gen/proto/domain/realtime/**"
+        "apps/desktop/src/gen/proto/domain/realtime/**",
+        "apps/mobile/src/gen/proto/domain/realtime/**"
       ],
       "impactClass": "SHARED_CONTRACT",
       "addTargetSelectors": [
