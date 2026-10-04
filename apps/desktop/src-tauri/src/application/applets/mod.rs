@@ -1683,6 +1683,14 @@ fn fan_out_atelier_canonical_event(
             .then(|| (context.applet_id.clone(), context.session_id.clone()))
         })
         .collect::<Vec<_>>();
+    if product_window_e2e_enabled() {
+        tracing::info!(
+            actor_ptid,
+            stream_event_id,
+            target_count = targets.len(),
+            "Atelier canonical event fan-out",
+        );
+    }
     drop(contexts);
     drop(subscriptions);
 

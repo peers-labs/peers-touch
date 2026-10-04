@@ -85,6 +85,19 @@ describe('event stream group membership decode', () => {
       originalCustomEvent;
   });
 
+  it('installs one listener per channel across concurrent boot callers', async () => {
+    await Promise.all([
+      installEventStreamBridge(),
+      installEventStreamBridge(),
+    ]);
+
+    expect(listenMock).toHaveBeenCalledTimes(2);
+    expect(listenMock.mock.calls.map(([eventName]) => eventName)).toEqual([
+      'realtime:event',
+      'realtime:connection-state',
+    ]);
+  });
+
   it.each([
     [GroupMembershipChange_Kind.TRANSFERRED, 'TRANSFERRED'],
     [GroupMembershipChange_Kind.DISSOLVED, 'DISSOLVED'],

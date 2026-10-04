@@ -363,6 +363,14 @@ describe('applet runtime loading', () => {
     expect(loaded.services?.[0]?.allowedPaths).toContain('/api/v1/*')
     expect(manager.getLoadedApplets()).toContain('generic-complex-applet')
     expect(manager.getSessionId('generic-complex-applet')).toBe('desktop-session-generic-complex-applet')
+    expect(manager.getDesktopEntryUrl('generic-complex-applet')).toBe(
+      `/applets-dist/generic-complex-applet/main.lynx.bundle?integrity=${EMPTY_SHA256.slice('sha256:'.length)}`,
+    )
+    expect(mockFetch).toHaveBeenCalledWith('/applets-dist/index.json', { cache: 'no-store' })
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/applets-dist/generic-complex-applet/main.lynx.bundle',
+      { cache: 'no-store' },
+    )
     expect(mockAppletCreateSession).toHaveBeenCalledWith({
       id: 'generic-complex-applet',
       manifest: expect.objectContaining({

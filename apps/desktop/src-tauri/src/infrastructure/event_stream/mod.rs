@@ -159,6 +159,19 @@ pub fn stop(actor_ptid: &str) {
     }
 }
 
+/// Stop one actor stream and notify renderer projections immediately.
+///
+/// A cancelled supervisor exits through the successful `run_once` path, so it
+/// cannot publish the disconnected transition itself. Explicit client stops
+/// must therefore emit the lifecycle event at the command boundary.
+pub fn stop_and_notify(app: &AppHandle, actor_ptid: &str) {
+    stop(actor_ptid);
+    let _ = app.emit(
+        EVENT_CONNECTION_STATE,
+        &json!({"connected": false, "reason": "stopped"}),
+    );
+}
+
 /// Stop every Station-scoped event stream before changing Station binding.
 pub fn stop_all() {
     let mut map = registry().lock().expect("event_stream registry poisoned");

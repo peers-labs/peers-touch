@@ -25,8 +25,19 @@
   ],
   "doneWhen": ["Home and Atelier remain live after every private client route is removed","Official applet and Gate fixtures use canonical /events/stream semantics","Whole-repository private endpoint scan is empty","The event fan-out Gate is registered and exact-source"],
   "failureBehavior": ["Do not retain compatibility commands or endpoint aliases","Any private consumer or contract blocks completion"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-05T04:43:00Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:9e943b9d68fdacc1fd9334c540a92ec5d6240290;development://personal-agent-os-convergence-20261003/artifacts/20261004T190913192042Z/paos-10c-event-consumer-hard-cut/capture.json;manifest-sha256:f6057f158342075158376238476f143af5e06dbb26f8cc1439cccd3e79b7d3"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "tooling/acceptance/evidence/applets/official-applet/atelier-product-window-gate.json;canonical-/events/stream;rendered-snapshot.invalidate-seq-4;unsubscribe:pass"
+    }
+  ]
 }
 ```
 
@@ -41,4 +52,12 @@
 
 ## Current Snapshot
 
-Desktop, official applet, and controlled Gates still reference private Agent event routes.
+Functional slice complete.
+
+- Desktop and Atelier consume the canonical shared `/events/stream`; private
+  Agent event commands and endpoints are absent.
+- Native Profile `two` evidence passed canonical event consumption and resync.
+- The packaged product-window Gate additionally proved canonical
+  `snapshot.invalidate` delivery, Station reconciliation, visible seq `4`, and
+  unsubscribe on close.
+- Final suite-lifecycle Acceptance remains owned by `PAOS-30`.

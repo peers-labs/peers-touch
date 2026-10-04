@@ -1,0 +1,194 @@
+{
+  "ok": true,
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.atelier",
+  "gate": "applet:atelier-product-window-gate",
+  "packageDir": "apps/desktop/applets-dist/peers.atelier",
+  "underlyingGate": "tooling/scripts/applet-desktop-product-window-gate.mjs --product-app",
+  "genericEvidencePath": "tooling/acceptance/evidence/applets/desktop/product-window-gate/product-shell-evidence.json",
+  "genericOutputPath": ".artifacts/applet-readiness/desktop/product-window-gate-output.txt",
+  "productShellEvidence": {
+    "appletId": "peers.atelier",
+    "event": "applet.product.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "readySource": "lifecycle.reportReady",
+    "recordedAt": 1791146508344
+  },
+  "unsubscribeEvidence": {
+    "appletId": "peers.atelier",
+    "event": "atelier.projection.unsubscribe",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "recordedAt": 1791146563486,
+    "sessionId": "desktop-peers.atelier-apl-1791146508293-2",
+    "topic": "atelier.projection.event"
+  },
+  "renderedProjectionEvidence": {
+    "appletId": "peers.atelier",
+    "event": "atelier.projection.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "properties": {
+      "eventBlockIds": [
+        "atelier-real-product-event-4"
+      ],
+      "eventId": "atelier-real-product-event-4",
+      "eventSeq": 4,
+      "patchKind": "snapshot.invalidate",
+      "renderedBlockIds": [
+        "atelier-real-product-gate-task-summary",
+        "atelier-real-product-event-1",
+        "atelier-real-product-event-2",
+        "atelier-real-product-gate-decision",
+        "atelier-real-product-event-4"
+      ],
+      "replayLabel": "4/4 · seq 4",
+      "selectedTaskTitle": "Atelier Real Product Gate",
+      "streamCount": 5,
+      "taskId": "atelier-real-product-gate-task",
+      "viewStatus": "ready"
+    },
+    "recordedAt": 1791146548458,
+    "sessionId": "desktop-peers.atelier-apl-1791146508293-2"
+  },
+  "createdProjectEvidence": null,
+  "readOnlyProjectionMode": true,
+  "stationGateServer": {
+    "baseUrl": "http://127.0.0.1:62156",
+    "taskId": "atelier-real-product-gate-task",
+    "agentId": "atelier-real-product-gate-agent",
+    "controlledClose": {
+      "beforeFirstReplay": true,
+      "afterFirstReplay": true
+    },
+    "expectedReplayProbeSequence": [
+      {
+        "agentId": "atelier-real-product-gate-agent",
+        "taskId": "atelier-real-product-gate-task",
+        "afterEventSeq": 0,
+        "replayedSeqs": [
+          1
+        ]
+      },
+      {
+        "agentId": "atelier-real-product-gate-agent",
+        "taskId": "atelier-real-product-gate-task",
+        "afterEventSeq": 1,
+        "replayedSeqs": [
+          2,
+          3
+        ]
+      },
+      {
+        "agentId": "atelier-real-product-gate-agent",
+        "taskId": "atelier-real-product-gate-task",
+        "afterEventSeq": 4,
+        "replayedSeqs": []
+      }
+    ],
+    "replayProbe": {
+      "requests": [
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 0,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 0,
+          "replayedSeqs": [
+            1
+          ]
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 0,
+          "replayedSeqs": [
+            1
+          ]
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 1,
+          "replayedSeqs": [
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        }
+      ]
+    },
+    "createProbe": null
+  },
+  "coveredPaths": [
+    "packaged peers.atelier renders inside the normal Desktop product shell",
+    "Desktop product-window route reports applet.product.rendered for peers.atelier",
+    "official peers.atelier loads Station workspace through /v1/workspace service binding inside the real Desktop product window UI",
+    "official peers.atelier starts Station projection event replay through events.subscribe -> /events/stream inside the real Desktop product window UI",
+    "official peers.atelier reconnects after controlled post-first-replay SSE close and resumes from the persisted cursor inside the real Desktop product window UI",
+    "official peers.atelier applies a Station projection event to rendered stream state inside the real Desktop product window UI",
+    "official peers.atelier unsubscribes atelier.projection.event and cancels the Desktop Gateway projection subscription after product-window close"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "packaged peers.atelier renders inside the normal Desktop product shell",
+      "Desktop product-window route reports applet.product.rendered for peers.atelier",
+      "official peers.atelier loads Station workspace through /v1/workspace service binding inside the real Desktop product window UI",
+      "official peers.atelier starts Station projection event replay through events.subscribe -> /events/stream inside the real Desktop product window UI",
+      "official peers.atelier reconnects after controlled post-first-replay SSE close and resumes from the persisted cursor inside the real Desktop product window UI",
+      "official peers.atelier applies a Station projection event to rendered stream state inside the real Desktop product window UI",
+      "official peers.atelier unsubscribes atelier.projection.event and cancels the Desktop Gateway projection subscription after product-window close"
+    ],
+    "doesNotProve": [
+      "projection SSE cross-restart cursor recovery inside real Desktop product window UI",
+      "human decision / escalation / resume E2E",
+      "Artifact/Gate production and blocking-gate recovery E2E",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "projection SSE cross-restart cursor recovery inside real Desktop product window UI",
+    "human decision / escalation / resume E2E",
+    "Artifact/Gate production and blocking-gate recovery E2E",
+    "complete Host + Station + applet E2E"
+  ]
+}

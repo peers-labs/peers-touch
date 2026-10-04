@@ -164,11 +164,18 @@ export function AtelierAppletPage() {
 
   useEffect(() => {
     const event = controller.lastAppliedProjectionEvent;
-    if (!event || event.patch.kind !== 'stream.append' || event.patch.taskId !== controller.selectedTaskId) {
+    if (!event || !('taskId' in event.patch) || event.patch.taskId !== controller.selectedTaskId) {
       return;
     }
     const renderedBlockIds = selectedBlocks.map((block) => block.id);
-    const eventBlockIds = event.patch.blocks.map((block) => block.id);
+    const eventBlockIds = event.patch.kind === 'stream.append'
+      ? event.patch.blocks.map((block) => block.id)
+      : event.patch.kind === 'snapshot.invalidate'
+        ? renderedBlockIds.filter((blockId) => blockId === event.id)
+        : [];
+    if (eventBlockIds.length === 0) {
+      return;
+    }
     if (!eventBlockIds.every((blockId) => renderedBlockIds.includes(blockId))) {
       return;
     }

@@ -88,6 +88,7 @@ const productWindowActorId = (process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_ACTOR_
   || 'applet-product-window-e2e-actor';
 
 mkdirSync(evidenceDir, { recursive: true });
+mkdirSync(path.dirname(outputPath), { recursive: true });
 
 function fail(message, details = []) {
   const output = ['FAIL Desktop packaged product-window applet gate', message, ...details]
@@ -212,23 +213,35 @@ async function proxyExternalStationRequest(req, res, targetBaseUrl) {
     }
   }
   const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await readBody(req);
-  const response = await fetch(target, {
-    method: req.method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  response.headers.forEach((value, name) => {
-    res.setHeader(name, value);
-  });
-  res.writeHead(response.status);
-  if (!response.body) {
-    res.end();
-    return;
+  const controller = new AbortController();
+  const abortUpstream = () => controller.abort();
+  req.once('aborted', abortUpstream);
+  res.once('close', abortUpstream);
+  try {
+    const response = await fetch(target, {
+      method: req.method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    response.headers.forEach((value, name) => {
+      res.setHeader(name, value);
+    });
+    res.writeHead(response.status);
+    if (!response.body) {
+      res.end();
+      return;
+    }
+    for await (const chunk of response.body) {
+      if (res.destroyed) break;
+      res.write(chunk);
+    }
+    if (!res.destroyed) res.end();
+  } finally {
+    req.off('aborted', abortUpstream);
+    res.off('close', abortUpstream);
+    controller.abort();
   }
-  for await (const chunk of response.body) {
-    res.write(chunk);
-  }
-  res.end();
 }
 
 function productAppletInstallState(manifest) {
@@ -282,6 +295,19 @@ function startControlledUpstream(manifest) {
     requests.push({ method: req.method, url: req.url });
     const parsed = new URL(req.url ?? '/', 'http://127.0.0.1');
     if (parsed.pathname === '/events/stream') {
+      if (externalStationBaseUrl) {
+        try {
+          await proxyExternalStationRequest(req, res, externalStationBaseUrl);
+        } catch (error) {
+          if (res.destroyed || res.writableEnded) return;
+          writeJson(res, 502, {
+            error: 'external_station_proxy_failed',
+            path: req.url,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+        return;
+      }
       writeSse(res);
       return;
     }
@@ -368,6 +394,7 @@ function startControlledUpstream(manifest) {
       try {
         await proxyExternalStationRequest(req, res, externalStationBaseUrl);
       } catch (error) {
+        if (res.destroyed || res.writableEnded) return;
         writeJson(res, 502, {
           error: 'external_station_proxy_failed',
           path: req.url,
@@ -550,6 +577,21 @@ function stopChild(child) {
   });
 }
 
+function stopServer(server) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      server.closeAllConnections?.();
+      resolve();
+    }, 5000);
+    server.close(() => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
+  });
+}
+
 let restore = null;
 let controlledUpstream = null;
 let child = null;
@@ -574,7 +616,8 @@ try {
   const appShellSource = readFileSync(appShellSourcePath, 'utf8');
   assert.ok(!appShellSource.includes('AppletReadinessProbeView'), 'packaged product-window gate must not depend on AppletReadinessProbeView');
   assert.ok(
-    appShellSource.includes('installAppRuntime()') && appShellSource.includes('<View lifecycle={lifecycle} />'),
+    appShellSource.includes('useAppRuntime(lifecycle)')
+      && appShellSource.includes('<View lifecycle={lifecycle} />'),
     'packaged product-window gate must render the normal App lifecycle shell',
   );
 
@@ -587,7 +630,9 @@ try {
 
   if (!skipBuild) {
     run('pnpm', ['--filter', '@peers-touch/app-desktop', 'run', 'build']);
-    restore = stagePackage(manifest);
+  }
+  restore = stagePackage(manifest);
+  if (!skipBuild) {
     run('pnpm', [
       '--filter',
       '@peers-touch/app-desktop',
@@ -601,8 +646,6 @@ try {
     ], {
       env: { CI: 'false', CARGO_TARGET_DIR: isolatedCargoTargetDir },
     });
-    restore();
-    restore = null;
   }
 
   const appPath = findMacApp();
@@ -737,7 +780,7 @@ try {
 } finally {
   if (child) await stopChild(child);
   if (controlledUpstream) {
-    await new Promise((resolve) => controlledUpstream.server.close(resolve));
+    await stopServer(controlledUpstream.server);
   }
   if (restore) restore();
 }

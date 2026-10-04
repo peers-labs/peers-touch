@@ -47,6 +47,7 @@ const (
 	gateScenarioLiveResume                 = "live_resume_provider"
 	gateRecoveryActionEnv                  = "PEERS_ATELIER_GATE_RECOVERY_ACTION"
 	gateFailureScenarioEnv                 = "PEERS_ATELIER_GATE_EVENT_REPLAY_FAILURE_SCENARIO"
+	gateWaitForWorkspaceEnv                = "PEERS_ATELIER_GATE_WAIT_FOR_WORKSPACE"
 	gateLiveResumeNodeID                   = "atelier-real-product-live-resume-node"
 	gateLiveResumeProviderID               = "atelier-live-resume-provider"
 	gateControlledProviderName             = "openai"
@@ -1187,6 +1188,8 @@ func run(ctx context.Context) error {
 	}
 
 	probe := &replayProbe{}
+	workspaceLoaded := make(chan struct{})
+	var workspaceLoadedOnce sync.Once
 	createdProbe := &createProbe{}
 	resolvedProbe := &resolveProbe{}
 	runtime := newGateAtelierRuntime()
@@ -1208,6 +1211,9 @@ func run(ctx context.Context) error {
 			response.Header().Set("Content-Type", "application/json")
 			response.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(response).Encode(snapshot)
+			workspaceLoadedOnce.Do(func() {
+				close(workspaceLoaded)
+			})
 		case request.Method == http.MethodPost && request.URL.Path == atelierMount+"/v1/projects":
 			handleCreateProject(response, request, db, projectionService, subject.ID, createdProbe)
 		case request.Method == http.MethodPost && request.URL.Path == atelierMount+"/v1/escalations:resolve":
@@ -1217,7 +1223,7 @@ func run(ctx context.Context) error {
 		case request.Method == http.MethodPost && request.URL.Path == "/sub-agent/agent/atelier/artifact/body/fetch":
 			handleFetchArtifactBody(response, request, projectionService, subject.ID)
 		case request.Method == http.MethodGet && request.URL.Path == agentEventAPI:
-			handleEventReplay(response, request, db, subject.ID, probe)
+			handleEventReplay(response, request, db, subject.ID, probe, workspaceLoaded)
 		case request.Method == http.MethodPost && request.URL.Path == providerCapabilitiesAPI:
 			handleProviderCapabilities(response, request, projectionService, subject.ID)
 		default:
@@ -1784,7 +1790,7 @@ func handleProviderCapabilities(response http.ResponseWriter, request *http.Requ
 	_ = json.NewEncoder(response).Encode(capabilities)
 }
 
-func handleEventReplay(response http.ResponseWriter, request *http.Request, db *gorm.DB, actorID string, probe *replayProbe) {
+func handleEventReplay(response http.ResponseWriter, request *http.Request, db *gorm.DB, actorID string, probe *replayProbe, workspaceLoaded <-chan struct{}) {
 	cursor := strings.TrimSpace(request.Header.Get("Last-Event-ID"))
 	afterEventSeq := canonicalGateCursorSequence(cursor)
 	if handleEventReplayFailureScenario(response) {
@@ -1809,6 +1815,44 @@ func handleEventReplay(response http.ResponseWriter, request *http.Request, db *
 			ReplayedSeqs:  []int64{},
 		})
 		return
+	}
+	if afterEventSeq == 0 && strings.TrimSpace(os.Getenv(gateWaitForWorkspaceEnv)) == "1" {
+		select {
+		case <-request.Context().Done():
+			return
+		case <-workspaceLoaded:
+			timer := time.NewTimer(time.Second)
+			defer timer.Stop()
+			select {
+			case <-request.Context().Done():
+				return
+			case <-timer.C:
+			}
+		}
+		payload, err := json.Marshal(map[string]any{
+			"agent_id": gateAgentID,
+			"task_id":  gateTaskID,
+			"text":     "Canonical Goal progress after Atelier subscription",
+		})
+		if err != nil {
+			http.Error(response, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := db.Exec(`INSERT OR IGNORE INTO agent_task_events (
+			id, task_id, step_id, turn_id, event_seq, event_type, payload, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			"atelier-real-product-event-4",
+			gateTaskID,
+			"",
+			"",
+			int64(4),
+			int32(agentmodel.TaskEventType_TASK_EVENT_TYPE_STEP_STARTED),
+			string(payload),
+			time.Now().UTC(),
+		).Error; err != nil {
+			http.Error(response, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	if actorID != gateActorID {
 		http.Error(response, "forbidden actor", http.StatusForbidden)

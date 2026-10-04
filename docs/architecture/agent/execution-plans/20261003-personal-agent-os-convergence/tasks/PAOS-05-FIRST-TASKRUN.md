@@ -25,7 +25,7 @@
   ],
   "doneWhen": ["Starting a Goal creates one GoalNode, TaskRun, ExecutionStep, and attempt identity","Home shows that TaskRun as pending or running","Selecting the row reads its canonical Station identifiers","No AgentTask or CollaborationTask is created for this new Goal"],
   "failureBehavior": ["A failed TaskRun allocation leaves the Goal non-running","Do not synthesize progress from elapsed time or local state"],
-  "updatedAt": "2026-10-03T00:00:00Z",
+  "updatedAt": "2026-10-04T19:10:00Z",
   "durableEvidence": [
     {
       "verificationClass": "SOURCE_CHECK",
@@ -51,4 +51,11 @@
 
 ## Current Snapshot
 
-TaskRun exists, but Goal admission does not yet allocate it as the visible unit of work.
+Functional slice complete.
+
+- Goal Start atomically creates one canonical GoalNode, TaskRun,
+  ExecutionStep, and attempt.
+- Home exposes the Station-authored identities and does not create AgentTask or
+  CollaborationTask for the new Goal.
+- Source and Profile `two` Native evidence are recorded above.
+- Final suite-lifecycle Acceptance remains owned by `PAOS-30`.
