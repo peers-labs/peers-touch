@@ -241,6 +241,67 @@ func TestRemoteRecipientAdmissionAllowsPrivateMediaWithoutBusinessCommit(
 	}
 }
 
+func TestFederatedAuthorClaimLocalitiesIncludesRemoteCommentAuthor(
+	t *testing.T,
+) {
+	author := socialdomain.PrivateContentAuthor{
+		Endpoint: &actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: "bob-device",
+		},
+		HomeStationPeerID: "station-remote",
+	}
+	localities, err := federatedAuthorClaimLocalities(
+		"test.remote_comment_author",
+		"station-local",
+		author,
+		"federation-one",
+		[]socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:alice",
+			HomeStationPeerID: "station-local",
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(localities) != 2 ||
+		localities[1].ActorPTID != "ptid:bob" ||
+		localities[1].HomeStationPeerID != "station-remote" ||
+		localities[1].FederationID != "federation-one" {
+		t.Fatalf("remote author claim localities = %+v", localities)
+	}
+}
+
+func TestFederatedAuthorClaimLocalitiesRejectsMissingFederation(
+	t *testing.T,
+) {
+	_, err := federatedAuthorClaimLocalities(
+		"test.remote_comment_author",
+		"station-local",
+		socialdomain.PrivateContentAuthor{
+			Endpoint: &actormodel.ActorDeviceRef{
+				Actor: &actormodel.ActorRef{
+					Ptid: "ptid:bob",
+					Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+				},
+				DeviceId: "bob-device",
+			},
+			HomeStationPeerID: "station-remote",
+		},
+		"",
+		nil,
+	)
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentInvalidArgument,
+	) {
+		t.Fatalf("missing remote author Federation error = %v", err)
+	}
+}
+
 type remoteValidationBoundaryStore struct {
 	infrastructure.PrivateContentStore
 	started *bool

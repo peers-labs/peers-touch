@@ -808,6 +808,7 @@ func (s *PrivateContentService) executeFederatedPrivateInteraction(
 			request,
 			transaction,
 			false,
+			command.GetFederationId(),
 		)
 		if err != nil {
 			return nil, err
@@ -822,7 +823,12 @@ func (s *PrivateContentService) executeFederatedPrivateInteraction(
 				err,
 			)
 		}
-		response, err := bound.SubmitPrivateComment(ctx, author.Endpoint, request)
+		response, err := bound.submitPrivateComment(
+			ctx,
+			author.Endpoint,
+			request,
+			command.GetFederationId(),
+		)
 		if err != nil {
 			return nil, err
 		}
