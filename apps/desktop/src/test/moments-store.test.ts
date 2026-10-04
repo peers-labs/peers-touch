@@ -41,7 +41,10 @@ import {
 import {
   CreateCommentResponseSchema,
 } from '../gen/proto/domain/social/comment_pb';
-import { ListMomentCommentsResponseSchema } from '../gen/proto/domain/social/private_content_pb';
+import {
+  GetMomentResourceResponseSchema,
+  ListMomentCommentsResponseSchema,
+} from '../gen/proto/domain/social/private_content_pb';
 import {
   FollowResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
@@ -1322,7 +1325,7 @@ describe('private Moments Native projection', () => {
     usePrivateCommentsStore.getState().activateActor('ptid:viewer', 6);
     enqueue(
       'social_get_moment',
-      bytesOk(GetPostResponseSchema, {}),
+      bytesOk(GetMomentResourceResponseSchema, { resource: {} }),
     );
     enqueue('social_private_moment_read', {
       ok: true,

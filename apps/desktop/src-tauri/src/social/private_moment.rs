@@ -42,10 +42,11 @@ use super::private_mention::{
 };
 use super::projection::{
     canonical_identifier, checked_timestamp_millis, decrypt_projection_from_response,
-    object_descriptor_set_hash, private_poll_option_set_hash, repost_source_material_from_response,
-    sender_key_requirement, verify_recovery_envelope_for_response, DecryptedPrivateMoment,
-    PrivateMediaState, PrivateMomentContentProjection, PrivateMomentProjection,
-    PrivateMomentPublishResult, PrivateMomentsSnapshot, PrivateProjectionFailureKind,
+    object_descriptor_set_hash, private_poll_option_set_hash, remote_delivery_state,
+    repost_source_material_from_response, sender_key_requirement,
+    verify_recovery_envelope_for_response, DecryptedPrivateMoment, PrivateMediaState,
+    PrivateMomentContentProjection, PrivateMomentProjection, PrivateMomentPublishResult,
+    PrivateMomentsSnapshot, PrivateProjectionFailureKind, PrivateRemoteDeliveryState,
     PrivateRepostSourceMaterial,
 };
 
@@ -1442,12 +1443,26 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 let post_id = command
                     .post_id
                     .ok_or_else(|| "published private Moment has no post ID".to_string())?;
-                let projection = self
+                let mut projection = self
                     .lease
                     .store
                     .projection(&post_id)?
                     .ok_or_else(|| "published private Moment projection is unavailable".to_string())
                     .and_then(|bytes| PrivateMomentProjection::decode_local(&bytes))?;
+                if matches!(
+                    projection.remote_delivery_state,
+                    Some(
+                        PrivateRemoteDeliveryState::Pending | PrivateRemoteDeliveryState::Retrying
+                    )
+                ) {
+                    let response = self
+                        .transport
+                        .get_private_moment(&post_id)
+                        .map_err(|error| error.to_string())?;
+                    self.ensure_current()?;
+                    refresh_published_delivery_projection(&mut projection, &response)?;
+                    self.save_projection_if_current(&post_id, &projection.encode_local()?)?;
+                }
                 Ok(Some(PrivateMomentPublishResult {
                     state: private_moment_publish_state(&projection),
                     draft_id: command.draft_id,
@@ -2177,6 +2192,25 @@ fn private_moment_publish_state(projection: &PrivateMomentProjection) -> String 
         _ => "PUBLISHED",
     }
     .to_string()
+}
+
+fn refresh_published_delivery_projection(
+    projection: &mut PrivateMomentProjection,
+    response: &social::GetMomentResourceResponse,
+) -> Result<(), String> {
+    let metadata = response
+        .resource
+        .as_ref()
+        .and_then(|resource| resource.metadata.as_ref())
+        .ok_or_else(|| "published private Moment readback omitted metadata".to_string())?;
+    if metadata.post_id != projection.post_id || metadata.content_id != projection.content_id {
+        return Err("published private Moment readback changed the resource identity".to_string());
+    }
+    projection.remote_delivery_state =
+        Some(remote_delivery_state(response)?.ok_or_else(|| {
+            "published private Moment delivery status is unavailable".to_string()
+        })?);
+    Ok(())
 }
 
 fn attach_recovery_envelope(
@@ -3263,6 +3297,43 @@ mod tests {
                 .state,
             PublicationState::PendingPublication,
         );
+    }
+
+    #[test]
+    fn published_private_moment_refreshes_remote_delivery_state() {
+        let mut projection = private_read_projection(
+            "post-delivered",
+            PrivateProjectionFailureKind::RecoveryRequired,
+            "RECOVERY_REQUIRED",
+            None,
+        );
+        projection.content_id = "content-delivered".to_string();
+        projection.remote_delivery_state = Some(PrivateRemoteDeliveryState::Pending);
+        let response = social::GetMomentResourceResponse {
+            resource: Some(social::PostResource {
+                metadata: Some(social::PostMetadata {
+                    post_id: projection.post_id.clone(),
+                    content_id: projection.content_id.clone(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            remote_delivery: Some(social::FederatedPrivateDeliveryStatus {
+                state: social::FederatedPrivateDeliveryState::Delivered as i32,
+                total_count: 1,
+                delivered_count: 1,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        refresh_published_delivery_projection(&mut projection, &response).unwrap();
+
+        assert_eq!(
+            projection.remote_delivery_state,
+            Some(PrivateRemoteDeliveryState::Delivered),
+        );
+        assert_eq!(private_moment_publish_state(&projection), "PUBLISHED");
     }
 
     #[test]
