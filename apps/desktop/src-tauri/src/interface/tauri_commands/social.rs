@@ -460,7 +460,7 @@ pub fn social_get_moment(
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
     let path = format!("/api/v1/social/moments/{}", input.id);
-    let resp: model::social::GetPostResponse =
+    let resp: model::social::GetMomentResourceResponse =
         match get_proto_optional_auth(&path, token.as_deref(), None) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "get moment failed"),
