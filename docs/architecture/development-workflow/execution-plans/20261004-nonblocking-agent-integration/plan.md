@@ -120,7 +120,7 @@
       "workstreamId": "DWF-INTEGRATION-CONTROL",
       "path": "tasks/DWF-NBI01-CONTROL-ACTIONS.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -130,7 +130,7 @@
       "dependsOn": [
         "DWF-NBI01-CONTROL-ACTIONS"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {
