@@ -233,21 +233,32 @@ export function HomePage() {
       {!projection && loading ? (
         <HomeLoading />
       ) : pinnedAgents.length === 0 ? (
-        <Card size="small">
-          <Empty description={t('agent.home.noPinnedAgents')}>
-            <Button
-              data-pt-agent-create
-              type="primary"
-              onClick={() =>
-                openAgentCreateFlow((agentName) =>
-                  navigation.navigateToAgentSurface(agentName, 'profile'),
-                )
-              }
+        <Flexbox gap={token.marginMD}>
+          <Card size="small">
+            <Empty description={t('agent.home.noPinnedAgents')}>
+              <Button
+                data-pt-agent-create
+                type="primary"
+                onClick={() =>
+                  openAgentCreateFlow((agentName) =>
+                    navigation.navigateToAgentSurface(agentName, 'profile'),
+                  )
+                }
+              >
+                {t('agent.home.createAgent')}
+              </Button>
+            </Empty>
+          </Card>
+          {goalExecutions.length ? (
+            <Card
+              data-pt-home-empty-goal-runs=""
+              size="small"
+              title={t('agent.home.activeTasks')}
             >
-              {t('agent.home.createAgent')}
-            </Button>
-          </Empty>
-        </Card>
+              <GoalRunSummary />
+            </Card>
+          ) : null}
+        </Flexbox>
       ) : (
         <div
           style={{
