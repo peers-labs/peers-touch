@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
     circles: [],
     circleMembers: {},
     syncProjection: vi.fn<() => Promise<void>>(),
+    hydratePrivateMoments: vi.fn(),
     listMyCircles: vi.fn<() => Promise<void>>(),
     loadCircleMembers: vi.fn<() => Promise<void>>(),
     loadPost: vi.fn<() => Promise<undefined>>(),
@@ -185,6 +186,7 @@ beforeEach(() => {
   mocks.moments.circleMembers = {};
   mocks.privateMoments.postsById = {};
   mocks.moments.syncProjection.mockResolvedValue(undefined);
+  mocks.moments.hydratePrivateMoments.mockClear();
   mocks.moments.listMyCircles.mockResolvedValue(undefined);
   mocks.moments.loadCircleMembers.mockResolvedValue(undefined);
   mocks.moments.loadPost.mockResolvedValue(undefined);
@@ -279,6 +281,50 @@ describe('momentsRuntime identity fence', () => {
     eventBus.publish(EVENT.MOMENT_COMMENTED, wake);
     await Promise.resolve();
     expect(mocks.privateComments.loadComments).toHaveBeenCalledTimes(1);
+  });
+
+  it('hydrates hidden private Reaction summaries once per EventBus event', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+    const postId = '01REMOTEREACTIONPOST';
+    (mocks.privateMoments.postsById as Record<string, unknown>)[postId] = {
+      postId,
+      state: 'CONTENT_READY',
+      reactions: [{ kind: 1, count: 1n, reactedByViewer: true }],
+      reactionRevision: '7',
+      reactionsHydrated: true,
+    };
+    const wake = {
+      eventId: 'remote-private-reaction-1',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId,
+      authorActorPtid: 'ptid:bob',
+      reactionActorPtid: 'ptid:alice',
+      kind: 'REACTION_LIKE',
+      removed: false,
+      occurredAtUnixMs: 460,
+    };
+
+    eventBus.publish(EVENT.MOMENT_REACTED, wake);
+    await vi.waitFor(() => {
+      expect(mocks.privateMoments.readMoment).toHaveBeenCalledWith(postId);
+      expect(mocks.moments.hydratePrivateMoments).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            postId,
+            reactionRevision: '7',
+          }),
+        ]),
+      );
+    });
+
+    eventBus.publish(EVENT.MOMENT_REACTED, wake);
+    await Promise.resolve();
+    expect(mocks.privateMoments.readMoment).toHaveBeenCalledTimes(1);
   });
 
   it('rejects imported Moment wakes from another actor or Station scope', async () => {

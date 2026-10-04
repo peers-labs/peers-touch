@@ -17,6 +17,8 @@ const userSource = source('../../pages/moments/MomentsUserPage.tsx');
 const circleSource = source('../../pages/moments/CircleManagePage.tsx');
 const discoverySource = source('../../store/discovery.ts');
 const runtimeSource = source('../../runtimes/momentsRuntime.ts');
+const momentCardSource = source('./MomentCard.tsx');
+const actionBarSource = source('./surfaces/SocialActionBar.tsx');
 const enMoments = JSON.parse(
   source('../../../../../packages/locales/en/moments.json'),
 ) as Record<string, string>;
@@ -96,5 +98,16 @@ describe('Desktop Moments interaction contract', () => {
     expect(composerSource).toContain('<SocialPrivateState');
     expect(composerSource).toContain('clearPrivatePublishState();');
     expect(enMoments['moments.compose.checkRecipients']).toBe('Check recipients');
+  });
+
+  it('renders private Reaction status and explicit retry through SocialActionBar', () => {
+    expect(momentCardSource).toContain('privateReaction: s.reactionsByPost[post.id]');
+    expect(momentCardSource).toContain('retryPrivateReaction(post.id)');
+    expect(momentCardSource).not.toContain('message.error(String(err))');
+    expect(actionBarSource).toContain("reactionState === 'REACTION_PENDING'");
+    expect(actionBarSource).toContain("t('moments.reaction.retry')");
+    expect(enMoments['moments.reaction.status.REACTION_PENDING']).toBe(
+      'Reaction pending',
+    );
   });
 });

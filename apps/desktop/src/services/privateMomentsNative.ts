@@ -1,4 +1,10 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { create } from '@bufbuild/protobuf';
+import {
+  ReactionKind,
+  ReactionSummarySchema,
+  type ReactionSummary,
+} from '../gen/proto/domain/social/post_pb';
 
 export const PRIVATE_MOMENTS_COMMANDS = {
   bootstrap: 'social_private_moments_bootstrap',
@@ -9,6 +15,9 @@ export const PRIVATE_MOMENTS_COMMANDS = {
   recover: 'social_private_moment_recover',
   purge: 'social_private_moment_purge',
   teardown: 'social_private_moments_teardown',
+  react: 'social_private_react',
+  unreact: 'social_private_unreact',
+  retryReaction: 'social_private_reaction_retry',
 } as const;
 
 export type PrivateMomentsPlatform = 'native' | 'browser' | 'unknown';
@@ -72,6 +81,32 @@ export type PrivateMediaState =
 export type PrivateMediaAccessPath =
   | 'HOME_STATION_LOCAL_OBJECT'
   | 'HOME_STATION_REMOTE_PEER_STREAM';
+
+export type PrivateReactionState =
+  | 'REACTION_PENDING'
+  | 'REACTION_RETRYING'
+  | 'REACTION_REJECTED'
+  | 'REACTION_COMMITTED';
+
+export interface PrivateReactionCommandProjection {
+  commandId: string;
+  postId: string;
+  kind: ReactionKind;
+  operation: 'REACT' | 'UNREACT';
+  state: PrivateReactionState;
+  attemptCount: number;
+  projectionRevision: string;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+  retryNotBeforeUnixMs?: number;
+}
+
+export interface PrivateReactionMutationResult {
+  command: PrivateReactionCommandProjection;
+  reactions: ReactionSummary[];
+  projectionRevision: string;
+  exactReplay: boolean;
+}
 
 export interface PrivateMomentMention {
   actorPtid: string;
@@ -159,6 +194,9 @@ export interface PrivateMomentProjection {
   audienceKind: PrivateAudienceKind | 'UNKNOWN';
   state: PrivateReadState;
   mentions: PrivateMomentMention[];
+  reactions?: ReactionSummary[];
+  reactionRevision?: string;
+  reactionsHydrated?: boolean;
   content?: PrivateMomentContentProjection;
   errorCode?: string;
   retryAfterSeconds?: number;
@@ -171,6 +209,7 @@ export interface PrivateMomentsNativeSnapshot {
   deviceId: string;
   sessionGeneration: string;
   projections: PrivateMomentProjection[];
+  reactionCommands: PrivateReactionCommandProjection[];
 }
 
 export interface PrivateMomentPublishIntent {
@@ -263,6 +302,8 @@ interface NativeSnapshotWire {
   session_generation?: unknown;
   sessionGeneration?: unknown;
   projections?: unknown;
+  reaction_commands?: unknown;
+  reactionCommands?: unknown;
 }
 
 interface NativeProjectionWire {
@@ -277,6 +318,11 @@ interface NativeProjectionWire {
   audienceKind?: unknown;
   state?: unknown;
   mentions?: unknown;
+  reactions?: unknown;
+  reaction_revision?: unknown;
+  reactionRevision?: unknown;
+  reactions_hydrated?: unknown;
+  reactionsHydrated?: unknown;
   content?: unknown;
   error_code?: unknown;
   errorCode?: unknown;
@@ -340,16 +386,34 @@ const PRIVATE_AUDIENCE_KINDS = new Set<PrivateAudienceKind>([
   'CUSTOM_ALLOW',
   'CUSTOM_DENY',
 ]);
+const REACTION_STATES = new Set<PrivateReactionState>([
+  'REACTION_PENDING',
+  'REACTION_RETRYING',
+  'REACTION_REJECTED',
+  'REACTION_COMMITTED',
+]);
+const REACTION_OPERATIONS = new Set<PrivateReactionCommandProjection['operation']>([
+  'REACT',
+  'UNREACT',
+]);
 
 export class PrivateMomentsNativeError extends Error {
   readonly code: string;
-  readonly state: PrivatePublishState | PrivateReadState | PrivateMediaState;
+  readonly state:
+    | PrivatePublishState
+    | PrivateReadState
+    | PrivateMediaState
+    | PrivateReactionState;
   readonly retryable: boolean;
   readonly retryAfterSeconds?: number;
 
   constructor(options: {
     code: string;
-    state: PrivatePublishState | PrivateReadState | PrivateMediaState;
+    state:
+      | PrivatePublishState
+      | PrivateReadState
+      | PrivateMediaState
+      | PrivateReactionState;
     message?: string;
     retryable?: boolean;
     retryAfterSeconds?: number;
@@ -399,6 +463,111 @@ function generationField(value: unknown): string {
   }
   const raw = stringField(value);
   return /^\d+$/.test(raw) ? raw : '';
+}
+
+function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
+  if (!Array.isArray(value) || value.length > 5) {
+    throw privateProjectionContractError('private Reaction summaries are malformed');
+  }
+  const seen = new Set<ReactionKind>();
+  return value.map((entry) => {
+    if (!isRecord(entry)) {
+      throw privateProjectionContractError('private Reaction summary is malformed');
+    }
+    const kind = optionalNumber(entry.kind) as ReactionKind | undefined;
+    const count = generationField(entry.count);
+    const reactedByViewer = entry.reacted_by_viewer ?? entry.reactedByViewer;
+    if (
+      kind === undefined
+      || kind === ReactionKind.REACTION_UNSPECIFIED
+      || ![
+        ReactionKind.REACTION_LIKE,
+        ReactionKind.REACTION_LOVE,
+        ReactionKind.REACTION_LAUGH,
+        ReactionKind.REACTION_WOW,
+        ReactionKind.REACTION_CELEBRATE,
+      ].includes(kind)
+      || seen.has(kind)
+      || !count
+      || typeof reactedByViewer !== 'boolean'
+    ) {
+      throw privateProjectionContractError('private Reaction summary is invalid');
+    }
+    seen.add(kind);
+    return create(ReactionSummarySchema, {
+      kind,
+      count: BigInt(count),
+      reactedByViewer,
+    });
+  });
+}
+
+function normalizeReactionCommand(value: unknown): PrivateReactionCommandProjection {
+  if (!isRecord(value)) {
+    throw privateProjectionContractError('private Reaction command is malformed');
+  }
+  const commandId = stringField(value.command_id ?? value.commandId);
+  const postId = stringField(value.post_id ?? value.postId);
+  const kind = optionalNumber(value.kind) as ReactionKind | undefined;
+  const operation = stringField(value.operation).toUpperCase() as
+    PrivateReactionCommandProjection['operation'];
+  const state = stringField(value.state).toUpperCase() as PrivateReactionState;
+  const attemptCount = optionalNumber(value.attempt_count ?? value.attemptCount);
+  const projectionRevision = generationField(
+    value.projection_revision ?? value.projectionRevision,
+  );
+  const retryNotBeforeUnixMs = optionalNumber(
+    value.retry_not_before_unix_ms ?? value.retryNotBeforeUnixMs,
+  );
+  if (
+    !commandId
+    || !postId
+    || kind === undefined
+    || !REACTION_OPERATIONS.has(operation)
+    || !REACTION_STATES.has(state)
+    || attemptCount === undefined
+    || !Number.isSafeInteger(attemptCount)
+    || attemptCount < 0
+    || !projectionRevision
+  ) {
+    throw privateProjectionContractError('private Reaction command identity is invalid');
+  }
+  return {
+    commandId,
+    postId,
+    kind,
+    operation,
+    state,
+    attemptCount,
+    projectionRevision,
+    errorCode: stringField(value.error_code ?? value.errorCode) || undefined,
+    retryAfterSeconds: optionalNumber(
+      value.retry_after_seconds ?? value.retryAfterSeconds,
+    ),
+    retryNotBeforeUnixMs,
+  };
+}
+
+function normalizeReactionMutationResult(value: unknown): PrivateReactionMutationResult {
+  if (!isRecord(value)) {
+    throw privateProjectionContractError('private Reaction result is malformed');
+  }
+  const projectionRevision = generationField(
+    value.projection_revision ?? value.projectionRevision,
+  );
+  if (!projectionRevision) {
+    throw privateProjectionContractError('private Reaction result revision is invalid');
+  }
+  const exactReplay = value.exact_replay ?? value.exactReplay;
+  if (typeof exactReplay !== 'boolean') {
+    throw privateProjectionContractError('private Reaction replay marker is invalid');
+  }
+  return {
+    command: normalizeReactionCommand(value.command),
+    reactions: normalizeReactionSummaries(value.reactions),
+    projectionRevision,
+    exactReplay,
+  };
 }
 
 function privateProjectionContractError(message: string): PrivateMomentsNativeError {
@@ -620,6 +789,13 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
   const authorPtid = stringField(wire.author_ptid ?? wire.authorPtid);
   const audienceKind = stringField(wire.audience_kind ?? wire.audienceKind).toUpperCase();
   const state = stringField(wire.state).toUpperCase() as PrivateReadState;
+  const reactions = normalizeReactionSummaries(wire.reactions ?? []);
+  const reactionRevision = generationField(
+    wire.reaction_revision ?? wire.reactionRevision ?? '0',
+  );
+  const reactionsHydrated = wire.reactions_hydrated
+    ?? wire.reactionsHydrated
+    ?? false;
   const mentions = Array.isArray(wire.mentions)
     ? wire.mentions.map((value) => {
         if (!isRecord(value)) {
@@ -653,6 +829,8 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
       && !(audienceKind === 'UNKNOWN' && state !== 'CONTENT_READY')
     )
     || !READ_STATES.has(state)
+    || !reactionRevision
+    || typeof reactionsHydrated !== 'boolean'
     || (state === 'CONTENT_READY' && !authorPtid)
   ) {
     throw privateProjectionContractError('private Moment projection identity or state is invalid');
@@ -677,6 +855,9 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     audienceKind: audienceKind as PrivateAudienceKind | 'UNKNOWN',
     state,
     mentions,
+    reactions,
+    reactionRevision,
+    reactionsHydrated,
     content,
     errorCode: stringField(wire.error_code ?? wire.errorCode) || undefined,
     retryAfterSeconds: optionalNumber(wire.retry_after_seconds ?? wire.retryAfterSeconds),
@@ -695,14 +876,31 @@ function normalizeSnapshot(value: unknown): PrivateMomentsNativeSnapshot {
   const sessionGeneration = generationField(
     wire.session_generation ?? wire.sessionGeneration,
   );
-  if (!actorPtid || !deviceId || !sessionGeneration || !Array.isArray(wire.projections)) {
+  const reactionCommands = wire.reaction_commands ?? wire.reactionCommands ?? [];
+  if (
+    !actorPtid
+    || !deviceId
+    || !sessionGeneration
+    || !Array.isArray(wire.projections)
+    || !Array.isArray(reactionCommands)
+  ) {
     throw privateProjectionContractError('private Moments snapshot identity is incomplete');
+  }
+  const normalizedReactionCommands = reactionCommands.map(normalizeReactionCommand);
+  if (
+    new Set(normalizedReactionCommands.map((command) => command.postId)).size
+      !== normalizedReactionCommands.length
+  ) {
+    throw privateProjectionContractError(
+      'private Reaction snapshot contains duplicate post commands',
+    );
   }
   return {
     actorPtid,
     deviceId,
     sessionGeneration,
     projections: wire.projections.map(normalizePrivateMomentProjection),
+    reactionCommands: normalizedReactionCommands,
   };
 }
 
@@ -821,8 +1019,12 @@ function unpackNativeData(data: unknown): unknown {
 
 function stateFromNativeError(
   error: NativeCommandResult<unknown>['error'],
-  fallback: PrivatePublishState | PrivateReadState | PrivateMediaState,
-): PrivatePublishState | PrivateReadState | PrivateMediaState {
+  fallback:
+    | PrivatePublishState
+    | PrivateReadState
+    | PrivateMediaState
+    | PrivateReactionState,
+): PrivatePublishState | PrivateReadState | PrivateMediaState | PrivateReactionState {
   const candidate = stringField(error?.details?.state).toUpperCase();
   if (PUBLISH_STATES.has(candidate as PrivatePublishState)) {
     return candidate as PrivatePublishState;
@@ -833,6 +1035,9 @@ function stateFromNativeError(
   if (MEDIA_STATES.has(candidate as PrivateMediaState)) {
     return candidate as PrivateMediaState;
   }
+  if (REACTION_STATES.has(candidate as PrivateReactionState)) {
+    return candidate as PrivateReactionState;
+  }
   if (error?.code === 'UNAUTHORIZED') return 'AUTHENTICATION_REQUIRED';
   return fallback;
 }
@@ -840,7 +1045,11 @@ function stateFromNativeError(
 async function invokePrivateNative<T>(
   command: string,
   input: Record<string, unknown>,
-  fallbackState: PrivatePublishState | PrivateReadState | PrivateMediaState,
+  fallbackState:
+    | PrivatePublishState
+    | PrivateReadState
+    | PrivateMediaState
+    | PrivateReactionState,
 ): Promise<T> {
   const result = await invoke<NativeCommandResult<T>>(command, { input });
   if (!result.ok || result.data === undefined) {
@@ -1021,6 +1230,61 @@ export const privateMomentsNative = {
         post_id: input.postId,
       },
       'RECOVERY_KEY_UNAVAILABLE',
+    ));
+  },
+
+  async react(input: {
+    actorPtid: string;
+    rendererGeneration: number;
+    postId: string;
+    kind: ReactionKind;
+  }): Promise<PrivateReactionMutationResult> {
+    assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
+    return normalizeReactionMutationResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.react,
+      {
+        actor_ptid: input.actorPtid,
+        renderer_generation: input.rendererGeneration,
+        post_id: input.postId,
+        kind: input.kind,
+      },
+      'REACTION_REJECTED',
+    ));
+  },
+
+  async unreact(input: {
+    actorPtid: string;
+    rendererGeneration: number;
+    postId: string;
+    kind: ReactionKind;
+  }): Promise<PrivateReactionMutationResult> {
+    assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
+    return normalizeReactionMutationResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.unreact,
+      {
+        actor_ptid: input.actorPtid,
+        renderer_generation: input.rendererGeneration,
+        post_id: input.postId,
+        kind: input.kind,
+      },
+      'REACTION_REJECTED',
+    ));
+  },
+
+  async retryReaction(input: {
+    actorPtid: string;
+    rendererGeneration: number;
+    commandId: string;
+  }): Promise<PrivateReactionMutationResult> {
+    assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
+    return normalizeReactionMutationResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.retryReaction,
+      {
+        actor_ptid: input.actorPtid,
+        renderer_generation: input.rendererGeneration,
+        command_id: input.commandId,
+      },
+      'REACTION_REJECTED',
     ));
   },
 

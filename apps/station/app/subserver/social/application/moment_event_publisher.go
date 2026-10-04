@@ -122,6 +122,50 @@ func (p *MomentEventPublisher) StageImportedCommented(
 	return err
 }
 
+func (p *MomentEventPublisher) StagePrivateReacted(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	postID string,
+	reactionActorPTID string,
+	targetActorPTID string,
+	kind model.ReactionKind,
+	removed bool,
+) error {
+	if p == nil ||
+		postID == "" ||
+		reactionActorPTID == "" ||
+		targetActorPTID == "" ||
+		kind == model.ReactionKind_REACTION_UNSPECIFIED {
+		return fmt.Errorf("private Reaction event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(
+		ctx,
+		transaction,
+		targetActorPTID,
+		&realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Moment{
+				Moment: &realtime.MomentEvent{
+					Kind:             realtime.MomentEvent_REACTED,
+					PostId:           postID,
+					ActorPtid:        reactionActorPTID,
+					ReactionKind:     kind.String(),
+					Removed:          removed,
+					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+				},
+			},
+		},
+	)
+	return err
+}
+
 func (p *MomentEventPublisher) PublishDeleted(ctx context.Context, postID uint64, authorPTID string) {
 	p.publish(ctx, authorPTID, &realtime.MomentEvent{
 		Kind:             realtime.MomentEvent_DELETED,

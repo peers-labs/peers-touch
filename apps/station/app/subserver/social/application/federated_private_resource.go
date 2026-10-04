@@ -377,7 +377,8 @@ func (s *PrivateContentService) enqueueFederatedPrivateComment(
 ) error {
 	remote := make([]socialdomain.RecipientLocality, 0)
 	for _, locality := range snapshot.RecipientLocalities {
-		if locality.HomeStationPeerID != s.localStationPeerID {
+		if locality.FederationID != "" &&
+			locality.HomeStationPeerID != s.localStationPeerID {
 			remote = append(remote, locality)
 		}
 	}
@@ -1536,7 +1537,22 @@ func (s *PrivateContentService) projectRemotePrivateMoment(
 		)
 	}
 	verification.ReceiverVerifiedSenderSigningKey = authorKey
+	metadata := proto.Clone(
+		message.GetPost(),
+	).(*privatecontentpb.PostMetadata)
+	postProjection, reactionProjectionRevision, err := s.privateMomentPostProjection(
+		ctx,
+		transaction,
+		message.GetSourceStationPeerId(),
+		message.GetTargetActor().GetPtid(),
+		metadata,
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &privatecontentpb.GetMomentResourceResponse{
+		Post:                       postProjection,
+		ReactionProjectionRevision: reactionProjectionRevision,
 		Explanation: &actormodel.FeedObjectExplanation{
 			ObjectId: message.GetPost().GetPostId(),
 			Source: &actormodel.ActivitySource{
@@ -1554,9 +1570,7 @@ func (s *PrivateContentService) projectRemotePrivateMoment(
 			},
 		},
 		Resource: &privatecontentpb.PostResource{
-			Metadata: proto.Clone(
-				message.GetPost(),
-			).(*privatecontentpb.PostMetadata),
+			Metadata: metadata,
 			Body: &privatecontentpb.PostResource_PrivateContent{
 				PrivateContent: &privatecontentpb.PrivateContentAccess{
 					Payload: proto.Clone(

@@ -353,6 +353,377 @@ func TestFederatedPrivateCommentParentRevalidation(t *testing.T) {
 	)
 }
 
+func TestFederatedPrivateReactionReactUnreact(t *testing.T) {
+	fixture := newFederatedPrivateReactionFixture(t)
+	react := fixture.reactRequest(t, "react-remote", actormodel.ReactionKind_REACTION_LIKE)
+
+	if _, err := fixture.receiver.service.ReactPrivateMoment(
+		fixture.ctx,
+		fixture.bobAuthor,
+		react,
+	); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+		t.Fatalf("initial react error = %v, want pending dependency", err)
+	}
+	fixture.deliverCommand(t, react.GetCommandId())
+	fixture.deliverResult(t, react.GetCommandId())
+
+	response, err := fixture.receiver.service.ReactPrivateMoment(
+		fixture.ctx,
+		fixture.bobAuthor,
+		react,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.GetSuccess() ||
+		response.GetCommandId() != react.GetCommandId() ||
+		!response.GetExactReplay() ||
+		response.GetProjectionRevision() != 1 {
+		t.Fatalf("remote react response = %+v", response)
+	}
+	assertFederatedPrivateReactionSummary(
+		t,
+		response.GetReactions(),
+		actormodel.ReactionKind_REACTION_LIKE,
+		1,
+		true,
+	)
+	assertTableCount(t, fixture.source.database, "social_reactions", 1)
+	assertTableCount(t, fixture.receiver.database, "social_reactions", 0)
+	assertTableCount(
+		t,
+		fixture.source.database,
+		"social_private_reaction_projections",
+		2,
+	)
+	assertTableCount(
+		t,
+		fixture.receiver.database,
+		"social_private_reaction_projections",
+		1,
+	)
+	assertFederatedPrivateReactionEvent(
+		t,
+		fixture.sourceSubscription,
+		fixture.postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+		false,
+	)
+	assertFederatedPrivateReactionEvent(
+		t,
+		fixture.receiver.subscription,
+		fixture.postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+		false,
+	)
+	fixture.assertReactionReadback(
+		t,
+		fixture.source.service,
+		fixture.source.author.Endpoint,
+		1,
+		1,
+		false,
+	)
+	fixture.assertReactionReadback(
+		t,
+		fixture.receiver.service,
+		fixture.receiver.bob,
+		1,
+		1,
+		true,
+	)
+
+	unreact := fixture.unreactRequest(
+		t,
+		"unreact-remote",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	if _, err := fixture.receiver.service.UnreactPrivateMoment(
+		fixture.ctx,
+		fixture.bobAuthor,
+		unreact,
+	); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+		t.Fatalf("initial unreact error = %v, want pending dependency", err)
+	}
+	fixture.deliverCommand(t, unreact.GetCommandId())
+	fixture.deliverResult(t, unreact.GetCommandId())
+
+	unreacted, err := fixture.receiver.service.UnreactPrivateMoment(
+		fixture.ctx,
+		fixture.bobAuthor,
+		unreact,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !unreacted.GetSuccess() ||
+		unreacted.GetCommandId() != unreact.GetCommandId() ||
+		!unreacted.GetExactReplay() ||
+		unreacted.GetProjectionRevision() != 2 ||
+		len(unreacted.GetReactions()) != 0 {
+		t.Fatalf("remote unreact response = %+v", unreacted)
+	}
+	assertTableCount(t, fixture.source.database, "social_reactions", 0)
+	assertTableCount(t, fixture.receiver.database, "social_reactions", 0)
+	assertFederatedPrivateReactionEvent(
+		t,
+		fixture.sourceSubscription,
+		fixture.postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+		true,
+	)
+	assertFederatedPrivateReactionEvent(
+		t,
+		fixture.receiver.subscription,
+		fixture.postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+		true,
+	)
+	fixture.assertReactionReadback(
+		t,
+		fixture.source.service,
+		fixture.source.author.Endpoint,
+		2,
+		0,
+		false,
+	)
+	fixture.assertReactionReadback(
+		t,
+		fixture.receiver.service,
+		fixture.receiver.bob,
+		2,
+		0,
+		false,
+	)
+}
+
+func TestFederatedPrivateReactionReplayAndHashConflict(t *testing.T) {
+	fixture := newFederatedPrivateReactionFixture(t)
+	request := fixture.reactRequest(
+		t,
+		"react-replay",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	response := fixture.completeReact(t, request)
+	commandFrame := federatedPrivateOutboxFrame(
+		t,
+		fixture.receiver.database,
+		federationdelivery.PayloadKindSocialPrivateInteraction,
+		func(frame *federationdelivery.Frame) bool {
+			return frame.GetPayloadId() == request.GetCommandId()
+		},
+	)
+	duplicate, err := fixture.sourceReceiver.Receive(fixture.ctx, commandFrame)
+	if err != nil ||
+		duplicate.Disposition != federationdelivery.DispositionDuplicate {
+		t.Fatalf("duplicate reaction command = %+v, %v", duplicate, err)
+	}
+	replayed, err := fixture.receiver.service.ReactPrivateMoment(
+		fixture.ctx,
+		fixture.bobAuthor,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayed.GetExactReplay() ||
+		replayed.GetProjectionRevision() != response.GetProjectionRevision() ||
+		!proto.Equal(
+			&actormodel.Post{Reactions: response.GetReactions()},
+			&actormodel.Post{Reactions: replayed.GetReactions()},
+		) {
+		t.Fatalf("exact reaction replay = %+v, first = %+v", replayed, response)
+	}
+	assertTableCount(t, fixture.source.database, "social_reactions", 1)
+
+	conflict := fixture.reactRequest(
+		t,
+		request.GetCommandId(),
+		actormodel.ReactionKind_REACTION_LOVE,
+	)
+	if _, err := fixture.receiver.service.ReactPrivateMoment(
+		fixture.ctx,
+		fixture.bobAuthor,
+		conflict,
+	); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentConflict) {
+		t.Fatalf("changed-hash reaction error = %v, want conflict", err)
+	}
+	assertTableCount(t, fixture.source.database, "social_reactions", 1)
+}
+
+func TestFederatedPrivateReactionRejectsInvalidSignatureAndRevokedParent(
+	t *testing.T,
+) {
+	t.Run("invalid signature", func(t *testing.T) {
+		fixture := newFederatedPrivateReactionFixture(t)
+		request := fixture.reactRequest(
+			t,
+			"react-invalid-signature",
+			actormodel.ReactionKind_REACTION_LIKE,
+		)
+		request.ActorDeviceSignature[0] ^= 1
+		if _, err := fixture.receiver.service.ReactPrivateMoment(
+			fixture.ctx,
+			fixture.bobAuthor,
+			request,
+		); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+			t.Fatalf("initial react error = %v, want pending dependency", err)
+		}
+		frame := federatedPrivateOutboxFrame(
+			t,
+			fixture.receiver.database,
+			federationdelivery.PayloadKindSocialPrivateInteraction,
+			func(frame *federationdelivery.Frame) bool {
+				return frame.GetPayloadId() == request.GetCommandId()
+			},
+		)
+		result, err := fixture.sourceReceiver.Receive(fixture.ctx, frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Disposition != federationdelivery.DispositionTerminal {
+			t.Fatalf("invalid reaction signature disposition = %+v", result)
+		}
+		assertTableCount(t, fixture.source.database, "social_reactions", 0)
+	})
+
+	t.Run("revoked parent", func(t *testing.T) {
+		fixture := newFederatedPrivateReactionFixture(t)
+		request := fixture.reactRequest(
+			t,
+			"react-revoked-parent",
+			actormodel.ReactionKind_REACTION_LIKE,
+		)
+		if _, err := fixture.receiver.service.ReactPrivateMoment(
+			fixture.ctx,
+			fixture.bobAuthor,
+			request,
+		); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+			t.Fatalf("initial react error = %v, want pending dependency", err)
+		}
+		deletedAt := fixture.source.clock.now.Add(time.Second)
+		update := fixture.source.database.Model(&dbmodel.SocialPrivateContentPost{}).
+			Where("post_id = ?", fixture.postID).
+			Updates(map[string]any{
+				"lifecycle_state": "DELETED",
+				"deleted_at":      deletedAt,
+				"updated_at":      deletedAt,
+			})
+		if update.Error != nil || update.RowsAffected != 1 {
+			t.Fatalf(
+				"delete parent rows = %d, error = %v",
+				update.RowsAffected,
+				update.Error,
+			)
+		}
+		fixture.deliverCommand(t, request.GetCommandId())
+		fixture.deliverResult(t, request.GetCommandId())
+		if _, err := fixture.receiver.service.ReactPrivateMoment(
+			fixture.ctx,
+			fixture.bobAuthor,
+			request,
+		); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentNotFound) {
+			t.Fatalf("revoked parent reaction error = %v, want not found", err)
+		}
+		assertTableCount(t, fixture.source.database, "social_reactions", 0)
+	})
+}
+
+func TestFederatedPrivateReactionReceiverProjectionIsMonotonic(t *testing.T) {
+	fixture := newFederatedPrivateReactionFixture(t)
+	first := fixture.reactRequest(
+		t,
+		"react-monotonic-1",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	fixture.completeReact(t, first)
+	assertFederatedPrivateReactionEvent(
+		t,
+		fixture.receiver.subscription,
+		fixture.postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+		false,
+	)
+
+	second := fixture.unreactRequest(
+		t,
+		"react-monotonic-2",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	if _, err := fixture.receiver.service.UnreactPrivateMoment(
+		fixture.ctx,
+		fixture.bobAuthor,
+		second,
+	); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+		t.Fatalf("initial unreact error = %v, want pending dependency", err)
+	}
+	fixture.deliverCommand(t, second.GetCommandId())
+
+	third := fixture.reactRequest(
+		t,
+		"react-monotonic-3",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	if _, err := fixture.receiver.service.ReactPrivateMoment(
+		fixture.ctx,
+		fixture.bobAuthor,
+		third,
+	); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+		t.Fatalf("second react error = %v, want pending dependency", err)
+	}
+	fixture.deliverCommand(t, third.GetCommandId())
+	fixture.deliverResult(t, third.GetCommandId())
+	fixture.deliverResult(t, second.GetCommandId())
+
+	var projection struct {
+		ProjectionRevision uint64 `gorm:"column:projection_revision"`
+	}
+	if err := fixture.receiver.database.
+		Table("social_private_reaction_projections").
+		Where(
+			"source_station_peer_id = ? AND post_id = ? AND viewer_ptid = ?",
+			"station-local",
+			fixture.postID,
+			"ptid:bob",
+		).
+		Take(&projection).Error; err != nil {
+		t.Fatal(err)
+	}
+	if projection.ProjectionRevision != 3 {
+		t.Fatalf(
+			"receiver reaction projection revision = %d, want 3",
+			projection.ProjectionRevision,
+		)
+	}
+	fixture.assertReactionReadback(
+		t,
+		fixture.receiver.service,
+		fixture.receiver.bob,
+		3,
+		1,
+		true,
+	)
+	assertTableCount(t, fixture.receiver.database, "social_reactions", 0)
+	assertFederatedPrivateReactionEvent(
+		t,
+		fixture.receiver.subscription,
+		fixture.postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+		false,
+	)
+	select {
+	case event := <-fixture.receiver.subscription.Events:
+		t.Fatalf("stale reaction projection emitted an event: %+v", event)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func TestFederatedPrivateCommentPreKeyNonReuse(t *testing.T) {
 	fixture := newFederatedPrivateCommentFixture(t)
 	first := fixture.completePrepare(
@@ -382,6 +753,51 @@ type federatedPrivateCommentFixture struct {
 	sourceSubscription *events.Subscription
 	bobAuthor          socialdomain.PrivateContentAuthor
 	postID             string
+}
+
+func newFederatedPrivateReactionFixture(
+	t *testing.T,
+) *federatedPrivateCommentFixture {
+	t.Helper()
+	fixture := newFederatedPrivateCommentFixture(t)
+	for name, database := range map[string]*gorm.DB{
+		"source":   fixture.source.database,
+		"receiver": fixture.receiver.database,
+	} {
+		if err := database.AutoMigrate(
+			&dbmodel.Actor{},
+			&dbmodel.Follow{},
+			&dbmodel.SocialReaction{},
+		); err != nil {
+			t.Fatalf("migrate %s reaction table: %v", name, err)
+		}
+	}
+	for _, actor := range []dbmodel.Actor{
+		{
+			PTID:              "ptid:alice",
+			Namespace:         "peers",
+			PreferredUsername: "alice",
+			Email:             "alice@station.test",
+			PasswordHash:      "test",
+		},
+		{
+			PTID:              "ptid:bob",
+			Namespace:         "peers",
+			PreferredUsername: "bob",
+			Email:             "bob@station.remote",
+			PasswordHash:      "test",
+			FederatedHandle:   "bob@station.remote",
+			HomeStationPeerID: "station-remote",
+			Origin:            "remote_cached",
+		},
+	} {
+		if err := fixture.source.database.
+			Where("ptid = ?", actor.PTID).
+			FirstOrCreate(&actor).Error; err != nil {
+			t.Fatalf("seed reaction actor %s: %v", actor.PTID, err)
+		}
+	}
+	return fixture
 }
 
 func newFederatedPrivateCommentFixture(
@@ -693,6 +1109,131 @@ func (f *federatedPrivateCommentFixture) submitRequest(
 	return request
 }
 
+func (f *federatedPrivateCommentFixture) reactRequest(
+	t *testing.T,
+	commandID string,
+	kind actormodel.ReactionKind,
+) *actormodel.ReactToPostRequest {
+	t.Helper()
+	request := &actormodel.ReactToPostRequest{
+		PostId:            f.postID,
+		Kind:              kind,
+		CommandId:         commandID,
+		ActorSigningKeyId: "author-key",
+	}
+	signingBytes, err := canonicalFederatedPrivateInteractionRequestSigningBytes(
+		privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ActorDeviceSignature = ed25519.Sign(
+		f.source.authorPrivateKey,
+		signingBytes,
+	)
+	return request
+}
+
+func (f *federatedPrivateCommentFixture) unreactRequest(
+	t *testing.T,
+	commandID string,
+	kind actormodel.ReactionKind,
+) *actormodel.UnreactToPostRequest {
+	t.Helper()
+	request := &actormodel.UnreactToPostRequest{
+		PostId:            f.postID,
+		Kind:              kind,
+		CommandId:         commandID,
+		ActorSigningKeyId: "author-key",
+	}
+	signingBytes, err := canonicalFederatedPrivateInteractionRequestSigningBytes(
+		privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ActorDeviceSignature = ed25519.Sign(
+		f.source.authorPrivateKey,
+		signingBytes,
+	)
+	return request
+}
+
+func (f *federatedPrivateCommentFixture) completeReact(
+	t *testing.T,
+	request *actormodel.ReactToPostRequest,
+) *actormodel.ReactToPostResponse {
+	t.Helper()
+	if _, err := f.receiver.service.ReactPrivateMoment(
+		f.ctx,
+		f.bobAuthor,
+		request,
+	); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+		t.Fatalf("initial react error = %v, want pending dependency", err)
+	}
+	f.deliverCommand(t, request.GetCommandId())
+	f.deliverResult(t, request.GetCommandId())
+	response, err := f.receiver.service.ReactPrivateMoment(
+		f.ctx,
+		f.bobAuthor,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
+func (f *federatedPrivateCommentFixture) assertReactionReadback(
+	t *testing.T,
+	service *PrivateContentService,
+	viewer *actormodel.ActorDeviceRef,
+	wantRevision uint64,
+	wantCount int64,
+	wantReacted bool,
+) {
+	t.Helper()
+	response, err := service.GetPrivateMoment(f.ctx, viewer, f.postID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetPost().GetId() != f.postID {
+		t.Fatalf("private reaction readback post = %+v", response.GetPost())
+	}
+	if response.GetReactionProjectionRevision() != wantRevision {
+		t.Fatalf(
+			"private reaction readback revision = %d, want %d",
+			response.GetReactionProjectionRevision(),
+			wantRevision,
+		)
+	}
+	if response.GetPost().GetStats().GetLikesCount() != wantCount {
+		t.Fatalf(
+			"private reaction readback likes = %d, want %d",
+			response.GetPost().GetStats().GetLikesCount(),
+			wantCount,
+		)
+	}
+	if wantCount == 0 {
+		if len(response.GetPost().GetReactions()) != 0 {
+			t.Fatalf(
+				"private reaction readback = %+v, want empty",
+				response.GetPost().GetReactions(),
+			)
+		}
+		return
+	}
+	assertFederatedPrivateReactionSummary(
+		t,
+		response.GetPost().GetReactions(),
+		actormodel.ReactionKind_REACTION_LIKE,
+		wantCount,
+		wantReacted,
+	)
+}
+
 func (f *federatedPrivateCommentFixture) deliverCommand(
 	t *testing.T,
 	commandID string,
@@ -779,6 +1320,62 @@ func assertFederatedPrivateCommentEvent(
 		}
 	case <-time.After(time.Second):
 		t.Fatal("private Comment emitted no committed Moment event")
+	}
+}
+
+func assertFederatedPrivateReactionSummary(
+	t *testing.T,
+	summaries []*actormodel.ReactionSummary,
+	kind actormodel.ReactionKind,
+	wantCount int64,
+	wantReacted bool,
+) {
+	t.Helper()
+	for _, summary := range summaries {
+		if summary.GetKind() == kind {
+			if summary.GetCount() != wantCount ||
+				summary.GetReactedByViewer() != wantReacted {
+				t.Fatalf(
+					"reaction summary = %+v, want count=%d reacted=%t",
+					summary,
+					wantCount,
+					wantReacted,
+				)
+			}
+			return
+		}
+	}
+	t.Fatalf("reaction summary kind %s is missing: %+v", kind, summaries)
+}
+
+func assertFederatedPrivateReactionEvent(
+	t *testing.T,
+	subscription *events.Subscription,
+	postID string,
+	reactionActorPTID string,
+	kind actormodel.ReactionKind,
+	removed bool,
+) {
+	t.Helper()
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case event := <-subscription.Events:
+			moment := event.GetMoment()
+			if moment == nil || moment.GetKind() != realtime.MomentEvent_REACTED {
+				continue
+			}
+			if moment.GetPostId() != postID ||
+				moment.GetActorPtid() != reactionActorPTID ||
+				moment.GetReactionKind() != kind.String() ||
+				moment.GetRemoved() != removed {
+				t.Fatalf("private Reaction event = %+v", event)
+			}
+			return
+		case <-timeout.C:
+			t.Fatal("private Reaction emitted no committed Moment event")
+		}
 	}
 }
 

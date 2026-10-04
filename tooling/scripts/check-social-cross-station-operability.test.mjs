@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   ALLOWED_METRIC_NAMES,
   REQUIRED_PRIVATE_MEDIA_KEYS,
+  REQUIRED_PRIVATE_REACTION_KEYS,
   REQUIRED_PRIVATE_STATE_KEYS,
   validateMetricDescriptors,
   validateSocialCrossStationOperability,
@@ -28,6 +29,14 @@ function locale(prefixes = {}) {
         `${state} label`,
       ]),
     ),
+    ...Object.fromEntries(
+      REQUIRED_PRIVATE_REACTION_KEYS.map((state) => [
+        `moments.reaction.status.${state}`,
+        `${state} label`,
+      ]),
+    ),
+    'moments.reaction.retry': 'Retry',
+    'moments.reaction.retryUnavailable': 'Retry unavailable',
     ...prefixes,
   };
 }
@@ -57,6 +66,7 @@ function fixture(overrides = {}) {
     privateNativeText: [
       ...REQUIRED_PRIVATE_STATE_KEYS.map((state) => `'${state}'`),
       ...REQUIRED_PRIVATE_MEDIA_KEYS.map((state) => `'${state}'`),
+      ...REQUIRED_PRIVATE_REACTION_KEYS.map((state) => `'${state}'`),
       'error_code ?? value.errorCode',
     ].join('\n'),
     objectStreamMetricText: [
@@ -121,6 +131,29 @@ test('rejects locale parity and missing typed state mapping', () => {
       ),
     }),
     /typed private state UNKNOWN_COMMIT is missing/,
+  );
+});
+
+test('rejects missing private Reaction state and retry copy', () => {
+  const values = fixture();
+  const zh = locale();
+  delete zh['moments.reaction.status.REACTION_RETRYING'];
+  assert.throws(
+    () => validateSocialCrossStationOperability({
+      ...values,
+      zhMomentsText: JSON.stringify(zh),
+    }),
+    /locale parity mismatch/,
+  );
+
+  const en = locale();
+  delete en['moments.reaction.retry'];
+  assert.throws(
+    () => validateSocialCrossStationOperability({
+      ...values,
+      enMomentsText: JSON.stringify(en),
+    }),
+    /moments.reaction.retry must be a non-empty string/,
   );
 });
 

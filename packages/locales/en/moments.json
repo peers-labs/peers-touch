@@ -119,6 +119,11 @@
   "moments.reaction.wow": "Wow",
   "moments.reaction.celebrate": "Celebrate",
   "moments.reaction.add": "React",
+  "moments.reaction.retry": "Retry",
+  "moments.reaction.retryUnavailable": "This reaction cannot be retried yet.",
+  "moments.reaction.status.REACTION_PENDING": "Reaction pending",
+  "moments.reaction.status.REACTION_RETRYING": "Retrying reaction",
+  "moments.reaction.status.REACTION_REJECTED": "Reaction not applied",
 
   "moments.compose.title": "New Post",
   "moments.compose.placeholder": "What's on your mind?",
