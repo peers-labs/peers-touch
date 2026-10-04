@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +55,48 @@ class DurableGoalEventJourneyError(RuntimeError):
     """The PAOS-07 Development Journey failed."""
 
 
+def run_publish_failure_probe(artifact_dir: Path) -> dict[str, Any]:
+    command = [
+        "go",
+        "test",
+        "./app/subserver/agent/service",
+        "-run",
+        (
+            "TestAgentRealtimeRelay"
+            "(PublishRetryKeepsStableIDAndActorOrder"
+            "|PublishFailurePreservesGoalReadback)"
+        ),
+        "-count=1",
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=ROOT / "apps" / "station",
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    log_path = artifact_dir / "publish-failure-probe.log"
+    log_path.write_text(
+        completed.stdout + completed.stderr,
+        encoding="utf-8",
+    )
+    require(
+        completed.returncode == 0,
+        f"Station publish-failure probe failed: {log_path}",
+    )
+    return {
+        "command": command,
+        "exitCode": completed.returncode,
+        "log": str(log_path),
+        "assertions": {
+            "publisherFailureInjected": True,
+            "pendingRetryPreservesEventIdentity": True,
+            "committedGoalReadbackSurvivesPublishFailure": True,
+        },
+    }
+
+
 def set_realtime_stream(
     client: FoundationRuntimeClient,
     *,
@@ -85,6 +128,7 @@ def run_journey(
     artifact_dir: Path,
     actor_ptid: str,
 ) -> dict[str, Any]:
+    publish_failure_probe = run_publish_failure_probe(artifact_dir)
     navigate_to_hash(client, "home")
     wait_until(
         lambda: visible_element(client, "[data-pt-home]"),
@@ -165,6 +209,7 @@ def run_journey(
         "revision": "1",
         "status": "DRAFT",
         "deliveryFault": "canonical-realtime-receiver-disconnected",
+        "publishFailureProbe": publish_failure_probe,
         "stationDuringOutage": station_during_outage,
         "stationAfterReconnect": station_after_reconnect,
         "screenshots": [
@@ -173,6 +218,12 @@ def run_journey(
         ],
         "assertions": {
             "realUiMutation": True,
+            "publisherFailureInjected": publish_failure_probe[
+                "assertions"
+            ]["publisherFailureInjected"],
+            "pendingRetryPreservesEventIdentity": publish_failure_probe[
+                "assertions"
+            ]["pendingRetryPreservesEventIdentity"],
             "receiverUnavailableDuringCommit": True,
             "stationReadbackDuringOutage": True,
             "homeRefreshUsesCommittedGoal": (
