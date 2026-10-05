@@ -10,6 +10,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -1080,6 +1081,47 @@ def _moments_harness(
     return result
 
 
+_NATIVE_APP_ERROR_CODES = frozenset(
+    {
+        "NOT_IMPLEMENTED",
+        "INVALID_ARGUMENT",
+        "UNAUTHORIZED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "CONFLICT",
+        "AGENT_CANVAS_SINGLE_AGENT_NOT_READY",
+        "INTERNAL_ERROR",
+    }
+)
+
+
+def _privacy_safe_native_app_error(app_result: object) -> str:
+    if not isinstance(app_result, Mapping):
+        return "UNKNOWN"
+    error = app_result.get("error")
+    if not isinstance(error, Mapping):
+        return "UNKNOWN"
+    code = error.get("code")
+    safe_code = code if code in _NATIVE_APP_ERROR_CODES else "UNKNOWN"
+    message = error.get("message")
+    if not isinstance(message, str):
+        return safe_code
+    safe_message = re.sub(r"https?://\S+", "<url>", message)
+    safe_message = re.sub(r"ptid:[^\s,;]+", "<ptid>", safe_message)
+    safe_message = re.sub(
+        r"(?<!\w)(?:/[A-Za-z0-9._-]+){2,}",
+        "<path>",
+        safe_message,
+    )
+    safe_message = re.sub(
+        r"\b(?:[A-Fa-f0-9]{24,}|[A-Za-z0-9_-]{32,})\b",
+        "<opaque>",
+        safe_message,
+    )
+    safe_message = " ".join(safe_message.split())[:240]
+    return f"{safe_code}: {safe_message}" if safe_message else safe_code
+
+
 def _native_invoke_json(
     client: FoundationRuntimeClient,
     command: str,
@@ -1117,9 +1159,13 @@ def _native_invoke_json(
         or app_result.get("ok") is not True
         or not isinstance(app_result.get("data"), Mapping)
     ):
+        error_summary = _privacy_safe_native_app_error(app_result)
         raise RuntimeOwnerBlocked(
             "FIXTURE_OWNER_UNAVAILABLE",
-            f"Native command {command!r} returned a failed AppResult",
+            (
+                f"Native command {command!r} returned a failed AppResult "
+                f"({error_summary})"
+            ),
             resource=f"fixture-action:{command}",
         )
     status = app_result["data"].get("status")

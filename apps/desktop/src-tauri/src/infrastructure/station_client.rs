@@ -769,7 +769,7 @@ where
     request_proto_for_actor_at(&station_base_url(), method, path, token, query, body)
 }
 
-fn request_proto_for_actor_at<Req, Payload>(
+pub(crate) fn request_proto_for_actor_at<Req, Payload>(
     station_url: &str,
     method: Method,
     path: &str,
