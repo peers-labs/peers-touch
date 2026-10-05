@@ -2,7 +2,8 @@ pub mod enrollment;
 pub mod keys;
 
 pub use enrollment::{
-    generate_fresh_device_identity, is_stale_endpoint_error, load_or_create_device_identity,
+    generate_fresh_device_identity, generate_fresh_device_identity_for_device,
+    is_stale_endpoint_error, load_or_create_device_identity,
     load_or_create_device_identity_for_device, validate_enrollment_actor,
     validate_enrollment_response, DeviceEnrollmentManager, DeviceEnrollmentRepository,
     DeviceEnrollmentTransport, FreshDeviceEnrollment, FreshDeviceIdentityState,
