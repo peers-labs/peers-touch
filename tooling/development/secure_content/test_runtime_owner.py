@@ -109,7 +109,11 @@ from tooling.development.secure_content.runtime_owner import (
     _social_acceptance_scenario_registry,
     _restart_lease,
     _runtime_cleanup_scope,
+    _proto_bytes,
+    _proto_fields,
+    _proto_uint,
     _service_payload,
+    _station_login,
     _stage_child_result,
     _stage_continuation_evidence,
     _start_client,
@@ -165,6 +169,85 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_station_login_uses_schema_bound_access_gate(self) -> None:
+        gate = b"".join(
+            (
+                _proto_bytes(1, "auth.login"),
+                _proto_uint(2, 2),
+                _proto_bytes(10, "auth.password"),
+                _proto_uint(11, 7),
+                _proto_bytes(12, "schema-digest"),
+            )
+        )
+        decision = b"".join(
+            (
+                _proto_uint(1, 2),
+                _proto_bytes(2, "attempt-1"),
+                _proto_bytes(3, "auth.login"),
+                _proto_bytes(4, gate),
+            )
+        )
+        start_response = _proto_bytes(
+            3,
+            _proto_bytes(
+                1,
+                "type.googleapis.com/StartAccessAttemptResponse",
+            )
+            + _proto_bytes(2, _proto_bytes(1, decision)),
+        )
+        tokens = _proto_bytes(2, "eve-token")
+        actor_ref = _proto_bytes(2, "ptid:v1:actor:eve")
+        login_response = _proto_bytes(1, tokens) + _proto_bytes(4, actor_ref)
+        submit_response = _proto_bytes(
+            3,
+            _proto_bytes(
+                1,
+                "type.googleapis.com/SubmitAccessGateResponse",
+            )
+            + _proto_bytes(2, _proto_bytes(2, login_response)),
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner._station_proto_post",
+            side_effect=(start_response, submit_response),
+        ) as post:
+            token, actor_ptid = _station_login(
+                "http://station.test",
+                station_peer_id="station-peer",
+                account="eve@testnet.local",
+                password="secret",
+            )
+
+        self.assertEqual("eve-token", token)
+        self.assertEqual("ptid:v1:actor:eve", actor_ptid)
+        self.assertEqual(
+            [
+                "http://station.test/actor/access/start",
+                "http://station.test/actor/access/submit",
+            ],
+            [candidate.args[0] for candidate in post.call_args_list],
+        )
+        submit_fields = list(_proto_fields(post.call_args_list[1].args[1]))
+        self.assertIn((3, 0, 2), submit_fields)
+        self.assertIn((8, 2, b"station-peer"), submit_fields)
+        self.assertIn((11, 0, 7), submit_fields)
+        self.assertIn((12, 2, b"schema-digest"), submit_fields)
+
+    def test_station_login_rejects_missing_access_gate_payload(self) -> None:
+        with patch(
+            "tooling.development.secure_content.runtime_owner._station_proto_post",
+            return_value=b"",
+        ), self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _station_login(
+                "http://station.test",
+                station_peer_id="station-peer",
+                account="eve@testnet.local",
+                password="secret",
+            )
+
+        self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
+        self.assertEqual("fixture-account:eve", raised.exception.resource)
+
     def test_private_publish_waits_for_remote_delivery_reconciliation(
         self,
     ) -> None:
