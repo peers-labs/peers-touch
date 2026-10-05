@@ -197,11 +197,17 @@ def open_atelier_and_read_task(
         isinstance(projected, Mapping),
         "Atelier create response has no canonical Goal-backed TaskRun",
     )
-    return wait_until(
+    readback = wait_until(
         lambda: canonical_atelier_task(load_workspace(client), title),
         "Atelier canonical Goal-backed TaskRun",
         timeout=180,
     )
+    require(
+        readback.get("taskId") == projected.get("taskId")
+        and readback.get("goalId") == projected.get("goalId"),
+        "Atelier workspace readback changed canonical identity",
+    )
+    return dict(projected)
 
 
 def run_journey(
