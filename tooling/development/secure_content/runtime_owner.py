@@ -1912,6 +1912,18 @@ def _revoke_remote_fixture_device(
     return revoked
 
 
+def _revoke_remote_fixture_device_if_pending(
+    client: FoundationRuntimeClient,
+    *,
+    readiness: Mapping[str, Any],
+    state: dict[str, bool],
+) -> None:
+    if state.get("complete") is True:
+        return
+    _revoke_remote_fixture_device(client, readiness=readiness)
+    state["complete"] = True
+
+
 def _prepare_private_content_keys(client: FoundationRuntimeClient) -> None:
     result = _fixture_harness(
         client,
@@ -10485,6 +10497,13 @@ class W7RuntimeOwner:
             )
             _wait_for_device_enrollment(remote_client)
             remote_readiness = _wait_for_mls_readiness(remote_client)
+            remote_device_cleanup = {"complete": False}
+            stack.callback(
+                _revoke_remote_fixture_device_if_pending,
+                remote_client,
+                readiness=remote_readiness,
+                state=remote_device_cleanup,
+            )
             ledger.record(
                 SuiteRuntimeAction.CLIENT_LAUNCH,
                 resource_id=f"client:{remote_client_id}",
@@ -10533,9 +10552,10 @@ class W7RuntimeOwner:
                     )
                 )
             )
-            _revoke_remote_fixture_device(
+            _revoke_remote_fixture_device_if_pending(
                 remote_client,
                 readiness=remote_readiness,
+                state=remote_device_cleanup,
             )
             _stop_client_or_raise(
                 remote_client,

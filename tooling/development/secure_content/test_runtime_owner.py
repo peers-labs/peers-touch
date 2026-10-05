@@ -92,6 +92,7 @@ from tooling.development.secure_content.runtime_owner import (
     _privacy_safe_native_app_error,
     _prepare_remote_group_fixture,
     _revoke_remote_fixture_device,
+    _revoke_remote_fixture_device_if_pending,
     _refresh_and_wait_for_moments_snapshot,
     _wait_for_accepted_friendship_projection,
     _wait_for_federated_actor_resolution,
@@ -585,15 +586,19 @@ class RuntimeOwnerTest(unittest.TestCase):
             '"runtimeManifest": acceptance_runtime_manifest',
             source[runtime_evidence:],
         )
+        remote_cleanup = source.index(
+            "_revoke_remote_fixture_device_if_pending,",
+        )
         remote_group = source.index("fixture_owner.bind_remote_group(")
         remote_revoke = source.index(
-            "_revoke_remote_fixture_device(",
+            "_revoke_remote_fixture_device_if_pending(",
             remote_group,
         )
         remote_stop = source.index(
             'purpose="W8 remote recipient identity preparation"',
             remote_revoke,
         )
+        self.assertLess(remote_cleanup, remote_group)
         self.assertLess(remote_group, remote_revoke)
         self.assertLess(remote_revoke, remote_stop)
         self.assertLess(
@@ -2397,6 +2402,28 @@ class RuntimeOwnerTest(unittest.TestCase):
                     client,
                     root / "shared" / "actor-identity",
                 )
+
+    def test_remote_recipient_cleanup_revokes_once(self) -> None:
+        client = MagicMock()
+        readiness = {"actorPtid": "ptid:remote", "deviceId": "device-1"}
+        state = {"complete": False}
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "_revoke_remote_fixture_device"
+        ) as revoke:
+            _revoke_remote_fixture_device_if_pending(
+                client,
+                readiness=readiness,
+                state=state,
+            )
+            _revoke_remote_fixture_device_if_pending(
+                client,
+                readiness=readiness,
+                state=state,
+            )
+
+        revoke.assert_called_once_with(client, readiness=readiness)
+        self.assertTrue(state["complete"])
 
     def test_portable_recovery_maintains_prekeys_for_created_epoch(
         self,
