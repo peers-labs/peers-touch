@@ -438,6 +438,13 @@ pub fn messaging_recovery_restore_latest(
             return AppResult::fail(ErrorCode::InternalError, error, None);
         }
     };
+    if let Err(error) = state.secure_content.teardown_actor(&session.actor_ptid) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("failed to fence Secure Content after identity recovery: {error}"),
+            None,
+        );
+    }
     let restored_device_id = match enrollment.certificate.device.as_ref() {
         Some(device) => device.device_id.clone(),
         None => {

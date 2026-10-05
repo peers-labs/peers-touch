@@ -623,6 +623,10 @@ class ContactMessageResilienceTest(unittest.TestCase):
             recovery,
         )
         profile_restore = src.find("state.messaging_engines.restore_profile(", recovery)
+        post_restore_teardown = src.find(
+            "state.secure_content.teardown_actor(&session.actor_ptid)",
+            teardown + 1,
+        )
         self.assertGreater(
             teardown,
             recovery,
@@ -637,6 +641,11 @@ class ContactMessageResilienceTest(unittest.TestCase):
             profile_restore,
             identity_restore,
             "Messaging profile replacement must happen after the identity key changes",
+        )
+        self.assertGreater(
+            post_restore_teardown,
+            profile_restore,
+            "Secure Content leases recreated during recovery must be fenced after profile replacement",
         )
 
     def test_lifecycle_recovers_stale_enrollment(self) -> None:
