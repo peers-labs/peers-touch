@@ -37,7 +37,7 @@ The same Journey later reached an authenticated `ACTIVE` scope after a lifecycle
 restart while `private-social` remained inactive with no local error.
 
 A direct Native activation probe then returned HTTP `200` with stable code
-`20005` while loading `/actor/federation/me`.
+`20005` while decoding the actor identity response.
 
 After the wire contract was repaired, the runtime could report `active=true`
 while its endpoint Content PreKeys were still absent. The first private publish
@@ -100,11 +100,11 @@ therefore skipped `private-social.bootstrap()` entirely during restart. Because
 the descriptor never ran, its module snapshot remained the empty inactive state
 without an activation error.
 
-After those lifecycle defects were fixed, Mobile still decoded
-`/actor/federation/me` as a raw `FederationSelfView`. The Station route and
-Desktop client use the canonical `PeersResponse` envelope with an exact
-`google.protobuf.Any` type URL, so the successful HTTP response failed local
-protobuf decoding before Private Social could pin the Station signing key.
+After those lifecycle defects were fixed, Mobile still decoded the actor
+identity response as a raw payload. The canonical `/actor/profile` route uses
+the `PeersResponse` envelope with an exact `google.protobuf.Any` type URL, so
+the successful HTTP response failed local protobuf decoding before Private
+Social could pin the Station signing key.
 
 Native activation creates and binds the Private Social engine, but endpoint
 Content PreKey provisioning belongs to Native reconciliation. The mobile
@@ -160,9 +160,11 @@ briefly while Session refresh or Social ingress reconciliation completes.
 - Private Social hard dependencies are limited to `session` and
   `secure-storage`. Messaging and Social remain degradable sibling capabilities;
   their failure cannot suppress Private Social activation.
-- The Federation self trust request decodes the canonical `PeersResponse`
-  envelope and requires the exact `FederationSelfView` type URL. The separate
-  Federation profile route retains its raw protobuf response contract.
+- The actor identity trust request reads `/actor/profile`, decodes the canonical
+  `PeersResponse` envelope, and requires the exact `ActorProfile` type URL. The
+  public Federation profile route retains its raw protobuf response contract.
+- Remote sender resolution first reads active Federation contexts and sends an
+  explicit `federation_id` on every `/actor/federation/resolve` request.
 - Private Social lifecycle bootstrap now completes Native reconciliation before
   publishing the runtime as active. Reconciliation failure fails lifecycle
   readiness and tears down the exact Native generation.
@@ -206,9 +208,9 @@ briefly while Session refresh or Social ingress reconciliation completes.
 - `restarts independently of failed degradable messaging and social runtimes`
   verifies that an authenticated restart still activates Private Social when a
   degradable sibling fails.
-- `federation_self_request_decodes_peers_response_envelope` verifies the real
-  HTTP request path, Bearer/device headers, canonical envelope, and exact
-  Federation self payload type.
+- `actor_profile_request_decodes_peers_response_envelope` verifies the real
+  HTTP request path, Bearer/device headers, canonical envelope, and exact Actor
+  Profile payload type.
 - `publishes readiness only after Content PreKey reconciliation` verifies that
   activation cannot become ready before Native provisioning succeeds, and
   `rejects readiness when a configured recovery pool is empty` verifies that
@@ -232,7 +234,7 @@ Run:
 cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
   private_social_uses_the_shared_station_origin_policy
 cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
-  federation_self_request_decodes_peers_response_envelope
+  actor_profile_request_decodes_peers_response_envelope
 pnpm --dir apps/mobile exec vitest run \
   src/runtimes/privateMomentsRuntime.test.ts
 ```
@@ -240,7 +242,7 @@ pnpm --dir apps/mobile exec vitest run \
 Then inspect Mobile Station-origin validation and session transition owners:
 
 ```bash
-rg -n "StationOriginPolicy|runRuntimeSessionTransition|FEDERATION_SELF_TYPE_URL" \
+rg -n "StationOriginPolicy|runRuntimeSessionTransition|ACTOR_PROFILE_TYPE_URL" \
   apps/mobile/src-tauri/src/secure_content \
   apps/mobile/src/runtimes/privateMomentsRuntime.ts
 ```

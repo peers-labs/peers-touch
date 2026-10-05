@@ -916,6 +916,7 @@ export interface SocialRequestSendActionInput {
 
 export interface SocialPeopleSearchActionInput {
   query: string;
+  federationId: string;
 }
 
 export interface FederationContextReadOutput {

@@ -160,13 +160,9 @@ export function ChatMessageArea({
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
   }));
-  const {
-    actorStationEntries,
-    memberStationsByFederation,
-  } = useActiveChatFederationSlice((state) => ({
-    actorStationEntries: state.actorStationEntries,
-    memberStationsByFederation: state.memberStationsByFederation,
-  }));
+  const actorStationEntries = useActiveChatFederationSlice(
+    (state) => state.actorStationEntries,
+  );
   const [inputValue, setInputValue] = useState('');
   const draftsRef = useRef<Record<string, string>>({});
   const prevActiveRef = useRef<string | null>(null);
@@ -219,10 +215,8 @@ export function ChatMessageArea({
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
-    federationId: activeConversation?.federationId,
     stationPeerId: authorityStationId,
     actorStationEntries,
-    memberStationsByFederation,
   });
 
   const subtitle = (() => {

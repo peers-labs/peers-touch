@@ -3,7 +3,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const socialMocks = vi.hoisted(() => ({
-  readSocialPeopleSearchFederations: vi.fn(),
   readCurrentSocialProfile: vi.fn(),
   searchSocialPeople: vi.fn(),
   readFederationContexts: vi.fn(),
@@ -29,8 +28,6 @@ const privateMomentRuntimeMocks = vi.hoisted(() => ({
 vi.mock('../features/social/socialRuntime', () => ({
   acceptSocialFriendRequest: vi.fn(),
   applySocialFriendRequestProjectionCheckpoints: vi.fn(),
-  readSocialPeopleSearchFederations:
-    socialMocks.readSocialPeopleSearchFederations,
   readSocialRuntimeProjection: vi.fn(),
   readCurrentSocialProfile: socialMocks.readCurrentSocialProfile,
   readFederationContexts: socialMocks.readFederationContexts,
@@ -66,10 +63,9 @@ import { mobileAcceptanceActions, publicCallSnapshot } from './actions';
 describe('Mobile Acceptance social actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    socialMocks.readSocialPeopleSearchFederations.mockReturnValue([]);
   });
 
-  it('selects a deterministic active Federation for a local actor search', async () => {
+  it('uses the explicit Federation context for a people search', async () => {
     socialMocks.searchSocialPeople.mockResolvedValue([{
       id: 'ptid:bob',
       ptid: 'ptid:bob',
@@ -78,18 +74,18 @@ describe('Mobile Acceptance social actions', () => {
       displayName: 'Bob',
       avatar: '',
     }]);
-    socialMocks.readSocialPeopleSearchFederations.mockReturnValue([
-      { federationId: 'federation-2' },
-      { federationId: 'federation-1' },
-    ]);
-
     await expect(
-      mobileAcceptanceActions['social.people.search']({ query: 'bob' }),
+      mobileAcceptanceActions['social.people.search']({
+        query: 'bob',
+        federationId: 'federation-1',
+      }),
     ).resolves.toEqual([{
       ptid: 'ptid:bob',
       federationId: 'federation-1',
       homeStationPeerId: 'station-four',
     }]);
+    expect(socialMocks.searchSocialPeople)
+      .toHaveBeenCalledExactlyOnceWith('bob', 'federation-1');
   });
 
   it('reads Federation contexts through the active Social runtime', async () => {

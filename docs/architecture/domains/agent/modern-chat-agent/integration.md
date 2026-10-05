@@ -154,19 +154,6 @@ runtime owners.
 Their acceptance evidence should map into ContextLedger, TurnTrace, runtime
 budget, and evaluation contracts defined here.
 
-### 4.6 `20260730-modern-chat-agent.md`
-
-The current execution plan remains blocked. After design acceptance it must be
-rewritten to:
-
-- Trace to `MCA-D01` through `MCA-D18`.
-- Prioritize single-Agent context, continuity, budgets, capability, and
-  evaluation before collaboration.
-- Remove multi-Agent implementation from the plan and use Agent Canvas as a
-  downstream readiness consumer.
-- Add stateful runtime binding and event replay closures.
-- Use the `MODERN_CHAT_AGENT_V1` profile instead of conflicting P0-P2 labels.
-
 ## 5. Capability Mapping
 
 | Capability | Existing foundation | Missing architecture closure |

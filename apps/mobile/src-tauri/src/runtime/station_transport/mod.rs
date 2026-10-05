@@ -50,6 +50,8 @@ struct ActorProfileUpdateInput {
     message_permission: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     auto_expire_days: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    discoverability: Option<String>,
     observed_revision: String,
 }
 
@@ -120,9 +122,15 @@ enum StationOperation {
     ActorSearch {
         query: String,
     },
-    FederationList {},
+    FederationContextsList {},
     FederationResolve {
+        federation_id: String,
         handle: String,
+    },
+    FederationCatalogSearch {
+        federation_id: String,
+        prefix: String,
+        page_size: u32,
     },
     NotificationList {
         limit: u32,
@@ -226,8 +234,9 @@ impl StationOperation {
             Self::ActorProfileUpdate { .. } => "actor_profile_update",
             Self::ActorProfileGetPeer { .. } => "actor_profile_get_peer",
             Self::ActorSearch { .. } => "actor_search",
-            Self::FederationList {} => "federation_list",
+            Self::FederationContextsList {} => "federation_contexts_list",
             Self::FederationResolve { .. } => "federation_resolve",
+            Self::FederationCatalogSearch { .. } => "federation_catalog_search",
             Self::NotificationList { .. } => "notification_list",
             Self::NotificationUnreadCounts {} => "notification_unread_counts",
             Self::NotificationMarkRead { .. } => "notification_mark_read",
@@ -660,6 +669,7 @@ fn build_request(
                 128,
                 "message_permission",
             )?;
+            validate_optional_text(input.discoverability.as_deref(), 64, "discoverability")?;
             validate_revision(&input.observed_revision, "actor_profile_update")?;
             let body = typed_json_body(&input, "actor_profile_update")?;
             json_request(client, session, Method::POST, "/actor/profile", body)?
@@ -680,17 +690,41 @@ fn build_request(
                 .append_pair("q", &clean_required(query, 512, "query")?);
             authenticated_request(client, session, Method::GET, url)
         }
-        StationOperation::FederationList {} => authenticated_request(
+        StationOperation::FederationContextsList {} => authenticated_request(
             client,
             session,
             Method::GET,
-            fixed_url(session, "/sub-federation/federations")?,
+            fixed_url(session, "/sub-federation/contexts")?,
         ),
-        StationOperation::FederationResolve { handle } => {
+        StationOperation::FederationResolve {
+            federation_id,
+            handle,
+        } => {
             let mut url = fixed_url(session, "/actor/federation/resolve")?;
             url.query_pairs_mut()
+                .append_pair("federation_id", &clean_id(federation_id, "federation_id")?)
                 .append_pair("handle", &clean_required(handle, 512, "handle")?);
             authenticated_request(client, session, Method::GET, url)
+        }
+        StationOperation::FederationCatalogSearch {
+            federation_id,
+            prefix,
+            page_size,
+        } => {
+            bounded_limit(page_size, 100, "federation_catalog_search")?;
+            let body = serde_json::to_vec(&json!({
+                "federation_id": clean_id(federation_id, "federation_id")?,
+                "prefix": clean_required(prefix, 512, "prefix")?,
+                "page_size": page_size,
+            }))
+            .map_err(|_| transport_error("federation_catalog_search", "encode"))?;
+            json_request(
+                client,
+                session,
+                Method::POST,
+                "/sub-federation/catalog/search",
+                body,
+            )?
         }
         StationOperation::NotificationList { limit, cursor } => {
             let mut url = fixed_url(session, "/notification/list")?;

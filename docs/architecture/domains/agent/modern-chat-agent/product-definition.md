@@ -1,8 +1,8 @@
 # Modern Chat Agent — Product Definition
 
 > **Status**: accepted
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-10-01
+> **Version**: v1.2
+> **Created**: 2026-07-30 | **Updated**: 2026-10-05
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -198,7 +198,8 @@ V2 scope dispositions:
 ## 7. Non-Goals
 
 - Cloning LobeHub navigation, marketplace, or visual identity.
-- Copying Peers-Touch's local-machine ownership model.
+- Making client-local machine state authoritative for conversation runtime
+  identity or durable product state.
 - Requiring every model to support tools, vision, reasoning, or artifacts.
 - Hiding runtime distinctions behind a generic success state.
 - Treating a prototype, unit test, or response screenshot as product readiness.

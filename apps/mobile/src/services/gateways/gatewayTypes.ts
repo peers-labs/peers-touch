@@ -36,6 +36,7 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export interface GatewayRequestOptions {
   readonly method: HttpMethod;
   readonly path: string;
+  readonly admission?: 'read' | 'write';
   readonly query?: Readonly<Record<string, string | number | undefined>>;
   readonly body?: Readonly<Record<string, unknown>>;
   readonly accept?: string;
@@ -115,7 +116,9 @@ export function createGatewayTransport(
   mutationDomain: MobileMutationDomain,
 ) {
   async function request<T>(options: GatewayRequestOptions): Promise<T> {
-    if (options.method !== 'GET') {
+    const admission = options.admission
+      ?? (options.method === 'GET' ? 'read' : 'write');
+    if (admission === 'write') {
       requireMobileMutationAdmission(
         mobileAuthScopeKey(session),
         mutationDomain,
@@ -228,12 +231,20 @@ function resolveGatewayOperation(
         operationId: 'actor_search',
         query: requiredString(query.q, 'q'),
       };
-    case 'GET /sub-federation/federations':
-      return { operationId: 'federation_list' };
+    case 'GET /sub-federation/contexts':
+      return { operationId: 'federation_contexts_list' };
     case 'GET /actor/federation/resolve':
       return {
         operationId: 'federation_resolve',
+        federation_id: requiredString(query.federation_id, 'federation_id'),
         handle: requiredString(query.handle, 'handle'),
+      };
+    case 'POST /sub-federation/catalog/search':
+      return {
+        operationId: 'federation_catalog_search',
+        federation_id: requiredString(body.federation_id, 'federation_id'),
+        prefix: requiredString(body.prefix, 'prefix'),
+        page_size: requiredNumber(body.page_size, 'page_size'),
       };
     case 'GET /notification/list':
       return {

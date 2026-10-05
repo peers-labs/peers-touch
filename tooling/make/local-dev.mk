@@ -12,7 +12,7 @@
         plan-activate plan-advance plan-cancel plan-reopen \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
-        desktop desktop-stop desktop-restart \
+        desktop desktop-install desktop-stop desktop-restart \
         mobile mobile-stop mobile-restart \
         status stop restart
 
@@ -424,6 +424,9 @@ relay-restart:
 
 desktop:
 	@$(DEVCTL) desktop start
+
+desktop-install:
+	@$(DEVCTL) desktop install
 
 desktop-stop:
 	@$(DEVCTL) desktop stop

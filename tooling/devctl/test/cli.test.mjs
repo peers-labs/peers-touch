@@ -84,3 +84,24 @@ test('desktop rejects an unconsumed positional mode', () => {
   assert.equal(parsed.error.code, 'DEVCTL_UNSUPPORTED_MODE');
   assert.deepEqual(parsed.error.details.arguments, ['web']);
 });
+
+test('desktop install is exposed without a runtime mode', () => {
+  const help = runCli(['help']);
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /devctl desktop install \[--json\]/u);
+
+  const result = runCli([
+    'desktop',
+    'install',
+    '--mode',
+    'web',
+    '--json',
+  ]);
+  assert.equal(result.status, 2);
+  const parsed = JSON.parse(result.stderr);
+  assert.equal(parsed.error.code, 'DEVCTL_UNSUPPORTED_MODE');
+  assert.equal(
+    parsed.error.message,
+    'Desktop installation does not accept --mode',
+  );
+});
