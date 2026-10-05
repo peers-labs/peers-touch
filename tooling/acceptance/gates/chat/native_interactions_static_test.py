@@ -660,6 +660,18 @@ class ContactMessageResilienceTest(unittest.TestCase):
         self.assertIn("generate_fresh_device_identity_from_seed(", branch)
         self.assertNotIn("generate_fresh_device_identity_for_device(", branch)
 
+    def test_private_recovery_reactivates_secure_content_after_identity_fence(self) -> None:
+        src = self.source("apps/desktop/src-tauri/src/social/mod.rs")
+        recovery = src.find("fn recovery_lease_for_window(")
+        self.assertGreater(recovery, 0)
+        end = src.find("\nfn native_failure(", recovery)
+        self.assertGreater(end, recovery)
+        helper = src[recovery:end]
+        self.assertIn(
+            "Err(_) => return activate(state, window, actor_ptid, renderer_generation)",
+            helper,
+        )
+
     def test_lifecycle_recovers_stale_enrollment(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/lifecycle.rs")
         self.assertIn(
