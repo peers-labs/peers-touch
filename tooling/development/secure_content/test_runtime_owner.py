@@ -1927,6 +1927,39 @@ class RuntimeOwnerTest(unittest.TestCase):
 
         self.assertNotEqual(first["runtimeRoot"], second["runtimeRoot"])
 
+    def test_runtime_root_override_preserves_canonical_shared_identity(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as result_directory,
+            tempfile.TemporaryDirectory() as runtime_directory,
+        ):
+            result_root = Path(result_directory)
+            runtime_root = Path(runtime_directory)
+            owner = W7RuntimeOwner(
+                repo_root=Path(__file__).resolve().parents[3],
+                result_root=result_root,
+                runtime_root=runtime_root,
+            )
+
+            self.assertEqual(runtime_root.resolve(), owner.runtime_root)
+            self.assertEqual(
+                result_root.resolve() / "runtime-owner" / "shared",
+                owner.shared_identity_root,
+            )
+            parsed = _parse_args(
+                [
+                    "run-social-desktop-acceptance-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                    "--slot",
+                    "12",
+                    "--runtime-root",
+                    str(runtime_root),
+                ]
+            )
+            self.assertEqual(runtime_root, parsed.runtime_root)
+
     def test_suite_runtime_contracts_match_plan_tasks(self) -> None:
         plan_root = (
             Path(__file__).resolve().parents[3]
