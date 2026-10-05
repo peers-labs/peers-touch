@@ -91,6 +91,7 @@ from tooling.development.secure_content.runtime_owner import (
     _revoke_remote_fixture_device,
     _wait_for_accepted_friendship_projection,
     _wait_for_private_moment_state,
+    _wait_for_private_moment_states,
     _parse_args,
     _publish_result_generation,
     _publish_canonical_private_schema_attestation,
@@ -2955,6 +2956,31 @@ class RuntimeOwnerTest(unittest.TestCase):
             ],
             client.harness.call_args_list,
         )
+
+    def test_private_moment_states_waits_for_remote_revocation(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec.profile = "secure-content-desktop-bob"
+        client.harness.side_effect = (
+            {"state": "CONTENT_READY"},
+            {"state": "DELETED_OR_REVOKED", "errorCode": "DELETED_OR_REVOKED"},
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.time.sleep"
+        ):
+            projection = _wait_for_private_moment_states(
+                client,
+                post_id="post-1",
+                expected_states=(
+                    "DELETED_OR_REVOKED",
+                    "NOT_FOUND_OR_NOT_AUTHORIZED",
+                ),
+                actor_label="Bob",
+            )
+
+        self.assertEqual("DELETED_OR_REVOKED", projection["state"])
+        self.assertEqual(2, client.harness.call_count)
 
     def test_private_moment_state_timeout_reports_last_projection(self) -> None:
         client = MagicMock()
