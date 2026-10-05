@@ -52,11 +52,12 @@ pub fn resolve(
         ("federation_id", federation_id.to_string()),
         ("handle", trimmed.to_string()),
     ];
-    station_client::request_peers_proto_no_body::<FederationResolveView>(
+    station_client::request_proto::<(), FederationResolveView>(
         Method::GET,
         ROUTE_RESOLVE,
         token,
         Some(&query),
+        None,
     )
     .map_err(FederationGatewayError::Station)
 }
