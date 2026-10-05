@@ -391,6 +391,13 @@ pub fn messaging_recovery_restore_latest(
             }
         };
     drop(engine);
+    if let Err(error) = state.secure_content.teardown_actor(&session.actor_ptid) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("failed to fence Secure Content before identity recovery: {error}"),
+            None,
+        );
+    }
 
     let key_ref = identity_key_ref(&session.ptid);
     let previous_seed = match crypto::load_identity_key(&key_ref) {
