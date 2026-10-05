@@ -1980,6 +1980,11 @@ def _prepare_cross_station_social_fixture(
         federated_handle=bob_handle,
         expected_home_station_peer_id=bob_station,
     )
+    _wait_for_federated_profile(
+        alice,
+        federated_handle=bob_handle,
+        expected_home_station_peer_id=bob_station,
+    )
     resolved = _wait_for_federated_actor_resolution(
         alice,
         federation_id=federation_id,
@@ -2179,6 +2184,79 @@ def _wait_for_federated_actor_resolution(
         "FIXTURE_OWNER_UNAVAILABLE",
         "Cross-Station Social resolver did not converge before the deadline",
         resource="fixture:cross-station-social-resolver",
+    )
+
+
+def _wait_for_federated_profile(
+    client: FoundationRuntimeClient,
+    *,
+    federated_handle: str,
+    expected_home_station_peer_id: str,
+    timeout_seconds: float = 300.0,
+    poll_interval_seconds: float = 5.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    http_get: Callable[..., tuple[int, bytes]] = _http_get,
+) -> Mapping[str, Any]:
+    query = urllib.parse.urlencode(
+        {
+            "handle": federated_handle,
+            "timeout": "15s",
+        }
+    )
+    url = (
+        f"{client.station_url.rstrip('/')}"
+        f"/sub-bootstrap/federation/resolve?{query}"
+    )
+    deadline = monotonic() + timeout_seconds
+    while True:
+        status, body = http_get(
+            url,
+            headers={"Accept": "application/json"},
+        )
+        if status == 200:
+            try:
+                envelope = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    "Cross-Station Social profile probe returned invalid JSON",
+                    resource="fixture:cross-station-social-profile",
+                ) from error
+            data = (
+                envelope.get("data")
+                if isinstance(envelope, Mapping)
+                and isinstance(envelope.get("data"), Mapping)
+                else {}
+            )
+            if (
+                data.get("home_station_peer_id")
+                != expected_home_station_peer_id
+                or not str(data.get("handle") or "").strip()
+            ):
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    "Cross-Station Social profile probe returned stale identity",
+                    resource="fixture:cross-station-social-profile",
+                )
+            return data
+        if status < 500 and status != 404:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                (
+                    "Cross-Station Social profile convergence probe returned "
+                    f"HTTP {status}"
+                ),
+                resource="fixture:cross-station-social-profile",
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_interval_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "FIXTURE_OWNER_UNAVAILABLE",
+        "Cross-Station Social profile did not converge before the deadline",
+        resource="fixture:cross-station-social-profile",
     )
 
 
