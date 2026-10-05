@@ -2726,6 +2726,7 @@ _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES = (
     "docs/architecture/social/",
     "tooling/acceptance/",
     "tooling/development/secure_content/",
+    "tooling/devctl/",
     "tooling/scripts/acceptance-run.py",
     "tooling/scripts/acceptance-run-test.py",
     "tooling/skills/pt-github-review/FRESHNESS.md",
