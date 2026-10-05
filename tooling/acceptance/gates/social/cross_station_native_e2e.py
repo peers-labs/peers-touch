@@ -10,7 +10,6 @@ from .cross_station_support import (
     SCENARIO_IDS,
     attach_suite_evidence,
     load_suite_result,
-    optional_acceptance_runtime_manifest,
 )
 
 
@@ -26,16 +25,8 @@ class Gate(AcceptanceGate):
 
     def run(self) -> dict[str, Any]:
         result = load_suite_result()
+        self.report.manifest = dict(result.payload["runtimeManifest"])
         attach_suite_evidence(self, result)
-
-        provisioned = optional_acceptance_runtime_manifest()
-        if provisioned is not None:
-            manifest_path, manifest = provisioned
-            self.report.manifest = manifest
-            self.report.add_evidence_file(
-                "acceptance-runtime-manifest",
-                manifest_path,
-            )
 
         for scenario_id in SCENARIO_IDS:
             scenario = result.payload["scenarioResults"][scenario_id]

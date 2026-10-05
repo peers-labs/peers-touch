@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -44,6 +45,10 @@ def _suite_result() -> ValidatedSuiteResult:
         "resourceReuse": {
             "provisioningRuns": 1,
             "clientLaunches": 3,
+        },
+        "runtimeManifest": {
+            "state": "FIXTURE_READY",
+            "runId": "css09-suite-runtime",
         },
         "cleanup": {"status": "CLEANED"},
         "suiteRuntimeReportDigest": "c" * 64,
@@ -136,47 +141,29 @@ class CrossStationSuiteWrapperTest(unittest.TestCase):
         with (
             mock.patch.object(module, "load_suite_result", return_value=suite),
             mock.patch.object(module, "attach_suite_evidence") as attach,
-            mock.patch.object(
-                module,
-                "optional_acceptance_runtime_manifest",
-                return_value=None,
-            ) as load_manifest,
         ):
             result = gate.run()
 
         attach.assert_called_once_with(gate, suite)
-        load_manifest.assert_called_once_with()
+        self.assertEqual(
+            suite.payload["runtimeManifest"],
+            gate.report.manifest,
+        )
         self.assertEqual(list(SCENARIO_IDS), result["provenScope"])
         self.assertEqual("UNPROVEN", result["suiteArtifactProofState"])
 
-    def test_native_gate_attaches_validated_acceptance_manifest(self) -> None:
-        module = importlib.import_module(
-            MODULE_PREFIX + "cross_station_native_e2e"
+    def test_native_gate_catalog_is_attach_only(self) -> None:
+        gate_catalog = json.loads(
+            (
+                Path(__file__).resolve().parents[2]
+                / "gates.yaml"
+            ).read_text(encoding="utf-8")
         )
-        gate = module.Gate()
-        suite = _suite_result()
-        manifest_path = Path("/tmp/runtime-manifest.json")
-        manifest = {"state": "FIXTURE_READY", "runId": "runtime"}
-        with (
-            mock.patch.object(module, "load_suite_result", return_value=suite),
-            mock.patch.object(module, "attach_suite_evidence"),
-            mock.patch.object(
-                module,
-                "optional_acceptance_runtime_manifest",
-                return_value=(manifest_path, manifest),
-            ),
-            mock.patch.object(
-                gate.report,
-                "add_evidence_file",
-            ) as add_evidence,
-        ):
-            gate.run()
+        definition = gate_catalog["gates"]["social-cross-station-native-e2e"]
 
-        self.assertEqual(manifest, gate.report.manifest)
-        add_evidence.assert_called_once_with(
-            "acceptance-runtime-manifest",
-            manifest_path,
-        )
+        self.assertEqual("local", definition["environment"])
+        self.assertEqual("env-evidence", definition["tier"])
+        self.assertNotIn("provisioner", definition)
 
 
 class CrossStationMainContractTest(unittest.TestCase):
