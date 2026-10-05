@@ -3436,6 +3436,42 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(snapshot, result)
         self.assertEqual(2, client.harness.call_count)
 
+    def test_moments_readiness_waits_for_new_boot_after_reload(
+        self,
+    ) -> None:
+        previous_boot_identity = "1" * 64
+        reloaded_snapshot = {
+            "platform": "native",
+            "bootIdentitySha256": "2" * 64,
+            "nativeRuntimeIdentitySha256": "3" * 64,
+        }
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec = SimpleNamespace(
+            profile="secure-content-desktop-bob",
+            runtime="native-tauri",
+        )
+        client.harness.side_effect = (
+            {
+                "platform": "native",
+                "bootIdentitySha256": previous_boot_identity,
+                "nativeRuntimeIdentitySha256": "3" * 64,
+            },
+            reloaded_snapshot,
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.harness_ready",
+            return_value=True,
+        ):
+            result = _wait_for_moments_snapshot(
+                client,
+                previous_boot_identity_sha256=previous_boot_identity,
+            )
+
+        self.assertEqual(reloaded_snapshot, result)
+        self.assertEqual(2, client.harness.call_count)
+
     def test_moments_readiness_retries_transient_browser_identity_gap(
         self,
     ) -> None:

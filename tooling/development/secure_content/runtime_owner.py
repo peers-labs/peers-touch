@@ -4756,6 +4756,8 @@ def _bind_reusable_actor_identity(
 
 def _wait_for_moments_snapshot(
     client: FoundationRuntimeClient,
+    *,
+    previous_boot_identity_sha256: str | None = None,
 ) -> Mapping[str, Any]:
     client.harness_namespace = "moments"
     if not harness_ready(client.driver, "moments", timeout=60):
@@ -4779,6 +4781,17 @@ def _wait_for_moments_snapshot(
                 and snapshot.get("platform") != expected_platform
             ):
                 return None
+            if (
+                isinstance(snapshot, Mapping)
+                and previous_boot_identity_sha256 is not None
+            ):
+                boot_identity = snapshot.get("bootIdentitySha256")
+                if (
+                    not isinstance(boot_identity, str)
+                    or not boot_identity
+                    or boot_identity == previous_boot_identity_sha256
+                ):
+                    return None
             return snapshot
         except FoundationClientError as error:
             message = str(error)
@@ -7931,7 +7944,13 @@ class W7RuntimeOwner:
             )
             before_reload = _wait_for_moments_snapshot(current_bob)
             current_bob.driver.refresh()
-            after_reload = _wait_for_moments_snapshot(current_bob)
+            after_reload = _wait_for_moments_snapshot(
+                current_bob,
+                previous_boot_identity_sha256=_required_text(
+                    before_reload.get("bootIdentitySha256"),
+                    "AS21 pre-reload boot identity",
+                ),
+            )
             as21_read = _wait_for_private_moment_state(
                 current_bob,
                 post_id=as21_post,
