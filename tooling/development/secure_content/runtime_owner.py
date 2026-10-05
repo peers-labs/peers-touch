@@ -1971,15 +1971,19 @@ def _prepare_cross_station_social_fixture(
                 f"{label} does not observe the complete shared Federation",
                 resource="fixture:cross-station-social-federation",
             )
+    bob_handle = _required_text(
+        bob_identity.get("federatedHandle"),
+        "cross-station Bob handle",
+    )
+    _wait_for_federated_locator(
+        alice,
+        federated_handle=bob_handle,
+        expected_home_station_peer_id=bob_station,
+    )
     resolved = _moments_harness(
         alice,
         "resolveFederatedActorIdentity",
-        {
-            "federatedHandle": _required_text(
-                bob_identity.get("federatedHandle"),
-                "cross-station Bob handle",
-            )
-        },
+        {"federatedHandle": bob_handle},
     )
     if (
         resolved.get("actorPtid") != bob_ptid
@@ -2028,6 +2032,79 @@ def _prepare_cross_station_social_fixture(
         "bobStationPeerId": bob_station,
         "federationId": federation_id,
     }
+
+
+def _wait_for_federated_locator(
+    client: FoundationRuntimeClient,
+    *,
+    federated_handle: str,
+    expected_home_station_peer_id: str,
+    timeout_seconds: float = 300.0,
+    poll_interval_seconds: float = 5.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    http_get: Callable[..., tuple[int, bytes]] = _http_get,
+) -> Mapping[str, Any]:
+    query = urllib.parse.urlencode(
+        {
+            "handle": federated_handle,
+            "timeout": "15s",
+        }
+    )
+    url = (
+        f"{client.station_url.rstrip('/')}"
+        f"/sub-bootstrap/locator/lookup?{query}"
+    )
+    deadline = monotonic() + timeout_seconds
+    while True:
+        status, body = http_get(
+            url,
+            headers={"Accept": "application/json"},
+        )
+        if status == 200:
+            try:
+                envelope = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    "Cross-Station Social locator probe returned invalid JSON",
+                    resource="fixture:cross-station-social-locator",
+                ) from error
+            data = (
+                envelope.get("data")
+                if isinstance(envelope, Mapping)
+                and isinstance(envelope.get("data"), Mapping)
+                else {}
+            )
+            if (
+                data.get("home_station_peer_id")
+                != expected_home_station_peer_id
+                or not str(data.get("federated_handle") or "").strip()
+            ):
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    "Cross-Station Social locator probe returned stale identity",
+                    resource="fixture:cross-station-social-locator",
+                )
+            return data
+        if status != 404:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                (
+                    "Cross-Station Social locator convergence probe returned "
+                    f"HTTP {status}"
+                ),
+                resource="fixture:cross-station-social-locator",
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_interval_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "FIXTURE_OWNER_UNAVAILABLE",
+        "Cross-Station Social locator did not converge before the deadline",
+        resource="fixture:cross-station-social-locator",
+    )
 
 
 def _restore_w8_invalidated_fixtures(
