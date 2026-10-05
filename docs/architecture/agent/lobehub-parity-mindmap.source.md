@@ -2,10 +2,11 @@
 
 > **Status**: active
 > **Created**: 2026-08-15
-> **Updated**: 2026-09-08
+> **Updated**: 2026-10-05
 > **Owner**: Peers-Touch Agent Team
 > **Purpose**: 单总根、双产品镜像的 Agent 能力对比脑图的**可解析落盘源**。
 > 每个节点携带：文本 + 状态标签 + 双侧源码引用。供 reviewer agent 做节点级审计，以及导出 SVG/mermaid 渲染。
+> **LobeHub source**: `https://github.com/lobehub/lobehub.git` @ `1056cdf32b`
 >
 > **本文件是脑图的权威源（source of truth）。** Dynamic UI panel / SVG 只是它的渲染。
 
@@ -43,7 +44,7 @@
 ### 证据核验方法
 
 本文件所有 Peers-Touch 行号均为 **2026-08-15 本会话对 `apps/desktop/src`、`apps/desktop/src-tauri`、`apps/station` 现网工作树的实测**。
-LobeHub 行号取自 `Peers-Touch/external/lobehub/src` 现网工作树实测，其余模块路径引自同目录 [lobehub-feature-topology.md](./lobehub-feature-topology.md)（同为磁盘证据）。
+LobeHub 行号取自上述公开仓库固定 revision 的 `src/`，其余模块路径引自同目录 [lobehub-feature-topology.md](./lobehub-feature-topology.md)（同为磁盘证据）。
 **未在本会话逐行核到的节点一律标 `未证实`，不填造行号。**
 
 ---
@@ -133,7 +134,7 @@ mindmap
 
 ## 2. 节点级审计矩阵（每节点：文本 + 双侧状态 + 双侧源码引用 + 范围）
 
-> 路径相对：Peers = `apps/desktop/…` 或 `apps/station/…`（`peers-ai-agent/` 下）；Lobe = `Peers-Touch/external/lobehub/src/…`。
+> 路径相对：Peers = `apps/desktop/…` 或 `apps/station/…`；Lobe = 上述 LobeHub revision 的 `src/…`。
 
 ### 2.1 能力域：对话运行时
 

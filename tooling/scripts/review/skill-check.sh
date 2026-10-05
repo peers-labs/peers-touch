@@ -1151,6 +1151,34 @@ else
   rm -rf "$cargo_directive_fixture"
   rm -f /tmp/pt-cargo-directive.$$
 
+  retired_reference_fixture="$(mktemp -d)"
+  retired_prefix="agent"
+  retired_suffix="box"
+  retired_title_prefix="Agent"
+  retired_title_suffix="Box"
+  mkdir -p "$retired_reference_fixture/paths"
+  printf 'legacy reference: %s%s\nlegacy reference: %s_%s\nlegacy reference: %s--__  %s\n' \
+    "$retired_prefix" "$retired_suffix" "$retired_prefix" "$retired_suffix" \
+    "$retired_prefix" "$retired_suffix" \
+    > "$retired_reference_fixture/content.md"
+  printf 'clean content\n' \
+    > "$retired_reference_fixture/paths/${retired_prefix}-${retired_suffix}.md"
+  printf 'clean content\n' \
+    > "$retired_reference_fixture/paths/${retired_title_prefix} ${retired_title_suffix}.md"
+  printf 'clean content\n' \
+    > "$retired_reference_fixture/paths/${retired_prefix}--__  ${retired_suffix}.md"
+  if tooling/scripts/review/hard-rules.sh \
+    --fixture-dir "$retired_reference_fixture" >/tmp/pt-retired-reference.$$ 2>&1; then
+    fail "hard-rules.sh must reject retired product references in content and paths"
+  fi
+  retired_findings="$(grep -c '\[retired-product-reference\]' /tmp/pt-retired-reference.$$ || true)"
+  if [[ "$retired_findings" -lt 6 ]]; then
+    cat /tmp/pt-retired-reference.$$
+    fail "hard-rules.sh must report both retired content and path references"
+  fi
+  rm -rf "$retired_reference_fixture"
+  rm -f /tmp/pt-retired-reference.$$
+
   growth_fixture_count="$(find "$fixtures_dir" -mindepth 1 -maxdepth 1 -type d -name 'growth-*' | wc -l | tr -d ' ')"
   if [[ "$growth_fixture_count" -lt 4 ]]; then
     fail "expected at least 4 growth fixtures, found $growth_fixture_count"

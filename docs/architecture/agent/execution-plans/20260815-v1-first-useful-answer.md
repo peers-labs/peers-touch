@@ -1,11 +1,13 @@
 # Modern Chat Agent V1 First Useful Answer — Source-Level Implementation Manual
 
-> **Status**: draft
+> **Status**: historical baseline
 > **Version**: v1.0
-> **Created**: 2026-08-15 | **Updated**: 2026-08-15
+> **Created**: 2026-08-15 | **Updated**: 2026-10-05
 > **Owner**: Peers-Touch Agent Team
 > **Worktree**: `<repo-root>`
 > **Branch**: `feat/p0-streaming-runtime-message-actions`
+> **Current execution authority**: none; superseded by
+> [`20261001-minimum-usable-agent-chat/plan.md`](./20261001-minimum-usable-agent-chat/plan.md)
 
 ---
 
@@ -101,10 +103,10 @@ named product scenario before it can be marked complete.
 
 ### 3.3 LobeHub reference boundary
 
-Reference repository:
+Canonical reference repository:
 
 ```text
-<workspace-root>/Peers-Touch/external/lobehub
+https://github.com/lobehub/lobehub.git
 ```
 
 Inspected revision:
@@ -889,8 +891,7 @@ Architecture/platform sources:
 - docs/client/desktop/provider-model-target-architecture.md
 
 LobeHub reference:
-<workspace-root>/Peers-Touch/external/lobehub
-revision 8412f49ec0
+https://github.com/lobehub/lobehub.git @ 8412f49ec0
 
 Review:
 1. Does the plan reproduce a complete First Useful Answer journey rather than

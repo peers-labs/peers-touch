@@ -60,7 +60,7 @@
 - 影响模块：`src/App.tsx`、`src/components/GlobalLayout.tsx`、`src/utils/deeplink.ts`
 - 影响内容：
   - 现有 `window.dispatchEvent`/`addEventListener` 改为 `globalContext.publish/subscribe`
-  - `Peers-Touch:navigate`、`navigate-settings-tab` 统一为 `navigation.requested`
+  - `navigate-settings-tab` 等旧导航事件统一为 `navigation.requested`
 - 业务收益：路由跳转与全局动作可审计、可回放，不再靠字符串事件散落
 
 ### B. 账号与 OAuth 域

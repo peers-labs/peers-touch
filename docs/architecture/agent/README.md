@@ -41,7 +41,6 @@
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [provider-station-ownership/](./provider-station-ownership/) | **Provider Station Ownership** — Station 是所有 AI Provider 的唯一执行者和配置所有者；Desktop/Mobile 是编辑入口 + SSE 消费端；per-actor 凭证隔离；版本号防脑裂 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
-| [lobehub-parity/](./lobehub-parity/) | **Agent LobeHub 全栈能力对标账本** — 以 BOM/Spec/Plan/Gate/Evidence/Traceability 追踪 LobeHub 源码级对标、原型确认门与迁移设计 |
 | [modern-chat-agent/prototype/](./modern-chat-agent/prototype/) | **Modern Chat Agent 产品原型** — Peers-owned 产品状态、交互、MCA traceability 与 Owner confirmation gate |
 | [prototype/](./prototype/) | **历史 LobeHub benchmark 原型审查包** — 保留来源对标、Owner checklist 和历史迁移门证据，不再作为当前产品身份 |
 | [agent-self-growth-architecture.md](./agent-self-growth-architecture.md) | **peers-touch 架构设计** — 自成长生命周期、领域对象、服务拓扑、Turn 执行闭环、成长评估机制 |
@@ -64,7 +63,6 @@
 | Historical | superseded | [Modern Chat Agent V2 overview](./execution-plans/20260817-modern-chat-agent-v2.md) · [Legacy formal execution DAG](./execution-plans/20260817-modern-chat-agent-v2-execution.md) | 保留产品、架构、历史依赖和证据输入；不再承担 current Task 或 active execution 状态 |
 | Amendment | owner approved | [Agent Delivery Recovery](./execution-plans/20260908-agent-delivery-recovery.md) | 2026-09-16 已批准 Home-first sequencing 与 C11 atomic activation；完整 G-F 不再阻塞 W2，未完成 `BASE-*` 作为 parked lane 保留 |
 | V1 | accepted baseline | [First Useful Answer](./execution-plans/20260815-v1-first-useful-answer.md) | 已提供 Direct Model → Agent Profile → New Topic → 真实流式回复 → Desktop 重启读回基线；当前不再替代 V2 Home 产品推进 |
-| P0-P2 | draft / design-blocked | [modern-chat-agent](./execution-plans/20260730-modern-chat-agent.md) | Station 单一真源下的现代 Agent Chat 集成、所有权切换与端到端验收计划 |
 | P0-P4 | capability inventory | [agent-lobehub-rebuild](./execution-plans/20260616-agent-lobehub-rebuild.md) | LobeHub Agent 广度能力库存；不得再以模块/文件存在替代产品旅程完成，V1 完成前不启动新的横向能力批次 |
 | P0 | code | [system-prompt-assembly](./execution-plans/20260411-system-prompt-assembly.md) | System Prompt 层级组装 + Context References + Prompt Caching |
 | P0 | code | [skill-filesystem-and-routing](./execution-plans/20260411-skill-filesystem-and-routing.md) | Skill 文件系统、渐进式披露、Skills Guard 安全扫描 |
