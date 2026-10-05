@@ -154,7 +154,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     clearPrivatePublishState: s.clearPublishState,
   }));
   const localStationPeerId = useActiveMomentsFederationSlice(
-    (s) => s.self?.homeStationPeerId.trim() ?? '',
+    (s) => s.self?.home_station_peer_id.trim() ?? '',
   );
   const { mutualFriends, followersByActor } = useActiveRelationshipsSlice((s) => ({
     mutualFriends: s.mutualFriends,
