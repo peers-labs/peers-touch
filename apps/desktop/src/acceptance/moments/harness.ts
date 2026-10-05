@@ -159,6 +159,7 @@ interface PublicMomentInput {
 }
 
 interface ResolveFederatedActorIdentityInput {
+  federationId: string;
   federatedHandle: string;
 }
 
@@ -1357,17 +1358,13 @@ export function installAcceptanceHarness(): void {
     async resolveFederatedActorIdentity(
       input: ResolveFederatedActorIdentityInput,
     ) {
+      const federationId = input.federationId?.trim();
       const federatedHandle = input.federatedHandle?.trim();
-      if (!federatedHandle) {
-        throw new Error('moments.acceptance.federatedHandleMissing');
-      }
-      const contexts = await api.federationListContexts();
-      const federationId = contexts.contexts
-        .filter((context) => context.status.trim().toLowerCase() === 'active')
-        .map((context) => context.federationId.trim())
-        .find(Boolean);
       if (!federationId) {
         throw new Error('moments.acceptance.federationIdMissing');
+      }
+      if (!federatedHandle) {
+        throw new Error('moments.acceptance.federatedHandleMissing');
       }
       const resolved = await api.federationResolve(federationId, federatedHandle);
       const actorPtid = resolved.profile?.ref?.ptid.trim();

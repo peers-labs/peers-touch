@@ -1982,6 +1982,7 @@ def _prepare_cross_station_social_fixture(
     )
     resolved = _wait_for_federated_actor_resolution(
         alice,
+        federation_id=federation_id,
         federated_handle=bob_handle,
     )
     if (
@@ -2109,6 +2110,7 @@ def _wait_for_federated_locator(
 def _wait_for_federated_actor_resolution(
     client: FoundationRuntimeClient,
     *,
+    federation_id: str,
     federated_handle: str,
     timeout_seconds: float = 300.0,
     poll_interval_seconds: float = 5.0,
@@ -2139,7 +2141,10 @@ def _wait_for_federated_actor_resolution(
                 code: String(error?.code || 'INTERNAL_ERROR'),
               }));
             """,
-            {"federatedHandle": federated_handle},
+            {
+                "federationId": federation_id,
+                "federatedHandle": federated_handle,
+            },
         )
         if not isinstance(result, Mapping):
             raise RuntimeOwnerBlocked(
