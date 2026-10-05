@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
@@ -142,6 +143,48 @@ func TestMapProductionConversationErrorMapsActorIdentityFailures(t *testing.T) {
 				t.Fatal("mapped error did not retain Actor Identity cause")
 			}
 		})
+	}
+}
+
+func TestMapProductionConversationErrorPreservesSafeDirectStage(t *testing.T) {
+	cause := errors.New("database details must remain private")
+	staged := productionStage("production_http.create_direct", "social_gate", cause)
+
+	mapped := mapProductionConversationError(context.Background(), staged)
+	var handlerError *server.HandlerError
+	if !errors.As(mapped, &handlerError) {
+		t.Fatalf("mapped error type = %T, want *server.HandlerError", mapped)
+	}
+	if handlerError.Code != http.StatusInternalServerError {
+		t.Fatalf(
+			"status = %d, want %d",
+			handlerError.Code,
+			http.StatusInternalServerError,
+		)
+	}
+	if got := handlerError.Headers["X-Peers-Error-Code"]; got != productionInternalErrorCode {
+		t.Fatalf("error code = %q, want %q", got, productionInternalErrorCode)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(
+		[]byte(handlerError.Headers["X-Peers-Error-Details"]),
+		&details,
+	); err != nil {
+		t.Fatalf("decode details: %v", err)
+	}
+	if details["operation"] != "production_http.create_direct" ||
+		details["field"] != "stage" ||
+		details["reason"] != "social_gate" {
+		t.Fatalf("details = %#v", details)
+	}
+	if strings.Contains(
+		handlerError.Headers["X-Peers-Error-Details"],
+		"database details",
+	) {
+		t.Fatal("internal cause leaked through public error details")
+	}
+	if !errors.Is(mapped, cause) {
+		t.Fatal("mapped error did not retain staged cause")
 	}
 }
 
