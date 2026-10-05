@@ -52,6 +52,24 @@ class AcceptanceClosureGeneratorTests(unittest.TestCase):
         self.assertEqual(manifest["retained_gates"], ["proto-build"])
         self.assertIn("chat-native-product-closure-e2e", gate_ids)
         self.assertIn("chat-contact-message-resilience-e2e", gate_ids)
+        federation_gate = next(
+            gate
+            for gate in plan["selected_gates"]
+            if gate["id"] == "station-access-federation-boundary-e2e"
+        )
+        self.assertEqual(
+            federation_gate["argv"],
+            [
+                "python3",
+                "-m",
+                "tooling.acceptance.gates.station_access.federation_boundary_e2e",
+            ],
+        )
+        self.assertEqual(
+            federation_gate["ephemeralCapabilities"],
+            ["mobile.simulator.appium-session"],
+        )
+        self.assertNotIn("command", federation_gate)
         self.assertIn("desktop-dev-runtime-isolation-static", gate_ids)
         self.assertIn("proto-build", gate_ids)
         self.assertLess(

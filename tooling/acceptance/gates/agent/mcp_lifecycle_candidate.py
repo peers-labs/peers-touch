@@ -201,7 +201,7 @@ def _validate_role_set(
 
 
 class McpLifecycleRuntimeAdapter:
-    """Execute fresh Desktop and Browser J04 tuple observations."""
+    """Execute fresh Desktop and Secondary J04 tuple observations."""
 
     def __init__(
         self,
@@ -223,8 +223,8 @@ class McpLifecycleRuntimeAdapter:
                 profile=PROFILE,
                 account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
             ),
-            "browser": authenticate_native_client(
-                runtime_pair.browser,
+            "secondary": authenticate_native_client(
+                runtime_pair.secondary,
                 profile_env,
                 profile=PROFILE,
                 account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
@@ -236,7 +236,7 @@ class McpLifecycleRuntimeAdapter:
         }
         require(
             len(set(actors.values())) == 1,
-            "J04 Native and Browser clients authenticated different actors",
+            "J04 Native and Secondary clients authenticated different actors",
         )
         enrollment = confirm_native_actor_identity_enrollment(
             runtime_pair.native,
@@ -259,13 +259,13 @@ class McpLifecycleRuntimeAdapter:
     ) -> FoundationRuntimeClient:
         if runtime_tuple.platform == "desktop_app":
             return self._runtime_pair.native
-        if runtime_tuple.platform == "browser":
-            return self._runtime_pair.browser
+        if runtime_tuple.platform == "secondary":
+            return self._runtime_pair.secondary
         raise McpLifecycleCandidateError(
             f"J04 runtime adapter rejects platform {runtime_tuple.platform}"
         )
 
-    def _observe_browser(
+    def _observe_secondary(
         self,
         runtime_tuple: AgentV2RuntimeTuple,
     ) -> AgentV2TupleObservation:
@@ -286,13 +286,13 @@ class McpLifecycleRuntimeAdapter:
                 },
                 timeout=300,
             ),
-            f"{runtime_tuple.key} Browser Harness capture",
+            f"{runtime_tuple.key} Secondary Harness capture",
         )
         roles = {
             role: _mapping(payload, f"{runtime_tuple.key} {role}")
             for role, payload in _mapping(
                 capture.get("roles"),
-                "J04 Browser roles",
+                "J04 Secondary roles",
             ).items()
         }
         roles["process-port-secret-canary"] = {
@@ -304,11 +304,11 @@ class McpLifecycleRuntimeAdapter:
         _validate_role_set(runtime_tuple, roles)
         runtime = _mapping(
             capture.get("runtimeAttestation"),
-            "J04 Browser runtime attestation",
+            "J04 Secondary runtime attestation",
         )
         require(
             runtime.get("scenarioExecutionId"),
-            f"{runtime_tuple.key}: Browser scenario execution ID is missing",
+            f"{runtime_tuple.key}: Secondary scenario execution ID is missing",
         )
         return AgentV2TupleObservation(
             tuple_key=runtime_tuple.key,
@@ -476,7 +476,7 @@ class McpLifecycleRuntimeAdapter:
         runtime_tuple: AgentV2RuntimeTuple,
     ) -> AgentV2TupleObservation:
         if runtime_tuple.runtime_attestation_profile == "unavailable_runtime":
-            return self._observe_browser(runtime_tuple)
+            return self._observe_secondary(runtime_tuple)
         return self._observe_desktop(runtime_tuple)
 
 

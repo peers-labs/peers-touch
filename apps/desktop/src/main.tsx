@@ -5,7 +5,6 @@ import { I18nextProvider } from 'react-i18next';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
 import { ErrorBoundary } from './kernel/ErrorBoundary';
-import { installBrowserGateway } from './kernel/gateway';
 import { markPhaseEnd, markPhaseStart } from './kernel/boot';
 import { purgeRetiredStorage } from './kernel/retiredStorage';
 import { registerAppletElements } from './applet/register-elements';
@@ -35,7 +34,6 @@ purgeRetiredStorage();
 registerAppletElements();
 installFrontendRuntimeProfiler();
 configureFrontendTelemetryUploader(uploadFrontendTelemetryEvents);
-installBrowserGateway();
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {

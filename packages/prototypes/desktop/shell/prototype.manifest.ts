@@ -9,7 +9,7 @@ const manifest = {
   status: 'drafting',
   module: 'desktop',
   path: 'packages/prototypes/desktop/shell/',
-  docs: 'docs/architecture/desktop/prototype/README.md',
+  docs: 'docs/architecture/engineering/prototypes/desktop-shell/README.md',
   description: 'Unified desktop prototype — all desktop features (Chat, Agent, Atelier, Orchestration, Applets, Settings) live here.',
   order: 10,
   previewExport: 'DesktopShell',

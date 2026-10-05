@@ -11,8 +11,8 @@ owns:
   - apps/station/app/subserver/events/
 referenced-by: []
 related:
-  - docs/architecture/identity/unified-actor-system.md
-  - docs/architecture/chat-lifecycle/decisions.md
+  - docs/architecture/domains/identity/unified-actor-system.md
+  - docs/architecture/domains/chat/lifecycle/decisions.md
 detected: 2026-09-24
 ---
 
@@ -51,5 +51,5 @@ Station 会把 JWT `session_id` 原子绑定到完成签名校验的 Actor Devic
 ## Crosswalks
 
 - `docs/knowledge/invariants/actor-identity-boundary.md`
-- `docs/architecture/identity/unified-actor-system.md`
-- `docs/architecture/chat-lifecycle/decisions.md` 中的 `CCU-D06`
+- `docs/architecture/domains/identity/unified-actor-system.md`
+- `docs/architecture/domains/chat/lifecycle/decisions.md` 中的 `CCU-D06`

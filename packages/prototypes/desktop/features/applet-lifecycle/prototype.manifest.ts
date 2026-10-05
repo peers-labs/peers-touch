@@ -9,7 +9,7 @@ const manifest = {
   status: 'drafting',
   module: 'applet-runtime',
   path: 'packages/prototypes/desktop/features/applet-lifecycle/',
-  docs: 'docs/architecture/applet-runtime/prototype/README.md',
+  docs: 'docs/architecture/platform/applet-runtime/prototype/README.md',
   description: 'Minimal Desktop Applet Box launcher with package import, running state, notifications, exit, and uninstall.',
   order: 24,
   hidden: true,

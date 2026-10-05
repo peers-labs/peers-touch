@@ -1,6 +1,6 @@
 // Session Manager — thin lifecycle wrapper over the capability SessionBackend.
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §6 分层架构 (Session Manager 职责: create/renew/destroy Gateway sessions).
 //
 // The manager owns no business data; it delegates to the injected backend

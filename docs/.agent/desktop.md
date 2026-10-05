@@ -23,8 +23,8 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 ### Architecture Sources
 
-- [Desktop Runtime Architecture](../../docs/architecture/runtime/desktop-runtime-architecture.md)
-- [Station/Desktop Scope Boundary](../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
+- [Desktop Runtime Architecture](../architecture/platform/client/desktop/runtime.md)
+- [Station/Desktop Scope Boundary](../architecture/platform/station-desktop-boundary.md)
 
 ### Platform Sources
 

@@ -1579,7 +1579,6 @@ function runtimeCapabilityResolutionName(value: unknown): string {
 
 function clientPlatformName(value: unknown): string {
   if (value === 1 || value === 'CLIENT_PLATFORM_DESKTOP') return 'desktop';
-  if (value === 2 || value === 'CLIENT_PLATFORM_BROWSER') return 'browser';
   if (value === 3 || value === 'CLIENT_PLATFORM_MOBILE') return 'mobile';
   if (typeof value === 'string' && value.length > 0) return value.toLowerCase();
   throw new Error('agent.acceptance.clientPlatformMissing');
@@ -2098,7 +2097,7 @@ interface McpLifecycleScenarioInput {
   runId: string;
   scenarioExecutionId: string;
   cell: string;
-  platform: 'desktop_app' | 'browser';
+  platform: 'desktop_app' | 'secondary';
   locale: 'en' | 'zh-CN';
   ordering: 'single' | 'A' | 'B';
   sampleId: string;
@@ -2121,7 +2120,7 @@ interface ConnectorInvocationDevelopmentInput {
   runId?: string;
   scenarioExecutionId?: string;
   cell?: string;
-  platform?: 'desktop_app' | 'browser';
+  platform?: 'desktop_app' | 'secondary';
   locale?: 'en' | 'zh-CN';
   ordering?: 'single' | 'A' | 'B';
 }
@@ -2188,7 +2187,7 @@ interface EvaluationScenarioInput {
   runId: string;
   scenarioExecutionId: string;
   cell: string;
-  platform: 'desktop_app' | 'browser';
+  platform: 'desktop_app' | 'secondary';
   locale: 'en' | 'zh-CN';
   ordering: 'single' | 'A' | 'B';
   sampleId: string;
@@ -2417,10 +2416,10 @@ async function foundationToolFixture(
   platform: string,
   options: FoundationToolFixtureOptions = {},
 ): Promise<FoundationToolFixture> {
-  const sourceKind = platform === 'browser'
+  const sourceKind = platform === 'secondary'
     ? CapabilitySourceKind.BUILTIN_TOOL
     : CapabilitySourceKind.CLIENT_NATIVE;
-  const toolName = options.toolName ?? (platform === 'browser'
+  const toolName = options.toolName ?? (platform === 'secondary'
     ? 'skills_list'
     : 'local_clipboard_read');
   const [manifests, bindings] = await Promise.all([
@@ -3844,14 +3843,14 @@ async function runDevelopmentClientPermissionDeniedScenario(input: {
   deferConversationCleanup: boolean;
   externalExecutorEvidence: boolean;
   scenarioKey: string;
-  receiverPlatform: 'browser' | 'desktop_app';
+  receiverPlatform: 'secondary' | 'desktop_app';
 }): Promise<Record<string, unknown>> {
   if (
     !input.capabilitySessionId
     || !input.deferConversationCleanup
     || !input.externalExecutorEvidence
     || !input.scenarioKey
-    || !['browser', 'desktop_app'].includes(input.receiverPlatform)
+    || !['secondary', 'desktop_app'].includes(input.receiverPlatform)
   ) {
     throw new Error(
       'agent.acceptance.permissionDeniedCoordinatorContractMissing',
@@ -3921,10 +3920,7 @@ async function runDevelopmentClientPermissionDeniedScenario(input: {
         receiverCapabilitySession.station.sessions.length,
     },
   );
-  if (
-    (receiverPlatform === 'browser' && localCapabilityCount !== 0)
-    || (receiverPlatform === 'desktop_app' && localCapabilityCount <= 0)
-  ) {
+  if (localCapabilityCount <= 0) {
     throw new Error(
       'agent.acceptance.permissionDeniedReceiverCapabilityIsolationInvalid',
     );
@@ -4330,7 +4326,7 @@ async function runDevelopmentClientPermissionDeniedScenario(input: {
         },
         restored: {},
       },
-      browser: {
+      secondary: {
         receiverPlatform,
         localCapabilityCount,
       },
@@ -4484,20 +4480,15 @@ async function resolveFoundationToolTurnSession(
 }
 
 async function refreshGovernedToolCapabilitySession(
-  platform: 'desktop_app' | 'browser',
+  _platform: 'desktop_app' | 'secondary',
 ): Promise<void> {
-  if (platform === 'browser') {
-    await api.closeBrowserCapabilitySession();
-    await api.openBrowserCapabilitySession();
-  } else {
-    await api.stopAgentClientExecutorSupervisor();
-    await api.startAgentClientExecutorSupervisor();
-  }
+  await api.stopAgentClientExecutorSupervisor();
+  await api.startAgentClientExecutorSupervisor();
   await waitForCapabilitySessionEvidence();
 }
 
 async function refreshConnectorCapabilitySession(
-  platform: 'desktop_app' | 'browser',
+  platform: 'desktop_app' | 'secondary',
   agentId: string,
 ): Promise<FoundationToolTurnSession> {
   await refreshGovernedToolCapabilitySession(platform);
@@ -4652,7 +4643,7 @@ async function foundationToolSideEffectCount(
   if (!toolCallId) {
     throw new Error('agent.acceptance.foundationToolCallIdMissing');
   }
-  if (platform === 'browser') {
+  if (platform === 'secondary') {
     return executionAttemptCount;
   }
   const startedAt = Date.now();
@@ -4994,7 +4985,7 @@ async function runFoundationF04Scenario(input: {
       }
     }
     if (
-      input.platform === 'browser'
+      input.platform === 'secondary'
       && policy === CapabilityApprovalPolicy.MANUAL
       && decision === undefined
     ) {
@@ -17566,7 +17557,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       model: fixtureModelId,
     });
     disposableAgentId = disposable.id || disposable.name;
-    const toolFixture = await foundationToolFixture(disposableAgentId, 'browser');
+    const toolFixture = await foundationToolFixture(disposableAgentId, 'secondary');
     if (
       !toolFixture.manifest.requiredRuntimeCapabilities.includes(
         'native-tools',
@@ -21196,9 +21187,9 @@ async function evaluateBasePermissionDenied(
     lease.restored,
     'foundationPermissionDeniedLeaseRestored',
   );
-  const browser = evidenceRecord(
-    facts.browser,
-    'foundationPermissionDeniedBrowser',
+  const secondary = evidenceRecord(
+    facts.secondary,
+    'foundationPermissionDeniedSecondary',
   );
   const recovery = evidenceRecord(
     facts.recovery,
@@ -21296,15 +21287,11 @@ async function evaluateBasePermissionDenied(
       && receiver.capabilityId === details.capability_id
       && receiver.permissionKind === details.permission_kind
     ),
-    browserCapabilityIsolation: (
-      (
-        browser.receiverPlatform === 'browser'
-        && Number(browser.localCapabilityCount) === 0
+    secondaryCapabilityIsolation: (
+      ['secondary', 'desktop_app'].includes(
+        String(secondary.receiverPlatform),
       )
-      || (
-        browser.receiverPlatform === 'desktop_app'
-        && Number(browser.localCapabilityCount) > 0
-      )
+      && Number(secondary.localCapabilityCount) > 0
     ),
     zeroToolCallPersistence: (
       Number(station.toolCallCount) === 0
@@ -22541,7 +22528,7 @@ function evaluateF04(ctx: DirectCellAssertionContext): Record<string, boolean | 
     'foundationF04LoopBudget',
   );
   const replay = evidenceRecord(facts.replay, 'foundationF04Replay');
-  const expectedOwner = ctx.platform === 'browser' ? 'station' : 'client_capability';
+  const expectedOwner = ctx.platform === 'secondary' ? 'station' : 'client_capability';
 
   const states = (value: Record<string, unknown>, name: string): string[] =>
     evidenceArray(value.states, name).map((state) => {
@@ -23082,7 +23069,7 @@ function evaluateF10(ctx: DirectCellAssertionContext): Record<string, boolean | 
       session.sessionId === session.readinessSessionId
       && session.platform === ctx.platform
       && (
-        ctx.platform === 'browser'
+        ctx.platform === 'secondary'
           ? capabilityCount === 0 && selectedDevice.executionDeviceId === null
           : capabilityCount > 0
             && selectedDevice.executionDeviceId === selectedDevice.sessionDeviceId
@@ -24805,11 +24792,11 @@ async function runMcpUnavailableScenario(
   input: McpLifecycleScenarioInput,
 ): Promise<Record<string, unknown>> {
   if (
-    input.platform !== 'browser'
+    input.platform !== 'secondary'
     || !['AS-04-UNAVAILABLE', 'TAX-04'].includes(input.cell)
   ) {
     throw new Error(
-      'DESIGN_AMENDMENT_REQUIRED: unsupported Browser MCP tuple',
+      'DESIGN_AMENDMENT_REQUIRED: unsupported Secondary MCP tuple',
     );
   }
   await changeLanguage(input.locale);
@@ -24833,7 +24820,7 @@ async function runMcpUnavailableScenario(
       && document.querySelector<HTMLElement>('.ant-alert')
         ?.getClientRects().length,
     ),
-    'Browser MCP unavailable receiver',
+    'Secondary MCP unavailable receiver',
     30_000,
   );
   const after = activity();
@@ -24848,7 +24835,7 @@ async function runMcpUnavailableScenario(
     scenarioExecutionId: input.scenarioExecutionId,
   }));
   const assertions = {
-    browserUnavailableVisible: Boolean(alert?.getClientRects().length),
+    secondaryUnavailableVisible: Boolean(alert?.getClientRects().length),
     zeroLocalMcpActivity:
       beforeHash === afterHash
       && before.operationIds.length === 0
@@ -24887,7 +24874,7 @@ async function runMcpUnavailableScenario(
       },
       stationProfile: 'mcp-unavailable',
       desktopMode: input.platform,
-      networkPath: 'browser->desktop-rust-unavailable-guard',
+      networkPath: 'secondary->desktop-rust-unavailable-guard',
       machine: navigator.userAgent,
       coldWarmState: 'neutral',
       observedAt: new Date().toISOString(),
@@ -24919,7 +24906,7 @@ async function runMcpUnavailableScenario(
         expected: 0,
       },
       cleanup: {
-        resourceKind: 'browser-mcp-unavailable-projection',
+        resourceKind: 'secondary-mcp-unavailable-projection',
         resourceIdHash: await sha256Hex(input.scenarioExecutionId),
         status: 'clean',
       },
@@ -25329,7 +25316,7 @@ async function runMcpDesktopCandidateScenario(
 async function runMcpLifecycleScenario(
   input: McpLifecycleScenarioInput,
 ): Promise<Record<string, unknown>> {
-  if (input.platform === 'browser') {
+  if (input.platform === 'secondary') {
     return runMcpUnavailableScenario(input);
   }
   const capture = await runMcpDesktopCandidateScenario(input);
@@ -29368,7 +29355,7 @@ interface GovernedToolDevelopmentInput {
   runId?: string;
   scenarioExecutionId?: string;
   cell?: string;
-  platform?: 'desktop_app' | 'browser';
+  platform?: 'desktop_app' | 'secondary';
   locale?: 'en' | 'zh-CN' | 'neutral';
   ordering?: 'single' | 'A' | 'B';
 }
@@ -29381,7 +29368,7 @@ function capabilityScenarioBarrier(
 }
 
 function governedToolRuntimeProfile(
-  platform: 'desktop_app' | 'browser',
+  platform: 'desktop_app' | 'secondary',
   cell: string,
   ordering: 'single' | 'A' | 'B',
 ): CapabilityAcceptanceRuntimeProfile {
@@ -29435,7 +29422,7 @@ function governedToolReceiptRejectionCode(cell: string): string {
 function governedToolExpectedOutcome(
   cell: string,
   ordering: 'single' | 'A' | 'B',
-  platform: 'desktop_app' | 'browser',
+  platform: 'desktop_app' | 'secondary',
 ): GovernedToolExpectedOutcome {
   if (
     cell === 'CR-04N'
@@ -30504,7 +30491,7 @@ async function runGovernedToolDevelopmentJourney(
           ...stationAttestation,
           scenarioExecutionId: input.scenarioExecutionId,
           desktopMode: platform,
-          networkPath: 'browser->station-tool-executor',
+          networkPath: 'secondary->station-tool-executor',
           stationToolCallBinding: commonToolBinding,
           stationExecutorAttestation: {
             executorId: String(lineage.executorLeaseId),
@@ -32921,7 +32908,7 @@ export function installAcceptanceHarness(): void {
         void fetch('http://127.0.0.1:7781/event', {
           method: 'POST',
           body: JSON.stringify({
-            sessionId: 'browser-renderer-closed',
+            sessionId: 'secondary-renderer-closed',
             runId: 'pre-fix-386c0444-login',
             hypothesisId,
             location: 'harness.ts:loginWithPassword',
@@ -33673,7 +33660,7 @@ export function installAcceptanceHarness(): void {
       locale = i18n.language,
     }: {
       sampleId: string;
-      platform?: 'desktop_app' | 'browser';
+      platform?: 'desktop_app' | 'secondary';
       locale?: string;
     }) {
       const sourceAgent = selectedAgent();
@@ -34421,7 +34408,7 @@ export function installAcceptanceHarness(): void {
       sampleId: string;
       providerBaseUrl: string;
       providerApiKey: string;
-      platform?: 'desktop_app' | 'browser';
+      platform?: 'desktop_app' | 'secondary';
       locale?: string;
     }) {
       if (!providerApiKey) {
@@ -35158,7 +35145,7 @@ export function installAcceptanceHarness(): void {
       locale = i18n.language,
     }: {
       sampleId: string;
-      platform?: 'desktop_app' | 'browser';
+      platform?: 'desktop_app' | 'secondary';
       locale?: string;
     }) {
       const sourceAgent = selectedAgent();
@@ -35744,7 +35731,7 @@ export function installAcceptanceHarness(): void {
       locale = i18n.language,
     }: {
       sampleId: string;
-      platform?: 'desktop_app' | 'browser';
+      platform?: 'desktop_app' | 'secondary';
       locale?: string;
     }) {
       const agent = selectedAgent();
@@ -36882,7 +36869,7 @@ export function installAcceptanceHarness(): void {
       try {
         await restorePersistedFoundationCapabilityIsolation();
         const authoritativeAgent = await api.getAgent(agentId);
-        const fixture = await foundationToolFixture(agentId, 'browser', {
+        const fixture = await foundationToolFixture(agentId, 'secondary', {
           toolName: unknownToolId,
         });
         const advertisedBinding = fixture.binding;
@@ -37529,19 +37516,12 @@ export function installAcceptanceHarness(): void {
         station: station.status === 'fulfilled' ? station.value : { error: String(station.reason) },
         runtime: {
           hasTauriInternals: '__TAURI_INTERNALS__' in window,
-          hasGatewayBase: '__PT_GATEWAY_BASE__' in window,
-          gatewayBase: window.__PT_GATEWAY_BASE__ ?? null,
         },
       };
     },
 
     async waitForCapabilitySession() {
       return waitForCapabilitySessionEvidence();
-    },
-
-    async openBrowserCapabilitySession() {
-      await api.openBrowserCapabilitySession();
-      return { opened: true };
     },
 
     async runDevelopmentInvalidResourceReference({
@@ -37581,7 +37561,7 @@ export function installAcceptanceHarness(): void {
       deferConversationCleanup: boolean;
       externalExecutorEvidence: boolean;
       scenarioKey: string;
-      receiverPlatform: 'browser' | 'desktop_app';
+      receiverPlatform: 'secondary' | 'desktop_app';
     }) {
       return evidenceValue(
         await runDevelopmentClientPermissionDeniedScenario({

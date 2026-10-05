@@ -9,7 +9,7 @@ owns:
 referenced-by:
   - docs/knowledge/README.md
 related:
-  - docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/tasks/W12A.md
+  - docs/architecture/shared/security/secure-content/execution-plans/20260913-secure-content-hard-cut/tasks/W12A.md
 detected: 2026-09-29
 ---
 

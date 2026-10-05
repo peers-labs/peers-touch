@@ -1,6 +1,6 @@
 //! Stateless authenticated sealed-box envelope for WebRTC signaling.
 //!
-//! See `docs/architecture/realtime/event-stream.md` §2.7.2 for the full
+//! See `docs/architecture/shared/communication/event-stream.md` §2.7.2 for the full
 //! cryptographic contract. Every signaling frame is encrypted
 //! independently using a fresh ephemeral X25519 keypair plus a
 //! long-term identity DH that authenticates the sender. The two

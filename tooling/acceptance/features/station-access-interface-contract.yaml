@@ -4,8 +4,8 @@
   "domain": "station-access",
   "status": "active",
   "owners": [
-    "docs/architecture/station-access-lifecycle/data-model.md",
-    "docs/architecture/api-ownership/station-api-capabilities.yaml",
+    "docs/architecture/platform/station/access/data-model.md",
+    "docs/architecture/engineering/api-governance/station-api-capabilities.yaml",
     "apps/desktop/src/services/desktop_api.ts",
     "apps/mobile/src/services/mobileCommands.ts",
     "tooling/acceptance/gates/station_access/capability_contract.py",

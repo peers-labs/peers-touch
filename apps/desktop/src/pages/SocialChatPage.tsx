@@ -244,7 +244,7 @@ export function SocialChatPage() {
       // Conversation switch: recycle only idle transport-readiness
       // connections. A ringing / active call must survive navigation
       // (peer B can call while the user reads peer C) — see
-      // docs/architecture/realtime/voice-video-calls.md §7. Full
+      // docs/architecture/domains/chat/calling/voice-video.md §7. Full
       // teardown belongs to the dedicated page-unmount effect below.
       callP2p.closeIdleConnections();
     };

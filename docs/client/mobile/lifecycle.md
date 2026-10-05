@@ -23,7 +23,7 @@ This document defines the lifecycle across those units. It does not redefine:
 - Mobile platform baseline, owned by [`base.md`](./base.md).
 - Native plugin boundaries, owned by [`native-dual-platform.md`](./native-dual-platform.md).
 - Sync mechanics, owned by [`sync-protocol.md`](./sync-protocol.md).
-- Access gate architecture, owned by [`../../architecture/access-gates/station-access-gate-architecture.md`](../../architecture/access-gates/station-access-gate-architecture.md).
+- Access gate architecture, owned by [`../../architecture/platform/station/access/station-access-gate-architecture.md`](../../architecture/platform/station/access/station-access-gate-architecture.md).
 
 ---
 

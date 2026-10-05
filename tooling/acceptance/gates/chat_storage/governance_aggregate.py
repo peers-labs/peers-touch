@@ -186,8 +186,8 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
             "CSG-G06",
         ],
         "spec": [
-            "docs/architecture/chat-storage-governance/acceptance-matrix.md",
-            "docs/architecture/chat-storage-governance/decisions.md",
+            "docs/architecture/domains/chat/storage-governance/acceptance-matrix.md",
+            "docs/architecture/domains/chat/storage-governance/decisions.md",
         ],
         "sampleEmissionAllowed": aggregate.passed,
         "source": aggregate.source,
@@ -224,8 +224,8 @@ class ChatStorageGovernanceAggregateGate(AcceptanceGate):
         "CSG-G06",
     )
     spec = (
-        "docs/architecture/chat-storage-governance/acceptance-matrix.md",
-        "docs/architecture/chat-storage-governance/decisions.md",
+        "docs/architecture/domains/chat/storage-governance/acceptance-matrix.md",
+        "docs/architecture/domains/chat/storage-governance/decisions.md",
     )
 
     def __init__(

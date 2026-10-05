@@ -118,7 +118,7 @@ def capture(probe: NonAdvertisementProbeInput) -> dict[str, object]:
             "text": "",
         },
         "cleanup": {"status": "clean"},
-        "networkPath": "native-tauri" if probe.include_local else "browser-gateway",
+        "networkPath": "native-tauri" if probe.include_local else "secondary-gateway",
     }
 
 
@@ -130,12 +130,12 @@ class NonAdvertisementFoundationAdapterTest(unittest.TestCase):
             machine="test-machine",
         )
 
-    def test_desktop_and_browser_rows_produce_typed_zero_evidence(self) -> None:
+    def test_desktop_and_secondary_rows_produce_typed_zero_evidence(self) -> None:
         for row, platform in (
             ("foundation-desktop-cli-absent", "desktop_app"),
-            ("foundation-browser-cli-absent", "browser"),
+            ("foundation-secondary-cli-absent", "secondary"),
             ("foundation-desktop-external-absent", "desktop_app"),
-            ("foundation-browser-external-absent", "browser"),
+            ("foundation-secondary-external-absent", "secondary"),
         ):
             observation = self.adapter().observe_non_advertisement(
                 runtime_tuple(row, platform)
@@ -168,7 +168,7 @@ class NonAdvertisementFoundationAdapterTest(unittest.TestCase):
         ):
             self.adapter(changed).observe_non_advertisement(runtime_tuple())
 
-    def test_browser_rejects_desktop_local_counter_evidence(self) -> None:
+    def test_secondary_rejects_desktop_local_counter_evidence(self) -> None:
         def borrowed(probe: NonAdvertisementProbeInput) -> dict[str, object]:
             evidence = capture(probe)
             local = snapshot(
@@ -186,8 +186,8 @@ class NonAdvertisementFoundationAdapterTest(unittest.TestCase):
         ):
             self.adapter(borrowed).observe_non_advertisement(
                 runtime_tuple(
-                    "foundation-browser-external-absent",
-                    "browser",
+                    "foundation-secondary-external-absent",
+                    "secondary",
                 )
             )
 

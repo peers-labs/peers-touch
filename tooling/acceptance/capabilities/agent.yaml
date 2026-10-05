@@ -36,7 +36,7 @@
           "Provider bridge, MCP process, port, fixture storage, and product fixture cleanup"
         ],
         "unproven_scope": [
-          "Browser and Mobile Agent Chat delivery",
+          "Mobile Agent Chat delivery",
           "The broader capability, ToolCall, MCP, and Foundation runtime matrices",
           "Marketplace, Evaluation, Artifacts, Multi-Agent, external Agent runtime, TTS, image, and video capabilities"
         ]
@@ -300,8 +300,7 @@
           "Versioned runtime and capability snapshots"
         ],
         "surfaces": [
-          "Desktop App",
-          "Browser",
+          "Primary and secondary Native Desktop clients",
           "Mobile semantic contracts",
           "Station D11 guards"
         ],
@@ -338,7 +337,6 @@
         ],
         "surfaces": [
           "Native External Agent conversation and Confirm reset recovery",
-          "Browser External Agent conversation and Confirm reset recovery",
           "Station binding, Turn, reset, and cleanup readback"
         ],
         "proven_by": [
@@ -348,7 +346,7 @@
           "MCA-P12 create, resume, Station restart, resume-unavailable, confirmed reset, idempotent replay, cleanup retry, cancellation, fresh epoch, isolation, and deletion cleanup"
         ],
         "unproven_scope": [
-          "Initial state: UNPROVEN until the exact-source Native and Browser runtime Gate passes"
+          "Initial state: UNPROVEN until the exact-source Native runtime Gate passes"
         ]
       }
     },

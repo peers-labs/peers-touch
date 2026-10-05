@@ -297,7 +297,7 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         result["assertions"] = evaluate_as_f07(facts)
         return result
     if probe.cell == "AS-F10":
-        browser = probe.platform == "browser"
+        secondary = probe.platform == "secondary"
         facts = {
             "coreOutcome": {
                 "stationStatus": "completed",
@@ -318,11 +318,11 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
                 "sessionId": "session-1",
                 "readinessSessionId": "session-1",
                 "deviceId": "device-1",
-                "capabilityCount": 0 if browser else 1,
+                "capabilityCount": 0 if secondary else 1,
             },
             "selectedDevice": {
                 "sessionDeviceId": "device-1",
-                "executionDeviceId": None if browser else "device-1",
+                "executionDeviceId": None if secondary else "device-1",
             },
             "rejections": {
                 "unsupported": {
@@ -483,7 +483,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             "runtime-events": runtime_event,
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-QUEUE_FULL",
             sample_id="sample-001",
@@ -512,7 +512,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             },
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-RATE_LIMIT",
             sample_id="sample-001",
@@ -541,7 +541,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             },
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-FORBIDDEN_ACTOR",
             sample_id="sample-001",
@@ -570,7 +570,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             },
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-INCOMPATIBLE_CAPABILITY",
             sample_id="sample-001",
@@ -592,7 +592,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         self,
     ) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-INCOMPATIBLE_CAPABILITY",
             sample_id="sample-001",
@@ -612,7 +612,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         self,
     ) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-INCOMPATIBLE_CAPABILITY",
             sample_id="sample-001",
@@ -634,7 +634,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             "runtime-events": typed_runtime_role(facts),
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-ATTACHMENT_REJECTED",
             sample_id="sample-001",
@@ -663,7 +663,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             },
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-ATTACHMENT_REJECTED",
             sample_id="sample-001",
@@ -682,7 +682,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             "assertions": evaluate_base_approval_expired(facts),
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-APPROVAL_EXPIRED",
             sample_id="sample-001",
@@ -707,7 +707,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             "assertions": evaluate_base_approval_denied(facts),
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-APPROVAL_DENIED",
             sample_id="sample-001",
@@ -732,7 +732,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             "assertions": evaluate_base_executor_unavailable(facts),
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-EXECUTOR_UNAVAILABLE",
             sample_id="sample-001",
@@ -751,7 +751,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             assert_group_one_capture(probe, capture_value)
 
     def test_permission_denied_routes_to_independent_oracle(self) -> None:
-        facts = valid_permission_denied_capture("browser")
+        facts = valid_permission_denied_capture("secondary")
         capture_value = {
             "scenarioFacts": facts,
             "assertions": evaluate_base_permission_denied(facts),
@@ -763,7 +763,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             },
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-PERMISSION_DENIED",
             sample_id="sample-001",
@@ -808,7 +808,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_model_unavailable_routes_to_independent_oracle(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-MODEL_UNAVAILABLE",
             sample_id="sample-001",
@@ -863,7 +863,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             },
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-CANCELLED",
             sample_id="sample-001",
@@ -883,7 +883,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_interrupted_routes_to_independent_oracle(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-INTERRUPTED",
             sample_id="sample-001",
@@ -904,7 +904,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_interrupted_rejects_runtime_role_source_drift(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-INTERRUPTED",
             sample_id="sample-001",
@@ -920,7 +920,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_interrupted_rejects_runtime_actor_drift(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-INTERRUPTED",
             sample_id="sample-001",
@@ -945,7 +945,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             },
         }
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-CONTEXT_OVERFLOW",
             sample_id="sample-001",
@@ -965,7 +965,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_invalid_reference_routes_to_independent_oracle(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-INVALID_REFERENCE",
             sample_id="sample-001",
@@ -986,7 +986,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_invalid_resource_routes_to_independent_oracle(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-INVALID_RESOURCE_REF",
             sample_id="sample-001",
@@ -1007,7 +1007,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_lease_expired_routes_to_independent_oracle(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-LEASE_EXPIRED",
             sample_id="sample-001",
@@ -1028,7 +1028,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_lease_expired_rejects_runtime_role_drift(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-LEASE_EXPIRED",
             sample_id="sample-001",
@@ -1044,7 +1044,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_duplicate_conflict_routes_to_independent_oracle(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-DUPLICATE_CONFLICT",
             sample_id="sample-001",
@@ -1067,7 +1067,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         self,
     ) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-DUPLICATE_CONFLICT",
             sample_id="sample-001",
@@ -1085,7 +1085,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_duplicate_conflict_rejects_runtime_actor_drift(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-DUPLICATE_CONFLICT",
             sample_id="sample-001",
@@ -1101,7 +1101,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_credential_missing_routes_to_independent_oracle(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-CREDENTIAL_MISSING",
             sample_id="sample-001",
@@ -1124,7 +1124,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         self,
     ) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-CREDENTIAL_MISSING",
             sample_id="sample-001",
@@ -1142,7 +1142,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
 
     def test_credential_missing_rejects_runtime_actor_drift(self) -> None:
         probe = DirectRuntimeProbeInput(
-            platform="browser",
+            platform="secondary",
             locale="en",
             cell="BASE-CREDENTIAL_MISSING",
             sample_id="sample-001",
@@ -1162,31 +1162,31 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         self.assertEqual(len(tuples), EXPECTED_GROUP_ONE_TUPLES)
         self.assertEqual(
             {item.row for item in tuples},
-            {"foundation-desktop-direct", "foundation-browser-direct"},
+            {"foundation-desktop-direct", "foundation-secondary-direct"},
         )
         self.assertEqual({item.locale for item in tuples}, {"en", "zh-CN"})
         self.assertEqual(len({item.key for item in tuples}), len(tuples))
 
     def test_dispatches_every_tuple_to_its_manifest_client(self) -> None:
         desktop = RecordingHarnessClient()
-        browser = RecordingHarnessClient()
+        secondary = RecordingHarnessClient()
         runner = FoundationGroupOneProbeRunner(
             desktop_native=desktop,
-            browser=browser,
+            secondary=secondary,
         )
 
         observations = runner.collect(scenario_capture)
 
         self.assertEqual(len(observations), EXPECTED_GROUP_ONE_TUPLES)
         self.assertEqual(len(desktop.locales), 22)
-        self.assertEqual(len(browser.locales), 22)
+        self.assertEqual(len(secondary.locales), 22)
         self.assertEqual(set(desktop.locales), {"en", "zh-CN"})
-        self.assertEqual(set(browser.locales), {"en", "zh-CN"})
+        self.assertEqual(set(secondary.locales), {"en", "zh-CN"})
 
     def test_locale_mismatch_fails_before_adapter_evidence(self) -> None:
         runner = FoundationGroupOneProbeRunner(
             desktop_native=RecordingHarnessClient(reject_locale=True),
-            browser=RecordingHarnessClient(),
+            secondary=RecordingHarnessClient(),
         )
 
         with self.assertRaisesRegex(
@@ -1198,7 +1198,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
     def test_as_f02_rejects_assertions_not_derived_from_facts(self) -> None:
         runner = FoundationGroupOneProbeRunner(
             desktop_native=RecordingHarnessClient(),
-            browser=RecordingHarnessClient(),
+            secondary=RecordingHarnessClient(),
         )
 
         def mismatched(
@@ -1222,7 +1222,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
     def test_as_f10_rejects_assertions_not_derived_from_facts(self) -> None:
         runner = FoundationGroupOneProbeRunner(
             desktop_native=RecordingHarnessClient(),
-            browser=RecordingHarnessClient(),
+            secondary=RecordingHarnessClient(),
         )
 
         def mismatched(
@@ -1275,7 +1275,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
     def test_as_f05_rejects_assertions_not_derived_from_facts(self) -> None:
         runner = FoundationGroupOneProbeRunner(
             desktop_native=RecordingHarnessClient(),
-            browser=RecordingHarnessClient(),
+            secondary=RecordingHarnessClient(),
         )
 
         def mismatched(
@@ -1308,7 +1308,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
     def test_as_f07_rejects_assertions_not_derived_from_facts(self) -> None:
         runner = FoundationGroupOneProbeRunner(
             desktop_native=RecordingHarnessClient(),
-            browser=RecordingHarnessClient(),
+            secondary=RecordingHarnessClient(),
         )
 
         def mismatched(
@@ -1332,7 +1332,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
     def test_deferred_assertion_key_mismatch_remains_fail_closed(self) -> None:
         runner = FoundationGroupOneProbeRunner(
             desktop_native=RecordingHarnessClient(),
-            browser=RecordingHarnessClient(),
+            secondary=RecordingHarnessClient(),
         )
 
         def mismatched(
@@ -1366,7 +1366,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
     def test_as_f10_accepts_deferred_assertions_when_consistent(self) -> None:
         runner = FoundationGroupOneProbeRunner(
             desktop_native=RecordingHarnessClient(),
-            browser=RecordingHarnessClient(),
+            secondary=RecordingHarnessClient(),
         )
 
         def deferred_capture(

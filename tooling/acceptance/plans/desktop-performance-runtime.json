@@ -1,15 +1,13 @@
 {
   "id": "desktop-performance-runtime",
-  "description": "Long-lived Desktop performance runtime gates. This layer proves preflight readiness, browser/Tauri DOM anchors, runtime cells, and the runtime matrix without using one runtime as evidence for another.",
+  "description": "Long-lived Native Desktop performance runtime gates. This layer proves Native Tauri DOM anchors, runtime cells, and the runtime matrix without using one runtime as evidence for another.",
   "logic": {
     "layer": "runtime",
-    "question": "Can each Desktop runtime cell report an explicit sampled, blocked, baseline-preflight-failure, or diagnostic-incomplete state?",
-    "invariant": "browser-gateway, tauri-webview-dev, and tauri-webview-packaged evidence must remain separate and cohort-identical; one runtime cell cannot impersonate another.",
+    "question": "Can each Native Desktop runtime cell report an explicit sampled, blocked, or diagnostic-incomplete state?",
+    "invariant": "tauri-webview-dev and tauri-webview-packaged evidence must remain separate and cohort-identical; one Native runtime cell cannot impersonate another.",
     "promote_from_phase0": true
   },
   "selected_gates": [
-    "desktop-performance-preflight-static-gate",
-    "desktop-performance-preflight-gate",
     "desktop-anchor-dom-evidence-template-static-gate",
     "desktop-anchor-dom-evidence-collect-static-gate",
     "desktop-anchor-dom-evidence-template-gate",

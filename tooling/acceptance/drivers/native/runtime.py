@@ -42,7 +42,6 @@ from tooling.acceptance.drivers.tauri import (
     TauriSession,
     find_app_binary,
 )
-from tooling.acceptance.drivers.station import StationDriver
 
 
 def _file_sha256(path: Path) -> str:
@@ -408,11 +407,8 @@ class NativeDesktopRuntimeBinding(ABC):
     ) -> None:
         if not station_url:
             raise DriverError("Runtime Binding Station endpoint is empty")
-        with StationDriver(
-            f"http://127.0.0.1:{session.gateway_port}"
-        ) as station:
-            station.station_add(station_url)
-            station.station_set_active(station_url)
+        session.invoke_app_result("station_add", {"url": station_url})
+        session.invoke_app_result("station_set_active", {"url": station_url})
 
     def _observe_live_service_identity(
         self,
@@ -432,11 +428,9 @@ class NativeDesktopRuntimeBinding(ABC):
         deadline = time.monotonic() + 30
         latest: Any = None
         while time.monotonic() < deadline:
-            with StationDriver(
-                f"http://127.0.0.1:{session.gateway_port}"
-            ) as station:
-                latest = station.station_list()
-            status = latest.get("status") if isinstance(latest, dict) else None
+            latest = session.invoke_app_result("station_list")
+            data = latest.get("data") if isinstance(latest, dict) else None
+            status = data.get("status") if isinstance(data, dict) else None
             try:
                 state = json.loads(status) if isinstance(status, str) else {}
             except json.JSONDecodeError:
@@ -1265,16 +1259,11 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             None,
         )
         if source is not None:
-            _invoke_tauri_activation_command(
-                source,
+            source.invoke_app_result(
                 "acceptance_yield_activation",
                 {"targetPid": target.process_id},
             )
-        _invoke_tauri_activation_command(
-            target,
-            "acceptance_request_activation",
-            {},
-        )
+        target.invoke_app_result("acceptance_request_activation")
         return True
 
     def binary_identity(self) -> dict[str, str]:
@@ -1499,68 +1488,6 @@ def _remove_paths(paths: Sequence[Path]) -> list[dict[str, str]]:
         except OSError as error:
             errors.append({"path": str(path), "error": str(error)})
     return errors
-
-
-def _invoke_tauri_activation_command(
-    session: TauriSession,
-    command: str,
-    arguments: dict[str, Any],
-) -> dict[str, Any]:
-    request_id = f"native-activation-{time.monotonic_ns()}"
-    session.driver.execute_script(
-        """
-        const [command, commandArguments, requestId] = arguments;
-        const requests = window.__PT_NATIVE_ACTIVATION_REQUESTS__ ||= {};
-        requests[requestId] = { done: false };
-        window.__TAURI_INTERNALS__.invoke(
-          command,
-          commandArguments,
-        ).then((result) => {
-          requests[requestId] = { done: true, result };
-        }).catch((error) => {
-          requests[requestId] = {
-            done: true,
-            result: {
-              ok: false,
-              error: { message: String(error) },
-            },
-          };
-        });
-        """,
-        command,
-        arguments,
-        request_id,
-    )
-    result: Any = None
-    deadline = time.monotonic() + 5
-    try:
-        while time.monotonic() < deadline:
-            result = session.driver.execute_script(
-                """
-                const request = window.__PT_NATIVE_ACTIVATION_REQUESTS__
-                  ?.[arguments[0]];
-                return request?.done ? request.result : null;
-                """,
-                request_id,
-            )
-            if result is not None:
-                break
-            time.sleep(0.01)
-    finally:
-        session.driver.execute_script(
-            """
-            if (window.__PT_NATIVE_ACTIVATION_REQUESTS__) {
-              delete window.__PT_NATIVE_ACTIVATION_REQUESTS__[arguments[0]];
-            }
-            """,
-            request_id,
-        )
-    if not isinstance(result, dict) or not result.get("ok"):
-        raise DriverError(
-            f"Native actor {command} failed: "
-            f"{result!r}"
-        )
-    return result
 
 
 def _wait_for(predicate: Any, *, timeout: float) -> bool:

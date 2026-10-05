@@ -319,63 +319,10 @@ fn negative_control_feature_enabled() -> bool {
     false
 }
 
-pub fn open_browser_capability_session(
-    supervisor: &crate::application::desktop_executor_worker::CapabilityWorkerSupervisor,
-) -> AppResult<StubPayload> {
-    if !supervisor.is_browser_surface() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "agent.browserCapabilitySessionRequiresBrowserSurface",
-            None,
-        );
-    }
-    match supervisor.start() {
-        Ok(()) => success_payload(
-            "agent_browser_capability_session_open",
-            json!({ "state": "starting" }),
-        ),
-        Err(error) => AppResult::fail(
-            ErrorCode::InternalError,
-            "agent.browserCapabilitySessionStartFailed",
-            Some(json!({ "cause": error })),
-        ),
-    }
-}
-
-pub fn close_browser_capability_session(
-    supervisor: &crate::application::desktop_executor_worker::CapabilityWorkerSupervisor,
-) -> AppResult<StubPayload> {
-    if !supervisor.is_browser_surface() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "agent.browserCapabilitySessionRequiresBrowserSurface",
-            None,
-        );
-    }
-    match supervisor.shutdown() {
-        Ok(()) => success_payload(
-            "agent_browser_capability_session_close",
-            json!({ "state": "closed" }),
-        ),
-        Err(error) => AppResult::fail(
-            ErrorCode::InternalError,
-            "agent.browserCapabilitySessionStopFailed",
-            Some(json!({ "cause": error })),
-        ),
-    }
-}
-
 pub fn set_client_executor_supervisor_available(
     supervisor: &CapabilityWorkerSupervisor,
     available: bool,
 ) -> AppResult<StubPayload> {
-    if supervisor.is_browser_surface() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "agent.clientExecutorSupervisorRequiresDesktopSurface",
-            None,
-        );
-    }
     if !executor_control_feature_enabled() {
         return AppResult::fail(
             ErrorCode::NotImplemented,
@@ -627,33 +574,6 @@ mod tests {
         assert!(status.contains("\"local_side_effect_count\":1"));
         assert!(status.contains("\"tool_call_id\":\"tool-call-exact\""));
         assert!(status.contains("\"side_effect_count\":1"));
-    }
-
-    #[test]
-    fn browser_capability_session_snapshot_has_no_desktop_capabilities() {
-        let result = capability_session_snapshot(vec![CapabilityWorkerSnapshot {
-            actor_ptid: "ptid:browser-actor".to_string(),
-            device_id: "browser-device".to_string(),
-            capability_session_id: "browser-session".to_string(),
-            lease_id: "browser-lease".to_string(),
-            lease_revision: 1,
-            capability_set_hash: "browser-capability-hash".to_string(),
-            platform: agent::ClientPlatform::Browser as i32,
-            capability_ids: Vec::new(),
-            local_execution_attempt_count: 0,
-            local_side_effect_count: 0,
-            tool_call_side_effect_counts: Vec::new(),
-            expires_at_ms: 456,
-        }]);
-        assert!(result.ok);
-        let status = result.data.expect("browser snapshot data").status;
-        assert!(status.contains("CLIENT_PLATFORM_BROWSER"));
-        assert!(status.contains("\"capability_ids\":[]"));
-        assert!(status.contains("\"local_execution_attempt_count\":0"));
-        assert!(status.contains("\"local_side_effect_count\":0"));
-        assert!(status.contains("\"tool_call_side_effect_counts\":[]"));
-        assert!(!status.contains("filesystem.read"));
-        assert!(!status.contains("shell.execute"));
     }
 
     #[test]

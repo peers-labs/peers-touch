@@ -26,7 +26,6 @@ IDENTITY = {
 }
 CLIENTS = (
     ("desktop-alice", "alice", "native-tauri", "station-four"),
-    ("browser-alice", "browser-alice", "browser", "station-four"),
     ("ios-alice", "alice", "tauri-ios-simulator", "station-five-arm"),
     ("android-bob", "bob", "tauri-android-emulator", "station-five-arm"),
 )
@@ -137,7 +136,6 @@ def identity_snapshot(
     snapshot = {
         "platform": {
             "native-tauri": "native",
-            "browser": "browser",
             "tauri-ios-simulator": "mobile",
             "tauri-android-emulator": "mobile",
         }[client["runtime_kind"]],
@@ -161,8 +159,7 @@ def identity_snapshot(
     }
     if authenticated:
         snapshot["actorPtidSha256"] = client["actor_role_digest"]
-    if client["runtime_kind"] != "browser":
-        snapshot["nativeRuntimeIdentitySha256"] = client["boot_identity"]
+    snapshot["nativeRuntimeIdentitySha256"] = client["boot_identity"]
     return snapshot
 
 
@@ -1280,40 +1277,14 @@ class RuntimeManifestV3Test(unittest.TestCase):
                     automation_session_id="wrong-automation-session",
                 )
 
-    def test_browser_harness_identity_binds_boot_and_session_generation(
-        self,
-    ) -> None:
-        payload = manifest_payload()
-        client_id = "browser-alice"
-        baseline = identity_snapshot(payload, client_id)
-        bind_identity_snapshot(payload, client_id, baseline)
-        with tempfile.TemporaryDirectory() as temp:
-            binding = load(write_manifest(Path(temp), payload))
-            session_id = binding.client(client_id)[
-                "automation_attachment_ref"
-            ]["session_id"]
-            for mutation in (
-                {"bootIdentitySha256": "f" * 64},
-                {"sessionGeneration": 999},
-            ):
-                with self.subTest(mutation=mutation), self.assertRaises(
-                    runtime_manifest.RuntimeManifestError
-                ):
-                    runtime_manifest.validate_harness_snapshot(
-                        binding,
-                        client_id,
-                        {**baseline, **mutation},
-                        automation_session_id=session_id,
-                    )
-
     def test_validates_attach_only_owner_continuation_for_mobile_client_id(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             parent_payload = manifest_payload()
-            parent_payload["clients"][2]["id"] = "ios_alice"
-            parent_payload["clients"][2]["automation_attachment_ref"][
+            parent_payload["clients"][1]["id"] = "ios_alice"
+            parent_payload["clients"][1]["automation_attachment_ref"][
                 "session_id"
             ] = "session-ios_alice"
             client_ids = tuple(
@@ -1325,7 +1296,7 @@ class RuntimeManifestV3Test(unittest.TestCase):
 
             child_payload = copy.deepcopy(parent_payload)
             child_payload["run_id"] = "runtime-v3-child"
-            retained = child_payload["clients"][2]
+            retained = child_payload["clients"][1]
             previous = parent.client("ios_alice")
             retained["boot_identity"] = digest(
                 "boot:ios_alice:restarted"

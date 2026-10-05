@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lifecycle controller for Foundation Native and Browser clients."""
+"""Lifecycle controller for isolated Foundation Native Desktop clients."""
 
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ from selenium.webdriver.remote.client_config import ClientConfig
 from selenium.webdriver.remote.remote_connection import RemoteConnection
 
 from tooling.acceptance.core.harness import call_async_harness, harness_ready
-from tooling.acceptance.drivers.chrome import ChromeDriver
 from tooling.acceptance.gates.agent.tcp_fault_proxy import (
     TcpFaultProxy,
     TcpFaultProxyCutController,
@@ -98,7 +97,7 @@ class FoundationClientSpec:
             storage_root=Path(str(value.get("storage_root") or "")).expanduser(),
             profile=str(value.get("profile") or ""),
         )
-        if spec.runtime not in {"native-tauri", "browser"}:
+        if spec.runtime != "native-tauri":
             raise FoundationClientError(
                 f"unsupported Foundation client runtime: {spec.runtime}"
             )
@@ -116,15 +115,11 @@ class FoundationClientSpec:
 
     @property
     def make_target(self) -> str:
-        return "desktop" if self.runtime == "native-tauri" else "desktop-web"
+        return "desktop"
 
     @property
     def surface(self) -> str:
-        return "desktop" if self.runtime == "native-tauri" else "browser"
-
-    @property
-    def devctl_mode(self) -> str:
-        return "app" if self.runtime == "native-tauri" else "web"
+        return "desktop"
 
     @property
     def cargo_target_dir(self) -> Path:
@@ -176,7 +171,6 @@ class FoundationRuntimeClient:
         self._managed_runtime_started = False
         self.log_handle: Any = None
         self.driver: Any = None
-        self.chrome: ChromeDriver | None = None
         self.restart_generation = 0
 
     @property
@@ -202,8 +196,6 @@ class FoundationRuntimeClient:
             "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.spec.renderer_port),
-            "PT_DESKTOP_WEB_GATEWAY_PORT": str(self.spec.gateway_port),
-            "PT_DESKTOP_WEB_WEB_PORT": str(self.spec.renderer_port),
             "VITE_ACCEPTANCE_HARNESS": "1",
         }
         self.runtime_profile.write_text(
@@ -225,17 +217,13 @@ class FoundationRuntimeClient:
             "WEB_PORT": str(self.spec.renderer_port),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.spec.renderer_port),
-            "PT_DESKTOP_WEB_GATEWAY_PORT": str(self.spec.gateway_port),
-            "PT_DESKTOP_WEB_WEB_PORT": str(self.spec.renderer_port),
             "PEERS_STORAGE_ROOT": str(self.spec.storage_root),
             "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": self._station_url,
             "PEERS_STATION_URL": self._station_url,
             "PT_DESKTOP_E2E": "true",
-            "PT_ACCEPTANCE_NATIVE_DEV": (
-                "1" if self.spec.runtime == "native-tauri" else "0"
-            ),
+            "PT_ACCEPTANCE_NATIVE_DEV": "1",
             "PT_ACCEPTANCE_WEBDRIVER_PORT": str(self.spec.webdriver_port),
             "VITE_ACCEPTANCE_HARNESS": "1",
             "PT_AGENT_AS_F10_NEGATIVE_CONTROL": "1",
@@ -302,49 +290,41 @@ class FoundationRuntimeClient:
             raise FoundationClientError(
                 f"{self.spec.runtime} client is not connected"
             )
-        initial_timeout = (
-            NATIVE_HARNESS_RELOAD_AFTER_SECONDS
-            if self.spec.runtime == "native-tauri"
-            else HARNESS_READY_TIMEOUT_SECONDS
-        )
+        initial_timeout = NATIVE_HARNESS_RELOAD_AFTER_SECONDS
         if harness_ready(
             self.driver,
             namespace=self.harness_namespace,
             timeout=initial_timeout,
         ):
             return
-        if self.spec.runtime == "native-tauri":
-            if (
-                not self._process_alive()
-                or not port_open(self.spec.renderer_port)
-            ):
-                raise FoundationClientError(
-                    "native-tauri renderer became unavailable before "
-                    f"{self.harness_namespace} acceptance Harness recovery"
-                )
-            navigation_error: Exception | None = None
-            try:
-                self.driver.get(
-                    f"http://127.0.0.1:{self.spec.renderer_port}"
-                )
-            except Exception as error:
-                navigation_error = error
-                if "unsupported type (code 5)" in str(error):
-                    self._reconnect_native_driver()
-            if harness_ready(
-                self.driver,
-                namespace=self.harness_namespace,
-                timeout=(
-                    HARNESS_READY_TIMEOUT_SECONDS
-                    - NATIVE_HARNESS_RELOAD_AFTER_SECONDS
-                ),
-            ):
-                return
-            if navigation_error is not None:
-                raise FoundationClientError(
-                    "native-tauri acceptance Harness navigation recovery failed: "
-                    f"{navigation_error}"
-                ) from navigation_error
+        if not self._process_alive() or not port_open(self.spec.renderer_port):
+            raise FoundationClientError(
+                "native-tauri renderer became unavailable before "
+                f"{self.harness_namespace} acceptance Harness recovery"
+            )
+        navigation_error: Exception | None = None
+        try:
+            self.driver.get(
+                f"http://127.0.0.1:{self.spec.renderer_port}"
+            )
+        except Exception as error:
+            navigation_error = error
+            if "unsupported type (code 5)" in str(error):
+                self._reconnect_native_driver()
+        if harness_ready(
+            self.driver,
+            namespace=self.harness_namespace,
+            timeout=(
+                HARNESS_READY_TIMEOUT_SECONDS
+                - NATIVE_HARNESS_RELOAD_AFTER_SECONDS
+            ),
+        ):
+            return
+        if navigation_error is not None:
+            raise FoundationClientError(
+                "native-tauri acceptance Harness navigation recovery failed: "
+                f"{navigation_error}"
+            ) from navigation_error
         raise FoundationClientError(
             f"{self.spec.runtime} {self.harness_namespace} acceptance "
             "Harness is unavailable"
@@ -371,54 +351,38 @@ class FoundationRuntimeClient:
         self._connect_driver()
 
     def _connect_driver(self) -> None:
-        if self.spec.runtime == "native-tauri":
-            wait_until(
-                lambda: self._process_alive() and port_open(self.spec.webdriver_port),
-                "Native embedded WebDriver",
-                self.startup_timeout,
-            )
-            endpoint = f"http://127.0.0.1:{self.spec.webdriver_port}"
-
-            def connect_session() -> Any:
-                self._process_alive()
-                connection = RemoteConnection(
-                    client_config=ClientConfig(
-                        remote_server_addr=endpoint,
-                        timeout=min(self.startup_timeout, 120),
-                    ),
-                )
-                try:
-                    driver = webdriver.Remote(
-                        command_executor=connection,
-                        options=ChromeOptions(),
-                    )
-                except BaseException:
-                    connection.close()
-                    raise
-                self.driver = driver
-                return driver
-
-            wait_until(
-                connect_session,
-                "Native embedded WebDriver session",
-                min(self.startup_timeout, WEBDRIVER_SESSION_TIMEOUT_SECONDS),
-                interval=WEBDRIVER_SESSION_RETRY_INTERVAL_SECONDS,
-            )
-            return
-
         wait_until(
-            lambda: self._process_alive()
-            and port_open(self.spec.gateway_port)
-            and port_open(self.spec.renderer_port),
-            "Browser gateway and renderer",
+            lambda: self._process_alive() and port_open(self.spec.webdriver_port),
+            "Native embedded WebDriver",
             self.startup_timeout,
         )
-        self.chrome = ChromeDriver(
-            user_data_dir=str(self.spec.storage_root / "chrome"),
+        endpoint = f"http://127.0.0.1:{self.spec.webdriver_port}"
+
+        def connect_session() -> Any:
+            self._process_alive()
+            connection = RemoteConnection(
+                client_config=ClientConfig(
+                    remote_server_addr=endpoint,
+                    timeout=min(self.startup_timeout, 120),
+                ),
+            )
+            try:
+                driver = webdriver.Remote(
+                    command_executor=connection,
+                    options=ChromeOptions(),
+                )
+            except BaseException:
+                connection.close()
+                raise
+            self.driver = driver
+            return driver
+
+        wait_until(
+            connect_session,
+            "Native embedded WebDriver session",
+            min(self.startup_timeout, WEBDRIVER_SESSION_TIMEOUT_SECONDS),
+            interval=WEBDRIVER_SESSION_RETRY_INTERVAL_SECONDS,
         )
-        self.driver = self.chrome.start()
-        self.chrome.navigate(f"http://localhost:{self.spec.renderer_port}")
-        self.chrome.wait_for_ready(30)
 
     def _process_alive(self) -> bool:
         if self.process is None:
@@ -517,15 +481,7 @@ class FoundationRuntimeClient:
                     failures.append(f"logout: {error}")
             finally:
                 self.harness_namespace = previous_namespace
-        if self.chrome is not None:
-            try:
-                self.chrome.stop()
-            except Exception as error:  # noqa: BLE001 - cleanup records failure.
-                failures.append(f"chrome: {error}")
-            finally:
-                self.chrome = None
-                self.driver = None
-        elif self.driver is not None:
+        if self.driver is not None:
             try:
                 self.driver.quit()
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
@@ -543,8 +499,6 @@ class FoundationRuntimeClient:
                         "tooling/devctl/index.mjs",
                         "desktop",
                         "stop",
-                        "--mode",
-                        self.spec.devctl_mode,
                     ],
                     cwd=self.spec.worktree,
                     env=environment,
@@ -621,8 +575,7 @@ class FoundationRuntimeClient:
                 failures.append(f"process: {error}")
         else:
             process_released = True
-        if self.spec.runtime == "native-tauri":
-            failures.extend(self._stop_owned_listener_processes())
+        failures.extend(self._stop_owned_listener_processes())
         if self.log_handle is not None:
             try:
                 self.log_handle.flush()
@@ -802,10 +755,10 @@ class FoundationRuntimePair:
     def __init__(
         self,
         native: FoundationRuntimeClient,
-        browser: FoundationRuntimeClient,
+        secondary: FoundationRuntimeClient,
     ) -> None:
         self.native = native
-        self.browser = browser
+        self.secondary = secondary
 
     @classmethod
     def from_manifest(
@@ -821,27 +774,25 @@ class FoundationRuntimePair:
             raise FoundationClientError("Foundation runtime manifest has no Station URL")
         if not isinstance(clients, list) or len(clients) != 2:
             raise FoundationClientError(
-                "Foundation runtime manifest requires Native and Browser clients"
+                "Foundation runtime manifest requires two Native Desktop clients"
             )
-        by_runtime = {
-            str(client.get("runtime") or ""): client
-            for client in clients
-            if isinstance(client, Mapping)
-        }
-        if set(by_runtime) != {"native-tauri", "browser"}:
+        if (
+            any(not isinstance(client, Mapping) for client in clients)
+            or any(client.get("runtime") != "native-tauri" for client in clients)
+        ):
             raise FoundationClientError(
                 "Foundation runtime manifest client identities are invalid"
             )
         station_url = str(station["url"])
         return cls(
             FoundationRuntimeClient(
-                FoundationClientSpec.from_mapping(by_runtime["native-tauri"]),
+                FoundationClientSpec.from_mapping(clients[0]),
                 station_url=station_url,
                 profile_env=profile_env,
                 startup_timeout=startup_timeout,
             ),
             FoundationRuntimeClient(
-                FoundationClientSpec.from_mapping(by_runtime["browser"]),
+                FoundationClientSpec.from_mapping(clients[1]),
                 station_url=station_url,
                 profile_env=profile_env,
                 startup_timeout=startup_timeout,
@@ -851,7 +802,7 @@ class FoundationRuntimePair:
     def start(self) -> None:
         started: list[FoundationRuntimeClient] = []
         try:
-            for client in (self.native, self.browser):
+            for client in (self.native, self.secondary):
                 client.start()
                 started.append(client)
         except Exception:
@@ -861,12 +812,14 @@ class FoundationRuntimePair:
 
     def stop(self, *, remove_storage: bool = True) -> dict[str, Any]:
         results = {
-            "browser": self.browser.stop(remove_storage=remove_storage),
-            "desktop_app": self.native.stop(remove_storage=remove_storage),
+            "native_secondary": self.secondary.stop(
+                remove_storage=remove_storage
+            ),
+            "native_primary": self.native.stop(remove_storage=remove_storage),
         }
         actor_identity_roots = {
             self.native.actor_identity_root,
-            self.browser.actor_identity_root,
+            self.secondary.actor_identity_root,
         }
         for root in actor_identity_roots:
             shutil.rmtree(root, ignore_errors=True)

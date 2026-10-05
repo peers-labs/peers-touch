@@ -363,7 +363,7 @@ message GetFriendshipStatusResponse {
 // subserver's options). Each mutation publishes a realtime
 // MessageMutation StreamEvent onto the recipient's (and the sender's
 // other devices') unified event stream so peers learn about the
-// change without polling. See docs/architecture/realtime/event-stream.md
+// change without polling. See docs/architecture/shared/communication/event-stream.md
 // §2.7 (MessageMutation).
 
 message RecallFriendMessageRequest {
@@ -404,7 +404,7 @@ message DeleteFriendMessageResponse {
 
 // Friend-chat E2EE ciphertext frame (serialized inside `encrypted_payload`).
 // This compatibility-only frame is scheduled for deletion by the canonical
-// Conversation device-payload cutover in docs/architecture/encryption/.
+// Conversation device-payload cutover in docs/architecture/domains/chat/encryption/.
 message EncryptedMessage {
   bytes ciphertext = 1;
   uint32 counter = 2;

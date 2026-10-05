@@ -1,8 +1,8 @@
 // Applet Kernel — public API surface.
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §6 分层架构 (Applet Kernel 分层), §10 数据模型.
-// Execution plan: docs/architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §5.
+// Execution plan: docs/architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §5.
 //
 // The kernel is render-agnostic (surface work is delegated to an injected
 // PlatformAdapter) and platform-agnostic (clock / session backend / audit sink

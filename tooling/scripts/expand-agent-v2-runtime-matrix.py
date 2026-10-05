@@ -32,7 +32,7 @@ ALWAYS_REQUIRED_ROLES = {
 }
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
-    "direct_runtime_no_local_capability",
+    "direct_runtime_secondary_native",
     "station_command",
     "station_control_plane",
     "station_turn",

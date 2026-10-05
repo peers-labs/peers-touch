@@ -280,7 +280,6 @@ def generate_plan(contract: dict[str, Any], gate_defs: dict[str, Any]) -> dict[s
         gdef = gate_defs[gid]
         planned_gate = {
             "id": gid,
-            "command": gdef["command"],
             "timeout_seconds": gdef.get("timeout_seconds", 600),
             "environment": gdef.get("environment", "local"),
             "provisioner": gdef.get("provisioner", ""),
@@ -288,6 +287,13 @@ def generate_plan(contract: dict[str, Any], gate_defs: dict[str, Any]) -> dict[s
             "description": gdef.get("description", ""),
             "required_by": [f"closure:{contract['workstream']}"],
         }
+        if "argv" in gdef:
+            planned_gate["argv"] = list(gdef["argv"])
+        else:
+            planned_gate["command"] = gdef["command"]
+        ephemeral_capabilities = gdef.get("ephemeralCapabilities")
+        if ephemeral_capabilities:
+            planned_gate["ephemeralCapabilities"] = list(ephemeral_capabilities)
         required_cells = gdef.get("requiredRuntimeCells")
         if required_cells:
             planned_gate["requiredRuntimeCells"] = required_cells

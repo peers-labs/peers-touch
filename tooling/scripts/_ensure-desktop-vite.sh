@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # _ensure-desktop-vite.sh — Shared helper: ensure Vite dev server is running and healthy.
 #
-# Both dev-desktop-app.sh and dev-desktop-web.sh source this file.
+# The Native Desktop launcher sources this file.
 #
 # Exported function:
 #   ensure_desktop_vite_ready <desktop_dir> <web_port> <gateway_port> <profile>

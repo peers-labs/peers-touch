@@ -406,7 +406,7 @@ def evaluate_as_f04(
 
     expected_owner = {
         "desktop_app": "client_capability",
-        "browser": "station",
+        "secondary": "station",
     }.get(platform)
     if expected_owner is None:
         raise GroupOneScenarioError(
@@ -1680,7 +1680,7 @@ def evaluate_as_f10(
 
     expected_session_platform = {
         "desktop_app": "desktop_app",
-        "browser": "browser",
+        "secondary": "secondary",
     }.get(platform)
     if expected_session_platform is None:
         raise GroupOneScenarioError(
@@ -1697,7 +1697,7 @@ def evaluate_as_f10(
         == _nonempty_string(session, "readinessSessionId", scenario="AS-F10")
     )
     session_platform_matches = session.get("platform") == expected_session_platform
-    if platform == "browser":
+    if platform == "secondary":
         selected_device_owns_execution = (
             capability_count == 0
             and selected_device.get("executionDeviceId") is None
@@ -4181,7 +4181,7 @@ def evaluate_base_permission_denied(
     lease = _mapping(capture, "lease", scenario=scenario)
     denied = _mapping(lease, "denied", scenario=scenario)
     restored = _mapping(lease, "restored", scenario=scenario)
-    browser = _mapping(capture, "browser", scenario=scenario)
+    secondary = _mapping(capture, "secondary", scenario=scenario)
     recovery = _mapping(capture, "recovery", scenario=scenario)
     replay = _mapping(capture, "replay", scenario=scenario)
     cleanup = _mapping(capture, "cleanup", scenario=scenario)
@@ -4247,7 +4247,7 @@ def evaluate_base_permission_denied(
         }
     )
     platform = _nonempty_string(
-        browser,
+        secondary,
         "receiverPlatform",
         scenario=scenario,
     )
@@ -4374,25 +4374,14 @@ def evaluate_base_permission_denied(
             and receiver.get("permissionKind")
             == details.get("permission_kind")
         ),
-        "browserCapabilityIsolation": (
-            (
-                platform == "browser"
-                and _nonnegative_int(
-                    browser,
-                    "localCapabilityCount",
-                    scenario=scenario,
-                )
-                == 0
+        "secondaryCapabilityIsolation": (
+            platform in {"secondary", "desktop_app"}
+            and _positive_int(
+                secondary,
+                "localCapabilityCount",
+                scenario=scenario,
             )
-            or (
-                platform == "desktop_app"
-                and _positive_int(
-                    browser,
-                    "localCapabilityCount",
-                    scenario=scenario,
-                )
-                > 0
-            )
+            > 0
         ),
         "zeroToolCallPersistence": (
             _nonnegative_int(

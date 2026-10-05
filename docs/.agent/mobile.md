@@ -41,7 +41,7 @@ Do **not** use this file as the place to redefine Mobile architecture, dual-plat
 ### Global Sources
 
 - [Project Architecture](../global/architecture.md)
-- [Station/Desktop Scope Boundary](../architecture/boundaries/station-desktop-scope-boundary.md)
+- [Station/Desktop Scope Boundary](../architecture/platform/station-desktop-boundary.md)
 
 ---
 

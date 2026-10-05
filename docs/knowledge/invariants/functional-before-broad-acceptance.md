@@ -10,10 +10,10 @@ owns:
   - tooling/make/acceptance.mk
   - tooling/make/review.mk
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
-  - docs/architecture/development-workflow/design.md
-  - docs/architecture/acceptance-framework/design.md
+  - docs/architecture/engineering/development-workflow/design.md
+  - docs/architecture/engineering/acceptance/design.md
 detected: 2026-09-20
 ---
 

@@ -85,7 +85,7 @@ func DecodeCursor(s string) (Cursor, error) {
 
 // MultiSourceCursor encodes the "where I left off" token for each of the
 // independent sources merged by the HOME timeline (see
-// `docs/architecture/social/moments.md §6.4`). Each named source can be
+// `docs/architecture/domains/social/core/moments.md §6.4`). Each named source can be
 // at a different position because the merge is a heap-style interleave by
 // `CreatedAt` rather than a SQL UNION.
 //

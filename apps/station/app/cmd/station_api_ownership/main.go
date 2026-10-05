@@ -17,7 +17,7 @@ func runCLI(arguments []string, output io.Writer) int {
 	root := flags.String("root", ".", "repository root")
 	registryPath := flags.String(
 		"registry",
-		"docs/architecture/api-ownership/station-api-capabilities.yaml",
+		"docs/architecture/engineering/api-governance/station-api-capabilities.yaml",
 		"repository-relative ownership registry path",
 	)
 	if err := flags.Parse(arguments); err != nil {

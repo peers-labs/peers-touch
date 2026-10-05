@@ -8,7 +8,7 @@ Vercel 发布由
 Preview 验证、真实 OAuth callback、GitHub 密文持久化验收和 Production
 promote/deploy；不要手工复制 sibling env 或绕过其 fail-closed 检查。
 系统边界与验收口径见
-[`oauth-login-broker`](../../docs/architecture/oauth-login-broker/README.md)。
+[`oauth-login-broker`](../../docs/architecture/domains/identity/oauth-login-broker/README.md)。
 
 ## 目录
 

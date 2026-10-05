@@ -14,9 +14,9 @@ injection and proof. Acceptance Infra optimization is owned by
 
 It is governed by:
 
-- `docs/architecture/acceptance-framework/domain-onboarding.md`
-- `docs/architecture/acceptance-framework/design.md`
-- `docs/architecture/acceptance-framework/decisions.md`
+- `docs/architecture/engineering/acceptance/domain-onboarding.md`
+- `docs/architecture/engineering/acceptance/design.md`
+- `docs/architecture/engineering/acceptance/decisions.md`
 - `tooling/acceptance/README.md`
 
 Do not infer a local onboarding process when these sources define one.
@@ -90,9 +90,9 @@ existing Feature update
 
 Before classification, read:
 
-1. `docs/architecture/acceptance-framework/domain-onboarding.md`
-2. `docs/architecture/acceptance-framework/design.md`
-3. `docs/architecture/acceptance-framework/decisions.md`
+1. `docs/architecture/engineering/acceptance/domain-onboarding.md`
+2. `docs/architecture/engineering/acceptance/design.md`
+3. `docs/architecture/engineering/acceptance/decisions.md`
 4. `tooling/acceptance/domains/index.yaml`
 5. The target Domain profile, Capability file, and Feature contracts when they
    exist.
@@ -232,7 +232,7 @@ For contract or framework changes, run:
 make acceptance-validate
 make acceptance-coverage-report
 make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>
-git diff --check -- tooling/acceptance docs/architecture/acceptance-framework tooling/skills AGENTS.md
+git diff --check -- tooling/acceptance docs/architecture/engineering/acceptance tooling/skills AGENTS.md
 ```
 
 Run selected cheap/local Gates. Environment-backed Gates remain `UNPROVEN`

@@ -349,7 +349,7 @@ export function ChatMessageArea({
 
   // ---- Typing-state outbound pulses --------------------------------
   //
-  // Wire contract: see docs/architecture/messaging-platform/design.md
+  // Wire contract: see docs/architecture/domains/chat/messaging/design.md
   // §8.2. The sender emits *at most* one `typing=true`
   // every 3s while the user is actively typing and a single
   // `typing=false` once they pause for 4s, send, blur, or change

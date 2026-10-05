@@ -613,7 +613,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
 
         ownership = (
             ROOT
-            / "docs/architecture/api-ownership/station-api-capabilities.yaml"
+            / "docs/architecture/engineering/api-governance/station-api-capabilities.yaml"
         ).read_text(encoding="utf-8")
         target_absent_stores = ownership.split(
             "target_absent_truth_stores:",

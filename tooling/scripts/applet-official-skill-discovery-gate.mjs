@@ -49,7 +49,7 @@ const checks = [
   },
   {
     name: 'runtime-readme-link',
-    path: 'docs/architecture/applet-runtime/README.md',
+    path: 'docs/architecture/platform/applet-runtime/README.md',
     terms: [
       'pt-official-applet-development',
       'apps/applets',
@@ -57,7 +57,7 @@ const checks = [
   },
   {
     name: 'contract-link',
-    path: 'docs/architecture/applet-runtime/official-applet-architecture-contract.md',
+    path: 'docs/architecture/platform/applet-runtime/official-applet-architecture-contract.md',
     terms: [
       'pt-official-applet-development',
       'MUST be used',

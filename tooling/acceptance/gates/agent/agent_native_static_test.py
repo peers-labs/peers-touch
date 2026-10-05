@@ -20,7 +20,6 @@ CAPABILITY_SUPERVISOR = (
     / "desktop_executor_worker"
     / "supervisor.rs"
 )
-DESKTOP_WEB_SCRIPT = ROOT / "tooling" / "scripts" / "dev-desktop-web.sh"
 DESKTOP_APP_SCRIPT = ROOT / "tooling" / "scripts" / "dev-desktop-app.sh"
 AGENT_CAPABILITY_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "runtimes" / "agentCapabilityRuntime.ts"
@@ -1447,7 +1446,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         end = self.source.index("async sendMessage", start)
         scenario = self.source[start:end]
 
-        self.assertIn("foundationToolFixture(agentId, 'browser'", scenario)
+        self.assertIn("foundationToolFixture(agentId, 'secondary'", scenario)
         self.assertIn("toolName: unknownToolId", scenario)
         self.assertIn(
             "prepareFoundationSelectiveCapabilityIsolation(",
@@ -1977,7 +1976,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("agents_update(&actor_ptid, &token, input)", commands)
         self.assertNotIn('agents_list("")', commands)
 
-    def test_browser_auth_binds_gateway_session_before_agent_commands(self) -> None:
+    def test_native_auth_binds_gateway_session_before_agent_commands(self) -> None:
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
         auth_service = DESKTOP_AUTH_SERVICE.read_text(encoding="utf-8")
 
@@ -1995,10 +1994,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
             gateway,
         )
         self.assertIn(
-            'app_auth::auth_restore_session_for_device(state, "desktop-browser")',
+            'app_auth::auth_restore_session_for_device(state, "desktop-native")',
             gateway,
         )
-        self.assertIn('input.device_type = Some("desktop-browser".to_string())', gateway)
+        self.assertIn('input.device_type = Some("desktop-native".to_string())', gateway)
         self.assertIn("state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL)", gateway)
         self.assertIn('.unwrap_or("desktop-native")', auth_service)
         self.assertIn(
@@ -2007,7 +2006,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertNotIn('"device_type": "desktop"', auth_service)
 
-    def test_browser_model_delete_uses_station_provider_owner(self) -> None:
+    def test_gateway_model_delete_uses_station_provider_owner(self) -> None:
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
         start = gateway.index('"model_delete" =>')
         end = gateway.index('"model_fetch_remote" =>', start)
@@ -2282,7 +2281,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertNotIn("sourceProvider.api_key", scenario)
-        self.assertIn("foundationToolFixture(disposableAgentId, 'browser')", scenario)
+        self.assertIn("foundationToolFixture(disposableAgentId, 'secondary')", scenario)
         self.assertIn("'native-tools'", scenario)
         self.assertIn("CAPABILITY_READINESS_STATE_UNAVAILABLE", scenario)
         self.assertIn("'runtime_capability_unavailable'", scenario)
@@ -2743,7 +2742,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("foundationIncompatibleExecutionSnapshot(", scenario)
         self.assertIn("providerContinuationCount", scenario)
         self.assertIn("localCapabilityCount", scenario)
-        self.assertIn("receiverPlatform: 'browser' | 'desktop_app'", scenario)
+        self.assertIn("receiverPlatform: 'secondary' | 'desktop_app'", scenario)
         self.assertIn("const receiverPlatform = input.receiverPlatform", scenario)
         self.assertNotIn("'__TAURI_INTERNALS__' in window", scenario)
         self.assertIn(
@@ -3362,7 +3361,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn('get("error_type")', agent_turn)
         self.assertNotIn("mock", scenario.lower())
 
-    def test_as_f04_budget_uses_browser_and_tauri_production_streams(self) -> None:
+    def test_as_f04_budget_uses_secondary_and_tauri_production_streams(self) -> None:
         desktop_api = DESKTOP_API.read_text(encoding="utf-8")
         contracts = DESKTOP_CONTRACTS.read_text(encoding="utf-8")
         agent_turn = DESKTOP_AGENT_TURN.read_text(encoding="utf-8")
@@ -3428,41 +3427,29 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
 
 class AgentCapabilitySessionStaticTest(unittest.TestCase):
-    def test_browser_and_desktop_launchers_select_distinct_surfaces(self) -> None:
-        browser_source = DESKTOP_WEB_SCRIPT.read_text(encoding="utf-8")
+    def test_desktop_launcher_is_native_only(self) -> None:
         self.assertIn(
-            "PT_CLIENT_SURFACE=browser",
-            browser_source,
-        )
-        self.assertIn("VITE_ACCEPTANCE_HARNESS=1", browser_source)
-        self.assertIn("VITE_RUNTIME_EVIDENCE_HARNESS=1", browser_source)
-        self.assertIn(
-            "PT_CLIENT_SURFACE=desktop",
+            "ensure_desktop_rust_ready",
             DESKTOP_APP_SCRIPT.read_text(encoding="utf-8"),
         )
 
-    def test_browser_supervisor_has_no_desktop_execution_capabilities(self) -> None:
+    def test_capability_supervisor_is_native_only(self) -> None:
         source = CAPABILITY_SUPERVISOR.read_text(encoding="utf-8")
-        self.assertIn("ClientSurface::Browser", source)
+        self.assertIn("ClientSurface::Desktop", source)
         self.assertIn("if surface == ClientSurface::Desktop", source)
-        self.assertIn("assert!(contracts.is_empty())", source)
-        self.assertIn("(None, None, None)", source)
 
-    def test_browser_session_is_opened_by_web_runtime_not_process_boot(self) -> None:
+    def test_capability_runtime_has_no_secondary_session_lifecycle(self) -> None:
         runtime = AGENT_CAPABILITY_RUNTIME.read_text(encoding="utf-8")
-        desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
-        self.assertIn("openBrowserCapabilitySession", runtime)
-        self.assertIn("closeBrowserCapabilitySession", runtime)
-        self.assertIn("starts_automatically()", desktop_main)
+        self.assertNotIn("SecondaryCapabilitySession", runtime)
+        self.assertNotIn("secondaryCapabilitySession", runtime)
+        self.assertIn("CLIENT_PLATFORM_DESKTOP", runtime)
 
-    def test_browser_gateway_exposes_runtime_evidence_commands(self) -> None:
+    def test_gateway_exposes_native_runtime_evidence_commands(self) -> None:
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
         for command in (
             "agent_submit_feedback",
             "agent_list_turn_feedback",
             "agent_capability_sessions",
-            "agent_browser_capability_session_open",
-            "agent_browser_capability_session_close",
             "agent_client_executor_supervisor_start",
             "agent_client_executor_supervisor_stop",
             "agent_runtime_activity_station",
@@ -3471,14 +3458,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIn(f'"{command}" =>', gateway)
-        self.assertIn(
-            "app_runtime_evidence::open_browser_capability_session",
-            gateway,
-        )
-        self.assertIn(
-            "app_runtime_evidence::close_browser_capability_session",
-            gateway,
-        )
+        self.assertNotIn("secondary_capability_session", gateway)
         self.assertIn(
             "app_runtime_evidence::set_client_executor_supervisor_available",
             gateway,
@@ -3494,7 +3474,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("app_agent_growth::agent_submit_feedback", gateway)
         self.assertIn("app_agent_growth::agent_list_turn_feedback", gateway)
 
-    def test_browser_gateway_isolates_long_lived_agent_stream_workers(self) -> None:
+    def test_native_gateway_isolates_long_lived_agent_stream_workers(self) -> None:
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
 
         self.assertIn("const COMMAND_POOL_SIZE: usize = 8;", gateway)
@@ -3963,8 +3943,8 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
 
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")
-        self.assertIn('"native-tauri", "browser"', source)
-        self.assertIn('"desktop" if self.runtime == "native-tauri" else "desktop-web"', source)
+        self.assertIn('spec.runtime != "native-tauri"', source)
+        self.assertIn('return "desktop"', source)
         self.assertIn("call_async_harness", source)
         self.assertIn("harness_ready", source)
         self.assertIn("os.killpg", source)

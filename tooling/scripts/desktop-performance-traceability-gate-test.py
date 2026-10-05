@@ -153,9 +153,9 @@ class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
             self.write_artifact(artifact)
             data = json.loads(artifact.read_text(encoding="utf-8"))
             data["summary"] = {
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceArtifact": "/tmp/route-probe.json",
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceKind": "desktop-telemetry-route-probe",
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceReason": "station-telemetry-route-probe-fallback",
+                "nativeRuntimeRouteEvidenceSourceArtifact": "/tmp/route-probe.json",
+                "nativeRuntimeRouteEvidenceSourceKind": "desktop-telemetry-route-probe",
+                "nativeRuntimeRouteEvidenceSourceReason": "station-telemetry-route-probe-fallback",
             }
             artifact.write_text(json.dumps(data), encoding="utf-8")
             report = module.build_report([str(artifact)])
@@ -167,10 +167,10 @@ class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
         self.assertEqual(
             report["details"][0]["missingFields"],
             [
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourcePhase",
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceBom",
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceSpec",
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceGate",
+                "nativeRuntimeRouteEvidenceSourcePhase",
+                "nativeRuntimeRouteEvidenceSourceBom",
+                "nativeRuntimeRouteEvidenceSourceSpec",
+                "nativeRuntimeRouteEvidenceSourceGate",
             ],
         )
         self.assertEqual(report["details"][0]["category"], "nested-route-evidence-source")
@@ -184,16 +184,16 @@ class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
             self.write_artifact(artifact)
             data = json.loads(artifact.read_text(encoding="utf-8"))
             data["summary"] = {
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceArtifact": "/tmp/route-probe.json",
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceKind": "desktop-telemetry-route-probe",
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourcePhase": "P0a-4/P0a-5/P0a-6/P0c-5",
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceBom": [
+                "nativeRuntimeRouteEvidenceSourceArtifact": "/tmp/route-probe.json",
+                "nativeRuntimeRouteEvidenceSourceKind": "desktop-telemetry-route-probe",
+                "nativeRuntimeRouteEvidenceSourcePhase": "P0a-4/P0a-5/P0a-6/P0c-5",
+                "nativeRuntimeRouteEvidenceSourceBom": [
                     "BOM-CON-03",
                     "BOM-CON-04",
                     "BOM-CAP-05",
                     "BOM-RUN-05",
                 ],
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceSpec": [
+                "nativeRuntimeRouteEvidenceSourceSpec": [
                     "SPEC-STA-01",
                     "SPEC-STA-02",
                     "SPEC-DB-01",
@@ -201,11 +201,11 @@ class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
                     "SPEC-STA-03",
                     "SPEC-MIRROR-01",
                 ],
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceGate": (
+                "nativeRuntimeRouteEvidenceSourceGate": (
                     "Station frontend telemetry ingest/query/rollup routes must be available before "
                     "Gateway upload, Station query, and Dev mirror proof can pass"
                 ),
-                "browserGatewayLiveTargetRuntimeRouteEvidenceSourceReason": "station-telemetry-route-probe-fallback",
+                "nativeRuntimeRouteEvidenceSourceReason": "station-telemetry-route-probe-fallback",
             }
             artifact.write_text(json.dumps(data), encoding="utf-8")
             report = module.build_report([str(artifact)])
@@ -492,7 +492,7 @@ class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
                     "sourcePhase": "P0b-1",
                     "sourceBom": ["BOM-SMP-01"],
                     "sourceSpec": ["SPEC-ANCHOR-01"],
-                    "sourceGate": "Browser and Tauri/WebView DOM automation must prove anchors",
+                    "sourceGate": "Native Tauri DOM automation must prove anchors",
                 }
             }
             artifact.write_text(json.dumps(data), encoding="utf-8")
@@ -520,7 +520,7 @@ class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
                     "sourcePhase": "P0b-1",
                     "sourceBom": ["BOM-SMP-01"],
                     "sourceSpec": ["SPEC-ANCHOR-01"],
-                    "sourceGate": "Browser and Tauri/WebView DOM automation must prove anchors",
+                    "sourceGate": "Native Tauri DOM automation must prove anchors",
                 }
             }
             artifact.write_text(json.dumps(data), encoding="utf-8")

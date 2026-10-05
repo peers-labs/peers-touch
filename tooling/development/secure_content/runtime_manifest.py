@@ -34,14 +34,12 @@ RUNTIME_LEASE_EVIDENCE_KIND = "secure-content-runtime-lease-evidence"
 CLIENT_KINDS = frozenset(
     {
         "native-tauri",
-        "browser",
         "tauri-ios-simulator",
         "tauri-android-emulator",
     }
 )
 RUNTIME_CLIENT_KINDS = {
     "desktop": frozenset({"native-tauri"}),
-    "browser": frozenset({"browser"}),
     "mobile": frozenset(
         {"tauri-ios-simulator", "tauri-android-emulator"}
     ),
@@ -557,7 +555,6 @@ def harness_identity_projection(
     runtime_kind = str(client.get("runtime_kind") or "")
     expected_platform = {
         "native-tauri": "native",
-        "browser": "browser",
         "tauri-ios-simulator": "mobile",
         "tauri-android-emulator": "mobile",
     }.get(runtime_kind)
@@ -663,13 +660,7 @@ def harness_identity_projection(
             f"runtime client {client_id!r} session generation differs from the manifest",
         )
     native_runtime_identity = snapshot.get("nativeRuntimeIdentitySha256")
-    if runtime_kind == "browser":
-        if native_runtime_identity is not None:
-            _fail(
-                "STALE_CLIENT_IDENTITY",
-                f"runtime client {client_id!r} Browser identity contains a Native boot identity",
-            )
-    elif (
+    if (
         not isinstance(native_runtime_identity, str)
         or not hmac.compare_digest(native_runtime_identity, boot_identity)
     ):

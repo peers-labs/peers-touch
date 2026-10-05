@@ -15,7 +15,7 @@ route_sets:
   - id: station-official-atelier
     source: apps/station/app/subserver/official_applets/atelier.go
     prefix: /applets/atelier/v1/
-  - id: browser-gateway
+  - id: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     prefix: agent_collaboration_
   - id: tauri-commands
@@ -372,8 +372,8 @@ entrypoints:
     disposition: allowed-cleanup
     expected_fragments: ['atelierV1Prefix+"/tasks/:taskID"', "s.handlePurgeTask"]
 
-  - id: browser-collaboration-create
-    surface: browser-gateway
+  - id: gateway-collaboration-create
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_create
     command: agent_collaboration_create
@@ -382,8 +382,8 @@ entrypoints:
     disposition: guarded-forwarder
     expected_fragments: ['"agent_collaboration_create" =>', "parse_args::<AgentCollaborationCreateInput>", "app_agent_orchestration::agent_collaboration_create"]
     guard: *guard_create
-  - id: browser-collaboration-get
-    surface: browser-gateway
+  - id: gateway-collaboration-get
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_get
     command: agent_collaboration_get
@@ -391,8 +391,8 @@ entrypoints:
     target: agent_collaboration_get
     disposition: allowed-read
     expected_fragments: ['"agent_collaboration_get" =>', "parse_args::<AgentCollaborationGetInput>", "app_agent_orchestration::agent_collaboration_get"]
-  - id: browser-collaboration-list
-    surface: browser-gateway
+  - id: gateway-collaboration-list
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_list
     command: agent_collaboration_list
@@ -400,8 +400,8 @@ entrypoints:
     target: agent_collaboration_list
     disposition: allowed-read
     expected_fragments: ['"agent_collaboration_list" =>', "parse_args::<AgentCollaborationListInput>", "app_agent_orchestration::agent_collaboration_list"]
-  - id: browser-collaboration-list-events
-    surface: browser-gateway
+  - id: gateway-collaboration-list-events
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_list_events
     command: agent_collaboration_list_events
@@ -409,8 +409,8 @@ entrypoints:
     target: agent_collaboration_list_events
     disposition: allowed-read
     expected_fragments: ['"agent_collaboration_list_events" =>', "parse_args::<AgentCollaborationListEventsInput>", "app_agent_orchestration::agent_collaboration_list_events"]
-  - id: browser-collaboration-cancel
-    surface: browser-gateway
+  - id: gateway-collaboration-cancel
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_cancel_task
     command: agent_collaboration_cancel_task
@@ -418,8 +418,8 @@ entrypoints:
     target: agent_collaboration_cancel_task
     disposition: allowed-cleanup
     expected_fragments: ['"agent_collaboration_cancel_task" =>', "parse_args::<AgentCollaborationCancelTaskInput>", "app_agent_orchestration::agent_collaboration_cancel_task"]
-  - id: browser-collaboration-resume
-    surface: browser-gateway
+  - id: gateway-collaboration-resume
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_resume_task
     command: agent_collaboration_resume_task
@@ -428,8 +428,8 @@ entrypoints:
     disposition: guarded-forwarder
     expected_fragments: ['"agent_collaboration_resume_task" =>', "parse_args::<AgentCollaborationResumeTaskInput>", "app_agent_orchestration::agent_collaboration_resume_task"]
     guard: *guard_resume
-  - id: browser-collaboration-submit
-    surface: browser-gateway
+  - id: gateway-collaboration-submit
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_submit_node_result
     command: agent_collaboration_submit_node_result
@@ -438,8 +438,8 @@ entrypoints:
     disposition: guarded-forwarder
     expected_fragments: ['"agent_collaboration_submit_node_result" =>', "parse_args::<AgentCollaborationSubmitNodeResultInput>", "app_agent_orchestration::agent_collaboration_submit_node_result"]
     guard: *guard_submit
-  - id: browser-collaboration-claim
-    surface: browser-gateway
+  - id: gateway-collaboration-claim
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_claim_executor_task
     command: agent_collaboration_claim_executor_task
@@ -448,8 +448,8 @@ entrypoints:
     disposition: guarded-forwarder
     expected_fragments: ['"agent_collaboration_claim_executor_task" =>', "parse_args::<AgentCollaborationClaimExecutorInput>", "app_agent_orchestration::agent_collaboration_claim_executor_task"]
     guard: *guard_claim
-  - id: browser-collaboration-heartbeat
-    surface: browser-gateway
+  - id: gateway-collaboration-heartbeat
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_heartbeat_executor_lease
     command: agent_collaboration_heartbeat_executor_lease
@@ -462,8 +462,8 @@ entrypoints:
       scope_symbol: HeartbeatExecutorLease
       first_effect: "db.WithContext(ctx).Transaction"
       current_state: before-effect
-  - id: browser-collaboration-release
-    surface: browser-gateway
+  - id: gateway-collaboration-release
+    surface: desktop-http-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
     symbol: agent_collaboration_release_executor_lease
     command: agent_collaboration_release_executor_lease

@@ -27,17 +27,17 @@ class DesktopTelemetryLocalLoopGateTest(unittest.TestCase):
             for spec, returncode in zip(module.CHECKS, returncodes)
         ]
 
-    def gateway_source(self, module: Any, status: str = "pass") -> dict[str, Any]:
+    def native_source(self, module: Any, status: str = "pass") -> dict[str, Any]:
         proven = status == "pass"
         return {
-            "sourceKind": "desktop-gateway-frontend-telemetry-upload-source",
+            "sourceKind": "desktop-native-frontend-telemetry-upload-source",
             "status": status,
             "completionStatus": "DONE" if proven else "PARTIAL",
             "proofStatus": "PROVEN" if proven else "UNPROVEN",
             "phase": "P0a-3",
             "bom": ["BOM-RUN-03"],
             "spec": ["SPEC-GW-01"],
-            "gate": "Desktop Gateway upload command source must prove Tauri invoke registration, HTTP gateway mapping, Station ingest path, and Desktop API wrapper",
+            "gate": "Native Desktop upload command source must prove Tauri invoke registration, Station ingest path, and Desktop API wrapper",
             "requirements": [
                 {
                     "id": "tauri-invoke-handler",
@@ -54,7 +54,7 @@ class DesktopTelemetryLocalLoopGateTest(unittest.TestCase):
 
     def test_report_is_proven_when_all_local_checks_pass(self) -> None:
         module = load_module()
-        report = module.build_report(Path("out.json"), self.check_results(module, [0, 0, 0]), self.gateway_source(module))
+        report = module.build_report(Path("out.json"), self.check_results(module, [0, 0, 0]), self.native_source(module))
 
         self.assertEqual(report["artifactKind"], module.ARTIFACT_KIND)
         self.assertEqual(report["status"], "pass")
@@ -69,30 +69,30 @@ class DesktopTelemetryLocalLoopGateTest(unittest.TestCase):
         self.assertEqual(report["summary"]["failedCheckCount"], 0)
         self.assertEqual(report["summary"]["stationIngestQueryRollupStatus"], "pass")
         self.assertEqual(report["summary"]["desktopEnvelopeBoundedQueueStatus"], "pass")
-        self.assertEqual(report["summary"]["tauriGatewayUploadValidationStatus"], "pass")
+        self.assertEqual(report["summary"]["tauriCommandUploadValidationStatus"], "pass")
         station_check = next(check for check in report["checks"] if check["id"] == "station-ingest-query-rollup")
         self.assertEqual(station_check["phase"], "P0a-4/P0a-5/P0a-6")
         self.assertIn("SPEC-STA-03", station_check["spec"])
         self.assertIn("SPEC-MIRROR-01", station_check["spec"])
         self.assertIn("Station query contract coverage", report["gate"])
-        upload_check = next(check for check in report["checks"] if check["id"] == "tauri-gateway-upload-validation")
+        upload_check = next(check for check in report["checks"] if check["id"] == "tauri-command-upload-validation")
         self.assertEqual(upload_check["phase"], "P0a-3")
         self.assertEqual(upload_check["bom"], ["BOM-RUN-03"])
         self.assertEqual(upload_check["spec"], ["SPEC-GW-01"])
-        self.assertEqual(report["summary"]["gatewayUploadSourceStatus"], "pass")
-        self.assertEqual(report["summary"]["gatewayUploadSourceProofStatus"], "PROVEN")
-        self.assertEqual(report["summary"]["gatewayUploadSourceFailedRequirementCount"], 0)
-        self.assertEqual(report["gatewayUploadSourceEvidence"]["proofStatus"], "PROVEN")
+        self.assertEqual(report["summary"]["nativeUploadSourceStatus"], "pass")
+        self.assertEqual(report["summary"]["nativeUploadSourceProofStatus"], "PROVEN")
+        self.assertEqual(report["summary"]["nativeUploadSourceFailedRequirementCount"], 0)
+        self.assertEqual(report["nativeUploadSourceEvidence"]["proofStatus"], "PROVEN")
         self.assertEqual(report["issueBreakdown"], [])
         markdown = module.render_markdown(report)
         self.assertIn("Desktop Telemetry Local Loop Gate", markdown)
         self.assertIn("station-ingest-query-rollup", markdown)
-        self.assertIn("Gateway Upload Source", markdown)
+        self.assertIn("Native Upload Source", markdown)
         self.assertIn("tauri-invoke-handler", markdown)
 
     def test_report_is_unproven_when_any_local_check_fails(self) -> None:
         module = load_module()
-        report = module.build_report(Path("out.json"), self.check_results(module, [0, 1, 0]), self.gateway_source(module))
+        report = module.build_report(Path("out.json"), self.check_results(module, [0, 1, 0]), self.native_source(module))
 
         self.assertEqual(report["status"], "diagnostic incomplete")
         self.assertEqual(report["completionStatus"], "PARTIAL")
@@ -111,7 +111,7 @@ class DesktopTelemetryLocalLoopGateTest(unittest.TestCase):
 
     def test_station_loop_failure_preserves_p0a6_traceability(self) -> None:
         module = load_module()
-        report = module.build_report(Path("out.json"), self.check_results(module, [1, 0, 0]), self.gateway_source(module))
+        report = module.build_report(Path("out.json"), self.check_results(module, [1, 0, 0]), self.native_source(module))
 
         issue = report["issueBreakdown"][0]
         self.assertEqual(issue["category"], "desktop-telemetry-local-loop-static-check")
@@ -122,31 +122,31 @@ class DesktopTelemetryLocalLoopGateTest(unittest.TestCase):
         self.assertIn("SPEC-MIRROR-01", issue["sourceSpec"])
         self.assertIn("query contract", issue["sourceGate"])
 
-    def test_report_is_unproven_when_gateway_upload_source_is_incomplete(self) -> None:
+    def test_report_is_unproven_when_native_upload_source_is_incomplete(self) -> None:
         module = load_module()
         report = module.build_report(
             Path("out.json"),
             self.check_results(module, [0, 0, 0]),
-            self.gateway_source(module, "diagnostic incomplete"),
+            self.native_source(module, "diagnostic incomplete"),
         )
 
         self.assertEqual(report["status"], "diagnostic incomplete")
         self.assertEqual(report["completionStatus"], "PARTIAL")
         self.assertEqual(report["proofStatus"], "UNPROVEN")
-        self.assertEqual(report["summary"]["gatewayUploadSourceStatus"], "diagnostic incomplete")
-        self.assertEqual(report["summary"]["gatewayUploadSourceProofStatus"], "UNPROVEN")
-        self.assertEqual(report["summary"]["gatewayUploadSourceFailedRequirementCount"], 1)
-        self.assertEqual(report["summary"]["gatewayUploadSourceFailedRequirements"], ["tauri-invoke-handler"])
+        self.assertEqual(report["summary"]["nativeUploadSourceStatus"], "diagnostic incomplete")
+        self.assertEqual(report["summary"]["nativeUploadSourceProofStatus"], "UNPROVEN")
+        self.assertEqual(report["summary"]["nativeUploadSourceFailedRequirementCount"], 1)
+        self.assertEqual(report["summary"]["nativeUploadSourceFailedRequirements"], ["tauri-invoke-handler"])
         issue = report["issueBreakdown"][0]
-        self.assertEqual(issue["category"], "desktop-gateway-upload-source")
-        self.assertEqual(issue["failedStep"], "gateway.frontend_telemetry_upload.source")
+        self.assertEqual(issue["category"], "desktop-native-upload-source")
+        self.assertEqual(issue["failedStep"], "native.frontend_telemetry_upload.source")
         self.assertEqual(issue["sourceArtifactKind"], module.ARTIFACT_KIND)
         self.assertIn("P0a-3", issue["proofImpact"])
 
-    def test_gateway_upload_source_evidence_scans_required_registration_points(self) -> None:
+    def test_native_upload_source_evidence_scans_required_registration_points(self) -> None:
         module = load_module()
         with self.subTest("current workspace source"):
-            evidence = module.gateway_upload_source_evidence(Path(".").resolve())
+            evidence = module.native_upload_source_evidence(Path(".").resolve())
         self.assertEqual(evidence["status"], "pass")
         self.assertEqual(evidence["proofStatus"], "PROVEN")
         self.assertEqual(evidence["failedRequirementCount"], 0)
@@ -154,7 +154,6 @@ class DesktopTelemetryLocalLoopGateTest(unittest.TestCase):
             {item["id"] for item in evidence["requirements"]},
             {
                 "tauri-invoke-handler",
-                "http-gateway-command-mapping",
                 "station-ingest-path",
                 "desktop-api-wrapper",
             },

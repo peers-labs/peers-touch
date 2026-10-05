@@ -1,6 +1,6 @@
 // Default resource policies (architecture §5.1/§5.2).
 //
-// Source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §5.1 LRU: Desktop 4 / Mobile 3 instances; maxSuspended 8.
 //   §5.2 TTL: hidden-warm 30min → suspended; suspended 120min → destroyed;
 //             paused 15min → suspended.

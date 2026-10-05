@@ -283,8 +283,6 @@ importers:
         specifier: ^0.14.4
         version: 0.14.5(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@rspack/core@1.7.12(@swc/helpers@0.5.23))(typescript@5.9.3)(webpack@5.109.2)
 
-  apps/dev: {}
-
   apps/mobile:
     dependencies:
       '@bufbuild/protobuf':

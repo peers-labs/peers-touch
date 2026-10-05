@@ -99,7 +99,7 @@ For any module-level or architecture-level demand, `.trae/documents/` is not suf
 This protocol applies when a request includes any of the following:
 
 - New product capability set or major feature rebuild.
-- Cross-layer work touching more than one of Desktop Web, Desktop Rust, Station, Model, packages, or applets.
+- Cross-layer work touching more than one of Desktop Renderer, Desktop Rust, Station, Model, packages, or applets.
 - Architecture landing, migration, domain decomposition, runtime ownership, persistence, public API, protocol, or directory boundary changes.
 - Large UI / UX redesign that changes product workflow or module ownership.
 - Benchmark-driven rebuilds from an external project, such as LobeHub-style Agent capability mapping.
@@ -108,7 +108,7 @@ Required behavior:
 
 1. Locate the formal docs home from `docs/README.md`.
 2. Write the durable design in the correct `docs/` layer:
-   - Architecture boundary / cross-layer capability → `docs/architecture/<domain>/`
+   - Architecture boundary / cross-layer capability → `docs/architecture/<taxonomy>/<domain>/`
    - Desktop-only implementation plan → `docs/client/desktop/`
    - Station-only implementation plan → `docs/station/`
    - Coding convention → `docs/global/coding-guide/`
@@ -120,22 +120,22 @@ Required behavior:
 
 Example:
 
-- Agent LobeHub-style rebuild formal design: `docs/architecture/agent/agent-lobehub-blueprint.md`
-- Its execution plan: `docs/architecture/agent/execution-plans/20260616-agent-lobehub-rebuild.md`
+- Agent LobeHub-style rebuild formal design: `docs/architecture/domains/agent/agent-lobehub-blueprint.md`
+- Its execution plan: `docs/architecture/domains/agent/execution-plans/20260616-agent-lobehub-rebuild.md`
 
 ---
 
 ## 4. Thinking Principles
 
 1. **Rationality over minimalism** — Architectural soundness is the goal, not minimum change.
-2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `dev-desktop-web.sh`, `pt.sh`, etc.).
+2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `pt.sh`, etc.).
 3. **Architecture design methodology** — For architecture design / system boundaries / ownership / contracts / topology / design decisions, **MUST** use `pt-architecture-design-methodology` skill before execution planning.
 4. **Architecture execution methodology** — For architecture landing / migration / domain decomposition, **MUST** use `pt-architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
 5. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.
 6. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
-7. **Desktop debug uses Make** — During investigation, lifecycle debugging, browser/app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop` (or `make desktop-web` only when the task explicitly needs the browser shell). Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
+7. **Desktop debug uses Make** — During investigation, lifecycle debugging, native app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop`. Desktop has no supported browser shell. Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
 8. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
-9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
+9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/platform/runtime/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
 10. **Acceptance Infra ownership first** — Acceptance Core, planner, validator, runner, Evidence Store, lifecycle, and framework tooling work MUST use `pt-acceptance-infra-engineering`. Infra defines and validates injection contracts; it MUST NOT create, repair, weaken, or complete business Domain injection. Business Acceptance onboarding and proof remain with `pt-acceptance-engineering`.
 11. **Acceptance Suite reuse first** — Multi-scenario runtime Tasks MUST keep
     build, deploy, account, client, device, storage, and login ownership at Task
@@ -147,15 +147,17 @@ Example:
     first edit, bind the explicitly selected current worktree through
     `tooling/scripts/verify-worktree-binding.py` and resolve its canonical root,
     branch, `workspaceId`, immutable initial HEAD, and current expected HEAD.
-    Expected HEAD is advancing source identity outside the Plan Package; only
+    Expected HEAD is advancing source identity outside the frozen Plan Version; only
     an explicitly authorized refresh operation defined in §13.5.1 may change
     it.
 13. **Development declaration first** — Read-only intake may inspect any
     permitted source, but every non-trivial task MUST publish and confirm its
     source/runtime intent through `make dev-start` before the first repository
     write or runtime acquisition. Scope growth uses `make dev-update`;
-    completion/cancellation uses `make dev-release`. See
-    `docs/architecture/development-workflow/README.md`. Source overlap across
+    completion/cancellation/abandonment uses the coordinated `make dev-close`
+    and requires a `CLOSED` `DevelopmentCloseReceipt`; `dev-release` is only a
+    low-level declaration owner primitive. See
+    `docs/architecture/engineering/development-workflow/README.md`. Source overlap across
     different worktrees on different branches is a coordination warning, not a
     lock; same-workspace, same-branch, and exclusive runtime conflicts still
     block.
@@ -493,7 +495,7 @@ Current project skills:
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
 | `pt-oauth2-client-2-vercel` | Publish and verify the OAuth2 Client on Vercel with fail-closed provider, environment, callback, and persistence checks |
-| `pt-plan-and-document` | Persist accepted models into canonical docs/Plan Packages, validate them, and create or advance the workspace Plan generation |
+| `pt-plan-and-document` | Persist accepted models into canonical frozen Plan Versions, validate them, and optionally mount one to an explicitly selected execution worktree |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
@@ -531,7 +533,7 @@ Agent responsibilities at startup:
 This keeps `tooling/skills/` as the single git-tracked truth and prevents skill drift across IDE instances or contributors.
 
 After a governance-source update, follow
-`docs/architecture/development-workflow/host-neutral-agent-integration.md`.
+`docs/architecture/engineering/development-workflow/host-neutral-agent-integration.md`.
 Installation rejects every live machine declaration, child assignment, and
 workflow action except the current exact OWNER-bound `make skills` action.
 Persist a Context Anchor, release the declaration, run
@@ -560,14 +562,26 @@ Do not hot-swap Skills during an in-flight action.
 
 ### 13.5 Stage Dispatch Protocol
 
-Any non-trivial development task (cross-module, new feature, architecture change) progresses through ordered stages. **Agent MUST detect the current stage and dispatch to the correct skill.**
+Any non-trivial development task (cross-module, new feature, architecture change)
+progresses through ordered stages unless the user explicitly selects standalone
+execution without a Plan. **Agent MUST detect the current stage, preserve that
+Plan policy, and dispatch to the correct skill.**
+
+An explicit user instruction such as `no plan`, `不要 plan`, or `直接做，不创建计划`
+is authoritative for the current request. It forbids creating or mounting a
+Plan Version, invoking Plan persistence, and fabricating Plan/Task/Session or
+active-work state. The Agent may still publish the required untracked
+Development declaration, execute against existing accepted product and
+architecture sources, run focused verification, and deliver a standalone PR.
+If the work cannot be executed safely without a new formal Plan, report that
+boundary instead of silently creating one.
 
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
 | **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-dev-workflow` → `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
-| **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + generation-bound Plan ownership + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Package |
-| **EXECUTE** | Plan accepted | `pt-dev-workflow` coordinates host-neutral scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
+| **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | `docs/architecture/<taxonomy>/<module>/` |
+| **PLAN** | Architecture accepted and formal planning is authorized | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (frozen Plan Version + optional explicit PlanMount + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Version |
+| **EXECUTE** | Plan accepted, or explicit standalone no-Plan work has sufficient accepted sources | `pt-dev-workflow` coordinates host-neutral execution and, for tracked work only, the scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-dev-workflow` → `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
@@ -580,7 +594,10 @@ Any non-trivial development task (cross-module, new feature, architecture change
 3. During EXECUTE, Goal Orchestrator schedules **what** is ready, Execution Plan
    Guardian decides whether one proposed action **may** run, and Dev Workflow
    executes allowed work and persists owner state. Context Anchor is read-only.
-4. Each stage MUST pass its gate before entering the next. No skipping gates.
+4. Tracked work MUST pass each stage gate before entering the next. Explicit
+   standalone no-Plan work omits PLAN modeling/persistence and all tracked
+   Plan/Task/Session projections; it does not weaken source, verification,
+   review, delivery, or cleanup requirements.
 5. Review pattern is uniform across stages: generate a structured review prompt
    → invoke the applicable project Review Skills → fix source-backed findings
    → rerun affected checks/review → pass. The user is not the default reviewer.
@@ -596,7 +613,8 @@ Any non-trivial development task (cross-module, new feature, architecture change
 7. **Stage detection**: read this workspace's machine-local
    `workflow/active-work.json` → validate its Plan/Task/Session owners →
    determine current stage. Project memory and chat are never runtime inputs.
-8. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
+8. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?" Never ask
+   this after the user explicitly selected no-Plan standalone execution.
 9. **Acceptance ownership dispatch**:
    - Core/runtime/planner/validator/runner/Evidence Store/framework optimization → `pt-acceptance-infra-engineering`.
    - Domain/Feature/Capability/Registry rule/concrete Gate/Environment/Provisioner/Fixture/product proof → `pt-acceptance-engineering`.
@@ -680,8 +698,12 @@ edits, status claims, and completion claims.
    reviewer authority.
 9. Revalidate the same `BindingProjection` after resume or compaction and
    before status, readiness, handoff, worker result, review, or completion
-   claims. Completion Review uses only the exact current owner-command Action
-   Receipt and assigned REVIEWER; it never enumerates worktree bindings.
+   claims. Completion Review is repository-native: it binds successful
+   Development Session provenance into an immutable request and delegates one
+   review-scoped capability. The capability proves assessment provenance, not
+   reviewer independence; independent reviewer launch is a Dev Workflow
+   obligation. Completion Review never consumes Action Receipts or worktree
+   bindings.
 10. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
    after a commit, rebase, or merge that the user explicitly authorized.
    Resume and context compaction verify the persisted values; they MUST NOT
@@ -690,31 +712,31 @@ edits, status claims, and completion claims.
 11. Do not run `git switch`, `git checkout`, `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
-    A Plan binding or lifecycle conflict is never implicit permission to create
+    A Plan mount or lifecycle conflict is never implicit permission to create
     another worktree.
-12. A repository or PR may contain multiple active Plan Packages. Each
-    workspace resolves only
-    `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json`;
-    branch scans, directory order, active status and synchronized foreign Plans
-    never select execution ownership.
-13. `make plan-bind PLAN=<path>` creates the workspace's first
-    `planId + planPath` generation. The same tuple is idempotent; a different
-    tuple returns `WORKSPACE_PLAN_REBIND_DENIED`.
-14. `make plan-binding-advance PLAN=<path> EXPECTED_GENERATION=<n>` is the only
-    next-Plan path for an existing workspace. It requires the current Plan to
-    be completed and the workspace to have no live declaration, active-work
-    projection, or runtime lease. It atomically advances one generation and
-    retains immutable history.
-15. Plan manifest, tracked declaration, workspace active-work record, Session
-    and Context Anchor must match the immutable binding. A bound workspace
-    cannot publish untracked work. CI has no machine binding and must receive
-    an explicit Plan.
+12. A repository or PR may contain multiple frozen Plan Versions. A Plan
+    Version contains no execution worktree identity; branch scans, directory
+    order, lifecycle state and synchronized foreign Plans never select
+    execution ownership.
+13. `make plan-mount PLAN=<path>` is an explicit owner action that binds one
+    frozen version digest to one selected execution `workspaceId` and creates
+    an immutable ExecutionPlanSnapshot with mount/workspace/branch/initial-HEAD
+    binding. The same tuple is idempotent; a second live Plan returns
+    `PLAN_MOUNT_CONFLICT`.
+14. A PlanMount has no TTL and occupies the worktree until completion,
+    cancellation, or explicit owner unmount. Agents may execute the snapshot
+    but MUST NOT amend the frozen Plan Version, switch its worktree, or unmount
+    it. Runtime leases and atomic locks are separate resource classes.
+15. ExecutionRun, tracked declaration, workspace active-work record, Session
+    and Context Anchor must match the mount and immutable snapshot. A mounted
+    workspace cannot publish untracked work. CI has no machine mount and must
+    receive an explicit Plan Version.
 
 Legacy shared `project_memory.md ## active_work` rows are not runtime state and
 cannot resume directly. The bounded Plan migration flow may read a declared
 legacy registry to verify a reviewed `NONE -> NONE` or source crosswalk, but no
 compatibility writer updates that Markdown. Resume requires the current
-worktree's Plan binding, declaration and Session owners to validate first, then
+worktree's PlanMount, ExecutionRun, declaration and Session owners to validate first, then
 `make active-work-sync WORK_ITEM=<id>` creates the workspace-owned record.
 Missing or contradictory owners fail closed; another workspace's record is
 never read as a fallback.
@@ -727,8 +749,8 @@ When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状
 
 1. `pt-god-view` classifies the intent and selects exactly one owner.
 2. Status/handoff routes to read-only `pt-context-anchor`.
-3. Continue/resume routes to `pt-dev-workflow`, which verifies binding,
-   reconciles Plan/Task/Session/workspace active-work, and starts or resumes the
+3. Continue/resume routes to `pt-dev-workflow`, which verifies mount/snapshot/run,
+   reconciles Task/Session/workspace active-work, and starts or resumes the
    authorized Plan Run.
 4. Dev Workflow asks `pt-goal-orchestrator` for the Ready/Parked schedule
    and concurrency lanes.
@@ -775,12 +797,15 @@ arbitrary replacement JSON.
 
 - **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a
   placeholder record or fabricate a plan path.
-- **First Plan created** → validate it, create generation 1, publish the tracked
-  declaration, then derive this workspace's record.
-- **Next Plan created** → after the current Plan is completed and declaration,
-  active-work, and runtime leases are released, explicitly advance the
-  generation with expected-generation CAS. Never create a worktree as an Agent
-  workaround.
+- **Explicit standalone no-Plan work** → keep the request unmounted for its
+  entire lifecycle; publish only the untracked Development declaration, and do
+  not create Plan, Task, Session, active-work, or Context Anchor state.
+- **Plan Version frozen** → validate it; only after an owner explicitly selects
+  the execution worktree, create PlanMount and ExecutionPlanSnapshot, publish
+  the tracked declaration, then derive this workspace's record.
+- **Next Plan created** → mount it only after the prior mount is released by
+  completion, cancellation, or explicit owner unmount. Never create a worktree
+  as an Agent workaround.
 - **Worktree binding created** → record the verified `workspace_id`,
   `initial_head`, and `expected_head`; initially both HEAD fields are
   identical. Never derive identity from a skill path or copy it from another
@@ -795,8 +820,12 @@ arbitrary replacement JSON.
   Workflow persists only owner-defined blocker state and resynchronizes.
 - **Goal blocked** → Plan/Task/Session owners record fixed-point exhaustion;
   active-work only mirrors those owners.
-- **Close** → `make active-work-close WORK_ITEM=<id>
-  EXPECTED_REVISION=<n>` removes only this workspace's record with CAS.
+- **Close** → `make dev-close WORK_ITEM=<id> MODE=<tracked|standalone>
+  CLOSE_REASON=<completed|cancelled|owner-abandon>
+  ENVIRONMENT_POLICY=<retain|unregister>` invokes each owner in order and
+  persists one resumable close receipt. `active-work-close`, `dev-release`,
+  Session archive, Plan unmount, and environment unregister are low-level
+  owner operations, not independent completion claims.
 - **Distribution** → `peers-dev-workflow` publishes the implementation; the
   installed copy derives the consuming worktree's canonical root and
   `workspaceId`. The source repository owns no consumer runtime state.

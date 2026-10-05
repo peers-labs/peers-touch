@@ -9,7 +9,7 @@ const manifest = {
   status: 'confirmed',
   module: 'mobile-shell',
   path: 'packages/prototypes/mobile/chat/',
-  docs: 'docs/architecture/mobile/prototype/README.md',
+  docs: 'docs/architecture/platform/client/mobile/prototype/README.md',
   description: 'Mobile Shell product flow with Station trust, OAuth, Chat, Moments, Contacts, Me, and recovery-state evidence.',
   order: 10,
   previewExport: 'MobilePrototype',

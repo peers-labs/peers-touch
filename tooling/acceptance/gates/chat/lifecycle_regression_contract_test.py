@@ -8,15 +8,15 @@ from tooling.acceptance.gates.chat.lifecycle_direct import station_presence_labe
 
 MATRIX = (
     REPO_ROOT
-    / "docs/architecture/chat-lifecycle/acceptance-matrix.md"
+    / "docs/architecture/domains/chat/lifecycle/acceptance-matrix.md"
 )
 PRODUCT = (
     REPO_ROOT
-    / "docs/architecture/chat-lifecycle/product-definition.md"
+    / "docs/architecture/domains/chat/lifecycle/product-definition.md"
 )
 TASK_ROOT = (
     REPO_ROOT
-    / "docs/architecture/chat-lifecycle/execution-plans"
+    / "docs/architecture/domains/chat/lifecycle/execution-plans"
     / "20260916-chat-lifecycle-product-closure/tasks"
 )
 

@@ -3,7 +3,7 @@
 > **Status**: Phase 0 baseline
 > **Created**: 2026-07-02
 > **Scope**: Desktop 端 Lynx-for-Web 承载 + Kernel 保活可行性
-> **对应执行计划**: [`2026-07-02-applet-runtime-lifecycle-buildout.md §3`](../../../docs/architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md)
+> **对应执行计划**: [`2026-07-02-applet-runtime-lifecycle-buildout.md §3`](../../../docs/architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md)
 
 ---
 

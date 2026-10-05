@@ -8,8 +8,8 @@ owns:
   - apps/mobile/src/features/call/
 referenced-by: []
 related:
-  - docs/architecture/chat-lifecycle/data-model.md
-  - docs/architecture/chat-lifecycle/decisions.md
+  - docs/architecture/domains/chat/lifecycle/data-model.md
+  - docs/architecture/domains/chat/lifecycle/decisions.md
 detected: 2026-09-24
 ---
 
@@ -57,5 +57,5 @@ canonical session identity，PostgreSQL 会拒绝首次 `CALL_REQUEST`，导致�
 
 ## Crosswalks
 
-- `CCU-D06`：`docs/architecture/chat-lifecycle/decisions.md`
-- Call Resolution 数据模型：`docs/architecture/chat-lifecycle/data-model.md`
+- `CCU-D06`：`docs/architecture/domains/chat/lifecycle/decisions.md`
+- Call Resolution 数据模型：`docs/architecture/domains/chat/lifecycle/data-model.md`

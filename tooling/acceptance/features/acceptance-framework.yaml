@@ -9,8 +9,8 @@
     "tooling/scripts/quality-evidence.py",
     "tooling/make/acceptance.mk",
     "tooling/scripts/review/route-change.sh",
-    "docs/architecture/quality-framework/**",
-    "docs/architecture/acceptance-framework/**",
+    "docs/architecture/engineering/quality/**",
+    "docs/architecture/engineering/acceptance/**",
     "Makefile"
   ],
   "truth_sources": [

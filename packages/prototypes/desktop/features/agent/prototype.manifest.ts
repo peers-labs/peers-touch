@@ -9,7 +9,7 @@ const manifest = {
   status: 'drafting',
   module: 'agent',
   path: 'packages/prototypes/desktop/features/agent/',
-  docs: 'docs/architecture/agent/prototype/README.md',
+  docs: 'docs/architecture/domains/agent/prototype/README.md',
   description:
     'Agent module prototype with 3 sub-entries: Agent (execution unit), Atelier (workbench UI), and Orchestration. TRAE Solo focused layout.',
   order: 25,

@@ -11,7 +11,7 @@ import { log } from '../../utils/logger';
 // be the data-plane and the deletion is non-obvious from `git blame`):
 //
 // Until the realtime SSE EventBus landed (see
-// docs/architecture/realtime/event-stream.md), the WebRTC DataChannel
+// docs/architecture/shared/communication/event-stream.md), the WebRTC DataChannel
 // here doubled as a "fast path" for direct-chat text: the sender
 // pushed a `MessageEnvelope` protobuf hint over the DC so the peer
 // could trigger an immediate message sync without waiting for the

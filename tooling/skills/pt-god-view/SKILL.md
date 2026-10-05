@@ -23,6 +23,7 @@ It does not perform that owner's work.
 God View owns:
 
 - intent classification;
+- explicit tracked versus no-Plan request policy;
 - tracked versus standalone determination;
 - stage and specialist routing;
 - ambiguity detection;
@@ -60,21 +61,27 @@ whose owner is already obvious.
 
 1. Identify the explicitly selected repository/worktree. If multiple candidates
    remain plausible, return `WORKTREE_SELECTION_REQUIRED`.
-2. For tracked work, resolve that workspace's immutable Plan binding. Ignore
+2. Resolve explicit user Plan policy before task-size or stage classification.
+   `no plan`, `不要 plan`, and equivalent instructions select standalone work
+   and forbid PLAN analysis/persistence for the current request.
+3. Resolve the workspace's immutable Plan binding. Ignore
    other active Plans synchronized into the same repository or PR; never
-   replace an existing binding.
-3. Classify intent:
+   replace an existing binding. Explicit no-Plan intent plus a live mount
+   returns `PLAN_POLICY_CONFLICT`; it does not silently unmount or downgrade
+   tracked work.
+4. Classify intent:
    - `STATUS_OR_HANDOFF`
    - `NON_TRIVIAL_MUTATION`
+   - `STANDALONE_MUTATION`
    - `STANDALONE_SMALL_FIX`
    - `PRODUCT`
    - `DESIGN`
    - `PLAN`
    - `REVIEW`
    - `GOAL`
-4. Select exactly one primary owner from the table below.
-5. Announce the route and reason in one short sentence.
-6. Invoke the owner and stop applying God View logic. The owner may dispatch
+5. Select exactly one primary owner from the table below.
+6. Announce the route and reason in one short sentence.
+7. Invoke the owner and stop applying God View logic. The owner may dispatch
    narrower specialists under its own contract.
 
 ## Route Table
@@ -82,6 +89,7 @@ whose owner is already obvious.
 | Intent | Primary owner |
 |---|---|
 | Non-trivial implementation, continuation, verification, or delivery | `pt-dev-workflow` |
+| Explicit standalone no-Plan mutation | `pt-dev-workflow` with Plan persistence forbidden |
 | Tracked-work status or handoff projection | `pt-context-anchor` |
 | Small isolated correction | `pt-small-fix-discipline` |
 | Product goal, Journey, visible state, or benchmark decision | `pt-product-design-methodology` |
@@ -124,7 +132,9 @@ to the owner:
 
 God View never self-approves a stage gate and never embeds stage procedures.
 The owning workflow invokes the project's agent-led review loop; routine review
-does not route back to the user.
+does not route back to the user. Explicit no-Plan work routes directly to
+standalone EXECUTE through DELIVER after sufficient accepted sources are
+confirmed; it never visits PLAN analysis or persistence.
 
 ## Output
 
@@ -141,6 +151,7 @@ After dispatch, the owning Skill controls all further output.
 ## Verification
 
 - Exactly one primary owner is selected.
+- Explicit no-Plan intent is preserved through dispatch.
 - No repository or durable workflow state was mutated by God View.
 - No queue, plan, Task, Session, Acceptance, or delivery procedure was copied
   into the facade.
@@ -159,3 +170,5 @@ Never:
   `pt-dev-workflow`;
 - select a repository from a Skill source path;
 - infer approval, authorization, or completion while routing.
+- override explicit no-Plan intent because work is non-trivial or delivery
+  tooling prefers a Plan.

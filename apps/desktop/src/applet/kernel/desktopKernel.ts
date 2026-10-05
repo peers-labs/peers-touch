@@ -2,7 +2,7 @@
 // the cross-platform AppletKernel with Desktop-specific collaborators.
 //
 // Authoritative contract: packages/applet-kernel/src/index.ts (AppletKernelDeps).
-// Execution plan: docs/architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.2.
+// Execution plan: docs/architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.2.
 //
 // Kernel-single-authority (§6.1): this kernel is the ONLY LRU / TTL / memory-
 // pressure authority on Desktop. The Shell keeps applet page frames resident and

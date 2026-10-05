@@ -13,7 +13,7 @@
 
 这里的原型是 UI/UX 与交互设计的可执行表达，用于 Owner 确认体验方向，不是最终产品代码，也不直接绑定 Desktop / Mobile / Station 的真实运行时。
 
-正式入口文档见：[`docs/architecture/prototypes/README.md`](../../docs/architecture/prototypes/README.md)。
+正式入口文档见：[`docs/architecture/engineering/prototypes/README.md`](../../docs/architecture/engineering/prototypes/README.md)。
 
 ---
 

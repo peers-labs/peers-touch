@@ -90,6 +90,9 @@ function seedActiveSession(scope, sessionId = 'DEV-SESSION') {
     {
       workspaceId,
       workItemId,
+      mountId: 'MOUNT-1',
+      runId: 'RUN-1',
+      snapshotDigest: 'a'.repeat(64),
       planId: 'PLAN-1',
       planPath: 'docs/architecture/test/execution-plans/test/plan.md',
       planStatus: 'active',

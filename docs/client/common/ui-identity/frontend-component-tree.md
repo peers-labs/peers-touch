@@ -14,7 +14,7 @@ This document defines the frontend component tree standard for Peers Touch clien
 
 It complements UI Identity by turning visual and interaction intent into an implementation tree that AI agents and engineers can inspect before writing UI code.
 
-Architecture source: `docs/architecture/frontend-runtime/README.md` owns the cross-client runtime model for scheduling, lifecycle, hidden-tree budget, Applet container behavior, and performance evidence. This document is the downstream UI tree standard that applies that architecture to client component trees.
+Architecture source: `docs/architecture/platform/client/frontend-runtime/README.md` owns the cross-client runtime model for scheduling, lifecycle, hidden-tree budget, Applet container behavior, and performance evidence. This document is the downstream UI tree standard that applies that architecture to client component trees.
 
 This standard exists because a UI can pass visual review and still feel slow when its tree is wrong:
 

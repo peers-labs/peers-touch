@@ -763,30 +763,75 @@ export function createSessionStore(initialState, options) {
 
 export function archiveSessionStore(options) {
   return withSessionLock(options, (paths) => {
+    const expectedSessionId = options.expected?.sessionId;
+    if (typeof expectedSessionId !== 'string' || expectedSessionId === '') {
+      sessionFail(
+        'SESSION_ARCHIVE_INVALID',
+        'Session archive requires the exact sessionId',
+      );
+    }
+    const archiveDirectory = path.join(
+      paths.directory,
+      'archive',
+      expectedSessionId,
+    );
+    const archivedSession = path.join(archiveDirectory, 'session.json');
+    const archivedEvents = path.join(archiveDirectory, 'events.ndjson');
+    const hasArchivedSession = existsSync(archivedSession);
+    const hasArchivedEvents = existsSync(archivedEvents);
+    const hasLiveSession = existsSync(paths.session);
+    const hasLiveEvents = existsSync(paths.events);
+    if (
+      !hasLiveSession &&
+      !hasLiveEvents &&
+      hasArchivedSession &&
+      hasArchivedEvents
+    ) {
+      const events = parseEvents(archivedEvents);
+      const session = parseSnapshot(archivedSession);
+      const projected = materialize(events);
+      if (
+        session === null ||
+        session.eventCount !== projected.eventCount ||
+        session.eventDigest !== projected.eventDigest ||
+        !stateEquals(session.state, projected.state)
+      ) {
+        sessionFail(
+          'SESSION_JOURNAL_INVALID',
+          'Archived Session snapshot and journal disagree',
+        );
+      }
+      assertIdentity(session, options.expected);
+      return {
+        archiveDirectory,
+        archivedAs: TERMINAL_STATES.has(session.state.state)
+          ? 'terminal'
+          : 'owner-abandon',
+        eventDigest: session.eventDigest,
+        sessionId: session.state.sessionId,
+        state: session.state.state,
+      };
+    }
+    if (hasArchivedSession || hasArchivedEvents) {
+      sessionFail(
+        'SESSION_ARCHIVE_CONFLICT',
+        'Development Session archive is incomplete or conflicts with live state',
+        { archiveDirectory },
+      );
+    }
     const { session } = readAndRepair(paths);
     assertIdentity(session, options.expected);
-    if (!TERMINAL_STATES.has(session.state.state)) {
+    if (
+      !TERMINAL_STATES.has(session.state.state) &&
+      options.allowNonTerminal !== true
+    ) {
       sessionFail(
         'SESSION_ARCHIVE_INVALID',
         'Only a terminal Development Session may be archived',
         { state: session.state.state },
       );
     }
-    const archiveDirectory = path.join(
-      paths.directory,
-      'archive',
-      session.state.sessionId,
-    );
     ensurePrivateDirectory(archiveDirectory);
-    const archivedSession = path.join(archiveDirectory, 'session.json');
-    const archivedEvents = path.join(archiveDirectory, 'events.ndjson');
-    if (existsSync(archivedSession) || existsSync(archivedEvents)) {
-      sessionFail(
-        'SESSION_ARCHIVE_CONFLICT',
-        'Development Session archive already exists',
-        { archiveDirectory },
-      );
-    }
     renameSync(paths.events, archivedEvents);
     try {
       renameSync(paths.session, archivedSession);
@@ -800,6 +845,9 @@ export function archiveSessionStore(options) {
     syncDirectory(paths.directory);
     return {
       archiveDirectory,
+      archivedAs: TERMINAL_STATES.has(session.state.state)
+        ? 'terminal'
+        : 'owner-abandon',
       eventDigest: session.eventDigest,
       sessionId: session.state.sessionId,
       state: session.state.state,

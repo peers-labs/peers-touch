@@ -1,8 +1,8 @@
 # 架构文档标准
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-04-20 | **Updated**: 2026-09-27
+> **Version**: v1.2
+> **Created**: 2026-04-20 | **Updated**: 2026-10-05
 > **Owner**: Architecture Team
 
 ---
@@ -43,7 +43,7 @@
 ### 3.1 目录结构
 
 ```
-architecture/<module>/
+architecture/<taxonomy>/<optional-group>/<module>/
 ├── README.md                  # [必选] 入口：Scope + 背景 + 导航
 ├── design.md                  # [必选] 架构设计：原则、系统图、核心接口
 ├── decisions.md               # [必选] 设计决策（ADR-lite 格式）
@@ -56,6 +56,10 @@ architecture/<module>/
 └── prototype/                 # [可选] 用落地目标对应的自有前端框架做的可运行原型（代码工程）
     └── README.md              # 仅放入口/跑法说明，原型源码落在落地目标工程（如 packages/applets/<id>/）
 ```
+
+`<taxonomy>` 只能是 `domains`、`platform`、`shared` 或 `engineering`。
+分类与分组 README 只提供导航，不是架构模块。稳定 module ID 由
+`architecture-modules.json` 声明，不从目录 basename 推导。
 
 ### 3.2 文件职责
 
@@ -73,14 +77,14 @@ architecture/<module>/
 ### 3.3 命名规则
 
 - 文件名固定，不加模块前缀（目录名已表达模块）
-- 正确：`architecture/agent/a2a/design.md`
-- 错误：`architecture/agent/a2a/a2a-design.md`
-- 子模块可嵌套目录：`architecture/agent/a2a/`、`architecture/agent/acp/`
+- 正确：`architecture/domains/agent/a2a/design.md`
+- 错误：`architecture/domains/agent/a2a/a2a-design.md`
+- 子模块可嵌套目录：`architecture/domains/agent/a2a/`、`architecture/domains/agent/acp/`
 
 ### 3.4 内容完整性 Profile
 
 每个进入机器治理的 active 模块在
-`architecture/architecture-module-governance/architecture-modules.json`
+`architecture/engineering/architecture-governance/architecture-modules.json`
 声明以下布尔特征：
 
 ```json
@@ -419,7 +423,7 @@ lifecycle 状态。
 
 - **原型不绑定最终运行时，不碰 Lynx / applet 容器 / SDK**：原型只为展示形态。即使功能终态是 applet（Lynx）或 Desktop 页面，原型也只用上表的 web 栈画界面，**不要**为了"贴近运行时"把原型做成 ReactLynx 工程或 applet 容器——那既重又偏离"快速展示终态"的初衷。web 原型可以自由用 DOM、`iframe`、`localStorage` 等浏览器能力。
 - **禁止重复造基础件**：原型复用项目已有的桌面组件体系（LobeUI / antd 组件），不得每个需求各搭一套基础库。
-- **源码集中在统一原型工作区**：所有界面原型工程集中放在 `packages/prototypes/<id>/`（纳入 pnpm workspace），统一一处便于追踪、统一工具链、基础件可跨原型复用。`architecture/<module>/prototype/README.md` 只写「原型在哪、怎么跑、对应哪版设计、做到什么程度」，不复制源码。原型经确认门置 `confirmed`、进入落地时，由对应落地工程（如 Applet 落到 `packages/applets/<id>/` 并按其运行时实现、Desktop 页面落到桌面工程）**参照原型重新实现**，总账状态推进到 `landed`——原型本身不要求能直接搬成产物。
+- **源码集中在统一原型工作区**：所有界面原型工程集中放在 `packages/prototypes/<id>/`（纳入 pnpm workspace），统一一处便于追踪、统一工具链、基础件可跨原型复用。`architecture/<taxonomy>/<module>/prototype/README.md` 只写「原型在哪、怎么跑、对应哪版设计、做到什么程度」，不复制源码。原型经确认门置 `confirmed`、进入落地时，由对应落地工程（如 Applet 落到 `packages/applets/<id>/` 并按其运行时实现、Desktop 页面落到桌面工程）**参照原型重新实现**，总账状态推进到 `landed`——原型本身不要求能直接搬成产物。
 - **从设计推导，不脱节**：原型界面区域要能对回 `design.md` / `functional-modules` 的模块编号；设计变更时原型同步或在 README 标注差异。
 - **可以用 mock 数据**：原型重在形态与交互，可用假数据驱动，不要求接通真实后端。
 - **不替代落地与验收**：原型是设计对齐工具，不是产品代码，不能当作任何运行时的验收证据（如 Desktop L3 须 Lynx bundle 经 Host Gateway，见 applet-runtime 验收门槛）。
@@ -428,10 +432,10 @@ lifecycle 状态。
 
 所有原型必须在统一总账登记，便于追踪、复用与"先确认后落地"：
 
-- **统一总账**：`docs/architecture/prototypes/README.md` 维护一张登记表，每个原型登记 `模块 / 原型路径 / 落地目标 / 对应设计版本 / 状态`。状态取值：`drafting`（搭建中）、`pending-review`（待确认）、`confirmed`（已确认）、`landed`（已落地）、`superseded`（已废弃）。
+- **统一总账**：`docs/architecture/engineering/prototypes/README.md` 维护一张登记表，每个原型登记 `模块 / 原型路径 / 落地目标 / 对应设计版本 / 状态`。状态取值：`drafting`（搭建中）、`pending-review`（待确认）、`confirmed`（已确认）、`landed`（已落地）、`superseded`（已废弃）。
 - **版本快照随开发分支**：原型本质是一个前端工程，其"当时版本快照"由 git 仓库本身承载——**与当前开发分支保持一致即可**，不另堆一堆 tag、也不在目录里复制 `v1/ v2/` 副本。需要回看历史形态时用 git 历史；总账只记当前对应的设计版本与状态，不维护版本副本。
 - **原型确认门**：原型登记在册并经 Owner 确认（状态置 `confirmed`）后，才允许进入对应功能的实现落地。未确认的原型不得作为落地依据。
-- 模块自身的 `architecture/<module>/prototype/README.md` 仍是该原型的入口文档，与总账互相引用。
+- 模块自身的 `architecture/<taxonomy>/<module>/prototype/README.md` 仍是该原型的入口文档，与总账互相引用。
 
 `prototype/README.md` 结构：
 
@@ -464,7 +468,7 @@ pnpm dev          # Vite，浏览器打开 localhost
 
 ## 总账状态
 
-（在 `docs/architecture/prototypes/README.md` 的登记状态：drafting / pending-review / confirmed / landed / superseded）
+（在 `docs/architecture/engineering/prototypes/README.md` 的登记状态：drafting / pending-review / confirmed / landed / superseded）
 
 ## 已知差异 / 待补
 
@@ -486,7 +490,7 @@ pnpm dev          # Vite，浏览器打开 localhost
 
 ### 7.1 新建模块文档
 
-1. 创建 `architecture/<module>/` 目录
+1. 按 ownership 选择 `domains | platform | shared | engineering`，再创建模块目录
 2. 至少创建必选三件套：`README.md`、`design.md`、`decisions.md`
 3. 根据内容特征补齐条件必选文件
 4. 每个文件顶部填写元数据块，Status 设为 `draft`

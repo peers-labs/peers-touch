@@ -165,14 +165,14 @@ def _report_as_f06_debug(
     message: str,
     data: Mapping[str, object],
 ) -> None:
-    if os.environ.get("DEBUG_SESSION_ID") != "as-f06-browser-restart-timeout":
+    if os.environ.get("DEBUG_SESSION_ID") != "as-f06-secondary-restart-timeout":
         return
     url = os.environ.get("DEBUG_SERVER_URL", "")
     if not url:
         return
     payload = json.dumps(
         {
-            "sessionId": "as-f06-browser-restart-timeout",
+            "sessionId": "as-f06-secondary-restart-timeout",
             "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
             "hypothesisId": hypothesis_id,
             "location": (
@@ -998,8 +998,8 @@ class FoundationExecutorUnavailableCoordinator:
     def _receiver(self, platform: str) -> Any:
         if platform == "desktop_app":
             return self._runtime_pair.native
-        if platform == "browser":
-            return self._runtime_pair.browser
+        if platform == "secondary":
+            return self._runtime_pair.secondary
         raise ScenarioRunnerError(
             f"BASE-EXECUTOR_UNAVAILABLE has no receiver for {platform}"
         )
@@ -1187,8 +1187,8 @@ class FoundationLeaseExpiredCoordinator:
     def _receiver(self, platform: str) -> Any:
         if platform == "desktop_app":
             return self._runtime_pair.native
-        if platform == "browser":
-            return self._runtime_pair.browser
+        if platform == "secondary":
+            return self._runtime_pair.secondary
         raise ScenarioRunnerError(
             f"BASE-LEASE_EXPIRED has no receiver for {platform}"
         )
@@ -1397,8 +1397,8 @@ class FoundationInvalidResourceReferenceCoordinator:
     ) -> Any:
         if platform == "desktop_app":
             return runtime_pair.native
-        if platform == "browser":
-            return runtime_pair.browser
+        if platform == "secondary":
+            return runtime_pair.secondary
         raise ScenarioRunnerError(
             f"BASE-INVALID_RESOURCE_REF has no receiver for {platform}"
         )
@@ -1632,8 +1632,8 @@ class FoundationPermissionDeniedCoordinator:
     def _receiver(self, platform: str) -> Any:
         if platform == "desktop_app":
             return self._runtime_pair.native
-        if platform == "browser":
-            return self._runtime_pair.browser
+        if platform == "secondary":
+            return self._runtime_pair.secondary
         raise ScenarioRunnerError(
             f"BASE-PERMISSION_DENIED has no receiver for {platform}"
         )
@@ -2066,16 +2066,16 @@ class FoundationForbiddenActorCoordinator:
     def _receiver(self, platform: str) -> Any:
         if platform == "desktop_app":
             return self._runtime_pair.native
-        if platform == "browser":
-            return self._runtime_pair.browser
+        if platform == "secondary":
+            return self._runtime_pair.secondary
         raise ScenarioRunnerError(
             f"BASE-FORBIDDEN_ACTOR has no receiver for {platform}"
         )
 
     def _owner(self, platform: str) -> Any:
         if platform == "desktop_app":
-            return self._runtime_pair.browser
-        if platform == "browser":
+            return self._runtime_pair.secondary
+        if platform == "secondary":
             return self._runtime_pair.native
         raise ScenarioRunnerError(
             f"BASE-FORBIDDEN_ACTOR has no owner client for {platform}"
@@ -2352,7 +2352,7 @@ class FoundationExternalRuntimeCoordinator:
             return
         self._deploy(True)
         self._enabled = True
-        for client in (self._runtime_pair.native, self._runtime_pair.browser):
+        for client in (self._runtime_pair.native, self._runtime_pair.secondary):
             client.restart()
         _authenticate_clients(self._runtime_pair, self._profile_env)
 
@@ -2364,7 +2364,7 @@ class FoundationExternalRuntimeCoordinator:
         client = (
             self._runtime_pair.native
             if probe_input.platform == "desktop_app"
-            else self._runtime_pair.browser
+            else self._runtime_pair.secondary
         )
         locale = client.harness(
             "setFoundationLocale",
@@ -2700,8 +2700,8 @@ class FoundationF06Coordinator:
     def _client(self, platform: str) -> Any:
         if platform == "desktop_app":
             return self._runtime_pair.native
-        if platform == "browser":
-            return self._runtime_pair.browser
+        if platform == "secondary":
+            return self._runtime_pair.secondary
         raise ScenarioRunnerError(
             f"AS-F06 has no direct client for platform {platform}"
         )
@@ -2806,7 +2806,7 @@ class FoundationF06Coordinator:
         errors: list[str] = []
         for platform, client in (
             ("desktop_app", self._runtime_pair.native),
-            ("browser", self._runtime_pair.browser),
+            ("secondary", self._runtime_pair.secondary),
         ):
             try:
                 client.restart()
@@ -3307,8 +3307,8 @@ class FoundationInterruptedCoordinator:
     def _client(self, platform: str) -> Any:
         if platform == "desktop_app":
             return self._runtime_pair.native
-        if platform == "browser":
-            return self._runtime_pair.browser
+        if platform == "secondary":
+            return self._runtime_pair.secondary
         raise ScenarioRunnerError(
             f"BASE-INTERRUPTED has no direct client for {platform}"
         )
@@ -3573,8 +3573,8 @@ class FoundationF12Coordinator:
     def _client(self, platform: str) -> Any:
         if platform == "desktop_app":
             return self._runtime_pair.native
-        if platform == "browser":
-            return self._runtime_pair.browser
+        if platform == "secondary":
+            return self._runtime_pair.secondary
         raise ScenarioRunnerError(
             f"AS-F12 has no direct client for platform {platform}"
         )
@@ -3760,13 +3760,13 @@ def _make_non_advertisement_probe(
     """Create the non-advertisement probe via WebDriver harness.
 
     Desktop-rooted rows (include_local=True) probe through the native client;
-    browser-rooted rows probe through the browser client.
+    secondary-rooted rows probe through the secondary client.
     """
     def probe(probe_input: NonAdvertisementProbeInput) -> Mapping[str, Any]:
         client = (
             runtime_pair.native
             if probe_input.include_local
-            else runtime_pair.browser
+            else runtime_pair.secondary
         )
         result = client.harness(
             "foundationNonAdvertisementProbe",
@@ -3957,7 +3957,7 @@ def _authenticate_clients(
     account = "alice@p.t"
     password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
     provider_config = _agent_provider_config(profile_env)
-    selected_clients = clients or (runtime_pair.native, runtime_pair.browser)
+    selected_clients = clients or (runtime_pair.native, runtime_pair.secondary)
     actor_ids: dict[str, str] = {}
 
     for client in selected_clients:
@@ -4094,12 +4094,12 @@ def _authenticate_clients(
                 f"{f' — client log: {log_path}' if log_path else ''}"
             )
 
-    # Step 5: Open browser capability session explicitly (browser worker does
-    # not auto-start; it requires an explicit openBrowserCapabilitySession call).
-    if runtime_pair.browser in selected_clients:
+    # Step 5: Open secondary capability session explicitly (secondary worker does
+    # not auto-start; it requires an explicit openSecondaryCapabilitySession call).
+    if runtime_pair.secondary in selected_clients:
         try:
-            runtime_pair.browser.harness(
-                "openBrowserCapabilitySession", {}, timeout=30
+            runtime_pair.secondary.harness(
+                "openSecondaryCapabilitySession", {}, timeout=30
             )
         except Exception:
             pass  # May already be open or handled by the runtime; polling will verify.
@@ -4303,7 +4303,7 @@ def _restore_capability_isolation_for_cleanup(
         )
 
     errors: list[str] = []
-    selected_clients = clients or (runtime_pair.browser, runtime_pair.native)
+    selected_clients = clients or (runtime_pair.secondary, runtime_pair.native)
     for client in selected_clients:
         if getattr(client, "driver", None) is None:
             storage_root = getattr(client.spec, "storage_root", None)
@@ -4382,11 +4382,13 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         if (
             len(clients) != 2
             or any(not isinstance(client, Mapping) for client in clients)
-            or {client.get("runtime") for client in clients}
-            != {"native-tauri", "browser"}
+            or any(
+                client.get("runtime") != "native-tauri"
+                for client in clients
+            )
         ):
             raise ScenarioRunnerError(
-                "Foundation runtime manifest requires Native and Browser clients"
+                "Foundation runtime manifest requires two Native Tauri clients"
             )
         for client in clients:
             FoundationClientSpec.from_mapping(client)
@@ -4401,7 +4403,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
     source = source_identity(REPO_ROOT)
     run = store.begin_run(GATE_ID, source=source)
 
-    # --- Launch Desktop (native) + Browser ---
+    # --- Launch Desktop (native) + Secondary ---
     runtime_pair = FoundationRuntimePair.from_manifest(
         client_manifest,
         profile_env=profile_env,
@@ -4468,19 +4470,19 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             "",
         ).strip()
         native_rate_limit_coordinator = None
-        browser_rate_limit_coordinator = None
+        secondary_rate_limit_coordinator = None
         if deployment_environment:
             native_rate_limit_coordinator = FoundationRateLimitCoordinator(
                 runtime_pair.native,
                 deployment_environment,
             )
-            browser_rate_limit_coordinator = FoundationRateLimitCoordinator(
-                runtime_pair.browser,
+            secondary_rate_limit_coordinator = FoundationRateLimitCoordinator(
+                runtime_pair.secondary,
                 deployment_environment,
             )
             rate_limit_coordinators = (
                 native_rate_limit_coordinator,
-                browser_rate_limit_coordinator,
+                secondary_rate_limit_coordinator,
             )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
@@ -4509,11 +4511,11 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             ),
         )
 
-        # 2. Browser adapter: real WebDriver probe through browser client.
-        browser_adapter = DirectRuntimeFoundationAdapter(
+        # 2. Secondary adapter: real WebDriver probe through secondary client.
+        secondary_adapter = DirectRuntimeFoundationAdapter(
             _with_provider_rate_limit_retry(
                 _make_direct_probe(
-                    runtime_pair.browser,
+                    runtime_pair.secondary,
                     f06_coordinator=f06_coordinator,
                     f12_coordinator=f12_coordinator,
                     interrupted_coordinator=interrupted_coordinator,
@@ -4528,7 +4530,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                         permission_denied_coordinator
                     ),
                     forbidden_actor_coordinator=forbidden_actor_coordinator,
-                    rate_limit_coordinator=browser_rate_limit_coordinator,
+                    rate_limit_coordinator=secondary_rate_limit_coordinator,
                     external_runtime_coordinator=external_runtime_coordinator,
                 ),
                 cooldown_seconds=provider_cooldown_seconds,
@@ -4554,7 +4556,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         # --- Assemble the adapter bundle ---
         adapters = FoundationAdapters(
             desktop_native=desktop_native_adapter,
-            browser=browser_adapter,
+            secondary=secondary_adapter,
             mobile_contract=mobile_contract_adapter,
             d11=d11_adapter,
             non_advertisement=non_advertisement_adapter,
@@ -4590,17 +4592,17 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             adapter = (
                 desktop_native_adapter
                 if runtime_tuple.platform == "desktop_app"
-                else browser_adapter
+                else secondary_adapter
             )
             cleanup_clients = (
                 (runtime_pair.native,)
                 if runtime_tuple.platform == "desktop_app"
-                else (runtime_pair.browser,)
+                else (runtime_pair.secondary,)
             )
             observation = (
                 adapter.observe_desktop_native(runtime_tuple)
                 if runtime_tuple.platform == "desktop_app"
-                else adapter.observe_browser(runtime_tuple)
+                else adapter.observe_secondary(runtime_tuple)
             )
             run.write_json(
                 "runtime/debug-tuple-observation.json",

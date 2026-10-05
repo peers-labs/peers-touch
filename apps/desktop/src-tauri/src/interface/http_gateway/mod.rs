@@ -19,8 +19,6 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use x25519_dalek::{PublicKey, StaticSecret};
 
-#[cfg(feature = "acceptance-webdriver")]
-use crate::acceptance::federation_fixture as acceptance_federation_fixture;
 use crate::contracts::*;
 use crate::domain::crypto::{self};
 use crate::error::{AppResult, ErrorCode};
@@ -576,28 +574,7 @@ fn handle_request(
         return;
     }
 
-    // GET /avatar?url=<remote-url>: serve a cached avatar image as bytes.
-    //
-    // This route exists because the dev-mode browser window cannot use
-    // Tauri's `convertFileSrc` to render local filesystem paths (the
-    // polyfill in `main.tsx` is a no-op). Without this route, an `<img>`
-    // pointed at `/Users/.../files/avatars/xxx` would fail to load and
-    // every avatar in the browser instance falls back to initials —
-    // making "two friends, one window shows the avatar, one doesn't"
-    // a visible bug under `make dev-dual`.
-    //
-    // We deliberately do NOT require auth on this endpoint. The gateway
-    // already binds to 127.0.0.1 only, so it is local-only by design;
-    // and the avatar cache only ever holds files we already chose to
-    // download from Station.
     if request.method() == &tiny_http::Method::Get {
-        let url = request.url().to_string();
-        if url.starts_with("/avatar") || url.starts_with("/avatar?") {
-            handle_avatar_get(request, &url);
-            return;
-        }
-        // Unknown GET path → 404, but respond with proper CORS so the
-        // browser can read the body for diagnostics.
         let body = json!({"ok": false, "error": "not found"}).to_string();
         let response = tiny_http::Response::from_string(body)
             .with_status_code(404)
@@ -900,135 +877,6 @@ fn handle_agent_stream_proxy(
 }
 
 // -------------------------------------------------------------------------
-// /avatar route
-// -------------------------------------------------------------------------
-
-fn handle_avatar_get(request: tiny_http::Request, url: &str) {
-    let remote_url = match parse_avatar_query(url) {
-        Some(u) if !u.is_empty() => u,
-        _ => {
-            let body = json!({"ok": false, "error": "missing or empty 'url' query"}).to_string();
-            let response = tiny_http::Response::from_string(body)
-                .with_status_code(400)
-                .with_header(content_type_json())
-                .with_header(cors_origin());
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    // Resolve via the same cache the Tauri webview uses. Both paths share
-    // one on-disk cache, so a hit in the native window guarantees a hit
-    // here too — no duplicate downloads.
-    let path = match crate::infrastructure::avatar_cache::ensure_local(&remote_url) {
-        Ok(p) => p,
-        Err(err) => {
-            tracing::debug!(error = %err, url = %remote_url, "avatar gateway: ensure_local failed");
-            // 404 instead of 5xx so the browser's <img onerror> path runs
-            // cleanly and falls back to the initials placeholder.
-            let body = json!({"ok": false, "error": format!("{}", err)}).to_string();
-            let response = tiny_http::Response::from_string(body)
-                .with_status_code(404)
-                .with_header(content_type_json())
-                .with_header(cors_origin());
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(err) => {
-            tracing::warn!(error = %err, path = %path.display(), "avatar gateway: read failed");
-            let body = json!({"ok": false, "error": format!("read failed: {}", err)}).to_string();
-            let response = tiny_http::Response::from_string(body)
-                .with_status_code(500)
-                .with_header(content_type_json())
-                .with_header(cors_origin());
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    let mime = guess_image_mime(&path).unwrap_or("application/octet-stream");
-    let len = bytes.len();
-    // 5-minute browser cache: avatars rarely change and the URL hash
-    // already invalidates on content change (cache filename is derived
-    // from the remote URL).
-    let cache_header: tiny_http::Header = "Cache-Control: private, max-age=300".parse().unwrap();
-    let mime_header: tiny_http::Header = format!("Content-Type: {}", mime).parse().unwrap();
-    let response = tiny_http::Response::from_data(bytes)
-        .with_header(mime_header)
-        .with_header(cache_header)
-        .with_header(cors_origin());
-    let _ = request.respond(response);
-    tracing::debug!(url = %remote_url, bytes = len, mime, "avatar gateway: served");
-}
-
-fn parse_avatar_query(url: &str) -> Option<String> {
-    let qpos = url.find('?')?;
-    let qs = &url[qpos + 1..];
-    for pair in qs.split('&') {
-        let mut it = pair.splitn(2, '=');
-        let key = it.next().unwrap_or("");
-        let value = it.next().unwrap_or("");
-        if key == "url" {
-            return Some(percent_decode(value));
-        }
-    }
-    None
-}
-
-// Tiny percent-decoder. We only need this for the `url=` query parameter
-// (frontend passes `encodeURIComponent(remoteUrl)`). Avoiding a full
-// `urlencoding` crate dep keeps the gateway lean.
-fn percent_decode(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'+' {
-            out.push(b' ');
-            i += 1;
-        } else if b == b'%' && i + 2 < bytes.len() {
-            let hi = (bytes[i + 1] as char).to_digit(16);
-            let lo = (bytes[i + 2] as char).to_digit(16);
-            if let (Some(h), Some(l)) = (hi, lo) {
-                out.push(((h << 4) | l) as u8);
-                i += 3;
-            } else {
-                out.push(b);
-                i += 1;
-            }
-        } else {
-            out.push(b);
-            i += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn guess_image_mime(path: &std::path::Path) -> Option<&'static str> {
-    let ext = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_ascii_lowercase());
-    match ext.as_deref() {
-        Some("png") => Some("image/png"),
-        Some("jpg") | Some("jpeg") => Some("image/jpeg"),
-        Some("gif") => Some("image/gif"),
-        Some("webp") => Some("image/webp"),
-        Some("svg") => Some("image/svg+xml"),
-        Some("bmp") => Some("image/bmp"),
-        Some("ico") => Some("image/x-icon"),
-        // Default for cache files (filename-hash, no extension): jpeg is
-        // the most common avatar format from the OSS server.
-        _ => Some("image/jpeg"),
-    }
-}
-
-// -------------------------------------------------------------------------
 // CORS & Content-Type helpers
 // -------------------------------------------------------------------------
 
@@ -1065,17 +913,6 @@ fn gateway_session(state: &AppState) -> Option<crate::domain::identity::ActiveSe
 }
 
 fn gateway_mcp_identity(state: &AppState) -> Result<(String, String), Value> {
-    if std::env::var("PT_CLIENT_SURFACE")
-        .unwrap_or_default()
-        .trim()
-        .eq_ignore_ascii_case("browser")
-    {
-        return Err(to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::NotImplemented,
-            "Local MCP is unavailable in the Browser client",
-            None,
-        )));
-    }
     let Some(session) = gateway_session(state) else {
         return Err(to_json(AppResult::<StubPayload>::fail(
             ErrorCode::Unauthorized,
@@ -2687,7 +2524,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             if input.device_type.is_none() {
-                input.device_type = Some("desktop-browser".to_string());
+                input.device_type = Some("desktop-native".to_string());
             }
             bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))
         }
@@ -2698,7 +2535,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "auth_restore_session" => bind_gateway_auth_result(
             state,
-            app_auth::auth_restore_session_for_device(state, "desktop-browser"),
+            app_auth::auth_restore_session_for_device(state, "desktop-native"),
         ),
         "auth_validate_token" => {
             let input = match parse_args::<AuthValidateTokenInput>(args) {
@@ -2741,79 +2578,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     "max_waiters": IDENTITY_TRANSITION_MAX_WAITERS.load(Ordering::SeqCst),
                 }),
             ))
-        }
-        "acceptance_federation_context" => {
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            let active_station_peer_id = match station_client::active_station_peer_id() {
-                Some(peer_id) => peer_id,
-                None => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::InternalError,
-                        "active Station peer ID is unavailable",
-                        None,
-                    ))
-                }
-            };
-            match app_federation::list_contexts(&token) {
-                Ok(view) => to_json(to_stub(
-                    "acceptance_federation_context",
-                    json!({
-                        "active_station_peer_id": active_station_peer_id,
-                        "federations": view
-                            .contexts
-                            .iter()
-                            .map(|federation| json!({
-                                "federation_id": federation.federation_id,
-                                "name": federation.name,
-                                "status": federation.status,
-                            }))
-                            .collect::<Vec<_>>(),
-                    }),
-                )),
-                Err(error) => to_json(
-                    error.into_app_result::<StubPayload>("acceptance_federation_context failed"),
-                ),
-            }
-        }
-        #[cfg(feature = "acceptance-webdriver")]
-        "acceptance_federation_fixture_snapshot" => {
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            to_json(acceptance_federation_fixture::snapshot_result(&token))
-        }
-        #[cfg(feature = "acceptance-webdriver")]
-        "acceptance_federation_fixture_create" => {
-            let input = match parse_args::<
-                acceptance_federation_fixture::FederationFixtureCreateInput,
-            >(args)
-            {
-                Ok(input) => input,
-                Err(error) => return error,
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            to_json(acceptance_federation_fixture::create_fixture(&token, input))
-        }
-        #[cfg(feature = "acceptance-webdriver")]
-        "acceptance_federation_fixture_join" => {
-            let input =
-                match parse_args::<acceptance_federation_fixture::FederationFixtureJoinInput>(args)
-                {
-                    Ok(input) => input,
-                    Err(error) => return error,
-                };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            to_json(acceptance_federation_fixture::join_fixture(&token, input))
         }
         "social_get_relationship" => {
             let input = match parse_args::<SocialGetRelationshipInput>(args) {
@@ -2934,9 +2698,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
         // new `social_*` Tauri commands target proto-typed responses and
         // are not exposed via the dev HTTP gateway (which only speaks
-        // JSON / StubPayload). If you need to exercise them from a
-        // browser harness, use the Tauri devtools `invoke()` panel
-        // instead.
+        // JSON / StubPayload). Native product tests use the registered
+        // Tauri commands instead.
 
         // =================================================================
         // Profile (session token via global lock — dev HTTP gateway)
@@ -3889,36 +3652,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_runtime_evidence::station_capability_sessions(&token))
-        }
-        "agent_browser_capability_session_open" => {
-            if http_gateway_bearer_token(state).is_none() {
-                return to_json(unauthorized_error());
-            }
-            let app = match runtime.app_handle("agent_browser_capability_session_open") {
-                Ok(app) => app,
-                Err(error) => return error,
-            };
-            let supervisor = app.state::<
-                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
-            >();
-            to_json(app_runtime_evidence::open_browser_capability_session(
-                supervisor.inner(),
-            ))
-        }
-        "agent_browser_capability_session_close" => {
-            if http_gateway_bearer_token(state).is_none() {
-                return to_json(unauthorized_error());
-            }
-            let app = match runtime.app_handle("agent_browser_capability_session_close") {
-                Ok(app) => app,
-                Err(error) => return error,
-            };
-            let supervisor = app.state::<
-                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
-            >();
-            to_json(app_runtime_evidence::close_browser_capability_session(
-                supervisor.inner(),
-            ))
         }
         "agent_client_executor_supervisor_start" => {
             if http_gateway_bearer_token(state).is_none() {
@@ -4968,20 +4701,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // Federation
         // =================================================================
-        "federation_resolve" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let input = match parse_args::<FederationResolveInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            match app_federation::resolve(&token, &input.federation_id, &input.handle) {
-                Ok(view) => to_json(AppResult::success(app_federation::encode_resolve(&view))),
-                Err(e) => to_json(e.into_app_result_proto("federation_resolve failed")),
-            }
-        }
         "federation_catalog_search" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -5004,19 +4723,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(e.into_app_result_proto("federation_catalog_search failed")),
             }
         }
-        "federation_list_contexts" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match app_federation::list_contexts(&token) {
-                Ok(view) => to_json(AppResult::success(app_federation::encode_list_contexts(
-                    &view,
-                ))),
-                Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_list_contexts failed")),
-            }
-        }
-
         // =================================================================
         // Applet store (catalog/install — state-dependent)
         // =================================================================
@@ -7535,7 +7241,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     tracing::warn!(
                         account_id = %account_id,
                         error = %error,
-                        "browser messaging group lifecycle wake failed after durable preparation"
+                        "desktop messaging group lifecycle wake failed after durable preparation"
                     );
                 }
             }
@@ -7955,7 +7661,7 @@ mod tests {
     }
 
     #[test]
-    fn station_list_exposes_binding_state_to_browser_clients() {
+    fn station_list_exposes_binding_state_to_gateway_clients() {
         let payload = station_list_payload(
             Vec::new(),
             Some("https://station.invalid".to_string()),

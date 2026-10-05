@@ -20,8 +20,8 @@ from tooling.acceptance.core.redaction import redact_text
 
 MATRIX = {
     "id": "modern-chat-agent-v2-runtime-matrix",
-    "version": "2026-10-01.1",
-    "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
+    "version": "2026-10-04.1",
+    "sha256": "ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58",
 }
 
 GATE_ROLES = {
@@ -394,7 +394,7 @@ def _report(gate_id: str, manifest: str, issues: list[str]) -> dict[str, Any]:
         "phase": "W0",
         "bom": ["W0-agent-v2-acceptance-contract-registration"],
         "spec": [
-            "docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md"
+            "docs/architecture/domains/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md"
         ],
         "gate": gate_id,
         "gateId": gate_id,

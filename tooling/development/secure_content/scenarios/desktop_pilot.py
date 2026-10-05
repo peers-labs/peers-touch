@@ -34,7 +34,7 @@ REQUIRED_FIXTURE_CAPABILITIES = frozenset(
         "historical-recovery-epoch",
     }
 )
-PUBLIC_TEXT = "secure-content-w7-browser-public"
+PUBLIC_TEXT = "secure-content-w7-desktop-public"
 PRIVATE_TEXT = "secure-content-w7-friends-image"
 PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"

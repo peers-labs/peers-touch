@@ -11,7 +11,7 @@ referenced-by:
   - docs/knowledge/README.md
 related:
   - docs/client/mobile/lifecycle.md
-  - docs/architecture/secure-content/decisions.md
+  - docs/architecture/shared/security/secure-content/decisions.md
 detected: 2026-09-27
 ---
 

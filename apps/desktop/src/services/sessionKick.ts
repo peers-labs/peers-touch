@@ -48,28 +48,16 @@ let unlistenFn: (() => void) | null = null;
 export async function installSessionKickBridge(): Promise<() => void> {
   if (unlistenFn) return unlistenFn;
 
-  // Tauri's `listen` is async (it talks to the Rust IPC channel). When
-  // running in the browser dev gateway, `@tauri-apps/api/event` falls
-  // through to a no-op polyfill, which is fine — duplicate-login
-  // detection in that mode happens via Station 401s on the next API
-  // call, not via this Tauri event.
-  let off: () => void = () => {};
-  try {
-    const mod = await import('@tauri-apps/api/event');
-    const handle = await mod.listen<RustKickedPayload>(
-      SESSION_KICKED_EVENT,
-      (event) => {
-        const reason = normaliseReason(event.payload?.reason);
-        const payload: SessionRevokedPayload = { reason };
-        eventBus.publish(EVENT.AUTH_SESSION_REVOKED, payload);
-      },
-    );
-    off = () => handle();
-  } catch {
-    // Browser dev gateway — no Tauri event channel. Fail silently; the
-    // standard 401 path on subsequent API calls covers this scenario.
-    off = () => {};
-  }
+  const mod = await import('@tauri-apps/api/event');
+  const handle = await mod.listen<RustKickedPayload>(
+    SESSION_KICKED_EVENT,
+    (event) => {
+      const reason = normaliseReason(event.payload?.reason);
+      const payload: SessionRevokedPayload = { reason };
+      eventBus.publish(EVENT.AUTH_SESSION_REVOKED, payload);
+    },
+  );
+  const off = () => handle();
   unlistenFn = off;
   return off;
 }

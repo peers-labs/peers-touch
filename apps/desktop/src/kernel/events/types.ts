@@ -6,7 +6,7 @@ export type SessionRevokedReason = 'expired' | 'kicked' | 'not_found' | 'unknown
 export interface SessionRevokedPayload {
   reason: SessionRevokedReason;
   raw?: string;
-  /** Device type from the revoked session (e.g. "desktop-native", "desktop-browser"). */
+  /** Device type from the revoked session (for example, "desktop-native"). */
   device_type?: string;
 }
 

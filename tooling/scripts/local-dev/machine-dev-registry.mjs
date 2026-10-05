@@ -38,6 +38,7 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLockSync,
 } from './workspace-lifecycle-lock.mjs';
+import { readLivePlanMountId } from '../plan/plan-mount.mjs';
 
 export const MACHINE_REGISTRY_KIND = 'peers-touch-machine-dev-registry';
 export const MACHINE_REGISTRY_AUTHORITY = 'machine-control-plane';
@@ -951,6 +952,46 @@ function mutateRegistry(options, mutation) {
   }
 }
 
+function mutateRegistryByWorkspaceId(options, mutation) {
+  const workspaceId = requiredText(options.workspaceId, 'workspaceId', 16);
+  if (!/^[0-9a-f]{16}$/.test(workspaceId)) {
+    fail('INVALID_ARGUMENT', 'workspaceId is invalid');
+  }
+  try {
+    return withWorkspaceLifecycleLockSync(
+      {
+        home: options.home,
+        workspaceId,
+        lifecycleLease: options.lifecycleLease,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      (lifecycleLease) =>
+        mutateRegistryUnderFence(
+          { ...options, workspaceId, lifecycleLease },
+          (registry, now) => {
+            const current = registrationForWorkspace(registry, workspaceId);
+            return mutation(
+              registry,
+              now,
+              {
+                canonicalRoot: current.canonicalRoot,
+                workspaceId,
+              },
+              current,
+            );
+          },
+        ),
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
+}
+
 function assertSlotAvailable(registry, workspaceId, slot) {
   const conflict = registry.registrations.find(
     (entry) => entry.workspaceId !== workspaceId && entry.slot === slot,
@@ -1062,7 +1103,6 @@ function assertWorkspaceHasNoLifecycleState(options, workspace, now) {
   }
   const activeWork = (options.readActiveWorkRecord ?? readActiveWorkRecord)({
     home: options.home,
-    workspaceRoot: workspace.canonicalRoot,
     workspaceId: workspace.workspaceId,
   });
   if (activeWork !== null) {
@@ -1073,6 +1113,16 @@ function assertWorkspaceHasNoLifecycleState(options, workspace, now) {
         workItemId: activeWork.workItemId,
         revision: activeWork.revision,
       },
+    );
+  }
+  const liveMountId = (
+    options.readLivePlanMountId ?? readLivePlanMountId
+  )(workspace.workspaceId, { home: options.home });
+  if (liveMountId !== null) {
+    fail(
+      'WORKSPACE_LIFECYCLE_CONFLICT',
+      'workspace cannot be unregistered while a Plan mount is live',
+      { mountId: liveMountId },
     );
   }
   assertWorkspaceHasNoLease(options, workspace.workspaceId);
@@ -1279,14 +1329,41 @@ export function unregisterWorkspace(options) {
   }).output;
 }
 
+export function unregisterWorkspaceByIdentity(options) {
+  const owner = requiredText(options.owner, 'owner', 256);
+  return mutateRegistryByWorkspaceId(
+    options,
+    (registry, now, workspace, current) => {
+      if (current.owner !== owner) {
+        fail(
+          'WORKSPACE_OWNER_MISMATCH',
+          'owner does not own workspace registration',
+          {
+            expected: current.owner,
+            actual: owner,
+          },
+        );
+      }
+      assertWorkspaceHasNoLifecycleState(options, workspace, now);
+      registry.registrations = registry.registrations.filter(
+        (entry) => entry.workspaceId !== workspace.workspaceId,
+      );
+      return {
+        workspaceId: workspace.workspaceId,
+        name: current.name,
+        unregisteredAt: now.toISOString(),
+        unregisteredBy: owner,
+      };
+    },
+  ).output;
+}
+
 export function slotPorts(slotValue) {
   const slot = requiredSlot(slotValue);
   return {
     station: 18_080 + slot * 100,
     desktopAppGateway: 3_030 + slot * 100,
     desktopAppWeb: 3_210 + slot * 100,
-    desktopWebGateway: 3_031 + slot * 100,
-    desktopWebWeb: 3_211 + slot * 100,
     mobileWeb: 5_173 + slot * 100,
   };
 }

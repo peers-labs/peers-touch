@@ -75,9 +75,9 @@ This document defines the identity and scope of the project, not detailed featur
 
 ### 5.1 Desktop
 
-Desktop is a multi-runtime client, not just a UI:
+Desktop is one native Tauri application composed of:
 
-- `desktop-web`
+- embedded WebView renderer
 - `desktop-rust`
 - `desktop-app`
 - `station`
@@ -85,9 +85,11 @@ Desktop is a multi-runtime client, not just a UI:
 At a high level:
 
 ```text
-desktop-web -> desktop-rust -> station
-desktop-app -> hosts desktop-web and carries desktop-rust
+embedded WebView renderer -> desktop-rust -> station
+desktop-app -> hosts the renderer and carries desktop-rust
 ```
+
+Desktop has no supported browser launch mode or browser product proof.
 
 ### 5.2 Mobile
 

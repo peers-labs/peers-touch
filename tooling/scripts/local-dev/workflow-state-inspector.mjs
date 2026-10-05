@@ -9,8 +9,7 @@ import path from 'node:path';
 import {
   developmentWorkLedgerPath,
 } from '../lib/machine-dev-paths.mjs';
-import { loadPlanPackage } from '../plan/plan-package.mjs';
-import { resolveWorkspacePlanBinding } from '../plan/workspace-plan-binding.mjs';
+import { resolvePlanExecution } from '../plan/plan-mount.mjs';
 import { readActiveWorkRecord } from './active-work-store.mjs';
 import { loadSessionStore } from './dev-session-store.mjs';
 import { readLedger } from './dev-work-ledger.mjs';
@@ -179,37 +178,40 @@ export async function inspectWorkflowContext(binding, options = {}) {
     );
   }
 
-  let bindingRecord;
-  let planPackage;
+  let execution;
   try {
-    const resolvePlanBinding =
-      options.resolveWorkspacePlanBinding ?? resolveWorkspacePlanBinding;
-    const loadPlan = options.loadPlanPackage ?? loadPlanPackage;
-    bindingRecord = await resolvePlanBinding({
+    execution = await (
+      options.resolvePlanExecution ?? resolvePlanExecution
+    )({
       repoRoot: canonicalRoot,
       home: options.home,
     });
-    planPackage = await loadPlan(
-      path.join(canonicalRoot, ...bindingRecord.planPath.split('/')),
-      { repoRoot: canonicalRoot, declaration },
-    );
   } catch (error) {
     return mismatch(
-      error?.code ?? 'WORKSPACE_PLAN_BINDING_REQUIRED',
+      error?.code ?? 'PLAN_MOUNT_REQUIRED',
       error?.message ?? String(error),
     );
   }
-  const currentTask = planPackage.manifest.tasks.find(
-    (task) => task.status === 'in_progress',
-  );
+  const currentTaskId = execution.run.currentTaskId;
+  const currentTask = currentTaskId
+    ? {
+        ...execution.snapshot.plan.tasks.find(
+          (task) => task.id === currentTaskId,
+        ),
+        ...execution.run.taskStates[currentTaskId],
+      }
+    : null;
   if (
-    bindingRecord.planId !== declaration.planId ||
-    bindingRecord.planPath !== declaration.planPath ||
+    execution.mount.planId !== declaration.planId ||
+    execution.mount.planPath !== declaration.planPath ||
+    execution.mount.planVersionDigest !== declaration.planVersionDigest ||
+    execution.mount.mountId !== declaration.mountId ||
+    execution.run.runId !== declaration.runId ||
     currentTask?.id !== declaration.taskId
   ) {
     return mismatch(
-      'WORKSPACE_PLAN_BINDING_MISMATCH',
-      'Plan binding, declaration, and current Task do not agree.',
+      'PLAN_MOUNT_IDENTITY_MISMATCH',
+      'Plan mount, run, declaration, and current Task do not agree.',
     );
   }
 
@@ -278,6 +280,9 @@ export async function inspectWorkflowContext(binding, options = {}) {
       ['workspaceId', workspaceId],
       ['workItemId', declaration.workItemId],
       ['sessionId', declaration.sessionId],
+      ['mountId', execution.mount.mountId],
+      ['runId', execution.run.runId],
+      ['snapshotDigest', execution.snapshot.recordDigest],
       ['planId', declaration.planId],
       ['planPath', declaration.planPath],
       ['currentTaskId', declaration.taskId],
@@ -303,8 +308,10 @@ export async function inspectWorkflowContext(binding, options = {}) {
     status: 'READY',
     tracked: true,
     declaration,
-    binding: bindingRecord,
-    planPackage,
+    mount: execution.mount,
+    snapshot: execution.snapshot,
+    run: execution.run,
+    planPackage: execution.planPackage,
     currentTask,
     activeWork,
     session,
@@ -323,21 +330,19 @@ export async function inspectStopContext(binding, inspect = inspectWorkflowConte
     return ready;
   }
   try {
-    const planBinding = await resolveWorkspacePlanBinding({
+    const execution = await resolvePlanExecution({
       repoRoot: binding.executionRoot,
     });
-    const planPackage = await loadPlanPackage(
-      path.join(binding.executionRoot, ...planBinding.planPath.split('/')),
-      { repoRoot: binding.executionRoot },
-    );
     const head = currentHead(binding.executionRoot);
     const branch = currentBranch(binding.executionRoot);
-    if (['completed', 'superseded'].includes(planPackage.manifest.status)) {
+    if (['completed', 'cancelled'].includes(execution.run.state)) {
       return {
         status: 'TERMINAL',
         tracked: true,
-        binding: planBinding,
-        planPackage,
+        mount: execution.mount,
+        snapshot: execution.snapshot,
+        run: execution.run,
+        planPackage: execution.planPackage,
         currentTask: null,
         head,
         branch,
@@ -345,7 +350,7 @@ export async function inspectStopContext(binding, inspect = inspectWorkflowConte
       };
     }
   } catch (error) {
-    if (error?.code === 'WORKSPACE_PLAN_BINDING_REQUIRED') {
+    if (error?.code === 'PLAN_MOUNT_REQUIRED') {
       return {
         status: 'IDLE',
         tracked: false,
@@ -355,7 +360,7 @@ export async function inspectStopContext(binding, inspect = inspectWorkflowConte
       };
     }
     return mismatch(
-      error?.code ?? 'WORKSPACE_PLAN_BINDING_INVALID',
+      error?.code ?? 'PLAN_MOUNT_INVALID',
       error?.message ?? String(error),
     );
   }

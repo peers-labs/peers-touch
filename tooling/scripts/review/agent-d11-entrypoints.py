@@ -354,7 +354,7 @@ def find_gateway_arm(text: str, command: str) -> str | None:
 
 
 def entry_scope(entry: dict[str, Any], text: str) -> str:
-    if entry.get("surface") == "browser-gateway" and entry.get("command"):
+    if entry.get("surface") == "desktop-http-gateway" and entry.get("command"):
         return find_gateway_arm(text, entry["command"]) or ""
     if entry.get("surface") in {
         "tauri-commands",
@@ -598,15 +598,15 @@ class Checker:
 
         gateway_text = self.read(
             "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
-            "browser-gateway",
+            "desktop-http-gateway",
         )
         actual_gateway = set(
             re.findall(r'"(agent_collaboration_[a-z0-9_]+)"\s*=>', gateway_text)
         )
         self.compare_set(
-            "browser-gateway",
+            "desktop-http-gateway",
             actual_gateway,
-            expected.get("browser-gateway", set()),
+            expected.get("desktop-http-gateway", set()),
         )
 
         tauri_text = self.read(

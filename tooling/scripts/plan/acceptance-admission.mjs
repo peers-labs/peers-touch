@@ -4,8 +4,7 @@ import path from 'node:path';
 
 import { isDirectInvocation, repoRoot } from '../lib/machine-dev-paths.mjs';
 import { loadSessionStoreFromPath } from '../local-dev/dev-session-store.mjs';
-import { loadPlanPackage } from './plan-package.mjs';
-import { resolveWorkspacePlanBinding } from './workspace-plan-binding.mjs';
+import { resolvePlanExecution } from './plan-mount.mjs';
 
 const ACCEPTANCE_STATES = new Set(['ACCEPTANCE_RUNNING']);
 const GAP_STATES = new Set(['ACCEPTANCE_PASS', 'DELIVERY_READY']);
@@ -35,44 +34,41 @@ export async function admitAcceptance(options = {}, dependencies = {}) {
       'broad Acceptance requires an explicit Development Session',
     );
   }
-  const resolveBinding =
-    dependencies.resolveWorkspacePlanBinding ?? resolveWorkspacePlanBinding;
-  const binding = await resolveBinding({
+  const execution = await (
+    dependencies.resolvePlanExecution ?? resolvePlanExecution
+  )({
     home: options.home,
     repoRoot: workspaceRoot,
   });
-  const planPath = options.plan
+  const requestedPlan = options.plan
     ? path.resolve(workspaceRoot, options.plan)
-    : path.resolve(workspaceRoot, binding.planPath);
-  const loadPlan = dependencies.loadPlanPackage ?? loadPlanPackage;
-  const plan = await loadPlan(planPath, { repoRoot: workspaceRoot });
-  const relativePlan = path
-    .relative(workspaceRoot, plan.path)
-    .split(path.sep)
-    .join('/');
+    : execution.planPackage.path;
+  const currentTaskId = execution.run.currentTaskId;
+  const currentTask = currentTaskId
+    ? execution.planPackage.taskSlices.get(currentTaskId)
+    : null;
   if (
-    binding.planId !== plan.manifest.planId ||
-    binding.planPath !== relativePlan ||
-    plan.manifest.status !== 'active' ||
-    plan.currentTask === null
+    requestedPlan !== execution.planPackage.path ||
+    execution.run.state !== 'active' ||
+    currentTask === null
   ) {
     fail(
       'ACCEPTANCE_PLAN_NOT_READY',
       'broad Acceptance requires the bound active Plan and current Task',
       {
-        planId: plan.manifest.planId,
-        planStatus: plan.manifest.status,
-        currentTaskId: plan.currentTask?.taskId ?? null,
+        planId: execution.snapshot.planId,
+        planStatus: execution.run.state,
+        currentTaskId,
       },
     );
   }
   const closureGates =
-    plan.acceptance.closures[plan.currentTask.closureId] ?? [];
+    execution.snapshot.acceptance.closures[currentTask.closureId] ?? [];
   if (closureGates.length === 0) {
     fail(
       'ACCEPTANCE_PLAN_NOT_READY',
       'current Task has no formal Acceptance closure',
-      { taskId: plan.currentTask.taskId },
+      { taskId: currentTask.taskId },
     );
   }
   let session;
@@ -81,10 +77,10 @@ export async function admitAcceptance(options = {}, dependencies = {}) {
       dependencies.loadSessionStoreFromPath ?? loadSessionStoreFromPath
     )(options.session, {
       expected: {
-        planId: plan.manifest.planId,
-        taskId: plan.currentTask.taskId,
-        workspaceId: plan.manifest.binding.workspaceId,
-        branch: plan.manifest.binding.branch,
+        planId: execution.snapshot.planId,
+        taskId: currentTask.taskId,
+        workspaceId: execution.snapshot.executionBinding.workspaceId,
+        branch: execution.snapshot.executionBinding.branch,
       },
     });
   } catch (error) {
@@ -103,8 +99,8 @@ export async function admitAcceptance(options = {}, dependencies = {}) {
         ? 'broad Acceptance may start only from ACCEPTANCE_RUNNING'
         : 'Gap Detector requires successful formal Acceptance',
       {
-        taskId: plan.currentTask.taskId,
-        completionClass: plan.currentTask.completionClass,
+        taskId: currentTask.taskId,
+        completionClass: currentTask.completionClass,
         state,
         allowedStates: [...allowed],
       },
@@ -113,9 +109,9 @@ export async function admitAcceptance(options = {}, dependencies = {}) {
   return {
     ok: true,
     mode,
-    planId: plan.manifest.planId,
-    taskId: plan.currentTask.taskId,
-    closureId: plan.currentTask.closureId,
+    planId: execution.snapshot.planId,
+    taskId: currentTask.taskId,
+    closureId: currentTask.closureId,
     sessionId: session.state.sessionId,
     sessionState: state,
   };

@@ -33,7 +33,7 @@ def load_matrix_module():
 
 
 class DesktopPerformanceCellTemplateTest(unittest.TestCase):
-    def test_templates_cover_non_browser_runtime_cells_with_trace_metadata(self) -> None:
+    def test_templates_cover_native_runtime_cells_with_trace_metadata(self) -> None:
         module = load_template_module()
         templates = module.build_templates()
 
@@ -155,13 +155,12 @@ class DesktopPerformanceCellTemplateTest(unittest.TestCase):
             template.write_templates(cell_dir)
             report = matrix.build_matrix(
                 argparse.Namespace(
-                    live_gate_report=str(Path(tmp) / "missing-live-gate.json"),
                     events_report=str(Path(tmp) / "missing-events.json"),
                     cell_evidence_dir=str(cell_dir),
                 )
             )
 
-        runtime_cells = [cell for cell in report["cells"] if cell["cellId"] != "browser-gateway"]
+        runtime_cells = report["cells"]
         self.assertEqual(len(runtime_cells), 2)
         for cell in runtime_cells:
             self.assertEqual(cell["status"], "diagnostic incomplete")

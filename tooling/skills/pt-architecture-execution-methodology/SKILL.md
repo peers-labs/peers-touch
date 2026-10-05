@@ -1,6 +1,6 @@
 ---
 name: "pt-architecture-execution-methodology"
-description: "Transforms accepted product and architecture contracts into a vertical, dependency-backed execution model. Planning only: it neither persists the Plan Package nor executes work."
+description: "Transforms accepted product and architecture contracts into a vertical, dependency-backed execution model. Planning only: it neither persists the frozen Plan Version nor executes work."
 stage: "PLAN"
 requires: ["accepted product contract when applicable", "accepted architecture"]
 produces: ["accepted vertical execution model", "dependency DAG", "risk-based verification model"]
@@ -17,7 +17,7 @@ increments?
 ```
 
 It does not write repository artifacts. `pt-plan-and-document` persists the
-accepted model as a Plan Package.
+accepted model as a frozen Plan Version.
 
 ## Boundary
 
@@ -189,7 +189,7 @@ Return a structured model containing:
 - authorization requirements;
 - completion/release criteria.
 
-The model is not yet a repository Plan Package and has no Task lifecycle,
+The model is not yet a repository Plan Version and has no Task lifecycle,
 current selection, Development Session, or workspace active-work state.
 
 ## Handoff To Persistence
@@ -198,12 +198,12 @@ Pass the accepted model to `pt-plan-and-document`, which:
 
 - renders `plan.md` and bounded Task Slices;
 - creates the single machine-readable `Acceptance Execution` contract;
-- records verified binding and authorization;
+- records authorization without execution worktree identity;
 - runs `planctl validate`;
-- leaves the package `prepared`;
-- creates the first workspace Plan generation, or explicitly advances a
-  completed and quiescent generation; runtime active-work is derived
-  later by Dev Workflow after current Task, declaration, and Session exist.
+- freezes the Plan Version digest;
+- optionally creates a PlanMount only after the owner explicitly selects an
+  execution worktree; runtime active-work is derived later by Dev Workflow
+  after ExecutionRun, current Task, declaration, and Session exist.
 
 The persistence Skill may reject an invalid model but may not redesign it.
 
@@ -252,7 +252,7 @@ Name the source gap and stop the affected closure.
 
 Never:
 
-- persist the Plan Package directly;
+- persist the Plan Version directly;
 - create `current_task_id`, `current_task_path`, or `dev_state`;
 - execute code or tests;
 - turn every technical layer into a separate phase;

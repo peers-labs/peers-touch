@@ -31,7 +31,7 @@
       "profile": "tooling/acceptance/domains/social.yaml",
       "capabilities": "tooling/acceptance/capabilities/social.yaml",
       "coverage": "managed_domain",
-      "notes": "Private Moments managed domain. Formal proof is bounded to Native Desktop; Browser private access, Mobile parity, and positive cross-Station private delivery remain UNPROVEN."
+      "notes": "Private Moments managed domain. Formal proof is bounded to Native Desktop; Mobile parity and positive cross-Station private delivery remain UNPROVEN."
     },
     {
       "id": "applet",

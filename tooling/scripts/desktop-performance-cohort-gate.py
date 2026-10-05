@@ -22,7 +22,6 @@ GATE = "All runtime cells must prove one complete and identical cohort, includin
 DEFAULT_MANIFEST = "tooling/acceptance/desktop-performance-cohort.json"
 DEFAULT_OUTPUT = "reports/desktop-performance-cohort-gate.json"
 REQUIRED_RUNTIMES = (
-    "browser-gateway",
     "tauri-webview-dev",
     "tauri-webview-packaged",
 )

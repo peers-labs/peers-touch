@@ -84,38 +84,26 @@ function integration(status = 'PASS') {
 
 function plan(root, status = 'active') {
   return {
-    binding: {
+    mount: {
+      mountId: 'mount-dev-product',
       workspaceId: WORKSPACE_ID,
       canonicalRoot: root,
       planId: PLAN_ID,
-      planPath: 'docs/architecture/development-workflow/plan.md',
+      planPath: 'docs/architecture/engineering/development-workflow/plan.md',
     },
-    plan: {
-      manifest: {
-        planId: PLAN_ID,
-        status,
-        binding: {
-          workspaceId: WORKSPACE_ID,
-          branch: BRANCH,
-          initialHead: HEAD,
-        },
-      },
-    },
-  };
-}
-
-function server(workspaceId = WORKSPACE_ID) {
-  return {
-    state: 'compatible',
-    server: {
-      kind: 'peers-touch-dev-server',
-      endpoint: 'http://127.0.0.1:4177',
-      source: {
-        workspaceId,
+    snapshot: {
+      planId: PLAN_ID,
+      executionBinding: {
+        workspaceId: WORKSPACE_ID,
         branch: BRANCH,
-        head: HEAD,
-        dirty: true,
       },
+    },
+    run: {
+      mountId: 'mount-dev-product',
+      state: status,
+    },
+    planPackage: {
+      manifest: { planId: PLAN_ID },
     },
   };
 }
@@ -143,9 +131,8 @@ function fixture(t, overrides = {}) {
       snapshotCalls += 1;
       return snapshot();
     },
-    probeServer: () => server(),
     resolveReview: (_root, _source, planResult, snapshotValue) => {
-      const planStatus = planResult.plan.manifest.status;
+      const planStatus = planResult.run.state;
       const row = snapshotValue.worktrees.find(
         (candidate) => candidate.workspaceId === WORKSPACE_ID,
       );
@@ -265,12 +252,12 @@ test('completed Plan requires a current PASS review', async (t) => {
   assert.equal(report.status, 'PASS');
 });
 
-test('superseded Plan is terminal without a completion claim', async (t) => {
+test('cancelled Plan is terminal without a completion claim', async (t) => {
   const current = fixture(t, {
-    resolvePlan: () => plan(current.root, 'superseded'),
+    resolvePlan: () => plan(current.root, 'cancelled'),
     buildSnapshot: () =>
       snapshot({
-        planStatus: 'superseded',
+        planStatus: 'cancelled',
         reviewState: 'MISSING',
       }),
   });
@@ -369,45 +356,10 @@ test('current-worktree projection ignores unrelated global drift and accepts war
   assert.deepEqual(promise.detail.warnings, ['WORKSPACE_UNREGISTERED']);
 });
 
-test('compatible machine-wide server reports source freshness without blocking', async (t) => {
-  const current = fixture(t, {
-    probeServer: () => server('fedcba9876543210'),
-  });
-  const report = await evaluateWorkflowDoctor(
-    { repoRoot: current.root },
-    current.dependencies,
-  );
-  const promise = byId(report, 'dev.server.live');
-  assert.equal(promise.status, 'PASS');
-  assert.equal(promise.detail.servingSourceMatches, false);
-  assert.equal(promise.detail.servingWorkspaceId, 'fedcba9876543210');
-});
-
-test('absent or incompatible listener blocks the live-server promise', async (t) => {
-  for (const [probe, code] of [
-    [{ state: 'absent' }, 'DEV_SERVER_NOT_RUNNING'],
-    [{ state: 'foreign' }, 'DEV_SERVER_INCOMPATIBLE'],
-  ]) {
-    const current = fixture(t, {
-      probeServer: () => probe,
-    });
-    const report = await evaluateWorkflowDoctor(
-      { repoRoot: current.root },
-      current.dependencies,
-    );
-    const promise = byId(report, 'dev.server.live');
-    assert.equal(promise.status, 'BLOCKED');
-    assert.equal(promise.code, code);
-  }
-});
-
 test('documentation audit requires every marker in every declared guide', async (t) => {
-  const missingId = 'dev.server.live';
+  const missingId = 'dev.workflow.current';
   const current = fixture(t, {
-    readFile: (file) =>
-      file.endsWith('apps/dev/README.md')
-        ? documentText(missingId)
-        : documentText(),
+    readFile: () => documentText(missingId),
   });
   const report = await evaluateWorkflowDoctor(
     { repoRoot: current.root },
@@ -416,11 +368,11 @@ test('documentation audit requires every marker in every declared guide', async 
   const promise = byId(report, 'dev.docs.executable');
   assert.equal(promise.status, 'BLOCKED');
   assert.deepEqual(promise.detail.missing, [
-    `apps/dev/README.md:${missingId}`,
+    `docs/global/workflow.md:${missingId}`,
   ]);
   assert.deepEqual(
     Object.keys(WORKFLOW_DOCTOR_DOCUMENTS),
-    ['docs/global/workflow.md', 'apps/dev/README.md'],
+    ['docs/global/workflow.md'],
   );
 });
 

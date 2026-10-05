@@ -30,8 +30,6 @@ function fixtureProfile(name = 'local-test') {
     'PT_STATION_PORT=18080',
     'PT_DESKTOP_APP_GATEWAY_PORT=3030',
     'PT_DESKTOP_APP_WEB_PORT=3210',
-    'PT_DESKTOP_WEB_GATEWAY_PORT=3031',
-    'PT_DESKTOP_WEB_WEB_PORT=3211',
     'API_TOKEN=private',
     '',
   ].join('\n');
@@ -322,8 +320,6 @@ test('normal resolution uses the machine binding instead of the active symlink',
         station: 18580,
         desktopAppGateway: 3530,
         desktopAppWeb: 3710,
-        desktopWebGateway: 3531,
-        desktopWebWeb: 3711,
         mobileWeb: 5673,
       },
       profile: {

@@ -624,7 +624,7 @@ class DomainContractClosureTests(unittest.TestCase):
             environments = acceptance_root / "environments"
             environments.mkdir()
             (environments / "home-station.yaml").write_text(
-                '{"id": "local-desktop-gateway"}\n',
+                '{"id": "different-environment"}\n',
                 encoding="utf-8",
             )
 

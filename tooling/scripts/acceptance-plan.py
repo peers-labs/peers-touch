@@ -59,6 +59,49 @@ def changed_paths(diff_range: str) -> list[str]:
     return sorted(paths)
 
 
+def gate_catalog_path(root: Path) -> str:
+    catalog = (root / "gates.yaml").resolve()
+    try:
+        return catalog.relative_to(REPO_ROOT.resolve()).as_posix()
+    except ValueError:
+        return f"{root.name}/gates.yaml"
+
+
+def changed_gate_ids(root: Path, baseline: str) -> list[str]:
+    catalog_path = gate_catalog_path(root)
+    baseline_catalog = subprocess.run(
+        ["git", "show", f"{baseline}:{catalog_path}"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+    )
+    if baseline_catalog.returncode != 0:
+        raise ExecutionPlanError(
+            PLAN_DRIFT,
+            f"cannot read Gate Catalog at Plan initial HEAD {baseline}",
+        )
+    try:
+        before = json.loads(baseline_catalog.stdout)
+    except json.JSONDecodeError as error:
+        raise ExecutionPlanError(
+            PLAN_DRIFT,
+            f"Gate Catalog at Plan initial HEAD is invalid: {error}",
+        ) from error
+    after = load_json_yaml(root / "gates.yaml")
+    before_gates = before.get("gates", {})
+    after_gates = after.get("gates", {})
+    if not isinstance(before_gates, dict) or not isinstance(after_gates, dict):
+        raise ExecutionPlanError(
+            PLAN_DRIFT,
+            "Gate Catalog must contain a gates object",
+        )
+    return sorted(
+        gate_id
+        for gate_id in set(before_gates) | set(after_gates)
+        if gate_id in after_gates and before_gates.get(gate_id) != after_gates[gate_id]
+    )
+
+
 def load_behavior_rules(root: Path) -> list[dict[str, Any]]:
     rules: list[dict[str, Any]] = []
     behavior_dir = root / "behavior-rules"
@@ -185,7 +228,12 @@ def planned_gate(
     return planned
 
 
-def plan(root: Path, paths: list[str]) -> dict[str, Any]:
+def plan(
+    root: Path,
+    paths: list[str],
+    *,
+    catalog_changed_gate_ids: list[str] | None = None,
+) -> dict[str, Any]:
     registry = load_json_yaml(root / "registry.yaml")
     gates = load_json_yaml(root / "gates.yaml").get("gates", {})
     bindings = finalizer_bindings(root, gates)
@@ -193,10 +241,18 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
     selected: dict[str, dict[str, Any]] = {}
     impacted_features: set[str] = set()
     matched_rules: list[dict[str, Any]] = []
+    catalog_path = gate_catalog_path(root)
 
     for rule in registry.get("rules", []):
         patterns = rule.get("when", {}).get("paths", [])
-        matched_paths = [path for path in paths if path_matches_any(path, patterns)]
+        effective_patterns = (
+            [pattern for pattern in patterns if pattern != catalog_path]
+            if catalog_changed_gate_ids is not None
+            else patterns
+        )
+        matched_paths = [
+            path for path in paths if path_matches_any(path, effective_patterns)
+        ]
         if not matched_paths:
             continue
         matched_rules.append({"id": rule.get("id"), "paths": matched_paths, "type": "path-rule"})
@@ -209,6 +265,28 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
                 planned_gate(gate_id, gates[gate_id], bindings.get(gate_id)),
             )
             selected[gate_id]["required_by"].append(rule.get("id"))
+
+    if catalog_changed_gate_ids is not None:
+        catalog_gates = []
+        for gate_id in catalog_changed_gate_ids:
+            if gate_id not in gates:
+                continue
+            selected.setdefault(
+                gate_id,
+                planned_gate(gate_id, gates[gate_id], bindings.get(gate_id)),
+            )
+            selected[gate_id]["required_by"].append(
+                f"gate-catalog:{gate_id}"
+            )
+            catalog_gates.append(gate_id)
+        matched_rules.append(
+            {
+                "id": "gate-catalog-definitions",
+                "paths": [catalog_path],
+                "type": "gate-catalog",
+                "gates": catalog_gates,
+            }
+        )
 
     for rule in behavior_rules:
         when = rule.get("when", {})
@@ -281,7 +359,16 @@ def main() -> int:
             if formal_plan
             else changed_paths(args.diff_range)
         )
-        result = plan(root, paths)
+        catalog_changes = (
+            changed_gate_ids(root, formal_plan.initial_head)
+            if formal_plan and gate_catalog_path(root) in paths
+            else None
+        )
+        result = plan(
+            root,
+            paths,
+            catalog_changed_gate_ids=catalog_changes,
+        )
         if formal_plan:
             candidate_ids = [gate["id"] for gate in result["selected_gates"]]
             undeclared = sorted(

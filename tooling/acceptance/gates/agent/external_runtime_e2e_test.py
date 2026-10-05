@@ -113,7 +113,7 @@ def passing_capture() -> dict:
             "stationRestarted": True,
             "turn": {"binding": primary},
         },
-        "browserFailure": {
+        "secondaryFailure": {
             "before": conversation(
                 "session-primary",
                 1,
@@ -380,7 +380,7 @@ class ExternalRuntimeE2ETest(unittest.TestCase):
 
     def test_oracle_rejects_binding_mutation_before_confirmation(self) -> None:
         capture = passing_capture()
-        capture["browserFailure"]["after"]["runtime_binding"][
+        capture["secondaryFailure"]["after"]["runtime_binding"][
             "external_session_epoch"
         ] = 2
         with self.assertRaisesRegex(

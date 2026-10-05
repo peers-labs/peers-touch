@@ -10,12 +10,10 @@ from tooling.acceptance.core import (
 )
 
 from .chat_storage_native import ChatStorageNativeProvisioner
-from .desktop_primary_navigation_browser import (
-    DesktopPrimaryNavigationBrowserProvisioner,
+from .desktop_primary_navigation_native import (
+    DesktopPrimaryNavigationNativeProvisioner,
 )
-from .dev_ui_local_browser import DevUiLocalBrowserProvisioner
 from .home_station import HomeStationProvisioner
-from .local_desktop_gateway import LocalDesktopGatewayProvisioner
 from .mobile_native import MobileNativeProvisioner
 from .mobile_simulator import (
     ChatMixedNativeProvisioner,
@@ -42,20 +40,15 @@ from .oauth2_client_local import (
 from .station_access_desktop_oauth_native import (
     StationAccessDesktopOAuthNativeProvisioner,
 )
-from .station_access_login_browser import (
-    StationAccessLoginBrowserProvisioner,
-)
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ChatMixedNativeProvisioner.environment_id: ChatMixedNativeProvisioner,
     ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
-    DesktopPrimaryNavigationBrowserProvisioner.environment_id: (
-        DesktopPrimaryNavigationBrowserProvisioner
+    DesktopPrimaryNavigationNativeProvisioner.environment_id: (
+        DesktopPrimaryNavigationNativeProvisioner
     ),
-    DevUiLocalBrowserProvisioner.environment_id: DevUiLocalBrowserProvisioner,
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
-    LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
     MobileDirectSimulatorProvisioner.environment_id: (
         MobileDirectSimulatorProvisioner
@@ -72,9 +65,6 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     StationAccessNativeProvisioner.environment_id: (
         StationAccessNativeProvisioner
-    ),
-    StationAccessLoginBrowserProvisioner.environment_id: (
-        StationAccessLoginBrowserProvisioner
     ),
     StationAccessDesktopOAuthNativeProvisioner.environment_id: (
         StationAccessDesktopOAuthNativeProvisioner
@@ -152,10 +142,7 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "ChatMixedNativeProvisioner",
     "ChatStorageNativeProvisioner",
-    "DesktopPrimaryNavigationBrowserProvisioner",
-    "DevUiLocalBrowserProvisioner",
     "HomeStationProvisioner",
-    "LocalDesktopGatewayProvisioner",
     "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",
     "MobileNativeProvisioner",
@@ -163,7 +150,6 @@ __all__ = [
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
     "StationAccessDesktopOAuthNativeProvisioner",
-    "StationAccessLoginBrowserProvisioner",
     "StationAccessNativeProvisioner",
     "NativeDesktopLinuxProvisioner",
     "NativeDesktopMacOSProvisioner",

@@ -178,15 +178,13 @@ class FoundationClientSpecTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             native = self.spec(root, "native-tauri")
-            browser = self.spec(root, "browser")
+            secondary = self.spec(root, "native-tauri")
 
         self.assertEqual((native.make_target, native.surface), ("desktop", "desktop"))
-        self.assertEqual(native.devctl_mode, "app")
         self.assertEqual(
-            (browser.make_target, browser.surface),
-            ("desktop-web", "browser"),
+            (secondary.make_target, secondary.surface),
+            ("desktop", "desktop"),
         )
-        self.assertEqual(browser.devctl_mode, "web")
         self.assertEqual(
             native.cargo_target_dir,
             root.resolve()
@@ -196,7 +194,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             / "agent-v2"
             / "native-tauri",
         )
-        self.assertNotEqual(native.cargo_target_dir, browser.cargo_target_dir)
+        self.assertEqual(native.cargo_target_dir, secondary.cargo_target_dir)
 
     def test_rejects_unknown_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -210,7 +208,7 @@ class FoundationClientSpecTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             client = FoundationRuntimeClient(
-                self.spec(root, "browser"),
+                self.spec(root, "native-tauri"),
                 station_url="http://station.example/",
                 profile_env={"PT_STATION_DEPLOY_ENV": "station-1"},
             )
@@ -226,7 +224,7 @@ class FoundationClientSpecTest(unittest.TestCase):
 
         self.assertEqual(environment["PT_DEV_PROFILE"], "one")
         self.assertEqual(client.runtime_profile.name, "one.env")
-        self.assertEqual(environment["PT_PROFILE"], "foundation-browser")
+        self.assertEqual(environment["PT_PROFILE"], "foundation-native-tauri")
         self.assertEqual(
             environment["PT_DEV_PROFILE_FILE_AUTHORITY"],
             "acceptance-runtime-manifest",
@@ -248,7 +246,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 / "acceptance"
                 / "cargo-target"
                 / "agent-v2"
-                / "browser"
+                / "native-tauri"
             ),
         )
         self.assertEqual(
@@ -283,11 +281,11 @@ class FoundationClientSpecTest(unittest.TestCase):
             with patch.object(
                 foundation_runtime_client,
                 "call_async_harness",
-                return_value={"platform": "browser"},
+                return_value={"platform": "native-tauri"},
             ) as call:
                 self.assertEqual(
                     client.harness("snapshot"),
-                    {"platform": "browser"},
+                    {"platform": "native-tauri"},
                 )
             self.assertEqual(call.call_args.kwargs["namespace"], "moments")
             client.driver = None
@@ -317,7 +315,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             "namespace is invalid",
         ):
             FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example/",
                 profile_env={},
                 harness_namespace=" moments ",
@@ -326,7 +324,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_extra_launch_environment_cannot_override_owner_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example/",
                 profile_env={},
                 launch_env={"PT_STATION_URL": "http://substitute.invalid"},
@@ -372,7 +370,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_managed_launcher_clean_exit_keeps_runtime_readiness_alive(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example/",
                 profile_env={},
             )
@@ -387,7 +385,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_managed_launcher_failure_still_fails_fast(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example/",
                 profile_env={},
             )
@@ -397,7 +395,7 @@ class FoundationClientSpecTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 FoundationClientError,
-                "browser exited with code 2",
+                "native-tauri exited with code 2",
             ):
                 client._process_alive()
             client._managed_runtime_started = False
@@ -406,7 +404,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_runtime_wait_propagates_managed_launcher_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example/",
                 profile_env={},
             )
@@ -416,11 +414,11 @@ class FoundationClientSpecTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 FoundationClientError,
-                "browser exited with code 2",
+                "native-tauri exited with code 2",
             ):
                 foundation_runtime_client.wait_until(
                     client._process_alive,
-                    "Browser gateway and renderer",
+                    "Secondary gateway and renderer",
                     60,
                 )
             client._managed_runtime_started = False
@@ -672,10 +670,10 @@ class FoundationClientSpecTest(unittest.TestCase):
             client.process = None
             client.stop()
 
-    def test_browser_harness_readiness_does_not_navigate(self) -> None:
+    def test_secondary_harness_readiness_does_not_navigate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example/",
                 profile_env={},
             )
@@ -688,12 +686,12 @@ class FoundationClientSpecTest(unittest.TestCase):
             ) as harness_ready:
                 with self.assertRaisesRegex(
                     FoundationClientError,
-                    "browser agent acceptance Harness is unavailable",
+                    "native-tauri renderer became unavailable",
                 ):
                     client._wait_for_acceptance_harness()
 
             self.assertEqual(
-                60.0,
+                30.0,
                 harness_ready.call_args.kwargs["timeout"],
             )
             driver.get.assert_not_called()
@@ -703,7 +701,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_unmanaged_launcher_clean_exit_still_fails_fast(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example/",
                 profile_env={},
             )
@@ -712,12 +710,12 @@ class FoundationClientSpecTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 FoundationClientError,
-                "browser exited with code 0",
+                "native-tauri exited with code 0",
             ):
                 client._process_alive()
             client.stop()
 
-    def test_runtime_pair_requires_exact_native_and_browser_clients(self) -> None:
+    def test_runtime_pair_requires_exact_native_and_secondary_clients(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             native = {
@@ -729,35 +727,35 @@ class FoundationClientSpecTest(unittest.TestCase):
                 "storage_root": str(root / "native" / "storage"),
                 "profile": "foundation-native",
             }
-            browser = {
+            secondary = {
                 **native,
-                "runtime": "browser",
+                "runtime": "native-tauri",
                 "gateway_port": 23031,
                 "renderer_port": 23211,
                 "webdriver_port": 24446,
-                "storage_root": str(root / "browser" / "storage"),
-                "profile": "foundation-browser",
+                "storage_root": str(root / "native-tauri" / "storage"),
+                "profile": "foundation-secondary",
             }
             pair = FoundationRuntimePair.from_manifest(
                 {
                     "station": {"url": "http://station.example"},
-                    "clients": [native, browser],
+                    "clients": [native, secondary],
                 },
                 profile_env={},
             )
             pair.stop()
 
         self.assertEqual(pair.native.spec.runtime, "native-tauri")
-        self.assertEqual(pair.browser.spec.runtime, "browser")
+        self.assertEqual(pair.secondary.spec.runtime, "native-tauri")
         self.assertEqual(
             pair.native.actor_identity_root,
-            pair.browser.actor_identity_root,
+            pair.secondary.actor_identity_root,
         )
 
     def test_start_failure_releases_fault_proxy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
             )
@@ -798,7 +796,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_start_rollback_error_still_releases_fault_proxy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
             )
@@ -838,7 +836,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_stop_runtime_error_still_releases_fault_proxy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
             )
@@ -871,7 +869,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                     0,
                 )
 
-    def test_runtime_pair_rejects_missing_browser_client(self) -> None:
+    def test_runtime_pair_rejects_missing_secondary_client(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             native = {
@@ -885,7 +883,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             }
             with self.assertRaisesRegex(
                 FoundationClientError,
-                "requires Native and Browser clients",
+                "requires two Native Desktop clients",
             ):
                 FoundationRuntimePair.from_manifest(
                     {
@@ -899,7 +897,7 @@ class FoundationClientSpecTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             client = FoundationRuntimeClient(
-                self.spec(root, "browser"),
+                self.spec(root, "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
             )
@@ -940,7 +938,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 ):
                     client.harness(
                         "foundationF06DurableReload",
-                        {"scenarioKey": "browser|en|AS-F06|sample-001"},
+                        {"scenarioKey": "secondary|en|AS-F06|sample-001"},
                     )
             client.driver = None
             client.stop()
@@ -948,7 +946,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_f06_prepare_injects_private_fault_control_endpoint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
             )
@@ -958,7 +956,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 return_value={"conversationId": "c1", "turnId": "t1"},
             ) as harness:
                 result = client.prepare_foundation_f06(
-                    {"scenarioKey": "browser|en|AS-F06|sample-001"},
+                    {"scenarioKey": "secondary|en|AS-F06|sample-001"},
                     timeout=300,
                 )
 
@@ -986,19 +984,19 @@ class FoundationClientSpecTest(unittest.TestCase):
                 "storage_root": str(root / "native" / "storage"),
                 "profile": "foundation-native",
             }
-            browser = {
+            secondary = {
                 **native,
-                "runtime": "browser",
+                "runtime": "native-tauri",
                 "gateway_port": 23031,
                 "renderer_port": 23211,
                 "webdriver_port": 24446,
-                "storage_root": str(root / "browser" / "storage"),
-                "profile": "foundation-browser",
+                "storage_root": str(root / "native-tauri" / "storage"),
+                "profile": "foundation-secondary",
             }
             pair = FoundationRuntimePair.from_manifest(
                 {
                     "station": {"url": "http://station.example"},
-                    "clients": [native, browser],
+                    "clients": [native, secondary],
                 },
                 profile_env={},
             )
@@ -1016,7 +1014,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_runtime_pair_can_preserve_storage_for_failed_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            spec = self.spec(root, "browser")
+            spec = self.spec(root, "native-tauri")
             spec.storage_root.mkdir(parents=True)
             journal = spec.storage_root / "Local Storage" / "capability-journal"
             journal.parent.mkdir()
@@ -1086,8 +1084,6 @@ class FoundationClientSpecTest(unittest.TestCase):
                     "tooling/devctl/index.mjs",
                     "desktop",
                     "stop",
-                    "--mode",
-                    "app",
                 ],
             )
             self.assertEqual(devctl_call.kwargs["cwd"], root.resolve())
@@ -1140,7 +1136,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
             )
@@ -1185,7 +1181,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_stop_runtime_reports_permission_error_for_live_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
             )
@@ -1222,7 +1218,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_stop_runtime_logs_out_through_agent_namespace(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
                 harness_namespace="moments",
@@ -1254,7 +1250,7 @@ class FoundationClientSpecTest(unittest.TestCase):
     def test_stop_runtime_restores_namespace_after_logout_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
-                self.spec(Path(directory), "browser"),
+                self.spec(Path(directory), "native-tauri"),
                 station_url="http://station.example",
                 profile_env={},
                 harness_namespace="moments",
@@ -1294,7 +1290,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 reservation.bind(("127.0.0.1", 0))
                 renderer_port = int(reservation.getsockname()[1])
             spec = replace(
-                self.spec(root, "browser"),
+                self.spec(root, "native-tauri"),
                 renderer_port=renderer_port,
             )
             client = FoundationRuntimeClient(

@@ -195,8 +195,6 @@ function applyMachineAllocation(profile, machine) {
     PT_DEV_SLOT: String(machine.binding.slot),
     PT_DESKTOP_APP_GATEWAY_PORT: String(machine.ports.desktopAppGateway),
     PT_DESKTOP_APP_WEB_PORT: String(machine.ports.desktopAppWeb),
-    PT_DESKTOP_WEB_GATEWAY_PORT: String(machine.ports.desktopWebGateway),
-    PT_DESKTOP_WEB_WEB_PORT: String(machine.ports.desktopWebWeb),
     PT_MOBILE_WEB_PORT: String(machine.ports.mobileWeb),
   };
   if (['local', 'compose'].includes(allocated.PT_STATION_MODE)) {
@@ -216,8 +214,6 @@ export function validateProfile(profile, expectedName, filePath) {
     'PT_STATION_PORT',
     'PT_DESKTOP_APP_GATEWAY_PORT',
     'PT_DESKTOP_APP_WEB_PORT',
-    'PT_DESKTOP_WEB_GATEWAY_PORT',
-    'PT_DESKTOP_WEB_WEB_PORT',
   ];
   const missing = required.filter((key) => !profile[key]);
   if (missing.length > 0) {
@@ -423,8 +419,6 @@ export function initializeProfile(root, name, slot = 0) {
     '',
     `PT_DESKTOP_APP_GATEWAY_PORT=${3030 + slot * 100}`,
     `PT_DESKTOP_APP_WEB_PORT=${3210 + slot * 100}`,
-    `PT_DESKTOP_WEB_GATEWAY_PORT=${3031 + slot * 100}`,
-    `PT_DESKTOP_WEB_WEB_PORT=${3211 + slot * 100}`,
     `PT_MOBILE_WEB_PORT=${5173 + slot * 100}`,
     `PT_MOBILE_DEFAULT_STATION_URL=http://127.0.0.1:${stationPort}`,
     '',

@@ -1226,7 +1226,6 @@ type ClientPlatform int32
 const (
 	ClientPlatform_CLIENT_PLATFORM_UNSPECIFIED ClientPlatform = 0
 	ClientPlatform_CLIENT_PLATFORM_DESKTOP     ClientPlatform = 1
-	ClientPlatform_CLIENT_PLATFORM_BROWSER     ClientPlatform = 2
 	ClientPlatform_CLIENT_PLATFORM_MOBILE      ClientPlatform = 3
 )
 
@@ -1235,13 +1234,11 @@ var (
 	ClientPlatform_name = map[int32]string{
 		0: "CLIENT_PLATFORM_UNSPECIFIED",
 		1: "CLIENT_PLATFORM_DESKTOP",
-		2: "CLIENT_PLATFORM_BROWSER",
 		3: "CLIENT_PLATFORM_MOBILE",
 	}
 	ClientPlatform_value = map[string]int32{
 		"CLIENT_PLATFORM_UNSPECIFIED": 0,
 		"CLIENT_PLATFORM_DESKTOP":     1,
-		"CLIENT_PLATFORM_BROWSER":     2,
 		"CLIENT_PLATFORM_MOBILE":      3,
 	}
 )
@@ -14836,12 +14833,11 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x1aTOOL_CALL_STATUS_CANCELLED\x10\t\x12\x1c\n" +
 	"\x18TOOL_CALL_STATUS_EXPIRED\x10\n" +
 	"\x12(\n" +
-	"$TOOL_CALL_STATUS_UNKNOWN_SIDE_EFFECT\x10\v*\x87\x01\n" +
+	"$TOOL_CALL_STATUS_UNKNOWN_SIDE_EFFECT\x10\v*p\n" +
 	"\x0eClientPlatform\x12\x1f\n" +
 	"\x1bCLIENT_PLATFORM_UNSPECIFIED\x10\x00\x12\x1b\n" +
-	"\x17CLIENT_PLATFORM_DESKTOP\x10\x01\x12\x1b\n" +
-	"\x17CLIENT_PLATFORM_BROWSER\x10\x02\x12\x1a\n" +
-	"\x16CLIENT_PLATFORM_MOBILE\x10\x03*\xee\x01\n" +
+	"\x17CLIENT_PLATFORM_DESKTOP\x10\x01\x12\x1a\n" +
+	"\x16CLIENT_PLATFORM_MOBILE\x10\x03\"\x04\b\x02\x10\x02*\xee\x01\n" +
 	"\x19CapabilityPermissionState\x12+\n" +
 	"'CAPABILITY_PERMISSION_STATE_UNSPECIFIED\x10\x00\x12'\n" +
 	"#CAPABILITY_PERMISSION_STATE_GRANTED\x10\x01\x12&\n" +

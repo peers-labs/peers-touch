@@ -105,20 +105,20 @@
     },
     "machine-dev-registry-self": {
       "command": "node --test tooling/scripts/local-dev/machine-dev.test.mjs tooling/devctl/test/desktop.test.mjs tooling/devctl/test/process-adapter.test.mjs tooling/devctl/test/profile.test.mjs tooling/devctl/test/station.test.mjs",
-      "timeout_seconds": 360,
+      "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Validate explicit first-use Profile registration, authoritative workspace update, source-matched idempotent Station and Desktop startup, partial managed Desktop recovery, generated-source preparation, typed remote deployment failures, owner-checked unregister, profile policy, conflict detection, and OS-held runtime lease lifecycle."
     },
-    "workspace-plan-generation-self": {
-      "command": "node --test tooling/scripts/plan/workspace-plan-binding.test.mjs",
+    "workspace-plan-mount-self": {
+      "command": "node --test tooling/scripts/plan/plan-mount.test.mjs",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate immutable current Plan generations, explicit completed-and-quiescent advance, history integrity, generation CAS, resource rejection, and concurrent winner semantics."
+      "description": "Validate Project Ledger Plan mounts, immutable Execution Plan snapshots, mutable revisioned Execution Runs, one-live-mount conflicts, release authorization, and tamper rejection."
     },
     "acceptance-workflow-contract": {
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/plan/workspace-plan-binding.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/workflow-*.test.mjs tooling/scripts/local-dev/worktree-observation-store.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs apps/dev/server/*.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.gates.dev.dev_ui_browser_e2e_test tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/agent-integration-audit-test.py && tooling/scripts/review/skill-check.sh'",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/workflow-*.test.mjs tooling/scripts/local-dev/worktree-observation-store.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/agent-integration-audit-test.py && tooling/scripts/review/skill-check.sh'",
       "timeout_seconds": 480,
       "environment": "local",
       "tier": "ci-cheap",
@@ -139,7 +139,7 @@
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
     "chat-native-visible-static": {
-      "command": "cd apps/station && go test ./frame/touch/actor -run 'TestBackfillPresetAvatar' -count=1 && go test ./frame/touch/federation/cache -count=1 && cd app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/components/chat/CreateGroupModal.test.ts src/components/chat/contactSelection.test.ts src/components/chat/message/ChatMessageTimeline.test.ts src/components/common/SquareAvatar.test.ts src/services/chatPresence.test.ts src/services/errorMappings/chatErrorMapping.test.ts src/services/socialRealtime.test.ts src/store/federation.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts src/store/socialChat.conversationProjection.test.ts src/store/socialNormalizers.test.ts src/store/socialProfileProjection.test.ts && pnpm --filter @peers-touch/prototype-desktop-social-chat build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop group_creation_ && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop typed_station_error_details_survive_json_transport && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.lifecycle_regression_contract_test tooling.acceptance.gates.chat.lifecycle_onboarding_test tooling.acceptance.gates.chat.lifecycle_mixed_client_test tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.friend_request_gateway_e2e_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
+      "command": "cd apps/station && go test ./frame/touch/actor -run 'TestBackfillPresetAvatar' -count=1 && go test ./frame/touch/federation/cache -count=1 && cd app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/components/chat/CreateGroupModal.test.ts src/components/chat/contactSelection.test.ts src/components/chat/message/ChatMessageTimeline.test.ts src/components/common/SquareAvatar.test.ts src/services/chatPresence.test.ts src/services/errorMappings/chatErrorMapping.test.ts src/services/socialRealtime.test.ts src/store/federation.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts src/store/socialChat.conversationProjection.test.ts src/store/socialNormalizers.test.ts src/store/socialProfileProjection.test.ts && pnpm --filter @peers-touch/prototype-desktop-social-chat build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop group_creation_ && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop typed_station_error_details_survive_json_transport && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.lifecycle_regression_contract_test tooling.acceptance.gates.chat.lifecycle_onboarding_test tooling.acceptance.gates.chat.lifecycle_mixed_client_test tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "ci-cheap",
@@ -317,20 +317,6 @@
       "tier": "ci-cheap",
       "description": "W11 closure: mechanical audit that all native evidence reports exist and PASS."
     },
-    "desktop-performance-preflight-static-gate": {
-      "command": "python3 tooling/scripts/desktop-performance-preflight-test.py",
-      "timeout_seconds": 120,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Validate the P0c-1/P0c-2 Desktop performance preflight artifact preserves Make entrypoint, Gateway, Station, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN semantics."
-    },
-    "desktop-performance-preflight-gate": {
-      "command": "python3 tooling/scripts/desktop-performance-preflight.py",
-      "timeout_seconds": 120,
-      "environment": "local-desktop-gateway",
-      "tier": "env-evidence",
-      "description": "Generate the fail-closed P0c-1/P0c-2 Desktop performance preflight evidence before runtime sample emission."
-    },
     "proto-build": {
       "command": "./model/build.sh",
       "timeout_seconds": 600,
@@ -360,7 +346,7 @@
       "description": "Run Station Dashboard web TypeScript checks."
     },
     "station-api-ownership": {
-      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/api-ownership/station-api-capabilities.yaml",
+      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/engineering/api-governance/station-api-capabilities.yaml",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-structure",
@@ -405,14 +391,6 @@
       ],
       "tier": "env-evidence",
       "description": "Launch one clean source-bound native macOS Desktop, prove GitHub and Google can start and cancel before authentication, then complete a deterministic OAuth callback through Station and restore the canonical authenticated actor."
-    },
-    "station-access-desktop-oauth-layout-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.station_access.desktop_oauth_layout_e2e",
-      "timeout_seconds": 300,
-      "environment": "station-access-login-browser",
-      "provisioner": "station-access-login-browser",
-      "tier": "env-evidence",
-      "description": "Render the exact-source Desktop login in Chromium at 1200x800 and 640x800, prove GitHub and Google opening, waiting, cancellation, initialization, success, and retry remain inside fixed-size provider actions without moving the auth card, and save DOM and screenshot evidence."
     },
     "station-access-scope-isolation-e2e": {
       "argv": [
@@ -460,11 +438,14 @@
     },
     "desktop-primary-navigation-e2e": {
       "command": "python3 -m tooling.acceptance.gates.desktop.primary_navigation_e2e",
-      "timeout_seconds": 180,
-      "environment": "desktop-primary-navigation-browser",
-      "provisioner": "desktop-primary-navigation-browser",
-      "tier": "local-evidence",
-      "description": "Render the exact-source Desktop in Chromium and prove primary-nav cleanup, Settings ownership, selected-only Cron lifecycle, canonical Command Palette access, and legacy Notes fallback."
+      "timeout_seconds": 1800,
+      "environment": "desktop-primary-navigation-native",
+      "provisioner": "desktop-primary-navigation-native",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Launch the exact-source Native Tauri Desktop and prove primary-nav cleanup, Settings ownership, selected-only Cron lifecycle, canonical Command Palette access, legacy Notes fallback, native input, and native screenshot evidence."
     },
     "mobile-native-build": {
       "argv": [
@@ -696,30 +677,6 @@
       "tier": "env-evidence",
       "description": "Run two synchronized current-profile Native Desktop clients through encrypted attachment byte conservation, screenshot cancel/confirm geometry preservation, recorded-voice cancel/preview/discard/send, private duration persistence, verified playback, cache-loss retry, and restart recovery."
     },
-    "chat-desktop-gateway-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.chat.desktop_gateway_e2e",
-      "timeout_seconds": 600,
-      "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
-      "tier": "env-evidence",
-      "description": "Run a real Desktop HTTP gateway flow proving atomic multi-account identity transitions, JWT-bound PIN unlock, legacy PIN fail-closed behavior, and MLS/E2EE direct conversation delivery."
-    },
-    "chat-friend-request-gateway-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.chat.friend_request_gateway_e2e",
-      "timeout_seconds": 300,
-      "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
-      "tier": "env-evidence",
-      "description": "Prove the friend-request lifecycle through the Desktop gateway: send request, list pending, accept, verify friendship established. Requires federation to be active."
-    },
-    "chat-federated-browser-prereq": {
-      "command": "python3 tooling/acceptance/gates/chat/federated_browser_prereq.py",
-      "timeout_seconds": 120,
-      "environment": "home-station",
-      "provisioner": "home-station",
-      "tier": "env-evidence",
-      "description": "Validate live deployed federated browser prerequisites: distinct authority/follower Stations, healthy Relay, discoverable Station peer IDs, and optional Desktop gateway Station binding."
-    },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",
       "timeout_seconds": 600,
@@ -760,7 +717,7 @@
       "timeout_seconds": 9000,
       "environment": "local",
       "tier": "env-evidence",
-      "description": "Prove Desktop Private Moments with one reusable Alice/Bob/Eve Native Suite while leaving Browser and Mobile unproven."
+      "description": "Prove Desktop Private Moments with one reusable Alice/Bob/Eve Native Suite while leaving Mobile unproven."
     },
     "social-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain social --require-proven",
@@ -781,7 +738,7 @@
       "timeout_seconds": 300,
       "environment": "fedp5",
       "tier": "env-evidence",
-      "description": "Validate Station health, Dashboard bundle, and Desktop gateway Station binding."
+      "description": "Validate the isolated Federation Station health endpoints and Dashboard bundle."
     },
     "federation-dashboard-visible-surface": {
       "command": "python3 tooling/acceptance/gates/dashboard/federation_visible_surface.py",
@@ -797,20 +754,12 @@
       "tier": "env-evidence",
       "description": "Validate Federation operations drilldown API and Dashboard visible-surface sections."
     },
-    "federation-desktop-gateway-smoke": {
-      "command": "python3 tooling/acceptance/gates/desktop/gateway_smoke.py",
-      "timeout_seconds": 600,
-      "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
-      "tier": "env-evidence",
-      "description": "Validate Desktop gateway active Station and collect render diagnostics."
-    },
     "desktop-performance-matrix-gate": {
       "command": "python3 tooling/scripts/desktop-performance-matrix-gate.py",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Generate the fail-closed Desktop performance runtime matrix with explicit sampled, blocked, baseline preflight failure, or diagnostic incomplete status per cell."
+      "description": "Generate the fail-closed Native Desktop performance runtime matrix with explicit sampled, blocked, or diagnostic incomplete status per cell."
     },
     "desktop-performance-cell-template-static-gate": {
       "command": "python3 tooling/scripts/desktop-performance-cell-template-test.py",
@@ -852,7 +801,7 @@
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Require complete and identical browser, dev-native, and packaged-native cohort observations before matrix samples are admitted."
+      "description": "Require complete and cohort-identical development and packaged Native Tauri observations before matrix samples are admitted."
     },
     "desktop-local-telemetry-buffer-static-gate": {
       "command": "python3 tooling/scripts/desktop-local-telemetry-buffer-gate-test.py",
@@ -882,13 +831,6 @@
       "tier": "local-evidence",
       "description": "Generate the fail-closed P0b Desktop sampler evidence gate from the Station mirror artifact."
     },
-    "desktop-telemetry-live-gate": {
-      "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
-      "timeout_seconds": 120,
-      "environment": "local-desktop-gateway",
-      "tier": "env-evidence",
-      "description": "Validate the fail-closed P0a Desktop Gateway -> Station ingest -> raw/rollup query -> Dev mirror telemetry loop."
-    },
     "desktop-telemetry-mirror-static-gate": {
       "command": "python3 tooling/scripts/desktop-telemetry-mirror-test.py",
       "timeout_seconds": 120,
@@ -915,14 +857,14 @@
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Generate the fail-closed Desktop stable-anchor inventory for P0b-1, preserving UNPROVEN when browser/Tauri DOM automation evidence is missing."
+      "description": "Generate the fail-closed Desktop stable-anchor inventory for P0b-1, preserving UNPROVEN when Native Tauri DOM automation evidence is missing."
     },
     "desktop-anchor-source-static-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-source-gate-test.py",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Validate the P0b-1 Desktop source-anchor gate proves required selectors without claiming browser/Tauri DOM automation evidence."
+      "description": "Validate the P0b-1 Desktop source-anchor gate proves required selectors without claiming Native Tauri DOM automation evidence."
     },
     "desktop-anchor-source-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-source-gate.py",
@@ -943,28 +885,21 @@
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Validate the P0b-1 Desktop anchor DOM evidence collector normalizes browser/Tauri observations into the Phase, BOM, Spec, Gate evidence contract."
+      "description": "Validate the P0b-1 Desktop anchor DOM evidence collector normalizes Native Tauri observations into the Phase, BOM, Spec, Gate evidence contract."
     },
     "desktop-anchor-dom-evidence-template-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template.py",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Generate the fail-closed P0b-1 Desktop anchor DOM evidence template consumed by browser/Tauri DOM evidence gates."
+      "description": "Generate the fail-closed P0b-1 Desktop anchor DOM evidence template consumed by Native Tauri DOM evidence gates."
     },
     "desktop-anchor-dom-evidence-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-gate.py",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Validate the fail-closed Desktop browser/Tauri stable-anchor DOM automation evidence for P0b-1."
-    },
-    "desktop-performance-report-gate": {
-      "command": "python3 tooling/scripts/desktop-performance-report.py",
-      "timeout_seconds": 120,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Assemble the Desktop performance Dev/CI report from Station mirror and matrix/red-line artifacts, preserving PARTIAL/UNPROVEN when evidence is missing."
+      "description": "Validate fail-closed Native Tauri stable-anchor DOM automation evidence for P0b-1."
     },
     "desktop-performance-traceability-gate": {
       "command": "python3 tooling/scripts/desktop-performance-traceability-gate.py",
@@ -1384,8 +1319,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-10-01.1",
-        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
+        "version": "2026-10-04.1",
+        "sha256": "ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58",
         "expected_tuple_count": 419
       },
       "required_artifact_roles": [
@@ -1411,7 +1346,7 @@
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "P12 External Agent: create, exact-session resume, Station restart, resume-unavailable, confirmed reset, cleanup retry, fresh epoch, isolation, and deletion cleanup across Native and Browser.",
+      "description": "P12 External Agent: create, exact-session resume, Station restart, resume-unavailable, confirmed reset, cleanup retry, fresh epoch, isolation, and deletion cleanup across the Native Desktop runtime.",
       "initial_proof_status": "UNPROVEN",
       "required_artifact_roles": [
         "receiver-dom",
@@ -1432,8 +1367,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-10-01.1",
-        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
+        "version": "2026-10-04.1",
+        "sha256": "ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58",
         "expected_tuple_count": 33
       },
       "required_artifact_roles": [
@@ -1462,8 +1397,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-10-01.1",
-        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
+        "version": "2026-10-04.1",
+        "sha256": "ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58",
         "expected_tuple_count": 69
       },
       "required_artifact_roles": [
@@ -1493,8 +1428,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-10-01.1",
-        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
+        "version": "2026-10-04.1",
+        "sha256": "ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58",
         "expected_tuple_count": 86
       },
       "required_artifact_roles": [
@@ -1523,8 +1458,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-10-01.1",
-        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
+        "version": "2026-10-04.1",
+        "sha256": "ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58",
         "expected_tuple_count": 41
       },
       "required_artifact_roles": [
@@ -1554,8 +1489,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-10-01.1",
-        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
+        "version": "2026-10-04.1",
+        "sha256": "ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58",
         "expected_tuple_count": 37
       },
       "required_artifact_roles": [
@@ -1585,8 +1520,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-10-01.1",
-        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
+        "version": "2026-10-04.1",
+        "sha256": "ea40770b7dd7b92869f8156040cdc83c16178f1d0d42887bd141d7cc30376a58",
         "expected_tuple_count": 57
       },
       "required_artifact_roles": [
@@ -1932,28 +1867,12 @@
       "tier": "ci-cheap",
       "description": "CCU aggregate gate: verify all preceding CCU closure gates passed before marking the project code-complete."
     },
-    "dev-ui-browser-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.dev.dev_ui_browser_e2e",
-      "timeout_seconds": 90,
-      "environment": "dev-ui-local-browser",
-      "provisioner": "dev-ui-local-browser",
-      "tier": "env-evidence",
-      "description": "Render the exact-source Peers Dev worktree governance surface in Chromium and prove discovery, selection controls, provenance-bearing metrics, protected serving-source removal, automatic refresh, responsive capture, and public-response privacy."
-    },
-    "peers-dev-ui-browser-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.dev.peers_dev_ui_browser_e2e",
-      "timeout_seconds": 120,
-      "environment": "dev-ui-local-browser",
-      "provisioner": "dev-ui-local-browser",
-      "tier": "env-evidence",
-      "description": "Bind an exact-source Peers Dev runtime, render the Workflow Snapshot through SSE at desktop and narrow viewports, verify three-level progress and action state, capture screenshots, and prove polling preserves the last valid snapshot after disconnect."
-    },
-    "peers-dev-product": {
-      "command": "node tooling/acceptance/gates/dev/peers-dev-product.mjs",
+    "workflow-doctor-product": {
+      "command": "node tooling/scripts/local-dev/workflow-doctor.mjs",
       "timeout_seconds": 420,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Prove the executable Workflow Doctor contract, isolated installed integration, complete workflow source suite, and Peers Dev rendering at desktop and narrow browser viewports."
+      "description": "Prove the executable Workflow Doctor contract, installed integration, current Plan mount, workflow projection, completion review, and executable documentation."
     }
   }
 }

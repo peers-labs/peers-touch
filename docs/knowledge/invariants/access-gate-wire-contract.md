@@ -11,8 +11,8 @@ owns:
 referenced-by:
   - ../playbooks/adding-an-access-gate.md
 related:
-  - ../../architecture/access-gates/station-access-gate-architecture.md
-  - ../../architecture/access-gates/station-access-gate-implementation-plan.md
+  - ../../architecture/platform/station/access/station-access-gate-architecture.md
+  - ../../architecture/platform/station/access/station-access-gate-implementation-plan.md
 detected: 2026-06-16
 ---
 
@@ -65,4 +65,4 @@ Reviewer rule: any new `AccessDecision`/`AccessGate` consumer that compares an e
 ## Crosswalks
 
 - Playbook [`playbooks/adding-an-access-gate.md`](../playbooks/adding-an-access-gate.md) builds this dual-form tolerance into the standard procedure for adding a new gate type.
-- Architecture [`station-access-gate-architecture.md` §13](../../architecture/access-gates/station-access-gate-architecture.md#13-wire-format-contract) states the same contract at the design level.
+- Architecture [`station-access-gate-architecture.md` §13](../../architecture/platform/station/access/station-access-gate-architecture.md#13-wire-format-contract) states the same contract at the design level.

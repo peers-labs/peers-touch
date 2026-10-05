@@ -111,7 +111,7 @@ func TestCapabilityAcceptanceScenarioJ03ZeroExecutionProfiles(t *testing.T) {
 		{
 			name:     "revoke first uses Station Turn",
 			cell:     "R-05",
-			platform: "browser",
+			platform: "secondary",
 			ordering: "A",
 			profile:  model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_TURN,
 			allowed:  true,
@@ -119,7 +119,7 @@ func TestCapabilityAcceptanceScenarioJ03ZeroExecutionProfiles(t *testing.T) {
 		{
 			name:     "dispatch first keeps Station executor profile",
 			cell:     "R-05",
-			platform: "browser",
+			platform: "secondary",
 			ordering: "B",
 			profile:  model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CAPABILITY_TURN,
 			allowed:  true,
@@ -127,7 +127,7 @@ func TestCapabilityAcceptanceScenarioJ03ZeroExecutionProfiles(t *testing.T) {
 		{
 			name:     "dispatch first rejects Station Turn",
 			cell:     "R-07",
-			platform: "browser",
+			platform: "secondary",
 			ordering: "B",
 			profile:  model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_TURN,
 		},
@@ -177,7 +177,7 @@ func TestCapabilityAcceptanceScenarioJ06ProfilesAndBarriers(t *testing.T) {
 		{
 			name:     "target invalid rejects Station Turn",
 			cell:     "ERR-E02",
-			platform: "browser",
+			platform: "secondary",
 			locale:   "zh-CN",
 			ordering: "single",
 			profile:  model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_TURN,
@@ -185,7 +185,7 @@ func TestCapabilityAcceptanceScenarioJ06ProfilesAndBarriers(t *testing.T) {
 		{
 			name:     "evaluator unavailable is control plane only",
 			cell:     "ERR-E05",
-			platform: "browser",
+			platform: "secondary",
 			locale:   "en",
 			ordering: "single",
 			profile:  model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CONTROL_PLANE,
@@ -203,7 +203,7 @@ func TestCapabilityAcceptanceScenarioJ06ProfilesAndBarriers(t *testing.T) {
 		{
 			name:     "race path rejects control plane profile",
 			cell:     "R-08",
-			platform: "browser",
+			platform: "secondary",
 			locale:   "en",
 			ordering: "A",
 			profile:  model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CONTROL_PLANE,
@@ -734,7 +734,7 @@ func TestCapabilityAcceptanceScenarioTupleBarrierMatchesExactOrdering(t *testing
 	request := capabilityAcceptanceRequest("run-1", "R-03", "execution-race-b")
 	request.Family =
 		model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03
-	request.Platform = "browser"
+	request.Platform = "secondary"
 	request.Ordering = "B"
 	request.RuntimeAttestationProfile =
 		model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CAPABILITY_TURN

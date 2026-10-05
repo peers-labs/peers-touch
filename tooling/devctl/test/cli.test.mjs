@@ -19,8 +19,6 @@ function fixtureProfile(name = 'cli-test') {
     'PT_STATION_PORT=18080',
     'PT_DESKTOP_APP_GATEWAY_PORT=3030',
     'PT_DESKTOP_APP_WEB_PORT=3210',
-    'PT_DESKTOP_WEB_GATEWAY_PORT=3031',
-    'PT_DESKTOP_WEB_WEB_PORT=3211',
     'API_TOKEN=private',
     '',
   ].join('\n');

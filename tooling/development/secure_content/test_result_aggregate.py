@@ -871,8 +871,8 @@ class ResultAggregateOwnerTest(unittest.TestCase):
                 elif mutation == "wrong":
                     result_digests["desktop"] = "f" * 64
                 else:
-                    result_digests["desktop"], result_digests["browser"] = (
-                        result_digests["browser"],
+                    result_digests["desktop"], result_digests["ios"] = (
+                        result_digests["ios"],
                         result_digests["desktop"],
                     )
                 _write_w12_suite_runtime_report(
@@ -1050,7 +1050,7 @@ class ResultAggregateOwnerTest(unittest.TestCase):
                 root,
                 final_cut_bindings=bindings,
             )
-            product_path = paths["browser"]
+            product_path = paths["ios"]
             product = json.loads(product_path.read_text(encoding="utf-8"))
             manifest_path = Path(str(product["runtimeManifestRef"]))
             manifest = json.loads(

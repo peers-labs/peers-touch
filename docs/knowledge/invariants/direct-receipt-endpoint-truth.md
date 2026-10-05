@@ -9,8 +9,8 @@ owns:
   - apps/desktop/src-tauri/src/messaging/
 referenced-by: []
 related:
-  - docs/architecture/messaging-platform/design.md
-  - docs/architecture/messaging-platform/decisions.md
+  - docs/architecture/domains/chat/messaging/design.md
+  - docs/architecture/domains/chat/messaging/decisions.md
 detected: 2026-09-11
 ---
 
@@ -58,5 +58,5 @@ actual persisted receipt count and MUST NOT infer `fully_delivered`.
 ## Crosswalks
 
 - `MP-A07`, `MP-A09`, `MP-A13`, and `MP-D17` in
-  `docs/architecture/messaging-platform/`.
+  `docs/architecture/domains/chat/messaging/`.
 - Feature `tooling/acceptance/features/chat-direct-delivered-receipt.yaml`.

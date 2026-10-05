@@ -185,8 +185,8 @@ class GovernedToolRuntimeAdapter:
                 profile=PROFILE,
                 account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
             ),
-            "browser": authenticate_native_client(
-                runtime_pair.browser,
+            "secondary": authenticate_native_client(
+                runtime_pair.secondary,
                 profile_env,
                 profile=PROFILE,
                 account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
@@ -198,7 +198,7 @@ class GovernedToolRuntimeAdapter:
         }
         require(
             len(set(actors.values())) == 1,
-            "J03 Native and Browser clients authenticated different actors",
+            "J03 Native and Secondary clients authenticated different actors",
         )
         enrollment = confirm_native_actor_identity_enrollment(
             runtime_pair.native,
@@ -222,8 +222,8 @@ class GovernedToolRuntimeAdapter:
     ) -> FoundationRuntimeClient:
         if runtime_tuple.platform == "desktop_app":
             return self._runtime_pair.native
-        if runtime_tuple.platform == "browser":
-            return self._runtime_pair.browser
+        if runtime_tuple.platform == "secondary":
+            return self._runtime_pair.secondary
         raise GovernedToolCandidateError(
             f"J03 runtime adapter rejects platform {runtime_tuple.platform}"
         )

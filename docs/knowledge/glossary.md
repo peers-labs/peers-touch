@@ -117,7 +117,7 @@ Desktop client-side federation integration — runtime, ActorRef rendering, fede
 Backend architecture cleanup — multi-relay proto reservations, KeyCache singleton, social graph proto extensions for `@user@host` rendering.
 
 **Tier C**
-Experience / scale — `C1` push-style invalidation (this knowledge layer's primary tenant), `C2` indexed catalog (designed in `docs/architecture/identity/federation-catalog.md`, not yet implemented).
+Experience / scale — `C1` push-style invalidation (this knowledge layer's primary tenant), `C2` indexed catalog (designed in `docs/architecture/domains/identity/federation-catalog.md`, not yet implemented).
 
 **Tier D**
 Engineering governance — CI/CD hardening, station-level diagnostics, operational hygiene.

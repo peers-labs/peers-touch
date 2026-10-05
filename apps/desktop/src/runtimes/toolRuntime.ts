@@ -1,5 +1,4 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
-import { isBrowserGatewayRuntime } from '../kernel/gateway';
 import {
   ToolCallStatus as AgentToolCallStatus,
   ToolExecutionOwner,
@@ -1015,10 +1014,8 @@ class ToolRuntime implements RuntimeDescriptor {
     if (pending) return pending;
 
     const decisionRevision = projection.decisionRevision;
-    const ensureLocalSupervisor = isBrowserGatewayRuntime()
-      ? Promise.resolve()
-      : api.startAgentClientExecutorSupervisor().then(() => undefined);
-    const request = ensureLocalSupervisor
+    const request = api.startAgentClientExecutorSupervisor()
+      .then(() => undefined)
       .then(() => api.listAgentCapabilitySessions())
       .then((capabilitySessions) => {
         if (!hasExecutorRecoveryTarget(capabilitySessions, recoveryTarget)) {

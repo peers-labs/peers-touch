@@ -6,7 +6,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/fed
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Federation Membership Service — RPCs exposed by all member Stations.
-// Source of truth: docs/architecture/federation/wire-protocol.md §6.4
+// Source of truth: docs/architecture/shared/federation/wire-protocol.md §6.4
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── GetMembershipStatus ────────────────────────────────────────────────────

@@ -32,9 +32,9 @@ def load_matrix_module():
     return module
 
 
-def load_report_module():
-    script = Path(__file__).with_name("desktop-performance-report.py")
-    spec = importlib.util.spec_from_file_location("desktop_performance_report", script)
+def load_sampler_module():
+    script = Path(__file__).with_name("desktop-performance-sampler-gate.py")
+    spec = importlib.util.spec_from_file_location("desktop_performance_sampler_gate", script)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"failed to load {script}")
     module = importlib.util.module_from_spec(spec)
@@ -91,14 +91,12 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertIn("- Sample emission allowed: `False`", markdown)
         commands = [command["command"] for command in report["recommendedReviewCommands"]]
         self.assertIn(
-            "python3 tooling/scripts/desktop-telemetry-live-gate.py",
+            (
+                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                "--station-url http://station.local "
+                "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+            ),
             commands,
-        )
-        self.assertFalse(
-            any(
-                command.startswith("python3 tooling/scripts/desktop-telemetry-mirror.py --station-url")
-                for command in commands
-            )
         )
 
     def test_write_template_replaces_explicit_output_without_mutable_latest_semantics(self) -> None:
@@ -148,7 +146,7 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertEqual(refreshed["issue_breakdown"][0]["sourceGate"], refreshed["gate"])
         self.assertEqual(refreshed["recommended_review_commands"][0]["command"], "make desktop")
 
-    def test_write_template_refreshes_existing_template_with_legacy_review_command(self) -> None:
+    def test_write_template_refreshes_existing_template_with_incomplete_review_command(self) -> None:
         module = load_template_module()
         with tempfile.TemporaryDirectory() as tmp:
             prefix = Path(tmp) / "desktop-performance-latest"
@@ -178,17 +176,13 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
 
         self.assertTrue(written)
         self.assertIn(
-            "python3 tooling/scripts/desktop-telemetry-live-gate.py",
+            (
+                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                "--station-url http://station.local "
+                "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+            ),
             commands,
         )
-        self.assertFalse(
-            any(
-                command.startswith("python3 tooling/scripts/desktop-telemetry-mirror.py --station-url")
-                for command in commands
-            )
-        )
-
-    def test_write_template_refreshes_existing_template_without_sample_emission_block(self) -> None:
         module = load_template_module()
         with tempfile.TemporaryDirectory() as tmp:
             prefix = Path(tmp) / "desktop-performance-latest"
@@ -203,7 +197,7 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
                         "recommended_review_commands": [
                             {"command": "make desktop"},
                             {
-                                "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py --mirror-prefix tooling/acceptance/reports/desktop-performance-latest"
+                                "command": "python3 tooling/scripts/desktop-telemetry-mirror.py --station-url http://station.local"
                             },
                         ],
                     }
@@ -244,7 +238,7 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
                         "recommended_review_commands": [
                             {"command": "make desktop"},
                             {
-                                "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py --mirror-prefix tooling/acceptance/reports/desktop-performance-latest"
+                                "command": "python3 tooling/scripts/desktop-telemetry-mirror.py --station-url http://station.local"
                             },
                         ],
                     }
@@ -262,10 +256,10 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertEqual(refreshed["issue_breakdown"][0]["proofStatus"], "UNPROVEN")
         self.assertFalse(refreshed["issue_breakdown"][0]["sampleEmissionAllowed"])
 
-    def test_matrix_and_report_consume_template_as_unproven(self) -> None:
+    def test_matrix_and_sampler_consume_template_as_unproven(self) -> None:
         template = load_template_module()
         matrix = load_matrix_module()
-        report_module = load_report_module()
+        sampler_module = load_sampler_module()
         with tempfile.TemporaryDirectory() as tmp:
             prefix = Path(tmp) / "desktop-performance-latest"
             mirror_report = template.build_template("http://station.local")
@@ -273,22 +267,13 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
             events_report = prefix.with_suffix(".json")
             matrix_report = matrix.build_matrix(
                 argparse.Namespace(
-                    live_gate_report=str(Path(tmp) / "missing-live-gate.json"),
                     events_report=str(events_report),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
             matrix_path = Path(tmp) / "matrix.json"
             matrix_path.write_text(json.dumps(matrix_report), encoding="utf-8")
-            performance_report = report_module.build_report(
-                argparse.Namespace(
-                    station_mirror_report=str(events_report),
-                    matrix_report=str(matrix_path),
-                    anchor_inventory_report=str(Path(tmp) / "missing-anchor.json"),
-                    anchor_dom_evidence_gate_report=str(Path(tmp) / "missing-dom-gate.json"),
-                    output_prefix=str(Path(tmp) / "report"),
-                )
-            )
+            performance_report = sampler_module.build_report(events_report)
 
         raw_evidence = matrix_report["redLinePolicy"]["rawEvidence"]
         self.assertEqual(raw_evidence["status"], "source-proof-unproven")
@@ -310,7 +295,12 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertEqual(station_source["issue_breakdown"][0]["failedStep"], "station-query-template")
         self.assertTrue(
             any(
-                command["command"] == "python3 tooling/scripts/desktop-telemetry-live-gate.py"
+                command["command"]
+                == (
+                    "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                    "--station-url http://station.local "
+                    "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+                )
                 for command in station_source["recommendedReviewCommands"]
             )
         )

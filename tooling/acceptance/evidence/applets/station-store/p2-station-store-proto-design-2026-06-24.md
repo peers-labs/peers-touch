@@ -1,7 +1,7 @@
 # P2.1 Station Store Proto Design Evidence
 
 > Date: 2026-06-24
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 > Workstream: `P2 - Station Store and Install State`
 > Task: `P2.1 Station Store Proto Design`
 > Evidence class: `NOT_IMPLEMENTED` for runtime behavior; `REAL_PRODUCT_PATH`

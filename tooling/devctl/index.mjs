@@ -70,7 +70,7 @@ Usage:
   devctl doctor [--json]
   devctl check [desktop|all] [--json]
   devctl station start|check|status|stop|restart [--json]
-  devctl desktop start|status|stop|restart [--mode app|web] [--json]
+  devctl desktop start|status|stop|restart [--json]
   devctl desktop install [--json]
   devctl status [--json]
   devctl stop [station|desktop|all]
@@ -258,8 +258,16 @@ export async function run(argv = process.argv.slice(2), environment = process.en
   }
 
   if (command === 'desktop') {
-    const requestedMode = takeOption(args, '--mode');
-    const mode = requestedMode ?? 'app';
+    const requestedInstallMode = subcommand === 'install'
+      ? takeOption(args, '--mode')
+      : undefined;
+    if (requestedInstallMode !== undefined) {
+      throw new DevctlError(
+        ERROR_CODES.UNSUPPORTED_MODE,
+        'Desktop installation does not accept --mode',
+        { mode: requestedInstallMode },
+      );
+    }
     if (args.length !== 2) {
       throw new DevctlError(
         ERROR_CODES.UNSUPPORTED_MODE,
@@ -269,21 +277,14 @@ export async function run(argv = process.argv.slice(2), environment = process.en
     }
     let result;
     if (subcommand === 'start') {
-      result = await startDesktop(root, mode, environment);
+      result = await startDesktop(root, environment);
     } else if (subcommand === 'status') {
-      result = await desktopStatus(root, mode, environment);
+      result = await desktopStatus(root, environment);
     } else if (subcommand === 'stop') {
-      result = await stopDesktop(root, mode, environment);
+      result = await stopDesktop(root, environment);
     } else if (subcommand === 'restart') {
-      result = await restartDesktop(root, mode, environment);
+      result = await restartDesktop(root, environment);
     } else if (subcommand === 'install') {
-      if (requestedMode !== undefined) {
-        throw new DevctlError(
-          ERROR_CODES.UNSUPPORTED_MODE,
-          'Desktop installation does not accept --mode',
-          { mode: requestedMode },
-        );
-      }
       result = await installDesktop(root, environment);
     } else {
       throw new DevctlError(
@@ -291,17 +292,16 @@ export async function run(argv = process.argv.slice(2), environment = process.en
         `Unsupported Desktop command: ${subcommand ?? '<missing>'}`,
       );
     }
-    writeResult(`desktop ${subcommand} (${mode})`, result, json);
+    writeResult(`desktop ${subcommand}`, result, json);
     return 0;
   }
 
   if (command === 'status') {
-    const [station, desktopApp, desktopWeb] = await Promise.all([
+    const [station, desktop] = await Promise.all([
       stationStatus(root, environment),
-      desktopStatus(root, 'app', environment),
-      desktopStatus(root, 'web', environment),
+      desktopStatus(root, environment),
     ]);
-    writeResult('status', { station, desktopApp, desktopWeb }, json);
+    writeResult('status', { station, desktop }, json);
     return 0;
   }
 
@@ -312,8 +312,7 @@ export async function run(argv = process.argv.slice(2), environment = process.en
       result.station = await stopStation(root, environment);
     }
     if (target === 'desktop' || target === 'all') {
-      result.desktopApp = await stopDesktop(root, 'app', environment);
-      result.desktopWeb = await stopDesktop(root, 'web', environment);
+      result.desktop = await stopDesktop(root, environment);
     }
     if (!['station', 'desktop', 'all'].includes(target)) {
       throw new DevctlError(
@@ -332,7 +331,7 @@ export async function run(argv = process.argv.slice(2), environment = process.en
       result.station = await restartStation(root, environment);
     }
     if (target === 'desktop' || target === 'all') {
-      result.desktop = await restartDesktop(root, 'app', environment);
+      result.desktop = await restartDesktop(root, environment);
     }
     if (!['station', 'desktop', 'all'].includes(target)) {
       throw new DevctlError(
