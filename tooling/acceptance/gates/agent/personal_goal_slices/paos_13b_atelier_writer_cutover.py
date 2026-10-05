@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -37,6 +38,7 @@ from tooling.acceptance.gates.agent.personal_goal_slices.paos_01_home_draft impo
     write_evidence_manifest,
 )
 from tooling.acceptance.gates.agent.personal_goal_slices.paos_12_collab_task_migration import (
+    atelier_request,
     load_workspace,
 )
 from tooling.acceptance.gates.agent.personal_goal_slices.paos_13_task_writer_cutover import (
@@ -173,6 +175,7 @@ def home_task_readback(
 def open_atelier_and_read_task(
     client: FoundationRuntimeClient,
     title: str,
+    create_request: Mapping[str, Any],
 ) -> dict[str, Any]:
     navigate_to_hash(client, f"applet:{APPLET_ID}")
     wait_until(
@@ -182,6 +185,17 @@ def open_atelier_and_read_task(
         ),
         "Atelier runtime shell",
         timeout=120,
+    )
+    created = atelier_request(
+        client,
+        "POST",
+        "/v1/projects",
+        create_request,
+    )
+    projected = canonical_atelier_task(created, title)
+    require(
+        isinstance(projected, Mapping),
+        "Atelier create response has no canonical Goal-backed TaskRun",
     )
     return wait_until(
         lambda: canonical_atelier_task(load_workspace(client), title),
@@ -199,27 +213,21 @@ def run_journey(
     title = f"PAOS-13B Atelier TaskRun {marker}"
     agent_id = configured_agent_id(client)
     legacy_before = legacy_inventory(client)
-    launch_options = {
-        "agentId": agent_id,
+    client_idempotency_key = f"paos-13b:{marker}"
+    create_request = {
         "agentIds": [agent_id],
-        "certificationMode": "product-window-e2e",
-        "createGoal": title,
-        "flowId": "expert-hierarchy",
+        "clientIdempotencyKey": client_idempotency_key,
+        "goal": title,
         "intentPreset": "work",
         "project": "peers-touch",
-        "runKind": "agents",
+        "run": {
+            "agentIds": [agent_id],
+            "flowId": "expert-hierarchy",
+            "kind": "agents",
+        },
     }
-    client.extra_launch_env.update({
-        "PEERS_APPLET_PRODUCT_WINDOW_E2E": "1",
-        "PEERS_APPLET_PRODUCT_WINDOW_E2E_APPLET_ID": APPLET_ID,
-        "PEERS_APPLET_PRODUCT_WINDOW_E2E_LAUNCH_OPTIONS_JSON": json.dumps(
-            launch_options,
-            sort_keys=True,
-        ),
-    })
 
-    client.restart()
-    first = open_atelier_and_read_task(client, title)
+    first = open_atelier_and_read_task(client, title, create_request)
     task_id = str(first.get("taskId") or "")
     goal_id = str(first.get("goalId") or "")
     require(first.get("selectedTaskId") == task_id, "Atelier did not select the returned TaskRun")
@@ -251,7 +259,7 @@ def run_journey(
     client.driver.save_screenshot(str(first_screenshot))
 
     client.restart()
-    replayed = open_atelier_and_read_task(client, title)
+    replayed = open_atelier_and_read_task(client, title, create_request)
     legacy_after_replay = legacy_inventory(client)
     require(replayed.get("taskId") == task_id, "Atelier replay created a second TaskRun")
     require(replayed.get("goalId") == goal_id, "Atelier replay created a second Goal")
@@ -265,6 +273,9 @@ def run_journey(
     return {
         "actorPtid": actor_ptid,
         "agentId": agent_id,
+        "clientIdempotencyKeyHash": hashlib.sha256(
+            client_idempotency_key.encode("utf-8")
+        ).hexdigest(),
         "title": title,
         "taskId": task_id,
         "goalId": goal_id,
