@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -204,6 +205,165 @@ function desktopValues(root, resolved, mode) {
   };
 }
 
+export function desktopInstallSettings(
+  environment = process.env,
+  homeDirectory = os.homedir(),
+) {
+  const appId = (
+    environment.PT_DESKTOP_APP_ID ?? 'com.peers.touch.desktop.dev'
+  ).trim();
+  const appIdSegments = appId.split('.');
+  if (
+    appId.length > 255
+    || appIdSegments.length < 2
+    || !appIdSegments.every((segment) =>
+      /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(segment),
+    )
+  ) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      `Invalid Desktop application identifier: ${appId || '<empty>'}`,
+      { appId },
+    );
+  }
+  const productName = 'Peers Dev';
+  const installDirectory = path.resolve(
+    environment.PT_DESKTOP_INSTALL_DIR?.trim()
+      || path.join(homeDirectory, 'Applications'),
+  );
+  return {
+    appId,
+    productName,
+    deepLinkScheme: 'peers-touch-dev',
+    installDirectory,
+    installPath: path.join(installDirectory, `${productName}.app`),
+  };
+}
+
+export function desktopInstallTauriConfig(settings) {
+  return {
+    productName: settings.productName,
+    identifier: settings.appId,
+    plugins: {
+      'deep-link': {
+        desktop: {
+          schemes: [settings.deepLinkScheme],
+        },
+      },
+    },
+  };
+}
+
+export function desktopInstallTauriArguments(configPath) {
+  return ['build', '--bundles', 'app', '--config', configPath];
+}
+
+export function signDesktopApplication(
+  appPath,
+  runCommand = spawnSync,
+  codesign = '/usr/bin/codesign',
+) {
+  if (!fs.existsSync(codesign)) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      'codesign is required to install Desktop on macOS',
+      { codesign },
+    );
+  }
+  const signResult = runCommand(
+    codesign,
+    ['--force', '--deep', '--sign', '-', appPath],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  );
+  if (signResult.error || signResult.status !== 0) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      `Unable to sign Desktop application at ${appPath}`,
+      {
+        status: signResult.status,
+        cause: signResult.error?.message,
+        stderr: signResult.stderr?.trim(),
+      },
+    );
+  }
+  const verifyResult = runCommand(
+    codesign,
+    ['--verify', '--deep', '--strict', appPath],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  );
+  if (verifyResult.error || verifyResult.status !== 0) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      `Desktop application signature is invalid at ${appPath}`,
+      {
+        status: verifyResult.status,
+        cause: verifyResult.error?.message,
+        stderr: verifyResult.stderr?.trim(),
+      },
+    );
+  }
+  return { signed: true, appPath };
+}
+
+function desktopInstallValues(root, settings, homeDirectory) {
+  const workspaceKey = createHash('sha256')
+    .update(path.resolve(root))
+    .digest('hex')
+    .slice(0, 12);
+  const stateDirectory = path.join(
+    homeDirectory,
+    '.peers-touch',
+    'dev',
+    'desktop-install',
+    workspaceKey,
+  );
+  const desktopDirectory = path.join(root, 'apps', 'desktop');
+  return {
+    desktopDirectory,
+    stateDirectory,
+    viteScript: path.join(
+      desktopDirectory,
+      'node_modules',
+      'vite',
+      'bin',
+      'vite.js',
+    ),
+    tauriScript: path.join(
+      desktopDirectory,
+      'node_modules',
+      '@tauri-apps',
+      'cli',
+      'tauri.js',
+    ),
+    dependencyLog: path.join(stateDirectory, 'dependencies-install.log'),
+    generatedSourceLog: path.join(stateDirectory, 'generated-sources.log'),
+    appletLog: path.join(stateDirectory, 'applets-build.log'),
+    appletStamp: path.join(stateDirectory, 'applets-build.sha256'),
+    buildLog: path.join(stateDirectory, 'tauri-build.log'),
+    configPath: path.join(stateDirectory, 'tauri.conf.json'),
+    protoRoot: path.join(root, 'model'),
+    protoOutput: path.join(root, 'apps', 'desktop', 'src', 'gen', 'proto'),
+    modelBuildScript: path.join(root, 'model', 'build.sh'),
+    sourceBundlePath: path.join(
+      root,
+      'apps',
+      'desktop',
+      'src-tauri',
+      'target',
+      'release',
+      'bundle',
+      'macos',
+      `${settings.productName}.app`,
+    ),
+  };
+}
+
 function appletSourceFingerprint(root) {
   const hash = createHash('sha256');
   const excluded = new Set(['node_modules', 'dist', 'target', '.git']);
@@ -322,6 +482,52 @@ export function desktopTauriArguments(configPath, environment = process.env) {
   }
   args.push('--config', configPath);
   return args;
+}
+
+export function replaceDesktopApplication(
+  sourcePath,
+  installPath,
+  prepareStaging = () => {},
+) {
+  if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isDirectory()) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      `Built Desktop application is unavailable: ${sourcePath}`,
+      { sourcePath },
+    );
+  }
+
+  const installDirectory = path.dirname(installPath);
+  const stagingPath = `${installPath}.installing-${process.pid}`;
+  const backupPath = `${installPath}.previous-${process.pid}`;
+  fs.mkdirSync(installDirectory, { recursive: true });
+  fs.rmSync(stagingPath, { recursive: true, force: true });
+  fs.rmSync(backupPath, { recursive: true, force: true });
+
+  try {
+    fs.cpSync(sourcePath, stagingPath, {
+      recursive: true,
+      preserveTimestamps: true,
+    });
+    prepareStaging(stagingPath);
+    if (fs.existsSync(installPath)) {
+      fs.renameSync(installPath, backupPath);
+    }
+    fs.renameSync(stagingPath, installPath);
+    fs.rmSync(backupPath, { recursive: true, force: true });
+  } catch (error) {
+    fs.rmSync(stagingPath, { recursive: true, force: true });
+    if (!fs.existsSync(installPath) && fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, installPath);
+    }
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      `Unable to install Desktop application at ${installPath}`,
+      { cause: error instanceof Error ? error.message : String(error) },
+    );
+  }
+
+  return installPath;
 }
 
 export function desktopRuntimeIdentity(values, environment = process.env) {
@@ -774,6 +980,131 @@ export async function startDesktop(
     }
     throw error;
   }
+}
+
+export async function installDesktop(
+  root,
+  environment = process.env,
+  platform = process.platform,
+) {
+  if (platform !== 'darwin') {
+    throw new DevctlError(
+      ERROR_CODES.UNSUPPORTED_MODE,
+      'Desktop installation currently supports macOS only',
+      { platform },
+    );
+  }
+
+  const homeDirectory = environment.HOME || os.homedir();
+  const settings = desktopInstallSettings(environment, homeDirectory);
+  const values = desktopInstallValues(root, settings, homeDirectory);
+  const pnpm = findExecutable('pnpm', environment);
+  if (!pnpm) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      'pnpm is required to install Desktop',
+    );
+  }
+  const pnpmCommand = pnpmInvocation(pnpm);
+  const dependencyState = ensureDesktopDependencies(
+    root,
+    pnpmCommand,
+    environment,
+    values,
+  );
+  const generatedSourceState = ensureDesktopGeneratedSources(
+    root,
+    environment,
+    values,
+  );
+  const appletState = runAppletBuild(
+    root,
+    pnpmCommand,
+    environment,
+    values,
+  );
+  const sourceCommit = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).stdout?.trim();
+  if (!/^[0-9a-f]{40,64}$/u.test(sourceCommit ?? '')) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      'Current Git commit is unavailable for Desktop installation',
+    );
+  }
+
+  fs.mkdirSync(values.stateDirectory, { recursive: true });
+  fs.writeFileSync(
+    values.configPath,
+    `${JSON.stringify(desktopInstallTauriConfig(settings), null, 2)}\n`,
+  );
+  fs.rmSync(values.sourceBundlePath, { recursive: true, force: true });
+  const buildEnvironment = {
+    ...environment,
+    CARGO_BUILD_JOBS: environment.CARGO_BUILD_JOBS ?? '1',
+  };
+  const result = spawnSync(
+    process.execPath,
+    [
+      values.tauriScript,
+      ...desktopInstallTauriArguments(values.configPath),
+    ],
+    {
+      cwd: values.desktopDirectory,
+      env: buildEnvironment,
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 3_600_000,
+    },
+  );
+  fs.writeFileSync(
+    values.buildLog,
+    `${result.stdout ?? ''}${result.stderr ?? ''}`,
+  );
+  if (result.error || result.status !== 0) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      `Desktop application build failed; see ${values.buildLog}`,
+      {
+        status: result.status,
+        signal: result.signal,
+        cause: result.error?.message,
+      },
+    );
+  }
+
+  const installedSourceCommit = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).stdout?.trim();
+  if (installedSourceCommit !== sourceCommit) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      'Git source changed while Desktop was building; rerun the installation',
+      { sourceCommit, installedSourceCommit },
+    );
+  }
+  replaceDesktopApplication(
+    values.sourceBundlePath,
+    settings.installPath,
+    signDesktopApplication,
+  );
+
+  return {
+    appId: settings.appId,
+    productName: settings.productName,
+    deepLinkScheme: settings.deepLinkScheme,
+    installPath: settings.installPath,
+    sourceCommit,
+    dependenciesInstalled: dependencyState.installed,
+    generatedSourcesPrepared: generatedSourceState.generated,
+    appletsBuilt: appletState.built,
+    buildLog: values.buildLog,
+  };
 }
 
 export async function stopDesktop(

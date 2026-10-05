@@ -317,6 +317,7 @@ registered and its binding must resolve.
 | `make plan-binding` | Resolve and validate the workspace's bound Plan |
 | `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
 | `make desktop` | Start Desktop Tauri app |
+| `make desktop-install` | Build the current source and atomically install `~/Applications/Peers Dev.app` |
 | `make desktop-web` | Start Desktop in browser |
 | `make mobile` | Start Mobile iOS simulator |
 
@@ -364,6 +365,14 @@ Vite/Tauri pair is reused only when both records match the current Git commit.
 Partial or source-stale managed pairs are stopped as one owned runtime before
 ports are checked and the pair is restarted. A separate `pnpm install`,
 `make model-gen`, or `make station` is not required.
+
+`make desktop-install` is the persistent macOS development install. It prepares
+the same package, generated-source, and applet inputs, builds only the Tauri
+`.app` bundle, and atomically replaces `~/Applications/Peers Dev.app`. The
+installed application uses bundle identifier `com.peers.touch.desktop.dev` and
+deep-link scheme `peers-touch-dev://`; override the identifier with
+`PT_DESKTOP_APP_ID` or the destination directory with
+`PT_DESKTOP_INSTALL_DIR`. This command neither starts nor deploys Station.
 
 Registration does not create or edit an environment definition. A later
 destructive wrapper uses the generic lease API after deriving Profile reset
