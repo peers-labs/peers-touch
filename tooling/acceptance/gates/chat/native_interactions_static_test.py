@@ -608,6 +608,37 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "reset, enabling the caller to distinguish 'reset performed' from 'already pending'",
         )
 
+    def test_recovery_fences_secure_content_before_identity_replacement(self) -> None:
+        src = self.source(
+            "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs"
+        )
+        recovery = src.find("pub fn messaging_recovery_restore_latest")
+        self.assertGreater(recovery, 0)
+        teardown = src.find(
+            "state.secure_content.teardown_actor(&session.actor_ptid)",
+            recovery,
+        )
+        identity_restore = src.find(
+            "crypto::store_identity_key(&key_ref, &archive.actor_identity_seed)",
+            recovery,
+        )
+        profile_restore = src.find("state.messaging_engines.restore_profile(", recovery)
+        self.assertGreater(
+            teardown,
+            recovery,
+            "replacement recovery must fence the stale Secure Content signing lease",
+        )
+        self.assertGreater(
+            identity_restore,
+            teardown,
+            "Secure Content must be fenced before the actor identity key changes",
+        )
+        self.assertGreater(
+            profile_restore,
+            identity_restore,
+            "Messaging profile replacement must happen after the identity key changes",
+        )
+
     def test_lifecycle_recovers_stale_enrollment(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/lifecycle.rs")
         self.assertIn(
