@@ -523,7 +523,7 @@ function isAtelierTask(value: unknown): value is AtelierTask {
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.project) &&
     (value.projectId === undefined || isNonEmptyString(value.projectId)) &&
-    isAtelierMigrationIdentity(value, value.projectId) &&
+    isAtelierMigrationIdentity(value, value.projectId, value.id) &&
     isNonEmptyString(value.title) &&
     isAtelierTaskStatus(value.status) &&
     typeof value.stepId === 'string' &&
@@ -579,6 +579,7 @@ function isAtelierProjectProjection(value: unknown): value is AtelierProjectProj
 function isAtelierMigrationIdentity(
   value: Record<string, unknown>,
   projectedGoalId: unknown,
+  expectedTaskRunId?: unknown,
 ): boolean {
   if (value.migrationState === undefined) {
     const hasNoCanonicalIdentity =
@@ -589,7 +590,10 @@ function isAtelierMigrationIdentity(
     const hasNativeCanonicalIdentity =
       isNonEmptyString(value.goalId) &&
       isNonEmptyString(value.taskRunId) &&
-      value.taskRunId === value.id &&
+      (
+        expectedTaskRunId === undefined ||
+        value.taskRunId === expectedTaskRunId
+      ) &&
       projectedGoalId === value.goalId &&
       value.legacySourceId === undefined &&
       value.migrationBlockReason === undefined;
