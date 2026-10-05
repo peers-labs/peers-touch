@@ -64,6 +64,7 @@ class FakeMessagingSession:
         self.runtime_phase = "ACTIVE"
         self.lifecycle_scope_phases: list[str] = []
         self.messaging_projection_reads_while_bootstrapping = 0
+        self.contact_open_inputs: list[dict[str, Any]] = []
         self.network.actors[actor.ptid] = actor
 
     def call_action(
@@ -97,21 +98,6 @@ class FakeMessagingSession:
                     "stationPeerId": self.actor.station_peer_id,
                     "actorPtid": self.actor.ptid,
                 },
-            }
-        if action == "messaging.createDirect":
-            peer_ptid = str(body["peerPtid"])
-            conversation_id = "-".join(
-                sorted((self.actor.ptid, peer_ptid))
-            )
-            self.network.add_conversation(
-                conversation_id,
-                kind=1,
-                owner_ptid=self.actor.ptid,
-                member_ptids=[self.actor.ptid, peer_ptid],
-            )
-            return {
-                "conversationId": conversation_id,
-                "state": "projected",
             }
         if action == "social.people.search":
             if set(body) != {"query", "federationId"}:
@@ -161,19 +147,38 @@ class FakeMessagingSession:
                 if request["requestId"] == body["requestId"]
             )
             request["status"] = 2
+            return self._social_projection()
+        if action == "social.contact.open":
+            self.contact_open_inputs.append(body)
+            peer_ptid = str(body["peerPtid"])
+            federation_id = str(body["federationId"])
+            accepted = any(
+                request["status"] == 2
+                and request["federationId"] == federation_id
+                and {
+                    request["senderPtid"],
+                    request["receiverPtid"],
+                }
+                == {self.actor.ptid, peer_ptid}
+                for request in self.network.friend_requests
+            )
+            if not accepted:
+                raise AssertionError(
+                    "Contact Direct creation requires an accepted Federation"
+                )
             conversation_id = "-".join(
-                sorted((request["senderPtid"], request["receiverPtid"]))
+                sorted((self.actor.ptid, peer_ptid))
             )
             self.network.add_conversation(
                 conversation_id,
                 kind=1,
-                owner_ptid=request["senderPtid"],
+                owner_ptid=self.actor.ptid,
                 member_ptids=[
-                    request["senderPtid"],
-                    request["receiverPtid"],
+                    self.actor.ptid,
+                    peer_ptid,
                 ],
             )
-            return self._social_projection()
+            return {"conversationId": conversation_id}
         if action == "social.reconcile":
             return self._social_projection()
         if action == "messaging.createGroup":
@@ -482,6 +487,15 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.assertEqual(result["senderPtid"], "ptid:alice")
         self.assertEqual(result["receiverPtid"], "ptid:bob")
         self.assertGreaterEqual(result["deliveryElapsedMs"], 0)
+        self.assertEqual(
+            self.sender_session.contact_open_inputs,
+            [
+                {
+                    "peerPtid": "ptid:bob",
+                    "federationId": "federation-1",
+                }
+            ],
+        )
         message = self.network.messages[result["conversationId"]][0]
         self.assertIn("ptid:bob", message["readByPtids"])
 
