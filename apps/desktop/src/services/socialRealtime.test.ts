@@ -55,6 +55,8 @@ const mocks = vi.hoisted(() => ({
   presenceNotify: vi.fn(),
   loadCurrentUserProfile: vi.fn(),
   loadPeerProfile: vi.fn(),
+  initEncryption: vi.fn(),
+  prewarmMessages: vi.fn(),
   resolveActorStations: vi.fn(),
   startEventStream: vi.fn(),
   stopEventStream: vi.fn(),
@@ -131,6 +133,7 @@ vi.mock('../store/socialChat', () => ({
       clearPeerPresence: mocks.clearPeerPresence,
       loadCurrentUserProfile: mocks.loadCurrentUserProfile,
       loadPeerProfile: mocks.loadPeerProfile,
+      initEncryption: mocks.initEncryption,
       sweepTypingPeers: vi.fn(),
     }),
   },
@@ -168,7 +171,10 @@ vi.mock('../store/navigationBadges', () => ({
 
 vi.mock('./mediaRuntime', () => ({
   useMediaRuntimeStore: {
-    getState: () => ({ mediaCallActive: false }),
+    getState: () => ({
+      mediaCallActive: false,
+      prewarmMessages: mocks.prewarmMessages,
+    }),
   },
 }));
 
@@ -218,6 +224,7 @@ describe('social realtime group membership side effects', () => {
     });
     mocks.loadCurrentUserProfile.mockResolvedValue(undefined);
     mocks.loadPeerProfile.mockResolvedValue(undefined);
+    mocks.initEncryption.mockResolvedValue(undefined);
     mocks.resolveActorStations.mockResolvedValue(undefined);
     mocks.startEventStream.mockResolvedValue(undefined);
     mocks.stopEventStream.mockResolvedValue(undefined);

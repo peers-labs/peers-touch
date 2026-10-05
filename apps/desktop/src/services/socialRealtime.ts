@@ -176,11 +176,10 @@ function rememberBounded(set: Set<string>, key: string, maxSize: number): boolea
 }
 
 /**
- * Re-pull friend requests, sessions, groups, group unread counts, and
- * conversation previews into the projection stores. Exported for the
- * `socialRuntime` adapter's `reconcile` hook (see
- * `apps/desktop/src/runtimes/socialRuntime.ts`); callers should never
- * trigger a refresh from view-mount effects.
+ * Re-pull Social-owned relationship, profile, presence, and notification
+ * projections. Messaging-owned conversations and messages reconcile through
+ * messagingRealtime. Callers should never trigger a refresh from view-mount
+ * effects.
  */
 export async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
   if (!currentAuthenticatedActorPtid()) return;
@@ -193,8 +192,6 @@ export async function refreshSocialProjection(label: string, includeNotification
     const notifications = useNotificationStore.getState();
     await Promise.allSettled([
       chat.loadFriendRequests(),
-      chat.loadSessions(),
-      chat.loadGroups(),
       refreshFriendshipProjection(true),
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
@@ -209,15 +206,7 @@ export async function refreshSocialProjection(label: string, includeNotification
     await Promise.allSettled([
       refreshFriendStationIdentities(),
       refreshPeerPresence(peerPtids),
-      refreshed.activeTab === 'friend' && refreshed.activeSessionUlid
-        ? refreshed.loadMessages(refreshed.activeSessionUlid, 'friend')
-        : refreshed.activeTab === 'group' && refreshed.activeGroupUlid
-          ? refreshed.loadMessages(refreshed.activeGroupUlid, 'group')
-          : Promise.resolve(),
-      refreshed.loadGroupUnreadCounts(),
-      refreshed.loadConversationPreviews(),
     ]);
-    useNavigationBadgeStore.getState().reconcileChatBadge();
 
     log.info('socialRealtime', 'social projection refresh completed', { label });
   })().finally(() => {
