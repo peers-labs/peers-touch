@@ -93,6 +93,7 @@ from tooling.development.secure_content.runtime_owner import (
     _wait_for_accepted_friendship_projection,
     _wait_for_federated_actor_resolution,
     _wait_for_federated_locator,
+    _wait_for_federated_profile,
     _wait_for_private_moment_state,
     _wait_for_private_moment_states,
     _parse_args,
@@ -2903,6 +2904,10 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "homeStationPeerId": "station-five-arm-peer",
                 },
             ) as wait_for_resolution,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_wait_for_federated_profile"
+            ) as wait_for_profile,
         ):
             result = _prepare_cross_station_social_fixture(alice, bob)
 
@@ -2916,6 +2921,11 @@ class RuntimeOwnerTest(unittest.TestCase):
             alice,
             federation_id="federation-1",
             federated_handle="@bob@five-arm.invalid",
+        )
+        wait_for_profile.assert_called_once_with(
+            alice,
+            federated_handle="@bob@five-arm.invalid",
+            expected_home_station_peer_id="station-five-arm-peer",
         )
         self.assertIn(
             call(
@@ -3032,6 +3042,41 @@ class RuntimeOwnerTest(unittest.TestCase):
             "fixture:cross-station-social-resolver",
             raised.exception.resource,
         )
+
+    def test_cross_station_profile_waits_for_remote_convergence(self) -> None:
+        responses = iter(
+            (
+                (500, b'{"code":"500"}'),
+                (
+                    200,
+                    json.dumps(
+                        {
+                            "data": {
+                                "handle": "@bob@five-arm.invalid",
+                                "home_station_peer_id": (
+                                    "station-five-arm-peer"
+                                ),
+                            }
+                        }
+                    ).encode("utf-8"),
+                ),
+            )
+        )
+        sleeps: list[float] = []
+
+        resolved = _wait_for_federated_profile(
+            SimpleNamespace(station_url="http://station.invalid"),
+            federated_handle="@bob@five-arm.invalid",
+            expected_home_station_peer_id="station-five-arm-peer",
+            timeout_seconds=10,
+            poll_interval_seconds=2,
+            monotonic=MagicMock(side_effect=(0.0, 1.0)),
+            sleep=sleeps.append,
+            http_get=lambda *_args, **_kwargs: next(responses),
+        )
+
+        self.assertEqual("@bob@five-arm.invalid", resolved["handle"])
+        self.assertEqual([2], sleeps)
 
     def test_friendship_projection_timeout_fails_closed(self) -> None:
         client = MagicMock()
