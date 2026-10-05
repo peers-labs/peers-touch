@@ -1764,6 +1764,28 @@ def _wait_for_private_moment_state(
     timeout_seconds: float = 30.0,
     poll_seconds: float = 0.25,
 ) -> Mapping[str, Any]:
+    return _wait_for_private_moment_states(
+        client,
+        post_id=post_id,
+        expected_states=(expected_state,),
+        actor_label=actor_label,
+        timeout_seconds=timeout_seconds,
+        poll_seconds=poll_seconds,
+    )
+
+
+def _wait_for_private_moment_states(
+    client: FoundationRuntimeClient,
+    *,
+    post_id: str,
+    expected_states: Sequence[str],
+    actor_label: str,
+    timeout_seconds: float = 30.0,
+    poll_seconds: float = 0.25,
+) -> Mapping[str, Any]:
+    accepted_states = frozenset(expected_states)
+    if not accepted_states:
+        raise ValueError("at least one private Moment state is required")
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     last_projection: Mapping[str, Any] = {}
     while True:
@@ -1772,7 +1794,7 @@ def _wait_for_private_moment_state(
             "readPrivateMoment",
             {"postId": post_id},
         )
-        if last_projection.get("state") == expected_state:
+        if last_projection.get("state") in accepted_states:
             return last_projection
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -1781,7 +1803,8 @@ def _wait_for_private_moment_state(
     raise RuntimeOwnerBlocked(
         "CLIENT_RUNTIME_UNAVAILABLE",
         (
-            f"{actor_label} private Moment did not reach {expected_state} "
+            f"{actor_label} private Moment did not reach one of "
+            f"{sorted(accepted_states)} "
             f"(state={last_projection.get('state')!r}, "
             f"errorCode={last_projection.get('errorCode')!r})"
         ),
@@ -7559,19 +7582,16 @@ class W7RuntimeOwner:
                 "deletePrivateMoment",
                 {"postId": as22_post},
             )
-            revoked = _moments_harness(
+            revoked = _wait_for_private_moment_states(
                 current_bob,
-                "readPrivateMoment",
-                {"postId": as22_post},
-            )
-            if (
-                deletion.get("deleted") is not True
-                or revoked.get("state")
-                not in {
+                post_id=as22_post,
+                expected_states=(
                     "DELETED_OR_REVOKED",
                     "NOT_FOUND_OR_NOT_AUTHORIZED",
-                }
-            ):
+                ),
+                actor_label="Bob",
+            )
+            if deletion.get("deleted") is not True:
                 raise RuntimeOwnerBlocked(
                     "CLIENT_RUNTIME_UNAVAILABLE",
                     "AS22 deletion did not revoke Bob's projection",
