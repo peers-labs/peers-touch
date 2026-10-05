@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -70,6 +71,29 @@ RUNTIME_MANIFEST_FIELDS = frozenset(
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 WORKSPACE_ID = re.compile(r"^[0-9a-f]{16}$")
+
+
+def _runtime_owner_command() -> list[str]:
+    workspace_key = hashlib.sha256(
+        str(REPO_ROOT).encode("utf-8")
+    ).hexdigest()[:16]
+    result_root = (
+        Path(tempfile.gettempdir())
+        / "pt-social-desktop"
+        / workspace_key
+    )
+    return [
+        sys.executable,
+        "-m",
+        "tooling.development.secure_content.runtime_owner",
+        "run-social-desktop-acceptance-suite",
+        "--profiles",
+        "four,fiveArm",
+        "--slot",
+        "12",
+        "--result-root",
+        str(result_root),
+    ]
 
 
 def _parse_owner_output(stdout: str) -> dict[str, Any]:
@@ -268,16 +292,7 @@ class SocialPrivateDesktopGate(AcceptanceGate):
             )
 
         completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "tooling.development.secure_content.runtime_owner",
-                "run-social-desktop-acceptance-suite",
-                "--profiles",
-                "four,fiveArm",
-                "--slot",
-                "12",
-            ],
+            _runtime_owner_command(),
             cwd=REPO_ROOT,
             text=True,
             capture_output=True,
