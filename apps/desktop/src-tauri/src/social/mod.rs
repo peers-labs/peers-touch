@@ -887,7 +887,10 @@ fn recovery_lease_for_window(
     actor_ptid: &str,
     renderer_generation: u64,
 ) -> Result<SecureContentLease, String> {
-    let lease = lease_for_window(state, window, actor_ptid, renderer_generation)?;
+    let lease = match lease_for_window(state, window, actor_ptid, renderer_generation) {
+        Ok(lease) => lease,
+        Err(_) => return activate(state, window, actor_ptid, renderer_generation),
+    };
     let engine = state
         .messaging_engines
         .get(&lease.session.account_id)?
