@@ -23,8 +23,6 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
         self.assertEqual(src.count('--resource-id "$PT_DEV_SLOT"'), 2)
         self.assertIn("${PT_DESKTOP_APP_GATEWAY_PORT}", src)
         self.assertIn("${PT_DESKTOP_APP_WEB_PORT}", src)
-        self.assertIn("${PT_DESKTOP_WEB_GATEWAY_PORT}", src)
-        self.assertIn("${PT_DESKTOP_WEB_WEB_PORT}", src)
         self.assertNotIn("_wt_offset", src)
 
     def test_desktop_dev_preserves_explicit_port_overrides(self) -> None:
@@ -75,20 +73,6 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
         self.assertRegex(src, r'bundle_id="com\.peertouch\.dev\.\$\{wt_suffix\}"')
         self.assertIn('\\"identifier\\"', src)
         self.assertIn("${bundle_id}", src)
-
-    def test_browser_rust_bff_does_not_create_a_tauri_renderer(self) -> None:
-        src = self.source("tooling/scripts/_ensure-desktop-rust.sh")
-        self.assertEqual(
-            src.count('\\"windows\\":[{\\"create\\":false}]'),
-            2,
-            "Both Browser BFF configurations must remain rendererless",
-        )
-        self.assertNotIn(
-            '\\"windows\\":[{\\"visible\\":false}]',
-            src,
-            "A hidden WebView still boots the Desktop frontend and competes "
-            "with the Browser gateway for session ownership",
-        )
 
     def test_native_startup_timeout_fails_closed(self) -> None:
         port = self._unused_port()

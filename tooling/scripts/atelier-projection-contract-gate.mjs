@@ -218,13 +218,13 @@ const files = {
   contract: 'apps/applets/atelier/contracts/atelier-projection.contract.json',
   malformedResponseFixtures: 'apps/applets/atelier/contracts/atelier-malformed-response-fixtures.json',
   contractGenerator: 'tooling/scripts/generate-atelier-projection-contract.mjs',
-  masterGoal: 'docs/architecture/atelier/execution-plans/master-goal.md',
+  masterGoal: 'docs/architecture/domains/applets/atelier/execution-plans/master-goal.md',
   atelierAcceptanceEvidenceReport: 'tooling/acceptance/evidence/applets/official-applet/atelier-acceptance-evidence-report-2026-07-06.md',
   atelierCompletionAudit: 'tooling/acceptance/evidence/applets/official-applet/atelier-completion-audit-2026-07-06.md',
   atelierDevRuntimeOpenSmoke: 'tooling/acceptance/evidence/applets/official-applet/atelier-dev-runtime-open-smoke.json',
   atelierNativeDesktopProcessSmoke: 'tooling/acceptance/evidence/applets/official-applet/atelier-native-desktop-process-smoke.json',
-  atelierDataModel: 'docs/architecture/atelier/data-model.md',
-  atelierDecisions: 'docs/architecture/atelier/decisions.md',
+  atelierDataModel: 'docs/architecture/domains/applets/atelier/data-model.md',
+  atelierDecisions: 'docs/architecture/domains/applets/atelier/decisions.md',
   contractSchemaGenerated: 'apps/applets/atelier/contracts/atelier-projection.schema.generated.json',
   officialFrontendContractGenerated: 'apps/applets/atelier/frontend/src/domain/projection.contract.generated.ts',
   prototypeContractGenerated: 'packages/prototypes/desktop/applets/atelier/src/projection.contract.generated.ts',
@@ -456,17 +456,17 @@ const files = {
   desktopAppletsStoreTest: 'apps/desktop/src/store/applets.test.ts',
   desktopIdentityRuntime: 'apps/desktop/src/kernel/identityRuntime.ts',
   desktopHashRouter: 'apps/desktop/src/hooks/useHashRouter.ts',
-  desktopBrowserEvents: 'apps/desktop/src/kernel/events/browser.ts',
+  desktopRendererEvents: 'apps/desktop/src/kernel/events/renderer.ts',
   rustGateway: 'apps/desktop/src-tauri/src/application/applets/mod.rs',
-  atelierReadme: 'docs/architecture/atelier/README.md',
+  atelierReadme: 'docs/architecture/domains/applets/atelier/README.md',
   officialAppletReadme: 'apps/applets/atelier/README.md',
-  prototypeReadme: 'docs/architecture/atelier/prototype/README.md',
-  functionalModulesPlan: 'docs/architecture/atelier/execution-plans/functional-modules.md',
-  uiImplementationMapping: 'docs/architecture/atelier/execution-plans/ui-implementation-mapping.md',
-  userViewPlan: 'docs/architecture/atelier/execution-plans/user-view.md',
-  multiEngineFeasibility: 'docs/architecture/atelier/execution-plans/multi-engine-feasibility.md',
-  featureMatrix: 'docs/architecture/atelier/execution-plans/feature-matrix.md',
-  roadmap: 'docs/architecture/atelier/execution-plans/roadmap.md',
+  prototypeReadme: 'docs/architecture/domains/applets/atelier/prototype/README.md',
+  functionalModulesPlan: 'docs/architecture/domains/applets/atelier/execution-plans/functional-modules.md',
+  uiImplementationMapping: 'docs/architecture/domains/applets/atelier/execution-plans/ui-implementation-mapping.md',
+  userViewPlan: 'docs/architecture/domains/applets/atelier/execution-plans/user-view.md',
+  multiEngineFeasibility: 'docs/architecture/domains/applets/atelier/execution-plans/multi-engine-feasibility.md',
+  featureMatrix: 'docs/architecture/domains/applets/atelier/execution-plans/feature-matrix.md',
+  roadmap: 'docs/architecture/domains/applets/atelier/execution-plans/roadmap.md',
   stationEnginePolicy: 'apps/station/app/subserver/agent/service/engine_policy.go',
   stationOrchestrationService: 'apps/station/app/subserver/agent/service/orchestration_service.go',
   stationOrchestrationServiceTest: 'apps/station/app/subserver/agent/service/orchestration_service_test.go',
@@ -11012,7 +11012,7 @@ expectIncludes(files.desktopIdentityRuntime, contents.desktopIdentityRuntime, 'w
 expectNotIncludes(files.desktopIdentityRuntime, contents.desktopIdentityRuntime, "window.history.replaceState(null, '', targetHash)", 'Desktop product-window launch must not silently replace hash without router notification');
 expectIncludes(files.desktopHashRouter, contents.desktopHashRouter, 'onWindowLocationChange', 'Desktop hash router must consume both popstate and hashchange updates');
 expectNotIncludes(files.desktopHashRouter, contents.desktopHashRouter, 'onWindowPopState', 'Desktop hash router must not ignore hashchange-only navigation');
-expectIncludes(files.desktopBrowserEvents, contents.desktopBrowserEvents, "window.addEventListener('hashchange', handler)", 'Desktop browser event adapter must expose hashchange for hash router navigation');
+expectIncludes(files.desktopRendererEvents, contents.desktopRendererEvents, "window.addEventListener('hashchange', handler)", 'Desktop renderer event adapter must expose hashchange for hash router navigation');
 expectIncludes(files.officialFrontendClient, contents.officialFrontendClient, 'ATELIER_PROJECTION_CONTRACT.eventSubscription.zeroCursorException', 'Official frontend stream config must preserve explicit afterEventSeq=0 through generated product-window zero cursor exception');
 expectIncludes(files.rustGateway, contents.rustGateway, 'replay_probe_request_replays_after_cursor(&replay_probe_requests, 1, 2)', 'Desktop Gateway Atelier test must prove reconnect request used persisted cursor without requiring an exact replay batch');
 

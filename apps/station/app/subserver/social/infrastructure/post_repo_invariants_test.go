@@ -13,7 +13,7 @@ import (
 // BEFORE any DB access, so the *gorm.DB handle can be nil — we only
 // care that the storage-separation invariant is enforced loudly
 // rather than silently allowing a non-PUBLIC post into the public
-// table. See `docs/architecture/social/moments.md §8`.
+// table. See `docs/architecture/domains/social/core/moments.md §8`.
 
 func TestPublicPostRepo_Create_PanicsOnNonPublic(t *testing.T) {
 	repo := NewPublicPostRepository(nil)

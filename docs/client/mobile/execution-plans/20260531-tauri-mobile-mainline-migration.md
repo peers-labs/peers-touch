@@ -1,6 +1,6 @@
 # Tauri Mobile 主线迁移实施计划
 
-> Status: superseded by `docs/architecture/mobile/` for target architecture;
+> Status: superseded by `docs/architecture/platform/client/mobile/` for target architecture;
 > retained as historical migration context
 > Owner: Client Architecture
 > Created: 2026-05-31

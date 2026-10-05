@@ -902,7 +902,7 @@ File: `apps/desktop/src/components/AppSideNav.tsx`
 | 3. 运行基线测试 | `PARTIAL` | Vite dev browser, current browser preflight/login/primary/secondary/context-menu diagnostic run, health-check-only browser gateway/API burst, Tauri dev startup, production build/preview, no-gateway dev | prod/Tauri/offline ready shell baseline 不完整 |
 | 4. 分层归因 | `DONE` for current evidence | Root cause model separates Web runtime, Tauri bridge, production bundle, offline boot | Click-frame Tauri attribution remains unproven |
 | 5. 输出框架缺陷清单 | `DONE` | §4 code findings and §2 evidence summary | Runtime fanout details need Phase 0 sampler |
-| 6. 输出框架级修复计划 | `DONE` | `docs/architecture/frontend-runtime/execution-plans/20260706-desktop-global-lag-framework-plan.md` | Plan still awaits user confirmation before implementation |
+| 6. 输出框架级修复计划 | `DONE` | `docs/architecture/platform/client/frontend-runtime/execution-plans/20260706-desktop-global-lag-framework-plan.md` | Plan still awaits user confirmation before implementation |
 
 ### 9.3 Acceptance Audit
 

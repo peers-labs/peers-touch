@@ -2766,7 +2766,7 @@ def run_journey(journey_name: str) -> int:
             bom = ["C08"]
             spec = [
                 "tooling/acceptance/features/agent-attachment-reference.yaml",
-                "docs/architecture/agent/execution-plans/"
+                "docs/architecture/domains/agent/execution-plans/"
                 "20260817-modern-chat-agent-v2-execution.md",
             ]
             gate_claim = (
@@ -2780,7 +2780,7 @@ def run_journey(journey_name: str) -> int:
             spec = [
                 "tooling/acceptance/features/"
                 "agent-minimum-usable-chat.yaml",
-                "docs/architecture/agent/execution-plans/"
+                "docs/architecture/domains/agent/execution-plans/"
                 "20261001-minimum-usable-agent-chat/plan.md",
             ]
             gate_claim = (
@@ -2797,7 +2797,7 @@ def run_journey(journey_name: str) -> int:
                 "tooling/acceptance/features/agent-cli-provider-primary.yaml",
                 "tooling/acceptance/matrices/"
                 "agent-cli-provider-primary-native.yaml",
-                "docs/architecture/agent/execution-plans/"
+                "docs/architecture/domains/agent/execution-plans/"
                 "20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
             ]
             gate_claim = (
@@ -2822,7 +2822,7 @@ def run_journey(journey_name: str) -> int:
             bom = ["R6"]
             spec = [
                 "tooling/acceptance/features/agent-stream-resilience.yaml",
-                "docs/architecture/agent/execution-plans/"
+                "docs/architecture/domains/agent/execution-plans/"
                 "20260816-lobehub-parity-full-landing.md",
             ]
             gate_claim = (

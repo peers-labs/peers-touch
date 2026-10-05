@@ -27,7 +27,7 @@ def load_module():
 def proven_observation() -> dict:
     return {
         "source": "window.__PT_FRONTEND_TELEMETRY__",
-        "runtime": "browser-gateway",
+        "runtime": "tauri-webview-dev",
         "url": "http://localhost:3210/#/chat",
         "readyState": "complete",
         "eventCount": 11,

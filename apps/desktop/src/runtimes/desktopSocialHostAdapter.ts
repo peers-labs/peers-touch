@@ -66,7 +66,7 @@ export function installDesktopSocialHostAdapter(
     dispatch({ kind: 'app-resume', reason: 'window-focus' });
   };
   const onOnline = () => {
-    dispatch({ kind: 'network-online', reason: 'browser-online' });
+    dispatch({ kind: 'network-online', reason: 'renderer-online' });
   };
 
   document.addEventListener('visibilitychange', onVisibilityChange);

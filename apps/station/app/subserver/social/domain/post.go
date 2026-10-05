@@ -9,7 +9,7 @@ import (
 // Post is the domain-layer representation of a Moment. It is intentionally
 // thin and storage-agnostic — repositories translate between this struct
 // and the two physical tables `social_public_posts` / `social_private_posts`
-// (see `docs/architecture/social/moments.md §6.2`); the application layer
+// (see `docs/architecture/domains/social/core/moments.md §6.2`); the application layer
 // (MomentService) owns the business rules and routes Posts to the correct
 // repo via `IsPublic`.
 //

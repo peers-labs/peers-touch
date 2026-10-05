@@ -34,7 +34,7 @@ from tooling.scripts.plan_lifecycle_source import (
 SCHEMA_VERSION = 1
 PLAN_ID = "SECURE-CONTENT-HARD-CUT-20260913"
 PLAN_PATH = (
-    "docs/architecture/secure-content/execution-plans/"
+    "docs/architecture/shared/security/secure-content/execution-plans/"
     "20260913-secure-content-hard-cut/plan.md"
 )
 SOURCE_WORK_ITEM_ID = "secure-content-w12d"
@@ -161,11 +161,11 @@ CROSS_STATION_SOCIAL_OWNER = ActivationOwnerDescriptor(
     owner_id="cross-station-social",
     plan_id="CROSS-STATION-SOCIAL-NATIVE-20261003",
     plan_path=(
-        "docs/architecture/cross-station-social/execution-plans/"
+        "docs/architecture/domains/social/cross-station/execution-plans/"
         "20261003-native-private-social/plan.md"
     ),
     manifest_path=(
-        "docs/architecture/cross-station-social/execution-plans/"
+        "docs/architecture/domains/social/cross-station/execution-plans/"
         "20261003-native-private-social/work-items.yaml"
     ),
     source_work_item_id="cross-station-social-source-freeze",

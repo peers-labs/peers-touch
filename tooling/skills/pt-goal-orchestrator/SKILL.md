@@ -37,7 +37,7 @@ absence does not make the schedule unavailable.
 | Stage and workflow route | `pt-god-view` / `pt-dev-workflow` |
 | Product and architecture semantics | owning methodology Skills |
 | Vertical dependency graph | `pt-architecture-execution-methodology` |
-| Durable Plan Package and Task lifecycle | plan owners via `pt-dev-workflow` |
+| Frozen Plan Version and durable ExecutionRun lifecycle | plan owners via `pt-dev-workflow` |
 | Schedule, Ready/Parked frontier, lane allocation | this Skill |
 | Host capability projection | this Skill |
 | Host adapter invocation | `pt-dev-workflow` after Guardian admission |
@@ -54,7 +54,7 @@ The caller supplies:
 
 - verified worktree binding and active Development declaration;
 - current methodology stage and authoritative work graph;
-- for tracked execution, validated Plan Package and current Task;
+- for tracked execution, validated ExecutionPlanSnapshot, ExecutionRun, and current Task;
 - completed dependencies and current evidence;
 - declared source/runtime claims;
 - Goal budget and hard boundaries;

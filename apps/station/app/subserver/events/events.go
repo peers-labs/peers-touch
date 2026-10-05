@@ -3,7 +3,7 @@
 // that multiplexes every kind of realtime event (messages, receipts,
 // presence, typing, future call signaling).
 //
-// See docs/architecture/realtime/event-stream.md for the wire
+// See docs/architecture/shared/communication/event-stream.md for the wire
 // contract; this package owns the in-process EventBus that every
 // other Station subserver publishes to.
 package events

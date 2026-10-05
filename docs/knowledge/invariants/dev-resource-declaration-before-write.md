@@ -9,10 +9,10 @@ owns:
   - tooling/make/local-dev.mk
   - docs/global/workflow.md
 referenced-by:
-  - docs/architecture/development-workflow/README.md
+  - docs/architecture/engineering/development-workflow/README.md
 related:
-  - docs/architecture/development-workflow/design.md
-  - docs/architecture/local-dev-control-plane/design.md
+  - docs/architecture/engineering/development-workflow/design.md
+  - docs/architecture/engineering/local-dev/design.md
 detected: 2026-09-13
 ---
 
@@ -62,5 +62,5 @@ authority.
 
 ## Crosswalks
 
-- Architecture: `docs/architecture/development-workflow/README.md`.
-- Machine allocation: `docs/architecture/local-dev-control-plane/README.md`.
+- Architecture: `docs/architecture/engineering/development-workflow/README.md`.
+- Machine allocation: `docs/architecture/engineering/local-dev/README.md`.

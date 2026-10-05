@@ -13,7 +13,6 @@ export type FrontendTelemetrySource =
   | 'acceptance';
 
 export type FrontendTelemetryRuntime =
-  | 'browser-gateway'
   | 'tauri-webview-dev'
   | 'tauri-webview-packaged'
   | 'unknown';
@@ -162,10 +161,9 @@ function createEventId(): string {
 function resolveRuntime(): FrontendTelemetryRuntime {
   if (runtimeOverride) return runtimeOverride;
   if (typeof window === 'undefined') return 'unknown';
-  if ('__TAURI_INTERNALS__' in window && !('__PT_GATEWAY_BASE__' in window)) {
+  if ('__TAURI_INTERNALS__' in window) {
     return import.meta.env.PROD ? 'tauri-webview-packaged' : 'tauri-webview-dev';
   }
-  if ('__PT_GATEWAY_BASE__' in window) return 'browser-gateway';
   return 'unknown';
 }
 

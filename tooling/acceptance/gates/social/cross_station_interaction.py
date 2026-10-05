@@ -87,8 +87,8 @@ class Gate(AcceptanceGate):
     phase = "CSS-09 Cross-Station Social Interaction"
     bom = ("CSS-04", "CSS-05")
     spec = (
-        "docs/architecture/cross-station-social/design.md",
-        "docs/architecture/cross-station-social/integration.md",
+        "docs/architecture/domains/social/cross-station/design.md",
+        "docs/architecture/domains/social/cross-station/integration.md",
     )
 
     def run(self) -> dict[str, Any]:

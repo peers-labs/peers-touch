@@ -63,7 +63,6 @@ W12_SUITE_RUNTIME_CONTRACT = RuntimeReuseContract.from_dict(
         "entryCheckId": "w12-functional",
         "scenarioIds": [
             "desktop",
-            "browser",
             "ios",
             "android",
             "chat-desktop",
@@ -71,8 +70,8 @@ W12_SUITE_RUNTIME_CONTRACT = RuntimeReuseContract.from_dict(
             "chat-android",
         ],
         "maxProvisioningRuns": 1,
-        "maxClientLaunches": 15,
-        "minWarmReuseRate": 0.85,
+        "maxClientLaunches": 13,
+        "minWarmReuseRate": 0.83,
         "requireAttachOnlyScenarios": True,
         "requireReceiverVisibleProof": True,
         "allowClientReplacement": True,
@@ -359,18 +358,6 @@ SPECS: Mapping[str, AggregateSpec] = {
                     }
                 ),
             ),
-            "browser": ChildSpec(
-                "browser",
-                "secure-content-w11",
-                "sc-dj-browser-private-boundary",
-                frozenset({"four", "fiveArm"}),
-                frozenset(
-                    {
-                        "secure-content-browser-authenticated",
-                        "secure-content-browser-anonymous",
-                    }
-                ),
-            ),
             "ios": ChildSpec(
                 "mobile",
                 "secure-content-w11",
@@ -452,18 +439,6 @@ SPECS: Mapping[str, AggregateSpec] = {
                         "secure-content-desktop-alice",
                         "secure-content-desktop-bob",
                         "secure-content-desktop-eve",
-                    }
-                ),
-            ),
-            "browser": ChildSpec(
-                "browser",
-                "secure-content-w12",
-                "sc-dj-browser-private-boundary",
-                frozenset({"four"}),
-                frozenset(
-                    {
-                        "secure-content-browser-authenticated",
-                        "secure-content-browser-anonymous",
                     }
                 ),
             ),

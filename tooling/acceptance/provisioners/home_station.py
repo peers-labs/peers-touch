@@ -45,6 +45,7 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 
 GATE_ROLES = {
+    "desktop-primary-navigation-e2e": ("alice",),
     "agent-attachment-e2e": ("alice",),
     "agent-cli-provider-primary-native-e2e": ("alice",),
     "agent-core-lifecycle-native-e2e": ("alice",),
@@ -122,6 +123,7 @@ AGENT_V2_CREDENTIAL_REFS = (
 )
 
 CLIENT_ROLES = {
+    "desktop-primary-navigation-e2e": ("alice",),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-presence-layout-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
@@ -478,44 +480,48 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         )
         return client
 
-    def _agent_v2_foundation_browser_client(
+    def _agent_v2_foundation_secondary_client(
         self,
         run_id: str,
         slot: int,
         profile_env: dict[str, str],
     ) -> ClientRuntime:
         worktree = Path(
-            os.environ.get("PT_AGENT_V2_BROWSER_WORKTREE", str(REPO_ROOT))
+            os.environ.get("PT_AGENT_V2_SECONDARY_WORKTREE", str(REPO_ROOT))
         ).expanduser().resolve()
         client = ClientRuntime(
             actor="alice",
-            runtime="browser",
+            runtime="native-tauri",
             worktree=str(worktree),
             gateway_port=int(
                 os.environ.get(
-                    "PT_AGENT_V2_BROWSER_GATEWAY_PORT",
-                    profile_env.get(
-                        "PT_DESKTOP_WEB_GATEWAY_PORT",
-                        str(3031 + slot * 100),
+                    "PT_AGENT_V2_SECONDARY_GATEWAY_PORT",
+                    str(
+                        int(profile_env.get(
+                            "PT_DESKTOP_APP_GATEWAY_PORT",
+                            str(3030 + slot * 100),
+                        )) + 1
                     ),
                 )
             ),
             renderer_port=int(
                 os.environ.get(
-                    "PT_AGENT_V2_BROWSER_RENDERER_PORT",
-                    profile_env.get(
-                        "PT_DESKTOP_WEB_WEB_PORT",
-                        str(3211 + slot * 100),
+                    "PT_AGENT_V2_SECONDARY_RENDERER_PORT",
+                    str(
+                        int(profile_env.get(
+                            "PT_DESKTOP_APP_WEB_PORT",
+                            str(3210 + slot * 100),
+                        )) + 1
                     ),
                 )
             ),
             webdriver_port=int(
-                os.environ.get("PT_AGENT_V2_BROWSER_WEBDRIVER_PORT", "4446")
+                os.environ.get("PT_AGENT_V2_SECONDARY_WEBDRIVER_PORT", "4446")
             ),
-            profile="agent-v2-foundation-browser",
-            storage_root=f"/tmp/pt-agent-v2-{run_id}/browser/storage",
+            profile="agent-v2-foundation-native-secondary",
+            storage_root=f"/tmp/pt-agent-v2-{run_id}/native-secondary/storage",
         )
-        self._assert_client_ports_available(client, resource_prefix="browser-")
+        self._assert_client_ports_available(client, resource_prefix="secondary-")
         return client
 
     def _agent_v2_binding_clients(
@@ -582,47 +588,51 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             ),
             storage_root=str(run_root / "native" / "storage"),
         )
-        browser = ClientRuntime(
+        secondary = ClientRuntime(
             actor=actor,
-            runtime="browser",
+            runtime="native-tauri",
             worktree=str(worktree),
             gateway_port=int(
                 os.environ.get(
-                    f"{environment_prefix}_BROWSER_GATEWAY_PORT",
-                    profile_env.get(
-                        "PT_DESKTOP_WEB_GATEWAY_PORT",
-                        str(3031 + slot * 100),
+                    f"{environment_prefix}_SECONDARY_GATEWAY_PORT",
+                    str(
+                        int(profile_env.get(
+                            "PT_DESKTOP_APP_GATEWAY_PORT",
+                            str(3030 + slot * 100),
+                        )) + 1
                     ),
                 )
             ),
             renderer_port=int(
                 os.environ.get(
-                    f"{environment_prefix}_BROWSER_RENDERER_PORT",
-                    profile_env.get(
-                        "PT_DESKTOP_WEB_WEB_PORT",
-                        str(3211 + slot * 100),
+                    f"{environment_prefix}_SECONDARY_RENDERER_PORT",
+                    str(
+                        int(profile_env.get(
+                            "PT_DESKTOP_APP_WEB_PORT",
+                            str(3210 + slot * 100),
+                        )) + 1
                     ),
                 )
             ),
             webdriver_port=int(
                 os.environ.get(
-                    f"{environment_prefix}_BROWSER_WEBDRIVER_PORT",
+                    f"{environment_prefix}_SECONDARY_WEBDRIVER_PORT",
                     str(4446 + slot * 10),
                 )
             ),
-            profile=f"agent-v2-{runtime_name}-browser",
-            storage_root=str(run_root / "browser" / "storage"),
+            profile=f"agent-v2-{runtime_name}-native-secondary",
+            storage_root=str(run_root / "native-secondary" / "storage"),
         )
         self._assert_client_ports_available(native)
         self._assert_client_ports_available(
-            browser,
-            resource_prefix="browser-",
+            secondary,
+            resource_prefix="secondary-",
         )
         self.register_cleanup(
             f"client-storage:{run_root}",
             lambda: shutil.rmtree(run_root, ignore_errors=True),
         )
-        return native, browser
+        return native, secondary
 
     def _agent_v2_home_manifest(
         self,
@@ -678,13 +688,17 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 str(4445 + slot * 10),
             ),
             "bob": (
-                profile_env.get(
-                    "PT_DESKTOP_WEB_GATEWAY_PORT",
-                    str(3031 + slot * 100),
+                str(
+                    int(profile_env.get(
+                        "PT_DESKTOP_APP_GATEWAY_PORT",
+                        str(3030 + slot * 100),
+                    )) + 1
                 ),
-                profile_env.get(
-                    "PT_DESKTOP_WEB_WEB_PORT",
-                    str(3211 + slot * 100),
+                str(
+                    int(profile_env.get(
+                        "PT_DESKTOP_APP_WEB_PORT",
+                        str(3210 + slot * 100),
+                    )) + 1
                 ),
                 str(4446 + slot * 10),
             ),
@@ -692,7 +706,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         clients = tuple(
             ClientRuntime(
                 actor=actor,
-                runtime="native-tauri" if actor == "alice" else "browser",
+                runtime="native-tauri",
                 worktree=str(worktree),
                 gateway_port=int(
                     os.environ.get(
@@ -715,7 +729,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 profile=(
                     "agent-v2-evaluation-native"
                     if actor == "alice"
-                    else "agent-v2-evaluation-browser"
+                    else "agent-v2-evaluation-native-secondary"
                 ),
                 storage_root=str(run_root / actor / "runtime" / "storage"),
             )
@@ -1009,7 +1023,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     slot,
                     profile_env,
                 ),
-                self._agent_v2_foundation_browser_client(
+                self._agent_v2_foundation_secondary_client(
                     manifest.run_id,
                     slot,
                     profile_env,
@@ -1761,8 +1775,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 services={attestation.service_id: attestation},
             )
             self._manifest = manifest
-            if gate_id == "chat-federated-browser-prereq":
-                return self._ready(manifest)
             if gate_id == AGENT_V2_FOUNDATION_GATE:
                 manifest = self._agent_v2_foundation_manifest(
                     manifest,

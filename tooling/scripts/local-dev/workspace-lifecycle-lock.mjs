@@ -23,9 +23,7 @@ import {
 export const WORKSPACE_LIFECYCLE_LOCK_KIND =
   'peers-touch-workspace-lifecycle-lock';
 
-const LEGACY_BINDING_LOCK_KIND =
-  'peers-touch-workspace-plan-binding-lock';
-const LOCK_FILE = 'plan-binding.lock';
+const LOCK_FILE = 'workspace-lifecycle.lock';
 const LOCK_KEYS = new Set([
   'kind',
   'pid',
@@ -327,9 +325,7 @@ function readOwnedLock(file, context = 'workspace lifecycle lock') {
   if (
     !isObject(metadata) ||
     !exactKeys(metadata, LOCK_KEYS) ||
-    ![WORKSPACE_LIFECYCLE_LOCK_KIND, LEGACY_BINDING_LOCK_KIND].includes(
-      metadata.kind,
-    ) ||
+    metadata.kind !== WORKSPACE_LIFECYCLE_LOCK_KIND ||
     !Number.isInteger(metadata.pid) ||
     metadata.pid <= 0 ||
     typeof metadata.processStart !== 'string' ||

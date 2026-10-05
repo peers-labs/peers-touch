@@ -21,7 +21,7 @@ This document does **not** define:
 
 For those, follow:
 
-- `docs/architecture/runtime/desktop-runtime-architecture.md`
+- `docs/architecture/platform/client/desktop/runtime.md`
 - `docs/station/base.md`
 - `docs/client/mobile/base.md`
 - `docs/global/coding-guide/`
@@ -34,7 +34,7 @@ For those, follow:
 ┌──────────────────────────────────────────────────────────────┐
 │                       CLIENT LAYER                           │
 │                                                              │
-│  Desktop = desktop-web + desktop-rust + desktop-app         │
+│  Desktop = embedded renderer + desktop-rust + desktop-app   │
 │  Mobile  = mobile-web + mobile-rust + native plugins        │
 └──────────────────────────────┬───────────────────────────────┘
                                │
@@ -123,7 +123,7 @@ Desktop is not a single process and not a single layer.
 
 It consists of four runtime units:
 
-- `desktop-web`: React + TypeScript UI
+- embedded renderer: React + TypeScript UI inside the Tauri WebView
 - `desktop-rust`: local runtime / local BFF / command gateway
 - `desktop-app`: Tauri native shell and window host
 - `station`: remote shared business system
@@ -131,11 +131,13 @@ It consists of four runtime units:
 Desktop high-level runtime chain:
 
 ```text
-desktop-web -> desktop-rust -> station
-desktop-app -> hosts desktop-web and carries desktop-rust
+embedded renderer -> desktop-rust -> station
+desktop-app -> hosts the renderer and carries desktop-rust
 ```
 
 Desktop is the richer local runtime client. It may host local orchestration and device capabilities, but it does not replace Station as the shared business truth owner.
+Desktop has no browser launch mode; all product proof uses the native Tauri
+application.
 
 ### 4.2 Mobile
 
@@ -202,6 +204,22 @@ peers-touch/
 └── docs/
 ```
 
+### 6.1 Architecture Documentation Projection
+
+`docs/architecture/` projects the code and ownership model through four
+non-overlapping categories:
+
+| Documentation category | Repository relationship |
+|---|---|
+| `domains/` | Station business owners, Model semantics, and cross-client product projections |
+| `platform/` | Client runtimes, Station framework boundaries, contracts, and runtime foundations |
+| `shared/` | Cross-domain capabilities with narrow owners and no business authority |
+| `engineering/` | Development, governance, quality, Acceptance, and tooling control planes |
+
+This is an ownership projection, not a mirror of every source directory.
+Code-backed areas without accepted architecture remain explicit gaps in the
+nearest category README.
+
 ---
 
 ## 7. Generated Contract Direction
@@ -223,9 +241,9 @@ The source of truth is always the `.proto`, never the generated file.
 ## 8. Related Architecture Sources
 
 - Desktop runtime details:
-  - `docs/architecture/runtime/desktop-runtime-architecture.md`
+  - `docs/architecture/platform/client/desktop/runtime.md`
 - Station/Desktop ownership boundary:
-  - `docs/architecture/boundaries/station-desktop-scope-boundary.md`
+  - `docs/architecture/platform/station-desktop-boundary.md`
 - Station platform overview:
   - `docs/station/base.md`
 - Mobile platform overview:
@@ -313,7 +331,7 @@ The source of truth is always the `.proto`, never the generated file.
 - Applet / 小程序运行时以 [Lynx](https://github.com/lynx-family/lynx) 为跨端容器方向
 - Desktop 使用 Lynx for Web 承载 Applet web bundle；Android / iOS 使用原生 LynxView 承载 native Lynx bundle
 - Applet 运行在 Host 托管的 Lynx Runtime 中，通过 canonical bridge (`peers-touch.applet.bridge`) 与 Capability Gateway 调用宿主能力
-- 正式架构见 `docs/architecture/applet-runtime/README.md`
+- 正式架构见 `docs/architecture/platform/applet-runtime/README.md`
 
 ---
 

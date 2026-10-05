@@ -53,7 +53,7 @@ function record(home, overrides = {}) {
     operation: {
       family: 'WRITE',
       label: 'apply_patch',
-      targetRef: 'apps/dev',
+      targetRef: 'apps/desktop',
     },
     progressStamp: PROGRESS,
     now: new Date('2026-09-26T00:00:00.000Z'),
@@ -73,7 +73,7 @@ test('records a bounded redacted lifecycle with a verified digest chain', () => 
       operation: {
         family: 'WRITE',
         label: 'apply_patch',
-        targetRef: 'apps/dev',
+        targetRef: 'apps/desktop',
         rawArguments: '--secret must-not-persist',
       },
     });
@@ -140,7 +140,7 @@ test('hard-cut inspection validates streams and returns only live actions', () =
   }
 });
 
-test('installer action grant is bound to one exact live receipt and consumed once', () => {
+test('cleanup action grant is bound to one exact live receipt and consumed once', () => {
   const scope = fixture();
   try {
     const receipt = record(scope.home, {
@@ -148,7 +148,7 @@ test('installer action grant is bound to one exact live receipt and consumed onc
       leaseMs: 1_000,
       operation: {
         family: 'OWNER_CONTROL',
-        label: 'skills',
+        label: 'skills-hard-cut',
         targetRef: null,
       },
     });
@@ -164,7 +164,7 @@ test('installer action grant is bound to one exact live receipt and consumed onc
       now: new Date('2026-09-26T00:00:02.000Z'),
       operation: {
         family: 'OWNER_CONTROL',
-        label: 'skills',
+        label: 'skills-hard-cut',
         targetRef: null,
       },
     });
@@ -206,6 +206,76 @@ test('an unrelated seeded installer receipt has no invocation authority', () => 
           now: new Date('2026-09-26T00:00:01.000Z'),
         }),
       (error) => error.code === 'WORKFLOW_ACTION_GRANT_UNAVAILABLE',
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('each integration control label receives only its own exact grant', () => {
+  for (const [index, label] of [
+    'skills-hard-cut',
+    'skills-gc',
+  ].entries()) {
+    const scope = fixture();
+    try {
+      const receipt = record(scope.home, {
+        actionId: `integration-control-${index}`,
+        leaseMs: 60_000,
+        operation: {
+          family: 'OWNER_CONTROL',
+          label,
+          targetRef: null,
+        },
+      });
+      const grant = issueWorkflowActionGrant(receipt, {
+        home: scope.home,
+        now: new Date('2026-09-26T00:00:00.000Z'),
+      });
+      assert.equal(grant.operationFingerprint, receipt.fingerprint);
+      const wrongLabel = {
+        ...receipt,
+        operation: {
+          family: 'OWNER_CONTROL',
+          label: label === 'skills-gc' ? 'skills-hard-cut' : 'skills-gc',
+          targetRef: null,
+        },
+      };
+      assert.throws(
+        () =>
+          claimWorkflowActionGrant(wrongLabel, {
+            home: scope.home,
+            now: new Date('2026-09-26T00:00:01.000Z'),
+          }),
+        (error) =>
+          error.code === 'WORKFLOW_ACTION_INVALID' ||
+          error.code === 'WORKFLOW_ACTION_GRANT_INVALID',
+      );
+    } finally {
+      scope.close();
+    }
+  }
+});
+
+test('non-destructive skills projection cannot receive an action grant', () => {
+  const scope = fixture();
+  try {
+    const receipt = record(scope.home, {
+      actionId: 'skills-projection',
+      leaseMs: 60_000,
+      operation: {
+        family: 'OWNER_CONTROL',
+        label: 'skills',
+        targetRef: null,
+      },
+    });
+    assert.throws(
+      () =>
+        issueWorkflowActionGrant(receipt, {
+          home: scope.home,
+          now: new Date('2026-09-26T00:00:01.000Z'),
+        }),
+      (error) => error.code === 'WORKFLOW_ACTION_GRANT_INVALID',
     );
   } finally {
     scope.close();

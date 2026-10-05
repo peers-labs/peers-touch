@@ -49,10 +49,10 @@ When editing prototype source, also follow `pt-prototype-design`.
 Check these sources:
 
 - Product files being changed.
-- `docs/architecture/prototypes/README.md`
+- `docs/architecture/engineering/prototypes/README.md`
 - `packages/prototypes/**/prototype.manifest.ts`
 - `packages/prototypes/<site>/<area>/<id>/`
-- `docs/architecture/<module>/prototype/README.md`
+- `docs/architecture/<taxonomy>/<module>/prototype/README.md`
 - Relevant `docs/architecture/**` and `docs/client/**` contracts.
 
 Surface mapping:

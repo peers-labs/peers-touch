@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   accountReset: vi.fn(),
   chatReset: vi.fn(),
   toolReset: vi.fn(),
-  closeBrowserCapabilitySession: vi.fn(),
   sidebarReset: vi.fn(),
   globalContextReset: vi.fn(),
   restoreSession: vi.fn(),
@@ -81,10 +80,6 @@ vi.mock('../runtimes/toolRuntime', () => ({
   },
 }));
 
-vi.mock('../runtimes/agentCapabilityRuntime', () => ({
-  closeBrowserCapabilitySession: mocks.closeBrowserCapabilitySession,
-}));
-
 vi.mock('../store/sidebar', () => ({
   useSidebarStore: {
     getState: () => ({ reset: mocks.sidebarReset }),
@@ -115,9 +110,7 @@ describe('identity handler actor-scoped projection cleanup', () => {
   });
 
   it('clears actor-scoped stores before switching accounts', async () => {
-    const closeCapabilitySession = mocks.handlers.get('close-browser-capability-session');
     const handler = mocks.handlers.get('clear-zustand-stores');
-    expect(closeCapabilitySession).toBeDefined();
     expect(handler).toBeDefined();
 
     const payload: IdentityChangePayload = {
@@ -125,10 +118,8 @@ describe('identity handler actor-scoped projection cleanup', () => {
       actorPtid: 'ptid:peer:bob',
       loginMethod: 'password',
     };
-    await closeCapabilitySession?.(payload);
     await handler?.(payload);
 
-    expect(mocks.closeBrowserCapabilitySession).toHaveBeenCalledOnce();
     expect(mocks.sessionReset).toHaveBeenCalledOnce();
     expect(mocks.socialReset).toHaveBeenCalledOnce();
     expect(mocks.notificationReset).toHaveBeenCalledOnce();
@@ -138,9 +129,7 @@ describe('identity handler actor-scoped projection cleanup', () => {
   });
 
   it('preserves actor-scoped stores when unlocking the same account', async () => {
-    const closeCapabilitySession = mocks.handlers.get('close-browser-capability-session');
     const handler = mocks.handlers.get('clear-zustand-stores');
-    expect(closeCapabilitySession).toBeDefined();
     expect(handler).toBeDefined();
 
     const payload: IdentityChangePayload = {
@@ -148,10 +137,8 @@ describe('identity handler actor-scoped projection cleanup', () => {
       actorPtid: 'ptid:peer:alice',
       loginMethod: 'password',
     };
-    await closeCapabilitySession?.(payload);
     await handler?.(payload);
 
-    expect(mocks.closeBrowserCapabilitySession).not.toHaveBeenCalled();
     expect(mocks.sessionReset).not.toHaveBeenCalled();
     expect(mocks.socialReset).not.toHaveBeenCalled();
     expect(mocks.notificationReset).not.toHaveBeenCalled();

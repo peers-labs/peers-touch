@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize browser/Tauri DOM anchor observations into the P0b-1 evidence contract."""
+"""Normalize Native Tauri DOM observations into the P0b-1 evidence contract."""
 
 from __future__ import annotations
 
@@ -42,7 +42,6 @@ def load_inventory_module():
 
 def runtime_observations(observations: dict[str, Any], runtime_id: str) -> dict[str, Any]:
     aliases = {
-        "browser-gateway": ("browser-gateway", "browser"),
         "tauri-webview-dev": ("tauri-webview-dev", "tauriDev"),
         "tauri-webview-packaged": ("tauri-webview-packaged", "tauriPackaged"),
     }
@@ -116,7 +115,7 @@ def issue_breakdown(
                 "proofStatus": "UNPROVEN",
                 "sampleEmissionAllowed": False,
                 "summary": f"{runtime['runtime']} missing DOM anchor observations: {','.join(missing)}",
-                "proofImpact": "P0b-1 remains PARTIAL/UNPROVEN until browser, dev native, and packaged native DOM evidence proves every required anchor.",
+                "proofImpact": "P0b-1 remains PARTIAL/UNPROVEN until dev and packaged Native DOM evidence proves every required anchor.",
                 "sourceArtifact": source_artifact,
                 "sourceArtifactKind": ARTIFACT_KIND,
                 "sourcePhase": inventory.DOM_EVIDENCE_PHASE,
@@ -135,7 +134,7 @@ def recommended_review_commands() -> list[dict[str, str]]:
             "command": "make desktop",
         },
         {
-            "purpose": "Collect browser/Tauri DOM anchor observations when runtimes are available.",
+            "purpose": "Collect Native Tauri DOM anchor observations when runtimes are available.",
             "command": COLLECT_COMMAND,
         },
         {
@@ -158,11 +157,6 @@ def build_evidence(
     source_artifact: Any = CURRENT_REPORT_REF,
 ) -> dict[str, Any]:
     inventory = load_inventory_module()
-    browser = normalize_runtime(
-        "browser-gateway",
-        runtime_observations(observations, "browser-gateway"),
-        inventory.REQUIRED_ANCHORS,
-    )
     tauri_dev = normalize_runtime(
         "tauri-webview-dev",
         runtime_observations(observations, "tauri-webview-dev"),
@@ -173,7 +167,7 @@ def build_evidence(
         runtime_observations(observations, "tauri-webview-packaged"),
         inventory.REQUIRED_ANCHORS,
     )
-    runtimes = (browser, tauri_dev, tauri_packaged)
+    runtimes = (tauri_dev, tauri_packaged)
     proven = all(runtime["status"] == "pass" for runtime in runtimes)
     evidence = {
         "schemaVersion": 1,
@@ -188,7 +182,6 @@ def build_evidence(
         "bom": list(inventory.DOM_EVIDENCE_BOM),
         "spec": list(inventory.DOM_EVIDENCE_SPEC),
         "gate": inventory.DOM_EVIDENCE_GATE,
-        "browser": browser,
         "tauriDev": tauri_dev,
         "tauriPackaged": tauri_packaged,
     }

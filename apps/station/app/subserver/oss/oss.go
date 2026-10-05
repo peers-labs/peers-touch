@@ -86,7 +86,7 @@ const defaultPresignedTTL = 5 * time.Minute
 
 // v3 lifecycle / observability defaults. Each is the fallback used
 // when the matching `Options` field is left at zero. Documented
-// alongside the YAML keys in `docs/architecture/oss/file-storage.md §5`.
+// alongside the YAML keys in `docs/architecture/shared/object-storage.md §5`.
 const (
 	defaultMultipartUploadThreshold int64 = 100 << 20 // 100 MiB
 

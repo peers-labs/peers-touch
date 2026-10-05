@@ -68,9 +68,9 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
 
     def test_architecture_records_accepted_boundary(self) -> None:
         decisions = read(
-            "docs/architecture/acceptance-framework/decisions.md"
+            "docs/architecture/engineering/acceptance/decisions.md"
         )
-        design = read("docs/architecture/acceptance-framework/design.md")
+        design = read("docs/architecture/engineering/acceptance/design.md")
 
         self.assertIn(
             "D-12: Acceptance Infra 与业务注入使用独立责任平面",

@@ -51,8 +51,8 @@ const root = git(['rev-parse', '--show-toplevel'], process.cwd()).trim();
 const registry = 'docs/client/common/ui-identity/frontend-component-tree-registry.md';
 const requiredFiles = [
   registry,
-  'docs/architecture/frontend-runtime/README.md',
-  'docs/architecture/frontend-runtime/data-model.md',
+  'docs/architecture/platform/client/frontend-runtime/README.md',
+  'docs/architecture/platform/client/frontend-runtime/data-model.md',
   'apps/desktop/src/kernel/frontendRuntimeProfiler.ts',
   'apps/desktop/src/kernel/SectionHost.tsx',
   'apps/desktop/src/applet/AppletContainerShell.tsx',
@@ -158,7 +158,7 @@ if (options.range) {
     /^(apps\/desktop\/src\/(kernel|pages|components\/settings|applet|runtimes|services)\/|apps\/mobile\/src\/)/u
       .test(file));
   const registryChanged = files.some((file) =>
-    file === registry || file.startsWith('docs/architecture/frontend-runtime/'));
+    file === registry || file.startsWith('docs/architecture/platform/client/frontend-runtime/'));
   if (runtimeChanged && !registryChanged) {
     const message =
       'UI runtime files changed without registry/runtime architecture doc update';

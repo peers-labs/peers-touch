@@ -4,7 +4,7 @@
 // Authoritative contract:
 //   - packages/applet-contract/src/platform-adapter.ts (SurfaceCommand semantics)
 //   - packages/applet-kernel/src/lifecycle-orchestrator.ts (frozen command mapping)
-// Execution plan: docs/architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.1/§6.2.
+// Execution plan: docs/architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.1/§6.2.
 //
 // Kernel-single-authority (§6.1): the Shell keeps the applet page React frame
 // resident (keepAlive:'forever'); SurfaceManager is the ONLY place that attaches,

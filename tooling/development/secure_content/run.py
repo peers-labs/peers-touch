@@ -45,7 +45,7 @@ from tooling.development.secure_content.source_projection import (
 SCHEMA_VERSION = 1
 RESULT_KIND = "peers-touch-development-result"
 VERIFICATION_CLASS = "FUNCTIONAL_CHECK"
-RUNTIMES = frozenset({"source-only", "service", "desktop", "mobile", "browser"})
+RUNTIMES = frozenset({"source-only", "service", "desktop", "mobile"})
 SCENARIO_PACKAGE = "tooling.development.secure_content.scenarios"
 IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$", re.IGNORECASE)
 SHA256 = re.compile(r"^[0-9a-f]{64}$")

@@ -102,7 +102,10 @@
       "domain": "federation",
       "direction": "acceptance_validates_product",
       "features": ["desktop-federation-surfaces"],
-      "required_gates": ["desktop-check", "federation-desktop-gateway-smoke"],
+      "required_gates": [
+        "desktop-check",
+        "station-access-federation-boundary-e2e"
+      ],
       "synthetic_paths": [
         "apps/desktop/src/components/common/StationPicker.tsx",
         "apps/desktop/src/components/chat/FindPeopleModal.tsx",
@@ -111,17 +114,17 @@
       "evidence": {
         "truth_sources": ["StationRegistry", "Federation Plaza projection", "Federation catalog projection"],
         "surfaces": ["desktop station picker", "desktop federation page", "find people modal"],
-        "proven_by": ["desktop-check", "federation-desktop-gateway-smoke"],
+        "proven_by": [
+          "desktop-check",
+          "station-access-federation-boundary-e2e"
+        ],
         "proven_scope": [
-          "Desktop gateway active Station is bound to expected fedp5 station",
-          "station probe returns online peer identity",
+          "Native Desktop consumes one explicit Federation context for scoped search and resolve",
+          "Native Desktop creates Direct and Group conversations with the selected Federation context",
           "Federation Catalog transport is statically constrained to direct typed protobuf decoding"
         ],
         "unproven_scope": [
-          "Desktop DOM-level StationPicker assertion",
-          "Desktop DOM-level Federation page assertion",
-          "Desktop DOM-level Find People assertion",
-          "Authenticated Native Federation Catalog response and result rendering"
+          "Linux and Windows native Federation context journeys"
         ]
       }
     },
@@ -139,7 +142,7 @@
         "desktop-check",
         "federation-surface-smoke",
         "federation-dashboard-operational-drilldown",
-        "federation-desktop-gateway-smoke"
+        "station-access-federation-boundary-e2e"
       ],
       "synthetic_paths": [
         "tooling/acceptance/domains/federation.yaml",
@@ -163,10 +166,10 @@
           "desktop-check",
           "federation-surface-smoke",
           "federation-dashboard-operational-drilldown",
-          "federation-desktop-gateway-smoke"
+          "station-access-federation-boundary-e2e"
         ],
         "proven_scope": [
-          "Federation exercises cross-runtime acceptance across Station Dashboard Desktop gateway and fedp5 testnet",
+          "Federation exercises cross-runtime acceptance across Station Dashboard Native Desktop Mobile and fedp5 testnet",
           "Federation exposes registry coverage gaps through synthetic path validation",
           "Federation produces reusable evidence without becoming acceptance core"
         ],

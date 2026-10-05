@@ -65,9 +65,9 @@ memory 相关问题补齐
 
 ---
 
-## 3. [docs/architecture/boundaries/station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
+## 3. [docs/architecture/platform/station-desktop-boundary.md](../../architecture/platform/station-desktop-boundary.md)
 
-此文件仅有一处提及 Memory，出现在 **§5 功能分配清单表格**中（[第48行](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md#L48)）：
+此文件仅有一处提及 Memory，出现在 **§5 功能分配清单表格**中（[第48行](../../architecture/platform/station-desktop-boundary.md#L48)）：
 
 > | Skills/Cron/Channels/MCP/**Memory** | 维护业务配置、运行状态、审计 | 提供管理台交互、状态可视化 | **Station** | 大体有实现，语义需复核 | 分域定义契约版本，避免"同名异义" |
 
@@ -743,7 +743,7 @@ pub struct MemoryPersonaInput {
 | 文件 | 内容 |
 |------|------|
 | [mobile/base.md](../../../docs/client/mobile/base.md) | Memory 作为业务功能模块出现在 `features/memory/` 目录，描述为"用户记忆条目管理（AI 上下文增强）"，同步方向 Station ↔ Mobile/Desktop |
-| [station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md) | Memory 真源（SoT）在 Station，Desktop 仅做管理台交互，"大体有实现，语义需复核" |
+| [station-desktop-scope-boundary.md](../../architecture/platform/station-desktop-boundary.md) | Memory 真源（SoT）在 Station，Desktop 仅做管理台交互，"大体有实现，语义需复核" |
 | [global-context-kernel.md](../../../docs/client/desktop/global-context-kernel.md) | 仅提到 Memory 模块的文件上传路径需纳入全局任务编排 |
 | `global/architecture.md` | ❌ 无 memory 相关 |
 | `global/domain-model.md` | ❌ 无 memory proto 定义 |
@@ -891,9 +891,9 @@ Now let me look at the existing AI chat subserver for patterns:
 
 | 文件路径 | 说明 |
 |---|---|
-| [station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md) | Station Desktop 范围边界 |
-| [unified-handler-architecture.md](../../../docs/architecture/runtime/unified-handler-architecture.md) | 统一 Handler 架构 |
-| [storage/unified-runtime-storage-architecture.md](../../../docs/architecture/storage/unified-runtime-storage-architecture.md) | 统一运行时存储架构 |
+| [station-desktop-scope-boundary.md](../../architecture/platform/station-desktop-boundary.md) | Station Desktop 范围边界 |
+| [unified-handler-architecture.md](../../architecture/platform/contracts/handler-model.md) | 统一 Handler 架构 |
+| [storage/unified-runtime-storage-architecture.md](../../architecture/platform/runtime/storage.md) | 统一运行时存储架构 |
 
 共 **3 个文件**，其中 `storage/` 子目录下有 1 个存储架构文档。
 
@@ -936,7 +936,9 @@ Now let me look at the existing AI chat subserver for patterns:
 
 ## 总结
 
-- **`docs/architecture/`** 是跨端/跨层的架构文档存放位置，目前已有 handler 架构和 storage 架构文档。如果要放一份"内存架构"（memory architecture）文档，这里是最合适的位置——可以放在 `docs/architecture/` 根目录，也可以像 storage 一样新建一个子目录（如 `docs/architecture/memory/`）。
+- **`docs/architecture/`** 是跨端/跨层的架构文档存放位置。后续实际落点为
+  [Agent Memory Architecture](../../architecture/domains/agent/agent-memory-architecture.md)；
+  仓库没有建立独立的 Memory 架构目录。
 - **`docs/global/`** 偏向全局性的规范和原则（编码标准、领域模型、第一性原理等），不太适合放具体的技术架构设计文档。
 - **`docs/station/`** 专注于 station 端（Go 后端）的规范和层级说明，如果内存架构仅限 station 端，也可考虑放在这里。
 
@@ -1167,7 +1169,7 @@ HTTP Request
 
 现在我已经深入理解了项目的所有架构约定，开始撰写 Memory 架构设计文档。
 
-架构设计文档已写入 [agent-memory-architecture.md](../../../docs/architecture/agent/agent-memory-architecture.md)。
+架构设计文档已写入 [agent-memory-architecture.md](../../architecture/domains/agent/agent-memory-architecture.md)。
 
 ---
 
@@ -1355,7 +1357,7 @@ const LAYER_COLORS: Record<string, string> = {
 
 ### 2. 架构文档中的五层模型（设计层面）
 
-[agent-memory-architecture.md](../../../docs/architecture/agent/agent-memory-architecture.md) 中定义的五层记忆模型与前端实际使用的名称 **存在差异**：
+[agent-memory-architecture.md](../../architecture/domains/agent/agent-memory-architecture.md) 中定义的五层记忆模型与前端实际使用的名称 **存在差异**：
 
 | 架构文档中的设计名称 | Proto 枚举值 | 前端实际使用的名称 |
 |---|---|---|
@@ -1369,7 +1371,7 @@ const LAYER_COLORS: Record<string, string> = {
 
 ### 3. Proto 定义（设计阶段，尚未实际生成代码）
 
-架构文档中包含了完整的 Protobuf 定义（[agent-memory-architecture.md:L288-L295](../../../docs/architecture/agent/agent-memory-architecture.md#L288-L295)）：
+架构文档中包含了完整的 Protobuf 定义（[agent-memory-architecture.md:L288-L295](../../architecture/domains/agent/agent-memory-architecture.md#L288-L295)）：
 
 ```protobuf
 enum MemoryLayer {
@@ -2445,7 +2447,7 @@ Type string `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"` // �
 #### 2. 设计文档中的规划
 
 - [README_design.zh.md:9](../../../apps/station/app/subserver/ai_chat/README_design.zh.md#L9) 提到：`数据库: PostgreSQL (支持pgvector插件用于RAG)`
-- [agent-memory-architecture.md](../../../docs/architecture/agent/agent-memory-architecture.md) 是一份非常详尽的架构设计文档，规划了整个 Memory 子服务，包括：
+- [agent-memory-architecture.md](../../architecture/domains/agent/agent-memory-architecture.md) 是一份非常详尽的架构设计文档，规划了整个 Memory 子服务，包括：
   - pgvector 向量索引表 `touch_memory_vector` (设计文档 L730-L741)
   - Embedding 引擎封装 `embedding/embedder.go` (设计文档 L586)
   - 混合检索算法：向量语义检索 + 关键词检索 + 时间衰减 (设计文档 L776-L832)
@@ -2517,7 +2519,7 @@ Type string `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"` // �
 | **RAG/语义检索** | 不存在 |
 | **设计文档完备度** | 非常完整（`agent-memory-architecture.md` 有 Proto 定义、DB 设计、检索算法、实施路线） |
 
-**结论**：`apps/station/` 中 embedding/vector 相关功能处于 **"已有详尽架构设计，但代码实现为零"** 的状态。当前 `ai_chat` 子服务仅实现了基础的 chat completion 流程，所有 embedding 模型调用、pgvector 向量存储、语义检索、记忆提取/注入的功能均需从零开发。设计文档 [agent-memory-architecture.md](../../../docs/architecture/agent/agent-memory-architecture.md) 中的 Phase 1-4 实施路线尚未启动。
+**结论**：`apps/station/` 中 embedding/vector 相关功能处于 **"已有详尽架构设计，但代码实现为零"** 的状态。当前 `ai_chat` 子服务仅实现了基础的 chat completion 流程，所有 embedding 模型调用、pgvector 向量存储、语义检索、记忆提取/注入的功能均需从零开发。设计文档 [agent-memory-architecture.md](../../architecture/domains/agent/agent-memory-architecture.md) 中的 Phase 1-4 实施路线尚未启动。
 
 ## User
 继续

@@ -8,9 +8,9 @@ owns:
   - apps/mobile/src/runtimes/commandRuntime.ts
 referenced-by: []
 related:
-  - docs/architecture/mobile/decisions.md
-  - docs/architecture/mobile/data-model.md
-  - docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/tasks/W9.md
+  - docs/architecture/platform/client/mobile/decisions.md
+  - docs/architecture/platform/client/mobile/data-model.md
+  - docs/architecture/shared/security/secure-content/execution-plans/20260913-secure-content-hard-cut/archive/desktop-usability-deferred/W9.md
 detected: 2026-09-27
 ---
 

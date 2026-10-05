@@ -49,7 +49,7 @@ TUPLE_FIELDS = (
 )
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
-    "direct_runtime_no_local_capability",
+    "direct_runtime_secondary_native",
     "station_command",
     "station_control_plane",
     "station_turn",
@@ -844,7 +844,7 @@ def validate_runtime_attestation(
 
     turn_profiles = {
         "direct_runtime",
-        "direct_runtime_no_local_capability",
+        "direct_runtime_secondary_native",
         "station_turn",
         "client_capability_turn",
         "station_capability_turn",
@@ -871,7 +871,7 @@ def validate_runtime_attestation(
         "client_capability_turn",
     }:
         expected_fields.update({"clientSession", "toolCallBinding"})
-    elif expected_profile == "direct_runtime_no_local_capability":
+    elif expected_profile == "direct_runtime_secondary_native":
         expected_fields.add("clientSession")
     elif expected_profile == "station_capability_turn":
         expected_fields.update(
@@ -1089,15 +1089,12 @@ def validate_runtime_attestation(
     client_capabilities = client["capabilities"]
     require(
         isinstance(client_capabilities, list)
+        and bool(client_capabilities)
         and (
-            (
-                expected_profile == "direct_runtime_no_local_capability"
-                and client["platform"] == "browser"
-                and not client_capabilities
-            )
+            expected_profile != "direct_runtime_secondary_native"
             or (
-                expected_profile != "direct_runtime_no_local_capability"
-                and bool(client_capabilities)
+                client["platform"] == "desktop"
+                and item["desktopMode"] == "secondary"
             )
         ),
         f"{label} client capabilities mismatch for {expected_profile}",
@@ -1144,7 +1141,7 @@ def validate_runtime_attestation(
         client["actorIdHash"] == item["actorIdentityHash"],
         f"{label} client actor does not match attested actor",
     )
-    if expected_profile == "direct_runtime_no_local_capability":
+    if expected_profile == "direct_runtime_secondary_native":
         return
 
     tool_binding = item.get("toolCallBinding")
@@ -1199,7 +1196,7 @@ def primary_execution_identity(item: dict[str, Any]) -> tuple[str, str]:
         return ("turn", item["turnAttempt"]["turnId"])
     if profile in {"direct_runtime", "client_capability_turn"}:
         return ("client-tool-call", item["toolCallBinding"]["toolCallId"])
-    if profile == "direct_runtime_no_local_capability":
+    if profile == "direct_runtime_secondary_native":
         return ("turn", item["turnAttempt"]["turnId"])
     if profile == "station_capability_turn":
         return (

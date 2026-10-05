@@ -142,12 +142,11 @@ jobs:
       - name: Run performance stress tests (N=30, P95 gate)
         working-directory: apps/desktop
         env:
-          PT_PERFORMANCE_RUNTIME: browser-gateway
+          PT_PERFORMANCE_RUNTIME: tauri-webview-dev
           PT_PERF_GATE_SAMPLES: 30
           PT_PERF_GATE_P95_NAV_MS: 100
           PT_PERF_GATE_P95_INPUT_MS: 50
         run: |
-          pnpm exec playwright install chromium
           pnpm exec playwright test e2e/tests/performance-stress.spec.ts --reporter=json --output=perf-gate-results.json || true
       - name: Evaluate P95 thresholds
         uses: actions/github-script@v7

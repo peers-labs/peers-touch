@@ -45,11 +45,11 @@
       "Alice publishes private text and media from the Native Desktop Moment composer",
       "Bob reads authorized plaintext and media in Native Desktop HOME and detail surfaces before and after restart",
       "Eve cannot render private parent, comment or media while unauthorized",
-      "public Moment continuity is proven by Native publish plus anonymous HTTP read without launching Browser"
+      "public Moment continuity is proven by Native publish plus anonymous HTTP read"
     ]
   },
   "negative": [
-    "Browser private publish/read and Mobile parity are not claimed",
+    "Mobile parity is not claimed",
     "development FUNCTIONAL_PASS artifacts are not treated as formal Acceptance proof",
     "no Scenario may rebuild, redeploy, register an account, or create a fresh Suite Runtime after the one Suite provisioning pass",
     "the Suite may keep at most three Native Desktop clients active concurrently",

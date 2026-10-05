@@ -9,8 +9,8 @@ owns:
 referenced-by:
   - ../invariants/access-gate-wire-contract.md
 related:
-  - ../../architecture/access-gates/station-access-gate-architecture.md
-  - ../../architecture/access-gates/station-access-gate-implementation-plan.md
+  - ../../architecture/platform/station/access/station-access-gate-architecture.md
+  - ../../architecture/platform/station/access/station-access-gate-implementation-plan.md
 detected: 2026-06-16
 ---
 
@@ -56,4 +56,4 @@ Do **not** use this for post-login, in-shell permission checks — those are not
 ## Crosswalks
 
 - Invariant this playbook automatically respects: [`invariants/access-gate-wire-contract.md`](../invariants/access-gate-wire-contract.md).
-- Architecture source: [`station-access-gate-architecture.md`](../../architecture/access-gates/station-access-gate-architecture.md) (§6 gate model, §7 gate types, §13 wire format).
+- Architecture source: [`station-access-gate-architecture.md`](../../architecture/platform/station/access/station-access-gate-architecture.md) (§6 gate model, §7 gate types, §13 wire format).

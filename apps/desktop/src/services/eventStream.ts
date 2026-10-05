@@ -47,7 +47,6 @@ import { log } from '../utils/logger';
 
 const REALTIME_EVENT = 'realtime:event';
 const REALTIME_CONNECTION_STATE = 'realtime:connection-state';
-const BROWSER_GATEWAY_RESYNC_INTERVAL_MS = 30_000;
 
 interface RawRealtimeEnvelope {
   actor_ptid?: string;
@@ -65,7 +64,6 @@ interface RawConnectionStatePayload {
 
 let unlistenRealtime: UnlistenFn | null = null;
 let unlistenConnState: UnlistenFn | null = null;
-let browserGatewayResyncTimer: number | null = null;
 
 /**
  * Install the Tauri listeners that translate raw `realtime:event`
@@ -122,7 +120,6 @@ export function teardownEventStreamBridge(): void {
  * window's authenticated actor. Idempotent.
  */
 export async function startEventStream(sessionEpoch: number): Promise<void> {
-  startBrowserGatewayResyncFallback();
   try {
     await api.realtimeStreamStart(sessionEpoch);
   } catch (error) {
@@ -134,37 +131,11 @@ export async function startEventStream(sessionEpoch: number): Promise<void> {
  * Ask the Rust supervisor to close the SSE socket. Idempotent.
  */
 export async function stopEventStream(): Promise<void> {
-  stopBrowserGatewayResyncFallback();
   try {
     await api.realtimeStreamStop();
   } catch (error) {
     log.warn('eventStream', 'realtimeStreamStop failed', error);
   }
-}
-
-function isBrowserDevGateway(): boolean {
-  return typeof window !== 'undefined' && typeof (window as any).__PT_GATEWAY_BASE__ === 'string';
-}
-
-function startBrowserGatewayResyncFallback(): void {
-  if (!isBrowserDevGateway() || browserGatewayResyncTimer) return;
-  // Browser desktop-web talks to the Rust HTTP gateway outside a Tauri WebView,
-  // so `@tauri-apps/api/event.listen` has no native event channel to receive
-  // Rust `emit` frames. Keep the fallback inside the runtime bridge and reuse
-  // the canonical cold-resync path as a low-frequency missed-event safety net
-  // instead of turning full runtime reconciliation into a per-second poll.
-  browserGatewayResyncTimer = window.setInterval(() => {
-    eventBus.publish(EVENT.REALTIME_RESYNC, {
-      newestEventId: '',
-      reason: 'browser-dev-gateway-resync',
-    });
-  }, BROWSER_GATEWAY_RESYNC_INTERVAL_MS);
-}
-
-function stopBrowserGatewayResyncFallback(): void {
-  if (!browserGatewayResyncTimer) return;
-  window.clearInterval(browserGatewayResyncTimer);
-  browserGatewayResyncTimer = null;
 }
 
 // ---------------------------------------------------------------------

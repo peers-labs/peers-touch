@@ -36,7 +36,6 @@ peers-touch/
 │   ├── desktop/           # Tauri + React/TS + Rust
 │   ├── mobile/            # Tauri v2 Mobile
 │   ├── station/           # Go backend (app/ + frame/)
-│   └── dev/               # Development control plane UI
 ├── model/domain/          # Proto definitions (single source of truth)
 ├── packages/              # applet-sdk, applets, locales
 ├── tooling/
@@ -60,7 +59,7 @@ peers-touch/
 | Tool | Purpose |
 |------|---------|
 | Go (latest stable) | Station backend |
-| Node.js + pnpm | Desktop web, tooling scripts |
+| Node.js + pnpm | Desktop embedded renderer, tooling scripts |
 | Rust + Cargo | Desktop/Mobile Tauri shell |
 | protoc + plugins | Proto generation |
 | PostgreSQL | Station database |
@@ -86,7 +85,7 @@ pnpm install
 # Station
 cd apps/station && go test ./...
 
-# Desktop web
+# Desktop embedded renderer
 cd apps/desktop && pnpm run check && pnpm run build
 
 # Proto generation
@@ -103,7 +102,6 @@ parameters to use.
 make profile <name>     # Create or switch profile
 make station            # Start Station through the active profile
 make desktop            # Start Desktop (Tauri app)
-make desktop-web        # Start Desktop (browser shell, for web-only work)
 ```
 
 Full profile system documentation:

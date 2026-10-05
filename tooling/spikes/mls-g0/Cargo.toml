@@ -1,6 +1,6 @@
 # G0 MLS verification spike — THROWAWAY.
 #
-# Isolation contract (see docs/architecture/federated-im/execution-plans/
+# Isolation contract (see docs/context/architecture/chat/federated-im/execution-plans/
 # 20260712-g0-mls-verification.md §5): this crate is NOT part of any product
 # build. It exists only to produce G0 evidence for D-08 and is deleted once the
 # §7 result matrix is filled. It must not be depended on by apps/* or model/*.

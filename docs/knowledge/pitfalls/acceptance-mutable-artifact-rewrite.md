@@ -11,8 +11,8 @@ owns:
 referenced-by:
   - docs/knowledge/README.md
 related:
-  - docs/architecture/acceptance-framework/design.md
-  - docs/architecture/acceptance-framework/execution-plans/20260824-native-desktop-runtime-cells.md
+  - docs/architecture/engineering/acceptance/design.md
+  - docs/architecture/engineering/acceptance/execution-plans/20260824-native-desktop-runtime-cells.md
 detected: 2026-09-11
 ---
 
@@ -80,4 +80,4 @@ Each mutable app log must have one final writer for a given artifact key.
 ## Crosswalks
 
 - Acceptance Evidence Store immutability is defined by D-11 in
-  `docs/architecture/acceptance-framework/decisions.md`.
+  `docs/architecture/engineering/acceptance/decisions.md`.

@@ -13,7 +13,7 @@
  *
  * It is NOT product code: no WebRTC, no signaling, no store/kernel/tauri. A
  * reviewer toolbar walks every call state the design enumerates
- * (architecture/realtime/voice-video-calls.md §6):
+ * (architecture/domains/chat/calling/voice-video.md §6):
  *   idle / outgoing / incoming / active / reconnecting / ended / failed.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';

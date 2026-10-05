@@ -22,8 +22,8 @@ It defines:
 - ownership and cleanup requirements.
 
 Product behavior remains governed by
-`docs/architecture/mobile/acceptance-matrix.md`. Architecture decision MS-D14
-in `docs/architecture/mobile/decisions.md` remains the decision source of
+`docs/architecture/platform/client/mobile/acceptance-matrix.md`. Architecture decision MS-D14
+in `docs/architecture/platform/client/mobile/decisions.md` remains the decision source of
 truth.
 
 ## 2. Required Proof Surface
@@ -577,7 +577,7 @@ Artifacts are registered in the Evidence Store with `ArtifactRef`s that bind:
 - the lifecycle generation and Station/PTID scope.
 
 Evidence indexed by `MS-PAxx` rows maps to the `MS-AGxx` gates through the
-product-to-architecture mapping in `docs/architecture/mobile/acceptance-matrix.md`.
+product-to-architecture mapping in `docs/architecture/platform/client/mobile/acceptance-matrix.md`.
 
 ## 11. Coverage Audit
 
@@ -622,7 +622,7 @@ credentials, downgraded gates, and browser-only substitution for native proof.
 
 These files are consumed by the provisioner and gate runners. They are the
 machine-readable implementation of the environment contract defined in
-`docs/architecture/mobile/mobile-acceptance-environment.md`.
+`docs/architecture/platform/client/mobile/mobile-acceptance-environment.md`.
 
 ## 13. Reversal Triggers
 
@@ -637,9 +637,9 @@ Re-evaluate Appium as the primary Mobile transport if:
 ## 14. References
 
 - Environment contract:
-  `docs/architecture/mobile/mobile-acceptance-environment.md`
+  `docs/architecture/platform/client/mobile/mobile-acceptance-environment.md`
 - Setup procedures: `docs/client/mobile/acceptance-setup.md`
-- Acceptance matrix: `docs/architecture/mobile/acceptance-matrix.md`
+- Acceptance matrix: `docs/architecture/platform/client/mobile/acceptance-matrix.md`
 - Tauri WebDriver: https://v2.tauri.app/develop/tests/webdriver/
 - Tauri manual WebDriver setup:
   https://v2.tauri.app/develop/tests/webdriver/manual-setup/

@@ -3,7 +3,7 @@
 // at the actor's home station, persisted in the libp2p DHT under a dedicated
 // /pst-actor/<handle> namespace.
 //
-// Layered responsibility (see docs/architecture/federation/* — TODO when the
+// Layered responsibility (see docs/architecture/shared/federation/* — TODO when the
 // resolver lands):
 //
 //	┌────────────────────────────────────────────────────────────────────┐

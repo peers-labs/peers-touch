@@ -64,9 +64,8 @@ SOURCE_ROOTS = (
     "apps/mobile/src-tauri/src/commands/group_crypto.rs",
     "apps/mobile/src-tauri/src/domain/crypto",
     "apps/mobile/src-tauri/src/messaging",
-    "docs/architecture/messaging-platform",
-    "docs/architecture/encryption",
-    "docs/architecture/federated-im",
+    "docs/architecture/domains/chat/messaging",
+    "docs/architecture/domains/chat/encryption",
     "tooling/acceptance",
     "tooling/scripts",
 )
@@ -253,7 +252,7 @@ def forbidden_inventory() -> dict[str, object]:
 
 
 def traceability_inventory() -> dict[str, object]:
-    docs_root = ROOT / "docs/architecture/messaging-platform"
+    docs_root = ROOT / "docs/architecture/domains/chat/messaging"
     text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in sorted(docs_root.rglob("*.md"))

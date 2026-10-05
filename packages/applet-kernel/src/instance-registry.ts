@@ -1,6 +1,6 @@
 // Applet Instance Registry — in-memory implementation.
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §6 分层架构 (registry owns records, not policy), §10 数据模型.
 //
 // This module is a pure store of instance records and their bookkeeping fields.

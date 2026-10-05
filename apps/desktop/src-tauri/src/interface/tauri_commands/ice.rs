@@ -22,7 +22,7 @@ use tauri::{State, Window};
 // peer pair did not survive offline → online transitions cleanly.
 //
 // Phase 8 of the realtime architecture (see
-// docs/architecture/realtime/event-stream.md §2.7 and §3.4) replaced
+// docs/architecture/shared/communication/event-stream.md §2.7 and §3.4) replaced
 // that surface with:
 //
 //   - `POST /realtime/signal` — single ingress, JWT-gated, opaque

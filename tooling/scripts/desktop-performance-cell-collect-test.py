@@ -97,7 +97,6 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
             }), encoding="utf-8")
             report = matrix.build_matrix(
                 argparse.Namespace(
-                    live_gate_report=str(Path(tmp) / "missing-live-gate.json"),
                     events_report=str(Path(tmp) / "missing-events.json"),
                     cell_evidence_dir=str(cell_dir),
                     cohort_report=str(cohort_path),
@@ -151,7 +150,7 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
     def test_runtime_entrypoint_startup_mismatch_blocks_sample_emission(self) -> None:
         collect = load_collect_module()
         observations = self.sampled_observations()
-        observations["cells"]["tauri-webview-dev"]["entrypoint"] = "make desktop-web"
+        observations["cells"]["tauri-webview-dev"]["entrypoint"] = "make invalid-desktop"
         evidence = collect.build_evidence(
             observations,
             {"status": "loaded", "path": "inline"},

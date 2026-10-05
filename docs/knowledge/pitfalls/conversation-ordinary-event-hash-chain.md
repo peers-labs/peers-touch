@@ -8,8 +8,10 @@ owns:
   - apps/desktop/src-tauri/src/messaging/
 referenced-by: []
 related:
-  - ../../architecture/federated-im/design.md
-  - ../../architecture/federated-im/decisions.md
+  - ../../architecture/domains/chat/messaging/data-model.md
+  - ../../architecture/domains/chat/messaging/decisions.md
+  - ../../context/architecture/chat/federated-im/design.md
+  - ../../context/architecture/chat/federated-im/decisions.md
 detected: 2026-08-02
 ---
 
@@ -58,4 +60,7 @@ New events must never appear in this query.
 
 ## Crosswalks
 
-- D-13/D-14 in `docs/architecture/federated-im/decisions.md`.
+- Current authority-event truth: `MP-D13` and `MP-D14` in
+  `docs/architecture/domains/chat/messaging/decisions.md`.
+- Historical origin: D-13/D-14 in
+  `docs/context/architecture/chat/federated-im/decisions.md`.

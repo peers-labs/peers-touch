@@ -6,9 +6,9 @@ This directory is for first-party applets that must prove the same architecture 
 
 The architecture source of truth is:
 
-- [`docs/architecture/applet-runtime/official-applet-architecture-contract.md`](../../docs/architecture/applet-runtime/official-applet-architecture-contract.md)
-- [`docs/architecture/applet-runtime/note-applet-validation-design.md`](../../docs/architecture/applet-runtime/note-applet-validation-design.md)
-- [`docs/architecture/applet-runtime/execution-plans/2026-06-17-note-official-applet-implementation-plan.md`](../../docs/architecture/applet-runtime/execution-plans/2026-06-17-note-official-applet-implementation-plan.md)
+- [`docs/architecture/platform/applet-runtime/official-applet-architecture-contract.md`](../../docs/architecture/platform/applet-runtime/official-applet-architecture-contract.md)
+- [`docs/architecture/platform/applet-runtime/note-applet-validation-design.md`](../../docs/architecture/platform/applet-runtime/note-applet-validation-design.md)
+- [`docs/architecture/platform/applet-runtime/execution-plans/2026-06-17-note-official-applet-implementation-plan.md`](../../docs/architecture/platform/applet-runtime/execution-plans/2026-06-17-note-official-applet-implementation-plan.md)
 
 ## Required Shape
 

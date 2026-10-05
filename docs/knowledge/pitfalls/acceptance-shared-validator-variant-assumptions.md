@@ -14,9 +14,9 @@ owns:
 referenced-by:
   - docs/knowledge/README.md
 related:
-  - docs/architecture/acceptance-framework/design.md
-  - docs/architecture/acceptance-framework/decisions.md
-  - docs/architecture/acceptance-framework/execution-plans/20260824-native-desktop-runtime-cells.md
+  - docs/architecture/engineering/acceptance/design.md
+  - docs/architecture/engineering/acceptance/decisions.md
+  - docs/architecture/engineering/acceptance/execution-plans/20260824-native-desktop-runtime-cells.md
 detected: 2026-09-13
 ---
 

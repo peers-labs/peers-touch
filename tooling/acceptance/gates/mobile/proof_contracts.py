@@ -2082,25 +2082,25 @@ CUTOVER_RULES = (
     CutoverRule(
         match_class="raw-ios-artifact-path",
         pattern=re.compile(r"PT_MOBILE_IOS_APP_PATH"),
-        roots=("tooling/acceptance", "apps/mobile", "docs/architecture/mobile"),
+        roots=("tooling/acceptance", "apps/mobile", "docs/architecture/platform/client/mobile"),
         replace_paths=(
             "tooling/acceptance/environments/mobile-native.yaml",
             "tooling/acceptance/provisioners/mobile_native.py",
             "tooling/acceptance/tests/test_mobile_native_preflight.py",
-            "docs/architecture/mobile/native-oauth-proof/*.md",
-            "docs/architecture/mobile/execution-plans/*.md",
+            "docs/architecture/platform/client/mobile/native-oauth-proof/*.md",
+            "docs/architecture/platform/client/mobile/execution-plans/*.md",
         ),
     ),
     CutoverRule(
         match_class="raw-android-artifact-path",
         pattern=re.compile(r"PT_MOBILE_ANDROID_APP_PATH"),
-        roots=("tooling/acceptance", "apps/mobile", "docs/architecture/mobile"),
+        roots=("tooling/acceptance", "apps/mobile", "docs/architecture/platform/client/mobile"),
         replace_paths=(
             "tooling/acceptance/environments/mobile-native.yaml",
             "tooling/acceptance/provisioners/mobile_native.py",
             "tooling/acceptance/tests/test_mobile_native_preflight.py",
-            "docs/architecture/mobile/native-oauth-proof/*.md",
-            "docs/architecture/mobile/execution-plans/*.md",
+            "docs/architecture/platform/client/mobile/native-oauth-proof/*.md",
+            "docs/architecture/platform/client/mobile/execution-plans/*.md",
         ),
     ),
     CutoverRule(
@@ -2112,11 +2112,11 @@ CUTOVER_RULES = (
     CutoverRule(
         match_class="legacy-android-avd-destination",
         pattern=re.compile("PT_MOBILE_ANDROID_" + "AVD"),
-        roots=("tooling/acceptance", "apps/mobile", "docs/architecture/mobile"),
+        roots=("tooling/acceptance", "apps/mobile", "docs/architecture/platform/client/mobile"),
         replace_paths=(
             "tooling/acceptance/environments/mobile-native.yaml",
             "tooling/acceptance/tests/test_mobile_native_preflight.py",
-            "docs/architecture/mobile/execution-plans/*.md",
+            "docs/architecture/platform/client/mobile/execution-plans/*.md",
         ),
     ),
     CutoverRule(
@@ -2125,12 +2125,12 @@ CUTOVER_RULES = (
             r"(?:clean_start|readback|cleanup)[\"']?\s*[:=].{0,24}"
             r"[\"']required[\"']"
         ),
-        roots=("tooling/acceptance", "apps/mobile", "docs/architecture/mobile"),
+        roots=("tooling/acceptance", "apps/mobile", "docs/architecture/platform/client/mobile"),
         replace_paths=(
             "tooling/acceptance/environments/mobile-native.yaml",
             "tooling/acceptance/provisioners/mobile_native.py",
-            "docs/architecture/mobile/native-oauth-proof/*.md",
-            "docs/architecture/mobile/execution-plans/*.md",
+            "docs/architecture/platform/client/mobile/native-oauth-proof/*.md",
+            "docs/architecture/platform/client/mobile/execution-plans/*.md",
         ),
     ),
     CutoverRule(
@@ -2149,12 +2149,12 @@ CUTOVER_RULES = (
     CutoverRule(
         match_class="unsupported-physical-variant",
         pattern=re.compile(r"\bsupported\s*=\s*False\b|\bmissing_closure\b"),
-        roots=("tooling/acceptance/gates/mobile", "docs/architecture/mobile"),
+        roots=("tooling/acceptance/gates/mobile", "docs/architecture/platform/client/mobile"),
         replace_paths=(
             "tooling/acceptance/gates/mobile/native_e2e.py",
             "tooling/acceptance/gates/mobile/native_e2e_test.py",
-            "docs/architecture/mobile/native-oauth-proof/*.md",
-            "docs/architecture/mobile/execution-plans/*.md",
+            "docs/architecture/platform/client/mobile/native-oauth-proof/*.md",
+            "docs/architecture/platform/client/mobile/execution-plans/*.md",
         ),
     ),
     CutoverRule(

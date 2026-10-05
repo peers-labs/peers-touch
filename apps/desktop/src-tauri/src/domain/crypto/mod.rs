@@ -14,7 +14,7 @@
 //!
 //! The signaling envelope is deliberately separate from the chat ratchet:
 //! ICE candidate loss/reorder must not stall text messages. See
-//! `docs/architecture/realtime/event-stream.md` §2.7.2 for the contract.
+//! `docs/architecture/shared/communication/event-stream.md` §2.7.2 for the contract.
 
 pub mod backup;
 pub mod device_registry;

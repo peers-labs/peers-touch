@@ -17,7 +17,7 @@ from tooling.scripts.plan_lifecycle_source import (
 
 
 PLAN_PATH = (
-    "docs/architecture/secure-content/execution-plans/"
+    "docs/architecture/shared/security/secure-content/execution-plans/"
     "20260913-secure-content-hard-cut/plan.md"
 )
 AGGREGATE_KIND = "secure-content-schema-activation-aggregate"

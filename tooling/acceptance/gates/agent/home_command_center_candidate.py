@@ -163,8 +163,6 @@ def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
             "PT_DEV_SLOT": str(slot),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(ports["desktopAppGateway"]),
             "PT_DESKTOP_APP_WEB_PORT": str(ports["desktopAppWeb"]),
-            "PT_DESKTOP_WEB_GATEWAY_PORT": str(ports["desktopWebGateway"]),
-            "PT_DESKTOP_WEB_WEB_PORT": str(ports["desktopWebWeb"]),
         }
     )
     return profile_name, profile_file, slot, values
@@ -369,7 +367,7 @@ def observation_from_home_capture(
 
 
 class HomeRuntimeAdapter:
-    """Execute one fresh Home fixture for each Desktop or Browser tuple."""
+    """Execute one fresh Home fixture for each Desktop or Secondary tuple."""
 
     def __init__(
         self,
@@ -380,11 +378,11 @@ class HomeRuntimeAdapter:
         self._profile_env = dict(profile_env)
         self._actors = {
             "desktop_app": _authenticate(runtime_pair.native, profile_env),
-            "browser": _authenticate(runtime_pair.browser, profile_env),
+            "secondary": _authenticate(runtime_pair.secondary, profile_env),
         }
         require(
             len(set(self._actors.values())) == 1,
-            "Native and Browser clients authenticated different actors",
+            "Native and Secondary clients authenticated different actors",
         )
         self.actor_identity_hash = _hash_text(
             next(iter(self._actors.values()))
@@ -397,8 +395,8 @@ class HomeRuntimeAdapter:
     ) -> FoundationRuntimeClient:
         if runtime_tuple.platform == "desktop_app":
             return self._runtime_pair.native
-        if runtime_tuple.platform == "browser":
-            return self._runtime_pair.browser
+        if runtime_tuple.platform == "secondary":
+            return self._runtime_pair.secondary
         raise HomeCommandCenterCandidateError(
             f"Home runtime adapter rejects platform {runtime_tuple.platform}"
         )

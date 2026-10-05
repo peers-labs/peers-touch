@@ -38,7 +38,7 @@ ownership, or encryption-key rotation.
 - Run key rotation only as a separately requested maintenance operation.
 
 Read [application operations](../../../apps/oauth2-client/README.md),
-[OAuth architecture](../../../docs/architecture/oauth-login-broker/README.md),
+[OAuth architecture](../../../docs/architecture/domains/identity/oauth-login-broker/README.md),
 and [Vercel deployment context](./references/vercel.md) before external
 operations. Read the provider catalog before provider discovery.
 

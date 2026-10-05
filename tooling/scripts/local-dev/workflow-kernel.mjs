@@ -25,6 +25,7 @@ import {
   resolveProjectRoot,
 } from './workflow-state-inspector.mjs';
 import {
+  isIntegrationControlLabel,
   issueWorkflowActionGrant,
   recordWorkflowAction,
   startWorkflowActionHeartbeat,
@@ -42,7 +43,6 @@ const STOPPABLE_SESSION_STATES = new Set([
   'STALE',
   'CANCELLED',
 ]);
-
 function repositoryPath(root, cwd, value) {
   const absolute = path.isAbsolute(value)
     ? path.resolve(value)
@@ -712,7 +712,7 @@ async function reportWorkflowAction(event, result, options) {
       receiptEvent === 'STARTED' &&
       receipt?.actionId &&
       recordInput.operation.family === 'OWNER_CONTROL' &&
-      recordInput.operation.label === 'skills' &&
+      isIntegrationControlLabel(recordInput.operation.label) &&
       issueGrant !== false
     ) {
       issueGrant(receipt, {

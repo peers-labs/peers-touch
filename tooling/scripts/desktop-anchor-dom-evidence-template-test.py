@@ -41,13 +41,10 @@ class DesktopAnchorDomEvidenceTemplateTest(unittest.TestCase):
         self.assertTrue(report["gate"])
         self.assertEqual(report["summary"]["failedStep"], "dom-evidence-template")
         self.assertFalse(report["summary"]["sampleEmissionAllowed"])
-        self.assertEqual(report["browser"]["status"], "diagnostic incomplete")
         self.assertEqual(report["tauriDev"]["status"], "diagnostic incomplete")
         self.assertEqual(report["tauriPackaged"]["status"], "diagnostic incomplete")
-        self.assertEqual(len(report["browser"]["anchors"]), 10)
         self.assertEqual(len(report["tauriDev"]["anchors"]), 10)
         self.assertEqual(len(report["tauriPackaged"]["anchors"]), 10)
-        self.assertTrue(all(anchor["count"] == 0 for anchor in report["browser"]["anchors"].values()))
         self.assertEqual(report["issue_breakdown"][0]["category"], "dom-automation-evidence")
         self.assertEqual(report["issueBreakdown"][0]["category"], "dom-automation-evidence")
         self.assertEqual(report["issue_breakdown"][0]["status"], "diagnostic incomplete")
@@ -81,9 +78,8 @@ class DesktopAnchorDomEvidenceTemplateTest(unittest.TestCase):
         self.assertEqual(template["spec"], ["SPEC-ANCHOR-01"])
         self.assertEqual(
             template["requiredRuntimes"],
-            ["browser-gateway", "tauri-webview-dev", "tauri-webview-packaged"],
+            ["tauri-webview-dev", "tauri-webview-packaged"],
         )
-        self.assertEqual(len(template["browser-gateway"]["anchors"]), 10)
         self.assertEqual(len(template["tauri-webview-dev"]["anchors"]), 10)
         self.assertEqual(len(template["tauri-webview-packaged"]["anchors"]), 10)
 

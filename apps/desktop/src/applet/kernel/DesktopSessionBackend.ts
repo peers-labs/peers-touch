@@ -3,7 +3,7 @@
 // Capability Gateway via desktop_api).
 //
 // Authoritative contract: packages/applet-kernel/src/ports.ts (SessionBackend).
-// Execution plan: docs/architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.2/§6.4.
+// Execution plan: docs/architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.2/§6.4.
 //
 // §6.4 keeps AppletManager as the single owner of the capability session and
 // manifest (keyed by appletId). The Kernel tracks lifecycle state under

@@ -76,7 +76,7 @@ def build_report(source_root: Path) -> dict[str, Any]:
             }
             for anchor in inventory.REQUIRED_ANCHORS
         ],
-        "boundary": "Source anchors prove selector inventory only; browser and Tauri DOM evidence remains separate.",
+        "boundary": "Source anchors prove selector inventory only; Native Tauri DOM evidence remains separate.",
         "summary": {
             "status": status,
             "completionStatus": "DONE" if status == "pass" else "PARTIAL",
@@ -138,7 +138,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "## Boundary",
             "",
             "- This gate does not inspect runtime DOM.",
-            "- Browser and Tauri/WebView DOM automation evidence remains required before P0b-1 can pass end to end.",
+            "- Native Tauri DOM automation evidence remains required before P0b-1 can pass end to end.",
         ]
     )
     return "\n".join(lines) + "\n"

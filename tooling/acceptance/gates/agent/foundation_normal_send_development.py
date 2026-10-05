@@ -295,30 +295,24 @@ def cleanup_clients(
     result = runtime_pair.stop(remove_storage=False)
     fallback: list[dict[str, Any]] = []
     if result.get("status") != "clean":
-        for mode in ("web", "app"):
-            completed = subprocess.run(
-                [
-                    "node",
-                    "tooling/devctl/index.mjs",
-                    "desktop",
-                    "stop",
-                    "--mode",
-                    mode,
-                ],
-                cwd=ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            fallback.append({"mode": mode, "returnCode": completed.returncode})
+        completed = subprocess.run(
+            ["node", "tooling/devctl/index.mjs", "desktop", "stop"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        fallback.append(
+            {"runtime": "native-desktop", "returnCode": completed.returncode}
+        )
     ports = {
         "nativeGateway": port_released(runtime_pair.native.spec.gateway_port),
         "nativeRenderer": port_released(runtime_pair.native.spec.renderer_port),
         "nativeWebDriver": port_released(runtime_pair.native.spec.webdriver_port),
-        "browserGateway": port_released(runtime_pair.browser.spec.gateway_port),
-        "browserRenderer": port_released(runtime_pair.browser.spec.renderer_port),
-        "browserWebDriver": port_released(runtime_pair.browser.spec.webdriver_port),
+        "secondaryGateway": port_released(runtime_pair.secondary.spec.gateway_port),
+        "secondaryRenderer": port_released(runtime_pair.secondary.spec.renderer_port),
+        "secondaryWebDriver": port_released(runtime_pair.secondary.spec.webdriver_port),
     }
     return {
         "initial": result,
@@ -559,7 +553,7 @@ def main() -> int:
                 )
             for runtime, client in (
                 ("native", runtime_pair.native),
-                ("browser", runtime_pair.browser),
+                ("secondary", runtime_pair.secondary),
             ):
                 if client.log_path.is_file():
                     target = artifact_dir / runtime / client.log_path.name

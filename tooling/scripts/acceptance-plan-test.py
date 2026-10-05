@@ -237,6 +237,97 @@ class ChangedPathsTests(unittest.TestCase):
             )
             run.assert_called_once()
 
+    def test_gate_catalog_diff_returns_only_changed_gate_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            acceptance = Path(tmp) / "acceptance"
+            acceptance.mkdir()
+            (acceptance / "gates.yaml").write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "changed-gate": {"command": "new"},
+                            "stable-gate": {"command": "stable"},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            baseline = subprocess.CompletedProcess(
+                args=["git", "show"],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "gates": {
+                            "changed-gate": {"command": "old"},
+                            "stable-gate": {"command": "stable"},
+                        }
+                    }
+                ),
+                stderr="",
+            )
+            with patch.object(
+                MODULE.subprocess,
+                "run",
+                return_value=baseline,
+            ):
+                self.assertEqual(
+                    MODULE.changed_gate_ids(acceptance, "a" * 40),
+                    ["changed-gate"],
+                )
+
+    def test_gate_catalog_change_does_not_expand_exact_file_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            acceptance = Path(tmp) / "acceptance"
+            acceptance.mkdir()
+            (acceptance / "registry.yaml").write_text(
+                json.dumps(
+                    {
+                        "rules": [
+                            {
+                                "id": "business-domain",
+                                "features": ["business"],
+                                "when": {"paths": ["acceptance/gates.yaml"]},
+                                "require": ["unrelated-business-gate"],
+                            },
+                            {
+                                "id": "acceptance-infra",
+                                "features": ["acceptance-infra"],
+                                "when": {"paths": ["acceptance/**"]},
+                                "require": ["infra-self-validation"],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (acceptance / "gates.yaml").write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "changed-gate": {"command": "changed"},
+                            "infra-self-validation": {"command": "infra"},
+                            "unrelated-business-gate": {"command": "business"},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = MODULE.plan(
+                acceptance,
+                ["acceptance/gates.yaml"],
+                catalog_changed_gate_ids=["changed-gate"],
+            )
+
+            self.assertEqual(
+                {gate["id"] for gate in result["selected_gates"]},
+                {"changed-gate", "infra-self-validation"},
+            )
+            self.assertNotIn(
+                "unrelated-business-gate",
+                {gate["id"] for gate in result["selected_gates"]},
+            )
+
     def test_self_check_uses_dedicated_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = EvidenceStore(Path(tmp) / "artifacts", worktree=ROOT)
@@ -325,7 +416,7 @@ class BehaviorRuleTests(unittest.TestCase):
         }
         for path in (
             "apps/oauth2-client/internal/bootstrap/container.go",
-            "docs/architecture/oauth-login-broker/design.md",
+            "docs/architecture/domains/identity/oauth-login-broker/design.md",
         ):
             with self.subTest(path=path):
                 self.assertTrue(expected.issubset(self.selected_ids(path)))
@@ -371,7 +462,6 @@ class BehaviorRuleTests(unittest.TestCase):
             "apps/desktop/src-tauri/src/messaging/direct.rs"
         )
         self.assertIn("chat-native-two-client-e2e", selected)
-        self.assertIn("chat-desktop-gateway-e2e", selected)
 
     def test_prekey_owner_selects_native_two_client(self) -> None:
         selected = self.selected_ids(
@@ -379,9 +469,8 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertIn("chat-native-current-profile-two-client-e2e", selected)
         self.assertIn("chat-native-two-client-e2e", selected)
-        self.assertIn("chat-desktop-gateway-e2e", selected)
 
-    def test_friend_request_owners_select_gateway_lifecycle(self) -> None:
+    def test_friend_request_owners_select_native_onboarding(self) -> None:
         for path in (
             "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
             "apps/station/app/subserver/social/domain/"
@@ -392,7 +481,7 @@ class BehaviorRuleTests(unittest.TestCase):
             with self.subTest(path=path):
                 selected = self.selected_ids(path)
                 self.assertIn(
-                    "chat-friend-request-gateway-e2e",
+                    "chat-lifecycle-onboarding-e2e",
                     selected,
                 )
 
@@ -424,12 +513,14 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertIn("station-api-ownership", selected)
 
-    def test_gateway_only_handler_does_not_select_native_two_client(self) -> None:
+    def test_gateway_only_handler_selects_no_desktop_product_gate(self) -> None:
         selected = self.selected_ids(
             "apps/desktop/src-tauri/src/interface/http_gateway/handler.rs"
         )
-        self.assertNotIn("chat-native-two-client-e2e", selected)
-        self.assertIn("chat-desktop-gateway-e2e", selected)
+        self.assertEqual(
+            selected,
+            {"chat-lifecycle-tree-zero-reference-e2e"},
+        )
 
     def test_mobile_social_gateway_selects_chat_and_contacts_gates(self) -> None:
         selected = self.selected_ids(

@@ -8,8 +8,8 @@ owns:
   - model/domain/chat/
   - model/domain/presence/
 related:
-  - docs/architecture/identity/presence-supervisor.md
-  - docs/architecture/realtime/event-stream.md
+  - docs/architecture/domains/identity/presence-supervisor.md
+  - docs/architecture/shared/communication/event-stream.md
 detected: 2026-06-19
 ---
 

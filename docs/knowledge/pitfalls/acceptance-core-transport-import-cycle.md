@@ -9,8 +9,8 @@ owns:
   - tooling/acceptance/fixtures/
 referenced-by: []
 related:
-  - docs/architecture/acceptance-framework/module-layout.md
-  - docs/architecture/acceptance-framework/execution-plans/20260816-runtime-provisioning-contract-implementation.md
+  - docs/architecture/engineering/acceptance/module-layout.md
+  - docs/architecture/engineering/acceptance/execution-plans/20260816-runtime-provisioning-contract-implementation.md
 detected: 2026-09-09
 ---
 
@@ -78,6 +78,6 @@ The import command must exit zero and the search must return no matches.
 ## Crosswalks
 
 - Architecture boundary:
-  `docs/architecture/acceptance-framework/module-layout.md`.
+  `docs/architecture/engineering/acceptance/module-layout.md`.
 - Owning execution plan:
-  `docs/architecture/acceptance-framework/execution-plans/20260816-runtime-provisioning-contract-implementation.md`.
+  `docs/architecture/engineering/acceptance/execution-plans/20260816-runtime-provisioning-contract-implementation.md`.

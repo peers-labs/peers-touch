@@ -117,17 +117,6 @@
       "fixture_capability": "secure-content-hardcut",
       "budget_seconds": 7200
     },
-    "run-w11-browser": {
-      "work_item_id": "secure-content-w11",
-      "task_id": "W11",
-      "journey_id": "sc-dj-browser-private-boundary",
-      "scenario_id": "hardcut-browser-regression",
-      "runtime": "browser",
-      "profiles": ["four", "fiveArm"],
-      "clients": ["secure-content-browser-authenticated", "secure-content-browser-anonymous"],
-      "fixture_capability": "secure-content-hardcut",
-      "budget_seconds": 1200
-    },
     "run-w11-ios": {
       "work_item_id": "secure-content-w11",
       "task_id": "W11",
@@ -193,17 +182,6 @@
       "clients": ["secure-content-desktop-alice", "secure-content-desktop-bob", "secure-content-desktop-eve"],
       "fixture_capability": "secure-content-final",
       "budget_seconds": 7200
-    },
-    "run-final-browser": {
-      "work_item_id": "secure-content-w12",
-      "task_id": "W12",
-      "journey_id": "sc-dj-browser-private-boundary",
-      "scenario_id": "final-browser",
-      "runtime": "browser",
-      "profiles": ["four"],
-      "clients": ["secure-content-browser-authenticated", "secure-content-browser-anonymous"],
-      "fixture_capability": "secure-content-final",
-      "budget_seconds": 1200
     },
     "run-final-ios": {
       "work_item_id": "secure-content-w12",
@@ -343,7 +321,6 @@
       "lifecycle-bounds",
       "full-social",
       "outer-uow",
-      "browser-boundary",
       "prepare-corpus",
       "direct-exact-bytes",
       "group-exact-bytes",
@@ -373,7 +350,6 @@
       "lifecycle-bounds",
       "full-social",
       "outer-uow",
-      "browser-boundary",
       "prepare-corpus",
       "direct-exact-bytes",
       "group-exact-bytes",

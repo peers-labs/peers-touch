@@ -6,22 +6,20 @@ human to click through the Desktop or Dashboard:
 
 1. Station endpoints are reachable on the isolated testnet.
 2. Dashboard serves the built Federation page bundle.
-3. A running Desktop dev gateway can list and probe the active Station.
 
 The script deliberately avoids governance writes. It validates that app
-surfaces are wired and pointing at the expected Station network.
+surfaces are wired to the expected Station network. Native Desktop Federation
+behavior is proven separately by the native Station Access boundary Gate.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any
 
 
 DEFAULT_STATIONS = [
@@ -50,18 +48,6 @@ def http_get(url: str, timeout: float = 8.0) -> tuple[int, str, bytes]:
     with urllib.request.urlopen(request, timeout=timeout) as response:
         content_type = response.headers.get("content-type", "")
         return response.status, content_type, response.read()
-
-
-def http_post_json(url: str, payload: dict[str, Any], timeout: float = 8.0) -> dict[str, Any]:
-    body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
 
 
 def check_station_health(station_url: str) -> CheckResult:
@@ -99,49 +85,6 @@ def check_dashboard_bundle(station_url: str) -> CheckResult:
         return CheckResult("dashboard federation bundle", False, str(error))
 
 
-def unwrap_gateway_status(response: dict[str, Any]) -> dict[str, Any]:
-    if not response.get("ok"):
-        raise RuntimeError(f"gateway command failed: {response}")
-    data = response.get("data") or {}
-    status = data.get("status")
-    if not isinstance(status, str):
-        raise RuntimeError(f"gateway response missing string status: {response}")
-    return json.loads(status)
-
-
-def check_desktop_gateway(gateway_url: str, expected_station: str) -> list[CheckResult]:
-    gateway_url = gateway_url.rstrip("/")
-    results: list[CheckResult] = []
-    try:
-        listed = unwrap_gateway_status(http_post_json(gateway_url, {"cmd": "station_list", "args": {}}))
-        active_url = (listed.get("active_url") or "").rstrip("/")
-        results.append(
-            CheckResult(
-                "desktop gateway station_list",
-                active_url == expected_station,
-                f"active_url={active_url or 'empty'}",
-            )
-        )
-    except Exception as error:  # noqa: BLE001
-        results.append(CheckResult("desktop gateway station_list", False, str(error)))
-        return results
-
-    try:
-        probed = unwrap_gateway_status(
-            http_post_json(gateway_url, {"cmd": "station_probe", "args": {"url": expected_station}})
-        )
-        results.append(
-            CheckResult(
-                "desktop gateway station_probe",
-                bool(probed.get("online")) and bool(probed.get("peer_id")),
-                f"online={probed.get('online')} peer_id={probed.get('peer_id') or 'empty'}",
-            )
-        )
-    except Exception as error:  # noqa: BLE001
-        results.append(CheckResult("desktop gateway station_probe", False, str(error)))
-    return results
-
-
 def print_report(results: list[CheckResult]) -> None:
     print("Federation App Smoke")
     print("====================")
@@ -153,13 +96,10 @@ def print_report(results: list[CheckResult]) -> None:
 def main() -> int:
     stations = env_list("FEDERATION_SMOKE_STATIONS", DEFAULT_STATIONS)
     dashboard_station = os.environ.get("FEDERATION_SMOKE_DASHBOARD_STATION", stations[0]).rstrip("/")
-    expected_desktop_station = os.environ.get("FEDERATION_SMOKE_DESKTOP_STATION", stations[0]).rstrip("/")
-    desktop_gateway = os.environ.get("FEDERATION_SMOKE_DESKTOP_GATEWAY", "http://127.0.0.1:3030").rstrip("/")
 
     results: list[CheckResult] = []
     results.extend(check_station_health(station) for station in stations)
     results.append(check_dashboard_bundle(dashboard_station))
-    results.extend(check_desktop_gateway(desktop_gateway, expected_desktop_station))
 
     print_report(results)
     return 0 if all(result.ok for result in results) else 1

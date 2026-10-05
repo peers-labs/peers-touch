@@ -10,53 +10,53 @@ import {
 const ROOT = '/tmp/acceptance-admission';
 const PLAN_PATH =
   'docs/architecture/example/execution-plans/current/plan.md';
+const WORKSPACE_ID = '0123456789abcdef';
+const BRANCH = 'feature/acceptance';
 
 function fixture(state = 'ACCEPTANCE_RUNNING') {
-  const plan = {
-    path: path.join(ROOT, PLAN_PATH),
-    manifest: {
-      planId: 'PLAN-1',
-      status: 'active',
-      binding: {
-        workspaceId: '0123456789abcdef',
-        branch: 'feature/acceptance',
-      },
-    },
-    currentTask: {
-      taskId: 'TASK-1',
-      closureId: 'closure-1',
-      completionClass: 'functional',
-    },
-    acceptance: {
-      closures: {
-        'closure-1': ['gate-1'],
-      },
-    },
+  const task = {
+    taskId: 'TASK-1',
+    closureId: 'closure-1',
+    completionClass: 'functional',
   };
-  const binding = {
-    planId: plan.manifest.planId,
-    planPath: PLAN_PATH,
+  const execution = {
+    planPackage: {
+      path: path.join(ROOT, PLAN_PATH),
+      taskSlices: new Map([[task.taskId, task]]),
+    },
+    snapshot: {
+      planId: 'PLAN-1',
+      executionBinding: {
+        workspaceId: WORKSPACE_ID,
+        branch: BRANCH,
+      },
+      acceptance: {
+        closures: {
+          'closure-1': ['gate-1'],
+        },
+      },
+    },
+    run: {
+      state: 'active',
+      currentTaskId: task.taskId,
+    },
   };
   const session = {
     state: {
       sessionId: 'session-1',
-      planId: plan.manifest.planId,
-      taskId: plan.currentTask.taskId,
-      workspaceId: plan.manifest.binding.workspaceId,
-      branch: plan.manifest.binding.branch,
+      planId: execution.snapshot.planId,
+      taskId: task.taskId,
+      workspaceId: WORKSPACE_ID,
+      branch: BRANCH,
       state,
     },
   };
   return {
-    plan,
-    binding,
+    execution,
     session,
     dependencies: {
-      resolveWorkspacePlanBinding() {
-        return binding;
-      },
-      loadPlanPackage() {
-        return plan;
+      resolvePlanExecution() {
+        return execution;
       },
       loadSessionStoreFromPath() {
         return session;
@@ -168,7 +168,7 @@ test('Gap Detector requires successful formal Acceptance', async () => {
 
 test('current Task must own a formal Acceptance closure', async () => {
   const scope = fixture();
-  scope.plan.acceptance.closures['closure-1'] = [];
+  scope.execution.snapshot.acceptance.closures['closure-1'] = [];
   await rejects(
     'ACCEPTANCE_PLAN_NOT_READY',
     admitAcceptance(

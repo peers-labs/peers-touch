@@ -568,7 +568,9 @@ class ControlLineageTest(unittest.TestCase):
                 root
                 / "docs"
                 / "architecture"
-                / "cross-station-social"
+                / "domains"
+                / "social"
+                / "cross-station"
                 / "evidence.md"
             )
             evidence_path.parent.mkdir(parents=True)

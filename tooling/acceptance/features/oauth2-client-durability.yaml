@@ -4,7 +4,7 @@
   "product_area": "oauth-login-broker",
   "owners": [
     "apps/oauth2-client/**",
-    "docs/architecture/oauth-login-broker/**",
+    "docs/architecture/domains/identity/oauth-login-broker/**",
     "tooling/acceptance/gates/oauth2_client/**"
   ],
   "truth_sources": [

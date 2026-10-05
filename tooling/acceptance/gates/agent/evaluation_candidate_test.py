@@ -91,7 +91,7 @@ class EvaluationCandidateTest(unittest.TestCase):
         self.assertEqual(sleep.call_count, 2)
         self.assertEqual(login["stationPeerId"], "station-peer")
 
-    def test_runtime_pair_reuses_native_identity_before_browser_start(self) -> None:
+    def test_runtime_pair_reuses_native_identity_before_secondary_start(self) -> None:
         events: list[str] = []
 
         class FakeClient:
@@ -103,13 +103,13 @@ class EvaluationCandidateTest(unittest.TestCase):
                 events.append(f"start:{self.name}")
 
         native = FakeClient("native")
-        browser = FakeClient("browser")
-        runtime_pair = SimpleNamespace(native=native, browser=browser)
+        secondary = FakeClient("secondary")
+        runtime_pair = SimpleNamespace(native=native, secondary=secondary)
 
         def fake_seed(_role, target_root, _station_url, *, fixture):
             del fixture
             events.append(f"seed:{target_root.name}")
-            return target_root == browser.actor_identity_root
+            return target_root == secondary.actor_identity_root
 
         def fake_auth(client, **_kwargs):
             events.append(f"auth:{client.name}")
@@ -156,9 +156,9 @@ class EvaluationCandidateTest(unittest.TestCase):
                 "start:native",
                 "auth:native",
                 "persist:native",
-                "seed:browser",
-                "start:browser",
-                "auth:browser",
+                "seed:secondary",
+                "start:secondary",
+                "auth:secondary",
             ],
         )
 

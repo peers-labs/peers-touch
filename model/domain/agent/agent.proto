@@ -664,7 +664,7 @@ enum ToolCallStatus {
 enum ClientPlatform {
   CLIENT_PLATFORM_UNSPECIFIED = 0;
   CLIENT_PLATFORM_DESKTOP = 1;
-  CLIENT_PLATFORM_BROWSER = 2;
+  reserved 2;
   CLIENT_PLATFORM_MOBILE = 3;
 }
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # _ensure-desktop-rust.sh — Shared helper: ensure Desktop Rust BFF is running.
 #
-# Both dev-desktop-app.sh and dev-desktop-web.sh source this file.
+# The Native Desktop launcher sources this file.
 # The Rust BFF (including HTTP Gateway) is currently embedded in the Tauri
 # process. Starting Tauri = starting Rust BFF.
 #
 # Exported function:
-#   ensure_desktop_rust_ready <desktop_dir> <gateway_port> <profile> <vite_port> [--headless]
+#   ensure_desktop_rust_ready <desktop_dir> <gateway_port> <profile> <vite_port>
 #
 # Environment variables set for the child Tauri process:
 #   PT_GATEWAY_PORT — HTTP gateway listen port
@@ -260,7 +260,6 @@ ensure_desktop_rust_ready() {
   local gw_port="$2"
   local profile="$3"
   local vite_port="$4"
-  local headless="${5:-}"
   local wt_id="${WORKTREE_ID:-default}"
   local pid_file="/tmp/peers-touch-desktop-rust-${profile}-${wt_id}.pid"
   local meta_file="/tmp/peers-touch-desktop-rust-${profile}-${wt_id}.meta"
@@ -279,10 +278,6 @@ ensure_desktop_rust_ready() {
   local tauri_config
   local e2e_testing="${PT_DESKTOP_E2E:-false}"
   if [[ "$native_dev" == "1" ]]; then
-    if [[ "$headless" == "--headless" ]]; then
-      echo "[ERROR] Native Acceptance requires a native window"
-      return 1
-    fi
     e2e_testing=true
   fi
   local wt_suffix
@@ -292,18 +287,14 @@ ensure_desktop_rust_ready() {
     wt_suffix="$(printf '%s' "$wt_id" | tr -cs 'a-zA-Z0-9' '-' | sed 's/-$//')"
   fi
   local bundle_id="com.peertouch.dev.${wt_suffix}"
-  if [[ "$headless" == "--headless" && "$e2e_testing" == "true" ]]; then
-    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"create\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
-  elif [[ "$headless" == "--headless" ]]; then
-    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"create\":false}]}}"
-  elif [[ "$e2e_testing" == "true" ]]; then
-    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
+  if [[ "$e2e_testing" == "true" ]]; then
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external renderer dev server\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   else
-    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external renderer dev server\"}}"
   fi
 
   local desired_fp
-  desired_fp="$(tauri_compute_fingerprint "$desktop_dir" "$profile" "$gw_port" "$vite_port"):${PT_CLIENT_SURFACE:-desktop}"
+  desired_fp="$(tauri_compute_fingerprint "$desktop_dir" "$profile" "$gw_port" "$vite_port")"
 
   # Determine if a restart is needed: explicit RESTART=1 or source code changed
   local needs_restart=false
@@ -339,11 +330,8 @@ ensure_desktop_rust_ready() {
 
   echo "[INFO] Starting Desktop Rust BFF (profile=$profile, gateway=:$gw_port)..."
 
-  # Both headless (web) and windowed (app) modes use `pnpm tauri dev --config`
-  # to ensure devUrl, window creation, and beforeDevCommand overrides are
-  # applied correctly. Browser mode keeps the Rust BFF rendererless so no
-  # hidden WebView can become a second session owner.
-  # See docs/architecture/runtime/desktop-runtime-architecture.md §6.4.
+  # Native Desktop uses `pnpm tauri dev --config` so devUrl and the embedded
+  # WebDriver capability remain bound to the Tauri application process.
   local tauri_feature_args=()
   if [[ "$native_dev" == "1" ]]; then
     tauri_feature_args=(--no-watch --features acceptance-webdriver)
@@ -374,7 +362,6 @@ TAURI_GATEWAY_PORT='${gw_port}'
 TAURI_VITE_PORT='${vite_port}'
 TAURI_STATION_URL='${PEERS_STATION_URL:-}'
 TAURI_E2E_TESTING='${PT_DESKTOP_E2E:-false}'
-TAURI_CLIENT_SURFACE='${PT_CLIENT_SURFACE:-desktop}'
 TAURI_PID='${TAURI_PID}'
 EOF
   echo "[INFO] Rust BFF started (pid: $TAURI_PID), waiting for gateway..."

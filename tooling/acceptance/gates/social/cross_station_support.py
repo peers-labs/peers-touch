@@ -52,7 +52,7 @@ CLIENT_BINDINGS = {
 LAUNCHED_CLIENTS = ("alice", "bob", "bob2")
 FIXTURE_ONLY_CLIENTS = ("eve",)
 ALLOWED_POST_RESULT_PREFIXES = (
-    "docs/architecture/cross-station-social/",
+    "docs/architecture/domains/social/cross-station/",
     "tooling/acceptance/",
     "tooling/development/secure_content/",
 )

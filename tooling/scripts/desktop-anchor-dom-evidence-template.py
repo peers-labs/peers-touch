@@ -64,8 +64,8 @@ def issue_breakdown() -> list[dict[str, Any]]:
         {
             "category": "dom-automation-evidence",
             "failedStep": "dom-evidence-template",
-            "summary": "Browser, dev native, and packaged native DOM automation has not populated runtime anchor observations.",
-            "proofImpact": "P0b-1 remains PARTIAL/UNPROVEN until all three runtime cells prove every required anchor.",
+            "summary": "Dev and packaged Native DOM automation has not populated runtime anchor observations.",
+            "proofImpact": "P0b-1 remains PARTIAL/UNPROVEN until both Native runtime cells prove every required anchor.",
             "status": "diagnostic incomplete",
             "completionStatus": "PARTIAL",
             "proofStatus": "UNPROVEN",
@@ -91,7 +91,7 @@ def recommended_review_commands() -> list[dict[str, str]]:
             "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template.py",
         },
         {
-            "purpose": "Collect browser/dev-native/packaged-native DOM anchor observations when runtimes are available.",
+            "purpose": "Collect dev-native and packaged-native DOM anchor observations when runtimes are available.",
             "command": COLLECT_COMMAND,
         },
         {
@@ -125,7 +125,6 @@ def build_template() -> dict[str, Any]:
         "bom": list(inventory.DOM_EVIDENCE_BOM),
         "spec": list(inventory.DOM_EVIDENCE_SPEC),
         "gate": inventory.DOM_EVIDENCE_GATE,
-        "browser": runtime_template("browser-gateway", inventory.REQUIRED_ANCHORS),
         "tauriDev": runtime_template("tauri-webview-dev", inventory.REQUIRED_ANCHORS),
         "tauriPackaged": runtime_template(
             "tauri-webview-packaged",
@@ -139,7 +138,7 @@ def build_template() -> dict[str, Any]:
             "completionStatus": "PARTIAL",
             "proofStatus": "UNPROVEN",
             "sampleEmissionAllowed": False,
-            "reason": "Browser, dev native, and packaged native DOM automation has not populated runtime anchor observations.",
+            "reason": "Dev and packaged Native DOM automation has not populated runtime anchor observations.",
         },
         "recommended_review_commands": review_commands,
         "recommendedReviewCommands": review_commands,
@@ -180,7 +179,7 @@ def build_observations_template() -> dict[str, Any]:
         }
         for anchor in inventory.REQUIRED_ANCHORS
     ]
-    reason = "Observation template only; replace count=0 with live browser/dev-native/packaged-native DOM match counts before collection."
+    reason = "Observation template only; replace count=0 with live dev-native and packaged-native DOM match counts before collection."
     return {
         "schemaVersion": 1,
         "artifactKind": OBSERVATIONS_TEMPLATE_ARTIFACT_KIND,
@@ -195,12 +194,10 @@ def build_observations_template() -> dict[str, Any]:
         "gate": inventory.DOM_EVIDENCE_GATE,
         "source": "dom-observations-template",
         "requiredRuntimes": [
-            "browser-gateway",
             "tauri-webview-dev",
             "tauri-webview-packaged",
         ],
         "requiredAnchors": required_anchors,
-        "browser-gateway": runtime_observation_template("browser-gateway", inventory.REQUIRED_ANCHORS),
         "tauri-webview-dev": runtime_observation_template(
             "tauri-webview-dev",
             inventory.REQUIRED_ANCHORS,

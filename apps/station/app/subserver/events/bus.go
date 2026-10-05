@@ -19,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Defaults from docs/architecture/realtime/event-stream.md.
+// Defaults from docs/architecture/shared/communication/event-stream.md.
 //
 // Operators may override per Station via subserver options (future
 // work); the defaults below are deliberately the values quoted in

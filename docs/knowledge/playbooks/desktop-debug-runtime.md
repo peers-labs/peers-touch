@@ -33,13 +33,13 @@ Do not use hard packaged `.app` debugging by default. Packaging is only the righ
 ## Steps
 
 1. **Start from Make** — Use the repo Make entrypoint for Desktop development.
-   - Default app shell: `make desktop`.
-   - Browser shell only when explicitly needed: `make desktop-web`.
+   - Use `make desktop` for the native Tauri application.
+   - There is no supported Desktop browser shell.
    - Do not call `pnpm --filter @peers-touch/app-desktop run tauri:build`, `tauri build`, or manually execute `.app/Contents/MacOS/*` for normal debugging.
 
 2. **Keep the loop live** — Reproduce, inspect logs, and iterate against the live dev runtime.
    - Prefer fixing lifecycle/runtime contracts in source and reloading the dev runtime.
-   - Use browser or integrated browser tools only after `make desktop-web` is the selected shell.
+   - Use the repository native driver or native accessibility tooling for UI interaction.
 
 3. **Separate acceptance tiers** — Treat package gates as a different evidence tier.
    - Local lifecycle and runtime gates may run during debugging.

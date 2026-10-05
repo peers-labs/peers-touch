@@ -1394,7 +1394,7 @@ export const DeleteFriendMessageResponseSchema: GenMessage<DeleteFriendMessageRe
 /**
  * Friend-chat E2EE ciphertext frame (serialized inside `encrypted_payload`).
  * This compatibility-only frame is scheduled for deletion by the canonical
- * Conversation device-payload cutover in docs/architecture/encryption/.
+ * Conversation device-payload cutover in docs/architecture/domains/chat/encryption/.
  *
  * @generated from message peers_touch.model.chat.v1.EncryptedMessage
  */

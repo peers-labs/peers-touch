@@ -297,7 +297,7 @@ Mandatory, not optional, when triggered:
 For every new active architecture module, and every existing active module
 whose architecture documents are changed, the accepted model also includes one
 positive registry projection in
-`docs/architecture/architecture-module-governance/architecture-modules.json`:
+`docs/architecture/engineering/architecture-governance/architecture-modules.json`:
 
 - module ID, root, status, owner, and characteristics;
 - the exact document set derived from those characteristics;

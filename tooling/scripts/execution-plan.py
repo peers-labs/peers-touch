@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core.execution_plan import (  # noqa: E402
+    PLAN_BINDING_REQUIRED,
     PLAN_INPUT_REQUIRED,
     PLAN_INVALID,
     ExecutionPlanError,
@@ -29,10 +30,11 @@ def main() -> int:
     parser.add_argument("--branch")
     parser.add_argument("--ci", action="store_true")
     parser.add_argument("--require-complete", action="store_true")
+    parser.add_argument("--allow-untracked", action="store_true")
     args = parser.parse_args()
 
+    explicit_plan = args.plan or os.environ.get("PT_EXECUTION_PLAN")
     try:
-        explicit_plan = args.plan or os.environ.get("PT_EXECUTION_PLAN")
         if args.ci and not explicit_plan:
             raise ExecutionPlanError(
                 PLAN_INPUT_REQUIRED,
@@ -67,6 +69,24 @@ def main() -> int:
                 ),
             )
     except ExecutionPlanError as error:
+        if (
+            args.allow_untracked
+            and not args.ci
+            and not explicit_plan
+            and error.code == PLAN_BINDING_REQUIRED
+        ):
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "tracked": False,
+                        "plan": None,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         print(
             json.dumps(
                 {"ok": False, "error": {"code": error.code, "message": str(error)}},
@@ -80,6 +100,7 @@ def main() -> int:
         json.dumps(
             {
                 "ok": True,
+                "tracked": True,
                 "plan": relative_plan,
                 "planId": plan.plan_id,
                 "planFormat": plan.plan_format,

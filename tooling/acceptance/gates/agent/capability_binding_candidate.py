@@ -125,7 +125,7 @@ def _combined_hash(values: Mapping[str, str]) -> str:
 
 
 class CapabilityBindingRuntimeAdapter:
-    """Execute one Station-owned scenario per Desktop or Browser tuple."""
+    """Execute one Station-owned scenario per Desktop or Secondary tuple."""
 
     def __init__(
         self,
@@ -143,8 +143,8 @@ class CapabilityBindingRuntimeAdapter:
                 profile=PROFILE,
                 account=ACTOR_ACCOUNT,
             ),
-            "browser": authenticate_native_client(
-                runtime_pair.browser,
+            "secondary": authenticate_native_client(
+                runtime_pair.secondary,
                 profile_env,
                 profile=PROFILE,
                 account=ACTOR_ACCOUNT,
@@ -156,7 +156,7 @@ class CapabilityBindingRuntimeAdapter:
         }
         require(
             len(set(actors.values())) == 1,
-            "J02 Native and Browser clients authenticated different actors",
+            "J02 Native and Secondary clients authenticated different actors",
         )
         self.actor_id = next(iter(actors.values()))
         self.actor_identity_hash = _hash_text(self.actor_id)
@@ -179,8 +179,8 @@ class CapabilityBindingRuntimeAdapter:
     ) -> FoundationRuntimeClient:
         if runtime_tuple.platform == "desktop_app":
             return self._runtime_pair.native
-        if runtime_tuple.platform == "browser":
-            return self._runtime_pair.browser
+        if runtime_tuple.platform == "secondary":
+            return self._runtime_pair.secondary
         raise CapabilityBindingCandidateError(
             f"J02 runtime adapter rejects platform {runtime_tuple.platform}"
         )
@@ -192,7 +192,7 @@ class CapabilityBindingRuntimeAdapter:
         require(
             runtime_tuple.runtime_attestation_profile
             == "station_control_plane",
-            "J02 Desktop/Browser tuple must use station_control_plane",
+            "J02 Desktop/Secondary tuple must use station_control_plane",
         )
         scenario_execution_id = str(uuid.uuid4())
         capture = _mapping(

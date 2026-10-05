@@ -207,110 +207,6 @@ class EnvironmentContractTests(unittest.TestCase):
                     declared.service_bindings,
                 )
 
-    def test_load_local_desktop_gateway_contract(self):
-        contract = EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "local-desktop-gateway.yaml")
-        self.assertEqual(contract.id, "local-desktop-gateway")
-        self.assertIn("station", contract.services)
-        self.assertIn("desktop-gateway", contract.services)
-        self.assertEqual(len(contract.fixtures), 1)
-        self.assertEqual(contract.fixtures[0].id, "chat-native-actors")
-        self.assertTrue(contract.fixtures[0].authorization_required)
-        self.assertEqual(
-            contract.fixtures[0].authorization_ref,
-            "env:CHAT_ACCEPTANCE_RESET",
-        )
-        self.assertEqual(len(contract.credentials), 1)
-        self.assertEqual(contract.credentials[0].id, "chat-password")
-        self.assertEqual(
-            contract.credentials[0].source_ref,
-            "fixture:apps/station/app/conf/actor.yml#preset_users",
-        )
-        self.assertTrue(contract.credentials[0].required)
-        self.assertFalse(contract.credentials[0].generated_if_missing)
-        self.assertEqual(
-            [fixture.id for fixture in contract.fixtures],
-            ["chat-native-actors"],
-        )
-        self.assertEqual(
-            [credential.source_ref for credential in contract.credentials],
-            ["fixture:apps/station/app/conf/actor.yml#preset_users"],
-        )
-
-        from tooling.acceptance.provisioners.local_desktop_gateway import (
-            LocalDesktopGatewayProvisioner,
-        )
-
-        provisioner = LocalDesktopGatewayProvisioner(contract)
-        refs, values = provisioner.prepare_credentials()
-        self.assertEqual(refs, (contract.credentials[0].source_ref,))
-        self.assertEqual(values, {"chat-password": "1"})
-        self.assertEqual(provisioner.resolved_credential_values, ())
-
-    def test_local_desktop_gateway_starts_with_exact_acceptance_ports(self):
-        from tooling.acceptance.provisioners import local_desktop_gateway
-
-        contract = EnvironmentContract.from_yaml(
-            ENVIRONMENTS_DIR / "local-desktop-gateway.yaml"
-        )
-        provisioner = local_desktop_gateway.LocalDesktopGatewayProvisioner(
-            contract
-        )
-        process = mock.Mock(pid=12345)
-        process.poll.return_value = None
-
-        with (
-            tempfile.TemporaryDirectory() as temp_dir,
-            mock.patch.object(
-                local_desktop_gateway.tempfile,
-                "mkdtemp",
-                return_value=str(Path(temp_dir) / "logs"),
-            ),
-            mock.patch.object(
-                local_desktop_gateway,
-                "write_current_artifact",
-            ),
-            mock.patch.object(
-                local_desktop_gateway.subprocess,
-                "Popen",
-                return_value=process,
-            ) as popen,
-            mock.patch.object(
-                provisioner,
-                "_gateway_ready",
-                return_value=True,
-            ),
-        ):
-            log_directory = Path(temp_dir) / "logs"
-            storage_parent = Path(temp_dir) / "storage"
-            log_directory.mkdir()
-            storage_parent.mkdir()
-            provisioner.register_cleanup(
-                "desktop-storage:run-id",
-                lambda: shutil.rmtree(storage_parent),
-            )
-            storage_root = provisioner._start_gateway(
-                "http://127.0.0.1:3430",
-                "run-id",
-                gateway_port=3430,
-                renderer_port=3610,
-                profile_name="four",
-                storage_parent=storage_parent,
-            )
-            storage_root.mkdir()
-            provisioner.cleanup()
-
-        launch_env = popen.call_args.kwargs["env"]
-        self.assertEqual(launch_env["PT_DESKTOP_E2E"], "true")
-        self.assertEqual(launch_env["PT_GATEWAY_PORT"], "3430")
-        self.assertEqual(launch_env["PT_RENDERER_PORT"], "3610")
-        self.assertEqual(launch_env["PT_PROFILE"], "four-gateway-run-id")
-        self.assertEqual(
-            Path(launch_env["PEERS_STORAGE_ROOT"]),
-            storage_parent,
-        )
-        self.assertEqual(storage_root, storage_parent / "peers-touch")
-        self.assertFalse(storage_parent.exists())
-
     def test_load_native_tauri_contract(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
@@ -2038,8 +1934,6 @@ class MachineProfileEnvironmentTests(unittest.TestCase):
                 "ports": {
                     "desktopAppGateway": 3130,
                     "desktopAppWeb": 3310,
-                    "desktopWebGateway": 3131,
-                    "desktopWebWeb": 3311,
                     "mobileWeb": 5273,
                 },
             }

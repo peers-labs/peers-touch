@@ -8,20 +8,8 @@ import { useAccountIdentityStore } from '../store/accountIdentity';
 import { useChatStore } from '../store/chat';
 import { useSidebarStore } from '../store/sidebar';
 import { useGlobalContextStore } from '../kernel/global-context/store';
-import { closeBrowserCapabilitySession } from '../runtimes/agentCapabilityRuntime';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
-
-registerIdentityHandler('close-browser-capability-session', async (payload) => {
-  const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
-  if (
-    payload.reason === 'logout'
-    || payload.reason === 'revoked'
-    || currentActorPtid !== payload.actorPtid
-  ) {
-    await closeBrowserCapabilitySession();
-  }
-});
 
 registerIdentityHandler('clear-zustand-stores', async (payload) => {
   const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;

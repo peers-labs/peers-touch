@@ -2,8 +2,8 @@
 # ─────────────────────────────────────────────────────────────
 # preview-desktop.sh — Production-like preview (loads from dist/)
 #
-# Unlike dev-desktop-app.sh / dev-desktop-web.sh (HMR mode), this script builds the
-# frontend into dist/ and loads it statically, mimicking the
+# Unlike dev-desktop-app.sh (HMR mode), this script builds the frontend into
+# dist/ and loads it statically, mimicking the
 # production build. Use this for final verification before release.
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DESKTOP_DIR="$PROJECT_ROOT/apps/desktop"
 VITE_PORT="${VITE_PORT:-3000}"
-WEB_PID_FILE="/tmp/peers-touch-desktop-web.pid"
+VITE_PID_FILE="/tmp/peers-touch-desktop-preview-vite.pid"
 DESKTOP_PID_FILE="/tmp/peers-touch-desktop-tauri.pid"
 source "$SCRIPT_DIR/_ensure-station.sh"
 
@@ -23,14 +23,14 @@ fi
 
 ensure_station_ready "$PROJECT_ROOT"
 
-if [[ -f "$WEB_PID_FILE" ]]; then
-  OLD_WEB_PID="$(cat "$WEB_PID_FILE" 2>/dev/null || true)"
+if [[ -f "$VITE_PID_FILE" ]]; then
+  OLD_WEB_PID="$(cat "$VITE_PID_FILE" 2>/dev/null || true)"
   if [[ -n "${OLD_WEB_PID:-}" ]] && ps -p "$OLD_WEB_PID" >/dev/null 2>&1; then
     echo "[INFO] stopping web preview process to avoid Vite port conflict: $OLD_WEB_PID"
     kill "$OLD_WEB_PID" 2>/dev/null || true
     sleep 1
   fi
-  rm -f "$WEB_PID_FILE"
+  rm -f "$VITE_PID_FILE"
 fi
 
 if [[ -f "$DESKTOP_PID_FILE" ]]; then

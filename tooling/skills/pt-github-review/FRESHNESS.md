@@ -3,16 +3,16 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-05
-covered_docs_hash: 477ee488959b5702cec100f74f7b49cb89bdd30d11b496454ad6e6466cd5c4e6
+covered_docs_hash: 1d42492bd4db10dc55ba4e724b3b2a3d471bf6062abceb8747a53814a1f11d55
 
 covered_docs:
   - AGENTS.md
   - docs/README.md
   - docs/global/code-review-framework.md
-  - docs/architecture/quality-framework
-  - docs/architecture/acceptance-framework
-  - docs/architecture/development-workflow
-  - docs/architecture/local-dev-control-plane
+  - docs/architecture/engineering/quality
+  - docs/architecture/engineering/acceptance
+  - docs/architecture/engineering/development-workflow
+  - docs/architecture/engineering/local-dev
   - docs/global/local-dev-environment.md
   - docs/global/architecture.md
   - docs/client/desktop/base.md
@@ -31,16 +31,16 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
-## 2026-10-05 Post-Master-Sync Covered-Docs Review
+## 2026-10-05 Cross-Station Social Taxonomy Integration Review
 
-After the semantic rebase onto the current master, every covered document hashes
-to the master value except two intentional Cross-Station Social deltas.
+After the semantic merge onto the architecture-taxonomy master, the covered
+documents retain two intentional Cross-Station Social deltas.
 
-First, `docs/README.md` replaces the draft federated-human-social-activity index
-pointer with the active `cross-station-social` module pointer and its current
-Native-only execution-plan scope. Architecture module governance already
-requires every active module to appear in this index, so no new review rule is
-needed.
+First, `docs/README.md` adds the active
+`architecture/domains/social/cross-station` module and its current Native-only
+execution-plan scope alongside the federated-human-social-activity index.
+Architecture module governance already requires every active module to appear
+in this index, so no new review rule is needed.
 
 Second, `docs/client/desktop/runtime-projections.md` narrows `socialRealtime` to
 social graph, presence, relationship, and notification projections, records the
@@ -55,7 +55,77 @@ owners, and demanding hidden-page plus missed-event recovery evidence. No
 additional `SKILL.md` behavior, generic fixture, or knowledge entry is required;
 this entry advances only the covered-docs pin to the post-rebase source bytes.
 
+## 2026-10-05 Architecture Taxonomy Review
+
+Architecture sources now live under `domains`, `platform`, `shared`, and
+`engineering`. The module registry explicitly distinguishes taxonomy indexes
+from capability-owning modules and permits stable module IDs to map to nested
+physical roots. GitHub Review continues to consume the shared governance
+parser, so severity and review semantics are unchanged. Generic Skill path
+templates and registry references were updated; module-governance tests cover
+taxonomy admission, unregistered nested modules, and module-ID/basename
+independence. No generic review fixture is required.
+
 ## 2026-10-05 Review
+
+Large PR-range quality aggregation exposed inherited nonblocking stdin on the
+structure classifier: synchronous fd 0 reads could fail with `EAGAIN` before
+classification. The classifier now switches the inherited handle to blocking
+mode at its explicit stdin boundary, and a focused regression verifies the
+ordering. This is a `ci_tooling_update` plus `review_fixture`; review semantics
+and severity are unchanged.
+
+DWF-D41 makes Development close one exact, resumable cross-owner transaction.
+Review now rejects declaration-only completion, wrong-owner Plan cancellation
+or release, new-work admission while a close receipt is unfinished, and
+environment unregister while declaration, active-work, PlanMount, or lease
+remains live. `implementation-ready`, `delivery-ready`, and `close-ready` are
+distinct claims; only the last consumes
+`DevelopmentCloseReceipt=CLOSED`. Deleted-worktree recovery requires exact
+workspace, mount, and owner identity.
+
+`pt-github-review/SKILL.md` was updated because standalone review and close
+readiness behavior changed directly. The coordinated-close invariant,
+owner-level regressions, Completion Auditor fixtures, architecture module
+registry, and Skill marker checks provide deterministic coverage; no generic
+code-review fixture is needed.
+
+DWF-D40 makes explicit user no-Plan intent an authoritative standalone
+execution boundary. Review must reject Agent-created placeholder Plans,
+Plan/Task/Session/active-work fabrication, and delivery tooling that upgrades
+standalone work into tracked work. It must still require declaration, focused
+verification, review, honest unproven scope, and cleanup.
+
+The Dev Workflow, God View, Plan persistence, and GitHub PR Skills now carry
+that boundary. `skill-check.sh` enforces the markers and rejects restoration of
+the removed unapproved Plan. Plan runtime tests use generated temporary Git
+fixtures instead of a live repository execution Plan; no generic review fixture
+is required.
+
+## 2026-10-04 Review
+
+DWF-D37 removes Completion Review from IDE Hook and Workflow Binding
+authorization. Review now requires a repository-native, request-scoped
+capability, internally derived delegation digest, assessment digest, and HMAC
+proof while preserving immutable current-source checks. Independent reviewer
+launch remains a Dev Workflow obligation because the machine proof establishes
+delegated assessment provenance, not cognitive independence.
+The generic PR review Skill needs no behavior change; the Completion Review
+owner, product contract, host-neutral invariant, and focused regression suite
+carry this boundary.
+
+DWF-D34 through DWF-D36 separate non-destructive Agent integration projection
+from machine-wide cleanup, project one equivalent canonical TRAE Hook into
+every participating root, and remove the projection's circular dependency on a
+grant issued by the Hook being installed. Review now rejects ordinary
+projection that depends on unrelated-worktree idle state or a Hook-issued
+grant, singleton bootstrap assumptions, implicit cleanup, interchangeable
+cleanup grants, or destructive cleanup without global-idle proof.
+`SKILL.md`, the owner-rooted workflow invariant, and dedicated multi-root,
+control, Kernel, and Action Store fixtures cover these checks; no generic
+review fixture is required.
+
+## 2026-10-05 Retired Product Reference Review
 
 The retired external product identity was removed from tracked documentation,
 historical transcripts, prototype copy, and benchmark paths. Review now blocks
@@ -206,8 +276,8 @@ no GitHub Review `SKILL.md` rule change is required.
 
 Desktop navigation ownership now removes the standalone Notes host page and
 makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
-Palette access. The dedicated browser Gate has an exact-source Runtime Manifest
-and cleanup contract, while the official Note applet remains unchanged.
+Palette access. The dedicated Native Desktop Gate has an exact-source Runtime
+Manifest and cleanup contract, while the official Note applet remains unchanged.
 Existing Desktop, locale, source-of-truth, and Acceptance evidence rules already
 cover this change, so no `SKILL.md` or review fixture update is required.
 
@@ -222,8 +292,8 @@ credential storage, exact-source Acceptance, and evidence freshness, so no
 
 Desktop navigation ownership now removes the standalone Notes host page and
 makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
-Palette access. The dedicated browser Gate has an exact-source Runtime Manifest
-and cleanup contract, while the official Note applet remains unchanged.
+Palette access. The dedicated Native Desktop Gate has an exact-source Runtime
+Manifest and cleanup contract, while the official Note applet remains unchanged.
 Existing Desktop, locale, source-of-truth, and Acceptance evidence rules already
 cover this change, so no `SKILL.md` or review fixture update is required.
 
@@ -482,11 +552,13 @@ with profile occupancy retained as a secondary capacity view. PR review
 severity and fixtures remain unchanged; `review/skill-check.sh`, Plan tests,
 Local Dev tests, and dashboard tests own the executable contract.
 
-Peers Dev now owns that projection as a first-class `apps/dev` application with
-one fixed machine endpoint and a fail-closed server identity contract. Concurrent
-read-only lease observers use shared locks so they do not impersonate live
-exclusive holders. These changes preserve existing review severity and require
-no new review fixture.
+At that point Peers Dev owned the projection as a first-class browser
+application with one fixed machine endpoint and a fail-closed server identity
+contract. LDCP-D19 later retired that application and endpoint; the retained
+history does not authorize restoring either. Concurrent read-only lease
+observers use shared locks so they do not impersonate live exclusive holders.
+These changes preserve existing review severity and require no new review
+fixture.
 
 Plan-aware observability adds an explicit declaration-to-Plan locator, a
 read-only Development Session bridge for mixed-version rollout, typed legacy

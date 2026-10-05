@@ -9,25 +9,20 @@ import {
   repoRoot,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
-import { loadPlanPackage } from '../plan/plan-package.mjs';
-import { resolveWorkspacePlanBinding } from '../plan/workspace-plan-binding.mjs';
+import { resolvePlanExecution } from '../plan/plan-mount.mjs';
 import { findEarliestInvalidCompletionReview } from './completion-review.mjs';
 import { buildWorkflowSnapshot } from './workflow-snapshot.mjs';
 
 export const WORKFLOW_DOCTOR_KIND = 'peers-touch-workflow-doctor-report';
 export const WORKFLOW_DOCTOR_SCHEMA_VERSION = 1;
-const DEV_SERVER_HOST = '127.0.0.1';
-const DEV_SERVER_KIND = 'peers-touch-dev-server';
-const DEV_SERVER_PORT = 4177;
-
 export const WORKFLOW_DOCTOR_PROMISES = Object.freeze([
   Object.freeze({
     id: 'dev.integration.installed',
     label: 'Installed agent integration',
   }),
   Object.freeze({
-    id: 'dev.plan.binding',
-    label: 'Current workspace Plan generation',
+    id: 'dev.plan.mount',
+    label: 'Current workspace Plan mount',
   }),
   Object.freeze({
     id: 'dev.workflow.current',
@@ -38,10 +33,6 @@ export const WORKFLOW_DOCTOR_PROMISES = Object.freeze([
     label: 'Current completion review',
   }),
   Object.freeze({
-    id: 'dev.server.live',
-    label: 'Live Peers Dev server',
-  }),
-  Object.freeze({
     id: 'dev.docs.executable',
     label: 'Executable documentation contract',
   }),
@@ -49,14 +40,6 @@ export const WORKFLOW_DOCTOR_PROMISES = Object.freeze([
 
 export const WORKFLOW_DOCTOR_DOCUMENTS = Object.freeze({
   'docs/global/workflow.md': WORKFLOW_DOCTOR_PROMISES.map(({ id }) => id),
-  'apps/dev/README.md': [
-    'dev.integration.installed',
-    'dev.plan.binding',
-    'dev.workflow.current',
-    'dev.review.current',
-    'dev.server.live',
-    'dev.docs.executable',
-  ],
 });
 
 const PROMISE_BY_ID = new Map(
@@ -64,7 +47,7 @@ const PROMISE_BY_ID = new Map(
 );
 const REVIEW_BLOCKING_STATES = new Set(['FAIL', 'STALE', 'UNAVAILABLE']);
 const PLAN_REVIEW_REQUIRED_STATUSES = new Set(['completed']);
-const PLAN_TERMINAL_STATUSES = new Set(['completed', 'superseded']);
+const PLAN_TERMINAL_STATUSES = new Set(['completed', 'cancelled']);
 
 function promiseResult(id, status, code, detail = {}) {
   const promise = PROMISE_BY_ID.get(id);
@@ -134,26 +117,8 @@ function runIntegrationAudit(root, host) {
   return parseAuditOutput(result);
 }
 
-async function runServerProbe() {
-  const { probeDevServer } = await import('../../../apps/dev/server/index.mjs');
-  return probeDevServer();
-}
-
 async function resolvePlan(root) {
-  const binding = await resolveWorkspacePlanBinding({ repoRoot: root });
-  const planPath = path.resolve(root, ...binding.planPath.split('/'));
-  const relative = path.relative(root, planPath);
-  if (
-    relative === '..' ||
-    relative.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relative)
-  ) {
-    const error = new Error('bound Plan path escapes the repository');
-    error.code = 'WORKSPACE_PLAN_BINDING_INVALID';
-    throw error;
-  }
-  const plan = await loadPlanPackage(planPath, { repoRoot: root });
-  return { binding, plan };
+  return resolvePlanExecution({ repoRoot: root });
 }
 
 export async function resolveDoctorReview(
@@ -163,7 +128,7 @@ export async function resolveDoctorReview(
   snapshot,
   dependencies = {},
 ) {
-  const planStatus = planResult.plan.manifest.status;
+  const planStatus = planResult.run.state;
   const row = snapshot?.worktrees?.find(
     (candidate) => candidate.workspaceId === source.workspaceId,
   );
@@ -179,7 +144,7 @@ export async function resolveDoctorReview(
     .filter(
       (candidate) =>
         candidate.workspaceId === source.workspaceId &&
-        candidate.planId === planResult.binding.planId &&
+        candidate.planId === planResult.mount.planId &&
         typeof candidate.workItemId === 'string',
     )
     .sort((left, right) =>
@@ -195,7 +160,8 @@ export async function resolveDoctorReview(
     findEarliestInvalidCompletionReview;
   const invalid = await findInvalid({
     repoRoot: root,
-    planPackage: planResult.plan,
+    execution: planResult,
+    planPackage: planResult.planPackage,
     workItemId: declaration.workItemId,
   });
   return {
@@ -238,21 +204,22 @@ function integrationPromise(result) {
   });
 }
 
-function bindingPromise(result, source) {
-  if (!result.ok) return blocked('dev.plan.binding', result.code);
-  const { binding, plan } = result.value;
+function mountPromise(result, source) {
+  if (!result.ok) return blocked('dev.plan.mount', result.code);
+  const { mount, snapshot, run } = result.value;
   const valid =
-    binding?.workspaceId === source.workspaceId &&
-    binding?.canonicalRoot === source.root &&
-    binding?.planId === plan?.manifest?.planId &&
-    plan?.manifest?.binding?.workspaceId === source.workspaceId &&
-    plan?.manifest?.binding?.branch === source.branch;
+    mount?.workspaceId === source.workspaceId &&
+    mount?.canonicalRoot === source.root &&
+    mount?.planId === snapshot?.planId &&
+    snapshot?.executionBinding?.workspaceId === source.workspaceId &&
+    snapshot?.executionBinding?.branch === source.branch &&
+    run?.mountId === mount?.mountId;
   return valid
-    ? pass('dev.plan.binding', {
-        planId: binding.planId,
-        planStatus: plan.manifest.status,
+    ? pass('dev.plan.mount', {
+        planId: mount.planId,
+        planStatus: run.state,
       })
-    : blocked('dev.plan.binding', 'WORKSPACE_PLAN_BINDING_MISMATCH');
+    : blocked('dev.plan.mount', 'PLAN_MOUNT_IDENTITY_MISMATCH');
 }
 
 function currentWorkflowPromise(result, source, planResult) {
@@ -265,9 +232,9 @@ function currentWorkflowPromise(result, source, planResult) {
   }
   const workflow = row.workflow;
   const expectedPlanId = planResult.ok
-    ? planResult.value.binding.planId
+    ? planResult.value.mount.planId
     : null;
-  const planStatus = planResult.value.plan.manifest.status;
+  const planStatus = planResult.value.run.state;
   const terminalPlan = PLAN_TERMINAL_STATUSES.has(planStatus);
   const projectedPlanMatches =
     workflow?.plan?.id === expectedPlanId &&
@@ -333,40 +300,6 @@ function reviewPromise(result) {
         required,
         invalidTaskId,
       });
-}
-
-function serverPromise(result, source) {
-  if (!result.ok) return blocked('dev.server.live', result.code);
-  const probe = result.value;
-  const server = probe?.server;
-  const servingSourceMatches =
-    server?.source?.workspaceId === source.workspaceId &&
-    server?.source?.branch === source.branch &&
-    server?.source?.head === source.head;
-  const valid =
-    probe?.state === 'compatible' &&
-    server?.kind === DEV_SERVER_KIND &&
-    server?.endpoint === `http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`;
-  return valid
-    ? pass('dev.server.live', {
-        endpoint: server.endpoint,
-        servingSourceMatches,
-        servingWorkspaceId: server.source.workspaceId,
-        servingBranch: server.source.branch,
-        servingHead: server.source.head,
-      })
-    : blocked(
-        'dev.server.live',
-        probe?.state === 'absent'
-          ? 'DEV_SERVER_NOT_RUNNING'
-          : 'DEV_SERVER_INCOMPATIBLE',
-        {
-          state: probe?.state ?? 'unavailable',
-          actualWorkspaceId: server?.source?.workspaceId ?? null,
-          actualBranch: server?.source?.branch ?? null,
-          actualHead: server?.source?.head ?? null,
-        },
-      );
 }
 
 function markerFor(id) {
@@ -440,15 +373,11 @@ export async function evaluateWorkflowDoctor(options = {}, dependencies = {}) {
   );
   const planResult = await capture(
     () => (dependencies.resolvePlan ?? resolvePlan)(root),
-    'WORKSPACE_PLAN_BINDING_UNAVAILABLE',
+    'PLAN_MOUNT_UNAVAILABLE',
   );
   const snapshotResult = await capture(
     () => (dependencies.buildSnapshot ?? buildWorkflowSnapshot)(),
     'WORKFLOW_SNAPSHOT_UNAVAILABLE',
-  );
-  const serverResult = await capture(
-    () => (dependencies.probeServer ?? runServerProbe)(),
-    'DEV_SERVER_PROBE_FAILED',
   );
   const documentResult = await capture(
     () => readDoctorDocuments(root, dependencies.readFile),
@@ -477,12 +406,11 @@ export async function evaluateWorkflowDoctor(options = {}, dependencies = {}) {
 
   const promises = [
     integrationPromise(integrationResult),
-    bindingPromise(planResult, source),
+    mountPromise(planResult, source),
     planResult.ok
       ? currentWorkflowPromise(snapshotResult, source, planResult)
-      : blocked('dev.workflow.current', 'WORKSPACE_PLAN_BINDING_UNAVAILABLE'),
+      : blocked('dev.workflow.current', 'PLAN_MOUNT_UNAVAILABLE'),
     reviewPromise(reviewResult),
-    serverPromise(serverResult, source),
     docsPromise(documentResult),
   ];
   return {
@@ -492,7 +420,6 @@ export async function evaluateWorkflowDoctor(options = {}, dependencies = {}) {
       ? 'PASS'
       : 'BLOCKED',
     checkedAt: now.toISOString(),
-    endpoint: `http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`,
     source: {
       workspaceId: source.workspaceId,
       branch: source.branch,

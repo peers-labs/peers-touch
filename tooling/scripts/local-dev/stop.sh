@@ -88,8 +88,6 @@ case "$target" in
   desktop)
     stop_pid "Desktop App Vite" "$PT_DEV_PIDS/desktop-app-vite.pid" "--port ${PT_DESKTOP_APP_WEB_PORT:-}"
     stop_pid "Desktop App Rust" "$PT_DEV_PIDS/desktop-app-rust.pid" "$PROJECT_ROOT"
-    stop_pid "Desktop Web Vite" "$PT_DEV_PIDS/desktop-web-vite.pid" "--port ${PT_DESKTOP_WEB_WEB_PORT:-}"
-    stop_pid "Desktop Web Rust" "$PT_DEV_PIDS/desktop-web-rust.pid" "$PROJECT_ROOT"
     ;;
   mobile)
     stop_pid "Mobile" "$PT_DEV_PIDS/mobile-ios-sim.pid" "$PROJECT_ROOT"
@@ -100,8 +98,6 @@ case "$target" in
     stop_pid "Relay" "$PT_DEV_PIDS/relay.pid" "$PROJECT_ROOT"
     stop_pid "Desktop App Vite" "$PT_DEV_PIDS/desktop-app-vite.pid" "--port ${PT_DESKTOP_APP_WEB_PORT:-}"
     stop_pid "Desktop App Rust" "$PT_DEV_PIDS/desktop-app-rust.pid" "$PROJECT_ROOT"
-    stop_pid "Desktop Web Vite" "$PT_DEV_PIDS/desktop-web-vite.pid" "--port ${PT_DESKTOP_WEB_WEB_PORT:-}"
-    stop_pid "Desktop Web Rust" "$PT_DEV_PIDS/desktop-web-rust.pid" "$PROJECT_ROOT"
     stop_pid "Mobile" "$PT_DEV_PIDS/mobile-ios-sim.pid" "$PROJECT_ROOT"
     ;;
   *)

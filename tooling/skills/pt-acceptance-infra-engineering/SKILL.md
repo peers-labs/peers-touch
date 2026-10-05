@@ -185,7 +185,7 @@ make acceptance-plan-self
 git diff --check -- \
   AGENTS.md \
   docs/global/workflow.md \
-  docs/architecture/acceptance-framework \
+  docs/architecture/engineering/acceptance \
   tooling/acceptance \
   tooling/scripts \
   tooling/skills
