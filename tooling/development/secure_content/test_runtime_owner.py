@@ -2691,10 +2691,10 @@ class RuntimeOwnerTest(unittest.TestCase):
                 ),
                 call(
                     primary,
-                    "addFederatedGroupMember",
+                    "inviteToGroup",
                     {
                         "groupUlid": "01JREMOTE",
-                        "member": {"ptid": "ptid:remote"},
+                        "memberPtids": ["ptid:remote"],
                     },
                 ),
                 call(
