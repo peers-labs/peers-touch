@@ -28,11 +28,11 @@ REQUIRED_SCENARIOS = (
     "SOC-SEC-AS08",
     "SOC-SEC-AS09",
     "SOC-SEC-AS10",
-    "SOC-SEC-AS12",
     "SOC-SEC-AS13",
     "SOC-SEC-AS15",
     "SOC-SEC-AS16",
 )
+HISTORICAL_SCENARIOS = ("SOC-SEC-AS12",)
 EXPLICITLY_UNPROVEN_SCENARIOS = (
     "SOC-SEC-AS11",
     "SOC-SEC-AS14",
@@ -151,6 +151,12 @@ def _validate_owner_result(
         EXPLICITLY_UNPROVEN_SCENARIOS
     ):
         raise GateError("Browser and Mobile non-claims are missing or changed")
+    if tuple(payload.get("historicalScenarios") or ()) != (
+        HISTORICAL_SCENARIOS
+    ):
+        raise GateError(
+            "superseded historical scenario disposition is missing or changed"
+        )
 
     reuse = payload.get("resourceReuse")
     if not isinstance(reuse, Mapping):
@@ -309,6 +315,7 @@ class SocialPrivateDesktopGate(AcceptanceGate):
             "scenarioResults": payload["scenarioResults"],
             "resourceReuse": payload["resourceReuse"],
             "unprovenScenarios": payload["unprovenScenarios"],
+            "historicalScenarios": payload["historicalScenarios"],
             "suiteRuntimeReportDigest": payload.get(
                 "suiteRuntimeReportDigest"
             ),

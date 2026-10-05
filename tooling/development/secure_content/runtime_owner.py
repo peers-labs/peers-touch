@@ -151,11 +151,11 @@ SOCIAL_ACCEPTANCE_IDS = (
     "SOC-SEC-AS08",
     "SOC-SEC-AS09",
     "SOC-SEC-AS10",
-    "SOC-SEC-AS12",
     "SOC-SEC-AS13",
     "SOC-SEC-AS15",
     "SOC-SEC-AS16",
 )
+SOCIAL_ACCEPTANCE_HISTORICAL_IDS = ("SOC-SEC-AS12",)
 SOCIAL_ACCEPTANCE_RUNTIME_SCENARIOS = (
     "desktop-pre-restart",
     "desktop-continuity",
@@ -768,7 +768,7 @@ W8_SCENARIOS = (
 
 SOCIAL_ACCEPTANCE_SCENARIO_MAP = {
     "private-comment": ("SOC-SEC-AS06", "SOC-SEC-AS16"),
-    "social-expansion": ("SOC-SEC-AS05", "SOC-SEC-AS12", "SOC-SEC-AS13"),
+    "social-expansion": ("SOC-SEC-AS05", "SOC-SEC-AS13"),
     "social-subtype": ("SOC-SEC-AS01",),
     "social-object": ("SOC-SEC-AS07",),
     "social-delete-block": ("SOC-SEC-AS09",),
@@ -10539,6 +10539,9 @@ class W7RuntimeOwner:
                         "SOC-SEC-AS11",
                         "SOC-SEC-AS14",
                     ],
+                    "historicalScenarios": list(
+                        SOCIAL_ACCEPTANCE_HISTORICAL_IDS
+                    ),
                     "resourceReuse": {
                         "provisioningRuns": 1,
                         "clientLaunches": 5,
