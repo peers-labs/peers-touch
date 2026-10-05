@@ -2249,7 +2249,7 @@ describe('moments store: reactions', () => {
     );
   });
 
-  it('routes a private Reaction through Native and hydrates the source summary', async () => {
+  it('routes a private Reaction through Native before the Moment shell hydrates', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
     usePrivateMomentsStore.getState().activateActor('ptid:viewer', 31);
@@ -2268,14 +2268,6 @@ describe('moments store: reactions', () => {
           reactionsHydrated: true,
           content: { kind: 'TEXT', text: 'private' },
         },
-      },
-    });
-    useMomentsStore.setState({
-      postsById: {
-        'private-reaction-post': create(PostSchema, {
-          id: 'private-reaction-post',
-          audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
-        }),
       },
     });
     enqueue('social_private_react', statusOk({
