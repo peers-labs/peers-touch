@@ -3072,6 +3072,10 @@ def _require_clean_source(
     return identity
 
 
+_SOCIAL_CROSS_STATION_PLAN_PATH = (
+    "docs/architecture/cross-station-social/execution-plans/"
+    "20261003-native-private-social/plan.md"
+)
 _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES = (
     "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs",
     "apps/desktop/src-tauri/src/social/mod.rs",
@@ -3103,6 +3107,64 @@ def _social_acceptance_source_delta_allowed(paths: Sequence[str]) -> bool:
         )
         for path in paths
     )
+
+
+def _social_acceptance_plan_lifecycle_projection(
+    repo_root: Path,
+    runtime_source: str,
+    control_head: str,
+) -> Mapping[str, Any] | None:
+    plan_commits = subprocess.run(
+        [
+            "git",
+            "rev-list",
+            "--reverse",
+            f"{runtime_source}..{control_head}",
+            "--",
+            _SOCIAL_CROSS_STATION_PLAN_PATH,
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    commits = plan_commits.stdout.splitlines()
+    if plan_commits.returncode != 0 or not commits:
+        return None
+    lifecycle_control = commits[-1]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "tooling/scripts/plan_lifecycle_source.py",
+            "--repo-root",
+            str(repo_root),
+            "--plan",
+            _SOCIAL_CROSS_STATION_PLAN_PATH,
+            "--runtime-source",
+            runtime_source,
+            "--control-head",
+            lifecycle_control,
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        projection = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    if (
+        completed.returncode != 0
+        or not isinstance(projection, Mapping)
+        or projection.get("runtimeSourceCommit") != runtime_source
+        or projection.get("controlHead") != lifecycle_control
+        or projection.get("planPath") != _SOCIAL_CROSS_STATION_PLAN_PATH
+        or not isinstance(projection.get("transitionDigest"), str)
+        or projection.get("transitionCount") != len(commits)
+    ):
+        return None
+    return projection
 
 
 def _require_social_acceptance_source(
@@ -3151,7 +3213,9 @@ def _require_social_acceptance_source(
             resource="source:workspace",
         )
 
-    candidates: list[tuple[int, Path, Mapping[str, Any]]] = []
+    candidates: list[
+        tuple[int, Path, Mapping[str, Any], Mapping[str, Any] | None]
+    ] = []
     aggregate_paths = {
         *result_root.glob(
             "W12A/activation/*/aggregate/result.json"
@@ -3218,8 +3282,23 @@ def _require_social_acceptance_source(
             capture_output=True,
             text=True,
         ).stdout.splitlines()
-        if not _social_acceptance_source_delta_allowed(changed):
+        plan_changed = _SOCIAL_CROSS_STATION_PLAN_PATH in changed
+        allowed_delta = tuple(
+            path
+            for path in changed
+            if path != _SOCIAL_CROSS_STATION_PLAN_PATH
+        )
+        if not _social_acceptance_source_delta_allowed(allowed_delta):
             continue
+        plan_projection = None
+        if plan_changed:
+            plan_projection = _social_acceptance_plan_lifecycle_projection(
+                repo_root,
+                generation,
+                str(control_identity["head"]),
+            )
+            if plan_projection is None:
+                continue
         distance = int(
             subprocess.run(
                 [
@@ -3234,7 +3313,9 @@ def _require_social_acceptance_source(
                 text=True,
             ).stdout.strip()
         )
-        candidates.append((distance, aggregate_path, aggregate))
+        candidates.append(
+            (distance, aggregate_path, aggregate, plan_projection)
+        )
 
     if not candidates:
         raise RuntimeOwnerBlocked(
@@ -3242,7 +3323,7 @@ def _require_social_acceptance_source(
             "no reusable exact-product-source schema activation is available",
             resource="source:plan-lifecycle",
         )
-    _distance, aggregate_path, aggregate = min(
+    _distance, aggregate_path, aggregate, plan_projection = min(
         candidates,
         key=lambda item: (item[0], str(item[1])),
     )
@@ -3261,6 +3342,7 @@ def _require_social_acceptance_source(
                             _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES
                         ),
                         "controlHead": control_identity["head"],
+                        "planLifecycle": plan_projection,
                         "runtimeSourceCommit": runtime_source,
                     },
                     separators=(",", ":"),

@@ -111,10 +111,21 @@ def get_provisioner(
         raise ProvisioningError(
             f"no provisioner registered for environment: {contract.id}"
         )
-    if provisioner_class in {
-        CrossStationSocialNativeProvisioner,
-        NativeTauriEmbeddedWebDriverProvisioner,
-    }:
+    if provisioner_class is CrossStationSocialNativeProvisioner:
+        if (
+            station_profiles
+            and service_profiles
+            and dict(station_profiles) != dict(service_profiles)
+        ):
+            raise ProvisioningError(
+                f"environment {contract.id!r} received conflicting "
+                "station and service profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            station_profiles=service_profiles or station_profiles,
+        )
+    if provisioner_class is NativeTauriEmbeddedWebDriverProvisioner:
         if service_profiles:
             raise ProvisioningError(
                 f"environment {contract.id!r} does not accept service profile bindings"

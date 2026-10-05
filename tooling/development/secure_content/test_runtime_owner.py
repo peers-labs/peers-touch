@@ -2751,6 +2751,59 @@ class RuntimeOwnerTest(unittest.TestCase):
                 ("apps/desktop/src/services/social_api.ts",)
             )
         )
+        self.assertFalse(
+            runtime_owner_module._social_acceptance_source_delta_allowed(
+                (runtime_owner_module._SOCIAL_CROSS_STATION_PLAN_PATH,)
+            )
+        )
+
+    def test_social_acceptance_validates_plan_only_handoff(self) -> None:
+        runtime_source = "a" * 40
+        lifecycle_control = "b" * 40
+        projection = {
+            "runtimeSourceCommit": runtime_source,
+            "controlHead": lifecycle_control,
+            "planPath": (
+                runtime_owner_module._SOCIAL_CROSS_STATION_PLAN_PATH
+            ),
+            "transitionCount": 1,
+            "transitionDigest": "c" * 64,
+        }
+        with patch.object(
+            runtime_owner_module.subprocess,
+            "run",
+            side_effect=(
+                SimpleNamespace(
+                    returncode=0,
+                    stdout=f"{lifecycle_control}\n",
+                    stderr="",
+                ),
+                SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps(projection),
+                    stderr="",
+                ),
+            ),
+        ) as run:
+            observed = (
+                runtime_owner_module
+                ._social_acceptance_plan_lifecycle_projection(
+                    Path("/repo"),
+                    runtime_source,
+                    "d" * 40,
+                )
+            )
+
+        self.assertEqual(projection, observed)
+        lifecycle_command = run.call_args_list[1].args[0]
+        self.assertIn(
+            "tooling/scripts/plan_lifecycle_source.py",
+            lifecycle_command,
+        )
+        self.assertEqual(
+            lifecycle_control,
+            lifecycle_command[lifecycle_command.index("--control-head") + 1],
+        )
 
     def test_running_client_authentication_uses_fixture_replacement_and_retries(
         self,
