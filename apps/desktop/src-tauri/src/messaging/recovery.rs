@@ -90,6 +90,7 @@ pub fn restore_profile_database_atomically(
     archive: &MessagingRecoveryArchive,
     reconciliation: &RecoveryReconciliation,
     device_identity: &FreshDeviceIdentityState,
+    preserve_device_continuity: bool,
 ) -> Result<FreshDeviceEnrollment, String> {
     validate_archive(archive)?;
     validate_reconciliation(archive, reconciliation)?;
@@ -134,7 +135,9 @@ pub fn restore_profile_database_atomically(
             return Err("messaging recovery staging readback mismatch".to_string());
         }
         staging.apply_recovery_reconciliation(reconciliation)?;
-        staging.install_in_place_recovery_continuity_from(&source, device_identity)?;
+        if preserve_device_continuity {
+            staging.install_in_place_recovery_continuity_from(&source, device_identity)?;
+        }
         staging.validate_integrity()?;
         source.prepare_for_atomic_replace()?;
         drop(source);
@@ -404,7 +407,9 @@ mod tests {
     use super::*;
     use crate::domain::crypto::{DeviceSigningKey, IdentityKeyPair};
     use crate::messaging::private_content::test_attachment_metadata;
-    use messaging_core::identity::enrollment::generate_fresh_device_identity_from_seed;
+    use messaging_core::identity::enrollment::{
+        generate_fresh_device_identity_for_device, generate_fresh_device_identity_from_seed,
+    };
     use prost::Message;
     use serde::{Deserialize, Serialize};
     use sha2::{Digest, Sha256};
@@ -960,6 +965,7 @@ mod tests {
             &archive,
             &RecoveryReconciliation::default(),
             &device_identity,
+            true,
         )
         .unwrap();
         assert_eq!(restored_enrollment, device_identity.enrollment);
@@ -986,6 +992,75 @@ mod tests {
         assert!(restored.load_one_time_prekey(1).is_err());
         assert_eq!(restored.load_one_time_prekey(2).unwrap(), [2; 32]);
         assert_eq!(restored.next_one_time_prekey_id().unwrap(), 3);
+        drop(restored);
+        remove_database_files(&path).unwrap();
+    }
+
+    #[test]
+    fn replacement_restore_rebinds_session_device_to_recovered_actor() {
+        let archive = archive();
+        let profile_id = format!("recovery-replacement-device-{:016x}", OsRng.next_u64());
+        let spec = DatabaseOpenSpec::new_chat_main(profile_id.clone());
+        let path = resolve_database_path(
+            &spec.app_name,
+            &spec.domain,
+            &spec.profile,
+            &spec.user_scope,
+        )
+        .unwrap();
+        remove_database_files(&path).unwrap();
+
+        let current_identity = generate_fresh_device_identity_for_device(
+            &archive.ptid,
+            "replacement-device",
+            [9; 32],
+            archive.actor_profile_version,
+        )
+        .unwrap();
+        let rebound_identity = generate_fresh_device_identity_for_device(
+            &archive.ptid,
+            "replacement-device",
+            archive.actor_identity_seed,
+            archive.actor_profile_version,
+        )
+        .unwrap();
+        let source = MessagingStore::from_connection(
+            open_database(&spec, PlatformKeyProvider::shared()).unwrap(),
+        )
+        .unwrap();
+        source
+            .install_fresh_device_identity(&current_identity)
+            .unwrap();
+        source
+            .complete_device_enrollment("replacement-device")
+            .unwrap();
+        source
+            .install_fresh_prekey_bundle(7, &[7; 32], &[(1, [1; 32])], 100)
+            .unwrap();
+        source.complete_prekey_publication(7).unwrap();
+        source.prepare_for_atomic_replace().unwrap();
+        drop(source);
+
+        let restored_enrollment = restore_profile_database_atomically(
+            &profile_id,
+            &archive,
+            &RecoveryReconciliation::default(),
+            &rebound_identity,
+            false,
+        )
+        .unwrap();
+        assert_eq!(restored_enrollment, rebound_identity.enrollment);
+        assert_ne!(restored_enrollment, current_identity.enrollment);
+
+        let restored = MessagingStore::from_connection(
+            open_database(&spec, PlatformKeyProvider::shared()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restored.pending_device_enrollment().unwrap(),
+            Some(rebound_identity.enrollment)
+        );
+        assert!(restored.load_signed_prekey(7).is_err());
         drop(restored);
         remove_database_files(&path).unwrap();
     }
