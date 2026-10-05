@@ -89,6 +89,44 @@ def active_task_ids(client: FoundationRuntimeClient) -> list[str]:
     return [str(task_id) for task_id in task_ids]
 
 
+def goal_initial_task_id(
+    client: FoundationRuntimeClient,
+    goal_id: str,
+    title: str,
+) -> str:
+    result = client.driver.execute_async_script(
+        """
+        const [goalId, title, done] = arguments;
+        import('/src/services/desktop_api.ts')
+          .then(({ api }) => api.getHomeWorkProjection(0n))
+          .then((projection) => {
+            const task = projection.activeTasks.find(
+              (candidate) =>
+                candidate.goalId === goalId
+                && candidate.title === title,
+            );
+            done({
+              ok: true,
+              taskId: task?.taskId || '',
+            });
+          })
+          .catch((error) => done({
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          }));
+        """,
+        goal_id,
+        title,
+    )
+    require(
+        isinstance(result, Mapping) and result.get("ok") is True,
+        f"Home initial TaskRun readback failed: {result}",
+    )
+    task_id = str(result.get("taskId") or "")
+    require(bool(task_id), "Goal start did not create its initial TaskRun")
+    return task_id
+
+
 def set_realtime_bridge(
     client: FoundationRuntimeClient,
     *,
@@ -385,8 +423,13 @@ def run_journey(
     final_task_ids = active_task_ids(client)
     new_task_ids = sorted(set(final_task_ids) - set(baseline_task_ids))
     require(
-        len(new_task_ids) == 1,
-        f"Goal start did not create exactly one TaskRun: {new_task_ids}",
+        len(new_task_ids) >= 1,
+        f"Goal start did not create its initial TaskRun: {new_task_ids}",
+    )
+    initial_task_id = goal_initial_task_id(client, goal_id, title)
+    require(
+        initial_task_id in new_task_ids,
+        f"Goal initial TaskRun is outside the new Goal work: {new_task_ids}",
     )
     require(
         running.get_attribute("data-pt-home-goal-revision") == "5",
@@ -400,7 +443,7 @@ def run_journey(
         "admissionRejection": rejected_review,
         "baselineTaskIds": baseline_task_ids,
         "finalTaskIds": final_task_ids,
-        "createdTaskId": new_task_ids[0],
+        "createdTaskId": initial_task_id,
         "screenshots": [
             str(admission_rejected_screenshot),
             str(reviewed_screenshot),

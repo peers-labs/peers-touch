@@ -557,6 +557,38 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
 
 class ActorFixtureOwnerTests(unittest.TestCase):
+    def test_read_only_actor_lookup_accepts_source_attested_protected_station(
+        self,
+    ) -> None:
+        deployment = {
+            "PT_DEPLOY_HOST": "station.example",
+            "PT_DEPLOY_USER": "tester",
+            "PT_DEPLOY_HEALTH_URL": (
+                "http://station.example:18080/sub-oss/healthz"
+            ),
+            "PT_DEPLOY_RESTART_CMD": (
+                "docker compose -p pt-station-two up -d station"
+            ),
+        }
+        with patch.object(
+            chat_native_reset,
+            "deploy_environment",
+            return_value=deployment,
+        ):
+            environment = chat_native_reset.read_only_station_environment(
+                "http://station.example:18080",
+                "station-two",
+            )
+
+        self.assertEqual(
+            environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"],
+            "pt-station-two-postgres-1",
+        )
+        self.assertEqual(
+            environment["PT_ACCEPTANCE_STATION_URL"],
+            "http://station.example:18080",
+        )
+
     def test_reset_module_imports_in_fresh_process(self) -> None:
         completed = subprocess.run(
             [

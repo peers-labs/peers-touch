@@ -475,6 +475,47 @@ def acceptance_station_environment(
     return environment
 
 
+def read_only_station_environment(
+    station_url: str,
+    environment_name: str,
+) -> dict[str, str]:
+    environment = deploy_environment(environment_name)
+    host = environment.get("PT_DEPLOY_HOST", "").strip()
+    user = environment.get("PT_DEPLOY_USER", "").strip()
+    health_url = environment.get("PT_DEPLOY_HEALTH_URL", "").rstrip("/")
+    parsed_url = urllib.parse.urlparse(station_url)
+    parsed_health = urllib.parse.urlparse(health_url)
+    if (
+        not host
+        or not user
+        or not health_url
+        or parsed_url.scheme not in {"http", "https"}
+        or parsed_url.scheme != parsed_health.scheme
+        or parsed_url.hostname != host
+        or parsed_health.hostname != host
+        or parsed_url.port != parsed_health.port
+        or parsed_url.path not in {"", "/"}
+        or parsed_url.params
+        or parsed_url.query
+        or parsed_url.fragment
+    ):
+        raise RuntimeError(
+            "Read-only Station target mismatch: "
+            f"environment={environment_name} station_url={station_url} "
+            f"health_url={health_url or 'missing'}"
+        )
+    compose_project = _deployment_compose_project(environment)
+    environment.update({
+        "PT_ACCEPTANCE_STATION_URL": station_url.rstrip("/"),
+        "PT_ACCEPTANCE_COMPOSE_PROJECT": compose_project,
+        "PT_ACCEPTANCE_STATION_CONTAINER": f"{compose_project}-station-1",
+        "PT_ACCEPTANCE_POSTGRES_CONTAINER": f"{compose_project}-postgres-1",
+        "PT_ACCEPTANCE_POSTGRES_VOLUME": f"{compose_project}_pg_data",
+    })
+    environment["PT_ACCEPTANCE_ENVIRONMENT"] = environment_name
+    return environment
+
+
 def verify_disposable_station_runtime(
     environment: dict[str, str],
     *,
@@ -1114,12 +1155,20 @@ def read_fixture_actor(
     station_url: str,
     environment_name: str,
     account_email: str,
+    *,
+    require_disposable: bool = True,
 ) -> FixtureActorRecord:
-    environment = acceptance_station_environment(
-        station_url,
-        environment_name,
-    )
-    verify_disposable_station_runtime(environment)
+    if require_disposable:
+        environment = acceptance_station_environment(
+            station_url,
+            environment_name,
+        )
+        verify_disposable_station_runtime(environment)
+    else:
+        environment = read_only_station_environment(
+            station_url,
+            environment_name,
+        )
     if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
         with closing(sqlite3.connect(
             environment["PT_ACCEPTANCE_LOCAL_DATABASE"],

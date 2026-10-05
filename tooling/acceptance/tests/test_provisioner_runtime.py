@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import (
+    ActorIdentity,
     BlockedError,
     ClientRuntime,
     ClientServiceBinding,
@@ -1070,32 +1071,30 @@ class ProvisionerBlockingTests(unittest.TestCase):
         )
         audit.assert_called_once_with("station-two")
 
-    def test_existing_actor_resolution_logs_out_without_reset(self):
-        login = MagicMock()
-        login.__enter__.return_value.read.return_value = json.dumps(
-            {
-                "data": {
-                    "actor_ref": {"ptid": "ptid:alice"},
-                    "tokens": {"access_token": "access-token"},
-                }
-            }
-        ).encode("utf-8")
-        logout = MagicMock()
-
+    def test_existing_actor_resolution_uses_fixture_truth_without_login(self):
         with patch(
-            "tooling.acceptance.provisioners.home_station.urllib.request.urlopen",
-            side_effect=[login, logout],
-        ) as urlopen:
+            "tooling.acceptance.provisioners.home_station.resolve_actor_identity",
+            return_value=ActorIdentity(
+                role="alice",
+                account_ref="station-account:alice@p.t",
+                ptid="ptid:alice",
+                device_policy="ephemeral-acceptance",
+            ),
+        ) as resolve:
             actor = resolve_existing_actor(
                 "http://station.example:18080",
+                "station-two",
                 "alice",
-                "fixture-password",
             )
 
         self.assertEqual(actor.ptid, "ptid:alice")
         self.assertEqual(actor.device_policy, "ephemeral-acceptance")
-        self.assertEqual(urlopen.call_count, 2)
-        logout.close.assert_called_once_with()
+        resolve.assert_called_once_with(
+            "http://station.example:18080",
+            "station-two",
+            "alice",
+            require_disposable=False,
+        )
 
     def test_agent_stream_credentials_must_come_from_one_profile(self):
         provisioner = HomeStationProvisioner(
@@ -1671,7 +1670,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         )
         reset_actor_manifest.assert_not_called()
         self.assertEqual(
-            [invocation.args[1] for invocation in resolve_actor.call_args_list],
+            [invocation.args[2] for invocation in resolve_actor.call_args_list],
             ["alice", "charlie"],
         )
         persisted = actor_manifest.call_args.args[0]

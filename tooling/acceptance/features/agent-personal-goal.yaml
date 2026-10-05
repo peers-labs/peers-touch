@@ -9,6 +9,8 @@
     "apps/station/app/subserver/agent/service/goal_service.go",
     "apps/station/app/subserver/agent/service/goal_admission_service.go",
     "apps/station/app/subserver/agent/service/goal_execution_service.go",
+    "apps/station/app/subserver/agent/service/goal_coordinator.go",
+    "apps/station/app/subserver/agent/infrastructure/persistence/goal_coordinator_lease.go",
     "apps/station/app/subserver/agent/service/task_run_command_service.go",
     "apps/station/app/subserver/agent/service/orchestration_service.go",
     "apps/station/app/subserver/agent/service/atelier_projection.go",
@@ -18,6 +20,7 @@
     "apps/desktop/src/runtimes/homeRuntime.ts",
     "apps/desktop/src/store/home.ts",
     "apps/desktop/src/components/home/GoalProgressPanel.tsx",
+    "apps/desktop/src/components/home/GoalTimeline.tsx",
     "apps/desktop/src/components/home/GoalConnectionStatus.tsx",
     "apps/desktop/src/components/home/GoalReviewPanel.tsx",
     "apps/desktop/src/components/home/GoalRunSummary.tsx",
@@ -28,7 +31,8 @@
   "truth_sources": [
     "Station AgentGoal record and revision",
     "Station Goal command receipts",
-    "Station AgentGoalNode, TaskRun, and ExecutionStep records"
+    "Station AgentGoalNode, TaskRun, and ExecutionStep records",
+    "Station GoalCoordinatorLease generation and dispatch sequence"
   ],
   "visible_surfaces": [
     {
@@ -52,7 +56,8 @@
     "agent-personal-goal-contract-source",
     "agent-personal-taskrun-cutover-source",
     "agent-personal-goal-home-e2e",
-    "agent-personal-goal-event-fanout-e2e"
+    "agent-personal-goal-event-fanout-e2e",
+    "agent-personal-goal-coordinator-e2e"
   ],
   "acceptance": {
     "service": [
@@ -61,7 +66,9 @@
       "Goal admission creates no executable work",
       "Goal start atomically commits READY to RUNNING and creates one linked GoalNode, TaskRun, ExecutionStep, and attempt identity",
       "Atelier and optional Canvas work commands create or address one canonical Goal and TaskRun without inserting CollaborationTask execution rows",
-      "Durable Goal events reach the shared EventBus through the outbox relay"
+      "Durable Goal events reach the shared EventBus through the outbox relay",
+      "One coordinator lease generation selects a deterministic dependency-ready frontier bounded by Goal parallelism",
+      "Every dispatch persists stable GoalNode, TaskRun, ExecutionStep, and attempt identity before runtime execution"
     ],
     "visible": [
       "Home shows material assumptions before Start",
@@ -71,7 +78,9 @@
       "Home updates Goal progress from typed canonical events without a page remount",
       "Home preserves accepted content across disconnect and converges after retry",
       "Atelier receives canonical invalidations and reconciles to the Station snapshot",
-      "Atelier opens the returned canonical TaskRun and preserves the same Goal and TaskRun identities on idempotent replay"
+      "Atelier opens the returned canonical TaskRun and preserves the same Goal and TaskRun identities on idempotent replay",
+      "Home advances from a completed Goal node to the next eligible node without a Continue command",
+      "Home renders the canonical two-node Goal timeline from Station TaskRun projection"
     ]
   },
   "negative": [
@@ -81,6 +90,8 @@
     "Atelier and Canvas work commands must not create CollaborationTask execution rows",
     "A failed TaskRun allocation must leave the Goal non-running",
     "Agent-private event buses, endpoints, Desktop commands, and applet stream ownership must not remain",
-    "source proof does not replace the required PAOS-J01/PAOS-J02 Native functional runs"
+    "source proof does not replace the required PAOS-J01/PAOS-J02 Native functional runs",
+    "unresolved dependencies, unavailable execution capability, and exhausted concurrency must not dispatch work",
+    "an unexpired coordinator lease must not be stolen by another scheduler generation"
   ]
 }

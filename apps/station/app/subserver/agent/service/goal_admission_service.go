@@ -25,10 +25,10 @@ type goalAdmissionPayload struct {
 type GoalAdmissionService struct {
 	goals      *GoalService
 	executions *GoalExecutionService
-	executor   goalDirectModelStarter
+	starter    goalExecutionStarter
 }
 
-type goalDirectModelStarter interface {
+type goalExecutionStarter interface {
 	PrepareTx(
 		context.Context,
 		*gorm.DB,
@@ -51,13 +51,13 @@ func NewGoalAdmissionService(
 	return service
 }
 
-func (s *GoalAdmissionService) SetDirectModelExecutor(
-	executor goalDirectModelStarter,
+func (s *GoalAdmissionService) SetExecutionStarter(
+	starter goalExecutionStarter,
 ) {
 	if s == nil {
 		return
 	}
-	s.executor = executor
+	s.starter = starter
 }
 
 func (s *GoalAdmissionService) Admit(
@@ -139,8 +139,8 @@ func (s *GoalAdmissionService) Start(
 			if err != nil {
 				return err
 			}
-			if s.executor != nil {
-				if err := s.executor.PrepareTx(
+			if s.starter != nil {
+				if err := s.starter.PrepareTx(
 					ctx,
 					tx,
 					record,
@@ -157,8 +157,8 @@ func (s *GoalAdmissionService) Start(
 	if err != nil {
 		return nil, err
 	}
-	if s.executor != nil && startedTaskID != "" {
-		s.executor.Start(strings.TrimSpace(ownerPTID), startedTaskID)
+	if s.starter != nil && startedTaskID != "" {
+		s.starter.Start(strings.TrimSpace(ownerPTID), startedTaskID)
 	}
 	return goal, nil
 }

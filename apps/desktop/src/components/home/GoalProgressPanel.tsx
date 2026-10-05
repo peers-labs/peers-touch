@@ -1,5 +1,4 @@
-import { Button, Progress, Tag, Typography, theme } from 'antd';
-import { ListTodo } from 'lucide-react';
+import { Progress, Tag, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 
@@ -10,13 +9,11 @@ import {
   useGoalExecutionStore,
 } from '../../store/goalExecution';
 import { useHomeStore } from '../../store/home';
+import { GoalTimeline } from './GoalTimeline';
 import { MigratedWorkBadge } from './MigratedWorkBadge';
-
-const { useToken } = theme;
 
 export function GoalProgressPanel() {
   const { t } = useTranslation('agent');
-  const { token } = useToken();
   const projection = useHomeStore((state) => state.projection);
   const savedGoal = useHomeStore((state) => state.savedGoal);
   const lastAgentEvent = useHomeStore((state) => state.lastAgentEvent);
@@ -25,7 +22,6 @@ export function GoalProgressPanel() {
   const selectedTaskId = useGoalExecutionStore(
     (state) => state.selectedTaskId,
   );
-  const selectTask = useGoalExecutionStore((state) => state.selectTask);
   const current = selectGoalProgressRun(
     executions,
     results,
@@ -113,32 +109,7 @@ export function GoalProgressPanel() {
           })}
         </Typography.Text>
       ) : null}
-      {executions.length > 1 ? (
-        <Flexbox data-pt-goal-runs="" gap={4}>
-          {executions.map((execution) => (
-            <Button
-              aria-pressed={execution.taskId === current.taskId}
-              data-pt-goal-run={execution.taskId}
-              data-pt-goal-run-status={HomeTaskStatus[execution.status]}
-              icon={<ListTodo size={14} />}
-              key={execution.taskId}
-              onClick={() => selectTask(execution.taskId)}
-              style={{
-                border: 0,
-                borderBottom: `1px solid ${token.colorBorderSecondary}`,
-                borderRadius: token.borderRadiusSM,
-                height: 'auto',
-                justifyContent: 'flex-start',
-                padding: '7px 0',
-                textAlign: 'left',
-              }}
-              type="text"
-            >
-              {execution.title}
-            </Button>
-          ))}
-        </Flexbox>
-      ) : null}
+      <GoalTimeline />
     </Flexbox>
   );
 }

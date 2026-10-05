@@ -288,6 +288,8 @@ def resolve_actor_identity(
     station_url: str,
     deployment_environment: str,
     role: str,
+    *,
+    require_disposable: bool = True,
 ) -> ResolvedActorIdentity:
     account = ACTOR_ACCOUNTS.get(role)
     if not account:
@@ -300,6 +302,7 @@ def resolve_actor_identity(
             station_url,
             deployment_environment,
             account,
+            require_disposable=require_disposable,
         )
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         raise BlockedError(

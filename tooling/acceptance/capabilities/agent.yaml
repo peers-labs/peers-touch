@@ -400,13 +400,15 @@
         "agent-personal-goal-contract-source",
         "agent-personal-taskrun-cutover-source",
         "agent-personal-goal-home-e2e",
-        "agent-personal-goal-event-fanout-e2e"
+        "agent-personal-goal-event-fanout-e2e",
+        "agent-personal-goal-coordinator-e2e"
       ],
       "synthetic_paths": [
         "model/domain/agent/goal.proto",
         "model/domain/agent/orchestration.proto",
         "apps/station/app/subserver/agent/service/goal_admission_service.go",
         "apps/station/app/subserver/agent/service/goal_execution_service.go",
+        "apps/station/app/subserver/agent/service/goal_coordinator.go",
         "apps/station/app/subserver/agent/service/task_run_command_service.go",
         "apps/station/app/subserver/agent/service/orchestration_service.go",
         "apps/station/app/subserver/agent/service/atelier_projection.go",
@@ -417,11 +419,12 @@
         "truth_sources": [
           "Station AgentGoal record and revision",
           "Station Goal command receipts",
-          "Station AgentGoalNode, TaskRun, and ExecutionStep records"
+          "Station AgentGoalNode, TaskRun, and ExecutionStep records",
+          "Station GoalCoordinatorLease generation and dispatch sequence"
         ],
         "surfaces": [
           "Native Home Goal contract review and start",
-          "Native Home canonical TaskRun summary",
+          "Native Home canonical TaskRun summary and Goal timeline",
           "Station Goal lifecycle and execution identity readback"
         ],
         "proven_by": [
@@ -434,7 +437,8 @@
           "PAOS-01 through PAOS-05 source contract for durable draft, reviewed assumptions, admission, atomic first TaskRun allocation, revision conflict, idempotency, actor isolation, and zero pre-admission executable work",
           "PAOS-08 and PAOS-09 Native Home live progress, disconnect preservation, retry, resync, and authoritative Station readback",
           "PAOS-10 through PAOS-10C canonical /events/stream fan-out to Home and Atelier with private publisher and consumer deletion",
-          "PAOS-13 and PAOS-13B route Home, Chat, Atelier, and optional Canvas work creation to canonical TaskRun writers without new AgentTask or CollaborationTask execution rows"
+          "PAOS-13 and PAOS-13B route Home, Chat, Atelier, and optional Canvas work creation to canonical TaskRun writers without new AgentTask or CollaborationTask execution rows",
+          "PAOS-15 advances the deterministic dependency-ready Goal frontier under one coordinator lease generation and renders both canonical nodes in Native Home"
         ],
         "unproven_scope": [
           "Proof remains UNPROVEN until the exact-source environment Gates pass and publish current evidence",

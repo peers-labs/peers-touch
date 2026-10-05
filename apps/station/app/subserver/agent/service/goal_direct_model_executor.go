@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -45,10 +46,19 @@ type goalDirectModelRuntime struct {
 }
 
 type GoalDirectModelExecutor struct {
-	db       *gorm.DB
-	provider directRunProviderExecutor
-	writer   *TaskEventWriter
-	now      func() time.Time
+	db         *gorm.DB
+	provider   directRunProviderExecutor
+	writer     *TaskEventWriter
+	onTerminal goalTaskTerminalObserver
+	now        func() time.Time
+}
+
+type goalTaskTerminalObserver interface {
+	OnTaskTerminal(
+		context.Context,
+		string,
+		string,
+	) error
 }
 
 func NewGoalDirectModelExecutor(
@@ -65,6 +75,15 @@ func NewGoalDirectModelExecutor(
 		writer:   NewTaskEventWriter(),
 		now:      time.Now,
 	}
+}
+
+func (e *GoalDirectModelExecutor) SetGoalTerminalObserver(
+	observer goalTaskTerminalObserver,
+) {
+	if e == nil {
+		return
+	}
+	e.onTerminal = observer
 }
 
 func (e *GoalDirectModelExecutor) PrepareTx(
@@ -90,7 +109,16 @@ func (e *GoalDirectModelExecutor) PrepareTx(
 		return goalInternal("Resolve Goal Direct Model Agent", err)
 	}
 	if err == gorm.ErrRecordNotFound {
-		agent = persistence.Agent{}
+		return goalAdmissionRejected(goal.GoalID, "executor_unavailable")
+	}
+	provider, err := loadOwnedGoalDirectModelProvider(
+		ctx,
+		tx,
+		goal.OwnerPTID,
+		agent.ProviderID,
+	)
+	if err != nil || isCLIProviderRecord(provider) {
+		return goalAdmissionRejected(goal.GoalID, "executor_unavailable")
 	}
 
 	budget := &model.AgentGoalBudget{}
@@ -102,7 +130,7 @@ func (e *GoalDirectModelExecutor) PrepareTx(
 		return goalInternal("Decode Goal Direct Model acceptance criteria", err)
 	}
 
-	runID := stableGoalExecutionID("direct_run", goal.GoalID)
+	runID := stableGoalDirectRunID(goal.GoalID, execution.Node.NodeID)
 	input := goalDirectModelInput{
 		GoalID:             goal.GoalID,
 		GoalNodeID:         execution.Node.NodeID,
@@ -110,8 +138,8 @@ func (e *GoalDirectModelExecutor) PrepareTx(
 		StepID:             execution.Step.StepID,
 		AttemptID:          execution.Step.AttemptID,
 		AgentID:            agent.ID,
-		Title:              goal.Title,
-		Outcome:            goal.Outcome,
+		Title:              firstNonEmptyString(execution.Task.Title, goal.Title),
+		Outcome:            firstNonEmptyString(execution.Task.Description, goal.Outcome),
 		ProviderID:         agent.ProviderID,
 		Model:              agent.ModelName,
 		Effort:             agent.Effort,
@@ -155,7 +183,13 @@ func (e *GoalDirectModelExecutor) PrepareTx(
 		}).Error; err != nil {
 		return goalInternal("Bind Goal Direct Model Agent", err)
 	}
-	meta, err := json.Marshal(map[string]string{
+	taskMeta := make(map[string]string)
+	if raw := strings.TrimSpace(execution.Task.MetaJSON); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &taskMeta); err != nil {
+			return goalInternal("Decode Goal TaskRun metadata", err)
+		}
+	}
+	for key, value := range map[string]string{
 		"attempt_id":       execution.Step.AttemptID,
 		"direct_run_id":    run.DirectRunID,
 		"goal_id":          goal.GoalID,
@@ -166,7 +200,10 @@ func (e *GoalDirectModelExecutor) PrepareTx(
 		"runtime_kind":     "direct_model",
 		"runtime_source":   run.Source,
 		"runtime_trace_id": run.TraceID,
-	})
+	} {
+		taskMeta[key] = value
+	}
+	meta, err := json.Marshal(taskMeta)
 	if err != nil {
 		return goalInternal("Encode Goal Direct Model metadata", err)
 	}
@@ -195,6 +232,26 @@ func (e *GoalDirectModelExecutor) PrepareTx(
 		return goalInternal("Append Goal Direct Model creation event", err)
 	}
 	return nil
+}
+
+func (e *GoalDirectModelExecutor) IsPreparedTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	execution *GoalExecutionSnapshot,
+) (bool, error) {
+	if e == nil || tx == nil || execution == nil || execution.Task == nil {
+		return false, goalInternal("Inspect Goal Direct Model preparation", nil)
+	}
+	var count int64
+	err := tx.WithContext(ctx).
+		Model(&persistence.DirectRun{}).
+		Where(
+			"task_id = ? AND state IN ?",
+			execution.Task.TaskID,
+			[]string{"pending_station_provider_route", "running"},
+		).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func (e *GoalDirectModelExecutor) Start(
@@ -620,6 +677,21 @@ func (e *GoalDirectModelExecutor) finish(
 		})
 		return nil
 	})
+	if err == nil && e.onTerminal != nil {
+		if advanceErr := e.onTerminal.OnTaskTerminal(
+			ctx,
+			runtime.Task.OwnerActorPTID,
+			runtime.Task.GoalID,
+		); advanceErr != nil {
+			logger.Warnf(
+				ctx,
+				"Goal coordinator advance failed: goal_id=%s task_id=%s err=%v",
+				runtime.Task.GoalID,
+				runtime.Task.TaskID,
+				advanceErr,
+			)
+		}
+	}
 	return events, err
 }
 
@@ -959,6 +1031,17 @@ func goalDirectModelSummary(value string) string {
 	return strings.TrimSpace(value)
 }
 
+func stableGoalDirectRunID(goalID string, nodeID string) string {
+	if strings.TrimSpace(nodeID) ==
+		stableGoalExecutionID("gnode", strings.TrimSpace(goalID)) {
+		return stableGoalExecutionID("direct_run", strings.TrimSpace(goalID))
+	}
+	return stableGoalExecutionID(
+		"direct_run",
+		strings.TrimSpace(goalID)+"\x00"+strings.TrimSpace(nodeID),
+	)
+}
+
 func goalDirectModelEventPayload(
 	run *persistence.DirectRun,
 	execution *GoalExecutionSnapshot,
@@ -981,6 +1064,17 @@ func goalDirectModelEventPayload(
 		payload["trace_id"] = run.TraceID
 	}
 	if execution != nil {
+		if execution.CoordinatorLeaseGeneration > 0 {
+			payload["coordinator_lease_generation"] =
+				execution.CoordinatorLeaseGeneration
+		}
+		if execution.CoordinatorDispatchSequence > 0 {
+			payload["coordinator_dispatch_sequence"] =
+				execution.CoordinatorDispatchSequence
+		}
+		if execution.GoalGraphRevision > 0 {
+			payload["goal_graph_revision"] = execution.GoalGraphRevision
+		}
 		if execution.Task != nil {
 			payload["task_id"] = execution.Task.TaskID
 			payload["goal_id"] = execution.Task.GoalID
@@ -1080,11 +1174,30 @@ func goalExecutionSnapshot(
 	if runtime == nil {
 		return nil
 	}
-	return &GoalExecutionSnapshot{
+	snapshot := &GoalExecutionSnapshot{
 		Node: &runtime.Node,
 		Task: &runtime.Task,
 		Step: &runtime.Step,
 	}
+	meta := make(map[string]string)
+	if json.Unmarshal([]byte(runtime.Task.MetaJSON), &meta) == nil {
+		snapshot.CoordinatorLeaseGeneration, _ = strconv.ParseUint(
+			meta["coordinator_lease_generation"],
+			10,
+			64,
+		)
+		snapshot.CoordinatorDispatchSequence, _ = strconv.ParseUint(
+			meta["coordinator_dispatch_sequence"],
+			10,
+			64,
+		)
+		snapshot.GoalGraphRevision, _ = strconv.ParseUint(
+			meta["goal_graph_revision"],
+			10,
+			64,
+		)
+	}
+	return snapshot
 }
 
 func runtimeActorPTID(payload any) string {

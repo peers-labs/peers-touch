@@ -61,6 +61,7 @@ describe('GoalProgressPanel', () => {
     ]) {
       expect(source).toContain(selector);
     }
+    expect(source).toContain('<GoalTimeline />');
   });
 
   it('keeps the current Goal TaskRun visible after it becomes terminal', () => {
