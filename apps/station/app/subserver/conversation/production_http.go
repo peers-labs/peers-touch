@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
@@ -2451,6 +2452,50 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.Forbidden("Conversation policy rejected the request")
 	}
+	actorIdentityCode := actoridentitydomain.CodeOf(err)
+	switch actorIdentityCode {
+	case actoridentitydomain.ErrorCodeInvalidArgument:
+		return productionActorIdentityHandlerError(
+			http.StatusBadRequest,
+			"invalid Actor Identity request",
+			actorIdentityCode,
+			err,
+		)
+	case actoridentitydomain.ErrorCodeUnauthorized,
+		actoridentitydomain.ErrorCodeInvalidProof:
+		return productionActorIdentityHandlerError(
+			http.StatusForbidden,
+			"Actor Identity operation is not authorized",
+			actorIdentityCode,
+			err,
+		)
+	case actoridentitydomain.ErrorCodeDeviceNotFound:
+		return productionActorIdentityHandlerError(
+			http.StatusNotFound,
+			"Actor Identity device was not found",
+			actorIdentityCode,
+			err,
+		)
+	case actoridentitydomain.ErrorCodeIdentityConflict,
+		actoridentitydomain.ErrorCodeDeviceConflict,
+		actoridentitydomain.ErrorCodeStaleProfileVersion,
+		actoridentitydomain.ErrorCodeFutureProfileVersion,
+		actoridentitydomain.ErrorCodeDeviceRevoked:
+		return productionActorIdentityHandlerError(
+			http.StatusConflict,
+			"Actor Identity state conflicts with the request",
+			actorIdentityCode,
+			err,
+		)
+	case actoridentitydomain.ErrorCodeIdentityUnavailable,
+		actoridentitydomain.ErrorCodePersistence:
+		return productionActorIdentityHandlerError(
+			http.StatusServiceUnavailable,
+			"Actor Identity dependency is unavailable",
+			actorIdentityCode,
+			err,
+		)
+	}
 	deliveryCode := deliveryapp.CodeOf(err)
 	switch deliveryCode {
 	case deliveryapp.ErrorCodeInvalidArgument:
@@ -2612,6 +2657,30 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.InternalErrorWithCause("Conversation operation failed", err)
 	}
+}
+
+func productionActorIdentityHandlerError(
+	status int,
+	message string,
+	code actoridentitydomain.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *actoridentitydomain.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
 }
 
 func productionDeviceInboxHandlerError(
