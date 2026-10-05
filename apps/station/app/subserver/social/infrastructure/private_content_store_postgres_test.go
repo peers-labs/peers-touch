@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -418,6 +419,39 @@ func TestSecureContentResetPostgresRebuildsLegacyPrivatePostSchema(
 	canonical.ContentID = "canonical-content-after-reset"
 	if err := database.Create(&canonical).Error; err != nil {
 		t.Fatalf("canonical insert after reset: %v", err)
+	}
+}
+
+func TestGORMPrivateContentStorePostgresListsInvalidationCandidates(
+	t *testing.T,
+) {
+	database, store := openPrivateContentStorePostgres(t)
+	err := database.Transaction(func(tx *gorm.DB) error {
+		messages, err := store.StagePrivateResourceInvalidations(
+			context.Background(),
+			remotePrivateStoreTransaction{database: tx},
+			PrivateResourceInvalidationRequest{
+				LocalStationPeerID: "station-local",
+				AuthorPTID:         "ptid:alice",
+				PostID:             "post-missing",
+				Reason: privatecontentpb.
+					PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_RESOURCE_DELETED,
+				CommittedAt: fixedTime(),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if len(messages) != 0 {
+			return fmt.Errorf(
+				"empty invalidation candidate query returned %d messages",
+				len(messages),
+			)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("list PostgreSQL invalidation candidates: %v", err)
 	}
 }
 
