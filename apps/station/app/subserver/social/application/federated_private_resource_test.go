@@ -260,6 +260,120 @@ func TestFederatedPrivateReconcileCommitsSourceOutboxAndReceiverProjection(
 			wire.GetResource().GetContentId() {
 		t.Fatalf("receiver remote Moment references = %+v", references)
 	}
+	relationshipStore, err := infrastructure.NewGORMFederatedFriendRequestStore(
+		receiver.database,
+		federationdelivery.SystemClock{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := relationshipStore.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	recoverable, err := receiver.service.ListRecoverablePrivateContent(
+		ctx,
+		"ptid:bob",
+		&privatecontentpb.ListRecoverablePrivateContentRequest{Limit: 100},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recoverable.GetResources()) != 1 {
+		t.Fatalf("receiver recoverable private content = %+v", recoverable)
+	}
+	recoveryResource := recoverable.GetResources()[0]
+	if recoveryResource.GetLocator().GetPostId() !=
+		wire.GetResource().GetContentId() ||
+		recoveryResource.GetRecoveryEnvelope().GetRecoveryActor().GetPtid() !=
+			"ptid:bob" ||
+		recoveryResource.GetRecoveryEnvelope().GetEndpoint() != nil ||
+		!bytes.Equal(
+			recoveryResource.GetPayloadCiphertextSha256(),
+			wire.GetPayload().GetCiphertextSha256(),
+		) {
+		t.Fatalf("receiver remote recovery projection = %+v", recoveryResource)
+	}
+	replacementBob := &actormodel.ActorDeviceRef{
+		Actor:    proto.Clone(receiver.bob.GetActor()).(*actormodel.ActorRef),
+		DeviceId: "bob-replacement-device",
+	}
+	replacementRead, err := receiver.service.GetPrivateMoment(
+		ctx,
+		replacementBob,
+		wire.GetResource().GetContentId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementPrivate := replacementRead.GetResource().GetPrivateContent()
+	if replacementPrivate == nil ||
+		replacementPrivate.GetViewerEnvelope() != nil ||
+		replacementPrivate.GetVerification().
+			GetReceiverVerifiedSenderSigningKey().
+			GetActorPtid() != "ptid:alice" ||
+		!proto.Equal(
+			replacementRead.GetResource().GetMetadata().GetAuthor(),
+			replacementPrivate.GetVerification().
+				GetCommitProof().
+				GetAuthor().
+				GetActor(),
+		) ||
+		!proto.Equal(
+			recoveryResource.GetRecoveryEnvelope().GetBinding().GetResource(),
+			replacementPrivate.GetPayload().GetResource(),
+		) ||
+		!bytes.Equal(
+			recoveryResource.GetRecoveryEnvelope().
+				GetBinding().
+				GetPayloadCiphertextSha256(),
+			replacementPrivate.GetPayload().GetCiphertextSha256(),
+		) {
+		t.Fatalf(
+			"replacement-device recovery point = %+v",
+			replacementRead,
+		)
+	}
+	tamperedRecoveryEnvelope := proto.Clone(
+		recoveryResource.GetRecoveryEnvelope(),
+	).(*securecontentpb.ViewerContentKeyEnvelope)
+	tamperedRecoveryEnvelope.GetRecoveryActor().Ptid = "ptid:eve"
+	tamperedRecoveryBytes, err := proto.MarshalOptions{
+		Deterministic: true,
+	}.Marshal(tamperedRecoveryEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := receiver.database.Table("social_remote_private_envelopes").
+		Where(
+			"content_id = ? AND recipient_key_kind = ? AND recipient_device_id = ''",
+			wire.GetResource().GetContentId(),
+			int32(
+				securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY,
+			),
+		).
+		Update("envelope_bytes", tamperedRecoveryBytes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := receiver.service.ListRecoverablePrivateContent(
+		ctx,
+		"ptid:bob",
+		&privatecontentpb.ListRecoverablePrivateContentRequest{Limit: 100},
+	); !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentIntegrityFailed,
+	) {
+		t.Fatalf("tampered remote recovery error = %v", err)
+	}
+	if _, err := receiver.service.GetPrivateMoment(
+		ctx,
+		replacementBob,
+		wire.GetResource().GetContentId(),
+	); !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentIntegrityFailed,
+	) {
+		t.Fatalf("tampered replacement-device point read error = %v", err)
+	}
 	assertTableCount(t, receiver.database, "realtime_events", 1)
 	select {
 	case event := <-receiver.subscription.Events:
@@ -370,7 +484,7 @@ func TestFederatedPrivateReconcileCommitsSourceOutboxAndReceiverProjection(
 		ctx,
 		&actormodel.ActorDeviceRef{
 			Actor:    proto.Clone(receiver.bob.GetActor()).(*actormodel.ActorRef),
-			DeviceId: "bob-unknown-device",
+			DeviceId: "revoked-device",
 		},
 		wire.GetResource().GetContentId(),
 	)
@@ -378,7 +492,7 @@ func TestFederatedPrivateReconcileCommitsSourceOutboxAndReceiverProjection(
 		err,
 		socialdomain.PrivateContentNotFound,
 	) {
-		t.Fatalf("unknown Bob device read error = %v", err)
+		t.Fatalf("revoked Bob device read error = %v", err)
 	}
 
 	replayed, err := receiver.receiver.Receive(
