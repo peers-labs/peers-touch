@@ -116,6 +116,7 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 WORKSPACE_ID = re.compile(r"^[0-9a-f]{16}$")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+NODE_TEST_OUTPUT_PATTERN = r"^(?:# Subtest:|ℹ tests [1-9][0-9]*)"
 
 
 @dataclass(frozen=True)
