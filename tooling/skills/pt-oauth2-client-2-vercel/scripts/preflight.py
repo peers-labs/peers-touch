@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import sys
@@ -91,8 +92,12 @@ def parse_env_file(path: Path) -> dict[str, str]:
         if key in values:
             duplicate_keys.append(key)
         value = value.strip()
+        quote = None
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            quote = value[0]
             value = value[1:-1]
+        if quote != "'":
+            value = value.replace(r"\$", "$")
         values[key] = value
     if invalid_lines:
         raise PreflightError(
@@ -105,6 +110,19 @@ def parse_env_file(path: Path) -> dict[str, str]:
             {"keys": sorted(set(duplicate_keys))},
         )
     return values
+
+
+def valid_admin_password_hash(value: str) -> bool:
+    parts = value.strip().split("$")
+    if len(parts) != 4 or parts[0] != "pbkdf2-sha256":
+        return False
+    try:
+        iterations = int(parts[1])
+        salt = base64.b64decode(parts[2], validate=True)
+        digest = base64.b64decode(parts[3], validate=True)
+    except (ValueError, base64.binascii.Error):
+        return False
+    return 100_000 <= iterations <= 10_000_000 and len(salt) >= 16 and len(digest) == 32
 
 
 def load_catalog(path: Path) -> dict[str, Any]:
@@ -479,18 +497,26 @@ def validate_vercel_config(
     errors: list[str] = []
     if config.get("$schema") != "https://openapi.vercel.sh/vercel.json":
         errors.append("vercel.json schema is missing")
-    functions = config.get("functions", {})
-    function_config = functions.get("api/**/*.go") if isinstance(functions, dict) else None
-    if not isinstance(function_config, dict):
-        errors.append("api/**/*.go function configuration is missing")
-    else:
-        includes = function_config.get("includeFiles")
-        include_values = [includes] if isinstance(includes, str) else includes
-        if not isinstance(include_values, list) or "config/sites.json" not in include_values:
-            errors.append("config/sites.json is not included in Go Functions")
-        duration = function_config.get("maxDuration")
-        if not isinstance(duration, int) or not 1 <= duration <= 300:
-            errors.append("Go Function maxDuration must be between 1 and 300 seconds")
+    functions = config.get("functions")
+    if functions not in (None, {}):
+        errors.append(
+            "Go Functions must use Vercel auto-discovery instead of functions globs"
+        )
+    entrypoints = sorted(app_root.glob("api/**/index.go"))
+    if not entrypoints:
+        errors.append("no api/**/index.go Go Function entrypoints found")
+    for entrypoint in entrypoints:
+        content = entrypoint.read_text(encoding="utf-8")
+        relative = entrypoint.relative_to(app_root).as_posix()
+        if "package handler" not in content or "func Handler(" not in content:
+            errors.append(f"{relative} is not a Vercel Go Function entrypoint")
+    embedded_config = app_root / "config/sites.go"
+    try:
+        embedded_source = embedded_config.read_text(encoding="utf-8")
+    except OSError:
+        embedded_source = ""
+    if "//go:embed sites.json" not in embedded_source:
+        errors.append("config/sites.json is not embedded in Go Functions")
     configured_routes = {
         item.get("src")
         for item in config.get("routes", [])
@@ -563,6 +589,10 @@ def build_preflight(
 
     required = _required_environment(providers, catalog, env)
     missing = sorted(name for name, _ in required if not env.get(name, "").strip())
+    invalid = []
+    admin_password_hash = env.get("OAUTH_ADMIN_PASSWORD_HASH", "")
+    if admin_password_hash and not valid_admin_password_hash(admin_password_hash):
+        invalid.append("OAUTH_ADMIN_PASSWORD_HASH")
     env_delta = [
         {
             "name": name,
@@ -572,6 +602,14 @@ def build_preflight(
         for name, visibility in required
         if name in missing
     ]
+    env_delta.extend(
+        {
+            "name": name,
+            "visibility": "secret",
+            "reason": "value does not satisfy the runtime format contract",
+        }
+        for name in invalid
+    )
     overrides = {
         "OAUTH_STORAGE_DRIVER": "github",
         "OAUTH_BASE_URL": stable_base_url,
@@ -605,7 +643,7 @@ def build_preflight(
     for key in FORBIDDEN_SYNC_KEYS:
         sync_values.pop(key, None)
 
-    status = "PASS" if not missing and not config_errors else "BLOCKED"
+    status = "PASS" if not missing and not invalid and not config_errors else "BLOCKED"
     report = {
         "status": status,
         "code": None if status == "PASS" else "PREFLIGHT_FAILED",
@@ -628,6 +666,7 @@ def build_preflight(
             "source": f"<external-env>/{env_file.name}",
             "presentKeys": sorted(sync_values),
             "missingKeys": missing,
+            "invalidKeys": invalid,
             "delta": env_delta,
             "forbiddenSyncKeys": sorted(FORBIDDEN_SYNC_KEYS),
         },

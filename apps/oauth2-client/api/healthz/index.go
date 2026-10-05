@@ -3,14 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/peers-labs/peers-touch/oauth2-client/api/shared"
+	shared "github.com/peers-labs/peers-touch/oauth2-client/bridge"
 )
 
 func Handler(w http.ResponseWriter, r *http.Request) {
-	c, err := shared.Container()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	c.Handler.Healthz(w, r)
+	shared.Healthz(w, r)
 }

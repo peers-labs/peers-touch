@@ -57,7 +57,10 @@ def fixture_env() -> dict[str, str]:
         "OAUTH_STORAGE_INDEX_HMAC_KEY": "index-hmac-secret",
         "OAUTH_AUDIT_HMAC_KEY": "audit-hmac-secret",
         "OAUTH_ADMIN_USERNAME": "operator",
-        "OAUTH_ADMIN_PASSWORD_HASH": "password-hash-secret",
+        "OAUTH_ADMIN_PASSWORD_HASH": (
+            "pbkdf2-sha256$100000$MDEyMzQ1Njc4OWFiY2RlZg==$"
+            "pnq3X8b0RCPy3QPbc4tMRNkzzR3dLJBRf6HfSFzQh1Y="
+        ),
         "OAUTH_ADMIN_PASSWORD": "admin-password-secret",
         "PEERS_OAUTH_BRIDGE_SECRET": "bridge-signing-secret",
         "OAUTH_GITHUB_CLIENT_ID": "github-client",
@@ -120,6 +123,23 @@ class PreflightTests(unittest.TestCase):
             "ENV_FILE_DUPLICATE_KEYS",
         )
 
+    def test_env_file_decodes_shell_escaped_dollar_signs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / "runtime.env"
+            env_file.write_text(
+                r"OAUTH_ADMIN_PASSWORD_HASH=pbkdf2-sha256\$100000\$salt\$digest"
+                + "\n",
+                encoding="utf-8",
+            )
+            env_file.chmod(0o600)
+
+            values = preflight.parse_env_file(env_file)
+
+        self.assertEqual(
+            values["OAUTH_ADMIN_PASSWORD_HASH"],
+            "pbkdf2-sha256$100000$salt$digest",
+        )
+
     def test_default_root_and_provider_discovery_match_current_source(self) -> None:
         self.assertEqual(preflight.default_repo_root(), REPO_ROOT)
         catalog = preflight.load_catalog(preflight.DEFAULT_CATALOG)
@@ -133,6 +153,44 @@ class PreflightTests(unittest.TestCase):
         )
         self.assertTrue(
             discovery["evidence"]["weixin"]["capabilities"]["unionId"]
+        )
+
+    def test_vercel_config_targets_only_function_entrypoints(self) -> None:
+        catalog = preflight.load_catalog(preflight.DEFAULT_CATALOG)
+        app_root = REPO_ROOT / "apps/oauth2-client"
+        self.assertEqual(
+            preflight.validate_vercel_config(
+                app_root,
+                ["github", "google"],
+                catalog,
+            ),
+            [],
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            stale_root = Path(temporary)
+            stale_config = json.loads(
+                (app_root / "vercel.json").read_text(encoding="utf-8")
+            )
+            stale_config["functions"] = {
+                "api/**/*.go": {
+                    "includeFiles": "config/sites.json",
+                    "maxDuration": 60,
+                }
+            }
+            (stale_root / "vercel.json").write_text(
+                json.dumps(stale_config),
+                encoding="utf-8",
+            )
+            errors = preflight.validate_vercel_config(
+                stale_root,
+                ["github", "google"],
+                catalog,
+            )
+
+        self.assertIn(
+            "Go Functions must use Vercel auto-discovery instead of functions globs",
+            errors,
         )
 
     def test_catalog_drift_is_detected(self) -> None:
@@ -271,6 +329,28 @@ class PreflightTests(unittest.TestCase):
             ["OAUTH_GOOGLE_CLIENT_SECRET"],
         )
         self.assertNotIn("google-client-secret", json.dumps(report))
+
+    def test_invalid_admin_password_hash_blocks_sync_without_exposing_value(self) -> None:
+        values = fixture_env()
+        values["OAUTH_ADMIN_PASSWORD_HASH"] = "not-a-valid-password-hash"
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / "runtime.env"
+            write_env(env_file, values)
+            report, _ = preflight.build_preflight(
+                REPO_ROOT,
+                env_file,
+                preflight.DEFAULT_CATALOG,
+                "https://oauth.example.test",
+                ["https://app.example.test/oauth/callback"],
+                [],
+            )
+
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(
+            report["environment"]["invalidKeys"],
+            ["OAUTH_ADMIN_PASSWORD_HASH"],
+        )
+        self.assertNotIn("not-a-valid-password-hash", json.dumps(report))
 
     def test_explicit_provider_must_be_enabled_in_runtime_config(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
