@@ -648,6 +648,18 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "Secure Content leases recreated during recovery must be fenced after profile replacement",
         )
 
+    def test_replacement_recovery_allocates_a_fresh_device_endpoint(self) -> None:
+        src = self.source("apps/desktop/src-tauri/src/messaging/engine.rs")
+        restore = src.find("pub fn restore_profile(")
+        self.assertGreater(restore, 0)
+        replacement = src.find("let device_identity = if preserve_device_continuity", restore)
+        worker = src.find("let (worker, worker_token)", replacement)
+        self.assertGreater(replacement, restore)
+        self.assertGreater(worker, replacement)
+        branch = src[replacement:worker]
+        self.assertIn("generate_fresh_device_identity_from_seed(", branch)
+        self.assertNotIn("generate_fresh_device_identity_for_device(", branch)
+
     def test_lifecycle_recovers_stale_enrollment(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/lifecycle.rs")
         self.assertIn(
