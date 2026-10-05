@@ -610,6 +610,14 @@ class RuntimeOwnerTest(unittest.TestCase):
             "social-desktop-remote-recipient-alice",
             W8_REMOTE_IDENTITY_SCOPE,
         )
+        self.assertIn(
+            'journey_id = _required_text(',
+            source,
+        )
+        self.assertIn(
+            'journey_id=str(declaration["journeyId"])',
+            source,
+        )
         self.assertIn("_run_social_acceptance_pre_restart(", source)
         self.assertIn("_social_acceptance_scenario_registry(", source)
         replacement_start = source.index("bob_replacement = _make_client(")
