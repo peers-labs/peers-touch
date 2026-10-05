@@ -946,13 +946,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
             postId,
           });
           applyProjection(projection, actorPtid, scope.rendererGeneration);
-          // #region debug-point D:recover-success
-          void fetch('http://10.37.246.80:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'as23-recovery-history', runId: 'pre-fix', hypothesisId: 'A,D,E', location: 'apps/desktop/src/store/privateMoments.ts:recoverMoment', msg: '[DEBUG] Native recovery returned', data: { postId, nativeState: projection.state, appliedState: get().postsById[postId]?.state ?? null, errorCode: projection.errorCode ?? null, contentKind: projection.content?.kind ?? null, text: projection.content?.kind === 'REPOST' ? projection.content.comment : projection.content?.text ?? null }, ts: Date.now() }) }).catch(() => {});
-          // #endregion
         } catch (error) {
-          // #region debug-point B:recover-error
-          void fetch('http://10.37.246.80:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'as23-recovery-history', runId: 'pre-fix', hypothesisId: 'B,C', location: 'apps/desktop/src/store/privateMoments.ts:recoverMoment', msg: '[DEBUG] Native recovery failed', data: { postId, errorName: error instanceof Error ? error.name : typeof error, errorMessage: error instanceof Error ? error.message : String(error), errorCode: error instanceof PrivateMomentsNativeError ? error.code : null, errorState: error instanceof PrivateMomentsNativeError ? error.state : null }, ts: Date.now() }) }).catch(() => {});
-          // #endregion
           if (!isCurrentScope(get().scope, actorPtid, scope.rendererGeneration)) return;
           set((state) => {
             const current = state.postsById[postId];
