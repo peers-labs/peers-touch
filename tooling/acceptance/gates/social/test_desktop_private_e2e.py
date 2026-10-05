@@ -76,9 +76,9 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
         payload = _parse_owner_output('runtime log\n{"status":"ok"}\n')
         self.assertEqual({"status": "ok"}, payload)
 
-    def test_runtime_owner_uses_bounded_result_root(self) -> None:
+    def test_runtime_owner_uses_bounded_runtime_root(self) -> None:
         command = _runtime_owner_command()
-        root = Path(command[command.index("--result-root") + 1])
+        root = Path(command[command.index("--runtime-root") + 1])
 
         self.assertTrue(root.is_absolute())
         self.assertEqual(

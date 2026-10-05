@@ -77,7 +77,7 @@ def _runtime_owner_command() -> list[str]:
     workspace_key = hashlib.sha256(
         str(REPO_ROOT).encode("utf-8")
     ).hexdigest()[:16]
-    result_root = (
+    runtime_root = (
         Path(tempfile.gettempdir())
         / "pt-social-desktop"
         / workspace_key
@@ -91,8 +91,8 @@ def _runtime_owner_command() -> list[str]:
         "four,fiveArm",
         "--slot",
         "12",
-        "--result-root",
-        str(result_root),
+        "--runtime-root",
+        str(runtime_root),
     ]
 
 

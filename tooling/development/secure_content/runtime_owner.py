@@ -6646,10 +6646,17 @@ class W7RuntimeOwner:
         *,
         repo_root: Path,
         result_root: Path,
+        runtime_root: Path | None = None,
     ) -> None:
         self.repo_root = repo_root.resolve(strict=True)
         self.result_root = result_root.resolve()
-        self.runtime_root = self.result_root / "runtime-owner"
+        canonical_runtime_root = self.result_root / "runtime-owner"
+        self.runtime_root = (
+            runtime_root.resolve()
+            if runtime_root is not None
+            else canonical_runtime_root
+        )
+        self.shared_identity_root = canonical_runtime_root / "shared"
 
     def preflight(self) -> dict[str, Any]:
         identity = _require_clean_source(self.repo_root, self.result_root)
@@ -10460,8 +10467,7 @@ class W7RuntimeOwner:
             )
             _bind_reusable_actor_identity(
                 remote_client,
-                self.runtime_root
-                / "shared"
+                self.shared_identity_root
                 / W8_REMOTE_IDENTITY_SCOPE
                 / "actor-identity",
             )
@@ -11201,6 +11207,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--profiles")
     parser.add_argument("--slot", type=int, default=SLOT)
     parser.add_argument("--result-root", type=Path)
+    parser.add_argument("--runtime-root", type=Path)
     return parser.parse_args(argv)
 
 
@@ -11285,6 +11292,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     owner = W7RuntimeOwner(
         repo_root=repo_root,
         result_root=result_root,
+        runtime_root=args.runtime_root,
     )
     try:
         if args.action == "preflight":
