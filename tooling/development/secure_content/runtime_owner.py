@@ -21,6 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -859,6 +860,141 @@ def _json_bytes(value: Mapping[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
+def _proto_varint(value: int) -> bytes:
+    if value < 0:
+        raise ValueError("protobuf varint must be non-negative")
+    encoded = bytearray()
+    while value > 0x7F:
+        encoded.append((value & 0x7F) | 0x80)
+        value >>= 7
+    encoded.append(value)
+    return bytes(encoded)
+
+
+def _proto_bytes(field_number: int, value: bytes | str) -> bytes:
+    payload = value.encode("utf-8") if isinstance(value, str) else value
+    return (
+        _proto_varint((field_number << 3) | 2)
+        + _proto_varint(len(payload))
+        + payload
+    )
+
+
+def _proto_uint(field_number: int, value: int) -> bytes:
+    return _proto_varint(field_number << 3) + _proto_varint(value)
+
+
+def _read_proto_varint(payload: bytes, offset: int) -> tuple[int, int]:
+    value = 0
+    shift = 0
+    while offset < len(payload) and shift < 70:
+        byte = payload[offset]
+        offset += 1
+        value |= (byte & 0x7F) << shift
+        if byte & 0x80 == 0:
+            return value, offset
+        shift += 7
+    raise ValueError("malformed protobuf varint")
+
+
+def _proto_fields(payload: bytes) -> Iterator[tuple[int, int, int | bytes]]:
+    offset = 0
+    while offset < len(payload):
+        key, offset = _read_proto_varint(payload, offset)
+        field_number = key >> 3
+        wire_type = key & 0x07
+        if field_number == 0:
+            raise ValueError("protobuf field number must be positive")
+        if wire_type == 0:
+            value, offset = _read_proto_varint(payload, offset)
+            yield field_number, wire_type, value
+            continue
+        if wire_type == 1:
+            end = offset + 8
+        elif wire_type == 2:
+            length, offset = _read_proto_varint(payload, offset)
+            end = offset + length
+        elif wire_type == 5:
+            end = offset + 4
+        else:
+            raise ValueError(f"unsupported protobuf wire type {wire_type}")
+        if end > len(payload):
+            raise ValueError("truncated protobuf field")
+        yield field_number, wire_type, payload[offset:end]
+        offset = end
+
+
+def _proto_first_bytes(payload: bytes, field_number: int) -> bytes:
+    for candidate, wire_type, value in _proto_fields(payload):
+        if candidate == field_number and wire_type == 2:
+            assert isinstance(value, bytes)
+            return value
+    raise ValueError(f"protobuf field {field_number} is missing")
+
+
+def _decode_peers_payload(payload: bytes) -> bytes:
+    any_message = _proto_first_bytes(payload, 3)
+    return _proto_first_bytes(any_message, 2)
+
+
+def _decode_access_login_gate(payload: bytes) -> dict[str, str | int]:
+    decision = _proto_first_bytes(_decode_peers_payload(payload), 1)
+    attempt_id = _proto_first_bytes(decision, 2).decode("utf-8")
+    current_gate_id = _proto_first_bytes(decision, 3).decode("utf-8")
+    for field_number, wire_type, value in _proto_fields(decision):
+        if field_number != 4 or wire_type != 2:
+            continue
+        assert isinstance(value, bytes)
+        gate_id = _proto_first_bytes(value, 1).decode("utf-8")
+        if gate_id != current_gate_id:
+            continue
+        fields = list(_proto_fields(value))
+        scalar = {
+            field: candidate
+            for field, candidate_wire, candidate in fields
+            if candidate_wire == 0
+        }
+        text = {
+            field: candidate.decode("utf-8")
+            for field, candidate_wire, candidate in fields
+            if candidate_wire == 2 and isinstance(candidate, bytes)
+        }
+        if scalar.get(2) != 2:
+            raise ValueError("current access gate is not AUTH_LOGIN")
+        return {
+            "attempt_id": attempt_id,
+            "gate_id": gate_id,
+            "action_id": text.get(10, ""),
+            "schema_revision": int(scalar.get(11, 0)),
+            "schema_digest": text.get(12, ""),
+        }
+    raise ValueError("current access gate is missing")
+
+
+def _decode_access_login(payload: bytes) -> tuple[str, str]:
+    response = _decode_peers_payload(payload)
+    login = _proto_first_bytes(response, 2)
+    tokens = _proto_first_bytes(login, 1)
+    actor_ref = _proto_first_bytes(login, 4)
+    token = _proto_first_bytes(tokens, 2).decode("utf-8")
+    actor_ptid = _proto_first_bytes(actor_ref, 2).decode("utf-8")
+    return token, actor_ptid
+
+
+def _station_proto_post(url: str, payload: bytes) -> bytes:
+    request = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Accept": "application/protobuf",
+            "Content-Type": "application/protobuf",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read()
+
+
 def _sha256(value: bytes | str) -> str:
     payload = value.encode("utf-8") if isinstance(value, str) else value
     return hashlib.sha256(payload).hexdigest()
@@ -1232,53 +1368,75 @@ def _http_get(
 def _station_login(
     station_url: str,
     *,
+    station_peer_id: str,
     account: str,
     password: str,
 ) -> tuple[str, str]:
-    request = urllib.request.Request(
-        f"{station_url.rstrip('/')}/actor/login",
-        data=_json_bytes(
-            {
-                "email": account,
-                "password": password,
-                "device_type": "desktop-native",
-            }
-        ),
-        headers={
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+    device_id = f"css09-eve-{secrets.token_hex(8)}"
+    lifecycle_generation = 1
+    client = b"".join(
+        (
+            _proto_bytes(1, "desktop"),
+            _proto_bytes(2, "0.1.0"),
+            _proto_bytes(3, device_id),
+            _proto_uint(5, lifecycle_generation),
+        )
+    )
+    start_request = b"".join(
+        (
+            _proto_bytes(1, station_url),
+            _proto_bytes(2, client),
+            _proto_bytes(4, station_peer_id),
+        )
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            envelope = json.loads(response.read().decode("utf-8"))
+        gate = _decode_access_login_gate(
+            _station_proto_post(
+                f"{station_url.rstrip('/')}/actor/access/start",
+                start_request,
+            )
+        )
+        login = b"".join(
+            (
+                _proto_bytes(1, account),
+                _proto_bytes(2, password),
+                _proto_bytes(3, "desktop-native"),
+            )
+        )
+        submit_request = b"".join(
+            (
+                _proto_bytes(1, str(gate["attempt_id"])),
+                _proto_bytes(2, str(gate["gate_id"])),
+                _proto_uint(3, 2),
+                _proto_bytes(4, login),
+                _proto_bytes(7, str(gate["action_id"])),
+                _proto_bytes(8, station_peer_id),
+                _proto_bytes(9, device_id),
+                _proto_uint(10, lifecycle_generation),
+                _proto_uint(11, int(gate["schema_revision"])),
+                _proto_bytes(12, str(gate["schema_digest"])),
+                _proto_bytes(13, str(uuid.uuid4())),
+            )
+        )
+        token, actor_ptid = _decode_access_login(
+            _station_proto_post(
+                f"{station_url.rstrip('/')}/actor/access/submit",
+                submit_request,
+            )
+        )
     except (
         urllib.error.HTTPError,
         urllib.error.URLError,
         OSError,
         TimeoutError,
-        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValueError,
     ) as error:
         raise RuntimeOwnerBlocked(
             "FIXTURE_OWNER_UNAVAILABLE",
             "Cross-Station Social fixture login failed",
             resource="fixture-account:eve",
         ) from error
-    data = (
-        envelope.get("data")
-        if isinstance(envelope, Mapping)
-        and isinstance(envelope.get("data"), Mapping)
-        else {}
-    )
-    tokens = data.get("tokens") if isinstance(data.get("tokens"), Mapping) else {}
-    actor_ref = (
-        data.get("actor_ref")
-        if isinstance(data.get("actor_ref"), Mapping)
-        else {}
-    )
-    token = tokens.get("access_token")
-    actor_ptid = actor_ref.get("ptid")
     if (
         not isinstance(token, str)
         or not token
@@ -7254,6 +7412,7 @@ class W7RuntimeOwner:
             )
             eve_token, eve_ptid = _station_login(
                 secondary_station_url,
+                station_peer_id=secondary_attestation.runtime_identity,
                 account=accounts["eve"],
                 password=password,
             )
