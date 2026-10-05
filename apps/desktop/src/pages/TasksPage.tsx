@@ -45,10 +45,11 @@ interface CreateFormValues {
 const STATUS_ICON_MAP: Record<TaskStatus, React.ReactNode> = {
   pending: <ClockCircleOutlined />,
   running: <PlayCircleOutlined />,
-  paused: <PauseCircleOutlined />,
+  needs_user: <PauseCircleOutlined />,
   completed: <CheckCircleOutlined />,
   failed: <ExclamationCircleOutlined />,
   cancelled: <MinusCircleOutlined />,
+  unavailable: <ExclamationCircleOutlined />,
 };
 
 function StatusBadge({ status }: { status: TaskStatus }) {
@@ -56,10 +57,11 @@ function StatusBadge({ status }: { status: TaskStatus }) {
   const colorMap: Record<TaskStatus, string> = {
     pending: 'default',
     running: 'processing',
-    paused: 'warning',
+    needs_user: 'warning',
     completed: 'success',
     failed: 'error',
     cancelled: 'default',
+    unavailable: 'error',
   };
   return (
     <Tag icon={STATUS_ICON_MAP[status]} color={colorMap[status]}>
@@ -99,9 +101,12 @@ function TaskCard({ task }: { task: AgentTask }) {
   const agent = agents.find((a) => a.id === task.agentId);
   const agentName = agent?.title || agent?.name || task.agentId;
 
-  const canStart = task.status === 'pending' || task.status === 'paused';
+  const canStart = task.status === 'pending' || task.status === 'needs_user';
   const canPause = task.status === 'running';
-  const canCancel = task.status === 'pending' || task.status === 'running' || task.status === 'paused';
+  const canCancel =
+    task.status === 'pending' ||
+    task.status === 'running' ||
+    task.status === 'needs_user';
 
   const handleAddSubtask = useCallback(() => {
     const trimmed = subtaskInput.trim();
@@ -267,7 +272,12 @@ export function TasksPage() {
   const filteredTasks = useMemo(() => {
     switch (filter) {
       case 'active':
-        return tasks.filter((t) => t.status === 'pending' || t.status === 'running' || t.status === 'paused');
+        return tasks.filter(
+          (task) =>
+            task.status === 'pending' ||
+            task.status === 'running' ||
+            task.status === 'needs_user',
+        );
       case 'completed':
         return tasks.filter((t) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled');
       default:

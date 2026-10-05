@@ -1,14 +1,23 @@
-// Task store — manages agent task lifecycle. Station-backed (O3): create /
-// status transitions (start/pause/cancel/complete/fail) / delete / subtasks
-// persist to Station via the agent task API; the list is refreshed from Station
-// truth after each mutation. Replaces the prior localStorage store.
+// Task store — writes through the task command API and reads lifecycle only
+// from the canonical Home TaskRun projection.
 
 import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
-import { api, type StationAgentTaskRow } from '../services/desktop_api';
+import { api } from '../services/desktop_api';
+import type { HomeTaskProjection, HomeWorkProjection } from '../gen/proto/domain/agent/home_pb';
+import {
+  normalizeHomeTaskRunStatus,
+  type TaskRunLifecycleStatus,
+} from './home';
 
-export type TaskStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+export type TaskStatus = TaskRunLifecycleStatus;
 export type TaskPriority = 'low' | 'medium' | 'high';
+type TaskMutationStatus =
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export interface AgentSubtask {
   id: string;
@@ -45,6 +54,8 @@ export interface TaskCreateInput {
 interface TaskState {
   tasks: AgentTask[];
   activeTaskId: string | null;
+  sourcePtid: string;
+  sourceRevision: bigint;
 
   loadTasks: () => Promise<void>;
   createTask: (input: TaskCreateInput) => Promise<void>;
@@ -61,28 +72,40 @@ interface TaskState {
   getActiveTasks: () => AgentTask[];
 }
 
-// Maps a Station task row (snake_case) into the UI AgentTask shape.
-function rowToTask(row: StationAgentTaskRow): AgentTask {
+function timestampToMillis(
+  value: HomeTaskProjection['updatedAt'],
+): number {
+  if (!value) return 0;
+  return Number(value.seconds) * 1_000 + Math.floor(value.nanos / 1_000_000);
+}
+
+export function homeTaskProjectionToTask(
+  task: HomeTaskProjection,
+  projection: HomeWorkProjection,
+): AgentTask {
+  const status = normalizeHomeTaskRunStatus(task.status);
+  const summary = projection.briefItems.find(
+    (item) => item.sourceRef === task.taskId,
+  )?.summary;
+  const updatedAt = timestampToMillis(task.updatedAt);
   return {
-    id: row.id,
-    title: row.title,
-    description: row.description || '',
-    agentId: row.agent_id,
-    status: row.status as TaskStatus,
-    priority: (row.priority || 'medium') as TaskPriority,
-    progress: row.progress || 0,
-    subtasks: (row.subtasks || []).map((s) => ({
-      id: s.id,
-      title: s.title,
-      status: s.status as AgentSubtask['status'],
-      completedAt: s.completed_at,
-    })),
-    topicKey: row.topic_key || undefined,
-    createdAt: new Date(row.created_at).getTime(),
-    updatedAt: new Date(row.updated_at).getTime(),
-    completedAt: row.completed_at ? new Date(row.completed_at).getTime() : undefined,
-    result: row.result || undefined,
-    error: row.error || undefined,
+    id: task.taskId,
+    title: task.title,
+    description: '',
+    agentId: task.agentId,
+    status,
+    priority: 'medium',
+    progress: task.progressPercent,
+    subtasks: [],
+    topicKey: task.topicRef || undefined,
+    createdAt: updatedAt,
+    updatedAt,
+    completedAt:
+      status === 'completed' || status === 'failed' || status === 'cancelled'
+        ? updatedAt
+        : undefined,
+    result: status === 'completed' ? summary : undefined,
+    error: status === 'failed' ? summary : undefined,
   };
 }
 
@@ -90,7 +113,7 @@ export const useTaskStore = createDesktopStore<TaskState>('tasks', (set, get) =>
   // Drive a Station status transition then refresh the list from Station truth.
   const transitionStatus = async (
     taskId: string,
-    status: TaskStatus,
+    status: TaskMutationStatus,
     extra?: { result?: string; error?: string },
   ) => {
     try {
@@ -110,14 +133,38 @@ export const useTaskStore = createDesktopStore<TaskState>('tasks', (set, get) =>
   return {
     tasks: [],
     activeTaskId: null,
+    sourcePtid: '',
+    sourceRevision: 0n,
 
     loadTasks: async () => {
       try {
-        const rows = await api.listAgentTasksRemote();
-        set({ tasks: rows.map(rowToTask) });
-        log.info('tasks', 'Tasks loaded from Station', { count: rows.length });
+        const sourcePtid = get().sourcePtid;
+        const sourceRevision = get().sourceRevision;
+        const projection = await api.getHomeWorkProjection(sourceRevision);
+        if (
+          projection.ptid === sourcePtid &&
+          projection.revision < sourceRevision
+        ) {
+          log.warn('tasks', 'Ignored stale Station task projection', {
+            acceptedRevision: sourceRevision.toString(),
+            receivedRevision: projection.revision.toString(),
+          });
+          return;
+        }
+        const tasks = projection.activeTasks.map((task) =>
+          homeTaskProjectionToTask(task, projection)
+        );
+        set({
+          tasks,
+          sourcePtid: projection.ptid,
+          sourceRevision: projection.revision,
+        });
+        log.info('tasks', 'Canonical TaskRuns loaded from Station', {
+          count: tasks.length,
+          revision: projection.revision.toString(),
+        });
       } catch (error) {
-        log.error('tasks', 'Failed to load tasks from Station', { error });
+        log.error('tasks', 'Failed to load canonical TaskRuns from Station', { error });
       }
     },
 
@@ -191,6 +238,11 @@ export const useTaskStore = createDesktopStore<TaskState>('tasks', (set, get) =>
 
     getTasksForAgent: (agentId) => get().tasks.filter((t) => t.agentId === agentId),
 
-    getActiveTasks: () => get().tasks.filter((t) => t.status === 'running' || t.status === 'pending'),
+    getActiveTasks: () => get().tasks.filter(
+      (task) =>
+        task.status === 'running' ||
+        task.status === 'pending' ||
+        task.status === 'needs_user',
+    ),
   };
 });

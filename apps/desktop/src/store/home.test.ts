@@ -4,17 +4,25 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   HomeErrorCode,
   HomeProjectionFreshness,
+  HomeTaskStatus,
   HomeWorkProjectionSchema,
 } from '../gen/proto/domain/agent/home_pb';
 import {
   AgentGoalSchema,
   AgentGoalStatus,
 } from '../gen/proto/domain/agent/goal_pb';
-import { useHomeStore } from './home';
+import { normalizeHomeTaskRunStatus, useHomeStore } from './home';
 
 describe('home projection store', () => {
   beforeEach(() => {
     useHomeStore.getState().reset();
+  });
+
+  it('maps unknown TaskRun lifecycle values to unavailable', () => {
+    expect(normalizeHomeTaskRunStatus(HomeTaskStatus.PENDING)).toBe('pending');
+    expect(normalizeHomeTaskRunStatus(HomeTaskStatus.NEEDS_USER)).toBe('needs_user');
+    expect(normalizeHomeTaskRunStatus(HomeTaskStatus.UNSPECIFIED)).toBe('unavailable');
+    expect(normalizeHomeTaskRunStatus(99 as HomeTaskStatus)).toBe('unavailable');
   });
 
   it('preserves accepted content and exposes stale retry metadata for an older revision', () => {

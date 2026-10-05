@@ -17,6 +17,10 @@ function task(id: string, title = id): AtelierTask {
     project: `project-${id}`,
     title,
     status: 'active',
+    executionStatus: 'pending',
+    stepId: `step-${id}`,
+    attemptId: `attempt-${id}`,
+    attempt: 1,
   };
 }
 
@@ -50,6 +54,15 @@ function event(overrides: Partial<AtelierProjectionEvent>): AtelierProjectionEve
 
 describe('Atelier projection reducer', () => {
   it('accepts stable migration identities and rejects inferred canonical links', () => {
+    expect(isAtelierProjectionPatch({
+      kind: 'task.upsert',
+      task: {
+        ...task('task-native'),
+        projectId: 'goal-native',
+        goalId: 'goal-native',
+        taskRunId: 'task-native',
+      },
+    })).toBe(true);
     expect(isAtelierProjectionPatch({
       kind: 'task.upsert',
       task: {
@@ -266,5 +279,29 @@ describe('Atelier projection reducer', () => {
     expect(todo.state.snapshot?.workspace.gates?.['task-a']).toEqual([{ id: 'gate-a', name: 'Gate', status: 'passed' }]);
     expect(todo.state.snapshot?.workspace.contexts['task-a']).toEqual({ usedPct: 42, files: [{ name: 'a.ts', group: 'hot' }] });
     expect(todo.state.snapshot?.workspace.todos['task-a']).toEqual([{ id: 'todo-a', text: 'Review', status: 'open' }]);
+  });
+
+  it('normalizes unknown snapshot and event TaskRun states to unavailable', () => {
+    const unknownSnapshot = snapshot([{
+      ...task('task-a'),
+      executionStatus: 'future_state',
+    } as unknown as AtelierTask]);
+    const current = stateFromAtelierSnapshot(unknownSnapshot);
+
+    expect(current.snapshot?.workspace.tasks[0].executionStatus).toBe('unavailable');
+
+    const updated = applyAtelierProjectionEventWithResult(current, event({
+      id: 'unknown-taskrun-status',
+      seq: 1,
+      taskId: 'task-a',
+      patch: {
+        kind: 'task.executionStatus',
+        taskId: 'task-a',
+        status: 'another_future_state',
+      },
+    }));
+
+    expect(updated.outcome).toBe('applied');
+    expect(updated.state.snapshot?.workspace.tasks[0].executionStatus).toBe('unavailable');
   });
 });

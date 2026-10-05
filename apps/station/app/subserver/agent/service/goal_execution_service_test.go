@@ -3,10 +3,69 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
+
+func TestGoalExecutionServiceListsAllNonChatTaskRunsForHome(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	now := time.Now().UTC()
+	for _, task := range []persistence.TaskRun{
+		{
+			TaskID:         "task-api",
+			Title:          "API task",
+			Surface:        int32(model.TaskSurface_TASK_SURFACE_API),
+			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING),
+			OwnerActorPTID: "ptid:actor-1",
+			RootStepID:     "step-api",
+			CreatedAt:      now,
+			StartedAt:      now,
+			UpdatedAt:      now,
+		},
+		{
+			TaskID:         "task-chat",
+			Title:          "Chat task",
+			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+			OwnerActorPTID: "ptid:actor-1",
+			RootStepID:     "step-chat",
+			CreatedAt:      now,
+			StartedAt:      now,
+			UpdatedAt:      now,
+		},
+	} {
+		if err := db.Create(&task).Error; err != nil {
+			t.Fatalf("create TaskRun %s: %v", task.TaskID, err)
+		}
+		if err := db.Create(&persistence.ExecutionStep{
+			StepID:    task.RootStepID,
+			TaskID:    task.TaskID,
+			AgentID:   "agent-1",
+			Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+			Attempt:   1,
+			AttemptID: "attempt-" + task.TaskID,
+			StartedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("create ExecutionStep %s: %v", task.TaskID, err)
+		}
+	}
+
+	snapshots, err := NewGoalExecutionService(db).ListTaskRunsForOwner(
+		context.Background(),
+		"ptid:actor-1",
+		20,
+	)
+	if err != nil {
+		t.Fatalf("list TaskRuns: %v", err)
+	}
+	if len(snapshots) != 1 ||
+		snapshots[0].Task.TaskID != "task-api" ||
+		snapshots[0].Node != nil {
+		t.Fatalf("non-chat TaskRun snapshots = %+v", snapshots)
+	}
+}
 
 func TestGoalTaskRunAllocationFailureLeavesGoalReady(t *testing.T) {
 	db := openGoalServiceTestDB(t)

@@ -29,10 +29,6 @@ type homeReadinessGetter interface {
 	Get(context.Context, string, *model.GetCapabilityReadinessRequest) (*model.CapabilityReadinessSnapshot, error)
 }
 
-type homeTaskLister interface {
-	ListTasks(context.Context, string, string) ([]*persistence.AgentTask, error)
-}
-
 type homeTaskMigrationLister interface {
 	ListTaskMigrationReadbacks(
 		context.Context,
@@ -41,14 +37,14 @@ type homeTaskMigrationLister interface {
 }
 
 type homeGoalExecutionLister interface {
-	ListForOwner(context.Context, string, int) ([]*GoalExecutionSnapshot, error)
+	ListTaskRunsForOwner(context.Context, string, int) ([]*GoalExecutionSnapshot, error)
 }
 
 type HomeProjectionService struct {
 	agents         homeAgentLister
 	conversations  homeConversationLister
 	readiness      homeReadinessGetter
-	tasks          homeTaskLister
+	taskMigrations homeTaskMigrationLister
 	goalExecutions homeGoalExecutionLister
 	now            func() time.Time
 }
@@ -57,15 +53,15 @@ func NewHomeProjectionService(
 	agents homeAgentLister,
 	conversations homeConversationLister,
 	readiness homeReadinessGetter,
-	tasks homeTaskLister,
+	taskMigrations homeTaskMigrationLister,
 	goalExecutions ...homeGoalExecutionLister,
 ) *HomeProjectionService {
 	service := &HomeProjectionService{
-		agents:        agents,
-		conversations: conversations,
-		readiness:     readiness,
-		tasks:         tasks,
-		now:           time.Now,
+		agents:         agents,
+		conversations:  conversations,
+		readiness:      readiness,
+		taskMigrations: taskMigrations,
+		now:            time.Now,
 	}
 	if len(goalExecutions) > 0 {
 		service.goalExecutions = goalExecutions[0]
@@ -103,10 +99,9 @@ func (s *HomeProjectionService) Get(
 		GeneratedAt: timestamppb.New(s.now().UTC()),
 		Freshness:   model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_FRESH,
 	}
-	migrationsBySourceID := make(map[string]persistence.AgentTaskGoalMap)
 	migrationsByTaskID := make(map[string]persistence.AgentTaskGoalMap)
-	if migrationReader, ok := s.tasks.(homeTaskMigrationLister); ok {
-		migrations, migrationErr := migrationReader.ListTaskMigrationReadbacks(
+	if s.taskMigrations != nil {
+		migrations, migrationErr := s.taskMigrations.ListTaskMigrationReadbacks(
 			ctx,
 			ptid,
 		)
@@ -120,7 +115,6 @@ func (s *HomeProjectionService) Get(
 			})
 		} else {
 			for _, migration := range migrations {
-				migrationsBySourceID[migration.LegacyTaskID] = migration
 				migrationsByTaskID[migration.TaskID] = migration
 				projection.Revision = maxHomeRevision(
 					projection.Revision,
@@ -230,9 +224,8 @@ func (s *HomeProjectionService) Get(
 		}
 	}
 
-	canonicalTaskIDs := make(map[string]struct{})
 	if s.goalExecutions != nil {
-		executions, executionErr := s.goalExecutions.ListForOwner(
+		executions, executionErr := s.goalExecutions.ListTaskRunsForOwner(
 			ctx,
 			ptid,
 			homeRecentWorkLimit,
@@ -240,21 +233,20 @@ func (s *HomeProjectionService) Get(
 		if executionErr != nil {
 			projection.Freshness = model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_PARTIAL
 			projection.SliceErrors = append(projection.SliceErrors, &model.HomeSliceError{
-				SliceId:        "goal_executions",
+				SliceId:        "task_runs",
 				Code:           model.HomeErrorCode_HOME_ERROR_CODE_SLICE_UNAVAILABLE,
 				Retryable:      true,
 				RecoveryAction: "retry",
 			})
 		} else {
 			for _, execution := range executions {
-				if execution == nil || execution.Node == nil ||
+				if execution == nil ||
 					execution.Task == nil || execution.Step == nil {
 					continue
 				}
 				task := execution.Task
 				node := execution.Node
 				step := execution.Step
-				canonicalTaskIDs[task.TaskID] = struct{}{}
 				projection.Revision = maxHomeRevision(projection.Revision, task.UpdatedAt)
 				projection.RecentWork = append(projection.RecentWork, &model.HomeRecentWork{
 					WorkId:    task.TaskID,
@@ -265,6 +257,10 @@ func (s *HomeProjectionService) Get(
 				})
 
 				status := homeTaskRunStatus(task.Status)
+				goalNodeID := task.GoalNodeID
+				if node != nil {
+					goalNodeID = node.NodeID
+				}
 				taskProjection := &model.HomeTaskProjection{
 					TaskId:          task.TaskID,
 					AgentId:         step.AgentID,
@@ -273,25 +269,18 @@ func (s *HomeProjectionService) Get(
 					ProgressPercent: homeTaskRunProgress(status),
 					UpdatedAt:       timestamppb.New(task.UpdatedAt.UTC()),
 					GoalId:          task.GoalID,
-					GoalNodeId:      node.NodeID,
+					GoalNodeId:      goalNodeID,
 					StepId:          step.StepID,
 					AttemptId:       step.AttemptID,
 					Attempt:         uint32(max(step.Attempt, 0)),
 					Surface:         model.TaskSurface(task.Surface),
 					WorkspaceId:     task.WorkspaceID,
 				}
-				if migration, ok := migrationsByTaskID[task.TaskID]; ok {
+				if migration, ok := migrationsByTaskID[task.TaskID]; ok &&
+					migration.State == persistence.AgentTaskMigrationStateMigrated {
 					taskProjection.LegacySourceId = migration.LegacyTaskID
-					if migration.State == persistence.AgentTaskMigrationStateBlocked {
-						taskProjection.Status =
-							model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER
-						taskProjection.MigrationState =
-							model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_BLOCKED
-						taskProjection.MigrationBlockReason = migration.BlockReason
-					} else {
-						taskProjection.MigrationState =
-							model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_MIGRATED
-					}
+					taskProjection.MigrationState =
+						model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_MIGRATED
 				}
 				// Keep every canonical Goal TaskRun in the wire projection so a
 				// Desktop restart can reconstruct both active and terminal work.
@@ -299,13 +288,13 @@ func (s *HomeProjectionService) Get(
 					projection.ActiveTasks,
 					taskProjection,
 				)
-				switch status {
+				switch taskProjection.Status {
 				case model.HomeTaskStatus_HOME_TASK_STATUS_PENDING,
 					model.HomeTaskStatus_HOME_TASK_STATUS_RUNNING,
 					model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER:
 				case model.HomeTaskStatus_HOME_TASK_STATUS_COMPLETED:
 					projection.BriefItems = append(projection.BriefItems, &model.HomeBriefItem{
-						BriefId:   homeGoalResultBriefID(execution),
+						BriefId:   homeTaskRunBriefID(execution),
 						SourceRef: task.TaskID,
 						Title:     task.Title,
 						Summary:   homeGoalResultSummary(execution, "Task completed"),
@@ -313,7 +302,7 @@ func (s *HomeProjectionService) Get(
 					})
 				case model.HomeTaskStatus_HOME_TASK_STATUS_FAILED:
 					projection.BriefItems = append(projection.BriefItems, &model.HomeBriefItem{
-						BriefId:   homeGoalResultBriefID(execution),
+						BriefId:   homeTaskRunBriefID(execution),
 						SourceRef: task.TaskID,
 						Title:     task.Title,
 						Summary:   homeGoalResultSummary(execution, "Task failed"),
@@ -325,112 +314,6 @@ func (s *HomeProjectionService) Get(
 						Title:      task.Title,
 						ActionKind: "open_task",
 						ActionRef:  task.TaskID,
-					})
-				}
-			}
-		}
-	}
-
-	if s.tasks != nil {
-		tasks, taskErr := s.tasks.ListTasks(ctx, ptid, "")
-		if taskErr != nil {
-			projection.Freshness = model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_PARTIAL
-			projection.SliceErrors = append(projection.SliceErrors, &model.HomeSliceError{
-				SliceId:        "tasks",
-				Code:           model.HomeErrorCode_HOME_ERROR_CODE_SLICE_UNAVAILABLE,
-				Retryable:      true,
-				RecoveryAction: "retry",
-			})
-		} else {
-			for _, task := range tasks {
-				if task == nil {
-					continue
-				}
-				if migration, ok := migrationsBySourceID[task.ID]; ok {
-					if migration.State == persistence.AgentTaskMigrationStateMigrated {
-						continue
-					}
-					if migration.State == persistence.AgentTaskMigrationStateBlocked {
-						if _, canonical := canonicalTaskIDs[migration.TaskID]; canonical {
-							continue
-						}
-						projection.Revision = maxHomeRevision(
-							projection.Revision,
-							migration.UpdatedAt,
-						)
-						projection.RecentWork = append(
-							projection.RecentWork,
-							&model.HomeRecentWork{
-								WorkId:    migration.TaskID,
-								Kind:      model.HomeWorkKind_HOME_WORK_KIND_TASK,
-								AgentId:   task.AgentID,
-								Title:     task.Title,
-								UpdatedAt: timestamppb.New(task.UpdatedAt.UTC()),
-							},
-						)
-						projection.ActiveTasks = append(
-							projection.ActiveTasks,
-							&model.HomeTaskProjection{
-								TaskId:               migration.TaskID,
-								AgentId:              task.AgentID,
-								Title:                task.Title,
-								Status:               model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER,
-								ProgressPercent:      uint32(min(max(task.Progress, 0), 100)),
-								UpdatedAt:            timestamppb.New(task.UpdatedAt.UTC()),
-								GoalId:               migration.GoalID,
-								GoalNodeId:           migration.GoalNodeID,
-								StepId:               migration.StepID,
-								AttemptId:            migration.AttemptID,
-								Attempt:              1,
-								Surface:              model.TaskSurface_TASK_SURFACE_API,
-								LegacySourceId:       migration.LegacyTaskID,
-								MigrationState:       model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_BLOCKED,
-								MigrationBlockReason: migration.BlockReason,
-							},
-						)
-						continue
-					}
-				}
-				if _, canonical := canonicalTaskIDs[task.ID]; canonical {
-					continue
-				}
-				projection.Revision = maxHomeRevision(projection.Revision, task.UpdatedAt)
-				projection.RecentWork = append(projection.RecentWork, &model.HomeRecentWork{
-					WorkId:    task.ID,
-					Kind:      model.HomeWorkKind_HOME_WORK_KIND_TASK,
-					AgentId:   task.AgentID,
-					Title:     task.Title,
-					UpdatedAt: timestamppb.New(task.UpdatedAt.UTC()),
-				})
-				status := homeTaskStatus(task.Status)
-				switch status {
-				case model.HomeTaskStatus_HOME_TASK_STATUS_PENDING,
-					model.HomeTaskStatus_HOME_TASK_STATUS_RUNNING,
-					model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER:
-					projection.ActiveTasks = append(projection.ActiveTasks, &model.HomeTaskProjection{
-						TaskId:          task.ID,
-						AgentId:         task.AgentID,
-						Title:           task.Title,
-						Status:          status,
-						ProgressPercent: uint32(min(max(task.Progress, 0), 100)),
-						UpdatedAt:       timestamppb.New(task.UpdatedAt.UTC()),
-						TopicRef:        task.TopicKey,
-					})
-				case model.HomeTaskStatus_HOME_TASK_STATUS_COMPLETED:
-					projection.BriefItems = append(projection.BriefItems, &model.HomeBriefItem{
-						BriefId:   "task:" + task.ID,
-						SourceRef: task.ID,
-						Title:     task.Title,
-						Summary:   firstNonEmpty(task.Result, "Task completed"),
-						UpdatedAt: timestamppb.New(task.UpdatedAt.UTC()),
-					})
-				case model.HomeTaskStatus_HOME_TASK_STATUS_FAILED:
-					projection.NeedsUserItems = append(projection.NeedsUserItems, &model.HomeNeedsUserItem{
-						ItemId:     "task:" + task.ID,
-						SourceRef:  task.ID,
-						Title:      task.Title,
-						ActionKind: "open_task",
-						ActionRef:  task.ID,
 					})
 				}
 			}
@@ -511,25 +394,6 @@ func homeReadinessRank(state string) int {
 	}
 }
 
-func homeTaskStatus(status string) model.HomeTaskStatus {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "pending":
-		return model.HomeTaskStatus_HOME_TASK_STATUS_PENDING
-	case "running":
-		return model.HomeTaskStatus_HOME_TASK_STATUS_RUNNING
-	case "paused":
-		return model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER
-	case "completed":
-		return model.HomeTaskStatus_HOME_TASK_STATUS_COMPLETED
-	case "failed":
-		return model.HomeTaskStatus_HOME_TASK_STATUS_FAILED
-	case "cancelled":
-		return model.HomeTaskStatus_HOME_TASK_STATUS_CANCELLED
-	default:
-		return model.HomeTaskStatus_HOME_TASK_STATUS_UNSPECIFIED
-	}
-}
-
 func homeTaskRunStatus(status int32) model.HomeTaskStatus {
 	switch model.CollaborationTaskStatus(status) {
 	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING:
@@ -554,6 +418,15 @@ func homeTaskRunProgress(status model.HomeTaskStatus) uint32 {
 		return 100
 	}
 	return 0
+}
+
+func homeTaskRunBriefID(execution *GoalExecutionSnapshot) string {
+	if execution != nil &&
+		execution.Task != nil &&
+		strings.TrimSpace(execution.Task.GoalID) == "" {
+		return "task:" + strings.TrimSpace(execution.Task.TaskID)
+	}
+	return homeGoalResultBriefID(execution)
 }
 
 type homeAgentConfig struct {

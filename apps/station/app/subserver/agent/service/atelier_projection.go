@@ -276,7 +276,10 @@ type AtelierTaskProjection struct {
 	MigrationBlockReason string                      `json:"migrationBlockReason,omitempty"`
 	Title                string                      `json:"title"`
 	Status               string                      `json:"status"`
-	Running              bool                        `json:"running,omitempty"`
+	ExecutionStatus      string                      `json:"executionStatus"`
+	StepID               string                      `json:"stepId"`
+	AttemptID            string                      `json:"attemptId"`
+	Attempt              int32                       `json:"attempt"`
 	Branch               string                      `json:"branch,omitempty"`
 	IntentPreset         string                      `json:"intentPreset,omitempty"`
 	ProviderStrategy     string                      `json:"providerStrategyPreset,omitempty"`
@@ -579,51 +582,30 @@ func (s *AtelierProjectionService) LoadWorkspace(
 		eventPageSize = 100
 	}
 
-	var taskRecords []persistence.CollaborationTask
-	if err := db.WithContext(ctx).
-		Where("goal_owner_ptid = ?", actorPTID).
-		Order("created_at DESC").
-		Limit(pageSize).
-		Find(&taskRecords).Error; err != nil {
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to list Atelier tasks", err)
-	}
-
-	taskIDs := make([]string, 0, len(taskRecords))
-	tasks := make([]*model.CollaborationTask, 0, len(taskRecords))
-	for i := range taskRecords {
-		taskIDs = append(taskIDs, taskRecords[i].ID)
-		tasks = append(tasks, taskRecordToProto(&taskRecords[i]))
-	}
-	canonicalTasks, canonicalNodesByTask, err :=
-		loadAtelierCanonicalTaskRunAdapters(
-			ctx,
-			db,
-			actorPTID,
-			pageSize,
-			taskIDs,
-		)
-	if err != nil {
-		return nil, err
-	}
-	for _, task := range canonicalTasks {
-		taskIDs = append(taskIDs, task.GetTaskId())
-		tasks = append(tasks, task)
-	}
 	migrationRows, err := persistence.ListCollaborationTaskGoalMaps(ctx, db, actorPTID)
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to list Atelier task migrations", err)
 	}
 	migrationsByTask := make(map[string]persistence.CollaborationTaskGoalMap, len(migrationRows))
 	for index := range migrationRows {
-		migrationsByTask[migrationRows[index].LegacyTaskID] = migrationRows[index]
+		migration := migrationRows[index]
+		if migration.State == persistence.CollaborationTaskMigrationStateMigrated {
+			migrationsByTask[migration.TaskID] = migration
+		}
 	}
 
-	nodesByTask, err := loadAtelierNodesByTask(ctx, db, taskIDs)
+	tasks, nodesByTask, err := loadAtelierCanonicalTaskRunAdapters(
+		ctx,
+		db,
+		actorPTID,
+		pageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
-	for taskID, nodes := range canonicalNodesByTask {
-		nodesByTask[taskID] = nodes
+	taskIDs := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		taskIDs = append(taskIDs, task.GetTaskId())
 	}
 	checkpointsByTask, err := loadAtelierCheckpointsByTask(ctx, db, taskIDs)
 	if err != nil {
@@ -648,12 +630,7 @@ func loadAtelierCanonicalTaskRunAdapters(
 	db *gorm.DB,
 	actorPTID string,
 	limit int,
-	legacyTaskIDs []string,
 ) ([]*model.CollaborationTask, map[string][]*model.TaskNode, error) {
-	legacy := make(map[string]struct{}, len(legacyTaskIDs))
-	for _, taskID := range legacyTaskIDs {
-		legacy[strings.TrimSpace(taskID)] = struct{}{}
-	}
 	var records []persistence.TaskRun
 	queryLimit := limit * 4
 	if queryLimit < 100 {
@@ -676,22 +653,13 @@ func loadAtelierCanonicalTaskRunAdapters(
 	nodesByTask := map[string][]*model.TaskNode{}
 	for index := range records {
 		record := records[index]
-		if _, ok := legacy[record.TaskID]; ok {
-			continue
-		}
 		meta := map[string]string{}
 		_ = json.Unmarshal([]byte(record.MetaJSON), &meta)
 		if !strings.HasPrefix(strings.TrimSpace(meta["source"]), "atelier.") &&
-			strings.TrimSpace(meta["entrypoint"]) != "atelier" {
+			strings.TrimSpace(meta["entrypoint"]) != "atelier" &&
+			strings.TrimSpace(meta["legacy_collaboration_task_id"]) == "" {
 			continue
 		}
-		task := canonicalTaskRunRecordToCollaborationProjection(
-			ctx,
-			db,
-			&record,
-			meta,
-		)
-		tasks = append(tasks, task)
 		var steps []persistence.ExecutionStep
 		if err := db.WithContext(ctx).
 			Where("task_id = ?", record.TaskID).
@@ -704,6 +672,18 @@ func loadAtelierCanonicalTaskRunAdapters(
 				err,
 			)
 		}
+		if current := currentAtelierExecutionStep(record.RootStepID, steps); current != nil {
+			meta["step_id"] = current.StepID
+			meta["attempt_id"] = current.AttemptID
+			meta["attempt"] = strconv.Itoa(int(current.Attempt))
+		}
+		task := canonicalTaskRunRecordToCollaborationProjection(
+			ctx,
+			db,
+			&record,
+			meta,
+		)
+		tasks = append(tasks, task)
 		nodes := make([]*model.TaskNode, 0, len(steps))
 		for stepIndex := range steps {
 			nodes = append(
@@ -719,6 +699,27 @@ func loadAtelierCanonicalTaskRunAdapters(
 		}
 	}
 	return tasks, nodesByTask, nil
+}
+
+func currentAtelierExecutionStep(
+	rootStepID string,
+	steps []persistence.ExecutionStep,
+) *persistence.ExecutionStep {
+	for index := range steps {
+		if model.TaskNodeStatus(steps[index].Status) ==
+			model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING {
+			return &steps[index]
+		}
+	}
+	for index := range steps {
+		if steps[index].StepID == rootStepID {
+			return &steps[index]
+		}
+	}
+	if len(steps) == 0 {
+		return nil
+	}
+	return &steps[0]
 }
 
 func canonicalTaskRunRecordToCollaborationProjection(
@@ -1139,8 +1140,8 @@ func (s *AtelierProjectionService) SetTaskStatus(
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
 	if err := db.WithContext(ctx).
-		Model(&persistence.CollaborationTask{}).
-		Where("id = ? AND goal_owner_ptid = ?", taskID, actorPTID).
+		Model(&persistence.TaskRun{}).
+		Where("task_id = ? AND owner_actor_ptid = ?", taskID, actorPTID).
 		Update("meta_json", string(nextMeta)).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update Atelier task status", err)
 	}
@@ -2120,6 +2121,26 @@ func purgeAtelierTaskRecordsTx(ctx context.Context, tx *gorm.DB, actorPTID strin
 		func() error {
 			return tx.WithContext(ctx).Where("task_id = ?", taskID).Delete(&persistence.CollaborationTaskNode{}).Error
 		},
+		func() error {
+			return tx.WithContext(ctx).Where("task_id = ?", taskID).Delete(&persistence.ExecutionStep{}).Error
+		},
+		func() error {
+			if !tx.Migrator().HasTable(&persistence.AgentGoalNode{}) {
+				return nil
+			}
+			return tx.WithContext(ctx).Where("task_id = ?", taskID).Delete(&persistence.AgentGoalNode{}).Error
+		},
+		func() error {
+			if !tx.Migrator().HasTable(&persistence.CollaborationTaskGoalMap{}) {
+				return nil
+			}
+			return tx.WithContext(ctx).Where("task_id = ?", taskID).Delete(&persistence.CollaborationTaskGoalMap{}).Error
+		},
+		func() error {
+			return tx.WithContext(ctx).
+				Where("task_id = ? AND owner_actor_ptid = ?", taskID, strings.TrimSpace(actorPTID)).
+				Delete(&persistence.TaskRun{}).Error
+		},
 	} {
 		if err := deleteOp(); err != nil {
 			return err
@@ -2279,37 +2300,6 @@ func BuildAtelierProjectionEvent(event *model.TaskEvent) (AtelierProjectionEvent
 		},
 		ReceivedAt: timestampRFC3339(event.GetCreatedAt()),
 	}, true
-}
-
-func loadAtelierNodesByTask(ctx context.Context, db *gorm.DB, taskIDs []string) (map[string][]*model.TaskNode, error) {
-	result := map[string][]*model.TaskNode{}
-	if len(taskIDs) == 0 {
-		return result, nil
-	}
-	var records []persistence.CollaborationTaskNode
-	if err := db.WithContext(ctx).
-		Where("task_id IN ?", taskIDs).
-		Order("started_at ASC").
-		Find(&records).Error; err != nil {
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to list Atelier task nodes", err)
-	}
-	for i := range records {
-		node := &model.TaskNode{
-			NodeId:              records[i].ID,
-			TaskId:              records[i].TaskID,
-			ParentNodeId:        records[i].ParentNodeID,
-			AgentId:             records[i].AgentID,
-			Role:                records[i].Role,
-			Description:         records[i].Description,
-			Status:              model.TaskNodeStatus(records[i].Status),
-			PrerequisiteNodeIds: parseMetaList(records[i].PrerequisiteNodeIDs),
-			ResultSummary:       records[i].ResultSummary,
-			StartedAt:           timestamppb.New(records[i].StartedAt),
-			EndedAt:             timestamppb.New(records[i].EndedAt),
-		}
-		result[node.GetTaskId()] = append(result[node.GetTaskId()], node)
-	}
-	return result, nil
 }
 
 func loadAtelierProjectPersistenceByTask(ctx context.Context, db *gorm.DB, taskIDs []string) (map[string]atelierProjectPersistence, error) {
@@ -2552,48 +2542,40 @@ func loadOwnedAtelierTask(ctx context.Context, actorPTID, taskID string) (*persi
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
-	var task persistence.CollaborationTask
-	if err := db.WithContext(ctx).
-		Where("id = ? AND goal_owner_ptid = ?", taskID, actorPTID).
-		First(&task).Error; err != nil {
-		if err != gorm.ErrRecordNotFound {
-			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get Atelier task", err)
+	var canonical persistence.TaskRun
+	if canonicalErr := db.WithContext(ctx).
+		Where("task_id = ? AND owner_actor_ptid = ?", taskID, actorPTID).
+		First(&canonical).Error; canonicalErr != nil {
+		if canonicalErr == gorm.ErrRecordNotFound {
+			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "Atelier task not found", canonicalErr)
 		}
-		var canonical persistence.TaskRun
-		if canonicalErr := db.WithContext(ctx).
-			Where("task_id = ? AND owner_actor_ptid = ?", taskID, actorPTID).
-			First(&canonical).Error; canonicalErr != nil {
-			if canonicalErr == gorm.ErrRecordNotFound {
-				return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "Atelier task not found", canonicalErr)
-			}
-			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get canonical Atelier TaskRun", canonicalErr)
-		}
-		meta := map[string]string{}
-		_ = json.Unmarshal([]byte(canonical.MetaJSON), &meta)
-		if !strings.HasPrefix(strings.TrimSpace(meta["source"]), "atelier.") &&
-			strings.TrimSpace(meta["entrypoint"]) != "atelier" {
-			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "Atelier task not found", gorm.ErrRecordNotFound)
-		}
-		engineType, _ := strconv.ParseInt(strings.TrimSpace(meta["engine_type"]), 10, 32)
-		endedAt := canonical.UpdatedAt
-		if canonical.EndedAt != nil {
-			endedAt = *canonical.EndedAt
-		}
-		return &persistence.CollaborationTask{
-			ID:            canonical.TaskID,
-			Title:         canonical.Title,
-			Description:   canonical.Description,
-			EngineType:    int32(engineType),
-			Status:        canonical.Status,
-			GoalOwnerPTID: canonical.OwnerActorPTID,
-			WorkspaceID:   canonical.WorkspaceID,
-			MetaJSON:      canonical.MetaJSON,
-			CreatedAt:     canonical.CreatedAt,
-			StartedAt:     canonical.StartedAt,
-			EndedAt:       endedAt,
-		}, nil
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get canonical Atelier TaskRun", canonicalErr)
 	}
-	return &task, nil
+	meta := map[string]string{}
+	_ = json.Unmarshal([]byte(canonical.MetaJSON), &meta)
+	if !strings.HasPrefix(strings.TrimSpace(meta["source"]), "atelier.") &&
+		strings.TrimSpace(meta["entrypoint"]) != "atelier" &&
+		strings.TrimSpace(meta["legacy_collaboration_task_id"]) == "" {
+		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "Atelier task not found", gorm.ErrRecordNotFound)
+	}
+	engineType, _ := strconv.ParseInt(strings.TrimSpace(meta["engine_type"]), 10, 32)
+	endedAt := canonical.UpdatedAt
+	if canonical.EndedAt != nil {
+		endedAt = *canonical.EndedAt
+	}
+	return &persistence.CollaborationTask{
+		ID:            canonical.TaskID,
+		Title:         canonical.Title,
+		Description:   canonical.Description,
+		EngineType:    int32(engineType),
+		Status:        canonical.Status,
+		GoalOwnerPTID: canonical.OwnerActorPTID,
+		WorkspaceID:   canonical.WorkspaceID,
+		MetaJSON:      canonical.MetaJSON,
+		CreatedAt:     canonical.CreatedAt,
+		StartedAt:     canonical.StartedAt,
+		EndedAt:       endedAt,
+	}, nil
 }
 
 func loadAtelierCheckpointsByTask(ctx context.Context, db *gorm.DB, taskIDs []string) (map[string]*persistence.TaskCheckpoint, error) {
@@ -2906,20 +2888,26 @@ func projectCollaborationTask(
 	meta := task.GetMeta()
 	workspaceID := atelierFirstNonEmpty(task.GetWorkspaceId(), meta["workspace_id"], meta["project"], "peers-touch")
 	projectID := atelierFirstNonEmpty(meta["project_id"], task.GetTaskId())
+	attempt, _ := strconv.ParseInt(strings.TrimSpace(meta["attempt"]), 10, 32)
 	projected := AtelierTaskProjection{
 		ID:                  task.GetTaskId(),
 		Project:             atelierFirstNonEmpty(meta["project"], task.GetWorkspaceId(), "peers-touch"),
 		ProjectID:           projectID,
 		Title:               atelierFirstNonEmpty(task.GetTitle(), "Untitled task"),
 		Status:              normalizeAtelierTaskStatus(meta["atelier_status"]),
-		Running:             isCollaborationTaskRunning(task.GetStatus()),
+		ExecutionStatus:     atelierTaskRunLifecycleStatus(task.GetStatus()),
+		StepID:              strings.TrimSpace(meta["step_id"]),
+		AttemptID:           strings.TrimSpace(meta["attempt_id"]),
+		Attempt:             int32(attempt),
 		Branch:              meta["branch"],
 		IntentPreset:        meta["intent_preset"],
 		ProviderStrategy:    meta["provider_strategy_preset"],
 		GatePlanPreset:      meta["gate_plan_preset"],
 		WorkspaceOpenTarget: atelierWorkspaceOpenTarget(task.GetTaskId(), workspaceID, meta),
 	}
-	if len(migrations) == 0 || migrations[0] == nil {
+	if len(migrations) == 0 ||
+		migrations[0] == nil ||
+		migrations[0].State != persistence.CollaborationTaskMigrationStateMigrated {
 		if meta["writer"] == taskRunCommandWriterVersion {
 			projected.ProjectID = atelierFirstNonEmpty(meta["goal_id"], projectID)
 			projected.GoalID = meta["goal_id"]
@@ -2989,7 +2977,9 @@ func projectAtelierProject(
 		Policy:           policy,
 		Defects:          defects,
 	}
-	if len(migrations) == 0 || migrations[0] == nil {
+	if len(migrations) == 0 ||
+		migrations[0] == nil ||
+		migrations[0].State != persistence.CollaborationTaskMigrationStateMigrated {
 		if meta["writer"] == taskRunCommandWriterVersion {
 			projected.ID = atelierFirstNonEmpty(meta["goal_id"], projectID)
 			projected.GoalID = meta["goal_id"]
@@ -3001,32 +2991,9 @@ func projectAtelierProject(
 	projected.LegacySourceID = migration.LegacyTaskID
 	projected.MigrationState = migration.State
 	projected.MigrationBlockReason = migration.BlockReason
-	if migration.State == persistence.CollaborationTaskMigrationStateMigrated {
-		projected.ID = migration.GoalID
-		projected.GoalID = migration.GoalID
-		projected.TaskRunID = migration.TaskID
-		return projected
-	}
-	if migration.State == persistence.CollaborationTaskMigrationStateBlocked {
-		blocker := AtelierProjectBlocker{
-			ID:          "migration:" + migration.LegacyTaskID,
-			Owner:       "station",
-			Severity:    "block",
-			State:       "open",
-			EvidenceRef: "collaboration-task:" + migration.LegacyTaskID,
-			Reason:      migration.BlockReason,
-		}
-		projected.State = "blocked"
-		projected.Completion.NoOpenBlockers = false
-		projected.OpenBlockers = appendAtelierMigrationBlocker(projected.OpenBlockers, blocker)
-		for index := range projected.MilestoneTree.Milestones {
-			projected.MilestoneTree.Milestones[index].State = "blocked"
-			projected.MilestoneTree.Milestones[index].OpenBlockers = appendAtelierMigrationBlocker(
-				projected.MilestoneTree.Milestones[index].OpenBlockers,
-				blocker,
-			)
-		}
-	}
+	projected.ID = migration.GoalID
+	projected.GoalID = migration.GoalID
+	projected.TaskRunID = migration.TaskID
 	return projected
 }
 
@@ -3035,22 +3002,11 @@ func atelierCollaborationMigration(
 	taskID string,
 ) *persistence.CollaborationTaskGoalMap {
 	migration, ok := migrations[strings.TrimSpace(taskID)]
-	if !ok {
+	if !ok ||
+		migration.State != persistence.CollaborationTaskMigrationStateMigrated {
 		return nil
 	}
 	return &migration
-}
-
-func appendAtelierMigrationBlocker(
-	blockers []AtelierProjectBlocker,
-	migrationBlocker AtelierProjectBlocker,
-) []AtelierProjectBlocker {
-	for _, blocker := range blockers {
-		if blocker.ID == migrationBlocker.ID {
-			return blockers
-		}
-	}
-	return append(blockers, migrationBlocker)
 }
 
 func projectAtelierTaskGraph(task *model.CollaborationTask, nodes []*model.TaskNode, events []*model.TaskEvent, meta map[string]string) AtelierTaskGraph {
@@ -3709,7 +3665,8 @@ func buildTaskStream(task *model.CollaborationTask, nodes []*model.TaskNode, eve
 			ID:   fmt.Sprintf("%s-summary", task.GetTaskId()),
 			Text: atelierFirstNonEmpty(task.GetDescription(), task.GetTitle()),
 			At:   timestampHHMM(task.GetCreatedAt()),
-			Done: !isCollaborationTaskRunning(task.GetStatus()),
+			Done: task.GetStatus() ==
+				model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED,
 		},
 	}
 
@@ -4147,9 +4104,25 @@ func atelierMemoryCandidateContent(task *persistence.CollaborationTask, payload 
 	return strings.Join(parts, "\n")
 }
 
-func isCollaborationTaskRunning(status model.CollaborationTaskStatus) bool {
-	return status == model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING ||
-		status == model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING
+func atelierTaskRunLifecycleStatus(
+	status model.CollaborationTaskStatus,
+) string {
+	switch status {
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING:
+		return "pending"
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING:
+		return "running"
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED:
+		return "needs_user"
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED:
+		return "completed"
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_FAILED:
+		return "failed"
+	case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED:
+		return "cancelled"
+	default:
+		return "unavailable"
+	}
 }
 
 func todoStatusForNode(status model.TaskNodeStatus) string {
