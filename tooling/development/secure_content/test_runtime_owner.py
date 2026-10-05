@@ -2192,7 +2192,10 @@ class RuntimeOwnerTest(unittest.TestCase):
                 (
                     primary_client,
                     "resolveFederatedActorIdentity",
-                    {"federatedHandle": "@remote@five-arm.invalid"},
+                    {
+                        "federatedHandle": "@remote@five-arm.invalid",
+                        "federationId": "federation-1",
+                    },
                 ),
             ],
             actions,
