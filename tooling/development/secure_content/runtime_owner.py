@@ -1844,10 +1844,10 @@ def _prepare_remote_group_fixture(
     )
     added = _chat_harness(
         primary_client,
-        "addFederatedGroupMember",
+        "inviteToGroup",
         {
             "groupUlid": group_ulid,
-            "member": {"ptid": remote_actor_ptid},
+            "memberPtids": [remote_actor_ptid],
         },
     )
     if added.get("groupUlid") != group_ulid:
