@@ -5,7 +5,7 @@
 // Dev mode: reads directly from packages/locales/ source tree for
 // instant reflection of changes — no version bump required.
 // Production: deploys from Tauri bundled resources to config/i18n/,
-// using metadata.json version comparison as a fast-path cache.
+// using metadata.json version and built-in pack content as a fast-path cache.
 // 2026-04-09: Initial creation for i18n architecture landing.
 // 2026-04-09: Refactored from procedural functions to I18nService struct.
 // 2026-04-14: Dev-mode direct-read — load_resources bypasses config/i18n
@@ -97,15 +97,22 @@ impl I18nService {
     /// Resolves source from Tauri resource_dir (production) or
     /// packages/locales/ (dev mode fallback via CARGO_MANIFEST_DIR).
     ///
-    /// Compares the `version` field in source and deployed metadata.json.
-    /// If they match, no IO is performed (fast path).
-    /// If they differ (or no deployed metadata exists), all built-in packs
-    /// are re-deployed. User / community packs are never touched.
+    /// Compares the `version` field and built-in pack contents in the source
+    /// and deployed directories. If both match, no IO is performed (fast
+    /// path). If either differs, all built-in packs are re-deployed. User /
+    /// community packs are never touched.
     pub fn deploy_builtin_packs(&self, resource_dir: &Path) -> Result<(), String> {
         fs::create_dir_all(&self.i18n_root)
             .map_err(|e| format!("Failed to create i18n directory: {e}"))?;
 
         let source = Self::resolve_source_dir(resource_dir);
+        for lang in BUILTIN_LANGUAGES {
+            if !source.join(lang).is_dir() {
+                return Err(format!(
+                    "Built-in i18n source is missing the {lang} language pack"
+                ));
+            }
+        }
 
         let source_meta_path = source.join("metadata.json");
         let target_meta_path = self.i18n_root.join("metadata.json");
@@ -113,10 +120,13 @@ impl I18nService {
         let source_version = Self::read_metadata_version(&source_meta_path);
         let deployed_version = Self::read_metadata_version(&target_meta_path);
 
-        if source_version.is_some() && source_version == deployed_version {
+        if source_version.is_some()
+            && source_version == deployed_version
+            && Self::builtin_packs_match(&source, &self.i18n_root)
+        {
             tracing::debug!(
                 version = source_version.as_deref().unwrap_or("?"),
-                "Built-in i18n packs already up-to-date, skipping deploy"
+                "Built-in i18n pack version and content are up-to-date, skipping deploy"
             );
             return Ok(());
         }
@@ -285,6 +295,61 @@ Community packs are **never touched** by the app.
             .map(String::from)
     }
 
+    fn builtin_packs_match(source: &Path, deployed: &Path) -> bool {
+        BUILTIN_LANGUAGES.iter().all(|lang| {
+            Self::directories_have_same_contents(&source.join(lang), &deployed.join(lang))
+        })
+    }
+
+    fn directories_have_same_contents(left: &Path, right: &Path) -> bool {
+        let entries = |directory: &Path| -> Option<Vec<PathBuf>> {
+            let mut paths = fs::read_dir(directory)
+                .ok()?
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?
+                .into_iter()
+                .map(|entry| entry.path())
+                .collect::<Vec<_>>();
+            paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+            Some(paths)
+        };
+
+        let Some(left_entries) = entries(left) else {
+            return false;
+        };
+        let Some(right_entries) = entries(right) else {
+            return false;
+        };
+        if left_entries.len() != right_entries.len() {
+            return false;
+        }
+
+        left_entries
+            .iter()
+            .zip(right_entries.iter())
+            .all(|(left_path, right_path)| {
+                if left_path.file_name() != right_path.file_name() {
+                    return false;
+                }
+                match (
+                    left_path.is_dir(),
+                    right_path.is_dir(),
+                    left_path.is_file(),
+                    right_path.is_file(),
+                ) {
+                    (true, true, _, _) => {
+                        Self::directories_have_same_contents(left_path, right_path)
+                    }
+                    (false, false, true, true) => match (fs::read(left_path), fs::read(right_path))
+                    {
+                        (Ok(left_bytes), Ok(right_bytes)) => left_bytes == right_bytes,
+                        _ => false,
+                    },
+                    _ => false,
+                }
+            })
+    }
+
     /// Resolve the source directory containing built-in locale files.
     ///
     /// In production: Tauri resource_dir contains bundled i18n/ files.
@@ -401,4 +466,82 @@ struct MetadataEntry {
     name: Option<String>,
     #[serde(rename = "nativeName")]
     native_name: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{I18nService, BUILTIN_LANGUAGES};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn same_version_with_changed_content_redeploys_builtin_packs() {
+        let root = test_root("content-drift");
+        let resources = root.join("resources");
+        let config = root.join("config");
+        write_pack(&resources.join("i18n"), "0.5.7", "current");
+        write_pack(&config.join("i18n"), "0.5.7", "stale");
+
+        let service = I18nService::new(&config);
+        service.deploy_builtin_packs(&resources).unwrap();
+
+        for lang in BUILTIN_LANGUAGES {
+            let auth =
+                fs::read_to_string(config.join("i18n").join(lang).join("auth.json")).unwrap();
+            assert_eq!(auth, r#"{"auth.login.retryWith":"current"}"#);
+        }
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_bundled_language_pack_fails_without_stamping_metadata() {
+        let root = test_root("missing-pack");
+        let resources = root.join("resources");
+        let config = root.join("config");
+        write_pack(&resources.join("i18n"), "0.5.8", "current");
+        fs::remove_dir_all(resources.join("i18n").join("zh-CN")).unwrap();
+        write_pack(&config.join("i18n"), "0.5.7", "stale");
+
+        let service = I18nService::new(&config);
+        let error = service.deploy_builtin_packs(&resources).unwrap_err();
+
+        assert!(error.contains("zh-CN language pack"));
+        assert_eq!(
+            fs::read_to_string(config.join("i18n").join("metadata.json")).unwrap(),
+            r#"{"version":"0.5.7"}"#,
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn write_pack(root: &Path, version: &str, value: &str) {
+        fs::create_dir_all(root).unwrap();
+        fs::write(
+            root.join("metadata.json"),
+            format!(r#"{{"version":"{version}"}}"#),
+        )
+        .unwrap();
+        for lang in BUILTIN_LANGUAGES {
+            let lang_dir = root.join(lang);
+            fs::create_dir_all(&lang_dir).unwrap();
+            fs::write(
+                lang_dir.join("auth.json"),
+                format!(r#"{{"auth.login.retryWith":"{value}"}}"#),
+            )
+            .unwrap();
+        }
+    }
+
+    fn test_root(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "peers-touch-i18n-{name}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
 }

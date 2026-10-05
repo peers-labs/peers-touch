@@ -1,3 +1,7 @@
+:root {
+  --pt-focus-ring-color: #6f87f5;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -17,6 +21,15 @@ body {
 input, textarea, [contenteditable="true"] {
   -webkit-user-select: auto;
   user-select: auto;
+}
+
+:where(button, [role="button"], a[href]):focus {
+  outline: none;
+}
+
+:where(button, [role="button"], a[href]):focus-visible {
+  outline: 2px solid var(--pt-focus-ring-color);
+  outline-offset: 2px;
 }
 
 .selectable {
