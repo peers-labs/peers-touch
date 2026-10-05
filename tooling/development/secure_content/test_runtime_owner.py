@@ -2624,7 +2624,14 @@ class RuntimeOwnerTest(unittest.TestCase):
         chat_results = iter(
             (
                 {"groupUlid": "01JREMOTE"},
-                {"groupUlid": "01JREMOTE"},
+                {
+                    "conversationId": "01JREMOTE",
+                    "members": [
+                        {"ptid": "ptid:primary"},
+                        {"ptid": "ptid:local-member"},
+                    ],
+                },
+                {"groupUlid": "01JREMOTE", "memberCount": 3},
                 {
                     "conversationId": "01JREMOTE",
                     "members": [
@@ -2643,7 +2650,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             timeout: float,
             interval: float,
         ) -> Mapping[str, object]:
-            self.assertIn("authoritative remote Group", description)
+            self.assertIn("authoritative", description)
             self.assertEqual(120, timeout)
             self.assertEqual(1, interval)
             result = predicate()
@@ -2688,6 +2695,12 @@ class RuntimeOwnerTest(unittest.TestCase):
                         "federationId": "federation-1",
                         "memberPtids": ["ptid:local-member"],
                     },
+                ),
+                call(
+                    primary,
+                    "groupLifecycleSnapshot",
+                    {"groupUlid": "01JREMOTE"},
+                    timeout=15,
                 ),
                 call(
                     primary,
