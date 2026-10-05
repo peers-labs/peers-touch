@@ -43,10 +43,12 @@ use crate::model::chat::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::identity::enrollment::load_or_create_device_identity_from_seed;
+use messaging_core::identity::enrollment::{
+    generate_fresh_device_identity_from_seed, load_or_create_device_identity_from_seed,
+};
 use messaging_core::identity::{
-    generate_fresh_device_identity_for_device, is_stale_endpoint_error,
-    DeviceEnrollmentManager, FreshDeviceEnrollment, FreshDeviceIdentityState,
+    is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
+    FreshDeviceIdentityState,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -3635,20 +3637,9 @@ impl EngineRegistry {
         let device_identity = if preserve_device_continuity {
             current_device_identity
         } else {
-            let device_id = current_device_identity
-                .enrollment
-                .certificate
-                .device
-                .as_ref()
-                .ok_or_else(|| {
-                    "messaging replacement recovery device endpoint is unavailable".to_string()
-                })?
-                .device_id
-                .clone();
-            generate_fresh_device_identity_for_device(
+            generate_fresh_device_identity_from_seed(
                 &archive.ptid,
-                &device_id,
-                archive.actor_identity_seed,
+                &archive.actor_identity_seed,
                 archive.actor_profile_version,
             )?
         };
