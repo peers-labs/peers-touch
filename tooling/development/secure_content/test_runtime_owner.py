@@ -43,6 +43,7 @@ from tooling.development.secure_content.runtime_owner import (
     PRIVATE_PUBLISH_RECONCILING_STATES,
     REQUIRED_FIXTURE_CAPABILITIES,
     SOCIAL_ACCEPTANCE_IDS,
+    SOCIAL_ACCEPTANCE_HISTORICAL_IDS,
     SOCIAL_ACCEPTANCE_JOURNEY,
     SOCIAL_ACCEPTANCE_PLAN_ID,
     SOCIAL_ACCEPTANCE_RUNTIME_REUSE,
@@ -430,7 +431,11 @@ class RuntimeOwnerTest(unittest.TestCase):
             runtime_owner_module._require_social_acceptance_source
         )
         self.assertIn("CSS-08A/activation", source_admission)
-        self.assertEqual(14, len(SOCIAL_ACCEPTANCE_IDS))
+        self.assertEqual(13, len(SOCIAL_ACCEPTANCE_IDS))
+        self.assertEqual(
+            ("SOC-SEC-AS12",),
+            SOCIAL_ACCEPTANCE_HISTORICAL_IDS,
+        )
         source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
         cleanup_complete = source.index(
             "ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)"

@@ -8,6 +8,7 @@ from pathlib import Path
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.social.desktop_private_e2e import (
     EXPLICITLY_UNPROVEN_SCENARIOS,
+    HISTORICAL_SCENARIOS,
     RUNTIME_CLIENT_IDS,
     RUNTIME_SCENARIOS,
     RUNTIME_SERVICE_IDS,
@@ -35,6 +36,7 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
                 for scenario_id in REQUIRED_SCENARIOS
             },
             "unprovenScenarios": list(EXPLICITLY_UNPROVEN_SCENARIOS),
+            "historicalScenarios": list(HISTORICAL_SCENARIOS),
             "resourceReuse": {
                 "provisioningRuns": 1,
                 "clientLaunches": 5,
@@ -132,6 +134,13 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
             payload = self._result(Path(temp_dir))
             payload["unprovenScenarios"] = []
             with self.assertRaisesRegex(GateError, "non-claims"):
+                _validate_owner_result(payload)
+
+    def test_historical_scenario_disposition_is_required(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            payload = self._result(Path(temp_dir))
+            payload["historicalScenarios"] = []
+            with self.assertRaisesRegex(GateError, "historical scenario"):
                 _validate_owner_result(payload)
 
 
