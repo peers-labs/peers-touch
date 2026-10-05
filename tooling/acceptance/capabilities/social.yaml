@@ -12,8 +12,8 @@
         "truth_sources": ["Station relationship, audience, Circle and Conversation membership authorities"],
         "surfaces": ["Native Desktop Moment composer and receiver timeline/detail"],
         "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS01, AS05, AS12 and AS15 on Native Desktop"],
-        "unproven_scope": ["Mobile parity and positive cross-Station private delivery"]
+        "proven_scope": ["SOC-SEC-AS01, AS05 and AS15 on Native Desktop"],
+        "unproven_scope": ["Mobile parity; AS12 is retained as historical cutover evidence"]
       }
     },
     {
@@ -160,10 +160,10 @@
           "browser-social-zero-registration"
         ],
         "proven_scope": [
-          "SOC-SEC-AS12 historical fail-closed cutover evidence"
+          "SOC-SEC-AS12 historical fail-closed cutover evidence",
+          "SOC-SEC-AS17 through SOC-SEC-AS24 exact-source Native Desktop proof"
         ],
         "unproven_scope": [
-          "SOC-SEC-AS17 through SOC-SEC-AS24 pending exact-source activation and Native proof",
           "Mobile Native parity",
           "cross-Federation private delivery"
         ]

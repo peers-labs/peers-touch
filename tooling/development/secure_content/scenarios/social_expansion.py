@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import time
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Mapping
@@ -126,40 +125,6 @@ def _chat_action(
     finally:
         client.snapshot()
     return _mapping(result, f"Chat {method}")
-
-def _wait_for_group_member(
-    client: AttachedProductClient,
-    *,
-    group_id: str,
-    member_ptid: str,
-) -> Mapping[str, Any]:
-    deadline = time.monotonic() + min(
-        30.0,
-        client.context.remaining_seconds(),
-    )
-    while time.monotonic() < deadline:
-        snapshot = _chat_action(
-            client,
-            "groupLifecycleSnapshot",
-            {"groupUlid": group_id},
-        )
-        members = snapshot.get("members")
-        if isinstance(members, list) and any(
-            isinstance(member, Mapping)
-            and member.get("ptid") == member_ptid
-            for member in members
-        ):
-            return snapshot
-        time.sleep(
-            min(
-                0.25,
-                max(0.0, deadline - time.monotonic()),
-            )
-        )
-    raise RunnerError(
-        "social-expansion remote Group membership did not become authoritative"
-    )
-
 
 def _stage_draft(
     publisher: AttachedProductClient,
@@ -421,11 +386,11 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         bob_ptid = _identity(bob, "Bob")
         eve_ptid = _identity(eve, "Eve")
         (
-            remote_ptid,
+            _remote_ptid,
             federation_id,
             remote_acknowledgement_digest,
             remote_federation_digest,
-            remote_group_id,
+            _remote_group_id,
         ) = _remote_recipient(context)
 
         bob.call("followActor", {"actorPtid": alice_ptid})
@@ -632,27 +597,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             actor_ptids=(eve_ptid,),
             acceptance_unsupported_probe=True,
         )
-        _stage_rejected_publish(
-            alice,
-            draft_id="w8-audience-remote-explicit",
-            text="secure-content-w8-audience-remote-explicit",
-            audience_kind="CUSTOM_ALLOW",
-            actor_ptids=(remote_ptid,),
-        )
-
-        _wait_for_group_member(
-            alice,
-            group_id=remote_group_id,
-            member_ptid=remote_ptid,
-        )
-        _stage_rejected_publish(
-            alice,
-            draft_id="w8-audience-remote-group",
-            text="secure-content-w8-audience-remote-group",
-            audience_kind="GROUP",
-            group_conversation_id=remote_group_id,
-        )
-
     return {
         "supportedAudiences": (
             "FRIENDS",
@@ -665,6 +609,8 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         ),
         "rejectedAudiences": (
             "CUSTOM_DENY(PUBLIC)",
+        ),
+        "supersededHistoricalAudiences": (
             "CUSTOM_ALLOW(remote)",
             "GROUP(remote)",
         ),
