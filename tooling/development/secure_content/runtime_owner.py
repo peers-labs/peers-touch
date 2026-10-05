@@ -7361,10 +7361,11 @@ class W7RuntimeOwner:
                     "AS17 media did not decrypt on Bob's Home Station",
                     resource="client:cross-station-social-bob",
                 )
+            recovery_text = "css09-cross-station-never-opened"
             recovery_post = _publish_friends_moment(
                 alice,
                 draft_id="css09-as23-never-opened",
-                text="css09-cross-station-never-opened",
+                text=recovery_text,
             )
             scenario_state["as17Post"] = as17_post
             scenario_state["recoveryPost"] = recovery_post
@@ -7700,7 +7701,7 @@ class W7RuntimeOwner:
             record_scenario(
                 "AS23",
                 receiver=current_bob,
-                visible_text="css09-cross-station-never-opened",
+                visible_text=recovery_text,
                 observations={
                     "beforeRecovery": "RECOVERY_REQUIRED",
                     "afterRecovery": "CONTENT_READY",
@@ -7725,12 +7726,12 @@ class W7RuntimeOwner:
             first_replay = _moments_harness(
                 current_bob,
                 "readPrivateMoment",
-                {"postId": as17_post},
+                {"postId": recovery_post},
             )
             second_replay = _moments_harness(
                 current_bob,
                 "readPrivateMoment",
-                {"postId": as17_post},
+                {"postId": recovery_post},
             )
             if (
                 first_replay.get("state") != "CONTENT_READY"
@@ -7744,7 +7745,7 @@ class W7RuntimeOwner:
             record_scenario(
                 "AS24",
                 receiver=current_bob,
-                visible_text=as17_text,
+                visible_text=recovery_text,
                 observations={
                     "exactReplayStable": True,
                     "projectionDigest": _sha256(
@@ -7788,12 +7789,28 @@ class W7RuntimeOwner:
                     "same-Station public Social regression failed",
                     resource="station:station-four",
                 )
+            public_projection = _moments_harness(
+                alice,
+                "findPublicMoment",
+                {"text": public_text},
+            )
+            if (
+                public_projection.get("found") is not True
+                or public_projection.get("textSha256") != _sha256(public_text)
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "same-Station public Social projection did not converge",
+                    resource="client:cross-station-social-alice",
+                )
             record_scenario(
                 "same-station-regression",
                 receiver=alice,
+                action_text="Public",
                 visible_text=public_text,
                 observations={
                     "anonymousReadStatus": public_status,
+                    "publicProjectionFound": True,
                     "publicTextSha256": _sha256(public_text),
                     "sameStationPrivateGate": "social-private-desktop-e2e",
                 },

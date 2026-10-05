@@ -397,6 +397,25 @@ class RuntimeOwnerTest(unittest.TestCase):
             replacement,
             cross_source.index('scenario_id="AS23"'),
         )
+        replay_start = cross_source.index('scenario_id="AS24"')
+        replay_end = cross_source.index(
+            'scenario_id="same-station-regression"',
+            replay_start,
+        )
+        replay_source = cross_source[replay_start:replay_end]
+        self.assertEqual(
+            2,
+            replay_source.count('{"postId": recovery_post}'),
+        )
+        self.assertNotIn('{"postId": as17_post}', replay_source)
+        self.assertIn("visible_text=recovery_text", replay_source)
+        same_station_source = cross_source[replay_end:]
+        self.assertIn('"findPublicMoment"', same_station_source)
+        self.assertIn('action_text="Public"', same_station_source)
+        self.assertIn(
+            '"publicProjectionFound": True',
+            same_station_source,
+        )
         cleanup = cross_source.index(
             "ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)"
         )
