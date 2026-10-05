@@ -42,7 +42,6 @@ from tooling.acceptance.gates.agent.personal_goal_slices.paos_12_collab_task_mig
     load_workspace,
 )
 from tooling.acceptance.gates.agent.personal_goal_slices.paos_13_task_writer_cutover import (
-    legacy_inventory,
     task_events,
 )
 
@@ -52,6 +51,41 @@ APPLET_ID = "peers.atelier"
 
 class AtelierTaskRunWriterCutoverJourneyError(RuntimeError):
     """The PAOS-13B Development Journey failed."""
+
+
+def collaboration_task_inventory(
+    client: FoundationRuntimeClient,
+) -> dict[str, Any]:
+    result = client.driver.execute_async_script(
+        """
+        const done = arguments[0];
+        import('/src/services/desktop_api.ts')
+          .then(({ api }) => api.listAgentCollaborationTasks())
+          .then((response) => {
+            const tasks = Array.isArray(response.tasks) ? response.tasks : [];
+            const ids = tasks
+              .map((task) => task.taskId || task.task_id || task.id || '')
+              .filter(Boolean)
+              .sort();
+            done({ ok: true, count: tasks.length, ids });
+          })
+          .catch((error) => done({
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          }));
+        """
+    )
+    require(
+        isinstance(result, Mapping) and result.get("ok") is True,
+        f"CollaborationTask inventory failed: {result}",
+    )
+    ids = [str(value) for value in result.get("ids", [])]
+    count = int(result.get("count") or 0)
+    require(
+        len(ids) == count and len(set(ids)) == count,
+        f"CollaborationTask inventory has missing or duplicate identities: {result}",
+    )
+    return {"count": count, "ids": ids}
 
 
 def configured_agent_id(client: FoundationRuntimeClient) -> str:
@@ -218,7 +252,7 @@ def run_journey(
     marker = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     title = f"PAOS-13B Atelier TaskRun {marker}"
     agent_id = configured_agent_id(client)
-    legacy_before = legacy_inventory(client)
+    legacy_before = collaboration_task_inventory(client)
     client_idempotency_key = f"paos-13b:{marker}"
     create_request = {
         "agentIds": [agent_id],
@@ -256,7 +290,7 @@ def run_journey(
         lambda: task_events(client, task_id),
         "Atelier TaskRun creation event",
     )
-    legacy_after_create = legacy_inventory(client)
+    legacy_after_create = collaboration_task_inventory(client)
     require(
         legacy_after_create == legacy_before,
         "Atelier create wrote a legacy CollaborationTask row",
@@ -266,7 +300,7 @@ def run_journey(
 
     client.restart()
     replayed = open_atelier_and_read_task(client, title, create_request)
-    legacy_after_replay = legacy_inventory(client)
+    legacy_after_replay = collaboration_task_inventory(client)
     require(replayed.get("taskId") == task_id, "Atelier replay created a second TaskRun")
     require(replayed.get("goalId") == goal_id, "Atelier replay created a second Goal")
     require(
