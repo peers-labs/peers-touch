@@ -10272,6 +10272,10 @@ class W7RuntimeOwner:
         )
         work_item_id = str(declaration["workItemId"])
         task_id = str(declaration["taskId"])
+        journey_id = _required_text(
+            declaration.get("journeyId"),
+            "Social Desktop owner Journey",
+        )
         resolved, profile_env = _resolve_machine_profile(
             self.repo_root,
             expected_slot=expected_slot,
