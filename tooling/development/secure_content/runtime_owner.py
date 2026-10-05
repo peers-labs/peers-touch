@@ -1980,10 +1980,9 @@ def _prepare_cross_station_social_fixture(
         federated_handle=bob_handle,
         expected_home_station_peer_id=bob_station,
     )
-    resolved = _moments_harness(
+    resolved = _wait_for_federated_actor_resolution(
         alice,
-        "resolveFederatedActorIdentity",
-        {"federatedHandle": bob_handle},
+        federated_handle=bob_handle,
     )
     if (
         resolved.get("actorPtid") != bob_ptid
@@ -2104,6 +2103,77 @@ def _wait_for_federated_locator(
         "FIXTURE_OWNER_UNAVAILABLE",
         "Cross-Station Social locator did not converge before the deadline",
         resource="fixture:cross-station-social-locator",
+    )
+
+
+def _wait_for_federated_actor_resolution(
+    client: FoundationRuntimeClient,
+    *,
+    federated_handle: str,
+    timeout_seconds: float = 300.0,
+    poll_interval_seconds: float = 5.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Mapping[str, Any]:
+    deadline = monotonic() + timeout_seconds
+    while True:
+        result = client.driver.execute_async_script(
+            """
+            const payload = arguments[0];
+            const done = arguments[arguments.length - 1];
+            const harness = window.__PT_ACCEPTANCE__?.moments;
+            if (
+              !harness
+              || typeof harness.resolveFederatedActorIdentity !== 'function'
+            ) {
+              done({
+                ok: false,
+                code: 'HARNESS_UNAVAILABLE',
+              });
+              return;
+            }
+            harness.resolveFederatedActorIdentity(payload)
+              .then((value) => done({ ok: true, value }))
+              .catch((error) => done({
+                ok: false,
+                code: String(error?.code || 'INTERNAL_ERROR'),
+              }));
+            """,
+            {"federatedHandle": federated_handle},
+        )
+        if not isinstance(result, Mapping):
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Cross-Station Social resolver returned invalid data",
+                resource="fixture:cross-station-social-resolver",
+            )
+        if result.get("ok") is True:
+            value = result.get("value")
+            if isinstance(value, Mapping):
+                return value
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Cross-Station Social resolver returned invalid identity",
+                resource="fixture:cross-station-social-resolver",
+            )
+        code = str(result.get("code") or "")
+        if code != "NOT_FOUND":
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                (
+                    "Cross-Station Social resolver failed with "
+                    f"{code or 'UNKNOWN'}"
+                ),
+                resource="fixture:cross-station-social-resolver",
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_interval_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "FIXTURE_OWNER_UNAVAILABLE",
+        "Cross-Station Social resolver did not converge before the deadline",
+        resource="fixture:cross-station-social-resolver",
     )
 
 
