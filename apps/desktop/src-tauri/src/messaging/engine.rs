@@ -1412,7 +1412,7 @@ impl MessagingEngine {
         for conversation in &archive.conversations {
             let conversation_id = &conversation.conversation_id;
             let query = [("conversation_id", conversation_id.clone())];
-            let response = station_client::request_proto_for_device::<
+            let response = station_client::request_proto_for_actor::<
                 GetConversationPublicHeadRequest,
                 GetConversationPublicHeadResponse,
             >(
@@ -1421,7 +1421,6 @@ impl MessagingEngine {
                 token,
                 Some(&query),
                 None,
-                &self.endpoint.device_id,
             )
             .map_err(|error| format!("snapshot messaging recovery authority head: {error}"))?;
             let mut target = response.head.ok_or_else(|| {
@@ -1459,7 +1458,7 @@ impl MessagingEngine {
                         "messaging recovery authority Station pin binding mismatch".to_string()
                     );
                 }
-                let authority_response = station_client::request_proto_for_device_at::<
+                let authority_response = station_client::request_proto_for_actor_at::<
                     GetConversationPublicHeadRequest,
                     GetConversationPublicHeadResponse,
                 >(
@@ -1469,7 +1468,6 @@ impl MessagingEngine {
                     token,
                     Some(&query),
                     None,
-                    &self.endpoint.device_id,
                 )
                 .map_err(|error| {
                     format!("snapshot messaging recovery authority head directly: {error}")
@@ -1513,7 +1511,7 @@ impl MessagingEngine {
                         ("limit", limit.to_string()),
                     ];
                     let response = match authority_url.as_deref() {
-                        Some(authority_url) => station_client::request_proto_for_device_at::<
+                        Some(authority_url) => station_client::request_proto_for_actor_at::<
                             ListConversationEventsRequest,
                             ListConversationEventsResponse,
                         >(
@@ -1523,9 +1521,8 @@ impl MessagingEngine {
                             token,
                             Some(&query),
                             None,
-                            &self.endpoint.device_id,
                         ),
-                        None => station_client::request_proto_for_device::<
+                        None => station_client::request_proto_for_actor::<
                             ListConversationEventsRequest,
                             ListConversationEventsResponse,
                         >(
@@ -1534,7 +1531,6 @@ impl MessagingEngine {
                             token,
                             Some(&query),
                             None,
-                            &self.endpoint.device_id,
                         ),
                     };
                     response.map(|response| response.events).map_err(|error| {

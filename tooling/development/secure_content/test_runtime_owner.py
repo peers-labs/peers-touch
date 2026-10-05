@@ -82,12 +82,14 @@ from tooling.development.secure_content.runtime_owner import (
     _make_client,
     _manifest_payload,
     _maintain_current_recovery_prekeys,
+    _native_invoke_json,
     _open_station_tunnels,
     _prepare_accepted_friendship,
     _prepare_cross_station_social_fixture,
     _prepare_mobile_private_content_keys,
     _prepare_portable_recovery,
     _prepare_private_content_keys,
+    _privacy_safe_native_app_error,
     _prepare_remote_group_fixture,
     _revoke_remote_fixture_device,
     _refresh_and_wait_for_moments_snapshot,
@@ -170,6 +172,51 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_native_invoke_reports_privacy_safe_app_error(self) -> None:
+        client = MagicMock()
+        client.driver.execute_async_script.return_value = {
+            "ok": True,
+            "value": {
+                "ok": False,
+                "data": None,
+                "error": {
+                    "code": "FORBIDDEN",
+                    "message": (
+                        "failed for ptid:v1:actor:private at "
+                        "https://station.example/private "
+                        + "a" * 64
+                    ),
+                    "details": {"token": "must-not-leak"},
+                },
+            },
+        }
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _native_invoke_json(client, "messaging_recovery_restore_latest")
+
+        message = str(raised.exception)
+        self.assertIn("FORBIDDEN", message)
+        self.assertIn("<ptid>", message)
+        self.assertIn("<url>", message)
+        self.assertIn("<opaque>", message)
+        self.assertNotIn("must-not-leak", message)
+        self.assertNotIn("station.example", message)
+
+    def test_native_app_error_summary_is_bounded_and_rejects_unknown_code(
+        self,
+    ) -> None:
+        summary = _privacy_safe_native_app_error(
+            {
+                "error": {
+                    "code": "PRIVATE_ERROR",
+                    "message": "stage " + ("x" * 400),
+                }
+            }
+        )
+
+        self.assertTrue(summary.startswith("UNKNOWN: stage "))
+        self.assertLessEqual(len(summary), len("UNKNOWN: ") + 240)
+
     def test_station_login_uses_schema_bound_access_gate(self) -> None:
         gate = b"".join(
             (
