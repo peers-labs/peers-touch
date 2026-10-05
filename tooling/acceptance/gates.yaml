@@ -814,10 +814,9 @@
     "social-cross-station-native-e2e": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-native-e2e",
       "timeout_seconds": 10800,
-      "environment": "cross-station-social-native",
-      "provisioner": "cross-station-social-native",
+      "environment": "local",
       "tier": "env-evidence",
-      "description": "Prove AS17 through AS24 and same-Station regression through one exact-source Native Suite."
+      "description": "Attach formal proof to the exact-source CSS-09 Native Suite for AS17 through AS24 and same-Station regression."
     },
     "browser-social-zero-registration": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate browser-social-zero-registration",
