@@ -25,8 +25,14 @@
   ],
   "doneWhen": ["Home and Atelier render one TaskRun status vocabulary","Opening migrated and new work yields the same visible lifecycle","No client derives terminal state from metadata or summary text","Station revision wins over cached projection"],
   "failureBehavior": ["Unknown status renders unavailable instead of completed","Do not retain dual-read fallback after this slice"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-05T01:29:00Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:46fedde77d96325882691e6263d29c9247ebd610;development://personal-agent-os-convergence-20261003/artifacts/20261005T012724791404Z/paos-14-task-reader-cutover/capture.json;capture-sha256:a549e99103a1ee0e8c84c5a583e30d7cccb43f4fcbc87a1f310db385df9dc12e;manifest-sha256:da3d810f45cddabc788c508321e593ba56fa09c6a564842f65288ec106b2c411"
+    }
+  ]
 }
 ```
 
@@ -40,4 +46,23 @@
 
 ## Current Snapshot
 
-Home, Atelier, and Chat currently project different task lifecycle models.
+Functional slice complete. Home, Desktop Tasks, and Atelier now read
+Station-owned TaskRun and ExecutionStep records only.
+
+- Home no longer reads AgentTask lifecycle rows or rescans legacy rows while
+  serving a projection.
+- Atelier workspace and owner lookup no longer read CollaborationTask or
+  CollaborationTaskNode lifecycle state.
+- Both surfaces use
+  `pending/running/needs_user/completed/failed/cancelled/unavailable`; an
+  unknown status is unavailable and never completed.
+- New TaskRun `task_0c921754f65cafe9565d9f4e` and migrated TaskRun
+  `collab_paos12_1791150834` matched across Home and Atelier on status,
+  current step, attempt ID, and attempt number.
+- Desktop Task store replaced its injected stale cache from Station revision
+  `1791163694321496000`.
+- Legacy CollaborationTask inventory remained exactly
+  `["collab_paos12_1791150834"]` before and after the Journey.
+- Full Agent tests, Desktop checks, Atelier 101-unit suite/build, the registered
+  `agent-personal-taskrun-cutover-source` Gate, native Profile `two` Journey,
+  cleanup audit, and sensitive-profile-key scan passed.
