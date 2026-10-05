@@ -4756,8 +4756,6 @@ def _bind_reusable_actor_identity(
 
 def _wait_for_moments_snapshot(
     client: FoundationRuntimeClient,
-    *,
-    previous_boot_identity_sha256: str | None = None,
 ) -> Mapping[str, Any]:
     client.harness_namespace = "moments"
     if not harness_ready(client.driver, "moments", timeout=60):
@@ -4781,17 +4779,6 @@ def _wait_for_moments_snapshot(
                 and snapshot.get("platform") != expected_platform
             ):
                 return None
-            if (
-                isinstance(snapshot, Mapping)
-                and previous_boot_identity_sha256 is not None
-            ):
-                boot_identity = snapshot.get("bootIdentitySha256")
-                if (
-                    not isinstance(boot_identity, str)
-                    or not boot_identity
-                    or boot_identity == previous_boot_identity_sha256
-                ):
-                    return None
             return snapshot
         except FoundationClientError as error:
             message = str(error)
@@ -4829,6 +4816,64 @@ def _wait_for_moments_snapshot(
             resource=f"client:{client.spec.profile}",
         )
     return snapshot
+
+
+def _refresh_and_wait_for_moments_snapshot(
+    client: FoundationRuntimeClient,
+) -> Mapping[str, Any]:
+    driver = client.driver
+    if driver is None:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            f"client {client.spec.profile} has no attached WebDriver",
+            resource=f"client:{client.spec.profile}",
+        )
+    marker = secrets.token_hex(32)
+    try:
+        driver.execute_script(
+            "window.__PT_ACCEPTANCE_RELOAD_MARKER__ = arguments[0]",
+            marker,
+        )
+        driver.refresh()
+    except Exception as error:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            redact_text(
+                f"client {client.spec.profile} renderer reload failed: {error}"
+            ),
+            resource=f"client:{client.spec.profile}",
+        ) from error
+
+    def reload_complete() -> bool | None:
+        try:
+            return driver.execute_script(
+                """
+                return (
+                  window.__PT_ACCEPTANCE_RELOAD_MARKER__ !== arguments[0]
+                  && document.readyState === 'complete'
+                )
+                """,
+                marker,
+            ) is True
+        except Exception:
+            return None
+
+    try:
+        wait_until(
+            reload_complete,
+            f"{client.spec.profile} renderer reload",
+            timeout=60,
+        )
+    except Exception as error:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            redact_text(
+                f"client {client.spec.profile} renderer did not reload: "
+                f"{_error_message_with_cleanup(error)}"
+            ),
+            resource=f"client:{client.spec.profile}",
+        ) from error
+    return _wait_for_moments_snapshot(client)
 
 
 def _receiver_ui_probe(
@@ -7943,14 +7988,7 @@ class W7RuntimeOwner:
                 text=as21_text,
             )
             before_reload = _wait_for_moments_snapshot(current_bob)
-            current_bob.driver.refresh()
-            after_reload = _wait_for_moments_snapshot(
-                current_bob,
-                previous_boot_identity_sha256=_required_text(
-                    before_reload.get("bootIdentitySha256"),
-                    "AS21 pre-reload boot identity",
-                ),
-            )
+            after_reload = _refresh_and_wait_for_moments_snapshot(current_bob)
             as21_read = _wait_for_private_moment_state(
                 current_bob,
                 post_id=as21_post,
@@ -7963,9 +8001,10 @@ class W7RuntimeOwner:
                 visible_text=as21_text,
                 observations={
                     "contentReady": as21_read.get("state") == "CONTENT_READY",
-                    "rendererReloaded": (
+                    "rendererReloaded": True,
+                    "bootIdentityStable": (
                         before_reload.get("bootIdentitySha256")
-                        != after_reload.get("bootIdentitySha256")
+                        == after_reload.get("bootIdentitySha256")
                     ),
                     "sourceGateIds": ["social-cross-station-delivery"],
                 },

@@ -90,6 +90,7 @@ from tooling.development.secure_content.runtime_owner import (
     _prepare_private_content_keys,
     _prepare_remote_group_fixture,
     _revoke_remote_fixture_device,
+    _refresh_and_wait_for_moments_snapshot,
     _wait_for_accepted_friendship_projection,
     _wait_for_federated_actor_resolution,
     _wait_for_federated_locator,
@@ -3436,13 +3437,12 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(snapshot, result)
         self.assertEqual(2, client.harness.call_count)
 
-    def test_moments_readiness_waits_for_new_boot_after_reload(
+    def test_moments_readiness_waits_for_new_window_after_reload(
         self,
     ) -> None:
-        previous_boot_identity = "1" * 64
         reloaded_snapshot = {
             "platform": "native",
-            "bootIdentitySha256": "2" * 64,
+            "bootIdentitySha256": "1" * 64,
             "nativeRuntimeIdentitySha256": "3" * 64,
         }
         client = MagicMock()
@@ -3451,26 +3451,25 @@ class RuntimeOwnerTest(unittest.TestCase):
             profile="secure-content-desktop-bob",
             runtime="native-tauri",
         )
-        client.harness.side_effect = (
-            {
-                "platform": "native",
-                "bootIdentitySha256": previous_boot_identity,
-                "nativeRuntimeIdentitySha256": "3" * 64,
-            },
-            reloaded_snapshot,
+        client.driver.execute_script.side_effect = (
+            None,
+            False,
+            True,
         )
 
         with patch(
-            "tooling.development.secure_content.runtime_owner.harness_ready",
-            return_value=True,
-        ):
-            result = _wait_for_moments_snapshot(
+            "tooling.development.secure_content.runtime_owner."
+            "_wait_for_moments_snapshot",
+            return_value=reloaded_snapshot,
+        ) as wait_for_snapshot:
+            result = _refresh_and_wait_for_moments_snapshot(
                 client,
-                previous_boot_identity_sha256=previous_boot_identity,
             )
 
         self.assertEqual(reloaded_snapshot, result)
-        self.assertEqual(2, client.harness.call_count)
+        client.driver.refresh.assert_called_once_with()
+        self.assertEqual(3, client.driver.execute_script.call_count)
+        wait_for_snapshot.assert_called_once_with(client)
 
     def test_moments_readiness_retries_transient_browser_identity_gap(
         self,
