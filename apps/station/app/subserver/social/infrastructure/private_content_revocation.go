@@ -140,15 +140,15 @@ func (s *GORMPrivateContentStore) StagePrivateResourceInvalidations(
 		Select(
 			"post.post_id, post.content_id, post.generation, "+
 				"post.audience_snapshot_id, snapshot.audience_kind, "+
-				"grant.recipient_ptid, plan.recipient_localities_bytes",
+				"recipient_grant.recipient_ptid, plan.recipient_localities_bytes",
 		).
 		Joins(
 			"JOIN social_private_audience_snapshots AS snapshot "+
 				"ON snapshot.snapshot_id = post.audience_snapshot_id",
 		).
 		Joins(
-			"JOIN social_private_recipient_grants AS grant "+
-				"ON grant.snapshot_id = post.audience_snapshot_id",
+			"JOIN social_private_recipient_grants AS recipient_grant "+
+				"ON recipient_grant.snapshot_id = post.audience_snapshot_id",
 		).
 		Joins(
 			"JOIN social_private_content_plans AS plan "+
@@ -158,7 +158,8 @@ func (s *GORMPrivateContentStore) StagePrivateResourceInvalidations(
 		).
 		Where(
 			"post.author_ptid = ? AND post.lifecycle_state = ? "+
-				"AND post.deleted_at IS NULL AND grant.revoked_at IS NULL",
+				"AND post.deleted_at IS NULL "+
+				"AND recipient_grant.revoked_at IS NULL",
 			request.AuthorPTID,
 			privateContentLifecycleActive,
 		)
@@ -166,11 +167,14 @@ func (s *GORMPrivateContentStore) StagePrivateResourceInvalidations(
 		query = query.Where("post.post_id = ?", request.PostID)
 	}
 	if request.RecipientPTID != "" {
-		query = query.Where("grant.recipient_ptid = ?", request.RecipientPTID)
+		query = query.Where(
+			"recipient_grant.recipient_ptid = ?",
+			request.RecipientPTID,
+		)
 	}
 	var candidates []sourcePrivateInvalidationCandidate
 	if err := query.Order(
-		"post.post_id ASC, grant.recipient_ptid ASC",
+		"post.post_id ASC, recipient_grant.recipient_ptid ASC",
 	).Scan(&candidates).Error; err != nil {
 		return nil, fmt.Errorf("list private invalidation candidates: %w", err)
 	}
