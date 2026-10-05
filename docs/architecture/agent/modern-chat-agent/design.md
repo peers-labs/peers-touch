@@ -1,8 +1,8 @@
 # Modern Chat Agent — Architecture Design
 
 > **Status**: accepted
-> **Version**: v1.5
-> **Created**: 2026-07-30 | **Updated**: 2026-10-03
+> **Version**: v1.6
+> **Created**: 2026-07-30 | **Updated**: 2026-10-05
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -38,7 +38,7 @@
 | Desktop Marketplace currently accepts arbitrary unsigned JSON, ignores branch semantics, and trusts source labels | `verified_fact` | `application/skills_market/mod.rs` source parser/store | high | None |
 | Publisher-signed snapshots plus target-authority readback close X3 without a hosted marketplace | `accepted_decision` | MCA-D20 in `decisions.md` | high | X3 native evidence |
 | A working turn alone is insufficient for a dependable Agent | `inference` | Benchmark runtime contracts plus current architecture goals | high | Owner acceptance of target quality |
-| Stateful Codex/Claude-like runtimes require conversation-scoped runtime identity separate from model-provider identity | `verified_fact` for benchmark behavior; `proposal` for Peers-Touch | Peers-Touch thread-owned runtime and external session contract | medium-high | Peers runtime product decision |
+| Stateful Codex/Claude-like runtimes require conversation-scoped runtime identity separate from model-provider identity | `verified_fact` for LobeHub behavior; `accepted_decision` for Peers-Touch | LobeHub Codex/Claude runtime behavior; MCA-D03 and MCA-D29 | high | Native external-runtime evidence |
 | Multi-Agent orchestration should consume, not define, the single-Agent runtime | `proposal` | Separation between Agent Canvas and turn kernel | high | Architecture review |
 
 ## 2. Scope And Quality Outcome
