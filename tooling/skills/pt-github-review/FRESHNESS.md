@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-05
-covered_docs_hash: 477ee488959b5702cec100f7b49cb89bdd30d11b496454ad6e6466cd5c4e6
+covered_docs_hash: 477ee488959b5702cec100f74f7b49cb89bdd30d11b496454ad6e6466cd5c4e6
 
 covered_docs:
   - AGENTS.md
@@ -34,17 +34,18 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 ## 2026-10-05 Post-Master-Sync Covered-Docs Review
 
 After the semantic rebase onto the current master, every covered document hashes
-to the master value except two intentional Cross-Station Social deltas:
+to the master value except two intentional Cross-Station Social deltas.
 
-- `docs/README.md` replaces the draft federated-human-social-activity index
-  pointer with the active `cross-station-social` module pointer and its current
-  Native-only execution-plan scope. Architecture module governance already
-  requires every active module to appear in this index, so no new review rule is
-  needed.
-- `docs/client/desktop/runtime-projections.md` narrows `socialRealtime` to
-  social graph, presence, relationship, and notification projections, records
-  the extraction of chat/messaging consumption into the separate `messaging`
-  runtime, and lists the migrated `moments` page under `social` and `messaging`.
+First, `docs/README.md` replaces the draft federated-human-social-activity index
+pointer with the active `cross-station-social` module pointer and its current
+Native-only execution-plan scope. Architecture module governance already
+requires every active module to appear in this index, so no new review rule is
+needed.
+
+Second, `docs/client/desktop/runtime-projections.md` narrows `socialRealtime` to
+social graph, presence, relationship, and notification projections, records the
+extraction of chat/messaging consumption into the separate `messaging` runtime,
+and lists the migrated `moments` page under `social` and `messaging`.
 
 The runtime-projections delta is the same producer-to-runtime ownership and
 duplicate-owner problem recorded in the 2026-10-03 Social EventBus Acceptance
