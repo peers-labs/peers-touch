@@ -4956,6 +4956,45 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn("social-desktop-formal-proof", commands[1])
         self.assertIn(session_id, commands[1])
 
+    def test_social_acceptance_falls_back_to_current_css09_owner(self) -> None:
+        legacy_error = RuntimeOwnerBlocked(
+            "DECLARATION_TRANSITION_FAILED",
+            "legacy Plan is completed",
+            resource="journey:SOC-SEC-J01-J09",
+        )
+        css09 = {
+            "state": "ACTIVE",
+            "workItemId": SOCIAL_CROSS_STATION_PLAN_ID,
+            "planId": SOCIAL_CROSS_STATION_PLAN_ID,
+            "taskId": SOCIAL_CROSS_STATION_TASK_ID,
+            "journeyId": SOCIAL_CROSS_STATION_JOURNEY,
+        }
+        with patch.object(
+            runtime_owner_module,
+            "_activate_scenario_journey",
+            side_effect=(legacy_error, css09),
+        ) as activate:
+            observed = (
+                runtime_owner_module
+                ._activate_social_desktop_acceptance_journey(
+                    Path("/tmp/peers-touch")
+                )
+            )
+
+        self.assertEqual(css09, observed)
+        self.assertEqual(
+            SOCIAL_ACCEPTANCE_PLAN_ID,
+            activate.call_args_list[0].kwargs["plan_id"],
+        )
+        self.assertEqual(
+            SOCIAL_CROSS_STATION_PLAN_ID,
+            activate.call_args_list[1].kwargs["plan_id"],
+        )
+        self.assertEqual(
+            SOCIAL_CROSS_STATION_TASK_ID,
+            activate.call_args_list[1].kwargs["task_id"],
+        )
+
     def test_social_acceptance_scenarios_use_resolved_owner_identity(self) -> None:
         scenario = _social_acceptance_scenario_registry(
             "private-comment",

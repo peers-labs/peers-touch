@@ -3372,6 +3372,33 @@ def _require_social_acceptance_source(
     return projected
 
 
+def _activate_social_desktop_acceptance_journey(
+    repo_root: Path,
+) -> Mapping[str, Any]:
+    try:
+        return _activate_scenario_journey(
+            repo_root,
+            SOCIAL_ACCEPTANCE_JOURNEY,
+            work_item_id=None,
+            task_id=None,
+            plan_id=SOCIAL_ACCEPTANCE_PLAN_ID,
+            allowed_task_ids=SOCIAL_ACCEPTANCE_TASK_IDS,
+        )
+    except RuntimeOwnerBlocked as legacy_error:
+        if legacy_error.code != "DECLARATION_TRANSITION_FAILED":
+            raise
+        try:
+            return _activate_scenario_journey(
+                repo_root,
+                SOCIAL_CROSS_STATION_JOURNEY,
+                work_item_id=SOCIAL_CROSS_STATION_PLAN_ID,
+                task_id=SOCIAL_CROSS_STATION_TASK_ID,
+                plan_id=SOCIAL_CROSS_STATION_PLAN_ID,
+            )
+        except RuntimeOwnerBlocked:
+            raise legacy_error
+
+
 def _free_port(start: int, reserved: set[int]) -> int:
     for port in range(start, start + 2000):
         if port in reserved:
@@ -10175,17 +10202,16 @@ class W7RuntimeOwner:
             identity.get("sourceEvidenceWorkspaceId")
             or identity["workspaceId"]
         )
-        declaration = _activate_scenario_journey(
-            self.repo_root,
-            journey_id,
-            work_item_id=None if formal_acceptance else W8_WORK_ITEM_ID,
-            task_id=None if formal_acceptance else W8_TASK_ID,
-            plan_id=plan_id,
-            allowed_task_ids=(
-                SOCIAL_ACCEPTANCE_TASK_IDS
-                if formal_acceptance
-                else None
-            ),
+        declaration = (
+            _activate_social_desktop_acceptance_journey(self.repo_root)
+            if formal_acceptance
+            else _activate_scenario_journey(
+                self.repo_root,
+                journey_id,
+                work_item_id=W8_WORK_ITEM_ID,
+                task_id=W8_TASK_ID,
+                plan_id=plan_id,
+            )
         )
         work_item_id = str(declaration["workItemId"])
         task_id = str(declaration["taskId"])
