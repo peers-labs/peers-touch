@@ -78,7 +78,8 @@ func RemotePrivateContentModels() []any {
 }
 
 type RemotePrivatePostReadModel struct {
-	Delivery *privatecontentpb.FederatedPrivateResourceDelivery
+	Delivery         *privatecontentpb.FederatedPrivateResourceDelivery
+	RecoveryEnvelope *securecontentpb.ViewerContentKeyEnvelope
 }
 
 type RemotePrivateCommentReadModel struct {
@@ -561,11 +562,12 @@ func loadRemotePrivatePost(
 	if blocked {
 		return nil, ErrPrivateContentNotFound
 	}
-	message, err := loadRemotePrivateDelivery(
+	message, recoveryEnvelope, err := loadRemotePrivateDelivery(
 		ctx,
 		database,
 		rows[0],
 		viewerDeviceID,
+		true,
 	)
 	if err != nil {
 		return nil, err
@@ -573,7 +575,10 @@ func loadRemotePrivatePost(
 	if message.GetPost() == nil {
 		return nil, ErrPrivateContentConflict
 	}
-	return &RemotePrivatePostReadModel{Delivery: message}, nil
+	return &RemotePrivatePostReadModel{
+		Delivery:         message,
+		RecoveryEnvelope: recoveryEnvelope,
+	}, nil
 }
 
 func (s *GORMPrivateContentStore) ReadRemotePrivateComment(
@@ -614,11 +619,12 @@ func (s *GORMPrivateContentStore) ReadRemotePrivateComment(
 		if err != nil {
 			return err
 		}
-		message, err := loadRemotePrivateDelivery(
+		message, _, err := loadRemotePrivateDelivery(
 			ctx,
 			database,
 			row,
 			viewerDeviceID,
+			false,
 		)
 		if err != nil {
 			return err
@@ -685,11 +691,12 @@ func (s *GORMPrivateContentStore) ListRemotePrivateComments(
 		}
 		page.Comments = make([]*RemotePrivateCommentReadModel, 0, len(rows))
 		for _, row := range rows {
-			message, err := loadRemotePrivateDelivery(
+			message, _, err := loadRemotePrivateDelivery(
 				ctx,
 				database,
 				row,
 				query.ViewerDeviceID,
+				false,
 			)
 			if err != nil {
 				return err
@@ -738,14 +745,19 @@ func loadRemotePrivateDelivery(
 	database *gorm.DB,
 	row remotePrivateResourceModel,
 	viewerDeviceID string,
-) (*privatecontentpb.FederatedPrivateResourceDelivery, error) {
+	allowRecoveryFallback bool,
+) (
+	*privatecontentpb.FederatedPrivateResourceDelivery,
+	*securecontentpb.ViewerContentKeyEnvelope,
+	error,
+) {
 	payload := &securecontentpb.EncryptedPayload{}
 	if err := unmarshalRemotePrivateProjectionPart(
 		"encrypted payload",
 		row.EncryptedPayloadBytes,
 		payload,
 	); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	objectSet := &privatecontentpb.FederatedPrivateObjectDescriptorSet{}
 	if len(row.ObjectDescriptorBytes) != 0 {
@@ -754,7 +766,7 @@ func loadRemotePrivateDelivery(
 			row.ObjectDescriptorBytes,
 			objectSet,
 		); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	verification := &privatecontentpb.PrivateContentVerification{}
@@ -763,7 +775,7 @@ func loadRemotePrivateDelivery(
 		row.VerificationBytes,
 		verification,
 	); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	audience := &actormodel.AudienceExplanation{}
 	if err := unmarshalRemotePrivateProjectionPart(
@@ -771,7 +783,7 @@ func loadRemotePrivateDelivery(
 		row.AudienceBytes,
 		audience,
 	); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	message := &privatecontentpb.FederatedPrivateResourceDelivery{
 		FormatVersion:       1,
@@ -800,7 +812,7 @@ func loadRemotePrivateDelivery(
 			row.ViewerMetadataBytes,
 			post,
 		); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		message.Metadata = &privatecontentpb.FederatedPrivateResourceDelivery_Post{
 			Post: post,
@@ -812,34 +824,42 @@ func loadRemotePrivateDelivery(
 			row.ViewerMetadataBytes,
 			comment,
 		); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		message.Metadata = &privatecontentpb.FederatedPrivateResourceDelivery_Comment{
 			Comment: comment,
 		}
 	default:
-		return nil, ErrPrivateContentConflict
+		return nil, nil, ErrPrivateContentConflict
 	}
 	var envelopes []remotePrivateEnvelopeModel
 	if err := database.WithContext(ctx).
 		Where(
-			"source_station_peer_id = ? AND content_id = ? AND generation = ? AND target_actor_ptid = ? AND recipient_device_id = ?",
+			"source_station_peer_id = ? AND content_id = ? AND generation = ? AND target_actor_ptid = ? AND recipient_key_kind = ? AND recipient_device_id = ?",
 			row.SourceStationPeerID,
 			row.ContentID,
 			row.Generation,
 			row.TargetActorPTID,
+			int32(securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ENDPOINT),
 			viewerDeviceID,
 		).
+		Limit(2).
 		Find(&envelopes).Error; err != nil {
-		return nil, fmt.Errorf("social remote private envelope read: %w", err)
+		return nil, nil, fmt.Errorf(
+			"social remote private envelope read: %w",
+			err,
+		)
 	}
-	if len(envelopes) != 1 {
-		return nil, ErrPrivateContentNotFound
+	if len(envelopes) > 1 {
+		return nil, nil, fmt.Errorf(
+			"%w: remote private endpoint envelope is ambiguous",
+			ErrPrivateContentConflict,
+		)
 	}
-	for _, row := range envelopes {
+	if len(envelopes) == 1 {
 		envelope := &securecontentpb.ViewerContentKeyEnvelope{}
-		if err := proto.Unmarshal(row.EnvelopeBytes, envelope); err != nil {
-			return nil, fmt.Errorf(
+		if err := proto.Unmarshal(envelopes[0].EnvelopeBytes, envelope); err != nil {
+			return nil, nil, fmt.Errorf(
 				"%w: decode remote private envelope: %v",
 				ErrPrivateContentConflict,
 				err,
@@ -849,8 +869,49 @@ func loadRemotePrivateDelivery(
 			message.TargetActorEnvelopes,
 			envelope,
 		)
+		return message, nil, nil
 	}
-	return message, nil
+	if !allowRecoveryFallback {
+		return nil, nil, ErrPrivateContentNotFound
+	}
+
+	var recoveryEnvelopes []remotePrivateEnvelopeModel
+	if err := database.WithContext(ctx).
+		Where(
+			"source_station_peer_id = ? AND content_id = ? AND generation = ? AND target_actor_ptid = ? AND recipient_key_kind = ? AND recipient_device_id = ''",
+			row.SourceStationPeerID,
+			row.ContentID,
+			row.Generation,
+			row.TargetActorPTID,
+			int32(
+				securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY,
+			),
+		).
+		Limit(2).
+		Find(&recoveryEnvelopes).Error; err != nil {
+		return nil, nil, fmt.Errorf(
+			"social remote private recovery envelope read: %w",
+			err,
+		)
+	}
+	if len(recoveryEnvelopes) != 1 {
+		return nil, nil, fmt.Errorf(
+			"%w: remote private recovery envelope is unavailable or ambiguous",
+			ErrPrivateContentConflict,
+		)
+	}
+	recoveryEnvelope := &securecontentpb.ViewerContentKeyEnvelope{}
+	if err := proto.Unmarshal(
+		recoveryEnvelopes[0].EnvelopeBytes,
+		recoveryEnvelope,
+	); err != nil {
+		return nil, nil, fmt.Errorf(
+			"%w: decode remote private recovery envelope: %v",
+			ErrPrivateContentConflict,
+			err,
+		)
+	}
+	return message, recoveryEnvelope, nil
 }
 
 func marshalRemotePrivateProjectionPart(

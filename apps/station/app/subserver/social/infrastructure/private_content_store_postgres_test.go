@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"gorm.io/driver/postgres"
@@ -452,6 +454,80 @@ func TestGORMPrivateContentStorePostgresListsInvalidationCandidates(
 	})
 	if err != nil {
 		t.Fatalf("list PostgreSQL invalidation candidates: %v", err)
+	}
+}
+
+func TestGORMPrivateContentStorePostgresListsRemoteRecoveryCandidates(
+	t *testing.T,
+) {
+	database, store := openPrivateContentStorePostgres(t)
+	relationshipStore, err := NewGORMFederatedFriendRequestStore(
+		database,
+		federationdelivery.SystemClock{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := relationshipStore.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now := fixedTime()
+	resource := remotePrivateResourceModel{
+		SourceStationPeerID:   "station-source",
+		ContentID:             "remote-recovery-post",
+		Generation:            1,
+		TargetActorPTID:       "ptid:bob",
+		FederationID:          "federation-one",
+		DeliveryID:            "remote-recovery-delivery",
+		TargetStationPeerID:   "station-target",
+		AuthorPTID:            "ptid:alice",
+		LifecycleRevision:     1,
+		ResourceKind:          int32(privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST),
+		ViewerMetadataBytes:   []byte{1},
+		EncryptedPayloadBytes: []byte{2},
+		ObjectDescriptorBytes: []byte{3},
+		VerificationBytes:     []byte{4},
+		AudienceBytes:         []byte{5},
+		CanonicalDeliveryHash: make([]byte, 32),
+		State:                 remotePrivateResourceStateActive,
+		CommittedAt:           now,
+		UpdatedAt:             now,
+	}
+	if err := database.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	envelope := remotePrivateEnvelopeModel{
+		SourceStationPeerID: "station-source",
+		ContentID:           resource.ContentID,
+		Generation:          resource.Generation,
+		TargetActorPTID:     resource.TargetActorPTID,
+		RecipientKeyKind: int32(
+			securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY,
+		),
+		OneTimeKeyID:   "remote-recovery-prekey",
+		EnvelopeBytes:  []byte{6},
+		PrincipalEpoch: 2,
+	}
+	if err := database.Create(&envelope).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	records, err := store.ListRecoverablePrivateContent(
+		context.Background(),
+		RecoverablePrivateContentQuery{
+			ActorPTID: "ptid:bob",
+			Limit:     2,
+		},
+	)
+	if err != nil {
+		t.Fatalf("list PostgreSQL remote recovery candidates: %v", err)
+	}
+	if len(records) != 1 ||
+		records[0].ResourceKind != PrivateContentResourcePost ||
+		records[0].ResourceID != resource.ContentID ||
+		records[0].EnvelopeRecipientPTID != "ptid:bob" ||
+		records[0].EnvelopeOneTimeKeyID != envelope.OneTimeKeyID {
+		t.Fatalf("remote recovery records = %+v", records)
 	}
 }
 
