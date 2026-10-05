@@ -2167,7 +2167,7 @@ def _wait_for_federated_actor_resolution(
                 resource="fixture:cross-station-social-resolver",
             )
         code = str(result.get("code") or "")
-        if code != "NOT_FOUND":
+        if code not in {"NOT_FOUND", "INTERNAL_ERROR"}:
             raise RuntimeOwnerBlocked(
                 "FIXTURE_OWNER_UNAVAILABLE",
                 (

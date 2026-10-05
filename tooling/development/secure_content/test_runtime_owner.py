@@ -3004,7 +3004,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             driver=MagicMock(),
         )
         client.driver.execute_async_script.side_effect = (
-            {"ok": False, "code": "NOT_FOUND"},
+            {"ok": False, "code": "INTERNAL_ERROR"},
             {
                 "ok": True,
                 "value": {
@@ -3030,7 +3030,7 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(2, client.driver.execute_async_script.call_count)
 
         client.driver.execute_async_script.side_effect = (
-            {"ok": False, "code": "INTERNAL_ERROR"},
+            {"ok": False, "code": "UNAUTHORIZED"},
         )
         with self.assertRaises(RuntimeOwnerBlocked) as raised:
             _wait_for_federated_actor_resolution(
