@@ -89,7 +89,7 @@ function plan(root, status = 'active') {
       workspaceId: WORKSPACE_ID,
       canonicalRoot: root,
       planId: PLAN_ID,
-      planPath: 'docs/architecture/development-workflow/plan.md',
+      planPath: 'docs/architecture/engineering/development-workflow/plan.md',
     },
     snapshot: {
       planId: PLAN_ID,

@@ -6,10 +6,10 @@ owns:
   - tooling/scripts/local-dev/workflow-snapshot.mjs
   - tooling/skills/pt-context-anchor/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
-  - docs/architecture/development-workflow/design.md
-  - docs/architecture/development-workflow/data-model.md
+  - docs/architecture/engineering/development-workflow/design.md
+  - docs/architecture/engineering/development-workflow/data-model.md
 detected: 2026-09-20
 ---
 

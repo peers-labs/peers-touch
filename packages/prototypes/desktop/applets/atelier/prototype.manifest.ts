@@ -9,7 +9,7 @@ const manifest = {
   status: 'superseded',
   module: 'atelier',
   path: 'packages/prototypes/desktop/applets/atelier/',
-  docs: 'docs/architecture/atelier/prototype/README.md',
+  docs: 'docs/architecture/domains/applets/atelier/prototype/README.md',
   description: 'Desktop-hosted applet prototype, not a first-level prototype site.',
   order: 20,
   previewExport: 'AtelierPage',

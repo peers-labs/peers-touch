@@ -2,7 +2,7 @@
 
 > Historical task material only.
 > 不作为当前 Desktop Chat / Auth / BFF 实现真源。
-> 若与现状冲突，以 `docs/README.md`、`docs/client/desktop/global-context-kernel.md`、`docs/global/coding-guide/desktop/service-api.md`、`docs/architecture/boundaries/station-desktop-scope-boundary.md` 为准。
+> 若与现状冲突，以 `docs/README.md`、`docs/client/desktop/global-context-kernel.md`、`docs/global/coding-guide/desktop/service-api.md`、`docs/architecture/platform/station-desktop-boundary.md` 为准。
 
 > **Workspace:** <repo-root>
 
@@ -6321,7 +6321,7 @@ OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs]
 #### 8. [app-layer.md](../../../docs/station/app-layer.md)
 **内容**：Station 应用层架构文档。描述了 Subserver 架构中 `auth` 子服务器的 Handler-Service-Repo 模式，并给出了 `AuthHandler.Login` 的代码示例（请求绑定 -> 调用 service.Login -> 返回响应）。
 
-#### 9. [station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
+#### 9. [station-desktop-scope-boundary.md](../../architecture/platform/station-desktop-boundary.md)
 **内容**：Station/Desktop 职责边界架构。明确 Station Scope 包含**鉴权、权限、审计、限流、配额**；功能分配清单中 **OAuth（授权）** 一行定义：Station 管理 provider、authorize/token 语义与凭证策略，Desktop 发起登录交互、回调承接、状态展示，真源在 Station。
 
 #### 10. [subserver-standard.md](../../../docs/station/subserver-standard.md)
@@ -6334,7 +6334,7 @@ OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs]
 - **20251216**：完成 auth 模块抽象性评审，新增 auth.Config 配置入口、DefaultMiddleware、RequireJWT 中间件注入。
 - **20251223**：记录登录态交叉问题。
 
-#### 12. [unified-handler-architecture.md](../../../docs/architecture/runtime/unified-handler-architecture.md)
+#### 12. [unified-handler-architecture.md](../../architecture/platform/contracts/handler-model.md)
 **内容**：统一 Handler 架构设计。覆盖中间件、错误处理、参数校验、**权限控制**全流程。Handler 必须显式声明**权限要求**，框架层自动完成权限校验。
 
 ---
@@ -6356,7 +6356,7 @@ OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs]
 #### 17. [provider-model-target-architecture.md](../../../docs/client/desktop/provider-model-target-architecture.md)
 **内容**：Desktop Provider + Model 目标态架构。提及用户作用域设计：命令层从会话解析 `session.actor_id` 作为 scope，**未登录时回落 `__default__`**。
 
-#### 18. [unified-runtime-storage-architecture.md](../../../docs/architecture/storage/unified-runtime-storage-architecture.md)
+#### 18. [unified-runtime-storage-architecture.md](../../architecture/platform/runtime/storage.md)
 **内容**：统一运行时存储架构。虽然主题是存储，但涉及安全增强（加密、密钥轮换）等与凭证存储相关的设计。
 
 #### 19. [sync-protocol.md](../../../docs/client/mobile/sync-protocol.md)
@@ -6400,7 +6400,7 @@ OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs]
 
 ## 更新了三份已有文档
 
-### 1. [station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md) — 核心方案文档
+### 1. [station-desktop-scope-boundary.md](../../architecture/platform/station-desktop-boundary.md) — 核心方案文档
 
 **新增内容：**
 - §5 功能分配清单：拆分出独立的 **Auth（认证/登录）** 行，与 OAuth（社交绑定）分离
@@ -16995,21 +16995,21 @@ chat 消息不一定要用sqlite吧，业界用的什么？
 我们现在已经有一些不同模块的落地库的，你要分类好。同时，数据库与其它 storage 没有两样，要复用 storage 的框架设计，框架未表述完整就优化框架。
 
 ## User
-补齐一下，docs/architecture/storage/unified-runtime-storage-architecture.md 这是之前的设计文档。我的判断是还是不够完善，需要你在这个需求上，进一步把架构搞健壮
+补齐一下，docs/architecture/platform/runtime/storage.md 这是之前的设计文档。我的判断是还是不够完善，需要你在这个需求上，进一步把架构搞健壮
 
 ## Assistant
 你这个要求我已经落到文档里了，并且按“数据库就是 storage 的一种”去补强了框架定义，不再把 DB 当特殊旁路。
 
 **已补齐内容**
 - 完整补强文档：  
-  [unified-runtime-storage-architecture.md](../../../docs/architecture/storage/unified-runtime-storage-architecture.md)
+  [unified-runtime-storage-architecture.md](../../architecture/platform/runtime/storage.md)
 - 关键增强点：
-  - 明确 DB 作为一等存储对象（统一接入 `data/db`）[L74-L93](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L74-L93)
-  - 增加分域分库规则（chat 必须独立库）[L89-L93](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L89-L93)
-  - 增加加密分级、密钥管理、轮换恢复 [L94-L110](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L94-L110)
-  - 补齐 framework 必备能力接口（`resolveDatabasePath/openDatabase/healthCheck` 等）[L147-L160](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L147-L160)
-  - 增加可观测性与治理指标 [L161-L174](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L161-L174)
-  - 强化验收标准（chat 分库 + L2 加密）[L182-L188](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L182-L188)
+  - 明确 DB 作为一等存储对象（统一接入 `data/db`）[L74-L93](../../architecture/platform/runtime/storage.md#L74-L93)
+  - 增加分域分库规则（chat 必须独立库）[L89-L93](../../architecture/platform/runtime/storage.md#L89-L93)
+  - 增加加密分级、密钥管理、轮换恢复 [L94-L110](../../architecture/platform/runtime/storage.md#L94-L110)
+  - 补齐 framework 必备能力接口（`resolveDatabasePath/openDatabase/healthCheck` 等）[L147-L160](../../architecture/platform/runtime/storage.md#L147-L160)
+  - 增加可观测性与治理指标 [L161-L174](../../architecture/platform/runtime/storage.md#L161-L174)
+  - 强化验收标准（chat 分库 + L2 加密）[L182-L188](../../architecture/platform/runtime/storage.md#L182-L188)
 
 **现在这版的核心变化**
 - 不再是“目录规范文档”，而是“**可实施的存储框架规范**”。
@@ -17020,7 +17020,7 @@ chat 消息不一定要用sqlite吧，业界用的什么？
 如果你认可，我下一步就按这份文档直接改代码框架接口（`resolveDatabasePath/openDatabase`）并把 chat 库接到统一规范里。
 
 ## User
-docs/architecture/storage/unified-runtime-storage-architecture.md 
+docs/architecture/platform/runtime/storage.md
  我更新了存储架构，我们回到chat的主任务，接下来我们要做什么
 
 ## Assistant

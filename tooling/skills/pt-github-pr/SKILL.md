@@ -158,7 +158,7 @@ Use the project PR template structure. Fill in each section based on actual chan
 
 ## Execution Plans / 执行计划
 
-<Tracked: - `docs/architecture/<domain>/execution-plans/<plan>/plan.md`>
+<Tracked: - `docs/architecture/<taxonomy>/<domain>/execution-plans/<plan>/plan.md`>
 <Standalone: - None>
 
 ## Changes / 变更内容

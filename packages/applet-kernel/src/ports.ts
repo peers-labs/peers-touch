@@ -1,8 +1,8 @@
 // Applet Kernel — internal ports (frozen interfaces).
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §5 资源策略, §6 分层架构 (各层职责), §10 数据模型.
-// Execution plan: docs/architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §5.
+// Execution plan: docs/architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §5.
 //
 // These interfaces are the contract between kernel modules. Each module
 // implements exactly one port and depends only on ports declared here — never

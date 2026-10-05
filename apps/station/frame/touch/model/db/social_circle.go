@@ -11,7 +11,7 @@ import (
 // used to target Moments via `Audience.kind == CIRCLE`. **Only the owner can
 // see the circle's name and member list** — circle membership is private
 // metadata of the publisher, not a shared social object (see
-// `docs/architecture/social/moments.md §2.3`).
+// `docs/architecture/domains/social/core/moments.md §2.3`).
 //
 // MemberCount is denormalized for fast UI listing; the source of truth is
 // `SocialCircleMember`, kept in sync by CircleService.{Add,Remove}Member.

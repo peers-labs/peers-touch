@@ -4,13 +4,13 @@ title: Canonical Profile ID solely owns reset policy
 status: active
 owns:
   - AGENTS.md
-  - docs/architecture/local-dev-control-plane/
+  - docs/architecture/engineering/local-dev/
   - docs/global/local-dev-environment.md
   - tooling/devctl/
   - tooling/scripts/local-dev/
   - tooling/skills/pt-local-dev-env/
 referenced-by:
-  - docs/architecture/local-dev-control-plane/decisions.md
+  - docs/architecture/engineering/local-dev/decisions.md
 related:
   - docs/knowledge/invariants/dev-resource-declaration-before-write.md
   - docs/knowledge/invariants/station-profile-only-start.md
@@ -56,5 +56,5 @@ continuous Plan execution without adding a real safety boundary.
 
 ## Crosswalks
 
-- Architecture: `docs/architecture/local-dev-control-plane/decisions.md#ldcp-d15-canonical-profile-id-reset-protection`.
+- Architecture: `docs/architecture/engineering/local-dev/decisions.md#ldcp-d15-canonical-profile-id-reset-protection`.
 - Environment contract: `docs/global/local-dev-environment.md`.

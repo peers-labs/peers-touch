@@ -14,7 +14,7 @@ owns:
   - tooling/skills/pt-dev-workflow/
   - tooling/skills/pt-completion-auditor/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
   - docs/knowledge/invariants/dev-resource-declaration-before-write.md
   - docs/knowledge/invariants/plan-mount-is-run-bound.md

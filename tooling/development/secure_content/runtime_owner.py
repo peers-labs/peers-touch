@@ -2322,9 +2322,9 @@ _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES = (
     "apps/desktop/src-tauri/src/social/private_moment.rs",
     "apps/desktop/src/acceptance/moments/harness.ts",
     "apps/desktop/src/acceptance/moments/harness.test.ts",
-    "docs/architecture/secure-content/execution-plans/"
+    "docs/architecture/shared/security/secure-content/execution-plans/"
     "20260913-secure-content-hard-cut/plan.md",
-    "docs/architecture/social/",
+    "docs/architecture/domains/social/core/",
     "tooling/acceptance/",
     "tooling/development/secure_content/",
     "tooling/scripts/acceptance-run.py",

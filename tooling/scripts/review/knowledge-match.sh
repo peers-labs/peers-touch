@@ -51,15 +51,15 @@ trap 'rm -f "$tmp_changed" "$tmp_owns"' EXIT
 if [[ ${#manual_files[@]} -gt 0 ]]; then
   printf '%s\n' "${manual_files[@]}" > "$tmp_changed"
 else
-  if ! git diff --name-only "$diff_range" -- > "$tmp_changed"; then
+  if ! git -c core.quotePath=false diff --name-only "$diff_range" -- > "$tmp_changed"; then
     echo "knowledge-match: invalid or unreadable git range: $diff_range" >&2
     exit 1
   fi
   if [[ ! -s "$tmp_changed" && "$diff_range" == "HEAD" ]]; then
-    git diff --name-only --cached -- > "$tmp_changed"
+    git -c core.quotePath=false diff --name-only --cached -- > "$tmp_changed"
   fi
   if [[ "$diff_range" == "HEAD" ]]; then
-    git ls-files --others --exclude-standard >> "$tmp_changed"
+    git -c core.quotePath=false ls-files --others --exclude-standard >> "$tmp_changed"
   fi
   sort -u "$tmp_changed" -o "$tmp_changed"
 fi

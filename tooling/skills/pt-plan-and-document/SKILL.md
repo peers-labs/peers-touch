@@ -62,7 +62,7 @@ next: "pt-dev-workflow agent review loop"
 
 - `docs/README.md`
 - `docs/global/architecture-document-standard.md`
-- `docs/architecture/architecture-module-governance/architecture-modules.json`
+- `docs/architecture/engineering/architecture-governance/architecture-modules.json`
 - 最近的模块 `README.md`
 - 对应上游方法论 Skill
 - `docs/knowledge/playbooks/documenting-large-requirements.md`（大需求）
@@ -70,7 +70,7 @@ next: "pt-dev-workflow agent review loop"
 路径规则：
 
 ```text
-架构真源      -> docs/architecture/<module>/
+架构真源      -> docs/architecture/<taxonomy>/<module>/
 平台落地      -> docs/client/<platform>/ 或 docs/station/
 编码规范      -> docs/global/coding-guide/
 历史上下文    -> docs/context/
@@ -83,7 +83,7 @@ next: "pt-dev-workflow agent review loop"
 遵循固定文件集：
 
 ```text
-docs/architecture/<module>/
+docs/architecture/<taxonomy>/<module>/
 ├── README.md
 ├── design.md
 ├── decisions.md

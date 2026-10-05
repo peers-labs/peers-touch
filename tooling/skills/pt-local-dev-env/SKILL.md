@@ -584,7 +584,7 @@ When encountering cross-service issues (relay-client not registered, DHT seeds
 not connecting, federation resolve failing, session kicked after Station
 redeploy), consult:
 
-- **`docs/architecture/service-coordination.md`** — Dependency DAG, credential
+- **`docs/architecture/platform/runtime/service-coordination.md`** — Dependency DAG, credential
   contracts (relay invite → mount → token), bootstrap node requirements, and
   troubleshooting index.
 

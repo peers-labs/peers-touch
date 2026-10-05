@@ -394,7 +394,7 @@ def _report(gate_id: str, manifest: str, issues: list[str]) -> dict[str, Any]:
         "phase": "W0",
         "bom": ["W0-agent-v2-acceptance-contract-registration"],
         "spec": [
-            "docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md"
+            "docs/architecture/domains/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md"
         ],
         "gate": gate_id,
         "gateId": gate_id,

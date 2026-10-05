@@ -5,7 +5,7 @@ package peers_touch.model.federation.v1;
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
 
 // federation_discovery.proto — Federation-scoped actor discovery.
-// Source of truth: docs/architecture/federation/wire-protocol.md §9
+// Source of truth: docs/architecture/shared/federation/wire-protocol.md §9
 //
 // All catalog/discovery queries MUST carry federation_id to scope results
 // to the correct federation's member stations and visibility policies.

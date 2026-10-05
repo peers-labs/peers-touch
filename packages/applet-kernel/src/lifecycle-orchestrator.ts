@@ -1,6 +1,6 @@
 // Lifecycle Orchestrator (architecture §3, §6).
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §3 状态机 + 状态转换事件表, §6 分层架构 (Lifecycle Orchestrator 职责).
 //
 // This module is the SINGLE writer of instance state. It validates every event

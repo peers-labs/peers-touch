@@ -78,8 +78,8 @@ This official applet follows the Peers-Touch official applet architecture contra
 
 Architecture source:
 
-- \`docs/architecture/applet-runtime/official-applet-architecture-contract.md\`
-- \`docs/architecture/applet-runtime/note-applet-validation-design.md\` when this applet is Note
+- \`docs/architecture/platform/applet-runtime/official-applet-architecture-contract.md\`
+- \`docs/architecture/platform/applet-runtime/note-applet-validation-design.md\` when this applet is Note
 
 ## Product Unit
 

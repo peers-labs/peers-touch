@@ -497,7 +497,7 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
     const registered = registerWorkspace(registrationOptions(scope));
     const source = inspectGitWorkspace(scope.workspaceA);
     const planPath =
-      'docs/architecture/development-workflow/execution-plans/test/plan.md';
+      'docs/architecture/engineering/development-workflow/execution-plans/test/plan.md';
     const planStatus = {
       planId: 'DWF-RESOURCE-PLAN',
       currentTaskId: 'DWF-RESOURCE-T1',
@@ -804,11 +804,11 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
         snapshotDigest: 'a'.repeat(64),
         planId: 'MACHINE-DEV-PLAN',
         planPath:
-          'docs/architecture/local-dev-control-plane/execution-plans/test/plan.md',
+          'docs/architecture/engineering/local-dev/execution-plans/test/plan.md',
         planStatus: 'completed',
         currentTaskId: 'MACHINE-DEV-T1',
         currentTaskPath:
-          'docs/architecture/local-dev-control-plane/execution-plans/test/tasks/MACHINE-DEV-T1.md',
+          'docs/architecture/engineering/local-dev/execution-plans/test/tasks/MACHINE-DEV-T1.md',
         taskStatus: 'done',
         sessionId: 'machine-dev-session',
         journeyId: 'MACHINE-DEV-J01',

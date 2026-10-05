@@ -231,7 +231,7 @@ class AgentImpactTests(unittest.TestCase):
         before = fingerprint()
         current = fingerprint(closureContractDigest="closure-b")
         result = self.classify(
-            "docs/architecture/agent/modern-chat-agent/design.md",
+            "docs/architecture/domains/agent/modern-chat-agent/design.md",
             before=before,
             current=current,
         )

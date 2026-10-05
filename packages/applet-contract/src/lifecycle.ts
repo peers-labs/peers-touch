@@ -1,6 +1,6 @@
 // Applet lifecycle contract — cross-platform state machine.
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §3 状态机 + 状态转换事件表, §10 Applet Instance Registry 数据模型.
 //
 // The lifecycle (keep-alive / reclaim) is owned by the Applet Kernel and is

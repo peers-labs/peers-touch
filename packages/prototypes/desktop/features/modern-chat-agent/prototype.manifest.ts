@@ -9,7 +9,7 @@ const manifest = {
   status: 'confirmed',
   module: 'agent',
   path: 'packages/prototypes/desktop/features/modern-chat-agent/',
-  docs: 'docs/architecture/agent/modern-chat-agent/prototype/README.md',
+  docs: 'docs/architecture/domains/agent/modern-chat-agent/prototype/README.md',
   description: 'Peers Touch Modern Chat Agent V1/V2 product states, including Home, capability governance, and Evaluation.',
   order: 45,
   hidden: true,

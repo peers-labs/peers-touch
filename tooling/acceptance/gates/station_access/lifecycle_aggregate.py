@@ -164,7 +164,7 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
         "phase": "SAL-03",
         "bom": ["SAL-G00", "SAL-G01", "SAL-G02", "SAL-G03", "SAL-G04"],
         "spec": [
-            "docs/architecture/station-access-lifecycle/acceptance-matrix.md",
+            "docs/architecture/platform/station/access/acceptance-matrix.md",
         ],
         "sampleEmissionAllowed": aggregate.passed,
         "source": aggregate.source,
@@ -196,7 +196,7 @@ class StationAccessLifecycleAggregateGate(AcceptanceGate):
         REPO_ROOT / "tooling" / "acceptance" / "reports" / f"{GATE_ID}.json"
     )
     spec = (
-        "docs/architecture/station-access-lifecycle/acceptance-matrix.md",
+        "docs/architecture/platform/station/access/acceptance-matrix.md",
     )
 
     def __init__(

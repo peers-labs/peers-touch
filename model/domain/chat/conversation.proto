@@ -9,13 +9,14 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 // ============================================================================
 // v1 Unified Conversation Contract
 //
-// Single source of truth for the IM data model per D-08...D-12.
+// Single source of truth for the unified Conversation wire model.
 // Both direct (1:1) and group conversations share this skeleton;
 // business projections (group membership, direct session) are separate.
 //
-// See docs/architecture/federated-im/data-model.md for the governing design.
-// See docs/architecture/federated-im/decisions.md D-10 (one envelope channel),
-// D-11 (hard cutover), D-12 (text on envelope, P2P for media only).
+// Current governing design:
+// docs/architecture/domains/chat/messaging/data-model.md.
+// MP-D09 owns the unified Conversation framework, MP-D10 the hard cut, and
+// MP-D11 the control-plane / attachment-data-plane separation.
 // ============================================================================
 
 // --- Conversation ---

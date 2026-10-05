@@ -189,7 +189,7 @@
         "station-access-lifecycle-aggregate-e2e"
       ],
       "synthetic_paths": [
-        "docs/architecture/station-access-lifecycle/data-model.md",
+        "docs/architecture/platform/station/access/data-model.md",
         "tooling/acceptance/gates/station_access/capability_contract.py",
         "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
       ],

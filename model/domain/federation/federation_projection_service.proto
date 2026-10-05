@@ -7,7 +7,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/fed
 // ═══════════════════════════════════════════════════════════════════════════════
 // Federation Projection Service — RPCs exposed by Home Station to its clients.
 // Consumed by Desktop Settings and Dashboard via standard JWT auth.
-// Source of truth: docs/architecture/federation/wire-protocol.md §6.5
+// Source of truth: docs/architecture/shared/federation/wire-protocol.md §6.5
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── ListFederations ────────────────────────────────────────────────────────

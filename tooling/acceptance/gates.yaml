@@ -346,7 +346,7 @@
       "description": "Run Station Dashboard web TypeScript checks."
     },
     "station-api-ownership": {
-      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/api-ownership/station-api-capabilities.yaml",
+      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/engineering/api-governance/station-api-capabilities.yaml",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-structure",

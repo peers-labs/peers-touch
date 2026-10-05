@@ -1,7 +1,7 @@
 // Desktop PlatformAdapter — the only layer that knows about Tauri WebView / DOM.
 //
 // Authoritative contract: packages/applet-contract/src/platform-adapter.ts.
-// Execution plan: docs/architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.2/§6.3.
+// Execution plan: docs/architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.2/§6.3.
 //
 // Responsibilities (never makes lifecycle policy decisions — that is the Kernel):
 //   1. applySurfaceCommand → routes to the SurfaceManager (the DOM owner).

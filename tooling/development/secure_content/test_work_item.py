@@ -14,12 +14,12 @@ from tooling.development.secure_content import work_item
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = (
     REPO_ROOT
-    / "docs/architecture/secure-content/execution-plans/"
+    / "docs/architecture/shared/security/secure-content/execution-plans/"
     "20260913-secure-content-work-items.yaml"
 )
 W12D_TASK = (
     REPO_ROOT
-    / "docs/architecture/secure-content/execution-plans/"
+    / "docs/architecture/shared/security/secure-content/execution-plans/"
     "20260913-secure-content-hard-cut/tasks/W12D.md"
 )
 
@@ -78,7 +78,7 @@ class WorkItemProjectionTest(unittest.TestCase):
 
                 self.assertEqual(task_id, projection.task_id)
                 self.assertEqual(
-                    "docs/architecture/secure-content/execution-plans/"
+                    "docs/architecture/shared/security/secure-content/execution-plans/"
                     "20260913-secure-content-hard-cut/plan.md",
                     projection.plan_ref,
                 )
@@ -90,7 +90,7 @@ class WorkItemProjectionTest(unittest.TestCase):
                 "sc-dj-mobile-matrix",
                 (
                     "shared-read:apps/desktop/src-tauri/src/social",
-                    "shared-read:docs/architecture/secure-content",
+                    "shared-read:docs/architecture/shared/security/secure-content",
                     "shared-read:packages/secure-content-core",
                 ),
             ),
@@ -182,7 +182,7 @@ class WorkItemProjectionTest(unittest.TestCase):
         )
 
         for path in (
-            "docs/architecture/secure-content/execution-plans/"
+            "docs/architecture/shared/security/secure-content/execution-plans/"
             "20260913-secure-content-work-items.yaml",
             "tooling/development/secure_content/schema_activation.py",
             "tooling/development/secure_content/test_schema_activation.py",
@@ -243,8 +243,8 @@ class WorkItemProjectionTest(unittest.TestCase):
 
         for claim in (
             "shared-read:apps/station",
-            "shared-read:docs/architecture/secure-content",
-            "shared-read:docs/architecture/social",
+            "shared-read:docs/architecture/shared/security/secure-content",
+            "shared-read:docs/architecture/domains/social/core",
         ):
             with self.subTest(claim=claim):
                 self.assertIn(claim, projection.source_claim_arguments)
@@ -267,8 +267,8 @@ class WorkItemProjectionTest(unittest.TestCase):
             "tooling/development/secure_content/scenarios/social_object.py",
             "tooling/development/secure_content/scenarios/social_delete_block.py",
             "tooling/development/secure_content/scenarios/social_bounds.py",
-            "docs/architecture/secure-content",
-            "docs/architecture/social",
+            "docs/architecture/shared/security/secure-content",
+            "docs/architecture/domains/social/core",
             "tooling/acceptance",
         ):
             with self.subTest(path=path):
@@ -717,7 +717,7 @@ class WorkItemProjectionTest(unittest.TestCase):
         )
 
         for field, value in (
-            ("planPath", "docs/architecture/secure-content/other-plan.md"),
+            ("planPath", "docs/architecture/shared/security/secure-content/other-plan.md"),
             ("taskId", "W3"),
         ):
             with self.subTest(field=field):

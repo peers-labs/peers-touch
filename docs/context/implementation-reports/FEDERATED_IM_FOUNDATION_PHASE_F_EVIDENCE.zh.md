@@ -7,8 +7,8 @@
 
 ## 1. 计划来源
 
-- `docs/architecture/federated-im/design.md`
-- `docs/architecture/federated-im/execution-plans/20260704-foundation-federated-im.md`
+- `docs/context/architecture/chat/federated-im/design.md`
+- `docs/context/architecture/chat/federated-im/execution-plans/20260704-foundation-federated-im.md`
 - Phase F: Foundation Pressure And Security Harness
 
 Phase F 要求：

@@ -1,7 +1,7 @@
 # P4 Host Audit Upload Slice
 
 > Evidence class: `CONTROLLED_CLIENT_INTEGRATION`
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 
 ## Completed
 

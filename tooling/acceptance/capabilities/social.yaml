@@ -7,7 +7,7 @@
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
       "required_gates": ["social-private-desktop-e2e"],
-      "synthetic_paths": ["docs/architecture/social/acceptance-matrix.md"],
+      "synthetic_paths": ["docs/architecture/domains/social/core/acceptance-matrix.md"],
       "evidence": {
         "truth_sources": ["Station relationship, audience, Circle and Conversation membership authorities"],
         "surfaces": ["Native Desktop Moment composer and receiver timeline/detail"],
@@ -112,7 +112,7 @@
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
       "required_gates": ["social-private-desktop-e2e"],
-      "synthetic_paths": ["docs/architecture/social/product-definition.md"],
+      "synthetic_paths": ["docs/architecture/domains/social/core/product-definition.md"],
       "evidence": {
         "truth_sources": ["Social platform matrix and current Native Desktop runtime report"],
         "surfaces": ["Native Desktop Private Moments"],

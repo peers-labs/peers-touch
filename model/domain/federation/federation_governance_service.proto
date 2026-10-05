@@ -6,7 +6,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/fed
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Federation Governance Service — RPCs exposed by sequencer Station.
-// Source of truth: docs/architecture/federation/wire-protocol.md §6.3
+// Source of truth: docs/architecture/shared/federation/wire-protocol.md §6.3
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import "domain/federation/federation_ledger.proto";

@@ -1,6 +1,6 @@
 // Resource Scheduler (architecture §5, §6).
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §5.1 LRU, §5.2 TTL, §5.3 内存压力, §6 分层架构 (ResourceScheduler 职责).
 //
 // This module decides *what* should be reclaimed, never *how*. It scans the

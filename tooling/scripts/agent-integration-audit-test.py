@@ -2067,7 +2067,7 @@ export function processStartIdentity() { return 'fixture'; }
         module = load_integration_audit()
         foreign = (
             self.root
-            / "docs/architecture/mobile/execution-plans/foreign-plan.md"
+            / "docs/architecture/platform/client/mobile/execution-plans/foreign-plan.md"
         )
         foreign.parent.mkdir(parents=True)
         foreign.write_text(
@@ -2078,12 +2078,12 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertEqual(module.legacy_references(self.root), [])
         findings = module.legacy_references(
             self.root,
-            ("docs/architecture/mobile/execution-plans/foreign-plan.md",),
+            ("docs/architecture/platform/client/mobile/execution-plans/foreign-plan.md",),
         )
         self.assertEqual(len(findings), 1)
         self.assertEqual(
             findings[0]["path"],
-            "docs/architecture/mobile/execution-plans/foreign-plan.md",
+            "docs/architecture/platform/client/mobile/execution-plans/foreign-plan.md",
         )
 
 

@@ -8,7 +8,7 @@ owns:
   - tooling/scripts/local-dev/worktree-observe.mjs
   - tooling/make/local-dev.mk
 referenced-by:
-  - docs/architecture/local-dev-control-plane/decisions.md
+  - docs/architecture/engineering/local-dev/decisions.md
 related:
   - docs/knowledge/invariants/workspace-active-work-is-local.md
   - docs/knowledge/invariants/conversation-bound-workflow-kernel.md

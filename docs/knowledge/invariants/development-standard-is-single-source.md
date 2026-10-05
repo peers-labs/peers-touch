@@ -4,14 +4,14 @@ title: Development has one human-facing operating standard
 status: active
 owns:
   - docs/global/workflow.md
-  - docs/architecture/development-workflow/
+  - docs/architecture/engineering/development-workflow/
   - tooling/skills/pt-dev-workflow/
   - tooling/skills/pt-god-view/
   - tooling/skills/pt-goal-orchestrator/
   - tooling/skills/pt-execution-plan-guardian/
   - tooling/skills/pt-context-anchor/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
   - docs/knowledge/invariants/continuous-plan-run.md
   - docs/knowledge/invariants/workflow-snapshot-is-read-only.md

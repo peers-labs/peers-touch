@@ -104,7 +104,7 @@ describe('prototypeRightRailProjection', () => {
   it('keeps Context projection independent from project and Todo surface selection', () => {
     const context = {
       usedPct: 35,
-      files: [{ name: 'docs/architecture/atelier/README.md', group: 'files' as const }],
+      files: [{ name: 'docs/architecture/domains/applets/atelier/README.md', group: 'files' as const }],
     };
 
     expect(derivePrototypeRightRailProjection({

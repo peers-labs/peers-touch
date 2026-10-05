@@ -1,5 +1,5 @@
 # Protected finalizer digests bind exact tracked bytes across host platforms.
-docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml text eol=lf
+docs/architecture/domains/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml text eol=lf
 tooling/acceptance/gates/mobile/__init__.py text eol=lf
 tooling/acceptance/gates/mobile/cleanup_evidence_finalizer.py text eol=lf
 tooling/acceptance/gates/mobile/cleanup_evidence_roles.py text eol=lf

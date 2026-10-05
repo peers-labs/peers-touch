@@ -12,10 +12,10 @@ owns:
   - tooling/skills/pt-dev-workflow/
   - tooling/skills/pt-plan-and-document/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
-  - docs/architecture/development-workflow/design.md
-  - docs/architecture/development-workflow/data-model.md
+  - docs/architecture/engineering/development-workflow/design.md
+  - docs/architecture/engineering/development-workflow/data-model.md
 detected: 2026-09-19
 ---
 

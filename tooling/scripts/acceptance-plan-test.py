@@ -416,7 +416,7 @@ class BehaviorRuleTests(unittest.TestCase):
         }
         for path in (
             "apps/oauth2-client/internal/bootstrap/container.go",
-            "docs/architecture/oauth-login-broker/design.md",
+            "docs/architecture/domains/identity/oauth-login-broker/design.md",
         ):
             with self.subTest(path=path):
                 self.assertTrue(expected.issubset(self.selected_ids(path)))

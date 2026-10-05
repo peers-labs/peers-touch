@@ -3,7 +3,7 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
-    "docs/architecture/chat-storage-governance/legacy-inventory.json",
+    "docs/architecture/domains/chat/storage-governance/legacy-inventory.json",
     "tooling/acceptance/gates/chat_storage/**"
   ],
   "truth_sources": [

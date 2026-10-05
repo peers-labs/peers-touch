@@ -1,7 +1,7 @@
 # P1.1 Note Gap Audit
 
 > Date: 2026-06-24
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 > Workstream: `P1 - Note Product Completion`
 > Task: `P1.1 Note Gap Audit`
 > Evidence classes used: `REAL_PRODUCT_PATH`, `CONTROLLED_LOCAL_UPSTREAM`,

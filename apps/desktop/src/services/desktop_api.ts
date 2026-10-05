@@ -7444,7 +7444,7 @@ export const api = {
    * the same actor. While running, the supervisor emits
    * `realtime:event` Tauri events for every business / heartbeat /
    * resync frame and `realtime:connection-state` on connect/disconnect.
-   * See docs/architecture/realtime/event-stream.md for the wire
+   * See docs/architecture/shared/communication/event-stream.md for the wire
    * contract and the per-window device id semantics.
    */
   realtimeStreamStart: () =>
@@ -7748,7 +7748,7 @@ export const api = {
   /**
    * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
    * candidate / hangup) into the standalone signaling envelope
-   * defined in `docs/architecture/realtime/event-stream.md` §2.7.2.
+   * defined in `docs/architecture/shared/communication/event-stream.md` §2.7.2.
    * Returns base64 of the wire bytes
    * `eph_pub(32B) || nonce(12B) || ciphertext || tag(16B)`.
    *
@@ -7820,7 +7820,7 @@ export const api = {
   // Anything resembling an ICE *session* (offer/answer/candidate exchange)
   // moved to the unified realtime SSE plane in Phase 8 — see
   // `realtimeSignalSend` / `signalingEnvelopeSeal` / `signalingEnvelopeOpen`
-  // above and docs/architecture/realtime/event-stream.md §2.7. The role-
+  // above and docs/architecture/shared/communication/event-stream.md §2.7. The role-
   // hint publisher (`ice_peer_register`) was retired in 8.3c — peer
   // online/offline liveness is now carried by PresenceFlip events on the
   // canonical realtime stream. What remains here is just the TURN

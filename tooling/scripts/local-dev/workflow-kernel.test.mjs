@@ -789,8 +789,15 @@ test('pre-edit context failure denies a previously scoped write', async () => {
   try {
     const root = projectRoot(temporary, 'root');
     mkdirSync(
-      path.join(root, 'docs/architecture/architecture-module-governance'),
+      path.join(root, 'docs/architecture/engineering/architecture-governance'),
       { recursive: true },
+    );
+    writeFileSync(
+      path.join(
+        root,
+        'docs/architecture/engineering/architecture-governance/architecture-modules.json',
+      ),
+      '{"kind":"invalid"}\n',
     );
     const result = await evaluateWorkflowEvent(
       event({

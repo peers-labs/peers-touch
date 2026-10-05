@@ -540,7 +540,7 @@ def main() -> int:
             "bom": ["MCA-P12", "MCA-D29", "BASE-RESUME_UNAVAILABLE"],
             "spec": [
                 "tooling/acceptance/features/agent-v2-external-runtime.yaml",
-                "docs/architecture/agent/modern-chat-agent/proposals/"
+                "docs/architecture/domains/agent/modern-chat-agent/proposals/"
                 "20261001-mca-d29-stateful-external-runtime.md",
             ],
             "gate": (

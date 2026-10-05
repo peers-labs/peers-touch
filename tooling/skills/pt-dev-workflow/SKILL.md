@@ -18,7 +18,7 @@ state transitions, authorization, and cleanup. It does not absorb specialist
 methodologies.
 
 Architecture source:
-`docs/architecture/development-workflow/README.md`.
+`docs/architecture/engineering/development-workflow/README.md`.
 
 ## Responsibility Boundary
 

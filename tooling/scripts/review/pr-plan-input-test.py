@@ -10,11 +10,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "tooling/scripts/review/pr-plan-input.py"
 DWF_PLAN = (
-    "docs/architecture/development-workflow/execution-plans/"
+    "docs/architecture/engineering/development-workflow/execution-plans/"
     "20260918-immutable-workspace-plan-binding/plan.md"
 )
 AGENT_PLAN = (
-    "docs/architecture/agent/execution-plans/"
+    "docs/architecture/domains/agent/execution-plans/"
     "20260917-modern-chat-agent-v2-alignment/plan.md"
 )
 

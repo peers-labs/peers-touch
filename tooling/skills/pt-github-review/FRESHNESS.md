@@ -3,16 +3,16 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-05
-covered_docs_hash: f8b012ad5594d1b8b7ab3e95463ae800deb472ac6253d324103be68de8d377b2
+covered_docs_hash: b809740a69ef44637b3c15f182792b2a54e6ce17d549e9aaf92b932380862b62
 
 covered_docs:
   - AGENTS.md
   - docs/README.md
   - docs/global/code-review-framework.md
-  - docs/architecture/quality-framework
-  - docs/architecture/acceptance-framework
-  - docs/architecture/development-workflow
-  - docs/architecture/local-dev-control-plane
+  - docs/architecture/engineering/quality
+  - docs/architecture/engineering/acceptance
+  - docs/architecture/engineering/development-workflow
+  - docs/architecture/engineering/local-dev
   - docs/global/local-dev-environment.md
   - docs/global/architecture.md
   - docs/client/desktop/base.md
@@ -30,6 +30,17 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-05 Architecture Taxonomy Review
+
+Architecture sources now live under `domains`, `platform`, `shared`, and
+`engineering`. The module registry explicitly distinguishes taxonomy indexes
+from capability-owning modules and permits stable module IDs to map to nested
+physical roots. GitHub Review continues to consume the shared governance
+parser, so severity and review semantics are unchanged. Generic Skill path
+templates and registry references were updated; module-governance tests cover
+taxonomy admission, unregistered nested modules, and module-ID/basename
+independence. No generic review fixture is required.
 
 ## 2026-10-05 Review
 

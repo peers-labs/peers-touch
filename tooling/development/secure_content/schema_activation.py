@@ -34,7 +34,7 @@ from tooling.scripts.plan_lifecycle_source import (
 SCHEMA_VERSION = 1
 PLAN_ID = "SECURE-CONTENT-HARD-CUT-20260913"
 PLAN_PATH = (
-    "docs/architecture/secure-content/execution-plans/"
+    "docs/architecture/shared/security/secure-content/execution-plans/"
     "20260913-secure-content-hard-cut/plan.md"
 )
 SOURCE_WORK_ITEM_ID = "secure-content-w12d"

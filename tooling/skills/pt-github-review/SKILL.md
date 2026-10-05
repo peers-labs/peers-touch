@@ -323,7 +323,7 @@ Path matching means a knowledge file must enter review context. It does not prov
 the code complies.
 
 For a changed path owned by
-`docs/architecture/architecture-module-governance/architecture-modules.json`,
+`docs/architecture/engineering/architecture-governance/architecture-modules.json`,
 review the registered module documents, accepted decisions, positive
 capabilities, consumers, dependencies, and evidence Gates. Reject undocumented
 or overlapping ownership and any attempt to preserve removed names as a

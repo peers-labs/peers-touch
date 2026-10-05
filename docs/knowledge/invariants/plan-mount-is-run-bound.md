@@ -10,10 +10,10 @@ owns:
   - tooling/skills/pt-dev-workflow/
   - tooling/skills/pt-plan-and-document/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
-  - docs/architecture/development-workflow/design.md
-  - docs/architecture/development-workflow/data-model.md
+  - docs/architecture/engineering/development-workflow/design.md
+  - docs/architecture/engineering/development-workflow/data-model.md
 detected: 2026-10-04
 ---
 
@@ -60,5 +60,5 @@ authorization, or the Task graph after admission.
 
 ## Crosswalks
 
-- DWF-D38 in `docs/architecture/development-workflow/decisions.md`.
-- LDCP-D19 in `docs/architecture/local-dev-control-plane/decisions.md`.
+- DWF-D38 in `docs/architecture/engineering/development-workflow/decisions.md`.
+- LDCP-D19 in `docs/architecture/engineering/local-dev/decisions.md`.

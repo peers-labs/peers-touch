@@ -1,7 +1,7 @@
 # P2.2-P2.4 Station Store Service Slice Evidence
 
 > Date: 2026-06-24
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 > Workstream: `P2 - Station Store and Install State`
 > Tasks: `P2.2 Station Store Persistence Model`, `P2.3 Station Store Service`,
 > `P2.4 Station Store Handler`

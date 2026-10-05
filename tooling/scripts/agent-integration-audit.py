@@ -80,7 +80,7 @@ INTEGRATION_RECEIPT_KEYS = {
 SCAN_ROOTS = (
     "AGENTS.md",
     "docs/global",
-    "docs/architecture/development-workflow",
+    "docs/architecture/engineering/development-workflow",
     "tooling",
 )
 HISTORICAL_MARKERS = (

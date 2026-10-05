@@ -12,7 +12,7 @@
 
 Step-by-step procedures for setting up and running mobile acceptance gates.
 For the architectural contract and environment definitions, see
-`docs/architecture/mobile/mobile-acceptance-environment.md`.
+`docs/architecture/platform/client/mobile/mobile-acceptance-environment.md`.
 
 ## 2. Prerequisites
 
@@ -154,7 +154,7 @@ adb shell dumpsys webviewupdate | grep "Current WebView package"
 ### 5.1 Verify Station Reachability
 
 The Station must expose the endpoints listed in
-`docs/architecture/mobile/mobile-acceptance-environment.md` Section 5.
+`docs/architecture/platform/client/mobile/mobile-acceptance-environment.md` Section 5.
 
 ```bash
 # From the host machine (iOS simulator shares host network)
@@ -370,8 +370,8 @@ download the matching Chromedriver from the artifacts list in
 
 ## 9. References
 
-- Environment contract: `docs/architecture/mobile/mobile-acceptance-environment.md`
+- Environment contract: `docs/architecture/platform/client/mobile/mobile-acceptance-environment.md`
 - Gate runner details: `tooling/acceptance/gates/mobile/README.md`
-- Acceptance matrix: `docs/architecture/mobile/acceptance-matrix.md`
+- Acceptance matrix: `docs/architecture/platform/client/mobile/acceptance-matrix.md`
 - Simulator environment config: `tooling/acceptance/environments/mobile-simulator.yaml`
 - Physical environment config: `tooling/acceptance/environments/mobile-native.yaml`

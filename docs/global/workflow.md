@@ -200,7 +200,7 @@ attach to the prepared manifest. They never create accounts, launch clients,
 deploy services, or release resources.
 
 Architecture source:
-`docs/architecture/development-workflow/README.md`.
+`docs/architecture/engineering/development-workflow/README.md`.
 
 ### Tracked Task Command Path
 
@@ -423,7 +423,7 @@ Rules:
   actor roles, or weakened product assertions to make framework checks pass.
 
 Architecture source:
-`docs/architecture/acceptance-framework/decisions.md` D-12.
+`docs/architecture/engineering/acceptance/decisions.md` D-12.
 
 ---
 

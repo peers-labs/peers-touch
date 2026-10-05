@@ -74,7 +74,7 @@ agent_impact_test="tooling/skills/pt-agent-development/scripts/test_impact.py"
 trae_host_adapter="tooling/skills/pt-trae-host-adapter/SKILL.md"
 cursor_host_adapter="tooling/skills/pt-cursor-host-adapter/SKILL.md"
 codex_host_adapter="tooling/skills/pt-codex-host-adapter/SKILL.md"
-workflow_architecture="docs/architecture/development-workflow/design.md"
+workflow_architecture="docs/architecture/engineering/development-workflow/design.md"
 global_workflow="docs/global/workflow.md"
 agents_contract="AGENTS.md"
 continuous_plan_invariant="docs/knowledge/invariants/continuous-plan-run.md"
@@ -318,7 +318,7 @@ if ! grep -Fq "explicit standalone no-Plan work" "$agents_contract"; then
   fail "$agents_contract missing the no-Plan stage-dispatch contract"
 fi
 
-retired_unapproved_plan="docs/architecture/development-workflow/execution-plans/20261004-nonblocking-agent-integration"
+retired_unapproved_plan="docs/architecture/engineering/development-workflow/execution-plans/20261004-nonblocking-agent-integration"
 if [[ -e "$retired_unapproved_plan" ]]; then
   fail "unapproved execution Plan still exists: $retired_unapproved_plan"
 fi
@@ -648,7 +648,7 @@ done
 for contract in \
   docs/global/workflow.md \
   docs/knowledge/invariants/continuous-plan-run.md \
-  docs/architecture/development-workflow/design.md; do
+  docs/architecture/engineering/development-workflow/design.md; do
   if ! grep -Fiq "already-authorized operations execute directly" "$contract"; then
     fail "$contract missing authorization-reuse invariant"
   fi
@@ -694,8 +694,8 @@ fi
 if rg -n \
   '\.local[^[:space:]`"]*work\.json|workspaces/[^[:space:]`"]*/work\.json' \
   tooling/scripts tooling/skills AGENTS.md docs/global \
-  docs/architecture/development-workflow \
-  docs/architecture/local-dev-control-plane >/tmp/pt-private-work-ledger.$$; then
+  docs/architecture/engineering/development-workflow \
+  docs/architecture/engineering/local-dev >/tmp/pt-private-work-ledger.$$; then
   cat /tmp/pt-private-work-ledger.$$
   fail "Development work declarations must not use a private worktree path"
 fi
@@ -1061,7 +1061,7 @@ for marker in \
     fail "$skill_overlay_invariant missing Overlay boundary marker: $marker"
   fi
 done
-if rg -n '^> \*\*Version\*\*:' docs/architecture/development-workflow \
+if rg -n '^> \*\*Version\*\*:' docs/architecture/engineering/development-workflow \
   >/tmp/pt-workflow-version-labels.$$; then
   cat /tmp/pt-workflow-version-labels.$$
   fail "Development Workflow documents must not publish version labels"
@@ -1364,8 +1364,9 @@ if ! grep -q '"architecture-module-governance"' <<< "$architecture_context_outpu
   fail "knowledge-match.sh must delegate changed paths to architecture governance"
 fi
 
-if tooling/scripts/review/knowledge-match.sh \
-  --changed-file docs/architecture/unregistered/design.md \
+if ! node --test \
+  --test-name-pattern='changed active architecture modules must be registered' \
+  tooling/scripts/architecture/module-governance.test.mjs \
   >/tmp/pt-architecture-unregistered.$$ 2>&1; then
   fail "knowledge-match.sh must reject changed unregistered architecture modules"
 fi

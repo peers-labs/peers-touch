@@ -67,7 +67,7 @@ def package_status(
                 "mode": "exclusive-write",
             },
             {
-                "pathPrefix": "docs/architecture/development-workflow",
+                "pathPrefix": "docs/architecture/engineering/development-workflow",
                 "mode": "shared-read",
             },
         ],
@@ -169,7 +169,7 @@ class ExecutionPlanTest(unittest.TestCase):
                 "workClass": "infrastructure",
                 "architecture": {
                     "sources": [
-                        "docs/architecture/development-workflow/design.md"
+                        "docs/architecture/engineering/development-workflow/design.md"
                     ],
                     "decisions": ["DWF-D13"],
                 },
@@ -180,7 +180,7 @@ class ExecutionPlanTest(unittest.TestCase):
                             "mode": "exclusive-write",
                         },
                         {
-                            "pathPrefix": "docs/architecture/development-workflow",
+                            "pathPrefix": "docs/architecture/engineering/development-workflow",
                             "mode": "shared-read",
                         },
                     ],
@@ -236,7 +236,7 @@ class ExecutionPlanTest(unittest.TestCase):
                 "runtimeClass": "source-only",
                 "writeSet": ["tooling/scripts/plan"],
                 "readSet": [
-                    "docs/architecture/development-workflow/design.md"
+                    "docs/architecture/engineering/development-workflow/design.md"
                 ],
                 "budgets": {
                     "focusedCheckSeconds": 30,
@@ -354,7 +354,7 @@ class ExecutionPlanTest(unittest.TestCase):
             plan.source_claims,
             (
                 "tooling/scripts/plan",
-                "docs/architecture/development-workflow",
+                "docs/architecture/engineering/development-workflow",
             ),
         )
 
@@ -375,7 +375,7 @@ class ExecutionPlanTest(unittest.TestCase):
                     "tooling/scripts/plan/planctl.mjs\n"
                     "apps/station/unrelated.go\n"
                 ),
-                "docs/architecture/development-workflow/design.md\n",
+                "docs/architecture/engineering/development-workflow/design.md\n",
                 "apps/desktop/untracked.ts\n",
             ],
         ):
@@ -390,7 +390,7 @@ class ExecutionPlanTest(unittest.TestCase):
                     "tooling/scripts/plan/planctl.mjs\n"
                     "apps/station/unrelated.go\n"
                 ),
-                "docs/architecture/development-workflow/design.md\n",
+                "docs/architecture/engineering/development-workflow/design.md\n",
                 "apps/desktop/untracked.ts\n",
             ],
         ):
@@ -403,7 +403,7 @@ class ExecutionPlanTest(unittest.TestCase):
         self.assertEqual(
             completion_paths,
             [
-                "docs/architecture/development-workflow/design.md",
+                "docs/architecture/engineering/development-workflow/design.md",
                 "tooling/scripts/plan/planctl.mjs",
             ],
         )

@@ -14,8 +14,8 @@ referenced-by:
   - ../pitfalls/c1-tombstone-only-broadcast.md
   - ../playbooks/adding-federation-broadcast-topic.md
 related:
-  - ../../architecture/identity/unified-actor-system.md
-  - ../../architecture/identity/federation-catalog.md
+  - ../../architecture/domains/identity/unified-actor-system.md
+  - ../../architecture/domains/identity/federation-catalog.md
 detected: 2026-05-18
 ---
 

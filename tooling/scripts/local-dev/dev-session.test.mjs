@@ -98,7 +98,7 @@ function fixture({
     journeyId,
     runtimeClass,
     writeSet: ['tooling/scripts/local-dev'],
-    readSet: ['docs/architecture/development-workflow'],
+    readSet: ['docs/architecture/engineering/development-workflow'],
     budgets: {
       focusedCheckSeconds: 30,
       functionalRunSeconds: 30,
@@ -790,7 +790,7 @@ test('archive preserves a terminal Session and clears the work-item slot', async
 test('task result admission revalidates a frozen runtime source projection', () => {
   const planPath = path.join(
     REPO_ROOT,
-    'docs/architecture/secure-content/execution-plans/'
+    'docs/architecture/shared/security/secure-content/execution-plans/'
       + '20260913-secure-content-hard-cut/plan.md',
   );
   const validation = spawnSync(

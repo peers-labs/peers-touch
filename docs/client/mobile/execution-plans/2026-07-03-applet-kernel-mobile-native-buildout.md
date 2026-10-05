@@ -5,8 +5,8 @@
 > **Created**: 2026-07-03 | **Updated**: 2026-07-03
 > **Owner**: Mobile Team
 > **Depends on**:
-> - 父计划：[`applet-runtime-lifecycle-buildout.md`](../../../architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md)（§5 实现位置、§7 Phase 3b Mobile、§8 验收）
-> - 状态机权威：[`applet-lifecycle-architecture.md`](../../../architecture/applet-runtime/applet-lifecycle-architecture.md)（§3 七态状态机、§5 资源策略、§10 数据模型）
+> - 父计划：[`applet-runtime-lifecycle-buildout.md`](../../../architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md)（§5 实现位置、§7 Phase 3b Mobile、§8 验收）
+> - 状态机权威：[`applet-lifecycle-architecture.md`](../../../architecture/platform/applet-runtime/applet-lifecycle-architecture.md)（§3 七态状态机、§5 资源策略、§10 数据模型）
 > - 平台契约：[`applet-container.md`](../applet-container.md)、[`docs/.agent/mobile.md`](../../../.agent/mobile.md)
 
 ---

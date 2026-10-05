@@ -124,7 +124,7 @@ This creates a two-way proof:
 8. Run `make acceptance-report` and include proven / unproven scope in the handoff.
 9. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
 10. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
-11. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+11. For a new product domain, follow `docs/architecture/engineering/acceptance/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
 12. For native Chat journeys, follow
     `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
     observers, source matching, isolated profiles, bounded steps, and composer

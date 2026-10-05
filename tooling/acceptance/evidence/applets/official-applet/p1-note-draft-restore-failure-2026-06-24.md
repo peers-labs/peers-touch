@@ -1,7 +1,7 @@
 # P1.3-P1.5 Note Draft, Restore, and Failure UI Evidence
 
 > Date: 2026-06-24
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 > Workstream: `P1 - Note Product Completion`
 > Tasks: `P1.3 Note Draft Storage`, `P1.4 Note Restore Flow`, `P1.5 Typed Failure UI`
 > Evidence class: `REAL_PRODUCT_PATH`

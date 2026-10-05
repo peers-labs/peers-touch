@@ -21,8 +21,8 @@
         "apps/station/app/subserver/agent/service/runtime_admission_service.go",
         "apps/station/app/subserver/agent/service/runtime_admission_service_test.go",
         "apps/station/app/subserver/agent/service/turn_service.go",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
         "tooling/acceptance/capabilities/agent.yaml",
         "tooling/acceptance/domains/agent.yaml",
         "tooling/acceptance/features/agent-cli-provider-primary.yaml",
@@ -54,7 +54,7 @@
       "commit": "21b13bd9c301203934cf112270bf7c5ea3f57df4",
       "subject": "docs(agent): refresh plan gate coverage",
       "changedPaths": [
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md"
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md"
       ],
       "expected": {
         "impactClasses": [
@@ -141,8 +141,8 @@
       "commit": "367891787dade8b75beccf17fba2e563f79aa595",
       "subject": "fix(workflow): accept normalized gate pass status",
       "changedPaths": [
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
         "tooling/scripts/local-dev/dev-session.mjs",
         "tooling/scripts/local-dev/dev-session.test.mjs"
       ],
@@ -183,8 +183,8 @@
       "commit": "545c165eb6b31f6cf5559c10b0e7c87f22822adc",
       "subject": "fix(tooling): support blocked completion review candidates",
       "changedPaths": [
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
         "tooling/make/local-dev.mk",
         "tooling/scripts/local-dev/completion-review.mjs",
         "tooling/scripts/local-dev/completion-review.test.mjs"
@@ -204,8 +204,8 @@
       "commit": "9112be8c2d735841d6f5f3d61a98d95f95c527d6",
       "subject": "fix(tooling): scope plan bounds to manifest content",
       "changedPaths": [
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
         "tooling/scripts/plan/plan-package.mjs",
         "tooling/scripts/plan/planctl.test.mjs"
       ],
@@ -267,7 +267,7 @@
       "changedPaths": [
         "apps/desktop/src-tauri/src/application/provider/mod.rs",
         "apps/desktop/src-tauri/src/application/provider/station_api.rs",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md"
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md"
       ],
       "expected": {
         "impactClasses": [
@@ -339,8 +339,8 @@
         "apps/station/app/subserver/agent/service/cli/process_unix.go",
         "apps/station/app/subserver/agent/service/cli/process_unix_test.go",
         "apps/station/app/subserver/agent/service/cli/process_windows.go",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
         "tooling/scripts/acceptance-gap-detect.py"
       ],
       "expected": {
@@ -365,8 +365,8 @@
         "apps/station/app/subserver/agent/service/cli/process_unix.go",
         "apps/station/app/subserver/agent/service/cli/process_unix_test.go",
         "apps/station/app/subserver/agent/service/cli/process_windows.go",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
-        "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
         "tooling/scripts/acceptance-gap-detect-test.py",
         "tooling/scripts/acceptance-gap-detect.py"
       ],

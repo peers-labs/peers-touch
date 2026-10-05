@@ -32,9 +32,9 @@ const legacy = spawnSync(
     '-n',
     legacyRoot,
     '--',
-    ':!docs/architecture/applet-runtime/decisions.md',
-    ':!docs/architecture/applet-runtime/integration.md',
-    ':!docs/architecture/applet-runtime/execution-plans/2026-08-08-applet-evidence-layout-cutover.md',
+    ':!docs/architecture/platform/applet-runtime/decisions.md',
+    ':!docs/architecture/platform/applet-runtime/integration.md',
+    ':!docs/architecture/platform/applet-runtime/execution-plans/2026-08-08-applet-evidence-layout-cutover.md',
   ],
   { cwd: repoRoot, encoding: 'utf8' },
 );

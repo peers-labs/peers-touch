@@ -1,7 +1,7 @@
 # P1.2 Note Editor Flow Evidence
 
 > Date: 2026-06-24
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 > Workstream: `P1 - Note Product Completion`
 > Task: `P1.2 Note Editor Flow`
 > Evidence class: `REAL_PRODUCT_PATH`

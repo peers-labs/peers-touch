@@ -10,7 +10,7 @@ This Skill owns completion judgment; its script validates lifecycle evidence
 only and never replaces code, architecture, security, or product review.
 
 Architecture source:
-`docs/architecture/development-workflow/README.md`.
+`docs/architecture/engineering/development-workflow/README.md`.
 
 ## Invoke When
 

@@ -97,6 +97,14 @@
 
 放**跨端、跨运行时、跨层边界**的正式架构文档。
 
+分类入口：[`architecture/README.md`](./architecture/README.md)。该入口按当前
+代码边界使用四个物理分类：
+
+- `architecture/domains/`：业务真源与跨端产品合同；
+- `architecture/platform/`：Client、Station、contracts 与 runtime 边界；
+- `architecture/shared/`：没有业务 authority 的跨域窄能力；
+- `architecture/engineering/`：Workflow、治理、质量、Acceptance 与工具链。
+
 适合放这里的问题：
 
 - Station 和 Desktop 谁负责什么
@@ -181,79 +189,85 @@
 
 ### 4.1 架构层真源
 
+- 分类总入口：`architecture/README.md`
+- 机器治理模块：`architecture/engineering/architecture-governance/architecture-modules.json`
+
+以下列表保留高频正式真源导航；专题状态、草案/历史边界与完整分类以
+`architecture/README.md` 和最近的模块 README 为准。
+
 - 项目整体架构：`global/architecture.md`
-- 状态机目录（全端 FSM 汇总索引）：`architecture/state-machines/README.md`
-- Station 与 Desktop 边界：`architecture/boundaries/station-desktop-scope-boundary.md`
-- Desktop 运行时关系：`architecture/runtime/desktop-runtime-architecture.md`
-- 统一 Handler 架构：`architecture/runtime/unified-handler-architecture.md`
-- Service API capability ownership：`architecture/api-ownership/README.md`
+- 状态机目录（全端 FSM 汇总索引）：`architecture/engineering/architecture-governance/state-machines.md`
+- Station 与 Desktop 边界：`architecture/platform/station-desktop-boundary.md`
+- Desktop 运行时关系：`architecture/platform/client/desktop/runtime.md`
+- 统一 Handler 架构：`architecture/platform/contracts/handler-model.md`
+- Service API capability ownership：`architecture/engineering/api-governance/README.md`
   （active；已接受统一业务 API owner、公开路由、真源存储与机械防重复 Gate）
-- 统一存储架构：`architecture/storage/unified-runtime-storage-architecture.md`
-- 大前端运行时架构：`architecture/frontend-runtime/README.md`
-- i18n 架构：`architecture/i18n/i18n-architecture.md`
-- 通知系统架构：`architecture/notification/notification-architecture.md`
-- 实时平面：`architecture/realtime/event-stream.md`
-- 语音 / 视频通话架构：`architecture/realtime/voice-video-calls.md`
-- Chat 端到端加密、设备级投递与恢复：`architecture/encryption/README.md`
-- 跨领域 Secure Content：`architecture/secure-content/README.md`
+- 统一存储架构：`architecture/platform/runtime/storage.md`
+- 大前端运行时架构：`architecture/platform/client/frontend-runtime/README.md`
+- i18n 架构：`architecture/shared/i18n/i18n-architecture.md`
+- 通知系统架构：`architecture/shared/notification/notification-architecture.md`
+- 实时平面：`architecture/shared/communication/event-stream.md`
+- 语音 / 视频通话架构：`architecture/domains/chat/calling/voice-video.md`
+- Chat 端到端加密、设备级投递与恢复：`architecture/domains/chat/encryption/README.md`
+- 跨领域 Secure Content：`architecture/shared/security/secure-content/README.md`
   （active；定义 Social/Conversation 共用的 Native 加密、endpoint key envelope、
   opaque object 协议、stateless validation、恢复与 hard-cut 边界；不新建业务 authority）
-- 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/service-coordination.md`
-- 本机多 worktree 开发控制面：`architecture/local-dev-control-plane/README.md`
+- 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/platform/runtime/service-coordination.md`
+- 本机多 worktree 开发控制面：`architecture/engineering/local-dev/README.md`
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
   Station capability lease，当前仅有 observed snapshot，尚未接管运行时）
-- 开发工作流控制面：`architecture/development-workflow/README.md`
+- 开发工作流控制面：`architecture/engineering/development-workflow/README.md`
   （active；定义从首次写入前资源声明到 `EXECUTE` 内以 Journey 为单位的产品优先开发循环、checkpoint
   授权、exact-source 功能验证与 Acceptance 晋级边界）
-- 架构模块治理：`architecture/architecture-module-governance/README.md`
+- 架构模块治理：`architecture/engineering/architecture-governance/README.md`
   （active；定义架构模块内容完整性、正向能力登记、编辑前上下文回执，以及
   Plan、Review、CI 共享的 fail-closed 校验）
-- 联邦 IM 历史架构：`architecture/federated-im/README.md`（superseded；保留
+- 联邦 IM 历史架构：`context/architecture/chat/federated-im/README.md`（superseded；保留
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）
-- Chat 全生命周期：`architecture/chat-lifecycle/README.md`（active；定义从找人、
+- Chat 全生命周期：`architecture/domains/chat/lifecycle/README.md`（active；定义从找人、
   好友建立、会话进入、文本与富媒体、语音消息、实时一对一语音/视频、群聊到跨设备/跨 Station
   恢复的唯一产品完成口径与当前执行计划）
-- Station 接入生命周期：`architecture/station-access-lifecycle/README.md`
+- Station 接入生命周期：`architecture/platform/station/access/README.md`
   （active；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
   Federation context 与 Relay 客户端边界，实施 Plan 已完成）
-- OAuth Login Broker：`architecture/oauth-login-broker/README.md`
+- OAuth Login Broker：`architecture/domains/identity/oauth-login-broker/README.md`
   （active；定义 Vercel 跨实例 OAuth 事务、GitHub 私有仓库存储、
   AES-256-GCM 凭据、Provider refresh 与只读管理面）
-- Chat 本机存储治理：`architecture/chat-storage-governance/README.md`
+- Chat 本机存储治理：`architecture/domains/chat/storage-governance/README.md`
   （active；定义当前设备 Chat 空间统计、缓存、保留周期、消息 redaction、单会话及
   显式批量清理与物理回收）
-- Messaging Platform：`architecture/messaging-platform/README.md`（active；Device
+- Messaging Platform：`architecture/domains/chat/messaging/README.md`（active；Device
   Messaging Engine、Conversation authority、ordered device delivery 与 recovery；
   Conversation 是唯一 Chat 入口，Device、Inbox、Recovery、Key Exchange 与
   Federation API 由各自 resource owner 暴露；其 20260808 执行计划已终止并作为
   Chat Lifecycle 的下游历史实现证据）
-- 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
-- Social 私密 Moments 产品合同：`architecture/social/product-definition.md`
+- 双端社交 Runtime 架构：`architecture/domains/social/runtime/README.md`
+- Social 私密 Moments 产品合同：`architecture/domains/social/core/product-definition.md`
   （active；定义好友/关注者语义、私密内容 E2EE、设备恢复、Browser 降级和验收矩阵）
-- Mobile Shell 产品与跨运行时架构：`architecture/mobile/README.md`
+- Mobile Shell 产品与跨运行时架构：`architecture/platform/client/mobile/README.md`
   （active；W2-E2 physical OAuth proof amendment 见
-  `architecture/mobile/native-oauth-proof/README.md`；MOP-D01..MOP-D04 与
+  `architecture/platform/client/mobile/native-oauth-proof/README.md`；MOP-D01..MOP-D04 与
   MOP-D03-A/MOP-D04-A 均已于 2026-08-29 接受）
-- 群生命周期历史设计：`architecture/social-runtime/group-lifecycle.md`（superseded；当前真源为 Chat Lifecycle 与 Messaging Platform）
-- 双端社交/聊天产品闭环执行计划：`architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md`
-- Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
-- Agent 架构总入口：`architecture/agent/README.md`（active；Station 单一真源、
+- 群生命周期历史设计：`context/architecture/social/group-lifecycle.md`（superseded；当前真源为 Chat Lifecycle 与 Messaging Platform）
+- 双端社交/聊天产品闭环执行计划：`architecture/domains/social/runtime/execution-plans/20260604-social-chat-product-closure.md`
+- Applet / 小程序运行时架构：`architecture/platform/applet-runtime/README.md`
+- Agent 架构总入口：`architecture/domains/agent/README.md`（active；Station 单一真源、
   Desktop 本机能力执行、统一能力绑定与 Native 最小可用 Agent Chat 证明边界）
-- A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
-- Agent Canvas 编排架构：`architecture/agent/agent-canvas-orchestration.md`
-- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`
+- A2A 协议集成：`architecture/domains/agent/a2a/`（文档集，入口 `README.md`）
+- Agent Canvas 编排架构：`architecture/domains/agent/agent-canvas-orchestration.md`
+- Modern Chat Agent 产品与单 Agent 运行时：`architecture/domains/agent/modern-chat-agent/README.md`
   （product-accepted / design-accepted；包含 LobeHub/Peers-Touch benchmark disposition、
   产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
-- Actor 隔离环境平面：`architecture/runtime/actor-isolated-environment.md`
-- Federation 虚拟网络与治理账本：`architecture/federation/README.md`
-- 质量保证闭环：`architecture/quality-framework/README.md`
-- 产品验收框架：`architecture/acceptance-framework/README.md`
-- Human 联邦社交活动层：`architecture/federated-social-activity/README.md`
-- Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
-- Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
-- 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/prototypes/README.md`
-- 跨平台开发工具链：`architecture/developer-toolchain/README.md`
+- Actor 隔离环境平面：`architecture/platform/station/actor-isolation.md`
+- Federation 虚拟网络与治理账本：`architecture/shared/federation/README.md`
+- 质量保证闭环：`architecture/engineering/quality/README.md`
+- 产品验收框架：`architecture/engineering/acceptance/README.md`
+- Human 联邦社交活动层：`architecture/domains/social/federation/README.md`
+- Agent LobeHub 蓝本重构：`architecture/domains/agent/agent-lobehub-blueprint.md`
+- Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/domains/applets/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
+- 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/engineering/prototypes/README.md`
+- 跨平台开发工具链：`architecture/engineering/toolchain/README.md`
   （active；`devctl` 是 profile、诊断、本地运行时生命周期与检查的统一控制面，
   Make、PowerShell 和 package scripts 只保留薄入口）
 
@@ -312,14 +326,14 @@
 ### 我想看 Desktop
 
 - 先看 `client/desktop/base.md`
-- 再看 `architecture/runtime/desktop-runtime-architecture.md`（跨进程边界）
+- 再看 `architecture/platform/client/desktop/runtime.md`（跨进程边界）
 - 再看 `client/desktop/runtime-projections.md`（desktop-web 内部 Page / Runtime / Boot 契约）
 - 再按主题看：
   - `client/desktop/global-context-kernel.md`
   - `client/desktop/provider-model-target-architecture.md`
 - Agent / Tool / MCP / Skill 重构：
-  - `architecture/agent/agent-lobehub-blueprint.md`
-  - `architecture/agent/execution-plans/20260616-agent-lobehub-rebuild.md`
+  - `architecture/domains/agent/agent-lobehub-blueprint.md`
+  - `architecture/domains/agent/execution-plans/20260616-agent-lobehub-rebuild.md`
 - 写代码前的规范层：
   - `global/coding-guide/desktop/page-component.md`
   - `global/coding-guide/desktop/store.md`
@@ -327,7 +341,7 @@
 
 ### 我想看 Station 与 Desktop 谁负责什么
 
-- `architecture/boundaries/station-desktop-scope-boundary.md`
+- `architecture/platform/station-desktop-boundary.md`
 
 ### 我想看 Mobile
 
@@ -356,18 +370,18 @@
 
 ### 我想看系统里有哪些状态机
 
-- `architecture/state-machines/README.md`（前后端全端 FSM 汇总，含状态/触发/Owner/设计索引）
+- `architecture/engineering/architecture-governance/state-machines.md`（前后端全端 FSM 汇总，含状态/触发/Owner/设计索引）
 
 ### 我想看通知系统
 
-- 先看 `architecture/notification/notification-architecture.md`
-- 再看执行计划 `architecture/notification/execution-plans/`
+- 先看 `architecture/shared/notification/notification-architecture.md`
+- 再看执行计划 `architecture/shared/notification/execution-plans/`
 
 ### 我想看联邦 / Federation
 
-- 先看 `architecture/federation/README.md`
-- 再看跨站用户目录 `architecture/identity/federation-catalog.md`
-- 再看 Actor 身份模型 `architecture/identity/unified-actor-system.md`
+- 先看 `architecture/shared/federation/README.md`
+- 再看跨站用户目录 `architecture/domains/identity/federation-catalog.md`
+- 再看 Actor 身份模型 `architecture/domains/identity/unified-actor-system.md`
 
 ---
 

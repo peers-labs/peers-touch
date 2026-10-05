@@ -6,8 +6,8 @@
 
 本文档描述 **收敛后（Kernel 单一权威）** 的 Desktop applet 运行时生命周期落地实现。它是平台层文档，向上受两份架构层真源约束，向下对齐 `desktop-web` kernel 契约：
 
-- 架构真源（跨端状态机 / 资源策略）：[`../../architecture/applet-runtime/applet-lifecycle-architecture.md`](../../architecture/applet-runtime/applet-lifecycle-architecture.md)（§3 状态机、§5 资源策略、§6 分层职责）。
-- 执行计划：[`../../architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md`](../../architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md)（§6 Phase 3 Desktop、§9 Phase 5 收敛）。
+- 架构真源（跨端状态机 / 资源策略）：[`../../architecture/platform/applet-runtime/applet-lifecycle-architecture.md`](../../architecture/platform/applet-runtime/applet-lifecycle-architecture.md)（§3 状态机、§5 资源策略、§6 分层职责）。
+- 执行计划：[`../../architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md`](../../architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md)（§6 Phase 3 Desktop、§9 Phase 5 收敛）。
 - Desktop kernel 契约（Page / Runtime / Boot）：[`runtime-projections.md §6`](./runtime-projections.md#6-kernel-contracts)。本文所引 `§6.1/§6.2/§6.3` 均指 `runtime-projections.md` 的对应小节。
 - Launcher 交互契约（打开入口、身份、恢复态）：[`applet-launcher-ux-contract.md`](./applet-launcher-ux-contract.md)。本文只讲 launcher 之后的运行时生命周期，不重复 launcher UX。
 

@@ -614,7 +614,7 @@
       "features": ["chat-client-unification-integrity"],
       "required_gates": ["chat-lifecycle-tree-zero-reference-e2e"],
       "synthetic_paths": [
-        "docs/architecture/chat-lifecycle/legacy-inventory.json",
+        "docs/architecture/domains/chat/lifecycle/legacy-inventory.json",
         "apps/desktop/src/store/socialChat.ts",
         "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
         "apps/mobile/src/features/chat/**",
@@ -917,7 +917,7 @@
         "chat-storage-governance-aggregate-e2e"
       ],
       "synthetic_paths": [
-        "docs/architecture/chat-storage-governance/legacy-inventory.json",
+        "docs/architecture/domains/chat/storage-governance/legacy-inventory.json",
         "tooling/acceptance/gates/chat_storage/governance_aggregate.py",
         "tooling/acceptance/gates/mobile/native_build.py"
       ],

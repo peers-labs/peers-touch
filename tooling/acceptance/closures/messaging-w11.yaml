@@ -4,7 +4,7 @@ claimed_runtime_cell: desktop-linux-native
 canonical_range: origin/master...HEAD
 retained_gates:
   - proto-build
-plan_source: docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md
+plan_source: docs/architecture/domains/chat/messaging/execution-plans/20260808-messaging-platform.md
 description: >
   Machine-readable closure contract for MP-W11 Atomic Cutover And Completion Audit.
   Every deliverable here must be mechanically verified. No AI discretion over

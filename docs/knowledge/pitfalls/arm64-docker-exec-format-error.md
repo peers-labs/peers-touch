@@ -5,7 +5,7 @@ status: active
 owns:
   - tooling/docker/station.Dockerfile
 related:
-  - docs/architecture/acceptance-framework/execution-plans/20260824-native-desktop-runtime-cells.md
+  - docs/architecture/engineering/acceptance/execution-plans/20260824-native-desktop-runtime-cells.md
 detected: 2026-09-02
 ---
 

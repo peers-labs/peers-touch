@@ -57,7 +57,7 @@ function taskSlice(id) {
     journeyId: `journey-${id}`,
     runtimeClass: 'source-only',
     writeSet: ['tooling/scripts/local-dev'],
-    readSet: ['docs/architecture/development-workflow'],
+    readSet: ['docs/architecture/engineering/development-workflow'],
     budgets: {
       focusedCheckSeconds: 30,
       functionalRunSeconds: 60,
@@ -138,7 +138,7 @@ async function makeFixture(
       },
       workClass: 'infrastructure',
       architecture: {
-        sources: ['docs/architecture/development-workflow/design.md'],
+        sources: ['docs/architecture/engineering/development-workflow/design.md'],
         decisions: ['DWF-D28'],
       },
       scope: {

@@ -5,7 +5,7 @@ status: active
 owns:
   - AGENTS.md
   - docs/global/workflow.md
-  - docs/architecture/development-workflow/
+  - docs/architecture/engineering/development-workflow/
   - tooling/skills/pt-goal-orchestrator/
   - tooling/skills/pt-dev-runtime-handoff/
   - tooling/skills/pt-trae-host-adapter/
@@ -13,7 +13,7 @@ owns:
   - tooling/skills/pt-codex-host-adapter/
   - tooling/skills/pt-defect-closure/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
   - docs/knowledge/invariants/continuous-plan-run.md
   - docs/knowledge/invariants/dev-resource-declaration-before-write.md
@@ -83,7 +83,7 @@ of the project architecture.
 ## How to verify
 
 - `tooling/scripts/review/skill-check.sh` passes.
-- `rg -n "pt-trae-goal-orchestrator|use \`TRAE-debugger\` workflow" AGENTS.md docs/global docs/architecture/development-workflow tooling/skills` returns no live contract references.
+- `rg -n "pt-trae-goal-orchestrator|use \`TRAE-debugger\` workflow" AGENTS.md docs/global docs/architecture/engineering/development-workflow tooling/skills` returns no live contract references.
 - `pt-goal-orchestrator` requires no named host runtime.
 - `pt-dev-runtime-handoff` contains `HOST_CAPABILITY_UNAVAILABLE`,
   `SESSION_PROJECTION_STALE`, and repository-native driver priority.

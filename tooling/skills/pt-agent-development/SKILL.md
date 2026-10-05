@@ -31,7 +31,7 @@ Read in this order:
 
 1. The current Agent Task and its `closureId`, `journeyId`, `doneWhen`,
    `failureBehavior`, checks, and write set.
-2. [`modern-chat-agent/README.md`](../../../docs/architecture/agent/modern-chat-agent/README.md)
+2. [`modern-chat-agent/README.md`](../../../docs/architecture/domains/agent/modern-chat-agent/README.md)
    and the architecture documents it prioritizes.
 3. The current Development Session, latest formal Gate manifest, and current
    Completion Review receipt.

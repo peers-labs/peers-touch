@@ -27,7 +27,7 @@ This document does NOT define:
 - CI/CD pipeline (out of scope for local dev)
 
 The machine-global ownership and allocation architecture is defined in
-[`docs/architecture/local-dev-control-plane/`](../architecture/local-dev-control-plane/README.md).
+[`docs/architecture/engineering/local-dev/`](../architecture/engineering/local-dev/README.md).
 The registration, binding, slot, and capability-lease runtime is implemented by
 `tooling/scripts/local-dev/machine-dev.mjs`. Evidence-root relocation remains a
 separate migration.
@@ -125,7 +125,7 @@ development code must be corrected explicitly.
 Local slot and Desktop/Mobile ports come from the machine binding. A profile's
 `PT_DEV_SLOT` and local client port fields are legacy topology observations and
 cannot override the allocation. See
-[`local-dev-control-plane/design.md`](../architecture/local-dev-control-plane/design.md).
+[`local-dev-control-plane/design.md`](../architecture/engineering/local-dev/design.md).
 
 ### 2.2 Environment Creation Authorization
 
