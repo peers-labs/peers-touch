@@ -91,6 +91,7 @@ from tooling.development.secure_content.runtime_owner import (
     _prepare_remote_group_fixture,
     _revoke_remote_fixture_device,
     _wait_for_accepted_friendship_projection,
+    _wait_for_federated_actor_resolution,
     _wait_for_federated_locator,
     _wait_for_private_moment_state,
     _wait_for_private_moment_states,
@@ -2862,11 +2863,6 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "station-five-arm-peer",
                 ]
             },
-            {
-                "actorPtid": "ptid:bob",
-                "federatedHandle": "@bob@five-arm.invalid",
-                "homeStationPeerId": "station-five-arm-peer",
-            },
             {"requestId": "friend-request-1"},
             {"accepted": True},
         )
@@ -2893,10 +2889,21 @@ class RuntimeOwnerTest(unittest.TestCase):
             {"accepted": True},
         )
 
-        with patch(
-            "tooling.development.secure_content.runtime_owner."
-            "_wait_for_federated_locator"
-        ) as wait_for_locator:
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_wait_for_federated_locator"
+            ) as wait_for_locator,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_wait_for_federated_actor_resolution",
+                return_value={
+                    "actorPtid": "ptid:bob",
+                    "federatedHandle": "@bob@five-arm.invalid",
+                    "homeStationPeerId": "station-five-arm-peer",
+                },
+            ) as wait_for_resolution,
+        ):
             result = _prepare_cross_station_social_fixture(alice, bob)
 
         self.assertEqual("federation-1", result["federationId"])
@@ -2904,6 +2911,10 @@ class RuntimeOwnerTest(unittest.TestCase):
             alice,
             federated_handle="@bob@five-arm.invalid",
             expected_home_station_peer_id="station-five-arm-peer",
+        )
+        wait_for_resolution.assert_called_once_with(
+            alice,
+            federated_handle="@bob@five-arm.invalid",
         )
         self.assertIn(
             call(
@@ -2975,6 +2986,48 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn(
             "handle=%40bob%40five-arm.invalid",
             urls[0],
+        )
+
+    def test_cross_station_resolution_retries_only_not_found(self) -> None:
+        client = SimpleNamespace(
+            driver=MagicMock(),
+        )
+        client.driver.execute_async_script.side_effect = (
+            {"ok": False, "code": "NOT_FOUND"},
+            {
+                "ok": True,
+                "value": {
+                    "actorPtid": "ptid:bob",
+                    "homeStationPeerId": "station-five-arm-peer",
+                },
+            },
+        )
+        sleeps: list[float] = []
+
+        resolved = _wait_for_federated_actor_resolution(
+            client,
+            federated_handle="@bob@five-arm.invalid",
+            timeout_seconds=10,
+            poll_interval_seconds=2,
+            monotonic=MagicMock(side_effect=(0.0, 1.0)),
+            sleep=sleeps.append,
+        )
+
+        self.assertEqual("ptid:bob", resolved["actorPtid"])
+        self.assertEqual([2], sleeps)
+        self.assertEqual(2, client.driver.execute_async_script.call_count)
+
+        client.driver.execute_async_script.side_effect = (
+            {"ok": False, "code": "INTERNAL_ERROR"},
+        )
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _wait_for_federated_actor_resolution(
+                client,
+                federated_handle="@bob@five-arm.invalid",
+            )
+        self.assertEqual(
+            "fixture:cross-station-social-resolver",
+            raised.exception.resource,
         )
 
     def test_friendship_projection_timeout_fails_closed(self) -> None:
