@@ -2314,6 +2314,119 @@ describe('moments store: reactions', () => {
     });
   });
 
+  it('recovers an existing durable private Reaction before creating another command', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 36);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-pending-post': {
+          postId: 'private-pending-post',
+          contentId: 'private-pending-post',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          reactions: [],
+          reactionRevision: '1',
+          reactionsHydrated: true,
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    useMomentsStore.setState({
+      postsById: {
+        'private-pending-post': create(PostSchema, {
+          id: 'private-pending-post',
+          audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
+        }),
+      },
+    });
+    enqueue('social_private_react', {
+      ok: false,
+      error: {
+        code: 'CONFLICT',
+        message: 'secure content Reaction command is already pending',
+        details: {
+          state: 'REACTION_PENDING',
+          native_error_code: 'REACTION_COMMAND_PENDING',
+          retryable: true,
+        },
+      },
+    });
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [{
+        post_id: 'private-pending-post',
+        content_id: 'private-pending-post',
+        generation: '1',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        reactions: [],
+        reaction_revision: '1',
+        reactions_hydrated: true,
+        content: { kind: 'TEXT', text: 'private' },
+      }],
+      reaction_commands: [{
+        command_id: 'reaction-v1-existing',
+        post_id: 'private-pending-post',
+        kind: ReactionKind.REACTION_LOVE,
+        operation: 'REACT',
+        state: 'REACTION_PENDING',
+        attempt_count: 1,
+        projection_revision: '1',
+      }],
+    }));
+    enqueue('social_private_reaction_retry', statusOk({
+      command: {
+        command_id: 'reaction-v1-existing',
+        post_id: 'private-pending-post',
+        kind: ReactionKind.REACTION_LOVE,
+        operation: 'REACT',
+        state: 'REACTION_COMMITTED',
+        attempt_count: 2,
+        projection_revision: '2',
+      },
+      reactions: [{
+        kind: ReactionKind.REACTION_LOVE,
+        count: '1',
+        reacted_by_viewer: true,
+      }],
+      projection_revision: '2',
+      exact_replay: true,
+    }));
+
+    await useMomentsStore
+      .getState()
+      .reactToPost('private-pending-post', ReactionKind.REACTION_LOVE);
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'social_private_moments_bootstrap',
+      expect.anything(),
+    );
+    expect(invokeMock).toHaveBeenCalledWith(
+      'social_private_reaction_retry',
+      expect.objectContaining({
+        input: expect.objectContaining({
+          command_id: 'reaction-v1-existing',
+        }),
+      }),
+    );
+    expect(
+      useMomentsStore.getState().reactions['private-pending-post']?.[0],
+    ).toMatchObject({
+      count: 1n,
+      reactedByViewer: true,
+    });
+    expect(
+      usePrivateMomentsStore.getState().reactionsByPost['private-pending-post'],
+    ).toBeUndefined();
+  });
+
   it('preserves known reactions until the private projection is hydrated', () => {
     usePrivateMomentsStore.getState().activateActor('ptid:viewer', 34);
     useMomentsStore.setState({

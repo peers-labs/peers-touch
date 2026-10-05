@@ -171,20 +171,10 @@ def _await_reaction_transition(
 ) -> Mapping[str, Any]:
     latest: Mapping[str, Any] = {}
     for attempt in range(20):
-        try:
-            latest = _mapping(
-                client.call(method, {"postId": post_id, "kind": "LOVE"}),
-                "Reaction transition",
-            )
-        except RunnerError as error:
-            if "secure content Reaction command is already pending" not in str(
-                error
-            ):
-                raise
-            if attempt == 19:
-                raise
-            time.sleep(min(0.25, client.context.remaining_seconds()))
-            continue
+        latest = _mapping(
+            client.call(method, {"postId": post_id, "kind": "LOVE"}),
+            "Reaction transition",
+        )
         reactions = latest.get("reactions")
         converged = (
             isinstance(reactions, list)

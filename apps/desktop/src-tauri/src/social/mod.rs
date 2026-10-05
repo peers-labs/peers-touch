@@ -176,7 +176,7 @@ pub fn social_private_reaction_retry(
         .and_then(|service| service.retry(&input))
     {
         Ok(result) => AppResult::success(json!(result)),
-        Err(error) => native_failure(error, "REACTION_REJECTED"),
+        Err(error) => private_reaction_failure(error),
     }
 }
 
@@ -199,7 +199,7 @@ fn private_reaction_mutation(
         .and_then(|service| service.mutate(&input, operation))
     {
         Ok(result) => AppResult::success(json!(result)),
-        Err(error) => native_failure(error, "REACTION_REJECTED"),
+        Err(error) => private_reaction_failure(error),
     }
 }
 
@@ -929,6 +929,32 @@ fn native_failure(message: String, state: &str) -> AppResult<Value> {
     )
 }
 
+fn private_reaction_failure(message: String) -> AppResult<Value> {
+    let lower = message.to_ascii_lowercase();
+    let pending = lower.contains("reaction command is already pending");
+    let retrying = lower.contains("reaction command is not retryable yet");
+    if !pending && !retrying {
+        return native_failure(message, "REACTION_REJECTED");
+    }
+    AppResult::fail(
+        ErrorCode::Conflict,
+        message,
+        Some(json!({
+            "state": if pending {
+                "REACTION_PENDING"
+            } else {
+                "REACTION_RETRYING"
+            },
+            "native_error_code": if pending {
+                "REACTION_COMMAND_PENDING"
+            } else {
+                "REACTION_RETRY_NOT_READY"
+            },
+            "retryable": true,
+        })),
+    )
+}
+
 fn private_media_failure(error: PrivateMediaOpenError) -> AppResult<Value> {
     let state = error.state();
     let retryable = error.retryable();
@@ -967,6 +993,38 @@ fn private_comment_failure(error: PrivateCommentFailure) -> AppResult<Value> {
             "retry_not_before_unix_ms": error.retry_not_before_unix_ms,
         })),
     )
+}
+
+#[cfg(test)]
+mod private_reaction_failure_tests {
+    use super::private_reaction_failure;
+    use crate::error::ErrorCode;
+
+    #[test]
+    fn preserves_existing_reaction_command_as_retryable_pending() {
+        let result = private_reaction_failure(
+            "secure content Reaction command is already pending".to_string(),
+        );
+        let error = result.error.expect("pending conflict should fail");
+        assert_eq!(error.code, ErrorCode::Conflict);
+        let details = error.details.expect("pending conflict should be typed");
+        assert_eq!(details["state"], "REACTION_PENDING");
+        assert_eq!(details["native_error_code"], "REACTION_COMMAND_PENDING");
+        assert_eq!(details["retryable"], true);
+    }
+
+    #[test]
+    fn preserves_reaction_backoff_as_retryable_state() {
+        let result = private_reaction_failure(
+            "secure content Reaction command is not retryable yet".to_string(),
+        );
+        let error = result.error.expect("retry backoff should fail");
+        assert_eq!(error.code, ErrorCode::Conflict);
+        let details = error.details.expect("retry backoff should be typed");
+        assert_eq!(details["state"], "REACTION_RETRYING");
+        assert_eq!(details["native_error_code"], "REACTION_RETRY_NOT_READY");
+        assert_eq!(details["retryable"], true);
+    }
 }
 
 #[cfg(all(test, feature = "acceptance-webdriver"))]
