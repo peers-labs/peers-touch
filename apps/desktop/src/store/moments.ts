@@ -310,6 +310,14 @@ function postCreatedAtMillis(post: Post | undefined): number {
     + Math.floor(post.createdAt.nanos / 1_000_000);
 }
 
+function isPrivateMomentMutation(postId: string, post: Post | undefined): boolean {
+  if (usePrivateMomentsStore.getState().postsById[postId]) return true;
+  const audienceKind = post?.audience?.kind;
+  return audienceKind !== undefined
+    && audienceKind !== Audience_Kind.PUBLIC
+    && audienceKind !== Audience_Kind.KIND_UNSPECIFIED;
+}
+
 function projectPrivateMoments(
   state: MomentsState,
   actorPtid: string | null,
@@ -952,11 +960,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const generation = storeGeneration;
     try {
       const post = get().postsById[postId];
-      if (
-        post?.audience
-        && post.audience.kind !== Audience_Kind.PUBLIC
-        && post.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
-      ) {
+      if (isPrivateMomentMutation(postId, post)) {
         const result = await usePrivateMomentsStore
           .getState()
           .reactToPost(postId, kind);
@@ -987,11 +991,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const generation = storeGeneration;
     try {
       const post = get().postsById[postId];
-      if (
-        post?.audience
-        && post.audience.kind !== Audience_Kind.PUBLIC
-        && post.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
-      ) {
+      if (isPrivateMomentMutation(postId, post)) {
         const result = await usePrivateMomentsStore
           .getState()
           .unreactToPost(
