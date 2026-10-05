@@ -23,30 +23,30 @@ from tooling.acceptance.core.execution_plan import (
 )
 
 
-def package_manifest_text(
+def plan_version_text(
     workspace: str,
     *,
     branch: str = "feat/example",
     status: str = "active",
 ) -> str:
-    return f"""# Example Package
+    return f"""# Example Plan Version
 
 > **Status**: {status}
 > **Branch**: `{branch}`
 > **Workspace ID**: `{workspace}`
 > **Initial HEAD**: `{'a' * 40}`
 
-## Plan Package
+## Plan Version
 
 ```json
 {{
-  "kind": "peers-touch-plan-package"
+  "kind": "peers-touch-plan-version"
 }}
 ```
 """
 
 
-def package_status(
+def mounted_plan_status(
     workspace: str,
     *,
     plan_id: str = "EXAMPLE-PLAN",
@@ -119,7 +119,7 @@ def plan_text(
 
 
 class ExecutionPlanTest(unittest.TestCase):
-    def test_completion_accepts_package_and_legacy_statuses(self) -> None:
+    def test_completion_accepts_plan_version_and_legacy_statuses(self) -> None:
         self.assertTrue(closure_status_is_complete("done"))
         self.assertTrue(closure_status_is_complete("completed"))
         self.assertTrue(closure_status_is_complete("completed with evidence"))
@@ -145,7 +145,7 @@ class ExecutionPlanTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 2)
         self.assertIn("EXECUTION_PLAN_INPUT_REQUIRED", completed.stderr)
 
-    def test_package_planctl_projection_end_to_end(self) -> None:
+    def test_plan_version_projection_preserves_acceptance_closure(self) -> None:
         repo_root = Path(__file__).resolve().parents[3]
         temporary_root = repo_root / "tmp"
         temporary_root.mkdir(exist_ok=True)
@@ -158,7 +158,7 @@ class ExecutionPlanTest(unittest.TestCase):
             tasks = package / "tasks"
             tasks.mkdir()
             manifest = {
-                "kind": "peers-touch-plan-package",
+                "kind": "peers-touch-plan-version",
                 "planId": "DWF-PYTHON-INTEGRATION",
                 "status": "active",
                 "binding": {
@@ -285,7 +285,7 @@ class ExecutionPlanTest(unittest.TestCase):
                         f"> **Workspace ID**: {workspace}",
                         f"> **Initial HEAD**: {'a' * 40}",
                         "",
-                        "## Plan Package",
+                        "## Plan Version",
                         "",
                         "```json",
                         json.dumps(manifest, indent=2),
@@ -321,27 +321,47 @@ class ExecutionPlanTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            plan = load_formal_plan(plan_path)
+            status = mounted_plan_status(
+                workspace,
+                plan_id=manifest["planId"],
+            )
+            status.update(
+                {
+                    "currentTaskId": "DWF-PY-01",
+                    "currentTaskPath": "tasks/DWF-PY-01.md",
+                    "currentTaskWriteSet": ["tooling/scripts/plan"],
+                    "currentClosure": "development-workflow-control-plane",
+                    "closureStatuses": {
+                        "development-workflow-control-plane": "in_progress"
+                    },
+                    "acceptance": acceptance,
+                }
+            )
+            with mock.patch(
+                "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                return_value=status,
+            ):
+                plan = load_formal_plan(plan_path)
 
-        self.assertEqual(plan.plan_format, "package")
+        self.assertEqual(plan.plan_format, "version")
         self.assertEqual(plan.current_task_id, "DWF-PY-01")
         self.assertEqual(
             plan.gate_ids("closure"),
             ["development-workflow-control-plane"],
         )
 
-    def test_loads_package_through_planctl_projection(self) -> None:
+    def test_loads_plan_version_through_planctl_projection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
-            path.write_text(package_manifest_text("1" * 16), encoding="utf-8")
+            path.write_text(plan_version_text("1" * 16), encoding="utf-8")
 
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._package_status",
-                return_value=package_status("1" * 16),
+                "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                return_value=mounted_plan_status("1" * 16),
             ):
                 plan = load_formal_plan(path)
 
-        self.assertEqual(plan.plan_format, "package")
+        self.assertEqual(plan.plan_format, "version")
         self.assertEqual(plan.current_task_id, "T1")
         self.assertEqual(plan.current_task_path, "tasks/T1.md")
         self.assertEqual(
@@ -358,13 +378,13 @@ class ExecutionPlanTest(unittest.TestCase):
             ),
         )
 
-    def test_package_changed_paths_are_limited_to_source_claims(self) -> None:
+    def test_plan_version_changed_paths_are_limited_to_source_claims(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
-            path.write_text(package_manifest_text("1" * 16), encoding="utf-8")
+            path.write_text(plan_version_text("1" * 16), encoding="utf-8")
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._package_status",
-                return_value=package_status("1" * 16),
+                "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                return_value=mounted_plan_status("1" * 16),
             ):
                 plan = load_formal_plan(path)
 
@@ -408,17 +428,17 @@ class ExecutionPlanTest(unittest.TestCase):
             ],
         )
 
-    def test_blocked_package_has_no_runnable_closure(self) -> None:
+    def test_blocked_plan_version_has_no_runnable_closure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
             path.write_text(
-                package_manifest_text("1" * 16, status="blocked"),
+                plan_version_text("1" * 16, status="blocked"),
                 encoding="utf-8",
             )
 
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._package_status",
-                return_value=package_status(
+                "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                return_value=mounted_plan_status(
                     "1" * 16,
                     status="blocked",
                     current=False,
@@ -514,17 +534,17 @@ class ExecutionPlanTest(unittest.TestCase):
             bound.parent.mkdir()
             foreign.parent.mkdir()
             bound.write_text(
-                package_manifest_text(expected_workspace),
+                plan_version_text(expected_workspace),
                 encoding="utf-8",
             )
             foreign.write_text(
-                package_manifest_text("2" * 16),
+                plan_version_text("2" * 16),
                 encoding="utf-8",
             )
 
             with (
                 mock.patch(
-                    "tooling.acceptance.core.execution_plan._workspace_plan_binding",
+                    "tooling.acceptance.core.execution_plan._workspace_plan_mount",
                     return_value={
                         "planId": "BOUND-PLAN",
                         "planPath": bound.relative_to(root).as_posix(),
@@ -535,8 +555,8 @@ class ExecutionPlanTest(unittest.TestCase):
                     return_value="feat/example",
                 ),
                 mock.patch(
-                    "tooling.acceptance.core.execution_plan._package_status",
-                    return_value=package_status(
+                    "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                    return_value=mounted_plan_status(
                         expected_workspace,
                         plan_id="BOUND-PLAN",
                     ),
@@ -563,21 +583,21 @@ class ExecutionPlanTest(unittest.TestCase):
             package_directory.mkdir(parents=True)
             manifest = package_directory / "plan.md"
             manifest.write_text(
-                package_manifest_text(expected_workspace),
+                plan_version_text(expected_workspace),
                 encoding="utf-8",
             )
 
             with (
                 mock.patch(
-                    "tooling.acceptance.core.execution_plan._workspace_plan_binding",
+                    "tooling.acceptance.core.execution_plan._workspace_plan_mount",
                     return_value={
                         "planId": "OTHER-PLAN",
                         "planPath": manifest.relative_to(root).as_posix(),
                     },
                 ),
                 mock.patch(
-                    "tooling.acceptance.core.execution_plan._package_status",
-                    return_value=package_status(
+                    "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                    return_value=mounted_plan_status(
                         expected_workspace,
                         plan_id="BOUND-PLAN",
                     ),
@@ -592,7 +612,7 @@ class ExecutionPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._workspace_plan_binding",
+                "tooling.acceptance.core.execution_plan._workspace_plan_mount",
                 side_effect=ExecutionPlanError(
                     PLAN_BINDING_REQUIRED,
                     "workspace has no immutable Plan binding",
