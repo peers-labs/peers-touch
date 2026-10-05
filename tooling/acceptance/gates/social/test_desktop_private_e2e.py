@@ -45,6 +45,10 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
                 "clientReplacements": ["bob2"],
                 "fixtureOnlyClients": ["eve"],
             },
+            "runtimeManifest": {
+                "state": "FIXTURE_READY",
+                "runId": "css09-suite-runtime",
+            },
             "cleanup": {"status": "CLEANED"},
             "suiteRuntimeReportDigest": "c" * 64,
         }
@@ -79,6 +83,10 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
         run_commands.assert_called_once_with(gate, SOURCE_COMMANDS)
         load_suite.assert_called_once_with()
         attach.assert_called_once_with(gate, suite)
+        self.assertEqual(
+            suite.payload["runtimeManifest"],
+            gate.report.manifest,
+        )
         self.assertEqual([SAME_STATION_SCENARIO], result["provenScope"])
         self.assertEqual(
             list(EXPLICITLY_UNPROVEN_SCENARIOS),
@@ -117,6 +125,13 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
         suite.payload["resourceReuse"]["clientReplacements"] = ["bob"]
 
         with self.assertRaisesRegex(GateError, "resource budget"):
+            _validate_attached_suite(suite.payload)
+
+    def test_runtime_manifest_is_required(self) -> None:
+        suite = self._suite()
+        suite.payload.pop("runtimeManifest")
+
+        with self.assertRaisesRegex(GateError, "runtime manifest"):
             _validate_attached_suite(suite.payload)
 
     def test_old_w7_runtime_owner_path_is_absent(self) -> None:

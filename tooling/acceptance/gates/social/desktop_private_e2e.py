@@ -47,7 +47,7 @@ SOURCE_COMMANDS = (
 
 def _validate_attached_suite(
     payload: Mapping[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     scenario_results = payload.get("scenarioResults")
     if not isinstance(scenario_results, Mapping):
         raise GateError("CSS-09 Social scenario results are missing")
@@ -76,7 +76,15 @@ def _validate_attached_suite(
         or reuse.get("fixtureOnlyClients") != ["eve"]
     ):
         raise GateError("CSS-09 Social Suite exceeded its resource budget")
-    return dict(same_station), dict(reuse)
+
+    runtime_manifest = payload.get("runtimeManifest")
+    if (
+        not isinstance(runtime_manifest, Mapping)
+        or runtime_manifest.get("state") != "FIXTURE_READY"
+        or not runtime_manifest.get("runId")
+    ):
+        raise GateError("CSS-09 Social runtime manifest is incomplete")
+    return dict(same_station), dict(reuse), dict(runtime_manifest)
 
 
 class SocialPrivateDesktopGate(AcceptanceGate):
@@ -101,7 +109,10 @@ class SocialPrivateDesktopGate(AcceptanceGate):
     def run(self) -> dict[str, Any]:
         commands = run_source_commands(self, SOURCE_COMMANDS)
         result = load_suite_result()
-        same_station, resource_reuse = _validate_attached_suite(result.payload)
+        same_station, resource_reuse, runtime_manifest = (
+            _validate_attached_suite(result.payload)
+        )
+        self.report.manifest = runtime_manifest
         attach_suite_evidence(self, result)
 
         self.assert_condition(
