@@ -5082,10 +5082,12 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_social_acceptance_scenarios_use_resolved_owner_identity(self) -> None:
         scenario = _social_acceptance_scenario_registry(
             "private-comment",
+            journey_id=SOCIAL_CROSS_STATION_JOURNEY,
             work_item_id="social-desktop-formal-proof",
             task_id="SDA-03-formal-proof",
         )["private-comment"]
 
+        self.assertEqual(SOCIAL_CROSS_STATION_JOURNEY, scenario.journey_id)
         self.assertEqual("social-desktop-formal-proof", scenario.work_item_id)
         self.assertEqual("SDA-03-formal-proof", scenario.result_task_id)
         self.assertEqual("SDA-03-formal-proof", scenario.result_workstream_id)
