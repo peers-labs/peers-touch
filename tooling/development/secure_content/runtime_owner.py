@@ -4396,6 +4396,7 @@ def _wait_for_moments_snapshot(
             if any(
                 marker in message
                 for marker in (
+                    "acceptance harness not mounted",
                     "moments.acceptance.nativeRuntimeIdentityMissing",
                     "moments.acceptance.browserRuntimeIdentityMissing",
                     "Script execution timed out",
