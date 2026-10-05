@@ -65,6 +65,7 @@ help:
 	@echo "  make relay-status              Show Relay deployment/runtime status"
 	@echo "  make relay-logs                Show Relay logs"
 	@echo "  make desktop                   Start Desktop App"
+	@echo "  make desktop-install           Build and install current source as Peers Dev.app"
 	@echo "  make desktop-web               Start Desktop Web (browser)"
 	@echo "  make mobile                    Start Mobile iOS Simulator"
 	@echo ""

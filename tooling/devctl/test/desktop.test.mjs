@@ -6,6 +6,9 @@ import test from 'node:test';
 
 import {
   desktopFrontendLogState,
+  desktopInstallSettings,
+  desktopInstallTauriArguments,
+  desktopInstallTauriConfig,
   desktopRuntimeIdentity,
   desktopTauriArguments,
   desktopViteEntryUrl,
@@ -13,6 +16,8 @@ import {
   ensureDesktopDependencies,
   ensureDesktopGeneratedSources,
   reconcileDesktopRuntime,
+  replaceDesktopApplication,
+  signDesktopApplication,
   waitForDesktopFrontend,
   waitForDesktopVite,
   warmDesktopViteModuleGraph,
@@ -61,6 +66,142 @@ test('desktop development keeps the default Tauri feature set', () => {
   assert.deepEqual(
     desktopTauriArguments('/tmp/tauri.conf.json', {}),
     ['dev', '--no-watch', '--config', '/tmp/tauri.conf.json'],
+  );
+});
+
+test('desktop install has one stable development identity', () => {
+  assert.deepEqual(
+    desktopInstallSettings({}, '/Users/example'),
+    {
+      appId: 'com.peers.touch.desktop.dev',
+      productName: 'Peers Dev',
+      deepLinkScheme: 'peers-touch-dev',
+      installDirectory: '/Users/example/Applications',
+      installPath: '/Users/example/Applications/Peers Dev.app',
+    },
+  );
+});
+
+test('desktop install accepts explicit identifier and destination overrides', () => {
+  assert.deepEqual(
+    desktopInstallSettings(
+      {
+        PT_DESKTOP_APP_ID: 'org.example.peers.dev',
+        PT_DESKTOP_INSTALL_DIR: '/tmp/desktop-apps',
+      },
+      '/Users/example',
+    ),
+    {
+      appId: 'org.example.peers.dev',
+      productName: 'Peers Dev',
+      deepLinkScheme: 'peers-touch-dev',
+      installDirectory: '/tmp/desktop-apps',
+      installPath: '/tmp/desktop-apps/Peers Dev.app',
+    },
+  );
+});
+
+test('desktop install rejects invalid application identifiers', () => {
+  assert.throws(
+    () =>
+      desktopInstallSettings(
+        { PT_DESKTOP_APP_ID: 'invalid_app_id' },
+        '/Users/example',
+      ),
+    (error) => {
+      assert.equal(error.code, ERROR_CODES.CHECK_FAILED);
+      assert.equal(error.details.appId, 'invalid_app_id');
+      return true;
+    },
+  );
+});
+
+test('desktop install builds only the macOS app bundle with dev overrides', () => {
+  const settings = desktopInstallSettings({}, '/Users/example');
+  assert.deepEqual(desktopInstallTauriConfig(settings), {
+    productName: 'Peers Dev',
+    identifier: 'com.peers.touch.desktop.dev',
+    plugins: {
+      'deep-link': {
+        desktop: {
+          schemes: ['peers-touch-dev'],
+        },
+      },
+    },
+  });
+  assert.deepEqual(
+    desktopInstallTauriArguments('/tmp/desktop-install.conf.json'),
+    [
+      'build',
+      '--bundles',
+      'app',
+      '--config',
+      '/tmp/desktop-install.conf.json',
+    ],
+  );
+});
+
+test('desktop install signs and verifies the staged macOS application', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-codesign-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const codesign = path.join(root, 'codesign');
+  fs.writeFileSync(codesign, '');
+  const calls = [];
+
+  assert.deepEqual(
+    signDesktopApplication(
+      '/tmp/Peers Dev.app',
+      (command, args, options) => {
+        calls.push({ command, args, options });
+        return { status: 0, stdout: '', stderr: '' };
+      },
+      codesign,
+    ),
+    { signed: true, appPath: '/tmp/Peers Dev.app' },
+  );
+  assert.deepEqual(calls, [
+    {
+      command: codesign,
+      args: ['--force', '--deep', '--sign', '-', '/tmp/Peers Dev.app'],
+      options: { encoding: 'utf8', windowsHide: true },
+    },
+    {
+      command: codesign,
+      args: ['--verify', '--deep', '--strict', '/tmp/Peers Dev.app'],
+      options: { encoding: 'utf8', windowsHide: true },
+    },
+  ]);
+});
+
+test('desktop install atomically replaces the previous application', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-install-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourcePath = path.join(root, 'build', 'Peers Dev.app');
+  const installPath = path.join(root, 'Applications', 'Peers Dev.app');
+  fs.mkdirSync(sourcePath, { recursive: true });
+  fs.mkdirSync(installPath, { recursive: true });
+  fs.writeFileSync(path.join(sourcePath, 'version.txt'), 'new');
+  fs.writeFileSync(path.join(installPath, 'version.txt'), 'old');
+
+  assert.equal(
+    replaceDesktopApplication(sourcePath, installPath, (stagingPath) => {
+      fs.writeFileSync(path.join(stagingPath, 'signed.txt'), 'signed');
+    }),
+    installPath,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(installPath, 'version.txt'), 'utf8'),
+    'new',
+  );
+  assert.equal(
+    fs.readFileSync(path.join(installPath, 'signed.txt'), 'utf8'),
+    'signed',
+  );
+  assert.equal(
+    fs.readdirSync(path.dirname(installPath)).some(
+      (entry) => entry.includes('.installing-') || entry.includes('.previous-'),
+    ),
+    false,
   );
 });
 

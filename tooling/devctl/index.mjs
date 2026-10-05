@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { runChecks } from './checks.mjs';
 import {
   desktopStatus,
+  installDesktop,
   restartDesktop,
   startDesktop,
   stopDesktop,
@@ -70,6 +71,7 @@ Usage:
   devctl check [desktop|all] [--json]
   devctl station start|check|status|stop|restart [--json]
   devctl desktop start|status|stop|restart [--mode app|web] [--json]
+  devctl desktop install [--json]
   devctl status [--json]
   devctl stop [station|desktop|all]
   devctl restart [station|desktop|all]
@@ -256,7 +258,8 @@ export async function run(argv = process.argv.slice(2), environment = process.en
   }
 
   if (command === 'desktop') {
-    const mode = takeOption(args, '--mode') ?? 'app';
+    const requestedMode = takeOption(args, '--mode');
+    const mode = requestedMode ?? 'app';
     if (args.length !== 2) {
       throw new DevctlError(
         ERROR_CODES.UNSUPPORTED_MODE,
@@ -273,6 +276,15 @@ export async function run(argv = process.argv.slice(2), environment = process.en
       result = await stopDesktop(root, mode, environment);
     } else if (subcommand === 'restart') {
       result = await restartDesktop(root, mode, environment);
+    } else if (subcommand === 'install') {
+      if (requestedMode !== undefined) {
+        throw new DevctlError(
+          ERROR_CODES.UNSUPPORTED_MODE,
+          'Desktop installation does not accept --mode',
+          { mode: requestedMode },
+        );
+      }
+      result = await installDesktop(root, environment);
     } else {
       throw new DevctlError(
         ERROR_CODES.UNSUPPORTED_MODE,

@@ -142,7 +142,7 @@ export default function ChatApp() {
     <div className="h-screen w-full flex flex-col bg-white font-sans text-slate-900 overflow-hidden">
       {/* Top Bar */}
       <header className="h-14 border-b border-slate-200 flex items-center justify-between px-6 shrink-0 bg-white z-30">
-        <div className="font-bold text-sm tracking-wide">Peers-Touch</div>
+        <div className="font-bold text-sm tracking-wide">Peers</div>
         <div className="flex items-center gap-4">
           <button className="w-7 h-7 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 transition-colors">
             <AlertCircle size={16} strokeWidth={2.5} />
@@ -186,7 +186,7 @@ export default function ChatApp() {
                 <div className="w-16 h-16 bg-indigo-500 rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg shadow-indigo-500/20">
                   <Bot size={32} strokeWidth={2} />
                 </div>
-                <h1 className="text-3xl font-bold mb-3 text-slate-900">Search Peers-Touch</h1>
+                <h1 className="text-3xl font-bold mb-3 text-slate-900">Search Peers</h1>
                 <p className="text-slate-500 mb-8 text-sm">Search conversations, tools, help, providers — or ask AI</p>
                 
                 <div className="w-full relative mb-8">
