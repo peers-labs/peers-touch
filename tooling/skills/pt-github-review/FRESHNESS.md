@@ -33,6 +33,13 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 
 ## 2026-10-05 Review
 
+Large PR-range quality aggregation exposed inherited nonblocking stdin on the
+structure classifier: synchronous fd 0 reads could fail with `EAGAIN` before
+classification. The classifier now switches the inherited handle to blocking
+mode at its explicit stdin boundary, and a focused regression verifies the
+ordering. This is a `ci_tooling_update` plus `review_fixture`; review semantics
+and severity are unchanged.
+
 DWF-D41 makes Development close one exact, resumable cross-owner transaction.
 Review now rejects declaration-only completion, wrong-owner Plan cancellation
 or release, new-work admission while a close receipt is unfinished, and

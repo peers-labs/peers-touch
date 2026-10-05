@@ -143,6 +143,16 @@ export function parseArguments(argv) {
   return options;
 }
 
+export function readStdinText(
+  stream = process.stdin,
+  readFile = fs.readFileSync,
+) {
+  if (typeof stream?._handle?.setBlocking === 'function') {
+    stream._handle.setBlocking(true);
+  }
+  return readFile(0, 'utf8');
+}
+
 function git(root, args) {
   try {
     return execFileSync('git', args, {
@@ -418,8 +428,7 @@ export function run(argv = process.argv.slice(2)) {
   if (options.classifyStdin) {
     const classifications = [
       ...new Set(
-        fs
-          .readFileSync(0, 'utf8')
+        readStdinText()
           .split(/\r?\n/)
           .map(normalizeSourcePath)
           .filter(Boolean),
@@ -448,8 +457,7 @@ export function run(argv = process.argv.slice(2)) {
   }
 
   if (options.filesStdin) {
-    const files = fs
-      .readFileSync(0, 'utf8')
+    const files = readStdinText()
       .split(/\r?\n/)
       .map(normalizeSourcePath)
       .filter(Boolean);
