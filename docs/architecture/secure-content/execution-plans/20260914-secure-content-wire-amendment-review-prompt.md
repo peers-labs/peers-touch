@@ -20,6 +20,7 @@ boundary.
 
 ## Architecture Sources
 
+- `docs/architecture/secure-content/design.md`, especially section 10.1
 - `docs/architecture/secure-content/decisions.md`, especially `SC-D14`
 - `docs/architecture/secure-content/data-model.md`, sections 5-7 and 12-13
 - `docs/architecture/secure-content/security.md`

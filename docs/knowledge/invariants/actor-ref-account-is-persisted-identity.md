@@ -7,7 +7,8 @@ owns:
   - apps/station/frame/touch/actor/
   - apps/station/frame/touch/actor_handler.go
   - apps/station/frame/touch/auth/
-  - apps/station/frame/touch/federation_api_handler.go
+  - apps/station/frame/touch/federation_profile_handler.go
+  - apps/station/frame/touch/federation_health_handler.go
   - apps/station/frame/touch/oauth_handler.go
   - apps/station/frame/touch/session/
   - apps/station/frame/touch/accessgate/

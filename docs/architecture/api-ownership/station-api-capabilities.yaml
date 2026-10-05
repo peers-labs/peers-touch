@@ -1175,18 +1175,6 @@ capabilities:
       - peers_touch.model.chat.v1.GetFederatedEndpointManifestRequest
       - peers_touch.model.chat.v1.GetFederatedEndpointManifestResponse
 
-  - id: federation.presence.query
-    domain_owner: station.federation
-    truth_owner: presence.actor_lease
-    exposure: peer
-    canonical_route: { method: POST, path: /federation/presence/query }
-    request_proto: peers_touch.model.presence.v1.PresenceQueryRequest
-    response_proto: peers_touch.model.presence.v1.PresenceQueryResponse
-    truth_stores: [actor_presence_leases]
-    allowed_dependencies: [federation.auth.verify, presence.actor_lease.read]
-    forbidden_aliases: []
-    superseded_symbols: []
-
   - id: federation.conversation.command.prepare
     domain_owner: station.federation
     truth_owner: conversation.authority

@@ -11,35 +11,35 @@
 
 | ID | Decision | Status |
 |---|---|---|
-| `SC-D01` | Secure Content is a shared contract/kernel, not a business authority | accepted |
-| `SC-D02` | Portable Rust Core is the single client crypto implementation | accepted |
-| `SC-D03` | Station reuse is a stateless kernel; object planes remain domain-owned | accepted |
-| `SC-D04` | Every private resource has an independent root content key | accepted |
-| `SC-D05` | HPKE envelopes use separate one-time endpoint and recovery PreKeys | accepted |
-| `SC-D06` | Private recipient and endpoint sets freeze at publish | accepted |
-| `SC-D07` | Ordinary responses expose only the caller endpoint envelope | accepted |
-| `SC-D08` | Public-readable APIs use strict optional authentication | accepted |
-| `SC-D09` | One-time actor recovery PreKeys restore never-opened content | accepted |
-| `SC-D10` | Legacy private plaintext and bespoke crypto are removed by hard cut | accepted |
-| `SC-D11` | Public and private content retain separate physical persistence | accepted |
-| `SC-D12` | Plans expose opaque slots backed only by one-time public keys | accepted |
-| `SC-D13` | The business domain owns the outer object/grant transaction | accepted |
-| `SC-D14` | Private subtype and routing wires are bounded and canonical | accepted |
-| `SC-D15` | Content PreKey publication is device-authenticated and epoch-fenced | accepted |
-| `SC-D16` | Recovery PreKey derivation uses one canonical HKDF transcript | accepted |
-| `SC-D17` | Social private prepare and submit use durable records and distinct routes | accepted |
-| `SC-D18` | Social encrypted objects use typed control messages and bounded raw-byte routes | accepted |
-| `SC-D19` | Durable content proofs use current-key attestations for retained Station public keys | accepted |
-| `SC-D20` | Content PreKey maintenance uses canonical Key Exchange client routes | accepted |
-| `SC-D21` | Product evidence uses production-delegating barriers and owner-controlled runtime continuation | accepted |
-| `SC-D22` | Development proof uses one owner-produced multi-service runtime manifest | accepted |
-| `SC-D23` | Development private-state reset is allowlisted, journaled, and public-preserving | accepted |
-| `SC-D24` | Canonical private schema activation precedes private-content Journeys | accepted |
-| `SC-D25` | A fresh authorized source may supersede only a PREPARED reset | accepted |
-| `SC-D26` | A reviewed source defect may replace one closed post-commit reset boundary through an immutable predecessor link | accepted |
-| `SC-D27` | Recovery replacement separates admission proof from append-only execution provenance | accepted |
-| `SC-D28` | Runtime services separate canonical schema identity from live connection routing | accepted |
-| `SC-D29` | Audience targets are typed and v1 private expansion remains locally enumerable | accepted |
+| SC-D01 | Secure Content is a shared contract/kernel, not a business authority | accepted |
+| SC-D02 | Portable Rust Core is the single client crypto implementation | accepted |
+| SC-D03 | Station reuse is a stateless kernel; object planes remain domain-owned | accepted |
+| SC-D04 | Every private resource has an independent root content key | accepted |
+| SC-D05 | HPKE envelopes use separate one-time endpoint and recovery PreKeys | accepted |
+| SC-D06 | Private recipient and endpoint sets freeze at publish | accepted |
+| SC-D07 | Ordinary responses expose only the caller endpoint envelope | accepted |
+| SC-D08 | Public-readable APIs use strict optional authentication | accepted |
+| SC-D09 | One-time actor recovery PreKeys restore never-opened content | accepted |
+| SC-D10 | Legacy private plaintext and bespoke crypto are removed by hard cut | accepted |
+| SC-D11 | Public and private content retain separate physical persistence | accepted |
+| SC-D12 | Plans expose opaque slots backed only by one-time public keys | accepted |
+| SC-D13 | The business domain owns the outer object/grant transaction | accepted |
+| SC-D14 | Private subtype and routing wires are bounded and canonical | accepted |
+| SC-D15 | Content PreKey publication is device-authenticated and epoch-fenced | accepted |
+| SC-D16 | Recovery PreKey derivation uses one canonical HKDF transcript | accepted |
+| SC-D17 | Social private prepare and submit use durable records and distinct routes | accepted |
+| SC-D18 | Social encrypted objects use typed control messages and bounded raw-byte routes | accepted |
+| SC-D19 | Durable content proofs use current-key attestations for retained Station public keys | accepted |
+| SC-D20 | Content PreKey maintenance uses canonical Key Exchange client routes | accepted |
+| SC-D21 | Product evidence uses production-delegating barriers and owner-controlled runtime continuation | accepted |
+| SC-D22 | Development proof uses one owner-produced multi-service runtime manifest | accepted |
+| SC-D23 | Development private-state reset is allowlisted, journaled, and public-preserving | accepted |
+| SC-D24 | Canonical private schema activation precedes private-content Journeys | accepted |
+| SC-D25 | A fresh authorized source may supersede only a PREPARED reset | accepted |
+| SC-D26 | A reviewed source defect may replace one closed post-commit reset boundary through an immutable predecessor link | accepted |
+| SC-D27 | Recovery replacement separates admission proof from append-only execution provenance | accepted |
+| SC-D28 | Runtime services separate canonical schema identity from live connection routing | accepted |
+| SC-D29 | Audience targets are typed and v1 private expansion remains locally enumerable | accepted |
 
 ---
 
@@ -1071,8 +1071,8 @@ W12 may target only:
 
 | Profile | Deploy environment | Destructive scope |
 |---|---|---|
-| `four` | `station-four` | `station-four-social-private` |
-| `fiveArm` | `station-five-arm` | `station-five-arm-social-private` |
+| four | `station-four` | `station-four-social-private` |
+| fiveArm | `station-five-arm` | `station-five-arm-social-private` |
 
 The workspace returns to profile `four`, slot `5` after each target. Profile
 `one` and `station-one-social-private` are not authorized aliases. Production
@@ -1782,10 +1782,10 @@ The closed recovery matrix is:
 
 | Predecessor boundary | Original failure | Replacement reason | Additional proof |
 |---|---|---|---|
-| `OBJECTS_DELETED` | absent | `RESET_SOURCE_SUPERSEDED` | none |
-| `OBJECTS_DELETED` | `RESET_PARTIAL_FAILURE` | `RESET_SOURCE_SUPERSEDED` | the state proves database and object mutation completed before the deployment handoff |
-| `STATION_DEPLOYED` | `RESET_SCHEMA_TARGET_UNREVIEWED` | `RESET_SCHEMA_TARGET_UNREVIEWED` | none |
-| `STATION_DEPLOYED` | `RESET_JOURNAL_STATE_CONFLICT` | `RESET_SOURCE_SUPERSEDED` | the predecessor manifest already carries a recovery link and its complete bounded chain validates under the admission transaction |
+| OBJECTS_DELETED | absent | `RESET_SOURCE_SUPERSEDED` | none |
+| OBJECTS_DELETED | `RESET_PARTIAL_FAILURE` | `RESET_SOURCE_SUPERSEDED` | the state proves database and object mutation completed before the deployment handoff |
+| STATION_DEPLOYED | `RESET_SCHEMA_TARGET_UNREVIEWED` | `RESET_SCHEMA_TARGET_UNREVIEWED` | none |
+| STATION_DEPLOYED | `RESET_JOURNAL_STATE_CONFLICT` | `RESET_SOURCE_SUPERSEDED` | the predecessor manifest already carries a recovery link and its complete bounded chain validates under the admission transaction |
 
 No other state/failure tuple is eligible. A fresh reset still executes the
 complete SC-D23 allowlist and verifies every inherited object target during
@@ -2354,8 +2354,8 @@ Key Exchange exposes exactly two client-facing support capabilities:
 
 | Capability ID | Method and path | Request / response |
 |---|---|---|
-| `key_exchange.content_prekey.publish` | `POST /key-exchange/content-prekeys/publish` | `PublishContentPreKeysRequest` / `PublishContentPreKeysResponse` |
-| `key_exchange.content_prekey.inventory` | `POST /key-exchange/content-prekeys/inventory` | `GetContentPreKeyInventoryRequest` / `GetContentPreKeyInventoryResponse` |
+| key_exchange.content_prekey.publish | `POST /key-exchange/content-prekeys/publish` | `PublishContentPreKeysRequest` / `PublishContentPreKeysResponse` |
+| key_exchange.content_prekey.inventory | `POST /key-exchange/content-prekeys/inventory` | `GetContentPreKeyInventoryRequest` / `GetContentPreKeyInventoryResponse` |
 
 Both routes are Key Exchange-owned and use only `application/protobuf`. They
 accept no query alternative, JSON representation, route alias or public
@@ -2635,8 +2635,8 @@ The target API-ownership projection is:
 
 | Capability ID | Domain/truth owner | Truth stores | Allowed dependency |
 |---|---|---|---|
-| `key_exchange.content_prekey.publish` | `station.key_exchange` / `key_exchange.content_prekey_public_material` | `key_exchange_content_prekey_pools`, `key_exchange_content_prekeys`, `key_exchange_content_prekey_publication_receipts` | `actor.device_directory.read` |
-| `key_exchange.content_prekey.inventory` | `station.key_exchange` / `key_exchange.content_prekey_public_material` | `key_exchange_content_prekey_pools`, `key_exchange_content_prekeys` | `actor.device_directory.read` |
+| key_exchange.content_prekey.publish | `station.key_exchange` / `key_exchange.content_prekey_public_material` | `key_exchange_content_prekey_pools`, `key_exchange_content_prekeys`, `key_exchange_content_prekey_publication_receipts` | `actor.device_directory.read` |
+| key_exchange.content_prekey.inventory | `station.key_exchange` / `key_exchange.content_prekey_public_material` | `key_exchange_content_prekey_pools`, `key_exchange_content_prekeys` | `actor.device_directory.read` |
 
 Both entries have client exposure, no aliases and no superseded symbols. Route
 registration and registry entries land atomically so the fail-closed
@@ -2768,9 +2768,9 @@ Social adds three authority tables:
 
 | Table | Primary/unique identity | Required bindings |
 |---|---|---|
-| `social_private_content_plans` | `plan_id`; unique `(author_ptid, prepare_command_id)`; unique `(content_id, generation)` | canonical prepare bytes/hash, exact Key Exchange claim-request bytes/hash and ordered targets, exact claim-response bytes/hash, resource kind, author endpoint, audience snapshot, exact signed plan bytes/hash, state, expiry, optional domain commit |
-| `social_private_content_plan_slots` | `(plan_id, recipient_slot_id)`; globally unique `claim_id`; unique `(plan_id, one_time_key_id)` | key kind, recipient actor/device, principal epoch, exact claimed PreKey bytes/hash including issuer signature, principal-binding hash |
-| `social_private_command_receipts` | `(author_ptid, command_id)` | canonical submit hash, resource kind/content/generation, domain commit ID, exact response bytes/hash, completion time |
+| social_private_content_plans | `plan_id`; unique `(author_ptid, prepare_command_id)`; unique `(content_id, generation)` | canonical prepare bytes/hash, exact Key Exchange claim-request bytes/hash and ordered targets, exact claim-response bytes/hash, resource kind, author endpoint, audience snapshot, exact signed plan bytes/hash, state, expiry, optional domain commit |
+| social_private_content_plan_slots | `(plan_id, recipient_slot_id)`; globally unique `claim_id`; unique `(plan_id, one_time_key_id)` | key kind, recipient actor/device, principal epoch, exact claimed PreKey bytes/hash including issuer signature, principal-binding hash |
+| social_private_command_receipts | `(author_ptid, command_id)` | canonical submit hash, resource kind/content/generation, domain commit ID, exact response bytes/hash, completion time |
 
 Prepare first inserts or locks the plan identity in `PREPARING`, calls Key
 Exchange with the exact claim request already persisted on that row, and then
