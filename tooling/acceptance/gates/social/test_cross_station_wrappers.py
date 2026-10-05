@@ -94,6 +94,21 @@ class CrossStationStaticWrapperTest(unittest.TestCase):
         self.assertIn("nativeRegistration.test.ts", command_text)
         self.assertNotIn("playwright", command_text.lower())
 
+    def test_recovery_rust_tests_serialize_shared_keystore_access(self) -> None:
+        module = importlib.import_module(
+            MODULE_PREFIX + "cross_station_revocation_recovery"
+        )
+        recovery = next(
+            command
+            for command in module.COMMANDS
+            if command.name == "recovery-desktop-rust"
+        )
+
+        self.assertEqual(
+            ("--", "--test-threads=1"),
+            recovery.argv[-2:],
+        )
+
 
 class CrossStationSuiteWrapperTest(unittest.TestCase):
     def test_desktop_functional_keeps_suite_unproven(self) -> None:
