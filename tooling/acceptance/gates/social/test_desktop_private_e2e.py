@@ -1,159 +1,129 @@
 from __future__ import annotations
 
-import json
-import tempfile
+import inspect
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tooling.acceptance.core import GateError
+from tooling.acceptance.gates.social import desktop_private_e2e as module
+from tooling.acceptance.gates.social.cross_station_support import (
+    ValidatedSuiteResult,
+)
 from tooling.acceptance.gates.social.desktop_private_e2e import (
     EXPLICITLY_UNPROVEN_SCENARIOS,
     HISTORICAL_SCENARIOS,
-    RUNTIME_CLIENT_IDS,
-    RUNTIME_SCENARIOS,
-    RUNTIME_SERVICE_IDS,
-    REQUIRED_SCENARIOS,
-    _parse_owner_output,
-    _runtime_owner_command,
-    _validate_owner_result,
+    SAME_STATION_SCENARIO,
+    SOURCE_COMMANDS,
+    SocialPrivateDesktopGate,
+    _validate_attached_suite,
 )
 
 
 class SocialPrivateDesktopGateTest(unittest.TestCase):
-    def _result(self, root: Path) -> dict[str, object]:
-        suite_report = root / "suite-runtime.json"
-        supporting = root / "scenario-evidence.json"
-        suite_report_digest = "a" * 64
-        suite_report.write_text(
-            json.dumps({"reportDigest": suite_report_digest}) + "\n",
-            encoding="utf-8",
-        )
-        supporting.write_text("{}\n", encoding="utf-8")
-        return {
-            "status": "FUNCTIONAL_PASS",
+    def _suite(self) -> ValidatedSuiteResult:
+        payload = {
             "proofState": "UNPROVEN",
+            "controlCommit": "a" * 40,
+            "sourceCommit": "b" * 40,
             "scenarioResults": {
-                scenario_id: "PASS"
-                for scenario_id in REQUIRED_SCENARIOS
+                SAME_STATION_SCENARIO: {
+                    "status": "PASS",
+                    "evidenceRefs": [
+                        "same-station-regression-receiver",
+                    ],
+                },
             },
-            "unprovenScenarios": list(EXPLICITLY_UNPROVEN_SCENARIOS),
-            "historicalScenarios": list(HISTORICAL_SCENARIOS),
             "resourceReuse": {
                 "provisioningRuns": 1,
-                "clientLaunches": 5,
-                "maxConcurrentNativeClients": 3,
+                "clientLaunches": 3,
+                "maxConcurrentNativeClients": 2,
                 "newAccountRegistrations": 3,
                 "stationBuilds": 0,
                 "stationDeployments": 0,
                 "desktopBuilds": 0,
-                "clientReplacements": ["bob"],
+                "clientReplacements": ["bob2"],
+                "fixtureOnlyClients": ["eve"],
             },
-            "suiteRuntimeReport": str(suite_report),
-            "suiteRuntimeReportDigest": suite_report_digest,
-            "runtimeManifest": {
-                "artifactKind": (
-                    "social-private-desktop-suite-runtime-manifest"
-                ),
-                "schemaVersion": 1,
-                "state": "FIXTURE_READY",
-                "cleanupState": "CLEANED",
-                "runId": "social-desktop-suite-run",
-                "workspaceId": "1" * 16,
-                "sourceCommit": "2" * 40,
-                "worktreeSetDigest": "3" * 64,
-                "scenarioManifestDigests": {
-                    scenario_id: "4" * 64
-                    for scenario_id in RUNTIME_SCENARIOS
-                },
-                "serviceIds": list(RUNTIME_SERVICE_IDS),
-                "clientIds": list(RUNTIME_CLIENT_IDS),
-                "suiteRuntimeReportDigest": suite_report_digest,
-            },
-            "supportingArtifacts": [str(supporting)],
+            "cleanup": {"status": "CLEANED"},
+            "suiteRuntimeReportDigest": "c" * 64,
         }
-
-    def test_parse_owner_output_uses_terminal_json_line(self) -> None:
-        payload = _parse_owner_output('runtime log\n{"status":"ok"}\n')
-        self.assertEqual({"status": "ok"}, payload)
-
-    def test_runtime_owner_uses_bounded_runtime_root(self) -> None:
-        command = _runtime_owner_command()
-        root = Path(command[command.index("--runtime-root") + 1])
-
-        self.assertTrue(root.is_absolute())
-        self.assertEqual(
-            Path(tempfile.gettempdir()) / "pt-social-desktop",
-            root.parent,
+        return ValidatedSuiteResult(
+            path=Path("/tmp/result.json"),
+            payload=payload,
+            suite_runtime_path=Path("/tmp/suite-runtime.json"),
+            suite_runtime_report={},
+            supporting_artifacts=(),
         )
-        self.assertLess(len(str(root)), 128)
 
-    def test_complete_desktop_result_is_accepted(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            suite, supporting, manifest = _validate_owner_result(
-                self._result(Path(temp_dir))
-            )
-            self.assertTrue(suite.is_file())
-            self.assertEqual(1, len(supporting))
-            self.assertEqual("FIXTURE_READY", manifest["state"])
-            self.assertEqual("CLEANED", manifest["cleanupState"])
-
-    def test_sorted_owner_json_preserves_scenario_manifest_closure(
+    def test_gate_attaches_current_css09_suite_without_runtime_owner(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            payload = self._result(Path(temp_dir))
-            parsed = _parse_owner_output(
-                json.dumps(payload, sort_keys=True)
-            )
-            _suite, _supporting, manifest = _validate_owner_result(parsed)
-            self.assertEqual(
-                set(RUNTIME_SCENARIOS),
-                set(manifest["scenarioManifestDigests"]),
-            )
+        gate = SocialPrivateDesktopGate()
+        suite = self._suite()
+        with (
+            mock.patch.object(
+                module,
+                "run_source_commands",
+                return_value=[{"name": "source-check"}],
+            ) as run_commands,
+            mock.patch.object(
+                module,
+                "load_suite_result",
+                return_value=suite,
+            ) as load_suite,
+            mock.patch.object(module, "attach_suite_evidence") as attach,
+        ):
+            result = gate.run()
 
-    def test_runtime_evidence_manifest_is_required(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            payload = self._result(Path(temp_dir))
-            payload.pop("runtimeManifest")
-            with self.assertRaisesRegex(GateError, "manifest is invalid"):
-                _validate_owner_result(payload)
+        run_commands.assert_called_once_with(gate, SOURCE_COMMANDS)
+        load_suite.assert_called_once_with()
+        attach.assert_called_once_with(gate, suite)
+        self.assertEqual([SAME_STATION_SCENARIO], result["provenScope"])
+        self.assertEqual(
+            list(EXPLICITLY_UNPROVEN_SCENARIOS),
+            result["unprovenScenarios"],
+        )
+        self.assertEqual(
+            list(HISTORICAL_SCENARIOS),
+            result["historicalScenarios"],
+        )
 
-    def test_runtime_evidence_requires_complete_scenario_closure(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            payload = self._result(Path(temp_dir))
-            payload["runtimeManifest"]["scenarioManifestDigests"].pop(
-                "social-bounds"
-            )
-            with self.assertRaisesRegex(GateError, "closure is invalid"):
-                _validate_owner_result(payload)
+    def test_missing_same_station_result_is_rejected(self) -> None:
+        suite = self._suite()
+        suite.payload["scenarioResults"].pop(SAME_STATION_SCENARIO)
 
-    def test_missing_scenario_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            payload = self._result(Path(temp_dir))
-            payload["scenarioResults"].pop("SOC-SEC-AS16")
-            with self.assertRaisesRegex(GateError, "incomplete"):
-                _validate_owner_result(payload)
+        with self.assertRaisesRegex(GateError, "same-Station regression"):
+            _validate_attached_suite(suite.payload)
+
+    def test_same_station_receiver_evidence_is_required(self) -> None:
+        suite = self._suite()
+        suite.payload["scenarioResults"][SAME_STATION_SCENARIO][
+            "evidenceRefs"
+        ] = []
+
+        with self.assertRaisesRegex(GateError, "receiver-visible evidence"):
+            _validate_attached_suite(suite.payload)
 
     def test_resource_expansion_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            payload = self._result(Path(temp_dir))
-            payload["resourceReuse"]["maxConcurrentNativeClients"] = 4
-            with self.assertRaisesRegex(GateError, "resource budget"):
-                _validate_owner_result(payload)
+        suite = self._suite()
+        suite.payload["resourceReuse"]["maxConcurrentNativeClients"] = 3
 
-    def test_browser_or_mobile_claim_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            payload = self._result(Path(temp_dir))
-            payload["unprovenScenarios"] = []
-            with self.assertRaisesRegex(GateError, "non-claims"):
-                _validate_owner_result(payload)
+        with self.assertRaisesRegex(GateError, "resource budget"):
+            _validate_attached_suite(suite.payload)
 
-    def test_historical_scenario_disposition_is_required(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            payload = self._result(Path(temp_dir))
-            payload["historicalScenarios"] = []
-            with self.assertRaisesRegex(GateError, "historical scenario"):
-                _validate_owner_result(payload)
+    def test_replacement_identity_drift_is_rejected(self) -> None:
+        suite = self._suite()
+        suite.payload["resourceReuse"]["clientReplacements"] = ["bob"]
+
+        with self.assertRaisesRegex(GateError, "resource budget"):
+            _validate_attached_suite(suite.payload)
+
+    def test_old_w7_runtime_owner_path_is_absent(self) -> None:
+        source = inspect.getsource(module)
+
+        self.assertNotIn("run-social-desktop-acceptance-suite", source)
+        self.assertNotIn("_runtime_owner_command", source)
 
 
 if __name__ == "__main__":
