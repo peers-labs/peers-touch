@@ -509,9 +509,17 @@ class RuntimeOwnerTest(unittest.TestCase):
         cross_source = inspect.getsource(
             W7RuntimeOwner.run_social_cross_station_suite
         )
+        recovery_prepare = cross_source.index(
+            "recovery_phrase, recovery_preparation = _prepare_portable_recovery("
+        )
+        fixture_prepare = cross_source.index(
+            "fixture_identity = _prepare_cross_station_social_fixture("
+        )
         scenario_loop_start = cross_source.index(
             'scenario_id="AS17"',
         )
+        self.assertLess(recovery_prepare, fixture_prepare)
+        self.assertLess(fixture_prepare, scenario_loop_start)
         self.assertEqual(1, cross_source.count("SuiteRuntimeLedger("))
         self.assertEqual(
             1,

@@ -7676,10 +7676,10 @@ class W7RuntimeOwner:
 
             alice = clients[SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[0]]
             bob = clients[SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[1]]
-            fixture_identity = _prepare_cross_station_social_fixture(alice, bob)
             recovery_phrase, recovery_preparation = _prepare_portable_recovery(
                 bob
             )
+            fixture_identity = _prepare_cross_station_social_fixture(alice, bob)
             eve_token, eve_ptid = _station_login(
                 secondary_station_url,
                 station_peer_id=secondary_attestation.runtime_identity,
