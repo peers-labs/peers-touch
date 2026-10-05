@@ -7,7 +7,7 @@ interface TestSessionState {
 }
 
 interface TestFederationState {
-  self: { homeStationPeerId: string } | null;
+  self: { home_station_peer_id?: string } | null;
 }
 
 const mocks = vi.hoisted(() => {
@@ -69,7 +69,7 @@ const mocks = vi.hoisted(() => {
       sessionEpoch: 1,
     } as TestSessionState,
     federationState: {
-      self: { homeStationPeerId: 'station-a' },
+      self: { home_station_peer_id: 'station-a' },
     } as TestFederationState,
     sessionListener: undefined as
       | ((state: TestSessionState, previous: TestSessionState) => void)
@@ -180,7 +180,7 @@ beforeEach(() => {
     sessionEpoch: 1,
   };
   mocks.federationState = {
-    self: { homeStationPeerId: 'station-a' },
+    self: { home_station_peer_id: 'station-a' },
   };
   mocks.moments.postsById = {};
   mocks.moments.circles = [];
@@ -577,6 +577,19 @@ describe('momentsRuntime identity fence', () => {
     await flushRuntime();
 
     expect(mocks.moments.syncProjection).toHaveBeenCalledWith('periodic reconcile');
+  });
+
+  it('waits for a Home Station identity without failing runtime bootstrap', async () => {
+    mocks.federationState = { self: {} };
+
+    momentsRuntime.install();
+    await flushRuntime();
+
+    expect(captureMomentsRuntimeScope()).toMatchObject({
+      actorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationIdentity: 'station:unresolved',
+    });
   });
 
   it('does not hide an authoritative sync failure during periodic resync', async () => {

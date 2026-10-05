@@ -92,7 +92,9 @@ function scopeKey(scope: Omit<MomentsRuntimeScope, 'generation'>): string {
 
 function currentStationIdentity(): string {
   if (stationIdentityHint) return stationIdentityHint;
-  const stationPeerId = useFederationStore.getState().self?.homeStationPeerId.trim();
+  const stationPeerId = (
+    useFederationStore.getState().self?.home_station_peer_id ?? ''
+  ).trim();
   return stationPeerId ? `peer:${stationPeerId}` : 'station:unresolved';
 }
 
@@ -736,8 +738,8 @@ export const momentsRuntime: RuntimeDescriptor = {
     const unsubscribeFederation = useFederationStore.subscribe((state, previous) => {
       if (stationIdentityHint) return;
       if (
-        state.self?.homeStationPeerId.trim()
-        !== previous.self?.homeStationPeerId.trim()
+        (state.self?.home_station_peer_id ?? '').trim()
+        !== (previous.self?.home_station_peer_id ?? '').trim()
       ) {
         void reconcileAuthenticatedRuntime('station-identity');
       }
