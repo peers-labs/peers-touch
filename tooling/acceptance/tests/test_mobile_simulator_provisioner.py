@@ -789,22 +789,22 @@ class MobileSimulatorContractTests(unittest.TestCase):
         contract = EnvironmentContract.from_yaml(path)
         provisioner = MobileDirectSimulatorProvisioner(
             contract,
-            station_profiles={"station": "chat-native-disposable"},
+            station_profiles={"station": "three"},
         )
-        active = {"PT_DEV_PROFILE": "chat-native-five"}
+        active = {"PT_DEV_PROFILE": "three"}
 
-        with (
-            patch.object(Path, "is_file", return_value=True),
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
-                "load_env_file",
-                return_value={
-                    "PT_DEV_PROFILE": "chat-native-disposable",
+        with patch(
+            "tooling.acceptance.provisioners.mobile_simulator."
+            "resolve_machine_profile_environment",
+            return_value=(
+                "three",
+                Path("/canonical/three/profile.env.example"),
+                15,
+                {
+                    "PT_DEV_PROFILE": "three",
                     "PT_STATION_MODE": "remote",
                     "PT_STATION_URL": "https://direct.example",
-                    "PT_STATION_DEPLOY_ENV": (
-                        "chat-native-disposable-station"
-                    ),
+                    "PT_STATION_DEPLOY_ENV": "station-three",
                 },
             ),
         ):
@@ -816,9 +816,40 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.assertEqual(
             merged["PT_MOBILE_DIRECT_STATION_DEPLOY_ENV"],
-            "chat-native-disposable-station",
+            "station-three",
         )
         self.assertNotIn("PT_MOBILE_DIRECT_STATION_URL", active)
+
+    def test_direct_simulator_rejects_non_active_station_profile(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-direct-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileDirectSimulatorProvisioner(
+            contract,
+            station_profiles={"station": "three"},
+        )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_machine_profile_environment",
+                return_value=(
+                    "two",
+                    Path("/canonical/two/profile.env.example"),
+                    1,
+                    {
+                        "PT_DEV_PROFILE": "two",
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_URL": "https://two.example",
+                        "PT_STATION_DEPLOY_ENV": "station-two",
+                    },
+                ),
+            ),
+            self.assertRaisesRegex(
+                BlockedError,
+                "requested='three' active='two'",
+            ),
+        ):
+            provisioner._inject_station_profile_bindings({})
 
     def test_current_two_actor_gates_use_direct_environment(self) -> None:
         catalog = json.loads(

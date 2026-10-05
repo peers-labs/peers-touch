@@ -6927,6 +6927,51 @@ class MobileDirectSimulatorProvisioner(
     actor_manifest_kind = "mobile-direct-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-direct-simulator-actors.json"
 
+    def _inject_station_profile_bindings(
+        self,
+        profile_env: Mapping[str, str],
+    ) -> dict[str, str]:
+        requested = self._required_station_profiles()
+        profile_name = requested.get("station")
+        if not profile_name:
+            return dict(profile_env)
+        resolved_name, _, _, station_env = (
+            resolve_machine_profile_environment(REPO_ROOT)
+        )
+        if resolved_name != profile_name:
+            raise BlockedError(
+                reason=(
+                    "Mobile Direct profile binding does not match the "
+                    f"active reviewed profile: requested={profile_name!r} "
+                    f"active={resolved_name!r}"
+                ),
+                resource="service-profile:station",
+            )
+        if station_env.get("PT_STATION_MODE", "").strip() != "remote":
+            raise BlockedError(
+                reason="Mobile Direct requires a remote Station profile",
+                resource="service-profile:station",
+            )
+        station_url = station_env.get("PT_STATION_URL", "").rstrip("/")
+        deployment_environment = station_env.get(
+            "PT_STATION_DEPLOY_ENV",
+            "",
+        ).strip()
+        if not station_url or not deployment_environment:
+            raise BlockedError(
+                reason=(
+                    "Mobile Direct active profile has no complete "
+                    "endpoint/deployment binding"
+                ),
+                resource="service-profile:station",
+            )
+        url_key, deployment_key = self.station_profile_keys["station"]
+        return {
+            **profile_env,
+            url_key: station_url,
+            deployment_key: deployment_environment,
+        }
+
 
 class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
     environment_id = CHAT_MIXED_NATIVE_ENVIRONMENT_ID
