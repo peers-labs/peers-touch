@@ -3323,6 +3323,47 @@ func TestConversationDDDExpiredPlansPersistTerminalStateAndReleaseReservations(t
 	})
 }
 
+func TestConversationDDDPrepareMembershipSelectsCanonicalActorDevice(t *testing.T) {
+	fixture := newDDDComposition(t)
+	owner := dddEndpoint("ptid:canonical-owner", "owner-1")
+	member := dddEndpoint("ptid:canonical-member", "member-1")
+	charlieZ := dddEndpoint("ptid:canonical-charlie", "charlie-z")
+	charlieA := dddEndpoint("ptid:canonical-charlie", "charlie-a")
+	groupID := valueobject.ConversationID("canonical-device-group")
+	createDDDGroup(t, fixture, groupID, owner, member)
+	seedDDDDevices(
+		t,
+		fixture.db,
+		dddDevice(charlieZ, "station-b"),
+		dddDevice(charlieA, "station-b"),
+	)
+
+	plan, err := fixture.commands.PrepareMembership(
+		context.Background(),
+		dddPrepareMembershipRequest(
+			t,
+			fixture,
+			groupID,
+			owner,
+			[]entity.MembershipChange{{
+				Action: entity.MembershipActionAddActor,
+				Actor:  charlieA.Actor,
+				Role:   valueobject.MemberRoleMember,
+			}},
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Changes) != 1 ||
+		plan.Changes[0].Device != charlieA.Device ||
+		plan.Changes[0].HomeStation != "station-b" ||
+		!containsEndpointDDD(plan.AddedEndpoints, charlieA) ||
+		containsEndpointDDD(plan.AddedEndpoints, charlieZ) {
+		t.Fatalf("canonical add-actor plan = %+v", plan)
+	}
+}
+
 func TestConversationDDDPrepareMembershipRemovesRevokedDeviceLeaf(t *testing.T) {
 	fixture := newDDDComposition(t)
 	owner := dddEndpoint("ptid:revoked-leaf-owner", "owner-1")
