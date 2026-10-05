@@ -54,6 +54,23 @@ Then select platform docs:
 - Mobile: `docs/client/mobile/`
 - Station: `docs/station/`
 
+### Work depth
+
+Small, standard, and large work use the same binding, declaration, execution,
+review, delivery, and coordinated-close lifecycle. The depth changes required
+artifacts and proof, not ownership or cleanup:
+
+| Depth | Use when | Required depth |
+|---|---|---|
+| Small | The change is local, uses accepted contracts, and does not alter product or architecture decisions. | Exact source claim, focused checks, findings-first review, standalone or mounted delivery, and `dev-close`. |
+| Standard | The change crosses modules or changes an existing product/runtime behavior covered by accepted sources. | Affected `ModuleImpact` records, dependency-aware implementation, focused functional proof where product behavior changes, applicable Acceptance, review, and `dev-close`. |
+| Large | The change introduces or replaces product journeys, architecture boundaries, ownership, protocol, persistence, security, or rollout policy. | Accepted product and architecture contracts before implementation; a tracked Plan Version only when the owner explicitly accepts and mounts one; full required Journey and Acceptance evidence. |
+
+Work depth never overrides Plan policy. Explicit standalone no-Plan work remains
+standalone at every depth. If a large standalone request lacks an accepted
+product or architecture decision, report that missing decision instead of
+creating a Plan.
+
 ---
 
 ## 2) Bind the active worktree
@@ -214,7 +231,7 @@ Use owner commands rather than editing machine state or Plan lifecycle fields:
 ```bash
 make dev-session-start \
   WORK_ITEM=<stable-id> \
-  PLAN=<package-plan.md> \
+  PLAN=<plan-version.md> \
   TASK=<current-task-id> \
   JOURNEY=<journey-id>
 
@@ -243,7 +260,7 @@ Workflow Binding, or caller-provided identity.
 Session and current Completion Review pass. `make plan-reopen` reopens the
 earliest completed closure invalidated by source or obligation drift.
 
-`make plan-cancel PLAN=<package-plan.md>` is the exact-owner cancellation path.
+`make plan-cancel PLAN=<plan-version.md>` is the exact-owner cancellation path.
 After delivery or cancellation, `dev-close` verifies no live lease remains,
 archives the Session, closes active-work, releases the declaration and mount,
 and writes a resumable `DevelopmentCloseReceipt`. New work is not admitted
@@ -301,52 +318,6 @@ credential, or scope failure.
 
 The agent runs the applicable methodology review plus `pt-quality-check`,
 `pt-completion-auditor`, and `pt-github-review`; it fixes source-backed findings
-and reruns the affected review. Escalate only when the next step requires an
-operation outside the accepted authorization, destructive or irreversible
-work, an external grant/resource, an unresolved material semantic choice, or
-fixed-point exhaustion.
-
-### Host-Neutral Runtime And Tool Dispatch
-
-Project owners do not depend on TRAE, Cursor, Codex, or another agent host:
-
-```text
-pt-dev-runtime-handoff -> repository-native command / product driver
-pt-goal-orchestrator -> Host Capability Request
-  -> Guardian ACTION_ALLOWED
-  -> pt-dev-workflow
-  -> pt-trae-host-adapter | pt-cursor-host-adapter | pt-codex-host-adapter
-```
-
-The generic owners define scheduling, Journey semantics, verification class,
-Session transition, and cleanup. A host adapter only invokes tools exposed by
-the detected host. It may not decide PASS, weaken required proof, run the
-repository-native fallback, or become a Task blocker when a project-owned path
-can continue. Missing capability degrades only that transport. Cleanup failure
-has one bounded quarantine and one post-expiry observation, never a recursive
-cleanup loop.
-
-### Continuous Plan Run
-
-An explicit `continue`, `resume`, `execute the plan`, or equivalent request
-authorizes Dev Workflow to drain the accepted Plan within its recorded
-authorization envelope:
-
-```text
-Task Goal Slice
-  -> focused verification
-  -> agent review and remediation
-  -> Task closure or parking
-  -> dependency-ready successor
-  -> repeat
-```
-
-Goal Slice remains one Task and one stage. Task closure, review success,
-Context Anchor output, and context compaction are internal checkpoints, not
-requests for another user confirmation.
-
-The agent runs the applicable methodology review plus `pt-quality-check`,
-`pt-completion-auditor`, and `pt-github-review`; it fixes source-backed findings
 and reruns the affected review. Escalate only when the next step requires:
 
 - an operation the accepted Plan authorization explicitly denies or does not
@@ -378,8 +349,8 @@ pt-goal-orchestrator -> Host Capability Request
 The generic owners define scheduling, Journey semantics, verification class,
 Session transition, and cleanup. A host adapter only invokes tools exposed by
 the detected host. It may not decide PASS, weaken a native Journey to browser
-or coordinate evidence, or become a Task blocker when a repository-native path
-can continue.
+or coordinate evidence, run the repository-native fallback, or become a Task
+blocker when a project-owned path can continue.
 
 The scheduler only projects the required host capability. Dev Workflow invokes
 the selected adapter after Guardian admission and owns retries, fallback,
@@ -490,14 +461,13 @@ CI=false pnpm run tauri:build
 ### Mobile
 
 ```bash
-cd apps/mobile/android && ./gradlew build
-cd apps/mobile/ios && xcodebuild -scheme PeersTouch -configuration Debug build
+pnpm mobile:check
 ```
 
 ### Station
 
 ```bash
-cd apps/station
+cd apps/station/app
 gofmt -l .
 go test ./...
 ```
