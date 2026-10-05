@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -19,6 +21,10 @@ import (
 )
 
 const goalDirectModelSource = "goal.direct_model.v1"
+
+var errGoalDirectModelExecutionAuthorityLost = errors.New(
+	"Goal Direct Model execution authority lost",
+)
 
 type goalDirectModelInput struct {
 	GoalID             string                 `json:"goal_id"`
@@ -51,6 +57,12 @@ type GoalDirectModelExecutor struct {
 	writer     *TaskEventWriter
 	onTerminal goalTaskTerminalObserver
 	now        func() time.Time
+	activeMu   sync.Mutex
+	active     map[string]*goalDirectModelActiveExecution
+}
+
+type goalDirectModelActiveExecution struct {
+	cancel context.CancelFunc
 }
 
 type goalTaskTerminalObserver interface {
@@ -74,6 +86,7 @@ func NewGoalDirectModelExecutor(
 		provider: executor,
 		writer:   NewTaskEventWriter(),
 		now:      time.Now,
+		active:   make(map[string]*goalDirectModelActiveExecution),
 	}
 }
 
@@ -276,6 +289,25 @@ func (e *GoalDirectModelExecutor) Start(
 	}()
 }
 
+func (e *GoalDirectModelExecutor) Cancel(
+	ownerPTID string,
+	taskID string,
+) error {
+	ownerPTID = strings.TrimSpace(ownerPTID)
+	taskID = strings.TrimSpace(taskID)
+	if e == nil || ownerPTID == "" || taskID == "" {
+		return nil
+	}
+	key := goalDirectModelActiveExecutionKey(ownerPTID, taskID)
+	e.activeMu.Lock()
+	active := e.active[key]
+	e.activeMu.Unlock()
+	if active != nil {
+		active.cancel()
+	}
+	return nil
+}
+
 func (e *GoalDirectModelExecutor) Execute(
 	ctx context.Context,
 	ownerPTID string,
@@ -291,6 +323,20 @@ func (e *GoalDirectModelExecutor) Execute(
 	runtime, claimed, _, err := e.claim(ctx, ownerPTID, taskID)
 	if err != nil || !claimed {
 		return err
+	}
+
+	executionCtx, releaseExecution := e.registerActiveExecution(
+		ctx,
+		ownerPTID,
+		taskID,
+	)
+	defer releaseExecution()
+	cancelled, err := e.goalCancellationPersisted(ctx, runtime)
+	if err != nil {
+		return err
+	}
+	if cancelled {
+		return nil
 	}
 
 	if runtime.Run.ProviderID == "" || runtime.Run.ModelIntent == "" ||
@@ -338,11 +384,11 @@ func (e *GoalDirectModelExecutor) Execute(
 		return finishErr
 	}
 
-	callCtx := ctx
+	callCtx := executionCtx
 	cancel := func() {}
 	if runtime.Input.Budget != nil && runtime.Input.Budget.GetWallTimeMs() > 0 {
 		callCtx, cancel = context.WithTimeout(
-			ctx,
+			executionCtx,
 			time.Duration(runtime.Input.Budget.GetWallTimeMs())*time.Millisecond,
 		)
 	}
@@ -365,6 +411,13 @@ func (e *GoalDirectModelExecutor) Execute(
 			MaxOutputTokens: goalDirectModelMaxOutputTokens(runtime.Input.Budget),
 		},
 	)
+	cancelled, cancellationErr := e.goalCancellationPersisted(ctx, runtime)
+	if cancellationErr != nil {
+		return cancellationErr
+	}
+	if cancelled {
+		return nil
+	}
 	if callErr != nil {
 		_, finishErr := e.finish(
 			ctx,
@@ -401,6 +454,67 @@ func (e *GoalDirectModelExecutor) Execute(
 	}
 	_, err = e.finish(ctx, runtime, provider, resp, true, content)
 	return err
+}
+
+func (e *GoalDirectModelExecutor) registerActiveExecution(
+	ctx context.Context,
+	ownerPTID string,
+	taskID string,
+) (context.Context, func()) {
+	executionCtx, cancel := context.WithCancel(ctx)
+	key := goalDirectModelActiveExecutionKey(ownerPTID, taskID)
+	active := &goalDirectModelActiveExecution{cancel: cancel}
+	e.activeMu.Lock()
+	e.active[key] = active
+	e.activeMu.Unlock()
+	return executionCtx, func() {
+		cancel()
+		e.activeMu.Lock()
+		if e.active[key] == active {
+			delete(e.active, key)
+		}
+		e.activeMu.Unlock()
+	}
+}
+
+func (e *GoalDirectModelExecutor) goalCancellationPersisted(
+	ctx context.Context,
+	runtime *goalDirectModelRuntime,
+) (bool, error) {
+	if e == nil || e.db == nil || runtime == nil {
+		return false, goalInternal("Inspect Goal cancellation", nil)
+	}
+	var run persistence.DirectRun
+	if err := e.db.WithContext(ctx).
+		Select("state").
+		Where("direct_run_id = ?", runtime.Run.DirectRunID).
+		First(&run).Error; err != nil {
+		return false, goalInternal("Inspect Goal runtime cancellation", err)
+	}
+	if run.State == "cancelled" {
+		return true, nil
+	}
+	var task persistence.TaskRun
+	if err := e.db.WithContext(ctx).
+		Select("status").
+		Where(
+			"task_id = ? AND owner_actor_ptid = ?",
+			runtime.Task.TaskID,
+			runtime.Task.OwnerActorPTID,
+		).
+		First(&task).Error; err != nil {
+		return false, goalInternal("Inspect Goal TaskRun cancellation", err)
+	}
+	return task.Status == int32(
+		model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED,
+	), nil
+}
+
+func goalDirectModelActiveExecutionKey(
+	ownerPTID string,
+	taskID string,
+) string {
+	return strings.TrimSpace(ownerPTID) + "\x00" + strings.TrimSpace(taskID)
 }
 
 func (e *GoalDirectModelExecutor) claim(
@@ -677,6 +791,15 @@ func (e *GoalDirectModelExecutor) finish(
 		})
 		return nil
 	})
+	if errors.Is(err, errGoalDirectModelExecutionAuthorityLost) {
+		cancelled, cancellationErr := e.goalCancellationPersisted(ctx, runtime)
+		if cancellationErr != nil {
+			return events, cancellationErr
+		}
+		if cancelled {
+			return nil, nil
+		}
+	}
 	if err == nil && e.onTerminal != nil {
 		if advanceErr := e.onTerminal.OnTaskTerminal(
 			ctx,
@@ -834,7 +957,7 @@ func updateGoalDirectModelTerminalStateTx(
 		return update.Error
 	}
 	if update.RowsAffected != 1 {
-		return goalInternal("Goal Direct Model result lost execution authority", nil)
+		return errGoalDirectModelExecutionAuthorityLost
 	}
 	update = tx.WithContext(ctx).Model(&persistence.TaskRun{}).
 		Where(

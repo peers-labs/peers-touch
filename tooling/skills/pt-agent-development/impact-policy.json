@@ -331,6 +331,7 @@
         "apps/desktop/src/pages/HomePage*.tsx",
         "apps/desktop/src/runtimes/agent*.ts",
         "apps/desktop/src/runtimes/homeRuntime*.ts",
+        "apps/desktop/src/services/goal-service.ts",
         "apps/desktop/src/services/agent/**",
         "apps/desktop/src/services/agent*.ts",
         "apps/desktop/src/services/desktop_api*.ts",

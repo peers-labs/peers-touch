@@ -8,17 +8,20 @@ import (
 )
 
 type GoalHandlers struct {
-	service   *service.GoalService
-	admission *service.GoalAdmissionService
+	service      *service.GoalService
+	admission    *service.GoalAdmissionService
+	cancellation *service.GoalCancellationService
 }
 
 func NewGoalHandlers(
 	goalService *service.GoalService,
 	admissionService *service.GoalAdmissionService,
+	cancellationService *service.GoalCancellationService,
 ) *GoalHandlers {
 	return &GoalHandlers{
-		service:   goalService,
-		admission: admissionService,
+		service:      goalService,
+		admission:    admissionService,
+		cancellation: cancellationService,
 	}
 }
 
@@ -92,7 +95,7 @@ func (h *GoalHandlers) HandleCancel(
 	ctx context.Context,
 	req *model.CancelAgentGoalRequest,
 ) (*model.CancelAgentGoalResponse, error) {
-	goal, err := h.service.Cancel(ctx, subjectActorPTID(ctx), req)
+	goal, err := h.cancellation.Cancel(ctx, subjectActorPTID(ctx), req)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
