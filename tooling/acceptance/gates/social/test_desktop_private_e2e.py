@@ -14,6 +14,7 @@ from tooling.acceptance.gates.social.desktop_private_e2e import (
     RUNTIME_SERVICE_IDS,
     REQUIRED_SCENARIOS,
     _parse_owner_output,
+    _runtime_owner_command,
     _validate_owner_result,
 )
 
@@ -74,6 +75,17 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
     def test_parse_owner_output_uses_terminal_json_line(self) -> None:
         payload = _parse_owner_output('runtime log\n{"status":"ok"}\n')
         self.assertEqual({"status": "ok"}, payload)
+
+    def test_runtime_owner_uses_bounded_result_root(self) -> None:
+        command = _runtime_owner_command()
+        root = Path(command[command.index("--result-root") + 1])
+
+        self.assertTrue(root.is_absolute())
+        self.assertEqual(
+            Path(tempfile.gettempdir()) / "pt-social-desktop",
+            root.parent,
+        )
+        self.assertLess(len(str(root)), 128)
 
     def test_complete_desktop_result_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
