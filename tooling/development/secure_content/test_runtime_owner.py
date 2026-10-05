@@ -2625,19 +2625,19 @@ class RuntimeOwnerTest(unittest.TestCase):
             (
                 {"groupUlid": "01JREMOTE"},
                 {
-                    "conversationId": "01JREMOTE",
-                    "members": [
-                        {"ptid": "ptid:primary"},
-                        {"ptid": "ptid:local-member"},
+                    "groupUlid": "01JREMOTE",
+                    "memberPtids": [
+                        "ptid:primary",
+                        "ptid:local-member",
                     ],
                 },
                 {"groupUlid": "01JREMOTE", "memberCount": 3},
                 {
-                    "conversationId": "01JREMOTE",
-                    "members": [
-                        {"ptid": "ptid:primary"},
-                        {"ptid": "ptid:local-member"},
-                        {"ptid": "ptid:remote"},
+                    "groupUlid": "01JREMOTE",
+                    "memberPtids": [
+                        "ptid:primary",
+                        "ptid:local-member",
+                        "ptid:remote",
                     ],
                 },
             )
@@ -2698,8 +2698,12 @@ class RuntimeOwnerTest(unittest.TestCase):
                 ),
                 call(
                     primary,
-                    "groupLifecycleSnapshot",
-                    {"groupUlid": "01JREMOTE"},
+                    "syncGroup",
+                    {
+                        "groupUlid": "01JREMOTE",
+                        "limit": 50,
+                        "maxPages": 1,
+                    },
                     timeout=15,
                 ),
                 call(
@@ -2712,8 +2716,12 @@ class RuntimeOwnerTest(unittest.TestCase):
                 ),
                 call(
                     primary,
-                    "groupLifecycleSnapshot",
-                    {"groupUlid": "01JREMOTE"},
+                    "syncGroup",
+                    {
+                        "groupUlid": "01JREMOTE",
+                        "limit": 50,
+                        "maxPages": 1,
+                    },
                     timeout=15,
                 ),
             ],

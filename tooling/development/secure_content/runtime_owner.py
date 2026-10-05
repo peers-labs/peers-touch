@@ -1846,20 +1846,20 @@ def _prepare_remote_group_fixture(
     def authoritative_local_group() -> Mapping[str, Any] | None:
         snapshot = _chat_harness(
             primary_client,
-            "groupLifecycleSnapshot",
-            {"groupUlid": group_ulid},
+            "syncGroup",
+            {
+                "groupUlid": group_ulid,
+                "limit": 50,
+                "maxPages": 1,
+            },
             timeout=15,
         )
-        members = snapshot.get("members")
+        members = snapshot.get("memberPtids")
         if (
-            snapshot.get("conversationId") == group_ulid
+            snapshot.get("groupUlid") == group_ulid
             and isinstance(members, Sequence)
             and not isinstance(members, (str, bytes))
-            and any(
-                isinstance(member, Mapping)
-                and member.get("ptid") == local_member_ptid
-                for member in members
-            )
+            and local_member_ptid in members
         ):
             return snapshot
         return None
@@ -1896,19 +1896,20 @@ def _prepare_remote_group_fixture(
     def authoritative_membership() -> Mapping[str, Any] | None:
         snapshot = _chat_harness(
             primary_client,
-            "groupLifecycleSnapshot",
-            {"groupUlid": group_ulid},
+            "syncGroup",
+            {
+                "groupUlid": group_ulid,
+                "limit": 50,
+                "maxPages": 1,
+            },
             timeout=15,
         )
-        members = snapshot.get("members")
+        members = snapshot.get("memberPtids")
         if (
-            isinstance(members, Sequence)
+            snapshot.get("groupUlid") == group_ulid
+            and isinstance(members, Sequence)
             and not isinstance(members, (str, bytes))
-            and any(
-                isinstance(member, Mapping)
-                and member.get("ptid") == remote_actor_ptid
-                for member in members
-            )
+            and remote_actor_ptid in members
         ):
             return snapshot
         return None
