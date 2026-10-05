@@ -69,13 +69,13 @@ export VITE_PORT=3000
 | `local-dev/workflow-doctor.mjs` | 推荐 | 检查公开工作流承诺与实际安装/状态/服务 | `make workflow-doctor IDE=<host>` |
 | `skill-overlay-control.py` | 推荐 | 管理 machine-local 用户 Skill Overlay | 提供 install/list/enable/disable/uninstall/resolve；安装为 digest-addressed immutable copy，不写 host Skill 投影 |
 | `skill-overlay-control-test.py` | 可用 | 回归验证用户 Overlay 控制面 | 覆盖生命周期、排序、显式替换、symlink 拒绝、registry 校验和 installed-copy 篡改 |
-| `review/submit-pipeline.sh` | 推荐 | 用户请求提交 MR/PR 时的提交前质量流水线 | 通过 `make review-submit REVIEW_BASE=<base>` 调用；生成 quality evidence 并运行 review/acceptance gates |
+| `review/submit-pipeline.sh` | 推荐 | 用户请求提交 MR/PR 时的提交前质量流水线 | tracked 模式传 `SESSION` 并运行 review/acceptance gates；standalone 模式按 diff 评审并标记 formal Acceptance 为 `NOT RUN/UNPROVEN` |
 | `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
 | `acceptance-plan.py` | 推荐 | 根据 git diff 生成 Gate 影响投影，并与正式 Plan 校验 | `make acceptance-plan` 只投影当前 closure |
 | `acceptance-run.py` | 推荐 | 执行正式 Plan 当前 closure 的 Gate 并记录日志 | completion/full 必须显式请求 |
-| `execution-plan.py` | 推荐 | 解析当前 workspace 的 mounted Plan Version 与 Execution Run；CI 需显式输入 | 校验 current closure，并在 PR 前执行 `--require-complete` |
+| `execution-plan.py` | 推荐 | 解析当前 workspace 的 mounted Plan Version 与 Execution Run；CI 需显式输入 | tracked PR 用 `--require-complete`；本地 `--allow-untracked` 仅把 `PLAN_MOUNT_REQUIRED` 分类为 standalone |
 | `plan/plan-mount.mjs` | 推荐 | 管理 Project Ledger PlanMount、immutable ExecutionPlanSnapshot 与 mutable ExecutionRun | `make plan-mount PLAN=<path>` 挂载，终态后用 `make plan-unmount` 释放 |
-| `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表 | CI 对每个声明路径执行 `execution-plan.py --plan`，不扫描 branch |
+| `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表或 `- None` standalone 标记 | CI 只对显式 Plan 路径执行 `execution-plan.py --plan`，不扫描 branch |
 | `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |
 | `acceptance-validate.py` | 推荐 | 按责任范围校验 capability graph、feature/gate、Provisioning contract、registry、run result 与 report；Infra 模式只消费 `acceptance_core_self_validation` | 通过 `make acceptance-infra-validate`、`make acceptance-validate` 或 `make acceptance-validate DOMAIN=<name>` 调用 |

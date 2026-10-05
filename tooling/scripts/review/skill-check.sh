@@ -14,6 +14,7 @@ pr_template=".github/PULL_REQUEST_TEMPLATE.md"
 review_workflow=".github/workflows/review.yml"
 pr_plan_input="tooling/scripts/review/pr-plan-input.py"
 pr_plan_input_test="tooling/scripts/review/pr-plan-input-test.py"
+execution_plan_test="tooling/scripts/execution-plan-test.py"
 submit_pipeline="tooling/scripts/review/submit-pipeline.sh"
 review_runner="tooling/scripts/review/run.sh"
 gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
@@ -92,6 +93,7 @@ require_file "$pr_template"
 require_file "$review_workflow"
 require_file "$pr_plan_input"
 require_file "$pr_plan_input_test"
+require_file "$execution_plan_test"
 require_file "$submit_pipeline"
 require_file "$review_runner"
 require_file "$gap_skill"
@@ -265,6 +267,25 @@ for marker in "${submit_markers[@]}"; do
 done
 
 for marker in \
+  "Tracked PR" \
+  "Standalone PR" \
+  "--allow-untracked" \
+  "Plan absence alone never forces a draft PR"; do
+  if ! grep -Fq -- "$marker" "$pr_skill_file"; then
+    fail "$pr_skill_file missing tracked/standalone PR marker: $marker"
+  fi
+done
+
+for marker in \
+  "--allow-untracked" \
+  "mode: " \
+  "standalone PR has no Development Session"; do
+  if ! grep -Fq -- "$marker" "$submit_pipeline"; then
+    fail "$submit_pipeline missing standalone PR behavior: $marker"
+  fi
+done
+
+for marker in \
   "Execution Plans / 执行计划" \
   "pr-plan-input.py" \
   "execution-plan.py"; do
@@ -272,6 +293,18 @@ for marker in \
     fail "explicit PR Plan input is missing marker: $marker"
   fi
 done
+
+if ! python3 "$pr_plan_input_test" >/tmp/pt-pr-plan-input-test.$$ 2>&1; then
+  cat /tmp/pt-pr-plan-input-test.$$
+  fail "$pr_plan_input_test failed"
+fi
+rm -f /tmp/pt-pr-plan-input-test.$$
+
+if ! python3 "$execution_plan_test" >/tmp/pt-execution-plan-test.$$ 2>&1; then
+  cat /tmp/pt-execution-plan-test.$$
+  fail "$execution_plan_test failed"
+fi
+rm -f /tmp/pt-execution-plan-test.$$
 
 if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
   fail "$planctl_script must permit only evidence-backed blocked Task handoff"
