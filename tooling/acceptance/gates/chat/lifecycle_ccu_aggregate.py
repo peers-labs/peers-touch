@@ -214,8 +214,8 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
             "CHAT-G22",
         ],
         "spec": [
-            "docs/architecture/chat-lifecycle/acceptance-matrix.md",
-            "docs/architecture/chat-lifecycle/decisions.md#ccu-d05",
+            "docs/architecture/domains/chat/lifecycle/acceptance-matrix.md",
+            "docs/architecture/domains/chat/lifecycle/decisions.md#ccu-d05",
         ],
         "sampleEmissionAllowed": aggregate.passed,
         "source": aggregate.source,

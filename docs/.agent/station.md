@@ -31,8 +31,8 @@ Do **not** use this file as the place to redefine Station architecture, Subserve
 ### Architecture Sources
 
 - [Project Architecture](../../docs/global/architecture.md)
-- [Station/Desktop Scope Boundary](../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
-- [Unified Handler Architecture](../../docs/architecture/runtime/unified-handler-architecture.md)
+- [Station/Desktop Scope Boundary](../architecture/platform/station-desktop-boundary.md)
+- [Unified Handler Architecture](../architecture/platform/contracts/handler-model.md)
 
 ### Specification Sources
 

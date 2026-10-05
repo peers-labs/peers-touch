@@ -346,7 +346,7 @@ LobeHub 对 UI/UX 一致性的控制不只靠组件库，而是通过“组件�
 
 - `tooling/skills/pt-prototype-design/SKILL.md`
 - `.trae/skills/pt-prototype-design/SKILL.md`
-- `docs/architecture/prototypes/README.md`
+- `docs/architecture/engineering/prototypes/README.md`
 
 ---
 

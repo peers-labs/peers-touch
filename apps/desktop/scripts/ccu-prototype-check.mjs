@@ -11,15 +11,15 @@ const repoRoot = path.resolve(desktopRoot, '..', '..');
 const portalUrl = process.env.PROTOTYPE_URL ?? 'http://localhost:3200/';
 const desktopEvidence = path.join(
   repoRoot,
-  'docs/architecture/realtime/prototype/evidence/ccu-20260922',
+  'docs/architecture/domains/chat/calling/prototype/evidence/ccu-20260922',
 );
 const mobileEvidence = path.join(
   repoRoot,
-  'docs/architecture/mobile/prototype/evidence/ccu-20260922',
+  'docs/architecture/platform/client/mobile/prototype/evidence/ccu-20260922',
 );
 const manifestPath = path.join(
   repoRoot,
-  'docs/architecture/chat-lifecycle/prototype-evidence-ccu-20260922.json',
+  'docs/architecture/domains/chat/lifecycle/prototype-evidence-ccu-20260922.json',
 );
 
 function git(...args) {
@@ -179,12 +179,12 @@ async function run() {
     theme: 'light',
     checks,
     screenshots: [
-      'docs/architecture/realtime/prototype/evidence/ccu-20260922/ringing-all-devices.png',
-      'docs/architecture/realtime/prototype/evidence/ccu-20260922/ringing-all-devices-narrow.png',
-      'docs/architecture/realtime/prototype/evidence/ccu-20260922/active-here.png',
-      'docs/architecture/realtime/prototype/evidence/ccu-20260922/handled-elsewhere.png',
-      'docs/architecture/mobile/prototype/evidence/ccu-20260922/sender-companion.png',
-      'docs/architecture/mobile/prototype/evidence/ccu-20260922/read-cursor.png',
+      'docs/architecture/domains/chat/calling/prototype/evidence/ccu-20260922/ringing-all-devices.png',
+      'docs/architecture/domains/chat/calling/prototype/evidence/ccu-20260922/ringing-all-devices-narrow.png',
+      'docs/architecture/domains/chat/calling/prototype/evidence/ccu-20260922/active-here.png',
+      'docs/architecture/domains/chat/calling/prototype/evidence/ccu-20260922/handled-elsewhere.png',
+      'docs/architecture/platform/client/mobile/prototype/evidence/ccu-20260922/sender-companion.png',
+      'docs/architecture/platform/client/mobile/prototype/evidence/ccu-20260922/read-cursor.png',
     ],
     result: 'PASS',
   };

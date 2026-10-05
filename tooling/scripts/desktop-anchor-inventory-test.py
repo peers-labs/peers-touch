@@ -62,7 +62,6 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
             "gate": module.DOM_EVIDENCE_GATE,
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
-            "browser": {"status": "pass", "anchors": anchors},
             "tauriDev": {"status": "pass", "anchors": anchors},
             "tauriPackaged": {"status": "pass", "anchors": anchors},
         }
@@ -135,11 +134,10 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
         self.assertTrue(report["sampleEmissionAllowed"])
         self.assertEqual(report["domAutomation"]["proofStatus"], "PROVEN")
         self.assertEqual(report["domAutomation"]["sourceArtifactKind"], "desktop-anchor-dom-evidence")
-        self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 10)
         self.assertEqual(report["domAutomation"]["tauriDev"]["provenCount"], 10)
         self.assertEqual(report["domAutomation"]["tauriPackaged"]["provenCount"], 10)
 
-    def test_dom_evidence_requires_per_anchor_browser_and_tauri_matches(self) -> None:
+    def test_dom_evidence_requires_per_anchor_native_matches(self) -> None:
         module = load_inventory_module()
         with tempfile.TemporaryDirectory() as tmp:
             source_root = self.write_source(tmp, self.complete_anchor_source())
@@ -147,7 +145,6 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
             dom_evidence.write_text(
                 json.dumps(
                     {
-                        "browser": {"status": "pass"},
                         "tauriDev": {"status": "pass"},
                         "tauriPackaged": {"status": "pass"},
                     }
@@ -167,15 +164,13 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
         self.assertFalse(report["domAutomation"]["issue_breakdown"][0]["sampleEmissionAllowed"])
         self.assertEqual(report["domAutomation"]["issue_breakdown"][0]["sourceArtifactKind"], "desktop-anchor-dom-evidence")
         self.assertIn("DOM evidence source metadata is incomplete", report["domAutomation"]["reason"])
-        self.assertIn("browser DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
         self.assertIn("tauriDev DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
         self.assertIn("tauriPackaged DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
         self.assertIn("(0/10 anchors proven)", report["domAutomation"]["issue_breakdown"][1]["summary"])
-        self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 0)
         self.assertEqual(report["domAutomation"]["tauriDev"]["provenCount"], 0)
         self.assertEqual(report["domAutomation"]["tauriPackaged"]["provenCount"], 0)
         markdown = module.render_markdown(report)
-        self.assertIn("| Anchor | Browser | Dev native | Packaged native |", markdown)
+        self.assertIn("| Anchor | Dev native | Packaged native |", markdown)
         self.assertIn("`diagnostic incomplete`", markdown)
         self.assertIn("missing or invalid phase", markdown)
 

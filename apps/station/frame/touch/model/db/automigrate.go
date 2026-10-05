@@ -36,7 +36,7 @@ func init() {
 			// Chat models
 			&Conversation{}, &ConvMember{}, &Message{},
 			&Attachment{}, &Receipt{}, &Reaction{}, &KeyEpoch{},
-			// Social — Moments family (see docs/architecture/social/moments.md §6).
+			// Social — Moments family (see docs/architecture/domains/social/core/moments.md §6).
 			// Private encrypted models are migrated through the explicit
 			// SocialPrivateContentModels path.
 			&SocialPublicPost{},

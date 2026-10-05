@@ -16,25 +16,19 @@ PHASE = "P0a-1/P0a-2/P0a-3/P0a-4/P0a-5/P0a-6"
 BOM = ["BOM-RUN-03", "BOM-RUN-04", "BOM-CON-03", "BOM-CON-04", "BOM-CAP-05"]
 SPEC = ["SPEC-GW-01", "SPEC-STA-01", "SPEC-STA-02", "SPEC-DB-01", "SPEC-DB-02", "SPEC-STA-03", "SPEC-MIRROR-01"]
 GATE = (
-    "Local telemetry static tests must prove Desktop envelope/queue, Gateway upload validation, "
+    "Local telemetry static tests must prove Desktop envelope/queue, Native Tauri upload validation, "
     "Station ingest/query/rollup implementation, and Station query contract coverage while leaving live upload/query/mirror proof to env gates"
 )
 DEFAULT_OUTPUT = "reports/desktop-telemetry-local-loop-gate.json"
 TAURI_MAIN_PATH = Path("apps/desktop/src-tauri/src/main.rs")
-TAURI_HTTP_GATEWAY_PATH = Path("apps/desktop/src-tauri/src/interface/http_gateway/mod.rs")
 TAURI_FRONTEND_TELEMETRY_COMMAND_PATH = Path("apps/desktop/src-tauri/src/interface/tauri_commands/frontend_telemetry.rs")
 DESKTOP_API_PATH = Path("apps/desktop/src/services/desktop_api.ts")
 
-GATEWAY_UPLOAD_SOURCE_REQUIREMENTS = (
+NATIVE_UPLOAD_SOURCE_REQUIREMENTS = (
     {
         "id": "tauri-invoke-handler",
         "path": TAURI_MAIN_PATH,
         "tokens": ["frontend_telemetry::frontend_telemetry_upload"],
-    },
-    {
-        "id": "http-gateway-command-mapping",
-        "path": TAURI_HTTP_GATEWAY_PATH,
-        "tokens": ['"frontend_telemetry_upload"', "frontend_telemetry_upload_with_token"],
     },
     {
         "id": "station-ingest-path",
@@ -83,14 +77,14 @@ CHECKS = (
         gate="Desktop frontend telemetry envelope and bounded queue tests must prove local inspector shape and queue behavior",
     ),
     CheckSpec(
-        check_id="tauri-gateway-upload-validation",
-        capability="Tauri/Gateway frontend_telemetry_upload command validation",
+        check_id="tauri-command-upload-validation",
+        capability="Native Tauri frontend_telemetry_upload command validation",
         command=["cargo", "test", "--manifest-path", "apps/desktop/src-tauri/Cargo.toml", "frontend_telemetry"],
         cwd=".",
         phase="P0a-3",
         bom=["BOM-RUN-03"],
         spec=["SPEC-GW-01"],
-        gate="Tauri/Gateway frontend telemetry upload command validation must prove local accept/reject/failure contract",
+        gate="Native Tauri frontend telemetry upload command validation must prove local accept/reject/failure contract",
     ),
 )
 
@@ -130,9 +124,9 @@ def check_result_from_exit(spec: CheckSpec, returncode: int, output: str) -> dic
     }
 
 
-def gateway_upload_source_evidence(root: Path) -> dict[str, Any]:
+def native_upload_source_evidence(root: Path) -> dict[str, Any]:
     requirement_results: list[dict[str, Any]] = []
-    for requirement in GATEWAY_UPLOAD_SOURCE_REQUIREMENTS:
+    for requirement in NATIVE_UPLOAD_SOURCE_REQUIREMENTS:
         path = requirement["path"]
         full_path = root / path
         try:
@@ -156,14 +150,14 @@ def gateway_upload_source_evidence(root: Path) -> dict[str, Any]:
     failed = [item for item in requirement_results if item["proofStatus"] != "PROVEN"]
     status = "pass" if not failed else "diagnostic incomplete"
     return {
-        "sourceKind": "desktop-gateway-frontend-telemetry-upload-source",
+        "sourceKind": "desktop-native-frontend-telemetry-upload-source",
         "status": status,
         "completionStatus": "DONE" if status == "pass" else "PARTIAL",
         "proofStatus": "PROVEN" if status == "pass" else "UNPROVEN",
         "phase": "P0a-3",
         "bom": ["BOM-RUN-03"],
         "spec": ["SPEC-GW-01"],
-        "gate": "Desktop Gateway upload command source must prove Tauri invoke registration, HTTP gateway mapping, Station ingest path, and Desktop API wrapper",
+        "gate": "Native Desktop upload command source must prove Tauri invoke registration, Station ingest path, and Desktop API wrapper",
         "requirements": requirement_results,
         "failedRequirementCount": len(failed),
         "failedRequirements": [item["id"] for item in failed],
@@ -173,7 +167,7 @@ def gateway_upload_source_evidence(root: Path) -> dict[str, Any]:
 def issue_breakdown(
     output: Path,
     checks: list[dict[str, Any]],
-    gateway_upload_source: dict[str, Any],
+    native_upload_source: dict[str, Any],
 ) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for check in checks:
@@ -196,20 +190,20 @@ def issue_breakdown(
                 "recommendedReviewCommands": recommended_review_commands(),
             }
         )
-    if gateway_upload_source.get("proofStatus") != "PROVEN":
+    if native_upload_source.get("proofStatus") != "PROVEN":
         issues.append(
             {
-                "category": "desktop-gateway-upload-source",
-                "failedStep": "gateway.frontend_telemetry_upload.source",
-                "summary": "Desktop Gateway frontend telemetry upload source registration is incomplete.",
-                "proofImpact": "P0a-3 Gateway upload command evidence remains PARTIAL/UNPROVEN until Tauri invoke, HTTP gateway mapping, Station ingest path, and Desktop API wrapper are all present.",
+                "category": "desktop-native-upload-source",
+                "failedStep": "native.frontend_telemetry_upload.source",
+                "summary": "Native Desktop frontend telemetry upload source registration is incomplete.",
+                "proofImpact": "P0a-3 Native upload command evidence remains PARTIAL/UNPROVEN until Tauri invoke, Station ingest path, and Desktop API wrapper are all present.",
                 "sourceArtifact": str(output),
                 "sourceArtifactKind": ARTIFACT_KIND,
                 "sourcePhase": PHASE,
                 "sourceBom": BOM,
                 "sourceSpec": SPEC,
                 "sourceGate": GATE,
-                "evidenceDetails": [gateway_upload_source],
+                "evidenceDetails": [native_upload_source],
                 "recommended_review_commands": recommended_review_commands(),
                 "recommendedReviewCommands": recommended_review_commands(),
             }
@@ -221,7 +215,7 @@ def recommended_review_commands() -> list[dict[str, str]]:
     return [
         {"purpose": "Run Station frontend telemetry local tests.", "command": "cd apps/station && go test ./app/subserver/frontend_telemetry"},
         {"purpose": "Run Desktop telemetry envelope and bounded queue tests.", "command": "pnpm --dir apps/desktop exec vitest run src/kernel/frontendTelemetry.test.ts"},
-        {"purpose": "Run Tauri/Gateway upload validation tests.", "command": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml frontend_telemetry"},
+        {"purpose": "Run Native Tauri upload validation tests.", "command": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml frontend_telemetry"},
         {"purpose": "Run full Phase 0 acceptance.", "command": "make acceptance PLAN=tooling/acceptance/plans/desktop-performance-phase0.json"},
     ]
 
@@ -229,23 +223,23 @@ def recommended_review_commands() -> list[dict[str, str]]:
 def build_report(
     output: Path,
     checks: list[dict[str, Any]],
-    gateway_upload_source: dict[str, Any] | None = None,
+    native_upload_source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if gateway_upload_source is None:
-        gateway_upload_source = {
-            "sourceKind": "desktop-gateway-frontend-telemetry-upload-source",
+    if native_upload_source is None:
+        native_upload_source = {
+            "sourceKind": "desktop-native-frontend-telemetry-upload-source",
             "status": "diagnostic incomplete",
             "completionStatus": "PARTIAL",
             "proofStatus": "UNPROVEN",
-            "failedRequirementCount": len(GATEWAY_UPLOAD_SOURCE_REQUIREMENTS),
-            "failedRequirements": [str(requirement["id"]) for requirement in GATEWAY_UPLOAD_SOURCE_REQUIREMENTS],
+            "failedRequirementCount": len(NATIVE_UPLOAD_SOURCE_REQUIREMENTS),
+            "failedRequirements": [str(requirement["id"]) for requirement in NATIVE_UPLOAD_SOURCE_REQUIREMENTS],
             "requirements": [],
         }
     passed = [check for check in checks if check.get("status") == "pass"]
     failed = [check for check in checks if check.get("status") != "pass"]
-    source_proven = gateway_upload_source.get("proofStatus") == "PROVEN"
+    source_proven = native_upload_source.get("proofStatus") == "PROVEN"
     status = "pass" if not failed and len(passed) == len(CHECKS) and source_proven else "diagnostic incomplete"
-    issues = issue_breakdown(output, checks, gateway_upload_source)
+    issues = issue_breakdown(output, checks, native_upload_source)
     return {
         "artifactKind": ARTIFACT_KIND,
         "schemaVersion": 1,
@@ -264,7 +258,7 @@ def build_report(
         "sourceGate": GATE,
         "sampleEmissionAllowed": False,
         "checks": checks,
-        "gatewayUploadSourceEvidence": gateway_upload_source,
+        "nativeUploadSourceEvidence": native_upload_source,
         "summary": {
             "status": status,
             "completionStatus": "DONE" if status == "pass" else "PARTIAL",
@@ -274,11 +268,11 @@ def build_report(
             "failedCheckCount": len(failed),
             "stationIngestQueryRollupStatus": next((c.get("status") for c in checks if c.get("id") == "station-ingest-query-rollup"), None),
             "desktopEnvelopeBoundedQueueStatus": next((c.get("status") for c in checks if c.get("id") == "desktop-envelope-bounded-queue"), None),
-            "tauriGatewayUploadValidationStatus": next((c.get("status") for c in checks if c.get("id") == "tauri-gateway-upload-validation"), None),
-            "gatewayUploadSourceStatus": gateway_upload_source.get("status"),
-            "gatewayUploadSourceProofStatus": gateway_upload_source.get("proofStatus"),
-            "gatewayUploadSourceFailedRequirementCount": gateway_upload_source.get("failedRequirementCount"),
-            "gatewayUploadSourceFailedRequirements": gateway_upload_source.get("failedRequirements") or [],
+            "tauriCommandUploadValidationStatus": next((c.get("status") for c in checks if c.get("id") == "tauri-command-upload-validation"), None),
+            "nativeUploadSourceStatus": native_upload_source.get("status"),
+            "nativeUploadSourceProofStatus": native_upload_source.get("proofStatus"),
+            "nativeUploadSourceFailedRequirementCount": native_upload_source.get("failedRequirementCount"),
+            "nativeUploadSourceFailedRequirements": native_upload_source.get("failedRequirements") or [],
             "sampleEmissionAllowed": False,
         },
         "issue_breakdown": issues,
@@ -299,8 +293,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- bom: `{','.join(report['bom'])}`",
         f"- spec: `{','.join(report['spec'])}`",
         f"- sampleEmissionAllowed: `{report['sampleEmissionAllowed']}`",
-        f"- gatewayUploadSourceStatus: `{report['summary'].get('gatewayUploadSourceStatus')}`",
-        f"- gatewayUploadSourceProofStatus: `{report['summary'].get('gatewayUploadSourceProofStatus')}`",
+        f"- nativeUploadSourceStatus: `{report['summary'].get('nativeUploadSourceStatus')}`",
+        f"- nativeUploadSourceProofStatus: `{report['summary'].get('nativeUploadSourceProofStatus')}`",
         "",
         "## Checks",
         "",
@@ -309,8 +303,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         lines.append(
             f"- `{check['id']}` status=`{check['status']}` proof=`{check['proofStatus']}` phase=`{check.get('phase')}` bom=`{','.join(check.get('bom') or [])}` spec=`{','.join(check.get('spec') or [])}` command=`{check['command']}`"
         )
-    lines.extend(["", "## Gateway Upload Source"])
-    for requirement in report.get("gatewayUploadSourceEvidence", {}).get("requirements", []):
+    lines.extend(["", "## Native Upload Source"])
+    for requirement in report.get("nativeUploadSourceEvidence", {}).get("requirements", []):
         if not isinstance(requirement, dict):
             continue
         lines.append(
@@ -337,7 +331,7 @@ def main() -> int:
     report = build_report(
         logical_output,
         checks,
-        gateway_upload_source_evidence(root),
+        native_upload_source_evidence(root),
     )
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)

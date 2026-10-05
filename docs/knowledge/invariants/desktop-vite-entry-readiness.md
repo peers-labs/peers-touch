@@ -8,7 +8,7 @@ owns:
 referenced-by:
   - docs/knowledge/README.md
 related:
-  - docs/architecture/developer-toolchain/design.md
+  - docs/architecture/engineering/toolchain/design.md
 detected: 2026-09-29
 ---
 
@@ -52,4 +52,4 @@ signal is missing or the early boot bridge reports a resource failure.
 
 ## Crosswalks
 
-- Developer Toolchain lifecycle: `docs/architecture/developer-toolchain/design.md`.
+- Developer Toolchain lifecycle: `docs/architecture/engineering/toolchain/design.md`.

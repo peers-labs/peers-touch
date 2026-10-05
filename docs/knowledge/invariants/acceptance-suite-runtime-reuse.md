@@ -4,7 +4,7 @@ title: Multi-scenario Acceptance reuses one Suite Runtime
 status: active
 owns:
   - AGENTS.md
-  - docs/architecture/acceptance-framework/
+  - docs/architecture/engineering/acceptance/
   - tooling/acceptance/
   - tooling/scripts/plan/
   - tooling/skills/pt-acceptance-engineering/
@@ -12,10 +12,10 @@ owns:
   - tooling/skills/pt-acceptance-pipeline-auditor/
   - tooling/development/
 referenced-by:
-  - docs/architecture/acceptance-framework/decisions.md
+  - docs/architecture/engineering/acceptance/decisions.md
 related:
-  - docs/architecture/acceptance-framework/design.md
-  - docs/architecture/secure-content/decisions.md
+  - docs/architecture/engineering/acceptance/design.md
+  - docs/architecture/shared/security/secure-content/decisions.md
 detected: 2026-09-29
 ---
 

@@ -14,7 +14,7 @@
 //! The application layer (`application::presence`) owns the supervisor that
 //! interprets triggers against the current state and runs side-effects
 //! (HTTP `/online`, `/pending`, `/ack`). Infrastructure modules
-//! (`infrastructure::identity_event`, Tauri lifecycle hooks, browser-side
+//! (`infrastructure::identity_event`, Tauri lifecycle hooks, renderer
 //! observers) only ever produce `PresenceTrigger`s; they do not carry any
 //! domain logic of their own.
 //!

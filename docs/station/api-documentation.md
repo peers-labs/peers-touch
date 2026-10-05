@@ -141,7 +141,7 @@ Content-Type: application/json
 3. 未绑定 → 用 email 匹配已有 Actor，或自动创建新 Actor → 建立绑定
 4. 复用 `LoginWithSession` 签发 JWT + 创建 Session
 
-详细架构设计见 `docs/architecture/boundaries/station-desktop-scope-boundary.md` §10。
+详细架构设计见 `docs/architecture/platform/station-desktop-boundary.md` §10。
 
 ### Token Refresh (计划新增)
 

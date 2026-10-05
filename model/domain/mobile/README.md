@@ -8,4 +8,4 @@ by MS-D15.
 - Draft payloads contain typed composer state and encrypted blob references,
   never media bytes, credentials, or dispatchable command frames.
 
-See `docs/architecture/mobile/data-model.md` sections 4 and 5.
+See `docs/architecture/platform/client/mobile/data-model.md` sections 4 and 5.

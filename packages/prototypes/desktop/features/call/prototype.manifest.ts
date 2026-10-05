@@ -9,7 +9,7 @@ const manifest = {
   status: 'confirmed',
   module: 'call',
   path: 'packages/prototypes/desktop/features/call/',
-  docs: 'docs/architecture/realtime/prototype/README.md',
+  docs: 'docs/architecture/domains/chat/calling/prototype/README.md',
   description: 'Desktop Chat / voice-video call capability prototype.',
   order: 30,
   hidden: true,

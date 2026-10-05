@@ -325,7 +325,7 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 
 ### 8.1 生命周期状态机
 
-> **唯一真源**：跨端七态状态机冻结在 `packages/applet-contract/src/lifecycle.ts:22-29`（状态 union）与 `:113-124`（`TRANSITION_RULES`）。Mobile **不重新定义状态**，本节仅镜像契约。历史的 `discovered/validated/loading/active/invalid` 命名已废弃（Manifest 扫描/校验属于 catalog 层，不是实例生命周期态）。参照架构真源 [`applet-lifecycle-architecture.md §3`](../../architecture/applet-runtime/applet-lifecycle-architecture.md) 与落地子计划 [`execution-plans/2026-07-03-applet-kernel-mobile-native-buildout.md §5.3`](./execution-plans/2026-07-03-applet-kernel-mobile-native-buildout.md)。
+> **唯一真源**：跨端七态状态机冻结在 `packages/applet-contract/src/lifecycle.ts:22-29`（状态 union）与 `:113-124`（`TRANSITION_RULES`）。Mobile **不重新定义状态**，本节仅镜像契约。历史的 `discovered/validated/loading/active/invalid` 命名已废弃（Manifest 扫描/校验属于 catalog 层，不是实例生命周期态）。参照架构真源 [`applet-lifecycle-architecture.md §3`](../../architecture/platform/applet-runtime/applet-lifecycle-architecture.md) 与落地子计划 [`execution-plans/2026-07-03-applet-kernel-mobile-native-buildout.md §5.3`](./execution-plans/2026-07-03-applet-kernel-mobile-native-buildout.md)。
 
 ```text
   cold → materializing → visible ⇄ hidden-warm → suspended → destroyed

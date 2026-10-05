@@ -10,7 +10,7 @@ owns:
   - tooling/scripts/local-dev/workflow-*.mjs
   - tooling/make/setup.mk
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
   - docs/knowledge/invariants/host-neutral-agent-execution.md
   - docs/knowledge/invariants/workspace-active-work-is-local.md

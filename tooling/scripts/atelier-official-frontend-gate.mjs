@@ -4658,7 +4658,7 @@ assert.ok(parseAtelierProjectionEvent(event('evt-artifact-preview-valid', 3, {
       sandboxRef: 'atelier-sandbox://task-1/artifact-preview/preview',
       bodyRef: 'artifact://task-1/artifact-preview/body',
     },
-    paths: ['docs/architecture/atelier/prototype/README.md'],
+    paths: ['docs/architecture/domains/applets/atelier/prototype/README.md'],
   },
 })));
 
@@ -4786,7 +4786,7 @@ state = applyAtelierProjectionEvent(state, event('evt-artifact', 6, {
     id: 'artifact-final-summary',
     kind: 'summary',
     name: 'Final summary',
-    paths: ['docs/architecture/atelier/prototype/README.md'],
+    paths: ['docs/architecture/domains/applets/atelier/prototype/README.md'],
     url: 'https://example.invalid/artifact',
   },
 }));

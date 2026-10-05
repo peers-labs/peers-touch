@@ -7,7 +7,6 @@
     "chat-proto-service-contract",
     "chat-realtime-contract",
     "desktop-chat-typed-surface",
-    "chat-friend-request-gateway-lifecycle",
     "chat-direct-delivery-receipt",
     "chat-rich-media-recorded-voice",
     "chat-live-voice-video",

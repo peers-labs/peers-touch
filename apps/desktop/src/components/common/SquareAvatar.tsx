@@ -3,17 +3,6 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 
-function isBrowserGateway(): boolean {
-  return typeof window !== 'undefined'
-    && typeof (window as any).__PT_GATEWAY_BASE__ === 'string'
-    && (window as any).__PT_GATEWAY_BASE__.length > 0;
-}
-
-function gatewayAvatarUrl(remoteUrl: string): string {
-  const base = (window as any).__PT_GATEWAY_BASE__ as string;
-  return `${base}/avatar?url=${encodeURIComponent(remoteUrl)}`;
-}
-
 type CacheEntry = string | null;
 const resolveCache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<CacheEntry>>();
@@ -92,10 +81,6 @@ export function SquareAvatar({
       setLocalPath(null);
       return;
     }
-    if (isBrowserGateway()) {
-      setLocalPath(downloadableSource);
-      return;
-    }
     const cached = resolveCache.get(downloadableSource);
     if (cached !== undefined) {
       setLocalPath(cached);
@@ -115,16 +100,13 @@ export function SquareAvatar({
   const showImage = !!(inlineSource || localPath) && !imgError;
 
   if (showImage) {
-    const src = inlineSource
-      ?? (isBrowserGateway()
-        ? gatewayAvatarUrl(downloadableSource as string)
-        : convertFileSrc(localPath as string));
+    const src = inlineSource ?? convertFileSrc(localPath as string);
     return (
       <img
         src={src}
         alt={name}
         onError={() => {
-          if (downloadableSource && !isBrowserGateway()) resolveCache.delete(downloadableSource);
+          if (downloadableSource) resolveCache.delete(downloadableSource);
           setImgError(true);
         }}
         style={{

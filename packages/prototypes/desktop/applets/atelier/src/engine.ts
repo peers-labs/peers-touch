@@ -25,7 +25,7 @@
  *   - What does NOT yet exist in Go (the gap this abstraction defines):
  *     EnginePolicy, CollaborationSession state machine, the consensus gate,
  *     and the AgentRole/EngineType enums. See the feasibility note in
- *     docs/architecture/atelier/.
+ *     docs/architecture/domains/applets/atelier/.
  */
 import type { Role } from './types';
 

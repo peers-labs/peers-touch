@@ -6,10 +6,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
-  machineDevRoot,
-  workspaceIdForRoot,
-} from '../lib/machine-dev-paths.mjs';
-import {
   ArchitectureGovernanceError,
   DEFAULT_REGISTRY_PATH,
   validatePlanArchitecture,
@@ -32,20 +28,9 @@ const COMPLETION_CLASSES = new Set([
   'functional',
   'acceptance-aggregate',
 ]);
-const PLAN_STATUSES = new Set([
-  'draft',
-  'prepared',
-  'active',
-  'blocked',
-  'completed',
-  'superseded',
-]);
-const TASK_STATUSES = new Set(['pending', 'in_progress', 'blocked', 'done', 'descoped']);
-const TERMINAL_TASK_STATUSES = new Set(['done', 'descoped']);
 const RUNTIME_CLASSES = new Set([
   'source-only',
   'service',
-  'browser',
   'native-desktop',
   'native-mobile',
 ]);
@@ -61,24 +46,9 @@ const FOCUSED_VERIFICATION_CLASSES = new Set([
   'STRUCTURAL_CHECK',
   'UX_REVIEW',
 ]);
-const VERIFICATION_RESULTS = new Set(['PASS', 'FAIL', 'BLOCKED', 'NOT_RUN']);
-const LOCKED_MIGRATION_PHASES = new Set([
-  'LOCKED',
-  'APPLYING',
-  'VERIFYING',
-  'ROLLING_BACK',
-]);
-const MIGRATION_PHASES = new Set([
-  'PREPARED',
-  ...LOCKED_MIGRATION_PHASES,
-  'COMMITTED',
-  'ROLLED_BACK',
-]);
 const FORBIDDEN_SECTION_PATTERN =
   /^(?:context anchor|appendix|appendices|dated progress|progress (?:log|history|appendix)|execution log|attempt log|raw (?:command )?(?:output|log)|command output|run[- ]?ids?(?: list)?)$/i;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const SHA1_PATTERN = /^[0-9a-f]{40}$/;
-const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
 export const TASK_SLICES_COLLECTION = 'Map';
 
@@ -87,9 +57,7 @@ export class PlanPackageError extends Error {
     super(message);
     this.name = 'PlanPackageError';
     this.code = code;
-    if (details !== undefined) {
-      this.details = details;
-    }
+    if (details !== undefined) this.details = details;
   }
 
   toJSON() {
@@ -137,7 +105,10 @@ function assertClosedObject(value, keys, context) {
 
 function assertArray(value, context, { min = 0 } = {}) {
   if (!Array.isArray(value) || value.length < min) {
-    fail('PLAN_SCHEMA_INVALID', `${context} must be an array with at least ${min} item(s)`);
+    fail(
+      'PLAN_SCHEMA_INVALID',
+      `${context} must be an array with at least ${min} item(s)`,
+    );
   }
 }
 
@@ -170,13 +141,13 @@ function assertEnum(value, allowed, context) {
 function assertUniqueStrings(values, context, { min = 0, pattern } = {}) {
   assertArray(values, context, { min });
   const seen = new Set();
-  for (const [index, value] of values.entries()) {
+  values.forEach((value, index) => {
     assertString(value, `${context}[${index}]`, { pattern });
     if (seen.has(value)) {
       fail('PLAN_DUPLICATE', `${context} contains duplicate value`, { value });
     }
     seen.add(value);
-  }
+  });
 }
 
 function lineCount(text) {
@@ -208,7 +179,9 @@ function markdownLines(text) {
   const matches = text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
   for (const raw of matches) {
     const withoutLf = raw.endsWith('\n') ? raw.slice(0, -1) : raw;
-    const value = withoutLf.endsWith('\r') ? withoutLf.slice(0, -1) : withoutLf;
+    const value = withoutLf.endsWith('\r')
+      ? withoutLf.slice(0, -1)
+      : withoutLf;
     result.push({ value, raw, offset });
     offset += raw.length;
   }
@@ -236,12 +209,14 @@ export function findStructuredBlocks(text, requestedLabel) {
       nearestHeading = normalizeBlockLabel(heading[2]);
       continue;
     }
-
     const opening = /^```json(?:\s+(.+?))?\s*$/.exec(line.value);
     if (!opening) continue;
 
     let closeIndex = index + 1;
-    while (closeIndex < lines.length && !/^```\s*$/.test(lines[closeIndex].value)) {
+    while (
+      closeIndex < lines.length &&
+      !/^```\s*$/.test(lines[closeIndex].value)
+    ) {
       closeIndex += 1;
     }
     if (closeIndex >= lines.length) {
@@ -251,26 +226,30 @@ export function findStructuredBlocks(text, requestedLabel) {
       });
     }
 
-    const explicitLabel = opening[1] ? normalizeBlockLabel(opening[1]) : null;
-    const blockLabel = explicitLabel ?? nearestHeading;
-    if (blockLabel === expected) {
+    const explicitLabel = opening[1]
+      ? normalizeBlockLabel(opening[1])
+      : null;
+    if ((explicitLabel ?? nearestHeading) === expected) {
       blocks.push({
         label: requestedLabel,
         openLine: index + 1,
         closeLine: closeIndex + 1,
         contentStart: line.offset + line.raw.length,
         contentEnd: lines[closeIndex].offset,
-        text: text.slice(line.offset + line.raw.length, lines[closeIndex].offset),
+        text: text.slice(
+          line.offset + line.raw.length,
+          lines[closeIndex].offset,
+        ),
       });
     }
     index = closeIndex;
   }
-
   return blocks;
 }
 
-function parseStructuredBlock(text, label, sourcePath) {
+function parseStructuredBlock(text, label, sourcePath, { optional = false } = {}) {
   const blocks = findStructuredBlocks(text, label);
+  if (blocks.length === 0 && optional) return null;
   if (blocks.length === 0) {
     fail('PLAN_BLOCK_MISSING', `${label} JSON block is missing`, {
       path: sourcePath,
@@ -293,31 +272,32 @@ function parseStructuredBlock(text, label, sourcePath) {
 }
 
 function assertNoForbiddenSections(text, sourcePath) {
-  for (const [index, line] of markdownLines(text).entries()) {
+  markdownLines(text).forEach((line, index) => {
     const heading = /^#{1,6}\s+(.+?)\s*$/.exec(line.value);
     if (heading && FORBIDDEN_SECTION_PATTERN.test(heading[1].trim())) {
-      fail('PLAN_FORBIDDEN_SECTION', 'plan package contains a forbidden history section', {
-        path: sourcePath,
-        line: index + 1,
-        heading: heading[1].trim(),
-      });
+      fail(
+        'PLAN_FORBIDDEN_SECTION',
+        'plan package contains a forbidden history section',
+        { path: sourcePath, line: index + 1, heading: heading[1].trim() },
+      );
     }
-  }
+  });
 }
 
 function assertCurrentSnapshot(text, sourcePath) {
   const lines = markdownLines(text);
   const indexes = [];
-  for (const [index, line] of lines.entries()) {
+  lines.forEach((line, index) => {
     if (/^#{1,6}\s+current snapshot\s*$/i.test(line.value)) {
       indexes.push(index);
     }
-  }
+  });
   if (indexes.length !== 1) {
-    fail('PLAN_SNAPSHOT_INVALID', 'Task Slice must contain exactly one Current Snapshot section', {
-      path: sourcePath,
-      count: indexes.length,
-    });
+    fail(
+      'PLAN_SNAPSHOT_INVALID',
+      'Task Slice must contain exactly one Current Snapshot section',
+      { path: sourcePath, count: indexes.length },
+    );
   }
   const start = indexes[0];
   const headingLevel = /^(#{1,6})/.exec(lines[start].value)[1].length;
@@ -329,11 +309,10 @@ function assertCurrentSnapshot(text, sourcePath) {
       break;
     }
   }
-  const count = end - start;
-  if (count > SNAPSHOT_MAX_LINES) {
+  if (end - start > SNAPSHOT_MAX_LINES) {
     fail('PLAN_SNAPSHOT_INVALID', 'Current Snapshot exceeds 30 lines', {
       path: sourcePath,
-      lines: count,
+      lines: end - start,
       maxLines: SNAPSHOT_MAX_LINES,
     });
   }
@@ -345,10 +324,9 @@ function metadataKey(value) {
 
 function stripMetadataValue(value) {
   const trimmed = value.trim();
-  if (trimmed.startsWith('`') && trimmed.endsWith('`') && trimmed.length >= 2) {
-    return trimmed.slice(1, -1);
-  }
-  return trimmed;
+  return trimmed.startsWith('`') && trimmed.endsWith('`')
+    ? trimmed.slice(1, -1)
+    : trimmed;
 }
 
 function parseMetadata(text, sourcePath) {
@@ -367,35 +345,40 @@ function parseMetadata(text, sourcePath) {
   return metadata;
 }
 
-function assertMetadata(manifest, metadata, sourcePath) {
-  if (metadata.has('worktreesetdigest')) {
-    fail(
-      'PLAN_METADATA_MISMATCH',
-      'Obsolete Worktree-set Digest metadata must be removed',
-      { path: sourcePath, key: 'Worktree-set Digest' },
-    );
-  }
-  if (metadata.has('expectedhead')) {
-    fail(
-      'PLAN_METADATA_MISMATCH',
-      'Obsolete Expected HEAD metadata must be removed',
-      { path: sourcePath, key: 'Expected HEAD' },
-    );
+function assertMetadata(plan, metadata, sourcePath) {
+  for (const obsolete of [
+    'status',
+    'branch',
+    'workspaceid',
+    'initialhead',
+    'expectedhead',
+    'worktreesetdigest',
+  ]) {
+    if (metadata.has(obsolete)) {
+      fail(
+        'PLAN_METADATA_MISMATCH',
+        'execution metadata is forbidden in a frozen Plan Version',
+        { path: sourcePath, key: obsolete },
+      );
+    }
   }
   const expected = {
-    status: manifest.status,
-    branch: manifest.binding.branch,
-    workspaceid: manifest.binding.workspaceId,
-    initialhead: manifest.binding.initialHead,
+    planid: plan.planId,
+    versionid: plan.versionId,
+    created: plan.createdAt,
   };
   for (const [key, value] of Object.entries(expected)) {
-    if (!metadata.has(key) || metadata.get(key) !== value) {
-      fail('PLAN_METADATA_MISMATCH', 'Markdown metadata does not equal the Plan Package', {
-        path: sourcePath,
-        key,
-        expected: value,
-        actual: metadata.get(key) ?? null,
-      });
+    if (metadata.get(key) !== value) {
+      fail(
+        'PLAN_METADATA_MISMATCH',
+        'Markdown metadata does not equal the Plan Version',
+        {
+          path: sourcePath,
+          key,
+          expected: value,
+          actual: metadata.get(key) ?? null,
+        },
+      );
     }
   }
 }
@@ -408,12 +391,18 @@ export function validateRepositoryPath(value, context = 'repository path') {
     path.posix.isAbsolute(value) ||
     value !== path.posix.normalize(value)
   ) {
-    fail('PLAN_PATH_INVALID', `${context} must be a canonical repository-relative POSIX path`, {
-      path: value,
-    });
+    fail(
+      'PLAN_PATH_INVALID',
+      `${context} must be a canonical repository-relative POSIX path`,
+      { path: value },
+    );
   }
   const segments = value.split('/');
-  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+  if (
+    segments.some(
+      (segment) => segment === '' || segment === '.' || segment === '..',
+    )
+  ) {
     fail('PLAN_PATH_INVALID', `${context} contains an invalid path segment`, {
       path: value,
     });
@@ -423,7 +412,12 @@ export function validateRepositoryPath(value, context = 'repository path') {
 
 function isNativePathInside(root, candidate) {
   const relative = path.relative(root, candidate);
-  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== '..' &&
+      !path.isAbsolute(relative))
+  );
 }
 
 async function pathExists(candidate) {
@@ -448,23 +442,25 @@ export async function assertRepositoryPathContained(
       path: relativePath,
     });
   }
-
   let existing = candidate;
   while (!(await pathExists(existing))) {
     const parent = path.dirname(existing);
     if (parent === existing) {
-      fail('PLAN_PATH_ESCAPE', `${context} has no containing repository parent`, {
-        path: relativePath,
-      });
+      fail(
+        'PLAN_PATH_ESCAPE',
+        `${context} has no containing repository parent`,
+        { path: relativePath },
+      );
     }
     existing = parent;
   }
   const realExisting = await fsp.realpath(existing);
   if (!isNativePathInside(repoRoot, realExisting)) {
-    fail('PLAN_PATH_ESCAPE', `${context} resolves through a symlink outside the repository`, {
-      path: relativePath,
-      resolvedParent: realExisting,
-    });
+    fail(
+      'PLAN_PATH_ESCAPE',
+      `${context} resolves through a symlink outside the repository`,
+      { path: relativePath, resolvedParent: realExisting },
+    );
   }
 }
 
@@ -475,12 +471,24 @@ function segmentContains(prefix, candidate) {
 function validateSourceClaim(value, context) {
   assertClosedObject(value, ['pathPrefix', 'mode'], context);
   validateRepositoryPath(value.pathPrefix, `${context}.pathPrefix`);
-  assertEnum(value.mode, new Set(['shared-read', 'exclusive-write']), `${context}.mode`);
+  assertEnum(
+    value.mode,
+    new Set(['shared-read', 'exclusive-write']),
+    `${context}.mode`,
+  );
 }
 
 function validateAuthorization(value, context) {
-  assertClosedObject(value, ['checkpoint', 'delivery', 'runtime', 'history'], context);
-  assertClosedObject(value.checkpoint, ['localCommit', 'amend'], `${context}.checkpoint`);
+  assertClosedObject(
+    value,
+    ['checkpoint', 'delivery', 'runtime', 'history'],
+    context,
+  );
+  assertClosedObject(
+    value.checkpoint,
+    ['localCommit', 'amend'],
+    `${context}.checkpoint`,
+  );
   assertEnum(
     value.checkpoint.localCommit,
     new Set(['allowed', 'denied']),
@@ -491,8 +499,16 @@ function validateAuthorization(value, context) {
     new Set(['allowed', 'denied']),
     `${context}.checkpoint.amend`,
   );
-  assertClosedObject(value.delivery, ['push', 'pullRequest'], `${context}.delivery`);
-  assertEnum(value.delivery.push, new Set(['allowed', 'denied']), `${context}.delivery.push`);
+  assertClosedObject(
+    value.delivery,
+    ['push', 'pullRequest'],
+    `${context}.delivery`,
+  );
+  assertEnum(
+    value.delivery.push,
+    new Set(['allowed', 'denied']),
+    `${context}.delivery.push`,
+  );
   assertEnum(
     value.delivery.pullRequest,
     new Set(['allowed', 'denied']),
@@ -503,43 +519,20 @@ function validateAuthorization(value, context) {
     ['deployProfiles', 'destructiveResetScopes'],
     `${context}.runtime`,
   );
-  assertUniqueStrings(value.runtime.deployProfiles, `${context}.runtime.deployProfiles`);
+  assertUniqueStrings(
+    value.runtime.deployProfiles,
+    `${context}.runtime.deployProfiles`,
+  );
   assertUniqueStrings(
     value.runtime.destructiveResetScopes,
     `${context}.runtime.destructiveResetScopes`,
   );
   assertClosedObject(value.history, ['rewrite'], `${context}.history`);
-  assertEnum(value.history.rewrite, new Set(['allowed', 'denied']), `${context}.history.rewrite`);
-}
-
-function validateBlocker(value, context, { evidenceRequired = true } = {}) {
-  const fields = evidenceRequired
-    ? ['code', 'owner', 'evidenceRef']
-    : ['code', 'owner', ...(value && 'evidenceRef' in value ? ['evidenceRef'] : [])];
-  assertClosedObject(value, fields, context);
-  assertString(value.code, `${context}.code`);
-  assertString(value.owner, `${context}.owner`);
-  if (evidenceRequired || 'evidenceRef' in value) {
-    assertString(value.evidenceRef, `${context}.evidenceRef`);
-  }
-}
-
-function validateExhaustion(value, context) {
-  assertClosedObject(
-    value,
-    ['recordedAt', 'blockedTaskIds', 'decisionRefs', 'evidenceRefs'],
-    context,
+  assertEnum(
+    value.history.rewrite,
+    new Set(['allowed', 'denied']),
+    `${context}.history.rewrite`,
   );
-  assertString(value.recordedAt, `${context}.recordedAt`);
-  if (Number.isNaN(Date.parse(value.recordedAt))) {
-    fail('PLAN_SCHEMA_INVALID', `${context}.recordedAt must be an ISO-compatible timestamp`);
-  }
-  assertUniqueStrings(value.blockedTaskIds, `${context}.blockedTaskIds`, {
-    min: 1,
-    pattern: ID_PATTERN,
-  });
-  assertUniqueStrings(value.decisionRefs, `${context}.decisionRefs`, { min: 1 });
-  assertUniqueStrings(value.evidenceRefs, `${context}.evidenceRefs`, { min: 1 });
 }
 
 function validateRuntimeReuse(value, context) {
@@ -566,16 +559,12 @@ function validateRuntimeReuse(value, context) {
     min: 2,
     pattern: ID_PATTERN,
   });
-  assertInteger(
-    value.maxProvisioningRuns,
-    `${context}.maxProvisioningRuns`,
-    { min: 1 },
-  );
-  assertInteger(
-    value.maxClientLaunches,
-    `${context}.maxClientLaunches`,
-    { min: 1 },
-  );
+  assertInteger(value.maxProvisioningRuns, `${context}.maxProvisioningRuns`, {
+    min: 1,
+  });
+  assertInteger(value.maxClientLaunches, `${context}.maxClientLaunches`, {
+    min: 1,
+  });
   if (
     typeof value.minWarmReuseRate !== 'number' ||
     !Number.isFinite(value.minWarmReuseRate) ||
@@ -598,75 +587,93 @@ function validateRuntimeReuse(value, context) {
   }
 }
 
-function validateManifestSchema(manifest) {
+function validatePlanVersion(plan) {
   assertClosedObject(
-    manifest,
+    plan,
     [
       'kind',
       'planId',
-      'status',
-      'binding',
+      'versionId',
+      'createdAt',
       'workClass',
       'architecture',
       'scope',
       'tasks',
-      'exhaustion',
       'authorization',
     ],
-    'Plan Package',
+    'Plan Version',
   );
-  if (manifest.kind !== 'peers-touch-plan-package') {
-    fail('PLAN_SCHEMA_INVALID', 'Plan Package kind is unsupported');
+  if (plan.kind !== 'peers-touch-plan-version') {
+    fail('PLAN_SCHEMA_INVALID', 'Plan Version kind is unsupported');
   }
-  assertString(manifest.planId, 'Plan Package.planId', { pattern: ID_PATTERN });
-  assertEnum(manifest.status, PLAN_STATUSES, 'Plan Package.status');
+  assertString(plan.planId, 'Plan Version.planId', { pattern: ID_PATTERN });
+  assertString(plan.versionId, 'Plan Version.versionId', { pattern: ID_PATTERN });
+  assertString(plan.createdAt, 'Plan Version.createdAt');
+  if (
+    Number.isNaN(Date.parse(plan.createdAt)) ||
+    new Date(plan.createdAt).toISOString() !== plan.createdAt
+  ) {
+    fail(
+      'PLAN_SCHEMA_INVALID',
+      'Plan Version.createdAt must be a canonical timestamp',
+    );
+  }
+  assertEnum(plan.workClass, WORK_CLASSES, 'Plan Version.workClass');
   assertClosedObject(
-    manifest.binding,
-    ['branch', 'workspaceId', 'initialHead'],
-    'Plan Package.binding',
+    plan.architecture,
+    ['sources', 'decisions'],
+    'Plan Version.architecture',
   );
-  assertString(manifest.binding.branch, 'Plan Package.binding.branch');
-  assertString(manifest.binding.workspaceId, 'Plan Package.binding.workspaceId');
-  assertString(manifest.binding.initialHead, 'Plan Package.binding.initialHead', {
-    pattern: SHA1_PATTERN,
-  });
-  assertEnum(manifest.workClass, WORK_CLASSES, 'Plan Package.workClass');
+  assertUniqueStrings(
+    plan.architecture.sources,
+    'Plan Version.architecture.sources',
+    { min: 1 },
+  );
+  plan.architecture.sources.forEach((source, index) =>
+    validateRepositoryPath(
+      source,
+      `Plan Version.architecture.sources[${index}]`,
+    ),
+  );
+  assertUniqueStrings(
+    plan.architecture.decisions,
+    'Plan Version.architecture.decisions',
+  );
 
-  assertClosedObject(manifest.architecture, ['sources', 'decisions'], 'Plan Package.architecture');
-  assertUniqueStrings(manifest.architecture.sources, 'Plan Package.architecture.sources', {
+  assertClosedObject(
+    plan.scope,
+    ['sourceClaims', 'nonGoals'],
+    'Plan Version.scope',
+  );
+  assertArray(plan.scope.sourceClaims, 'Plan Version.scope.sourceClaims', {
     min: 1,
   });
-  manifest.architecture.sources.forEach((source, index) =>
-    validateRepositoryPath(source, `Plan Package.architecture.sources[${index}]`),
-  );
-  assertUniqueStrings(manifest.architecture.decisions, 'Plan Package.architecture.decisions');
-
-  assertClosedObject(manifest.scope, ['sourceClaims', 'nonGoals'], 'Plan Package.scope');
-  assertArray(manifest.scope.sourceClaims, 'Plan Package.scope.sourceClaims', { min: 1 });
   const claimPaths = new Set();
-  manifest.scope.sourceClaims.forEach((claim, index) => {
-    validateSourceClaim(claim, `Plan Package.scope.sourceClaims[${index}]`);
+  plan.scope.sourceClaims.forEach((claim, index) => {
+    validateSourceClaim(claim, `Plan Version.scope.sourceClaims[${index}]`);
     if (claimPaths.has(claim.pathPrefix)) {
-      fail('PLAN_DUPLICATE', 'Plan Package source claim path is duplicated', {
+      fail('PLAN_DUPLICATE', 'Plan Version source claim path is duplicated', {
         path: claim.pathPrefix,
       });
     }
     claimPaths.add(claim.pathPrefix);
   });
-  assertUniqueStrings(manifest.scope.nonGoals, 'Plan Package.scope.nonGoals');
+  assertUniqueStrings(plan.scope.nonGoals, 'Plan Version.scope.nonGoals');
 
-  assertArray(manifest.tasks, 'Plan Package.tasks', { min: 1 });
+  assertArray(plan.tasks, 'Plan Version.tasks', { min: 1 });
   const taskIds = new Set();
   const taskPaths = new Set();
-  for (const [index, task] of manifest.tasks.entries()) {
-    const context = `Plan Package.tasks[${index}]`;
+  plan.tasks.forEach((task, index) => {
+    const context = `Plan Version.tasks[${index}]`;
     assertClosedObject(
       task,
-      ['id', 'workstreamId', 'path', 'dependsOn', 'status', 'blocker'],
+      ['id', 'workstreamId', 'path', 'dependsOn'],
       context,
     );
     assertString(task.id, `${context}.id`, { pattern: ID_PATTERN });
-    assertString(task.workstreamId, `${context}.workstreamId`, { pattern: ID_PATTERN });
+    assertString(task.workstreamId, `${context}.workstreamId`, {
+      pattern: ID_PATTERN,
+    });
     validateRepositoryPath(task.path, `${context}.path`);
     if (task.path !== `tasks/${task.id}.md`) {
       fail('PLAN_PATH_INVALID', 'Task path must equal tasks/<task-id>.md', {
@@ -674,152 +681,57 @@ function validateManifestSchema(manifest) {
         path: task.path,
       });
     }
-    assertUniqueStrings(task.dependsOn, `${context}.dependsOn`, { pattern: ID_PATTERN });
-    assertEnum(task.status, TASK_STATUSES, `${context}.status`);
-    if (task.status === 'blocked' || task.status === 'descoped') {
-      if (task.blocker !== null) {
-        validateBlocker(task.blocker, `${context}.blocker`, {
-          evidenceRequired: task.status === 'blocked',
-        });
-      }
-    } else if (task.blocker !== null) {
-      fail('PLAN_STATE_INVALID', 'Only a blocked Task may have blocker metadata', {
+    assertUniqueStrings(task.dependsOn, `${context}.dependsOn`, {
+      pattern: ID_PATTERN,
+    });
+    if (taskIds.has(task.id) || taskPaths.has(task.path)) {
+      fail('PLAN_DUPLICATE', 'Plan Version Task identity is duplicated', {
         taskId: task.id,
-        status: task.status,
+        path: task.path,
       });
-    }
-    if (taskIds.has(task.id)) {
-      fail('PLAN_DUPLICATE', 'Task ID is duplicated', { taskId: task.id });
-    }
-    if (taskPaths.has(task.path)) {
-      fail('PLAN_DUPLICATE', 'Task path is duplicated', { path: task.path });
     }
     taskIds.add(task.id);
     taskPaths.add(task.path);
-  }
-
-  if (manifest.exhaustion === null) {
-    // Validated by lifecycle rules below.
-  } else {
-    validateExhaustion(manifest.exhaustion, 'Plan Package.exhaustion');
-  }
-  validateAuthorization(manifest.authorization, 'Plan Package.authorization');
+  });
+  validateAuthorization(plan.authorization, 'Plan Version.authorization');
 }
 
-function validateDagAndLifecycle(manifest) {
-  const byId = new Map(manifest.tasks.map((task) => [task.id, task]));
-  for (const task of manifest.tasks) {
+function validateDag(plan) {
+  const tasksById = new Map(plan.tasks.map((task) => [task.id, task]));
+  for (const task of plan.tasks) {
     for (const dependency of task.dependsOn) {
-      if (!byId.has(dependency)) {
+      if (!tasksById.has(dependency)) {
         fail('PLAN_DAG_INVALID', 'Task dependency does not exist', {
           taskId: task.id,
           dependency,
         });
       }
       if (dependency === task.id) {
-        fail('PLAN_DAG_INVALID', 'Task cannot depend on itself', { taskId: task.id });
+        fail('PLAN_DAG_INVALID', 'Task cannot depend on itself', {
+          taskId: task.id,
+        });
       }
     }
   }
-
   const visiting = new Set();
   const visited = new Set();
-  function visit(taskId, trail) {
+  function visit(taskId) {
+    if (visited.has(taskId)) return;
     if (visiting.has(taskId)) {
       fail('PLAN_DAG_INVALID', 'Task dependency graph contains a cycle', {
-        cycle: [...trail, taskId],
+        taskId,
       });
     }
-    if (visited.has(taskId)) return;
     visiting.add(taskId);
-    const task = byId.get(taskId);
-    for (const dependency of task.dependsOn) {
-      visit(dependency, [...trail, taskId]);
-    }
+    tasksById.get(taskId).dependsOn.forEach(visit);
     visiting.delete(taskId);
     visited.add(taskId);
   }
-  for (const task of manifest.tasks) visit(task.id, []);
-
-  const dependenciesDone = (task) =>
-    task.dependsOn.every((dependency) => byId.get(dependency).status === 'done');
-  for (const task of manifest.tasks) {
-    if (['in_progress', 'blocked', 'done'].includes(task.status) && !dependenciesDone(task)) {
-      fail('PLAN_STATE_INVALID', 'Started or terminal Task has an incomplete dependency', {
-        taskId: task.id,
-        dependsOn: task.dependsOn,
-      });
-    }
-  }
-
-  const current = manifest.tasks.filter((task) => task.status === 'in_progress');
-  const blocked = manifest.tasks.filter((task) => task.status === 'blocked');
-  const ready = manifest.tasks.filter(
-    (task) => task.status === 'pending' && dependenciesDone(task),
-  );
-
-  if (manifest.status === 'active') {
-    if (current.length !== 1 || manifest.exhaustion !== null) {
-      fail('PLAN_STATE_INVALID', 'Active package must have one current Task and no exhaustion', {
-        currentTaskIds: current.map((task) => task.id),
-      });
-    }
-  } else if (manifest.status === 'blocked') {
-    if (
-      current.length !== 0 ||
-      blocked.length === 0 ||
-      ready.length !== 0 ||
-      manifest.exhaustion === null
-    ) {
-      fail(
-        'PLAN_STATE_INVALID',
-        'Blocked package must have blocked Tasks, no current/ready Task, and exhaustion',
-        {
-          currentTaskIds: current.map((task) => task.id),
-          blockedTaskIds: blocked.map((task) => task.id),
-          readyTaskIds: ready.map((task) => task.id),
-        },
-      );
-    }
-    const actual = [...manifest.exhaustion.blockedTaskIds].sort();
-    const expected = blocked.map((task) => task.id).sort();
-    if (
-      actual.length !== expected.length ||
-      actual.some((taskId, index) => taskId !== expected[index])
-    ) {
-      fail('PLAN_STATE_INVALID', 'Exhaustion blockedTaskIds must equal blocked Task status', {
-        expected,
-        actual,
-      });
-    }
-  } else if (manifest.status === 'completed') {
-    if (
-      current.length !== 0 ||
-      manifest.exhaustion !== null ||
-      manifest.tasks.some((task) => !TERMINAL_TASK_STATUSES.has(task.status))
-    ) {
-      fail(
-        'PLAN_STATE_INVALID',
-        'Completed package requires every Task to be done or descoped',
-      );
-    }
-  } else if (
-    ['draft', 'prepared', 'superseded'].includes(manifest.status) &&
-    (current.length !== 0 || manifest.exhaustion !== null)
-  ) {
-    fail(
-      'PLAN_STATE_INVALID',
-      `${manifest.status} package must have no current Task or exhaustion`,
-    );
-  }
-
-  return { byId, current, ready, blocked };
+  plan.tasks.forEach((task) => visit(task.id));
 }
 
-function validateTaskSliceSchema(task) {
-  const optionalFields = [];
-  if ('status' in task) optionalFields.push('status');
-  if ('runtimeReuse' in task) optionalFields.push('runtimeReuse');
+function validateTaskSlice(task) {
+  const optionalFields = 'runtimeReuse' in task ? ['runtimeReuse'] : [];
   assertClosedObject(
     task,
     [
@@ -842,65 +754,34 @@ function validateTaskSliceSchema(task) {
       'doneWhen',
       'failureBehavior',
       'updatedAt',
-      'durableEvidence',
     ],
     'Task Slice',
   );
   if (task.kind !== 'peers-touch-task-slice') {
     fail('PLAN_SCHEMA_INVALID', 'Task Slice kind is unsupported');
   }
-  assertString(task.planId, 'Task Slice.planId', { pattern: ID_PATTERN });
-  assertString(task.taskId, 'Task Slice.taskId', { pattern: ID_PATTERN });
-  assertString(task.workstreamId, 'Task Slice.workstreamId', { pattern: ID_PATTERN });
+  for (const field of ['planId', 'taskId', 'workstreamId', 'closureId']) {
+    assertString(task[field], `Task Slice.${field}`, { pattern: ID_PATTERN });
+  }
   assertString(task.title, 'Task Slice.title');
+  assertString(task.journeyId, 'Task Slice.journeyId');
   assertEnum(task.workClass, WORK_CLASSES, 'Task Slice.workClass');
   assertEnum(
     task.completionClass,
     COMPLETION_CLASSES,
     'Task Slice.completionClass',
   );
-  assertEnum(task.executionMode, new Set(['build', 'fix']), 'Task Slice.executionMode');
-  assertString(task.closureId, 'Task Slice.closureId', { pattern: ID_PATTERN });
-  assertString(task.journeyId, 'Task Slice.journeyId');
+  assertEnum(
+    task.executionMode,
+    new Set(['build', 'fix']),
+    'Task Slice.executionMode',
+  );
   assertEnum(task.runtimeClass, RUNTIME_CLASSES, 'Task Slice.runtimeClass');
-  if ('runtimeReuse' in task) {
-    if (task.completionClass !== 'functional') {
-      fail(
-        'PLAN_TASK_RUNTIME_INVALID',
-        'runtimeReuse is valid only for functional Task Slices',
-        { taskId: task.taskId, completionClass: task.completionClass },
-      );
-    }
-    if (task.runtimeClass === 'source-only') {
-      fail(
-        'PLAN_TASK_RUNTIME_INVALID',
-        'runtimeReuse requires an executable runtime class',
-        { taskId: task.taskId, runtimeClass: task.runtimeClass },
-      );
-    }
-    validateRuntimeReuse(task.runtimeReuse, 'Task Slice.runtimeReuse');
-    const entryCheck = task.checks?.find(
-      (check) => check.id === task.runtimeReuse.entryCheckId,
-    );
-    if (
-      !entryCheck ||
-      entryCheck.verificationClass !== 'FUNCTIONAL_CHECK'
-    ) {
-      fail(
-        'PLAN_TASK_CHECK_INVALID',
-        'runtimeReuse.entryCheckId must reference one functional check',
-        {
-          taskId: task.taskId,
-          entryCheckId: task.runtimeReuse.entryCheckId,
-        },
-      );
-    }
-  }
   if (task.completionClass === 'source' && task.runtimeClass !== 'source-only') {
     fail(
       'PLAN_TASK_RUNTIME_INVALID',
       'source completion requires source-only runtime',
-      { taskId: task.taskId, runtimeClass: task.runtimeClass },
+      { taskId: task.taskId },
     );
   }
   if (
@@ -909,8 +790,8 @@ function validateTaskSliceSchema(task) {
   ) {
     fail(
       'PLAN_TASK_RUNTIME_INVALID',
-      'acceptance aggregate requires source-only orchestration runtime',
-      { taskId: task.taskId, runtimeClass: task.runtimeClass },
+      'acceptance aggregate requires source-only runtime',
+      { taskId: task.taskId },
     );
   }
   if (
@@ -921,13 +802,10 @@ function validateTaskSliceSchema(task) {
     fail(
       'PLAN_TASK_RUNTIME_INVALID',
       'functional source-only runtime is incompatible with the Task work class',
-      {
-        taskId: task.taskId,
-        workClass: task.workClass,
-        completionClass: task.completionClass,
-      },
+      { taskId: task.taskId },
     );
   }
+
   assertUniqueStrings(task.writeSet, 'Task Slice.writeSet', { min: 1 });
   assertUniqueStrings(task.readSet, 'Task Slice.readSet');
   task.writeSet.forEach((value, index) =>
@@ -936,38 +814,53 @@ function validateTaskSliceSchema(task) {
   task.readSet.forEach((value, index) =>
     validateRepositoryPath(value, `Task Slice.readSet[${index}]`),
   );
-
   assertClosedObject(
     task.budgets,
     ['focusedCheckSeconds', 'functionalRunSeconds', 'cleanupSeconds'],
     'Task Slice.budgets',
   );
-  assertInteger(task.budgets.focusedCheckSeconds, 'Task Slice.budgets.focusedCheckSeconds', {
-    min: 1,
-  });
+  assertInteger(
+    task.budgets.focusedCheckSeconds,
+    'Task Slice.budgets.focusedCheckSeconds',
+    { min: 1 },
+  );
   assertInteger(
     task.budgets.functionalRunSeconds,
     'Task Slice.budgets.functionalRunSeconds',
     { min: 1 },
   );
-  assertInteger(task.budgets.cleanupSeconds, 'Task Slice.budgets.cleanupSeconds', { min: 1 });
+  assertInteger(
+    task.budgets.cleanupSeconds,
+    'Task Slice.budgets.cleanupSeconds',
+    { min: 1 },
+  );
 
   assertArray(task.checks, 'Task Slice.checks', { min: 1 });
   const checkIds = new Set();
   const checkClasses = new Set();
-  for (const [index, check] of task.checks.entries()) {
+  task.checks.forEach((check, index) => {
     const context = `Task Slice.checks[${index}]`;
     assertClosedObject(check, ['id', 'command', 'verificationClass'], context);
     assertString(check.id, `${context}.id`, { pattern: ID_PATTERN });
     assertString(check.command, `${context}.command`);
-    assertEnum(check.verificationClass, VERIFICATION_CLASSES, `${context}.verificationClass`);
+    assertEnum(
+      check.verificationClass,
+      VERIFICATION_CLASSES,
+      `${context}.verificationClass`,
+    );
     if (checkIds.has(check.id)) {
-      fail('PLAN_DUPLICATE', 'Task check ID is duplicated', { checkId: check.id });
+      fail('PLAN_DUPLICATE', 'Task check ID is duplicated', {
+        checkId: check.id,
+      });
     }
     checkIds.add(check.id);
     checkClasses.add(check.verificationClass);
-  }
-  if (![...checkClasses].some((value) => FOCUSED_VERIFICATION_CLASSES.has(value))) {
+  });
+  if (
+    ![...checkClasses].some((value) =>
+      FOCUSED_VERIFICATION_CLASSES.has(value),
+    )
+  ) {
     fail(
       'PLAN_TASK_CHECK_INVALID',
       'Task Slice must declare a focused source, structural, or UX check',
@@ -981,7 +874,7 @@ function validateTaskSliceSchema(task) {
   ) {
     fail(
       'PLAN_TASK_CHECK_INVALID',
-      'Source Task Slice cannot declare functional or Acceptance proof checks',
+      'Source Task Slice cannot declare runtime proof checks',
       { taskId: task.taskId },
     );
   }
@@ -1006,134 +899,178 @@ function validateTaskSliceSchema(task) {
       { taskId: task.taskId },
     );
   }
+  if ('runtimeReuse' in task) {
+    if (
+      task.completionClass !== 'functional' ||
+      task.runtimeClass === 'source-only'
+    ) {
+      fail(
+        'PLAN_TASK_RUNTIME_INVALID',
+        'runtimeReuse requires a functional executable-runtime Task',
+        { taskId: task.taskId },
+      );
+    }
+    validateRuntimeReuse(task.runtimeReuse, 'Task Slice.runtimeReuse');
+    const entryCheck = task.checks.find(
+      (check) => check.id === task.runtimeReuse.entryCheckId,
+    );
+    if (entryCheck?.verificationClass !== 'FUNCTIONAL_CHECK') {
+      fail(
+        'PLAN_TASK_CHECK_INVALID',
+        'runtimeReuse.entryCheckId must reference one functional check',
+        { taskId: task.taskId },
+      );
+    }
+  }
   assertUniqueStrings(task.doneWhen, 'Task Slice.doneWhen', { min: 1 });
-  assertUniqueStrings(task.failureBehavior, 'Task Slice.failureBehavior', { min: 1 });
+  assertUniqueStrings(task.failureBehavior, 'Task Slice.failureBehavior', {
+    min: 1,
+  });
   assertString(task.updatedAt, 'Task Slice.updatedAt');
-  if (Number.isNaN(Date.parse(task.updatedAt))) {
-    fail('PLAN_SCHEMA_INVALID', 'Task Slice.updatedAt must be an ISO-compatible timestamp');
-  }
-  assertArray(task.durableEvidence, 'Task Slice.durableEvidence');
-  const evidenceClasses = new Set();
-  for (const [index, evidence] of task.durableEvidence.entries()) {
-    const context = `Task Slice.durableEvidence[${index}]`;
-    assertClosedObject(evidence, ['verificationClass', 'result', 'ref'], context);
-    assertEnum(
-      evidence.verificationClass,
-      VERIFICATION_CLASSES,
-      `${context}.verificationClass`,
-    );
-    assertEnum(evidence.result, VERIFICATION_RESULTS, `${context}.result`);
-    assertString(evidence.ref, `${context}.ref`);
-    evidenceClasses.add(evidence.verificationClass);
-  }
   if (
-    task.completionClass === 'source' &&
-    (evidenceClasses.has('FUNCTIONAL_CHECK') ||
-      evidenceClasses.has('ACCEPTANCE_PROOF'))
+    Number.isNaN(Date.parse(task.updatedAt)) ||
+    new Date(task.updatedAt).toISOString() !== task.updatedAt
   ) {
     fail(
-      'PLAN_TASK_EVIDENCE_INVALID',
-      'Source Task cannot own functional or Acceptance proof evidence',
-      { taskId: task.taskId },
-    );
-  }
-  if (
-    task.completionClass === 'acceptance-aggregate' &&
-    evidenceClasses.has('FUNCTIONAL_CHECK')
-  ) {
-    fail(
-      'PLAN_TASK_EVIDENCE_INVALID',
-      'Acceptance aggregate cannot own functional evidence',
-      { taskId: task.taskId },
+      'PLAN_SCHEMA_INVALID',
+      'Task Slice.updatedAt must be a canonical timestamp',
     );
   }
 }
 
-function validateAcceptanceSchema(acceptance) {
+function validateAcceptance(acceptance) {
   assertClosedObject(
     acceptance,
     ['closures', 'completion', 'full'],
     'Acceptance Execution',
   );
   if (!isPlainObject(acceptance.closures)) {
-    fail('PLAN_SCHEMA_INVALID', 'Acceptance Execution.closures must be an object');
+    fail(
+      'PLAN_SCHEMA_INVALID',
+      'Acceptance Execution.closures must be an object',
+    );
   }
   for (const [closureId, gateIds] of Object.entries(acceptance.closures)) {
-    assertString(closureId, 'Acceptance Execution closure ID', { pattern: ID_PATTERN });
-    assertUniqueStrings(gateIds, `Acceptance Execution.closures.${closureId}`);
+    assertString(closureId, 'Acceptance Execution closure ID', {
+      pattern: ID_PATTERN,
+    });
+    assertUniqueStrings(
+      gateIds,
+      `Acceptance Execution.closures.${closureId}`,
+    );
   }
   assertUniqueStrings(acceptance.completion, 'Acceptance Execution.completion');
   assertUniqueStrings(acceptance.full, 'Acceptance Execution.full');
 }
 
-function assertAcceptanceCrosswalk(manifest, taskSlices, acceptance) {
-  const manifestById = new Map(
-    manifest.tasks.map((task) => [task.id, task]),
+function validateSourceInvalidationPolicy(policy, plan) {
+  if (policy === null) return;
+  assertClosedObject(
+    policy,
+    ['kind', 'sourceOwnerTaskId', 'rootTaskIds'],
+    'Source Invalidation Policy',
   );
-  const taskClosures = new Map();
-  for (const task of taskSlices.values()) {
-    if (taskClosures.has(task.closureId)) {
-      fail('PLAN_ACCEPTANCE_MISMATCH', 'Task closureId is duplicated', {
-        closureId: task.closureId,
-        taskIds: [taskClosures.get(task.closureId), task.taskId],
-      });
-    }
-    taskClosures.set(task.closureId, task.taskId);
-  }
-  const declaredClosures = Object.keys(acceptance.closures);
-  const expectedClosures = [...taskClosures.keys()];
-  const missing = expectedClosures.filter((closureId) => !declaredClosures.includes(closureId));
-  const extra = declaredClosures.filter((closureId) => !taskClosures.has(closureId));
-  if (missing.length > 0 || extra.length > 0) {
-    fail('PLAN_ACCEPTANCE_MISMATCH', 'Task and Acceptance closure crosswalk is incomplete', {
-      missing,
-      extra,
-    });
-  }
-
-  const completion = new Set(acceptance.completion);
-  const full = new Set(acceptance.full);
-  const closureGates = new Set(Object.values(acceptance.closures).flat());
-  const missingFromCompletion = [...closureGates].filter((gateId) => !completion.has(gateId));
-  const missingFromFull = acceptance.completion.filter((gateId) => !full.has(gateId));
-  if (missingFromCompletion.length > 0 || missingFromFull.length > 0) {
+  if (policy.kind !== 'peers-touch-source-invalidation-policy') {
     fail(
-      'PLAN_ACCEPTANCE_MISMATCH',
-      'Closure Gates must be in completion and completion Gates must be in full',
-      { missingFromCompletion, missingFromFull },
+      'PLAN_SCHEMA_INVALID',
+      'Source Invalidation Policy kind is unsupported',
     );
   }
+  assertString(
+    policy.sourceOwnerTaskId,
+    'Source Invalidation Policy.sourceOwnerTaskId',
+    { pattern: ID_PATTERN },
+  );
+  assertUniqueStrings(
+    policy.rootTaskIds,
+    'Source Invalidation Policy.rootTaskIds',
+    { min: 1, pattern: ID_PATTERN },
+  );
+  const ids = new Set(plan.tasks.map((task) => task.id));
+  if (
+    !ids.has(policy.sourceOwnerTaskId) ||
+    policy.rootTaskIds.some((taskId) => !ids.has(taskId))
+  ) {
+    fail(
+      'PLAN_DAG_INVALID',
+      'Source Invalidation Policy references an unknown Task',
+    );
+  }
+}
 
+function validateTaskScope(task, plan) {
+  const claims = plan.scope.sourceClaims;
+  for (const target of task.writeSet) {
+    const covered = claims.some(
+      (claim) =>
+        claim.mode === 'exclusive-write' &&
+        segmentContains(claim.pathPrefix, target),
+    );
+    if (!covered) {
+      fail('PLAN_SCOPE_INVALID', 'Task writeSet escapes Plan source claims', {
+        taskId: task.taskId,
+        path: target,
+      });
+    }
+  }
+  for (const target of task.readSet) {
+    const covered = claims.some((claim) =>
+      segmentContains(claim.pathPrefix, target),
+    );
+    if (!covered) {
+      fail('PLAN_SCOPE_INVALID', 'Task readSet escapes Plan source claims', {
+        taskId: task.taskId,
+        path: target,
+      });
+    }
+  }
+}
+
+function validateCrosswalk(plan, taskSlices, acceptance) {
+  const closureIds = new Set();
+  for (const planTask of plan.tasks) {
+    const task = taskSlices.get(planTask.id);
+    if (closureIds.has(task.closureId)) {
+      fail('PLAN_DUPLICATE', 'Task closure ID is duplicated', {
+        closureId: task.closureId,
+      });
+    }
+    closureIds.add(task.closureId);
+  }
+  const acceptanceClosureIds = Object.keys(acceptance.closures);
+  if (
+    acceptanceClosureIds.length !== closureIds.size ||
+    acceptanceClosureIds.some((closureId) => !closureIds.has(closureId))
+  ) {
+    fail(
+      'PLAN_ACCEPTANCE_INVALID',
+      'Acceptance closures must equal Task closure IDs',
+      {
+        expected: [...closureIds].sort(),
+        actual: acceptanceClosureIds.sort(),
+      },
+    );
+  }
   for (const task of taskSlices.values()) {
     const gates = acceptance.closures[task.closureId];
-    const checkClasses = new Set(
+    const classes = new Set(
       task.checks.map((check) => check.verificationClass),
     );
-    if (task.completionClass === 'source' && gates.length > 0) {
-      fail('PLAN_ACCEPTANCE_MISMATCH', 'Source Task must own an empty Gate closure', {
-        taskId: task.taskId,
-        gateIds: gates,
-      });
-    }
-    if (
-      task.completionClass === 'functional' &&
-      gates.length > 0 &&
-      !checkClasses.has('ACCEPTANCE_PROOF')
-    ) {
+    if (task.completionClass === 'source' && gates.length !== 0) {
       fail(
-        'PLAN_ACCEPTANCE_MISMATCH',
-        'Functional Task with formal Gates must declare an Acceptance proof check',
-        { taskId: task.taskId, gateIds: gates },
+        'PLAN_ACCEPTANCE_INVALID',
+        'Source Task must own an empty Acceptance closure',
+        { taskId: task.taskId },
       );
     }
     if (
       task.completionClass === 'functional' &&
-      gates.length === 0 &&
-      checkClasses.has('ACCEPTANCE_PROOF')
+      gates.length > 0 &&
+      !classes.has('ACCEPTANCE_PROOF')
     ) {
       fail(
-        'PLAN_ACCEPTANCE_MISMATCH',
-        'Functional Task without formal Gates cannot declare an Acceptance proof check',
+        'PLAN_ACCEPTANCE_INVALID',
+        'Functional Task with Acceptance Gates must declare proof checks',
         { taskId: task.taskId },
       );
     }
@@ -1142,357 +1079,73 @@ function assertAcceptanceCrosswalk(manifest, taskSlices, acceptance) {
       gates.length === 0
     ) {
       fail(
-        'PLAN_ACCEPTANCE_MISMATCH',
-        'Acceptance aggregate must own a non-empty Gate closure',
+        'PLAN_ACCEPTANCE_INVALID',
+        'Acceptance aggregate must own a non-empty closure',
         { taskId: task.taskId },
       );
     }
-    if (task.completionClass === 'acceptance-aggregate') {
-      const ancestors = new Set();
-      const visit = (taskId) => {
-        for (const dependency of manifestById.get(taskId).dependsOn) {
-          if (ancestors.has(dependency)) continue;
-          ancestors.add(dependency);
-          visit(dependency);
-        }
-      };
-      visit(task.taskId);
-      const functionalPredecessors = [...ancestors].filter(
-        (taskId) =>
-          taskSlices.get(taskId).completionClass === 'functional',
-      );
-      if (functionalPredecessors.length === 0) {
-        fail(
-          'PLAN_ACCEPTANCE_DEPENDENCY_INVALID',
-          'Acceptance aggregate requires a functional predecessor',
-          { taskId: task.taskId },
-        );
-      }
-    }
-  }
-
-  for (const task of taskSlices.values()) {
-    if (
-      task.completionClass !== 'source' ||
-      task.workClass === 'documentation'
-    ) {
-      continue;
-    }
-    const successors = manifest.tasks.filter((candidate) => {
-      if (!candidate.dependsOn.includes(task.taskId)) return false;
-      const successor = taskSlices.get(candidate.id);
-      return (
-        successor.workstreamId === task.workstreamId &&
-        successor.completionClass === 'functional'
-      );
-    });
-    if (successors.length !== 1) {
-      fail(
-        'PLAN_TASK_SUCCESSOR_INVALID',
-        'Source Task requires exactly one direct same-workstream functional successor',
-        {
-          taskId: task.taskId,
-          successorTaskIds: successors.map((candidate) => candidate.id),
-        },
-      );
-    }
-  }
-
-  for (const manifestTask of manifest.tasks) {
-    if (!taskSlices.has(manifestTask.id)) {
-      fail('PLAN_TASK_MISMATCH', 'Manifest Task has no Task Slice', {
-        taskId: manifestTask.id,
-      });
-    }
   }
 }
 
-function claimsCoverPath(claims, targetPath, requiredMode) {
-  return claims.some(
-    (claim) =>
-      segmentContains(claim.pathPrefix, targetPath) &&
-      (requiredMode !== 'exclusive-write' || claim.mode === 'exclusive-write'),
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalize(value[key])]),
   );
 }
 
-function validateTaskScope(task, manifest, declarationClaims) {
-  for (const targetPath of task.writeSet) {
-    if (!claimsCoverPath(manifest.scope.sourceClaims, targetPath, 'exclusive-write')) {
-      fail('PLAN_SCOPE_MISMATCH', 'Task writeSet escapes Plan exclusive-write scope', {
-        taskId: task.taskId,
-        path: targetPath,
-      });
-    }
-    if (
-      declarationClaims &&
-      !claimsCoverPath(declarationClaims, targetPath, 'exclusive-write')
-    ) {
-      fail('PLAN_SCOPE_MISMATCH', 'Task writeSet escapes declaration exclusive-write scope', {
-        taskId: task.taskId,
-        path: targetPath,
-      });
-    }
-  }
-  for (const targetPath of task.readSet) {
-    if (!claimsCoverPath(manifest.scope.sourceClaims, targetPath, 'shared-read')) {
-      fail('PLAN_SCOPE_MISMATCH', 'Task readSet escapes Plan source scope', {
-        taskId: task.taskId,
-        path: targetPath,
-      });
-    }
-    if (declarationClaims && !claimsCoverPath(declarationClaims, targetPath, 'shared-read')) {
-      fail('PLAN_SCOPE_MISMATCH', 'Task readSet escapes declaration source scope', {
-        taskId: task.taskId,
-        path: targetPath,
-      });
-    }
-  }
+export function digestPlanVersionInput({
+  plan,
+  tasks,
+  acceptance,
+  sourceInvalidationPolicy = null,
+}) {
+  return crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify(
+        canonicalize({
+          plan,
+          tasks: [...tasks].sort((left, right) =>
+            left.taskId.localeCompare(right.taskId),
+          ),
+          acceptance,
+          sourceInvalidationPolicy,
+        }),
+      ),
+    )
+    .digest('hex');
 }
 
-async function validateDeclarationClaims(value, manifest, repoRoot) {
-  if (value === undefined) return null;
-  assertArray(value, 'declarationClaims', { min: 1 });
-  const paths = new Set();
-  for (const [index, claim] of value.entries()) {
-    validateSourceClaim(claim, `declarationClaims[${index}]`);
-    if (paths.has(claim.pathPrefix)) {
-      fail('PLAN_DUPLICATE', 'Declaration source claim path is duplicated', {
-        path: claim.pathPrefix,
-      });
-    }
-    paths.add(claim.pathPrefix);
-    await assertRepositoryPathContained(
-      repoRoot,
-      claim.pathPrefix,
-      `declarationClaims[${index}].pathPrefix`,
-    );
-    const compatible = manifest.scope.sourceClaims.some(
-      (planClaim) =>
-        segmentContains(planClaim.pathPrefix, claim.pathPrefix) &&
-        (claim.mode !== 'exclusive-write' || planClaim.mode === 'exclusive-write'),
-    );
-    if (!compatible) {
-      fail('PLAN_SCOPE_MISMATCH', 'Declaration adds a source claim outside Plan scope', {
-        claim,
-      });
-    }
-  }
-  return value;
-}
-
-async function findRepoRoot(startPath) {
-  let candidate = path.resolve(startPath);
+async function findRepoRoot(start) {
+  let current = path.resolve(start);
   while (true) {
-    if (await pathExists(path.join(candidate, '.git'))) {
-      return fsp.realpath(candidate);
+    if (await pathExists(path.join(current, '.git'))) return fsp.realpath(current);
+    const parent = path.dirname(current);
+    if (parent === current) {
+      fail('PLAN_REPOSITORY_INVALID', 'Plan is not inside a Git repository', {
+        path: start,
+      });
     }
-    const parent = path.dirname(candidate);
-    if (parent === candidate) {
-      fail('PLAN_REPO_ROOT_UNAVAILABLE', 'Could not infer repository root');
-    }
-    candidate = parent;
+    current = parent;
   }
 }
 
 async function resolveRepoRoot(planPath, explicitRoot) {
-  const inferredRoot = await findRepoRoot(path.dirname(planPath));
-  let root = inferredRoot;
-  if (explicitRoot !== undefined) {
-    assertString(explicitRoot, 'options.repoRoot');
-    root = await fsp.realpath(path.resolve(explicitRoot));
-    if (root !== inferredRoot) {
-      fail(
-        'PLAN_REPO_ROOT_MISMATCH',
-        'Explicit repository root does not match the Plan Git root',
-        { explicitRoot: root, inferredRoot },
-      );
-    }
-  }
   const realPlan = await fsp.realpath(planPath);
-  if (!isNativePathInside(root, realPlan)) {
-    fail('PLAN_PATH_ESCAPE', 'Plan Package resolves outside the repository root', {
-      planPath,
-      repoRoot: root,
-      resolvedPlanPath: realPlan,
+  const repoRoot = explicitRoot
+    ? await fsp.realpath(path.resolve(explicitRoot))
+    : await findRepoRoot(path.dirname(realPlan));
+  if (!isNativePathInside(repoRoot, realPlan)) {
+    fail('PLAN_PATH_ESCAPE', 'Plan path is outside the repository root', {
+      planPath: realPlan,
+      repoRoot,
     });
   }
-  return { repoRoot: root, realPlan };
-}
-
-function migrationReadContexts(options, identity) {
-  const hasJournal = options.migrationJournalPath !== undefined;
-  const hasLock = options.migrationLockPath !== undefined;
-  if (hasJournal !== hasLock) {
-    fail(
-      'PLAN_MIGRATION_CONTEXT_REQUIRED',
-      'Migration journal and lock paths must be supplied together',
-    );
-  }
-
-  const contexts = [];
-  if (hasJournal) {
-    contexts.push({
-      journalPath: path.resolve(options.migrationJournalPath),
-      lockPath: path.resolve(options.migrationLockPath),
-    });
-  }
-
-  if (identity?.repoRoot) {
-    const workspaceIds = new Set([
-      identity.workspaceId,
-      workspaceIdForRoot(identity.repoRoot),
-    ]);
-    const root = path.resolve(machineDevRoot());
-    for (const workspaceId of workspaceIds) {
-      if (workspaceId === undefined) continue;
-      if (!ID_PATTERN.test(workspaceId)) {
-        fail('PLAN_MIGRATION_CONTEXT_REQUIRED', 'Migration workspace ID is invalid', {
-          workspaceId,
-        });
-      }
-      const directory = path.join(
-        root,
-        'workspaces',
-        workspaceId,
-        'workflow',
-        'plan-migration',
-      );
-      contexts.push({
-        journalPath: path.join(directory, 'migration.json'),
-        lockPath: path.join(directory, 'migration.lock'),
-      });
-    }
-  }
-
-  const deduplicated = new Map();
-  for (const context of contexts) {
-    deduplicated.set(`${context.journalPath}\0${context.lockPath}`, context);
-  }
-  if (deduplicated.size === 0) {
-    fail(
-      'PLAN_MIGRATION_CONTEXT_REQUIRED',
-      'Plan discovery requires repository identity or explicit migration paths',
-    );
-  }
-  return [...deduplicated.values()];
-}
-
-async function readOptionalFile(candidate) {
-  try {
-    return await fsp.readFile(candidate);
-  } catch (error) {
-    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
-    throw error;
-  }
-}
-
-function digestOptionalFile(value) {
-  return value === null
-    ? null
-    : crypto.createHash('sha256').update(value).digest('hex');
-}
-
-function parseMigrationMetadata(bytes, candidate, context) {
-  if (bytes === null) return null;
-  try {
-    return JSON.parse(bytes.toString('utf8'));
-  } catch {
-    fail('PLAN_MIGRATION_JOURNAL_INVALID', `${context} is not valid JSON`, {
-      path: candidate,
-    });
-  }
-}
-
-function migrationLockOwnedBy(lock, lockPath, ownerToken) {
-  if (lock === null) return false;
-  if (
-    !isPlainObject(lock) ||
-    typeof lock.ownerToken !== 'string' ||
-    !SHA256_PATTERN.test(lock.ownerToken)
-  ) {
-    fail('PLAN_MIGRATION_LOCK_INVALID', 'Migration lock metadata is invalid', {
-      lockPath,
-    });
-  }
-  return ownerToken !== undefined && lock.ownerToken === ownerToken;
-}
-
-export async function assertPlanDiscoveryReadable(options = {}, identity = undefined) {
-  const fence = [];
-  for (const context of migrationReadContexts(options, identity)) {
-    const lockBefore = await readOptionalFile(context.lockPath);
-    const journalBytes = await readOptionalFile(context.journalPath);
-    const lockAfter = await readOptionalFile(context.lockPath);
-    if (
-      digestOptionalFile(lockBefore) !== digestOptionalFile(lockAfter)
-    ) {
-      fail(
-        'PLAN_MIGRATION_IN_PROGRESS',
-        'Plan migration lock changed during discovery fencing',
-        { lockPath: context.lockPath },
-      );
-    }
-    const lock = parseMigrationMetadata(
-      lockAfter,
-      context.lockPath,
-      'migration lock',
-    );
-    const owned = migrationLockOwnedBy(
-      lock,
-      context.lockPath,
-      options.migrationOwnerToken,
-    );
-    if (lock !== null && !owned) {
-      fail('PLAN_MIGRATION_IN_PROGRESS', 'Plan migration lock is active', {
-        lockPath: context.lockPath,
-      });
-    }
-    if (journalBytes !== null) {
-      const journal = parseMigrationMetadata(
-        journalBytes,
-        context.journalPath,
-        'migration journal',
-      );
-      if (!isPlainObject(journal) || !MIGRATION_PHASES.has(journal.phase)) {
-        fail(
-          'PLAN_MIGRATION_JOURNAL_INVALID',
-          'Migration journal phase is invalid',
-          {
-            journalPath: context.journalPath,
-            phase: isPlainObject(journal) ? journal.phase : undefined,
-          },
-        );
-      }
-      if (LOCKED_MIGRATION_PHASES.has(journal.phase) && !owned) {
-        fail('PLAN_MIGRATION_IN_PROGRESS', 'Plan migration journal is in a locked phase', {
-          journalPath: context.journalPath,
-          phase: journal.phase,
-        });
-      }
-    }
-    fence.push({
-      journalPath: context.journalPath,
-      lockPath: context.lockPath,
-      journalDigest: digestOptionalFile(journalBytes),
-      lockDigest: digestOptionalFile(lockAfter),
-    });
-  }
-  return fence;
-}
-
-export async function assertPlanDiscoveryFenceUnchanged(
-  initialFence,
-  options,
-  identity,
-) {
-  const finalFence = await assertPlanDiscoveryReadable(options, identity);
-  if (JSON.stringify(finalFence) !== JSON.stringify(initialFence)) {
-    fail(
-      'PLAN_MIGRATION_IN_PROGRESS',
-      'Plan migration state changed during package discovery',
-      { initialFence, finalFence },
-    );
-  }
+  return { repoRoot, realPlan };
 }
 
 async function taskMarkdownFiles(tasksDirectory) {
@@ -1501,42 +1154,32 @@ async function taskMarkdownFiles(tasksDirectory) {
     entries = await fsp.readdir(tasksDirectory, { withFileTypes: true });
   } catch (error) {
     if (error.code === 'ENOENT') {
-      fail('PLAN_TASK_MISMATCH', 'Plan Package tasks directory does not exist', {
+      fail('PLAN_TASK_MISMATCH', 'Plan tasks directory does not exist', {
         path: tasksDirectory,
       });
     }
     throw error;
   }
   return entries
-    .filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith('.md'))
+    .filter(
+      (entry) =>
+        (entry.isFile() || entry.isSymbolicLink()) &&
+        entry.name.endsWith('.md'),
+    )
     .map((entry) => entry.name)
     .sort();
 }
 
-async function validateRegisteredArchitecture(manifest, repoRoot) {
-  const registryPath = DEFAULT_REGISTRY_PATH;
-  if (
-    !fs.existsSync(path.join(repoRoot, ...registryPath.split('/')))
-  ) {
-    const governanceRoot = path.join(
-      repoRoot,
-      'docs/architecture/architecture-module-governance',
-    );
-    if (fs.existsSync(governanceRoot)) {
-      fail(
-        'ARCHITECTURE_REGISTRY_INVALID',
-        'architecture module registry is required by this repository',
-        { path: registryPath },
-      );
-    }
+async function validateRegisteredArchitecture(plan, repoRoot) {
+  if (!fs.existsSync(path.join(repoRoot, ...DEFAULT_REGISTRY_PATH.split('/')))) {
     return null;
   }
   try {
     return await validatePlanArchitecture({
       repoRoot,
-      registryPath,
-      sources: manifest.architecture.sources,
-      decisions: manifest.architecture.decisions,
+      registryPath: DEFAULT_REGISTRY_PATH,
+      sources: plan.architecture.sources,
+      decisions: plan.architecture.decisions,
     });
   } catch (error) {
     if (error instanceof ArchitectureGovernanceError || error?.code) {
@@ -1550,68 +1193,72 @@ async function validateRegisteredArchitecture(manifest, repoRoot) {
   }
 }
 
-/**
- * Loads and validates one Plan Package.
- *
- * taskSlices is always a Map<string, TaskSlice>. currentTask and readyTasks
- * contain the same TaskSlice values, while lifecycle status remains owned by
- * manifest.tasks.
- */
 export async function loadPlanPackage(planPath, options = {}) {
   assertString(planPath, 'planPath');
   const absolutePlan = path.resolve(planPath);
-  const { repoRoot, realPlan } = await resolveRepoRoot(absolutePlan, options.repoRoot);
-  const migrationFence = await assertPlanDiscoveryReadable(options, { repoRoot });
+  const { repoRoot, realPlan } = await resolveRepoRoot(
+    absolutePlan,
+    options.repoRoot,
+  );
   const markdown = await fsp.readFile(realPlan, 'utf8');
   assertBounds(markdown, 'manifest', realPlan);
   assertNoForbiddenSections(markdown, realPlan);
 
-  const { value: manifest } = parseStructuredBlock(markdown, 'Plan Package', realPlan);
+  const { value: plan } = parseStructuredBlock(
+    markdown,
+    'Plan Version',
+    realPlan,
+  );
   const { value: acceptance } = parseStructuredBlock(
     markdown,
     'Acceptance Execution',
     realPlan,
   );
-  validateManifestSchema(manifest);
-  validateAcceptanceSchema(acceptance);
-  assertMetadata(manifest, parseMetadata(markdown, realPlan), realPlan);
-  const lifecycle = validateDagAndLifecycle(manifest);
-  await assertPlanDiscoveryFenceUnchanged(
-    migrationFence,
-    options,
-    { repoRoot },
+  const invalidationBlock = parseStructuredBlock(
+    markdown,
+    'Source Invalidation Policy',
+    realPlan,
+    { optional: true },
   );
+  const sourceInvalidationPolicy = invalidationBlock?.value ?? null;
+  validatePlanVersion(plan);
+  validateDag(plan);
+  validateAcceptance(acceptance);
+  validateSourceInvalidationPolicy(sourceInvalidationPolicy, plan);
+  assertMetadata(plan, parseMetadata(markdown, realPlan), realPlan);
 
-  const planRelativePath = path.relative(repoRoot, realPlan).split(path.sep).join('/');
+  const planRelativePath = path
+    .relative(repoRoot, realPlan)
+    .split(path.sep)
+    .join('/');
   validateRepositoryPath(planRelativePath, 'planPath');
   const packageDirectory = path.dirname(realPlan);
-  const declarationClaims = await validateDeclarationClaims(
-    options.declarationClaims ?? options.declaration?.sourceClaims,
-    manifest,
-    repoRoot,
-  );
 
-  for (const [index, source] of manifest.architecture.sources.entries()) {
+  for (const [index, source] of plan.architecture.sources.entries()) {
     await assertRepositoryPathContained(
       repoRoot,
       source,
-      `Plan Package.architecture.sources[${index}]`,
+      `Plan Version.architecture.sources[${index}]`,
     );
   }
   const architectureGovernance = await validateRegisteredArchitecture(
-    manifest,
+    plan,
     repoRoot,
   );
-  for (const [index, claim] of manifest.scope.sourceClaims.entries()) {
+  for (const [index, claim] of plan.scope.sourceClaims.entries()) {
     await assertRepositoryPathContained(
       repoRoot,
       claim.pathPrefix,
-      `Plan Package.scope.sourceClaims[${index}].pathPrefix`,
+      `Plan Version.scope.sourceClaims[${index}].pathPrefix`,
     );
   }
 
-  const indexedFiles = manifest.tasks.map((task) => path.posix.basename(task.path)).sort();
-  const actualFiles = await taskMarkdownFiles(path.join(packageDirectory, 'tasks'));
+  const indexedFiles = plan.tasks
+    .map((task) => path.posix.basename(task.path))
+    .sort();
+  const actualFiles = await taskMarkdownFiles(
+    path.join(packageDirectory, 'tasks'),
+  );
   if (
     actualFiles.length !== indexedFiles.length ||
     actualFiles.some((file, index) => file !== indexedFiles[index])
@@ -1623,38 +1270,40 @@ export async function loadPlanPackage(planPath, options = {}) {
   }
 
   const taskSlices = new Map();
-  for (const manifestTask of manifest.tasks) {
-    const taskPath = path.join(packageDirectory, ...manifestTask.path.split('/'));
-    const relativeTaskPath = path.relative(repoRoot, taskPath).split(path.sep).join('/');
+  for (const planTask of plan.tasks) {
+    const taskPath = path.join(
+      packageDirectory,
+      ...planTask.path.split('/'),
+    );
+    const relativeTaskPath = path
+      .relative(repoRoot, taskPath)
+      .split(path.sep)
+      .join('/');
     await assertRepositoryPathContained(
       repoRoot,
       relativeTaskPath,
-      `Task ${manifestTask.id} path`,
+      `Task ${planTask.id} path`,
     );
     const taskMarkdown = await fsp.readFile(taskPath, 'utf8');
     assertBounds(taskMarkdown, 'task', taskPath);
     assertNoForbiddenSections(taskMarkdown, taskPath);
     assertCurrentSnapshot(taskMarkdown, taskPath);
-    const { value: task } = parseStructuredBlock(taskMarkdown, 'Task Slice', taskPath);
-    validateTaskSliceSchema(task);
+    const { value: task } = parseStructuredBlock(
+      taskMarkdown,
+      'Task Slice',
+      taskPath,
+    );
+    validateTaskSlice(task);
     if (
-      task.planId !== manifest.planId ||
-      task.taskId !== manifestTask.id ||
-      task.workstreamId !== manifestTask.workstreamId
+      task.planId !== plan.planId ||
+      task.taskId !== planTask.id ||
+      task.workstreamId !== planTask.workstreamId
     ) {
-      fail('PLAN_TASK_MISMATCH', 'Task Slice metadata does not match its manifest entry', {
-        taskPath: manifestTask.path,
-        manifest: {
-          planId: manifest.planId,
-          taskId: manifestTask.id,
-          workstreamId: manifestTask.workstreamId,
-        },
-        task: {
-          planId: task.planId,
-          taskId: task.taskId,
-          workstreamId: task.workstreamId,
-        },
-      });
+      fail(
+        'PLAN_TASK_MISMATCH',
+        'Task Slice metadata does not match its Plan Version entry',
+        { taskPath: planTask.path, taskId: task.taskId },
+      );
     }
     for (const [index, targetPath] of task.writeSet.entries()) {
       await assertRepositoryPathContained(
@@ -1670,221 +1319,64 @@ export async function loadPlanPackage(planPath, options = {}) {
         `Task ${task.taskId}.readSet[${index}]`,
       );
     }
-    validateTaskScope(task, manifest, null);
+    validateTaskScope(task, plan);
     taskSlices.set(task.taskId, task);
   }
-  assertAcceptanceCrosswalk(manifest, taskSlices, acceptance);
+  validateCrosswalk(plan, taskSlices, acceptance);
 
-  const currentTask =
-    lifecycle.current.length === 1 ? taskSlices.get(lifecycle.current[0].id) : null;
-  if (currentTask && declarationClaims) {
-    validateTaskScope(currentTask, manifest, declarationClaims);
-  }
-  const readyTasks = lifecycle.ready.map((task) => taskSlices.get(task.id));
-  await assertPlanDiscoveryFenceUnchanged(
-    migrationFence,
-    options,
-    { repoRoot },
-  );
-
+  const tasks = plan.tasks.map((task) => taskSlices.get(task.id));
+  const planVersionDigest = digestPlanVersionInput({
+    plan,
+    tasks,
+    acceptance,
+    sourceInvalidationPolicy,
+  });
   return {
     path: realPlan,
+    planPath: planRelativePath,
     repoRoot,
-    manifest,
+    plan,
+    manifest: plan,
     acceptance,
+    sourceInvalidationPolicy,
     architectureGovernance,
     taskSlices,
-    currentTask,
-    readyTasks,
+    tasks,
+    planVersionDigest,
   };
 }
+
+export const loadPlanVersion = loadPlanPackage;
 
 export function allDeclaredGateIds(acceptance) {
-  const ordered = [
-    ...Object.values(acceptance.closures).flat(),
-    ...acceptance.completion,
-    ...acceptance.full,
+  return [
+    ...new Set([
+      ...Object.values(acceptance.closures).flat(),
+      ...acceptance.completion,
+      ...acceptance.full,
+    ]),
   ];
-  return [...new Set(ordered)];
-}
-
-function progressPercentage(completed, total) {
-  return total === 0
-    ? 100
-    : Number(((completed / total) * 100).toFixed(2));
-}
-
-export function summarizePlanProgress(planPackage) {
-  const tasks = planPackage.manifest.tasks;
-  const completed = tasks.filter((task) => task.status === 'done').length;
-  const total = tasks.length;
-  const percentage = progressPercentage(completed, total);
-  const currentTasks = tasks.filter((task) => task.status === 'in_progress');
-  const current =
-    planPackage.manifest.status === 'active' && currentTasks.length === 1
-      ? currentTasks[0]
-      : null;
-
-  if (!current) {
-    return {
-      unit: 'task-closure',
-      completed,
-      total,
-      percentage,
-      currentTaskId: null,
-      nextProgressBoundary: null,
-    };
-  }
-
-  const completedAfter = completed + 1;
-  const percentageAfter = progressPercentage(completedAfter, total);
-  const doneAfter = new Set(
-    tasks
-      .filter((task) => task.status === 'done')
-      .map((task) => task.id),
-  );
-  doneAfter.add(current.id);
-  const readyBefore = new Set(
-    tasks
-      .filter(
-        (task) =>
-          task.status === 'pending' &&
-          task.dependsOn.every((dependency) =>
-            tasks.some(
-              (candidate) =>
-                candidate.id === dependency && candidate.status === 'done',
-            ),
-          ),
-      )
-      .map((task) => task.id),
-  );
-  const unlocksTaskIds = tasks
-    .filter(
-      (task) =>
-        task.status === 'pending' &&
-        !readyBefore.has(task.id) &&
-        task.dependsOn.every((dependency) => doneAfter.has(dependency)),
-    )
-    .map((task) => task.id);
-
-  return {
-    unit: 'task-closure',
-    completed,
-    total,
-    percentage,
-    currentTaskId: current.id,
-    nextProgressBoundary: {
-      taskId: current.id,
-      title: planPackage.taskSlices.get(current.id).title,
-      transition: 'in_progress->done',
-      completedDelta: 1,
-      completedAfter,
-      percentageAfter,
-      percentagePointDelta: Number((percentageAfter - percentage).toFixed(2)),
-      unlocksTaskIds,
-    },
-  };
 }
 
 export function summarizePlanPackage(planPackage) {
-  const currentManifestTask =
-    planPackage.manifest.tasks.find((task) => task.status === 'in_progress') ?? null;
-  const taskStatuses = Object.fromEntries(
-    planPackage.manifest.tasks.map((task) => [task.id, task.status]),
-  );
-  const closureStatuses = Object.fromEntries(
-    planPackage.manifest.tasks.map((task) => [
-      planPackage.taskSlices.get(task.id).closureId,
-      task.status,
-    ]),
-  );
   return {
     ok: true,
     plan: planPackage.path,
-    planId: planPackage.manifest.planId,
-    status: planPackage.manifest.status,
-    branch: planPackage.manifest.binding.branch,
-    workspaceId: planPackage.manifest.binding.workspaceId,
-    initialHead: planPackage.manifest.binding.initialHead,
-    sourceClaims: planPackage.manifest.scope.sourceClaims.map((claim) => ({
-      pathPrefix: claim.pathPrefix,
-      mode: claim.mode,
+    planPath: planPackage.planPath,
+    planId: planPackage.plan.planId,
+    versionId: planPackage.plan.versionId,
+    createdAt: planPackage.plan.createdAt,
+    planVersionDigest: planPackage.planVersionDigest,
+    workClass: planPackage.plan.workClass,
+    sourceClaims: planPackage.plan.scope.sourceClaims.map((claim) => ({
+      ...claim,
     })),
-    progress: summarizePlanProgress(planPackage),
-    currentTaskId: currentManifestTask?.id ?? null,
-    currentTaskPath: currentManifestTask?.path ?? null,
-    currentTaskWriteSet: planPackage.currentTask?.writeSet ?? [],
-    currentClosure: planPackage.currentTask?.closureId ?? null,
-    taskStatuses,
+    taskIds: planPackage.plan.tasks.map((task) => task.id),
     acceptance: planPackage.acceptance,
-    closureStatuses,
-    closures: closureStatuses,
     completion: planPackage.acceptance.completion,
     full: planPackage.acceptance.full,
     allDeclaredGateIds: allDeclaredGateIds(planPackage.acceptance),
   };
-}
-
-export function renderPlanDocument(markdown, manifest) {
-  validateManifestSchema(manifest);
-  validateDagAndLifecycle(manifest);
-  const { block } = parseStructuredBlock(markdown, 'Plan Package', '<memory>');
-  if (parseMetadata(markdown, '<memory>').has('expectedhead')) {
-    fail(
-      'PLAN_METADATA_MISMATCH',
-      'Obsolete Expected HEAD metadata must be removed before rendering',
-      { path: '<memory>', key: 'Expected HEAD' },
-    );
-  }
-  const replacements = new Map([
-    ['status', manifest.status],
-    ['branch', manifest.binding.branch],
-    ['workspaceid', manifest.binding.workspaceId],
-    ['initialhead', manifest.binding.initialHead],
-  ]);
-
-  function renderWith(serializedManifest) {
-    let candidate =
-      markdown.slice(0, block.contentStart) +
-      `${serializedManifest}\n` +
-      markdown.slice(block.contentEnd);
-    const seen = new Set();
-    candidate = candidate.replace(
-      /^(\s*>\s*\*\*([^*]+)\*\*:\s*)(.*?)(\s*)$/gm,
-      (whole, prefix, rawKey, _value, suffix) => {
-        const key = metadataKey(rawKey);
-        if (key === 'worktreesetdigest') return '';
-        if (!replacements.has(key)) return whole;
-        if (seen.has(key)) {
-          fail('PLAN_METADATA_MISMATCH', 'Markdown metadata key is duplicated', {
-            key: rawKey,
-          });
-        }
-        seen.add(key);
-        return `${prefix}${replacements.get(key)}${suffix}`;
-      },
-    );
-    for (const key of replacements.keys()) {
-      if (!seen.has(key)) {
-        fail('PLAN_METADATA_MISMATCH', 'Required Markdown metadata is missing', { key });
-      }
-    }
-    return candidate;
-  }
-
-  let serializedManifest = JSON.stringify(manifest, null, 2);
-  try {
-    assertBounds(serializedManifest, 'manifest', '<memory>');
-  } catch (error) {
-    if (!(error instanceof PlanPackageError) || error.code !== 'PLAN_BOUNDS_EXCEEDED') {
-      throw error;
-    }
-    serializedManifest = JSON.stringify(manifest);
-    assertBounds(serializedManifest, 'manifest', '<memory>');
-  }
-  const rendered = renderWith(serializedManifest);
-  assertNoForbiddenSections(rendered, '<memory>');
-  return rendered;
 }
 
 const ATOMIC_RENAME_SCRIPT = [
@@ -1927,22 +1419,14 @@ function nativeAtomicRename(operation, sourcePath, destinationPath) {
       path.resolve(sourcePath),
       path.resolve(destinationPath),
     ],
-    {
-      encoding: 'utf8',
-      env: process.env,
-      maxBuffer: 1024 * 1024,
-    },
+    { encoding: 'utf8', env: process.env, maxBuffer: 1024 * 1024 },
   );
   if (result.status !== 0) {
-    fail(
-      'PLAN_ATOMIC_RENAME_UNAVAILABLE',
-      'Atomic rename helper failed',
-      {
-        operation,
-        status: result.status,
-        stderr: result.stderr?.trim() || null,
-      },
-    );
+    fail('PLAN_ATOMIC_RENAME_UNAVAILABLE', 'Atomic rename helper failed', {
+      operation,
+      status: result.status,
+      stderr: result.stderr?.trim() || null,
+    });
   }
   let payload;
   try {
@@ -1956,28 +1440,18 @@ function nativeAtomicRename(operation, sourcePath, destinationPath) {
   }
   if (payload.ok) return;
   if (payload.code === 'EEXIST' || payload.code === 'ENOENT') {
-    fail(
-      'PLAN_CONCURRENT_MODIFICATION',
-      'File state changed before atomic rename',
-      {
-        operation,
-        sourcePath: path.resolve(sourcePath),
-        destinationPath: path.resolve(destinationPath),
-        cause: payload.code,
-      },
-    );
-  }
-  fail(
-    'PLAN_ATOMIC_RENAME_UNAVAILABLE',
-    'Required atomic rename primitive failed',
-    {
+    fail('PLAN_CONCURRENT_MODIFICATION', 'File state changed before atomic rename', {
       operation,
       sourcePath: path.resolve(sourcePath),
       destinationPath: path.resolve(destinationPath),
       cause: payload.code,
-      message: payload.message,
-    },
-  );
+    });
+  }
+  fail('PLAN_ATOMIC_RENAME_UNAVAILABLE', 'Required atomic rename primitive failed', {
+    operation,
+    cause: payload.code,
+    message: payload.message,
+  });
 }
 
 async function fsyncDirectory(directory) {
@@ -2002,12 +1476,10 @@ export async function atomicMoveFileNoReplace(sourcePath, destinationPath) {
 }
 
 export async function atomicExchangeFiles(leftPath, rightPath) {
-  const left = path.resolve(leftPath);
-  const right = path.resolve(rightPath);
-  nativeAtomicRename('exchange', left, right);
-  await fsyncDirectory(path.dirname(left));
-  if (path.dirname(right) !== path.dirname(left)) {
-    await fsyncDirectory(path.dirname(right));
+  nativeAtomicRename('exchange', path.resolve(leftPath), path.resolve(rightPath));
+  await fsyncDirectory(path.dirname(path.resolve(leftPath)));
+  if (path.dirname(path.resolve(rightPath)) !== path.dirname(path.resolve(leftPath))) {
+    await fsyncDirectory(path.dirname(path.resolve(rightPath)));
   }
 }
 
@@ -2015,38 +1487,20 @@ export async function assertAtomicRenameSupport(directory) {
   const root = path.resolve(directory);
   await fsp.mkdir(root, { recursive: true, mode: 0o700 });
   const token = `${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
-  const exchangeLeft = path.join(root, `.plan-atomic-probe.${token}.left`);
-  const exchangeRight = path.join(root, `.plan-atomic-probe.${token}.right`);
-  const moveSource = path.join(root, `.plan-atomic-probe.${token}.source`);
-  const moveDestination = path.join(root, `.plan-atomic-probe.${token}.destination`);
+  const left = path.join(root, `.plan-atomic-probe.${token}.left`);
+  const right = path.join(root, `.plan-atomic-probe.${token}.right`);
+  const source = path.join(root, `.plan-atomic-probe.${token}.source`);
+  const destination = path.join(root, `.plan-atomic-probe.${token}.destination`);
   try {
-    await fsp.writeFile(exchangeLeft, 'left', { flag: 'wx', mode: 0o600 });
-    await fsp.writeFile(exchangeRight, 'right', { flag: 'wx', mode: 0o600 });
-    await atomicExchangeFiles(exchangeLeft, exchangeRight);
-    if (
-      (await fsp.readFile(exchangeLeft, 'utf8')) !== 'right' ||
-      (await fsp.readFile(exchangeRight, 'utf8')) !== 'left'
-    ) {
-      fail(
-        'PLAN_ATOMIC_RENAME_UNAVAILABLE',
-        'Atomic exchange probe produced an invalid result',
-        { directory: root },
-      );
-    }
-
-    await fsp.writeFile(moveSource, 'move', { flag: 'wx', mode: 0o600 });
-    await atomicMoveFileNoReplace(moveSource, moveDestination);
-    if ((await fsp.readFile(moveDestination, 'utf8')) !== 'move') {
-      fail(
-        'PLAN_ATOMIC_RENAME_UNAVAILABLE',
-        'Atomic no-replace probe produced an invalid result',
-        { directory: root },
-      );
-    }
+    await fsp.writeFile(left, 'left', { flag: 'wx', mode: 0o600 });
+    await fsp.writeFile(right, 'right', { flag: 'wx', mode: 0o600 });
+    await atomicExchangeFiles(left, right);
+    await fsp.writeFile(source, 'move', { flag: 'wx', mode: 0o600 });
+    await atomicMoveFileNoReplace(source, destination);
   } finally {
     await Promise.all(
-      [exchangeLeft, exchangeRight, moveSource, moveDestination].map(
-        (candidate) => fsp.rm(candidate, { force: true }),
+      [left, right, source, destination].map((candidate) =>
+        fsp.rm(candidate, { force: true }),
       ),
     );
     await fsyncDirectory(root);
@@ -2056,16 +1510,26 @@ export async function assertAtomicRenameSupport(directory) {
 export async function atomicReplaceFile(targetPath, content, options = {}) {
   const absoluteTarget = path.resolve(targetPath);
   const directory = path.dirname(absoluteTarget);
-  const current = await fsp.readFile(absoluteTarget);
+  await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+  let current = null;
+  try {
+    current = await fsp.readFile(absoluteTarget);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   if (
     options.expectedContent !== undefined &&
-    !current.equals(Buffer.from(options.expectedContent))
+    (current === null ||
+      !current.equals(Buffer.from(options.expectedContent)))
   ) {
-    fail('PLAN_CONCURRENT_MODIFICATION', 'File changed before atomic replacement', {
-      path: absoluteTarget,
-    });
+    fail(
+      'PLAN_CONCURRENT_MODIFICATION',
+      'File changed before atomic replacement',
+      { path: absoluteTarget },
+    );
   }
-  const stat = await fsp.stat(absoluteTarget);
+  const mode =
+    current === null ? 0o600 : (await fsp.stat(absoluteTarget)).mode;
   const temporaryPath = path.join(
     directory,
     `.${path.basename(absoluteTarget)}.${process.pid}.${Date.now()}.${Math.random()
@@ -2074,38 +1538,30 @@ export async function atomicReplaceFile(targetPath, content, options = {}) {
   );
   let handle;
   try {
-    handle = await fsp.open(temporaryPath, 'wx', stat.mode);
+    handle = await fsp.open(temporaryPath, 'wx', mode);
     await handle.writeFile(content);
     await handle.sync();
     await handle.close();
     handle = null;
-    if (options.expectedContent !== undefined) {
-      if (options.beforeAtomicCommit) {
-        await options.beforeAtomicCommit();
-      }
+    if (options.beforeAtomicCommit) await options.beforeAtomicCommit();
+    if (current === null) {
+      await atomicMoveFileNoReplace(temporaryPath, absoluteTarget);
+    } else if (options.expectedContent !== undefined) {
       await atomicExchangeFiles(temporaryPath, absoluteTarget);
       const displaced = await fsp.readFile(temporaryPath);
       if (!displaced.equals(Buffer.from(options.expectedContent))) {
         await atomicExchangeFiles(temporaryPath, absoluteTarget);
-        const postRestore = await fsp.readFile(temporaryPath);
-        if (!postRestore.equals(Buffer.from(content))) {
-          await atomicExchangeFiles(temporaryPath, absoluteTarget);
-        }
-        fail('PLAN_CONCURRENT_MODIFICATION', 'File changed before atomic replacement', {
-          path: absoluteTarget,
-        });
+        fail(
+          'PLAN_CONCURRENT_MODIFICATION',
+          'File changed before atomic replacement',
+          { path: absoluteTarget },
+        );
       }
       await fsp.rm(temporaryPath, { force: true });
       await fsyncDirectory(directory);
-      return;
-    }
-    await fsp.rename(temporaryPath, absoluteTarget);
-    try {
-      const directoryHandle = await fsp.open(directory, fs.constants.O_RDONLY);
-      await directoryHandle.sync();
-      await directoryHandle.close();
-    } catch (error) {
-      if (!['EINVAL', 'ENOTSUP', 'EISDIR'].includes(error.code)) throw error;
+    } else {
+      await fsp.rename(temporaryPath, absoluteTarget);
+      await fsyncDirectory(directory);
     }
   } finally {
     if (handle) await handle.close();
@@ -2114,27 +1570,26 @@ export async function atomicReplaceFile(targetPath, content, options = {}) {
 }
 
 export async function discoverPlanPackages(root, options = {}) {
-  const explicitRoot = options.repoRoot ? await fsp.realpath(path.resolve(options.repoRoot)) : null;
+  const explicitRoot = options.repoRoot
+    ? await fsp.realpath(path.resolve(options.repoRoot))
+    : null;
   const searchRoot = await fsp.realpath(path.resolve(root));
   if (explicitRoot && !isNativePathInside(explicitRoot, searchRoot)) {
-    fail('PLAN_PATH_ESCAPE', 'Discovery root is outside the explicit repository root', {
-      root: searchRoot,
-      repoRoot: explicitRoot,
-    });
+    fail(
+      'PLAN_PATH_ESCAPE',
+      'Discovery root is outside the explicit repository root',
+      { root: searchRoot, repoRoot: explicitRoot },
+    );
   }
-  const repoRoot = explicitRoot ?? await findRepoRoot(searchRoot);
-  const migrationFence = await assertPlanDiscoveryReadable(options, { repoRoot });
-
+  const repoRoot = explicitRoot ?? (await findRepoRoot(searchRoot));
   const planPaths = [];
   async function walk(directory) {
     const entries = await fsp.readdir(directory, { withFileTypes: true });
     for (const entry of entries) {
       if (
-        entry.name === 'archive' ||
-        entry.name === '.git' ||
-        entry.name === 'node_modules' ||
-        entry.name === 'target' ||
-        entry.name === 'dist'
+        ['archive', '.git', 'node_modules', 'target', 'dist'].includes(
+          entry.name,
+        )
       ) {
         continue;
       }
@@ -2143,36 +1598,29 @@ export async function discoverPlanPackages(root, options = {}) {
         await walk(candidate);
       } else if (entry.isFile() && entry.name === 'plan.md') {
         const text = await fsp.readFile(candidate, 'utf8');
-        if (findStructuredBlocks(text, 'Plan Package').length > 0) {
+        if (findStructuredBlocks(text, 'Plan Version').length > 0) {
           planPaths.push(candidate);
         }
       }
     }
   }
   await walk(searchRoot);
-
   const packages = [];
-  for (const planPath of planPaths.sort()) {
-    const planPackage = await loadPlanPackage(planPath, {
-      ...options,
-      repoRoot,
-    });
-    if (planPackage.manifest.status !== 'superseded') {
-      packages.push(planPackage);
-    }
+  for (const candidate of planPaths.sort()) {
+    packages.push(
+      await loadPlanPackage(candidate, { ...options, repoRoot }),
+    );
   }
-  await assertPlanDiscoveryFenceUnchanged(
-    migrationFence,
-    options,
-    { repoRoot },
-  );
   return packages;
 }
 
 export function isDirectInvocation(importMetaUrl, argvPath = process.argv[1]) {
   if (!argvPath) return false;
   try {
-    return fs.realpathSync(path.resolve(argvPath)) === fs.realpathSync(fileURLToPath(importMetaUrl));
+    return (
+      fs.realpathSync(path.resolve(argvPath)) ===
+      fs.realpathSync(fileURLToPath(importMetaUrl))
+    );
   } catch {
     return false;
   }

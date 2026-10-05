@@ -40,17 +40,19 @@ export const ACTIVE_WORK_KIND = 'peers-touch-workspace-active-work';
 
 const LOCK_TIMEOUT_MS = 5_000;
 const PLAN_STATUSES = new Set([
-  'draft',
   'prepared',
   'active',
   'blocked',
   'completed',
-  'superseded',
+  'cancelled',
 ]);
 const TASK_STATUSES = new Set(['pending', 'in_progress', 'blocked', 'done']);
 const INPUT_KEYS = new Set([
   'workspaceId',
   'workItemId',
+  'mountId',
+  'runId',
+  'snapshotDigest',
   'planId',
   'planPath',
   'planStatus',
@@ -155,8 +157,13 @@ function validateInput(input) {
   if (!WORKSPACE_ID_PATTERN.test(input.workspaceId)) {
     fail('ACTIVE_WORK_INVALID', 'workspaceId is invalid');
   }
+  if (!/^[0-9a-f]{64}$/.test(input.snapshotDigest)) {
+    fail('ACTIVE_WORK_INVALID', 'snapshotDigest is invalid');
+  }
   for (const field of [
     'workItemId',
+    'mountId',
+    'runId',
     'planId',
     'currentTaskId',
     'sessionId',
@@ -615,6 +622,9 @@ function repairActiveWorkRecordUnderFence(input, options) {
     }
     for (const field of [
       'workspaceId',
+      'mountId',
+      'runId',
+      'snapshotDigest',
       'planId',
       'planPath',
       'branch',

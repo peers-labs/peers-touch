@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "plan": "docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md",
+  "plan": "docs/architecture/domains/chat/messaging/execution-plans/20260808-messaging-platform.md",
   "workstreams": {
     "MP-W00": [
       "docs/README.md",
-      "docs/architecture/messaging-platform/",
+      "docs/architecture/domains/chat/messaging/",
       "tooling/acceptance/",
       "tooling/scripts/messaging-platform-",
       "tooling/scripts/dev-desktop-app.sh"
@@ -74,10 +74,10 @@
       "apps/desktop/src/services/mediaRuntime.ts"
     ],
     "MP-W11": [
-      "docs/architecture/encryption/",
-      "docs/architecture/federated-im/",
-      "docs/architecture/social-runtime/",
-      "docs/architecture/realtime/event-stream.md",
+      "docs/architecture/domains/chat/encryption/",
+      "docs/context/architecture/chat/federated-im/",
+      "docs/architecture/domains/social/runtime/",
+      "docs/architecture/shared/communication/event-stream.md",
       "apps/desktop/src/services/desktop_api.ts",
       "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
       "apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs",

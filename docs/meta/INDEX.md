@@ -46,16 +46,16 @@
 
 当前子目录：
 
-- `architecture/boundaries/`
+- `architecture/platform/`
   - `station-desktop-scope-boundary.md`
-- `architecture/runtime/`
+- `architecture/platform/`
   - `desktop-runtime-architecture.md`
   - `unified-handler-architecture.md`
-- `architecture/storage/`
+- `architecture/platform/runtime/storage.md/`
   - `unified-runtime-storage-architecture.md`
-- `architecture/i18n/`
+- `architecture/shared/i18n/`
   - `i18n-architecture.md`
-- `architecture/agent/`
+- `architecture/domains/agent/`
   - Agent 体系架构与执行计划
 
 ### `client/`
@@ -107,11 +107,11 @@ IDE / AI 工作材料。
 ### 看 Desktop
 
 - `../client/desktop/base.md`
-- `../architecture/runtime/desktop-runtime-architecture.md`
+- `../architecture/platform/client/desktop/runtime.md`
 
 ### 看 Station 与 Desktop 边界
 
-- `../architecture/boundaries/station-desktop-scope-boundary.md`
+- `../architecture/platform/station-desktop-boundary.md`
 
 ### 看编码规范
 

@@ -922,10 +922,10 @@ function validateProjectionContractDocSyncSelfCheck(document, relativePath) {
     `${relativePath} docSyncSelfCheck.missingAnchors must be empty`,
   );
   for (const requiredDocument of [
-    'docs/architecture/atelier/prototype/README.md',
+    'docs/architecture/domains/applets/atelier/prototype/README.md',
     'tooling/acceptance/evidence/applets/official-applet/atelier-acceptance-evidence-report-2026-07-06.md',
     'tooling/acceptance/evidence/applets/official-applet/atelier-completion-audit-2026-07-06.md',
-    'docs/architecture/atelier/execution-plans/master-goal.md',
+    'docs/architecture/domains/applets/atelier/execution-plans/master-goal.md',
   ]) {
     assert.ok(
       document.docSyncSelfCheck.requiredDocuments?.includes(requiredDocument),

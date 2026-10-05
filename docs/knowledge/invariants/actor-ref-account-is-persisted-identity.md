@@ -7,7 +7,7 @@ owns:
   - apps/station/frame/touch/actor/
   - apps/station/frame/touch/actor_handler.go
   - apps/station/frame/touch/auth/
-  - apps/station/frame/touch/federation_api_handler.go
+  - apps/station/frame/touch/federation_profile_handler.go
   - apps/station/frame/touch/oauth_handler.go
   - apps/station/frame/touch/session/
   - apps/station/frame/touch/accessgate/
@@ -16,8 +16,8 @@ owns:
   - apps/desktop/src-tauri/src/secure_content/
 referenced-by: []
 related:
-  - docs/architecture/identity/unified-actor-system.md
-  - docs/architecture/federation/decisions.md
+  - docs/architecture/domains/identity/unified-actor-system.md
+  - docs/architecture/shared/federation/decisions.md
 detected: 2026-09-21
 ---
 
@@ -64,7 +64,7 @@ profile and causes valid private content to fail with
 
 ## Crosswalks
 
-- `docs/architecture/identity/unified-actor-system.md` defines `ActorRef` as
+- `docs/architecture/domains/identity/unified-actor-system.md` defines `ActorRef` as
   the only cross-process identity carrier.
-- `docs/architecture/federation/decisions.md` D-09 requires federation identity
+- `docs/architecture/shared/federation/decisions.md` D-09 requires federation identity
   to reuse `ActorRef` and persisted federated-handle semantics.

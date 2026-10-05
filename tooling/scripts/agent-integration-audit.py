@@ -65,6 +65,7 @@ REQUIRED_INTEGRATION_MATCHERS = {
 INTEGRATION_RECEIPT_KEYS = {
     "kind",
     "state",
+    "operation",
     "workspaceId",
     "branch",
     "sourceHead",
@@ -79,7 +80,7 @@ INTEGRATION_RECEIPT_KEYS = {
 SCAN_ROOTS = (
     "AGENTS.md",
     "docs/global",
-    "docs/architecture/development-workflow",
+    "docs/architecture/engineering/development-workflow",
     "tooling",
 )
 HISTORICAL_MARKERS = (
@@ -312,6 +313,13 @@ def host_projection_findings(
                 }
             )
         else:
+            projection_roots = set(
+                control.trae_hook_projection_roots(
+                    root,
+                    workspace_roots,
+                    bootstrap_root,
+                )
+            )
             for workspace_root in workspace_roots:
                 hooks_path = workspace_root / ".trae" / "hooks.json"
                 hook_label = (
@@ -320,7 +328,7 @@ def host_projection_findings(
                     else str(hooks_path)
                 )
                 if not hooks_path.exists():
-                    if workspace_root == bootstrap_root:
+                    if workspace_root in projection_roots:
                         findings.append(
                             {
                                 "path": hook_label,
@@ -367,7 +375,7 @@ def host_projection_findings(
                     )
                     valid = (
                         managed == [expected]
-                        if workspace_root == bootstrap_root
+                        if workspace_root in projection_roots
                         else managed == []
                     )
                     if valid:
@@ -584,12 +592,12 @@ def validated_plan_status(root: Path, plan_path: Path) -> dict[str, object]:
     return value
 
 
-def resolved_plan_binding(root: Path) -> dict[str, object]:
+def resolved_plan_mount(root: Path) -> dict[str, object] | None:
     completed = subprocess.run(
         [
             "node",
-            "tooling/scripts/plan/workspace-plan-binding.mjs",
-            "resolve",
+            "tooling/scripts/plan/plan-mount.mjs",
+            "status",
             "--repo-root",
             str(root),
         ],
@@ -599,29 +607,31 @@ def resolved_plan_binding(root: Path) -> dict[str, object]:
         check=False,
     )
     if completed.returncode != 0:
+        try:
+            failure = json.loads(completed.stderr)
+        except json.JSONDecodeError:
+            failure = {}
+        if failure.get("error", {}).get("code") == "PLAN_MOUNT_REQUIRED":
+            return None
         raise RuntimeError(
             completed.stderr.strip()
             or completed.stdout.strip()
-            or "canonical binding resolution failed"
+            or "canonical Plan mount resolution failed"
         )
     value = json.loads(completed.stdout)
-    binding = value.get("binding") if isinstance(value, dict) else None
-    if value.get("ok") is not True or not isinstance(binding, dict):
-        raise RuntimeError("canonical binding resolver returned an invalid result")
-    return {
-        key: binding.get(key)
-        for key in (
-            "schemaVersion",
-            "kind",
-            "workspaceId",
-            "canonicalRoot",
-            "planId",
-            "planPath",
-            "generation",
-            "boundAt",
-            "boundBy",
-            "recordDigest",
+    if (
+        value.get("ok") is not True
+        or not isinstance(value.get("mount"), dict)
+        or not isinstance(value.get("snapshot"), dict)
+        or not isinstance(value.get("run"), dict)
+    ):
+        raise RuntimeError(
+            "canonical Plan mount resolver returned an invalid result"
         )
+    return {
+        "mount": value["mount"],
+        "snapshot": value["snapshot"],
+        "run": value["run"],
     }
 
 
@@ -651,59 +661,20 @@ def workflow_identity(root: Path) -> dict[str, object]:
     workspace_id = hashlib.sha256(str(canonical).encode()).hexdigest()[:16]
     branch = git_value(root, "branch", "--show-current")
     head = git_value(root, "rev-parse", "HEAD")
-    binding_path = (
-        machine_dev_root()
-        / "workspaces"
-        / workspace_id
-        / "workflow"
-        / "plan-binding.json"
-    )
-    binding = None
-    binding_invalid = False
-    if binding_path.is_file():
-        try:
-            binding = json.loads(binding_path.read_text(encoding="utf-8"))
-            if not isinstance(binding, dict):
-                binding = None
-                binding_invalid = True
-        except (OSError, json.JSONDecodeError):
-            binding_invalid = True
+    execution = None
     manifest: dict[str, object] = {}
     current_task = None
     plan_legacy_claims: list[str] = []
     findings: list[str] = []
-    if binding_invalid:
-        findings.append("binding-invalid")
-    if binding is not None:
-        try:
-            canonical_binding = resolved_plan_binding(root)
-            if binding.get("schemaVersion") == 1:
-                legacy_fields = (
-                    "kind",
-                    "workspaceId",
-                    "canonicalRoot",
-                    "planId",
-                    "planPath",
-                    "boundAt",
-                    "boundBy",
-                )
-                legacy_projection = {
-                    key: canonical_binding.get(key)
-                    for key in legacy_fields
-                }
-                stored_projection = {
-                    key: binding.get(key)
-                    for key in legacy_fields
-                }
-                if legacy_projection != stored_projection:
-                    findings.append("binding-canonical-mismatch")
-                else:
-                    binding = canonical_binding
-            elif canonical_binding != binding:
-                findings.append("binding-canonical-mismatch")
-        except (OSError, RuntimeError, json.JSONDecodeError):
-            findings.append("binding-canonical-invalid")
-        plan_path = root / str(binding.get("planPath") or "")
+    try:
+        execution = resolved_plan_mount(root)
+    except (OSError, RuntimeError, json.JSONDecodeError):
+        findings.append("plan-mount-canonical-invalid")
+    if execution is not None:
+        mount = execution["mount"]
+        snapshot = execution["snapshot"]
+        run = execution["run"]
+        plan_path = root / str(mount.get("planPath") or "")
         try:
             status = validated_plan_status(root, plan_path)
             manifest = structured_plan(plan_path)
@@ -724,20 +695,20 @@ def workflow_identity(root: Path) -> dict[str, object]:
         if plan_legacy_claims:
             findings.append("plan-legacy-skill-claim")
         current_task = status.get("currentTaskId")
-        if manifest.get("status") == "active" and current_task is None:
+        if run.get("state") == "active" and current_task is None:
             findings.append("active-plan-current-task-missing")
-        if binding.get("workspaceId") != workspace_id:
-            findings.append("binding-workspace-mismatch")
-        if manifest.get("planId") != binding.get("planId"):
-            findings.append("binding-plan-mismatch")
-        manifest_binding = manifest.get("binding")
-        if not isinstance(manifest_binding, dict):
-            findings.append("manifest-binding-missing")
+        execution_binding = snapshot.get("executionBinding")
+        if mount.get("workspaceId") != workspace_id:
+            findings.append("mount-workspace-mismatch")
+        if manifest.get("planId") != mount.get("planId"):
+            findings.append("mount-plan-mismatch")
+        if not isinstance(execution_binding, dict):
+            findings.append("snapshot-execution-binding-missing")
         else:
-            if manifest_binding.get("workspaceId") != workspace_id:
-                findings.append("manifest-workspace-mismatch")
-            if manifest_binding.get("branch") != branch:
-                findings.append("manifest-branch-mismatch")
+            if execution_binding.get("workspaceId") != workspace_id:
+                findings.append("snapshot-workspace-mismatch")
+            if execution_binding.get("branch") != branch:
+                findings.append("snapshot-branch-mismatch")
     ledger_path = machine_dev_root() / "work.json"
     declaration = None
     declaration_mode = "NONE"
@@ -777,9 +748,9 @@ def workflow_identity(root: Path) -> dict[str, object]:
                     candidate.get("planPath"),
                     candidate.get("taskId"),
                 )
-                if binding is None:
+                if execution is None:
                     if any(value is not None for value in locator):
-                        findings.append("unbound-declaration-plan-locator")
+                        findings.append("unmounted-declaration-plan-locator")
                     else:
                         declaration_mode = "UNTRACKED_PRE_PLAN"
                 else:
@@ -791,9 +762,10 @@ def workflow_identity(root: Path) -> dict[str, object]:
                         findings.append("declaration-plan-locator-missing")
                     if candidate.get("taskId") != current_task:
                         findings.append("declaration-current-task-mismatch")
+                    mount = execution["mount"]
                     if (
-                        candidate.get("planId") != binding.get("planId")
-                        or candidate.get("planPath") != binding.get("planPath")
+                        candidate.get("planId") != mount.get("planId")
+                        or candidate.get("planPath") != mount.get("planPath")
                     ):
                         findings.append("declaration-plan-mismatch")
     return {
@@ -811,8 +783,12 @@ def workflow_identity(root: Path) -> dict[str, object]:
             else None
         ),
         "declarationMode": declaration_mode,
-        "planBinding": binding,
-        "planStatus": manifest.get("status"),
+        "planMount": execution,
+        "planStatus": (
+            execution["run"].get("state")
+            if execution is not None
+            else None
+        ),
         "currentTaskId": current_task,
         "planLegacyClaims": plan_legacy_claims,
         "declarationLegacyClaims": declaration_legacy_claims,
@@ -913,13 +889,13 @@ def installed_callback_probe(
         return {"status": "NOT_APPLICABLE"}
     try:
         control = integration_control_module()
-        workspace_file, _, bootstrap_root = control.resolve_trae_workspace(
+        workspace_file, _, _ = control.resolve_trae_workspace(
             root,
             workspace,
         )
         proof = control.probe_installed_trae_hook(
             root,
-            bootstrap_root / ".trae",
+            root / ".trae",
             workspace_file,
         )
         expected = dict(control.TRAE_CALLBACK_PROOF)
@@ -983,6 +959,12 @@ def integration_receipt(
         findings.append("integration-kind-mismatch")
     if value.get("state") != "INSTALLED":
         findings.append("integration-state-mismatch")
+    if value.get("operation") not in {
+        "skills",
+        "skills-hard-cut",
+        "skills-gc",
+    }:
+        findings.append("integration-operation-mismatch")
     if value.get("host") != host:
         findings.append("integration-host-mismatch")
     expected_callback_proof = (
@@ -1030,10 +1012,15 @@ def audit_root(
     ]
     legacy_source = root / "tooling" / "skills" / LEGACY_SKILL
     identity = workflow_identity(root)
-    binding = identity.get("planBinding")
+    execution = identity.get("planMount")
+    mount = (
+        execution.get("mount")
+        if isinstance(execution, dict)
+        else None
+    )
     bound_plan_paths = (
-        (str(binding["planPath"]),)
-        if isinstance(binding, dict) and isinstance(binding.get("planPath"), str)
+        (str(mount["planPath"]),)
+        if isinstance(mount, dict) and isinstance(mount.get("planPath"), str)
         else ()
     )
     catalog = canonical_integration_catalog(root)

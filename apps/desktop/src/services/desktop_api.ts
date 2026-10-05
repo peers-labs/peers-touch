@@ -6776,18 +6776,6 @@ export const api = {
       {},
     ),
 
-  openBrowserCapabilitySession: () =>
-    invokeRustDataFromStatus<Record<string, never>, { state: string }>(
-      'agent_browser_capability_session_open',
-      {},
-    ),
-
-  closeBrowserCapabilitySession: () =>
-    invokeRustDataFromStatus<Record<string, never>, { state: string }>(
-      'agent_browser_capability_session_close',
-      {},
-    ),
-
   startAgentClientExecutorSupervisor: () =>
     invokeRustDataFromStatus<Record<string, never>, { available: boolean; state: string }>(
       'agent_client_executor_supervisor_start',
@@ -7395,7 +7383,7 @@ export const api = {
    * the same actor. While running, the supervisor emits
    * `realtime:event` Tauri events for every business / heartbeat /
    * resync frame and `realtime:connection-state` on connect/disconnect.
-   * See docs/architecture/realtime/event-stream.md for the wire
+   * See docs/architecture/shared/communication/event-stream.md for the wire
    * contract and the per-window device id semantics.
    */
   realtimeStreamStart: () =>
@@ -7699,7 +7687,7 @@ export const api = {
   /**
    * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
    * candidate / hangup) into the standalone signaling envelope
-   * defined in `docs/architecture/realtime/event-stream.md` §2.7.2.
+   * defined in `docs/architecture/shared/communication/event-stream.md` §2.7.2.
    * Returns base64 of the wire bytes
    * `eph_pub(32B) || nonce(12B) || ciphertext || tag(16B)`.
    *
@@ -7771,7 +7759,7 @@ export const api = {
   // Anything resembling an ICE *session* (offer/answer/candidate exchange)
   // moved to the unified realtime SSE plane in Phase 8 — see
   // `realtimeSignalSend` / `signalingEnvelopeSeal` / `signalingEnvelopeOpen`
-  // above and docs/architecture/realtime/event-stream.md §2.7. The role-
+  // above and docs/architecture/shared/communication/event-stream.md §2.7. The role-
   // hint publisher (`ice_peer_register`) was retired in 8.3c — peer
   // online/offline liveness is now carried by PresenceFlip events on the
   // canonical realtime stream. What remains here is just the TURN
@@ -8329,10 +8317,6 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
   };
 }
 
-function isHttpGatewayMode() {
-  return typeof window !== 'undefined' && Boolean((window as any).__PT_GATEWAY_BASE__);
-}
-
 export const AGENT_REPLAY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
 const AGENT_REPLAY_CATCHUP_TIMEOUT_MS = 30_000;
 export const AGENT_SSE_IDLE_TIMEOUT_MS = 30_000;
@@ -8357,8 +8341,6 @@ function reportLeaseReplayFetchDebug(
   }).catch(() => {});
 }
 // #endregion
-const FOUNDATION_F06_STREAM_PROBE_INPUT =
-  'Write a detailed 2000-word numbered guide to durable event stream recovery.';
 const AGENT_REPLAY_CONTROL_EVENTS = new Set([
   'reconnecting',
   'replaying',
@@ -8367,177 +8349,6 @@ const AGENT_REPLAY_CONTROL_EVENTS = new Set([
   'recovery_failed',
   'catchup_done',
 ]);
-
-// #region debug-point B-D:foundation-fault-ack
-function reportFoundationFaultAckDebug(
-  stage: string,
-  data: Record<string, unknown>,
-): void {
-  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
-  void fetch('http://127.0.0.1:7783/event', {
-    method: 'POST',
-    body: JSON.stringify({
-      sessionId: 'foundation-fault-ack',
-      runId: 'pre-fix',
-      hypothesisId: 'B-D',
-      location: 'desktop_api.ts:streamAgentTurn',
-      msg: `[DEBUG] ${stage}`,
-      data,
-      ts: Date.now(),
-    }),
-  }).catch(() => {});
-}
-// #endregion
-
-function waitForAgentReplay(delayMs: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException('Agent replay cancelled', 'AbortError'));
-      return;
-    }
-    const onAbort = () => {
-      window.clearTimeout(timer);
-      reject(new DOMException('Agent replay cancelled', 'AbortError'));
-    };
-    const timer = window.setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, delayMs);
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-async function agentTurnHttpErrorData(
-  response: Response,
-): Promise<Record<string, unknown>> {
-  const bodyText = await response.text();
-  let body: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(bodyText);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      body = parsed as Record<string, unknown>;
-    }
-  } catch {
-    body = {};
-  }
-  let headerDetails: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(response.headers.get('x-peers-error-details') || '');
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      headerDetails = parsed as Record<string, unknown>;
-    }
-  } catch {
-    headerDetails = {};
-  }
-  const details = Object.fromEntries(
-    AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS
-      .map((field) => [field, headerDetails[field]] as const)
-      .filter((entry): entry is [typeof AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS[number], string] => (
-        typeof entry[1] === 'string'
-      )),
-  );
-  const errorType = response.headers.get('x-peers-error-code')
-    || (typeof body.error_type === 'string' ? body.error_type : '');
-  const localeKey = response.headers.get('x-peers-error-locale-key')
-    || (typeof body.locale_key === 'string' ? body.locale_key : '');
-  const retryable = agentTypedErrorBoolean(
-    response.headers.get('x-peers-error-retryable') ?? body.retryable,
-  );
-  const terminal = agentTypedErrorBoolean(
-    response.headers.get('x-peers-error-terminal') ?? body.terminal,
-  );
-  return {
-    type: 'error',
-    error: localeKey
-      || (typeof body.error === 'string' ? body.error : `Agent stream returned HTTP ${response.status}`),
-    ...(errorType ? { error_type: errorType } : {}),
-    ...(localeKey ? { locale_key: localeKey } : {}),
-    ...(retryable === undefined ? {} : { retryable }),
-    ...(terminal === undefined ? {} : { terminal }),
-    details,
-  };
-}
-
-async function consumeAgentSSE(
-  response: Response,
-  signal: AbortSignal,
-  onFrame: (event: StreamEvent) => boolean,
-  onActivity?: (activity: 'heartbeat') => void,
-): Promise<boolean> {
-  if (!response.ok) {
-    const data = await agentTurnHttpErrorData(response);
-    if (projectAgentTypedErrorPayload(data)) {
-      onFrame({ event: 'error', data });
-      return true;
-    }
-    throw new Error(String(data.error));
-  }
-  if (!response.body) {
-    throw new Error(`Agent stream returned HTTP ${response.status}`);
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let terminal = false;
-  while (!signal.aborted) {
-    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
-    const idleTimeout = new Promise<never>((_resolve, reject) => {
-      timeout = globalThis.setTimeout(() => {
-        reject(new Error('agent.error.streamIdleTimeout'));
-        void reader.cancel();
-      }, AGENT_SSE_IDLE_TIMEOUT_MS);
-    });
-    const { done, value } = await Promise.race([reader.read(), idleTimeout])
-      .finally(() => {
-        if (timeout !== undefined) globalThis.clearTimeout(timeout);
-      });
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf('\n\n');
-    while (boundary >= 0) {
-      const frame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const lines = frame.split('\n');
-      const eventLine = lines.find((line) => line.startsWith('event:'));
-      const dataText = lines
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trimStart())
-        .join('\n');
-      if (
-        !eventLine
-        && !dataText
-        && lines.every((line) => !line.trim() || line.startsWith(':'))
-      ) {
-        onActivity?.('heartbeat');
-        boundary = buffer.indexOf('\n\n');
-        continue;
-      }
-      const event = eventLine?.slice(6).trim() || 'message';
-      let data: Record<string, unknown> = {};
-      if (dataText) {
-        const parsed = JSON.parse(dataText);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          data = parsed as Record<string, unknown>;
-        }
-      }
-      if (signal.aborted) {
-        await reader.cancel();
-        return terminal;
-      }
-      terminal = onFrame({ event, data }) || terminal;
-      if (signal.aborted) {
-        await reader.cancel();
-        return terminal;
-      }
-      if (terminal) {
-        await reader.cancel();
-        return true;
-      }
-      boundary = buffer.indexOf('\n\n');
-    }
-  }
-  return terminal;
-}
 
 export function classifyAgentTurnTerminalEvent(
   event: StreamEvent,
@@ -8767,208 +8578,6 @@ export function streamAgentTurn(
     enumerable: true,
   });
   log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
-  if (isHttpGatewayMode()) {
-    const transportController = new AbortController();
-    let transportDisconnectRequested = false;
-    let resolveTransportDisconnect = () => {};
-    let rejectTransportDisconnect = (_error: Error) => {};
-    const transportDisconnectCompletion = new Promise<void>((resolve, reject) => {
-      resolveTransportDisconnect = resolve;
-      rejectTransportDisconnect = reject;
-    });
-    const foundationFaultProbe =
-      input.user_input === FOUNDATION_F06_STREAM_PROBE_INPUT;
-    const foundationFaultProbeStartedAt = performance.now();
-    Object.defineProperty(controller, 'disconnectTransport', {
-      value: () => {
-        if (controller.signal.aborted) return Promise.resolve();
-        if (!transportDisconnectRequested) {
-          transportDisconnectRequested = true;
-          transportController.abort();
-        }
-        return transportDisconnectCompletion;
-      },
-      enumerable: true,
-    });
-    (async () => {
-      let turnId = '';
-      let conversationId = input.conversation_id || '';
-      let lastSequence = 0;
-      let settled = false;
-      const forward = (event: StreamEvent): boolean => {
-        const projectedEvent: StreamEvent = {
-          ...event,
-          data: { ...event.data, streamGeneration },
-        };
-        const seq = Number(projectedEvent.data?.seq || 0);
-        if (Number.isFinite(seq) && seq > lastSequence) lastSequence = seq;
-        const eventTurnId = String(projectedEvent.data?.turnId || projectedEvent.data?.turn_id || '');
-        const eventConversationId = String(projectedEvent.data?.conversationId || projectedEvent.data?.conversation_id || '');
-        if (eventTurnId) turnId = eventTurnId;
-        if (eventConversationId) conversationId = eventConversationId;
-        publishAgentTurnRuntimeEvent(
-          streamId,
-          streamGeneration,
-          sourcePtid,
-          conversationId || input.conversation_id,
-          input.agent_id,
-          projectedEvent,
-        );
-        onEvent(projectedEvent);
-        const terminal = classifyAgentTurnTerminalEvent(projectedEvent);
-        if (terminal === 'failed') {
-          resolveTransportDisconnect();
-          onError(agentTurnStreamErrorFromData(projectedEvent.data));
-          settled = true;
-          return true;
-        }
-        if (
-          terminal === 'completed'
-          || terminal === 'cancelled'
-          || terminal === 'queued'
-          || terminal === 'interrupted'
-        ) {
-          resolveTransportDisconnect();
-          onDone();
-          settled = true;
-          return true;
-        }
-        return false;
-      };
-      controller.signal.addEventListener('abort', () => {
-        transportController.abort();
-      }, { once: true });
-      try {
-        const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
-        let terminal = false;
-        let liveTransportError: Error | null = null;
-        try {
-          if (foundationFaultProbe) {
-            reportFoundationFaultAckDebug('browser-stream-started', {
-              streamGeneration,
-              transportDisconnectRequested,
-            });
-          }
-          const response = await fetch(`${gatewayBase}/agent/turn/stream`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-            body: JSON.stringify({ ...input, stream: true }),
-            signal: transportController.signal,
-          });
-          const admittedTurnId = response.headers.get('x-agent-turn-id')?.trim() || '';
-          if (admittedTurnId) turnId = admittedTurnId;
-          if (foundationFaultProbe) {
-            reportFoundationFaultAckDebug('browser-upstream-admitted', {
-              elapsedMs: performance.now() - foundationFaultProbeStartedAt,
-              status: response.status,
-              turnIdPresent: Boolean(admittedTurnId),
-            });
-          }
-          if (controller.signal.aborted) {
-            return;
-          }
-          terminal = await consumeAgentSSE(
-            response,
-            transportController.signal,
-            (event) => forward({
-              ...event,
-              sourceDelivery: createAgentTurnSourceDelivery(
-                event.event,
-                event.data,
-                sourcePtid,
-                conversationId || input.conversation_id,
-                turnId,
-              ),
-            }),
-          );
-          if (foundationFaultProbe) {
-            reportFoundationFaultAckDebug('browser-sse-consume-finished', {
-              elapsedMs: performance.now() - foundationFaultProbeStartedAt,
-              terminal,
-              lastSequence,
-              transportDisconnectRequested,
-            });
-          }
-        } catch (error) {
-          liveTransportError = error instanceof Error ? error : new Error(String(error));
-          if (foundationFaultProbe) {
-            reportFoundationFaultAckDebug('browser-sse-consume-error', {
-              elapsedMs: performance.now() - foundationFaultProbeStartedAt,
-              errorName: liveTransportError.name,
-              errorMessage: liveTransportError.message,
-              lastSequence,
-              transportDisconnectRequested,
-            });
-          }
-        }
-        if (!terminal && !controller.signal.aborted) {
-          if (!turnId || !conversationId) {
-            throw liveTransportError ?? new Error('agent.error.streamIdentityMissing');
-          }
-          if (foundationFaultProbe) {
-            reportFoundationFaultAckDebug('browser-connection-lost-forwarded', {
-              elapsedMs: performance.now() - foundationFaultProbeStartedAt,
-              lastSequence,
-              reason: transportDisconnectRequested
-                ? 'transport_disconnect_requested'
-                : liveTransportError?.message || 'station_stream_closed',
-            });
-          }
-          forward({
-            event: 'connection_lost',
-            data: {
-              turnId,
-              conversationId,
-              seq: lastSequence,
-              recoveryHandoff: true,
-              reason: transportDisconnectRequested
-                ? 'transport_disconnect_requested'
-                : liveTransportError?.message || 'station_stream_closed',
-            },
-          });
-          resolveTransportDisconnect();
-        }
-      } catch (err: unknown) {
-        if (transportDisconnectRequested) {
-          rejectTransportDisconnect(
-            err instanceof Error ? err : new Error(String(err)),
-          );
-        }
-        if (!controller.signal.aborted && !settled) {
-          const normalized = normalizeAgentTurnStreamError(err);
-          if (normalized.typedError) {
-            const sourceData: Record<string, unknown> = {
-              ...normalized.typedError,
-              conversationId: input.conversation_id,
-              agentId: input.agent_id,
-            };
-            const event: StreamEvent = {
-              event: 'error',
-              data: { ...sourceData, streamGeneration },
-              ptid: sourcePtid,
-              sourceDelivery: createAgentTurnSourceDelivery(
-                'error',
-                sourceData,
-                sourcePtid,
-                input.conversation_id,
-              ),
-            };
-            publishAgentTurnRuntimeEvent(
-              streamId,
-              streamGeneration,
-              sourcePtid,
-              input.conversation_id,
-              input.agent_id,
-              event,
-            );
-            onEvent(event);
-          }
-          onError(normalized);
-        }
-      }
-    })();
-    return controller;
-  }
   let transportDisconnectRequested = false;
   let resolveTransportDisconnect = () => {};
   let rejectTransportDisconnect = (_error: Error) => {};
@@ -9255,162 +8864,6 @@ export function streamAgentTurnReplay(
   }, AGENT_REPLAY_CATCHUP_TIMEOUT_MS);
   controller.signal.addEventListener('abort', clearCatchupDeadline, { once: true });
 
-  if (isHttpGatewayMode()) {
-    void (async () => {
-      const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
-      let replayError: Error | null = null;
-      for (let attempt = 0; attempt <= AGENT_REPLAY_RETRY_DELAYS_MS.length; attempt += 1) {
-        let liveTailEstablished = false;
-        try {
-          if (attempt > 0) {
-            await waitForAgentReplay(
-              AGENT_REPLAY_RETRY_DELAYS_MS[attempt - 1],
-              controller.signal,
-            );
-          }
-          deliverReplayEvent({
-            event: 'reconnecting',
-            ptid: sourcePtid,
-            data: {
-              turnId: input.turn_id,
-              conversationId: input.conversation_id,
-              seq: input.after_seq,
-              attempt: attempt + 1,
-            },
-          });
-          // #region debug-point J-L:lease-replay-fetch-start
-          reportLeaseReplayFetchDebug('J-L', 'fetch-start', {
-            gatewayBase,
-            attempt: attempt + 1,
-            conversationId: input.conversation_id,
-            turnId: input.turn_id,
-            afterSequence: input.after_seq,
-          });
-          // #endregion
-          const response = await fetch(`${gatewayBase}/agent/turn/events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-            body: JSON.stringify(toAgentTurnReplayWireInput(input)),
-            signal: controller.signal,
-          });
-          // #region debug-point J-L:lease-replay-fetch-response
-          reportLeaseReplayFetchDebug('J-L', 'fetch-response', {
-            attempt: attempt + 1,
-            status: response.status,
-            ok: response.ok,
-          });
-          // #endregion
-          deliverReplayEvent({
-            event: 'replaying',
-            ptid: sourcePtid,
-            data: {
-              turnId: input.turn_id,
-              conversationId: input.conversation_id,
-              seq: input.after_seq,
-            },
-          });
-          const terminal = await consumeAgentSSE(response, controller.signal, (event) => {
-            const sourceEvent: StreamEvent = {
-              ...event,
-              ptid: sourcePtid,
-              sourceDelivery: AGENT_REPLAY_CONTROL_EVENTS.has(event.event)
-                ? undefined
-                : createAgentTurnSourceDelivery(
-                    event.event,
-                    event.data,
-                    sourcePtid,
-                    input.conversation_id,
-                    input.turn_id,
-                  ),
-            };
-            const terminalStatus = classifyAgentTurnTerminalEvent(sourceEvent);
-            if (
-              sourceEvent.event === 'snapshot'
-              && terminalStatus !== null
-              && !liveTailEstablished
-            ) {
-              liveTailEstablished = true;
-              const recoveryData = {
-                turnId: input.turn_id,
-                conversationId: input.conversation_id,
-                seq: sourceEvent.data.seq ?? input.after_seq,
-              };
-              deliverReplayEvent({
-                event: 'reconciling',
-                ptid: sourcePtid,
-                data: recoveryData,
-              });
-              deliverReplayEvent({
-                event: 'connected',
-                ptid: sourcePtid,
-                data: recoveryData,
-              });
-              deliverReplayEvent(sourceEvent);
-              return true;
-            }
-            if (sourceEvent.event === 'catchup_done' && !liveTailEstablished) {
-              liveTailEstablished = true;
-              deliverReplayEvent({
-                event: 'reconciling',
-                ptid: sourcePtid,
-                data: {
-                  turnId: input.turn_id,
-                  conversationId: input.conversation_id,
-                  seq: sourceEvent.data.seq ?? input.after_seq,
-                },
-              });
-              deliverReplayEvent(sourceEvent);
-              deliverReplayEvent({
-                event: 'connected',
-                ptid: sourcePtid,
-                data: {
-                  turnId: input.turn_id,
-                  conversationId: input.conversation_id,
-                  seq: sourceEvent.data.seq ?? input.after_seq,
-                },
-              });
-            } else {
-              deliverReplayEvent(sourceEvent);
-            }
-            return liveTailEstablished && terminalStatus !== null;
-          }, () => {
-            // #region debug-point F-H:lease-replay-heartbeat
-            reportLeaseReplayFetchDebug('F-H', 'stream-heartbeat', {
-              attempt: attempt + 1,
-              afterSequence: input.after_seq,
-              liveTailEstablished,
-            });
-            // #endregion
-          });
-          if (terminal || controller.signal.aborted) return;
-          replayError = new Error(
-            liveTailEstablished
-              ? 'agent.error.replayTailClosed'
-              : 'agent.error.replayIncomplete',
-          );
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          replayError = error instanceof Error ? error : new Error(String(error));
-          // #region debug-point J-M:lease-replay-fetch-error
-          reportLeaseReplayFetchDebug('J-M', 'fetch-error', {
-            attempt: attempt + 1,
-            errorName: replayError.name,
-            errorMessage: replayError.message,
-            liveTailEstablished,
-          });
-          // #endregion
-        }
-        if (liveTailEstablished && replayError) {
-          reportReplayError(replayError);
-          return;
-        }
-      }
-      if (!controller.signal.aborted) {
-        reportReplayError(replayError ?? new Error('agent.error.replayFailed'));
-      }
-    })();
-    return controller;
-  }
 
   void (async () => {
     let unlisten: (() => void) | undefined;

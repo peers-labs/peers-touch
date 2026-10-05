@@ -14,7 +14,7 @@ This registry records which frontend surfaces are alive, which are not alive, an
 
 It is the operational companion to `frontend-component-tree.md`.
 
-Architecture source: `docs/architecture/frontend-runtime/README.md` defines the upstream runtime lifecycle, budget, and evidence model. Registry rows should be interpretable as `RuntimeSurface` entries from `docs/architecture/frontend-runtime/data-model.md`.
+Architecture source: `docs/architecture/platform/client/frontend-runtime/README.md` defines the upstream runtime lifecycle, budget, and evidence model. Registry rows should be interpretable as `RuntimeSurface` entries from `docs/architecture/platform/client/frontend-runtime/data-model.md`.
 
 Use it to answer:
 

@@ -11,8 +11,8 @@ owns:
   - tooling/acceptance/
 referenced-by: []
 related:
-  - ../../architecture/api-ownership/README.md
-  - ../../architecture/api-ownership/decisions.md
+  - ../../architecture/engineering/api-governance/README.md
+  - ../../architecture/engineering/api-governance/decisions.md
 detected: 2026-09-06
 ---
 
@@ -63,6 +63,6 @@ from an internal package name rather than the resource domain.
 
 ## Crosswalks
 
-- `docs/architecture/api-ownership/README.md`
-- `docs/architecture/api-ownership/decisions.md`
-- `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`
+- `docs/architecture/engineering/api-governance/README.md`
+- `docs/architecture/engineering/api-governance/decisions.md`
+- `docs/architecture/engineering/api-governance/execution-plans/20260906-conversation-authority-hard-cut.md`

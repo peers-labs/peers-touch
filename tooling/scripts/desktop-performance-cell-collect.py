@@ -37,7 +37,6 @@ def cell_specs(matrix: Any) -> dict[str, Any]:
     return {
         spec.cell_id: spec
         for spec in matrix.DEFAULT_CELLS
-        if spec.cell_id != "browser-gateway"
     }
 
 
@@ -302,7 +301,7 @@ def main() -> int:
         "--cell-id",
         action="append",
         dest="cell_ids",
-        help="Runtime cell id to normalize. Defaults to all non-browser matrix cells.",
+        help="Runtime cell id to normalize. Defaults to all Native Desktop matrix cells.",
     )
     parser.add_argument(
         "--strict-exit",

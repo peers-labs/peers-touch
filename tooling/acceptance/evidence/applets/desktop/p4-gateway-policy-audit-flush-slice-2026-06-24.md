@@ -1,7 +1,7 @@
 # P4 Gateway Policy and Audit Flush Slice
 
 > Evidence class: CONTROLLED_LOCAL_UPSTREAM
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 
 ## Scope Completed
 

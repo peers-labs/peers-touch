@@ -142,24 +142,16 @@ export async function waitForDesktopFrontend(
   );
 }
 
-function desktopValues(root, resolved, mode) {
-  const appMode = mode === 'app';
+function desktopValues(root, resolved) {
   const profile = resolved.profile;
-  const runtimeProfile = `${profile.PT_DEV_PROFILE}-${mode}`;
-  const webPort = Number(
-    appMode
-      ? profile.PT_DESKTOP_APP_WEB_PORT
-      : profile.PT_DESKTOP_WEB_WEB_PORT,
-  );
+  const mode = 'app';
+  const runtimeProfile = `${profile.PT_DEV_PROFILE}-app`;
+  const webPort = Number(profile.PT_DESKTOP_APP_WEB_PORT);
   return {
     mode,
     runtimeProfile,
     desktopDirectory: path.join(root, 'apps', 'desktop'),
-    gatewayPort: Number(
-      appMode
-        ? profile.PT_DESKTOP_APP_GATEWAY_PORT
-        : profile.PT_DESKTOP_WEB_GATEWAY_PORT,
-    ),
+    gatewayPort: Number(profile.PT_DESKTOP_APP_GATEWAY_PORT),
     webPort,
     viteReadinessUrl: desktopViteReadinessUrl(webPort),
     viteService: `desktop-${mode}-vite`,
@@ -227,16 +219,16 @@ export function desktopInstallSettings(
     );
   }
   const productName = 'Peers Dev';
-  const installDirectory = path.resolve(
+  const installDirectory = path.posix.resolve(
     environment.PT_DESKTOP_INSTALL_DIR?.trim()
-      || path.join(homeDirectory, 'Applications'),
+      || path.posix.join(homeDirectory, 'Applications'),
   );
   return {
     appId,
     productName,
     deepLinkScheme: 'peers-touch-dev',
     installDirectory,
-    installPath: path.join(installDirectory, `${productName}.app`),
+    installPath: path.posix.join(installDirectory, `${productName}.app`),
   };
 }
 
@@ -428,16 +420,6 @@ function desktopProtoRequirements(values) {
     left.source.localeCompare(right.source));
 }
 
-function validateMode(mode) {
-  if (!['app', 'web'].includes(mode)) {
-    throw new DevctlError(
-      ERROR_CODES.UNSUPPORTED_MODE,
-      `Unsupported Desktop mode: ${mode}`,
-      { mode },
-    );
-  }
-}
-
 function writeTauriOverride(values, worktreeId) {
   const suffix = worktreeId.replace(/[^A-Za-z0-9]+/gu, '-').replace(/-$/u, '');
   const config = {
@@ -447,9 +429,6 @@ function writeTauriOverride(values, worktreeId) {
       beforeDevCommand: null,
     },
   };
-  if (values.mode === 'web') {
-    config.app = { windows: [{ create: false }] };
-  }
   fs.mkdirSync(path.dirname(values.configPath), { recursive: true });
   fs.writeFileSync(values.configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
@@ -786,12 +765,10 @@ export function reconcileDesktopRuntime(
 
 export async function desktopStatus(
   root,
-  mode = 'app',
   environment = process.env,
 ) {
-  validateMode(mode);
   const resolved = resolveProfile(root, environment);
-  const values = desktopValues(root, resolved, mode);
+  const values = desktopValues(root, resolved);
   const runtimeIdentity = desktopRuntimeIdentity(values, environment);
   const [viteReady, gatewayReady] = await Promise.all([
     probeHttp(values.viteReadinessUrl),
@@ -799,7 +776,7 @@ export async function desktopStatus(
   ]);
   return {
     profile: resolved.reference.profileName,
-    mode,
+    mode: values.mode,
     runtimeProfile: runtimeIdentity.profile,
     web: {
       url: `http://127.0.0.1:${values.webPort}/`,
@@ -822,12 +799,11 @@ export async function desktopStatus(
 
 export async function startDesktop(
   root,
-  mode = 'app',
   environment = process.env,
 ) {
-  validateMode(mode);
   const resolved = resolveProfile(root, environment);
-  const values = desktopValues(root, resolved, mode);
+  const values = desktopValues(root, resolved);
+  const mode = values.mode;
   const runtimeEnv = runtimeEnvironment(resolved, environment);
   const runtimeIdentity = desktopRuntimeIdentity(values, environment);
   const pnpm = findExecutable('pnpm', runtimeEnv);
@@ -855,7 +831,7 @@ export async function startDesktop(
       'Current Git commit is unavailable for Desktop runtime ownership',
     );
   }
-  const existing = await desktopStatus(root, mode, environment);
+  const existing = await desktopStatus(root, environment);
   const reconciliation = reconcileDesktopRuntime(
     resolved.paths.profileState,
     values,
@@ -885,7 +861,6 @@ export async function startDesktop(
   const childEnvironment = windowsDeveloperEnvironment({
     ...runtimeEnv,
     PT_PROFILE: runtimeIdentity.profile,
-    PT_CLIENT_SURFACE: mode === 'app' ? 'desktop' : 'browser',
     PEERS_STATION_URL: resolved.profile.PT_STATION_URL,
     PEERS_STATION_MODE: resolved.profile.PT_STATION_MODE,
     PEERS_STORAGE_ROOT: runtimeIdentity.storageRoot,
@@ -952,7 +927,7 @@ export async function startDesktop(
       fromOffset: tauriLogOffset,
       processAlive: () => Boolean(inspectProcess(tauri.pid)),
     });
-    const status = await desktopStatus(root, mode, environment);
+    const status = await desktopStatus(root, environment);
     if (
       !status.web.health.ok
       || !status.gateway.listening
@@ -1109,24 +1084,21 @@ export async function installDesktop(
 
 export async function stopDesktop(
   root,
-  mode = 'app',
   environment = process.env,
 ) {
-  validateMode(mode);
   const resolved = resolveProfile(root, environment);
-  const values = desktopValues(root, resolved, mode);
+  const values = desktopValues(root, resolved);
   const results = [];
   for (const service of [values.tauriService, values.viteService]) {
     results.push(stopManagedProcess(resolved.paths.profileState, service));
   }
-  return { profile: resolved.reference.profileName, mode, results };
+  return { profile: resolved.reference.profileName, mode: values.mode, results };
 }
 
 export async function restartDesktop(
   root,
-  mode = 'app',
   environment = process.env,
 ) {
-  await stopDesktop(root, mode, environment);
-  return startDesktop(root, mode, environment);
+  await stopDesktop(root, environment);
+  return startDesktop(root, environment);
 }

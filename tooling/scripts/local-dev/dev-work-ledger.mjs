@@ -45,14 +45,16 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLockSync,
 } from './workspace-lifecycle-lock.mjs';
-import { workspacePlanBindingPath } from '../plan/workspace-plan-binding.mjs';
+import { assertDevelopmentCloseAdmission } from './development-close-store.mjs';
+import { readActiveWorkRecord } from './active-work-store.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
+const WORKSPACE_ID = /^[0-9a-f]{16}$/;
 const PLANCTL_SCRIPT = fileURLToPath(
   new URL('../plan/planctl.mjs', import.meta.url),
 );
-const PLAN_BINDING_SCRIPT = fileURLToPath(
-  new URL('../plan/workspace-plan-binding.mjs', import.meta.url),
+const PLAN_MOUNT_SCRIPT = fileURLToPath(
+  new URL('../plan/plan-mount.mjs', import.meta.url),
 );
 const LEDGER_KEYS = new Set([
   'schemaVersion',
@@ -138,35 +140,6 @@ export function emptyLedger(now = new Date()) {
   };
 }
 
-function migrateLegacyTerminalDeclaration(declaration) {
-  if (
-    !isObject(declaration) ||
-    !['RELEASED', 'STALE'].includes(declaration.state) ||
-    !Array.isArray(declaration.sourceClaims) ||
-    digestDeclaration(declaration) !== declaration.declarationDigest
-  ) {
-    return declaration;
-  }
-  const sourceClaims = declaration.sourceClaims.filter(
-    (claim) =>
-      !(
-        isObject(claim) &&
-        exactKeys(claim, new Set(['pathPrefix', 'mode'])) &&
-        claim.mode === 'exclusive-write' &&
-        claim.pathPrefix === '.'
-      ),
-  );
-  if (sourceClaims.length === declaration.sourceClaims.length) {
-    return declaration;
-  }
-  const migrated = {
-    ...declaration,
-    sourceClaims,
-  };
-  migrated.declarationDigest = digestDeclaration(migrated);
-  return migrated;
-}
-
 export function readLedger(file, now = new Date()) {
   if (!existsSync(file)) return emptyLedger(now);
   let ledger;
@@ -190,14 +163,12 @@ export function readLedger(file, now = new Date()) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'work ledger schema is invalid');
   }
   for (const [id, declaration] of Object.entries(ledger.declarations)) {
-    const migrated = migrateLegacyTerminalDeclaration(declaration);
-    ledger.declarations[id] = migrated;
-    validateDeclaration(migrated);
-    if (id !== migrated.declarationId) {
+    validateDeclaration(declaration);
+    if (id !== declaration.declarationId) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
         'declaration map key does not match declarationId',
-        { declarationId: migrated.declarationId, key: id },
+        { declarationId: declaration.declarationId, key: id },
       );
     }
   }
@@ -804,11 +775,13 @@ function parsePlanStatus(workspaceRoot, planPath, options) {
   }
 }
 
-function parseWorkspacePlanBinding(workspaceRoot, options) {
-  if (options.planBinding) return options.planBinding;
+function parsePlanExecution(workspaceRoot, options) {
+  if (Object.hasOwn(options, 'planExecution')) {
+    return options.planExecution;
+  }
   const arguments_ = [
-    PLAN_BINDING_SCRIPT,
-    'resolve',
+    PLAN_MOUNT_SCRIPT,
+    'status',
     '--repo-root',
     workspaceRoot,
   ];
@@ -821,7 +794,11 @@ function parseWorkspacePlanBinding(workspaceRoot, options) {
         stdio: ['ignore', 'pipe', 'pipe'],
       }),
     );
-    return payload.binding;
+    return {
+      mount: payload.mount,
+      snapshot: payload.snapshot,
+      run: payload.run,
+    };
   } catch (error) {
     let payload;
     try {
@@ -830,24 +807,23 @@ function parseWorkspacePlanBinding(workspaceRoot, options) {
       payload = null;
     }
     fail(
-      payload?.error?.code ?? 'WORKSPACE_PLAN_BINDING_REQUIRED',
-      payload?.error?.message ?? 'workspace Plan binding is unavailable',
+      payload?.error?.code ?? 'PLAN_MOUNT_REQUIRED',
+      payload?.error?.message ?? 'workspace Plan mount is unavailable',
       payload?.error?.details,
     );
   }
 }
 
 function assertUntrackedWorkspace(options, identity) {
-  const bindingFile = workspacePlanBindingPath({
-    home: options.home,
-    repoRoot: identity.workspaceRoot,
-  });
-  if (existsSync(bindingFile)) {
+  try {
+    const execution = parsePlanExecution(identity.workspaceRoot, options);
+    if (execution === null) return;
     fail(
       'WORKSPACE_PLAN_DECLARATION_REQUIRED',
-      'a Plan-bound workspace cannot publish untracked work',
-      { bindingFile },
+      'a Plan-mounted workspace cannot publish untracked work',
     );
+  } catch (error) {
+    if (error?.code !== 'PLAN_MOUNT_REQUIRED') throw error;
   }
 }
 
@@ -857,7 +833,10 @@ function resolvePlanLocator(options, existing, identity) {
     options.planId,
     options.taskId,
   ].some((value) => value !== undefined);
-  const existingHasLocator = Object.hasOwn(existing ?? {}, 'planPath');
+  const existingHasLocator =
+    existing !== null &&
+    existing !== undefined &&
+    existing.planPath !== null;
   if (!supplied && !existingHasLocator) {
     assertUntrackedWorkspace(options, identity);
     return null;
@@ -872,7 +851,14 @@ function resolvePlanLocator(options, existing, identity) {
   const values = [planPath, planId, taskId];
   if (values.every((value) => value === null)) {
     assertUntrackedWorkspace(options, identity);
-    return { planPath: null, planId: null, taskId: null };
+    return {
+      planPath: null,
+      planId: null,
+      planVersionDigest: null,
+      mountId: null,
+      runId: null,
+      taskId: null,
+    };
   }
   if (
     typeof planPath !== 'string' ||
@@ -897,10 +883,7 @@ function resolvePlanLocator(options, existing, identity) {
     normalizedPlanPath,
     options,
   );
-  const binding = parseWorkspacePlanBinding(
-    identity.workspaceRoot,
-    options,
-  );
+  const execution = parsePlanExecution(identity.workspaceRoot, options);
   const normalizedPlanId =
     planId === undefined || planId === null
       ? requiredIdentifier(status.planId, 'planId')
@@ -915,8 +898,15 @@ function resolvePlanLocator(options, existing, identity) {
     ['planId', normalizedPlanId, status.planId],
     ['workspaceId', identity.workspaceId, status.workspaceId],
     ['branch', identity.branch, status.branch],
-    ['boundPlanId', normalizedPlanId, binding.planId],
-    ['boundPlanPath', normalizedPlanPath, binding.planPath],
+    ['mountedPlanId', normalizedPlanId, execution.mount.planId],
+    ['mountedPlanPath', normalizedPlanPath, execution.mount.planPath],
+    [
+      'planVersionDigest',
+      status.planVersionDigest,
+      execution.mount.planVersionDigest,
+    ],
+    ['mountId', status.mountId, execution.mount.mountId],
+    ['runId', status.runId, execution.run.runId],
   ]) {
     if (expected !== actual) mismatches[field] = { expected, actual };
   }
@@ -928,6 +918,20 @@ function resolvePlanLocator(options, existing, identity) {
       planStatus: status.status ?? null,
     };
   }
+  if (existingHasLocator) {
+    for (const [field, actual] of [
+      ['planVersionDigest', status.planVersionDigest],
+      ['mountId', status.mountId],
+      ['runId', status.runId],
+    ]) {
+      if (existing[field] !== actual) {
+        mismatches[field] = {
+          expected: existing[field] ?? null,
+          actual,
+        };
+      }
+    }
+  }
   if (Object.keys(mismatches).length > 0) {
     fail('PLAN_LOCATOR_MISMATCH', 'declared Plan locator does not match', {
       mismatches,
@@ -936,6 +940,9 @@ function resolvePlanLocator(options, existing, identity) {
   return {
     planPath: normalizedPlanPath,
     planId: normalizedPlanId,
+    planVersionDigest: status.planVersionDigest,
+    mountId: status.mountId,
+    runId: status.runId,
     taskId: normalizedTaskId,
   };
 }
@@ -993,8 +1000,14 @@ function buildDeclaration(options, existing, now) {
     expiresAt: new Date(now.getTime() + expiresMinutes * 60_000).toISOString(),
     sourceClaims,
     runtimeClaims,
+    planPath: null,
+    planId: null,
+    planVersionDigest: null,
+    mountId: null,
+    runId: null,
+    taskId: null,
   };
-  if (planLocator) Object.assign(declaration, planLocator);
+  if (planLocator !== null) Object.assign(declaration, planLocator);
   declaration.declarationDigest = digestDeclaration(declaration);
   validateDeclaration(declaration);
   return declaration;
@@ -1022,12 +1035,29 @@ function mutateLedgerUnderFence(options, mutation) {
 }
 
 function mutateLedger(options, mutation) {
-  const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
+  const identity =
+    options.workspaceRoot === undefined && options.workspaceId !== undefined
+      ? {
+          workspaceId: requiredText(
+            options.workspaceId,
+            'workspaceId',
+            16,
+          ),
+        }
+      : {
+          workspaceRoot: path.resolve(options.workspaceRoot ?? repoRoot),
+        };
+  if (
+    identity.workspaceId !== undefined &&
+    !WORKSPACE_ID.test(identity.workspaceId)
+  ) {
+    fail('INVALID_DECLARATION', 'workspaceId is invalid');
+  }
   try {
     return withWorkspaceLifecycleLockSync(
       {
         home: options.home,
-        workspaceRoot,
+        ...identity,
         lifecycleLease: options.lifecycleLease,
         lockTimeoutMs:
           options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
@@ -1035,7 +1065,7 @@ function mutateLedger(options, mutation) {
       },
       (lifecycleLease) =>
         mutateLedgerUnderFence(
-          { ...options, workspaceRoot, lifecycleLease },
+          { ...options, ...identity, lifecycleLease },
           mutation,
         ),
     );
@@ -1072,7 +1102,29 @@ export function startOrUpdateDeclaration(
   const declaration = mutateLedger(options, (ledger, now) => {
     const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
     const workspaceId = workspaceIdForRoot(workspaceRoot);
+    assertDevelopmentCloseAdmission({
+      home: options.home,
+      workspaceId,
+    });
     const workItemId = requiredIdentifier(options.workItemId, 'workItemId');
+    const activeWork = readActiveWorkRecord({
+      home: options.home,
+      workspaceId,
+    });
+    if (
+      activeWork !== null &&
+      activeWork.workItemId !== workItemId
+    ) {
+      fail(
+        'DEVELOPMENT_CLOSE_REQUIRED',
+        'previous workspace active-work must be closed before new declaration',
+        {
+          activeWorkItemId: activeWork.workItemId,
+          requestedWorkItemId: workItemId,
+          revision: activeWork.revision,
+        },
+      );
+    }
     const id = declarationId(workItemId, workspaceId);
     const existing = ledger.declarations[id];
     if (requireExisting && !existing) {
@@ -1141,8 +1193,13 @@ export function startOrUpdateDeclaration(
 }
 
 function ownedDeclaration(options, ledger) {
-  const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
-  const workspaceId = workspaceIdForRoot(workspaceRoot);
+  const workspaceId =
+    options.workspaceRoot === undefined && options.workspaceId !== undefined
+      ? requiredText(options.workspaceId, 'workspaceId', 16)
+      : workspaceIdForRoot(path.resolve(options.workspaceRoot ?? repoRoot));
+  if (!WORKSPACE_ID.test(workspaceId)) {
+    fail('INVALID_DECLARATION', 'workspaceId is invalid');
+  }
   const workItemId = requiredIdentifier(options.workItemId, 'workItemId');
   const id = declarationId(workItemId, workspaceId);
   const declaration = ledger.declarations[id];
@@ -1154,6 +1211,13 @@ function ownedDeclaration(options, ledger) {
   if (options.sessionId && declaration.sessionId !== options.sessionId) {
     fail('WORK_DECLARATION_OWNER_MISMATCH', 'session does not own declaration', {
       declarationId: id,
+    });
+  }
+  if (options.owner && declaration.owner !== options.owner) {
+    fail('WORK_DECLARATION_OWNER_MISMATCH', 'owner does not own declaration', {
+      declarationId: id,
+      expected: declaration.owner,
+      actual: options.owner,
     });
   }
   return declaration;
@@ -1259,6 +1323,9 @@ export function checkDeclaration(options) {
           ...options,
           planPath: declaration.planPath,
           planId: declaration.planId,
+          planVersionDigest: declaration.planVersionDigest,
+          mountId: declaration.mountId,
+          runId: declaration.runId,
           taskId: declaration.taskId,
         },
         declaration,

@@ -148,7 +148,7 @@ packages/prototypes/
 原型登记和 Portal 展示必须按一级站点归属组织：
 
 ```text
-desktop            # Desktop App / desktop-web / applet 容器内体验
+desktop            # Native Desktop App / embedded renderer / applet 容器内体验
 mobile             # Mobile 端体验
 dashboard          # Station Dashboard / 管理台 / 运维台
 ```
@@ -160,7 +160,7 @@ dashboard          # Station Dashboard / 管理台 / 运维台
 每个模块的原型在架构文档侧有对应入口：
 
 ```
-docs/architecture/<module>/prototype/README.md
+docs/architecture/<taxonomy>/<module>/prototype/README.md
 ```
 
 该文件只写：原型在哪、怎么跑、对应哪版设计、做到什么程度、已知差异。**不复制源码**。
@@ -203,7 +203,7 @@ make run-prototype
 
 ## 5. 统一原型总账
 
-位置：`docs/architecture/prototypes/README.md`
+位置：`docs/architecture/engineering/prototypes/README.md`
 
 ### 5.1 登记表字段
 
@@ -263,8 +263,8 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] 源码在 `packages/prototypes/<site>/<area>/<id>/`，物理目录没有把 applet / feature 放成一级站点
 - [ ] `make run-prototype` 能跑，浏览器能打开
 - [ ] Prototype Portal 的 Live Preview 已选中并渲染目标原型：右上角标题必须是目标 prototype title，正文不能是 `Desktop Shell` / kernel placeholder / “原型未细化”占位页
-- [ ] `docs/architecture/<module>/prototype/README.md` 已创建/更新
-- [ ] `docs/architecture/prototypes/README.md` 总账已登记
+- [ ] `docs/architecture/<taxonomy>/<module>/prototype/README.md` 已创建/更新
+- [ ] `docs/architecture/engineering/prototypes/README.md` 总账已登记
 - [ ] 原型区域能对回设计文档编号
 - [ ] 客户端 UI 原型已读取 `docs/client/common/ui-identity/README.md` 及 foundations / tokens / layout / components
 - [ ] 已读取最近的模块 UI ID；若不存在，已在原型 README 标注“当前无模块 UI ID，复用 shared UI ID”
@@ -290,7 +290,7 @@ Prototype Portal 支持 worktree / branch 切换：
 ## 9. 真源文档引用
 
 - 完整规范：`docs/global/architecture-document-standard.md` §5.8
-- 原型总账：`docs/architecture/prototypes/README.md`
+- 原型总账：`docs/architecture/engineering/prototypes/README.md`
 - 桌面组件栈参考：`docs/global/coding-guide/desktop/page-component.md`
 - 客户端 UI Identity：`docs/client/common/ui-identity/README.md`
 - UI Identity tokens：`docs/client/common/ui-identity/tokens.md`

@@ -16,8 +16,8 @@ owns:
 referenced-by:
   - docs/knowledge/README.md
 related:
-  - docs/architecture/messaging-platform/decisions.md
-  - docs/architecture/acceptance-framework/execution-plans/20260824-native-desktop-runtime-cells.md
+  - docs/architecture/domains/chat/messaging/decisions.md
+  - docs/architecture/engineering/acceptance/execution-plans/20260824-native-desktop-runtime-cells.md
 detected: 2026-09-13
 ---
 

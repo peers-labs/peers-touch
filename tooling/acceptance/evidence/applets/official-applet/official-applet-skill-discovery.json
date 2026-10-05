@@ -16,13 +16,13 @@
     },
     {
       "name": "runtime-readme-link",
-      "path": "docs/architecture/applet-runtime/README.md",
+      "path": "docs/architecture/platform/applet-runtime/README.md",
       "exists": true,
       "missingTerms": []
     },
     {
       "name": "contract-link",
-      "path": "docs/architecture/applet-runtime/official-applet-architecture-contract.md",
+      "path": "docs/architecture/platform/applet-runtime/official-applet-architecture-contract.md",
       "exists": true,
       "missingTerms": []
     }

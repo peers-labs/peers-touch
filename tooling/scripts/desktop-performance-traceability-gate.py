@@ -51,7 +51,7 @@ SOURCE_TRACE_FIELD_SET = set(REQUIRED_ISSUE_FIELDS)
 DEFAULT_INPUT_ROLES = (
     ("acceptance-run", "run"),
     (
-        "desktop-performance-report-gate",
+        "desktop-performance-sampler-gate",
         "report",
     ),
     (

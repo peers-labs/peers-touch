@@ -33,11 +33,11 @@ class McpLifecycleCandidateTest(unittest.TestCase):
                     runtime_tuple.platform == platform
                     for runtime_tuple in tuples
                 )
-                for platform in ("desktop_app", "browser", "mobile_contract")
+                for platform in ("desktop_app", "secondary", "mobile_contract")
             },
             {
                 "desktop_app": 34,
-                "browser": 4,
+                "secondary": 4,
                 "mobile_contract": 3,
             },
         )

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Contract tests for the applet lifecycle state machine.
 //
-// Source of truth: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Source of truth: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §3 状态转换事件表, §10 数据模型, §11 验收标准 (切换保活事件顺序).
 //
 // Run after building the package: the imports resolve against dist/.

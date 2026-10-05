@@ -22,9 +22,9 @@ EXPECTED_ROLES = frozenset(
 NOT_ADVERTISED = "RUNTIME_ADVERTISEMENT_STATE_NOT_ADVERTISED"
 RUNTIME_BY_ROW = {
     "foundation-desktop-cli-absent": (1, "trae-cli", True),
-    "foundation-browser-cli-absent": (1, "trae-cli", False),
+    "foundation-secondary-cli-absent": (1, "trae-cli", False),
     "foundation-desktop-external-absent": (2, "external-agent", True),
-    "foundation-browser-external-absent": (2, "external-agent", False),
+    "foundation-secondary-external-absent": (2, "external-agent", False),
 }
 COUNTER_FIELDS = (
     "runtime_bindings_created",
@@ -118,7 +118,7 @@ class NonAdvertisementFoundationAdapter:
             local_delta = _zero_delta(local_before, local_after, "desktop-rust")
         elif before.get("local") is not None or after.get("local") is not None:
             raise NonAdvertisementEvidenceError(
-                f"{runtime_tuple.row}: Browser evidence must not borrow Desktop counters"
+                f"{runtime_tuple.row}: Secondary evidence must not borrow Desktop counters"
             )
 
         if cleanup.get("status") != "clean":

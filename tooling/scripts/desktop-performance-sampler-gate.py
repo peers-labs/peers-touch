@@ -4,9 +4,7 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +20,8 @@ from _acceptance_artifacts import (
 
 PRODUCER_GATE_ID = "desktop-performance-sampler-gate"
 DEFAULT_OUTPUT_PREFIX = "reports/desktop-performance-sampler-gate-latest"
+STATION_MIRROR_OUTPUT_PREFIX = "tooling/acceptance/reports/desktop-performance-station-mirror"
+STATION_MIRROR_REPORT_PATH = f"{STATION_MIRROR_OUTPUT_PREFIX}.json"
 
 PHASE = "P0b-2/P0b-3/P0b-4/P0b-5/P0b-6/P0b-7/P0c-5"
 BOM = [
@@ -177,8 +177,11 @@ def recommended_review_commands(station_mirror_report: Path) -> list[dict[str, s
             "command": "make station",
         },
         {
-            "purpose": "Re-run the P0a live telemetry gate so Station mirror input can become live evidence.",
-            "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
+            "purpose": "Query Station telemetry into an explicit Dev/CI mirror.",
+            "command": (
+                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                f"--output-prefix {STATION_MIRROR_OUTPUT_PREFIX}"
+            ),
         },
         {
             "purpose": "Inspect the sampler gate diagnostic artifact.",
@@ -186,7 +189,10 @@ def recommended_review_commands(station_mirror_report: Path) -> list[dict[str, s
         },
         {
             "purpose": "Re-run only the sampler gate after Station mirror evidence exists.",
-            "command": f"python3 tooling/scripts/desktop-performance-sampler-gate.py --station-mirror-report {station_mirror_report}",
+            "command": (
+                "python3 tooling/scripts/desktop-performance-sampler-gate.py "
+                f"--station-mirror-report {STATION_MIRROR_REPORT_PATH}"
+            ),
         },
         {
             "purpose": "Re-run the full Phase 0 bundle and keep fail-closed evidence if runtime samples are still missing.",
@@ -345,15 +351,406 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def load_report_module():
-    script = Path(__file__).with_name("desktop-performance-report.py")
-    spec = importlib.util.spec_from_file_location("desktop_performance_report", script)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"failed to load {script}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+ANALYSIS_AGGREGATION_TRACE = {
+    "reactCommitAggregation": {
+        "phase": "P0b-3/P0c-5",
+        "bom": ["BOM-SMP-02", "BOM-RUN-05", "BOM-CAP-05"],
+        "spec": ["SPEC-SMP-REACT-01", "SPEC-MIRROR-01", "SPEC-STA-03"],
+        "gate": "React commit sampler evidence must be present in Station mirror before report proof is allowed",
+    },
+    "storeUpdateAggregation": {
+        "phase": "P0b-4/P0c-5",
+        "bom": ["BOM-SMP-03", "BOM-RUN-05", "BOM-CAP-05"],
+        "spec": ["SPEC-SMP-STORE-01", "SPEC-MIRROR-01", "SPEC-STA-03"],
+        "gate": "Store update sampler evidence must be present in Station mirror before report proof is allowed",
+    },
+    "overlayLatencyAggregation": {
+        "phase": "P0b-5/P0c-5",
+        "bom": ["BOM-SMP-04", "BOM-RUN-05", "BOM-CAP-05"],
+        "spec": ["SPEC-SMP-OVERLAY-01", "SPEC-MIRROR-01", "SPEC-STA-03"],
+        "gate": "Overlay intent/visible latency evidence must be present in Station mirror before report proof is allowed",
+    },
+    "invokeAggregation": {
+        "phase": "P0b-6/P0c-5",
+        "bom": ["BOM-SMP-05", "BOM-RUN-05", "BOM-CAP-05"],
+        "spec": ["SPEC-SMP-INVOKE-01", "SPEC-MIRROR-01", "SPEC-STA-03"],
+        "gate": "Invoke started/completed/failed evidence must be present in Station mirror before report proof is allowed",
+    },
+    "mainThreadExceptions": {
+        "phase": "P0b-7/P0c-5",
+        "bom": ["BOM-SMP-06", "BOM-RUN-05", "BOM-CAP-05"],
+        "spec": ["SPEC-SMP-MAIN-01", "SPEC-MIRROR-01", "SPEC-STA-03"],
+        "gate": "Main-thread longtask/layout/paint evidence must either be within budget or carry an explicit exception",
+    },
+}
+ANALYSIS_INTERACTION_EVENT_KINDS = {
+    "contextmenu.intent",
+    "invoke.completed",
+    "invoke.failed",
+    "invoke.started",
+    "overlay.visible",
+    "react.commit",
+    "route.requested",
+    "route.visible",
+    "store.update",
+    "surface.hidden.render",
+    "surface.render",
+}
+ANALYSIS_MAIN_THREAD_EVENT_KINDS = {
+    "longtask.detected",
+    "layout.shift",
+    "paint.timing",
+}
+ANALYSIS_MIRROR_KIND = "desktop-performance-station-mirror"
+ANALYSIS_MIRROR_PHASE = "P0a-6/P0c-5"
+ANALYSIS_MIRROR_BOM = ("BOM-CAP-05", "BOM-RUN-05")
+ANALYSIS_MIRROR_SPEC = ("SPEC-STA-03", "SPEC-MIRROR-01")
+
+
+def analysis_read_json_if_present(
+    path: Path,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    if not path.exists():
+        return None, {"path": str(path), "status": "missing"}
+    return json.loads(path.read_text(encoding="utf-8")), {
+        "path": str(path),
+        "status": "loaded",
+    }
+
+
+def analysis_review_commands() -> list[dict[str, str]]:
+    return [
+        {
+            "purpose": "Start the Native Desktop development runtime.",
+            "command": "make desktop",
+        },
+        {
+            "purpose": "Query Station telemetry into an explicit Dev/CI mirror.",
+            "command": (
+                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                f"--output-prefix {STATION_MIRROR_OUTPUT_PREFIX}"
+            ),
+        },
+        {
+            "purpose": "Re-run the Native sampler gate.",
+            "command": (
+                "python3 tooling/scripts/desktop-performance-sampler-gate.py "
+                f"--station-mirror-report {STATION_MIRROR_REPORT_PATH}"
+            ),
+        },
+    ]
+
+
+def analysis_station_mirror_source_state(
+    station_report: dict[str, Any] | None,
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    if station_report is None:
+        reason = f"missing Station mirror report: {evidence['path']}"
+        return {
+            "status": "missing",
+            "completionStatus": "PARTIAL",
+            "proofStatus": "UNPROVEN",
+            "reason": reason,
+            "evidencePath": evidence["path"],
+            "evidenceStatus": evidence["status"],
+            "details": [],
+            "recommended_review_commands": analysis_review_commands(),
+            "recommendedReviewCommands": analysis_review_commands(),
+        }
+
+    details: list[str] = []
+    if station_report.get("artifactKind") != ANALYSIS_MIRROR_KIND:
+        details.append("missing or invalid artifactKind")
+    if station_report.get("phase") != ANALYSIS_MIRROR_PHASE:
+        details.append("missing or invalid phase")
+    if not all(
+        item in station_report.get("bom", [])
+        for item in ANALYSIS_MIRROR_BOM
+    ):
+        details.append("missing required mirror BOM binding")
+    if not all(
+        item in station_report.get("spec", [])
+        for item in ANALYSIS_MIRROR_SPEC
+    ):
+        details.append("missing required mirror Spec binding")
+    if station_report.get("completionStatus") != "DONE":
+        details.append("missing or invalid completionStatus")
+    if station_report.get("proofStatus") != "PROVEN":
+        details.append("missing or invalid proofStatus")
+    if station_report.get("productSink") != "Station":
+        details.append("missing Station product sink boundary")
+    if station_report.get("mirrorRole") != "Dev/CI evidence artifact":
+        details.append("missing Dev/CI mirror role boundary")
+
+    issues = station_report.get(
+        "issue_breakdown",
+        station_report.get("issueBreakdown"),
+    )
+    issue_details: list[Any] = []
+    if isinstance(issues, list):
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            candidate = issue.get("evidenceDetails", issue.get("details"))
+            if isinstance(candidate, list):
+                issue_details.extend(candidate)
+    status = "loaded" if not details else "diagnostic incomplete"
+    reason = (
+        "Station mirror source metadata is valid"
+        if status == "loaded"
+        else str(
+            station_report.get("reason")
+            or "Station mirror source metadata is incomplete"
+        )
+    )
+    state = {
+        "status": status,
+        "completionStatus": "DONE" if status == "loaded" else "PARTIAL",
+        "proofStatus": "PROVEN" if status == "loaded" else "UNPROVEN",
+        "reason": reason,
+        "evidencePath": evidence["path"],
+        "evidenceStatus": evidence["status"],
+        "phase": station_report.get("phase"),
+        "bom": station_report.get("bom"),
+        "spec": station_report.get("spec"),
+        "gate": station_report.get("gate"),
+        "artifactKind": station_report.get("artifactKind"),
+        "details": issue_details or details,
+        "summary": station_report.get("summary", {}),
+    }
+    if status != "loaded":
+        commands = station_report.get(
+            "recommended_review_commands",
+            station_report.get("recommendedReviewCommands"),
+        )
+        if not isinstance(commands, list):
+            commands = analysis_review_commands()
+        if isinstance(issues, list):
+            state["issue_breakdown"] = issues
+            state["issueBreakdown"] = issues
+        state["recommended_review_commands"] = commands
+        state["recommendedReviewCommands"] = commands
+    return state
+
+
+def analysis_events(
+    station_report: dict[str, Any] | None,
+    kinds: set[str],
+) -> list[dict[str, Any]]:
+    if not isinstance(station_report, dict):
+        return []
+    events = station_report.get("events")
+    if not isinstance(events, list):
+        return []
+    return [
+        event
+        for event in events
+        if isinstance(event, dict) and event.get("kind") in kinds
+    ]
+
+
+def analysis_simple_event_family(
+    station_report: dict[str, Any] | None,
+    *,
+    kinds: set[str],
+    count_key: str,
+    missing_reason: str,
+) -> dict[str, Any]:
+    events = analysis_events(station_report, kinds)
+    if not events:
+        return {
+            "status": "diagnostic incomplete",
+            "proofStatus": "UNPROVEN",
+            "reason": missing_reason,
+            count_key: 0,
+        }
+    durations = [
+        float(event["durationMs"])
+        for event in events
+        if isinstance(event.get("durationMs"), (int, float))
+    ]
+    return {
+        "status": "loaded",
+        "proofStatus": "PROVEN",
+        "reason": f"{','.join(sorted(kinds))} events are present",
+        count_key: len(events),
+        "maxDurationMs": max(durations) if durations else None,
+    }
+
+
+def analysis_interaction_correlation_summary(
+    station_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    events = analysis_events(
+        station_report,
+        ANALYSIS_INTERACTION_EVENT_KINDS,
+    )
+    if not events:
+        return {
+            "status": "diagnostic incomplete",
+            "proofStatus": "UNPROVEN",
+            "reason": "no interaction-correlated event families in Station mirror",
+            "trackedEventCount": 0,
+            "linkedEventCount": 0,
+            "unlinkedEventCount": 0,
+        }
+    unlinked = [event for event in events if not event.get("interactionId")]
+    return {
+        "status": "loaded" if not unlinked else "diagnostic incomplete",
+        "proofStatus": "PROVEN" if not unlinked else "UNPROVEN",
+        "reason": (
+            "interaction-correlated event families carry interactionId"
+            if not unlinked
+            else "interaction-correlated events are missing interactionId"
+        ),
+        "trackedEventCount": len(events),
+        "linkedEventCount": len(events) - len(unlinked),
+        "unlinkedEventCount": len(unlinked),
+    }
+
+
+def analysis_react_commit_aggregation(
+    station_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return analysis_simple_event_family(
+        station_report,
+        kinds={"react.commit"},
+        count_key="commitCount",
+        missing_reason="no react.commit events in Station mirror",
+    )
+
+
+def analysis_store_update_aggregation(
+    station_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return analysis_simple_event_family(
+        station_report,
+        kinds={"store.update"},
+        count_key="updateCount",
+        missing_reason="no store.update events in Station mirror",
+    )
+
+
+def analysis_overlay_latency_aggregation(
+    station_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    intents = analysis_events(station_report, {"contextmenu.intent"})
+    visible = analysis_events(station_report, {"overlay.visible"})
+    paired = min(len(intents), len(visible))
+    missing = max(0, len(intents) - len(visible))
+    status = "loaded" if intents and visible and missing == 0 else "diagnostic incomplete"
+    return {
+        "status": status,
+        "proofStatus": "PROVEN" if status == "loaded" else "UNPROVEN",
+        "reason": (
+            "contextmenu.intent and overlay.visible events are paired"
+            if status == "loaded"
+            else "overlay telemetry is incomplete"
+        ),
+        "intentCount": len(intents),
+        "visibleCount": len(visible),
+        "pairedVisibleCount": paired,
+        "missingVisibleCount": missing,
+    }
+
+
+def analysis_invoke_aggregation(
+    station_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    events = analysis_events(
+        station_report,
+        {"invoke.started", "invoke.completed", "invoke.failed"},
+    )
+    terminal = [
+        event
+        for event in events
+        if event.get("kind") in {"invoke.completed", "invoke.failed"}
+    ]
+    status = "loaded" if events and terminal else "diagnostic incomplete"
+    return {
+        "status": status,
+        "proofStatus": "PROVEN" if status == "loaded" else "UNPROVEN",
+        "reason": (
+            "invoke events include a terminal observation"
+            if status == "loaded"
+            else "invoke telemetry has no completed/failed terminal events"
+        ),
+        "eventCount": len(events),
+        "terminalCount": len(terminal),
+        "failedCount": sum(
+            1 for event in terminal if event.get("kind") == "invoke.failed"
+        ),
+    }
+
+
+def analysis_main_thread_exception_summary(
+    station_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    events = analysis_events(
+        station_report,
+        ANALYSIS_MAIN_THREAD_EVENT_KINDS,
+    )
+    violations = []
+    for event in events:
+        duration = event.get("durationMs")
+        data = event.get("data")
+        threshold = data.get("thresholdMs") if isinstance(data, dict) else None
+        if (
+            isinstance(duration, (int, float))
+            and isinstance(threshold, (int, float))
+            and duration > threshold
+            and not (isinstance(data, dict) and isinstance(data.get("exception"), dict))
+        ):
+            violations.append(event)
+    status = "loaded" if events and not violations else "diagnostic incomplete"
+    return {
+        "status": status,
+        "proofStatus": "PROVEN" if status == "loaded" else "UNPROVEN",
+        "reason": (
+            "main-thread events are within budget or excepted"
+            if status == "loaded"
+            else "main-thread evidence is missing or over budget"
+        ),
+        "eventCount": len(events),
+        "violationCount": len(violations),
+        "exceptionCount": 0,
+    }
+
+
+class NativeSamplerAnalysis:
+    AGGREGATION_TRACE = ANALYSIS_AGGREGATION_TRACE
+    INTERACTION_CORRELATION_EVENT_KINDS = ANALYSIS_INTERACTION_EVENT_KINDS
+    MAIN_THREAD_EVENT_KINDS = ANALYSIS_MAIN_THREAD_EVENT_KINDS
+    MIRROR_REQUIRED_ARTIFACT_KIND = ANALYSIS_MIRROR_KIND
+    MIRROR_REQUIRED_PHASE = ANALYSIS_MIRROR_PHASE
+    MIRROR_REQUIRED_BOM = ANALYSIS_MIRROR_BOM
+    MIRROR_REQUIRED_SPEC = ANALYSIS_MIRROR_SPEC
+
+    read_json_if_present = staticmethod(analysis_read_json_if_present)
+    station_mirror_source_state = staticmethod(
+        analysis_station_mirror_source_state
+    )
+    interaction_correlation_summary = staticmethod(
+        analysis_interaction_correlation_summary
+    )
+    react_commit_aggregation = staticmethod(
+        analysis_react_commit_aggregation
+    )
+    store_update_aggregation = staticmethod(
+        analysis_store_update_aggregation
+    )
+    overlay_latency_aggregation = staticmethod(
+        analysis_overlay_latency_aggregation
+    )
+    invoke_aggregation = staticmethod(analysis_invoke_aggregation)
+    main_thread_exception_summary = staticmethod(
+        analysis_main_thread_exception_summary
+    )
+
+
+def load_report_module() -> type[NativeSamplerAnalysis]:
+    return NativeSamplerAnalysis
 
 
 def read_runtime_closure_evidence(path: Path | None) -> dict[str, Any]:
@@ -802,7 +1199,7 @@ def dom_anchor_blocked_reasons(
                 "sourceSpec": ["SPEC-ANCHOR-01"],
                 "sourceGate": cell.get(
                     "blockedByGate",
-                    "Browser and Tauri/WebView DOM automation must prove every required anchor by selector and count",
+                    "Native Tauri DOM automation must prove every required anchor by selector and count",
                 ),
                 "completionStatus": dom_anchor_gate_report.get("completionStatus", "PARTIAL"),
                 "sourceProofStatus": dom_anchor_gate_report.get("proofStatus", "UNPROVEN"),
@@ -1230,8 +1627,8 @@ def build_local_telemetry_buffer_observations_template() -> dict[str, Any]:
         "gate": LOCAL_TELEMETRY_BUFFER_GATE,
         "targetObservationPath": LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_PATH,
         "collectionProtocol": [
-            "start browser-gateway runtime through make desktop-web",
-            "open the Desktop page and authenticate if required",
+            "start the Native Desktop runtime through make desktop",
+            "authenticate in the Native Desktop window if required",
             "run window.__PT_FRONTEND_TELEMETRY__.clear() immediately before sampling",
             "perform primary-nav, secondary-tab, and context-menu interactions",
             "copy JSON.stringify(window.__PT_FRONTEND_TELEMETRY__.snapshot(), null, 2)",
@@ -1252,7 +1649,7 @@ def build_local_telemetry_buffer_observations_template() -> dict[str, Any]:
         "issueBreakdown": [issue],
         "template": {
             "source": "window.__PT_FRONTEND_TELEMETRY__",
-            "runtime": "browser-gateway",
+            "runtime": "tauri-webview-dev",
             "url": "",
             "readyState": "",
             "eventCount": 0,
@@ -1339,7 +1736,7 @@ def main() -> int:
     args = parser.parse_args()
 
     defaults = {
-        "station_mirror_report": ("desktop-telemetry-live-gate", "mirror-report"),
+        "station_mirror_report": ("desktop-telemetry-mirror-template-gate", "report"),
         "anchor_dom_evidence_gate_report": (
             "desktop-anchor-dom-evidence-gate",
             "report",

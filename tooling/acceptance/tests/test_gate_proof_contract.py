@@ -395,7 +395,7 @@ class GateProofContractTest(unittest.TestCase):
             )
             if attestation_profile in {
                 "direct_runtime",
-                "direct_runtime_no_local_capability",
+                "direct_runtime_secondary_native",
                 "client_capability_turn",
             }:
                 capability_id = f"capability-{suffix}"
@@ -405,29 +405,31 @@ class GateProofContractTest(unittest.TestCase):
                     "capabilitySessionId": f"session-{suffix}",
                     "actorIdHash": HASH,
                     "deviceId": device_id,
-                    "platform": item["platform"],
-                    "capabilities": (
-                        []
+                    "platform": (
+                        "desktop"
                         if attestation_profile
-                        == "direct_runtime_no_local_capability"
-                        else [
-                            {
-                                "capabilityId": capability_id,
-                                "schemaVersion": "1",
-                                "permission": "granted",
-                                "constraints": {
-                                    "maxRequestBytes": 1024,
-                                    "maxResultBytes": 1024,
-                                    "allowedResourceKinds": ["text"],
-                                },
-                            }
-                        ]
+                        == "direct_runtime_secondary_native"
+                        else item["platform"]
                     ),
+                    "capabilities": [
+                        {
+                            "capabilityId": capability_id,
+                            "schemaVersion": "1",
+                            "permission": "granted",
+                            "constraints": {
+                                "maxRequestBytes": 1024,
+                                "maxResultBytes": 1024,
+                                "allowedResourceKinds": ["text"],
+                            },
+                        }
+                    ],
                     "expiresAt": "2026-08-18T01:00:00+00:00",
                     "connectionId": f"connection-{suffix}",
                     "leaseId": lease_id,
                 }
-                if attestation_profile != "direct_runtime_no_local_capability":
+                if attestation_profile == "direct_runtime_secondary_native":
+                    item["desktopMode"] = "secondary"
+                if attestation_profile != "direct_runtime_secondary_native":
                     item["toolCallBinding"] = {
                         "toolCallId": f"tool-call-{suffix}",
                         "turnId": f"turn-{suffix}",

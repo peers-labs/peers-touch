@@ -30,10 +30,7 @@ quality-evidence:
 	python3 tooling/scripts/quality-evidence.py --range "$(REVIEW_RANGE)"
 
 review-submit:
-	@if [ -z "$(SESSION)" ]; then echo "Usage: make review-submit SESSION=<session.json> [REVIEW_BASE=<ref>]"; exit 1; fi
-	tooling/scripts/review/submit-pipeline.sh \
-		--base "$(REVIEW_BASE)" \
-		--session "$(SESSION)"
+	tooling/scripts/review/submit-pipeline.sh --base "$(REVIEW_BASE)" $(if $(SESSION),--session "$(SESSION)",)
 
 acceptance-evidence-export:
 	python3 tooling/scripts/acceptance-evidence.py export

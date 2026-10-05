@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "plan": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md",
+  "plan": "docs/architecture/platform/client/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md",
   "description": "Mobile Shell Acceptance bundle for MS-PA01 through MS-PA27. Required runtime proof uses source-bound iOS Simulator cells, with two isolated iOS clients where independent sessions or actors are required; Android and physical-device Gates are optional diagnostics.",
   "selected_gates": [
     "mobile-contract-static",

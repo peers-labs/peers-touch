@@ -2683,30 +2683,30 @@ class AcceptanceRunTest(unittest.TestCase):
         gates = module.selected_gates_from_plan(
             {
                 "selected_gates": [
-                    "desktop-performance-preflight-gate",
+                    "desktop-performance-cohort-gate",
                     {
-                        "id": "desktop-performance-report-gate",
+                        "id": "desktop-performance-sampler-gate",
                         "timeout_seconds": 42,
                     },
                 ]
             },
             {
-                "desktop-performance-preflight-gate": {
-                    "command": "python3 tooling/scripts/desktop-performance-preflight.py",
+                "desktop-performance-cohort-gate": {
+                    "command": "python3 tooling/scripts/desktop-performance-cohort-gate.py",
                     "timeout_seconds": 600,
                     "tier": "env-evidence",
                 },
-                "desktop-performance-report-gate": {
-                    "command": "python3 tooling/scripts/desktop-performance-report.py",
+                "desktop-performance-sampler-gate": {
+                    "command": "python3 tooling/scripts/desktop-performance-sampler-gate.py",
                     "timeout_seconds": 600,
                     "tier": "local-evidence",
                 },
             },
         )
 
-        self.assertEqual([gate["id"] for gate in gates], ["desktop-performance-preflight-gate", "desktop-performance-report-gate"])
-        self.assertEqual(gates[0]["command"], "python3 tooling/scripts/desktop-performance-preflight.py")
-        self.assertEqual(gates[1]["command"], "python3 tooling/scripts/desktop-performance-report.py")
+        self.assertEqual([gate["id"] for gate in gates], ["desktop-performance-cohort-gate", "desktop-performance-sampler-gate"])
+        self.assertEqual(gates[0]["command"], "python3 tooling/scripts/desktop-performance-cohort-gate.py")
+        self.assertEqual(gates[1]["command"], "python3 tooling/scripts/desktop-performance-sampler-gate.py")
         self.assertEqual(gates[1]["timeout_seconds"], 42)
 
     def test_explicit_gate_uses_current_catalog_not_stale_plan_entry(self) -> None:
@@ -2819,19 +2819,19 @@ class AcceptanceRunTest(unittest.TestCase):
             worktree = root / "repo"
             worktree.mkdir()
             store = EvidenceStore(root / "artifacts", worktree=worktree)
-            run = store.begin_run("desktop-performance-report-gate", source={})
+            run = store.begin_run("desktop-performance-sampler-gate", source={})
             list_artifact_path = run.run_dir / "evidence/restart-snapshots.json"
             list_artifact_path.parent.mkdir(parents=True)
             list_artifact_path.write_text(
                 json.dumps([{"phase": "after-restart"}]),
                 encoding="utf-8",
             )
-            artifact_path = run.run_dir / "reports/desktop-performance-report-latest.json"
+            artifact_path = run.run_dir / "reports/desktop-performance-sampler-gate-latest.json"
             artifact_path.parent.mkdir(parents=True)
             artifact_path.write_text(
                 json.dumps(
                     {
-                        "artifactKind": "desktop-performance-report",
+                        "artifactKind": "desktop-performance-sampler-gate",
                         "status": "diagnostic incomplete",
                         "completionStatus": "PARTIAL",
                         "proofStatus": "UNPROVEN",
@@ -2859,7 +2859,7 @@ class AcceptanceRunTest(unittest.TestCase):
                         "recommended_review_commands": [
                             {
                                 "purpose": "Re-run final report.",
-                                "command": "python3 tooling/scripts/desktop-performance-report.py",
+                                "command": "python3 tooling/scripts/desktop-performance-sampler-gate.py",
                             }
                         ],
                     }
@@ -2868,18 +2868,18 @@ class AcceptanceRunTest(unittest.TestCase):
             )
             result = module.enrich_result_with_run_artifacts(
                 {
-                    "id": "desktop-performance-report-gate",
-                    "command": "python3 tooling/scripts/desktop-performance-report.py",
+                    "id": "desktop-performance-sampler-gate",
+                    "command": "python3 tooling/scripts/desktop-performance-sampler-gate.py",
                     "status": "failed",
                 },
                 run,
             )
             run.close()
 
-        self.assertEqual(result["sourceArtifactKind"], "desktop-performance-report")
+        self.assertEqual(result["sourceArtifactKind"], "desktop-performance-sampler-gate")
         self.assertEqual(
             result["sourceArtifact"]["path"],
-            "reports/desktop-performance-report-latest.json",
+            "reports/desktop-performance-sampler-gate-latest.json",
         )
         self.assertEqual(result["completionStatus"], "PARTIAL")
         self.assertEqual(result["proofStatus"], "UNPROVEN")
@@ -2898,7 +2898,7 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(result["issue_breakdown"][0]["category"], "matrix")
         self.assertEqual(
             result["recommended_review_commands"][0]["command"],
-            "python3 tooling/scripts/desktop-performance-report.py",
+            "python3 tooling/scripts/desktop-performance-sampler-gate.py",
         )
 
     def test_build_run_report_marks_failed_run_unproven(self) -> None:
@@ -2911,11 +2911,11 @@ class AcceptanceRunTest(unittest.TestCase):
                     "status": "passed",
                 },
                 {
-                    "id": "desktop-performance-report-gate",
+                    "id": "desktop-performance-sampler-gate",
                     "status": "failed",
                     "reason": "runtime evidence missing",
-                    "sourceArtifact": "tooling/acceptance/reports/desktop-performance-report-latest.json",
-                    "sourceArtifactKind": "desktop-performance-report",
+                    "sourceArtifact": "tooling/acceptance/reports/desktop-performance-sampler-gate-latest.json",
+                    "sourceArtifactKind": "desktop-performance-sampler-gate",
                     "sourcePhase": "P0c",
                     "sourceBom": ["BOM-GATE-02"],
                     "sourceSpec": ["SPEC-GATE-02"],
@@ -2938,7 +2938,7 @@ class AcceptanceRunTest(unittest.TestCase):
                     "recommended_review_commands": [
                         {
                             "purpose": "Re-run final report.",
-                            "command": "python3 tooling/scripts/desktop-performance-report.py",
+                            "command": "python3 tooling/scripts/desktop-performance-sampler-gate.py",
                         }
                     ],
                 },
@@ -2970,7 +2970,7 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(report["results"][1]["artifactKind"], "acceptance-gate-result")
         self.assertEqual(
             report["results"][1]["artifactPath"],
-            "tooling/acceptance/reports/desktop-performance-report-latest.json",
+            "tooling/acceptance/reports/desktop-performance-sampler-gate-latest.json",
         )
         self.assertEqual(report["results"][1]["traceability"]["status"], "complete")
         self.assertEqual(report["results"][1]["traceability"]["sourcePhase"], "P0c")
@@ -2981,12 +2981,12 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(report["sourceSpec"], ["SPEC-GATE-02"])
         self.assertEqual(report["sourceGates"], ["Final report must fail closed until runtime evidence is proven"])
         self.assertEqual(report["issue_breakdown"][0]["category"], "matrix")
-        self.assertEqual(report["issue_breakdown"][0]["acceptanceGateId"], "desktop-performance-report-gate")
+        self.assertEqual(report["issue_breakdown"][0]["acceptanceGateId"], "desktop-performance-sampler-gate")
         self.assertEqual(
             report["issue_breakdown"][0]["sourceArtifact"],
-            "tooling/acceptance/reports/desktop-performance-report-latest.json",
+            "tooling/acceptance/reports/desktop-performance-sampler-gate-latest.json",
         )
-        self.assertEqual(report["issue_breakdown"][0]["sourceArtifactKind"], "desktop-performance-report")
+        self.assertEqual(report["issue_breakdown"][0]["sourceArtifactKind"], "desktop-performance-sampler-gate")
         self.assertEqual(report["issue_breakdown"][0]["sourcePhase"], "P0c")
         self.assertEqual(report["issue_breakdown"][0]["sourceBom"], ["BOM-GATE-02"])
         self.assertEqual(report["issue_breakdown"][0]["sourceSpec"], ["SPEC-GATE-02"])
@@ -2998,7 +2998,7 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(report["issue_breakdown"][0]["evidenceDetails"][0]["reason"], "connection refused")
         self.assertEqual(
             report["recommended_review_commands"][0]["command"],
-            "python3 tooling/scripts/desktop-performance-report.py",
+            "python3 tooling/scripts/desktop-performance-sampler-gate.py",
         )
 
     def test_build_run_report_keeps_empty_and_dry_run_unproven(self) -> None:
@@ -3119,8 +3119,11 @@ class AcceptanceRunTest(unittest.TestCase):
                     ],
                     "recommended_review_commands": [
                         {
-                            "purpose": "Run the live Gateway -> Station telemetry gate.",
-                            "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
+                            "purpose": "Query Station telemetry into an explicit Dev/CI mirror.",
+                            "command": (
+                                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                                "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+                            ),
                         }
                     ],
                 },
@@ -3164,7 +3167,10 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(report["issueBreakdown"], report["issue_breakdown"])
         self.assertEqual(
             report["recommended_review_commands"][0]["command"],
-            "python3 tooling/scripts/desktop-telemetry-live-gate.py",
+            (
+                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+            ),
         )
         self.assertEqual(report["recommendedReviewCommands"], report["recommended_review_commands"])
 
@@ -3218,7 +3224,7 @@ class AcceptanceRunTest(unittest.TestCase):
             "tooling/acceptance/plans/desktop-performance-phase0.json",
             [
                 {
-                    "id": "desktop-performance-preflight-gate",
+                    "id": "desktop-performance-matrix-gate",
                     "status": "dry-run",
                 }
             ],

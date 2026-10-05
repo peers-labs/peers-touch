@@ -24,7 +24,7 @@ For those, follow:
 - `subserver-standard.md`
 - `go-standards.md`
 - `lib-usage.md`
-- `../architecture/boundaries/station-desktop-scope-boundary.md`
+- `../architecture/platform/station-desktop-boundary.md`
 
 ---
 
@@ -192,7 +192,7 @@ Related examples:
 Detailed cross-system ownership is defined in:
 
 - `../global/architecture.md`
-- `../architecture/boundaries/station-desktop-scope-boundary.md`
+- `../architecture/platform/station-desktop-boundary.md`
 
 ---
 
@@ -209,4 +209,4 @@ If you are working on Station, continue with:
 If you are resolving cross-end ownership:
 
 - [Project Architecture](../global/architecture.md)
-- [Station/Desktop Scope Boundary](../architecture/boundaries/station-desktop-scope-boundary.md)
+- [Station/Desktop Scope Boundary](../architecture/platform/station-desktop-boundary.md)

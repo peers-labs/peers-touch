@@ -736,7 +736,7 @@ def main() -> int:
         "artifactKind": "agent-native-capability-gate",
         "phase": "agent-phase2-native",
         "bom": "agent-phase2-native-current-worktree",
-        "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+        "spec": "docs/architecture/domains/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
         "gate": gate_id,
         "capability": capability,
         "gateId": gate_id,

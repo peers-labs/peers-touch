@@ -218,7 +218,7 @@ export const GroupMemberSchema: GenMessage<GroupMember> = /*@__PURE__*/
  * 群消息
  *
  * Group chat is end-to-end encrypted under the Sender Keys protocol
- * (see peers-touch/docs/architecture/encryption/README.md).
+ * (see peers-touch/docs/architecture/domains/chat/encryption/README.md).
  * `encrypted_payload` carries the wire-encoded `GroupCiphertext`
  * (defined below) and is the ONLY source of message body for new
  * messages. Station treats it as opaque bytes -- it does not, and

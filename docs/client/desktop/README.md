@@ -19,7 +19,7 @@
 
 Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关系：
 
-- [../../architecture/runtime/desktop-runtime-architecture.md](../../architecture/runtime/desktop-runtime-architecture.md)
+- [../../architecture/platform/client/desktop/runtime.md](../../architecture/platform/client/desktop/runtime.md)
 
 它在第 11 节明确指出：`desktop-web` 内部的契约归 `runtime-projections.md`，本文不重复定义。
 
@@ -41,7 +41,7 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 ## 产品原型
 
 - [prototype/chat/私聊与群聊系统原型 v1.0/readme.md](./prototype/chat/私聊与群聊系统原型%20v1.0/readme.md) — 私聊 / 群聊系统交互原型
-- 语音 / 视频通话原型已迁入统一原型工作区：见 [原型总账](../../architecture/prototypes/README.md) 与 [realtime/prototype/README.md](../../architecture/realtime/prototype/README.md)
+- 语音 / 视频通话原型已迁入统一原型工作区：见 [原型总账](../../architecture/engineering/prototypes/README.md) 与 [realtime/prototype/README.md](../../architecture/domains/chat/calling/prototype/README.md)
 
 ## 跨端通用 UX
 

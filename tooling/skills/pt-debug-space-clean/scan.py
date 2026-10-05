@@ -291,10 +291,16 @@ def development_context(home: Path, worktrees: Sequence[Dict[str, Any]]) -> Dict
         if root and workspace_id:
             root_to_workspace[Path(root).resolve()] = str(workspace_id)
 
-    for binding_path in (dev_root / "workspaces").glob("*/workflow/plan-binding.json"):
-        binding = load_json(binding_path)
-        root = binding.get("canonicalRoot")
-        workspace_id = binding.get("workspaceId")
+    ledger = load_json(dev_root / "plan-mounts/ledger.json")
+    live_mount_ids = set(
+        (ledger.get("liveMountsByWorkspace") or {}).values()
+    )
+    for mount_id in live_mount_ids:
+        mount = load_json(
+            dev_root / "plan-mounts/mounts" / f"{mount_id}.json"
+        )
+        root = mount.get("canonicalRoot")
+        workspace_id = mount.get("workspaceId")
         if root and workspace_id:
             root_to_workspace[Path(root).resolve()] = str(workspace_id)
 

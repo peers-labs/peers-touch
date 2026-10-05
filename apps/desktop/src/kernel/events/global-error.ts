@@ -7,7 +7,7 @@ window.addEventListener('error', (e) => {
     message: e.message,
     filename: e.filename,
     lineno: e.lineno,
-    // Preserve stack when available (browser error event may carry it on `error`).
+    // Preserve the embedded WebView stack when the event carries an Error.
     error: err instanceof Error ? { message: err.message, stack: err.stack } : undefined,
   });
 });

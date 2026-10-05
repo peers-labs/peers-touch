@@ -11,8 +11,7 @@ import {
   repoRoot,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
-import { loadPlanPackage } from '../plan/plan-package.mjs';
-import { resolveWorkspacePlanBinding } from '../plan/workspace-plan-binding.mjs';
+import { resolvePlanExecution } from '../plan/plan-mount.mjs';
 import {
   ActiveWorkError,
   clearActiveWorkRecord,
@@ -116,31 +115,33 @@ function currentDeclaration(options, workspaceId, dependencies) {
   return declaration;
 }
 
-function expectedTaskStatus(planStatus) {
-  if (planStatus === 'active') return 'in_progress';
-  if (planStatus === 'blocked') return 'blocked';
-  if (planStatus === 'completed') return 'done';
-  return null;
-}
-
 function assertOwnerAgreement({
-  binding,
   declaration,
+  execution,
   head,
-  planPackage,
   task,
   taskSlice,
   workspaceId,
 }) {
-  const expectedStatus = expectedTaskStatus(planPackage.manifest.status);
   const mismatches = {};
   for (const [field, expected, actual] of [
     ['workspaceId', workspaceId, declaration.workspaceId],
-    ['planId', binding.planId, declaration.planId],
-    ['planPath', binding.planPath, declaration.planPath],
-    ['taskId', declaration.taskId, task?.id],
-    ['taskStatus', expectedStatus, task?.status],
-    ['branch', planPackage.manifest.binding.branch, declaration.branch],
+    ['planId', execution.mount.planId, declaration.planId],
+    ['planPath', execution.mount.planPath, declaration.planPath],
+    [
+      'planVersionDigest',
+      execution.mount.planVersionDigest,
+      declaration.planVersionDigest,
+    ],
+    ['mountId', execution.mount.mountId, declaration.mountId],
+    ['runId', execution.run.runId, declaration.runId],
+    ['taskId', execution.run.currentTaskId, declaration.taskId],
+    ['taskStatus', 'in_progress', task?.state],
+    [
+      'branch',
+      execution.snapshot.executionBinding.branch,
+      declaration.branch,
+    ],
     ['sourceHead', head, declaration.sourceHead],
     ['journeyId', taskSlice?.journeyId, declaration.journeyId],
   ]) {
@@ -155,7 +156,7 @@ function assertOwnerAgreement({
   }
 }
 
-function readSessionState(options, declaration, planPackage, dependencies) {
+function readSessionState(options, declaration, dependencies) {
   try {
     const session = (
       dependencies.statusDevelopmentSession ?? statusDevelopmentSession
@@ -184,66 +185,64 @@ export async function deriveActiveWorkInput(options, dependencies = {}) {
   const workspaceId =
     dependencies.workspaceId ?? workspaceIdForRoot(workspaceRoot);
   const workItemId = requiredIdentifier(options.workItemId, 'workItemId');
-  const binding = await (
-    dependencies.resolveWorkspacePlanBinding ?? resolveWorkspacePlanBinding
+  const execution = await (
+    dependencies.resolvePlanExecution ?? resolvePlanExecution
   )({
     home: options.home,
     repoRoot: workspaceRoot,
   });
-  const planPath = path.resolve(
-    workspaceRoot,
-    ...binding.planPath.split('/'),
-  );
-  const planPackage = await (
-    dependencies.loadPlanPackage ?? loadPlanPackage
-  )(planPath, { repoRoot: workspaceRoot });
   const declaration = currentDeclaration(
     { ...options, workItemId },
     workspaceId,
     dependencies,
   );
-  const task =
-    planPackage.manifest.tasks.find(
-      (candidate) => candidate.id === declaration.taskId,
-    ) ?? null;
-  const taskSlice = task ? planPackage.taskSlices.get(task.id) : null;
+  const currentTaskId = execution.run.currentTaskId;
+  const task = currentTaskId
+    ? execution.run.taskStates[currentTaskId]
+    : null;
+  const taskSlice = currentTaskId
+    ? execution.planPackage.taskSlices.get(currentTaskId)
+    : null;
   const head =
     dependencies.gitHead ??
     gitValue(workspaceRoot, ['rev-parse', 'HEAD'], 'source HEAD');
 
   assertOwnerAgreement({
-    binding,
     declaration,
+    execution,
     head,
-    planPackage,
     task,
     taskSlice,
     workspaceId,
   });
 
   const currentTaskPath = path.posix.join(
-    path.posix.dirname(binding.planPath),
-    task.path,
+    path.posix.dirname(execution.mount.planPath),
+    execution.snapshot.plan.tasks.find(
+      (candidate) => candidate.id === currentTaskId,
+    ).path,
   );
   return {
     workspaceId,
     workItemId,
-    planId: binding.planId,
-    planPath: binding.planPath,
-    planStatus: planPackage.manifest.status,
-    currentTaskId: task.id,
+    mountId: execution.mount.mountId,
+    runId: execution.run.runId,
+    snapshotDigest: execution.snapshot.recordDigest,
+    planId: execution.mount.planId,
+    planPath: execution.mount.planPath,
+    planStatus: execution.run.state,
+    currentTaskId,
     currentTaskPath,
-    taskStatus: task.status,
+    taskStatus: task.state,
     sessionId: declaration.sessionId,
     journeyId: declaration.journeyId,
     devState: readSessionState(
       { ...options, workspaceRoot },
       declaration,
-      planPackage,
       dependencies,
     ),
     branch: declaration.branch,
-    initialHead: planPackage.manifest.binding.initialHead,
+    initialHead: execution.snapshot.executionBinding.initialHead,
     expectedHead: declaration.sourceHead,
   };
 }

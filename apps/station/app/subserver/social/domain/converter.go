@@ -394,7 +394,7 @@ func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
 //
 // The id stored in the DB is itself a self-describing OSS Content
 // Identifier (`oss://{origin}/{key}` — see
-// `docs/architecture/oss/file-storage.md`). The CID is therefore both
+// `docs/architecture/shared/object-storage.md`). The CID is therefore both
 // the canonical handle AND a directly-fetchable URL (the OSS subserver
 // resolves `cid → bytes` via `/api/v1/oss/file?cid=...`). We mirror it
 // into the `Url` field so clients only need to look at one field; the

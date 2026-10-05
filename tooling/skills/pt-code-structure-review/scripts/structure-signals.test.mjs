@@ -7,8 +7,28 @@ import {
   isGeneratedSource,
   isReviewableSource,
   parseArguments,
+  readStdinText,
   StructureSignalError,
 } from './structure-signals.mjs';
+
+test('switches inherited stdin to blocking mode before synchronous reads', () => {
+  let blocking = null;
+  const stream = {
+    _handle: {
+      setBlocking(value) {
+        blocking = value;
+      },
+    },
+  };
+  const text = readStdinText(stream, (descriptor, encoding) => {
+    assert.equal(descriptor, 0);
+    assert.equal(encoding, 'utf8');
+    assert.equal(blocking, true);
+    return 'tooling/scripts/check.py\n';
+  });
+
+  assert.equal(text, 'tooling/scripts/check.py\n');
+});
 
 test('classifies authored and generated source paths deterministically', () => {
   assert.equal(isReviewableSource('apps/station/app/service/member.go'), true);

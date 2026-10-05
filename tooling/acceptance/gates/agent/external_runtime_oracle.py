@@ -17,8 +17,8 @@ EXPECTED_ASSERTIONS = frozenset(
         "resumeUnavailableTyped",
         "bindingPreservedBeforeConfirmation",
         "nativeLocalizedConfirmReset",
-        "browserLocalizedConfirmReset",
-        "browserOwnsNoExternalProcess",
+        "secondaryLocalizedConfirmReset",
+        "secondaryOwnsNoExternalProcess",
         "destructiveConfirmationVisible",
         "resetAdvancedExactlyOneEpoch",
         "concurrentResetSerialized",
@@ -99,12 +99,12 @@ def evaluate_external_runtime_capture(
         restart_turn.get("binding"),
         "restart binding",
     )
-    browser_failure = _mapping(
-        capture.get("browserFailure"),
-        "browser failure",
+    secondary_failure = _mapping(
+        capture.get("secondaryFailure"),
+        "secondary failure",
     )
-    failure_before = _mapping(browser_failure.get("before"), "failure before")
-    failure_after = _mapping(browser_failure.get("after"), "failure after")
+    failure_before = _mapping(secondary_failure.get("before"), "failure before")
+    failure_after = _mapping(secondary_failure.get("after"), "failure after")
     failure_before_binding = _binding(
         failure_before.get("runtime_binding"),
         "failure binding before",
@@ -113,11 +113,11 @@ def evaluate_external_runtime_capture(
         failure_after.get("runtime_binding"),
         "failure binding after",
     )
-    browser_receiver = _mapping(
-        browser_failure.get("receiver"),
-        "browser receiver",
+    secondary_receiver = _mapping(
+        secondary_failure.get("receiver"),
+        "secondary receiver",
     )
-    failed_turn = _mapping(browser_failure.get("turn"), "failed Turn")
+    failed_turn = _mapping(secondary_failure.get("turn"), "failed Turn")
     failed_assistant = _mapping(
         failed_turn.get("assistant"),
         "failed Assistant",
@@ -206,12 +206,12 @@ def evaluate_external_runtime_capture(
         and item.get("runtime_id") == "external-agent"
     ]
     local_before = _mapping(
-        browser_failure.get("localActivityBefore"),
-        "browser local activity before",
+        secondary_failure.get("localActivityBefore"),
+        "secondary local activity before",
     )
     local_after = _mapping(
-        browser_failure.get("localActivityAfter"),
-        "browser local activity after",
+        secondary_failure.get("localActivityAfter"),
+        "secondary local activity after",
     )
 
     old_tuple = (
@@ -282,12 +282,12 @@ def evaluate_external_runtime_capture(
             and restart_binding.get("runtime_home_ref")
             == primary_start_binding.get("runtime_home_ref"),
         "resumeUnavailableTyped":
-            browser_receiver.get("errorType") == "RUNTIME_RESUME_UNAVAILABLE"
-            and browser_receiver.get("localeKey")
+            secondary_receiver.get("errorType") == "RUNTIME_RESUME_UNAVAILABLE"
+            and secondary_receiver.get("localeKey")
             == "agent.errors.resumeUnavailable"
-            and browser_receiver.get("retryable") is True
-            and browser_receiver.get("terminal") is True
-            and browser_receiver.get("resolutionType") == "confirmReset"
+            and secondary_receiver.get("retryable") is True
+            and secondary_receiver.get("terminal") is True
+            and secondary_receiver.get("resolutionType") == "confirmReset"
             and set(failed_details)
             == {"runtime_profile_id", "reason_code"},
         "bindingPreservedBeforeConfirmation":
@@ -301,14 +301,14 @@ def evaluate_external_runtime_capture(
             == native_receiver.get("expectedRecoveryText")
             and native_receiver.get("errorText")
             == native_receiver.get("expectedErrorText"),
-        "browserLocalizedConfirmReset":
-            browser_receiver.get("visible") is True
-            and browser_receiver.get("locale") == "zh-CN"
-            and browser_receiver.get("recoveryText")
-            == browser_receiver.get("expectedRecoveryText")
-            and browser_receiver.get("errorText")
-            == browser_receiver.get("expectedErrorText"),
-        "browserOwnsNoExternalProcess":
+        "secondaryLocalizedConfirmReset":
+            secondary_receiver.get("visible") is True
+            and secondary_receiver.get("locale") == "zh-CN"
+            and secondary_receiver.get("recoveryText")
+            == secondary_receiver.get("expectedRecoveryText")
+            and secondary_receiver.get("errorText")
+            == secondary_receiver.get("expectedErrorText"),
+        "secondaryOwnsNoExternalProcess":
             local_before.get("owner") == "desktop-rust"
             and local_after.get("owner") == "desktop-rust"
             and _counter_delta(local_before, local_after, "processes_started") == 0

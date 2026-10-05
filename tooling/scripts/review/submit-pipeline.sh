@@ -14,10 +14,11 @@ fi
 
 usage() {
   cat <<'USAGE'
-Usage: submit-pipeline.sh --session <session.json> [--base <base-ref>] [--range <git-range>] [--skip-ci-gates]
+Usage: submit-pipeline.sh [--session <session.json>] [--base <base-ref>] [--range <git-range>] [--skip-ci-gates]
 
 Runs the submit-time review pipeline before creating or updating a PR/MR.
 Default base: origin/master when available, otherwise master.
+Tracked work requires --session. Standalone work omits it.
 USAGE
 }
 
@@ -56,11 +57,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$session_path" ]]; then
-  echo "submit-pipeline: ACCEPTANCE_SESSION_REQUIRED" >&2
-  exit 2
-fi
-
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
@@ -81,12 +77,43 @@ if ! git diff --name-only "$diff_range" -- >/dev/null; then
 fi
 
 scope_plan="$(mktemp)"
-trap 'rm -f "$scope_plan"' EXIT
-python3 tooling/scripts/acceptance-plan.py \
-  --root tooling/acceptance \
-  --active-plan \
-  --completion \
-  --output "$scope_plan" >/dev/null
+plan_resolution="$(mktemp)"
+trap 'rm -f "$scope_plan" "$plan_resolution"' EXIT
+python3 tooling/scripts/execution-plan.py \
+  --require-complete \
+  --allow-untracked \
+  > "$plan_resolution"
+tracked="$(
+  python3 - "$plan_resolution" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    result = json.load(handle)
+print("1" if result.get("tracked") is True else "0")
+PY
+)"
+if [[ "$tracked" == "1" && -z "$session_path" ]]; then
+  echo "submit-pipeline: ACCEPTANCE_SESSION_REQUIRED" >&2
+  exit 2
+fi
+if [[ "$tracked" == "0" && -n "$session_path" ]]; then
+  echo "submit-pipeline: STANDALONE_SESSION_FORBIDDEN" >&2
+  exit 2
+fi
+
+if [[ "$tracked" == "1" ]]; then
+  python3 tooling/scripts/acceptance-plan.py \
+    --root tooling/acceptance \
+    --active-plan \
+    --completion \
+    --output "$scope_plan" >/dev/null
+else
+  python3 tooling/scripts/acceptance-plan.py \
+    --root tooling/acceptance \
+    --range "$diff_range" \
+    --output "$scope_plan" >/dev/null
+fi
 infra_only="$(
   python3 - "$scope_plan" <<'PY'
 import json
@@ -102,11 +129,12 @@ PY
 echo "Submit-Time Review Pipeline"
 echo "==========================="
 echo "range: $diff_range"
+echo "mode: $([[ "$tracked" == "1" ]] && echo tracked || echo standalone)"
 echo "acceptance_scope: $([[ "$infra_only" == "1" ]] && echo infra || echo business-or-mixed)"
 
 echo
 echo "== Execution plan completion =="
-python3 tooling/scripts/execution-plan.py --require-complete
+cat "$plan_resolution"
 
 echo
 echo "== Quality evidence =="
@@ -124,11 +152,20 @@ else
   make acceptance-validate
 fi
 make acceptance-coverage-report
-python3 tooling/scripts/acceptance-plan.py \
-  --active-plan \
-  --completion
+if [[ "$tracked" == "1" ]]; then
+  python3 tooling/scripts/acceptance-plan.py \
+    --active-plan \
+    --completion
+else
+  python3 tooling/scripts/acceptance-plan.py \
+    --range "$diff_range"
+fi
 
-if [[ "$skip_ci_gates" -eq 1 ]]; then
+if [[ "$tracked" == "0" ]]; then
+  echo
+  echo "== Acceptance CI gates =="
+  echo "[NOT RUN/UNPROVEN] standalone PR has no Development Session"
+elif [[ "$skip_ci_gates" -eq 1 ]]; then
   echo
   echo "== Acceptance CI gates =="
   echo "[SKIP] --skip-ci-gates was provided"
@@ -141,17 +178,23 @@ fi
 
 echo
 echo "== Acceptance gap detector =="
-python3 tooling/scripts/acceptance-gap-detect.py \
-  --claim "Change range $diff_range is ready for PR review" \
-  --range "$diff_range" \
-  --plan "$scope_plan" \
-  --session "$session_path"
+if [[ "$tracked" == "1" ]]; then
+  python3 tooling/scripts/acceptance-gap-detect.py \
+    --claim "Change range $diff_range is ready for PR review" \
+    --range "$diff_range" \
+    --plan "$scope_plan" \
+    --session "$session_path"
+else
+  echo "[NOT RUN/UNPROVEN] standalone PR has no Development Session"
+fi
 
 echo
 echo "submit-pipeline: pass"
 echo "quality evidence: gate=quality-evidence role=quality-markdown"
 echo "quality evidence inspect: python3 tooling/scripts/acceptance-artifact.py cat --gate quality-evidence --role quality-markdown"
-if [[ "$skip_ci_gates" -eq 1 ]]; then
+if [[ "$tracked" == "0" ]]; then
+  echo "acceptance report: NOT RUN/UNPROVEN (standalone PR)"
+elif [[ "$skip_ci_gates" -eq 1 ]]; then
   echo "acceptance report: NOT RUN/UNPROVEN (--skip-ci-gates; no artifact from this invocation)"
 else
   echo "acceptance report: gate=acceptance-report role=report"

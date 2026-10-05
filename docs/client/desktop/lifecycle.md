@@ -15,10 +15,10 @@ Desktop is not a single React page. It is a multi-runtime client made of:
 
 This document defines the user-visible and runtime lifecycle across those units. It does not redefine:
 
-- Cross-process topology, owned by [`../../architecture/runtime/desktop-runtime-architecture.md`](../../architecture/runtime/desktop-runtime-architecture.md).
+- Cross-process topology, owned by [`../../architecture/platform/client/desktop/runtime.md`](../../architecture/platform/client/desktop/runtime.md).
 - Desktop identity state machine, owned by [`identity-lifecycle.md`](./identity-lifecycle.md).
 - `desktop-web` kernel contracts, owned by [`runtime-projections.md`](./runtime-projections.md).
-- Access gate architecture, owned by [`../../architecture/access-gates/station-access-gate-architecture.md`](../../architecture/access-gates/station-access-gate-architecture.md).
+- Access gate architecture, owned by [`../../architecture/platform/station/access/station-access-gate-architecture.md`](../../architecture/platform/station/access/station-access-gate-architecture.md).
 
 ---
 

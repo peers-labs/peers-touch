@@ -31,9 +31,9 @@ EXPECTED_ROLES = frozenset(
 )
 PLATFORM_BY_ROW = {
     "foundation-desktop-direct": "desktop_app",
-    "foundation-browser-direct": "browser",
+    "foundation-secondary-direct": "secondary",
     "foundation-z-desktop-external-runtime": "desktop_app",
-    "foundation-z-browser-external-runtime": "browser",
+    "foundation-z-secondary-external-runtime": "secondary",
 }
 REQUIRED_ASSERTIONS = {
     "AS-F01": frozenset(
@@ -328,7 +328,7 @@ REQUIRED_ASSERTIONS = {
             "deniedLeaseObserved",
             "localizedRecoveryVisible",
             "permissionDetailOpened",
-            "browserCapabilityIsolation",
+            "secondaryCapabilityIsolation",
             "zeroToolCallPersistence",
             "zeroLocalExecution",
             "zeroProviderContinuation",
@@ -510,15 +510,15 @@ class DirectRuntimeFoundationAdapter:
             },
         )
 
-    def observe_browser(
+    def observe_secondary(
         self,
         runtime_tuple: FoundationTuple,
     ) -> FoundationTupleObservation:
         return self._observe(
             runtime_tuple,
             expected_rows={
-                "foundation-browser-direct",
-                "foundation-z-browser-external-runtime",
+                "foundation-secondary-direct",
+                "foundation-z-secondary-external-runtime",
             },
         )
 

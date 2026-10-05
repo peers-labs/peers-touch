@@ -694,6 +694,13 @@ class RouteRangeTests(unittest.TestCase):
                     source,
                 )
 
+    def test_knowledge_match_disables_git_path_quoting(self) -> None:
+        source = KNOWLEDGE_SCRIPT.read_text(encoding="utf-8")
+        self.assertGreaterEqual(
+            source.count("git -c core.quotePath=false"),
+            3,
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

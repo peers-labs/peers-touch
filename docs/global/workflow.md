@@ -22,25 +22,24 @@ bypass the workflow or create another worktree.
 
 For a TRAE multi-root workspace, install with
 `make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>`. The
-descriptor's first folder hosts the only managed bootstrap, but it never
-selects execution authority. Installation requires machine-wide workflow
-quiescence and hard-deletes only the old conversation and workflow-action
-stores; there is no compatibility reader or migration.
+selected source root, descriptor bootstrap root, and existing TRAE-participating
+roots receive equivalent ingress to one canonical Kernel; Hook location never
+selects execution authority. Normal installation is non-destructive and does
+not require machine-wide workflow quiescence. Explicit `skills-hard-cut` and
+`skills-gc` own separately authorized global-idle cleanup.
 
 | Promise ID | What must be true | Normal recovery |
 |---|---|---|
 | `dev.integration.installed` | The selected host has the exact current Skill and hook projection, callback proof, and install receipt. | Run `make skills IDE=<host>` at a durable boundary. |
-| `dev.plan.binding` | This worktree resolves one current Plan generation whose workspace and branch match current source. | Bind generation 1, or explicitly advance a completed and quiescent generation. |
+| `dev.plan.mount` | Tracked work resolves one current Project Ledger mount, immutable Execution Plan snapshot, and mutable Execution Run; explicit standalone work remains unmounted. | Mount the frozen Plan Version for tracked work, resolve a typed identity failure, or preserve the user's explicit no-Plan standalone policy. |
 | `dev.workflow.current` | Plan, current Task, Development Session, declaration, active-work, and reduced Action Receipt state agree. | Repair the typed owner mismatch; never edit machine state directly. |
 | `dev.review.current` | Active work has no failed or stale review; completed work has a current independent `PASS`. | Run a fresh independent Completion Review after source or obligation drift. |
-| `dev.server.live` | The machine-wide Peers Dev endpoint is live and exposes compatible source freshness. | Run `make dev-ui`; stop a stale incompatible listener first. |
-| `dev.docs.executable` | This guide and `apps/dev/README.md` declare each public promise exactly once. | Update code and both guides in the same change. |
+| `dev.docs.executable` | This guide declares each public Workflow Doctor promise exactly once. | Update the executable contract and this guide in the same change. |
 
 <!-- workflow-doctor:dev.integration.installed -->
-<!-- workflow-doctor:dev.plan.binding -->
+<!-- workflow-doctor:dev.plan.mount -->
 <!-- workflow-doctor:dev.workflow.current -->
 <!-- workflow-doctor:dev.review.current -->
-<!-- workflow-doctor:dev.server.live -->
 <!-- workflow-doctor:dev.docs.executable -->
 
 ## 1) Read before coding
@@ -85,31 +84,69 @@ Default rule:
 Cross-worktree comparison is allowed for investigation, conflict analysis, and
 PR review, but write scope remains bound to the active worktree.
 
-Agents must not create a worktree merely to bypass Plan binding, lifecycle, or
+Agents must not create a worktree merely to bypass Plan mount, lifecycle, or
 resource conflicts. A worktree is created only when the user explicitly
 chooses isolation or concurrency.
 
-Before an explicitly authorized worktree removal, stop its runtime resources,
-release its declaration, and run `make env-unregister` from that worktree.
-Never delete a machine registry row by hand.
-
-Plan binding is immutable within one generation:
+Before an explicitly authorized worktree removal, stop its runtime resources
+and run the coordinated close with `ENVIRONMENT_POLICY=unregister`. Never
+release individual records or delete a machine registry row by hand:
 
 ```bash
-make plan-bind PLAN=<package-plan.md>
-make plan-binding
+make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> \
+  CLOSE_REASON=<completed|cancelled|owner-abandon> \
+  ENVIRONMENT_POLICY=unregister [MOUNT=<mount-id>]
 ```
 
-After that Plan is `completed` and its declaration, active-work projection, and
-runtime leases are released, the same workspace may explicitly advance:
+For tracked work, Plan source is frozen independently from execution placement.
+An explicit owner action mounts it to one selected execution worktree:
 
 ```bash
-make plan-binding-advance \
-  PLAN=<next-package-plan.md> \
-  EXPECTED_GENERATION=<current-generation>
+make plan-mount PLAN=<plan-version.md>
+make plan-mount-status
 ```
 
-There is no unbind or discovery-based replacement path.
+The worktree remains occupied until the run completes, is cancelled, or the
+owner explicitly unmounts it:
+
+```bash
+make plan-unmount MOUNT=<mount-id> \
+  REASON=<completed|cancelled|owner-unmount>
+```
+
+The command requires the exact mount owner. Agents cannot amend the frozen
+version, change its execution worktree, or unmount an unfinished run without
+explicit `owner-unmount` authority. Repository discovery never replaces a
+mount. A deleted worktree is recoverable only through exact
+`workspaceId + mountId + mountedBy` identity.
+
+### Explicit standalone no-Plan work
+
+When the user explicitly says `no plan`, `不要 plan`, or otherwise directs the
+Agent to execute the current task without creating a Plan, that instruction is
+the Plan policy for the request:
+
+- do not invoke Plan modeling or persistence;
+- do not create a Plan Version, Task Slice, PlanMount, ExecutionPlanSnapshot,
+  ExecutionRun, Development Session, active-work record, or Context Anchor;
+- do not convert repository size, test requirements, or delivery tooling into
+  an implicit reason to create a Plan;
+- publish the normal untracked Development declaration before the first write,
+  preserve unrelated dirty files, run focused verification and review, and
+  deliver as a standalone change;
+- keep formal Acceptance explicitly `NOT RUN/UNPROVEN` when standalone
+  execution has no source-bound Acceptance session.
+
+The standalone lifecycle is:
+
+```text
+bind -> declare -> implement -> focused verification -> review
+     -> standalone delivery -> release
+```
+
+If accepted product or architecture sources are insufficient to execute safely,
+report the exact missing decision. Do not manufacture a Plan to satisfy the
+workflow.
 
 ---
 
@@ -138,8 +175,8 @@ Rules:
 - Use `make dev-status-all` to inspect all worktree declarations.
 - A declaration is public intent, not a Profile/Station lease or operation
   authorization.
-- Completion, cancellation and abandonment require
-  `make dev-release WORK_ITEM=<id>`.
+- Completion, cancellation and abandonment require `make dev-close`; a
+  declaration release alone is not complete cleanup.
 
 For a runtime-bearing Task, the Agent gathers one `ModuleImpact` from each
 affected module and prepares one combined resource plan before acquisition:
@@ -163,7 +200,7 @@ attach to the prepared manifest. They never create accounts, launch clients,
 deploy services, or release resources.
 
 Architecture source:
-`docs/architecture/development-workflow/README.md`.
+`docs/architecture/engineering/development-workflow/README.md`.
 
 ### Tracked Task Command Path
 
@@ -187,19 +224,30 @@ make completion-review-prepare WORK_ITEM=<stable-id> SCOPE=<task|plan>
 make completion-review-submit \
   REVIEW=<review-id> \
   VERDICT=PASS \
-  ASSESSMENT=<owner-only-json-file>
-make dev-release WORK_ITEM=<stable-id>
+  ASSESSMENT=<owner-only-json-file> \
+  CAPABILITY=<reviewer-capability-json-file>
+make dev-close WORK_ITEM=<stable-id> MODE=tracked \
+  CLOSE_REASON=completed ENVIRONMENT_POLICY=retain MOUNT=<mount-id>
 ```
 
-`completion-review-prepare` resolves the exact current OWNER Action Receipt and
-creates the REVIEWER assignment recorded by the immutable request.
-`completion-review-submit` accepts only a live child projection with that exact
-assignment. Stale, expired, terminal, unassigned, wrong-parent, and historical
-bindings never participate in selection.
+`completion-review-prepare` binds the current successful Development Session,
+source, obligations, candidate Plan, and evidence into an immutable request
+and returns one owner-private reviewer capability path.
+`completion-review-submit` accepts only that exact capability and derives the
+delegation digest and assessment proof internally. This proves request-scoped
+delegation, not reviewer independence; Dev Workflow must launch the independent
+reviewer. Completion Review does not depend on an IDE Hook, Action Receipt,
+Workflow Binding, or caller-provided identity.
 
 `make plan-advance` closes or parks a Task only after the required journal-backed
 Session and current Completion Review pass. `make plan-reopen` reopens the
 earliest completed closure invalidated by source or obligation drift.
+
+`make plan-cancel PLAN=<package-plan.md>` is the exact-owner cancellation path.
+After delivery or cancellation, `dev-close` verifies no live lease remains,
+archives the Session, closes active-work, releases the declaration and mount,
+and writes a resumable `DevelopmentCloseReceipt`. New work is not admitted
+while that receipt is `CLOSING` or `BLOCKED`.
 
 ### Development Skill responsibility chain
 
@@ -375,7 +423,7 @@ Rules:
   actor roles, or weakened product assertions to make framework checks pass.
 
 Architecture source:
-`docs/architecture/acceptance-framework/decisions.md` D-12.
+`docs/architecture/engineering/acceptance/decisions.md` D-12.
 
 ---
 
@@ -413,8 +461,10 @@ Acceptance scenarios are selected from product states, receiver outcomes,
 changed failure semantics, and concrete architecture risks. Do not impose a
 generic success/network/timeout/invalid/cancellation matrix on every closure.
 
-Before `FUNCTIONAL_PASS`, do not run coverage, Gap Detector, Completion Auditor,
-cross-platform matrices, submit pipeline, or unrelated broad Gate bundles.
+Before required product `FUNCTIONAL_PASS`, do not run coverage, Gap Detector,
+Completion Auditor `delivery-ready|close-ready`, cross-platform matrices,
+submit pipeline, or unrelated broad Gate bundles. The lifecycle-only
+`implementation-ready` claim remains available during source work.
 
 ---
 
@@ -478,7 +528,8 @@ Only mark task done when:
 - Tests pass
 - Required exact-source Journeys have `FUNCTIONAL_CHECK`
 - Required formal capabilities have `ACCEPTANCE_PROOF`
-- Public resource declaration and runtime leases are released
+- Public resources are closed by `dev-close` and the exact
+  `DevelopmentCloseReceipt` is `CLOSED`
 
 Suggested report format:
 

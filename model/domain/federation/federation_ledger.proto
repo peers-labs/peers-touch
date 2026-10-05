@@ -6,7 +6,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/fed
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Federation Ledger — Core types for the append-only governance ledger.
-// Source of truth: docs/architecture/federation/wire-protocol.md §3-§5
+// Source of truth: docs/architecture/shared/federation/wire-protocol.md §3-§5
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // EventType enumerates all governance actions that can appear in the ledger.

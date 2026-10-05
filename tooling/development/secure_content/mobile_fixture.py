@@ -87,7 +87,7 @@ class MobileProductionFixture:
             return self._secrecy_scan(payload)
         if operation == "cleanup-corpus":
             return self._cleanup_corpus(payload)
-        if operation in {"full-social", "outer-uow", "browser-boundary"}:
+        if operation in {"full-social", "outer-uow"}:
             raise MobileFixtureError(
                 f"{operation} is not a Mobile fixture operation"
             )

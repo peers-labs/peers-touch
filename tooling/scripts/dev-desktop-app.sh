@@ -2,12 +2,8 @@
 # ─────────────────────────────────────────────────────────────
 # dev-desktop-app.sh — Desktop App dev mode (Tauri native window)
 #
-# Starts a complete, independent Desktop App stack:
+# Starts the supported Desktop development stack:
 #   station → desktop-rust (profile=desktop, gateway=:3030) → desktop-app
-#
-# This instance is fully isolated from dev-desktop-web.sh.
-# They run separate Rust BFF processes with separate sessions,
-# so you can log in with different accounts simultaneously.
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -56,7 +52,6 @@ ensure_desktop_vite_ready "$DESKTOP_DIR" "$WEB_PORT" "$GATEWAY_PORT" "$PROFILE"
 
 # ── 3. Desktop Rust BFF (via Tauri — includes App window) ────
 cd "$DESKTOP_DIR"
-export PT_CLIENT_SURFACE=desktop
 ensure_desktop_rust_ready "$DESKTOP_DIR" "$GATEWAY_PORT" "$PROFILE" "$WEB_PORT"
 
 # ── banner ────────────────────────────────────────────────────

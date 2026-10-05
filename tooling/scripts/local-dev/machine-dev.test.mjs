@@ -36,6 +36,7 @@ import {
   selectWorkspaceProfile,
   statusAll,
   unregisterWorkspace,
+  unregisterWorkspaceByIdentity,
   updateWorkspace,
   validateLeaseRequest,
 } from './machine-dev-registry.mjs';
@@ -85,8 +86,6 @@ function profileText({
     `PT_STATION_HEALTH_URL=${stationUrl}/sub-oss/healthz`,
     'PT_DESKTOP_APP_GATEWAY_PORT=3130',
     'PT_DESKTOP_APP_WEB_PORT=3310',
-    'PT_DESKTOP_WEB_GATEWAY_PORT=3131',
-    'PT_DESKTOP_WEB_WEB_PORT=3311',
     'PT_MOBILE_WEB_PORT=5273',
     '',
   ].join('\n');
@@ -498,12 +497,30 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
     const registered = registerWorkspace(registrationOptions(scope));
     const source = inspectGitWorkspace(scope.workspaceA);
     const planPath =
-      'docs/architecture/development-workflow/execution-plans/test/plan.md';
+      'docs/architecture/engineering/development-workflow/execution-plans/test/plan.md';
     const planStatus = {
       planId: 'DWF-RESOURCE-PLAN',
       currentTaskId: 'DWF-RESOURCE-T1',
       workspaceId: registered.workspaceId,
       branch: registered.branch,
+      planVersionDigest: 'a'.repeat(64),
+      mountId: 'mount-machine-dev-test',
+      runId: 'run-machine-dev-test',
+      status: 'active',
+      taskStatuses: {
+        'DWF-RESOURCE-T1': 'in_progress',
+      },
+    };
+    const planExecution = {
+      mount: {
+        planId: planStatus.planId,
+        planPath,
+        planVersionDigest: planStatus.planVersionDigest,
+        mountId: planStatus.mountId,
+      },
+      run: {
+        runId: planStatus.runId,
+      },
     };
     const declaration = startOrUpdateDeclaration({
       home: scope.home,
@@ -523,10 +540,7 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
       planPath,
       taskId: planStatus.currentTaskId,
       planStatus,
-      planBinding: {
-        planId: planStatus.planId,
-        planPath,
-      },
+      planExecution,
     });
     const file = planResourceReceiptPath({
       home: scope.home,
@@ -785,13 +799,16 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       {
         workspaceId: registered.workspaceId,
         workItemId: 'machine-dev-test',
+        mountId: 'mount-machine-dev-test',
+        runId: 'run-machine-dev-test',
+        snapshotDigest: 'a'.repeat(64),
         planId: 'MACHINE-DEV-PLAN',
         planPath:
-          'docs/architecture/local-dev-control-plane/execution-plans/test/plan.md',
+          'docs/architecture/engineering/local-dev/execution-plans/test/plan.md',
         planStatus: 'completed',
         currentTaskId: 'MACHINE-DEV-T1',
         currentTaskPath:
-          'docs/architecture/local-dev-control-plane/execution-plans/test/tasks/MACHINE-DEV-T1.md',
+          'docs/architecture/engineering/local-dev/execution-plans/test/tasks/MACHINE-DEV-T1.md',
         taskStatus: 'done',
         sessionId: 'machine-dev-session',
         journeyId: 'MACHINE-DEV-J01',
@@ -818,6 +835,14 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       expectedRevision: activeWork.revision,
       workItemId: activeWork.workItemId,
     });
+    expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
+      unregisterWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        owner: registered.owner,
+        readLivePlanMountId: () => 'mount-machine-dev-test',
+      }),
+    );
 
     const removed = unregisterWorkspace({
       home: scope.home,
@@ -832,6 +857,31 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       statusAll({ home: scope.home, envRepo: scope.envRepo }).registrations.length,
       0,
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('unregisters a deleted worktree by exact workspace identity', () => {
+  const scope = fixture();
+  try {
+    const registered = registerWorkspace(
+      registrationOptions(scope, {
+        workspaceRoot: scope.workspaceB,
+        slot: 6,
+      }),
+    );
+    rmSync(scope.workspaceB, { recursive: true, force: true });
+
+    const removed = unregisterWorkspaceByIdentity({
+      home: scope.home,
+      workspaceId: registered.workspaceId,
+      owner: registered.owner,
+      now: new Date('2026-10-05T00:00:00.000Z'),
+    });
+
+    assert.equal(removed.workspaceId, registered.workspaceId);
+    assert.equal(removed.unregisteredBy, registered.owner);
   } finally {
     scope.close();
   }

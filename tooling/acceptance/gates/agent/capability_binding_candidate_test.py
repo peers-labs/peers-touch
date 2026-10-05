@@ -360,9 +360,9 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
                 raise AssertionError(f"unexpected Harness method: {method}")
 
         native = Client("native")
-        browser = Client("browser")
+        secondary = Client("secondary")
         adapter = CapabilityBindingRuntimeAdapter(
-            SimpleNamespace(native=native, browser=browser),
+            SimpleNamespace(native=native, secondary=secondary),
             {
                 "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
                 "PT_DEV_PROFILE": "two",
@@ -377,14 +377,14 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
         scenario_call = next(
             payload
             for method, payload in (
-                native.calls + browser.calls
+                native.calls + secondary.calls
             )
             if method == "runCapabilityBindingScenario"
         )
         self.assertEqual(scenario_call["agentName"], "candidate-agent")
         login_accounts = [
             payload["account"]
-            for method, payload in native.calls + browser.calls
+            for method, payload in native.calls + secondary.calls
             if method == "loginWithPassword"
         ]
         self.assertEqual(login_accounts, [ACTOR_ACCOUNT, ACTOR_ACCOUNT])

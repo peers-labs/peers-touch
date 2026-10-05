@@ -86,7 +86,7 @@ and response-body acquisition.
 ## Federation Bootstrap Loop
 
 Federation is the first validation domain for this framework because it crosses
-Station, Dashboard, Desktop gateway, projections, and isolated testnet services.
+Station, Dashboard, Native Desktop, projections, and isolated testnet services.
 This creates a two-way proof:
 
 - Acceptance proves Federation capability by running stable gates against the live `fedp5` environment.
@@ -103,10 +103,8 @@ This creates a two-way proof:
 - `make acceptance-validate DOMAIN=station-dashboard` validates the Station Dashboard managed-domain profile structure.
 - `python3 tooling/scripts/acceptance-validate.py --domain federation --require-proven` additionally requires latest gate evidence; this is what the Federation mutual-validation gate uses.
 - `make acceptance-chat-domain-validation` runs the Messaging Platform contract,
-  Station messaging packages, native selector contract, and Desktop gateway E2E
-  gates before requiring latest evidence for the managed domain profile.
-- `make acceptance-chat-desktop-gateway` requires a running Desktop HTTP gateway
-  and proves the client-owned E2EE create, send, hydrate, and decrypt flow.
+  Station messaging packages, Native onboarding, and Native two-client Gates
+  before requiring latest evidence for the managed domain profile.
 - `make acceptance-station-dashboard-domain-validation` runs the Station Dashboard gates and then requires latest evidence for the managed domain profile.
 - `make acceptance-coverage-report` writes `tooling/acceptance/reports/project-coverage-report.md` and summarizes active, candidate, planned, and not-onboarded domains.
 
@@ -126,7 +124,7 @@ This creates a two-way proof:
 8. Run `make acceptance-report` and include proven / unproven scope in the handoff.
 9. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
 10. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
-11. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+11. For a new product domain, follow `docs/architecture/engineering/acceptance/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
 12. For native Chat journeys, follow
     `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
     observers, source matching, isolated profiles, bounded steps, and composer
@@ -275,8 +273,7 @@ never treats the Foundation Gate as having run.
 ### Agent V2 Foundation Runtime
 
 `agent-v2-kernel-foundation-e2e` consumes the provisioned profile selected by
-`PT_ACCEPTANCE_APPROVED_PROFILE`, with exactly one Native Tauri client and one
-isolated Browser client.
+`PT_ACCEPTANCE_APPROVED_PROFILE`, with two isolated Native Tauri clients.
 `foundation_runtime_client.py` owns their launch, Harness connection, reverse
 shutdown, port checks, and storage cleanup. `foundation_group_one_probe.py`
 expands the reviewed matrix and dispatches the 32 Group 1 tuples by platform,
@@ -291,7 +288,7 @@ python3 tooling/acceptance/gates/agent/foundation_scenario_runner.py --dry-run
 ```
 
 This requires `PT_ACCEPTANCE_RUNTIME_MANIFEST` and the matching active profile.
-It checks manifest/profile inputs, Native/Browser client fields, the startup
+It checks manifest/profile inputs, Native client fields, the startup
 timeout, and required provider-field presence without constructing runtimes or
 proxies, contacting Station, allocating evidence, or producing a candidate.
 An existing manifest may be inspected this way, but the result is not live
@@ -305,7 +302,7 @@ not as point-to-point spot checks. The funnel answers one question per layer:
 
 1. Contract: can acceptance preserve stable targets, source artifacts, and
    `PARTIAL` / `UNPROVEN` metadata before runtime samples are trusted?
-2. Telemetry: can Desktop events flow through Gateway into Station, then return
+2. Telemetry: can Native Desktop events flow through Tauri commands into Station, then return
    through raw query, rollup query, and Dev/CI mirror artifacts?
 3. Runtime: can each runtime cell report an explicit state without one cell
    impersonating another?
@@ -313,9 +310,9 @@ not as point-to-point spot checks. The funnel answers one question per layer:
    without hiding missing evidence?
 
 The runtime layer admits no samples until
-`desktop-performance-cohort-gate.py` proves that browser, dev native, and
-packaged native observations match `desktop-performance-cohort.json`, including
-the actual authenticated actor rather than only the requested profile name.
+`desktop-performance-cohort-gate.py` proves that dev Native and packaged Native
+observations match `desktop-performance-cohort.json`, including the actual
+authenticated actor rather than only the requested profile name.
 
 The original Phase 0 bundle remains available as the pilot construction bundle:
 
@@ -341,8 +338,8 @@ Use the layers as follows:
 | Layer | Plan | Long-term role | Failure meaning |
 |---|---|---|---|
 | Contract | `desktop-performance-contract.json` | Static and source-bound contract gate for stable anchors, runner semantics, templates, and traceability | Acceptance cannot trust runtime samples |
-| Telemetry | `desktop-performance-telemetry.json` | Product telemetry sink gate for Desktop Gateway, Station ingest/query/rollup, local buffer diagnostics, and Station sampler mirror | Metrics are local-only or not queryable from Station |
-| Runtime | `desktop-performance-runtime.json` | Runtime matrix gate for preflight, DOM anchors, runtime-cell observations, and matrix state | Runtime evidence is missing, blocked, or conflated |
+| Telemetry | `desktop-performance-telemetry.json` | Product telemetry sink gate for Native Tauri upload, Station ingest/query/rollup, local buffer diagnostics, and Station sampler mirror | Metrics are local-only or not queryable from Station |
+| Runtime | `desktop-performance-runtime.json` | Native runtime matrix gate for DOM anchors, runtime-cell observations, and matrix state | Runtime evidence is missing, blocked, or conflated |
 | Red-line | `desktop-performance-redline.json` | Merge/readiness judgment gate for sampler evidence, matrix, report, and traceability | Performance conclusion must stay `PARTIAL` / `UNPROVEN` |
 
 Phase-specific scaffolding such as template artifacts may remain inside the

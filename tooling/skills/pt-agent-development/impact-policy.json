@@ -82,7 +82,7 @@
         "desktop-ui-source"
       ],
       "targetSelectors": [
-        "desktop-web"
+        "desktop-native"
       ],
       "journeySelectors": [
         "agent-product-journey"
@@ -158,7 +158,7 @@
     {
       "id": "acceptance-infrastructure",
       "patterns": [
-        "docs/architecture/acceptance-framework/**",
+        "docs/architecture/engineering/acceptance/**",
         "tooling/acceptance/core/**",
         "tooling/acceptance/evidence/**",
         "tooling/acceptance/finalizers/**",
@@ -360,7 +360,7 @@
     {
       "id": "agent-docs",
       "patterns": [
-        "docs/architecture/agent/**",
+        "docs/architecture/domains/agent/**",
         "docs/client/agent/**",
         "packages/prototypes/agent-canvas/**"
       ],

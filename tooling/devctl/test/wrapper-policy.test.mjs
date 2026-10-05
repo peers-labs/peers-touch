@@ -29,8 +29,8 @@ test('migrated development wrappers delegate lifecycle to devctl', () => {
   }
   assert.match(localDev, /DEVCTL := node tooling\/devctl\/index\.mjs/u);
   assert.match(localDev, /station:\n\t@\$\(DEVCTL\) station start/u);
-  assert.match(localDev, /desktop:\n\t@\$\(DEVCTL\) desktop start --mode app/u);
-  assert.match(localDev, /desktop-web:\n\t@\$\(DEVCTL\) desktop start --mode web/u);
+  assert.match(localDev, /desktop:\n\t@\$\(DEVCTL\) desktop start/u);
+  assert.doesNotMatch(localDev, /--mode web/u);
   assert.match(localDev, /status:\n\t@\$\(DEVCTL\) status/u);
   assert.match(powershell, /devctl\\index\.mjs/u);
 });

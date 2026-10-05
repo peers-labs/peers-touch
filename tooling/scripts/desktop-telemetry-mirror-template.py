@@ -16,6 +16,7 @@ from _acceptance_artifacts import artifact_session, explicit_output_path, inspec
 
 PRODUCER_GATE_ID = "desktop-telemetry-mirror-template-gate"
 DEFAULT_OUTPUT = "reports/desktop-performance-mirror-template.json"
+STATION_MIRROR_OUTPUT_PREFIX = "tooling/acceptance/reports/desktop-performance-station-mirror"
 
 
 def utc_now() -> str:
@@ -42,8 +43,12 @@ def build_template(station_url: str, filters: dict[str, Any] | None = None) -> d
             "command": "make desktop",
         },
         {
-            "purpose": "Run the live Gateway -> Station telemetry gate and write the Dev/CI mirror artifact.",
-            "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
+            "purpose": "Query Station telemetry into an explicit Dev/CI mirror.",
+            "command": (
+                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                f"--station-url {station_url} "
+                f"--output-prefix {STATION_MIRROR_OUTPUT_PREFIX}"
+            ),
         },
         {
             "purpose": "Inspect the mirror source artifact diagnostics.",

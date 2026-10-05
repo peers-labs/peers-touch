@@ -14,6 +14,7 @@ pr_template=".github/PULL_REQUEST_TEMPLATE.md"
 review_workflow=".github/workflows/review.yml"
 pr_plan_input="tooling/scripts/review/pr-plan-input.py"
 pr_plan_input_test="tooling/scripts/review/pr-plan-input-test.py"
+execution_plan_test="tooling/scripts/execution-plan-test.py"
 submit_pipeline="tooling/scripts/review/submit-pipeline.sh"
 review_runner="tooling/scripts/review/run.sh"
 gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
@@ -35,6 +36,9 @@ dev_resource_plan_test="tooling/scripts/local-dev/dev-resource-plan.test.mjs"
 dev_session_script="tooling/scripts/local-dev/dev-session.mjs"
 dev_session_store="tooling/scripts/local-dev/dev-session-store.mjs"
 dev_session_test="tooling/scripts/local-dev/dev-session.test.mjs"
+development_close="tooling/scripts/local-dev/development-close.mjs"
+development_close_store="tooling/scripts/local-dev/development-close-store.mjs"
+development_close_test="tooling/scripts/local-dev/development-close.test.mjs"
 planctl_script="tooling/scripts/plan/planctl.mjs"
 acceptance_run="tooling/scripts/acceptance-run.py"
 acceptance_registry="tooling/acceptance/registry.yaml"
@@ -60,13 +64,18 @@ goal_review_rubric="tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md"
 runtime_handoff_skill="tooling/skills/pt-dev-runtime-handoff/SKILL.md"
 defect_closure_skill="tooling/skills/pt-defect-closure/SKILL.md"
 local_dev_env_skill="tooling/skills/pt-local-dev-env/SKILL.md"
+completion_auditor_skill="tooling/skills/pt-completion-auditor/SKILL.md"
+completion_audit_script="tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs"
+completion_audit_schema="tooling/skills/pt-completion-auditor/scripts/completion-audit-schema.mjs"
+completion_audit_test="tooling/skills/pt-completion-auditor/scripts/completion-audit.test.mjs"
 agent_development_skill="tooling/skills/pt-agent-development/SKILL.md"
 agent_impact_policy="tooling/skills/pt-agent-development/impact-policy.json"
 agent_impact_test="tooling/skills/pt-agent-development/scripts/test_impact.py"
 trae_host_adapter="tooling/skills/pt-trae-host-adapter/SKILL.md"
 cursor_host_adapter="tooling/skills/pt-cursor-host-adapter/SKILL.md"
 codex_host_adapter="tooling/skills/pt-codex-host-adapter/SKILL.md"
-workflow_architecture="docs/architecture/development-workflow/design.md"
+workflow_architecture="docs/architecture/engineering/development-workflow/design.md"
+global_workflow="docs/global/workflow.md"
 agents_contract="AGENTS.md"
 continuous_plan_invariant="docs/knowledge/invariants/continuous-plan-run.md"
 host_neutral_invariant="docs/knowledge/invariants/host-neutral-agent-execution.md"
@@ -92,6 +101,7 @@ require_file "$pr_template"
 require_file "$review_workflow"
 require_file "$pr_plan_input"
 require_file "$pr_plan_input_test"
+require_file "$execution_plan_test"
 require_file "$submit_pipeline"
 require_file "$review_runner"
 require_file "$gap_skill"
@@ -113,6 +123,9 @@ require_file "$dev_resource_plan_test"
 require_file "$dev_session_script"
 require_file "$dev_session_store"
 require_file "$dev_session_test"
+require_file "$development_close"
+require_file "$development_close_store"
+require_file "$development_close_test"
 require_file "$planctl_script"
 require_file "$acceptance_run"
 require_file "$acceptance_registry"
@@ -127,6 +140,10 @@ require_file "$agent_plugin"
 require_file "$agent_plugin_hooks"
 require_file "$agent_plugin_entry"
 require_file "$workflow_kernel"
+require_file "$completion_auditor_skill"
+require_file "$completion_audit_script"
+require_file "$completion_audit_schema"
+require_file "$completion_audit_test"
 for kernel_test in $workflow_kernel_tests; do
   require_file "$kernel_test"
 done
@@ -151,6 +168,7 @@ require_file "$trae_host_adapter"
 require_file "$cursor_host_adapter"
 require_file "$codex_host_adapter"
 require_file "$workflow_architecture"
+require_file "$global_workflow"
 
 for marker in \
   "Expensive resources belong to Task or Suite scope." \
@@ -265,6 +283,65 @@ for marker in "${submit_markers[@]}"; do
 done
 
 for marker in \
+  "Tracked PR" \
+  "Standalone PR" \
+  "--allow-untracked" \
+  "Plan absence alone never forces a draft PR"; do
+  if ! grep -Fq -- "$marker" "$pr_skill_file"; then
+    fail "$pr_skill_file missing tracked/standalone PR marker: $marker"
+  fi
+done
+
+for marker in \
+  "Explicit standalone no-Plan work" \
+  "planPolicy=standalone"; do
+  if ! grep -Fq -- "$marker" "$dev_workflow_skill"; then
+    fail "$dev_workflow_skill missing explicit no-Plan marker: $marker"
+  fi
+done
+
+for marker in \
+  "explicit user Plan policy" \
+  "PLAN_POLICY_CONFLICT"; do
+  if ! grep -Fq -- "$marker" "$god_view_skill"; then
+    fail "$god_view_skill missing explicit no-Plan routing marker: $marker"
+  fi
+done
+
+if ! grep -Fq "PLAN_PERSISTENCE_FORBIDDEN" "$plan_skill"; then
+  fail "$plan_skill must reject explicit no-Plan persistence"
+fi
+if ! grep -Fq "Explicit standalone no-Plan work" "$global_workflow"; then
+  fail "$global_workflow missing the human-facing no-Plan contract"
+fi
+if ! grep -Fq "explicit standalone no-Plan work" "$agents_contract"; then
+  fail "$agents_contract missing the no-Plan stage-dispatch contract"
+fi
+
+retired_unapproved_plan="docs/architecture/engineering/development-workflow/execution-plans/20261004-nonblocking-agent-integration"
+if [[ -e "$retired_unapproved_plan" ]]; then
+  fail "unapproved execution Plan still exists: $retired_unapproved_plan"
+fi
+if rg -n \
+  'DWF-NONBLOCKING-INTEGRATION-20261004|20261004-nonblocking-agent-integration|DWF-NBI0' \
+  AGENTS.md docs tooling \
+  --glob '!tooling/scripts/review/skill-check.sh' \
+  >/tmp/pt-retired-unapproved-plan.$$; then
+  cat /tmp/pt-retired-unapproved-plan.$$
+  fail "live source still references the unapproved execution Plan"
+fi
+rm -f /tmp/pt-retired-unapproved-plan.$$
+
+for marker in \
+  "--allow-untracked" \
+  "mode: " \
+  "standalone PR has no Development Session"; do
+  if ! grep -Fq -- "$marker" "$submit_pipeline"; then
+    fail "$submit_pipeline missing standalone PR behavior: $marker"
+  fi
+done
+
+for marker in \
   "Execution Plans / 执行计划" \
   "pr-plan-input.py" \
   "execution-plan.py"; do
@@ -273,7 +350,19 @@ for marker in \
   fi
 done
 
-if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
+if ! python3 "$pr_plan_input_test" >/tmp/pt-pr-plan-input-test.$$ 2>&1; then
+  cat /tmp/pt-pr-plan-input-test.$$
+  fail "$pr_plan_input_test failed"
+fi
+rm -f /tmp/pt-pr-plan-input-test.$$
+
+if ! python3 "$execution_plan_test" >/tmp/pt-execution-plan-test.$$ 2>&1; then
+  cat /tmp/pt-execution-plan-test.$$
+  fail "$execution_plan_test failed"
+fi
+rm -f /tmp/pt-execution-plan-test.$$
+
+if ! grep -Fq "blocked handoff requires a BLOCKED Session with a failure record" "$planctl_script"; then
   fail "$planctl_script must permit only evidence-backed blocked Task handoff"
 fi
 
@@ -417,7 +506,7 @@ for marker in \
   "legacyReferences" \
   "hostProjectionFindings" \
   "workflowIdentity" \
-  "planBinding" \
+  "planMount" \
   "currentTaskId" \
   "planLegacyClaims" \
   "declarationLegacyClaims" \
@@ -431,7 +520,7 @@ for marker in \
 done
 
 for marker in \
-  "binding-canonical-invalid" \
+  "plan-mount-canonical-invalid" \
   "declaration-plan-locator-missing" \
   "declaration-current-task-mismatch" \
   "registry-missing" \
@@ -559,7 +648,7 @@ done
 for contract in \
   docs/global/workflow.md \
   docs/knowledge/invariants/continuous-plan-run.md \
-  docs/architecture/development-workflow/design.md; do
+  docs/architecture/engineering/development-workflow/design.md; do
   if ! grep -Fiq "already-authorized operations execute directly" "$contract"; then
     fail "$contract missing authorization-reuse invariant"
   fi
@@ -605,8 +694,8 @@ fi
 if rg -n \
   '\.local[^[:space:]`"]*work\.json|workspaces/[^[:space:]`"]*/work\.json' \
   tooling/scripts tooling/skills AGENTS.md docs/global \
-  docs/architecture/development-workflow \
-  docs/architecture/local-dev-control-plane >/tmp/pt-private-work-ledger.$$; then
+  docs/architecture/engineering/development-workflow \
+  docs/architecture/engineering/local-dev >/tmp/pt-private-work-ledger.$$; then
   cat /tmp/pt-private-work-ledger.$$
   fail "Development work declarations must not use a private worktree path"
 fi
@@ -717,10 +806,10 @@ done
 if grep -Fq "planctl validate" "$god_view_skill" ||
   grep -Fq "current_task_id" "$god_view_skill" ||
   grep -Fq "dev_state" "$god_view_skill"; then
-  fail "$god_view_skill must not embed Plan Package implementation details"
+  fail "$god_view_skill must not embed Plan Version implementation details"
 fi
 
-plan_package_contract_files=(
+plan_version_contract_files=(
   "$architecture_execution_skill"
   "$plan_skill"
   "$dev_workflow_skill"
@@ -730,9 +819,9 @@ plan_package_contract_files=(
   "$agents_contract"
 )
 
-for contract_file in "${plan_package_contract_files[@]}"; do
-  if ! grep -Fq "Plan Package" "$contract_file"; then
-    fail "$contract_file missing Plan Package contract marker"
+for contract_file in "${plan_version_contract_files[@]}"; do
+  if ! grep -Fq "Plan Version" "$contract_file"; then
+    fail "$contract_file missing Plan Version contract marker"
   fi
 done
 
@@ -759,7 +848,7 @@ for marker in \
 done
 
 for marker in \
-  "prepared package 没有 current Task" \
+  "Frozen Plan Version 没有 current Task" \
   "make active-work-sync WORK_ITEM=<id>" \
   "不创建 active-work"; do
   if ! grep -Fq "$marker" "$plan_skill"; then
@@ -779,7 +868,7 @@ done
 for marker in \
   "planctl validate" \
   "Task Slice" \
-  "prepared" \
+  "frozen" \
   "Acceptance Execution"; do
   if ! grep -Fq "$marker" "$plan_skill"; then
     fail "$plan_skill missing package authoring marker: $marker"
@@ -787,7 +876,7 @@ for marker in \
 done
 
 if rg -q '\| id \| plan \| stage \| current_step \|' \
-  "${plan_package_contract_files[@]}"; then
+  "${plan_version_contract_files[@]}"; then
   fail "workflow contracts still publish the legacy active_work current_step schema"
 fi
 
@@ -972,7 +1061,7 @@ for marker in \
     fail "$skill_overlay_invariant missing Overlay boundary marker: $marker"
   fi
 done
-if rg -n '^> \*\*Version\*\*:' docs/architecture/development-workflow \
+if rg -n '^> \*\*Version\*\*:' docs/architecture/engineering/development-workflow \
   >/tmp/pt-workflow-version-labels.$$; then
   cat /tmp/pt-workflow-version-labels.$$
   fail "Development Workflow documents must not publish version labels"
@@ -981,13 +1070,6 @@ rm -f /tmp/pt-workflow-version-labels.$$
 if ! grep -Fq "No Invented Development Workflow Versions" "$agents_contract"; then
   fail "$agents_contract must define the unversioned internal workflow rule"
 fi
-if rg -n 'schemaVersion|protocolVersion' \
-  apps/dev/server/index.mjs apps/dev/server/status.mjs \
-  >/tmp/pt-peers-dev-version-labels.$$; then
-  cat /tmp/pt-peers-dev-version-labels.$$
-  fail "Peers Dev public payloads must not publish workflow versions"
-fi
-rm -f /tmp/pt-peers-dev-version-labels.$$
 while IFS= read -r plan_doc; do
   if grep -Fq '"schemaVersion"' "$plan_doc"; then
     fail "$plan_doc contains a versioned Plan/Task contract"
@@ -1237,6 +1319,38 @@ if ! node --test "$dev_resource_plan_test" \
 fi
 rm -f /tmp/pt-dev-resource-plan.$$
 
+if ! node --test "$development_close_test" \
+  >/tmp/pt-development-close.$$ 2>&1; then
+  cat /tmp/pt-development-close.$$
+  fail "Development close tests failed"
+fi
+rm -f /tmp/pt-development-close.$$
+
+if ! node --test "$completion_audit_test" \
+  >/tmp/pt-completion-audit.$$ 2>&1; then
+  cat /tmp/pt-completion-audit.$$
+  fail "Completion audit lifecycle tests failed"
+fi
+rm -f /tmp/pt-completion-audit.$$
+
+for marker in \
+  "implementation-ready" \
+  "delivery-ready" \
+  "close-ready" \
+  "DevelopmentCloseReceipt" \
+  "tracked" \
+  "standalone"; do
+  if ! grep -Fq "$marker" "$completion_auditor_skill"; then
+    fail "$completion_auditor_skill missing exact audit marker: $marker"
+  fi
+done
+
+for marker in "dev-close:" "dev-close-status:" "plan-cancel:" "dev-session-archive:"; do
+  if ! grep -Fq "$marker" "$local_dev_make"; then
+    fail "$local_dev_make missing lifecycle command marker: $marker"
+  fi
+done
+
 if ! python3 "$agent_impact_test" \
   >/tmp/pt-agent-impact.$$ 2>&1; then
   cat /tmp/pt-agent-impact.$$
@@ -1278,8 +1392,9 @@ if ! grep -q '"architecture-module-governance"' <<< "$architecture_context_outpu
   fail "knowledge-match.sh must delegate changed paths to architecture governance"
 fi
 
-if tooling/scripts/review/knowledge-match.sh \
-  --changed-file docs/architecture/unregistered/design.md \
+if ! node --test \
+  --test-name-pattern='changed active architecture modules must be registered' \
+  tooling/scripts/architecture/module-governance.test.mjs \
   >/tmp/pt-architecture-unregistered.$$ 2>&1; then
   fail "knowledge-match.sh must reject changed unregistered architecture modules"
 fi

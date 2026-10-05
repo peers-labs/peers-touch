@@ -1,13 +1,9 @@
-// Performance-only Playwright helpers. Product Acceptance uses embedded WebDriver.
-import type {
-  BrowserPageAdapter,
-  TauriPage,
-} from '@srsholmes/tauri-playwright';
+// Performance-only WebDriver helpers for the native Tauri WebView.
+import type { TauriPage } from '@srsholmes/tauri-playwright';
 
-export type PerformancePage = TauriPage | BrowserPageAdapter;
+export type PerformancePage = TauriPage;
 
 export type PerformanceRuntime =
-  | 'browser-gateway'
   | 'tauri-webview-dev'
   | 'tauri-webview-packaged';
 

@@ -162,7 +162,7 @@ def _mobile_runner(*_args, **_kwargs):
 class HomeCommandCenterCandidateTest(unittest.TestCase):
     def test_authentication_waits_for_in_progress_station_switch(self) -> None:
         class Client:
-            spec = SimpleNamespace(runtime="browser")
+            spec = SimpleNamespace(runtime="native-tauri")
 
             def __init__(self) -> None:
                 self.configure_attempts = 0
@@ -197,7 +197,7 @@ class HomeCommandCenterCandidateTest(unittest.TestCase):
 
     def test_authentication_does_not_retry_other_station_failures(self) -> None:
         class Client:
-            spec = SimpleNamespace(runtime="browser")
+            spec = SimpleNamespace(runtime="native-tauri")
 
             def __init__(self) -> None:
                 self.configure_attempts = 0
@@ -318,7 +318,7 @@ class HomeCommandCenterCandidateTest(unittest.TestCase):
             },
         )
 
-    def test_home_provisioner_allocates_native_and_browser_profile_two_clients(
+    def test_home_provisioner_allocates_native_and_secondary_profile_two_clients(
         self,
     ) -> None:
         provisioner = HomeStationProvisioner(
@@ -339,13 +339,13 @@ class HomeCommandCenterCandidateTest(unittest.TestCase):
 
         self.assertEqual(
             {client.runtime for client in clients},
-            {"native-tauri", "browser"},
+            {"native-tauri"},
         )
         self.assertEqual(
             {client.profile for client in clients},
             {
                 "agent-v2-home-native",
-                "agent-v2-home-browser",
+                "agent-v2-home-secondary",
             },
         )
         with self.assertRaisesRegex(BlockedError, "requires the approved two"):

@@ -132,7 +132,7 @@ def _validate_runtime_tuple_policy(
         )
         return
     require(
-        runtime_tuple.platform in {"desktop_app", "browser"},
+        runtime_tuple.platform in {"desktop_app", "secondary"},
         f"{runtime_tuple.key}: unsupported J06 runtime platform",
     )
     expected_profile = (
@@ -155,7 +155,7 @@ def _validate_runtime_tuple_policy(
 
 
 class EvaluationRuntimeAdapter:
-    """Execute one fresh Evaluation scenario per Desktop or Browser tuple."""
+    """Execute one fresh Evaluation scenario per Desktop or Secondary tuple."""
 
     def __init__(
         self,
@@ -203,22 +203,22 @@ class EvaluationRuntimeAdapter:
         require(
             seed_actor_identity(
                 "alice",
-                runtime_pair.browser.actor_identity_root,
+                runtime_pair.secondary.actor_identity_root,
                 profile_env["PT_STATION_URL"],
                 fixture=ACTOR_IDENTITY_FIXTURES["alice"],
             ),
-            "J06 Browser identity could not reuse the enrolled Native identity",
+            "J06 Secondary identity could not reuse the enrolled Native identity",
         )
-        runtime_pair.browser.start()
-        browser_login = authenticate_client(
-            runtime_pair.browser,
+        runtime_pair.secondary.start()
+        secondary_login = authenticate_client(
+            runtime_pair.secondary,
             account=ACTOR_ACCOUNTS["alice"],
             password=profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
             ensure_provider=provider_info,
         )
         logins = {
             "desktop_app": native_login,
-            "browser": browser_login,
+            "secondary": secondary_login,
         }
         actors = {
             platform: str(login["actorId"])
@@ -226,7 +226,7 @@ class EvaluationRuntimeAdapter:
         }
         require(
             len(set(actors.values())) == 1,
-            "J06 Native and Browser clients authenticated different actors",
+            "J06 Native and Secondary clients authenticated different actors",
         )
         self.actor_identity_hash = _hash_text(actors["desktop_app"])
 
@@ -236,8 +236,8 @@ class EvaluationRuntimeAdapter:
     ) -> FoundationRuntimeClient:
         if runtime_tuple.platform == "desktop_app":
             return self._runtime_pair.native
-        if runtime_tuple.platform == "browser":
-            return self._runtime_pair.browser
+        if runtime_tuple.platform == "secondary":
+            return self._runtime_pair.secondary
         raise EvaluationCandidateError(
             f"J06 runtime adapter rejects platform {runtime_tuple.platform}"
         )
@@ -318,7 +318,7 @@ class EvaluationRuntimeAdapter:
             cleanup_error: BaseException | None = None
             if state is not None:
                 fallback = (
-                    self._runtime_pair.browser
+                    self._runtime_pair.secondary
                     if client is self._runtime_pair.native
                     else self._runtime_pair.native
                 )
@@ -615,7 +615,7 @@ def _candidate_root() -> Path:
 
 
 def _kill_stale_desktop_processes(slot: int) -> None:
-    """Kill leftover Desktop/Browser processes from prior runs on the same port slot."""
+    """Kill leftover Desktop/Secondary processes from prior runs on the same port slot."""
     gateway_base = 3330 + slot * 100
     renderer_base = 3510 + slot * 100
     webdriver_base = 4445 + slot * 10

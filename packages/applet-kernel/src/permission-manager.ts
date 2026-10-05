@@ -1,7 +1,7 @@
 // Permission Manager — validates manifest-declared grants against runtime
 // invokes and records every decision to the audit sink.
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §6 分层架构 (Permission Manager 职责: validate manifest permissions + runtime
 //   grant, record invoke audit).
 //

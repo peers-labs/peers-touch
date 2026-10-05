@@ -33,7 +33,7 @@
     "packages/locales/zh-CN/chat.json",
     "packages/locales/zh-CN/errors.json",
     "packages/prototypes/desktop/features/social-chat/**",
-    "docs/architecture/social/prototype/README.md"
+    "docs/architecture/domains/social/core/prototype/README.md"
   ],
   "truth_sources": [
     "Station Social mutual follow edges",

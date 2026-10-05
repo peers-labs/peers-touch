@@ -20,20 +20,34 @@ automatic labeling, and issue linking using the `gh` CLI.
 - `gh` CLI installed and authenticated (`gh auth status`)
 - Current branch pushed to remote (`git push -u origin <branch>`)
 
+## PR Modes
+
+- **Tracked PR**: the worktree has a live PlanMount. The mounted Plan must be
+  complete, the successful Development Session must be supplied to the
+  submit-time pipeline, and push/PR must be authorized.
+- **Standalone PR**: the worktree has no live PlanMount. It does not require a
+  Plan or Development Session. The submit-time pipeline derives scope from the
+  Git range and records formal Acceptance as `NOT RUN/UNPROVEN`.
+
+`PLAN_MOUNT_REQUIRED` selects standalone mode. Any malformed, stale, conflicting,
+or identity-mismatched mount remains a blocking error. Plan absence alone never forces a draft PR.
+Explicit user no-Plan intent also selects standalone mode and forbids creating
+a placeholder Plan or Development Session for delivery.
+
 ## PR Creation Workflow
 
 ### 1. Pre-flight Checks
 
-Before push or PR creation, require the bound formal execution plan to have no
-incomplete closure:
+Classify the current worktree without requiring a Plan:
 
 ```bash
-python3 tooling/scripts/execution-plan.py --require-complete
+python3 tooling/scripts/execution-plan.py \
+  --require-complete \
+  --allow-untracked
 ```
 
-An incomplete or ambiguous plan blocks a normal ready-for-review PR. It may be
-opened as draft only when the body names the incomplete closure and the user
-explicitly requests that draft.
+For tracked mode, an incomplete Plan blocks a normal ready-for-review PR. For
+standalone mode, continue without creating a placeholder Plan or Session.
 
 ```bash
 # Verify gh auth
@@ -54,13 +68,22 @@ base branch.
 
 ```bash
 git fetch origin
+
+# Tracked PR
+make review-submit \
+  REVIEW_BASE=origin/master \
+  SESSION=<development-session.json>
+
+# Standalone PR
 make review-submit REVIEW_BASE=origin/master
 ```
 
 This pipeline generates quality evidence, runs strict review framework checks,
 validates acceptance structure, plans acceptance gates, runs selected `ci-*`
-acceptance gates, invokes `pt-acceptance-gap-detector`, and renders an
-acceptance report.
+acceptance gates for tracked work, invokes `pt-acceptance-gap-detector` for
+tracked work, and renders the available evidence. Standalone work keeps formal
+Acceptance explicitly `NOT RUN/UNPROVEN`; that status is not itself a pipeline
+failure.
 
 If the pipeline fails:
 
@@ -132,6 +155,11 @@ Use the project PR template structure. Fill in each section based on actual chan
 
 <EN: Brief description of what this PR does and why>
 <CN: 简要描述本 PR 做了什么、为什么做>
+
+## Execution Plans / 执行计划
+
+<Tracked: - `docs/architecture/<taxonomy>/<domain>/execution-plans/<plan>/plan.md`>
+<Standalone: - None>
 
 ## Changes / 变更内容
 
@@ -288,6 +316,8 @@ Examples:
 ## Anti-Patterns
 
 - **Never** create a PR without pushing the branch first
+- **Never** require a placeholder Plan or Development Session for standalone work
+- **Never** override explicit user no-Plan intent to satisfy PR tooling
 - **Never** create a normal ready-for-review PR before running the submit-time review pipeline
 - **Never** leave the PR description empty — always fill the template
 - **Never** omit quality evidence, evidence gaps, or unproven scope from the PR body

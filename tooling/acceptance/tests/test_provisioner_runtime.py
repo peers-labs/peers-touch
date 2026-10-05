@@ -304,8 +304,6 @@ class ProfileResolutionTests(unittest.TestCase):
                 "ports": {
                     "desktopAppGateway": 3330,
                     "desktopAppWeb": 3510,
-                    "desktopWebGateway": 3331,
-                    "desktopWebWeb": 3511,
                     "mobileWeb": 5473,
                 },
             }
@@ -369,8 +367,6 @@ class ProfileResolutionTests(unittest.TestCase):
                 "ports": {
                     "desktopAppGateway": 3330,
                     "desktopAppWeb": 3510,
-                    "desktopWebGateway": 3331,
-                    "desktopWebWeb": 3511,
                     "mobileWeb": 5473,
                 },
             }
@@ -427,8 +423,6 @@ class ProfileResolutionTests(unittest.TestCase):
                 "ports": {
                     "desktopAppGateway": 3330,
                     "desktopAppWeb": 3510,
-                    "desktopWebGateway": 3331,
-                    "desktopWebWeb": 3511,
                     "mobileWeb": 5473,
                 },
             }
@@ -483,8 +477,6 @@ class ProfileResolutionTests(unittest.TestCase):
                 "ports": {
                     "desktopAppGateway": 3130,
                     "desktopAppWeb": 3310,
-                    "desktopWebGateway": 3131,
-                    "desktopWebWeb": 3311,
                     "mobileWeb": 5273,
                 },
             }
@@ -542,8 +534,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_STATION_DEPLOY_ENV": "station-1",
                 "PT_DESKTOP_APP_GATEWAY_PORT": "23030",
                 "PT_DESKTOP_APP_WEB_PORT": "23210",
-                "PT_DESKTOP_WEB_GATEWAY_PORT": "23031",
-                "PT_DESKTOP_WEB_WEB_PORT": "23211",
                 "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
                 "CHAT_ACCEPTANCE_RESET": "1",
             },
@@ -563,8 +553,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_STATION_DEPLOY_ENV": "station-2",
                 "PT_DESKTOP_APP_GATEWAY_PORT": "24030",
                 "PT_DESKTOP_APP_WEB_PORT": "24210",
-                "PT_DESKTOP_WEB_GATEWAY_PORT": "24031",
-                "PT_DESKTOP_WEB_WEB_PORT": "24211",
                 "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
                 "CHAT_ACCEPTANCE_RESET": "1",
             },
@@ -1285,7 +1273,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
         self.assertIn("reset", manifest.blocked_reason.lower())
 
-    def test_agent_v2_foundation_provisions_native_and_browser_manifest(self):
+    def test_agent_v2_foundation_provisions_native_and_secondary_manifest(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
@@ -1345,7 +1333,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {
                 "PT_AGENT_V2_NATIVE_WEBDRIVER_PORT": "24445",
-                "PT_AGENT_V2_BROWSER_WEBDRIVER_PORT": "24446",
+                "PT_AGENT_V2_SECONDARY_WEBDRIVER_PORT": "24446",
             },
             clear=True,
         ):
@@ -1365,19 +1353,19 @@ class ProvisionerBlockingTests(unittest.TestCase):
             ),
         )
         self.assertEqual(len(manifest.clients), 2)
-        native, browser = manifest.clients
+        native, secondary = manifest.clients
         self.assertEqual(native.actor, "alice")
         self.assertEqual(native.runtime, "native-tauri")
         self.assertEqual(native.gateway_port, 23030)
         self.assertEqual(native.renderer_port, 23210)
         self.assertEqual(native.webdriver_port, 24445)
-        self.assertEqual(browser.actor, "alice")
-        self.assertEqual(browser.runtime, "browser")
-        self.assertEqual(browser.gateway_port, 23031)
-        self.assertEqual(browser.renderer_port, 23211)
-        self.assertEqual(browser.webdriver_port, 24446)
+        self.assertEqual(secondary.actor, "alice")
+        self.assertEqual(secondary.runtime, "native-tauri")
+        self.assertEqual(secondary.gateway_port, 23031)
+        self.assertEqual(secondary.renderer_port, 23211)
+        self.assertEqual(secondary.webdriver_port, 24446)
         self.assertEqual(native.profile, "agent-v2-foundation-native")
-        self.assertEqual(browser.profile, "agent-v2-foundation-browser")
+        self.assertEqual(secondary.profile, "agent-v2-foundation-native-secondary")
         for client in manifest.clients:
             self.assertIn(manifest.run_id, client.storage_root)
         self.assertTrue(manifest.cleanup_registered)
@@ -1641,7 +1629,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {
                 "PT_AGENT_V2_BINDING_NATIVE_WEBDRIVER_PORT": "25445",
-                "PT_AGENT_V2_BINDING_BROWSER_WEBDRIVER_PORT": "25446",
+                "PT_AGENT_V2_BINDING_SECONDARY_WEBDRIVER_PORT": "25446",
             },
             clear=True,
         ):
@@ -1653,18 +1641,18 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.profile_resolved, "two")
         self.assertEqual(manifest.services, {"station": attestation})
         self.assertEqual(len(manifest.clients), 2)
-        native, browser = manifest.clients
+        native, secondary = manifest.clients
         self.assertEqual(native.runtime, "native-tauri")
-        self.assertEqual(browser.runtime, "browser")
+        self.assertEqual(secondary.runtime, "native-tauri")
         self.assertEqual(native.actor, "charlie")
-        self.assertEqual(browser.actor, "charlie")
+        self.assertEqual(secondary.actor, "charlie")
         self.assertEqual(native.profile, "agent-v2-binding-native")
-        self.assertEqual(browser.profile, "agent-v2-binding-browser")
-        self.assertNotEqual(native.storage_root, browser.storage_root)
+        self.assertEqual(secondary.profile, "agent-v2-binding-native-secondary")
+        self.assertNotEqual(native.storage_root, secondary.storage_root)
         self.assertIn(manifest.run_id, native.storage_root)
-        self.assertIn(manifest.run_id, browser.storage_root)
+        self.assertIn(manifest.run_id, secondary.storage_root)
         self.assertEqual(native.webdriver_port, 25445)
-        self.assertEqual(browser.webdriver_port, 25446)
+        self.assertEqual(secondary.webdriver_port, 25446)
         self.assertEqual(
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
@@ -1743,7 +1731,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {
                 "PT_AGENT_V2_GOVERNED_TOOL_NATIVE_WEBDRIVER_PORT": "26445",
-                "PT_AGENT_V2_GOVERNED_TOOL_BROWSER_WEBDRIVER_PORT": "26446",
+                "PT_AGENT_V2_GOVERNED_TOOL_SECONDARY_WEBDRIVER_PORT": "26446",
             },
             clear=True,
         ):
@@ -1755,13 +1743,13 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.profile_resolved, "two")
         self.assertEqual(manifest.services, {"station": attestation})
         self.assertEqual(len(manifest.clients), 2)
-        native, browser = manifest.clients
+        native, secondary = manifest.clients
         self.assertEqual(native.actor, "charlie")
-        self.assertEqual(browser.actor, "charlie")
+        self.assertEqual(secondary.actor, "charlie")
         self.assertEqual(native.profile, "agent-v2-governed-tool-native")
-        self.assertEqual(browser.profile, "agent-v2-governed-tool-browser")
+        self.assertEqual(secondary.profile, "agent-v2-governed-tool-native-secondary")
         self.assertEqual(native.webdriver_port, 26445)
-        self.assertEqual(browser.webdriver_port, 26446)
+        self.assertEqual(secondary.webdriver_port, 26446)
         self.assertIn("pt-agent-v2-governed-tool-", native.storage_root)
         self.assertEqual(
             manifest.credential_refs,
@@ -1783,7 +1771,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-governed-tool-", cleanup[0])
 
-    def test_agent_v2_mcp_provisions_profile_two_native_and_browser_clients(self):
+    def test_agent_v2_mcp_provisions_profile_two_native_and_secondary_clients(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
@@ -1827,7 +1815,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {
                 "PT_AGENT_V2_MCP_NATIVE_WEBDRIVER_PORT": "27445",
-                "PT_AGENT_V2_MCP_BROWSER_WEBDRIVER_PORT": "27446",
+                "PT_AGENT_V2_MCP_SECONDARY_WEBDRIVER_PORT": "27446",
             },
             clear=True,
         ):
@@ -1839,17 +1827,17 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.profile_resolved, "two")
         self.assertEqual(manifest.services, {"station": attestation})
         self.assertEqual(len(manifest.clients), 2)
-        native, browser = manifest.clients
+        native, secondary = manifest.clients
         self.assertEqual(native.runtime, "native-tauri")
         self.assertEqual(native.actor, "charlie")
         self.assertEqual(native.profile, "agent-v2-mcp-native")
         self.assertEqual(native.webdriver_port, 27445)
-        self.assertEqual(browser.runtime, "browser")
-        self.assertEqual(browser.actor, "charlie")
-        self.assertEqual(browser.profile, "agent-v2-mcp-browser")
-        self.assertEqual(browser.webdriver_port, 27446)
+        self.assertEqual(secondary.runtime, "native-tauri")
+        self.assertEqual(secondary.actor, "charlie")
+        self.assertEqual(secondary.profile, "agent-v2-mcp-native-secondary")
+        self.assertEqual(secondary.webdriver_port, 27446)
         self.assertIn("pt-agent-v2-mcp-", native.storage_root)
-        self.assertIn("pt-agent-v2-mcp-", browser.storage_root)
+        self.assertIn("pt-agent-v2-mcp-", secondary.storage_root)
         self.assertEqual(
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
@@ -1911,7 +1899,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {
                 "PT_AGENT_V2_CONNECTOR_NATIVE_WEBDRIVER_PORT": "28445",
-                "PT_AGENT_V2_CONNECTOR_BROWSER_WEBDRIVER_PORT": "28446",
+                "PT_AGENT_V2_CONNECTOR_SECONDARY_WEBDRIVER_PORT": "28446",
             },
             clear=True,
         ):
@@ -1923,17 +1911,17 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.profile_resolved, "two")
         self.assertEqual(manifest.services, {"station": attestation})
         self.assertEqual(len(manifest.clients), 2)
-        native, browser = manifest.clients
+        native, secondary = manifest.clients
         self.assertEqual(native.runtime, "native-tauri")
         self.assertEqual(native.actor, "bob")
         self.assertEqual(native.profile, "agent-v2-connector-native")
         self.assertEqual(native.webdriver_port, 28445)
-        self.assertEqual(browser.runtime, "browser")
-        self.assertEqual(browser.actor, "bob")
-        self.assertEqual(browser.profile, "agent-v2-connector-browser")
-        self.assertEqual(browser.webdriver_port, 28446)
+        self.assertEqual(secondary.runtime, "native-tauri")
+        self.assertEqual(secondary.actor, "bob")
+        self.assertEqual(secondary.profile, "agent-v2-connector-native-secondary")
+        self.assertEqual(secondary.webdriver_port, 28446)
         self.assertIn("pt-agent-v2-connector-", native.storage_root)
-        self.assertIn("pt-agent-v2-connector-", browser.storage_root)
+        self.assertIn("pt-agent-v2-connector-", secondary.storage_root)
         self.assertEqual(
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
@@ -1956,7 +1944,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-connector-", cleanup[0])
 
-    def test_agent_v2_evaluation_provisions_native_and_browser_clients(self):
+    def test_agent_v2_evaluation_provisions_native_and_secondary_clients(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
@@ -2013,7 +2001,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual((alice.actor, bob.actor), ("alice", "bob"))
         self.assertEqual(
             (alice.runtime, bob.runtime),
-            ("native-tauri", "browser"),
+            ("native-tauri", "native-tauri"),
         )
         self.assertEqual(
             alice.profile,
@@ -2021,7 +2009,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         )
         self.assertEqual(
             bob.profile,
-            "agent-v2-evaluation-browser",
+            "agent-v2-evaluation-native-secondary",
         )
         self.assertEqual(
             (alice.webdriver_port, bob.webdriver_port),

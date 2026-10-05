@@ -20,7 +20,7 @@ from .provisioning import ServiceAttestation, utc_now
 
 
 _GENERATED_COVERAGE_REPORT = (
-    "docs/architecture/acceptance-framework/coverage-report.md"
+    "docs/architecture/engineering/acceptance/coverage-report.md"
 )
 PROTOCOL_SOURCE_PATHS = (
     ":(glob)model/domain/**/*.proto",

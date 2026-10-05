@@ -1,30 +1,28 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: env-register env-update env-unregister env-check env-status-all dev-ui dev-ui-snapshot dev-observe workflow-snapshot workflow-doctor \
+.PHONY: env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
         profile profile-authorize profile-init profiles config \
-        dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
+        dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release dev-close dev-close-status \
         dev-resources-prepare dev-resources-status dev-resource-record \
-        dev-session-start dev-session-status dev-transition dev-functional-result \
+        dev-session-start dev-session-status dev-session-archive dev-transition dev-functional-result \
         active-work-sync active-work-status active-work-status-all active-work-close \
         completion-review-prepare completion-review-submit completion-review-status \
-        plan-bind plan-binding plan-binding-advance plan-validate plan-status plan-current plan-next \
-        plan-activate plan-advance plan-reopen \
+        plan-mount plan-mount-status plan-unmount plan-validate plan-status plan-current plan-next \
+        plan-activate plan-advance plan-cancel plan-reopen \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-install desktop-stop desktop-restart \
-        desktop-web desktop-web-stop desktop-web-restart \
         mobile mobile-stop mobile-restart \
         status stop restart
 
 DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
 MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
-DEV_APP_SCRIPT := apps/dev/server/index.mjs
 WORKFLOW_SNAPSHOT_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-snapshot.mjs
 WORKFLOW_DOCTOR_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-doctor.mjs
 PLANCTL_SCRIPT := tooling/scripts/plan/planctl.mjs
-PLAN_BINDING_SCRIPT := tooling/scripts/plan/workspace-plan-binding.mjs
+PLAN_MOUNT_SCRIPT := tooling/scripts/plan/plan-mount.mjs
 ENV_REPO_ARG := $(or $(ENV_REPO),$(abspath ../env))
 PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
 SLOT_ARG := $(or $(SLOT),0)
@@ -47,6 +45,7 @@ DEV_RESOURCE_INPUT_ARG := $(or $(RESOURCE_INPUT),$(DEV_RESOURCE_INPUT))
 DEV_RESOURCE_RESULT_ARG := $(or $(RESOURCE_RESULT),$(DEV_RESOURCE_RESULT))
 DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
+DEV_CLOSE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/development-close.mjs
 DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
 ACTIVE_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/active-work.mjs
 WORKTREE_OBSERVE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/worktree-observe.mjs
@@ -74,6 +73,7 @@ env-update:
 
 env-unregister:
 	@node $(MACHINE_DEV_SCRIPT) unregister \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",) \
 		--owner "$(ENV_OWNER_ARG)"
 
 env-check:
@@ -87,12 +87,6 @@ env-check:
 env-status-all:
 	@node $(MACHINE_DEV_SCRIPT) status-all
 
-dev-ui:
-	@node $(DEV_APP_SCRIPT) serve --env-repo "$(ENV_REPO_ARG)"
-
-dev-ui-snapshot:
-	@node $(DEV_APP_SCRIPT) snapshot --env-repo "$(ENV_REPO_ARG)"
-
 dev-observe:
 	@node $(WORKTREE_OBSERVE_SCRIPT) --workspace-root "$(CURDIR)" --host cli --event manual
 
@@ -102,22 +96,23 @@ workflow-snapshot:
 workflow-doctor:
 	@node $(WORKFLOW_DOCTOR_SCRIPT) --host "$(or $(IDE),trae)"
 
-plan-bind:
-	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-bind PLAN=<package-plan.md>"; exit 1; fi
-	@node $(PLAN_BINDING_SCRIPT) bind \
+plan-mount:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-mount PLAN=<plan.md>"; exit 1; fi
+	@node $(PLAN_MOUNT_SCRIPT) mount \
 		--repo-root "$(CURDIR)" \
 		--plan "$(PLAN)" \
 		--owner "$(DEV_OWNER_ARG)"
 
-plan-binding:
-	@node $(PLAN_BINDING_SCRIPT) resolve --repo-root "$(CURDIR)"
+plan-mount-status:
+	@node $(PLAN_MOUNT_SCRIPT) status --repo-root "$(CURDIR)"
 
-plan-binding-advance:
-	@if [ -z "$(PLAN)" ] || [ -z "$(EXPECTED_GENERATION)" ]; then echo "Usage: make plan-binding-advance PLAN=<package-plan.md> EXPECTED_GENERATION=<n>"; exit 1; fi
-	@node $(PLAN_BINDING_SCRIPT) advance \
-		--repo-root "$(CURDIR)" \
-		--plan "$(PLAN)" \
-		--expected-generation "$(EXPECTED_GENERATION)" \
+plan-unmount:
+	@if [ -z "$(MOUNT)" ] || [ -z "$(REASON)" ]; then echo "Usage: make plan-unmount MOUNT=<mount-id> REASON=<completed|cancelled|owner-unmount> [WORKSPACE_ID=<id>] [ALLOW_UNFINISHED=true]"; exit 1; fi
+	@node $(PLAN_MOUNT_SCRIPT) unmount \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",--repo-root "$(CURDIR)") \
+		--mount-id "$(MOUNT)" \
+		--reason "$(REASON)" \
+		--allow-unfinished "$(or $(ALLOW_UNFINISHED),false)" \
 		--owner "$(DEV_OWNER_ARG)"
 
 plan-validate:
@@ -135,6 +130,13 @@ plan-current:
 plan-next:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-next PLAN=<package-plan.md>"; exit 1; fi
 	@node $(PLANCTL_SCRIPT) next --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-cancel:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-cancel PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) cancel \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--owner "$(DEV_OWNER_ARG)"
 
 plan-activate:
 	@if [ -z "$(PLAN)" ] || [ -z "$(TASK)" ]; then echo "Usage: make plan-activate PLAN=<package-plan.md> TASK=<ready-id>"; exit 1; fi
@@ -242,7 +244,28 @@ dev-release:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-release WORK_ITEM=<id>"; exit 1; fi
 	@node $(DEV_WORK_SCRIPT) release \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--owner "$(DEV_OWNER_ARG)" \
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
+
+dev-close:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(MODE)" ] || [ -z "$(CLOSE_REASON)" ]; then \
+		echo "Usage: make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> CLOSE_REASON=<completed|cancelled|owner-abandon> [ENVIRONMENT_POLICY=<retain|unregister>] [MOUNT=<mount-id>] [WORKSPACE_ID=<id>]"; \
+		exit 1; \
+	fi
+	@node $(DEV_CLOSE_SCRIPT) close \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--mode "$(MODE)" \
+		--reason "$(CLOSE_REASON)" \
+		--environment-policy "$(or $(ENVIRONMENT_POLICY),retain)" \
+		--owner "$(DEV_OWNER_ARG)" \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",--repo-root "$(CURDIR)") \
+		$(if $(MOUNT),--mount-id "$(MOUNT)",)
+
+dev-close-status:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-close-status WORK_ITEM=<id> [WORKSPACE_ID=<id>]"; exit 1; fi
+	@node $(DEV_CLOSE_SCRIPT) status \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",--repo-root "$(CURDIR)")
 
 dev-resources-prepare:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_RESOURCE_INPUT_ARG)" ]; then echo "Usage: make dev-resources-prepare WORK_ITEM=<id> RESOURCE_INPUT=<json-file>"; exit 1; fi
@@ -277,6 +300,12 @@ dev-session-start:
 dev-session-status:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-session-status WORK_ITEM=<id>"; exit 1; fi
 	@node $(DEV_SESSION_SCRIPT) status --work-item "$(DEV_WORK_ITEM_ARG)"
+
+dev-session-archive:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_SESSION_ARG)" ]; then echo "Usage: make dev-session-archive WORK_ITEM=<id> SESSION=<session-id>"; exit 1; fi
+	@node $(DEV_SESSION_SCRIPT) archive \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--session "$(DEV_SESSION_ARG)"
 
 dev-transition:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(TO)" ] || [ -z "$(REASON)" ]; then \
@@ -335,12 +364,13 @@ completion-review-prepare:
 		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 completion-review-submit:
-	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
+	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ] || [ -z "$(CAPABILITY)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> CAPABILITY=<json-file> [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
 	@node $(COMPLETION_REVIEW_SCRIPT) submit \
 		--repo-root "$(CURDIR)" \
 		--review "$(REVIEW)" \
 		--verdict "$(VERDICT)" \
 		--assessment "$(ASSESSMENT)" \
+		--capability "$(CAPABILITY)" \
 		$(if $(NEXT),--next "$(NEXT)",) \
 		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
 		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
@@ -393,25 +423,16 @@ relay-restart:
 	@bash $(LOCAL_DEV_SCRIPTS)/restart.sh relay
 
 desktop:
-	@$(DEVCTL) desktop start --mode app
+	@$(DEVCTL) desktop start
 
 desktop-install:
 	@$(DEVCTL) desktop install
 
 desktop-stop:
-	@$(DEVCTL) desktop stop --mode app
+	@$(DEVCTL) desktop stop
 
 desktop-restart:
-	@$(DEVCTL) desktop restart --mode app
-
-desktop-web:
-	@$(DEVCTL) desktop start --mode web
-
-desktop-web-stop:
-	@$(DEVCTL) desktop stop --mode web
-
-desktop-web-restart:
-	@$(DEVCTL) desktop restart --mode web
+	@$(DEVCTL) desktop restart
 
 mobile:
 	@bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh

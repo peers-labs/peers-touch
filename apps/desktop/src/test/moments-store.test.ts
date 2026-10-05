@@ -859,32 +859,6 @@ describe('moments store: createPost / deletePost', () => {
     });
   });
 
-  it('rejects private Browser publish before invoking any backend command', async () => {
-    installEventWindowStub();
-    Object.assign(window, { __PT_GATEWAY_BASE__: '/api' });
-    usePrivateMomentsStore.getState().reset();
-    usePrivateMomentsStore.getState().activateActor('ptid:browser-author', 2);
-
-    await expect(
-      useMomentsStore.getState().createPost({
-        kind: 'text',
-        text: 'browser-private-draft',
-        audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
-        draftId: 'browser-private-draft',
-        draftRevision: 1,
-      }),
-    ).rejects.toThrow('PRIVATE_UNSUPPORTED');
-
-    expect(invokeMock).not.toHaveBeenCalledWith(
-      'social_create_moment',
-      expect.anything(),
-    );
-    expect(invokeMock).not.toHaveBeenCalledWith(
-      'social_private_moment_publish',
-      expect.anything(),
-    );
-  });
-
   it('rejects CUSTOM_DENY(PUBLIC) at the production audience boundary', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });

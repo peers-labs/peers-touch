@@ -13,7 +13,7 @@ import (
 //
 // This is the pure-Go counterpart of the `Circle` proto message used by
 // the application service. It MUST be persisted in the `social_private`
-// schema (see `docs/architecture/social/moments.md` §"Storage invariants")
+// schema (see `docs/architecture/domains/social/core/moments.md` §"Storage invariants")
 // and MUST NOT federate over ActivityPub.
 type Circle struct {
 	ID          uint64

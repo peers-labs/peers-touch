@@ -67,7 +67,7 @@ GROUP_ONE_CELLS = frozenset(
 GROUP_ONE_ROWS = frozenset(
     {
         "foundation-desktop-direct",
-        "foundation-browser-direct",
+        "foundation-secondary-direct",
     }
 )
 EXPECTED_GROUP_ONE_TUPLES = 44
@@ -111,11 +111,11 @@ class FoundationGroupOneProbeRunner:
         self,
         *,
         desktop_native: HarnessClient,
-        browser: HarnessClient,
+        secondary: HarnessClient,
     ) -> None:
         self._clients = {
             "desktop_app": desktop_native,
-            "browser": browser,
+            "secondary": secondary,
         }
 
     def collect(
@@ -163,7 +163,7 @@ class FoundationGroupOneProbeRunner:
             if runtime_tuple.row == "foundation-desktop-direct":
                 observation = adapter.observe_desktop_native(runtime_tuple)
             else:
-                observation = adapter.observe_browser(runtime_tuple)
+                observation = adapter.observe_secondary(runtime_tuple)
             observations.append((runtime_tuple, observation))
         return tuple(observations)
 

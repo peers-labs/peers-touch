@@ -181,7 +181,7 @@ def main() -> int:
     parser.add_argument(
         "--output-prefix",
         required=True,
-        help="Explicit output prefix supplied by desktop-telemetry-live-gate or a test.",
+        help="Explicit output prefix for the Station-backed Dev/CI mirror.",
     )
     parser.add_argument("--device-id")
     parser.add_argument("--session-id")

@@ -6,10 +6,9 @@ from tooling.acceptance.core.drivers.base import BaseDriver, DomDriver
 
 if TYPE_CHECKING:
     from tooling.acceptance.drivers.chrome import ChromeDriver
-    from tooling.acceptance.drivers.station import StationDriver
     from tooling.acceptance.drivers.tauri import TauriDriver
 
-__all__ = ["BaseDriver", "DomDriver", "TauriDriver", "ChromeDriver", "StationDriver"]
+__all__ = ["BaseDriver", "DomDriver", "TauriDriver", "ChromeDriver"]
 
 
 def __getattr__(name: str) -> Any:
@@ -21,8 +20,4 @@ def __getattr__(name: str) -> Any:
         from tooling.acceptance.drivers.chrome import ChromeDriver
 
         return ChromeDriver
-    if name == "StationDriver":
-        from tooling.acceptance.drivers.station import StationDriver
-
-        return StationDriver
     raise AttributeError(name)

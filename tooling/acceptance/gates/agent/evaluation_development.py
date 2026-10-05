@@ -651,11 +651,11 @@ def _clients_from_manifest(
     )
     require(
         isinstance(clients, list) and len(clients) == 2,
-        "J06 runtime manifest must contain Native and Browser clients",
+        "J06 runtime manifest must contain Native and Secondary clients",
     )
     expected_runtimes = {
         "alice": "native-tauri",
-        "bob": "browser",
+        "bob": "secondary",
     }
     result: dict[str, FoundationRuntimeClient] = {}
     for raw_client in clients:
@@ -665,7 +665,7 @@ def _clients_from_manifest(
             actor in ACTOR_ACCOUNTS
             and client.get("runtime") == expected_runtimes[actor]
             and actor not in result,
-            "J06 clients must be isolated Alice Native and Bob Browser clients",
+            "J06 clients must be isolated Alice Native and Bob Secondary clients",
         )
         result[actor] = FoundationRuntimeClient(
             FoundationClientSpec.from_mapping(client),
@@ -1008,7 +1008,7 @@ def main() -> int:
             "profile": PROFILE,
             "stationDeploymentEnvironment": deployment_environment,
             "stationBuildCommit": station.live_commit if station else "",
-            "clientRuntimes": ["native-tauri:alice", "browser:bob"],
+            "clientRuntimes": ["native-tauri:alice", "secondary:bob"],
         },
         "assertions": assertions,
         "capture": capture,

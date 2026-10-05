@@ -6,7 +6,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 
 // Wire schema for the Canonical Event Stream.
 //
-// See docs/architecture/realtime/event-stream.md for the full contract.
+// See docs/architecture/shared/communication/event-stream.md for the full contract.
 // Brief: each authenticated device-window holds exactly one SSE
 // connection to its home Station. That stream multiplexes every kind
 // of real-time event encoded as a StreamEvent oneof. Schema evolves

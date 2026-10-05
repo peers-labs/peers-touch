@@ -38,7 +38,10 @@ Do not use this playbook for small bug fixes, local copy changes, or narrow comp
 ## Steps
 
 1. **Choose the formal docs home** — Pick the highest layer that owns the decision.
-   - Cross-layer boundary or capability: `docs/architecture/<domain>/`
+   - Business truth or product contract: `docs/architecture/domains/<domain>/`
+   - Client/Station/runtime boundary: `docs/architecture/platform/`
+   - Cross-domain narrow capability: `docs/architecture/shared/`
+   - Development or governance control plane: `docs/architecture/engineering/`
    - Desktop-only implementation: `docs/client/desktop/`
    - Station-only implementation: `docs/station/`
    - Coding convention: `docs/global/coding-guide/`

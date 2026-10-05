@@ -10,7 +10,7 @@ import (
 // everyone — including anonymous viewers and (post-v1) federated outbound
 // fan-out. The implementation MUST panic if `Create` is called with a
 // non-PUBLIC post; this is the first of the three defense lines (see
-// `docs/architecture/social/moments.md §8`).
+// `docs/architecture/domains/social/core/moments.md §8`).
 type PublicPostRepository interface {
 	Create(ctx context.Context, p *Post) error
 	GetByID(ctx context.Context, id uint64) (*Post, error)

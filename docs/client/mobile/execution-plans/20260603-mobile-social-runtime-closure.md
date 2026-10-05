@@ -3,7 +3,7 @@
 > **Status: SUPERSEDED / HISTORICAL — DO NOT EXECUTE**
 >
 > Superseded by
-> `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`
+> `docs/architecture/engineering/api-governance/execution-plans/20260906-conversation-authority-hard-cut.md`
 > and the active Mobile shell plan. The routes, ownership model, commands,
 > checklists, and remaining-work statements below are preserved only as a
 > historical record. They are not current implementation guidance or an
@@ -20,7 +20,7 @@ This is not a UI parity patch. The upgrade is a runtime-projection closure for M
 
 Cross-end architecture source:
 
-- `docs/architecture/social-runtime/README.md` defines the Desktop/Mobile shared social runtime abstraction. This Mobile plan is a platform-layer refinement under that architecture source, not a competing boundary definition.
+- `docs/architecture/domains/social/runtime/README.md` defines the Desktop/Mobile shared social runtime abstraction. This Mobile plan is a platform-layer refinement under that architecture source, not a competing boundary definition.
 
 Current problem:
 

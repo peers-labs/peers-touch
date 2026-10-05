@@ -50,7 +50,6 @@
       "features": ["station-access-authentication"],
       "required_gates": [
         "station-access-capability-contract",
-        "station-access-desktop-oauth-layout-e2e",
         "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e"
       ],
@@ -74,17 +73,14 @@
           "native client binding proofs"
         ],
         "surfaces": [
-          "exact-source Desktop browser Access Gate at wide and narrow window sizes",
           "native macOS Desktop Access Gate",
           "native iOS Simulator Access Gate"
         ],
         "proven_by": [
-          "station-access-desktop-oauth-layout-e2e",
           "station-access-desktop-oauth-native-e2e",
           "station-access-auth-e2e"
         ],
         "proven_scope": [
-          "GitHub and Google opening, waiting, cancellation, initialization, success, and retry stay inside fixed-size provider actions without moving the auth card",
           "native macOS Desktop starts GitHub and Google loopback authorization before an actor session exists",
           "native macOS Desktop completes an OAuth callback through the Station bridge, persists the Station session, and restores the canonical authenticated actor",
           "Desktop and Mobile bind a signed Station identity before authentication",
@@ -193,7 +189,7 @@
         "station-access-lifecycle-aggregate-e2e"
       ],
       "synthetic_paths": [
-        "docs/architecture/station-access-lifecycle/data-model.md",
+        "docs/architecture/platform/station/access/data-model.md",
         "tooling/acceptance/gates/station_access/capability_contract.py",
         "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
       ],

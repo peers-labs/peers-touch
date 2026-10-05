@@ -31,7 +31,7 @@
     "Both stations deployed with identical code (same git commit)",
     "Both stations healthy (GET /api/oauth/providers returns 200)",
     "At least one user authenticated on each station",
-    "Desktop-web running against each station (different ports)"
+    "Two source-bound Native Desktop clients running against their assigned stations with isolated profiles"
   ],
   "acceptance": {
     "T1_create_federation": {

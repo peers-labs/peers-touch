@@ -198,7 +198,7 @@ class AgentImpactTests(unittest.TestCase):
         self.assertEqual(agent_ui["changeKinds"], ["DESKTOP_UI"])
         self.assertEqual(
             agent_ui["requirements"]["targetSelectors"],
-            ["desktop-web"],
+            ["desktop-native"],
         )
         self.assertEqual(unrelated["state"], "POLICY_REQUIRED")
         self.assertEqual(
@@ -231,7 +231,7 @@ class AgentImpactTests(unittest.TestCase):
         before = fingerprint()
         current = fingerprint(closureContractDigest="closure-b")
         result = self.classify(
-            "docs/architecture/agent/modern-chat-agent/design.md",
+            "docs/architecture/domains/agent/modern-chat-agent/design.md",
             before=before,
             current=current,
         )

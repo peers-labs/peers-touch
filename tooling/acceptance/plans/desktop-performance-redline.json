@@ -1,10 +1,10 @@
 {
   "id": "desktop-performance-redline",
-  "description": "Long-lived Desktop performance red-line gates. This layer assembles Station mirror, sampler, runtime matrix, report, and traceability evidence into a fail-closed merge/readiness judgment.",
+  "description": "Long-lived Native Desktop performance red-line gates. This layer assembles Station mirror, sampler, runtime matrix, and traceability evidence into a fail-closed merge/readiness judgment.",
   "logic": {
     "layer": "redline",
-    "question": "Can the acceptance report make a source-bound pass/fail judgment for Desktop interaction budgets without hiding missing evidence?",
-    "invariant": "Missing sampler, runtime-cell, Station mirror, or report source proof keeps the result PARTIAL/UNPROVEN and sampleEmissionAllowed=false.",
+    "question": "Can the Native runtime matrix make a source-bound pass/fail judgment for Desktop interaction budgets without hiding missing evidence?",
+    "invariant": "Missing sampler, Native runtime-cell, or Station mirror source proof keeps the result PARTIAL/UNPROVEN and sampleEmissionAllowed=false.",
     "promote_from_phase0": true
   },
   "selected_gates": [
@@ -12,7 +12,6 @@
     "desktop-performance-sampler-static-gate",
     "desktop-performance-sampler-gate",
     "desktop-performance-matrix-gate",
-    "desktop-performance-report-gate",
     "desktop-performance-traceability-gate"
   ]
 }

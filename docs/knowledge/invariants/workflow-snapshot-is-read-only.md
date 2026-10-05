@@ -3,14 +3,13 @@ kind: invariant
 title: Workflow status is one read-only cross-owner projection
 status: active
 owns:
-  - apps/dev/
   - tooling/scripts/local-dev/workflow-snapshot.mjs
   - tooling/skills/pt-context-anchor/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
-  - docs/architecture/development-workflow/design.md
-  - docs/architecture/development-workflow/data-model.md
+  - docs/architecture/engineering/development-workflow/design.md
+  - docs/architecture/engineering/development-workflow/data-model.md
 detected: 2026-09-20
 ---
 
@@ -25,8 +24,8 @@ joins them into one consistency result:
 The same read derives the Plan Run decision:
 `CONTINUE | HARD_BLOCK | COMPLETE`.
 
-The snapshot persists nothing and never repairs an owner. Peers Dev and Context
-Anchor consume its verdict and typed findings instead of rebuilding their own
+The snapshot persists nothing and never repairs an owner. Workflow Doctor and
+Context Anchor consume its verdict and typed findings instead of rebuilding their own
 precedence rules. `CONTINUE` keeps owner repair, Task handoff, review, Anchor,
 and context boundaries inside the authorized Run. Rollout drift remains visible
 but cannot block business work.
@@ -54,15 +53,14 @@ into accidental state owners.
 ## How to verify
 
 - `node --test tooling/scripts/local-dev/workflow-snapshot.test.mjs` passes.
-- `node --test apps/dev/server/status.test.mjs apps/dev/server/index.test.mjs`
-  passes.
+- `node --test tooling/scripts/local-dev/workflow-snapshot.test.mjs` passes.
 - `make workflow-snapshot` reports typed owner/field findings.
 - The Anchor projection reports current Task timing only under
   `currentObservation`; a current Task without a Session reports
   `not-started` with `NOT_RUN` evidence, and no current Task reports `none`.
 - Active Plans report `CONTINUE`, fixed-point blocked or identity-invalid Plans
   report `HARD_BLOCK`, and terminal Plans report `COMPLETE`.
-- `rg -n "resolveDeclarationPlan" apps/dev tooling/skills` returns no matches.
+- `rg -n "resolveDeclarationPlan" tooling/scripts tooling/skills` returns no matches.
 - Snapshot reads leave Git and machine owner records unchanged.
 
 ## Crosswalks
