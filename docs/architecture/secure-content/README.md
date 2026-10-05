@@ -67,6 +67,7 @@ wire, storage, and recovery behavior.
 
 | Document | Purpose |
 |---|---|
+| [design.md](./design.md) | Ownership, trust boundaries, runtime topology, flows, APIs, and failure semantics |
 | [decisions.md](./decisions.md) | Proposed architecture decisions and rejected alternatives |
 | [data-model.md](./data-model.md) | Proto shapes, persistence model, state machines, and cryptographic bindings |
 | [integration.md](./integration.md) | Social, Conversation, Identity, Key Exchange, Recovery, OSS, and client integration |

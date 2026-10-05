@@ -15,7 +15,7 @@ Review the W8 amendment across:
 - `docs/architecture/social/experience-contract.md`
 - `docs/architecture/social/product-state-model.md`
 - `docs/architecture/social/acceptance-matrix.md`
-- `docs/architecture/secure-content/README.md`
+- `docs/architecture/secure-content/design.md`
 - `docs/architecture/secure-content/decisions.md`
 - `docs/architecture/secure-content/data-model.md`
 - `docs/architecture/secure-content/integration.md`

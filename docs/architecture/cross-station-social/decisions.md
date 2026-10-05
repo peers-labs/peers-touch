@@ -11,17 +11,17 @@
 
 | ID | Decision | Status |
 |---|---|---|
-| `CSS-D01` | Receiver Home Station owns Friend Request decisions | accepted |
-| `CSS-D02` | Author Home Station remains private resource authority | accepted |
-| `CSS-D03` | One durable viewer-scoped frame per remote actor | accepted |
-| `CSS-D04` | Recipient Key Exchange owns remote Content PreKey claims | accepted |
-| `CSS-D05` | Large object ciphertext remains at source Social | accepted |
-| `CSS-D06` | Remote interactions return to source Social authority | accepted |
-| `CSS-D07` | Revocation combines local suppression with monotonic source invalidation | accepted |
-| `CSS-D08` | Current readiness is Native Desktop only | accepted |
-| `CSS-D09` | Federated GROUP extends the SC-D29 snapshot without replacing its authority | accepted |
-| `CSS-D10` | Remote Content PreKey submit validation uses a distinct read-only peer contract | accepted |
-| `CSS-D11` | Private objects use source-authorized bounded peer streams | accepted |
+| CSS-D01 | Receiver Home Station owns Friend Request decisions | accepted |
+| CSS-D02 | Author Home Station remains private resource authority | accepted |
+| CSS-D03 | One durable viewer-scoped frame per remote actor | accepted |
+| CSS-D04 | Recipient Key Exchange owns remote Content PreKey claims | accepted |
+| CSS-D05 | Large object ciphertext remains at source Social | accepted |
+| CSS-D06 | Remote interactions return to source Social authority | accepted |
+| CSS-D07 | Revocation combines local suppression with monotonic source invalidation | accepted |
+| CSS-D08 | Current readiness is Native Desktop only | accepted |
+| CSS-D09 | Federated GROUP extends the SC-D29 snapshot without replacing its authority | accepted |
+| CSS-D10 | Remote Content PreKey submit validation uses a distinct read-only peer contract | accepted |
+| CSS-D11 | Private objects use source-authorized bounded peer streams | accepted |
 
 ## CSS-D01: Receiver Home Station Owns Friend Request Decisions
 
