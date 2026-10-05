@@ -219,16 +219,16 @@ export function desktopInstallSettings(
     );
   }
   const productName = 'Peers Dev';
-  const installDirectory = path.resolve(
+  const installDirectory = path.posix.resolve(
     environment.PT_DESKTOP_INSTALL_DIR?.trim()
-      || path.join(homeDirectory, 'Applications'),
+      || path.posix.join(homeDirectory, 'Applications'),
   );
   return {
     appId,
     productName,
     deepLinkScheme: 'peers-touch-dev',
     installDirectory,
-    installPath: path.join(installDirectory, `${productName}.app`),
+    installPath: path.posix.join(installDirectory, `${productName}.app`),
   };
 }
 
