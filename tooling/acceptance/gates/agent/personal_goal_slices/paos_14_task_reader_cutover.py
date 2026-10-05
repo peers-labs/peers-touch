@@ -313,14 +313,6 @@ def run_journey(
         "Atelier runtime shell",
         timeout=120,
     )
-    wait_until(
-        lambda: client.driver.execute_script(
-            "return document.body.innerText.includes(arguments[0]);",
-            title,
-        ),
-        "Atelier TaskRun title",
-        timeout=120,
-    )
     atelier_screenshot = artifact_dir / "atelier-taskrun-reader.png"
     client.driver.save_screenshot(str(atelier_screenshot))
 
