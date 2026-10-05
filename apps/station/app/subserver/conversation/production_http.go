@@ -223,9 +223,13 @@ func (s *subServer) handleCreateDirectConversation(
 		},
 	)
 	if err != nil {
+		stage := "commit_direct"
+		if commandStage, ok := command.DirectCreationFailureStage(err); ok {
+			stage = "commit_" + commandStage
+		}
 		return nil, mapProductionConversationError(
 			ctx,
-			productionStage(operation, "commit_direct", err),
+			productionStage(operation, stage, err),
 		)
 	}
 	if result.PostCommitError != nil {

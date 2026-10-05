@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -27,6 +28,36 @@ const (
 	commandProposalVersion     = uint32(1)
 	commandProposalScope       = "conversation-command-proposal"
 )
+
+type directCreationStageError struct {
+	stage string
+	cause error
+}
+
+func (e *directCreationStageError) Error() string {
+	return fmt.Sprintf("application.create_direct: %s: %v", e.stage, e.cause)
+}
+
+func (e *directCreationStageError) Unwrap() error {
+	return e.cause
+}
+
+func directCreationStage(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &directCreationStageError{stage: stage, cause: err}
+}
+
+// DirectCreationFailureStage returns a non-sensitive transaction stage while
+// retaining the original error for typed mapping and server-side diagnostics.
+func DirectCreationFailureStage(err error) (string, bool) {
+	var staged *directCreationStageError
+	if !errors.As(err, &staged) {
+		return "", false
+	}
+	return staged.stage, true
+}
 
 type Service struct {
 	unitOfWork      ports.UnitOfWork
@@ -437,7 +468,7 @@ func (s *Service) createDirect(
 					receiptErr,
 					conversationdomain.ErrorCodeNotFound,
 				):
-					return receiptErr
+					return directCreationStage("load_receipt", receiptErr)
 				}
 				if existing.AuthorityStation != s.localStation {
 					return conversationdomain.NewError(
@@ -454,7 +485,7 @@ func (s *Service) createDirect(
 
 				return nil
 			case !conversationdomain.IsCode(loadErr, conversationdomain.ErrorCodeNotFound):
-				return loadErr
+				return directCreationStage("load_authority", loadErr)
 			}
 			follower, followerErr := transaction.Repositories.Followers.Get(
 				ctx,
@@ -487,7 +518,7 @@ func (s *Service) createDirect(
 				followerErr,
 				conversationdomain.ErrorCodeNotFound,
 			):
-				return followerErr
+				return directCreationStage("load_follower", followerErr)
 			}
 
 			routes, routeErr := canonicalActorRoutes(
@@ -499,7 +530,7 @@ func (s *Service) createDirect(
 			}
 			active, activeErr := transaction.Identity.IsActive(ctx, request.Creator)
 			if activeErr != nil {
-				return activeErr
+				return directCreationStage("check_creator_endpoint", activeErr)
 			}
 			if !active {
 				return unauthorized(
@@ -520,7 +551,7 @@ func (s *Service) createDirect(
 					station,
 				)
 				if federationErr != nil {
-					return federationErr
+					return directCreationStage("check_federation", federationErr)
 				}
 				if !federationActive {
 					return conversationdomain.NewError(
@@ -546,7 +577,7 @@ func (s *Service) createDirect(
 				routes,
 			)
 			if buildErr != nil {
-				return buildErr
+				return directCreationStage("build_deliveries", buildErr)
 			}
 			created, transition, createErr := aggregate.CreateDirect(aggregate.CreateInput{
 				ID:               conversationID,
@@ -575,7 +606,7 @@ func (s *Service) createDirect(
 				commandHash,
 				s.localStation,
 			); persistErr != nil {
-				return persistErr
+				return directCreationStage("persist_transition", persistErr)
 			}
 			notifications = committedDeliveries(transition, s.localStation)
 			result = Result{Conversation: created.Snapshot(), Event: transition.Event}
@@ -583,6 +614,9 @@ func (s *Service) createDirect(
 		},
 	)
 	if err != nil {
+		if _, staged := DirectCreationFailureStage(err); !staged {
+			err = directCreationStage("transaction", err)
+		}
 		return Result{}, err
 	}
 	result.PostCommitError = s.notify(ctx, notifications)
