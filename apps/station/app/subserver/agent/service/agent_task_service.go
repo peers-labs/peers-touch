@@ -87,14 +87,6 @@ func (s *AgentTaskService) ListTaskMigrationReadbacks(
 	if err != nil {
 		return nil, err
 	}
-	if err := persistence.MigrateAgentTasks(db); err != nil {
-		return nil, errcode.New(
-			errcode.AgentInternal,
-			http.StatusInternalServerError,
-			"failed to migrate legacy Agent tasks",
-			err,
-		)
-	}
 	rows, err := persistence.ListAgentTaskGoalMaps(ctx, db, ownerActorID)
 	if err != nil {
 		return nil, errcode.New(

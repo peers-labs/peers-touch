@@ -2,6 +2,7 @@ import type { Timestamp } from '@bufbuild/protobuf/wkt';
 
 import {
   HomeProjectionFreshness,
+  HomeTaskStatus,
   HomeWorkKind,
   type HomeBriefItem,
   type HomeCapabilitySummary,
@@ -14,6 +15,40 @@ import {
 import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
 import type { RealtimeAgentDomainEventPayload } from '../kernel/events/types';
 import { createDesktopStore } from './createDesktopStore';
+
+export const TASK_RUN_LIFECYCLE_STATUSES = [
+  'pending',
+  'running',
+  'needs_user',
+  'completed',
+  'failed',
+  'cancelled',
+  'unavailable',
+] as const;
+
+export type TaskRunLifecycleStatus =
+  (typeof TASK_RUN_LIFECYCLE_STATUSES)[number];
+
+export function normalizeHomeTaskRunStatus(
+  status: HomeTaskStatus,
+): TaskRunLifecycleStatus {
+  switch (status) {
+    case HomeTaskStatus.PENDING:
+      return 'pending';
+    case HomeTaskStatus.RUNNING:
+      return 'running';
+    case HomeTaskStatus.NEEDS_USER:
+      return 'needs_user';
+    case HomeTaskStatus.COMPLETED:
+      return 'completed';
+    case HomeTaskStatus.FAILED:
+      return 'failed';
+    case HomeTaskStatus.CANCELLED:
+      return 'cancelled';
+    default:
+      return 'unavailable';
+  }
+}
 
 export interface HomePinnedAgentView {
   agentId: string;

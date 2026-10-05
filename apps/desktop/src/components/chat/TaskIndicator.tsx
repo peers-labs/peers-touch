@@ -16,7 +16,15 @@ export function TaskIndicator({ agentId, onClick }: TaskIndicatorProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const activeTasks = useTaskStore((s) =>
-    s.tasks.filter((task) => task.agentId === agentId && (task.status === 'running' || task.status === 'pending')),
+    s.tasks.filter(
+      (task) =>
+        task.agentId === agentId &&
+        (
+          task.status === 'running' ||
+          task.status === 'pending' ||
+          task.status === 'needs_user'
+        ),
+    ),
   );
 
   if (activeTasks.length === 0) return null;

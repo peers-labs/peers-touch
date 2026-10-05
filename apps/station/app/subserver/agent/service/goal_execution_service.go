@@ -149,6 +149,49 @@ func (s *GoalExecutionService) ListForOwner(
 	return snapshots, nil
 }
 
+func (s *GoalExecutionService) ListTaskRunsForOwner(
+	ctx context.Context,
+	ownerPTID string,
+	limit int,
+) ([]*GoalExecutionSnapshot, error) {
+	ownerPTID = strings.TrimSpace(ownerPTID)
+	if s == nil || s.db == nil {
+		return nil, goalInternal("TaskRun persistence is unavailable", nil)
+	}
+	if ownerPTID == "" {
+		return nil, goalUnauthorized()
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	var tasks []persistence.TaskRun
+	if err := s.db.WithContext(ctx).
+		Where(
+			"owner_actor_ptid = ? AND surface <> ?",
+			ownerPTID,
+			int32(model.TaskSurface_TASK_SURFACE_CHAT),
+		).
+		Order("updated_at DESC").
+		Limit(limit).
+		Find(&tasks).Error; err != nil {
+		return nil, goalInternal("List TaskRuns", err)
+	}
+
+	snapshots := make([]*GoalExecutionSnapshot, 0, len(tasks))
+	for i := range tasks {
+		snapshot, err := loadTaskRunSnapshotTx(
+			s.db.WithContext(ctx),
+			&tasks[i],
+		)
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
 func (s *GoalExecutionService) GetForOwner(
 	ctx context.Context,
 	ownerPTID string,
@@ -179,14 +222,33 @@ func loadGoalExecutionSnapshotTx(
 	tx *gorm.DB,
 	task *persistence.TaskRun,
 ) (*GoalExecutionSnapshot, error) {
-	var node persistence.AgentGoalNode
-	if err := tx.Where(
-		"goal_id = ? AND node_id = ? AND task_id = ?",
-		task.GoalID,
-		task.GoalNodeID,
-		task.TaskID,
-	).First(&node).Error; err != nil {
-		return nil, goalRecordError("Goal node", task.GoalNodeID, err)
+	snapshot, err := loadTaskRunSnapshotTx(tx, task)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot.Node == nil {
+		return nil, goalRecordError("Goal node", task.GoalNodeID, gorm.ErrRecordNotFound)
+	}
+	return snapshot, nil
+}
+
+func loadTaskRunSnapshotTx(
+	tx *gorm.DB,
+	task *persistence.TaskRun,
+) (*GoalExecutionSnapshot, error) {
+	var node *persistence.AgentGoalNode
+	if strings.TrimSpace(task.GoalID) != "" &&
+		strings.TrimSpace(task.GoalNodeID) != "" {
+		var record persistence.AgentGoalNode
+		if err := tx.Where(
+			"goal_id = ? AND node_id = ? AND task_id = ?",
+			task.GoalID,
+			task.GoalNodeID,
+			task.TaskID,
+		).First(&record).Error; err != nil {
+			return nil, goalRecordError("Goal node", task.GoalNodeID, err)
+		}
+		node = &record
 	}
 
 	var step persistence.ExecutionStep
@@ -197,12 +259,16 @@ func loadGoalExecutionSnapshotTx(
 	).First(&step).Error; err != nil {
 		return nil, goalRecordError("Goal ExecutionStep", task.RootStepID, err)
 	}
-	result, err := loadGoalResultProjectionTx(tx, task, &step)
-	if err != nil {
-		return nil, goalInternal("Load Goal result projection", err)
+	var result *GoalResultProjection
+	if node != nil {
+		var err error
+		result, err = loadGoalResultProjectionTx(tx, task, &step)
+		if err != nil {
+			return nil, goalInternal("Load Goal result projection", err)
+		}
 	}
 	return &GoalExecutionSnapshot{
-		Node:   &node,
+		Node:   node,
 		Task:   task,
 		Step:   &step,
 		Result: result,

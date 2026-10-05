@@ -45,18 +45,12 @@ func (s homeReadinessGetterStub) Get(
 	return s.byAgent[req.GetAgentId()], nil
 }
 
-type homeTaskListerStub struct {
-	tasks []*persistence.AgentTask
-	err   error
-}
-
-type homeMigratingTaskListerStub struct {
-	homeTaskListerStub
+type homeTaskMigrationListerStub struct {
 	migrations []persistence.AgentTaskGoalMap
 	migrateErr error
 }
 
-func (s homeMigratingTaskListerStub) ListTaskMigrationReadbacks(
+func (s homeTaskMigrationListerStub) ListTaskMigrationReadbacks(
 	context.Context,
 	string,
 ) ([]persistence.AgentTaskGoalMap, error) {
@@ -68,20 +62,12 @@ type homeGoalExecutionListerStub struct {
 	err        error
 }
 
-func (s homeGoalExecutionListerStub) ListForOwner(
+func (s homeGoalExecutionListerStub) ListTaskRunsForOwner(
 	context.Context,
 	string,
 	int,
 ) ([]*GoalExecutionSnapshot, error) {
 	return s.executions, s.err
-}
-
-func (s homeTaskListerStub) ListTasks(
-	context.Context,
-	string,
-	string,
-) ([]*persistence.AgentTask, error) {
-	return s.tasks, s.err
 }
 
 func (s homeConversationListerStub) ListConversations(
@@ -412,14 +398,26 @@ func TestHomeProjectionIncludesReadinessAndTaskSlices(t *testing.T) {
 				}},
 			},
 		}},
-		homeTaskListerStub{tasks: []*persistence.AgentTask{{
-			ID:           "task-1",
-			Title:        "Prepare brief",
-			AgentID:      "agent-1",
-			Status:       "running",
-			Progress:     25,
-			OwnerActorID: "ptid:actor-1",
-			UpdatedAt:    now,
+		nil,
+		homeGoalExecutionListerStub{executions: []*GoalExecutionSnapshot{{
+			Task: &persistence.TaskRun{
+				TaskID:         "task-1",
+				Title:          "Prepare brief",
+				Surface:        int32(model.TaskSurface_TASK_SURFACE_API),
+				Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+				OwnerActorPTID: "ptid:actor-1",
+				RootStepID:     "step-1",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+			Step: &persistence.ExecutionStep{
+				StepID:    "step-1",
+				TaskID:    "task-1",
+				AgentID:   "agent-1",
+				Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+				Attempt:   1,
+				AttemptID: "attempt-1",
+			},
 		}}},
 	)
 	svc.now = func() time.Time { return now }
@@ -509,25 +507,16 @@ func TestHomeProjectionIncludesCanonicalGoalTaskRun(t *testing.T) {
 
 func TestHomeProjectionShowsMigratedAgentTaskThroughCanonicalIdentity(t *testing.T) {
 	now := time.Date(2026, 10, 4, 14, 0, 0, 0, time.UTC)
-	legacy := &persistence.AgentTask{
-		ID:           "legacy-task-1",
-		Title:        "Migrated task",
-		AgentID:      "agent-1",
-		Status:       "running",
-		OwnerActorID: "ptid:actor-1",
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
 	migration := persistence.AgentTaskGoalMap{
-		LegacyTaskID:    legacy.ID,
-		OwnerPTID:       legacy.OwnerActorID,
+		LegacyTaskID:    "legacy-task-1",
+		OwnerPTID:       "ptid:actor-1",
 		GoalID:          "goal-migrated",
 		TaskID:          "task-migrated",
 		GoalNodeID:      "node-migrated",
 		StepID:          "step-migrated",
 		AttemptID:       "attempt-migrated",
 		State:           persistence.AgentTaskMigrationStateMigrated,
-		SourceStatus:    legacy.Status,
+		SourceStatus:    "running",
 		SourceUpdatedAt: now,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -536,10 +525,7 @@ func TestHomeProjectionShowsMigratedAgentTaskThroughCanonicalIdentity(t *testing
 		homeAgentListerStub{},
 		homeConversationListerStub{},
 		nil,
-		homeMigratingTaskListerStub{
-			homeTaskListerStub: homeTaskListerStub{
-				tasks: []*persistence.AgentTask{legacy},
-			},
+		homeTaskMigrationListerStub{
 			migrations: []persistence.AgentTaskGoalMap{migration},
 		},
 		homeGoalExecutionListerStub{executions: []*GoalExecutionSnapshot{{
@@ -551,10 +537,10 @@ func TestHomeProjectionShowsMigratedAgentTaskThroughCanonicalIdentity(t *testing
 			},
 			Task: &persistence.TaskRun{
 				TaskID:         migration.TaskID,
-				Title:          legacy.Title,
+				Title:          "Migrated task",
 				Surface:        int32(model.TaskSurface_TASK_SURFACE_API),
 				Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-				OwnerActorPTID: legacy.OwnerActorID,
+				OwnerActorPTID: "ptid:actor-1",
 				GoalID:         migration.GoalID,
 				GoalNodeID:     migration.GoalNodeID,
 				RootStepID:     migration.StepID,
@@ -564,7 +550,7 @@ func TestHomeProjectionShowsMigratedAgentTaskThroughCanonicalIdentity(t *testing
 			Step: &persistence.ExecutionStep{
 				StepID:    migration.StepID,
 				TaskID:    migration.TaskID,
-				AgentID:   legacy.AgentID,
+				AgentID:   "agent-1",
 				Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
 				Attempt:   1,
 				AttemptID: migration.AttemptID,
@@ -573,7 +559,7 @@ func TestHomeProjectionShowsMigratedAgentTaskThroughCanonicalIdentity(t *testing
 	)
 	svc.now = func() time.Time { return now }
 
-	projection, err := svc.Get(context.Background(), legacy.OwnerActorID, 0)
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
@@ -583,7 +569,7 @@ func TestHomeProjectionShowsMigratedAgentTaskThroughCanonicalIdentity(t *testing
 	task := projection.GetActiveTasks()[0]
 	if task.GetTaskId() != migration.TaskID ||
 		task.GetGoalId() != migration.GoalID ||
-		task.GetLegacySourceId() != legacy.ID ||
+		task.GetLegacySourceId() != migration.LegacyTaskID ||
 		task.GetMigrationState() !=
 			model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_MIGRATED {
 		t.Fatalf("migrated Home task = %+v", task)
@@ -594,21 +580,11 @@ func TestHomeProjectionShowsMigratedAgentTaskThroughCanonicalIdentity(t *testing
 	}
 }
 
-func TestHomeProjectionShowsBlockedAgentTaskMigration(t *testing.T) {
+func TestHomeProjectionOmitsBlockedMigrationWithoutCanonicalTaskRun(t *testing.T) {
 	now := time.Date(2026, 10, 4, 14, 30, 0, 0, time.UTC)
-	legacy := &persistence.AgentTask{
-		ID:           "legacy-task-blocked",
-		Title:        "Ambiguous task",
-		AgentID:      "agent-1",
-		Status:       "completed",
-		Progress:     99,
-		OwnerActorID: "ptid:actor-1",
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
 	migration := persistence.AgentTaskGoalMap{
-		LegacyTaskID:    legacy.ID,
-		OwnerPTID:       legacy.OwnerActorID,
+		LegacyTaskID:    "legacy-task-blocked",
+		OwnerPTID:       "ptid:actor-1",
 		GoalID:          "goal-blocked",
 		TaskID:          "task-blocked",
 		GoalNodeID:      "node-blocked",
@@ -616,7 +592,7 @@ func TestHomeProjectionShowsBlockedAgentTaskMigration(t *testing.T) {
 		AttemptID:       "attempt-blocked",
 		State:           persistence.AgentTaskMigrationStateBlocked,
 		BlockReason:     "terminal_state_ambiguous",
-		SourceStatus:    legacy.Status,
+		SourceStatus:    "completed",
 		SourceUpdatedAt: now,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -625,27 +601,22 @@ func TestHomeProjectionShowsBlockedAgentTaskMigration(t *testing.T) {
 		homeAgentListerStub{},
 		homeConversationListerStub{},
 		nil,
-		homeMigratingTaskListerStub{
-			homeTaskListerStub: homeTaskListerStub{
-				tasks: []*persistence.AgentTask{legacy},
-			},
+		homeTaskMigrationListerStub{
 			migrations: []persistence.AgentTaskGoalMap{migration},
 		},
 	)
 	svc.now = func() time.Time { return now }
 
-	projection, err := svc.Get(context.Background(), legacy.OwnerActorID, 0)
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	if len(projection.GetActiveTasks()) != 1 {
-		t.Fatalf("active tasks = %+v", projection.GetActiveTasks())
-	}
-	task := projection.GetActiveTasks()[0]
-	if task.GetStatus() != model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER ||
-		task.GetMigrationState() !=
-			model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_BLOCKED ||
-		task.GetMigrationBlockReason() != "terminal_state_ambiguous" {
-		t.Fatalf("blocked Home task = %+v", task)
+	if len(projection.GetActiveTasks()) != 0 ||
+		len(projection.GetRecentWork()) != 0 {
+		t.Fatalf(
+			"blocked legacy migration leaked into canonical projection: tasks=%+v recent=%+v",
+			projection.GetActiveTasks(),
+			projection.GetRecentWork(),
+		)
 	}
 }

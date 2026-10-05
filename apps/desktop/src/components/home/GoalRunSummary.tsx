@@ -98,11 +98,19 @@ function goalRunStatusLabel(
   t: (key: string) => string,
 ): string {
   switch (status) {
+    case HomeTaskStatus.PENDING:
+      return t('agent.home.taskPending');
     case HomeTaskStatus.RUNNING:
       return t('agent.home.taskRunning');
     case HomeTaskStatus.NEEDS_USER:
       return t('agent.home.taskNeedsUser');
+    case HomeTaskStatus.COMPLETED:
+      return t('agent.home.taskCompleted');
+    case HomeTaskStatus.FAILED:
+      return t('agent.home.taskFailed');
+    case HomeTaskStatus.CANCELLED:
+      return t('agent.home.taskCancelled');
     default:
-      return t('agent.home.taskPending');
+      return t('agent.home.taskUnavailable');
   }
 }

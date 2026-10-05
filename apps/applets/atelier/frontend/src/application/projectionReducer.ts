@@ -5,6 +5,7 @@ import type {
   AtelierProjectionSnapshot,
   AtelierStreamBlock,
 } from '../domain/projection';
+import { normalizeTaskRunLifecycleStatus } from '../domain/projection';
 
 export interface AtelierProjectionRuntimeState {
   snapshot: AtelierProjectionSnapshot | null;
@@ -38,9 +39,10 @@ export function createAtelierProjectionRuntimeState(): AtelierProjectionRuntimeS
 }
 
 export function stateFromAtelierSnapshot(snapshot: AtelierProjectionSnapshot): AtelierProjectionRuntimeState {
+  const normalized = cloneSnapshot(snapshot);
   return {
-    snapshot,
-    selectedTaskId: selectTaskId(snapshot, snapshot.selectedTaskId),
+    snapshot: normalized,
+    selectedTaskId: selectTaskId(normalized, normalized.selectedTaskId),
     seenEventKeys: [],
     lastSeqByScope: {},
   };
@@ -50,9 +52,10 @@ export function reconcileAtelierSnapshot(
   current: AtelierProjectionRuntimeState,
   snapshot: AtelierProjectionSnapshot,
 ): AtelierProjectionRuntimeState {
+  const normalized = cloneSnapshot(snapshot);
   return {
-    snapshot,
-    selectedTaskId: selectTaskId(snapshot, current.selectedTaskId),
+    snapshot: normalized,
+    selectedTaskId: selectTaskId(normalized, current.selectedTaskId),
     seenEventKeys: current.seenEventKeys,
     lastSeqByScope: current.lastSeqByScope,
   };
@@ -113,15 +116,33 @@ function applyAtelierProjectionPatch(
       break;
     case 'task.upsert': {
       const exists = next.workspace.tasks.some((task) => task.id === patch.task.id);
+      const task = {
+        ...patch.task,
+        executionStatus: normalizeTaskRunLifecycleStatus(
+          patch.task.executionStatus,
+        ),
+      };
       next.workspace.tasks = exists
-        ? next.workspace.tasks.map((task) => (task.id === patch.task.id ? patch.task : task))
-        : [patch.task, ...next.workspace.tasks];
+        ? next.workspace.tasks.map((currentTask) =>
+          currentTask.id === task.id ? task : currentTask
+        )
+        : [task, ...next.workspace.tasks];
       if (patch.select) next.selectedTaskId = patch.task.id;
       break;
     }
     case 'task.status':
       next.workspace.tasks = next.workspace.tasks.map((task) =>
         task.id === patch.taskId ? { ...task, status: patch.status } : task,
+      );
+      break;
+    case 'task.executionStatus':
+      next.workspace.tasks = next.workspace.tasks.map((task) =>
+        task.id === patch.taskId
+          ? {
+              ...task,
+              executionStatus: normalizeTaskRunLifecycleStatus(patch.status),
+            }
+          : task,
       );
       break;
     case 'stream.append':
@@ -235,5 +256,10 @@ function upsertById<TItem extends AtelierArtifactProjection | AtelierGateProject
 }
 
 function cloneSnapshot(snapshot: AtelierProjectionSnapshot): AtelierProjectionSnapshot {
-  return JSON.parse(JSON.stringify(snapshot)) as AtelierProjectionSnapshot;
+  const cloned = JSON.parse(JSON.stringify(snapshot)) as AtelierProjectionSnapshot;
+  cloned.workspace.tasks = cloned.workspace.tasks.map((task) => ({
+    ...task,
+    executionStatus: normalizeTaskRunLifecycleStatus(task.executionStatus),
+  }));
+  return cloned;
 }

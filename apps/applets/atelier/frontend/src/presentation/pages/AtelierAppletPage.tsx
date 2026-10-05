@@ -1067,15 +1067,24 @@ function TaskRow({
   const confirmingPurge = status === 'deleted' && purgeConfirmTaskId === task.id;
   return (
     <view
+      data-pt-taskrun-id={task.id}
       data-pt-collaboration-migration={task.migrationState}
       data-pt-migration-goal-id={task.goalId}
       data-pt-migration-source-id={task.legacySourceId}
+      data-pt-taskrun-step-id={task.stepId}
+      data-pt-taskrun-attempt-id={task.attemptId}
+      data-pt-taskrun-attempt={task.attempt}
       style={{ backgroundColor: selected ? colors.primarySoft : colors.elevated, borderColor: selected ? '#bfdbfe' : colors.border, borderRadius: px(12), borderWidth: px(1), marginBottom: px(8), padding: px(10) }}
     >
       <view bindtap={onTap}>
         <view style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: px(4) }}>
           <text style={{ color: colors.text, flex: 1, fontSize: px(13), fontWeight: '700', marginRight: px(8) }}>{task.title || t('atelier.task.untitled')}</text>
-          {task.running ? <text style={{ color: colors.success, fontSize: px(11) }}>●</text> : null}
+          <text
+            data-pt-taskrun-status={task.executionStatus}
+            style={{ color: task.executionStatus === 'unavailable' || task.executionStatus === 'failed' ? colors.danger : task.executionStatus === 'running' ? colors.success : colors.muted, fontSize: px(11) }}
+          >
+            {task.executionStatus}
+          </text>
         </view>
         <text style={{ color: colors.muted, fontSize: px(11) }}>{task.project} · {status}</text>
         {task.branch ? <text style={{ color: colors.subtle, fontSize: px(11), marginTop: px(3) }}>{task.branch}</text> : null}
