@@ -118,6 +118,7 @@ func AllModels() []interface{} {
 		&ExecutorLease{},
 		&TaskCheckpoint{},
 		&AgentGoal{},
+		&GoalCoordinatorLease{},
 		&AgentGoalEvent{},
 		&AgentRealtimeActorCursor{},
 		&AgentRealtimeOutbox{},

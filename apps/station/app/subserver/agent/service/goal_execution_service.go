@@ -14,10 +14,13 @@ import (
 )
 
 type GoalExecutionSnapshot struct {
-	Node   *persistence.AgentGoalNode
-	Task   *persistence.TaskRun
-	Step   *persistence.ExecutionStep
-	Result *GoalResultProjection
+	Node                        *persistence.AgentGoalNode
+	Task                        *persistence.TaskRun
+	Step                        *persistence.ExecutionStep
+	Result                      *GoalResultProjection
+	CoordinatorLeaseGeneration  uint64
+	CoordinatorDispatchSequence uint64
+	GoalGraphRevision           uint64
 }
 
 type GoalExecutionService struct {
@@ -104,6 +107,115 @@ func (s *GoalExecutionService) AllocateFirstTx(
 	}
 	if err := tx.WithContext(ctx).Create(node).Error; err != nil {
 		return nil, goalInternal("Create Goal node", err)
+	}
+
+	goal.GraphRevision++
+	return &GoalExecutionSnapshot{Node: node, Task: task, Step: step}, nil
+}
+
+func (s *GoalExecutionService) AllocateContinuationTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	goal *persistence.AgentGoal,
+	prerequisiteNodeID string,
+) (*GoalExecutionSnapshot, error) {
+	if s == nil || tx == nil || goal == nil {
+		return nil, goalInternal("Allocate Goal continuation", nil)
+	}
+	prerequisiteNodeID = strings.TrimSpace(prerequisiteNodeID)
+	if prerequisiteNodeID == "" {
+		return nil, goalInvalid("Goal continuation prerequisite node is required")
+	}
+
+	identitySeed := goal.GoalID + "\x00continuation"
+	nodeID := stableGoalExecutionID("gnode", identitySeed)
+	taskID := stableGoalExecutionID("task", identitySeed)
+	stepID := stableGoalExecutionID("step", identitySeed)
+	attemptID := stableGoalExecutionID("attempt", identitySeed)
+	var existing persistence.TaskRun
+	result := tx.WithContext(ctx).
+		Where(
+			"task_id = ? AND goal_id = ? AND goal_node_id = ?",
+			taskID,
+			goal.GoalID,
+			nodeID,
+		).
+		Limit(1).
+		Find(&existing)
+	if result.Error != nil {
+		return nil, goalInternal("Inspect Goal continuation", result.Error)
+	}
+	if result.RowsAffected == 1 {
+		return loadGoalExecutionSnapshotTx(tx.WithContext(ctx), &existing)
+	}
+
+	prerequisitesJSON, err := json.Marshal([]string{prerequisiteNodeID})
+	if err != nil {
+		return nil, goalInternal("Encode Goal continuation prerequisites", err)
+	}
+	meta, err := json.Marshal(map[string]string{
+		"attempt_id":           attemptID,
+		"goal_id":              goal.GoalID,
+		"goal_node_id":         nodeID,
+		"goal_phase":           "continuation",
+		"prerequisite_node_id": prerequisiteNodeID,
+		"root_step_id":         stepID,
+	})
+	if err != nil {
+		return nil, goalInternal("Encode Goal continuation metadata", err)
+	}
+
+	now := s.now().UTC()
+	title := "Finalize: " + strings.TrimSpace(goal.Title)
+	description := "Consolidate completed Goal work into the requested outcome: " +
+		strings.TrimSpace(goal.Outcome)
+	node := &persistence.AgentGoalNode{
+		GoalID:                  goal.GoalID,
+		NodeID:                  nodeID,
+		TaskID:                  taskID,
+		Title:                   title,
+		Description:             description,
+		Status:                  int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+		PrerequisiteNodeIDsJSON: string(prerequisitesJSON),
+		Priority:                -1,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	}
+	task := &persistence.TaskRun{
+		TaskID:         taskID,
+		Title:          title,
+		Description:    description,
+		Surface:        int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN),
+		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING),
+		OwnerActorPTID: goal.OwnerPTID,
+		WorkspaceID:    goal.WorkspaceID,
+		MetaJSON:       string(meta),
+		CreatedAt:      now,
+		StartedAt:      now,
+		UpdatedAt:      now,
+		GoalID:         goal.GoalID,
+		GoalNodeID:     nodeID,
+		RootStepID:     stepID,
+	}
+	step := &persistence.ExecutionStep{
+		StepID:            stepID,
+		TaskID:            taskID,
+		Role:              "executor",
+		Description:       description,
+		Status:            int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+		Attempt:           1,
+		AttemptID:         attemptID,
+		EligibleExecutors: model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED.String(),
+		StartedAt:         now,
+	}
+	if err := tx.WithContext(ctx).Create(task).Error; err != nil {
+		return nil, goalInternal("Create Goal continuation TaskRun", err)
+	}
+	if err := tx.WithContext(ctx).Create(step).Error; err != nil {
+		return nil, goalInternal("Create Goal continuation ExecutionStep", err)
+	}
+	if err := tx.WithContext(ctx).Create(node).Error; err != nil {
+		return nil, goalInternal("Create Goal continuation node", err)
 	}
 
 	goal.GraphRevision++

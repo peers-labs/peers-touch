@@ -447,11 +447,17 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		s.agentDB,
 		providerSvc,
 	)
+	goalCoordinator := service.NewGoalCoordinator(
+		s.agentDB,
+		goalExecutionService,
+		goalDirectModelExecutor,
+	)
+	goalDirectModelExecutor.SetGoalTerminalObserver(goalCoordinator)
 	goalAdmissionService := service.NewGoalAdmissionService(
 		goalService,
 		goalExecutionService,
 	)
-	goalAdmissionService.SetDirectModelExecutor(goalDirectModelExecutor)
+	goalAdmissionService.SetExecutionStarter(goalCoordinator)
 	realtimeRelay := service.NewAgentRealtimeRelay(
 		s.agentDB,
 		func() service.AgentRealtimePublisher {

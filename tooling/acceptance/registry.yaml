@@ -2049,7 +2049,8 @@
         "agent-personal-goal-contract-source",
         "agent-personal-taskrun-cutover-source",
         "agent-personal-goal-home-e2e",
-        "agent-personal-goal-event-fanout-e2e"
+        "agent-personal-goal-event-fanout-e2e",
+        "agent-personal-goal-coordinator-e2e"
       ]
     },
     {

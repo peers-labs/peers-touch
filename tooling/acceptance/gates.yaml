@@ -1471,6 +1471,22 @@
         "source-identity"
       ]
     },
+    "agent-personal-goal-coordinator-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/personal_goal_coordinator_e2e.py --mode development --require-ui --require-station-readback",
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "Native Home two-node Goal progression with dependency ordering, bounded dispatch, stable execution identities, graph revision, and one coordinator lease generation.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "runtime-events",
+        "cleanup",
+        "source-identity"
+      ]
+    },
     "agent-v2-home-command-center-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-home-command-center-e2e",
       "timeout_seconds": 600,

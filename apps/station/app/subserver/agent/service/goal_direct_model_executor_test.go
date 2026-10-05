@@ -250,7 +250,7 @@ func TestGoalDirectModelStartReplayDoesNotDispatchAgain(t *testing.T) {
 
 	goals := NewGoalService(db)
 	admission := NewGoalAdmissionService(goals)
-	admission.SetDirectModelExecutor(executor)
+	admission.SetExecutionStarter(executor)
 	reviewed := createReviewedGoal(t, goals, "ptid:actor-1")
 	ready, err := admission.Admit(
 		context.Background(),
@@ -361,7 +361,7 @@ func startGoalWithDirectModel(
 	t.Helper()
 	goals := NewGoalService(db)
 	admission := NewGoalAdmissionService(goals)
-	admission.SetDirectModelExecutor(executor)
+	admission.SetExecutionStarter(executor)
 	reviewed := createReviewedGoal(t, goals, "ptid:actor-1")
 	ready, err := admission.Admit(
 		context.Background(),
