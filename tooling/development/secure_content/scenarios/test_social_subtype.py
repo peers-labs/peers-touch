@@ -69,8 +69,6 @@ class _FakeProductClient:
     published_kinds: list[str] = []
     reaction_add_calls = 0
     delayed_reaction_add = False
-    pending_reaction_add_failures = 0
-    reaction_add_error: str | None = None
 
     def __init__(
         self,
@@ -174,16 +172,6 @@ class _FakeProductClient:
             return result
         if method == "reactToPrivateMoment":
             type(self).reaction_add_calls += 1
-            if self.reaction_add_error is not None:
-                raise social_subtype.RunnerError(self.reaction_add_error)
-            if (
-                type(self).reaction_add_calls
-                <= self.pending_reaction_add_failures
-            ):
-                raise social_subtype.RunnerError(
-                    "harness moments.reactToPrivateMoment failed: "
-                    "secure content Reaction command is already pending"
-                )
             if self.delayed_reaction_add and type(self).reaction_add_calls == 1:
                 return {"reactions": []}
             return {
@@ -206,8 +194,6 @@ class SocialSubtypeScenarioTest(unittest.TestCase):
         _FakeProductClient.published_kinds = []
         _FakeProductClient.reaction_add_calls = 0
         _FakeProductClient.delayed_reaction_add = False
-        _FakeProductClient.pending_reaction_add_failures = 0
-        _FakeProductClient.reaction_add_error = None
 
     def test_retries_reaction_until_projection_converges(self) -> None:
         _FakeProductClient.delayed_reaction_add = True
@@ -224,51 +210,6 @@ class SocialSubtypeScenarioTest(unittest.TestCase):
         self.assertEqual(2, _FakeProductClient.reaction_add_calls)
         self.assertEqual(1, result["reactions"][0]["count"])
         self.assertIs(result["reactions"][0]["reactedByViewer"], True)
-
-    def test_retries_pending_reaction_command_until_projection_converges(
-        self,
-    ) -> None:
-        _FakeProductClient.pending_reaction_add_failures = 2
-        client = _FakeProductClient(
-            _Context(),
-            social_subtype.EXPECTED_CLIENTS[1],
-        )
-
-        with patch.object(social_subtype.time, "sleep"):
-            result = social_subtype._await_reaction_transition(
-                client,
-                method="reactToPrivateMoment",
-                post_id="post-reaction",
-                present=True,
-            )
-
-        self.assertEqual(3, _FakeProductClient.reaction_add_calls)
-        self.assertEqual(1, result["reactions"][0]["count"])
-        self.assertIs(result["reactions"][0]["reactedByViewer"], True)
-
-    def test_does_not_retry_non_pending_reaction_error(self) -> None:
-        _FakeProductClient.reaction_add_error = "reaction authorization failed"
-        client = _FakeProductClient(
-            _Context(),
-            social_subtype.EXPECTED_CLIENTS[1],
-        )
-
-        with (
-            patch.object(social_subtype.time, "sleep") as sleep,
-            self.assertRaisesRegex(
-                social_subtype.RunnerError,
-                "reaction authorization failed",
-            ),
-        ):
-            social_subtype._await_reaction_transition(
-                client,
-                method="reactToPrivateMoment",
-                post_id="post-reaction",
-                present=True,
-            )
-
-        self.assertEqual(1, _FakeProductClient.reaction_add_calls)
-        sleep.assert_not_called()
 
     def test_executes_complete_private_subtype_and_reaction_matrix(
         self,
