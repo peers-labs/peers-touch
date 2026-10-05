@@ -91,6 +91,7 @@ from tooling.development.secure_content.runtime_owner import (
     _prepare_remote_group_fixture,
     _revoke_remote_fixture_device,
     _wait_for_accepted_friendship_projection,
+    _wait_for_federated_locator,
     _wait_for_private_moment_state,
     _wait_for_private_moment_states,
     _parse_args,
@@ -2892,9 +2893,18 @@ class RuntimeOwnerTest(unittest.TestCase):
             {"accepted": True},
         )
 
-        result = _prepare_cross_station_social_fixture(alice, bob)
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "_wait_for_federated_locator"
+        ) as wait_for_locator:
+            result = _prepare_cross_station_social_fixture(alice, bob)
 
         self.assertEqual("federation-1", result["federationId"])
+        wait_for_locator.assert_called_once_with(
+            alice,
+            federated_handle="@bob@five-arm.invalid",
+            expected_home_station_peer_id="station-five-arm-peer",
+        )
         self.assertIn(
             call(
                 "sendFriendRequest",
@@ -2917,6 +2927,54 @@ class RuntimeOwnerTest(unittest.TestCase):
                 timeout=120,
             ),
             bob.harness.call_args_list,
+        )
+
+    def test_cross_station_locator_waits_only_for_not_found(self) -> None:
+        responses = iter(
+            (
+                (404, b'{"error":"not_found"}'),
+                (
+                    200,
+                    json.dumps(
+                        {
+                            "data": {
+                                "federated_handle": "bob@five-arm.invalid",
+                                "home_station_peer_id": (
+                                    "station-five-arm-peer"
+                                ),
+                            }
+                        }
+                    ).encode("utf-8"),
+                ),
+            )
+        )
+        sleeps: list[float] = []
+        urls: list[str] = []
+
+        def http_get(
+            url: str,
+            **_kwargs: object,
+        ) -> tuple[int, bytes]:
+            urls.append(url)
+            return next(responses)
+
+        resolved = _wait_for_federated_locator(
+            SimpleNamespace(station_url="http://station.invalid"),
+            federated_handle="@bob@five-arm.invalid",
+            expected_home_station_peer_id="station-five-arm-peer",
+            timeout_seconds=10,
+            poll_interval_seconds=2,
+            monotonic=MagicMock(side_effect=(0.0, 1.0)),
+            sleep=sleeps.append,
+            http_get=http_get,
+        )
+
+        self.assertEqual("bob@five-arm.invalid", resolved["federated_handle"])
+        self.assertEqual([2], sleeps)
+        self.assertEqual(2, len(urls))
+        self.assertIn(
+            "handle=%40bob%40five-arm.invalid",
+            urls[0],
         )
 
     def test_friendship_projection_timeout_fails_closed(self) -> None:
