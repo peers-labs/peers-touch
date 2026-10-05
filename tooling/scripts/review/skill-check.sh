@@ -36,6 +36,9 @@ dev_resource_plan_test="tooling/scripts/local-dev/dev-resource-plan.test.mjs"
 dev_session_script="tooling/scripts/local-dev/dev-session.mjs"
 dev_session_store="tooling/scripts/local-dev/dev-session-store.mjs"
 dev_session_test="tooling/scripts/local-dev/dev-session.test.mjs"
+development_close="tooling/scripts/local-dev/development-close.mjs"
+development_close_store="tooling/scripts/local-dev/development-close-store.mjs"
+development_close_test="tooling/scripts/local-dev/development-close.test.mjs"
 planctl_script="tooling/scripts/plan/planctl.mjs"
 acceptance_run="tooling/scripts/acceptance-run.py"
 acceptance_registry="tooling/acceptance/registry.yaml"
@@ -61,6 +64,10 @@ goal_review_rubric="tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md"
 runtime_handoff_skill="tooling/skills/pt-dev-runtime-handoff/SKILL.md"
 defect_closure_skill="tooling/skills/pt-defect-closure/SKILL.md"
 local_dev_env_skill="tooling/skills/pt-local-dev-env/SKILL.md"
+completion_auditor_skill="tooling/skills/pt-completion-auditor/SKILL.md"
+completion_audit_script="tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs"
+completion_audit_schema="tooling/skills/pt-completion-auditor/scripts/completion-audit-schema.mjs"
+completion_audit_test="tooling/skills/pt-completion-auditor/scripts/completion-audit.test.mjs"
 agent_development_skill="tooling/skills/pt-agent-development/SKILL.md"
 agent_impact_policy="tooling/skills/pt-agent-development/impact-policy.json"
 agent_impact_test="tooling/skills/pt-agent-development/scripts/test_impact.py"
@@ -116,6 +123,9 @@ require_file "$dev_resource_plan_test"
 require_file "$dev_session_script"
 require_file "$dev_session_store"
 require_file "$dev_session_test"
+require_file "$development_close"
+require_file "$development_close_store"
+require_file "$development_close_test"
 require_file "$planctl_script"
 require_file "$acceptance_run"
 require_file "$acceptance_registry"
@@ -130,6 +140,10 @@ require_file "$agent_plugin"
 require_file "$agent_plugin_hooks"
 require_file "$agent_plugin_entry"
 require_file "$workflow_kernel"
+require_file "$completion_auditor_skill"
+require_file "$completion_audit_script"
+require_file "$completion_audit_schema"
+require_file "$completion_audit_test"
 for kernel_test in $workflow_kernel_tests; do
   require_file "$kernel_test"
 done
@@ -1276,6 +1290,38 @@ if ! node --test "$dev_resource_plan_test" \
   fail "Development resource-plan tests failed"
 fi
 rm -f /tmp/pt-dev-resource-plan.$$
+
+if ! node --test "$development_close_test" \
+  >/tmp/pt-development-close.$$ 2>&1; then
+  cat /tmp/pt-development-close.$$
+  fail "Development close tests failed"
+fi
+rm -f /tmp/pt-development-close.$$
+
+if ! node --test "$completion_audit_test" \
+  >/tmp/pt-completion-audit.$$ 2>&1; then
+  cat /tmp/pt-completion-audit.$$
+  fail "Completion audit lifecycle tests failed"
+fi
+rm -f /tmp/pt-completion-audit.$$
+
+for marker in \
+  "implementation-ready" \
+  "delivery-ready" \
+  "close-ready" \
+  "DevelopmentCloseReceipt" \
+  "tracked" \
+  "standalone"; do
+  if ! grep -Fq "$marker" "$completion_auditor_skill"; then
+    fail "$completion_auditor_skill missing exact audit marker: $marker"
+  fi
+done
+
+for marker in "dev-close:" "dev-close-status:" "plan-cancel:" "dev-session-archive:"; do
+  if ! grep -Fq "$marker" "$local_dev_make"; then
+    fail "$local_dev_make missing lifecycle command marker: $marker"
+  fi
+done
 
 if ! python3 "$agent_impact_test" \
   >/tmp/pt-agent-impact.$$ 2>&1; then

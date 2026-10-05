@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-07-23 | **Updated**: 2026-09-28
+> **Created**: 2026-07-23 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 
 ---
@@ -302,6 +302,7 @@ registered and its binding must resolve.
 | `make profile <name>` | Explicitly select a reviewed Profile; on first use, register with the lowest free slot and minimum operational capabilities without reset |
 | `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
 | `make env-update ...` | Update requested binding fields and current registered branch while no lease is held |
+| `make env-unregister [WORKSPACE_ID=<id>]` | Remove an idle registration after coordinated Development close; rejects live declaration, active-work, PlanMount, or lease |
 | `make env-check ...` | Verify stable workspace binding, current Git source, tracked-clean topology, slot, capabilities, target match, and budget |
 | `make env-status-all` | Report all registrations and observed OS-held leases |
 | `make dev-start ...` | Publish and conflict-check this task's source/runtime intent |
@@ -310,7 +311,8 @@ registered and its binding must resolve.
 | `make dev-status-all` | Show machine-wide task declarations |
 | `make dev-check WORK_ITEM=<id>` | Verify current declaration before mutation |
 | `make dev-heartbeat WORK_ITEM=<id>` | Extend the current declaration expiry |
-| `make dev-release WORK_ITEM=<id>` | Release declaration after runtime cleanup |
+| `make dev-release WORK_ITEM=<id>` | Low-level declaration release owner; normal workflow close uses `make dev-close` |
+| `make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> CLOSE_REASON=<completed|cancelled|owner-abandon> ...` | Resume-safe cross-owner cleanup and close receipt |
 | `make plan-mount PLAN=<path>` | Mount one frozen Plan Version to this workspace |
 | `make plan-mount-status` | Resolve and validate the workspace's mount and run |
 | `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
@@ -514,3 +516,7 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
 11. **Apply Profile-ID reset policy once** — non-stable Profiles may be reset by
     the Agent without human confirmation; stable Profiles fail before lease
     acquisition. Runtime scope and ownership guards still apply.
+12. **Close before unregister** — normal completion retains the registration.
+    Explicit worktree removal uses `dev-close
+    ENVIRONMENT_POLICY=unregister`; unregister fails while any declaration,
+    active-work, PlanMount, or OS-held lease remains.

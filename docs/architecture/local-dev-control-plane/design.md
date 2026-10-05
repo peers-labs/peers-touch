@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-04
+> **Created**: 2026-09-13 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -107,6 +107,7 @@ not remain as a symlink, fallback, or second read owner.
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
 | Worktree Plan occupancy | Development Workflow | Project Ledger `PlanMount` |
 | Development source/runtime intent | Development Workflow | `~/.peers-touch/dev/work.json` |
+| Development close transaction | Development Workflow | Per-work-item `DevelopmentCloseReceipt` |
 | Local port slot | Machine Dev Control Plane | `bindings[workspaceId].slot` |
 | Station connection/deploy/reset permission | Machine Dev Control Plane | capability lease |
 | Live process and port state | OS observation | PID identity + listening socket |
@@ -182,6 +183,13 @@ passwords, private keys, user messages, or Acceptance artifacts.
 Registration is explicit. Discovery through `git worktree list`, a branch name,
 an existing directory, a project `active_work` row, or a legacy profile pointer
 must not register a worktree automatically.
+
+Registration is reusable machine allocation and remains after normal task
+completion. It is removed only for an explicitly authorized worktree removal.
+Unregister requires the exact registration owner and no live declaration,
+active-work, PlanMount, or OS-held lease. Deleted-worktree cleanup uses the
+exact workspace identity through the Development close coordinator; no
+registry row is removed by path guessing or direct file edits.
 
 Worktree activity is a derived runtime fact:
 

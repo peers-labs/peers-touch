@@ -15,6 +15,7 @@ import {
 } from './plan-package.mjs';
 import {
   PlanMountError,
+  cancelExecutionRun,
   resolvePlanExecution,
   updateExecutionRun,
 } from './plan-mount.mjs';
@@ -513,6 +514,25 @@ export async function activatePlan(_planPath, options) {
   );
 }
 
+export async function cancelPlan(_planPath, options) {
+  const current = await resolveCurrent(options);
+  const owner = requireOption(options, 'owner');
+  const cancelled = await cancelExecutionRun({
+    ...mountOptions(options),
+    owner,
+  });
+  if (
+    cancelled.mount.mountId !== current.mount.mountId ||
+    cancelled.run.snapshotDigest !== current.run.snapshotDigest
+  ) {
+    fail(
+      'PLAN_CANCEL_CONFLICT',
+      'Plan execution changed while cancellation was in progress',
+    );
+  }
+  return { ...current, run: cancelled.run };
+}
+
 export async function reopenPlan(_planPath, options) {
   const resolved = await resolveCurrent(options);
   const reviewOwner = await import('../local-dev/completion-review.mjs');
@@ -649,6 +669,11 @@ async function advanceCommand(options) {
   return summarizeExecution(await advancePlan(options.plan, options));
 }
 
+async function cancelCommand(options) {
+  assertAllowedOptions(options, [...READ_OPTIONS, 'owner']);
+  return summarizeExecution(await cancelPlan(options.plan, options));
+}
+
 async function reopenCommand(options) {
   assertAllowedOptions(options, [...READ_OPTIONS, 'work-item']);
   const result = await reopenPlan(options.plan, options);
@@ -675,6 +700,7 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
   if (command === 'status') return statusCommand(options);
   if (command === 'activate') return activateCommand(options);
   if (command === 'advance') return advanceCommand(options);
+  if (command === 'cancel') return cancelCommand(options);
   if (command === 'reopen') return reopenCommand(options);
   if (command === 'invalidate-source') {
     return invalidateSourceCommand(options);
@@ -688,6 +714,7 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
       'status',
       'activate',
       'advance',
+      'cancel',
       'reopen',
       'invalidate-source',
     ],

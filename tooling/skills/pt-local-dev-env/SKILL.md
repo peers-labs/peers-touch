@@ -159,6 +159,7 @@ Use `make relay-check` only when the user explicitly wants health-check only.
 # Machine binding and profile management
 make env-register PROFILE=<name> SLOT=<n> CAPABILITIES='<csv>' PURPOSE='<text>'
 make env-update [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<csv>']
+make env-unregister [WORKSPACE_ID=<id>]       # After coordinated close, before worktree removal
 make env-check [WORKSPACE_ID=<id>] [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<csv>'] [BUDGET_SECONDS=<n>]
 make env-status-all                         # Bindings plus observed OS-held leases
 make profiles                               # List approved canonical profiles
@@ -388,6 +389,10 @@ When the user says "set up environment for X" or "I want to debug against Y":
    committed lockfile and runs the source-aware Station ready closure.
 10. **Report**: include workspace ID, slot, capabilities, derived reset policy,
     Station URL, deploy environment, and lease result.
+11. **Remove only after close**: when the user explicitly authorizes worktree
+    removal, run `make dev-close ... ENVIRONMENT_POLICY=unregister`. Do not
+    unregister a workspace while its declaration, active-work, PlanMount, or
+    lease is live, and do not delete registry rows by hand.
 
 ## Remote Deployment
 
@@ -486,6 +491,10 @@ Source modes:
   must fail closed.
 - `make env-register` is an explicit workspace registration, not permission to
   create or edit a profile.
+- `make env-unregister` is a terminal cleanup operation. It requires the exact
+  registration owner and rejects any live declaration, active-work, PlanMount,
+  or OS-held lease. Deleted-worktree recovery uses the exact `WORKSPACE_ID`
+  through `dev-close`, not a guessed root.
 - Legacy `.local/dev/active/` pointers never select a runtime profile.
 - Runtime PIDs/logs/data live under
   `~/.peers-touch/dev/workspaces/<workspaceId>/runtime/<profile>/`.

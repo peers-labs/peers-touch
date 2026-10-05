@@ -170,7 +170,13 @@ Before mutation:
 6. If explicit no-Plan intent conflicts with a live PlanMount, return
    `PLAN_POLICY_CONFLICT`; only an explicit owner action may release the mount.
    An unmounted standalone request must remain unmounted.
-7. Preserve unrelated dirty files. Never switch branches or worktrees
+7. Reconcile the previous Development Run before admitting a new one. A
+   `DEVELOPMENT_CLOSE_IN_PROGRESS`, terminal live PlanMount, released
+   declaration with remaining active-work, or orphan mount is internal close
+   work: resume `make dev-close` with the exact work item/mode/reason. Deleted
+   worktrees use the owner-authorized `workspaceId + mountId` recovery path.
+   Do not ask the user to release individual records by hand.
+8. Preserve unrelated dirty files. Never switch branches or worktrees
    implicitly. Never create a worktree to bypass a Plan mount, lifecycle
    state, or resource conflict; only an explicit user-selected isolation or
    concurrency operation authorizes worktree creation.
@@ -216,6 +222,8 @@ Rules:
   `RESOURCE_DECLARATION_CONFLICT`.
 - A declaration is public intent, not a runtime lease or operation
   authorization.
+- `dev-start` and `plan-mount` reject an unfinished
+  `DevelopmentCloseReceipt`; resume its exact close before starting new work.
 - `peers-dev-workflow` is the canonical source and rollout owner only. Every
   installed copy executes from the conversation-bound worktree. Workflow owner
   state remains worktree-local; the Kernel writes only its separate
@@ -467,8 +475,10 @@ REPRODUCE
 - Park an external/authorization edge without blocking independent ready work.
 - Focused source checks, Gate count, coverage, and test count cannot establish
   `FUNCTIONAL_PASS`.
-- Do not run broad Acceptance, Gap Detector, Completion Auditor,
-  cross-platform matrices, or submit pipelines before `FUNCTIONAL_PASS`.
+- Do not run broad Acceptance, Gap Detector, Completion Auditor
+  `delivery-ready|close-ready`, cross-platform matrices, or submit pipelines
+  before required product `FUNCTIONAL_PASS`. Lifecycle-only
+  `implementation-ready` remains available during source work.
 
 ## 7. Amendments
 
@@ -505,7 +515,8 @@ Review is an internal quality gate, not a default user handoff:
 3. Invoke the applicable project review path, normally
    `route-change` -> `pt-code-structure-review` for authored source and record
    its source-bound decision -> `pt-quality-check` ->
-   `pt-completion-auditor` -> `pt-github-review`.
+   `pt-completion-auditor claimClass=delivery-ready` ->
+   `pt-github-review`.
 4. Treat findings that accepted sources resolve as Run work.
 5. Fix them at the owning layer, rerun affected checks, and repeat review.
 6. Advance automatically when the review passes.
@@ -536,17 +547,31 @@ After required proof:
 
 1. Run completion and quality review for the named scope.
 2. Use `pt-github-commit`, `pt-github-pr`, and `pt-github-review`.
-3. Stop/release owned runtime resources.
-4. Release the Development declaration. Tracked work also closes active-work:
+3. Stop/release owned runtime resources through their physical owner.
+4. Run the single close coordinator:
 
 ```bash
-make dev-release WORK_ITEM=<id> [SESSION=<id>]
-# tracked work only
-make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>
+make dev-close \
+  WORK_ITEM=<id> \
+  MODE=<tracked|standalone> \
+  CLOSE_REASON=<completed|cancelled|owner-abandon> \
+  ENVIRONMENT_POLICY=<retain|unregister> \
+  [MOUNT=<mount-id>] [WORKSPACE_ID=<workspace-id>]
 ```
 
-5. For tracked work, persist final owner state and emit the read-only Context
-   Anchor. Standalone work creates neither owner state nor Anchor.
+   Normal completion/cancellation archives a terminal Session, closes
+   active-work, releases the declaration and mount, then retains the reusable
+   environment unless the user authorized worktree removal. `owner-abandon` is
+   an explicit Owner decision and may archive a non-terminal Session without
+   relabeling it as successful. The coordinator is idempotent and resumes from
+   its machine-local `DevelopmentCloseReceipt`.
+   `make dev-release`, `make active-work-close`, Session archive, Plan unmount,
+   and environment unregister remain low-level owner/recovery commands; normal
+   closure never treats one of them as complete.
+5. Run `pt-completion-auditor` with `claimClass=close-ready`; it must consume
+   that exact `CLOSED` receipt and resource matrix.
+6. For tracked work, emit the final read-only Context Anchor before close when
+   the host contract requires it. Standalone work creates no Anchor.
 
 A checkpoint commit is source identity, not delivery approval. Push, PR,
 deploy, destructive reset, and history rewrite remain separate
@@ -567,6 +592,8 @@ the requested mutation. Synchronized foreign Plans are ignored.
 - Explicit no-Plan intent remained standalone and created no tracked Plan
   artifacts or projections.
 - Public declaration preceded mutation and was released at closure.
+- One `DevelopmentCloseReceipt` closed every owned resource or names the exact
+  blocker; no manual owner-by-owner cleanup was delegated to the user.
 - Every affected module emitted one standard `ModuleImpact`; one
   `PlanResourcePlan` resolved targets and capacity for the whole Task.
 - Ready target claims were published atomically; parked targets retained no
@@ -619,4 +646,6 @@ Never:
   or Session transitions that did not close a Task;
 - copy one Journey into separate Development and Acceptance implementations;
 - claim readiness from static checks or stale proof;
+- call `dev-release`, `active-work-close`, or `plan-unmount` as a substitute
+  for the coordinated `dev-close` lifecycle;
 - leave declarations or owned runtime resources active after closure.

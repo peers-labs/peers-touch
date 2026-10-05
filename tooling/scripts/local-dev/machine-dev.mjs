@@ -13,6 +13,7 @@ import {
   selectWorkspaceProfile,
   statusAll,
   unregisterWorkspace,
+  unregisterWorkspaceByIdentity,
   updateWorkspace,
   validateLeaseRequest,
   verifyHeldLease,
@@ -197,7 +198,11 @@ export async function runCli(argv) {
       return 0;
     case 'unregister':
       requireOption(options, 'owner');
-      output(unregisterWorkspace(options));
+      output(
+        options.workspaceId === undefined
+          ? unregisterWorkspace(options)
+          : unregisterWorkspaceByIdentity(options),
+      );
       return 0;
     case 'check':
       output(checkWorkspace(options));
@@ -244,12 +249,12 @@ if (invokedDirectly) {
     process.exitCode = await runCli(process.argv.slice(2));
   } catch (error) {
     const payload =
-      error instanceof MachineDevError
+      error instanceof MachineDevError || typeof error?.code === 'string'
         ? {
             status: 'BLOCKED',
             code: error.code,
             message: error.message,
-            detail: error.detail,
+            detail: error.detail ?? error.details ?? {},
           }
         : {
             status: 'BLOCKED',

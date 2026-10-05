@@ -140,7 +140,9 @@
         "DWF-D36",
         "DWF-D37",
         "DWF-D38",
-        "DWF-D39"
+        "DWF-D39",
+        "DWF-D40",
+        "DWF-D41"
       ],
       "governedPaths": [
         "docs/architecture/development-workflow",
@@ -151,6 +153,9 @@
         "tooling/scripts/local-dev/active-work.mjs",
         "tooling/scripts/local-dev/completion-review.mjs",
         "tooling/scripts/local-dev/completion-review.test.mjs",
+        "tooling/scripts/local-dev/development-close-store.mjs",
+        "tooling/scripts/local-dev/development-close.mjs",
+        "tooling/scripts/local-dev/development-close.test.mjs",
         "tooling/scripts/local-dev/dev-resource-plan.mjs",
         "tooling/scripts/local-dev/dev-resource-plan.test.mjs",
         "tooling/scripts/local-dev/dev-session-schema.mjs",
@@ -324,12 +329,12 @@
         "LDCP-D08",
         "LDCP-D09",
         "LDCP-D13",
-        "LDCP-D14",
         "LDCP-D15",
         "LDCP-D16",
         "LDCP-D17",
         "LDCP-D18",
-        "LDCP-D19"
+        "LDCP-D19",
+        "LDCP-D20"
       ],
       "governedPaths": [
         "docs/architecture/local-dev-control-plane",

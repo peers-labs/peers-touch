@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-04
+> **Created**: 2026-09-13 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 
 ---
@@ -49,6 +49,8 @@
 | DWF-D37 | Make Completion Review a repository-native reviewer handoff | accepted |
 | DWF-D38 | Separate frozen Plan versions from execution worktree mounts | accepted |
 | DWF-D39 | Permit only native Desktop runtime and product proof | accepted |
+| DWF-D40 | Preserve explicit user no-Plan intent | accepted |
+| DWF-D41 | Coordinate Development close with one resumable receipt | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1977,3 +1979,81 @@ review, and cleanup controls.
 - Plan-backed commands remain fail-closed for malformed or incomplete mounts.
 - Tests use isolated generated fixtures instead of a live repository execution
   Plan.
+
+## DWF-D41: Coordinate Development Close With One Resumable Receipt
+
+**Status**: accepted
+**Date**: 2026-10-05
+
+### Context
+
+Plan completion, Session termination, active-work removal, declaration release,
+PlanMount release, runtime cleanup, and environment registration have separate
+owners. The workflow exposed those owner commands independently but had no
+cross-owner close transaction. An interruption could therefore leave a
+terminal or stale owner blocking the next task, and deleting the worktree made
+root-derived mount recovery impossible.
+
+The prior Completion Auditor also required released declarations before every
+readiness claim, creating a loop: review had to pass before close, while review
+required close to have already happened.
+
+### Decision
+
+- `dev-close` is the sole normal close coordinator. Existing stores remain the
+  state owners; the coordinator invokes them under the workspace lifecycle
+  fence.
+- It writes one machine-local, revisioned `DevelopmentCloseReceipt` under the
+  selected workspace/work-item after every completed stage.
+- Close order is runtime leases, Session archive, active-work, declaration,
+  PlanMount, then optional environment unregister.
+- `completed`, `cancelled`, and `owner-abandon` are distinct close reasons.
+  Normal reasons require matching terminal semantics. `owner-abandon` requires
+  explicit Owner intent and may archive a non-terminal Session without
+  changing its state to success.
+- Normal completion retains the reusable environment registration. Explicit
+  worktree removal uses `environmentPolicy=unregister` after every live
+  workflow/resource owner is gone.
+- `planctl cancel` is the exact-owner Execution Run cancellation command.
+  PlanMount release requires the exact `mountedBy`.
+- A deleted worktree can release only the exact
+  `workspaceId + mountId + mountedBy` mount. Repository scans and branch names
+  are not recovery selectors.
+- New declaration and PlanMount admission reject unfinished close receipts.
+  Dev Workflow resumes the internal close instead of asking the user to run
+  owner commands manually.
+- Completion audit separates `implementation-ready`, `delivery-ready`, and
+  `close-ready`. Only `close-ready` requires the exact closed receipt.
+
+### Rationale
+
+The workflow needs one application transaction without moving source-of-truth
+ownership into another monolith. A resumable receipt records cross-owner
+progress and makes retries deterministic while each owner preserves its own
+validation and atomic write.
+
+Readiness stages have different resource expectations. Delivery review occurs
+before resource release; close readiness occurs after. Separating the claims
+removes the review/release cycle without weakening final cleanup proof.
+
+### Alternatives Considered
+
+- Keep documenting a manual command sequence: rejected because interruption
+  and owner mismatch remain untracked.
+- Make declaration release cascade-delete every owner: rejected because the
+  declaration does not own Session, active-work, PlanMount, leases, or
+  environment registration.
+- Auto-unregister every completed workspace: rejected because registrations
+  and slots are reusable machine resources and worktree removal is a separate
+  Owner decision.
+
+### Consequences
+
+- `DevelopmentCloseReceipt=CLOSED` is the only lifecycle evidence for a
+  `close-ready` claim.
+- A blocked receipt names the exact remaining owner and can be retried
+  idempotently.
+- Low-level release commands remain available to their owners and recovery
+  tooling, but normal workflow closure does not call them independently.
+- Tests cover interruption, exact owner checks, standalone/tracked modes,
+  cancellation, and deleted-worktree mount recovery.

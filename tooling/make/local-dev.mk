@@ -3,13 +3,13 @@
 
 .PHONY: env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
         profile profile-authorize profile-init profiles config \
-        dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
+        dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release dev-close dev-close-status \
         dev-resources-prepare dev-resources-status dev-resource-record \
-        dev-session-start dev-session-status dev-transition dev-functional-result \
+        dev-session-start dev-session-status dev-session-archive dev-transition dev-functional-result \
         active-work-sync active-work-status active-work-status-all active-work-close \
         completion-review-prepare completion-review-submit completion-review-status \
         plan-mount plan-mount-status plan-unmount plan-validate plan-status plan-current plan-next \
-        plan-activate plan-advance plan-reopen \
+        plan-activate plan-advance plan-cancel plan-reopen \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-stop desktop-restart \
@@ -45,6 +45,7 @@ DEV_RESOURCE_INPUT_ARG := $(or $(RESOURCE_INPUT),$(DEV_RESOURCE_INPUT))
 DEV_RESOURCE_RESULT_ARG := $(or $(RESOURCE_RESULT),$(DEV_RESOURCE_RESULT))
 DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
+DEV_CLOSE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/development-close.mjs
 DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
 ACTIVE_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/active-work.mjs
 WORKTREE_OBSERVE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/worktree-observe.mjs
@@ -72,6 +73,7 @@ env-update:
 
 env-unregister:
 	@node $(MACHINE_DEV_SCRIPT) unregister \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",) \
 		--owner "$(ENV_OWNER_ARG)"
 
 env-check:
@@ -105,9 +107,10 @@ plan-mount-status:
 	@node $(PLAN_MOUNT_SCRIPT) status --repo-root "$(CURDIR)"
 
 plan-unmount:
-	@if [ -z "$(REASON)" ]; then echo "Usage: make plan-unmount REASON=<completed|cancelled|owner-unmount> [ALLOW_UNFINISHED=true]"; exit 1; fi
+	@if [ -z "$(MOUNT)" ] || [ -z "$(REASON)" ]; then echo "Usage: make plan-unmount MOUNT=<mount-id> REASON=<completed|cancelled|owner-unmount> [WORKSPACE_ID=<id>] [ALLOW_UNFINISHED=true]"; exit 1; fi
 	@node $(PLAN_MOUNT_SCRIPT) unmount \
-		--repo-root "$(CURDIR)" \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",--repo-root "$(CURDIR)") \
+		--mount-id "$(MOUNT)" \
 		--reason "$(REASON)" \
 		--allow-unfinished "$(or $(ALLOW_UNFINISHED),false)" \
 		--owner "$(DEV_OWNER_ARG)"
@@ -127,6 +130,13 @@ plan-current:
 plan-next:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-next PLAN=<package-plan.md>"; exit 1; fi
 	@node $(PLANCTL_SCRIPT) next --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-cancel:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-cancel PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) cancel \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--owner "$(DEV_OWNER_ARG)"
 
 plan-activate:
 	@if [ -z "$(PLAN)" ] || [ -z "$(TASK)" ]; then echo "Usage: make plan-activate PLAN=<package-plan.md> TASK=<ready-id>"; exit 1; fi
@@ -234,7 +244,28 @@ dev-release:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-release WORK_ITEM=<id>"; exit 1; fi
 	@node $(DEV_WORK_SCRIPT) release \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--owner "$(DEV_OWNER_ARG)" \
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
+
+dev-close:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(MODE)" ] || [ -z "$(CLOSE_REASON)" ]; then \
+		echo "Usage: make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> CLOSE_REASON=<completed|cancelled|owner-abandon> [ENVIRONMENT_POLICY=<retain|unregister>] [MOUNT=<mount-id>] [WORKSPACE_ID=<id>]"; \
+		exit 1; \
+	fi
+	@node $(DEV_CLOSE_SCRIPT) close \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--mode "$(MODE)" \
+		--reason "$(CLOSE_REASON)" \
+		--environment-policy "$(or $(ENVIRONMENT_POLICY),retain)" \
+		--owner "$(DEV_OWNER_ARG)" \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",--repo-root "$(CURDIR)") \
+		$(if $(MOUNT),--mount-id "$(MOUNT)",)
+
+dev-close-status:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-close-status WORK_ITEM=<id> [WORKSPACE_ID=<id>]"; exit 1; fi
+	@node $(DEV_CLOSE_SCRIPT) status \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",--repo-root "$(CURDIR)")
 
 dev-resources-prepare:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_RESOURCE_INPUT_ARG)" ]; then echo "Usage: make dev-resources-prepare WORK_ITEM=<id> RESOURCE_INPUT=<json-file>"; exit 1; fi
@@ -269,6 +300,12 @@ dev-session-start:
 dev-session-status:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-session-status WORK_ITEM=<id>"; exit 1; fi
 	@node $(DEV_SESSION_SCRIPT) status --work-item "$(DEV_WORK_ITEM_ARG)"
+
+dev-session-archive:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_SESSION_ARG)" ]; then echo "Usage: make dev-session-archive WORK_ITEM=<id> SESSION=<session-id>"; exit 1; fi
+	@node $(DEV_SESSION_SCRIPT) archive \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--session "$(DEV_SESSION_ARG)"
 
 dev-transition:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(TO)" ] || [ -z "$(REASON)" ]; then \

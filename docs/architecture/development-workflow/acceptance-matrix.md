@@ -1,7 +1,7 @@
 # Development Workflow Acceptance Matrix
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-04
+> **Created**: 2026-09-26 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
@@ -33,6 +33,10 @@
 | DEV-A22 | Resource aggregation | DWF-D32 | Multiple modules request shared/exclusive resources | One all-or-none fenced PlanResourcePlan selects resources and parks conflicts | Resource-plan tests |
 | DEV-A23 | Native Desktop only | DWF-D39/D-18 | Scan Desktop commands, runtime schemas, Gates, provisioners, and matrices | Native Tauri is the only Desktop runtime/proof path | Native-only source gate |
 | DEV-A24 | Native proof | DWF-D39/D-18 | Execute Desktop product Journey | Real Tauri window/input/screenshot and receiver-visible evidence pass | Native runtime-cell Gate |
+| DEV-A25 | Close resume | DWF-D41 | Interrupt after one owner release and retry exact `dev-close` selector | Same receipt advances without duplicate owner state | Development close tests |
+| DEV-A26 | Exact close ownership | DWF-D38/D41 | Cancel/release with wrong mount owner or orphan selector | Typed denial with no state mutation | Plan mount/run tests |
+| DEV-A27 | Standalone close | DWF-D40/D41 | Close explicit no-Plan work | Declaration releases; Session/active-work/mount remain not applicable | Development close tests |
+| DEV-A28 | Close readiness | DWF-D41 | Audit before and after coordinated close | Only exact CLOSED receipt with no pending resource passes | Completion audit fixtures |
 
 ## Acceptance Rules
 
@@ -43,5 +47,7 @@
   evidence digests.
 - Historical browser results and completed browser Plans remain audit history
   only.
+- Declaration release alone is not close evidence; `close-ready` consumes the
+  exact `DevelopmentCloseReceipt`.
 - Output must not expose credentials, raw conversation identifiers, canonical
   roots, or user-home paths.

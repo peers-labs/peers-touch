@@ -8,6 +8,7 @@ import { mountPlanVersion, resolvePlanExecution } from './plan-mount.mjs';
 import { createPlanRepository } from './plan-test-fixture.mjs';
 import {
   activatePlan,
+  cancelPlan,
   runPlanctl,
   summarizeExecution,
 } from './planctl.mjs';
@@ -61,6 +62,40 @@ test('activate starts only one dependency-ready Task in the Execution Run', asyn
   assert.equal(activated.run.state, 'active');
   assert.equal(activated.run.currentTaskId, taskId);
   assert.equal(activated.run.taskStates[taskId].state, 'in_progress');
+});
+
+test('cancel transitions an active Execution Run and is idempotent', async (t) => {
+  const options = scope(t);
+  const mounted = await mountPlanVersion(options);
+  const taskId = mounted.snapshot.plan.tasks.find(
+    (task) => task.dependsOn.length === 0,
+  ).id;
+  await activatePlan(options.plan, {
+    ...options,
+    task: taskId,
+  });
+
+  const cancelled = await cancelPlan(options.plan, {
+    ...options,
+    owner: options.owner,
+  });
+  assert.equal(cancelled.run.state, 'cancelled');
+  assert.equal(cancelled.run.currentTaskId, null);
+  assert.equal(cancelled.run.taskStates[taskId].state, 'pending');
+
+  const repeated = await runPlanctl([
+    'cancel',
+    '--repo-root',
+    options.repoRoot,
+    '--home',
+    options.home,
+    '--plan',
+    options.plan,
+    '--owner',
+    options.owner,
+  ]);
+  assert.equal(repeated.status, 'cancelled');
+  assert.equal(repeated.runId, cancelled.run.runId);
 });
 
 test('CLI status resolves only the workspace-mounted Plan Version', async (t) => {

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Created**: 2026-09-13 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -25,12 +25,13 @@
 | LDCP-D11 | Provide one read-only Development Control Plane dashboard | superseded by LDCP-D19 |
 | LDCP-D12 | Run one machine-wide Peers Dev application | superseded by LDCP-D19 |
 | LDCP-D13 | Project Plan progress separately from environment health | accepted |
-| LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | accepted |
+| LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | superseded by DWF-D38 |
 | LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 | LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
 | LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | accepted |
 | LDCP-D19 | Retire the Peers Dev browser service and keep Workflow Snapshot read-only | accepted |
+| LDCP-D20 | Unregister environments only through coordinated Development close | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -555,7 +556,7 @@ problem without erasing the task.
 
 ## LDCP-D14: Reserve Immutable Workspace Plan Ownership Under The Machine Dev Root
 
-**Status**: accepted
+**Status**: superseded by DWF-D38
 **Date**: 2026-09-18
 
 ### Context
@@ -591,6 +592,11 @@ mutable environment registry preserves both concerns' lifecycle.
   binding; no normal command rebinding path exists.
 - Local Dev status may project the binding but cannot use it as environment or
   runtime authority.
+
+**Supersession**: DWF-D38 replaces the permanent workspace binding with Project
+Ledger PlanMount. The machine Dev root remains the storage boundary, but normal
+completion releases the mount without removing the reusable environment
+registration.
 
 ## LDCP-D15: Canonical Profile-ID Reset Protection
 
@@ -893,3 +899,49 @@ keeps authority with the underlying workflow stores.
 - `apps/dev` contains no browser UI or server owner after the hard cut.
 - Workflow status remains scriptable and host-neutral through Workflow
   Snapshot.
+
+## LDCP-D20: Unregister Environments Only Through Coordinated Development Close
+
+**Status**: accepted
+**Date**: 2026-10-05
+
+### Context
+
+Environment registration, Development declaration, active-work, PlanMount, and
+OS-held leases have different owners. Removing a worktree or registry row while
+one remains live leaves machine state orphaned or makes later owner cleanup
+impossible.
+
+### Decision
+
+- Normal task completion retains the environment registration for reuse.
+- Explicit worktree removal selects `environmentPolicy=unregister` on
+  `dev-close`.
+- Unregister requires the exact registration owner and rejects any live
+  declaration, active-work, PlanMount, or lease.
+- A deleted-worktree recovery path may use exact `workspaceId`, but only after
+  the Development close coordinator has released every workflow owner.
+- Discovery, branch, basename, stale profile pointer, and direct registry-file
+  editing cannot unregister a workspace.
+
+### Rationale
+
+Registration is durable machine allocation, not task state. Keeping it after
+normal work avoids needless profile/slot churn, while coordinated unregister
+prevents worktree deletion from bypassing live lifecycle owners.
+
+### Alternatives Considered
+
+- Unregister after every task: rejected because registration and slot
+  allocation are reusable machine state, not work-item state.
+- Let worktree deletion implicitly remove registration: rejected because it
+  bypasses live declaration, PlanMount, active-work, and lease checks.
+- Permit direct registry-file cleanup: rejected because it has no exact owner,
+  lifecycle fence, or readback proof.
+
+### Consequences
+
+- `make env-unregister [WORKSPACE_ID=<id>]` is a terminal cleanup primitive.
+- Worktree removal remains an explicit Owner operation.
+- Tests must prove PlanMount blocks unregister and exact identity recovery works
+  after the source root is gone.

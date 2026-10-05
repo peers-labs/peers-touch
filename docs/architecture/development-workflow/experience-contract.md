@@ -1,7 +1,7 @@
 # Development Workflow Experience Contract
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-04
+> **Created**: 2026-09-26 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
@@ -83,6 +83,23 @@ unfinished run.
 5. Runtime owners build/restart/provision and return fenced manifests.
 6. Business Gates attach to prepared manifests.
 
+## DEV-J07: Close Or Recover A Development Run
+
+1. Dev Workflow stops physical runtime owners and selects the exact workspace,
+   work item, mode, close reason, and environment policy.
+2. `make dev-close` verifies no live lease, then archives Session, closes
+   active-work, releases declaration and PlanMount, and optionally unregisters
+   the environment.
+3. Each stage advances one machine-local `DevelopmentCloseReceipt`.
+4. Interruption or owner failure leaves a resumable `CLOSING` or `BLOCKED`
+   receipt; a new task is not admitted until the exact close resumes.
+5. Completion audit accepts `close-ready` only after that receipt is `CLOSED`
+   with no pending resource.
+
+Normal completion retains the environment registration. Explicit worktree
+removal uses `environmentPolicy=unregister`. If the worktree is already gone,
+recovery requires exact workspace, mount, and owner identity.
+
 ## Recovery Contract
 
 - Missing mount/snapshot/run: report the exact missing owner; never discover a
@@ -93,3 +110,5 @@ unfinished run.
 - Snapshot partial failure: retain valid owner projections and typed findings
   for failed owners.
 - Overlay policy mutation: ignore it and return typed denial under DWF-D25.
+- Interrupted close: resume the exact receipt; never infer or manually delete
+  the remaining owner.

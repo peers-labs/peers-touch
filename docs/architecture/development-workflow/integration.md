@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-04
+> **Created**: 2026-09-13 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 
 ---
@@ -73,6 +73,11 @@ make dev-status-all
 make dev-check WORK_ITEM=<id>
 make dev-heartbeat WORK_ITEM=<id>
 make dev-release WORK_ITEM=<id>
+make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> \
+  CLOSE_REASON=<completed|cancelled|owner-abandon> \
+  ENVIRONMENT_POLICY=<retain|unregister> \
+  [MOUNT=<mount-id>] [WORKSPACE_ID=<workspace-id>]
+make dev-close-status WORK_ITEM=<id> [WORKSPACE_ID=<workspace-id>]
 make dev-resources-prepare WORK_ITEM=<id> RESOURCE_INPUT=<json-file>
 make dev-resources-status WORK_ITEM=<id>
 make dev-resource-record WORK_ITEM=<id> RESOURCE_RESULT=<json-file>
@@ -136,6 +141,7 @@ make plan-next RUN=<run-id>
 make plan-status RUN=<run-id>
 make plan-advance RUN=<run-id> WORK_ITEM=<id> \
   TASK=<current-id> TO=done NEXT=<ready-id> SESSION=<session.json>
+make plan-cancel PLAN=<package-plan.md>
 make plan-reopen RUN=<run-id> WORK_ITEM=<id>
 make plan-migrate LEGACY_PLAN=<legacy.md> PACKAGE=<package-plan.md>
 ```
@@ -146,6 +152,7 @@ Development Session:
 make dev-session-start \
   WORK_ITEM=<id> PLAN=<package-plan.md> TASK=<task-id> JOURNEY=<journey-id>
 make dev-session-status WORK_ITEM=<id>
+make dev-session-archive WORK_ITEM=<id> SESSION=<session-id>
 make dev-transition WORK_ITEM=<id> TO=<state> REASON=<text> \
   [SOURCE=<json>] [VERIFICATION=<json>] [FAILURE=<json>] \
   [RUNTIME_BINDING_REF=<ref>]
@@ -174,6 +181,19 @@ All commands:
   fields without requesting them again;
 - never run broad Acceptance before functional promotion;
 - use atomic replacement, lock metadata and replayable migration/session journals.
+
+`dev-close` is the only normal cross-owner closure command. It verifies that
+physical leases are gone, archives the exact Session, closes active-work,
+releases the declaration and PlanMount, and optionally unregisters the
+environment only for authorized worktree removal. Each successful step advances
+the machine-local `DevelopmentCloseReceipt`; retries resume the same receipt.
+New declaration and mount admission rejects an unfinished receipt.
+
+`plan-cancel` requires the exact PlanMount owner. Low-level `dev-release`,
+`active-work-close`, Session archive, Plan unmount, and environment unregister
+remain owner/recovery primitives; their individual success is not a workflow
+completion claim. Deleted-worktree recovery uses
+`dev-close ... WORKSPACE_ID=<id> MOUNT=<id> CLOSE_REASON=owner-abandon`.
 
 `active-work-sync` runs from the consuming worktree and derives its record from
 the current mount, snapshot, run/Task, active declaration, Session and Git. It
@@ -410,13 +430,19 @@ decisions reach the user.
 
 ### `pt-completion-auditor`
 
-Rejects:
+Requires one exact workspace/work-item selector and declares
+`mode=tracked|standalone` plus one claim class:
 
-- a package that violates bounds/DAG/current-task rules;
-- completion inferred from archive or chat;
-- a product Task without current functional proof;
-- a plan completed while any Task is not `done`;
-- workspace active-work pointers inconsistent with package/session.
+- `implementation-ready`: exact active declaration and legal owner state;
+- `delivery-ready`: completed implementation/review frontier before close;
+- `close-ready`: exact `DevelopmentCloseReceipt=CLOSED` with no pending
+  resource.
+
+The executable lifecycle validator reports owner mismatches and missing close
+evidence. The Skill still owns findings-first architecture, security, code,
+test, docs, functional-proof, and overclaim judgment. Standalone mode never
+requires a manufactured Plan, Session, active-work, BindingProjection, or
+Completion Review receipt.
 
 ## 5. Acceptance Integration
 

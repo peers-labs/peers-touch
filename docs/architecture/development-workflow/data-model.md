@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Data Model
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-01
+> **Created**: 2026-09-13 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 
 ---
@@ -348,6 +348,9 @@ Rules:
 - a different live mount returns `PLAN_MOUNT_CONFLICT`;
 - normal release requires the corresponding run to be `completed` or
   `cancelled`; an unfinished run requires explicit owner unmount;
+- cancellation and release require exact `mountedBy` identity;
+- deleted-worktree recovery requires explicit `workspaceId + mountId` and
+  never resolves ownership from a branch or repository scan;
 - mount has no TTL and is not a runtime lease;
 - ledger writes hold one short atomic lock; the lock is not Plan occupancy;
 - every mount record is create-once, digest-verified, and owner-controlled;
@@ -427,6 +430,11 @@ Status rules:
   Task, and non-null fixed-point `exhaustion`;
 - `completed`: every Task is `done`;
 - `cancelled`: no Task is `in_progress`.
+
+`planctl cancel` is idempotent, requires the exact PlanMount owner, clears the
+current Task selection, returns any in-progress Task to `pending`, and sets the
+Execution Run to `cancelled`. It does not release Session, declaration,
+active-work, leases, or PlanMount; `dev-close` coordinates those owners.
 
 ## 6. Workspace Active-Work Projection
 
@@ -1127,6 +1135,73 @@ shared `resource.plan:<workItemId>` marker makes missing-receipt provenance
 fail closed without acting as a physical lease. The marker is reserved for the
 planner and is invalid as a module requirement or Runtime Owner inventory item.
 
+## 8.2 Development Close Receipt
+
+One exact workspace/work-item close is persisted at:
+
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/<workItemId>/development-close.json
+```
+
+```ts
+interface DevelopmentCloseReceipt {
+  kind: 'peers-touch-development-close-receipt';
+  receiptId: string;
+  workspaceId: string;
+  workItemId: string;
+  mode: 'tracked' | 'standalone';
+  closeReason: 'completed' | 'cancelled' | 'owner-abandon';
+  environmentPolicy: 'retain' | 'unregister';
+  owner: string;
+  mountId: string | null;
+  runId: string | null;
+  state: 'CLOSING' | 'BLOCKED' | 'CLOSED';
+  resources: {
+    runtimeLeases: 'PENDING' | 'RELEASED';
+    session:
+      | 'PENDING'
+      | 'ARCHIVED'
+      | 'ABANDONED'
+      | 'NOT_APPLICABLE';
+    activeWork: 'PENDING' | 'CLOSED' | 'NOT_APPLICABLE';
+    declaration: 'PENDING' | 'RELEASED' | 'NOT_APPLICABLE';
+    planMount: 'PENDING' | 'RELEASED' | 'NOT_APPLICABLE';
+    environmentRegistration:
+      | 'PENDING'
+      | 'RETAINED'
+      | 'UNREGISTERED'
+      | 'NOT_REGISTERED';
+  };
+  blocker: null | {
+    code: string;
+    message: string;
+    details: object;
+  };
+  createdAt: string;
+  updatedAt: string;
+  revision: number;
+  recordDigest: string;
+}
+```
+
+Rules:
+
+- the selector and close policy are immutable after revision 1;
+- every stage invokes the existing owner and persists its readback before the
+  next stage;
+- `CLOSED` permits no `PENDING` resource;
+- only `BLOCKED` carries a blocker;
+- normal completion/cancellation archives only terminal Sessions;
+- `owner-abandon` may archive a non-terminal Session as `ABANDONED` but cannot
+  change its Development state or claim success;
+- tracked close releases only the exact mount owner; deleted-worktree recovery
+  requires explicit `workspaceId + mountId`;
+- standalone close requires `planMount=NOT_APPLICABLE`;
+- `retain` is the normal environment policy; `unregister` is reserved for
+  authorized worktree removal after all live owners are absent;
+- `implementation-ready` and `delivery-ready` do not require this receipt;
+  `close-ready` requires its exact current `CLOSED` record.
+
 ## 9. Execution Authorization
 
 ```ts
@@ -1479,6 +1554,11 @@ Recovery edges:
 - any active state may enter `CLEANING`;
 - `CLEANING -> CANCELLED`;
 - `SOURCE_READY`, `CANCELLED` and `DELIVERY_READY` are terminal.
+
+Normal Session archive accepts only these terminal states. Explicit
+`owner-abandon` close may move a non-terminal journal/snapshot into its archive
+without changing the stored Development state; the close receipt records that
+resource as `ABANDONED`, never as a successful terminal transition.
 
 Unknown, skipped or work-class-incompatible edges are invalid.
 

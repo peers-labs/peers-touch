@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Design
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-04
+> **Created**: 2026-09-13 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 
 ---
@@ -68,6 +68,10 @@
 25. **Explicit no-Plan is standalone**: 用户明确拒绝为当前请求创建 Plan 时，
     intake 必须保持 worktree unmounted，禁止进入 Plan model/persistence 或
     伪造 Task、Session、active-work；声明、验证、review 和 cleanup 仍执行。
+26. **Close is coordinated, owners stay separate**: `dev-close` 在 workspace
+    lifecycle fence 下按 owner 顺序关闭资源并写可恢复
+    `DevelopmentCloseReceipt`；它不接管 Session、declaration、PlanMount、
+    lease 或 environment 的真源。
 
 ## 2. Evidence Ledger
 
@@ -172,6 +176,7 @@ accepted product + architecture
 | Worker/reviewer identity and liveness | Workflow Binding Store | assignment, child binding, lease and terminal receipt | canonical `BindingProjection` |
 | Tool action target | Workflow Kernel | normalized Tool Intent AST plus resolved `subjectRoot` | admission result |
 | Final handoff completeness | Workflow Kernel | rendered Anchor receipt plus create-once release receipt | host-native Stop continuation |
+| Development resource closure | Dev Workflow close coordinator | machine-local `DevelopmentCloseReceipt` plus each owner readback | Completion Auditor `close-ready` |
 | User interaction preferences | user Overlay registry | `~/.peers-touch/dev/skill-overlays/registry.json` + digest-addressed installed copy | `pt-ew` resolution |
 | Chat status | Context Anchor | derived projection only | none |
 
@@ -196,6 +201,9 @@ No owner may copy another owner's complete state. In particular:
 - `PlanResourcePlan` does not replace a physical lease or runtime manifest.
 - Business Gates do not build, provision, log in, clean up, or release
   resources.
+- Declaration release, Session archive, active-work removal, PlanMount release,
+  and environment unregister remain separate owner mutations. Only a
+  `CLOSED` close receipt proves their coordinated completion.
 
 ### 4.1 Methodology Runtime Boundaries
 
@@ -623,6 +631,31 @@ supporting action or stop after administrative work.
 
 Missing or mismatched session state is explicit `SESSION_UNAVAILABLE` or
 `SESSION_IDENTITY_MISMATCH`; it never causes history reconstruction from chat.
+
+### 8.1 Close Resume Protocol
+
+Close is a resumable owner sequence:
+
+```text
+no live runtime lease
+  -> Session archived or not applicable
+  -> active-work closed or not applicable
+  -> declaration released or not applicable
+  -> PlanMount released or not applicable
+  -> environment retained | unregistered | not registered
+  -> DevelopmentCloseReceipt CLOSED
+```
+
+Each successful stage advances the receipt before the next owner. A process
+failure leaves `CLOSING`; an owner failure leaves `BLOCKED` with its typed
+error. Repeating the exact selector resumes the remaining stages. A different
+mode, reason, owner, mount, work item, workspace, or environment policy is a
+receipt mismatch, not a new close.
+
+`owner-abandon` is the only reason allowed to archive a non-terminal Session or
+release an unfinished run. It is an explicit Owner decision and preserves the
+observed Session state. Deleted-worktree recovery omits root resolution and
+requires the exact `workspaceId + mountId + mountedBy` tuple.
 
 ## 9. Concurrency And Cutover
 

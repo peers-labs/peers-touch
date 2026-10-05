@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-05
-covered_docs_hash: 66aaebba5308015ca5c93102e4d45b7555cbfa76932b0aeb2ad6b2a45134eae8
+covered_docs_hash: f8b012ad5594d1b8b7ab3e95463ae800deb472ac6253d324103be68de8d377b2
 
 covered_docs:
   - AGENTS.md
@@ -32,6 +32,21 @@ covered_docs:
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
 ## 2026-10-05 Review
+
+DWF-D41 makes Development close one exact, resumable cross-owner transaction.
+Review now rejects declaration-only completion, wrong-owner Plan cancellation
+or release, new-work admission while a close receipt is unfinished, and
+environment unregister while declaration, active-work, PlanMount, or lease
+remains live. `implementation-ready`, `delivery-ready`, and `close-ready` are
+distinct claims; only the last consumes
+`DevelopmentCloseReceipt=CLOSED`. Deleted-worktree recovery requires exact
+workspace, mount, and owner identity.
+
+`pt-github-review/SKILL.md` was updated because standalone review and close
+readiness behavior changed directly. The coordinated-close invariant,
+owner-level regressions, Completion Auditor fixtures, architecture module
+registry, and Skill marker checks provide deterministic coverage; no generic
+code-review fixture is needed.
 
 DWF-D40 makes explicit user no-Plan intent an authoritative standalone
 execution boundary. Review must reject Agent-created placeholder Plans,

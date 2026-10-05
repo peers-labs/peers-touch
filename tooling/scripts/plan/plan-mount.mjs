@@ -15,6 +15,7 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLock,
 } from '../local-dev/workspace-lifecycle-lock.mjs';
+import { assertDevelopmentCloseAdmission } from '../local-dev/development-close-store.mjs';
 import {
   atomicReplaceFile,
   isDirectInvocation,
@@ -778,7 +779,9 @@ async function withWorkspaceLifecycle(workspace, options, operation) {
     return await withWorkspaceLifecycleLock(
       {
         home: options.home,
-        workspaceRoot: workspace.canonicalRoot,
+        ...(workspace.canonicalRoot === undefined
+          ? {}
+          : { workspaceRoot: workspace.canonicalRoot }),
         workspaceId: workspace.workspaceId,
         lifecycleLease: options.lifecycleLease,
         lockTimeoutMs: options.lifecycleLockTimeoutMs,
@@ -879,6 +882,101 @@ function readMount(mountId, options) {
     'Plan mount record cannot be read',
     validateMount,
   );
+}
+
+export function readLivePlanMountId(workspaceId, options = {}) {
+  requiredText(workspaceId, 'workspaceId', WORKSPACE_ID);
+  return readLedger(options).value.liveMountsByWorkspace[workspaceId] ?? null;
+}
+
+export function resolvePlanMountByIdentity(options = {}) {
+  const workspaceId = requiredText(
+    options.workspaceId,
+    'workspaceId',
+    WORKSPACE_ID,
+  );
+  const ledger = readLedger(options).value;
+  const indexedMountId = ledger.liveMountsByWorkspace[workspaceId] ?? null;
+  const mountId =
+    options.mountId === undefined
+      ? indexedMountId
+      : requiredText(options.mountId, 'mountId', IDENTIFIER);
+  if (mountId === null) {
+    fail('PLAN_MOUNT_REQUIRED', 'workspace has no live Plan mount', {
+      workspaceId,
+    });
+  }
+  const mount = readMount(mountId, options).value;
+  if (mount.workspaceId !== workspaceId) {
+    fail(
+      'PLAN_MOUNT_IDENTITY_MISMATCH',
+      'Plan mount does not belong to the requested workspace',
+      {
+        workspaceId,
+        mountWorkspaceId: mount.workspaceId,
+        mountId,
+      },
+    );
+  }
+  if (mount.state === 'mounted' && indexedMountId !== mountId) {
+    fail(
+      'PLAN_MOUNT_IDENTITY_MISMATCH',
+      'live Plan mount index does not match the requested mount',
+      { workspaceId, indexedMountId, mountId },
+    );
+  }
+  if (mount.state === 'released' && options.allowReleased !== true) {
+    fail('PLAN_MOUNT_REQUIRED', 'workspace has no live Plan mount', {
+      workspaceId,
+      mountId,
+    });
+  }
+  const runId = ledger.runsByMount[mountId];
+  if (!runId) {
+    fail('EXECUTION_RUN_REQUIRED', 'Plan mount has no Execution Run', {
+      mountId,
+    });
+  }
+  const workspace = {
+    workspaceId,
+    canonicalRoot: mount.canonicalRoot,
+  };
+  const { paths, snapshot, run } = readSnapshotAndRun(
+    runId,
+    workspace,
+    options,
+  );
+  const mismatches = {};
+  for (const [field, expected, actual] of [
+    ['snapshotMountId', mountId, snapshot.value.executionBinding.mountId],
+    ['snapshotWorkspaceId', workspaceId, snapshot.value.executionBinding.workspaceId],
+    ['runMountId', mountId, run.value.mountId],
+    ['planId', mount.planId, snapshot.value.planId],
+    ['planVersionId', mount.planVersionId, snapshot.value.planVersionId],
+    [
+      'planVersionDigest',
+      mount.planVersionDigest,
+      snapshot.value.planVersionDigest,
+    ],
+    ['planPath', mount.planPath, snapshot.value.planPath],
+  ]) {
+    if (expected !== actual) mismatches[field] = { expected, actual };
+  }
+  if (Object.keys(mismatches).length > 0) {
+    fail(
+      'PLAN_MOUNT_IDENTITY_MISMATCH',
+      'Plan mount, snapshot, and run identity disagree',
+      { mismatches },
+    );
+  }
+  return {
+    workspace,
+    ledger,
+    mount,
+    snapshot: snapshot.value,
+    run: run.value,
+    paths,
+  };
 }
 
 function readSnapshotAndRun(runId, workspace, options) {
@@ -1014,6 +1112,10 @@ export async function mountPlanVersion(options = {}) {
 
   return withWorkspaceLifecycle(workspace, options, () =>
     withLedgerLock(options, async () => {
+      assertDevelopmentCloseAdmission({
+        home: options.home,
+        workspaceId: workspace.workspaceId,
+      });
       const currentLedger = readLedger(options);
       const workspaceMountId =
         currentLedger.value.liveMountsByWorkspace[workspace.workspaceId];
@@ -1021,6 +1123,28 @@ export async function mountPlanVersion(options = {}) {
         currentLedger.value.liveMountsByPlanVersion[
           planPackage.planVersionDigest
         ];
+      if (workspaceMountId) {
+        const existingExecution = resolvePlanMountByIdentity({
+          ...options,
+          workspaceId: workspace.workspaceId,
+          mountId: workspaceMountId,
+        });
+        if (
+          ['completed', 'cancelled'].includes(
+            existingExecution.run.state,
+          )
+        ) {
+          fail(
+            'DEVELOPMENT_CLOSE_REQUIRED',
+            'terminal Plan execution must be closed before mount admission',
+            {
+              mountId: workspaceMountId,
+              runId: existingExecution.run.runId,
+              runState: existingExecution.run.state,
+            },
+          );
+        }
+      }
       if (workspaceMountId || versionMountId) {
         if (workspaceMountId && workspaceMountId === versionMountId) {
           const resolved = await resolvePlanExecution({
@@ -1156,8 +1280,74 @@ export async function updateExecutionRun(options = {}, updater) {
   });
 }
 
+export async function cancelExecutionRun(options = {}) {
+  const workspace =
+    options.workspaceId === undefined
+      ? canonicalWorkspace(options.repoRoot ?? process.cwd())
+      : {
+          workspaceId: requiredText(
+            options.workspaceId,
+            'workspaceId',
+            WORKSPACE_ID,
+          ),
+        };
+  const owner = requiredText(options.owner, 'owner');
+  return withWorkspaceLifecycle(workspace, options, async () => {
+    const resolved = resolvePlanMountByIdentity({
+      ...options,
+      workspaceId: workspace.workspaceId,
+    });
+    if (owner !== resolved.mount.mountedBy) {
+      fail(
+        'PLAN_CANCEL_OWNER_MISMATCH',
+        'only the exact mount owner may cancel an Execution Run',
+        {
+          expected: resolved.mount.mountedBy,
+          actual: owner,
+        },
+      );
+    }
+    if (resolved.run.state === 'completed') {
+      fail(
+        'PLAN_CANCEL_INVALID',
+        'a completed Execution Run cannot be cancelled',
+      );
+    }
+    if (resolved.run.state === 'cancelled') return resolved;
+    const next = structuredClone(resolved.run);
+    if (next.currentTaskId !== null) {
+      next.taskStates[next.currentTaskId] = {
+        state: 'pending',
+        blocker: null,
+      };
+    }
+    next.state = 'cancelled';
+    next.currentTaskId = null;
+    next.exhaustion = null;
+    next.updatedAt = operationDate(options).toISOString();
+    next.revision = resolved.run.revision + 1;
+    next.recordDigest = digestExecutionRun(next);
+    validateRun(next, resolved.snapshot);
+    await writeJsonAtomic(
+      resolved.paths.run,
+      next,
+      fs.readFileSync(resolved.paths.run),
+    );
+    return { ...resolved, run: next };
+  });
+}
+
 export async function releasePlanMount(options = {}) {
-  const workspace = canonicalWorkspace(options.repoRoot ?? process.cwd());
+  const workspace =
+    options.workspaceId === undefined
+      ? canonicalWorkspace(options.repoRoot ?? process.cwd())
+      : {
+          workspaceId: requiredText(
+            options.workspaceId,
+            'workspaceId',
+            WORKSPACE_ID,
+          ),
+        };
   const owner = requiredText(options.owner, 'owner');
   const reason = requiredText(options.reason, 'reason');
   if (!RELEASE_REASONS.has(reason)) {
@@ -1166,10 +1356,85 @@ export async function releasePlanMount(options = {}) {
   const now = operationDate(options);
   return withWorkspaceLifecycle(workspace, options, () =>
     withLedgerLock(options, async () => {
-      const resolved = await resolvePlanExecution({
+      const resolved = resolvePlanMountByIdentity({
         ...options,
-        repoRoot: workspace.canonicalRoot,
+        workspaceId: workspace.workspaceId,
+        allowReleased: true,
       });
+      if (
+        options.mountId !== undefined &&
+        options.mountId !== resolved.mount.mountId
+      ) {
+        fail(
+          'PLAN_MOUNT_IDENTITY_MISMATCH',
+          'requested mountId does not match the workspace mount',
+          {
+            requested: options.mountId,
+            actual: resolved.mount.mountId,
+          },
+        );
+      }
+      if (owner !== resolved.mount.mountedBy) {
+        fail(
+          'PLAN_MOUNT_OWNER_MISMATCH',
+          'only the exact mount owner may release a Plan mount',
+          {
+            expected: resolved.mount.mountedBy,
+            actual: owner,
+          },
+        );
+      }
+      if (resolved.mount.state === 'released') {
+        if (resolved.mount.releaseReason !== reason) {
+          fail(
+            'PLAN_MOUNT_RELEASE_CONFLICT',
+            'Plan mount was already released for a different reason',
+            {
+              expected: resolved.mount.releaseReason,
+              actual: reason,
+            },
+          );
+        }
+        const currentLedger = readLedger(options);
+        const liveMountsByWorkspace = {
+          ...currentLedger.value.liveMountsByWorkspace,
+        };
+        const liveMountsByPlanVersion = {
+          ...currentLedger.value.liveMountsByPlanVersion,
+        };
+        let changed = false;
+        if (
+          liveMountsByWorkspace[workspace.workspaceId] ===
+          resolved.mount.mountId
+        ) {
+          delete liveMountsByWorkspace[workspace.workspaceId];
+          changed = true;
+        }
+        if (
+          liveMountsByPlanVersion[resolved.mount.planVersionDigest] ===
+          resolved.mount.mountId
+        ) {
+          delete liveMountsByPlanVersion[resolved.mount.planVersionDigest];
+          changed = true;
+        }
+        if (!changed) {
+          return {
+            mount: resolved.mount,
+            run: resolved.run,
+            ledger: currentLedger.value,
+          };
+        }
+        const ledger = {
+          ...currentLedger.value,
+          revision: currentLedger.value.revision + 1,
+          liveMountsByWorkspace,
+          liveMountsByPlanVersion,
+        };
+        ledger.recordDigest = digestRecord(ledger);
+        validateLedger(ledger);
+        await writeJsonAtomic(currentLedger.file, ledger, currentLedger.raw);
+        return { mount: resolved.mount, run: resolved.run, ledger };
+      }
       if (
         reason === 'completed' &&
         resolved.run.state !== 'completed'
@@ -1202,9 +1467,7 @@ export async function releasePlanMount(options = {}) {
         state: 'released',
         releasedAt: now.toISOString(),
         releaseReason: reason,
-        mountedBy: owner === resolved.mount.mountedBy
-          ? owner
-          : resolved.mount.mountedBy,
+        mountedBy: owner,
       };
       released.recordDigest = digestPlanMountRecord(released);
       validateMount(released);
@@ -1269,6 +1532,8 @@ function parseArguments(argv) {
         'project-id',
         'reason',
         'allow-unfinished',
+        'workspace-id',
+        'mount-id',
       ].includes(key)
     ) {
       fail('PLAN_MOUNT_USAGE', `unsupported option: ${token}`);
@@ -1282,6 +1547,8 @@ function parseArguments(argv) {
         'project-id': 'projectId',
         reason: 'reason',
         'allow-unfinished': 'allowUnfinished',
+        'workspace-id': 'workspaceId',
+        'mount-id': 'mountId',
       }[key]
     ] = key === 'allow-unfinished' ? value === 'true' : value;
     index += 1;
@@ -1327,8 +1594,9 @@ if (isDirectInvocation(import.meta.url)) {
       error instanceof PlanMountError
         ? error
         : new PlanMountError(
-            'PLAN_MOUNT_INTERNAL_ERROR',
+            error?.code ?? 'PLAN_MOUNT_INTERNAL_ERROR',
             error?.message ?? String(error),
+            error?.details ?? error?.detail,
           );
     process.stderr.write(`${JSON.stringify(normalized.toJSON())}\n`);
     process.exitCode = 2;

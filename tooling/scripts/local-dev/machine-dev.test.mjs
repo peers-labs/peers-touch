@@ -36,6 +36,7 @@ import {
   selectWorkspaceProfile,
   statusAll,
   unregisterWorkspace,
+  unregisterWorkspaceByIdentity,
   updateWorkspace,
   validateLeaseRequest,
 } from './machine-dev-registry.mjs';
@@ -834,6 +835,14 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       expectedRevision: activeWork.revision,
       workItemId: activeWork.workItemId,
     });
+    expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
+      unregisterWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        owner: registered.owner,
+        readLivePlanMountId: () => 'mount-machine-dev-test',
+      }),
+    );
 
     const removed = unregisterWorkspace({
       home: scope.home,
@@ -848,6 +857,31 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       statusAll({ home: scope.home, envRepo: scope.envRepo }).registrations.length,
       0,
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('unregisters a deleted worktree by exact workspace identity', () => {
+  const scope = fixture();
+  try {
+    const registered = registerWorkspace(
+      registrationOptions(scope, {
+        workspaceRoot: scope.workspaceB,
+        slot: 6,
+      }),
+    );
+    rmSync(scope.workspaceB, { recursive: true, force: true });
+
+    const removed = unregisterWorkspaceByIdentity({
+      home: scope.home,
+      workspaceId: registered.workspaceId,
+      owner: registered.owner,
+      now: new Date('2026-10-05T00:00:00.000Z'),
+    });
+
+    assert.equal(removed.workspaceId, registered.workspaceId);
+    assert.equal(removed.unregisteredBy, registered.owner);
   } finally {
     scope.close();
   }

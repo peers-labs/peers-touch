@@ -74,6 +74,7 @@ Target command behavior:
 | Command | Control-plane action |
 |---------|----------------------|
 | `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
+| `make env-unregister [WORKSPACE_ID=<id>]` | Remove the exact idle registration after coordinated close; reject live declaration, active-work, PlanMount, or lease |
 | `make profile <name>` | Explicitly select a reviewed Profile; register with the lowest free slot and minimum operational capabilities, excluding reset, on first use; otherwise update the existing binding |
 | `make env-update` | Atomically replace requested binding fields and the registered branch while no lease is held |
 | `make env-check` | Verify current root/ID/branch, live Git source, selected definition, slot, capabilities, target host, and budget |
@@ -81,7 +82,8 @@ Target command behavior:
 | `make dev-update` | Atomically replace the current work item's intent |
 | `make dev-status-all` | Show all worktree declarations beside observed leases |
 | `make dev-check` | Verify current worktree/branch/HEAD owns a live declaration |
-| `make dev-release` | Release the work declaration after cleanup |
+| `make dev-release` | Low-level declaration owner release; not a complete workflow close |
+| `make dev-close ... ENVIRONMENT_POLICY=<retain|unregister>` | Coordinate every workflow/resource owner and persist the resumable close receipt |
 | `make dev-resources-prepare` | Ask Dev Workflow to aggregate module impacts and atomically publish ready-target resource claims |
 | `make dev-resource-record` | Record a Runtime Owner result against the committed resource-plan fence |
 | `make plan-mount PLAN=<path>` | Mount one frozen Plan Version to the current execution workspace |

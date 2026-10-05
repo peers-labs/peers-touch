@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-09-17 | **Updated**: 2026-10-04
+> **Created**: 2026-09-17 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -18,6 +18,9 @@ tooling/scripts/local-dev/
 ├── workflow-snapshot-core.mjs
 ├── workflow-snapshot.mjs
 ├── dev-resource-plan.mjs
+├── development-close-store.mjs
+├── development-close.mjs
+├── development-close.test.mjs
 ├── dev-work-schema.mjs
 ├── dev-work-ledger.mjs
 └── dev-work.mjs
@@ -35,8 +38,10 @@ tooling/scripts/plan/
 | `tooling/scripts/local-dev/workflow-snapshot.mjs` | One-shot JSON CLI over Workflow Snapshot core |
 | `tooling/scripts/local-dev/machine-dev-registry.mjs` | Machine registry, profile validation, live lease projection, and committed resource-plan admission authority |
 | `tooling/scripts/local-dev/dev-resource-plan.mjs` | DWF-owned ModuleImpact aggregation and planner-claim provenance consumed by Local Dev admission |
+| `tooling/scripts/local-dev/development-close-store.mjs` | Digest-protected per-work-item close receipt and new-work admission guard |
+| `tooling/scripts/local-dev/development-close.mjs` | Workspace-fenced close coordinator and exact deleted-worktree recovery path |
 | `tooling/scripts/local-dev/dev-work-ledger.mjs` | Machine-wide Development intent authority |
-| `tooling/scripts/plan/plan-mount.mjs` | Project Ledger Plan mount, snapshot, run, release, and conflict owner |
+| `tooling/scripts/plan/plan-mount.mjs` | Project Ledger Plan mount, snapshot, run, exact-owner cancel/release, orphan recovery, and conflict owner |
 | `tooling/make/local-dev.mk` | Thin `make workflow-snapshot` and runtime entry points |
 
 ## 3. Dependency Direction
@@ -54,6 +59,11 @@ tooling Local Dev owners
 Development Workflow Plan mount
   -> plan-mount.mjs
   -> ~/.peers-touch/dev/plan-mounts/
+
+Development Workflow close
+  -> development-close.mjs
+  -> existing Session / active-work / declaration / mount / registry owners
+  -> per-work-item DevelopmentCloseReceipt
 ```
 
 Forbidden dependencies:

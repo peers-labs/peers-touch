@@ -45,8 +45,11 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLockSync,
 } from './workspace-lifecycle-lock.mjs';
+import { assertDevelopmentCloseAdmission } from './development-close-store.mjs';
+import { readActiveWorkRecord } from './active-work-store.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
+const WORKSPACE_ID = /^[0-9a-f]{16}$/;
 const PLANCTL_SCRIPT = fileURLToPath(
   new URL('../plan/planctl.mjs', import.meta.url),
 );
@@ -1032,12 +1035,29 @@ function mutateLedgerUnderFence(options, mutation) {
 }
 
 function mutateLedger(options, mutation) {
-  const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
+  const identity =
+    options.workspaceRoot === undefined && options.workspaceId !== undefined
+      ? {
+          workspaceId: requiredText(
+            options.workspaceId,
+            'workspaceId',
+            16,
+          ),
+        }
+      : {
+          workspaceRoot: path.resolve(options.workspaceRoot ?? repoRoot),
+        };
+  if (
+    identity.workspaceId !== undefined &&
+    !WORKSPACE_ID.test(identity.workspaceId)
+  ) {
+    fail('INVALID_DECLARATION', 'workspaceId is invalid');
+  }
   try {
     return withWorkspaceLifecycleLockSync(
       {
         home: options.home,
-        workspaceRoot,
+        ...identity,
         lifecycleLease: options.lifecycleLease,
         lockTimeoutMs:
           options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
@@ -1045,7 +1065,7 @@ function mutateLedger(options, mutation) {
       },
       (lifecycleLease) =>
         mutateLedgerUnderFence(
-          { ...options, workspaceRoot, lifecycleLease },
+          { ...options, ...identity, lifecycleLease },
           mutation,
         ),
     );
@@ -1082,7 +1102,29 @@ export function startOrUpdateDeclaration(
   const declaration = mutateLedger(options, (ledger, now) => {
     const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
     const workspaceId = workspaceIdForRoot(workspaceRoot);
+    assertDevelopmentCloseAdmission({
+      home: options.home,
+      workspaceId,
+    });
     const workItemId = requiredIdentifier(options.workItemId, 'workItemId');
+    const activeWork = readActiveWorkRecord({
+      home: options.home,
+      workspaceId,
+    });
+    if (
+      activeWork !== null &&
+      activeWork.workItemId !== workItemId
+    ) {
+      fail(
+        'DEVELOPMENT_CLOSE_REQUIRED',
+        'previous workspace active-work must be closed before new declaration',
+        {
+          activeWorkItemId: activeWork.workItemId,
+          requestedWorkItemId: workItemId,
+          revision: activeWork.revision,
+        },
+      );
+    }
     const id = declarationId(workItemId, workspaceId);
     const existing = ledger.declarations[id];
     if (requireExisting && !existing) {
@@ -1151,8 +1193,13 @@ export function startOrUpdateDeclaration(
 }
 
 function ownedDeclaration(options, ledger) {
-  const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
-  const workspaceId = workspaceIdForRoot(workspaceRoot);
+  const workspaceId =
+    options.workspaceRoot === undefined && options.workspaceId !== undefined
+      ? requiredText(options.workspaceId, 'workspaceId', 16)
+      : workspaceIdForRoot(path.resolve(options.workspaceRoot ?? repoRoot));
+  if (!WORKSPACE_ID.test(workspaceId)) {
+    fail('INVALID_DECLARATION', 'workspaceId is invalid');
+  }
   const workItemId = requiredIdentifier(options.workItemId, 'workItemId');
   const id = declarationId(workItemId, workspaceId);
   const declaration = ledger.declarations[id];
@@ -1164,6 +1211,13 @@ function ownedDeclaration(options, ledger) {
   if (options.sessionId && declaration.sessionId !== options.sessionId) {
     fail('WORK_DECLARATION_OWNER_MISMATCH', 'session does not own declaration', {
       declarationId: id,
+    });
+  }
+  if (options.owner && declaration.owner !== options.owner) {
+    fail('WORK_DECLARATION_OWNER_MISMATCH', 'owner does not own declaration', {
+      declarationId: id,
+      expected: declaration.owner,
+      actual: options.owner,
     });
   }
   return declaration;

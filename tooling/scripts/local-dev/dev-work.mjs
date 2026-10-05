@@ -51,6 +51,7 @@ const OPTION_NAMES = {
   'resource-result': 'resourceResultFile',
   'expires-minutes': 'expiresMinutes',
   'workspace-root': 'workspaceRoot',
+  'workspace-id': 'workspaceId',
   home: 'home',
 };
 
@@ -131,12 +132,14 @@ export function runCli(argv, io = {}) {
 
 function reportError(error) {
   const payload =
-    error instanceof DevWorkError || error instanceof ResourcePlanError
+    error instanceof DevWorkError ||
+    error instanceof ResourcePlanError ||
+    typeof error?.code === 'string'
       ? {
           status: 'BLOCKED',
           code: error.code,
           message: error.message,
-          detail: error.detail,
+          detail: error.detail ?? error.details ?? {},
         }
       : {
           status: 'BLOCKED',

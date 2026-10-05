@@ -154,7 +154,9 @@ Example:
     permitted source, but every non-trivial task MUST publish and confirm its
     source/runtime intent through `make dev-start` before the first repository
     write or runtime acquisition. Scope growth uses `make dev-update`;
-    completion/cancellation uses `make dev-release`. See
+    completion/cancellation/abandonment uses the coordinated `make dev-close`
+    and requires a `CLOSED` `DevelopmentCloseReceipt`; `dev-release` is only a
+    low-level declaration owner primitive. See
     `docs/architecture/development-workflow/README.md`. Source overlap across
     different worktrees on different branches is a coordination warning, not a
     lock; same-workspace, same-branch, and exclusive runtime conflicts still
@@ -818,8 +820,12 @@ arbitrary replacement JSON.
   Workflow persists only owner-defined blocker state and resynchronizes.
 - **Goal blocked** → Plan/Task/Session owners record fixed-point exhaustion;
   active-work only mirrors those owners.
-- **Close** → `make active-work-close WORK_ITEM=<id>
-  EXPECTED_REVISION=<n>` removes only this workspace's record with CAS.
+- **Close** → `make dev-close WORK_ITEM=<id> MODE=<tracked|standalone>
+  CLOSE_REASON=<completed|cancelled|owner-abandon>
+  ENVIRONMENT_POLICY=<retain|unregister>` invokes each owner in order and
+  persists one resumable close receipt. `active-work-close`, `dev-release`,
+  Session archive, Plan unmount, and environment unregister are low-level
+  owner operations, not independent completion claims.
 - **Distribution** → `peers-dev-workflow` publishes the implementation; the
   installed copy derives the consuming worktree's canonical root and
   `workspaceId`. The source repository owns no consumer runtime state.

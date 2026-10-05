@@ -22,10 +22,11 @@ bypass the workflow or create another worktree.
 
 For a TRAE multi-root workspace, install with
 `make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>`. The
-descriptor's first folder hosts the only managed bootstrap, but it never
-selects execution authority. Installation requires machine-wide workflow
-quiescence and hard-deletes only the old conversation and workflow-action
-stores; there is no compatibility reader or migration.
+selected source root, descriptor bootstrap root, and existing TRAE-participating
+roots receive equivalent ingress to one canonical Kernel; Hook location never
+selects execution authority. Normal installation is non-destructive and does
+not require machine-wide workflow quiescence. Explicit `skills-hard-cut` and
+`skills-gc` own separately authorized global-idle cleanup.
 
 | Promise ID | What must be true | Normal recovery |
 |---|---|---|
@@ -87,9 +88,15 @@ Agents must not create a worktree merely to bypass Plan mount, lifecycle, or
 resource conflicts. A worktree is created only when the user explicitly
 chooses isolation or concurrency.
 
-Before an explicitly authorized worktree removal, stop its runtime resources,
-release its declaration, and run `make env-unregister` from that worktree.
-Never delete a machine registry row by hand.
+Before an explicitly authorized worktree removal, stop its runtime resources
+and run the coordinated close with `ENVIRONMENT_POLICY=unregister`. Never
+release individual records or delete a machine registry row by hand:
+
+```bash
+make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> \
+  CLOSE_REASON=<completed|cancelled|owner-abandon> \
+  ENVIRONMENT_POLICY=unregister [MOUNT=<mount-id>]
+```
 
 For tracked work, Plan source is frozen independently from execution placement.
 An explicit owner action mounts it to one selected execution worktree:
@@ -107,8 +114,11 @@ make plan-unmount MOUNT=<mount-id> \
   REASON=<completed|cancelled|owner-unmount>
 ```
 
-Agents cannot amend the frozen version, change its execution worktree, or
-unmount an unfinished run. Repository discovery never replaces a mount.
+The command requires the exact mount owner. Agents cannot amend the frozen
+version, change its execution worktree, or unmount an unfinished run without
+explicit `owner-unmount` authority. Repository discovery never replaces a
+mount. A deleted worktree is recoverable only through exact
+`workspaceId + mountId + mountedBy` identity.
 
 ### Explicit standalone no-Plan work
 
@@ -165,8 +175,8 @@ Rules:
 - Use `make dev-status-all` to inspect all worktree declarations.
 - A declaration is public intent, not a Profile/Station lease or operation
   authorization.
-- Completion, cancellation and abandonment require
-  `make dev-release WORK_ITEM=<id>`.
+- Completion, cancellation and abandonment require `make dev-close`; a
+  declaration release alone is not complete cleanup.
 
 For a runtime-bearing Task, the Agent gathers one `ModuleImpact` from each
 affected module and prepares one combined resource plan before acquisition:
@@ -216,7 +226,8 @@ make completion-review-submit \
   VERDICT=PASS \
   ASSESSMENT=<owner-only-json-file> \
   CAPABILITY=<reviewer-capability-json-file>
-make dev-release WORK_ITEM=<stable-id>
+make dev-close WORK_ITEM=<stable-id> MODE=tracked \
+  CLOSE_REASON=completed ENVIRONMENT_POLICY=retain MOUNT=<mount-id>
 ```
 
 `completion-review-prepare` binds the current successful Development Session,
@@ -231,6 +242,12 @@ Workflow Binding, or caller-provided identity.
 `make plan-advance` closes or parks a Task only after the required journal-backed
 Session and current Completion Review pass. `make plan-reopen` reopens the
 earliest completed closure invalidated by source or obligation drift.
+
+`make plan-cancel PLAN=<package-plan.md>` is the exact-owner cancellation path.
+After delivery or cancellation, `dev-close` verifies no live lease remains,
+archives the Session, closes active-work, releases the declaration and mount,
+and writes a resumable `DevelopmentCloseReceipt`. New work is not admitted
+while that receipt is `CLOSING` or `BLOCKED`.
 
 ### Development Skill responsibility chain
 
@@ -444,8 +461,10 @@ Acceptance scenarios are selected from product states, receiver outcomes,
 changed failure semantics, and concrete architecture risks. Do not impose a
 generic success/network/timeout/invalid/cancellation matrix on every closure.
 
-Before `FUNCTIONAL_PASS`, do not run coverage, Gap Detector, Completion Auditor,
-cross-platform matrices, submit pipeline, or unrelated broad Gate bundles.
+Before required product `FUNCTIONAL_PASS`, do not run coverage, Gap Detector,
+Completion Auditor `delivery-ready|close-ready`, cross-platform matrices,
+submit pipeline, or unrelated broad Gate bundles. The lifecycle-only
+`implementation-ready` claim remains available during source work.
 
 ---
 
@@ -509,7 +528,8 @@ Only mark task done when:
 - Tests pass
 - Required exact-source Journeys have `FUNCTIONAL_CHECK`
 - Required formal capabilities have `ACCEPTANCE_PROOF`
-- Public resource declaration and runtime leases are released
+- Public resources are closed by `dev-close` and the exact
+  `DevelopmentCloseReceipt` is `CLOSED`
 
 Suggested report format:
 

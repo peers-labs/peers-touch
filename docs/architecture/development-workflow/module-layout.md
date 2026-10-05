@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Module Layout
 
 > **Status**: active
-> **Created**: 2026-09-16 | **Updated**: 2026-10-01
+> **Created**: 2026-09-16 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 
 ---
@@ -41,6 +41,9 @@ tooling/scripts/local-dev/
 ├── dev-work-ledger.mjs
 ├── dev-work.mjs
 ├── dev-work.test.mjs
+├── development-close-store.mjs
+├── development-close.mjs
+├── development-close.test.mjs
 ├── dev-resource-plan.mjs
 ├── dev-resource-plan.test.mjs
 ├── dev-session-schema.mjs
@@ -104,6 +107,7 @@ tooling/scripts/
     │   ├── session.json
     │   ├── events.ndjson
     │   ├── resource-plan.json
+    │   ├── development-close.json
     │   ├── session.lock
     │   ├── checks/
     │   └── artifacts/
@@ -127,7 +131,7 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D39 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D41 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Frozen Plan Version and Acceptance contract |
@@ -141,6 +145,9 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
+| `development-close-store.mjs` | Closed `DevelopmentCloseReceipt` schema, digest, atomic persistence, and new-work admission guard |
+| `development-close.mjs` | Idempotent runtime/Session/active-work/declaration/PlanMount/environment close coordinator and orphan recovery CLI |
+| `development-close.test.mjs` | Standalone/tracked close, interruption resume, admission, and owner-resource regressions |
 | `dev-resource-plan.mjs` | Standard ModuleImpact validation, target dependency closure, peak-capacity planning, concrete resource selection, declaration update, fencing, and Runtime Owner result receipt |
 | `dev-resource-plan.test.mjs` | Single/multi-module, reuse/build/restart, capacity parking, all-or-none reservation, replacement, idempotency, and fencing regressions |
 | `active-work-store.mjs` | Consuming-workspace active-work schema, revision/CAS, digest, lock and atomic storage |
@@ -173,6 +180,8 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `migration.lock.recovery` | Exclusive abandoned-lock recovery claim |
 | `checks/` | Structured check records |
 | `artifacts/` | Bounded transient diagnostics |
+| `development-close.json` | Resumable cross-owner close receipt; only `CLOSED` supports `close-ready` |
+| `tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs` | Exact selector/mode/claim lifecycle validator |
 | `tooling/skills/pt-goal-orchestrator/` | Host-neutral Goal scheduling contract, template, and review rubric |
 | `tooling/skills/pt-dev-runtime-handoff/` | Project runtime, Journey, Session result, and cleanup owner |
 | `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |

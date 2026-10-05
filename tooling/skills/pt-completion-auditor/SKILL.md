@@ -1,398 +1,242 @@
 ---
-name: "pt-completion-auditor"
-description: "Audits Peers-Touch work for completion, architecture, security, code quality, tests, docs, and evidence. Invoke for AI self-checks or readiness claims."
+name: pt-completion-auditor
+description: Audits exact Peers-Touch implementation, delivery, or close readiness. Use before non-trivial readiness claims or when the user asks what remains incomplete.
 ---
 
 # Peers-Touch Completion Auditor
 
-Use this skill to audit whether a Peers-Touch change is actually complete,
-well-structured, safe, and honestly evidenced.
+Audit one exact target. Report concrete findings before any readiness summary.
+This Skill owns completion judgment; its script validates lifecycle evidence
+only and never replaces code, architecture, security, or product review.
 
-This is a project-wide auditor. It is not specific to Atelier and must cover all
-relevant Peers-Touch domains: Desktop, Station, Mobile, Applet runtime, Agent /
-orchestration, federation, model/proto contracts, packages, tooling, docs, and
-prototype surfaces.
+Architecture source:
+`docs/architecture/development-workflow/README.md`.
 
 ## Invoke When
 
-Invoke this skill when the user asks any of:
+- Before claiming non-trivial work is implementation-ready, delivery-ready, or
+  fully closed.
+- The user asks whether work is complete, safe to continue, ready to deliver,
+  or still blocked.
+- A refactor or cross-layer change needs an overclaim and residual-risk audit.
 
-- "检查完成度", "审核完成度", "做完了吗", "还差什么", "继续前先检查".
-- "检查代码", "检查规范", "检查架构", "检查安全", "全局看一下".
-- "AI 自检", "让 AI 审核自己的完成", "不要只说完成".
-- Before claiming a non-trivial feature, phase, integration, or refactor is
-  complete, ready, production-ready, or safe to联调.
-- After work spans more than one Peers-Touch layer, for example Desktop +
-  Station, applet-sdk + manifest + gateway, proto + generated clients, or docs +
-  code + tests.
+Do not use as a generic code review, security-only review, or substitute for
+formal Acceptance.
 
-Do not invoke for isolated one-line edits unless the user explicitly asks for
-completion, readiness, or risk review.
+## Exact Target
 
-## Core Rule
+Select exactly one:
 
-Never audit by vibes.
+- workspace ID plus work item ID;
+- repository root plus work item ID;
+- the same selector plus mount ID for tracked work.
 
-Every conclusion must be tied to:
+Declare:
 
-- Concrete changed files.
-- Accepted product capabilities, journeys, visible states, and acceptance
-  assertions when the work is product-facing.
-- Authoritative plan/spec/docs, when available.
-- Runtime / contract boundaries.
-- Executed commands or explicitly missing evidence.
-- Known Peers-Touch architecture rules.
+```text
+mode = tracked | standalone
+claimClass = implementation-ready | delivery-ready | close-ready
+```
 
-If a claim is not proven, mark it as `UNPROVEN`, not `PASS`.
+Never infer the target from branch scans, synchronized Plan files, chat
+history, a nearby worktree, or the newest declaration.
 
-Before any completion/readiness verdict, require the canonical
-`BindingProjection` for the current action. OWNER claims must carry the exact
-root binding; REVIEWER claims must carry the request's exact live assignment,
-root and parent digests. An unassigned, expired, terminal, released, or
-worktree-enumerated binding is `UNPROVEN` and cannot sign completion.
+Run the lifecycle validator:
 
-For non-trivial development work, also read
-`docs/architecture/development-workflow/README.md` and require:
+```bash
+node tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs \
+  --repo-root <root> \
+  --work-item <id> \
+  --mode <tracked|standalone> \
+  --claim-class <implementation-ready|delivery-ready|close-ready> \
+  [--mount-id <id>]
+```
 
-- a released or explicitly handed-off public resource declaration;
-- a named verification class for every reported result;
-- current exact-source `FUNCTIONAL_CHECK` for each required product Journey;
-- formal `ACCEPTANCE_PROOF` for every capability claimed proven.
+For deleted-worktree recovery, replace `--repo-root` with
+`--workspace-id <id>` and provide `--mount-id`.
 
-`SOURCE_CHECK`, `STRUCTURAL_CHECK`, `UX_REVIEW`, test count, Gate count and
-prototype evidence cannot substitute for `FUNCTIONAL_CHECK`.
+## Claim Classes
 
-## Relationship To Existing Skills
+### `implementation-ready`
 
-- `pt-execution-plan-guardian`: keeps work tied to plan and evidence while
-  executing.
-- `pt-quality-check`: gathers review/acceptance evidence for a PR or range.
-- `pt-code-structure-review`: produces the stable structural verdict and rule
-  IDs for authored source changes.
-- `pt-completion-auditor`: performs a multi-dimensional completion and
-  architecture audit for a change or workstream, including AI overclaim checks.
+Use while source work is active.
 
-Use this skill when the question is broader than code review and asks whether
-the work is complete, coherent, safe, and aligned across Peers-Touch.
+- Require the exact ACTIVE Development declaration.
+- Tracked mode requires the exact mounted Plan and non-terminal Execution Run.
+- Standalone mode requires no PlanMount, Development Session, or active-work.
+- This claim says only that implementation may proceed. It does not claim
+  product behavior, Acceptance proof, or delivery readiness.
 
-When invoked by an authorized Plan Run, return findings to `pt-dev-workflow`.
-Source-backed findings are remediation work inside the Run and must not be
-delegated to the user. Request human input only for a precise DWF-D20
-destructive, external-authorization/resource, or unresolved-semantic boundary.
+### `delivery-ready`
+
+Use after implementation and required review, before resource close.
+
+- Tracked mode requires a completed Execution Run and terminal Session.
+- Standalone mode remains unmounted with no tracked projections.
+- Independently verify requested scope, code structure, tests, docs, security,
+  product-functional evidence, and formal Acceptance obligations.
+- Keep absent formal proof `NOT RUN/UNPROVEN`.
+
+### `close-ready`
+
+Use only after `make dev-close`.
+
+- Require one exact `DevelopmentCloseReceipt` in `CLOSED`.
+- Require its resource matrix to contain no `PENDING` state.
+- Require declaration and tracked projections to be released/absent.
+- Tracked mode requires the exact PlanMount to be `released`.
+- Standalone mode must remain unmounted.
+- A released declaration alone is never close-ready evidence.
 
 ## Required Audit Dimensions
 
-### 1. Requested Scope Completion
+### Scope
 
-Check the user's actual request and the current workstream.
+List each requested outcome as:
 
-- Trace product-facing work to accepted product capability/journey IDs.
-- List requested outcomes.
-- Mark each as `DONE`, `PARTIAL`, `UNPROVEN`, `NOT STARTED`, or `OUT OF SCOPE`.
-- Identify any "done" wording that is only backed by mock, mapper, docs, or
-  local-only evidence.
-- Separate formal plan completion from conversation-local progress.
-- Verify the required Journey reached `FUNCTIONAL_PASS` before Acceptance was
-  expanded or executed.
+`DONE | PARTIAL | UNPROVEN | NOT STARTED | OUT OF SCOPE`
 
-### 2. Peers-Touch Architecture Fit
+Trace product-facing outcomes to accepted capability/Journey/state sources.
+Separate conversation progress from durable owner state.
 
-Check whether the implementation respects Peers-Touch boundaries.
+### Architecture
 
-- Desktop app is a host / gateway / client shell, not a Station replacement.
-- Station subservers own backend truth, persistence, and typed service behavior.
-- Applets use applet-sdk / Host bridge and declared manifest permissions.
-- Agent / orchestration owns multi-agent execution, provider scheduling,
-  checkpoints, gates, traces, and runtime decisions.
-- Prototypes may demonstrate UI but must not be reported as production runtime.
-- Docs must not claim stronger readiness than code and tests prove.
+Verify ownership and dependency direction across every changed layer:
 
-Flag any boundary violation as at least `P1`, and `P0` if it creates data loss,
-security bypass, or false production readiness.
+- Desktop remains a host/client shell; Station owns backend truth.
+- Agent owns orchestration/provider/runtime decisions.
+- Applets use declared SDK/Host capabilities and permissions.
+- Proto/model, generated clients, persistence, service, native gateway, and UI
+  representations agree.
+- Prototypes and mocks are not reported as production runtime.
 
-### 3. Cross-Layer Contract Consistency
+### Security And Robustness
 
-For any cross-layer change, verify all relevant representations line up:
+Check actor/session context, ownership, permission denial, dangerous
+operations, data leakage, malformed input, duplicate/replay behavior,
+idempotency, failure states, cleanup, and irreversible actions.
 
-- TypeScript types and runtime adapters.
-- Rust Desktop gateway payloads, permissions, and event translation.
-- Go Station request/response structs and service mappers.
-- Protobuf / model objects, if touched or implied.
-- Applet manifest permissions and capability registry.
-- JSON field naming compatibility: `snake_case` and `camelCase` where events
-  cross Go / Rust / TypeScript.
-- Docs and examples.
+Use `P0` for dangerous correctness/security/data-integrity failures, `P1` for
+merge-blocking completion or architecture gaps, and `P2` for non-blocking
+maintainability/docs/evidence debt.
 
-Report mismatches with the exact layers involved.
+### Code And Documentation
 
-### 4. Security And Permission Review
+- Consume the current source-bound `pt-code-structure-review` decision when
+  authored source changed.
+- Check for duplicated owners, compatibility shims, dead paths, misleading
+  names, fake APIs, and broad helpers.
+- Confirm governing docs and operational knowledge match the implementation.
+- For structural changes, require one current source of truth and zero live
+  references to the removed path.
 
-Check:
+### Verification And Proof
 
-- Authentication and actor/session context.
-- Ownership checks for task, artifact, message, file, applet, or station data.
-- Manifest permission allow/deny behavior.
-- Gateway method authorization.
-- Dangerous operations: purge, delete, revoke, publish, rollback, filesystem,
-  network, token, secret, and event subscription.
-- Data leakage through logs, telemetry, projection payloads, or docs.
+Classify every command:
 
-Security claims require direct evidence. If only the happy path was tested, say
-so.
+`PASS | FAIL | NOT RUN | NOT APPLICABLE | INSUFFICIENT`
 
-### 5. Robustness And State Semantics
+Never substitute:
 
-Check:
+- typecheck/unit tests for a product Journey;
+- mock/fake host checks for native runtime proof;
+- manifest validation for permission-deny proof;
+- Suite lifecycle conformance for business proof;
+- Development records for formal Acceptance evidence.
 
-- Empty, nil, malformed, or partial payloads.
-- Duplicate events, replay, outbox retry, SSE reconnect, and idempotency.
-- Snapshot vs incremental event consistency.
-- Local fallback vs Host runtime behavior.
-- Lifecycle operations and irreversible actions.
-- Error behavior and user-facing failure state.
-- Backward compatibility with existing mock/prototype data.
+Use `pt-acceptance-gap-detector` only when the audited claim includes formal
+product/runtime proof. Carry every detected gap as `UNPROVEN`; do not invoke it
+for source-only standalone work with no proof claim.
 
-### 6. Code Quality And Maintainability
+## Mode Rules
 
-Check:
+### Tracked
 
-- The source-bound `pt-code-structure-review` decision matches the current
-  HEAD, workspace digest, range, reviewed files, and rubric hash, and has no
-  unresolved blocking primary rule IDs when authored source changed.
-- Clear domain naming and no misleading capability names.
-- No fake APIs or manifest permissions for unimplemented gateway methods.
-- No hidden coupling across Desktop / Station / applet / prototype layers.
-- No over-broad helpers that collide with existing package functions.
-- Minimal duplication, or duplication called out as temporary compatibility.
-- Tests are targeted and not just implementation restatements.
+- Consume only the selected PlanMount, immutable snapshot, Execution Run,
+  declaration, Session, active-work, review, and evidence records.
+- Do not require release for `implementation-ready` or `delivery-ready`; close
+  happens afterward.
+- Require a `CLOSED` close receipt only for `close-ready`.
+- Do not infer completion from archive, chat, task count, or a synchronized
+  foreign Plan.
 
-### 7. Verification Evidence
+### Standalone
 
-Classify every verification command:
-
-- `PASS`: command ran and covers the claim.
-- `FAIL`: command ran and failed.
-- `NOT RUN`: command not executed.
-- `NOT APPLICABLE`: not required for this scope.
-- `INSUFFICIENT`: command ran but does not prove the claim.
-
-Never treat:
-
-- Type-check as product runtime proof.
-- Unit mapper tests as end-to-end proof.
-- Mock bridge as real Host proof.
-- Manifest validation as live permission proof.
-- Docs update as implementation proof.
-- A passing Suite Runtime audit as product proof; it establishes lifecycle
-  conformance only.
-
-### 8. Documentation And Plan Alignment
-
-Check:
-
-- Product definition, benchmark disposition, experience/state contracts,
-  prototype status, architecture, and plan remain mutually consistent.
-- Tracked work has a matching workspace active-work record whose Plan, Task, branch,
-  blocker, and session fields agree with repository and plan evidence.
-- Execution plans do not contain a `## Context Anchor`; user-facing Anchor
-  output is generated by `pt-context-anchor`.
-- Docs updated where behavior or contract changed.
-- Old docs do not contradict new architecture.
-- The workspace active-work record matches the actual worktree and branch, and agrees with
-  the plan status table, tracking source, evidence, blockers, and next action.
-- The current workspace generation resolves exactly one formal Plan, every closure is
-  complete before merge, and the plan's Acceptance Execution contract matches
-  the actual diff impact.
-- Multi-scenario runtime Tasks declare `runtimeReuse`; their Suite Runtime
-  reports satisfy provisioning, client-launch, warm-reuse, attach-only,
-  receiver-proof, and cleanup constraints through
-  `pt-acceptance-pipeline-auditor`.
-- workspace active-work, dashboards, and chat projections do not claim progress
-  stronger than the plan status table and repository evidence.
-- Acceptance Infra readiness is judged from `acceptance_core_self_validation`
-  and framework evidence. Business injection and reverse-validation gaps are
-  reported separately and do not block Infra unless the generic mechanism is
-  defective.
-- "Current state" and "remaining work" are explicit.
-- Terms like `done`, `ready`, `production`, `联调`, `真源`, `mock`,
-  `projection`, and `runtime` are used accurately.
-
-### 9. Global Completion Map
-
-For multi-layer work, produce a map:
-
-- UI / client surface.
-- Runtime adapter.
-- Applet SDK / bridge.
-- Desktop gateway.
-- Station endpoint / service.
-- Persistence / model / proto.
-- Agent / orchestration.
-- Tests / gates.
-- Docs / operational knowledge.
-
-Each layer must be marked `DONE`, `PARTIAL`, `UNPROVEN`, `NOT STARTED`, or
-`OUT OF SCOPE`.
-
-## Severity
-
-Use this severity model:
-
-- `P0`: Blocks correctness, security, data integrity, or would make a readiness
-  claim false in a dangerous way.
-- `P1`: Important completion, architecture, permission, or robustness gap that
-  should be fixed before merge or real联调.
-- `P2`: Maintainability, documentation, or evidence gap that should be tracked
-  but does not block the next local step.
+- Do not require or manufacture a Plan, Task, Session, active-work, Context
+  Anchor, BindingProjection, or Completion Review receipt.
+- Use the explicit request, accepted architecture sources, diff, focused
+  checks, and findings-first review as the completion basis.
+- Require the standalone close receipt only for `close-ready`.
+- Formal Acceptance remains `NOT RUN/UNPROVEN` unless exact standalone proof
+  was actually produced by its normal owner.
 
 ## Workflow
 
-### Step 1. Establish Audit Target
+1. Establish the exact selector, mode, claim class, user request, changed
+   range, and touched domains.
+2. Run `completion-audit.mjs`; carry every blocked lifecycle check into
+   findings.
+3. Read accepted product/architecture sources and the changed code plus
+   cross-layer counterparts.
+4. Run the applicable structure, quality, security, and Acceptance owners.
+5. Build the completion matrix and report findings ordered by severity.
+6. Remediate source-backed findings inside the Development Run and re-audit.
+7. End with the strongest claim fully supported by current evidence.
 
-Identify:
-
-- User request being audited.
-- Changed files or planned files.
-- Whether the audit target is local diff, a named module, a workstream, or a
-  readiness claim.
-- Which Peers-Touch domains are touched.
-
-If the scope is unclear, ask one concise clarification question.
-
-Before building the completion matrix, invoke `pt-acceptance-gap-detector` for
-every product or runtime proof claim. Carry each detector gap into Findings and
-keep the affected requirement `UNPROVEN` or `BLOCKED`.
-
-### Step 2. Find Authoritative Sources
-
-Prefer:
-
-- Accepted product definition, benchmark disposition, experience/state
-  contracts, acceptance matrix, and confirmed prototype references.
-- `docs/architecture/**`
-- `docs/client/**`
-- `docs/station/**`
-- `docs/global/**`
-- `docs/knowledge/**`
-- `AGENTS.md`, `PROJECT.md`, `README.md`
-- Applet manifests and package contracts.
-- User decisions in the current conversation.
-
-If no source exists, say `No formal source found` and audit against an explicit
-temporary checklist.
-
-### Step 3. Inspect Cross-Layer Diffs
-
-Read changed files and nearby code. For each changed layer, inspect its
-counterparts:
-
-- TS contract -> Rust gateway -> Go service -> docs.
-- Manifest permission -> capability registry -> gateway authorization.
-- Snapshot type -> mapper -> event patch -> runtime applyPatch -> UI consumer.
-- Proto/model -> persistence -> service -> generated clients.
-
-Do not audit only the file that changed if the behavior crosses layers.
-
-### Step 4. Build The Completion Matrix
-
-Create a table:
-
-| Requirement | Status | Evidence | Gaps |
-| --- | --- | --- | --- |
-
-Statuses must be one of:
-
-- `DONE`
-- `PARTIAL`
-- `UNPROVEN`
-- `NOT STARTED`
-- `OUT OF SCOPE`
-
-### Step 5. Produce Findings
-
-List concrete issues first, ordered by severity.
-
-Each finding must include:
-
-- Title.
-- Severity.
-- Confidence.
-- Location.
-- Why it matters.
-- Suggested fix or next evidence.
-
-If no concrete defect is found, say so, but still list residual unproven areas.
-
-### Step 6. Make An Honest Readiness Claim
-
-End with the strongest accurate claim:
-
-- `Ready for local continuation`
-- `Ready for static review only`
-- `Ready for fake-host integration`
-- `Ready for real Desktop/Station联调`
-- `Not ready`
-
-Choose the weakest claim that is fully supported by evidence.
-
-The claim is a workflow input, not a user approval request. `Not ready` or
-`PARTIAL` causes remediation/re-audit while legal Plan work remains.
-
-Before the claim, verify `make dev-status WORK_ITEM=<id>` shows the declaration
-released, or name the explicit handoff owner and expiry. A forgotten live
-declaration is a completion gap.
-
-## Output Format
-
-Use this structure:
+## Output
 
 ```markdown
-**Audit Scope**
-- Target:
-- Domains:
+**Audit Target**
+- Selector:
+- Mode:
+- Claim class:
 - Sources:
 
 **Findings**
-- `P0/P1/P2` <title> — <location>
+- `P0/P1/P2` <title> - <location>
   Impact:
   Evidence:
   Fix:
 
 **Completion Matrix**
-| Product capability/journey | Architecture/plan closure | Status | Evidence | Gaps |
-| --- | --- | --- | --- | --- |
-
-**Architecture Map**
-| Layer | Status | Notes |
-| --- | --- | --- |
+| Requirement | Status | Evidence | Gap |
+| --- | --- | --- | --- |
 
 **Verification**
-- `<command>`: PASS/FAIL/NOT RUN/INSUFFICIENT — <what it proves>
+- `<command>`: PASS/FAIL/NOT RUN/NOT APPLICABLE/INSUFFICIENT - <scope>
 
 **Residual Risk**
-- <risk that remains unproven>
+- <remaining unproven area>
 
-**Readiness Claim**
-- <one accurate claim>
+**Readiness**
+- Ready for implementation | Ready for delivery | Close-ready | Not ready
 ```
 
-## Anti-Overclaim Rules
+If there are no concrete defects, say so and still list residual unproven
+areas. Use the weakest readiness claim supported by the evidence.
 
-Never say:
+## Verification
 
-- "全局完成" when only a projection or mapper is implemented.
-- "真实可用" when only mock / fake host / unit tests ran.
-- "安全" when only manifest validation passed but deny-path was not tested.
-- "端到端" when Desktop Host, Station, persistence, and UI were not exercised in
-  one flow.
-- "生产 ready" while bundle integrity, rollout, revoke, audit, or migration gates
-  are pending.
+```bash
+node --test \
+  tooling/skills/pt-completion-auditor/scripts/completion-audit.test.mjs
+node tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs \
+  --repo-root "$PWD" \
+  --work-item <id> \
+  --mode <tracked|standalone> \
+  --claim-class <claim>
+tooling/scripts/review/skill-check.sh
+```
 
-Always distinguish:
+## Anti-Patterns
 
-- Code exists.
-- Code compiles.
-- Unit tests pass.
-- Fake integration passes.
-- Real environment passes.
-- Product readiness gates pass.
+Never:
+
+- audit an unspecified branch, worktree, Plan, or "latest" task;
+- require a formal Plan or BindingProjection for explicit standalone work;
+- require released resources before a delivery-ready audit;
+- claim close-ready without consuming `DevelopmentCloseReceipt`;
+- infer product readiness from static checks, Gate count, docs, or mocks;
+- let the lifecycle script replace architecture/security/code judgment;
+- send source-backed findings to the user instead of remediating them inside
+  the authorized Development Run.
