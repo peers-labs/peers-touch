@@ -1842,6 +1842,42 @@ def _prepare_remote_group_fixture(
         created.get("groupUlid"),
         "remote Group ULID",
     )
+
+    def authoritative_local_group() -> Mapping[str, Any] | None:
+        snapshot = _chat_harness(
+            primary_client,
+            "groupLifecycleSnapshot",
+            {"groupUlid": group_ulid},
+            timeout=15,
+        )
+        members = snapshot.get("members")
+        if (
+            snapshot.get("conversationId") == group_ulid
+            and isinstance(members, Sequence)
+            and not isinstance(members, (str, bytes))
+            and any(
+                isinstance(member, Mapping)
+                and member.get("ptid") == local_member_ptid
+                for member in members
+            )
+        ):
+            return snapshot
+        return None
+
+    try:
+        wait_until(
+            authoritative_local_group,
+            "W8 authoritative local Group creation",
+            timeout=120,
+            interval=1,
+        )
+    except Exception as error:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "W8 local Group did not become authoritative",
+            resource="fixture:remote-private-recipient-group",
+        ) from error
+
     added = _chat_harness(
         primary_client,
         "inviteToGroup",
