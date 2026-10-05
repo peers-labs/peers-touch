@@ -363,10 +363,16 @@ describe('Moments acceptance harness', () => {
       home_station_peer_id: 'station-four',
     } as never);
     vi.mocked(api.federationListContexts).mockResolvedValue({
-      contexts: [{
-        federationId: 'federation-1',
-        status: 'active',
-      }],
+      contexts: [
+        {
+          federationId: 'unrelated-active-federation',
+          status: 'active',
+        },
+        {
+          federationId: 'federation-1',
+          status: 'active',
+        },
+      ],
     } as never);
     vi.mocked(api.federationResolve).mockResolvedValue({
       federatedHandle: '@remote@five-arm.invalid',
@@ -382,6 +388,7 @@ describe('Moments acceptance harness', () => {
       homeStationPeerId: 'station-four',
     });
     await expect(harness().resolveFederatedActorIdentity({
+      federationId: 'federation-1',
       federatedHandle: '@remote@five-arm.invalid',
     })).resolves.toEqual({
       actorPtid: 'ptid:test:remote',
@@ -392,6 +399,7 @@ describe('Moments acceptance harness', () => {
       'federation-1',
       '@remote@five-arm.invalid',
     );
+    expect(api.federationListContexts).not.toHaveBeenCalled();
   });
 
   it('joins and verifies the shared Federation through an acceptance-only fixture boundary', async () => {

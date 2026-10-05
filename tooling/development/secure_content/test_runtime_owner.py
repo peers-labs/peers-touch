@@ -2914,6 +2914,7 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         wait_for_resolution.assert_called_once_with(
             alice,
+            federation_id="federation-1",
             federated_handle="@bob@five-arm.invalid",
         )
         self.assertIn(
@@ -3006,6 +3007,7 @@ class RuntimeOwnerTest(unittest.TestCase):
 
         resolved = _wait_for_federated_actor_resolution(
             client,
+            federation_id="federation-1",
             federated_handle="@bob@five-arm.invalid",
             timeout_seconds=10,
             poll_interval_seconds=2,
@@ -3023,6 +3025,7 @@ class RuntimeOwnerTest(unittest.TestCase):
         with self.assertRaises(RuntimeOwnerBlocked) as raised:
             _wait_for_federated_actor_resolution(
                 client,
+                federation_id="federation-1",
                 federated_handle="@bob@five-arm.invalid",
             )
         self.assertEqual(
