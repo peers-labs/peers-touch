@@ -807,7 +807,7 @@ mod tests {
             assert!(headers.starts_with("POST /oauth/mobile/status HTTP/1.1\r\n"));
             assert!(headers
                 .to_ascii_lowercase()
-                .contains("content-type: application/x-protobuf"));
+                .contains("content-type: application/protobuf"));
             let content_length = headers
                 .lines()
                 .find_map(|line| {
