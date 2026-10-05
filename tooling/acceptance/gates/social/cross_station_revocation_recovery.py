@@ -64,6 +64,8 @@ COMMANDS = (
             "apps/desktop/src-tauri/Cargo.toml",
             "recovery",
             "--no-fail-fast",
+            "--",
+            "--test-threads=1",
         ),
         timeout_seconds=900,
     ),
