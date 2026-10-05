@@ -19,6 +19,7 @@ const (
 	defaultGoalCoordinatorLeaseTTL = 30 * time.Second
 	maxGoalReadyFrontier           = 64
 	goalFrontierAdvancedEvent      = "agent.goal.frontier.advanced"
+	goalCoordinatorLeaseCancelled  = "cancelled"
 )
 
 type goalCoordinatorDispatcher interface {
@@ -34,6 +35,7 @@ type goalCoordinatorDispatcher interface {
 		*GoalExecutionSnapshot,
 	) (bool, error)
 	Start(ownerPTID string, taskID string)
+	Cancel(ownerPTID string, taskID string) error
 }
 
 type GoalCoordinatorAdvanceResult struct {
@@ -114,6 +116,23 @@ func (c *GoalCoordinator) Start(ownerPTID string, taskID string) {
 		return
 	}
 	c.dispatcher.Start(ownerPTID, taskID)
+}
+
+func (c *GoalCoordinator) Cancel(
+	ownerPTID string,
+	taskIDs []string,
+) error {
+	if c == nil || c.dispatcher == nil {
+		return goalInternal("Goal coordinator cancellation is unavailable", nil)
+	}
+	var firstErr error
+	for _, taskID := range uniqueGoalCoordinatorTaskIDs(taskIDs) {
+		if err := c.dispatcher.Cancel(ownerPTID, taskID); err != nil &&
+			firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func (c *GoalCoordinator) OnTaskTerminal(
@@ -505,6 +524,30 @@ func (c *GoalCoordinator) updateLeaseTx(
 	}
 	if result.RowsAffected != 1 {
 		return goalInternal("Goal coordinator lost its lease", nil)
+	}
+	return nil
+}
+
+func fenceGoalCoordinatorCancellationTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	goalID string,
+	goalRevision uint64,
+	now time.Time,
+) error {
+	update := tx.WithContext(ctx).
+		Model(&persistence.GoalCoordinatorLease{}).
+		Where("goal_id = ?", strings.TrimSpace(goalID)).
+		Updates(map[string]any{
+			"generation":    gorm.Expr("generation + 1"),
+			"goal_revision": goalRevision,
+			"status":        goalCoordinatorLeaseCancelled,
+			"heartbeat_at":  now,
+			"expires_at":    now,
+			"updated_at":    now,
+		})
+	if update.Error != nil {
+		return goalInternal("Fence Goal coordinator cancellation", update.Error)
 	}
 	return nil
 }

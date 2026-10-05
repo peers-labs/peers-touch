@@ -9,6 +9,7 @@ import {
   useGoalExecutionStore,
 } from '../../store/goalExecution';
 import { useHomeStore } from '../../store/home';
+import { GoalActiveCancelControl } from './GoalActiveCancelControl';
 import { GoalTimeline } from './GoalTimeline';
 import { MigratedWorkBadge } from './MigratedWorkBadge';
 
@@ -108,6 +109,9 @@ export function GoalProgressPanel() {
             }),
           })}
         </Typography.Text>
+      ) : null}
+      {savedGoal?.goalId === current.goalId ? (
+        <GoalActiveCancelControl goal={savedGoal} />
       ) : null}
       <GoalTimeline />
     </Flexbox>

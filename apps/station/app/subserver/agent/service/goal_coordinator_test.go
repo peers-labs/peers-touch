@@ -72,6 +72,10 @@ func (s *goalCoordinatorDispatcherStub) Start(
 	s.started = append(s.started, taskID)
 }
 
+func (s *goalCoordinatorDispatcherStub) Cancel(string, string) error {
+	return nil
+}
+
 func (s *goalCoordinatorDispatcherStub) snapshot() ([]string, []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

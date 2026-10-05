@@ -458,6 +458,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		goalExecutionService,
 	)
 	goalAdmissionService.SetExecutionStarter(goalCoordinator)
+	goalCancellationService := service.NewGoalCancellationService(
+		goalService,
+		goalCoordinator,
+	)
 	realtimeRelay := service.NewAgentRealtimeRelay(
 		s.agentDB,
 		func() service.AgentRealtimePublisher {
@@ -467,6 +471,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	goalHandlers := handler.NewGoalHandlers(
 		goalService,
 		goalAdmissionService,
+		goalCancellationService,
 	)
 	homeHandlers := handler.NewHomeHandlers(
 		service.NewHomeProjectionService(
