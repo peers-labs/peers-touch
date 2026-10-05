@@ -6,7 +6,11 @@ from typing import Any
 
 from tooling.acceptance.core import AcceptanceGate
 
-from .cross_station_support import SourceCommand, run_source_commands
+from .cross_station_support import (
+    NODE_TEST_OUTPUT_PATTERN,
+    SourceCommand,
+    run_source_commands,
+)
 
 
 TEST_PATTERN = (
@@ -88,7 +92,7 @@ COMMANDS = (
             "tooling/scripts/check-social-cross-station-operability.test.mjs",
         ),
         timeout_seconds=300,
-        required_output_pattern=r"^# Subtest:",
+        required_output_pattern=NODE_TEST_OUTPUT_PATTERN,
     ),
     SourceCommand(
         name="social-operability-check",

@@ -6,7 +6,11 @@ from typing import Any
 
 from tooling.acceptance.core import AcceptanceGate
 
-from .cross_station_support import SourceCommand, run_source_commands
+from .cross_station_support import (
+    NODE_TEST_OUTPUT_PATTERN,
+    SourceCommand,
+    run_source_commands,
+)
 
 
 COMMANDS = (
@@ -27,7 +31,7 @@ COMMANDS = (
             "tooling/scripts/proto-gen-secure-content.test.mjs",
         ),
         timeout_seconds=600,
-        required_output_pattern=r"^# Subtest:",
+        required_output_pattern=NODE_TEST_OUTPUT_PATTERN,
     ),
 )
 

@@ -18,6 +18,7 @@ from tooling.acceptance.core import (
 from tooling.acceptance.gates.social.cross_station_support import (
     CLIENT_BINDINGS,
     EXPECTED_RUNTIME_REUSE,
+    NODE_TEST_OUTPUT_PATTERN,
     SCENARIO_IDS,
     SERVICE_IDS,
     SourceCommand,
@@ -73,6 +74,11 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 class SourceCommandTest(unittest.TestCase):
+    def test_node_test_output_pattern_accepts_supported_reporters(self) -> None:
+        self.assertRegex("# Subtest: focused behavior", NODE_TEST_OUTPUT_PATTERN)
+        self.assertRegex("ℹ tests 18", NODE_TEST_OUTPUT_PATTERN)
+        self.assertNotRegex("ℹ tests 0", NODE_TEST_OUTPUT_PATTERN)
+
     def test_success_attaches_log_and_records_assertion(self) -> None:
         gate = _Gate()
         command = SourceCommand(
