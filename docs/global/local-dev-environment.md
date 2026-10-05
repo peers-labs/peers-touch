@@ -317,6 +317,7 @@ registered and its binding must resolve.
 | `make plan-mount-status` | Resolve and validate the workspace's mount and run |
 | `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
 | `make desktop` | Start Desktop Tauri app |
+| `make desktop-install` | Build the current source and atomically install `~/Applications/Peers Dev.app` |
 | `make mobile` | Start Mobile iOS simulator |
 
 Normal initial registration is explicit and one-step:
@@ -366,6 +367,14 @@ ports are checked and the pair is restarted. A separate `pnpm install`,
 
 There is no supported Desktop browser launch path. Native Tauri is the only
 Desktop development and product-proof runtime.
+
+`make desktop-install` is the persistent macOS development install. It prepares
+the same package, generated-source, and applet inputs, builds only the Tauri
+`.app` bundle, and atomically replaces `~/Applications/Peers Dev.app`. The
+installed application uses bundle identifier `com.peers.touch.desktop.dev` and
+deep-link scheme `peers-touch-dev://`; override the identifier with
+`PT_DESKTOP_APP_ID` or the destination directory with
+`PT_DESKTOP_INSTALL_DIR`. This command neither starts nor deploys Station.
 
 Registration does not create or edit an environment definition. A later
 destructive wrapper uses the generic lease API after deriving Profile reset

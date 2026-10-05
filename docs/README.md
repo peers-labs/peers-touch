@@ -257,7 +257,7 @@
 - A2A 协议集成：`architecture/domains/agent/a2a/`（文档集，入口 `README.md`）
 - Agent Canvas 编排架构：`architecture/domains/agent/agent-canvas-orchestration.md`
 - Modern Chat Agent 产品与单 Agent 运行时：`architecture/domains/agent/modern-chat-agent/README.md`
-  （product-accepted / design-accepted；包含 LobeHub/Peers-Touch benchmark disposition、
+  （product-accepted / design-accepted；包含 LobeHub benchmark disposition、
   产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/platform/station/actor-isolation.md`
 - Federation 虚拟网络与治理账本：`architecture/shared/federation/README.md`

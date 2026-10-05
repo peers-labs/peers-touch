@@ -67,7 +67,6 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 | Historical | superseded | [Modern Chat Agent V2 overview](./execution-plans/20260817-modern-chat-agent-v2.md) · [Legacy formal execution DAG](./execution-plans/20260817-modern-chat-agent-v2-execution.md) | 保留产品、架构、历史依赖和证据输入；不再承担 current Task 或 active execution 状态 |
 | Amendment | owner approved | [Agent Delivery Recovery](./execution-plans/20260908-agent-delivery-recovery.md) | 2026-09-16 已批准 Home-first sequencing 与 C11 atomic activation；完整 G-F 不再阻塞 W2，未完成 `BASE-*` 作为 parked lane 保留 |
 | V1 | accepted baseline | [First Useful Answer](./execution-plans/20260815-v1-first-useful-answer.md) | 已提供 Direct Model → Agent Profile → New Topic → 真实流式回复 → Desktop 重启读回基线；当前不再替代 V2 Home 产品推进 |
-| P0-P2 | draft / design-blocked | [modern-chat-agent](./execution-plans/20260730-modern-chat-agent.md) | Station 单一真源下的现代 Agent Chat 集成、所有权切换与端到端验收计划 |
 | P0-P4 | capability inventory | [agent-lobehub-rebuild](./execution-plans/20260616-agent-lobehub-rebuild.md) | LobeHub Agent 广度能力库存；不得再以模块/文件存在替代产品旅程完成，V1 完成前不启动新的横向能力批次 |
 | P0 | code | [system-prompt-assembly](./execution-plans/20260411-system-prompt-assembly.md) | System Prompt 层级组装 + Context References + Prompt Caching |
 | P0 | code | [skill-filesystem-and-routing](./execution-plans/20260411-skill-filesystem-and-routing.md) | Skill 文件系统、渐进式披露、Skills Guard 安全扫描 |

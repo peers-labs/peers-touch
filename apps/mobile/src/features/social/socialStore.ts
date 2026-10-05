@@ -3,7 +3,7 @@ import { clearChatUnreadForParticipant } from '@peers-touch/client-chat-core';
 import type { DomainCacheRepository } from '@peers-touch/client-storage';
 
 import type { MobileAuthSession } from '../auth/authSession';
-import type { FederationSummary } from '../../gen/proto/domain/federation/federation_projection_service_pb';
+import type { FederationContext } from '../../gen/proto/domain/federation/federation_projection_service_pb';
 import { mobileAuthScope, mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import {
   createMobileClientStorageRuntime,
@@ -49,6 +49,7 @@ import type {
   FriendRequestMutationResult,
 } from '../../services/gateways/socialGateway';
 import {
+  federationCatalogEntryToResult,
   normalizeFriendRequest,
   normalizeNotification,
   normalizePeerProfile,
@@ -128,7 +129,7 @@ export interface SocialState {
   blockedUsers: FriendshipStatus[];
   typingPeers: Record<string, Record<string, TypingEntry>>;
   peopleSearchResults: ActorSearchResult[];
-  peopleSearchFederations: FederationSummary[];
+  peopleSearchFederations: FederationContext[];
   peopleSearchFederationsError: SocialApiError | null;
   peopleSearchLoading: boolean;
   peopleSearchError: SocialApiError | null;
@@ -210,7 +211,8 @@ export interface SocialState {
   applyTypingState: (sessionUlid: string, fromActorPtid: string, typing: boolean) => void;
   sweepTypingPeers: (staleBefore: number) => void;
   sendTypingState: (sessionUlid: string, typing: boolean) => Promise<void>;
-  searchPeople: (query: string) => Promise<void>;
+  refreshFederationContexts: () => Promise<void>;
+  searchPeople: (query: string, federationId: string) => Promise<void>;
   clearPeopleSearch: () => void;
   clearError: () => void;
 }
@@ -370,11 +372,11 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     const request = {};
     socialReconcile = request;
     const isCurrent = () => socialReconcile === request && get().authSession === scope;
-    const { refreshFriendRequests, refreshSessions, refreshBlockedUsers, refreshConversationSettings, refreshNotifications } = get();
+    const { refreshFriendRequests, refreshSessions, refreshBlockedUsers, refreshConversationSettings, refreshNotifications, refreshFederationContexts } = get();
     const coldStart = get().sessions.length === 0 && get().friendRequests.length === 0 && get().notifications.length === 0;
     set({ loading: coldStart, error: null });
     try {
-      await Promise.all([refreshFriendRequests(), refreshSessions(), refreshBlockedUsers(), refreshNotifications()]);
+      await Promise.all([refreshFriendRequests(), refreshSessions(), refreshBlockedUsers(), refreshNotifications(), refreshFederationContexts()]);
       if (!isCurrent()) return;
       await refreshConversationSettings();
       if (!isCurrent()) return;
@@ -1449,41 +1451,65 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     });
   },
 
-  searchPeople: async (query) => {
+  refreshFederationContexts: async () => {
+    const profileGw = get().profileGateway;
+    if (!profileGw) {
+      set({ peopleSearchFederations: [], peopleSearchFederationsError: null });
+      return;
+    }
+    const result = await profileGw.listFederationContexts();
+    if (get().profileGateway !== profileGw) return;
+    set({
+      peopleSearchFederations: result.ok ? result.data : [],
+      peopleSearchFederationsError: result.ok ? null : new SocialApiError(result.error),
+    });
+  },
+
+  searchPeople: async (query, federationId) => {
     const trimmed = query.trim();
+    const contextId = federationId.trim();
     if (!trimmed) {
       get().clearPeopleSearch();
+      return;
+    }
+    if (!contextId) {
+      set({
+        peopleSearchResults: [],
+        peopleSearchLoading: false,
+        peopleSearchError: new SocialApiError({
+          method: 'POST',
+          path: '/sub-federation/catalog/search',
+          code: 'FEDERATION_CONTEXT_REQUIRED',
+          message: 'mobile.contacts.federationRequired',
+        }),
+      });
       return;
     }
     const profileGw = get().profileGateway;
     const request = {};
     peopleSearchRequest = request;
     const isCurrent = () => peopleSearchRequest === request && get().profileGateway === profileGw;
-    set({
-      peopleSearchLoading: true,
-      peopleSearchError: null,
-      peopleSearchFederations: [],
-      peopleSearchFederationsError: null,
-    });
+    set({ peopleSearchLoading: true, peopleSearchError: null });
     try {
       if (!profileGw) throw new Error('mobile.social.runtimeUnavailable');
       const parsed = parseHandleInput(trimmed);
       let items: ActorSearchResult[];
       if (parsed.isFederated && parsed.hasHost) {
-        const result = unwrapOutcome(await profileGw.resolveFederationHandle(parsed.canonical));
+        const result = unwrapOutcome(
+          await profileGw.resolveFederationHandle(contextId, parsed.canonical),
+        );
         items = result.asSearchResult ? [result.asSearchResult] : [];
       } else {
-        items = unwrapOutcome(await profileGw.searchActors(parsed.localPart || trimmed)).items;
+        const entries = unwrapOutcome(
+          await profileGw.searchFederationActors(
+            contextId,
+            parsed.localPart || trimmed.replace(/^@/, ''),
+          ),
+        );
+        items = entries.map(federationCatalogEntryToResult);
       }
       if (!isCurrent()) return;
-      set({ peopleSearchResults: items });
-      const federations = await profileGw.listFederations();
-      if (!isCurrent()) return;
-      set({
-        peopleSearchFederations: federations.ok ? federations.data : [],
-        peopleSearchFederationsError: federations.ok ? null : new SocialApiError(federations.error),
-        peopleSearchLoading: false,
-      });
+      set({ peopleSearchResults: items, peopleSearchLoading: false });
     } catch (error) {
       if (!isCurrent()) return;
       set({ peopleSearchResults: [], peopleSearchLoading: false, peopleSearchError: normalizeError(error) });
@@ -1495,8 +1521,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     set({
       peopleSearchResults: [],
       peopleSearchError: null,
-      peopleSearchFederations: [],
-      peopleSearchFederationsError: null,
       peopleSearchLoading: false,
     });
   },

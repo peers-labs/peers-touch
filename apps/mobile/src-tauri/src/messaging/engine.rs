@@ -5151,6 +5151,7 @@ mod tests {
                 6,
                 AttachmentContentKind::File as i32,
                 0,
+                None,
             )
             .unwrap();
         assert!(engine

@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(feature = "acceptance-webdriver")]
+mod acceptance;
 mod application;
 mod bootstrap;
 mod contracts;
@@ -647,6 +649,12 @@ fn main() {
             social::social_private_moments_acceptance_maintain_prekeys,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_recovery::messaging_recovery_acceptance_create_revision,
+            #[cfg(feature = "acceptance-webdriver")]
+            acceptance::federation_fixture::acceptance_federation_fixture_snapshot,
+            #[cfg(feature = "acceptance-webdriver")]
+            acceptance::federation_fixture::acceptance_federation_fixture_create,
+            #[cfg(feature = "acceptance-webdriver")]
+            acceptance::federation_fixture::acceptance_federation_fixture_join,
             profile::profile_get,
             profile::peer_profile_get,
             profile::profile_update,
@@ -659,17 +667,9 @@ fn main() {
             profile::account_sync_avatar,
             profile::sync_user_profile,
             profile::avatar_resolve_local,
-            federation::federation_get_self,
-            federation::federation_update_visibility,
             federation::federation_resolve,
-            federation::federation_health,
             federation::federation_catalog_search,
-            federation::federation_list_federations,
-            federation::federation_create,
-            federation::federation_join,
-            federation::federation_leave,
-            federation::federation_delete,
-            federation::federation_list_member_stations,
+            federation::federation_list_contexts,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,

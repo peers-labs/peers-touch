@@ -1,5 +1,5 @@
 {
-  "state_name": "Search Peers-Touch (Home)",
+  "state_name": "Search Peers (Home)",
   "state_url": "/chat?tab=search",
   "children": [
     {

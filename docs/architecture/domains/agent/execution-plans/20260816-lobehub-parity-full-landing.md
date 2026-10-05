@@ -7,7 +7,7 @@
 > **Plan type**: EXECUTE（多阶段能力对齐落地）
 > **Source of truth（追踪源）**: [`../lobehub-parity-mindmap.source.md`](../lobehub-parity-mindmap.source.md) §2（45 节点，带 `对齐` icon 列）
 > **可视化**: [`../lobehub-parity-mindmap.svg`](../lobehub-parity-mindmap.svg)
-> **对标源**: `Peers-Touch/external/lobehub` @ 1056cdf32b
+> **对标源**: `https://github.com/lobehub/lobehub.git` @ `1056cdf32b`
 
 ---
 

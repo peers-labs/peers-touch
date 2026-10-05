@@ -39,8 +39,9 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 tmp_files="$(mktemp)"
+retired_match_file="$(mktemp)"
 generated_verify_root=""
-trap 'rm -f "$tmp_files"; [[ -z "$generated_verify_root" ]] || rm -rf "$generated_verify_root"' EXIT
+trap 'rm -f "$tmp_files" "$retired_match_file"; [[ -z "$generated_verify_root" ]] || rm -rf "$generated_verify_root"' EXIT
 
 if [[ -n "$fixture_dir" ]]; then
   find "$fixture_dir" -type f | sed "s#^\./##" > "$tmp_files"
@@ -91,6 +92,62 @@ report_failure() {
   failures=$((failures + 1))
   printf '[%s] %s\n' "$code" "$message"
 }
+
+scan_retired_product_references() {
+  local retired_prefix="agent"
+  local retired_suffix="box"
+  local retired_pattern="${retired_prefix}[-_ ]*${retired_suffix}"
+  local scan_status=0
+  local had_nocasematch=0
+
+  : > "$retired_match_file"
+  if [[ -n "$fixture_dir" ]]; then
+    if ! find "$fixture_dir" -type f -print0 > "$retired_match_file"; then
+      report_failure "retired-product-reference" "unable to enumerate fixture paths"
+      return
+    fi
+  elif ! git ls-files -z > "$retired_match_file"; then
+    report_failure "retired-product-reference" "unable to enumerate tracked paths"
+    return
+  fi
+
+  if shopt -q nocasematch; then
+    had_nocasematch=1
+  else
+    shopt -s nocasematch
+  fi
+  while IFS= read -r -d '' candidate; do
+    if [[ "$candidate" =~ $retired_pattern ]]; then
+      report_failure "retired-product-reference" "$candidate uses a retired product identifier"
+    fi
+  done < "$retired_match_file"
+  if [[ "$had_nocasematch" -eq 0 ]]; then
+    shopt -u nocasematch
+  fi
+
+  : > "$retired_match_file"
+  if [[ -n "$fixture_dir" ]]; then
+    if rg -I -n -i -e "$retired_pattern" "$fixture_dir" > "$retired_match_file" 2>/dev/null; then
+      scan_status=0
+    else
+      scan_status=$?
+    fi
+  elif git grep -I -n -i -E "$retired_pattern" -- . > "$retired_match_file" 2>/dev/null; then
+    scan_status=0
+  else
+    scan_status=$?
+  fi
+
+  if [[ "$scan_status" -gt 1 ]]; then
+    report_failure "retired-product-reference" "unable to scan tracked content"
+    return
+  fi
+  while IFS= read -r line; do
+    [[ -z "$line" ]] || report_failure "retired-product-reference" "$line"
+  done < "$retired_match_file"
+}
+
+scan_retired_product_references
 
 is_source_file() {
   case "$1" in

@@ -19,7 +19,7 @@ fn main() {
         "../../../model/domain/common/common.proto",
         "../../../model/domain/error/error.proto",
         "../../../model/domain/federation/federation_resolve.proto",
-        "../../../model/domain/federation/federation_self.proto",
+        "../../../model/domain/federation/federation_projection_service.proto",
         "../../../model/domain/federation/profile.proto",
         "../../../model/domain/oauth/mobile_oauth.proto",
         "../../../model/domain/notification/notification.proto",

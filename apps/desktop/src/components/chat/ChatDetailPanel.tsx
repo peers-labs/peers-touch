@@ -655,11 +655,9 @@ export function ChatDetailPanel() {
     loadPeerProfile: s.loadPeerProfile,
     setGroupSecurityState: s.setGroupSecurityState,
   }));
-  const { actorStationEntries, memberStationsByFederation } =
-    useActiveChatFederationSlice((state) => ({
-      actorStationEntries: state.actorStationEntries,
-      memberStationsByFederation: state.memberStationsByFederation,
-    }));
+  const actorStationEntries = useActiveChatFederationSlice(
+    (state) => state.actorStationEntries,
+  );
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const isGroup = activeTab === 'group';
@@ -677,10 +675,8 @@ export function ChatDetailPanel() {
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
-    federationId: activeConversation?.federationId,
     stationPeerId: authorityStationId,
     actorStationEntries,
-    memberStationsByFederation,
   });
 
   const [verifyOpen, setVerifyOpen] = useState(false);

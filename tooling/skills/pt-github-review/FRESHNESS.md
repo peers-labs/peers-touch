@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-05
-covered_docs_hash: b809740a69ef44637b3c15f182792b2a54e6ce17d549e9aaf92b932380862b62
+covered_docs_hash: 9c39335b3c13e2a86824fa332641c9781bb0cc70c730136711577fba60912336
 
 covered_docs:
   - AGENTS.md
@@ -100,6 +100,16 @@ cleanup grants, or destructive cleanup without global-idle proof.
 `SKILL.md`, the owner-rooted workflow invariant, and dedicated multi-root,
 control, Kernel, and Action Store fixtures cover these checks; no generic
 review fixture is required.
+
+## 2026-10-05 Retired Product Reference Review
+
+The retired external product identity was removed from tracked documentation,
+historical transcripts, prototype copy, and benchmark paths. Review now blocks
+that identifier in every tracked path and text file, with runtime-generated
+fixtures proving both surfaces without preserving the identifier in source.
+`pt-github-review/SKILL.md` records the new blocking code. No knowledge entry
+is required because the hard rule and regression test fully encode the
+repository-wide invariant.
 
 ## 2026-10-03 Review
 

@@ -49,7 +49,7 @@ It does **not**:
 Invoke for:
 
 - A new product, module, major capability, or workflow redesign.
-- Benchmark-driven work using products such as LobeHub or Peers-Touch.
+- Benchmark-driven work using products such as LobeHub or another external reference.
 - Requests phrased as "product-ready", "complete experience", "what should we
   build", or "is this enough for users".
 - Existing architecture that lacks user journeys, visible states, capability
@@ -354,7 +354,7 @@ Never:
 
 - Start from a feature checklist without users, jobs, and outcomes.
 - Enumerate capabilities without concrete actions and feasibility evidence.
-- Copy LobeHub, Peers-Touch, or another benchmark without a disposition ledger.
+- Copy LobeHub or another benchmark without a disposition ledger.
 - Use a benchmark brand as the canonical Peers product/prototype identity.
 - Call a happy-path wireframe a complete experience.
 - Leave loading, approval, cancellation, failure, recovery, or degraded states

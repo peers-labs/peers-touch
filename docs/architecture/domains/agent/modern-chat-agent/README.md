@@ -1,8 +1,8 @@
 # Modern Chat Agent
 
 > **Status**: product-accepted / design-accepted / execution-active
-> **Version**: v1.4
-> **Created**: 2026-07-30 | **Updated**: 2026-10-03
+> **Version**: v1.5
+> **Created**: 2026-07-30 | **Updated**: 2026-10-05
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `packages/agent-catalog/`,
 > `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
@@ -51,8 +51,9 @@ operation lifecycles, Connector-to-tool invocation, and durable Evaluation
 run/result ownership. Those V2 contracts must be reconciled before a formal
 execution DAG can authorize implementation.
 
-LobeHub and Peers-Touch are evidence sources for capability shape and failure
-semantics. They do not override Peers-Touch ownership boundaries.
+LobeHub is the external product benchmark. Repository-native product,
+architecture, and runtime evidence determines Peers-Touch behavior and does not
+cede ownership to the benchmark.
 
 ## 3. Design Goal
 
@@ -68,7 +69,7 @@ A Modern Chat Agent is:
 | Document | Purpose |
 |---|---|
 | [product-definition.md](./product-definition.md) | Target users, product promise, capability profile, trust promises, and non-goals |
-| [benchmark-disposition.md](./benchmark-disposition.md) | Evidence-backed LobeHub/Peers-Touch adopt, adapt, reject, and defer decisions |
+| [benchmark-disposition.md](./benchmark-disposition.md) | Evidence-backed LobeHub observations and Peers-Touch adopt, adapt, reject, and defer decisions |
 | [experience-contract.md](./experience-contract.md) | End-to-end journeys, surface anatomy, recovery, and platform adaptation |
 | [product-state-model.md](./product-state-model.md) | User-observable readiness, Home, topic, composer, turn, capability, Evaluation, and recovery states |
 | [acceptance-matrix.md](./acceptance-matrix.md) | Product-to-architecture-to-prototype-to-production evidence traceability |
@@ -101,7 +102,6 @@ A Modern Chat Agent is:
 | [Legacy formal V2 execution plan](../execution-plans/20260817-modern-chat-agent-v2-execution.md) | Superseded execution source retained for the detailed historical DAG, cutovers, Gates, and scenarios |
 | [Reviewed V2 runtime matrix](../execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml) | Immutable Gate/platform/runtime/cell/locale/order/sample expansion, Mobile semantic-contract cells, and frozen P12/CLI non-advertisement |
 | [Prior V1 plan](../execution-plans/20260730-modern-chat-agent-v1.md) | Historical first-loop plan; does not own current V2 status |
-| [Old blocked plan](../execution-plans/20260730-modern-chat-agent.md) | Superseded — drafted before PRODUCT/DESIGN completion, retained for historical reference only |
 
 The Owner accepted the MCA-D20 publisher-signed package catalog and
 authority-readback contract on 2026-09-17 as the X3/P4-3 closure boundary.

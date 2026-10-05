@@ -30,8 +30,7 @@ const INVENTORY_CAPABILITY: &str = "key_exchange.content_prekey.inventory";
 const PROFILE_MAX_LIFETIME_MS: i64 = 60 * 60 * 1_000;
 const PROFILE_CLOCK_SKEW_MS: i64 = 30_000;
 const FEDERATION_KEY_ID_LENGTH: usize = 26;
-const FEDERATION_SELF_TYPE_URL: &str =
-    "type.googleapis.com/peers_touch.model.federation.v1.FederationSelfView";
+const ACTOR_PROFILE_TYPE_URL: &str = "type.googleapis.com/peers_touch.model.actor.v1.ActorProfile";
 const FEDERATION_RESOLVE_TYPE_URL: &str =
     "type.googleapis.com/peers_touch.model.federation.v1.FederationResolveView";
 
@@ -399,11 +398,27 @@ impl NativeSocialTransport {
         &self,
         handle: &str,
     ) -> Result<federation::FederationResolveView, TransportError> {
-        self.get_peers_proto(
-            "/actor/federation/resolve",
-            Some(&[("handle", handle.to_string())]),
-            FEDERATION_RESOLVE_TYPE_URL,
-        )
+        let contexts: federation::ListFederationContextsResponse =
+            self.get_proto("/sub-federation/contexts", None)?;
+        let mut last_error = None;
+        for context in contexts.contexts {
+            if context.status != "active" || context.federation_id.trim().is_empty() {
+                continue;
+            }
+            match self.get_peers_proto::<federation::FederationResolveView>(
+                "/actor/federation/resolve",
+                Some(&[
+                    ("federation_id", context.federation_id.clone()),
+                    ("handle", handle.to_string()),
+                ]),
+                FEDERATION_RESOLVE_TYPE_URL,
+            ) {
+                Ok(view) if view.federation_id == context.federation_id => return Ok(view),
+                Ok(_) => last_error = Some(local_error(20005)),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| local_error(20004)))
     }
 
     fn get_actor_federation_profile(
@@ -573,20 +588,17 @@ pub fn resolve_trusted_station_signing_key(
 ) -> Result<TrustedStationSigningKey, String> {
     require_authenticated_transport(&scope.station_origin)?;
     let client = http_client()?;
-    let federation_self = get_federation_self_at(&client, scope, access_token)?;
-    if federation_self.home_station_peer_id != scope.station_peer_id
-        || federation_self
-            .actor_ref
-            .as_ref()
-            .map(|actor| actor.ptid.as_str())
+    let profile = get_actor_profile_at(&client, scope, access_token)?;
+    if profile.home_station_peer_id != scope.station_peer_id
+        || profile.r#ref.as_ref().map(|actor| actor.ptid.as_str())
             != Some(scope.actor_ptid.as_str())
-        || federation_self.federated_handle.trim().is_empty()
+        || profile.federated_handle.trim().is_empty()
     {
-        return Err("private Social Federation self identity is inconsistent".to_string());
+        return Err("private Social Actor profile identity is inconsistent".to_string());
     }
-    let handle = canonical_federated_handle(&federation_self.federated_handle)
-        .ok_or_else(|| "private Social Federation self handle is invalid".to_string())?;
-    let profile: federation::ActorProfileEnvelope = get_proto_at(
+    let handle = canonical_federated_handle(&profile.federated_handle)
+        .ok_or_else(|| "private Social Actor profile handle is invalid".to_string())?;
+    let envelope: federation::ActorProfileEnvelope = get_proto_at(
         &client,
         scope,
         access_token,
@@ -594,7 +606,7 @@ pub fn resolve_trusted_station_signing_key(
         Some(&[("handle", handle.clone())]),
     )?;
     let trusted =
-        verify_profile_envelope(&profile, &handle, &scope.station_peer_id, now_unix_ms())?;
+        verify_profile_envelope(&envelope, &handle, &scope.station_peer_id, now_unix_ms())?;
     pin_or_verify_station_key(storage, &scope.station_peer_id, &trusted)?;
     Ok(trusted)
 }
@@ -682,15 +694,15 @@ fn get_proto_at<Resp: Message + Default>(
     .map_err(|error| error.to_string())
 }
 
-fn get_federation_self_at(
+fn get_actor_profile_at(
     client: &Client,
     scope: &PrivateSocialScope,
     access_token: &str,
-) -> Result<federation::FederationSelfView, String> {
+) -> Result<actor::ActorProfile, String> {
     let request = with_proto_content_negotiation(
         client
             .get(
-                endpoint_url(&scope.station_origin, "/actor/federation/me", None)
+                endpoint_url(&scope.station_origin, "/actor/profile", None)
                     .map_err(|error| error.to_string())?,
             )
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
@@ -700,7 +712,7 @@ fn get_federation_self_at(
         request
             .send()
             .map_err(|error| format!("load private Social trust material: {error}"))?,
-        FEDERATION_SELF_TYPE_URL,
+        ACTOR_PROFILE_TYPE_URL,
     )
     .map_err(|error| error.to_string())
 }
@@ -1538,8 +1550,7 @@ mod tests {
         assert_eq!(decoded, view);
 
         let mut wrong_type = response;
-        wrong_type.data.as_mut().unwrap().type_url =
-            "type.googleapis.com/peers_touch.model.federation.v1.FederationSelfView".to_string();
+        wrong_type.data.as_mut().unwrap().type_url = ACTOR_PROFILE_TYPE_URL.to_string();
         assert!(decode_peers_payload::<federation::FederationResolveView>(
             &wrong_type.encode_to_vec(),
             FEDERATION_RESOLVE_TYPE_URL,
@@ -1548,20 +1559,17 @@ mod tests {
     }
 
     #[test]
-    fn federation_self_request_decodes_peers_response_envelope() {
-        let view = federation::FederationSelfView {
+    fn actor_profile_request_decodes_peers_response_envelope() {
+        let view = actor::ActorProfile {
             federated_handle: "@alice@station.test".to_string(),
             home_station_peer_id: "station-1".to_string(),
-            actor_ref: Some(actor::ActorRef {
+            r#ref: Some(actor::ActorRef {
                 ptid: "ptid:alice".to_string(),
                 ..Default::default()
             }),
             ..Default::default()
         };
-        let (station_origin, request) = spawn_peers_proto_response(
-            &view,
-            "type.googleapis.com/peers_touch.model.federation.v1.FederationSelfView",
-        );
+        let (station_origin, request) = spawn_peers_proto_response(&view, ACTOR_PROFILE_TYPE_URL);
         let scope = PrivateSocialScope {
             profile_id: "profile-1".to_string(),
             station_peer_id: "station-1".to_string(),
@@ -1570,16 +1578,16 @@ mod tests {
             device_id: "device-1".to_string(),
         };
 
-        let decoded = get_federation_self_at(
+        let decoded = get_actor_profile_at(
             &http_client().expect("build test client"),
             &scope,
             "access-token",
         )
-        .expect("decode Federation self envelope");
+        .expect("decode Actor profile envelope");
         assert_eq!(decoded, view);
 
         let request = request.join().expect("join test Station").to_lowercase();
-        assert!(request.starts_with("get /actor/federation/me http/1.1"));
+        assert!(request.starts_with("get /actor/profile http/1.1"));
         assert!(request.contains("authorization: bearer access-token"));
         assert!(request.contains("x-device-id: device-1"));
         assert!(request.contains("content-type: application/protobuf"));
