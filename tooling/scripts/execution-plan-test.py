@@ -23,19 +23,15 @@ SPEC.loader.exec_module(MODULE)
 
 def tracked_plan(status: str) -> SimpleNamespace:
     return SimpleNamespace(
-        path=(
-            MODULE.REPO_ROOT
-            / "docs/architecture/development-workflow/execution-plans/"
-            "20261004-nonblocking-agent-integration/plan.md"
-        ),
-        plan_id="DWF-NONBLOCKING-INTEGRATION-20261004",
+        path=MODULE.REPO_ROOT / "plans/fixture/plan.md",
+        plan_id="FIXTURE-PLAN",
         plan_format="version",
-        branch="fix/nonblocking-agent-integration",
-        workspace_id="23d863a02a53c299",
+        branch="fixture-branch",
+        workspace_id="0000000000000000",
         current_task_id=None,
         current_task_path=None,
         current_closure=None,
-        closure_statuses={"native-plan-mount-cutover": status},
+        closure_statuses={"fixture-closure": status},
     )
 
 

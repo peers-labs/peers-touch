@@ -1916,3 +1916,64 @@ cannot represent.
   Desktop product proof.
 - Browser compatibility code is removed rather than hidden behind flags or
   deprecated aliases.
+
+## DWF-D40: Preserve Explicit User No-Plan Intent
+
+**Status**: accepted
+**Date**: 2026-10-05
+
+### Context
+
+The workflow treated every non-trivial mutation as a path toward a persisted
+Plan Version. An Agent could therefore create a Plan package to satisfy its own
+orchestration and delivery checks even after the user intended an immediate
+standalone task. That substituted internal process preference for user intent
+and introduced PlanMount, Task, Session, active-work, and proof obligations the
+user had not requested.
+
+Standalone PR admission already distinguishes an absent mount from malformed or
+incomplete tracked work. Intake and stage routing need the same distinction.
+
+### Decision
+
+- An explicit user instruction such as `no plan`, `不要 plan`, or equivalent
+  binds the current request to standalone execution.
+- God View and Dev Workflow preserve that policy before task-size or stage
+  classification. They may not dispatch Plan modeling or Plan persistence for
+  that request.
+- `pt-plan-and-document` rejects Plan persistence when the request carries
+  explicit no-Plan intent.
+- Standalone work may publish an untracked Development declaration and perform
+  implementation, focused verification, review, commit, push, and standalone
+  PR delivery without Plan, Task, Session, active-work, or Context Anchor
+  state.
+- Missing product or architecture decisions remain a real execution boundary.
+  The Agent reports that boundary instead of manufacturing a Plan.
+- An existing live PlanMount remains authoritative tracked work and cannot be
+  silently downgraded to standalone. Resolving that conflict requires an
+  explicit owner action.
+
+### Rationale
+
+A Plan is an accepted execution artifact, not a mandatory receipt generated to
+make tooling pass. Respecting explicit no-Plan intent keeps immediate work
+proportional while retaining declaration, source ownership, verification,
+review, and cleanup controls.
+
+### Alternatives Considered
+
+- Always create a minimal placeholder Plan: rejected because it fabricates
+  acceptance and lifecycle obligations and directly contradicts user intent.
+- Treat only small changes as standalone: rejected because size does not
+  override an explicit interaction boundary.
+- Skip every workflow control in standalone mode: rejected because resource
+  declaration, source safety, testing, review, and honest evidence remain
+  necessary.
+
+### Consequences
+
+- Stage routing has two legal execution paths: tracked Plan execution and
+  explicit standalone no-Plan execution.
+- Plan-backed commands remain fail-closed for malformed or incomplete mounts.
+- Tests use isolated generated fixtures instead of a live repository execution
+  Plan.

@@ -57,6 +57,8 @@ Do not use for status-only projection or a trivial text-only correction.
 
 ## Run Lifecycle
 
+Tracked work:
+
 ```text
 INTAKE
   -> DECLARED
@@ -71,9 +73,29 @@ INTAKE
   -> RELEASED
 ```
 
+Explicit standalone no-Plan work:
+
+```text
+INTAKE
+  -> DECLARED
+  -> EXECUTING
+  -> FOCUSED_VERIFICATION
+  -> REVIEW
+  -> DELIVER
+  -> RELEASED
+```
+
 A stage may be skipped only when its owning Skill proves it is unnecessary.
 Never enter broad Acceptance while a required Journey is not
 `FUNCTIONAL_PASS`.
+
+Explicit user instructions such as `no plan`, `不要 plan`, or equivalent are
+an intake constraint, not a stage suggestion. They forbid PLAN modeling,
+`pt-plan-and-document`, Plan Version or Task Slice creation, PlanMount,
+ExecutionPlanSnapshot, ExecutionRun, Development Session, active-work, and
+Context Anchor state for the current request. If execution lacks an accepted
+product or architecture decision, report that precise boundary instead of
+creating a Plan.
 
 ## Plan Run Authorization
 
@@ -143,8 +165,12 @@ Before mutation:
    branch. Do not amend, rebind, or unmount it; release occurs only after
    completion/cancellation or explicit owner action.
 5. Resolve user intent, authorization envelope, existing accepted sources, and
-   whether the work is tracked.
-6. Preserve unrelated dirty files. Never switch branches or worktrees
+   `planPolicy=tracked|standalone`. Explicit no-Plan intent fixes
+   `planPolicy=standalone` before task-size or stage classification.
+6. If explicit no-Plan intent conflicts with a live PlanMount, return
+   `PLAN_POLICY_CONFLICT`; only an explicit owner action may release the mount.
+   An unmounted standalone request must remain unmounted.
+7. Preserve unrelated dirty files. Never switch branches or worktrees
    implicitly. Never create a worktree to bypass a Plan mount, lifecycle
    state, or resource conflict; only an explicit user-selected isolation or
    concurrency operation authorizes worktree creation.
@@ -172,8 +198,9 @@ Rules:
 - A tracked run must publish `PLAN` and `TASK`; the declaration validates the
   Plan Version digest, current workspace PlanMount and ExecutionRun, expected
   HEAD, and single current Task. An unmounted workspace may publish untracked
-  pre-Plan work; a mounted
-  workspace cannot publish a locator-less declaration.
+  pre-Plan or explicit standalone work; standalone declarations omit `PLAN`,
+  `TASK`, and Development Session. A mounted workspace cannot publish a
+  locator-less declaration.
 - Run `make dev-update` before expanding scope/resources and after Task handoff.
 - Before a long action crosses half of the current heartbeat-to-expiry window,
   run `make dev-heartbeat`; heartbeat extends liveness but cannot change source,
@@ -271,16 +298,40 @@ Invoke the owning Skill and consume its typed output:
 |---|---|
 | PRODUCT | accepted Journey/state/acceptance contract |
 | DESIGN | accepted ownership/contracts/failure semantics |
-| PLAN model | accepted vertical dependency model |
-| PLAN persistence | validated frozen Plan Version and optional explicit PlanMount |
+| PLAN model | accepted vertical dependency model; tracked work only |
+| PLAN persistence | validated frozen Plan Version and optional explicit PlanMount; tracked work only |
 | EXECUTE | scheduler proposal plus Guardian policy decision |
 | ACCEPTANCE | formal evidence for required scope |
 | DELIVER | reviewed commit/PR result |
 
 Dev Workflow owns transition order, not stage content. It never edits a
-specialist's answer in place to bypass a blocked gate.
+specialist's answer in place to bypass a blocked gate. Explicit standalone
+no-Plan work skips both PLAN rows and enters EXECUTE only when existing accepted
+sources are sufficient.
 
-## 4. Tracked Execution Loop
+## 4. Standalone No-Plan Execution
+
+For `planPolicy=standalone`:
+
+1. Confirm there is no live PlanMount and publish one untracked Development
+   declaration with the exact source/runtime scope.
+2. Use existing accepted product and architecture sources. Do not dispatch
+   PLAN analysis or persistence and do not create substitute Plan-shaped files.
+3. Execute the requested change directly within the declaration, preserving
+   unrelated dirty files and the user's authorization envelope.
+4. Run focused source verification and the applicable findings-first review.
+   Product/runtime claims still require their normal exact-source proof; absent
+   formal Acceptance remains `NOT RUN/UNPROVEN`.
+5. Deliver through the standalone commit/PR path. Do not create a placeholder
+   Plan or Development Session to satisfy delivery tooling.
+6. Release the declaration and owned runtime resources. There is no
+   active-work record or PlanMount to close.
+
+Task size, cross-module scope, and PR checks do not override explicit no-Plan
+intent. If a new unresolved product or architecture decision prevents safe
+execution, return that decision as the blocker without generating a Plan.
+
+## 5. Tracked Execution Loop
 
 For a mounted Plan Version:
 
@@ -390,7 +441,7 @@ Run. If the Task is too large to close within one bounded Slice, return
 `PLAN_AMENDMENT_REQUIRED`; after agent-led amendment review passes, resume
 without asking the user. Never invent a partial percentage.
 
-## 5. Product-Functional Fence
+## 6. Product-Functional Fence
 
 For product-facing work:
 
@@ -419,7 +470,7 @@ REPRODUCE
 - Do not run broad Acceptance, Gap Detector, Completion Auditor,
   cross-platform matrices, or submit pipelines before `FUNCTIONAL_PASS`.
 
-## 6. Amendments
+## 7. Amendments
 
 When execution finds drift:
 
@@ -433,17 +484,24 @@ decision may authorize a new frozen Plan Version and mount transition;
 `pt-plan-and-document` then persists the accepted replacement. The Agent,
 Guardian, and scheduler never self-amend or rebind a mounted Plan.
 
-## 7. Agent Review Loop
+For explicit standalone no-Plan work, `PRODUCT_AMENDMENT_REQUIRED` or
+`DESIGN_AMENDMENT_REQUIRED` is reported as the exact missing decision.
+`PLAN_AMENDMENT_REQUIRED` is not a license to create a Plan; the request remains
+standalone unless the user explicitly changes its Plan policy.
+
+## 8. Agent Review Loop
 
 Review is an internal quality gate, not a default user handoff:
 
 1. Generate the owning methodology or delivery review prompt.
-2. Run `completion-review-prepare` from the current successful Development
+2. For tracked work, run `completion-review-prepare` from the current successful Development
    Session. The command creates one immutable request and one owner-private
    reviewer capability. Pass the returned capability path to the independent
    reviewer; `completion-review-submit` rejects a missing, wrong-review, or
    wrong-digest capability and derives delegation provenance internally. The
    capability proves request-scoped delegation, not reviewer independence.
+   For standalone work, run a separate findings-first review pass without
+   manufacturing a Development Session or Completion Review receipt.
 3. Invoke the applicable project review path, normally
    `route-change` -> `pt-code-structure-review` for authored source and record
    its source-bound decision -> `pt-quality-check` ->
@@ -457,7 +515,7 @@ An independent subagent may review when available and safely isolated.
 Otherwise the current agent performs a separate findings-first review pass.
 Automation supplies evidence; the reviewing agent owns judgment.
 
-## 8. Acceptance Promotion
+## 9. Acceptance Promotion
 
 After `FUNCTIONAL_PASS`:
 
@@ -472,21 +530,23 @@ After `FUNCTIONAL_PASS`:
 `PROVEN` is reserved for formal Acceptance evidence. Development Session
 records remain diagnostics.
 
-## 9. Delivery And Close
+## 10. Delivery And Close
 
 After required proof:
 
 1. Run completion and quality review for the named scope.
 2. Use `pt-github-commit`, `pt-github-pr`, and `pt-github-review`.
 3. Stop/release owned runtime resources.
-4. Run:
+4. Release the Development declaration. Tracked work also closes active-work:
 
 ```bash
 make dev-release WORK_ITEM=<id> [SESSION=<id>]
+# tracked work only
 make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>
 ```
 
-5. Persist final owner state, then emit the read-only Context Anchor.
+5. For tracked work, persist final owner state and emit the read-only Context
+   Anchor. Standalone work creates neither owner state nor Anchor.
 
 A checkpoint commit is source identity, not delivery approval. Push, PR,
 deploy, destructive reset, and history rewrite remain separate
@@ -494,15 +554,18 @@ authorizations.
 
 ## Resume
 
-On resume, verify the persisted worktree, PlanMount, immutable snapshot, and
-ExecutionRun, run `make dev-check`, reconcile current Task/Session/workspace
-active-work, then resume the earliest legal action and
-continue the Plan Run. Synchronized foreign Plans are ignored. Do not pause
-merely to print the Anchor or after the first Task closes.
+On resume, first restore the request's Plan policy. Tracked work verifies the
+persisted worktree, PlanMount, immutable snapshot, and ExecutionRun, runs
+`make dev-check`, reconciles current Task/Session/workspace active-work, and
+continues the Plan Run. Standalone work verifies that no live mount or tracked
+projection was created, runs `make dev-check` for its declaration, and resumes
+the requested mutation. Synchronized foreign Plans are ignored.
 
 ## Verification
 
 - One Development Run owns the lifecycle.
+- Explicit no-Plan intent remained standalone and created no tracked Plan
+  artifacts or projections.
 - Public declaration preceded mutation and was released at closure.
 - Every affected module emitted one standard `ModuleImpact`; one
   `PlanResourcePlan` resolved targets and capacity for the whole Task.
@@ -534,6 +597,8 @@ Never:
 - retry a parked target while an independent ready target can progress;
 - let God View execute or persist workflow state;
 - let the Agent, scheduler, or Guardian mutate the frozen Plan Version or PlanMount;
+- create or mount a Plan after the user explicitly selected no-Plan standalone
+  execution;
 - let Context Anchor repair workspace active-work;
 - write project memory or another workspace's active-work record;
 - write before declaration or outside declared scope;

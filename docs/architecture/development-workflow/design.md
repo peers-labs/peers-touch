@@ -65,6 +65,9 @@
 24. **Native Desktop only**: Desktop functional and formal proof uses one
     native Tauri runtime. Browser launch, browser runtime classes, and browser
     product proof do not exist.
+25. **Explicit no-Plan is standalone**: 用户明确拒绝为当前请求创建 Plan 时，
+    intake 必须保持 worktree unmounted，禁止进入 Plan model/persistence 或
+    伪造 Task、Session、active-work；声明、验证、review 和 cleanup 仍执行。
 
 ## 2. Evidence Ledger
 
@@ -91,6 +94,17 @@
 | 非破坏性 projection 不依赖待安装 Hook 的 grant；cleanup 仍需 exact OWNER grant | `accepted_decision` | DWF-D36 | high | ungranted install and cleanup-grant tests |
 
 ## 3. System Architecture
+
+Intake first resolves one immutable request policy:
+
+```text
+explicit no-Plan intent -> standalone declaration -> execution/review/delivery
+accepted formal Plan    -> PlanMount -> snapshot/run -> tracked execution
+```
+
+Task size cannot upgrade standalone intent into tracked work. A live PlanMount
+cannot be downgraded by standalone intent; that conflict requires an explicit
+owner action.
 
 ```text
 accepted product + architecture
@@ -135,6 +149,7 @@ accepted product + architecture
 |---|---|---|---|
 | Product behavior | Product/domain docs | accepted journeys and acceptance IDs | Task references |
 | Architecture | Architecture docs | `docs/architecture/**` | manifest references |
+| Current request Plan policy | Development Workflow intake | explicit user intent plus live PlanMount state | standalone or tracked dispatch |
 | Stable goal, scope, DAG and authorization | Plan Version | frozen `plan.md` plus referenced Task Slices | execution snapshot |
 | Plan-to-worktree occupancy | Project Ledger | immutable `PlanMount` plus live mount index | workflow inspection |
 | Exact execution input | Development Workflow | immutable `ExecutionPlanSnapshot` | Context Anchor |
@@ -189,7 +204,7 @@ No owner may copy another owner's complete state. In particular:
 | Facade/router | `pt-god-view` | No |
 | Development Run application service | `pt-dev-workflow` | Yes, only through the owning Plan/Task/Session/workspace active-work commands |
 | Vertical dependency modeling | `pt-architecture-execution-methodology` | No |
-| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents and frozen Plan Versions; mount remains an explicit Project Ledger action |
+| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents and authorized frozen Plan Versions; explicit no-Plan requests forbid Plan persistence |
 | Scheduler / WHAT runs next | `pt-goal-orchestrator` | No |
 | Policy / MAY this action run | `pt-execution-plan-guardian` | No |
 | Runtime launch, Journey operation and functional result commit | `pt-dev-runtime-handoff` | Yes, through runtime and Session owner commands |

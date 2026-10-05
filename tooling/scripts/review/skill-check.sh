@@ -68,6 +68,7 @@ trae_host_adapter="tooling/skills/pt-trae-host-adapter/SKILL.md"
 cursor_host_adapter="tooling/skills/pt-cursor-host-adapter/SKILL.md"
 codex_host_adapter="tooling/skills/pt-codex-host-adapter/SKILL.md"
 workflow_architecture="docs/architecture/development-workflow/design.md"
+global_workflow="docs/global/workflow.md"
 agents_contract="AGENTS.md"
 continuous_plan_invariant="docs/knowledge/invariants/continuous-plan-run.md"
 host_neutral_invariant="docs/knowledge/invariants/host-neutral-agent-execution.md"
@@ -153,6 +154,7 @@ require_file "$trae_host_adapter"
 require_file "$cursor_host_adapter"
 require_file "$codex_host_adapter"
 require_file "$workflow_architecture"
+require_file "$global_workflow"
 
 for marker in \
   "Expensive resources belong to Task or Suite scope." \
@@ -277,6 +279,46 @@ for marker in \
 done
 
 for marker in \
+  "Explicit standalone no-Plan work" \
+  "planPolicy=standalone"; do
+  if ! grep -Fq -- "$marker" "$dev_workflow_skill"; then
+    fail "$dev_workflow_skill missing explicit no-Plan marker: $marker"
+  fi
+done
+
+for marker in \
+  "explicit user Plan policy" \
+  "PLAN_POLICY_CONFLICT"; do
+  if ! grep -Fq -- "$marker" "$god_view_skill"; then
+    fail "$god_view_skill missing explicit no-Plan routing marker: $marker"
+  fi
+done
+
+if ! grep -Fq "PLAN_PERSISTENCE_FORBIDDEN" "$plan_skill"; then
+  fail "$plan_skill must reject explicit no-Plan persistence"
+fi
+if ! grep -Fq "Explicit standalone no-Plan work" "$global_workflow"; then
+  fail "$global_workflow missing the human-facing no-Plan contract"
+fi
+if ! grep -Fq "explicit standalone no-Plan work" "$agents_contract"; then
+  fail "$agents_contract missing the no-Plan stage-dispatch contract"
+fi
+
+retired_unapproved_plan="docs/architecture/development-workflow/execution-plans/20261004-nonblocking-agent-integration"
+if [[ -e "$retired_unapproved_plan" ]]; then
+  fail "unapproved execution Plan still exists: $retired_unapproved_plan"
+fi
+if rg -n \
+  'DWF-NONBLOCKING-INTEGRATION-20261004|20261004-nonblocking-agent-integration|DWF-NBI0' \
+  AGENTS.md docs tooling \
+  --glob '!tooling/scripts/review/skill-check.sh' \
+  >/tmp/pt-retired-unapproved-plan.$$; then
+  cat /tmp/pt-retired-unapproved-plan.$$
+  fail "live source still references the unapproved execution Plan"
+fi
+rm -f /tmp/pt-retired-unapproved-plan.$$
+
+for marker in \
   "--allow-untracked" \
   "mode: " \
   "standalone PR has no Development Session"; do
@@ -306,7 +348,7 @@ if ! python3 "$execution_plan_test" >/tmp/pt-execution-plan-test.$$ 2>&1; then
 fi
 rm -f /tmp/pt-execution-plan-test.$$
 
-if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
+if ! grep -Fq "blocked handoff requires a BLOCKED Session with a failure record" "$planctl_script"; then
   fail "$planctl_script must permit only evidence-backed blocked Task handoff"
 fi
 
@@ -450,7 +492,7 @@ for marker in \
   "legacyReferences" \
   "hostProjectionFindings" \
   "workflowIdentity" \
-  "planBinding" \
+  "planMount" \
   "currentTaskId" \
   "planLegacyClaims" \
   "declarationLegacyClaims" \
@@ -464,7 +506,7 @@ for marker in \
 done
 
 for marker in \
-  "binding-canonical-invalid" \
+  "plan-mount-canonical-invalid" \
   "declaration-plan-locator-missing" \
   "declaration-current-task-mismatch" \
   "registry-missing" \

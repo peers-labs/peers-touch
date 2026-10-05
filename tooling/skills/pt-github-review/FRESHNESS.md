@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-04
-covered_docs_hash: a7407568634de85ede9a809fb5bbd7ed76264b871eca8600fe560ec56be714bf
+last_verified_at: 2026-10-05
+covered_docs_hash: 66aaebba5308015ca5c93102e4d45b7555cbfa76932b0aeb2ad6b2a45134eae8
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,20 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-05 Review
+
+DWF-D40 makes explicit user no-Plan intent an authoritative standalone
+execution boundary. Review must reject Agent-created placeholder Plans,
+Plan/Task/Session/active-work fabrication, and delivery tooling that upgrades
+standalone work into tracked work. It must still require declaration, focused
+verification, review, honest unproven scope, and cleanup.
+
+The Dev Workflow, God View, Plan persistence, and GitHub PR Skills now carry
+that boundary. `skill-check.sh` enforces the markers and rejects restoration of
+the removed unapproved Plan. Plan runtime tests use generated temporary Git
+fixtures instead of a live repository execution Plan; no generic review fixture
+is required.
 
 ## 2026-10-04 Review
 

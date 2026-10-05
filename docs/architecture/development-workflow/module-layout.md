@@ -8,10 +8,10 @@
 
 ## 1. Target Directory Tree
 
-This is the accepted DWF-D38 target. `DWF-NBI02-NATIVE-PLAN-MOUNT-CUTOVER`
-creates these paths and deletes the superseded workspace-binding path. During
-the preceding source-only architecture Task, target paths are not implementation
-readiness claims.
+This is the accepted DWF-D38 target. PlanMount owns tracked execution placement;
+standalone work does not create Plan package or machine-local tracked state.
+The superseded workspace-binding path is deleted, and target paths are not by
+themselves implementation readiness claims.
 
 ```text
 docs/architecture/development-workflow/

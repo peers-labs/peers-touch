@@ -102,7 +102,26 @@ class AgentIntegrationTests(unittest.TestCase):
             "tooling/scripts/plan/plan-package.mjs":
                 "export function loadPlanPackage() { throw new Error('fixture only'); }\n",
             "tooling/scripts/plan/plan-mount.mjs":
-                "export async function resolvePlanExecution() { throw new Error('fixture only'); }\n",
+                """
+import { pathToFileURL } from 'node:url';
+export async function resolvePlanExecution() {
+  throw new Error('fixture only');
+}
+if (
+  process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  process.stderr.write(`${JSON.stringify({
+    ok: false,
+    error: {
+      type: 'PlanMountError',
+      code: 'PLAN_MOUNT_REQUIRED',
+      message: 'workspace has no live Plan mount',
+    },
+  })}\n`);
+  process.exitCode = 2;
+}
+""".lstrip(),
             "tooling/scripts/local-dev/dev-session-store.mjs":
                 """
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -409,6 +428,9 @@ export function processStartIdentity() { return 'fixture'; }
             "activeWork.updateActiveWorkRecord({"
             "workspaceId: owner.workspaceId,"
             "workItemId,"
+            "mountId: 'MOUNT-1',"
+            "runId: 'RUN-1',"
+            "snapshotDigest: 'a'.repeat(64),"
             "planId: 'PLAN-1',"
             "planPath: 'docs/architecture/test/execution-plans/test/plan.md',"
             "planStatus: 'active',"

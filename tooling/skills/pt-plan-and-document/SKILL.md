@@ -43,6 +43,19 @@ next: "pt-dev-workflow agent review loop"
 
 若输入仍包含产品/架构/计划语义分歧，返回对应 owner，不在本 Skill 内解决。
 
+## 0. 显式 No-Plan 边界
+
+若当前用户请求明确包含 `no plan`、`不要 plan`、`不创建计划` 或等价指令：
+
+- 返回 `PLAN_PERSISTENCE_FORBIDDEN`；
+- 不创建或修改 Plan Version、Task Slice、PlanMount、Execution snapshot、
+  Session 或 active-work；
+- 不把任务规模、仓库规范、测试、Acceptance 或 PR 提交要求解释成隐式 Plan
+  授权；
+- 将执行权返回 `pt-dev-workflow` 的 standalone 路径。
+
+只有用户后续明确撤销 no-Plan 指令并要求正式规划，才可重新进入本 Skill。
+
 ## 1. 选择规范和位置
 
 先读取：
@@ -233,6 +246,7 @@ sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D
 
 禁止：
 
+- 覆盖用户明确的 no-Plan 指令或创建 placeholder Plan；
 - 边落盘边重新设计；
 - 从文件清单反推产品或架构；
 - 把通用 success/network/timeout/invalid/cancel 套餐写进每个 closure；

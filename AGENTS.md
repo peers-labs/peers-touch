@@ -560,14 +560,26 @@ Do not hot-swap Skills during an in-flight action.
 
 ### 13.5 Stage Dispatch Protocol
 
-Any non-trivial development task (cross-module, new feature, architecture change) progresses through ordered stages. **Agent MUST detect the current stage and dispatch to the correct skill.**
+Any non-trivial development task (cross-module, new feature, architecture change)
+progresses through ordered stages unless the user explicitly selects standalone
+execution without a Plan. **Agent MUST detect the current stage, preserve that
+Plan policy, and dispatch to the correct skill.**
+
+An explicit user instruction such as `no plan`, `不要 plan`, or `直接做，不创建计划`
+is authoritative for the current request. It forbids creating or mounting a
+Plan Version, invoking Plan persistence, and fabricating Plan/Task/Session or
+active-work state. The Agent may still publish the required untracked
+Development declaration, execute against existing accepted product and
+architecture sources, run focused verification, and deliver a standalone PR.
+If the work cannot be executed safely without a new formal Plan, report that
+boundary instead of silently creating one.
 
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
 | **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-dev-workflow` → `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (frozen Plan Version + optional explicit PlanMount + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Version |
-| **EXECUTE** | Plan accepted | `pt-dev-workflow` coordinates host-neutral scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
+| **PLAN** | Architecture accepted and formal planning is authorized | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (frozen Plan Version + optional explicit PlanMount + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Version |
+| **EXECUTE** | Plan accepted, or explicit standalone no-Plan work has sufficient accepted sources | `pt-dev-workflow` coordinates host-neutral execution and, for tracked work only, the scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-dev-workflow` → `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
@@ -580,7 +592,10 @@ Any non-trivial development task (cross-module, new feature, architecture change
 3. During EXECUTE, Goal Orchestrator schedules **what** is ready, Execution Plan
    Guardian decides whether one proposed action **may** run, and Dev Workflow
    executes allowed work and persists owner state. Context Anchor is read-only.
-4. Each stage MUST pass its gate before entering the next. No skipping gates.
+4. Tracked work MUST pass each stage gate before entering the next. Explicit
+   standalone no-Plan work omits PLAN modeling/persistence and all tracked
+   Plan/Task/Session projections; it does not weaken source, verification,
+   review, delivery, or cleanup requirements.
 5. Review pattern is uniform across stages: generate a structured review prompt
    → invoke the applicable project Review Skills → fix source-backed findings
    → rerun affected checks/review → pass. The user is not the default reviewer.
@@ -596,7 +611,8 @@ Any non-trivial development task (cross-module, new feature, architecture change
 7. **Stage detection**: read this workspace's machine-local
    `workflow/active-work.json` → validate its Plan/Task/Session owners →
    determine current stage. Project memory and chat are never runtime inputs.
-8. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
+8. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?" Never ask
+   this after the user explicitly selected no-Plan standalone execution.
 9. **Acceptance ownership dispatch**:
    - Core/runtime/planner/validator/runner/Evidence Store/framework optimization → `pt-acceptance-infra-engineering`.
    - Domain/Feature/Capability/Registry rule/concrete Gate/Environment/Provisioner/Fixture/product proof → `pt-acceptance-engineering`.
@@ -779,6 +795,9 @@ arbitrary replacement JSON.
 
 - **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a
   placeholder record or fabricate a plan path.
+- **Explicit standalone no-Plan work** → keep the request unmounted for its
+  entire lifecycle; publish only the untracked Development declaration, and do
+  not create Plan, Task, Session, active-work, or Context Anchor state.
 - **Plan Version frozen** → validate it; only after an owner explicitly selects
   the execution worktree, create PlanMount and ExecutionPlanSnapshot, publish
   the tracked declaration, then derive this workspace's record.

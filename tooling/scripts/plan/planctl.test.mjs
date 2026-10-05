@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { mountPlanVersion, resolvePlanExecution } from './plan-mount.mjs';
+import { createPlanRepository } from './plan-test-fixture.mjs';
 import {
   activatePlan,
   runPlanctl,
@@ -13,23 +13,14 @@ import {
 } from './planctl.mjs';
 
 const TEST_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(TEST_DIRECTORY, '../../..');
-const PLAN =
-  'docs/architecture/development-workflow/execution-plans/'
-  + '20261004-nonblocking-agent-integration/plan.md';
 
 function scope(t) {
-  const home = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'planctl-test-'),
-  );
-  t.after(() =>
-    fs.rmSync(home, { recursive: true, force: true }),
-  );
+  const fixture = createPlanRepository(t);
   return {
-    repoRoot: REPO_ROOT,
-    'repo-root': REPO_ROOT,
-    home,
-    plan: PLAN,
+    repoRoot: fixture.repoRoot,
+    'repo-root': fixture.repoRoot,
+    home: fixture.home,
+    plan: fixture.plan,
     projectId: 'peers-touch',
     owner: 'test-owner',
     now: new Date('2026-10-04T00:00:00.000Z'),
@@ -39,7 +30,7 @@ function scope(t) {
 test('status projects frozen Plan Version and mutable Run state', async (t) => {
   const options = scope(t);
   const planBytes = fs.readFileSync(
-    path.join(REPO_ROOT, PLAN),
+    path.join(options.repoRoot, options.plan),
     'utf8',
   );
   await mountPlanVersion(options);
@@ -51,7 +42,7 @@ test('status projects frozen Plan Version and mutable Run state', async (t) => {
   assert.equal(summary.currentTaskId, null);
   assert.equal(summary.planVersionDigest, resolved.mount.planVersionDigest);
   assert.equal(
-    fs.readFileSync(path.join(REPO_ROOT, PLAN), 'utf8'),
+    fs.readFileSync(path.join(options.repoRoot, options.plan), 'utf8'),
     planBytes,
   );
 });
@@ -62,7 +53,7 @@ test('activate starts only one dependency-ready Task in the Execution Run', asyn
   const taskId = mounted.snapshot.plan.tasks.find(
     (task) => task.dependsOn.length === 0,
   ).id;
-  const activated = await activatePlan(PLAN, {
+  const activated = await activatePlan(options.plan, {
     ...options,
     task: taskId,
   });
@@ -78,16 +69,16 @@ test('CLI status resolves only the workspace-mounted Plan Version', async (t) =>
   const result = await runPlanctl([
     'status',
     '--repo-root',
-    REPO_ROOT,
+    options.repoRoot,
     '--home',
     options.home,
     '--plan',
-    PLAN,
+    options.plan,
   ]);
 
   assert.equal(result.ok, true);
   assert.equal(result.status, 'prepared');
-  assert.equal(result.planPath, PLAN);
+  assert.equal(result.planPath, options.plan);
 });
 
 test('completion review precedes the single guarded Run update', () => {

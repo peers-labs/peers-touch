@@ -31,6 +31,8 @@ automatic labeling, and issue linking using the `gh` CLI.
 
 `PLAN_MOUNT_REQUIRED` selects standalone mode. Any malformed, stale, conflicting,
 or identity-mismatched mount remains a blocking error. Plan absence alone never forces a draft PR.
+Explicit user no-Plan intent also selects standalone mode and forbids creating
+a placeholder Plan or Development Session for delivery.
 
 ## PR Creation Workflow
 
@@ -315,6 +317,7 @@ Examples:
 
 - **Never** create a PR without pushing the branch first
 - **Never** require a placeholder Plan or Development Session for standalone work
+- **Never** override explicit user no-Plan intent to satisfy PR tooling
 - **Never** create a normal ready-for-review PR before running the submit-time review pipeline
 - **Never** leave the PR description empty — always fill the template
 - **Never** omit quality evidence, evidence gaps, or unproven scope from the PR body

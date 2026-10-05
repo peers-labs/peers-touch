@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import {
   PlanMountError,
@@ -12,29 +9,15 @@ import {
   resolvePlanExecution,
   updateExecutionRun,
 } from './plan-mount.mjs';
-
-const REPO_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../..',
-);
-const PLAN =
-  'docs/architecture/development-workflow/execution-plans/'
-  + '20261004-nonblocking-agent-integration/plan.md';
-const OTHER_PLAN =
-  'docs/architecture/agent/execution-plans/'
-  + '20261003-mcp-dual-runtime/plan.md';
+import { createPlanRepository } from './plan-test-fixture.mjs';
 
 function scope(t) {
-  const home = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'plan-mount-test-'),
-  );
-  t.after(() =>
-    fs.rmSync(home, { recursive: true, force: true }),
-  );
+  const fixture = createPlanRepository(t);
   return {
-    repoRoot: REPO_ROOT,
-    home,
-    plan: PLAN,
+    repoRoot: fixture.repoRoot,
+    home: fixture.home,
+    plan: fixture.plan,
+    otherPlan: fixture.otherPlan,
     projectId: 'peers-touch',
     owner: 'test-owner',
     now: new Date('2026-10-04T00:00:00.000Z'),
@@ -69,7 +52,7 @@ test('same Plan Version mount is idempotent and a second Plan conflicts', async 
   assert.equal(second.created, false);
   assert.equal(second.mount.mountId, first.mount.mountId);
   await assert.rejects(
-    mountPlanVersion({ ...options, plan: OTHER_PLAN }),
+    mountPlanVersion({ ...options, plan: options.otherPlan }),
     (error) =>
       error instanceof PlanMountError
       && error.code === 'PLAN_MOUNT_CONFLICT',

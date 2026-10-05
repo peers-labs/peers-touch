@@ -30,7 +30,7 @@ stores; there is no compatibility reader or migration.
 | Promise ID | What must be true | Normal recovery |
 |---|---|---|
 | `dev.integration.installed` | The selected host has the exact current Skill and hook projection, callback proof, and install receipt. | Run `make skills IDE=<host>` at a durable boundary. |
-| `dev.plan.mount` | This worktree resolves one current Project Ledger mount, immutable Execution Plan snapshot, and mutable Execution Run. | Mount the frozen Plan Version or resolve the typed mount identity failure. |
+| `dev.plan.mount` | Tracked work resolves one current Project Ledger mount, immutable Execution Plan snapshot, and mutable Execution Run; explicit standalone work remains unmounted. | Mount the frozen Plan Version for tracked work, resolve a typed identity failure, or preserve the user's explicit no-Plan standalone policy. |
 | `dev.workflow.current` | Plan, current Task, Development Session, declaration, active-work, and reduced Action Receipt state agree. | Repair the typed owner mismatch; never edit machine state directly. |
 | `dev.review.current` | Active work has no failed or stale review; completed work has a current independent `PASS`. | Run a fresh independent Completion Review after source or obligation drift. |
 | `dev.docs.executable` | This guide declares each public Workflow Doctor promise exactly once. | Update the executable contract and this guide in the same change. |
@@ -91,8 +91,8 @@ Before an explicitly authorized worktree removal, stop its runtime resources,
 release its declaration, and run `make env-unregister` from that worktree.
 Never delete a machine registry row by hand.
 
-Plan source is frozen independently from execution placement. An explicit
-owner action mounts it to one selected execution worktree:
+For tracked work, Plan source is frozen independently from execution placement.
+An explicit owner action mounts it to one selected execution worktree:
 
 ```bash
 make plan-mount PLAN=<plan-version.md>
@@ -109,6 +109,34 @@ make plan-unmount MOUNT=<mount-id> \
 
 Agents cannot amend the frozen version, change its execution worktree, or
 unmount an unfinished run. Repository discovery never replaces a mount.
+
+### Explicit standalone no-Plan work
+
+When the user explicitly says `no plan`, `不要 plan`, or otherwise directs the
+Agent to execute the current task without creating a Plan, that instruction is
+the Plan policy for the request:
+
+- do not invoke Plan modeling or persistence;
+- do not create a Plan Version, Task Slice, PlanMount, ExecutionPlanSnapshot,
+  ExecutionRun, Development Session, active-work record, or Context Anchor;
+- do not convert repository size, test requirements, or delivery tooling into
+  an implicit reason to create a Plan;
+- publish the normal untracked Development declaration before the first write,
+  preserve unrelated dirty files, run focused verification and review, and
+  deliver as a standalone change;
+- keep formal Acceptance explicitly `NOT RUN/UNPROVEN` when standalone
+  execution has no source-bound Acceptance session.
+
+The standalone lifecycle is:
+
+```text
+bind -> declare -> implement -> focused verification -> review
+     -> standalone delivery -> release
+```
+
+If accepted product or architecture sources are insufficient to execute safely,
+report the exact missing decision. Do not manufacture a Plan to satisfy the
+workflow.
 
 ---
 

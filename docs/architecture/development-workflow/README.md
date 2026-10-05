@@ -106,6 +106,9 @@ Completion Review 使用独立的 repository-native reviewer handoff。
     只有这两类破坏性清理要求全局 idle。
 25. Desktop 只支持 native Tauri runtime；browser runtime、browser Gate 和
     browser 产品矩阵不是开发或证明路径。
+26. 用户明确要求当前任务不创建 Plan 时，该请求按 standalone 执行；Agent
+    不得进入 Plan model/persistence、创建 Plan/Task/Session/active-work，
+    也不得用流程、测试或 PR 要求反向覆盖该指令。
 
 ## 4. Document Navigation
 
@@ -113,7 +116,7 @@ Completion Review 使用独立的 repository-native reviewer handoff。
 |---|---|
 | [design.md](./design.md) | 控制面边界、Plan Version、mount、snapshot、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D39 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D40 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
 | [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33 的 Kernel、宿主投影和 rollout 流程 |
@@ -129,7 +132,7 @@ Completion Review 使用独立的 repository-native reviewer handoff。
 
 ## 5. Current Status
 
-DWF-D01..DWF-D39 已接受。仓库与 PR 可包含多个 frozen Plan Version；
+DWF-D01..DWF-D40 已接受。仓库与 PR 可包含多个 frozen Plan Version；
 Project Ledger 的显式 PlanMount 是执行 worktree 唯一 Plan 占用真源。执行前
 生成 immutable ExecutionPlanSnapshot，并在其中绑定 mount、workspace、branch
 和 initial HEAD。Plan 完成、取消或 Owner 显式 unmount 前 worktree 持续被
@@ -148,4 +151,5 @@ Project Ledger 的显式 PlanMount 是执行 worktree 唯一 Plan 占用真源�
 Overlay 的用户保持原始 `pt-god-view` 行为。
 Desktop development and Acceptance use the native Tauri application only.
 Workflow Snapshot remains an on-demand CLI/library projection; the Peers Dev
-4177 browser application is retired.
+4177 browser application is retired. Explicit user no-Plan requests remain
+unmounted standalone work and never create placeholder Plan state.
