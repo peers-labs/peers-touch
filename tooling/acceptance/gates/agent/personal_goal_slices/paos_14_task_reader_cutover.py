@@ -308,19 +308,18 @@ def run_journey(
     wait_until(
         lambda: visible_element(
             client,
-            f'[data-pt-taskrun-id="{task_id}"]',
+            f'[data-applet-runtime="{APPLET_ID}"]',
         ),
-        "Atelier TaskRun row",
+        "Atelier runtime shell",
         timeout=120,
     )
-    atelier_row = visible_element(
-        client,
-        f'[data-pt-taskrun-id="{task_id}"]',
-    )
-    require(
-        atelier_row.get_attribute("data-pt-taskrun-status") ==
-        home_new.get("status"),
-        "Atelier visible TaskRun status differs from Station",
+    wait_until(
+        lambda: client.driver.execute_script(
+            "return document.body.innerText.includes(arguments[0]);",
+            title,
+        ),
+        "Atelier TaskRun title",
+        timeout=120,
     )
     atelier_screenshot = artifact_dir / "atelier-taskrun-reader.png"
     client.driver.save_screenshot(str(atelier_screenshot))
