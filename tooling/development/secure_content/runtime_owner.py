@@ -781,6 +781,7 @@ SOCIAL_ACCEPTANCE_SCENARIO_MAP = {
 def _social_acceptance_scenario_registry(
     scenario_id: str,
     *,
+    journey_id: str,
     work_item_id: str,
     task_id: str,
 ) -> Mapping[str, ScenarioDefinition]:
@@ -788,7 +789,7 @@ def _social_acceptance_scenario_registry(
     return {
         scenario_id: replace(
             scenario,
-            journey_id=SOCIAL_ACCEPTANCE_JOURNEY,
+            journey_id=journey_id,
             work_item_id=work_item_id,
             result_prefix=Path(task_id),
             result_task_id=task_id,
@@ -11048,6 +11049,7 @@ class W7RuntimeOwner:
                     registry=(
                         _social_acceptance_scenario_registry(
                             spec.scenario_id,
+                            journey_id=str(declaration["journeyId"]),
                             work_item_id=work_item_id,
                             task_id=task_id,
                         )
