@@ -26,8 +26,14 @@
   ],
   "doneWhen": ["Atelier creates or addresses canonical Goal and TaskRun identities","Optional Canvas callers use the same TaskRun writer without becoming core completion","No new CollaborationTask execution row is written","The all-writer cutover Gate is registered and exact-source"],
   "failureBehavior": ["Do not make Atelier or Canvas an execution authority","Do not delete legacy readers in this slice"],
-  "updatedAt": "2026-10-03T00:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-05T00:15:39Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:1c389494b305eb7c99107b093c3ccc97d0801f1d;development://personal-agent-os-convergence-20261003/artifacts/20261005T001358734795Z/paos-13b-atelier-writer-cutover/capture.json;capture-sha256:f1cb8a003fdaefaa46d3d3666f276d92831f83369a689e66c910fda32fa79e58;manifest-sha256:63860e5c777ef365b0c4ae76facd1e58447c41d7177fea4b08cf5864802b2cea"
+    }
+  ]
 }
 ```
 
@@ -42,4 +48,23 @@
 
 ## Current Snapshot
 
-Atelier create-from-goal and orchestration writers still create CollaborationTask state.
+Functional slice complete. Atelier create and confirmed rerun now use the
+Station-owned Goal-backed TaskRun writer; the optional public Canvas adapter
+delegates to the same writer while its readiness guard remains fail-closed.
+
+- Agent Station full tests, focused race tests, Atelier 99-unit suite,
+  TypeScript checks, applet build, Desktop check, source Gate, contract Gate,
+  and registered `agent-personal-taskrun-cutover-source` Gate pass.
+- Native Profile `two` created TaskRun
+  `task_70d76151c29836a0bc1610e6` under Goal
+  `goal_cb83313c6c8e3ad53af00962`, with GoalNode
+  `gnode_df31ff88825afdc344b3770c`, ExecutionStep
+  `step_aa4349484336d38f09da320f`, and attempt
+  `attempt_0476a221f11402ae528420a0`.
+- Atelier opened the create response's canonical TaskRun and replayed the same
+  Goal/TaskRun identity after native restart.
+- Legacy CollaborationTask count remained `1` and the exact ID set remained
+  `["collab_paos12_1791150834"]` before create, after create, and after replay.
+- Native process, gateway/renderer/WebDriver/fault ports, runtime profile, and
+  storage cleanup passed; the persisted-sensitive-profile-key scan found no
+  leaks.
