@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-05
-covered_docs_hash: a1fc5b889942809f8fb32a3c417bf58d0a790f6b4c7596861ab66ef371e236db
+covered_docs_hash: 477ee488959b5702cec100f7b49cb89bdd30d11b496454ad6e6466cd5c4e6
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,29 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-05 Post-Master-Sync Covered-Docs Review
+
+After the semantic rebase onto the current master, every covered document hashes
+to the master value except two intentional Cross-Station Social deltas:
+
+- `docs/README.md` replaces the draft federated-human-social-activity index
+  pointer with the active `cross-station-social` module pointer and its current
+  Native-only execution-plan scope. Architecture module governance already
+  requires every active module to appear in this index, so no new review rule is
+  needed.
+- `docs/client/desktop/runtime-projections.md` narrows `socialRealtime` to
+  social graph, presence, relationship, and notification projections, records
+  the extraction of chat/messaging consumption into the separate `messaging`
+  runtime, and lists the migrated `moments` page under `social` and `messaging`.
+
+The runtime-projections delta is the same producer-to-runtime ownership and
+duplicate-owner problem recorded in the 2026-10-03 Social EventBus Acceptance
+Review: `pt-github-review/SKILL.md` already requires tracing the full
+producer-to-owner path, rejecting module-private listener bypasses and duplicate
+owners, and demanding hidden-page plus missed-event recovery evidence. No
+additional `SKILL.md` behavior, generic fixture, or knowledge entry is required;
+this entry advances only the covered-docs pin to the post-rebase source bytes.
 
 ## 2026-10-05 Review
 
