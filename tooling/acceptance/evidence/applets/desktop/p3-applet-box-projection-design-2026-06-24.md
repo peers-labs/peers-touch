@@ -1,7 +1,7 @@
 # P3.1 Applet Box Station-Backed Projection Design
 
 > Evidence class: `NOT_IMPLEMENTED`
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 > Platform source: `docs/client/desktop/runtime-projections.md`
 
 ## Objective

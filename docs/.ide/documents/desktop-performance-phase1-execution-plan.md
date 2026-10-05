@@ -142,4 +142,4 @@ D-07, D-08, D-10, D-11, D-12, D-14 从 proposed → accepted
 - `apps/desktop/src/store/createDesktopStore.ts`
 - `apps/desktop/vite.config.ts`
 - `apps/desktop/package.json`
-- `docs/architecture/frontend-runtime/decisions.md`
+- `docs/architecture/platform/client/frontend-runtime/decisions.md`

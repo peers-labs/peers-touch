@@ -5,7 +5,6 @@
         acceptance-driver-build acceptance-driver-smoke \
         acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
-        acceptance-chat-desktop-gateway \
         acceptance-chat-native-static acceptance-chat-native-two-client \
         acceptance-chat-native-interactions acceptance-chat-native-product-closure \
         acceptance-chat-native-typing \
@@ -15,8 +14,7 @@
         acceptance-chat-w11 \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
         acceptance-federation acceptance-federation-mutual-validation acceptance-federation-report \
-        acceptance-desktop-performance-preflight-static acceptance-desktop-performance-preflight \
-        acceptance-desktop-telemetry-live acceptance-desktop-telemetry-mirror-static \
+        acceptance-desktop-telemetry-mirror-static \
         acceptance-desktop-telemetry-mirror-template-static acceptance-desktop-telemetry-mirror-template \
         acceptance-desktop-anchor-inventory acceptance-desktop-anchor-source-static acceptance-desktop-anchor-source \
         acceptance-desktop-anchor-dom-evidence-template-static \
@@ -25,9 +23,9 @@
         acceptance-desktop-performance-cell-template-static acceptance-desktop-performance-cell-template \
         acceptance-desktop-performance-cell-collect-static acceptance-desktop-performance-cell-collect \
         acceptance-desktop-performance-sampler-static acceptance-desktop-performance-sampler \
-        acceptance-desktop-performance-matrix acceptance-desktop-performance-report \
+        acceptance-desktop-performance-matrix \
         federation-surface-smoke federation-dashboard-visible-surface \
-        federation-dashboard-operational-drilldown federation-desktop-gateway-smoke
+        federation-dashboard-operational-drilldown
 
 ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?=
@@ -118,7 +116,8 @@ acceptance-chat:
 		--gate messaging-platform-contract \
 		--gate desktop-check \
 		--gate chat-native-visible-static \
-		--gate chat-desktop-gateway-e2e
+		--gate chat-lifecycle-onboarding-e2e \
+		--gate chat-native-two-client-e2e
 
 acceptance-chat-domain-validation:
 	python3 tooling/scripts/acceptance-run.py \
@@ -128,11 +127,9 @@ acceptance-chat-domain-validation:
 		--gate messaging-platform-contract \
 		--gate desktop-check \
 		--gate chat-native-visible-static \
-		--gate chat-desktop-gateway-e2e
+		--gate chat-lifecycle-onboarding-e2e \
+		--gate chat-native-two-client-e2e
 	python3 tooling/scripts/acceptance-run.py --gate chat-domain-validation
-
-acceptance-chat-desktop-gateway:
-	python3 tooling/scripts/acceptance-run.py --gate chat-desktop-gateway-e2e
 
 acceptance-chat-native-static:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-visible-static
@@ -251,15 +248,6 @@ acceptance-desktop-performance-sampler-static:
 acceptance-desktop-performance-sampler:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-performance-sampler-gate
 
-acceptance-desktop-performance-preflight-static:
-	python3 tooling/scripts/acceptance-run.py --gate desktop-performance-preflight-static-gate
-
-acceptance-desktop-performance-preflight:
-	python3 tooling/scripts/acceptance-run.py --gate desktop-performance-preflight-gate
-
-acceptance-desktop-telemetry-live:
-	python3 tooling/scripts/acceptance-run.py --gate desktop-telemetry-live-gate
-
 acceptance-desktop-telemetry-mirror-static:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-telemetry-mirror-static-gate
 
@@ -281,9 +269,6 @@ acceptance-station-dashboard-domain-validation: acceptance-station-dashboard
 acceptance-desktop-performance-matrix:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-performance-matrix-gate
 
-acceptance-desktop-performance-report:
-	python3 tooling/scripts/acceptance-run.py --gate desktop-performance-report-gate
-
 acceptance-federation:
 	python3 tooling/scripts/acceptance-run.py \
 		--gate acceptance-plan-self \
@@ -294,7 +279,7 @@ acceptance-federation:
 		--gate desktop-check \
 		--gate federation-surface-smoke \
 		--gate federation-dashboard-operational-drilldown \
-		--gate federation-desktop-gateway-smoke
+		--gate station-access-federation-boundary-e2e
 
 acceptance-federation-mutual-validation: acceptance-federation
 	python3 tooling/scripts/acceptance-run.py --gate federation-mutual-validation
@@ -320,6 +305,3 @@ federation-dashboard-visible-surface:
 
 federation-dashboard-operational-drilldown:
 	python3 tooling/acceptance/gates/dashboard/federation_operational_drilldown.py
-
-federation-desktop-gateway-smoke:
-	python3 tooling/acceptance/gates/desktop/gateway_smoke.py

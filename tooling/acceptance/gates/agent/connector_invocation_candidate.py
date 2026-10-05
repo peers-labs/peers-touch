@@ -142,7 +142,7 @@ def _validate_runtime_tuple_policy(
 
 
 class ConnectorInvocationRuntimeAdapter:
-    """Execute one fresh Connector scenario per Desktop or Browser tuple."""
+    """Execute one fresh Connector scenario per Desktop or Secondary tuple."""
 
     def __init__(
         self,
@@ -164,8 +164,8 @@ class ConnectorInvocationRuntimeAdapter:
                 profile=PROFILE,
                 account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
             ),
-            "browser": authenticate_native_client(
-                runtime_pair.browser,
+            "secondary": authenticate_native_client(
+                runtime_pair.secondary,
                 profile_env,
                 profile=PROFILE,
                 account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
@@ -177,7 +177,7 @@ class ConnectorInvocationRuntimeAdapter:
         }
         require(
             len(set(actors.values())) == 1,
-            "J05 Native and Browser clients authenticated different actors",
+            "J05 Native and Secondary clients authenticated different actors",
         )
         enrollment = confirm_native_actor_identity_enrollment(
             runtime_pair.native,
@@ -200,8 +200,8 @@ class ConnectorInvocationRuntimeAdapter:
     ) -> FoundationRuntimeClient:
         if runtime_tuple.platform == "desktop_app":
             return self._runtime_pair.native
-        if runtime_tuple.platform == "browser":
-            return self._runtime_pair.browser
+        if runtime_tuple.platform == "secondary":
+            return self._runtime_pair.secondary
         raise ConnectorInvocationCandidateError(
             f"J05 runtime adapter rejects platform {runtime_tuple.platform}"
         )
@@ -237,12 +237,12 @@ class ConnectorInvocationRuntimeAdapter:
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
         )
 
-    def retire_browser_session(self) -> None:
-        """Release the Browser OAuth owner before Desktop tuples begin."""
-        cleanup = self._runtime_pair.browser.stop(remove_storage=False)
+    def retire_secondary_session(self) -> None:
+        """Release the Secondary OAuth owner before Desktop tuples begin."""
+        cleanup = self._runtime_pair.secondary.stop(remove_storage=False)
         require(
             cleanup.get("status") == "clean",
-            f"J05 Browser runtime handoff cleanup failed: {cleanup}",
+            f"J05 Secondary runtime handoff cleanup failed: {cleanup}",
         )
 
     def observe(
@@ -477,7 +477,7 @@ class ConnectorInvocationCandidateProducer:
                 and runtime_tuple.platform != last_platform
                 and runtime_tuple.platform == "desktop_app"
             ):
-                self.runtime_adapter.retire_browser_session()
+                self.runtime_adapter.retire_secondary_session()
                 self.runtime_adapter.refresh_native_session()
             elif (
                 runtime_tuple.platform == "desktop_app"
@@ -660,7 +660,7 @@ def _reset_capability_leases(profile_env: Mapping[str, str]) -> None:
     )
 
 def _kill_stale_desktop_processes(slot: int) -> None:
-    """Kill leftover Desktop/Browser processes from prior runs on the same port slot."""
+    """Kill leftover Desktop/Secondary processes from prior runs on the same port slot."""
     gateway_base = 3330 + slot * 100
     renderer_base = 3510 + slot * 100
     webdriver_base = 4445 + slot * 10

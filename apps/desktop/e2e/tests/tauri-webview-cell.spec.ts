@@ -21,7 +21,7 @@ const CELL_METADATA = {
   phase: 'P0c-3',
   bom: ['BOM-GATE-02', 'BOM-CAP-04'],
   spec: ['SPEC-GATE-02', 'SPEC-RUN-01'],
-  gate: 'Tauri WebView runtime evidence required; browser samples are not substitutes',
+  gate: 'Development Native Tauri WebView runtime evidence is required',
   cellId: 'tauri-webview-dev',
   runtime: 'tauri-webview-dev',
   entrypoint: 'make desktop',
@@ -77,7 +77,7 @@ test.describe('tauri-webview-dev runtime cell evidence', () => {
         })()
       `);
       writeReport({
-        status: 'baseline preflight failure',
+        status: 'diagnostic incomplete',
         completionStatus: 'PARTIAL',
         proofStatus: 'UNPROVEN',
         sampleEmissionAllowed: false,

@@ -57,6 +57,9 @@ function input(workspaceId = WORKSPACE_A, overrides = {}) {
   return {
     workspaceId,
     workItemId: 'DWF-ACTIVE-WORK',
+    mountId: 'mount-active-work',
+    runId: 'run-active-work',
+    snapshotDigest: 'b'.repeat(64),
     planId: 'DWF-PLAN',
     planPath: 'docs/architecture/example/execution-plans/test/plan.md',
     planStatus: 'active',
@@ -101,6 +104,9 @@ function ownerDependencies(overrides = {}) {
     runtimeClaims: [],
     planPath: 'docs/architecture/example/execution-plans/test/plan.md',
     planId: 'DWF-PLAN',
+    planVersionDigest: 'a'.repeat(64),
+    mountId: 'mount-active-work',
+    runId: 'run-active-work',
     taskId: 'DWF-T1',
     declarationDigest: 'f'.repeat(64),
   };
@@ -108,34 +114,46 @@ function ownerDependencies(overrides = {}) {
     workspaceRoot: repoRoot,
     workspaceId: WORKSPACE_A,
     gitHead: '2'.repeat(40),
-    async resolveWorkspacePlanBinding() {
+    async resolvePlanExecution() {
       return {
-        workspaceId: WORKSPACE_A,
-        planId: 'DWF-PLAN',
-        planPath: declaration.planPath,
-      };
-    },
-    async loadPlanPackage() {
-      return {
-        manifest: {
+        mount: {
           planId: 'DWF-PLAN',
-          status: 'active',
-          binding: {
+          planPath: declaration.planPath,
+          planVersionDigest: declaration.planVersionDigest,
+          mountId: declaration.mountId,
+        },
+        snapshot: {
+          recordDigest: 'b'.repeat(64),
+          executionBinding: {
             workspaceId: WORKSPACE_A,
             branch: declaration.branch,
             initialHead: '1'.repeat(40),
           },
-          tasks: [
-            {
-              id: 'DWF-T1',
-              path: 'tasks/DWF-T1.md',
-              status: 'in_progress',
-            },
-          ],
+          plan: {
+            tasks: [
+              {
+                id: 'DWF-T1',
+                path: 'tasks/DWF-T1.md',
+              },
+            ],
+          },
         },
-        taskSlices: new Map([
-          ['DWF-T1', { journeyId: 'DWF-J01' }],
-        ]),
+        run: {
+          runId: declaration.runId,
+          state: 'active',
+          currentTaskId: 'DWF-T1',
+          taskStates: {
+            'DWF-T1': {
+              state: 'in_progress',
+              blocker: null,
+            },
+          },
+        },
+        planPackage: {
+          taskSlices: new Map([
+            ['DWF-T1', { journeyId: 'DWF-J01' }],
+          ]),
+        },
       };
     },
     readLedger() {

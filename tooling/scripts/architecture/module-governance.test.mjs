@@ -81,7 +81,7 @@ function decisions(owner, id = 'EX-D01') {
 }
 
 async function createModule(root, id, owner = 'Architecture Team') {
-  const moduleRoot = `docs/architecture/${id}`;
+  const moduleRoot = `docs/architecture/domains/${id}`;
   await mkdir(path.join(root, moduleRoot), { recursive: true });
   await mkdir(path.join(root, `tooling/${id}`), { recursive: true });
   for (const name of deriveRequiredDocuments(CHARACTERISTICS)) {
@@ -118,17 +118,26 @@ async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'module-governance-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(path.join(root, 'docs'), { recursive: true });
+  await mkdir(path.join(root, 'docs/architecture/domains'), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(root, 'docs/architecture/domains/README.md'),
+    document('Architecture Team'),
+  );
   const module = await createModule(root, 'example');
   await writeFile(
     path.join(root, 'docs', 'README.md'),
-    '- Example: `architecture/example/README.md`\n',
+    '- Example: `architecture/domains/example/README.md`\n',
   );
   return {
     root,
     module,
     registry: {
       kind: 'peers-touch-architecture-module-registry',
-      schemaVersion: 1,
+      schemaVersion: 3,
+      taxonomyIndexes: ['docs/architecture/domains/README.md'],
+      documentCollections: [],
       modules: [module],
     },
   };
@@ -343,8 +352,8 @@ test('governed paths cannot overlap across modules', async (t) => {
   await writeFile(
     path.join(value.root, 'docs', 'README.md'),
     [
-      '- Example: `architecture/example/README.md`',
-      '- Second: `architecture/second/README.md`',
+      '- Example: `architecture/domains/example/README.md`',
+      '- Second: `architecture/domains/second/README.md`',
       '',
     ].join('\n'),
   );
@@ -361,11 +370,63 @@ test('changed paths resolve registered module ownership', async (t) => {
     repoRoot: value.root,
     registry: value.registry,
     changedPaths: [
-      'docs/architecture/example/design.md',
+      'docs/architecture/domains/example/design.md',
       'tooling/example/check.mjs',
     ],
   });
   assert.deepEqual(result.modules, ['example']);
+});
+
+test('taxonomy indexes are admitted without becoming modules', async (t) => {
+  const value = await fixture(t);
+  const result = validateChangedArchitecturePaths({
+    repoRoot: value.root,
+    registry: value.registry,
+    changedPaths: ['docs/architecture/domains/README.md'],
+  });
+  assert.deepEqual(result.modules, []);
+});
+
+test('taxonomy indexes cannot carry Plan decisions', async (t) => {
+  const value = await fixture(t);
+  rejectsCode('ARCHITECTURE_DECISION_INVALID', () =>
+    validatePlanArchitecture({
+      repoRoot: value.root,
+      registry: value.registry,
+      sources: ['docs/architecture/domains/README.md'],
+      decisions: ['FAKE-D01'],
+    }));
+});
+
+test('known document collections do not claim module ownership', async (t) => {
+  const value = await fixture(t);
+  const collectionRoot = 'docs/architecture/domains/reference';
+  await mkdir(path.join(value.root, collectionRoot), { recursive: true });
+  await writeFile(
+    path.join(value.root, collectionRoot, 'README.md'),
+    document('Reference Team'),
+  );
+  await writeFile(
+    path.join(value.root, collectionRoot, 'design.md'),
+    document('Reference Team'),
+  );
+  value.registry.documentCollections.push(collectionRoot);
+  const result = validateChangedArchitecturePaths({
+    repoRoot: value.root,
+    registry: value.registry,
+    changedPaths: [`${collectionRoot}/design.md`],
+  });
+  assert.deepEqual(result.modules, []);
+});
+
+test('module identity is independent from its nested directory basename', async (t) => {
+  const value = await fixture(t);
+  value.registry.modules[0].id = 'business-example';
+  const result = validateArchitectureRegistry({
+    repoRoot: value.root,
+    registry: value.registry,
+  });
+  assert.deepEqual(result.moduleIds, ['business-example']);
 });
 
 test('pre-edit context deterministically matches knowledge and architecture', async (t) => {
@@ -461,29 +522,29 @@ test('pre-edit context ordering is independent of locale collation', async (t) =
 test('changed active architecture modules must be registered', async (t) => {
   const value = await fixture(t);
   await mkdir(
-    path.join(value.root, 'docs/architecture/unregistered'),
+    path.join(value.root, 'docs/architecture/domains/unregistered'),
     { recursive: true },
   );
   await writeFile(
-    path.join(value.root, 'docs/architecture/unregistered/README.md'),
+    path.join(value.root, 'docs/architecture/domains/unregistered/README.md'),
     document('Another Team'),
   );
   rejectsCode('ARCHITECTURE_MODULE_UNREGISTERED', () =>
     validateChangedArchitecturePaths({
       repoRoot: value.root,
       registry: value.registry,
-      changedPaths: ['docs/architecture/unregistered/README.md'],
+      changedPaths: ['docs/architecture/domains/unregistered/README.md'],
     }));
 });
 
-test('removed standard module documents cannot escape registration', async (t) => {
+test('removed paths do not manufacture current architecture modules', async (t) => {
   const value = await fixture(t);
-  rejectsCode('ARCHITECTURE_MODULE_UNREGISTERED', () =>
-    validateChangedArchitecturePaths({
-      repoRoot: value.root,
-      registry: value.registry,
-      changedPaths: ['docs/architecture/removed/design.md'],
-    }));
+  const result = validateChangedArchitecturePaths({
+    repoRoot: value.root,
+    registry: value.registry,
+    changedPaths: ['docs/architecture/domains/removed/design.md'],
+  });
+  assert.deepEqual(result.modules, []);
 });
 
 test('Plan decisions must belong to selected registered modules', async (t) => {
@@ -492,7 +553,7 @@ test('Plan decisions must belong to selected registered modules', async (t) => {
     validatePlanArchitecture({
       repoRoot: value.root,
       registry: value.registry,
-      sources: ['docs/architecture/example/design.md'],
+      sources: ['docs/architecture/domains/example/design.md'],
       decisions: ['OTHER-D01'],
     }));
 });
@@ -523,7 +584,7 @@ test('Plan validation preserves gradual rollout for unregistered modules', async
     repoRoot: value.root,
     registry: value.registry,
     sources: [
-      'docs/architecture/example/design.md',
+      'docs/architecture/domains/example/design.md',
       'docs/architecture/existing/design.md',
     ],
     decisions: ['EX-D01', 'EXISTING-D01'],
@@ -535,7 +596,7 @@ test('Plan validation preserves gradual rollout for unregistered modules', async
       repoRoot: value.root,
       registry: value.registry,
       sources: [
-        'docs/architecture/example/design.md',
+        'docs/architecture/domains/example/design.md',
         'docs/architecture/existing/design.md',
       ],
       decisions: ['EX-D99', 'EXISTING-D01'],

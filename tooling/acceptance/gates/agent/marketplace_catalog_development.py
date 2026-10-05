@@ -362,7 +362,7 @@ def main() -> int:
             "bom": ["X3", "P4-3", "MCA-D20", "MCA-D20A"],
             "spec": [
                 "tooling/acceptance/features/agent-trusted-package-catalog.yaml",
-                "docs/architecture/agent/modern-chat-agent/decisions.md#"
+                "docs/architecture/domains/agent/modern-chat-agent/decisions.md#"
                 "mca-d20a-station-distributed-publisher-signed-official-catalog",
             ],
             "gate": (

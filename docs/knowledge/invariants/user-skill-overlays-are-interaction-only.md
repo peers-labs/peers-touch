@@ -8,10 +8,10 @@ owns:
   - tooling/scripts/skill-overlay-control-test.py
   - tooling/make/setup.mk
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
-  - docs/architecture/development-workflow/design.md
-  - docs/architecture/development-workflow/integration.md
+  - docs/architecture/engineering/development-workflow/design.md
+  - docs/architecture/engineering/development-workflow/integration.md
 detected: 2026-09-21
 ---
 

@@ -5,7 +5,7 @@ status: active
 owns:
   - AGENTS.md
   - docs/global/workflow.md
-  - docs/architecture/development-workflow/
+  - docs/architecture/engineering/development-workflow/
   - tooling/skills/pt-dev-workflow/
   - tooling/skills/pt-goal-orchestrator/
   - tooling/skills/pt-context-anchor/
@@ -19,10 +19,10 @@ owns:
   - tooling/skills/pt-github-review/
   - tooling/skills/pt-ew/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
-  - docs/architecture/development-workflow/design.md
-  - docs/architecture/development-workflow/integration.md
+  - docs/architecture/engineering/development-workflow/design.md
+  - docs/architecture/engineering/development-workflow/integration.md
 detected: 2026-09-19
 ---
 
@@ -70,9 +70,9 @@ Narrow escalation preserves safety without fragmenting execution.
 ## How to verify
 
 - `tooling/scripts/review/skill-check.sh` passes.
-- `rg -n "user decides whether to send|user initiates review|Continue\\?" AGENTS.md tooling/skills docs/global/workflow.md docs/architecture/development-workflow` returns only explicit anti-pattern statements.
-- `rg -n "Plan Run|agent-led review|Agent Review Loop" AGENTS.md tooling/skills/pt-dev-workflow/SKILL.md docs/architecture/development-workflow` finds the governing contracts.
-- `rg -n "Already-authorized operations execute directly|actual external permission" AGENTS.md tooling/skills docs/global/workflow.md docs/architecture/development-workflow` finds the authorization-reuse contract.
+- `rg -n "user decides whether to send|user initiates review|Continue\\?" AGENTS.md tooling/skills docs/global/workflow.md docs/architecture/engineering/development-workflow` returns only explicit anti-pattern statements.
+- `rg -n "Plan Run|agent-led review|Agent Review Loop" AGENTS.md tooling/skills/pt-dev-workflow/SKILL.md docs/architecture/engineering/development-workflow` finds the governing contracts.
+- `rg -n "Already-authorized operations execute directly|actual external permission" AGENTS.md tooling/skills docs/global/workflow.md docs/architecture/engineering/development-workflow` finds the authorization-reuse contract.
 
 ## Crosswalks
 

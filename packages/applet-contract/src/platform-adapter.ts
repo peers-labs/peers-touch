@@ -1,7 +1,7 @@
 // Platform Adapter contract — translates platform events into standard lifecycle
 // events, and executes surface operations on behalf of the Applet Kernel.
 //
-// Authoritative source: docs/architecture/applet-runtime/applet-lifecycle-architecture.md
+// Authoritative source: docs/architecture/platform/applet-runtime/applet-lifecycle-architecture.md
 //   §4 事件映射标准, §6 分层架构 (Platform Adapter 职责), §9 端侧渲染 runtime 汇总.
 //
 // The adapter is the ONLY layer that knows about Tauri WebView / LynxView /

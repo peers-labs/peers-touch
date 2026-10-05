@@ -18,8 +18,7 @@ export function initializeDesktopHostPolicy(
 
   const nativeTauri = Boolean(
     target
-    && hasOwn(target, '__TAURI_INTERNALS__')
-    && !hasOwn(target, '__PT_GATEWAY_BASE__'),
+    && hasOwn(target, '__TAURI_INTERNALS__'),
   );
   bootPolicy = Object.freeze({
     kind: nativeTauri ? 'native-tauri' : 'browser',

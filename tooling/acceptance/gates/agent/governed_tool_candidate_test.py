@@ -86,7 +86,7 @@ def _adapter(
     clipboard: _ClipboardAdapter | None = None,
 ) -> GovernedToolRuntimeAdapter:
     adapter = object.__new__(GovernedToolRuntimeAdapter)
-    adapter._runtime_pair = SimpleNamespace(native=client, browser=client)
+    adapter._runtime_pair = SimpleNamespace(native=client, secondary=client)
     adapter._run_id = "run-1"
     adapter._local_provider = SimpleNamespace(api_key="local-run-key")
     adapter._station_provider = SimpleNamespace(api_key="station-run-key")
@@ -107,13 +107,13 @@ class GovernedToolCandidateTest(unittest.TestCase):
         self.assertEqual(clipboard.value, FIXTURE_CLIPBOARD_BYTES)
         self.assertEqual(clipboard.write_count, 1)
 
-    def test_browser_execution_does_not_mutate_native_clipboard(self) -> None:
+    def test_secondary_execution_does_not_mutate_native_clipboard(self) -> None:
         client = _RuntimeClient()
         clipboard = _ClipboardAdapter()
 
         _adapter(client, clipboard)._execute(
             _runtime_tuple(
-                platform="browser",
+                platform="secondary",
                 profile="station_capability_turn",
             )
         )

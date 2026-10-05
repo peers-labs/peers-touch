@@ -856,6 +856,66 @@ class TauriSession(DomDriver):
     def execute_async_script(self, script: str, *args: Any) -> Any:
         return self._connected_driver().execute_async_script(script, *args)
 
+    def invoke_app_result(
+        self,
+        command: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        request_id = f"native-invoke-{time.monotonic_ns()}"
+        self.driver.execute_script(
+            """
+            const [command, commandArguments, requestId] = arguments;
+            const requests = window.__PT_NATIVE_INVOKE_REQUESTS__ ||= {};
+            requests[requestId] = { done: false };
+            window.__TAURI_INTERNALS__.invoke(
+              command,
+              commandArguments,
+            ).then((result) => {
+              requests[requestId] = { done: true, result };
+            }).catch((error) => {
+              requests[requestId] = {
+                done: true,
+                result: {
+                  ok: false,
+                  error: { message: String(error) },
+                },
+              };
+            });
+            """,
+            command,
+            arguments or {},
+            request_id,
+        )
+        result: Any = None
+        deadline = time.monotonic() + timeout
+        try:
+            while time.monotonic() < deadline:
+                result = self.driver.execute_script(
+                    """
+                    const request = window.__PT_NATIVE_INVOKE_REQUESTS__
+                      ?.[arguments[0]];
+                    return request?.done ? request.result : null;
+                    """,
+                    request_id,
+                )
+                if result is not None:
+                    break
+                time.sleep(0.01)
+        finally:
+            self.driver.execute_script(
+                """
+                if (window.__PT_NATIVE_INVOKE_REQUESTS__) {
+                  delete window.__PT_NATIVE_INVOKE_REQUESTS__[arguments[0]];
+                }
+                """,
+                request_id,
+            )
+        if not isinstance(result, dict) or not result.get("ok"):
+            raise DriverError(f"Native Tauri command {command} failed: {result!r}")
+        return result
+
     def find_element(self, selector: str, timeout: float = 10.0) -> Any:
         return self._connected_driver().find_element(selector, timeout)
 

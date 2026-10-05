@@ -125,7 +125,7 @@ GlobalContext 关心“**跨域汇聚**”；Page/Runtime/Boot 关心“**单域
 内置流程（第一批）：
 - `app_bootstrap`
 - `identity_switch`
-- `session_login`（含密码登录和 OAuth2 登录两种入口，统一产出 JWT，见 `../../architecture/boundaries/station-desktop-scope-boundary.md` §10）
+- `session_login`（含密码登录和 OAuth2 登录两种入口，统一产出 JWT，见 `../../architecture/platform/station-desktop-boundary.md` §10）
 - `session_logout`
 - `session_restore`（应用启动时自动恢复持久化 session，先恢复本地持久化，再校验 Station session 是否仍有效）
 - `session_refresh`（JWT 临近过期时自动续签）
@@ -330,7 +330,7 @@ const off = eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, () => {
 - Desktop Rust 不得把 `session_revoked` 再包装回 `String` 供上层猜测。
 - 任何需要退出登录的路径都必须收敛到 `AUTH_SESSION_REVOKED -> session_logout` 这一条链路。
 
-详细架构设计见 `../../architecture/boundaries/station-desktop-scope-boundary.md` §10。
+详细架构设计见 `../../architecture/platform/station-desktop-boundary.md` §10。
 
 ## 8.1 身份切换（Identity Switch）
 1. 发起 `context_action_dispatch(identity.switch)`
@@ -437,4 +437,4 @@ TS 侧统一入口（建议）：
 ## 13. 与现有文档关系
 
 - 本文是 Desktop 全局上下文内核设计，补齐 `docs/architecture` 下对“框架级状态与事件组件”的空白。
-- 与 `../../architecture/boundaries/station-desktop-scope-boundary.md` 协同：职责边界不变，本文聚焦 Desktop 内部框架治理。
+- 与 `../../architecture/platform/station-desktop-boundary.md` 协同：职责边界不变，本文聚焦 Desktop 内部框架治理。

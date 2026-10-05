@@ -38,7 +38,6 @@ from tooling.development.secure_content.platform_runtime import (
 )
 from tooling.development.secure_content.run import RunnerError, ScenarioContext
 from tooling.development.secure_content.runtime_owner import (
-    BROWSER_JOURNEY,
     DESKTOP_CLIENTS,
     PRIVATE_PUBLISH_RECONCILING_STATES,
     REQUIRED_FIXTURE_CAPABILITIES,
@@ -128,7 +127,6 @@ from tooling.development.secure_content.runtime_owner import (
     _wait_for_mls_readiness,
     _verify_live_canonical_private_schema_attestation,
     _wait_for_moments_snapshot,
-    _write_browser_runtime_manifest_with_recovery,
     _receiver_ui_probe,
     main,
 )
@@ -323,9 +321,6 @@ class RuntimeOwnerTest(unittest.TestCase):
         source = inspect.getsource(
             W7RuntimeOwner.run_w7_desktop_suite
         )
-        self.assertNotIn("BROWSER_", source)
-        self.assertNotIn('runtime_kind="browser"', source)
-        self.assertNotIn('runtime="browser"', source)
         self.assertNotIn('runtime="mobile"', source)
 
     def test_w7_desktop_suite_publishes_after_ui_proof_and_cleanup(
@@ -1377,6 +1372,8 @@ class RuntimeOwnerTest(unittest.TestCase):
             Path(__file__).resolve().parents[3]
             / "docs"
             / "architecture"
+            / "shared"
+            / "security"
             / "secure-content"
             / "execution-plans"
             / "20260913-secure-content-hard-cut"
@@ -1407,8 +1404,8 @@ class RuntimeOwnerTest(unittest.TestCase):
             "run-w9-suite": (0, 6, 6),
             "run-w2-suite": (4, 4, 8),
             "run-w10-suite": (4, 4, 8),
-            "run-w11-suite": (7, 8, 15),
-            "run-final-suite": (7, 8, 15),
+            "run-w11-suite": (5, 8, 13),
+            "run-final-suite": (5, 8, 13),
         }
         for action, counts in expected.items():
             with self.subTest(action=action):
@@ -1986,6 +1983,8 @@ class RuntimeOwnerTest(unittest.TestCase):
             Path(__file__).resolve().parents[3]
             / "docs"
             / "architecture"
+            / "shared"
+            / "security"
             / "secure-content"
             / "execution-plans"
             / "20260913-secure-content-hard-cut"
@@ -2978,12 +2977,12 @@ class RuntimeOwnerTest(unittest.TestCase):
                 primary_station_url="http://127.0.0.1:4101",
                 secondary_station_url="http://127.0.0.1:4102",
                 run_id="w7-runtime-accounts",
-                roles=("alice", "bob", "eve", "browser_actor"),
+                roles=("alice", "bob", "eve", "carol"),
                 secondary_roles=("bob",),
             )
 
         self.assertEqual(
-            {"alice", "bob", "eve", "browser_actor"},
+            {"alice", "bob", "eve", "carol"},
             set(accounts),
         )
         self.assertEqual(4, len(set(accounts.values())))
@@ -3006,9 +3005,9 @@ class RuntimeOwnerTest(unittest.TestCase):
             return_value=response,
         ) as open_request:
             for role, suffix in (
-                ("browser_actor", "a" * 10),
-                ("browser_anonymous_bootstrap", "a" * 10),
-                ("browser_anonymous_bootstrap", "b" * 10),
+                ("alice", "a" * 10),
+                ("bob", "a" * 10),
+                ("bob", "b" * 10),
             ):
                 _register_runtime_account(
                     "http://127.0.0.1:4101",
@@ -3671,35 +3670,6 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(3, client.driver.execute_script.call_count)
         wait_for_snapshot.assert_called_once_with(client)
 
-    def test_moments_readiness_retries_transient_browser_identity_gap(
-        self,
-    ) -> None:
-        snapshot = {
-            "platform": "browser",
-            "bootIdentitySha256": "2" * 64,
-        }
-        client = MagicMock()
-        client.harness_namespace = "agent"
-        client.spec = SimpleNamespace(
-            profile="secure-content-browser-authenticated"
-        )
-        client.harness.side_effect = (
-            FoundationClientError(
-                "browser harness snapshot failed: "
-                "moments.acceptance.browserRuntimeIdentityMissing"
-            ),
-            snapshot,
-        )
-
-        with patch(
-            "tooling.development.secure_content.runtime_owner.harness_ready",
-            return_value=True,
-        ):
-            result = _wait_for_moments_snapshot(client)
-
-        self.assertEqual(snapshot, result)
-        self.assertEqual(2, client.harness.call_count)
-
     def test_moments_readiness_retries_transient_script_timeout(self) -> None:
         snapshot = {
             "platform": "native",
@@ -3716,36 +3686,6 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "native-tauri harness snapshot failed: "
                 "Message: Script execution timed out"
             ),
-            snapshot,
-        )
-
-        with patch(
-            "tooling.development.secure_content.runtime_owner.harness_ready",
-            return_value=True,
-        ):
-            result = _wait_for_moments_snapshot(client)
-
-        self.assertEqual(snapshot, result)
-        self.assertEqual(2, client.harness.call_count)
-
-    def test_moments_readiness_retries_transient_browser_platform(
-        self,
-    ) -> None:
-        snapshot = {
-            "platform": "browser",
-            "bootIdentitySha256": "2" * 64,
-        }
-        client = MagicMock()
-        client.harness_namespace = "agent"
-        client.spec = SimpleNamespace(
-            profile="secure-content-browser-anonymous",
-            runtime="browser",
-        )
-        client.harness.side_effect = (
-            {
-                "platform": "unknown",
-                "bootIdentitySha256": "1" * 64,
-            },
             snapshot,
         )
 
@@ -3854,336 +3794,6 @@ class RuntimeOwnerTest(unittest.TestCase):
             str(raised.exception),
         )
         client.configure_station.assert_not_called()
-
-    def test_start_browser_client_completes_station_binding_after_authentication(
-        self,
-    ) -> None:
-        snapshot = {
-            "platform": "browser",
-            "nativeRuntimeIdentitySha256": "",
-        }
-        client = MagicMock()
-        client.spec = SimpleNamespace(
-            profile="secure-content-browser-authenticated",
-            runtime="browser",
-        )
-        events: list[str] = []
-        client.start.side_effect = lambda: events.append("start")
-        client.configure_station.side_effect = lambda: events.append(
-            "configure-station"
-        )
-
-        with (
-            patch(
-                "tooling.development.secure_content.runtime_owner."
-                "_authenticate_running_client",
-                side_effect=lambda *_args, **_kwargs: events.append(
-                    "authenticate"
-                ),
-            ),
-            patch(
-                "tooling.development.secure_content.runtime_owner."
-                "_ensure_browser_station_binding",
-                side_effect=lambda *_args, **_kwargs: events.append(
-                    "complete-binding"
-                ),
-            ) as ensure_station_binding,
-            patch(
-                "tooling.development.secure_content.runtime_owner."
-                "_wait_for_moments_snapshot",
-                return_value=snapshot,
-            ) as wait_for_snapshot,
-        ):
-            result = _start_client(
-                client,
-                account="alice@p.t",
-                password="1",
-            )
-
-        client.start.assert_called_once_with()
-        client.configure_station.assert_called_once_with()
-        ensure_station_binding.assert_called_once_with(client)
-        wait_for_snapshot.assert_called_once_with(client)
-        self.assertEqual(
-            ["start", "configure-station", "authenticate", "complete-binding"],
-            events,
-        )
-        self.assertEqual(snapshot, result)
-
-    def test_start_anonymous_browser_client_binds_then_clears_session(
-        self,
-    ) -> None:
-        authenticated_snapshot = {
-            "platform": "browser",
-            "authenticationState": "AUTHENTICATED",
-        }
-        anonymous_snapshot = {
-            "platform": "browser",
-            "authenticationState": "ANONYMOUS",
-            "nativeRuntimeIdentitySha256": "",
-        }
-        client = MagicMock()
-        client.spec = SimpleNamespace(
-            profile="secure-content-browser-anonymous",
-            runtime="browser",
-        )
-        client.harness_namespace = "agent"
-        events: list[str] = []
-        client.start.side_effect = lambda: events.append("start")
-        client.configure_station.side_effect = lambda: events.append(
-            "configure-station"
-        )
-        client.harness.side_effect = lambda *_args, **_kwargs: events.append(
-            "logout"
-        )
-
-        with (
-            patch(
-                "tooling.development.secure_content.runtime_owner."
-                "_authenticate_running_client",
-                side_effect=lambda *_args, **_kwargs: events.append(
-                    "authenticate"
-                ),
-            ) as authenticate,
-            patch(
-                "tooling.development.secure_content.runtime_owner."
-                "_ensure_browser_station_binding",
-                side_effect=lambda *_args, **_kwargs: events.append(
-                    "complete-binding"
-                ),
-            ) as ensure_station_binding,
-            patch(
-                "tooling.development.secure_content.runtime_owner."
-                "_wait_for_moments_snapshot",
-                side_effect=(
-                    authenticated_snapshot,
-                    anonymous_snapshot,
-                ),
-            ) as wait_for_snapshot,
-        ):
-            result = _start_client(
-                client,
-                account=None,
-                password="1",
-                anonymous_binding_account="anonymous-bootstrap@p.t",
-            )
-
-        authenticate.assert_called_once_with(
-            client,
-            account="anonymous-bootstrap@p.t",
-            password="1",
-        )
-        ensure_station_binding.assert_called_once_with(client)
-        client.harness.assert_called_once_with("logout", timeout=120)
-        self.assertEqual(2, wait_for_snapshot.call_count)
-        self.assertEqual(
-            [
-                "start",
-                "configure-station",
-                "authenticate",
-                "complete-binding",
-                "logout",
-            ],
-            events,
-        )
-        self.assertEqual(anonymous_snapshot, result)
-
-    def test_browser_manifest_attachment_recovers_lost_harness_once(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            storage_root = root / "storage"
-            storage_root.mkdir()
-            output_path = root / "runtime.json"
-            old_driver = SimpleNamespace(
-                session_id="webdriver-old",
-                command_executor=SimpleNamespace(
-                    _client_config=SimpleNamespace(
-                        remote_server_addr="http://127.0.0.1:9515",
-                    ),
-                ),
-            )
-            new_driver = SimpleNamespace(
-                session_id="webdriver-new",
-                command_executor=SimpleNamespace(
-                    _client_config=SimpleNamespace(
-                        remote_server_addr="http://127.0.0.1:9516",
-                    ),
-                ),
-            )
-            client = MagicMock()
-            client.spec = SimpleNamespace(
-                profile="secure-content-browser-authenticated",
-                runtime="browser",
-                storage_root=storage_root,
-            )
-            client.harness_namespace = "agent"
-            client.driver = old_driver
-            client.restart.side_effect = lambda: setattr(
-                client,
-                "driver",
-                new_driver,
-            )
-            previous = {
-                "id": "secure-content-browser-authenticated",
-                "actor_role": "browser_actor",
-                "actor_role_digest": "a" * 64,
-                "runtime_kind": "browser",
-                "required_service_roles": [
-                    "station",
-                    "station-secondary",
-                ],
-                "service_bindings": {
-                    "station": {
-                        "service_id": "station-four",
-                        "required_kind": "station",
-                    },
-                    "station-secondary": {
-                        "service_id": "station-five-arm",
-                        "required_kind": "station",
-                    },
-                },
-                "storage_identity_digest": _storage_identity(storage_root),
-                "boot_identity": "1" * 64,
-                "session_generation": 1,
-            }
-            recovered_snapshot = {
-                "platform": "browser",
-                "actorPtidSha256": "a" * 64,
-                "bootIdentitySha256": "2" * 64,
-                "sessionGeneration": 2,
-            }
-            attachment_error = RunnerError(
-                "runtime client 'secure-content-browser-authenticated' "
-                "did not expose 'moments' acceptance harness"
-            )
-
-            with (
-                patch(
-                    "tooling.development.secure_content.runtime_owner."
-                    "write_attached_runtime_manifest",
-                    side_effect=(attachment_error, output_path),
-                ) as write_manifest,
-                patch(
-                    "tooling.development.secure_content.runtime_owner."
-                    "_wait_for_moments_snapshot",
-                    return_value=recovered_snapshot,
-                ) as wait_for_snapshot,
-            ):
-                result = _write_browser_runtime_manifest_with_recovery(
-                    manifest_payload={"clients": [previous]},
-                    output_path=output_path,
-                    journey_id=BROWSER_JOURNEY,
-                    sessions_by_client={previous["id"]: client},
-                    repo_root=root,
-                )
-
-        self.assertEqual(output_path, result)
-        client.restart.assert_called_once_with()
-        wait_for_snapshot.assert_called_once_with(client)
-        self.assertEqual("agent", client.harness_namespace)
-        self.assertEqual(2, write_manifest.call_count)
-        first_call, recovered_call = write_manifest.call_args_list
-        self.assertEqual(
-            "webdriver-old",
-            first_call.kwargs["automation_refs_by_client"][
-                previous["id"]
-            ]["session_id"],
-        )
-        self.assertEqual(
-            "webdriver-new",
-            recovered_call.kwargs["automation_refs_by_client"][
-                previous["id"]
-            ]["session_id"],
-        )
-        recovered_client = recovered_call.kwargs["manifest_payload"][
-            "clients"
-        ][0]
-        self.assertEqual(
-            previous["storage_identity_digest"],
-            recovered_client["storage_identity_digest"],
-        )
-        self.assertEqual("2" * 64, recovered_client["boot_identity"])
-        self.assertEqual(2, recovered_client["session_generation"])
-
-    def test_browser_manifest_attachment_recovery_is_bounded_per_client(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            storage_root = root / "storage"
-            storage_root.mkdir()
-            driver = SimpleNamespace(
-                session_id="webdriver",
-                command_executor=SimpleNamespace(
-                    _client_config=SimpleNamespace(
-                        remote_server_addr="http://127.0.0.1:9515",
-                    ),
-                ),
-            )
-            client = MagicMock()
-            client.spec = SimpleNamespace(
-                profile="secure-content-browser-authenticated",
-                runtime="browser",
-                storage_root=storage_root,
-            )
-            client.harness_namespace = "agent"
-            client.driver = driver
-            client.restart.side_effect = lambda: setattr(
-                client,
-                "driver",
-                SimpleNamespace(
-                    session_id="webdriver-recovered",
-                    command_executor=driver.command_executor,
-                ),
-            )
-            previous = {
-                "id": "secure-content-browser-authenticated",
-                "actor_role": "browser_actor",
-                "actor_role_digest": "a" * 64,
-                "service_bindings": {
-                    "station": {
-                        "service_id": "station-four",
-                        "required_kind": "station",
-                    },
-                },
-                "storage_identity_digest": _storage_identity(storage_root),
-            }
-            attachment_error = RunnerError(
-                "runtime client 'secure-content-browser-authenticated' "
-                "did not expose 'moments' acceptance harness"
-            )
-
-            with (
-                patch(
-                    "tooling.development.secure_content.runtime_owner."
-                    "write_attached_runtime_manifest",
-                    side_effect=(attachment_error, attachment_error),
-                ) as write_manifest,
-                patch(
-                    "tooling.development.secure_content.runtime_owner."
-                    "_wait_for_moments_snapshot",
-                    return_value={
-                        "actorPtidSha256": "a" * 64,
-                        "bootIdentitySha256": "2" * 64,
-                        "sessionGeneration": 2,
-                    },
-                ),
-                self.assertRaises(RuntimeOwnerBlocked) as raised,
-            ):
-                _write_browser_runtime_manifest_with_recovery(
-                    manifest_payload={"clients": [previous]},
-                    output_path=root / "runtime.json",
-                    journey_id=BROWSER_JOURNEY,
-                    sessions_by_client={previous["id"]: client},
-                    repo_root=root,
-                )
-
-        client.restart.assert_called_once_with()
-        self.assertEqual(2, write_manifest.call_count)
-        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
-        self.assertIn("one bounded", str(raised.exception))
 
     def test_station_tunnels_target_reviewed_profile_hosts_and_close(
         self,
@@ -4485,7 +4095,6 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertNotIn("desktop.clear()", source)
         self.assertIn("work_item_id=WORK_ITEM_ID", source)
         self.assertIn("task_id=TASK_ID", source)
-        self.assertNotIn("BROWSER_JOURNEY", source)
 
     def test_mobile_station_binding_uses_canonical_origin_not_tunnel(self) -> None:
         session = MagicMock()
@@ -4975,6 +4584,7 @@ class RuntimeOwnerTest(unittest.TestCase):
 
     def test_scenario_journey_transition_uses_the_active_owner_session(self) -> None:
         session_id = "secure-content-w7-functional-20260918"
+        target_journey = "sc-dj-hardcut-regression"
         declaration = {
             "state": "ACTIVE",
             "workItemId": "secure-content-w7",
@@ -4985,8 +4595,8 @@ class RuntimeOwnerTest(unittest.TestCase):
         }
         responses = [
             {"declarations": [declaration]},
-            {**declaration, "journeyId": BROWSER_JOURNEY},
-            {**declaration, "journeyId": BROWSER_JOURNEY},
+            {**declaration, "journeyId": target_journey},
+            {**declaration, "journeyId": target_journey},
         ]
         commands: list[list[str]] = []
 
@@ -5000,11 +4610,11 @@ class RuntimeOwnerTest(unittest.TestCase):
 
         activated = _activate_scenario_journey(
             Path("/tmp/peers-touch"),
-            BROWSER_JOURNEY,
+            target_journey,
             command_runner=run,
         )
 
-        self.assertEqual(BROWSER_JOURNEY, activated["journeyId"])
+        self.assertEqual(target_journey, activated["journeyId"])
         self.assertIn(session_id, commands[1])
         self.assertEqual("update", commands[1][2])
         self.assertEqual("check", commands[2][2])
@@ -5131,7 +4741,7 @@ class RuntimeOwnerTest(unittest.TestCase):
         ):
             _activate_scenario_journey(
                 Path("/tmp/peers-touch"),
-                BROWSER_JOURNEY,
+                "sc-dj-hardcut-regression",
                 command_runner=run,
             )
 
@@ -5441,12 +5051,12 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_manifest_payload_preserves_owner_bound_source(self) -> None:
         payload = _manifest_payload(
             identity=IDENTITY,
-            journey_id=BROWSER_JOURNEY,
+            journey_id="sc-dj-desktop-pilot",
             run_id="w7-owner-run",
             services={"station-four": {"kind": "station"}},
             fixture_ref={"path": "fixture.json", "sha256": "1" * 64},
             fixture_digest="2" * 64,
-            clients=[{"id": "browser"}],
+            clients=[{"id": "desktop-alice"}],
         )
 
         self.assertNotIn("manifest_digest", payload)

@@ -35,7 +35,7 @@ export interface CapabilityBindingScenarioInput {
   runId: string;
   scenarioExecutionId: string;
   cell: string;
-  platform: 'desktop_app' | 'browser';
+  platform: 'desktop_app' | 'secondary';
   locale: 'en' | 'zh-CN';
   ordering: 'single';
   sampleId: 'sample-001';

@@ -203,7 +203,7 @@ class ConnectorInvocationCandidateTest(unittest.TestCase):
         self.assertLess(reconnected, reconnect_refresh)
         self.assertLess(reconnect_refresh, reconnect_bind)
 
-    def test_browser_connector_oauth_does_not_use_local_mcp_identity_guard(
+    def test_secondary_connector_oauth_does_not_use_local_mcp_identity_guard(
         self,
     ) -> None:
         gateway = (
@@ -220,11 +220,11 @@ class ConnectorInvocationCandidateTest(unittest.TestCase):
 
         self.assertIn("fn gateway_identity(", gateway)
         self.assertIn("fn gateway_mcp_identity(", gateway)
-        self.assertIn("Local MCP is unavailable in the Browser client", gateway)
+        self.assertIn("Local MCP is unavailable in the Secondary client", gateway)
         self.assertIn("match gateway_identity(state)", oauth_routes)
         self.assertNotIn("gateway_mcp_identity(state)", oauth_routes)
 
-    def test_platform_handoff_retires_browser_and_restarts_native_retry(
+    def test_platform_handoff_retires_secondary_and_restarts_native_retry(
         self,
     ) -> None:
         candidate = (
@@ -237,7 +237,7 @@ class ConnectorInvocationCandidateTest(unittest.TestCase):
             maxsplit=1,
         )[1].split("def _candidate_root(", maxsplit=1)[0]
 
-        retire = collect.index("self.runtime_adapter.retire_browser_session()")
+        retire = collect.index("self.runtime_adapter.retire_secondary_session()")
         refresh = collect.index(
             "self.runtime_adapter.refresh_native_session()",
             retire,

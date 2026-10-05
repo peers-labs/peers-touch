@@ -36,7 +36,7 @@ export const DECLARATION_STATES = new Set([
   'STALE',
 ]);
 
-const LEGACY_DECLARATION_KEYS = new Set([
+const DECLARATION_KEYS = new Set([
   'declarationId',
   'workItemId',
   'sessionId',
@@ -53,11 +53,11 @@ const LEGACY_DECLARATION_KEYS = new Set([
   'sourceClaims',
   'runtimeClaims',
   'declarationDigest',
-]);
-const DECLARATION_KEYS = new Set([
-  ...LEGACY_DECLARATION_KEYS,
   'planPath',
   'planId',
+  'planVersionDigest',
+  'mountId',
+  'runId',
   'taskId',
 ]);
 const SOURCE_CLAIM_KEYS = new Set(['pathPrefix', 'mode']);
@@ -361,8 +361,7 @@ function validIsoTimestamp(value) {
 export function validateDeclaration(declaration) {
   if (
     !isObject(declaration) ||
-    (!hasExactKeys(declaration, DECLARATION_KEYS) &&
-      !hasExactKeys(declaration, LEGACY_DECLARATION_KEYS))
+    !hasExactKeys(declaration, DECLARATION_KEYS)
   ) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'declaration fields are invalid');
   }
@@ -399,43 +398,51 @@ export function validateDeclaration(declaration) {
       fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
     }
   }
-  if (Object.hasOwn(declaration, 'planPath')) {
-    const values = [
-      declaration.planPath,
-      declaration.planId,
-      declaration.taskId,
-    ];
-    const allNull = values.every((value) => value === null);
-    const allPresent = values.every(
-      (value) => typeof value === 'string' && value.length > 0,
+  const locatorFields = [
+    'planPath',
+    'planId',
+    'planVersionDigest',
+    'mountId',
+    'runId',
+    'taskId',
+  ];
+  const locatorValues = locatorFields.map((field) => declaration[field]);
+  const allNull = locatorValues.every((value) => value === null);
+  const allPresent = locatorValues.every(
+    (value) => typeof value === 'string' && value.length > 0,
+  );
+  if (!allNull && !allPresent) {
+    fail(
+      'MACHINE_WORK_LEDGER_INVALID',
+      'Plan locator fields must be all null or all present',
     );
-    if (!allNull && !allPresent) {
+  }
+  if (allPresent) {
+    let normalizedPath;
+    try {
+      normalizedPath = normalizePlanPath(declaration.planPath);
+    } catch {
+      fail('MACHINE_WORK_LEDGER_INVALID', 'planPath is invalid');
+    }
+    if (normalizedPath !== declaration.planPath) {
+      fail('MACHINE_WORK_LEDGER_INVALID', 'planPath is not canonical');
+    }
+    for (const field of ['planId', 'mountId', 'runId', 'taskId']) {
+      let normalized;
+      try {
+        normalized = requiredIdentifier(declaration[field], field);
+      } catch {
+        fail('MACHINE_WORK_LEDGER_INVALID', `${field} is invalid`);
+      }
+      if (normalized !== declaration[field]) {
+        fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
+      }
+    }
+    if (!/^[0-9a-f]{64}$/.test(declaration.planVersionDigest)) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
-        'Plan locator fields must be all null or all present',
+        'planVersionDigest is invalid',
       );
-    }
-    if (allPresent) {
-      let normalizedPath;
-      try {
-        normalizedPath = normalizePlanPath(declaration.planPath);
-      } catch {
-        fail('MACHINE_WORK_LEDGER_INVALID', 'planPath is invalid');
-      }
-      if (normalizedPath !== declaration.planPath) {
-        fail('MACHINE_WORK_LEDGER_INVALID', 'planPath is not canonical');
-      }
-      for (const field of ['planId', 'taskId']) {
-        let normalized;
-        try {
-          normalized = requiredIdentifier(declaration[field], field);
-        } catch {
-          fail('MACHINE_WORK_LEDGER_INVALID', `${field} is invalid`);
-        }
-        if (normalized !== declaration[field]) {
-          fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
-        }
-      }
     }
   }
   if (!/^[0-9a-f]{16}$/.test(declaration.workspaceId)) {

@@ -19,7 +19,7 @@ CONTRACT_PATH = (
     ENVIRONMENTS_DIR / "secure-content-development-runtime.yaml"
 )
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-RUNTIMES = frozenset({"desktop", "browser", "mobile"})
+RUNTIMES = frozenset({"desktop", "mobile"})
 MOBILE_MATRIX_OPERATIONS = frozenset(
     {
         "publish-states",
@@ -72,8 +72,6 @@ SCENARIO_OPERATIONS = MappingProxyType(
         "final-chat-mobile": CHAT_ATTACHMENT_OPERATIONS,
         "hardcut-regression": frozenset({"full-social", "outer-uow"}),
         "final-desktop": frozenset({"full-social", "outer-uow"}),
-        "hardcut-browser-regression": frozenset({"browser-boundary"}),
-        "final-browser": frozenset({"browser-boundary"}),
     }
 )
 
@@ -287,14 +285,12 @@ def load_platform_runtime_contract(
         "run-w10-ios",
         "run-w10-android",
         "run-w11-desktop",
-        "run-w11-browser",
         "run-w11-ios",
         "run-w11-android",
         "run-w11-chat-desktop",
         "run-w11-chat-ios",
         "run-w11-chat-android",
         "run-final-desktop",
-        "run-final-browser",
         "run-final-ios",
         "run-final-android",
         "run-final-chat-desktop",

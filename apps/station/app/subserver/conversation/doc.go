@@ -11,6 +11,6 @@
 // identity, presence, object storage, and Federation transport remain separate
 // owners accessed through explicit ports.
 //
-// See docs/architecture/api-ownership/design.md and
-// docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md.
+// See docs/architecture/engineering/api-governance/design.md and
+// docs/architecture/engineering/api-governance/execution-plans/20260906-conversation-authority-hard-cut.md.
 package conversation

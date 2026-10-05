@@ -17,7 +17,6 @@ Prepare the development environment so the user can simply run:
 make station       # Ready Station (local start / remote deploy)
 make relay         # Ready Relay (remote deploy)
 make desktop       # Start Desktop (Tauri app)
-make desktop-web   # Start Desktop (browser)
 make mobile        # Start Mobile iOS Simulator
 make status        # Check what's running
 make stop          # Stop everything
@@ -62,7 +61,7 @@ Station whose active profile resolves to:
 - an empty or unapproved remote deploy environment.
 
 Before an agent runs `make station`, `make station-restart`, `make restart`,
-`make desktop`, `make desktop-web`, `make mobile`, or any test/Acceptance
+`make desktop`, `make mobile`, or any test/Acceptance
 command that may ready or access Station, it MUST:
 
 1. Run `make config`.
@@ -127,8 +126,6 @@ port conflicts:
 | Station | `18080 + slot * 100` |
 | Desktop App gateway | `3030 + slot * 100` |
 | Desktop App web | `3210 + slot * 100` |
-| Desktop Web gateway | `3031 + slot * 100` |
-| Desktop Web vite | `3211 + slot * 100` |
 | Mobile web | `5173 + slot * 100` |
 
 There is no implicit slot from Profile metadata. First explicit
@@ -162,6 +159,7 @@ Use `make relay-check` only when the user explicitly wants health-check only.
 # Machine binding and profile management
 make env-register PROFILE=<name> SLOT=<n> CAPABILITIES='<csv>' PURPOSE='<text>'
 make env-update [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<csv>']
+make env-unregister [WORKSPACE_ID=<id>]       # After coordinated close, before worktree removal
 make env-check [WORKSPACE_ID=<id>] [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<csv>'] [BUDGET_SECONDS=<n>]
 make env-status-all                         # Bindings plus observed OS-held leases
 make profiles                               # List approved canonical profiles
@@ -180,7 +178,6 @@ make relay-check                            # Health-check Relay only
 make relay-status                           # Relay deployment/runtime status
 make relay-logs                             # Relay logs
 make desktop                                # Desktop Tauri app
-make desktop-web                            # Desktop in browser
 make mobile                                 # Mobile iOS Simulator
 
 # Lifecycle
@@ -221,8 +218,6 @@ PT_BOOTSTRAP_NODES=<multiaddr>
 # Desktop
 PT_DESKTOP_APP_GATEWAY_PORT=<port>
 PT_DESKTOP_APP_WEB_PORT=<port>
-PT_DESKTOP_WEB_GATEWAY_PORT=<port>
-PT_DESKTOP_WEB_WEB_PORT=<port>
 
 # Mobile
 PT_MOBILE_WEB_PORT=<port>
@@ -394,6 +389,10 @@ When the user says "set up environment for X" or "I want to debug against Y":
    committed lockfile and runs the source-aware Station ready closure.
 10. **Report**: include workspace ID, slot, capabilities, derived reset policy,
     Station URL, deploy environment, and lease result.
+11. **Remove only after close**: when the user explicitly authorizes worktree
+    removal, run `make dev-close ... ENVIRONMENT_POLICY=unregister`. Do not
+    unregister a workspace while its declaration, active-work, PlanMount, or
+    lease is live, and do not delete registry rows by hand.
 
 ## Remote Deployment
 
@@ -492,6 +491,10 @@ Source modes:
   must fail closed.
 - `make env-register` is an explicit workspace registration, not permission to
   create or edit a profile.
+- `make env-unregister` is a terminal cleanup operation. It requires the exact
+  registration owner and rejects any live declaration, active-work, PlanMount,
+  or OS-held lease. Deleted-worktree recovery uses the exact `WORKSPACE_ID`
+  through `dev-close`, not a guessed root.
 - Legacy `.local/dev/active/` pointers never select a runtime profile.
 - Runtime PIDs/logs/data live under
   `~/.peers-touch/dev/workspaces/<workspaceId>/runtime/<profile>/`.
@@ -514,11 +517,13 @@ Source modes:
   deploy health, and final profile health readback.
 - Agent use of `make station` is remote-only and requires the safety preflight
   above. Local/compose Station execution is reserved for human developers.
-- `make desktop`, `make desktop-web`, `make mobile`, and restart targets may
+- `make desktop`, `make mobile`, and restart targets may
   ready Station indirectly, so the same agent preflight applies to them.
-- `make desktop` / `make desktop-web` install missing package dependencies with
+- `make desktop` installs missing package dependencies with
   frozen-lockfile semantics and always ensure Station is source-current before
   starting the client.
+- Desktop browser mode is unsupported; do not create or invoke a substitute
+  browser launcher.
 - `make mobile` always ensures Station is ready first.
 - Profile files own runtime topology and allocation inputs. Repository
   manifests and lockfiles own source package dependencies; do not duplicate
@@ -579,7 +584,7 @@ When encountering cross-service issues (relay-client not registered, DHT seeds
 not connecting, federation resolve failing, session kicked after Station
 redeploy), consult:
 
-- **`docs/architecture/service-coordination.md`** — Dependency DAG, credential
+- **`docs/architecture/platform/runtime/service-coordination.md`** — Dependency DAG, credential
   contracts (relay invite → mount → token), bootstrap node requirements, and
   troubleshooting index.
 

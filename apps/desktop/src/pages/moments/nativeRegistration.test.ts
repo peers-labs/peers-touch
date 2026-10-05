@@ -22,10 +22,6 @@ async function registrationSnapshot(
 
   const hostPolicy = await import('../../kernel/hostPolicy');
   const policy = hostPolicy.initializeDesktopHostPolicy(target);
-  if (host === 'browser') {
-    const { installBrowserGateway } = await import('../../kernel/gateway');
-    installBrowserGateway();
-  }
 
   const momentsModule = await import('../../modules/moments');
   const moduleRegistry = await import('../../modules/registry');
@@ -69,7 +65,7 @@ describe('Native-only Moments registration', () => {
     expect(snapshot.sidebarIds).toContain('moments');
   });
 
-  it('keeps Browser Social unregistered after the gateway polyfill is installed', async () => {
+  it('keeps Browser Social unregistered without a retired gateway path', async () => {
     const snapshot = await registrationSnapshot('browser');
 
     expect(snapshot.hostKind).toBe('browser');

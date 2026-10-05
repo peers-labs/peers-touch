@@ -10,7 +10,7 @@ import (
 // SocialPublicPost stores Moments whose `audience.kind == PUBLIC`.
 //
 // Lives on its own physical table (`social_public_posts`) per
-// `docs/architecture/social/moments.md §6` — the only writers are the
+// `docs/architecture/domains/social/core/moments.md §6` — the only writers are the
 // PublicPostRepository in social subserver, the only readers are the public
 // timeline, the public outbox dispatcher (P3+, AP-bound), and the dashboard
 // audit views. SQL constructed against this table never sees a viewer's

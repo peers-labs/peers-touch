@@ -21,7 +21,7 @@ export const PRIVATE_MOMENTS_COMMANDS = {
   retryReaction: 'social_private_reaction_retry',
 } as const;
 
-export type PrivateMomentsPlatform = 'native' | 'browser' | 'unknown';
+export type PrivateMomentsPlatform = 'native' | 'unknown';
 export type PrivateAudienceKind =
   | 'FRIENDS'
   | 'FOLLOWERS'
@@ -498,7 +498,6 @@ export class PrivateMomentsNativeError extends Error {
 
 export function resolvePrivateMomentsPlatform(): PrivateMomentsPlatform {
   if (typeof window === 'undefined') return 'unknown';
-  if ('__PT_GATEWAY_BASE__' in window) return 'browser';
   if ('__TAURI_INTERNALS__' in window) return 'native';
   return 'unknown';
 }

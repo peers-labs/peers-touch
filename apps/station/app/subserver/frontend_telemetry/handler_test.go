@@ -68,7 +68,7 @@ func validEvent(id, interactionID string, duration float64) frontendTelemetryEve
 		TS:            float64(time.Now().UTC().UnixMilli()),
 		Kind:          "route.visible",
 		Source:        "shell",
-		Module:        "desktop-telemetry-live-gate",
+		Module:        "desktop-native-telemetry",
 		Runtime:       "tauri-webview",
 		InteractionID: interactionID,
 		DurationMS:    &duration,
@@ -83,7 +83,7 @@ func TestHandleIngestPersistsValidEventsAndRejectsInvalidOnes(t *testing.T) {
 
 	res, err := s.handleIngest(ctx, &ingestRequest{Events: []frontendTelemetryEvent{
 		validEvent("event-1", "interaction-1", 12),
-		{ID: "bad-event", SchemaVersion: 1, Source: "shell", Module: "desktop-telemetry-live-gate", Runtime: "tauri-webview"},
+		{ID: "bad-event", SchemaVersion: 1, Source: "shell", Module: "desktop-native-telemetry", Runtime: "tauri-webview"},
 	}})
 	if err != nil {
 		t.Fatalf("handleIngest: %v", err)
@@ -152,7 +152,7 @@ func TestHandleRollupQueryReturnsPersistedPercentiles(t *testing.T) {
 	}
 
 	res, err := s.handleRollupQuery(ctx, &rollupQueryRequest{
-		Module: "desktop-telemetry-live-gate",
+		Module: "desktop-native-telemetry",
 		Limit:  10,
 	})
 	if err != nil {
@@ -175,7 +175,7 @@ func TestHandleRollupQueryReturnsPersistedPercentiles(t *testing.T) {
 		t.Fatalf("handleIngest second batch: %v", err)
 	}
 	res, err = s.handleRollupQuery(ctx, &rollupQueryRequest{
-		Module: "desktop-telemetry-live-gate",
+		Module: "desktop-native-telemetry",
 		Limit:  10,
 	})
 	if err != nil {

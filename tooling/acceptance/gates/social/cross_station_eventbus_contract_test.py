@@ -118,7 +118,7 @@ class CrossStationEventBusContractTest(unittest.TestCase):
         host_policy = source(DESKTOP / "kernel" / "hostPolicy.ts")
         self.assertIn("nativeSocialEnabled", host_policy)
         self.assertIn("__TAURI_INTERNALS__", host_policy)
-        self.assertIn("__PT_GATEWAY_BASE__", host_policy)
+        self.assertNotIn("__PT_GATEWAY_BASE__", host_policy)
 
         registrations = {
             "module": source(DESKTOP / "modules" / "index.ts"),
@@ -133,9 +133,11 @@ class CrossStationEventBusContractTest(unittest.TestCase):
             )
 
         main = source(DESKTOP / "main.tsx")
+        self.assertNotIn("installBrowserGateway", main)
+        self.assertFalse((DESKTOP / "kernel" / "gateway.ts").exists())
         self.assertLess(
             main.index("initializeDesktopHostPolicy();"),
-            main.index("installBrowserGateway();"),
+            main.index("registerModulesForHost();"),
         )
 
 

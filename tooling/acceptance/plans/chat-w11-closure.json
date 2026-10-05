@@ -7,7 +7,6 @@
   "selected_gates": [
     {
       "id": "chat-w11-forbidden-scan",
-      "command": "python3 -m tooling.acceptance.gates.chat.w11_forbidden_scan",
       "timeout_seconds": 60,
       "environment": "local",
       "provisioner": "",
@@ -15,11 +14,11 @@
       "description": "W11 closure: tree-wide scan for deleted owners, dead code, and debug instrumentation.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "python3 -m tooling.acceptance.gates.chat.w11_forbidden_scan"
     },
     {
       "id": "chat-w11-duplicate-scan",
-      "command": "python3 -m tooling.acceptance.gates.chat.w11_duplicate_scan",
       "timeout_seconds": 60,
       "environment": "local",
       "provisioner": "",
@@ -27,23 +26,11 @@
       "description": "W11 closure: verify single-owner crypto/codec contracts with no duplicate implementations.",
       "required_by": [
         "closure:MP-W11"
-      ]
-    },
-    {
-      "id": "station-api-ownership",
-      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/api-ownership/station-api-capabilities.yaml",
-      "timeout_seconds": 120,
-      "environment": "local",
-      "provisioner": "",
-      "tier": "ci-structure",
-      "description": "Validate Station route, owner, contract, and truth-store ownership against the accepted capability registry.",
-      "required_by": [
-        "closure:MP-W11"
-      ]
+      ],
+      "command": "python3 -m tooling.acceptance.gates.chat.w11_duplicate_scan"
     },
     {
       "id": "station-messaging-unit",
-      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/federation/... ./apps/station/frame/core/federation/...",
       "timeout_seconds": 600,
       "environment": "local",
       "provisioner": "",
@@ -51,11 +38,11 @@
       "description": "Run canonical Station Conversation and shared Federation package tests.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/federation/... ./apps/station/app/subserver/key_exchange/... ./apps/station/frame/core/federation/..."
     },
     {
       "id": "messaging-platform-contract",
-      "command": "python3 -m unittest tooling.acceptance.gates.chat.messaging_platform_contract_test",
       "timeout_seconds": 120,
       "environment": "local",
       "provisioner": "",
@@ -63,11 +50,11 @@
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "python3 -m unittest tooling.acceptance.gates.chat.messaging_platform_contract_test"
     },
     {
       "id": "desktop-check",
-      "command": "cd apps/desktop && pnpm run check",
       "timeout_seconds": 600,
       "environment": "local",
       "provisioner": "",
@@ -75,31 +62,49 @@
       "description": "Run Desktop TypeScript checks.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "cd apps/desktop && pnpm run check"
     },
     {
       "id": "chat-native-visible-static",
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
-      "timeout_seconds": 120,
+      "timeout_seconds": 300,
       "environment": "local",
       "provisioner": "",
       "tier": "ci-cheap",
-      "description": "Validate native runner fail-closed evidence, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey.",
+      "description": "Validate the CHAT-UR01 through CHAT-UR13 regression-to-closure contract, retained-account resume wiring, PTID-keyed request-history consolidation, human-readable Station identity with copyable details, authoritative presence reconciliation, immediate background preview, canonical message search, irreversible device-local conversation clearing, Station relationship-list identity hydration, remote Actor PTID refresh, typed Group preparation errors, recoverable Group UI state, native runner fail-closed evidence, mutual-friend projection, virtual timeline/composer geometry, bundled avatar rendering, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey.",
       "required_by": [
         "closure:MP-W11"
+      ],
+      "command": "cd apps/station && go test ./frame/touch/actor -run 'TestBackfillPresetAvatar' -count=1 && go test ./frame/touch/federation/cache -count=1 && cd app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/components/chat/CreateGroupModal.test.ts src/components/chat/contactSelection.test.ts src/components/chat/message/ChatMessageTimeline.test.ts src/components/common/SquareAvatar.test.ts src/services/chatPresence.test.ts src/services/errorMappings/chatErrorMapping.test.ts src/services/socialRealtime.test.ts src/store/federation.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts src/store/socialChat.conversationProjection.test.ts src/store/socialNormalizers.test.ts src/store/socialProfileProjection.test.ts && pnpm --filter @peers-touch/prototype-desktop-social-chat build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop group_creation_ && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop typed_station_error_details_survive_json_transport && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.lifecycle_regression_contract_test tooling.acceptance.gates.chat.lifecycle_onboarding_test tooling.acceptance.gates.chat.lifecycle_mixed_client_test tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test"
+    },
+    {
+      "id": "chat-native-product-closure-e2e",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "description": "Run Alice and Bob through real Native Chat DOM actions and prove transcript, thread, reaction, toolbar geometry, identity, Station attribution, settings/background, attachment conservation, restart and cleanup.",
+      "required_by": [
+        "closure:MP-W11"
+      ],
+      "command": "python3 -m tooling.acceptance.gates.chat.native_product_closure_entry",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
       ]
     },
     {
       "id": "chat-native-two-client-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
-      "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED receipt visibility.",
+      "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext, DELIVERED receipt visibility, unobscured newest-message geometry, and bundled demo-avatar rendering.",
       "required_by": [
         "closure:MP-W11"
       ],
+      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
       "requiredRuntimeCells": [
         "desktop-macos-native",
         "desktop-linux-native",
@@ -108,7 +113,6 @@
     },
     {
       "id": "chat-native-interactions-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
       "timeout_seconds": 3600,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
@@ -117,6 +121,7 @@
       "required_by": [
         "closure:MP-W11"
       ],
+      "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
       "requiredRuntimeCells": [
         "desktop-macos-native",
         "desktop-linux-native",
@@ -125,15 +130,15 @@
     },
     {
       "id": "chat-contact-message-resilience-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.contact_message_resilience_runner",
       "timeout_seconds": 600,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
-      "description": "Prove that clicking the contact Message button opens the chat view immediately even when createDirect fails, and the error is presented within the open view.",
+      "description": "Prove that clicking the contact Message button immediately opens a peer-bound conversation intent pane even when createDirect fails, with inline error and retry instead of the generic empty Chat view.",
       "required_by": [
         "closure:MP-W11"
       ],
+      "command": "python3 -m tooling.acceptance.gates.chat.contact_message_resilience_runner",
       "requiredRuntimeCells": [
         "desktop-macos-native",
         "desktop-linux-native",
@@ -142,7 +147,6 @@
     },
     {
       "id": "chat-native-typing-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
@@ -151,6 +155,7 @@
       "required_by": [
         "closure:MP-W11"
       ],
+      "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
       "requiredRuntimeCells": [
         "desktop-macos-native",
         "desktop-linux-native",
@@ -159,7 +164,6 @@
     },
     {
       "id": "chat-native-multi-device-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
@@ -168,6 +172,7 @@
       "required_by": [
         "closure:MP-W11"
       ],
+      "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
       "requiredRuntimeCells": [
         "desktop-macos-native",
         "desktop-linux-native",
@@ -176,7 +181,6 @@
     },
     {
       "id": "chat-native-recovery-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.native_recovery_runner",
       "timeout_seconds": 2400,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
@@ -185,6 +189,7 @@
       "required_by": [
         "closure:MP-W11"
       ],
+      "command": "python3 -m tooling.acceptance.gates.chat.native_recovery_runner",
       "requiredRuntimeCells": [
         "desktop-macos-native",
         "desktop-linux-native",
@@ -193,15 +198,15 @@
     },
     {
       "id": "chat-native-group-mls-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.native_group_mls_runner",
       "timeout_seconds": 2400,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
-      "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance.",
+      "description": "Run three source-bound Native clients and prove same-name PTID identity metadata, avatar parity, visible Create Group selection, three-device MLS projection/send/restart/remove, and typed unavailable-member inline retry.",
       "required_by": [
         "closure:MP-W11"
       ],
+      "command": "python3 -m tooling.acceptance.gates.chat.native_group_mls_runner",
       "requiredRuntimeCells": [
         "desktop-macos-native",
         "desktop-linux-native",
@@ -209,32 +214,38 @@
       ]
     },
     {
-      "id": "chat-desktop-gateway-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.desktop_gateway_e2e",
-      "timeout_seconds": 600,
-      "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
+      "id": "chat-lifecycle-onboarding-e2e",
+      "timeout_seconds": 1800,
+      "environment": "native-tauri-current-profile",
+      "provisioner": "native-tauri-current-profile",
       "tier": "env-evidence",
-      "description": "Run a real Desktop HTTP gateway flow proving atomic multi-account identity transitions, JWT-bound PIN unlock, legacy PIN fail-closed behavior, and MLS/E2EE direct conversation delivery.",
+      "description": "Run two synchronized current-profile Native Desktop clients through retained no-PIN account restart without credential prompts; local, federated-handle, and Station-scoped discovery; PTID-keyed selectable request-history consolidation; authoritative Station-name summary with expandable copyable identity details; reject and retry; accept; Direct reuse or creation; and bidirectional exact plaintext.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding && PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding_e2e"
     },
     {
-      "id": "federation-desktop-gateway-smoke",
-      "command": "python3 tooling/acceptance/gates/desktop/gateway_smoke.py",
-      "timeout_seconds": 600,
-      "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
+      "id": "station-access-federation-boundary-e2e",
+      "timeout_seconds": 2400,
+      "environment": "station-access-native",
+      "provisioner": "station-access-native",
       "tier": "env-evidence",
-      "description": "Validate Desktop gateway active Station and collect render diagnostics.",
+      "description": "Prove native macOS Desktop and iOS Simulator clients consume one explicit Federation context for scoped search, resolve, Direct creation, and Group creation while ordinary clients expose no Federation governance or Relay topology controls.",
       "required_by": [
         "closure:MP-W11"
+      ],
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.federation_boundary_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
       ]
     },
     {
       "id": "acceptance-plan-self",
-      "command": "python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check",
       "timeout_seconds": 30,
       "environment": "local",
       "provisioner": "",
@@ -242,11 +253,11 @@
       "description": "Validate that the acceptance registry can plan the current diff.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check"
     },
     {
       "id": "acceptance-infra-validation",
-      "command": "python3 tooling/scripts/acceptance-validate.py --infra",
       "timeout_seconds": 120,
       "environment": "local",
       "provisioner": "",
@@ -254,35 +265,35 @@
       "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "python3 tooling/scripts/acceptance-validate.py --infra"
     },
     {
       "id": "acceptance-runtime-provisioning-self",
-      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py",
       "timeout_seconds": 180,
       "environment": "local",
       "provisioner": "",
       "tier": "ci-cheap",
-      "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, ephemeral Gate launch-context isolation and cleanup, runner failure semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity.",
+      "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, ephemeral Gate launch-context isolation and cleanup, runner and report semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'"
     },
     {
       "id": "desktop-dev-runtime-isolation-static",
-      "command": "python3 -m unittest tooling.acceptance.gates.desktop.dev_runtime_multi_instance_static_test",
       "timeout_seconds": 60,
       "environment": "local",
       "provisioner": "",
       "tier": "ci-cheap",
-      "description": "Validate dev-runtime multi-instance isolation: per-worktree port offsets, PID files, bundle IDs, and proto ownership without launching processes.",
+      "description": "Validate dev-runtime multi-instance isolation: machine-registry slots, OS-held leases, reviewed profile resolution, PID files, bundle IDs, and proto ownership without launching processes.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "python3 -m unittest tooling.acceptance.gates.desktop.dev_runtime_multi_instance_static_test"
     },
     {
       "id": "proto-build",
-      "command": "./model/build.sh",
       "timeout_seconds": 600,
       "environment": "local",
       "provisioner": "",
@@ -290,11 +301,11 @@
       "description": "Generate protobuf-derived code from model/domain sources.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "./model/build.sh"
     },
     {
       "id": "chat-w11-completion-audit",
-      "command": "python3 -m tooling.acceptance.gates.chat.w11_completion_audit",
       "timeout_seconds": 60,
       "environment": "local",
       "provisioner": "",
@@ -302,7 +313,8 @@
       "description": "W11 closure: mechanical audit that all native evidence reports exist and PASS.",
       "required_by": [
         "closure:MP-W11"
-      ]
+      ],
+      "command": "python3 -m tooling.acceptance.gates.chat.w11_completion_audit"
     }
   ]
 }

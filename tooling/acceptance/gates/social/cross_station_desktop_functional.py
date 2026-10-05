@@ -18,7 +18,7 @@ class Gate(AcceptanceGate):
     phase = "CSS-09 Social Desktop Functional Evidence"
     bom = ("CSS-09",)
     spec = (
-        "docs/architecture/cross-station-social/execution-plans/"
+        "docs/architecture/domains/social/cross-station/execution-plans/"
         "20261003-native-private-social/plan.md",
     )
 

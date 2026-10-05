@@ -38,7 +38,7 @@
 - `execution-plans/implementation-plan-20260403.md`
 - `execution-plans/20260531-tauri-mobile-mainline-migration.md`（Tauri Mobile 主线迁移实施计划）
 - `../../context/mobile/tauri-mobile-capability-topology-proposal.md`（设计过程记录，不是当前真源）
-- `../../architecture/boundaries/station-desktop-scope-boundary.md`
+- `../../architecture/platform/station-desktop-boundary.md`
 - `../../global/coding-guide/mobile/`
 
 ---
@@ -270,5 +270,5 @@ apps/mobile/
 - [Sync Protocol](./sync-protocol.md)
 - [Tauri Mobile Mainline Migration Plan](./execution-plans/20260531-tauri-mobile-mainline-migration.md)
 - [Tauri Mobile Capability Topology Proposal](../../context/mobile/tauri-mobile-capability-topology-proposal.md)（设计过程记录）
-- [Station/Desktop Scope Boundary](../../architecture/boundaries/station-desktop-scope-boundary.md)
+- [Station/Desktop Scope Boundary](../../architecture/platform/station-desktop-boundary.md)
 - [Mobile Coding Guide](../../global/coding-guide/mobile)

@@ -1,0 +1,50 @@
+{
+  "id": "desktop-primary-navigation-native",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "services": {
+    "station": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "ready_action": "station",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "clients": [
+    {
+      "id": "alice",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "chat-native-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:CHAT_ACCEPTANCE_RESET"
+    }
+  ],
+  "credentials": [
+    {
+      "id": "evidence-leak-canary",
+      "source_ref": "auto:uuid",
+      "required": true,
+      "generated_if_missing": true
+    }
+  ],
+  "cleanup": {
+    "resources": ["processes", "ports", "storage", "sessions"]
+  }
+}

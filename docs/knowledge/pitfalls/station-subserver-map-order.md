@@ -9,7 +9,7 @@ owns:
 referenced-by: []
 related:
   - ../../station/subserver-standard.md
-  - ../../architecture/federation/design.md
+  - ../../architecture/shared/federation/design.md
 detected: 2026-08-02
 ---
 

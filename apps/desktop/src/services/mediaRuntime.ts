@@ -20,7 +20,7 @@ interface MediaRuntimeState {
   prewarmedSessions: Set<string>;
 
   /**
-   * Pre-warm media URLs from messages so the browser caches them before
+   * Pre-warm media URLs from messages so the embedded WebView caches them before
    * the user scrolls into view.
    *
    * Accepts the same shape as `useSocialChatStore.getState().messages`:
@@ -47,7 +47,7 @@ function extractMediaUrls(messages: SocialMessage[]): string[] {
 }
 
 function prewarmCids(cids: string[]): void {
-  // Trigger browser-level fetch caching via <link rel="prefetch"> elements.
+  // Trigger WebView fetch caching via <link rel="prefetch"> elements.
   // This is a best-effort operation; failures are silently ignored since
   // the user will simply load the media on demand.
   for (const cid of cids) {

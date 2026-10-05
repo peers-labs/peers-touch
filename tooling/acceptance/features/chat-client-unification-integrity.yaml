@@ -3,7 +3,7 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
-    "docs/architecture/chat-lifecycle/legacy-inventory.json",
+    "docs/architecture/domains/chat/lifecycle/legacy-inventory.json",
     "apps/desktop/**",
     "apps/mobile/**",
     "apps/station/**",

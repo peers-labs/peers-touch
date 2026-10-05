@@ -20,7 +20,7 @@ describe('frontend telemetry queue', () => {
 
   it('emits the shared envelope and exposes dev inspection state', () => {
     vi.stubGlobal('window', {});
-    installFrontendTelemetryQueue({ runtime: 'browser-gateway' });
+    installFrontendTelemetryQueue({ runtime: 'tauri-webview-dev' });
 
     const event = emitFrontendTelemetryEvent({
       kind: 'boot.phase',
@@ -33,7 +33,7 @@ describe('frontend telemetry queue', () => {
     expect(event).toMatchObject({
       kind: 'boot.phase',
       module: 'boot',
-      runtime: 'browser-gateway',
+      runtime: 'tauri-webview-dev',
       schemaVersion: FRONTEND_TELEMETRY_SCHEMA_VERSION,
       source: 'runtime',
     });
@@ -48,7 +48,7 @@ describe('frontend telemetry queue', () => {
       timeOrigin: 1_783_503_302_000,
       now: () => 42.5,
     });
-    installFrontendTelemetryQueue({ runtime: 'browser-gateway' });
+    installFrontendTelemetryQueue({ runtime: 'tauri-webview-dev' });
 
     const event = emitFrontendTelemetryEvent({
       kind: 'route.visible',
@@ -61,7 +61,7 @@ describe('frontend telemetry queue', () => {
 
   it('bounds the queue and reports dropped event count', () => {
     vi.stubGlobal('window', {});
-    installFrontendTelemetryQueue({ maxEvents: 2, runtime: 'browser-gateway' });
+    installFrontendTelemetryQueue({ maxEvents: 2, runtime: 'tauri-webview-dev' });
 
     for (const module of ['one', 'two', 'three']) {
       emitFrontendTelemetryEvent({
@@ -80,7 +80,7 @@ describe('frontend telemetry queue', () => {
     vi.stubGlobal('window', {
       location: { href: 'http://localhost:3210/#/chat' },
     });
-    installFrontendTelemetryQueue({ maxEvents: 2, runtime: 'browser-gateway' });
+    installFrontendTelemetryQueue({ maxEvents: 2, runtime: 'tauri-webview-dev' });
 
     emitFrontendTelemetryEvent({
       interactionId: 'interaction-1',
@@ -118,7 +118,7 @@ describe('frontend telemetry queue', () => {
       },
       eventCount: 2,
       maxEvents: 2,
-      runtime: 'browser-gateway',
+      runtime: 'tauri-webview-dev',
       source: 'window.__PT_FRONTEND_TELEMETRY__',
       url: 'http://localhost:3210/#/chat',
       withInteraction: {
@@ -130,7 +130,7 @@ describe('frontend telemetry queue', () => {
 
   it('redacts sensitive payload fields before queueing', () => {
     vi.stubGlobal('window', {});
-    installFrontendTelemetryQueue({ runtime: 'browser-gateway' });
+    installFrontendTelemetryQueue({ runtime: 'tauri-webview-dev' });
 
     const sensitiveKeys = { pw: 'password', sec: 'secret', tok: 'accessToken' };
     const event = emitFrontendTelemetryEvent({
@@ -159,7 +159,7 @@ describe('frontend telemetry queue', () => {
     });
   });
 
-  it('classifies a real Tauri WebView runtime separately from the browser gateway polyfill', () => {
+  it('classifies the native Tauri WebView runtime', () => {
     vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
     installFrontendTelemetryQueue();
 
@@ -170,27 +170,12 @@ describe('frontend telemetry queue', () => {
     });
 
     expect(nativeEvent?.runtime).toBe('tauri-webview-dev');
-
-    _resetFrontendTelemetryForTests();
-    vi.stubGlobal('window', {
-      __PT_GATEWAY_BASE__: 'http://127.0.0.1:3030',
-      __TAURI_INTERNALS__: {},
-    });
-    installFrontendTelemetryQueue();
-
-    const gatewayEvent = emitFrontendTelemetryEvent({
-      kind: 'route.visible',
-      module: 'chat',
-      source: 'shell',
-    });
-
-    expect(gatewayEvent?.runtime).toBe('browser-gateway');
   });
 
   it('auto flushes queued events after an uploader is configured', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('window', {});
-    installFrontendTelemetryQueue({ runtime: 'browser-gateway' });
+    installFrontendTelemetryQueue({ runtime: 'tauri-webview-dev' });
     const uploader = vi.fn(async (events) => ({
       accepted: events.length,
       failed: 0,
@@ -215,7 +200,7 @@ describe('frontend telemetry queue', () => {
 
   it('manual flush uses the configured uploader', async () => {
     vi.stubGlobal('window', {});
-    installFrontendTelemetryQueue({ runtime: 'browser-gateway' });
+    installFrontendTelemetryQueue({ runtime: 'tauri-webview-dev' });
     configureFrontendTelemetryUploader(async (events) => ({
       accepted: events.length,
       failed: 0,

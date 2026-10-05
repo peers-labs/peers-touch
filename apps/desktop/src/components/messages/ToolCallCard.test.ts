@@ -119,8 +119,6 @@ describe('ToolCallsBlock approval visibility', () => {
     );
     expect(source).toContain('void reconnectAgentToolExecutor(tool.id)');
     expect(source).not.toContain('fetch(');
-    expect(source).not.toContain('openBrowserCapabilitySession');
-    expect(runtimeSource).not.toContain('api.openBrowserCapabilitySession()');
     expect(runtimeSource).toContain('api.startAgentClientExecutorSupervisor()');
     expect(runtimeSource).toContain('api.listAgentCapabilitySessions()');
     expect(runtimeSource).not.toContain('claimAgentTool');

@@ -15,7 +15,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 // only. Compare with `chat.Group` which is a shared, bidirectional chat space.
 //
 // All circle data MUST be stored in the `social_private` schema (see
-// `docs/architecture/social/moments.md` §"Storage invariants") and MUST NOT
+// `docs/architecture/domains/social/core/moments.md` §"Storage invariants") and MUST NOT
 // federate over ActivityPub. P0 only defines the proto shape; the GORM
 // model and repository land in P1.
 

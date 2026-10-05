@@ -1,6 +1,6 @@
 //! The single SSE consumer for the canonical realtime event stream.
 //!
-//! See `docs/architecture/realtime/event-stream.md` for the wire
+//! See `docs/architecture/shared/communication/event-stream.md` for the wire
 //! contract this module implements. In short:
 //!
 //! * One long-lived SSE connection per actor to `/events/stream`.

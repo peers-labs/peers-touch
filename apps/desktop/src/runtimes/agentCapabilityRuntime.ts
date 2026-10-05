@@ -1,5 +1,4 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
-import { isBrowserGatewayRuntime } from '../kernel/gateway';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import {
@@ -21,15 +20,11 @@ import { useToolStore } from '../store/tool';
 import { log } from '../utils/logger';
 
 const CAPABILITY_RECONCILE_INTERVAL_MS = 60_000;
-const BROWSER_CAPABILITY_REFRESH_WINDOW_MS = CAPABILITY_RECONCILE_INTERVAL_MS;
-const BROWSER_CAPABILITY_READY_POLL_INTERVAL_MS = 250;
-const BROWSER_CAPABILITY_READY_ATTEMPTS = 40;
 
 let installed = false;
 let runtimeGeneration = 0;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let runtimeUnsubscribers: Array<() => void> = [];
-let browserCapabilitySessionRefresh: Promise<AgentCapabilitySessionList> | null = null;
 const authorityStreams = new Map<string, AbortController>();
 
 type CapabilitySession = AgentCapabilitySessionList['sessions'][number];
@@ -37,22 +32,6 @@ type AgentCapabilityProjectionStore = Pick<
   AgentCapabilityState,
   'loadCatalog' | 'loadKnowledgeDescriptors' | 'loadAgent'
 >;
-
-interface BrowserCapabilitySessionLifecycle {
-  close(): Promise<unknown>;
-  open(): Promise<unknown>;
-  list(): Promise<AgentCapabilitySessionList>;
-}
-
-interface BrowserCapabilityRefreshOptions {
-  now?: () => number;
-  sleep?: (delayMs: number) => Promise<void>;
-  shouldContinue?: () => boolean;
-}
-
-function sleep(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
 
 function capabilitySessionExpiresAtMs(session: CapabilitySession): number {
   if (!session.expires_at) return 0;
@@ -64,7 +43,6 @@ function capabilitySessionExpiresAtMs(session: CapabilitySession): number {
 
 export function selectActiveCapabilitySession(
   sessions: readonly CapabilitySession[],
-  browserShell: boolean,
   nowMs = Date.now(),
 ): CapabilitySession | undefined {
   const active = sessions.filter(
@@ -73,59 +51,14 @@ export function selectActiveCapabilitySession(
       && capabilitySessionExpiresAtMs(session) > nowMs,
   );
 
-  const preferredPlatform = browserShell
-    ? 'CLIENT_PLATFORM_BROWSER'
-    : 'CLIENT_PLATFORM_DESKTOP';
   return active
-    .filter((session) => session.platform === preferredPlatform)
+    .filter((session) => session.platform === 'CLIENT_PLATFORM_DESKTOP')
     .sort((left, right) => {
       const expiryDelta =
         capabilitySessionExpiresAtMs(right) - capabilitySessionExpiresAtMs(left);
       if (expiryDelta !== 0) return expiryDelta;
       return right.lease_revision - left.lease_revision;
     })[0];
-}
-
-export function browserCapabilitySessionNeedsRefresh(
-  sessions: readonly CapabilitySession[],
-  nowMs = Date.now(),
-): boolean {
-  const activeSession = selectActiveCapabilitySession(sessions, true, nowMs);
-  return !activeSession || (
-    capabilitySessionExpiresAtMs(activeSession) - nowMs
-    <= BROWSER_CAPABILITY_REFRESH_WINDOW_MS
-  );
-}
-
-export async function ensureFreshBrowserCapabilitySession(
-  capabilitySessions: AgentCapabilitySessionList,
-  lifecycle: BrowserCapabilitySessionLifecycle,
-  options: BrowserCapabilityRefreshOptions = {},
-): Promise<AgentCapabilitySessionList> {
-  const now = options.now ?? Date.now;
-  const wait = options.sleep ?? sleep;
-  const shouldContinue = options.shouldContinue ?? (() => true);
-  if (!browserCapabilitySessionNeedsRefresh(capabilitySessions.sessions, now())) {
-    return capabilitySessions;
-  }
-
-  await lifecycle.close();
-  if (!shouldContinue()) return capabilitySessions;
-  await lifecycle.open();
-
-  let latest = capabilitySessions;
-  for (let attempt = 0; attempt < BROWSER_CAPABILITY_READY_ATTEMPTS; attempt += 1) {
-    if (!shouldContinue()) return latest;
-    latest = await lifecycle.list();
-    if (!browserCapabilitySessionNeedsRefresh(latest.sessions, now())) {
-      return latest;
-    }
-    if (attempt + 1 < BROWSER_CAPABILITY_READY_ATTEMPTS) {
-      await wait(BROWSER_CAPABILITY_READY_POLL_INTERVAL_MS);
-    }
-  }
-
-  throw new Error('agent.browserCapabilitySessionUnavailable');
 }
 
 export async function reconcileAgentCapabilityProjection(
@@ -140,50 +73,6 @@ export async function reconcileAgentCapabilityProjection(
       clientCapabilitySessionId,
     })),
   ]);
-}
-
-async function openBrowserCapabilitySession(): Promise<void> {
-  if (!isBrowserGatewayRuntime()) return;
-  await api.openBrowserCapabilitySession();
-}
-
-export async function closeBrowserCapabilitySession(): Promise<void> {
-  if (!isBrowserGatewayRuntime()) return;
-  await api.closeBrowserCapabilitySession();
-}
-
-async function ensureRuntimeBrowserCapabilitySession(
-  capabilitySessions: AgentCapabilitySessionList,
-  generation: number,
-  reason: string,
-): Promise<AgentCapabilitySessionList> {
-  if (
-    !isBrowserGatewayRuntime()
-    || !browserCapabilitySessionNeedsRefresh(capabilitySessions.sessions)
-  ) {
-    return capabilitySessions;
-  }
-  if (browserCapabilitySessionRefresh !== null) {
-    return browserCapabilitySessionRefresh;
-  }
-
-  log.info('agentCapabilityRuntime', 'refreshing browser capability session', { reason });
-  browserCapabilitySessionRefresh = ensureFreshBrowserCapabilitySession(
-    capabilitySessions,
-    {
-      close: closeBrowserCapabilitySession,
-      open: openBrowserCapabilitySession,
-      list: api.listAgentCapabilitySessions,
-    },
-    {
-      shouldContinue: () => installed && generation === runtimeGeneration,
-    },
-  );
-  try {
-    return await browserCapabilitySessionRefresh;
-  } finally {
-    browserCapabilitySessionRefresh = null;
-  }
 }
 
 async function loadAgentCapabilities(reason: string): Promise<void> {
@@ -204,16 +93,8 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
     ]),
   ]);
   if (!installed || generation !== runtimeGeneration) return;
-  const capabilitySessions = await ensureRuntimeBrowserCapabilitySession(
-    listedCapabilitySessions,
-    generation,
-    reason,
-  );
-  if (!installed || generation !== runtimeGeneration) return;
-  const browserShell = isBrowserGatewayRuntime();
   const activeSession = selectActiveCapabilitySession(
-    capabilitySessions.sessions,
-    browserShell,
+    listedCapabilitySessions.sessions,
   );
 
   const authorityStore = useAgentCapabilityStore.getState();
@@ -243,7 +124,6 @@ export function authorityEventAgentId(
 }
 
 function syncAuthorityStreams(agentIds: readonly string[]): void {
-  if (isBrowserGatewayRuntime()) return;
   const desired = new Set(agentIds);
   for (const [agentId, controller] of authorityStreams) {
     if (desired.has(agentId)) continue;
@@ -347,16 +227,10 @@ export const agentCapabilityRuntime: RuntimeDescriptor = {
     useAgentCapabilityStore.getState().reset();
     useAgentConnectorStore.getState().reset();
     useMCPStore.getState().reset();
-    void closeBrowserCapabilitySession().catch((error) => {
-      log.warn('agentCapabilityRuntime', 'browser capability session close failed', {
-        error: String(error),
-      });
-    });
     installed = false;
   },
   async bootstrap(actorId) {
     if (!actorId) return;
-    await openBrowserCapabilitySession();
     await loadAgentCapabilities('bootstrap');
   },
   async reconcile(reason: string) {

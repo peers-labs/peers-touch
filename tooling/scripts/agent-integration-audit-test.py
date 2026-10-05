@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -100,8 +101,27 @@ class AgentIntegrationTests(unittest.TestCase):
         module_stubs = {
             "tooling/scripts/plan/plan-package.mjs":
                 "export function loadPlanPackage() { throw new Error('fixture only'); }\n",
-            "tooling/scripts/plan/workspace-plan-binding.mjs":
-                "export function resolveWorkspacePlanBinding() { throw new Error('fixture only'); }\n",
+            "tooling/scripts/plan/plan-mount.mjs":
+                """
+import { pathToFileURL } from 'node:url';
+export async function resolvePlanExecution() {
+  throw new Error('fixture only');
+}
+if (
+  process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  process.stderr.write(`${JSON.stringify({
+    ok: false,
+    error: {
+      type: 'PlanMountError',
+      code: 'PLAN_MOUNT_REQUIRED',
+      message: 'workspace has no live Plan mount',
+    },
+  })}\n`);
+  process.exitCode = 2;
+}
+""".lstrip(),
             "tooling/scripts/local-dev/dev-session-store.mjs":
                 """
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -143,7 +163,15 @@ export function createSessionStore(state, options) {
                 shell_quote_fixture / name,
             )
         (self.root / "tooling/scripts/local-dev/dev-work.mjs").write_text(
-            "",
+            """
+import { readFileSync } from 'node:fs';
+const ledger = JSON.parse(
+  readFileSync(process.env.PT_MACHINE_DEV_ROOT + '/work.json', 'utf8'),
+);
+console.log(JSON.stringify({
+  declarations: Object.values(ledger.declarations),
+}));
+""".lstrip(),
             encoding="utf-8",
         )
         ledger_validator.write_text(
@@ -264,7 +292,6 @@ export function processStartIdentity() { return 'fixture'; }
         self,
         workspace: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        self.seed_live_workflow_state("installer-authorized")
         command = ["make", "skills", "IDE=trae"]
         if workspace is not None:
             command.append(f"WORKSPACE={workspace}")
@@ -298,6 +325,65 @@ export function processStartIdentity() { return 'fixture'; }
             text=True,
             env=self.environment(),
             check=False,
+        )
+
+    def prepare_codex_projection(self) -> None:
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        for actions in self.machine.glob("workspaces/*/workflow/actions"):
+            shutil.rmtree(actions)
+
+    def write_live_declaration(self, state: str) -> None:
+        now_value = datetime.now(timezone.utc)
+        now = now_value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        expires_at = (now_value + timedelta(minutes=10)).isoformat(
+            timespec="milliseconds",
+        ).replace("+00:00", "Z")
+        declaration = {
+            "declarationId": "OTHER-fedcba9876543210",
+            "workItemId": "OTHER",
+            "sessionId": "SESSION-OTHER",
+            "workspaceId": "fedcba9876543210",
+            "branch": "other",
+            "sourceHead": "a" * 40,
+            "owner": "other@test.invalid",
+            "purpose": "unrelated fixture",
+            "journeyId": None,
+            "state": state,
+            "createdAt": now,
+            "heartbeatAt": now,
+            "expiresAt": expires_at,
+            "sourceClaims": [],
+            "runtimeClaims": [],
+            "planPath": None,
+            "planId": None,
+            "taskId": None,
+        }
+        serialized = json.dumps(
+            declaration,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+        declaration["declarationDigest"] = hashlib.sha256(serialized).hexdigest()
+        (self.machine / "work.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "kind": "peers-touch-development-work-ledger",
+                    "updatedAt": now,
+                    "declarations": {
+                        declaration["declarationId"]: declaration,
+                    },
+                }
+            ),
+            encoding="utf-8",
         )
 
     def seed_live_workflow_state(self, mode: str) -> None:
@@ -342,6 +428,9 @@ export function processStartIdentity() { return 'fixture'; }
             "activeWork.updateActiveWorkRecord({"
             "workspaceId: owner.workspaceId,"
             "workItemId,"
+            "mountId: 'MOUNT-1',"
+            "runId: 'RUN-1',"
+            "snapshotDigest: 'a'.repeat(64),"
             "planId: 'PLAN-1',"
             "planPath: 'docs/architecture/test/execution-plans/test/plan.md',"
             "planStatus: 'active',"
@@ -384,14 +473,21 @@ export function processStartIdentity() { return 'fixture'; }
             "},"
             "operation: {"
             "family: 'OWNER_CONTROL',"
-            "label: mode.startsWith('installer-') ? 'skills' : 'status',"
+            "label: mode.startsWith('installer-')"
+            " ? 'skills'"
+            " : mode.startsWith('hard-cut-')"
+            " ? 'skills-hard-cut'"
+            " : mode.startsWith('gc-')"
+            " ? 'skills-gc'"
+            " : 'status',"
             "targetRef: null"
             "},"
             "progressStamp: 'c'.repeat(64),"
             "leaseMs: 60_000,"
             "now"
             "});"
-            "if (mode === 'installer-authorized') {"
+            "if (mode.endsWith('-authorized') && "
+            "!mode.startsWith('installer-')) {"
             "action.issueWorkflowActionGrant(receipt, { machineRoot, now });"
             "}"
             "}"
@@ -476,7 +572,7 @@ export function processStartIdentity() { return 'fixture'; }
                 module.atomic_move_no_replace(Path("source"), Path("target"))
             )
 
-    def test_noninteractive_codex_install_retires_real_legacy_directory(self) -> None:
+    def test_ungranted_codex_install_retires_real_legacy_directory(self) -> None:
         legacy = self.root / ".agents/skills/pt-trae-goal-orchestrator"
         legacy.mkdir(parents=True)
         (legacy / "SKILL.md").write_text("legacy\n", encoding="utf-8")
@@ -484,7 +580,6 @@ export function processStartIdentity() { return 'fixture'; }
         unrelated.mkdir(parents=True)
         (unrelated / "keep.txt").write_text("keep\n", encoding="utf-8")
         environment = self.environment("installing-session")
-        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -700,13 +795,21 @@ export function processStartIdentity() { return 'fixture'; }
             },
         )
 
-    def test_trae_workspace_bootstrap_is_unique_and_folder_order_is_not_authority(
+    def test_trae_workspace_projects_bootstrap_source_and_existing_host_roots(
         self,
     ) -> None:
         bootstrap = self.root / "bootstrap"
+        connected = self.root / "connected"
         untouched = self.root / "untouched"
         bootstrap.mkdir()
+        connected.mkdir()
         untouched.mkdir()
+        connected_trae = connected / ".trae"
+        connected_trae.mkdir()
+        (connected_trae / "hooks.json").write_text(
+            json.dumps({"hooks": {}}),
+            encoding="utf-8",
+        )
         workspace = self.root / "fixture.code-workspace"
         workspace.write_text(
             json.dumps(
@@ -714,6 +817,7 @@ export function processStartIdentity() { return 'fixture'; }
                     "folders": [
                         {"path": "bootstrap"},
                         {"path": "."},
+                        {"path": "connected"},
                         {"path": "untouched"},
                     ]
                 }
@@ -744,13 +848,14 @@ export function processStartIdentity() { return 'fixture'; }
             (bootstrap / ".trae/hooks.json").read_text(encoding="utf-8")
         )
         self.assertIn("--workspace", json.dumps(bootstrap_hooks))
-        self.assertNotIn(
+        self.assertIn(
             "pt-ew-plugin",
             current_hooks.read_text(encoding="utf-8"),
         )
-        self.assertEqual(
-            json.loads(current_hooks.read_text(encoding="utf-8")),
-            {"hooks": {}},
+        self.assertIn("--workspace", current_hooks.read_text(encoding="utf-8"))
+        self.assertIn(
+            "pt-ew-plugin",
+            (connected_trae / "hooks.json").read_text(encoding="utf-8"),
         )
         self.assertFalse((untouched / ".trae").exists())
 
@@ -772,11 +877,11 @@ export function processStartIdentity() { return 'fixture'; }
         duplicate_audit = self.audit_trae_fixture(workspace)
         self.assertEqual(duplicate_audit.returncode, 2)
         self.assertIn(
-            "managed-hook-invalid:PreToolUse",
+            "managed-hook-invalid:SessionStart",
             duplicate_audit.stdout,
         )
 
-    def test_trae_workspace_preflight_fails_before_hard_cut_reset(self) -> None:
+    def test_trae_workspace_preflight_never_resets_legacy_state(self) -> None:
         workspace = self.root / "fixture.code-workspace"
         workspace.write_text(
             json.dumps({"folders": [{"path": "missing"}]}),
@@ -803,12 +908,38 @@ export function processStartIdentity() { return 'fixture'; }
             check=False,
         )
         self.assertEqual(retried.returncode, 0, retried.stdout + retried.stderr)
-        self.assertFalse((self.machine / "conversations").exists())
+        self.assertTrue(legacy.exists())
+
+    def test_install_preserves_legacy_conversations_and_action_stores(self) -> None:
+        self.seed_live_workflow_state("installer-authorized")
+        conversation = self.machine / "conversations/trae/legacy"
+        action_store = (
+            self.machine
+            / "workspaces/0123456789abcdef/workflow/actions"
+        )
+        conversation.mkdir(parents=True)
+        action_store.mkdir(parents=True)
+        (conversation / "binding.json").write_text("{}\n", encoding="utf-8")
+        (action_store / "receipt.json").write_text("{}\n", encoding="utf-8")
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertTrue(conversation.is_dir())
+        self.assertTrue(action_store.is_dir())
 
     def test_hard_cut_purges_only_legacy_conversations_and_action_stores(
         self,
     ) -> None:
-        self.seed_live_workflow_state("installer-authorized")
+        self.prepare_codex_projection()
+        self.seed_live_workflow_state("hard-cut-authorized")
         conversations = self.machine / "conversations/trae/legacy"
         actions = self.machine / "workspaces/0123456789abcdef/workflow/actions"
         preserved = (
@@ -826,7 +957,7 @@ export function processStartIdentity() { return 'fixture'; }
         preserved.write_text('{"preserved":true}\n', encoding="utf-8")
 
         installed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -843,7 +974,7 @@ export function processStartIdentity() { return 'fixture'; }
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -860,7 +991,7 @@ export function processStartIdentity() { return 'fixture'; }
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -877,7 +1008,7 @@ export function processStartIdentity() { return 'fixture'; }
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -889,12 +1020,12 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertTrue(legacy.exists())
 
     def test_hard_cut_rejects_an_unrelated_seeded_installer_action(self) -> None:
-        self.seed_live_workflow_state("installer-action")
+        self.seed_live_workflow_state("hard-cut-action")
         legacy = self.machine / "conversations/trae/legacy"
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -906,12 +1037,13 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertTrue(legacy.exists())
 
     def test_hard_cut_accepts_the_exact_granted_installer_action_once(self) -> None:
-        self.seed_live_workflow_state("installer-authorized")
+        self.prepare_codex_projection()
+        self.seed_live_workflow_state("hard-cut-authorized")
         legacy = self.machine / "conversations/trae/legacy"
         legacy.mkdir(parents=True)
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -933,7 +1065,7 @@ export function processStartIdentity() { return 'fixture'; }
         action_store.write_text("{}\n", encoding="utf-8")
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -945,8 +1077,10 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertTrue(legacy.exists())
         self.assertTrue(action_store.exists())
 
-    def test_hard_cut_records_blocked_before_a_failed_purge(self) -> None:
-        self.seed_live_workflow_state("installer-authorized")
+    def test_hard_cut_rejects_an_unsafe_target_before_grant_consumption(
+        self,
+    ) -> None:
+        self.seed_live_workflow_state("hard-cut-authorized")
         external = self.root / "external-conversations"
         external.mkdir()
         (self.machine / "conversations").symlink_to(
@@ -955,7 +1089,7 @@ export function processStartIdentity() { return 'fixture'; }
         )
 
         completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
+            ["make", "skills-hard-cut", "IDE=codex"],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -965,15 +1099,79 @@ export function processStartIdentity() { return 'fixture'; }
 
         self.assertEqual(completed.returncode, 2)
         self.assertIn("LEGACY_BINDING_RESET_INVALID", completed.stdout)
-        receipt = next(
-            self.machine.glob("workspaces/*/workflow/agent-integration.json")
+        self.assertFalse(
+            any(
+                self.machine.glob(
+                    "workspaces/*/workflow/agent-integration.json"
+                )
+            )
         )
-        receipt_value = json.loads(receipt.read_text(encoding="utf-8"))
-        self.assertEqual(receipt_value["state"], "BLOCKED")
-        self.assertIn(
-            "LEGACY_BINDING_RESET_INVALID",
-            receipt_value["callbackProof"]["code"],
+
+    def test_skills_gc_removes_only_retired_project_projections(self) -> None:
+        self.prepare_codex_projection()
+        self.seed_live_workflow_state("gc-authorized")
+        skills = self.root / ".agents/skills/pt-goal-orchestrator"
+        retired_skill = (
+            self.root
+            / ".agents/retired-project-skills/pt-goal-orchestrator.old"
         )
+        retired_plugin = (
+            self.root
+            / ".agents/retired-project-plugins/pt-ew-plugin.old"
+        )
+        retired_skill.mkdir(parents=True)
+        retired_plugin.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills-gc", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertTrue(skills.is_dir())
+        self.assertFalse(retired_skill.parent.exists())
+        self.assertFalse(retired_plugin.parent.exists())
+
+    def test_skills_gc_rejects_a_hard_cut_grant(self) -> None:
+        self.seed_live_workflow_state("hard-cut-authorized")
+        retired = self.root / ".agents/retired-project-skills/legacy"
+        retired.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills-gc", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
+        self.assertTrue(retired.is_dir())
+
+    def test_skills_gc_rejects_an_unrelated_live_declaration(self) -> None:
+        self.seed_live_workflow_state("gc-authorized")
+        self.write_live_declaration("ACTIVE")
+        retired = self.root / ".agents/retired-project-skills/legacy"
+        retired.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills-gc", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
+        self.assertTrue(retired.is_dir())
 
     def test_trae_audit_rejects_missing_pre_tool_use_matcher(self) -> None:
         installed = self.install_trae_fixture()
@@ -1121,6 +1319,8 @@ export function processStartIdentity() { return 'fixture'; }
             "#!/usr/bin/env node\nprocess.stdout.write('\\n{}\\n');\n",
             encoding="utf-8",
         )
+        for actions in self.machine.glob("workspaces/*/workflow/actions"):
+            shutil.rmtree(actions)
         self.seed_live_workflow_state("installer-authorized")
         failed = subprocess.run(
             ["make", "skills", "IDE=trae"],
@@ -1244,29 +1444,13 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
         self.assertIn("managed-hook-invalid:preToolUse", audit.stdout)
 
-    def test_install_rejects_every_live_worktree_declaration(self) -> None:
+    def test_install_with_live_declaration_is_nonblocking(self) -> None:
         machine = self.root / "machine"
-        machine.mkdir()
-        workspace_id = hashlib.sha256(
-            str(self.root.resolve()).encode()
-        ).hexdigest()[:16]
         for state in ("DECLARED", "ACTIVE", "RELEASING"):
             with self.subTest(state=state):
-                (machine / "work.json").write_text(
-                    json.dumps(
-                        {
-                            "declarations": {
-                                "active": {
-                                    "workspaceId": workspace_id,
-                                    "state": state,
-                                    "workItemId": "WORK-01",
-                                    "heartbeatAt": "2026-09-19T00:00:00.000Z",
-                                }
-                            }
-                        }
-                    ),
-                    encoding="utf-8",
-                )
+                shutil.rmtree(machine, ignore_errors=True)
+                self.seed_live_workflow_state("installer-authorized")
+                self.write_live_declaration(state)
                 completed = subprocess.run(
                     ["make", "skills", "IDE=codex"],
                     cwd=self.root,
@@ -1276,11 +1460,33 @@ export function processStartIdentity() { return 'fixture'; }
                     env=self.environment("installing-session"),
                     check=False,
                 )
-                self.assertEqual(completed.returncode, 2)
-                self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
-                self.assertFalse(
-                    (self.root / ".agents/skills/pt-goal-orchestrator").exists()
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stdout + completed.stderr,
                 )
+                self.assertTrue(
+                    (self.root / ".agents/skills/pt-goal-orchestrator").is_symlink()
+                )
+
+    def test_install_with_unrelated_live_action_is_nonblocking(self) -> None:
+        self.seed_live_workflow_state("action")
+        self.seed_live_workflow_state("installer-authorized")
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            env=self.environment("installing-session"),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertTrue(
+            (self.root / ".agents/skills/pt-goal-orchestrator").is_symlink()
+        )
 
     def test_audit_rejects_a_versioned_integration_receipt(self) -> None:
         self.seed_live_workflow_state("installer-authorized")
@@ -1856,126 +2062,12 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertEqual(audit.returncode, 2)
         self.assertIn("canonical-source-symlink", audit.stdout)
 
-    def test_audit_uses_canonical_plan_binding_validation(self) -> None:
-        machine = self.root / "machine"
-        workspace_id = hashlib.sha256(
-            str(self.root.resolve()).encode()
-        ).hexdigest()[:16]
-        binding = (
-            machine
-            / "workspaces"
-            / workspace_id
-            / "workflow"
-            / "plan-binding.json"
-        )
-        binding.parent.mkdir(parents=True)
-        binding.write_text(
-            json.dumps(
-                {
-                    "workspaceId": workspace_id,
-                    "planId": "PLAN-01",
-                    "planPath": "missing-plan.md",
-                }
-            ),
-            encoding="utf-8",
-        )
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/agent-integration-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 2)
-        self.assertIn("binding-canonical-invalid", audit.stdout)
-
-    def test_audit_accepts_canonical_normalization_of_legacy_binding(self) -> None:
-        module = load_integration_audit()
-        workspace_id = hashlib.sha256(
-            str(self.root.resolve()).encode()
-        ).hexdigest()[:16]
-        branch = subprocess.run(
-            ["git", "branch", "--show-current"],
-            cwd=self.root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        legacy = {
-            "schemaVersion": 1,
-            "kind": "peers-touch-workspace-plan-binding",
-            "workspaceId": workspace_id,
-            "canonicalRoot": str(self.root.resolve()),
-            "planId": "PLAN-01",
-            "planPath": "plan.md",
-            "boundAt": "2026-09-19T00:00:00.000Z",
-            "boundBy": "test",
-        }
-        normalized = {
-            **legacy,
-            "schemaVersion": 2,
-            "generation": 1,
-            "recordDigest": "a" * 64,
-        }
-        binding_path = (
-            self.machine
-            / "workspaces"
-            / workspace_id
-            / "workflow"
-            / "plan-binding.json"
-        )
-        binding_path.parent.mkdir(parents=True)
-        binding_path.write_text(json.dumps(legacy), encoding="utf-8")
-        manifest = {
-            "planId": "PLAN-01",
-            "status": "completed",
-            "binding": {
-                "workspaceId": workspace_id,
-                "branch": branch,
-            },
-            "scope": {
-                "sourceClaims": [
-                    {
-                        "mode": "exclusive-write",
-                        "pathPrefix": "tooling/scripts",
-                    }
-                ]
-            },
-        }
-
-        with mock.patch.object(
-            module,
-            "machine_dev_root",
-            return_value=self.machine,
-        ), mock.patch.object(
-            module,
-            "resolved_plan_binding",
-            return_value=normalized,
-        ), mock.patch.object(
-            module,
-            "validated_plan_status",
-            return_value={"currentTaskId": None},
-        ), mock.patch.object(
-            module,
-            "structured_plan",
-            return_value=manifest,
-        ):
-            identity = module.workflow_identity(self.root)
-
-        self.assertEqual(identity["identityFindings"], [])
-        self.assertEqual(identity["planBinding"], normalized)
 
     def test_legacy_scan_ignores_foreign_plans_but_checks_bound_plan(self) -> None:
         module = load_integration_audit()
         foreign = (
             self.root
-            / "docs/architecture/mobile/execution-plans/foreign-plan.md"
+            / "docs/architecture/platform/client/mobile/execution-plans/foreign-plan.md"
         )
         foreign.parent.mkdir(parents=True)
         foreign.write_text(
@@ -1986,168 +2078,14 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertEqual(module.legacy_references(self.root), [])
         findings = module.legacy_references(
             self.root,
-            ("docs/architecture/mobile/execution-plans/foreign-plan.md",),
+            ("docs/architecture/platform/client/mobile/execution-plans/foreign-plan.md",),
         )
         self.assertEqual(len(findings), 1)
         self.assertEqual(
             findings[0]["path"],
-            "docs/architecture/mobile/execution-plans/foreign-plan.md",
+            "docs/architecture/platform/client/mobile/execution-plans/foreign-plan.md",
         )
 
-    def test_audit_rejects_tracked_declaration_without_plan_task_locator(
-        self,
-    ) -> None:
-        machine = self.root / "machine"
-        workspace_id = hashlib.sha256(
-            str(self.root.resolve()).encode()
-        ).hexdigest()[:16]
-        branch = subprocess.run(
-            ["git", "branch", "--show-current"],
-            cwd=self.root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        head = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=self.root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        binding = {
-            "schemaVersion": 2,
-            "kind": "peers-touch-workspace-plan-binding",
-            "workspaceId": workspace_id,
-            "canonicalRoot": str(self.root.resolve()),
-            "planId": "PLAN-01",
-            "planPath": "plan.md",
-            "generation": 2,
-            "boundAt": "2026-09-19T00:00:00.000Z",
-            "boundBy": "test",
-            "recordDigest": "a" * 64,
-        }
-        binding_path = (
-            machine
-            / "workspaces"
-            / workspace_id
-            / "workflow"
-            / "plan-binding.json"
-        )
-        binding_path.parent.mkdir(parents=True)
-        binding_path.write_text(json.dumps(binding), encoding="utf-8")
-        (self.root / "plan.md").write_text(
-            "## Plan Package\n```json\n"
-            + json.dumps(
-                {
-                    "planId": "PLAN-01",
-                    "status": "active",
-                    "binding": {
-                        "workspaceId": workspace_id,
-                        "branch": branch,
-                    },
-                    "scope": {
-                        "sourceClaims": [
-                            {
-                                "mode": "exclusive-write",
-                                "pathPrefix": "tooling/skills",
-                            }
-                        ]
-                    },
-                }
-            )
-            + "\n```\n",
-            encoding="utf-8",
-        )
-        plan_scripts = self.root / "tooling/scripts/plan"
-        plan_scripts.mkdir(exist_ok=True)
-        (plan_scripts / "workspace-plan-binding.mjs").write_text(
-            f"console.log({json.dumps(json.dumps({'ok': True, 'binding': binding}))});\n",
-            encoding="utf-8",
-        )
-        (plan_scripts / "planctl.mjs").write_text(
-            'console.log(JSON.stringify({ok:true,currentTaskId:"TASK-01"}));\n',
-            encoding="utf-8",
-        )
-        local_dev = self.root / "tooling/scripts/local-dev"
-        local_dev.mkdir(exist_ok=True)
-        declaration = {
-            "workspaceId": workspace_id,
-            "branch": branch,
-            "sourceHead": head,
-            "sourceClaims": [
-                {
-                    "mode": "exclusive-write",
-                    "pathPrefix": "tooling/skills",
-                }
-            ],
-            "state": "ACTIVE",
-            "workItemId": "WORK-01",
-            "heartbeatAt": "2026-09-19T00:00:00.000Z",
-            "planId": None,
-            "planPath": None,
-            "taskId": None,
-        }
-        valid_declaration = {
-            **declaration,
-            "workItemId": "WORK-02",
-            "heartbeatAt": "2026-09-19T01:00:00.000Z",
-            "planId": "PLAN-01",
-            "planPath": "plan.md",
-            "taskId": "TASK-01",
-        }
-        (machine / "work.json").write_text(
-            json.dumps(
-                {
-                    "declarations": {
-                        "older-invalid": declaration,
-                        "newer-valid": valid_declaration,
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-        (local_dev / "dev-work.mjs").write_text(
-            "console.log("
-            + json.dumps(
-                json.dumps(
-                    {
-                        "declarations": [
-                            declaration,
-                            valid_declaration,
-                        ]
-                    }
-                )
-            )
-            + ");\n",
-            encoding="utf-8",
-        )
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/agent-integration-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 2)
-        findings = json.loads(audit.stdout)["workflowIdentity"][
-            "identityFindings"
-        ]
-        self.assertIn("declaration-plan-locator-missing", findings)
-        self.assertIn("declaration-current-task-mismatch", findings)
-        self.assertNotIn("binding-canonical-mismatch", findings)
-        self.assertEqual(
-            json.loads(audit.stdout)["workflowIdentity"][
-                "activeDeclaration"
-            ]["workItemId"],
-            "WORK-02",
-        )
 
 
 if __name__ == "__main__":

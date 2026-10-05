@@ -153,7 +153,6 @@ def build_observations_template() -> dict[str, Any]:
     cells = {
         spec.cell_id: runtime_cell_observation_template(spec)
         for spec in matrix.DEFAULT_CELLS
-        if spec.cell_id != "browser-gateway"
     }
     reason = "Observation template only; replace placeholders with live runtime-cell readyShell and telemetry events before collection."
     return {
@@ -191,7 +190,6 @@ def build_templates() -> dict[str, dict[str, Any]]:
     return {
         spec.cell_id: build_cell_template(matrix, spec)
         for spec in matrix.DEFAULT_CELLS
-        if spec.cell_id != "browser-gateway"
     }
 
 

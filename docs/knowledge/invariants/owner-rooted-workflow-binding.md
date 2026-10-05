@@ -10,7 +10,7 @@ owns:
   - tooling/scripts/local-dev/workflow-*.mjs
   - tooling/make/setup.mk
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
   - docs/knowledge/invariants/host-neutral-agent-execution.md
   - docs/knowledge/invariants/workspace-active-work-is-local.md
@@ -37,40 +37,46 @@ execution-session hash may retry or use the assignment. Child liveness comes
 from assignment, lease, and terminal receipts. OWNER liveness never comes from
 a generic TTL.
 
-Every hook, Action Receipt, status, readiness, handoff, Stop, worker result,
-and Completion Review consumes one canonical `BindingProjection`. The
-projection includes role, lineage, binding/release state, immutable
-`executionRoot`, and per-event subject/tool/target roots.
+Every hook, Action Receipt, status, readiness, handoff, Stop, and worker result
+consumes one canonical `BindingProjection`. The projection includes role,
+lineage, binding/release state, immutable `executionRoot`, and per-event
+subject/tool/target roots.
 
 Cross-worktree reads remain allowed. Every lineage member may write only
 inside the OWNER execution root and the active declaration's source claims.
 Dynamic or unparseable shell structure fails closed.
 
-Completion Review selects the exact OWNER or assigned REVIEWER from the
-latest receipt for the current owner-command action ID. A FINISHED receipt
-invalidates earlier STARTED and HEARTBEAT receipts. It never enumerates every
-unreleased binding for a worktree and never treats stale child history as
-ownership. Schema-v2 requests and receipts use only
-`completion-reviews-v2`; the pre-hard-cut namespace is not read or migrated.
+Completion Review is outside the IDE write-authorization boundary. Under
+DWF-D37 it binds immutable review requests to successful Development Session
+contexts and delegates through a repository-native reviewer capability. It
+does not consume Workflow Bindings or Action Receipts. Schema-v3 records use
+only `completion-reviews-v3`; earlier namespaces are not read or migrated.
 
 `PreCompact` writes one bounded receipt keyed by the current binding digest.
 `PostCompact` must re-resolve that exact binding, root, parent, assignment,
 Development Session, workspace, and execution root before context is restored.
 Concurrent OWNER, WORKER, and REVIEWER compactions never share a receipt slot.
 
-TRAE multi-root installations expose one descriptor-selected workspace
-bootstrap. Its location is not an authority hint. The first mutating tool event
+TRAE multi-root installations expose equivalent canonical Hook entries in the
+selected source root, descriptor bootstrap root, and descriptor roots with an
+existing real `.trae` directory. Their locations are not authority hints, and
+the entries are not parallel authorities. They dispatch to the same selected
+source integration and one host-neutral Kernel. The first mutating tool event
 must name one declared task root or have all mutation targets resolve to one
 workspace root; otherwise it fails with `WORKTREE_SELECTION_REQUIRED`.
-Managed per-worktree hook entries are not parallel authorities.
-Rollout is a hard cut: after proving the workflow idle, delete prior
-conversation and workflow-action stores before installing the current
-bootstrap. No legacy reader, importer, alias, or dual writer is allowed.
-The sole live OWNER `skills` action is admissible only with its create-once
-Kernel grant, which the installer atomically consumes exactly once. Zero live
-actions are denied. Fallible path/workspace/catalog planning completes before
-grant consumption. After consumption, the installer immediately persists
-`INSTALLING` before destructive reset and records `BLOCKED` if reset fails.
+Descriptor roots without `.trae` remain untouched.
+Projection and cleanup are separate actions. Ordinary `skills` consumes one
+machine-lock-serialized, strictly validated projection path and does not
+depend on a grant from the Hook it installs. It may update the selected host
+projection while unrelated worktrees remain active and never deletes workflow
+state.
+`skills-hard-cut` is the only legacy conversation/action-store reset owner, and
+`skills-gc` is the only retired-projection cleanup owner. Each consumes its own
+exact create-once OWNER grant and proves global idle before deletion. No legacy
+reader, importer, alias, or dual writer is allowed. Fallible
+path/workspace/catalog planning completes before grant consumption. After
+consumption, each command persists its operation state and records `BLOCKED`
+if its bounded mutation fails.
 
 ## Why this is non-negotiable
 
@@ -92,24 +98,29 @@ authority because a timer elapsed.
 - Assignment creation rejects a missing or non-current Development Session.
 - Interrupted and concurrent OWNER publication leaves one valid immutable file.
 - Expired and terminal children are excluded from current projections.
-- Twenty stale child records do not block exact Completion Review resolution.
-- A FINISHED review action cannot authorize work through an older receipt.
+- Twenty stale child records cannot affect Completion Review preparation or
+  submission.
 - Pre-hard-cut Completion Review records cannot block current status or review.
 - Compact restoration fails when any persisted lineage field differs.
 - Concurrent lineage compactions preserve independent receipts.
-- A missing, seeded, or already-consumed installer action has no rollout
-  authority.
-- Failed destructive reset leaves a `BLOCKED` installation receipt.
+- A missing, seeded, wrong-label, or already-consumed control action has no
+  projection or cleanup authority.
+- Ordinary install succeeds without a Hook-issued grant while an unrelated
+  declaration remains active and does not remove legacy stores.
+- Hard cut and GC reject unrelated live work and leave a `BLOCKED` operation
+  receipt on failure.
 - BeforePrompt injects role, lineage, release, execution, subject, tool, and
   target roots; wrong-binding status/final claims fail closed.
 - Sibling-worktree reads pass and writes fail with
   `CROSS_WORKTREE_WRITE_DENIED`.
-- The active multi-root workspace contains exactly one managed TRAE bootstrap.
+- Every participating root in the active multi-root workspace contains exactly
+  one managed TRAE Hook per supported event; untouched roots remain untouched.
 - Active-editor mismatch and explicit New Task target fixtures bind the
   selected worktree or fail `WORKTREE_SELECTION_REQUIRED`; folder order never
   decides authority.
-- Rollout removes the old conversation/action stores and tree-wide search finds
-  no runtime import of `workflow-conversation-binding.mjs`.
+- Explicit hard cut removes the old conversation/action stores; ordinary
+  install does not. Tree-wide search finds no runtime import of
+  `workflow-conversation-binding.mjs`.
 
 ## Crosswalks
 
@@ -117,3 +128,10 @@ authority because a timer elapsed.
 - DWF-D22 keeps mutable workflow owner state in each consuming worktree.
 - DWF-D33 defines OWNER/child lineage, exact claim selection, and hard-cut
   rollout.
+- DWF-D35 defines participating-root Hook projection without multiplying owner
+  authority.
+- DWF-D36 removes the ordinary projection's circular Hook-grant dependency
+  while preserving exact grants for destructive cleanup.
+- DWF-D37 removes Completion Review from host binding authorization while
+  preserving request-scoped delegated assessment provenance; independent
+  reviewer launch remains a Dev Workflow obligation.

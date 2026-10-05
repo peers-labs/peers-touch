@@ -762,7 +762,7 @@ function normalTargets(state, context) {
       }
       if (
         task.completionClass === 'functional' &&
-        ['service', 'browser', 'native-desktop', 'native-mobile'].includes(
+        ['service', 'native-desktop', 'native-mobile'].includes(
           task.runtimeClass,
         )
       ) {

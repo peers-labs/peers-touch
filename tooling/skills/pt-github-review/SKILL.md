@@ -87,6 +87,21 @@ python3 tooling/scripts/execution-plan.py --require-complete
 python3 tooling/scripts/acceptance-plan.py --active-plan --completion
 ```
 
+For explicit standalone no-Plan work, replace the tracked Plan commands with:
+
+```bash
+python3 tooling/scripts/execution-plan.py --require-complete --allow-untracked
+node tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs \
+  --repo-root "$PWD" \
+  --work-item <id> \
+  --mode standalone \
+  --claim-class delivery-ready
+```
+
+Do not manufacture a Plan, Session, active-work record, BindingProjection, or
+Completion Review receipt for standalone review. Formal Acceptance remains
+`NOT RUN/UNPROVEN` unless its normal owner produced exact proof.
+
 CI has no machine workspace binding. The PR body must declare every owned Plan
 under `## Execution Plans / 执行计划`; CI passes each path through `--plan` and
 must not infer a Plan from the PR branch.
@@ -137,23 +152,21 @@ verify:
 - every status, handoff, worker result, and review verdict consumes the
   current canonical `BindingProjection`; child assignment validates the exact
   current active-work and Development Session records; one assignment has one
-  atomically published execution-session claim; Completion Review reduces each
-  action to its latest receipt and uses the exact live OWNER command or assigned
-  REVIEWER rather than enumerating worktree bindings, and reads only the current
-  versioned review namespace;
+  atomically published execution-session claim; Completion Review uses its
+  repository-native immutable request, exact reviewer capability, internally
+  derived assessment proof, and current review namespace without enumerating
+  Workflow Bindings or Action Receipts;
 - OWNER publication uses atomic create-once semantics, and `PreCompact` /
   `PostCompact` persist and verify one receipt per complete binding lineage so
   concurrent OWNER/WORKER/REVIEWER compactions cannot overwrite each other;
-- TRAE multi-root integration installs one descriptor-selected bootstrap,
-  never treats bootstrap location or folder order as execution authority, and
-  rejects active-editor/task/target disagreement with
-  `WORKTREE_SELECTION_REQUIRED`;
-- binding rollout proves global workflow quiescence, deletes only the old
-  conversation and workflow-action stores, consumes a create-once grant for
-  the exact current OWNER `skills` action only after fallible preflight,
-  publishes `INSTALLING` immediately after consumption and before destructive
-  reset, records reset failure as `BLOCKED`, and contains no compatibility
-  reader, importer, alias, fallback, or dual writer;
+- TRAE multi-root integration projects equivalent ingress into the selected
+  source root, descriptor bootstrap root, and existing TRAE-participating
+  roots, never treats Hook location or folder order as execution authority,
+  and rejects task/target disagreement with `WORKTREE_SELECTION_REQUIRED`;
+- ordinary integration projection is non-destructive, requires no Hook-issued
+  grant or global idle, and deletes no workflow state; only exact OWNER
+  `skills-hard-cut` and `skills-gc` grants may perform their bounded
+  global-idle cleanup, with no compatibility reader or dual writer;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under
@@ -178,6 +191,11 @@ verify:
   instead of asking the user whether to continue.
 - routine stage/code review findings are remediated and re-reviewed inside the
   Plan Run.
+- Development close uses one exact `workspaceId + workItemId` selector and a
+  resumable `DevelopmentCloseReceipt`; review rejects declaration-only close,
+  wrong-owner cancel/unmount, new-task admission during `CLOSING|BLOCKED`, and
+  environment unregister while declaration, active-work, PlanMount, or lease
+  remains live. Only `close-ready` requires the exact `CLOSED` resource matrix.
 
 ### 4. Decide
 
@@ -306,7 +324,7 @@ Path matching means a knowledge file must enter review context. It does not prov
 the code complies.
 
 For a changed path owned by
-`docs/architecture/architecture-module-governance/architecture-modules.json`,
+`docs/architecture/engineering/architecture-governance/architecture-modules.json`,
 review the registered module documents, accepted decisions, positive
 capabilities, consumers, dependencies, and evidence Gates. Reject undocumented
 or overlapping ownership and any attempt to preserve removed names as a
@@ -375,7 +393,7 @@ Check:
 
 Check:
 
-- `desktop-web -> desktop-rust -> station` remains the business path;
+- `native Tauri embedded renderer -> desktop-rust -> station` remains the business path;
 - pages are pure renderers and do not own long-lived freshness;
 - runtime-backed features have event consumption and reconciliation;
 - user-facing strings use locale keys;
@@ -404,6 +422,12 @@ concurrency decisions, identity-based live-agent conflict detection, reserved
 write sets, integrator-owned reconciliation, and non-blocking Context Anchor
 projection.
 
+For Agent integration controls, reject ordinary projection that requires
+unrelated worktrees to be idle or deletes workflow state. Require separate
+exact OWNER grants for legacy-store hard cut and retired-projection GC; only
+those two destructive commands may require global idle. Ordinary projection
+must not depend on a Hook-issued grant.
+
 For Local Dev Profile changes, reject any stored reset-policy field or
 compatibility reader. The verified canonical Profile ID is the sole policy
 source: case-insensitive `stable` means reset-protected; all other reviewed
@@ -418,6 +442,13 @@ binding. The registration owns canonical root, workspace ID, registered branch,
 Profile, slot, capabilities, and Owner metadata. Current HEAD comes from Git;
 Development declaration/Session identity and runtime build readback fence
 source-sensitive mutation.
+
+For Development close changes, preserve independent state owners. The
+coordinator may sequence lease inspection, Session archive, active-work close,
+declaration release, PlanMount release, and optional environment unregister
+under the workspace lifecycle fence, but it must not reimplement their policy
+or relabel abandoned state as success. Deleted-worktree recovery requires exact
+workspace, mount, and owner identity.
 
 ### Acceptance Review
 

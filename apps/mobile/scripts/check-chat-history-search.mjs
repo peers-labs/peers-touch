@@ -441,7 +441,7 @@ try {
     evidence: 'component-only',
     command,
     contract: 'docs/client/mobile/chat-layout-contract.md#12-bounded-history-and-restoration',
-    plan: 'docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/W6A.md',
+    plan: 'docs/architecture/platform/client/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/W6A.md',
     boundary: 'React -> useChatHistorySearch -> dispatchSearchMessages -> messagingSearchMessages -> controlled Tauri invoke',
     notProven: ['real native index/cursor ordering', 'Station/API behavior', 'ChatPage product UI', 'native/device Acceptance'],
     source,

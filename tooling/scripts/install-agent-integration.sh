@@ -4,8 +4,13 @@ set -euo pipefail
 host=""
 root=""
 workspace=""
+action="install"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --action)
+      action="${2:-}"
+      shift 2
+      ;;
     --host)
       host="${2:-}"
       shift 2
@@ -25,6 +30,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "$action" in
+  install|hard-cut|gc) ;;
+  *)
+    echo "action must be install, hard-cut, or gc" >&2
+    exit 2
+    ;;
+esac
+
 case "$host" in
   trae|cursor|codex) ;;
   *)
@@ -39,7 +52,7 @@ else
   root="$(cd "$root" && pwd -P)"
 fi
 
-args=(install --root "$root" --host "$host")
+args=("$action" --root "$root" --host "$host")
 if [[ -n "$workspace" ]]; then
   args+=(--workspace "$workspace")
 fi

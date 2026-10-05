@@ -30,32 +30,8 @@ DEFAULT_OUTPUT_PREFIX = "reports/desktop-performance-matrix-latest"
 ALLOWED_STATUSES = {
     "sampled",
     "blocked",
-    "baseline preflight failure",
     "diagnostic incomplete",
 }
-LIVE_GATE_REQUIRED_BOM = (
-    "BOM-RUN-03",
-    "BOM-RUN-04",
-    "BOM-CON-03",
-    "BOM-CON-04",
-    "BOM-CAP-05",
-    "BOM-RUN-05",
-)
-LIVE_GATE_REQUIRED_PHASE = "P0a-3/P0a-4/P0a-5/P0a-6/P0c-5"
-LIVE_GATE_REQUIRED_SPEC = (
-    "SPEC-GW-01",
-    "SPEC-STA-01",
-    "SPEC-STA-02",
-    "SPEC-DB-01",
-    "SPEC-DB-02",
-    "SPEC-STA-03",
-    "SPEC-MIRROR-01",
-)
-LIVE_GATE_REQUIRED_ARTIFACT_KIND = "desktop-telemetry-live-gate"
-PREFLIGHT_REQUIRED_PHASE = "P0c-1/P0c-2"
-PREFLIGHT_REQUIRED_BOM = ("BOM-RUN-01", "BOM-CAP-04", "BOM-GATE-01")
-PREFLIGHT_REQUIRED_SPEC = ("SPEC-RUN-01", "SPEC-GATE-01")
-PREFLIGHT_REQUIRED_ARTIFACT_KIND = "desktop-performance-preflight"
 COHORT_REQUIRED_PHASE = "P0c-3"
 COHORT_REQUIRED_TASK = "P0c3-R2"
 COHORT_REQUIRED_ARTIFACT_KIND = "desktop-performance-cohort-gate"
@@ -100,22 +76,13 @@ class RedLinePolicy:
 
 DEFAULT_CELLS = (
     MatrixCellSpec(
-        cell_id="browser-gateway",
-        runtime="browser-gateway",
-        entrypoint="make desktop-web",
-        startup_mode="dev-browser-gateway",
-        bom=("BOM-GATE-02", "BOM-CAP-04"),
-        spec=("SPEC-GATE-02", "SPEC-RUN-01"),
-        gate="browser/gateway preflight must pass before samples are accepted",
-    ),
-    MatrixCellSpec(
         cell_id="tauri-webview-dev",
         runtime="tauri-webview-dev",
         entrypoint="make desktop",
         startup_mode="dev-tauri-webview",
         bom=("BOM-GATE-02", "BOM-CAP-04"),
         spec=("SPEC-GATE-02", "SPEC-RUN-01"),
-        gate="Dev Tauri WebView evidence required; browser samples are not substitutes",
+        gate="Dev Tauri WebView evidence is required",
     ),
     MatrixCellSpec(
         cell_id="tauri-webview-packaged",
@@ -252,194 +219,6 @@ def diagnostic_issue_breakdown(report: dict[str, Any]) -> Any:
     return report.get("issue_breakdown", report.get("issueBreakdown"))
 
 
-def diagnostic_review_commands(report: dict[str, Any]) -> Any:
-    return report.get("recommended_review_commands", report.get("recommendedReviewCommands"))
-
-
-def live_gate_source_metadata(report: dict[str, Any], path: Path, source_status: str) -> dict[str, Any]:
-    details: list[str] = []
-    failed_step = report.get("failedStep")
-    if isinstance(failed_step, str) and failed_step:
-        details.append(f"failedStep={failed_step}")
-    reason = report.get("reason")
-    if isinstance(reason, str) and reason:
-        details.append(reason)
-    source_details = report.get("details")
-    if isinstance(source_details, list):
-        for item in source_details:
-            if isinstance(item, dict):
-                step = item.get("step")
-                error = item.get("error")
-                if step and error:
-                    details.append(f"{step}: {error}")
-                elif error:
-                    details.append(str(error))
-            elif item:
-                details.append(str(item))
-    evidence = {
-        "path": str(path),
-        "sourceArtifact": str(path),
-        "status": "loaded",
-        "sourceStatus": source_status,
-        "completionStatus": report.get("completionStatus", "PARTIAL"),
-        "proofStatus": report.get("proofStatus", "UNPROVEN"),
-        "sourcePhase": report.get("phase"),
-        "sourceBom": report.get("bom", []),
-        "sourceSpec": report.get("spec", []),
-        "sourceGate": report.get("gate"),
-        "sourceArtifactKind": report.get("artifactKind"),
-        "sampleEmissionAllowed": bool(report.get("sampleEmissionAllowed")) and source_status == "pass",
-    }
-    if isinstance(failed_step, str) and failed_step:
-        evidence["failedStep"] = failed_step
-    if details:
-        evidence["details"] = details
-    issue_breakdown = diagnostic_issue_breakdown(report)
-    if isinstance(issue_breakdown, list):
-        evidence["issue_breakdown"] = issue_breakdown
-        evidence["issueBreakdown"] = issue_breakdown
-    review_commands = diagnostic_review_commands(report)
-    if isinstance(review_commands, list):
-        evidence["recommended_review_commands"] = review_commands
-        evidence["recommendedReviewCommands"] = review_commands
-    return evidence
-
-
-def validate_live_gate_source_metadata(report: dict[str, Any]) -> list[str]:
-    reasons: list[str] = []
-    if report.get("artifactKind") != LIVE_GATE_REQUIRED_ARTIFACT_KIND:
-        reasons.append("missing or invalid artifactKind")
-    if report.get("completionStatus") not in {"DONE", "PARTIAL"}:
-        reasons.append("missing or invalid completionStatus")
-    if report.get("proofStatus") not in {"PROVEN", "UNPROVEN"}:
-        reasons.append("missing or invalid proofStatus")
-    if report.get("phase") != LIVE_GATE_REQUIRED_PHASE:
-        reasons.append("missing or invalid phase")
-    source_bom = report.get("bom")
-    if not isinstance(source_bom, list) or not all(item in source_bom for item in LIVE_GATE_REQUIRED_BOM):
-        reasons.append("missing required P0a BOM binding")
-    source_spec = report.get("spec")
-    if not isinstance(source_spec, list) or not all(item in source_spec for item in LIVE_GATE_REQUIRED_SPEC):
-        reasons.append("missing required P0a Spec binding")
-    if not isinstance(report.get("gate"), str) or not report.get("gate"):
-        reasons.append("missing gate")
-    status = report.get("status")
-    if status != "pass":
-        issue_breakdown = diagnostic_issue_breakdown(report)
-        if not isinstance(issue_breakdown, list) or not issue_breakdown:
-            reasons.append("missing issue_breakdown")
-        else:
-            for issue in issue_breakdown:
-                if not isinstance(issue, dict):
-                    reasons.append("invalid issue_breakdown item")
-                    break
-                for key in ("category", "failedStep", "summary", "proofImpact"):
-                    if not isinstance(issue.get(key), str) or not issue.get(key):
-                        reasons.append(f"missing issue_breakdown.{key}")
-        review_commands = diagnostic_review_commands(report)
-        if not isinstance(review_commands, list) or not review_commands:
-            reasons.append("missing recommended_review_commands")
-        else:
-            for command in review_commands:
-                if not isinstance(command, dict):
-                    reasons.append("invalid recommended_review_commands item")
-                    break
-                for key in ("purpose", "command"):
-                    if not isinstance(command.get(key), str) or not command.get(key):
-                        reasons.append(f"missing recommended_review_commands.{key}")
-    return reasons
-
-
-def preflight_source_state(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        source = str(path) if path is not None else "evidence-store:latest:desktop-performance-preflight-gate:report"
-        reason = f"missing Desktop performance preflight report: {source}"
-        issue_breakdown = [
-            {
-                "category": "desktop-performance-preflight",
-                "failedStep": "desktop-performance-preflight",
-                "summary": reason,
-                "proofImpact": "P0c-1/P0c-2 remains PARTIAL/UNPROVEN until Desktop runtime preflight evidence exists.",
-            }
-        ]
-        review_commands = [
-            {"purpose": "Generate Desktop runtime preflight evidence.", "command": "python3 tooling/scripts/desktop-performance-preflight.py"},
-            {"purpose": "Re-run the P0c matrix gate.", "command": "python3 tooling/scripts/desktop-performance-matrix-gate.py"},
-            {"purpose": "Re-run the full Phase 0 bundle.", "command": "make acceptance PLAN=tooling/acceptance/plans/desktop-performance-phase0.json"},
-        ]
-        return {
-            "path": source,
-            "sourceArtifact": source,
-            "status": "diagnostic incomplete",
-            "sourceStatus": "missing",
-            "completionStatus": "PARTIAL",
-            "proofStatus": "UNPROVEN",
-            "sourcePhase": PREFLIGHT_REQUIRED_PHASE,
-            "sourceBom": list(PREFLIGHT_REQUIRED_BOM),
-            "sourceSpec": list(PREFLIGHT_REQUIRED_SPEC),
-            "sourceGate": "Desktop runtime preflight evidence must exist before matrix proof is allowed",
-            "sourceArtifactKind": PREFLIGHT_REQUIRED_ARTIFACT_KIND,
-            "sampleEmissionAllowed": False,
-            "reason": reason,
-            "details": ["missing preflight artifact"],
-            "issue_breakdown": issue_breakdown,
-            "issueBreakdown": issue_breakdown,
-            "recommended_review_commands": review_commands,
-            "recommendedReviewCommands": review_commands,
-        }
-
-    report = read_json(path)
-    details: list[str] = []
-    if report.get("artifactKind") != PREFLIGHT_REQUIRED_ARTIFACT_KIND:
-        details.append("missing or invalid artifactKind")
-    if report.get("phase") != PREFLIGHT_REQUIRED_PHASE:
-        details.append("missing or invalid phase")
-    source_bom = report.get("bom")
-    if not isinstance(source_bom, list) or not all(item in source_bom for item in PREFLIGHT_REQUIRED_BOM):
-        details.append("missing required preflight BOM binding")
-    source_spec = report.get("spec")
-    if not isinstance(source_spec, list) or not all(item in source_spec for item in PREFLIGHT_REQUIRED_SPEC):
-        details.append("missing required preflight Spec binding")
-    if not isinstance(report.get("gate"), str) or not report.get("gate"):
-        details.append("missing gate")
-    if report.get("completionStatus") != "DONE":
-        details.append("missing or incomplete completionStatus")
-    if report.get("proofStatus") != "PROVEN":
-        details.append("missing or invalid proofStatus")
-    if report.get("sampleEmissionAllowed") is not True:
-        details.append("sample emission is not allowed")
-
-    status = "pass" if not details else "diagnostic incomplete"
-    evidence = {
-        "path": str(path),
-        "sourceArtifact": str(path),
-        "status": status,
-        "sourceStatus": report.get("status", "diagnostic incomplete"),
-        "completionStatus": "DONE" if status == "pass" else "PARTIAL",
-        "proofStatus": "PROVEN" if status == "pass" else "UNPROVEN",
-        "sourcePhase": report.get("phase"),
-        "sourceBom": report.get("bom", []),
-        "sourceSpec": report.get("spec", []),
-        "sourceGate": report.get("gate"),
-        "sourceArtifactKind": report.get("artifactKind"),
-        "sampleEmissionAllowed": bool(report.get("sampleEmissionAllowed")) and status == "pass",
-        "reason": "Desktop performance preflight evidence is proven"
-        if status == "pass"
-        else report.get("reason") or "Desktop performance preflight evidence is incomplete",
-        "failedStep": report.get("failedStep"),
-        "details": details,
-    }
-    issue_breakdown = diagnostic_issue_breakdown(report)
-    if isinstance(issue_breakdown, list):
-        evidence["issue_breakdown"] = issue_breakdown
-        evidence["issueBreakdown"] = issue_breakdown
-    review_commands = diagnostic_review_commands(report)
-    if isinstance(review_commands, list):
-        evidence["recommended_review_commands"] = review_commands
-        evidence["recommendedReviewCommands"] = review_commands
-    return evidence
-
-
 def cohort_source_state(path: Path | None) -> dict[str, Any]:
     if path is None or not path.exists():
         source = str(path) if path is not None else "evidence-store:latest:desktop-performance-cohort-gate:report"
@@ -509,59 +288,6 @@ def cohort_source_state(path: Path | None) -> dict[str, Any]:
         evidence["issue_breakdown"] = source_issues
         evidence["issueBreakdown"] = source_issues
     return evidence
-
-
-def status_from_live_gate(path: Path) -> tuple[str, dict[str, Any]]:
-    if not path.exists():
-        return (
-            "baseline preflight failure",
-            {
-                "reason": "missing live gate report",
-                "path": str(path),
-                "sourceArtifact": str(path),
-                "status": "missing",
-                "sourceStatus": "missing",
-                "completionStatus": "PARTIAL",
-                "proofStatus": "UNPROVEN",
-                "sourceArtifactKind": LIVE_GATE_REQUIRED_ARTIFACT_KIND,
-                "sourcePhase": LIVE_GATE_REQUIRED_PHASE,
-                "sourceBom": list(LIVE_GATE_REQUIRED_BOM),
-                "sourceSpec": list(LIVE_GATE_REQUIRED_SPEC),
-                "sourceGate": "Desktop Gateway upload, Station ingest, raw/rollup query, and Dev mirror must all pass before live telemetry is proven",
-                "sampleEmissionAllowed": False,
-            },
-        )
-    report = read_json(path)
-    status = str(report.get("status") or "diagnostic incomplete")
-    evidence = live_gate_source_metadata(report, path, status)
-    metadata_reasons = validate_live_gate_source_metadata(report)
-    if metadata_reasons:
-        evidence["status"] = "missing-source-metadata"
-        evidence["reason"] = "live gate report is missing required source metadata"
-        evidence["details"] = metadata_reasons
-        evidence["sampleEmissionAllowed"] = False
-        return (
-            "blocked",
-            evidence,
-        )
-    if status == "pass":
-        evidence["interactionId"] = report.get("interactionId")
-        return (
-            "sampled",
-            evidence,
-        )
-    if status == "baseline preflight failure":
-        evidence["error"] = report.get("error")
-        evidence["steps"] = report.get("steps", [])
-        return (
-            "baseline preflight failure",
-            evidence,
-        )
-    evidence["error"] = report.get("error")
-    return (
-        "blocked",
-        evidence,
-    )
 
 
 def validate_cell_source_metadata(spec: MatrixCellSpec, report: dict[str, Any]) -> list[str]:
@@ -1024,8 +750,11 @@ def matrix_review_commands() -> list[dict[str, str]]:
             "command": "make desktop",
         },
         {
-            "purpose": "Run the P0a live telemetry gate to populate browser/gateway matrix evidence.",
-            "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
+            "purpose": "Query Station telemetry into an explicit Dev/CI mirror.",
+            "command": (
+                "python3 tooling/scripts/desktop-telemetry-mirror.py "
+                "--output-prefix tooling/acceptance/reports/desktop-performance-station-mirror"
+            ),
         },
         {
             "purpose": "Collect runtime cell observations after target runtimes are available.",
@@ -1049,7 +778,6 @@ def matrix_review_commands() -> list[dict[str, str]]:
 def matrix_issue_breakdown(
     cells: list[dict[str, Any]],
     red_lines: dict[str, Any],
-    preflight: dict[str, Any],
     cohort: dict[str, Any],
 ) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
@@ -1073,21 +801,6 @@ def matrix_issue_breakdown(
         fill("sourceGate", source.get("sourceGate") or MATRIX_GATE)
         return normalized
 
-    if preflight.get("status") != "pass":
-        source_issues = preflight.get("issue_breakdown", preflight.get("issueBreakdown"))
-        if isinstance(source_issues, list) and source_issues:
-            for issue in source_issues:
-                if isinstance(issue, dict):
-                    issues.append(normalize_issue(issue, preflight))
-        else:
-            issues.append(
-                normalize_issue({
-                    "category": "desktop-performance-preflight",
-                    "failedStep": str(preflight.get("failedStep") or "desktop-performance-preflight"),
-                    "summary": str(preflight.get("reason") or "Desktop performance preflight evidence is incomplete"),
-                    "proofImpact": "P0c-1/P0c-2 remains PARTIAL/UNPROVEN until Desktop runtime preflight evidence is proven.",
-                }, preflight)
-            )
     if cohort.get("status") != "pass":
         source_issues = cohort.get("issue_breakdown", cohort.get("issueBreakdown"))
         if isinstance(source_issues, list) and source_issues:
@@ -1180,18 +893,12 @@ def build_cell(
 def build_matrix(args: argparse.Namespace) -> dict[str, Any]:
     cells: list[dict[str, Any]] = []
     cell_evidence_dir = Path(args.cell_evidence_dir)
-    preflight_report = getattr(args, "preflight_report", None)
-    preflight = preflight_source_state(Path(preflight_report) if preflight_report else None)
     cohort_report = getattr(args, "cohort_report", None)
     cohort = cohort_source_state(Path(cohort_report) if cohort_report else None)
     cohort_allowed = bool(cohort.get("sampleEmissionAllowed"))
     for spec in DEFAULT_CELLS:
-        if spec.cell_id == "browser-gateway":
-            status, evidence = status_from_live_gate(Path(args.live_gate_report))
-            reason = "uses desktop telemetry live gate report"
-        else:
-            status, evidence = status_from_cell_evidence(spec, cell_evidence_dir)
-            reason = "uses runtime-specific cell evidence report"
+        status, evidence = status_from_cell_evidence(spec, cell_evidence_dir)
+        reason = "uses runtime-specific cell evidence report"
         cells.append(
             build_cell(
                 spec,
@@ -1228,14 +935,11 @@ def build_matrix(args: argparse.Namespace) -> dict[str, Any]:
             "gate": "Every matrix cell reports explicit state before red-line evaluation",
         },
         "failClosed": {
-            "sampleEmissionRequiresPreflightPass": True,
-            "preflightSampleEmissionAllowed": bool(preflight.get("sampleEmissionAllowed")),
             "sampleEmissionRequiresCohortPass": True,
             "cohortSampleEmissionAllowed": cohort_allowed,
             "allowedStatuses": sorted(ALLOWED_STATUSES),
             "blockedCellCount": len(sample_blocked),
         },
-        "preflightState": preflight,
         "cohortState": cohort,
         "redLinePolicy": red_lines,
         "cells": cells,
@@ -1243,15 +947,12 @@ def build_matrix(args: argparse.Namespace) -> dict[str, Any]:
             "cellCount": len(cells),
             "sampled": len(sampled),
             "blocked": len([cell for cell in cells if cell["status"] == "blocked"]),
-            "baselinePreflightFailure": len(
-                [cell for cell in cells if cell["status"] == "baseline preflight failure"]
-            ),
             "diagnosticIncomplete": len([cell for cell in cells if cell["status"] == "diagnostic incomplete"]),
             "sampleEmissionAllowed": status == "pass",
         },
     }
     if status != "pass":
-        issue_breakdown = matrix_issue_breakdown(cells, red_lines, preflight, cohort)
+        issue_breakdown = matrix_issue_breakdown(cells, red_lines, cohort)
         review_commands = matrix_review_commands()
         report["issue_breakdown"] = issue_breakdown
         report["issueBreakdown"] = issue_breakdown
@@ -1273,21 +974,6 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- BOM: `{', '.join(report['plan']['bom'])}`",
         f"- Spec: `{', '.join(report['plan']['spec'])}`",
         f"- Gate: `{report['plan']['gate']}`",
-        "",
-        "## Runtime Preflight",
-        "",
-        f"- Status: `{report['preflightState']['status']}`",
-        f"- Completion: `{report['preflightState']['completionStatus']}`",
-        f"- Proof: `{report['preflightState']['proofStatus']}`",
-        f"- Source status: `{report['preflightState'].get('sourceStatus')}`",
-        f"- Source artifact: `{report['preflightState'].get('sourceArtifact')}`",
-        f"- Source kind: `{report['preflightState'].get('sourceArtifactKind')}`",
-        f"- Source phase: `{report['preflightState'].get('sourcePhase')}`",
-        f"- Source BOM: `{format_markdown_list(report['preflightState'].get('sourceBom'))}`",
-        f"- Source Spec: `{format_markdown_list(report['preflightState'].get('sourceSpec'))}`",
-        f"- Source Gate: `{report['preflightState'].get('sourceGate')}`",
-        f"- Sample emission allowed: `{report['preflightState'].get('sampleEmissionAllowed')}`",
-        f"- Reason: `{report['preflightState'].get('reason')}`",
         "",
         "## Cohort Preflight",
         "",
@@ -1406,8 +1092,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             "## Boundary",
             "",
             "- This gate is a Dev/CI matrix mirror, not the Station product sink.",
-            "- Missing preflight evidence blocks sample emission.",
-            "- Browser/gateway evidence is not a substitute for Tauri WebView evidence.",
+            "- Missing Native runtime-cell, cohort, or Station mirror evidence blocks sample emission.",
+            "- Only Native Tauri WebView evidence is accepted.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -1426,12 +1112,6 @@ def write_outputs(report: dict[str, Any], output_prefix: str) -> tuple[Path, Pat
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--live-gate-report",
-    )
-    parser.add_argument(
-        "--preflight-report",
-    )
-    parser.add_argument(
         "--cohort-report",
     )
     parser.add_argument(
@@ -1449,22 +1129,6 @@ def main() -> int:
 
     input_refs: dict[str, Any] = {}
     resolved_refs: dict[Path, dict[str, Any]] = {}
-    if not args.live_gate_report:
-        resolved_path, artifact_ref = latest_artifact(
-            "desktop-telemetry-live-gate",
-            "report",
-        )
-        args.live_gate_report = str(resolved_path)
-        input_refs["liveGate"] = artifact_ref
-        resolved_refs[resolved_path] = artifact_ref
-    if not args.preflight_report:
-        resolved_path, artifact_ref = latest_artifact(
-            "desktop-performance-preflight-gate",
-            "report",
-        )
-        args.preflight_report = str(resolved_path)
-        input_refs["preflight"] = artifact_ref
-        resolved_refs[resolved_path] = artifact_ref
     if not args.cohort_report:
         resolved_path, artifact_ref = latest_artifact(
             "desktop-performance-cohort-gate",
@@ -1475,8 +1139,8 @@ def main() -> int:
         resolved_refs[resolved_path] = artifact_ref
     if not args.events_report:
         resolved_path, artifact_ref = latest_artifact(
-            "desktop-telemetry-live-gate",
-            "mirror-report",
+            "desktop-telemetry-mirror-template-gate",
+            "report",
         )
         args.events_report = str(resolved_path)
         input_refs["events"] = artifact_ref
@@ -1485,8 +1149,6 @@ def main() -> int:
         cell_paths: list[Path] = []
         cell_refs: dict[str, dict[str, Any]] = {}
         for spec in DEFAULT_CELLS:
-            if spec.cell_id == "browser-gateway":
-                continue
             resolved_path, artifact_ref = latest_artifact(
                 "desktop-performance-cell-collect-gate",
                 f"cell-{spec.cell_id}",

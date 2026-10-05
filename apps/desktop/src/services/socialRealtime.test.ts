@@ -346,7 +346,7 @@ describe('social realtime group membership side effects', () => {
 
     eventBus.publish(EVENT.REALTIME_RESYNC, {
       newestEventId: '',
-      reason: 'browser-dev-gateway-resync',
+      reason: 'native-runtime-resync',
     });
 
     await vi.waitFor(() => {
@@ -355,11 +355,11 @@ describe('social realtime group membership side effects', () => {
 
     eventBus.publish(EVENT.REALTIME_RESYNC, {
       newestEventId: 'event-2',
-      reason: 'browser-dev-gateway-resync',
+      reason: 'native-runtime-resync',
     });
     eventBus.publish(EVENT.REALTIME_RESYNC, {
       newestEventId: 'event-3',
-      reason: 'browser-dev-gateway-resync',
+      reason: 'native-runtime-resync',
     });
 
     await new Promise((resolve) => setTimeout(resolve, 20));

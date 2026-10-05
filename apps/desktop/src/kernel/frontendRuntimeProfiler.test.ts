@@ -326,13 +326,13 @@ describe('frontend runtime profiler interaction correlation', () => {
       pageId: 'settings',
     });
     const returnedInteractionId = markInvokeStarted('settings_load', {
-      source: 'browser-gateway',
+      source: 'tauri-webview-dev',
     });
     markInvokeCompleted('settings_load', 18, {
-      source: 'browser-gateway',
+      source: 'tauri-webview-dev',
     });
     markInvokeFailed('settings_save', 22, {
-      source: 'browser-gateway',
+      source: 'tauri-webview-dev',
     });
 
     expect(returnedInteractionId).toBe(interactionId);

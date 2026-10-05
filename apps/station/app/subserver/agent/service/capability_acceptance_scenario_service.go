@@ -1348,12 +1348,12 @@ func capabilityAcceptancePlatformProfileAllowed(
 ) bool {
 	switch family {
 	case model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_BINDING_J02:
-		return (platform == "desktop_app" || platform == "browser") &&
+		return (platform == "desktop_app" || platform == "secondary") &&
 			profile ==
 				model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CONTROL_PLANE
 	case model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03:
 		if capabilityAcceptanceJ03ZeroExecution(cell, ordering) {
-			return (platform == "desktop_app" || platform == "browser") &&
+			return (platform == "desktop_app" || platform == "secondary") &&
 				profile ==
 					model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_TURN
 		}
@@ -1361,7 +1361,7 @@ func capabilityAcceptancePlatformProfileAllowed(
 		case "desktop_app":
 			return profile ==
 				model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_CLIENT_CAPABILITY_TURN
-		case "browser":
+		case "secondary":
 			return profile ==
 				model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CAPABILITY_TURN
 		case "mobile_contract":
@@ -1374,7 +1374,7 @@ func capabilityAcceptancePlatformProfileAllowed(
 		case "desktop_app":
 			return profile ==
 				model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_CLIENT_CAPABILITY_TURN
-		case "browser":
+		case "secondary":
 			return (cell == "AS-04-UNAVAILABLE" || cell == "TAX-04") &&
 				profile ==
 					model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_UNAVAILABLE_RUNTIME
@@ -1387,11 +1387,11 @@ func capabilityAcceptancePlatformProfileAllowed(
 		}
 	case model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_CONNECTOR_J05:
 		if capabilityAcceptanceJ05ZeroExecution(cell, ordering) {
-			return (platform == "desktop_app" || platform == "browser") &&
+			return (platform == "desktop_app" || platform == "secondary") &&
 				profile ==
 					model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_TURN
 		}
-		if platform == "desktop_app" || platform == "browser" {
+		if platform == "desktop_app" || platform == "secondary" {
 			return profile ==
 				model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_CLIENT_CAPABILITY_TURN
 		}
@@ -1405,7 +1405,7 @@ func capabilityAcceptancePlatformProfileAllowed(
 				profile ==
 					model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_CONTRACT_ONLY
 		}
-		if platform != "desktop_app" && platform != "browser" {
+		if platform != "desktop_app" && platform != "secondary" {
 			return false
 		}
 		if cell == "ERR-E01" || cell == "ERR-E02" || cell == "ERR-E05" {

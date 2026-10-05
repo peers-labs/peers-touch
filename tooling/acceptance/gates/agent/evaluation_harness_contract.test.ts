@@ -155,7 +155,7 @@ test('J06 ERR-E04 creates a retryable partial parent before idempotency conflict
   );
 });
 
-test('J06 browser gateway exposes the scenario clock-advance command', () => {
+test('J06 secondary gateway exposes the scenario clock-advance command', () => {
   assert.match(
     httpGateway,
     /"agent_capability_acceptance_scenario_clock_advance"\s*=>/,

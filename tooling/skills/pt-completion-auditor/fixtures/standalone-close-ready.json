@@ -1,0 +1,29 @@
+{
+  "selector": {
+    "workspaceId": "0123456789abcdef",
+    "workItemId": "DWF-STANDALONE-CLOSE",
+    "mountId": null
+  },
+  "mode": "standalone",
+  "claimClass": "close-ready",
+  "declaration": {
+    "state": "RELEASED"
+  },
+  "activeWork": null,
+  "session": null,
+  "closeReceipt": {
+    "receiptId": "close-0123456789abcdef",
+    "state": "CLOSED",
+    "recordDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "resources": {
+      "runtimeLeases": "RELEASED",
+      "session": "NOT_APPLICABLE",
+      "activeWork": "NOT_APPLICABLE",
+      "declaration": "RELEASED",
+      "planMount": "NOT_APPLICABLE",
+      "environmentRegistration": "RETAINED"
+    }
+  },
+  "mount": null,
+  "run": null
+}

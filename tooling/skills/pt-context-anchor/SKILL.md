@@ -2,7 +2,7 @@
 name: "pt-context-anchor"
 description: "Reads verified tracked-work sources and renders one copyable chat projection for status, resume, handoff, blockers, readiness, or close. It never repairs or mutates workflow state."
 stage: "cross-stage"
-requires: ["canonical BindingProjection", "valid Plan Package", "matching workspace active-work record", "verified worktree identity"]
+requires: ["canonical BindingProjection", "valid PlanMount and ExecutionRun", "matching workspace active-work record", "verified worktree identity"]
 produces: ["verified read-only Context Anchor"]
 ---
 
@@ -36,8 +36,8 @@ This Skill may read:
 
 - the current canonical `BindingProjection`;
 - the current workspace's `workflow/active-work.json`;
-- compact Plan Package `plan.md`;
-- the manifest's current Task Slice;
+- the frozen Plan Version through its immutable ExecutionPlanSnapshot;
+- the ExecutionRun's current Task Slice;
 - matching Development `session.json`;
 - referenced durable evidence;
 - verified Git/worktree identity;
@@ -46,7 +46,7 @@ This Skill may read:
 It must not:
 
 - update active-work state;
-- change Plan Package or Task lifecycle;
+- change PlanMount, ExecutionRun, or Task lifecycle;
 - append Session events;
 - recompute or persist a scheduler queue;
 - acquire resources or execute work;
@@ -63,11 +63,11 @@ the owner, then invokes this Skill again.
 | Projected field | Read owner |
 |---|---|
 | Worktree, branch, `workspaceId` | verified Git binding |
-| Initial HEAD | Plan Package immutable binding |
+| Initial HEAD | ExecutionPlanSnapshot execution binding |
 | Expected HEAD | workspace active-work projection verified against declaration and Git |
 | Main task, scope, architecture/product decisions | accepted sources |
 | Stage and tracked locator | workspace active-work record |
-| Task lifecycle/current Task/dependencies | Plan Package manifest |
+| Task lifecycle/current Task/dependencies | ExecutionRun plus immutable snapshot DAG |
 | Current transition and first failure | Development Session |
 | Completed delta and evidence | Task snapshot plus referenced evidence |
 | Remaining frontier, lanes, conflict controls, critical path | scheduler output backed by the current graph |
@@ -91,8 +91,8 @@ Tracked work reads exactly:
 Validation rules:
 
 - schema, revision and digest validate;
-- `planId/planPath` match the current workspace Plan generation;
-- `currentTaskId/currentTaskPath/taskStatus` mirror the manifest-selected Task;
+- `mountId/runId/snapshotDigest/planId/planPath` match current Plan owners;
+- `currentTaskId/currentTaskPath/taskStatus` mirror the run-selected Task;
 - `devState` mirrors `session.json` or is `null`;
 - branch, workspace and expected HEAD match declaration and verified Git state;
 - initial HEAD matches the Plan's immutable baseline.
@@ -102,15 +102,15 @@ not an input.
 
 ## Read Procedure
 
-1. Resolve the workspace's current machine Plan generation and read only that
+1. Resolve the workspace's current PlanMount, snapshot, and ExecutionRun; read only that
    workspace's active-work record with `make active-work-status`.
 2. Revalidate the current `BindingProjection`. Its role, binding/root/parent
    digests, assignment, release/child state, and execution root must match the
    invoking lineage. Never select a binding by enumerating a worktree.
-3. Verify the persisted worktree and Plan generation. Do not recapture a new
-   baseline or replace an unfinished generation.
+3. Verify the persisted worktree and mount. Do not recapture a snapshot,
+   replace a live mount, or change an unfinished run.
 4. Run `planctl validate`, `planctl current`, and `planctl status`.
-5. Read compact `plan.md`, only `current_task_path`, and matching
+5. Read the immutable snapshot, only `current_task_path`, and matching
    `session.json`.
 6. Validate each projected field against its owner.
 7. Use `unknown` for ETA when critical-path or throughput evidence is
@@ -192,7 +192,7 @@ Each error names the mismatched field and owning writer.
 
 ## Verification
 
-- The Plan Package and matching locator exist.
+- The PlanMount, snapshot, ExecutionRun, and matching locator exist.
 - Git identity matches persisted binding.
 - Binding role and lineage match the current canonical `BindingProjection`;
   expired or terminal child state cannot support a status or final claim.

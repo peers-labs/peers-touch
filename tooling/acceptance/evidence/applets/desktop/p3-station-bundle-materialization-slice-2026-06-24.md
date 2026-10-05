@@ -1,7 +1,7 @@
 # P3 Station Bundle Materialization Slice
 
 > Evidence class: `CONTROLLED_CLIENT_INTEGRATION`
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 > Design source: `tooling/acceptance/evidence/applets/desktop/p3-applet-box-projection-design-2026-06-24.md`
 
 ## Completed

@@ -31,7 +31,7 @@ Read in this order:
 
 1. The current Agent Task and its `closureId`, `journeyId`, `doneWhen`,
    `failureBehavior`, checks, and write set.
-2. [`modern-chat-agent/README.md`](../../../docs/architecture/agent/modern-chat-agent/README.md)
+2. [`modern-chat-agent/README.md`](../../../docs/architecture/domains/agent/modern-chat-agent/README.md)
    and the architecture documents it prioritizes.
 3. The current Development Session, latest formal Gate manifest, and current
    Completion Review receipt.
@@ -108,7 +108,7 @@ The output has exactly these impact classes:
 |---|---|---|
 | `STATION_RUNTIME` | Station Agent kernel | `station` |
 | `DESKTOP_HOST` | Desktop Rust capability/bridge | `desktop-native` |
-| `DESKTOP_UI` | Desktop Agent projection/UI | `desktop-web` |
+| `DESKTOP_UI` | Native Desktop embedded renderer | `desktop-native` |
 | `SHARED_CONTRACT` | Agent proto/catalog/shared clients | Named affected consumers |
 | `ACCEPTANCE_HARNESS` | Agent Gate/driver/fixture/profile | `acceptance-suite-runtime` |
 | `WORKFLOW_TOOLING` | Session/Plan/review/admission tooling | none |

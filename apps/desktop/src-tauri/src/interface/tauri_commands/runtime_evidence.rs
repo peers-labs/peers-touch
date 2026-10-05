@@ -46,30 +46,6 @@ pub fn agent_capability_sessions(
 }
 
 #[tauri::command]
-pub fn agent_browser_capability_session_open(
-    state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    if let Err(error) = authenticated_token(state.inner(), &window) {
-        return error;
-    }
-    application_runtime_evidence::open_browser_capability_session(supervisor.inner())
-}
-
-#[tauri::command]
-pub fn agent_browser_capability_session_close(
-    state: State<'_, Arc<AppState>>,
-    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    if let Err(error) = authenticated_token(state.inner(), &window) {
-        return error;
-    }
-    application_runtime_evidence::close_browser_capability_session(supervisor.inner())
-}
-
-#[tauri::command]
 pub fn agent_client_executor_supervisor_start(
     state: State<'_, Arc<AppState>>,
     supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,

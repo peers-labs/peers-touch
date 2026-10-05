@@ -6,10 +6,10 @@
 
 ## 1. Plan Source
 
-- `docs/architecture/federated-im/design.md`
-- `docs/architecture/federated-im/data-model.md`
-- `docs/architecture/federated-im/decisions.md`
-- `docs/architecture/federated-im/execution-plans/20260704-foundation-federated-im.md`
+- `docs/context/architecture/chat/federated-im/design.md`
+- `docs/context/architecture/chat/federated-im/data-model.md`
+- `docs/context/architecture/chat/federated-im/decisions.md`
+- `docs/context/architecture/chat/federated-im/execution-plans/20260704-foundation-federated-im.md`
 - `docs/context/implementation-reports/FEDERATED_IM_FOUNDATION_PHASE_F_EVIDENCE.zh.md`
 
 ## 2. Review Target

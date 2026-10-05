@@ -7,13 +7,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const REGISTRY_KIND = 'peers-touch-architecture-module-registry';
-export const REGISTRY_SCHEMA_VERSION = 1;
+export const REGISTRY_SCHEMA_VERSION = 3;
 export const PRE_EDIT_CONTEXT_KIND = 'peers-touch-pre-edit-context';
 export const PRE_EDIT_CONTEXT_SCHEMA_VERSION = 1;
 export const DEFAULT_REGISTRY_PATH =
-  'docs/architecture/architecture-module-governance/architecture-modules.json';
+  'docs/architecture/engineering/architecture-governance/architecture-modules.json';
 
-const REGISTRY_KEYS = new Set(['kind', 'schemaVersion', 'modules']);
+const REGISTRY_KEYS = new Set([
+  'kind',
+  'schemaVersion',
+  'taxonomyIndexes',
+  'documentCollections',
+  'modules',
+]);
 const MODULE_KEYS = new Set([
   'id',
   'root',
@@ -488,18 +494,25 @@ function validateExternalRegistry(repoRoot, external, context) {
   }
 }
 
-function validateModule(repoRoot, module, indexSource, position) {
+function validateModule(
+  repoRoot,
+  module,
+  indexSource,
+  taxonomyRoots,
+  position,
+) {
   const context = `modules[${position}]`;
   assertClosedObject(module, MODULE_KEYS, context);
   assertString(module.id, `${context}.id`, MODULE_ID_PATTERN);
   normalizeRepoPath(module.root, `${context}.root`);
   if (
     !module.root.startsWith('docs/architecture/')
-    || path.posix.basename(module.root) !== module.id
+    || !taxonomyRoots.some((taxonomyRoot) =>
+      taxonomyRoot !== module.root && pathContains(taxonomyRoot, module.root))
   ) {
     fail(
       'ARCHITECTURE_REGISTRY_INVALID',
-      `${context}.root must be docs/architecture/<module-id>`,
+      `${context}.root must be nested under a declared taxonomy index`,
     );
   }
   if (module.status !== 'active') {
@@ -644,6 +657,8 @@ export function validateArchitectureRegistry({
   if (
     value.kind !== REGISTRY_KIND
     || value.schemaVersion !== REGISTRY_SCHEMA_VERSION
+    || !Array.isArray(value.taxonomyIndexes)
+    || !Array.isArray(value.documentCollections)
     || !Array.isArray(value.modules)
     || value.modules.length === 0
   ) {
@@ -652,6 +667,63 @@ export function validateArchitectureRegistry({
       'registry identity or modules are invalid',
     );
   }
+  assertUniqueStrings(value.taxonomyIndexes, 'registry.taxonomyIndexes', {
+    min: 1,
+  });
+  const taxonomyRoots = value.taxonomyIndexes.map((relative, index) => {
+    const context = `registry.taxonomyIndexes[${index}]`;
+    const normalized = normalizeRepoPath(relative, context);
+    if (
+      !normalized.startsWith('docs/architecture/')
+      || path.posix.basename(normalized) !== 'README.md'
+    ) {
+      fail(
+        'ARCHITECTURE_REGISTRY_INVALID',
+        `${context} must be an architecture taxonomy README`,
+      );
+    }
+    const source = readUtf8(
+      canonicalRoot,
+      normalized,
+      'ARCHITECTURE_INDEX_MISSING',
+      context,
+    );
+    if (metadataValue(source, 'Status') !== 'active') {
+      fail(
+        'ARCHITECTURE_STATUS_MISMATCH',
+        `${context} must have active status`,
+      );
+    }
+    return path.posix.dirname(normalized);
+  });
+  assertUniqueStrings(
+    value.documentCollections,
+    'registry.documentCollections',
+  );
+  const documentCollections = value.documentCollections.map(
+    (relative, index) => {
+      const context = `registry.documentCollections[${index}]`;
+      const normalized = normalizeRepoPath(relative, context);
+      if (
+        !normalized.startsWith('docs/architecture/')
+        || !taxonomyRoots.some((taxonomyRoot) =>
+          taxonomyRoot !== normalized
+          && pathContains(taxonomyRoot, normalized))
+      ) {
+        fail(
+          'ARCHITECTURE_REGISTRY_INVALID',
+          `${context} must be nested under a declared taxonomy index`,
+        );
+      }
+      requireCurrentPath(canonicalRoot, normalized, context);
+      requireCurrentPath(
+        canonicalRoot,
+        `${normalized}/README.md`,
+        `${context} README`,
+      );
+      return normalized;
+    },
+  );
   const indexSource = readUtf8(
     canonicalRoot,
     'docs/README.md',
@@ -659,7 +731,13 @@ export function validateArchitectureRegistry({
     'docs index',
   );
   const modules = value.modules.map((module, index) =>
-    validateModule(canonicalRoot, module, indexSource, index));
+    validateModule(
+      canonicalRoot,
+      module,
+      indexSource,
+      taxonomyRoots,
+      index,
+    ));
   const moduleIds = new Set();
   const capabilityIds = new Set();
   for (const module of modules) {
@@ -686,6 +764,9 @@ export function validateArchitectureRegistry({
   return {
     ok: true,
     registry: value,
+    taxonomyIndexes: [...value.taxonomyIndexes].sort(),
+    taxonomyRoots: [...taxonomyRoots].sort(),
+    documentCollections: [...documentCollections].sort(),
     modules,
     moduleIds: [...moduleIds].sort(),
     capabilityIds: [...capabilityIds].sort(),
@@ -958,7 +1039,12 @@ export function validateChangedArchitecturePaths({
   const registeredRoots = new Set(
     registryResult.modules.map((module) => module.root),
   );
+  const taxonomyRoots = new Set(registryResult.taxonomyRoots);
+  const documentCollections = registryResult.documentCollections;
   for (const changedPath of normalized) {
+    if (!fs.existsSync(path.join(canonicalRoot, changedPath))) {
+      continue;
+    }
     const activeRoot = nearestActiveArchitectureRoot(
       canonicalRoot,
       changedPath,
@@ -972,9 +1058,30 @@ export function validateChangedArchitecturePaths({
       changedPath.split('/').length >= 4
       && changedPath.startsWith('docs/architecture/')
       && standardDocument;
+    const exactTaxonomyIndex =
+      activeRoot !== null
+      && taxonomyRoots.has(activeRoot)
+      && changedPath === `${activeRoot}/README.md`;
+    const knownDocumentCollection = documentCollections.some((collection) =>
+      pathContains(collection, changedPath));
+    const activeUnregisteredModule =
+      activeRoot !== null
+      && !registeredRoots.has(activeRoot)
+      && !taxonomyRoots.has(activeRoot);
+    const unregisteredNestedModule =
+      activeRoot !== null
+      && taxonomyRoots.has(activeRoot)
+      && !exactTaxonomyIndex
+      && unregisteredModulePath;
     if (
-      (activeRoot !== null && !registeredRoots.has(activeRoot))
-      || (activeRoot === null && unregisteredModulePath)
+      (
+        (
+          activeUnregisteredModule
+          || unregisteredNestedModule
+          || (activeRoot === null && unregisteredModulePath)
+        )
+        && !knownDocumentCollection
+      )
     ) {
       fail(
         'ARCHITECTURE_MODULE_UNREGISTERED',
@@ -1016,6 +1123,15 @@ export function validatePlanArchitecture({
   });
   const normalizedSources = sources.map((value, index) =>
     normalizeRepoPath(value, `architecture.sources[${index}]`));
+  const taxonomySources = normalizedSources.filter((source) =>
+    registryResult.taxonomyIndexes.includes(source));
+  if (taxonomySources.length > 0) {
+    fail(
+      'ARCHITECTURE_DECISION_INVALID',
+      'taxonomy indexes cannot be Plan architecture sources',
+      { taxonomySources },
+    );
+  }
   normalizedSources.forEach((source, index) =>
     requireCurrentPath(
       canonicalRoot,

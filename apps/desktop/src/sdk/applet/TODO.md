@@ -12,4 +12,4 @@ SDK 当前位于 `web/src/sdk/applet/`，作为主应用子模块。
 
 ## 相关文档
 
-- `docs/architecture/agent/` 第 0 节「小程序四层架构」
+- `docs/architecture/domains/agent/` 第 0 节「小程序四层架构」

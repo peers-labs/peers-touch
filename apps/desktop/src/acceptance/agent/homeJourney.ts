@@ -157,7 +157,7 @@ async function navigateHome(actorPtid: string): Promise<HTMLElement> {
   await bootstrapRuntime('home', actorPtid);
   await refreshHomeProjection('acceptance-home-navigation');
   window.location.hash = '#/home';
-  // eslint-disable-next-line no-restricted-syntax -- HashRouter observes the browser hashchange boundary.
+  // eslint-disable-next-line no-restricted-syntax -- HashRouter observes the renderer hashchange boundary.
   window.dispatchEvent(new HashChangeEvent('hashchange'));
   await waitFor(
     () => Boolean(

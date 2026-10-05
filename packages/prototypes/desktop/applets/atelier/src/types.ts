@@ -9,7 +9,7 @@
  * must decide.
  *
  * Light shapes for a design prototype; real schema lives in
- * docs/architecture/atelier/data-model.md.
+ * docs/architecture/domains/applets/atelier/data-model.md.
  */
 import type { ReactElement } from 'react';
 import type { ATELIER_PROJECTION_CONTRACT } from './projection.contract.generated';

@@ -702,8 +702,7 @@ func (s *ToolDispatchService) RegisterCapabilityLease(
 		return nil, err
 	}
 	input := request.GetAdvertisement()
-	if len(input.GetCapabilities()) == 0 &&
-		input.GetPlatform() != model.ClientPlatform_CLIENT_PLATFORM_BROWSER {
+	if len(input.GetCapabilities()) == 0 {
 		return nil, invalidToolRequest("at least one client capability is required")
 	}
 	if err := validateClientCapabilityAdvertisement(input.GetCapabilities()); err != nil {

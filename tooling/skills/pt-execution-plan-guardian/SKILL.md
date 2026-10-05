@@ -1,8 +1,8 @@
 ---
 name: "pt-execution-plan-guardian"
-description: "Evaluates whether a proposed action may execute under an accepted Peers-Touch plan, binding, declaration, architecture, and evidence policy. It is a read-only policy guard, not an executor or scheduler."
+description: "Evaluates whether a proposed action may execute under an accepted Peers-Touch snapshot, mount, declaration, architecture, and evidence policy. It is a read-only policy guard, not an executor or scheduler."
 stage: "EXECUTE"
-requires: ["accepted active Plan Package", "proposed action", "verified binding and declaration"]
+requires: ["mounted ExecutionPlanSnapshot", "proposed action", "verified mount and declaration"]
 produces: ["ACTION_ALLOWED", "typed denial or amendment escalation"]
 ---
 
@@ -22,7 +22,9 @@ It does not answer what should run next and it does not run anything.
 
 The Guardian:
 
-- reads accepted product, architecture, Plan Package, current Task, binding,
+- verifies the frozen Plan Version through its immutable
+  ExecutionPlanSnapshot;
+- reads accepted product, architecture, ExecutionPlanSnapshot, current Task, mount,
   declaration, and proposed scheduler action;
 - verifies scope, dependency, ownership, authorization, evidence, and
   anti-drift policy;
@@ -60,7 +62,7 @@ The caller supplies:
 
 - proposed action ID, purpose, and bounded command/operation;
 - accepted product and architecture sources;
-- validated Plan Package and its current Task;
+- validated ExecutionPlanSnapshot and the ExecutionRun's current Task;
 - Task read/write sets, dependencies, closure, and required evidence;
 - verified worktree binding;
 - active Development declaration and operation authorization;
@@ -83,7 +85,7 @@ Evaluate in this order:
      machine binding; synchronized foreign Plans and branch scans are ignored;
    - otherwise `WORKTREE_IDENTITY_MISMATCH`.
 2. **Current ownership**
-   - the action belongs to the manifest current Task;
+   - the action belongs to the ExecutionRun current Task;
    - dependencies are complete;
    - source and runtime owners are unambiguous.
 3. **Declared scope**

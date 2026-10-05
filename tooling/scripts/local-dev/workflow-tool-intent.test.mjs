@@ -60,13 +60,16 @@ test('recognizes only one structurally exact workflow owner command', () => {
   for (const target of [
     'env-unregister',
     'dev-start',
-    'plan-binding-advance',
+    'plan-mount',
+    'plan-unmount',
     'plan-activate',
     'plan-reopen',
     'completion-review-prepare',
     'completion-review-submit',
     'completion-review-status',
     'skills',
+    'skills-hard-cut',
+    'skills-gc',
   ]) {
     assert.equal(
       classifyToolIntent(shell(`make ${target} WORK_ITEM=WORK-01`)).kind,

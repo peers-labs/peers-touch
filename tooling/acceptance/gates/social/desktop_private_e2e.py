@@ -98,11 +98,11 @@ class SocialPrivateDesktopGate(AcceptanceGate):
         "SOC-SEC-RC06",
     )
     spec = (
-        "docs/architecture/social/product-definition.md",
-        "docs/architecture/social/experience-contract.md",
-        "docs/architecture/social/product-state-model.md",
-        "docs/architecture/social/acceptance-matrix.md",
-        "docs/architecture/cross-station-social/execution-plans/"
+        "docs/architecture/domains/social/core/product-definition.md",
+        "docs/architecture/domains/social/core/experience-contract.md",
+        "docs/architecture/domains/social/core/product-state-model.md",
+        "docs/architecture/domains/social/core/acceptance-matrix.md",
+        "docs/architecture/domains/social/cross-station/execution-plans/"
         "20261003-native-private-social/plan.md",
     )
 

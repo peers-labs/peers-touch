@@ -1,5 +1,5 @@
 -- Federation Governance Schema — Phase 1
--- Source: docs/architecture/federation/data-model.md + wire-protocol.md
+-- Source: docs/architecture/shared/federation/data-model.md + wire-protocol.md
 
 BEGIN;
 

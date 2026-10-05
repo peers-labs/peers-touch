@@ -1,7 +1,7 @@
 // Desktop AuditSink — routes Applet Kernel permission decisions to the unified logger.
 //
 // Authoritative contract: packages/applet-kernel/src/ports.ts (AuditSink).
-// Execution plan: docs/architecture/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.2.
+// Execution plan: docs/architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md §6.2.
 //
 // Security: never records sessionId, tokens, or PII (AGENTS.md logging security).
 // appletId / instanceId / method / granted are safe operational identifiers.

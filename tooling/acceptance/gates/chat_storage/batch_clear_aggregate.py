@@ -50,8 +50,8 @@ class ChatStorageBatchClearAggregateGate(AcceptanceGate):
     phase = "CSG-BATCH-03"
     bom = ("CSG-G07",)
     spec = (
-        "docs/architecture/chat-storage-governance/acceptance-matrix.md",
-        "docs/architecture/chat-storage-governance/decisions.md",
+        "docs/architecture/domains/chat/storage-governance/acceptance-matrix.md",
+        "docs/architecture/domains/chat/storage-governance/decisions.md",
     )
 
     def __init__(

@@ -216,10 +216,11 @@ def _runtime_attestation(
     }
     if (
         runtime_tuple.runtime_attestation_profile
-        == "direct_runtime_no_local_capability"
+        == "direct_runtime_secondary_native"
     ):
         del payload["toolCallBinding"]
-        payload["clientSession"]["capabilities"] = []
+        payload["clientSession"]["platform"] = "desktop"
+        payload["desktopMode"] = "secondary"
     elif runtime_tuple.runtime_attestation_profile == "station_turn":
         del payload["toolCallBinding"]
         del payload["clientSession"]
@@ -342,10 +343,10 @@ class RecordingAdapter:
     ) -> FoundationTupleObservation:
         return self._observe("desktop_native", runtime_tuple)
 
-    def observe_browser(
+    def observe_secondary(
         self, runtime_tuple: FoundationTuple
     ) -> FoundationTupleObservation:
-        return self._observe("browser", runtime_tuple)
+        return self._observe("secondary", runtime_tuple)
 
     def observe_mobile_contract(
         self, runtime_tuple: FoundationTuple
@@ -366,7 +367,7 @@ class RecordingAdapter:
 def _adapters(adapter: RecordingAdapter) -> FoundationAdapters:
     return FoundationAdapters(
         desktop_native=adapter,
-        browser=adapter,
+        secondary=adapter,
         mobile_contract=adapter,
         d11=adapter,
         non_advertisement=adapter,
@@ -390,10 +391,10 @@ class FoundationCandidateProducerTest(unittest.TestCase):
                     }
                     for item in tuples
                 ),
-                "browser": sum(
+                "secondary": sum(
                     item.row in {
-                        "foundation-browser-direct",
-                        "foundation-z-browser-external-runtime",
+                        "foundation-secondary-direct",
+                        "foundation-z-secondary-external-runtime",
                     }
                     for item in tuples
                 ),
@@ -413,7 +414,7 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             Counter(
                 {
                     "direct_runtime": 195,
-                    "direct_runtime_no_local_capability": 195,
+                    "direct_runtime_secondary_native": 195,
                     "station_turn": 4,
                     "contract_only": 15,
                     "orchestration_guard": 2,
@@ -456,7 +457,7 @@ class FoundationCandidateProducerTest(unittest.TestCase):
                     Counter(
                         {
                             "direct_runtime": 195,
-                            "direct_runtime_no_local_capability": 195,
+                            "direct_runtime_secondary_native": 195,
                             "station_turn": 4,
                             "contract_only": 15,
                             "orchestration_guard": 2,
@@ -666,32 +667,21 @@ class FoundationCandidateProducerTest(unittest.TestCase):
                 _adapters(RecordingAdapter(replace_profile))
             ).collect()
 
-    def test_browser_no_local_capability_profile_rejects_local_authority(
+    def test_secondary_native_profile_rejects_empty_capabilities(
         self,
     ) -> None:
-        def add_local_capability(
+        def remove_local_capabilities(
             runtime_tuple: FoundationTuple,
             observation: FoundationTupleObservation,
         ) -> FoundationTupleObservation:
             if (
                 runtime_tuple.runtime_attestation_profile
-                != "direct_runtime_no_local_capability"
+                != "direct_runtime_secondary_native"
             ):
                 return observation
             payload = dict(observation.runtime_attestation.payload)
             session = dict(payload["clientSession"])
-            session["capabilities"] = [
-                {
-                    "capabilityId": "fabricated",
-                    "schemaVersion": "1",
-                    "permission": "granted",
-                    "constraints": {
-                        "maxRequestBytes": 1,
-                        "maxResultBytes": 1,
-                        "allowedResourceKinds": ["text"],
-                    },
-                }
-            ]
+            session["capabilities"] = []
             payload["clientSession"] = session
             return FoundationTupleObservation(
                 tuple_key=observation.tuple_key,
@@ -709,10 +699,10 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             "client capabilities mismatch",
         ):
             FoundationCandidateProducer(
-                _adapters(RecordingAdapter(add_local_capability))
+                _adapters(RecordingAdapter(remove_local_capabilities))
             ).collect()
 
-    def test_browser_no_local_capability_profile_rejects_tool_call(
+    def test_secondary_native_profile_rejects_tool_call(
         self,
     ) -> None:
         def add_tool_call(
@@ -721,7 +711,7 @@ class FoundationCandidateProducerTest(unittest.TestCase):
         ) -> FoundationTupleObservation:
             if (
                 runtime_tuple.runtime_attestation_profile
-                != "direct_runtime_no_local_capability"
+                != "direct_runtime_secondary_native"
             ):
                 return observation
             payload = dict(observation.runtime_attestation.payload)

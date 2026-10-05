@@ -47,7 +47,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         )
         plan = self.project_root / "tooling" / "scripts" / "plan"
         plan.mkdir(parents=True)
-        for name in ("plan-package.mjs", "workspace-plan-binding.mjs"):
+        for name in ("plan-package.mjs", "plan-mount.mjs"):
             shutil.copy2(SCRIPT_DIR.parent / "plan" / name, plan / name)
         self.config_script = scripts / "config.sh"
         self.profile_script = scripts / "profile.sh"

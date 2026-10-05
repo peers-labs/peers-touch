@@ -1,5 +1,5 @@
 /**
- * usePresence — emits browser-side lifecycle signals to the Rust
+ * usePresence — emits renderer lifecycle signals to the Rust
  * presence supervisor.
  *
  * # What this hook does *not* do

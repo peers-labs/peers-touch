@@ -9,6 +9,6 @@ export {
   onWindowOnline,
   onWindowOffline,
   onWindowStationActiveChanged,
-} from './browser';
+} from './renderer';
 export { eventDebugBuffer } from './debug';
 export type { EventDebugRecord } from './debug';

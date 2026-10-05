@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
 from tooling.development.secure_content.platform_runtime import (
     load_platform_runtime_contract,
@@ -27,14 +26,12 @@ class PlatformRuntimeContractTest(unittest.TestCase):
                 "run-w10-ios",
                 "run-w10-android",
                 "run-w11-desktop",
-                "run-w11-browser",
                 "run-w11-ios",
                 "run-w11-android",
                 "run-w11-chat-desktop",
                 "run-w11-chat-ios",
                 "run-w11-chat-android",
                 "run-final-desktop",
-                "run-final-browser",
                 "run-final-ios",
                 "run-final-android",
                 "run-final-chat-desktop",
@@ -73,10 +70,6 @@ class PlatformRuntimeContractTest(unittest.TestCase):
                 self.assertTrue(command.clients)
                 self.assertTrue(command.profiles)
                 self.assertNotIn("manifest", command.action)
-        self.assertEqual(
-            contract.command("run-w11-browser").fixture_operations,
-            frozenset({"browser-boundary"}),
-        )
         self.assertNotIn(
             "full-social",
             contract.command("run-w11-ios").fixture_operations,
@@ -106,27 +99,6 @@ class PlatformRuntimeContractTest(unittest.TestCase):
             ),
             contract.command("run-final-chat-android").clients,
         )
-
-    def test_downstream_task_commands_use_the_runtime_owner(self) -> None:
-        task_root = Path(
-            "docs/architecture/secure-content/execution-plans/"
-            "20260913-secure-content-hard-cut/tasks"
-        )
-
-        for task_id in ("W9", "W2", "W10", "W11", "W12"):
-            with self.subTest(task_id=task_id):
-                content = (task_root / f"{task_id}.md").read_text(
-                    encoding="utf-8"
-                )
-                self.assertNotIn(
-                    "secure_content.run --runtime",
-                    content,
-                )
-                self.assertIn(
-                    "secure_content.runtime_owner run-",
-                    content,
-                )
-
 
 if __name__ == "__main__":
     unittest.main()

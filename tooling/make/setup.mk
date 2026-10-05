@@ -31,12 +31,14 @@ init-dev:
 skill-help:
 	@echo ""
 	@echo "Skills and host hooks are installed with 'make skills IDE=<host>'."
+	@echo "Legacy stores are removed with 'make skills-hard-cut IDE=<host>'."
+	@echo "Retired projections are removed with 'make skills-gc IDE=<host>'."
 	@echo "User overlays: make skill-overlay-install SOURCE=<directory>."
 	@echo "See AGENTS.md §13 for details."
 	@echo ""
 
 # ─── Skills And Workflow Hooks ───────────────────────────────────
-.PHONY: skills
+.PHONY: skills skills-hard-cut skills-gc
 
 skills:
 	@echo ""
@@ -53,7 +55,26 @@ skills:
 	fi; \
 	case "$$IDE_NAME" in trae|cursor|codex) ;; *) echo "Invalid IDE: $$IDE_NAME"; exit 1 ;; esac; \
 	/bin/bash tooling/scripts/install-agent-integration.sh \
+		--action install \
 		--host "$$IDE_NAME" \
+		--root "$(CURDIR)" \
+		$(if $(WORKSPACE),--workspace "$(WORKSPACE)",)
+
+skills-hard-cut:
+	@if [ -z "$(IDE)" ]; then echo "IDE is required: make skills-hard-cut IDE=trae|cursor|codex"; exit 1; fi
+	@case "$(IDE)" in trae|cursor|codex) ;; *) echo "Invalid IDE: $(IDE)"; exit 1 ;; esac
+	@/bin/bash tooling/scripts/install-agent-integration.sh \
+		--action hard-cut \
+		--host "$(IDE)" \
+		--root "$(CURDIR)" \
+		$(if $(WORKSPACE),--workspace "$(WORKSPACE)",)
+
+skills-gc:
+	@if [ -z "$(IDE)" ]; then echo "IDE is required: make skills-gc IDE=trae|cursor|codex"; exit 1; fi
+	@case "$(IDE)" in trae|cursor|codex) ;; *) echo "Invalid IDE: $(IDE)"; exit 1 ;; esac
+	@/bin/bash tooling/scripts/install-agent-integration.sh \
+		--action gc \
+		--host "$(IDE)" \
 		--root "$(CURDIR)" \
 		$(if $(WORKSPACE),--workspace "$(WORKSPACE)",)
 

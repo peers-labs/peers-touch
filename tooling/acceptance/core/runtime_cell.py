@@ -23,7 +23,7 @@ from .redaction import redact_value
 
 
 # Ordered lifecycle a remote cell walks before and after a product Gate runs.
-# See docs/architecture/acceptance-framework/data-model.md §17.
+# See docs/architecture/engineering/acceptance/data-model.md §17.
 class RuntimeCellState(str, Enum):
     DISCOVERED = "DISCOVERED"
     HOST_VERIFIED = "HOST_VERIFIED"

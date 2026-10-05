@@ -40,7 +40,7 @@ through Actor Identity capabilities on demand.
 
 ## Canonical Source
 
-`docs/architecture/identity/unified-actor-system.md` defines the three-layer
+`docs/architecture/domains/identity/unified-actor-system.md` defines the three-layer
 identity model:
 
 | Layer | Type | Scope | May cross process boundary? |

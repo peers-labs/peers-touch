@@ -131,7 +131,7 @@ while IFS= read -r file; do
       add_profile "review-system" "$file changes review framework infrastructure"
       add_profile "skill" "$file affects review skill verification"
       ;;
-    tooling/acceptance/*|tooling/scripts/acceptance-*.py|tooling/make/acceptance.mk|docs/architecture/acceptance-framework/*)
+    tooling/acceptance/*|tooling/scripts/acceptance-*.py|tooling/make/acceptance.mk|docs/architecture/engineering/acceptance/*)
       add_profile "acceptance" "$file changes product acceptance framework"
       ;;
     tooling/skills/*)

@@ -252,7 +252,7 @@ def valid_as_f07_capture() -> dict[str, object]:
 
 
 def valid_as_f10_capture(platform: str = "desktop_app") -> dict[str, object]:
-    browser = platform == "browser"
+    secondary = platform == "secondary"
     return {
         "coreOutcome": {
             "stationStatus": "completed",
@@ -273,11 +273,11 @@ def valid_as_f10_capture(platform: str = "desktop_app") -> dict[str, object]:
             "sessionId": "session-1",
             "readinessSessionId": "session-1",
             "deviceId": "device-1",
-            "capabilityCount": 0 if browser else 1,
+            "capabilityCount": 0 if secondary else 1,
         },
         "selectedDevice": {
             "sessionDeviceId": "device-1",
-            "executionDeviceId": None if browser else "device-1",
+            "executionDeviceId": None if secondary else "device-1",
         },
         "rejections": {
             "unsupported": {
@@ -821,7 +821,7 @@ def valid_as_f04_capture(
     platform: str = "desktop_app",
 ) -> dict[str, object]:
     execution_owner = (
-        "station" if platform == "browser" else "client_capability"
+        "station" if platform == "secondary" else "client_capability"
     )
 
     def lineage(suffix: str, *, terminal: bool) -> dict[str, object]:
@@ -1715,7 +1715,7 @@ def valid_invalid_resource_reference_capture() -> dict[str, object]:
 
 
 def valid_permission_denied_capture(
-    platform: str = "browser",
+    platform: str = "secondary",
 ) -> dict[str, object]:
     conversation_id = "conversation-permission-denied"
     turn_id = "turn-permission-denied"
@@ -1836,9 +1836,9 @@ def valid_permission_denied_capture(
                 "permissionKind": "CAPABILITY_PERMISSION_KIND_FILESYSTEM",
             },
         },
-        "browser": {
+        "secondary": {
             "receiverPlatform": platform,
-            "localCapabilityCount": 0 if platform == "browser" else 6,
+            "localCapabilityCount": 6,
         },
         "recovery": {
             "turnCountBefore": 1,
@@ -3142,8 +3142,8 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_as_f03(capture)
 
-    def test_as_f04_accepts_governed_desktop_and_browser_facts(self) -> None:
-        for platform in ("desktop_app", "browser"):
+    def test_as_f04_accepts_governed_desktop_and_secondary_facts(self) -> None:
+        for platform in ("desktop_app", "secondary"):
             with self.subTest(platform=platform):
                 assertions = evaluate_as_f04(
                     valid_as_f04_capture(platform),
@@ -3165,8 +3165,8 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_as_f04(capture, platform="desktop_app")
 
-    def test_as_f04_rejects_browser_client_execution(self) -> None:
-        capture = valid_as_f04_capture("browser")
+    def test_as_f04_rejects_secondary_client_execution(self) -> None:
+        capture = valid_as_f04_capture("secondary")
         cases = capture["cases"]
         assert isinstance(cases, dict)
         auto = cases["auto"]
@@ -3177,7 +3177,7 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             GroupOneScenarioError,
             "authorityLineagePersisted",
         ):
-            evaluate_as_f04(capture, platform="browser")
+            evaluate_as_f04(capture, platform="secondary")
 
     def test_as_f04_rejects_untyped_loop_budget_terminal(self) -> None:
         capture = valid_as_f04_capture()
@@ -3505,8 +3505,8 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_as_f07(capture)
 
-    def test_as_f10_accepts_desktop_and_browser_production_facts(self) -> None:
-        for platform in ("desktop_app", "browser"):
+    def test_as_f10_accepts_desktop_and_secondary_production_facts(self) -> None:
+        for platform in ("desktop_app", "secondary"):
             with self.subTest(platform=platform):
                 assertions = evaluate_as_f10(
                     valid_as_f10_capture(platform),
@@ -3717,34 +3717,34 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             )
 
     def test_as_f10_rejects_any_execution_delta(self) -> None:
-        capture = valid_as_f10_capture("browser")
+        capture = valid_as_f10_capture("secondary")
         capture["execution"]["sideEffectDelta"] = 1
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "zeroExecutionOnReject",
         ):
-            evaluate_as_f10(capture, platform="browser")
+            evaluate_as_f10(capture, platform="secondary")
 
     def test_as_f10_rejects_unisolated_core_turn(self) -> None:
-        capture = valid_as_f10_capture("browser")
+        capture = valid_as_f10_capture("secondary")
         capture["toolIsolation"]["readyCapabilityCount"] = 1
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "coreOutcomesMatch",
         ):
-            evaluate_as_f10(capture, platform="browser")
+            evaluate_as_f10(capture, platform="secondary")
 
-    def test_as_f10_rejects_browser_local_capabilities(self) -> None:
-        capture = valid_as_f10_capture("browser")
+    def test_as_f10_rejects_secondary_local_capabilities(self) -> None:
+        capture = valid_as_f10_capture("secondary")
         capture["capabilitySession"]["capabilityCount"] = 1
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "selectedDeviceOwnsExecution",
         ):
-            evaluate_as_f10(capture, platform="browser")
+            evaluate_as_f10(capture, platform="secondary")
 
     def test_as_f10_rejects_unexpected_rejection_code(self) -> None:
         capture = valid_as_f10_capture()
@@ -4505,7 +4505,7 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         self,
     ) -> None:
         capture = valid_invalid_resource_reference_capture()
-        capture["executor"]["evidenceSource"] = "browser"
+        capture["executor"]["evidenceSource"] = "secondary"
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,
@@ -4552,7 +4552,7 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             evaluate_base_invalid_resource_reference(capture)
 
     def test_permission_denied_accepts_exact_product_facts(self) -> None:
-        for platform in ("desktop_app", "browser"):
+        for platform in ("desktop_app", "secondary"):
             with self.subTest(platform=platform):
                 assertions = evaluate_base_permission_denied(
                     valid_permission_denied_capture(platform)
@@ -4618,13 +4618,13 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
                 ):
                     evaluate_base_permission_denied(capture)
 
-    def test_permission_denied_requires_browser_capability_isolation(self) -> None:
-        capture = valid_permission_denied_capture("browser")
-        capture["browser"]["localCapabilityCount"] = 1
+    def test_permission_denied_requires_secondary_capability_isolation(self) -> None:
+        capture = valid_permission_denied_capture("secondary")
+        capture["secondary"]["localCapabilityCount"] = 0
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,
-            "browserCapabilityIsolation",
+            "secondaryCapabilityIsolation",
         ):
             evaluate_base_permission_denied(capture)
 

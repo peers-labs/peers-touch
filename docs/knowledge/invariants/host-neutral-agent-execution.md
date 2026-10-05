@@ -5,7 +5,7 @@ status: active
 owns:
   - AGENTS.md
   - docs/global/workflow.md
-  - docs/architecture/development-workflow/
+  - docs/architecture/engineering/development-workflow/
   - tooling/skills/pt-goal-orchestrator/
   - tooling/skills/pt-dev-runtime-handoff/
   - tooling/skills/pt-trae-host-adapter/
@@ -13,7 +13,7 @@ owns:
   - tooling/skills/pt-codex-host-adapter/
   - tooling/skills/pt-defect-closure/
 referenced-by:
-  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/engineering/development-workflow/decisions.md
 related:
   - docs/knowledge/invariants/continuous-plan-run.md
   - docs/knowledge/invariants/dev-resource-declaration-before-write.md
@@ -39,6 +39,10 @@ A missing host capability degrades only that transport. It does not block a
 safe serial schedule or a project-native Journey. A deterministic
 `FUNCTIONAL_CHECK/PASS` must be committed to `FUNCTIONAL_PASS` before Task
 closure; a host debugger confirmation gate cannot replace that state owner.
+Completion Review preparation and submission are repository-native. They bind
+successful Development Session and current-source material to a create-once
+reviewer capability and never require an IDE Hook, Action Receipt, or host
+session identity.
 Runtime Handoff reports a missing capability and native-attempt state;
 `pt-goal-orchestrator` alone projects the Host Capability Request, and only Dev
 Workflow invokes an adapter after Guardian admission. Adapters never execute
@@ -79,7 +83,7 @@ of the project architecture.
 ## How to verify
 
 - `tooling/scripts/review/skill-check.sh` passes.
-- `rg -n "pt-trae-goal-orchestrator|use \`TRAE-debugger\` workflow" AGENTS.md docs/global docs/architecture/development-workflow tooling/skills` returns no live contract references.
+- `rg -n "pt-trae-goal-orchestrator|use \`TRAE-debugger\` workflow" AGENTS.md docs/global docs/architecture/engineering/development-workflow tooling/skills` returns no live contract references.
 - `pt-goal-orchestrator` requires no named host runtime.
 - `pt-dev-runtime-handoff` contains `HOST_CAPABILITY_UNAVAILABLE`,
   `SESSION_PROJECTION_STALE`, and repository-native driver priority.
@@ -103,3 +107,4 @@ of the project architecture.
 - DWF-D22 separates workflow source distribution from runtime-state ownership.
 - DWF-D33 roots IDE enforcement in one OWNER binding, assigns child lineage,
   and treats each hook target as a separate subject root.
+- DWF-D37 keeps Completion Review identity independent from host transport.

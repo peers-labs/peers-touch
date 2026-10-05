@@ -1,7 +1,7 @@
 # P2 Station Store CLI Gates
 
 > Evidence class: `CONTROLLED_LOCAL_UPSTREAM`
-> Plan source: `docs/architecture/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
+> Plan source: `docs/architecture/platform/applet-runtime/execution-plans/2026-06-23-applet-capability-completion-plan.md`
 > Scope: P2.5 CLI gates plus the minimum typed publish and bundle-serving path required by those gates.
 
 ## Completed

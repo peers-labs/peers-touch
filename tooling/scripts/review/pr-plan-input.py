@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve the explicit Plan Package list declared in a pull request body."""
+"""Resolve explicit Plan Packages or standalone intent from a pull request."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 
 SECTION = "## Execution Plans / 执行计划"
 PLAN_ITEM = re.compile(r"^-\s+`([^`]+)`\s*$")
+STANDALONE_ITEM = "- None"
 
 
 class PlanInputError(ValueError):
@@ -52,6 +53,7 @@ def extract_plan_paths(body: str, repo_root: Path) -> list[str]:
         )
 
     paths: list[str] = []
+    standalone = False
     lines = body.splitlines()
     for line in lines[sections[0] + 1 :]:
         stripped = line.strip()
@@ -59,15 +61,29 @@ def extract_plan_paths(body: str, repo_root: Path) -> list[str]:
             break
         if not stripped or stripped.startswith("<!--"):
             continue
+        if stripped == STANDALONE_ITEM:
+            if standalone or paths:
+                raise PlanInputError(
+                    "standalone marker cannot be duplicated or mixed with Plans",
+                )
+            standalone = True
+            continue
         match = PLAN_ITEM.fullmatch(stripped)
         if not match:
             raise PlanInputError(
-                "Execution Plans section accepts only '- `path/to/plan.md`' entries",
+                "Execution Plans section accepts '- `path/to/plan.md`' "
+                "entries or one '- None' standalone marker",
+            )
+        if standalone:
+            raise PlanInputError(
+                "standalone marker cannot be mixed with Plans",
             )
         paths.append(_validate_plan_path(match.group(1), repo_root))
 
-    if not paths:
-        raise PlanInputError("Execution Plans section must declare at least one Plan")
+    if not paths and not standalone:
+        raise PlanInputError(
+            "Execution Plans section must declare Plans or '- None'",
+        )
     if len(paths) != len(set(paths)):
         raise PlanInputError("Execution Plans section contains duplicate Plan paths")
     return paths

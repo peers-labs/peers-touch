@@ -47,7 +47,7 @@ class Gate(AcceptanceGate):
     bom = ("CSS-01", "CSS-02B", "CSS-06", "CSS-07")
     spec = (
         "docs/client/desktop/runtime-projections.md",
-        "docs/architecture/cross-station-social/design.md",
+        "docs/architecture/domains/social/cross-station/design.md",
     )
 
     def run(self) -> dict[str, Any]:

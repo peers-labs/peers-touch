@@ -44,8 +44,8 @@ class Gate(AcceptanceGate):
     phase = "CSS-09 Browser Social Prohibition"
     bom = ("CSS-01",)
     spec = (
-        "docs/architecture/social/product-definition.md",
-        "docs/architecture/cross-station-social/design.md",
+        "docs/architecture/domains/social/core/product-definition.md",
+        "docs/architecture/domains/social/cross-station/design.md",
     )
 
     def run(self) -> dict[str, Any]:
