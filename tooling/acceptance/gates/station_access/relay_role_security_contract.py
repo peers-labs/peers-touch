@@ -264,6 +264,70 @@ def _http_status(url: str) -> int:
         raise GateError(f"HTTP probe failed for {url}: {error}") from error
 
 
+def _probe_tls_with_openssl(host: str, port: int) -> dict[str, str]:
+    target = f"{host}:{port}"
+    base_command = [
+        "openssl",
+        "s_client",
+        "-connect",
+        target,
+        "-servername",
+        host,
+    ]
+    try:
+        modern = subprocess.run(
+            [*base_command, "-tls1_3", "-showcerts"],
+            input="",
+            capture_output=True,
+            text=True,
+            timeout=12,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise GateError(
+            f"OpenSSL TLS 1.3 probe failed for {target}: {error}"
+        ) from error
+    modern_output = f"{modern.stdout}\n{modern.stderr}"
+    begin = "-----BEGIN CERTIFICATE-----"
+    end = "-----END CERTIFICATE-----"
+    begin_index = modern_output.find(begin)
+    end_index = modern_output.find(end, begin_index)
+    if (
+        modern.returncode != 0
+        or "TLSv1.3" not in modern_output
+        or begin_index < 0
+        or end_index < 0
+    ):
+        raise GateError(f"Relay TLS 1.3 handshake failed at tls://{target}")
+    pem = modern_output[begin_index : end_index + len(end)]
+    try:
+        certificate = ssl.PEM_cert_to_DER_cert(pem)
+    except ValueError as error:
+        raise GateError("Relay TLS certificate is invalid") from error
+
+    try:
+        legacy = subprocess.run(
+            [*base_command, "-tls1_2", "-brief"],
+            input="",
+            capture_output=True,
+            text=True,
+            timeout=12,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise GateError(
+            f"OpenSSL TLS 1.2 rejection probe failed for {target}: {error}"
+        ) from error
+    if legacy.returncode == 0:
+        raise GateError("Relay stream accepted forbidden TLS 1.2")
+    return {
+        "endpoint": f"tls://{target}",
+        "protocol": "TLSv1.3",
+        "certificateSha256": hashlib.sha256(certificate).hexdigest(),
+        "tls12": "rejected",
+    }
+
+
 def _probe_tls(stream_endpoint: str) -> dict[str, str]:
     parsed = urlparse(stream_endpoint)
     if (
@@ -272,6 +336,9 @@ def _probe_tls(stream_endpoint: str) -> dict[str, str]:
         or parsed.port is None
     ):
         raise GateError("Relay stream endpoint must be a tls:// host and port")
+
+    if not ssl.HAS_TLSv1_3:
+        return _probe_tls_with_openssl(parsed.hostname, parsed.port)
 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
