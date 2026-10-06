@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from tooling.acceptance.core import EvidenceManifestInvalid
-from tooling.acceptance.gates.station_access import lifecycle_aggregate
+from tooling.acceptance.gates.station_access import session_class_e2e
 
 
 EXPECTED_SOURCE = {
@@ -26,7 +26,7 @@ def passing_manifest(
         "state": "DURABLE",
         "workspaceId": "0123456789abcdef",
         "gateId": gate_id,
-        "runId": "20260926T120000000000Z-" + ("b" * 32),
+        "runId": "20261006T120000000000Z-" + ("b" * 32),
         "source": source or EXPECTED_SOURCE,
         "redaction": {"status": "passed"},
         "result": {
@@ -52,44 +52,40 @@ class FakeStore:
         return self.manifests[gate_id]
 
 
-class StationAccessLifecycleAggregateTest(unittest.TestCase):
+class StationAccessSessionClassGateTest(unittest.TestCase):
     def setUp(self) -> None:
         self.manifests = {
             spec.gate_id: passing_manifest(spec.gate_id)
-            for spec in lifecycle_aggregate.PRECEDING_GATES
+            for spec in session_class_e2e.PRECEDING_GATES
         }
         self.store = FakeStore(self.manifests)
 
-    def evaluate(self) -> lifecycle_aggregate.AggregateResult:
-        return lifecycle_aggregate.AggregateResult(
+    def evaluate(self) -> session_class_e2e.AggregateResult:
+        return session_class_e2e.AggregateResult(
             source=EXPECTED_SOURCE,
             gates=[
-                lifecycle_aggregate.check_gate(
+                session_class_e2e.check_gate(
                     self.store,
                     spec,
                     expected_source=EXPECTED_SOURCE,
                 )
-                for spec in lifecycle_aggregate.PRECEDING_GATES
+                for spec in session_class_e2e.PRECEDING_GATES
             ],
         )
 
-    def test_requires_complete_station_access_gate_set(self) -> None:
+    def test_requires_all_three_native_session_class_branches(self) -> None:
         self.assertEqual(
-            [spec.gate_id for spec in lifecycle_aggregate.PRECEDING_GATES],
             [
-                "development-workflow-control-plane",
-                "proto-build",
-                "station-api-ownership",
-                "station-access-capability-contract",
-                "station-access-auth-e2e",
-                "station-access-scope-isolation-e2e",
-                "station-federation-unit",
-                "station-access-federation-boundary-e2e",
-                "mobile-hard-cut-static",
-                "mobile-simulator-platform-e2e",
-                "desktop-release-build",
-                "mobile-native-build",
-                "station-access-session-class-e2e",
+                (spec.acceptance_id, spec.gate_id)
+                for spec in session_class_e2e.PRECEDING_GATES
+            ],
+            [
+                ("SAL-G05", "chat-native-multi-device-e2e"),
+                (
+                    "SAL-G05",
+                    "chat-lifecycle-mixed-client-multi-device-e2e",
+                ),
+                ("SAL-G05", "mobile-simulator-station-lifecycle-e2e"),
             ],
         )
 
@@ -97,34 +93,34 @@ class StationAccessLifecycleAggregateTest(unittest.TestCase):
         result = self.evaluate()
 
         self.assertTrue(result.passed)
-        report = lifecycle_aggregate.build_report(result)
+        report = session_class_e2e.build_report(result)
         self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["completionStatus"], "DONE")
         self.assertEqual(report["proofStatus"], "PROVEN")
-        self.assertEqual(
-            report["passedCount"],
-            len(lifecycle_aggregate.PRECEDING_GATES),
-        )
+        self.assertEqual(report["passedCount"], 3)
 
     def test_missing_or_stale_evidence_is_unproven(self) -> None:
-        missing = lifecycle_aggregate.PRECEDING_GATES[0]
-        del self.manifests[missing.gate_id]
+        target = session_class_e2e.PRECEDING_GATES[0]
+        del self.manifests[target.gate_id]
+
         result = self.evaluate()
+
         self.assertFalse(result.passed)
         self.assertTrue(result.unproven)
         self.assertEqual(result.gates[0].status, "MISSING")
 
-        self.manifests[missing.gate_id] = passing_manifest(
-            missing.gate_id,
+        self.manifests[target.gate_id] = passing_manifest(
+            target.gate_id,
             source={**EXPECTED_SOURCE, "commit": "c" * 40},
         )
         result = self.evaluate()
         self.assertEqual(result.gates[0].status, "STALE")
 
-    def test_failed_or_unredacted_evidence_fails_closed(self) -> None:
-        target = lifecycle_aggregate.PRECEDING_GATES[1]
+    def test_non_proven_result_fails_closed(self) -> None:
+        target = session_class_e2e.PRECEDING_GATES[1]
         self.manifests[target.gate_id] = passing_manifest(
             target.gate_id,
-            status="failed",
+            proof_status="UNPROVEN",
         )
 
         result = self.evaluate()
@@ -133,21 +129,45 @@ class StationAccessLifecycleAggregateTest(unittest.TestCase):
         self.assertFalse(result.unproven)
         self.assertEqual(result.gates[1].status, "FAIL")
 
+    def test_invalid_manifest_identity_is_unproven(self) -> None:
+        target = session_class_e2e.PRECEDING_GATES[2]
+        self.manifests[target.gate_id] = {
+            **passing_manifest(target.gate_id),
+            "workspaceId": "fedcba9876543210",
+        }
+
+        result = self.evaluate()
+
+        self.assertFalse(result.passed)
+        self.assertTrue(result.unproven)
+        self.assertEqual(result.gates[2].status, "ERROR")
+
+    def test_dirty_aggregate_source_is_unproven(self) -> None:
+        result = session_class_e2e.AggregateResult(
+            source={
+                **EXPECTED_SOURCE,
+                "workspaceDigest": "sha256:" + ("d" * 64),
+            },
+            gates=[],
+        )
+
+        self.assertFalse(result.passed)
+        self.assertTrue(result.unproven)
+        self.assertEqual(
+            session_class_e2e.build_report(result)["status"],
+            "UNPROVEN",
+        )
+
     def test_gate_records_every_preceding_result(self) -> None:
-        gate = lifecycle_aggregate.StationAccessLifecycleAggregateGate(
+        gate = session_class_e2e.StationAccessSessionClassGate(
             store=self.store,
             expected_source=EXPECTED_SOURCE,
         )
+
         result = gate.run()
 
-        self.assertEqual(
-            result["passedCount"],
-            len(lifecycle_aggregate.PRECEDING_GATES),
-        )
-        self.assertEqual(
-            len(gate.report.assertions),
-            len(lifecycle_aggregate.PRECEDING_GATES),
-        )
+        self.assertEqual(result, {"gateCount": 3, "passedCount": 3})
+        self.assertEqual(len(gate.report.assertions), 3)
 
 
 if __name__ == "__main__":

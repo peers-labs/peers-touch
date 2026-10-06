@@ -407,6 +407,13 @@
       "tier": "env-evidence",
       "description": "Prove native macOS Desktop and iOS Simulator restart, logout, actor/device separation, lifecycle fencing, and old-scope absence on one source-attested Station."
     },
+    "station-access-session-class-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.session_class_e2e",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require current-source native receiver proof for Desktop-Mobile coexistence and independent Desktop and Mobile same-class takeover."
+    },
     "station-access-federation-boundary-e2e": {
       "argv": [
         "python3",

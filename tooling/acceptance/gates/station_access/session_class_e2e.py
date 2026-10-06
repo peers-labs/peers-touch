@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aggregate current-source Station Access proof."""
+"""Aggregate exact-source native proof for Station Access Session classes."""
 
 from __future__ import annotations
 
@@ -15,8 +15,7 @@ from tooling.acceptance.core import (
 )
 
 
-GATE_ID = "station-access-lifecycle-aggregate-e2e"
-REPORT_RELATIVE_PATH = f"reports/{GATE_ID}.json"
+GATE_ID = "station-access-session-class-e2e"
 
 
 @dataclass(frozen=True)
@@ -26,19 +25,12 @@ class GateSpec:
 
 
 PRECEDING_GATES: tuple[GateSpec, ...] = (
-    GateSpec("SAL-G04", "development-workflow-control-plane"),
-    GateSpec("SAL-G00", "proto-build"),
-    GateSpec("SAL-G00", "station-api-ownership"),
-    GateSpec("SAL-G00", "station-access-capability-contract"),
-    GateSpec("SAL-G01", "station-access-auth-e2e"),
-    GateSpec("SAL-G02", "station-access-scope-isolation-e2e"),
-    GateSpec("SAL-G03", "station-federation-unit"),
-    GateSpec("SAL-G03", "station-access-federation-boundary-e2e"),
-    GateSpec("SAL-G04", "mobile-hard-cut-static"),
-    GateSpec("SAL-G04", "mobile-simulator-platform-e2e"),
-    GateSpec("SAL-G04", "desktop-release-build"),
-    GateSpec("SAL-G04", "mobile-native-build"),
-    GateSpec("SAL-G05", "station-access-session-class-e2e"),
+    GateSpec("SAL-G05", "chat-native-multi-device-e2e"),
+    GateSpec(
+        "SAL-G05",
+        "chat-lifecycle-mixed-client-multi-device-e2e",
+    ),
+    GateSpec("SAL-G05", "mobile-simulator-station-lifecycle-e2e"),
 )
 
 
@@ -162,17 +154,11 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
         "status": status,
         "completionStatus": "DONE" if aggregate.passed else "PARTIAL",
         "proofStatus": "PROVEN" if aggregate.passed else "UNPROVEN",
-        "phase": "SAL-03",
-        "bom": [
-            "SAL-G00",
-            "SAL-G01",
-            "SAL-G02",
-            "SAL-G03",
-            "SAL-G04",
-            "SAL-G05",
-        ],
+        "phase": "SAL-G05",
+        "bom": ["SAL-G05"],
         "spec": [
             "docs/architecture/platform/station/access/acceptance-matrix.md",
+            "docs/architecture/platform/station/access/experience-contract.md",
         ],
         "sampleEmissionAllowed": aggregate.passed,
         "source": aggregate.source,
@@ -196,22 +182,16 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
     }
 
 
-class StationAccessLifecycleAggregateGate(AcceptanceGate):
+class StationAccessSessionClassGate(AcceptanceGate):
     gate_id = GATE_ID
-    phase = "SAL-03"
-    bom = (
-        "SAL-G00",
-        "SAL-G01",
-        "SAL-G02",
-        "SAL-G03",
-        "SAL-G04",
-        "SAL-G05",
-    )
+    phase = "SAL-G05"
+    bom = ("SAL-G05",)
     report_path = (
         REPO_ROOT / "tooling" / "acceptance" / "reports" / f"{GATE_ID}.json"
     )
     spec = (
         "docs/architecture/platform/station/access/acceptance-matrix.md",
+        "docs/architecture/platform/station/access/experience-contract.md",
     )
 
     def __init__(
@@ -260,7 +240,7 @@ class StationAccessLifecycleAggregateGate(AcceptanceGate):
         )
         if not aggregate.passed:
             raise GateError(
-                "Station Access aggregate is incomplete: "
+                "Station Access Session class proof is incomplete: "
                 + ", ".join(
                     f"{gate.gate_id}={gate.status}"
                     for gate in aggregate.gates
@@ -274,7 +254,7 @@ class StationAccessLifecycleAggregateGate(AcceptanceGate):
 
 
 def main() -> int:
-    return StationAccessLifecycleAggregateGate().execute()
+    return StationAccessSessionClassGate().execute()
 
 
 if __name__ == "__main__":
