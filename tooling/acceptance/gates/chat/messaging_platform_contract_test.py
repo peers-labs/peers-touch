@@ -163,6 +163,9 @@ class MessagingPlatformContractTest(unittest.TestCase):
         desktop_recovery = (
             ROOT / "apps/desktop/src-tauri/src/messaging/recovery.rs"
         ).read_text(encoding="utf-8")
+        portable_recovery = (
+            ROOT / "packages/messaging-core/src/recovery/types.rs"
+        ).read_text(encoding="utf-8")
         desktop_json = (
             ROOT
             / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
@@ -234,7 +237,8 @@ class MessagingPlatformContractTest(unittest.TestCase):
             "if !self.store.conversation_projections()?.is_empty()",
             desktop_engine,
         )
-        self.assertIn("pub federation_id: String", desktop_recovery)
+        self.assertIn("RecoveryConversationProjection,", desktop_recovery)
+        self.assertIn("pub federation_id: String", portable_recovery)
         self.assertIn('"federation_id": conversation.federation_id', desktop_json)
         self.assertIn("federationId: string", desktop_contract)
         self.assertIn(
@@ -746,7 +750,11 @@ class MessagingPlatformContractTest(unittest.TestCase):
         group_detail = (
             ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
         ).read_text(encoding="utf-8")
-        self.assertIn("imServiceV1.messaging.submitMembershipIntent(", group_detail)
+        self.assertIn("messagingCommands.submitMembershipIntent(", group_detail)
+        self.assertNotIn(
+            "imServiceV1.messaging.submitMembershipIntent(",
+            group_detail,
+        )
         self.assertNotIn("imServiceV1.keyPackage.fetch(", group_detail)
         self.assertNotIn("imServiceV1.mlsGroup.addAuthorizedMember(", group_detail)
         self.assertNotIn("imServiceV1.mlsGroup.removeAuthorizedMember(", group_detail)
