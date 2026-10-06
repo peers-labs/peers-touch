@@ -26,6 +26,9 @@ from tooling.acceptance.core import (
     ServiceAttestation,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
+from tooling.acceptance.core.provisioner import (
+    resolve_reviewed_profile_environment,
+)
 from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
     MobileNativeProvisioner,
@@ -237,6 +240,78 @@ class ProvisionerBaseClassTests(unittest.TestCase):
 
 
 class ProfileResolutionTests(unittest.TestCase):
+    def test_reviewed_profile_resolves_tracked_clean_env_repository(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "peers-touch-worktree"
+            root.mkdir()
+            env_repo = Path(tmpdir) / "reviewed-env"
+            profile = (
+                env_repo
+                / "peers-touch"
+                / "chat-native-disposable"
+                / "profile.env.example"
+            )
+            profile.parent.mkdir(parents=True)
+            profile.write_text(
+                "\n".join(
+                    (
+                        "PT_DEV_PROFILE=chat-native-disposable",
+                        "PT_STATION_MODE=remote",
+                        "PT_STATION_URL=https://station.example",
+                        "PT_STATION_DEPLOY_ENV=station-disposable",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            git_results = (
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="true\n",
+                    stderr="",
+                ),
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=(
+                        "peers-touch/chat-native-disposable/"
+                        "profile.env.example\n"
+                    ),
+                    stderr="",
+                ),
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                ),
+            )
+            with patch.dict(
+                os.environ,
+                {"PT_ENV_REPO": str(env_repo)},
+                clear=True,
+            ), patch(
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                side_effect=git_results,
+            ) as run:
+                resolved_path, values = resolve_reviewed_profile_environment(
+                    "chat-native-disposable",
+                    repo_root=root,
+                )
+
+        self.assertEqual(resolved_path, profile.resolve())
+        self.assertEqual(
+            values["PT_STATION_DEPLOY_ENV"],
+            "station-disposable",
+        )
+        self.assertEqual(run.call_count, 3)
+        self.assertNotIn(".local/dev/profiles", str(resolved_path))
+
+    def test_reviewed_profile_rejects_invalid_identity(self):
+        with self.assertRaisesRegex(BlockedError, "Invalid reviewed profile"):
+            resolve_reviewed_profile_environment("../unreviewed")
+
     def test_missing_machine_binding_blocks(self):
         provisioner = get_provisioner(
             EnvironmentContract.from_yaml(
