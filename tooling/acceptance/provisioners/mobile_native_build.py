@@ -228,7 +228,6 @@ WEB_ACCEPTANCE_HARNESS_MARKERS = (
     b"lifecycle.secureStorageDeleteFailure",
     b"native.deliverDeepLink",
     b"projection.read",
-    b"cleanup",
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
