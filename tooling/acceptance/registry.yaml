@@ -249,12 +249,40 @@
       ]
     },
     {
+      "id": "station-access-relay-role-security",
+      "features": [
+        "station-access-relay-role-security"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/conf/sub_relay.yml",
+          "apps/station/app/main.go",
+          "apps/station/app/subserver/events/bus.go",
+          "apps/station/frame/core/federation/transport.go",
+          "apps/station/frame/core/plugin/native/node/**",
+          "apps/station/frame/core/plugin/native/subserver/relay/**",
+          "apps/station/frame/core/runtime/role/**",
+          "apps/station/frame/peers.go",
+          "tooling/docker/.env.example",
+          "tooling/docker/README.md",
+          "tooling/docker/compose.yml",
+          "tooling/docker/entrypoint.sh",
+          "tooling/scripts/local-dev/relay-check.sh",
+          "tooling/scripts/local-dev/station-dev.sh"
+        ]
+      },
+      "require": [
+        "relay-role-security-contract"
+      ]
+    },
+    {
       "id": "station-access-acceptance",
       "features": [
         "station-access-wire-contract",
         "station-access-authentication",
         "station-access-scope-isolation",
         "station-access-federation-boundary",
+        "station-access-relay-role-security",
         "station-access-interface-contract"
       ],
       "when": {
@@ -277,6 +305,7 @@
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
         "station-access-federation-boundary-e2e",
+        "relay-role-security-contract",
         "desktop-release-build",
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",

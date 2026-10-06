@@ -1,7 +1,7 @@
 package relay
 
 // 2026-04-07: Block 1-8 refactoring (see CHANGELOG per block).
-// 2026-04-08: Refactored — jwtWrapper constructed in Init() and shared with handler layer.
+// 2026-04-08: Refactored — route auth wrappers are constructed in Init().
 //             Metrics declarations moved to relay_metrics.go.
 
 import (
@@ -20,21 +20,13 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/infrastructure"
+	"github.com/peers-labs/peers-touch/station/frame/core/runtime/role"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
 const (
 	SubserverTypeRelay server.SubserverType = "relay"
-
-	defaultMaxStations             = 100
-	defaultHeartbeatTimeout        = 60
-	defaultForwardTimeout          = 30
-	defaultMaxBodySize             = 10 * 1024 * 1024 // 10 MB
-	defaultMaxConcurrentPerStation = 64
-	defaultStreamPingInterval      = 30
-	defaultStreamPingTimeout       = 5
-	defaultGracefulDrainTimeout    = 10
 )
 
 var _ server.Subserver = &SubServer{}
@@ -45,9 +37,8 @@ type SubServer struct {
 	svc     *application.Service
 	streams *StreamManager
 
-	// jwtWrapper is constructed once in Init() and shared with handler layer.
-	// Pattern from friend_chat/subserver.go.
-	jwtWrapper server.Wrapper
+	networkJWTWrapper  server.Wrapper
+	operatorJWTWrapper server.Wrapper
 
 	listener net.Listener
 	stopCh   chan struct{}
@@ -58,11 +49,29 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 		s.opts.Apply(opt)
 	}
 
-	applyDefaults(s.opts)
+	processRole, err := role.FromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("[relay] resolve runtime role: %w", err)
+	}
+	if processRole != role.Relay {
+		return fmt.Errorf("[relay] subserver cannot initialize under %q role", processRole)
+	}
 
-	// Auth: construct JWT wrapper once, shared with handler layer.
+	operatorKey, err := validateRelaySecurityOptions(s.opts)
+	if err != nil {
+		return err
+	}
+
+	// Network credentials remain on the legacy mount path until Task 2 replaces
+	// them with Station proof-of-possession credentials.
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	s.networkJWTWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	s.operatorJWTWrapper = operatorAuthenticationWrapper(
+		operatorKey,
+		s.opts.OperatorIssuer,
+		s.opts.OperatorAudience,
+		s.opts.OperatorScope,
+	)
 
 	// Infrastructure layer: persistence
 	rds, err := store.GetRDS(ctx)
@@ -130,20 +139,27 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	return nil
 }
 
-// listenStream creates the TCP or TLS listener (Block 8).
+// listenStream creates a TLS 1.3 listener unless an explicit loopback-only
+// development exception was validated during Init.
 func (s *SubServer) listenStream() (net.Listener, error) {
-	if s.opts.TLSCertFile != "" && s.opts.TLSKeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(s.opts.TLSCertFile, s.opts.TLSKeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("load TLS key pair: %w", err)
-		}
-		tlsCfg := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
-		}
-		return tls.Listen("tcp", s.opts.StreamListenAddr, tlsCfg)
+	if s.opts.AllowInsecureLoopback &&
+		s.opts.TLSCertFile == "" &&
+		s.opts.TLSKeyFile == "" {
+		return net.Listen("tcp", s.opts.StreamListenAddr)
 	}
-	return net.Listen("tcp", s.opts.StreamListenAddr)
+
+	cert, err := tls.LoadX509KeyPair(s.opts.TLSCertFile, s.opts.TLSKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load TLS key pair: %w", err)
+	}
+	return tls.Listen("tcp", s.opts.StreamListenAddr, relayTLSConfig(cert))
+}
+
+func relayTLSConfig(cert tls.Certificate) *tls.Config {
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS13,
+	}
 }
 
 func (s *SubServer) Stop(ctx context.Context) error {
@@ -398,35 +414,6 @@ type bufferedReadConn struct {
 func (c *bufferedReadConn) Read(p []byte) (int, error)  { return c.Reader.Read(p) }
 func (c *bufferedReadConn) Write(p []byte) (int, error) { return c.Conn.Write(p) }
 func (c *bufferedReadConn) Close() error                { return c.Conn.Close() }
-
-// ---- Defaults ----
-
-func applyDefaults(o *Options) {
-	if o.MaxStations <= 0 {
-		o.MaxStations = defaultMaxStations
-	}
-	if o.HeartbeatTimeout <= 0 {
-		o.HeartbeatTimeout = defaultHeartbeatTimeout
-	}
-	if o.ForwardTimeout <= 0 {
-		o.ForwardTimeout = defaultForwardTimeout
-	}
-	if o.MaxBodySize <= 0 {
-		o.MaxBodySize = defaultMaxBodySize
-	}
-	if o.MaxConcurrentPerStation <= 0 {
-		o.MaxConcurrentPerStation = defaultMaxConcurrentPerStation
-	}
-	if o.StreamPingInterval <= 0 {
-		o.StreamPingInterval = defaultStreamPingInterval
-	}
-	if o.StreamPingTimeout <= 0 {
-		o.StreamPingTimeout = defaultStreamPingTimeout
-	}
-	if o.GracefulDrainTimeout <= 0 {
-		o.GracefulDrainTimeout = defaultGracefulDrainTimeout
-	}
-}
 
 // ---- Constructor ----
 

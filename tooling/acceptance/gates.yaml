@@ -359,6 +359,13 @@
       "tier": "ci-cheap",
       "description": "Validate signed Station identity ownership, the complete generated-protobuf Access route inventory, shared Desktop/Mobile consumers, typed outcomes, and scope fields."
     },
+    "relay-role-security-contract": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.relay_role_security_contract",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate explicit Station/Relay composition, Relay route inventory, TLS 1.3 and loopback exception policy, dedicated operator credentials, positive quotas, deployment wiring, and zero hardcoded debug egress."
+    },
     "station-access-auth-e2e": {
       "argv": [
         "python3",

@@ -178,6 +178,45 @@
       }
     },
     {
+      "id": "station-access-relay-runtime-security",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-relay-role-security"],
+      "required_gates": [
+        "relay-role-security-contract"
+      ],
+      "synthetic_paths": [
+        "apps/station/frame/core/runtime/role/role.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/security.go",
+        "tooling/docker/compose.yml",
+        "tooling/docker/entrypoint.sh"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "explicit process runtime role",
+          "Relay role composition allowlist",
+          "Relay startup security policy"
+        ],
+        "surfaces": [
+          "Relay startup, health, metrics, and operator API"
+        ],
+        "proven_by": [
+          "relay-role-security-contract"
+        ],
+        "proven_scope": [
+          "Station and Relay composition are selected by one explicit role owner",
+          "Relay role excludes Station business surfaces by a deny-by-default plugin allowlist",
+          "missing TLS, signing key, operator policy, or quota configuration fails closed",
+          "operator credentials are isolated from Station application JWTs",
+          "hardcoded debug egress is absent from Station source"
+        ],
+        "unproven_scope": [
+          "live public-certificate negotiation and hostile-client behavior are proven by station-access-relay-security-e2e",
+          "signed discovery, proof-of-possession enrollment, and opaque tunnel behavior are owned by later Relay closures"
+        ]
+      }
+    },
+    {
       "id": "station-access-interface-integrity",
       "domain": "station-access",
       "direction": "acceptance_validates_product",
