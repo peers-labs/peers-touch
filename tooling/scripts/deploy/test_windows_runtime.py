@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock
 
-from tooling.scripts.deploy.windows_runtime import _remote_runtime_script
+from tooling.scripts.deploy.windows_runtime import (
+    _remote_runtime_script,
+    _rotate_service_log,
+)
 
 
 class WindowsRuntimeScriptTest(unittest.TestCase):
@@ -60,23 +66,95 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
         script = _remote_runtime_script()
         deploy = script[script.index("def deploy()") :]
         rotate = script[
-            script.index("def rotate_service_log():")
+            script.index("def _rotate_service_log(")
             : script.index("def materialize_binary")
         ]
 
-        self.assertIn("def rotate_service_log():", script)
+        self.assertIn("def _rotate_service_log(", script)
         self.assertIn("log_path.replace(previous_log_path)", script)
-        self.assertIn("deadline = time.monotonic() + 15", rotate)
+        self.assertIn("deadline = monotonic() + timeout_seconds", rotate)
         self.assertIn("except PermissionError as error:", rotate)
         self.assertIn(
             "timed out waiting for Windows service log release",
             rotate,
         )
-        self.assertIn("time.sleep(0.25)", rotate)
+        self.assertIn("sleep(retry_interval_seconds)", rotate)
         self.assertLess(
             deploy.index("stop_owned()"),
-            deploy.index("rotate_service_log()"),
+            deploy.index("_rotate_service_log(log_path)"),
         )
+
+    def test_log_rotation_retries_transient_permission_error(self) -> None:
+        log_path = MagicMock()
+        previous_log_path = MagicMock()
+        log_path.is_file.return_value = True
+        log_path.with_suffix.return_value = previous_log_path
+        log_path.replace.side_effect = [PermissionError("busy"), None]
+        monotonic = MagicMock(side_effect=[0.0, 0.1])
+        sleep = MagicMock()
+
+        _rotate_service_log(
+            log_path,
+            monotonic=monotonic,
+            sleep=sleep,
+        )
+
+        self.assertEqual(log_path.replace.call_count, 2)
+        sleep.assert_called_once_with(0.25)
+
+    def test_log_rotation_times_out_on_persistent_permission_error(self) -> None:
+        log_path = MagicMock()
+        log_path.is_file.return_value = True
+        log_path.with_suffix.return_value = MagicMock()
+        log_path.replace.side_effect = PermissionError("busy")
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "timed out waiting for Windows service log release",
+        ):
+            _rotate_service_log(
+                log_path,
+                timeout_seconds=1.0,
+                monotonic=MagicMock(side_effect=[0.0, 1.0]),
+                sleep=MagicMock(),
+            )
+
+    def test_log_rotation_ignores_missing_service_log(self) -> None:
+        log_path = MagicMock()
+        log_path.is_file.return_value = False
+
+        _rotate_service_log(log_path)
+
+        log_path.with_suffix.assert_not_called()
+
+    def test_log_rotation_replaces_existing_previous_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "relay.log"
+            previous_log_path = log_path.with_suffix(".previous.log")
+            log_path.write_text("current", encoding="utf-8")
+            previous_log_path.write_text("old", encoding="utf-8")
+
+            _rotate_service_log(log_path)
+
+            self.assertFalse(log_path.exists())
+            self.assertEqual(
+                previous_log_path.read_text(encoding="utf-8"),
+                "current",
+            )
+
+    def test_secret_acl_is_applied_to_each_relay_secret_file(self) -> None:
+        script = _remote_runtime_script()
+        acl = script[
+            script.index("def apply_secret_acl")
+            : script.index("def yaml_path")
+        ]
+
+        self.assertIn('secret_root / "relay-operator.key"', acl)
+        self.assertIn('secret_root / "relay-signing.key"', acl)
+        self.assertIn('secret_root / "relay-tls.key"', acl)
+        self.assertIn('secret_root / "relay.crt"', acl)
+        self.assertIn("for secret_path in secret_paths:", acl)
+        self.assertIn('username + ":F"', acl)
 
 
 if __name__ == "__main__":
