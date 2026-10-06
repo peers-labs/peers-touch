@@ -279,6 +279,7 @@ class RelayEndpointDiscoveryGate(AcceptanceGate):
             text=True,
             timeout=180,
             check=False,
+            env={**os.environ, "HOME": str(Path.home())},
         )
         result = dict(
             self.capability_client.invoke(
