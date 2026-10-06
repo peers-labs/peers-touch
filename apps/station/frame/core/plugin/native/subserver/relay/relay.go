@@ -324,29 +324,45 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	// Block 4: Send ACK to station — handshake succeeded.
-	s.writeHandshakeACK(conn, true, "")
-
 	brc := &bufferedReadConn{Reader: br, Conn: conn}
-
-	// Block 1: Add starts readLoop goroutine internally — no handleIncomingFrames.
-	s.streams.Add(
+	entry, err := s.streams.AddValidated(
 		ctx,
 		hs.StationPeerID,
 		identity.Generation,
 		identity.ExpiresAt,
 		brc,
+		func() error {
+			_, err := s.svc.AuthenticateMountCredential(
+				ctx,
+				hs.RelayToken,
+				domain.ScopeMountConnect,
+			)
+			return err
+		},
 	)
+	if err != nil {
+		logger.Warnf(
+			ctx,
+			"[relay] handshake credential became stale for %s: %v",
+			hs.StationPeerID,
+			err,
+		)
+		s.writeHandshakeACK(conn, false, "mount is revoked or stale")
+		_ = conn.Close()
+		metConnectionsTotal.Inc("auth_error")
+		return
+	}
+
+	// ACK only after the stream is registered. Rotation or revocation updates
+	// persistent state first, then removes this exact live entry.
+	s.writeHandshakeACK(conn, true, "")
 
 	metConnectionsTotal.Inc("success")
 	metActiveStreams.Inc()
 	logger.Infof(ctx, "[relay] stream connected for %s from %s", hs.StationPeerID, conn.RemoteAddr())
 
 	// Wait for this entry's readLoop to exit (stream disconnect).
-	entry, ok := s.streams.GetEntry(hs.StationPeerID)
-	if ok {
-		entry.Wait()
-	}
+	entry.Wait()
 
 	metActiveStreams.Dec()
 

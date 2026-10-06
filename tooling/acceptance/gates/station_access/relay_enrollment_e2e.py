@@ -9,6 +9,7 @@ import select
 import socket
 import ssl
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
@@ -150,6 +151,10 @@ def validate_enrollment_source_contract() -> None:
         "client_runtime": _read(
             "apps/station/frame/core/plugin/native/subserver/relay-client/subserver.go"
         ),
+        "client_probe": _read(
+            "apps/station/frame/core/plugin/native/subserver/relay-client/"
+            "cmd/acceptance-probe/main.go"
+        ),
     }
     required = {
         "domain": (
@@ -177,6 +182,7 @@ def validate_enrollment_source_contract() -> None:
             "ALTER TABLE relay_invite DROP COLUMN token",
             "credential_jti",
             "generation",
+            "current.Generation + 1",
             "MountStatusRevoked",
         ),
         "handler": (
@@ -187,6 +193,7 @@ def validate_enrollment_source_contract() -> None:
         "relay": (
             "AuthenticateMountCredential",
             "ActivateMount",
+            "AddValidated",
             "identity.Generation",
             "identity.ExpiresAt",
         ),
@@ -202,6 +209,11 @@ def validate_enrollment_source_contract() -> None:
             "ConnectionStateChanged",
             "CredentialRejected",
             "setMountReady",
+        ),
+        "client_probe": (
+            "NewRelayClientSubServer",
+            "server.StatusRunning",
+            "CredentialCached",
         ),
     }
     for label, tokens in required.items():
@@ -241,6 +253,13 @@ class RelayEnrollmentCapabilityHandler(EphemeralCapabilityHandler):
         self._sensitive: list[bytearray] = []
         self._closed = False
         self._tunnels: list[SshTunnel] = []
+        self._probe_directory = tempfile.TemporaryDirectory(
+            prefix="peers-touch-relay-client-probe-"
+        )
+        self._probe_binary = Path(self._probe_directory.name) / "probe"
+        self._probe_token_store = (
+            Path(self._probe_directory.name) / "mount-credential.json"
+        )
         try:
             station = transport.start_local_forward(
                 remote_port=station_config.http_port
@@ -325,6 +344,7 @@ class RelayEnrollmentCapabilityHandler(EphemeralCapabilityHandler):
                 value[index] = 0
             value.clear()
         self._sensitive.clear()
+        self._probe_directory.cleanup()
         self._closed = True
         return EphemeralHandlerCleanup(
             closed=not errors,
@@ -399,6 +419,14 @@ sys.stdout.write((unsigned + b"." + signature).decode())
             station_peer_id,
         )
         try:
+            first_client_credential = self._request_json(
+                self._relay_url + "/api/v1/relay/client-token",
+                payload={"ttl": "5m"},
+                bearer=str(first_credential["relay_token"]),
+            )
+            first_client_token = self._remember_secret(
+                str(first_client_credential["relay_token"])
+            )
             listed = self._request_json(
                 self._relay_url + "/api/v1/relay/invites",
                 method="GET",
@@ -435,6 +463,12 @@ sys.stdout.write((unsigned + b"." + signature).decode())
                 self._relay_url + "/api/v1/relay/heartbeat",
                 payload={},
                 bearer=str(rotated["relay_token"]),
+            )
+            old_client_after_rotate = self._request_status(
+                self._relay_url
+                + f"/relay/forward/{station_peer_id}/sub-oss/healthz",
+                payload={},
+                bearer=first_client_token,
             )
             stream_closed_after_rotate = self._wait_for_stream_close(stream)
             stream.close()
@@ -518,6 +552,37 @@ sys.stdout.write((unsigned + b"." + signature).decode())
             bearer=operator_token,
         )
 
+        relay_client_invite = self._create_invite(
+            operator_token,
+            station_peer_id,
+        )
+        relay_client_initial = self._run_relay_client_probe(
+            str(relay_client_invite["invite_token"]),
+            deadline_monotonic,
+            cancellation,
+        )
+        self._request_json(
+            self._relay_url + "/api/v1/relay/mount",
+            method="DELETE",
+            payload={"station_peer_id": station_peer_id},
+            bearer=operator_token,
+        )
+        relay_client_recovery_invite = self._create_invite(
+            operator_token,
+            station_peer_id,
+        )
+        relay_client_recovered = self._run_relay_client_probe(
+            str(relay_client_recovery_invite["invite_token"]),
+            deadline_monotonic,
+            cancellation,
+        )
+        self._request_json(
+            self._relay_url + "/api/v1/relay/mount",
+            method="DELETE",
+            payload={"station_peer_id": station_peer_id},
+            bearer=operator_token,
+        )
+
         self._check_deadline(deadline_monotonic, cancellation)
         return {
             "stationPeerIdSha256": hashlib.sha256(
@@ -539,6 +604,9 @@ sys.stdout.write((unsigned + b"." + signature).decode())
             "streamClosedAfterRotate": stream_closed_after_rotate,
             "oldCredentialAfterRotateStatus": old_after_rotate,
             "newCredentialAfterRotateStatus": new_after_rotate,
+            "oldClientCredentialAfterRotateStatus": (
+                old_client_after_rotate
+            ),
             "revokeStatus": revoke.get("status"),
             "streamClosedAfterRevoke": stream_closed,
             "reconnectRejectedAfterRevoke": reconnect_rejected,
@@ -546,7 +614,92 @@ sys.stdout.write((unsigned + b"." + signature).decode())
             "recoveryGeneration": int(recovered["generation"]),
             "recoverySucceeded": True,
             "concurrentConsumeStatuses": concurrent_statuses,
+            "relayClientInitialReady": (
+                relay_client_initial.get("status") == "running"
+                and relay_client_initial.get("credential_cached") is True
+            ),
+            "relayClientRecoveredReady": (
+                relay_client_recovered.get("status") == "running"
+                and relay_client_recovered.get("credential_cached") is True
+            ),
         }
+
+    def _run_relay_client_probe(
+        self,
+        invite_token: str,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> Mapping[str, object]:
+        self._check_deadline(deadline_monotonic, cancellation)
+        if not self._probe_binary.exists():
+            remaining = max(1.0, deadline_monotonic - time.monotonic())
+            completed = subprocess.run(
+                [
+                    "go",
+                    "build",
+                    "-o",
+                    str(self._probe_binary),
+                    "./subserver/relay-client/cmd/acceptance-probe",
+                ],
+                cwd=(
+                    REPO_ROOT
+                    / "apps/station/frame/core/plugin/native"
+                ),
+                capture_output=True,
+                text=True,
+                timeout=min(remaining, 120.0),
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise GateError("Relay client probe build failed")
+
+        remaining = max(1.0, deadline_monotonic - time.monotonic())
+        completed = subprocess.run(
+            [str(self._probe_binary)],
+            input=json.dumps(
+                {
+                    "relay_url": self._relay_url,
+                    "relay_stream_addr": f"127.0.0.1:{self._stream_port}",
+                    "bootstrap_info_url": (
+                        self._station_url + "/sub-bootstrap/info"
+                    ),
+                    "bootstrap_identity_url": (
+                        self._station_url
+                        + "/sub-bootstrap/station-identity"
+                    ),
+                    "invite_token": invite_token,
+                    "token_store_path": str(self._probe_token_store),
+                    "timeout_seconds": 30,
+                },
+                separators=(",", ":"),
+            ),
+            capture_output=True,
+            text=True,
+            timeout=min(remaining, 45.0),
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise GateError("Relay client readiness probe failed")
+        marker = "PT_RELAY_CLIENT_PROBE="
+        encoded = next(
+            (
+                line[len(marker):]
+                for line in completed.stdout.splitlines()
+                if line.startswith(marker)
+            ),
+            "",
+        )
+        try:
+            result = json.loads(encoded)
+        except json.JSONDecodeError as error:
+            raise GateError(
+                "Relay client readiness probe returned invalid evidence"
+            ) from error
+        if not isinstance(result, dict):
+            raise GateError(
+                "Relay client readiness probe result must be an object"
+            )
+        return result
 
     def _create_invite(
         self,
@@ -822,7 +975,7 @@ class RelayEnrollmentGate(AcceptanceGate):
                 CAPABILITY_ID,
                 RUN_OPERATION,
                 {},
-                timeout_seconds=120,
+                timeout_seconds=240,
             )
         )
         expected_scopes = {
@@ -846,8 +999,8 @@ class RelayEnrollmentGate(AcceptanceGate):
             )
             == expected_scopes,
             "credential_has_jti": result.get("credentialHasJti") is True,
-            "rotation_preserves_generation": result.get("rotationGeneration")
-            == result.get("firstGeneration"),
+            "rotation_advances_generation": result.get("rotationGeneration")
+            == int(result.get("firstGeneration") or 0) + 1,
             "rotation_changes_jti": result.get("rotationChangedJti") is True,
             "rotation_closes_stale_stream": result.get(
                 "streamClosedAfterRotate"
@@ -861,6 +1014,10 @@ class RelayEnrollmentGate(AcceptanceGate):
                 "newCredentialAfterRotateStatus"
             )
             == 200,
+            "old_client_credential_rejected": result.get(
+                "oldClientCredentialAfterRotateStatus"
+            )
+            == 401,
             "revoke_closes_stream": result.get("streamClosedAfterRevoke")
             is True,
             "revoke_rejects_reconnect": result.get(
@@ -877,6 +1034,14 @@ class RelayEnrollmentGate(AcceptanceGate):
                 "concurrentConsumeStatuses"
             )
             == [200, 403],
+            "relay_client_initial_readiness": result.get(
+                "relayClientInitialReady"
+            )
+            is True,
+            "relay_client_recovers_after_revocation": result.get(
+                "relayClientRecoveredReady"
+            )
+            is True,
         }
         for name, passed in assertions.items():
             self.assert_condition(name, passed)

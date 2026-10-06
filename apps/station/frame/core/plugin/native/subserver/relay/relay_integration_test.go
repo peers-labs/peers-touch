@@ -399,6 +399,19 @@ func TestMountCredentialRotationAndRevoke(t *testing.T) {
 	)
 	require.NoError(t, err)
 	enrolled := enrollStation(t, env, secret, "rotate", station, 100)
+	enrolledIdentity, err := env.svc.AuthenticateMountCredential(
+		ctx,
+		enrolled.Credential.Token,
+		domain.ScopeMountConnect,
+	)
+	require.NoError(t, err)
+	require.NoError(t, env.svc.ActivateMount(ctx, enrolledIdentity))
+	clientCredential, err := env.svc.MintClientToken(
+		ctx,
+		enrolled.Credential.Token,
+		time.Hour,
+	)
+	require.NoError(t, err)
 
 	challenge, err := env.svc.BeginRotationChallenge(
 		ctx,
@@ -411,7 +424,7 @@ func TestMountCredentialRotationAndRevoke(t *testing.T) {
 		signChallenge(t, station, challenge),
 	)
 	require.NoError(t, err)
-	assert.Equal(t, enrolled.Credential.Generation, rotated.Generation)
+	assert.Equal(t, enrolled.Credential.Generation+1, rotated.Generation)
 	assert.NotEqual(t, enrolled.Credential.JTI, rotated.JTI)
 
 	_, err = env.svc.AuthenticateMountCredential(
@@ -426,6 +439,11 @@ func TestMountCredentialRotationAndRevoke(t *testing.T) {
 		domain.ScopeMountConnect,
 	)
 	require.NoError(t, err)
+	_, err = env.svc.AuthenticateNetworkCredential(
+		ctx,
+		clientCredential.Token,
+	)
+	assert.ErrorIs(t, err, application.ErrCredentialInvalid)
 
 	revoked, err := env.svc.RevokeMount(ctx, station.peerID)
 	require.NoError(t, err)

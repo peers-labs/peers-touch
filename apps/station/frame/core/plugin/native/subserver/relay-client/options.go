@@ -32,9 +32,9 @@ type Options struct {
 	// here after acquiring a relay_token via RelayURL.
 	RelayStreamAddr string
 
-	// InviteToken is the single-use admin-issued JWT used the FIRST TIME a
-	// station registers with this relay. After registration the relay_token
-	// is persisted to TokenStorePath and the InviteToken is no longer needed.
+	// InviteToken is the single-use opaque secret used the first time a
+	// Station registers with this Relay. After registration the structured
+	// mount credential at TokenStorePath becomes the source of truth.
 	InviteToken string
 
 	// Label is an opaque, human-readable identifier sent on /register and

@@ -102,8 +102,8 @@ type streamEntry struct {
 	onBroadcast BroadcastCallback
 }
 
-// newStreamEntry creates and starts a stream entry. The readLoop goroutine
-// begins immediately — the entry is "live" after this call.
+// newStreamEntry creates a stream entry. The manager starts its readLoop only
+// after the entry has passed admission and is installed in the live map.
 func newStreamEntry(
 	parentCtx context.Context,
 	peerID string,
@@ -128,8 +128,11 @@ func newStreamEntry(
 		onBroadcast:         onBroadcast,
 	}
 	e.lastPong.Store(time.Now())
-	go e.readLoop()
 	return e
+}
+
+func (e *streamEntry) start() {
+	go e.readLoop()
 }
 
 // readLoop is the ONLY goroutine that reads from conn. It dispatches frames
@@ -394,7 +397,7 @@ func (sm *StreamManager) IsBroadcastTopicAllowed(topic string) bool {
 
 // Add registers (or replaces) a stream for the given peerID.
 // If an old stream exists it is closed first.
-// The new entry starts its readLoop immediately.
+// The new entry starts its readLoop after it is installed in the live map.
 func (sm *StreamManager) Add(
 	ctx context.Context,
 	peerID string,
@@ -402,6 +405,36 @@ func (sm *StreamManager) Add(
 	credentialExpiresAt time.Time,
 	conn net.Conn,
 ) {
+	_, _ = sm.AddValidated(
+		ctx,
+		peerID,
+		generation,
+		credentialExpiresAt,
+		conn,
+		nil,
+	)
+}
+
+// AddValidated serializes credential revalidation with stream replacement.
+// Revocation and rotation update persistent state before calling Remove, so
+// every interleaving either fails validation or leaves a registered entry
+// that Remove can close.
+func (sm *StreamManager) AddValidated(
+	ctx context.Context,
+	peerID string,
+	generation uint64,
+	credentialExpiresAt time.Time,
+	conn net.Conn,
+	validate func() error,
+) (*streamEntry, error) {
+	sm.mu.Lock()
+	if validate != nil {
+		if err := validate(); err != nil {
+			sm.mu.Unlock()
+			return nil, err
+		}
+	}
+
 	// We bind the broadcast hook here (not in NewStreamManager) so
 	// each entry's readLoop dispatches into the same fan-out path,
 	// without the entry having to know about its peers.
@@ -415,17 +448,18 @@ func (sm *StreamManager) Add(
 		sm.handleInboundBroadcast,
 	)
 
-	sm.mu.Lock()
 	if old, exists := sm.streams[peerID]; exists {
 		old.Close()
 	}
 	sm.streams[peerID] = entry
+	entry.start()
 	sm.mu.Unlock()
 
 	if sm.callback != nil {
 		sm.callback(ctx, peerID, generation, true)
 	}
 	logger.Infof(ctx, "[stream] added stream for %s", peerID)
+	return entry, nil
 }
 
 // handleInboundBroadcast is the readLoop callback for Broadcast
