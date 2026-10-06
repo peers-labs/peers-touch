@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import ssl
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.gates.station_access.relay_enrollment_e2e import (
     CAPABILITY_ID,
@@ -23,6 +25,31 @@ def _encode(value: object) -> str:
 class RelayEnrollmentGateTest(unittest.TestCase):
     def test_current_repository_satisfies_source_contract(self) -> None:
         validate_enrollment_source_contract()
+
+    @patch(
+        "tooling.acceptance.gates.station_access."
+        "relay_enrollment_e2e._OpenSSLRelayStream"
+    )
+    def test_stream_uses_openssl_when_python_lacks_tls13(
+        self,
+        stream_factory: MagicMock,
+    ) -> None:
+        stream = MagicMock()
+        stream.recv.side_effect = [b'{"ok":true}', b"\n"]
+        stream_factory.return_value = stream
+        handler = object.__new__(RelayEnrollmentCapabilityHandler)
+        handler._relay_config = SimpleNamespace(host="relay.example")
+        handler._stream_port = 4501
+
+        with patch.object(ssl, "HAS_TLSv1_3", False):
+            opened = handler._open_stream("credential", "station-peer")
+
+        self.assertIs(opened, stream)
+        stream_factory.assert_called_once_with("relay.example", 4501)
+        stream.settimeout.assert_called_once_with(10)
+        stream.sendall.assert_called_once_with(
+            b'{"relay_token":"credential","station_peer_id":"station-peer"}\n'
+        )
 
     def test_credential_claim_projection_reads_eddsa_header(self) -> None:
         token = ".".join(

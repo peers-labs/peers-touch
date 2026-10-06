@@ -4,15 +4,18 @@ import base64
 import concurrent.futures
 import hashlib
 import json
+import os
+import select
 import socket
 import ssl
+import subprocess
 import threading
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.request import ProxyHandler, build_opener
 
 from tooling.acceptance.core import (
@@ -33,6 +36,91 @@ GATE_ID = "relay-station-enrollment-e2e"
 CAPABILITY_ID = "station-access.relay-enrollment-operator"
 RUN_OPERATION = "run-lifecycle"
 _MAX_RESPONSE_BYTES = 64 * 1024
+
+
+class _RelayStream(Protocol):
+    def sendall(self, data: bytes) -> None: ...
+
+    def recv(self, size: int) -> bytes: ...
+
+    def settimeout(self, timeout: float) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class _OpenSSLRelayStream:
+    def __init__(self, server_name: str, port: int) -> None:
+        try:
+            self._process = subprocess.Popen(
+                [
+                    "openssl",
+                    "s_client",
+                    "-quiet",
+                    "-tls1_3",
+                    "-connect",
+                    f"127.0.0.1:{port}",
+                    "-servername",
+                    server_name,
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+            )
+        except OSError as error:
+            raise GateError(
+                "OpenSSL TLS 1.3 stream transport is unavailable"
+            ) from error
+        if self._process.stdin is None or self._process.stdout is None:
+            self.close()
+            raise GateError("OpenSSL TLS 1.3 stream transport is incomplete")
+        self._timeout = 10.0
+
+    def sendall(self, data: bytes) -> None:
+        if self._process.poll() is not None or self._process.stdin is None:
+            raise ConnectionError("OpenSSL TLS 1.3 stream is closed")
+        try:
+            self._process.stdin.write(data)
+            self._process.stdin.flush()
+        except (BrokenPipeError, OSError) as error:
+            raise ConnectionError("OpenSSL TLS 1.3 stream write failed") from error
+
+    def recv(self, size: int) -> bytes:
+        if self._process.stdout is None:
+            return b""
+        ready, _, _ = select.select(
+            [self._process.stdout],
+            [],
+            [],
+            self._timeout,
+        )
+        if not ready:
+            if self._process.poll() is not None:
+                return b""
+            raise socket.timeout
+        return os.read(self._process.stdout.fileno(), size)
+
+    def settimeout(self, timeout: float) -> None:
+        self._timeout = timeout
+
+    def close(self) -> None:
+        process = getattr(self, "_process", None)
+        if process is None:
+            return
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+        if process.stdout is not None:
+            process.stdout.close()
 
 
 def validate_enrollment_source_contract() -> None:
@@ -582,37 +670,67 @@ sys.stdout.write((unsigned + b"." + signature).decode())
             raise GateError("Relay lifecycle response must be an object")
         return value
 
-    def _open_stream(self, token: str, station_peer_id: str) -> ssl.SSLSocket:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        context.minimum_version = ssl.TLSVersion.TLSv1_3
-        raw = socket.create_connection(
-            ("127.0.0.1", self._stream_port),
-            timeout=10,
-        )
-        stream = context.wrap_socket(
-            raw,
-            server_hostname=self._relay_config.host,
-        )
-        stream.settimeout(10)
-        stream.sendall(
-            json.dumps(
-                {
-                    "relay_token": token,
-                    "station_peer_id": station_peer_id,
-                },
-                separators=(",", ":"),
-            ).encode("utf-8")
-            + b"\n"
-        )
-        acknowledgement = json.loads(self._read_line(stream).decode("utf-8"))
-        if acknowledgement.get("ok") is not True:
+    def _open_stream(
+        self,
+        token: str,
+        station_peer_id: str,
+    ) -> _RelayStream:
+        stream: _RelayStream
+        context: ssl.SSLContext | None = None
+        if ssl.HAS_TLSv1_3:
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                context.minimum_version = ssl.TLSVersion.TLSv1_3
+                context.maximum_version = ssl.TLSVersion.TLSv1_3
+            except (ValueError, ssl.SSLError):
+                context = None
+        if context is None:
+            stream = _OpenSSLRelayStream(
+                self._relay_config.host,
+                self._stream_port,
+            )
+        else:
+            raw = socket.create_connection(
+                ("127.0.0.1", self._stream_port),
+                timeout=10,
+            )
+            try:
+                stream = context.wrap_socket(
+                    raw,
+                    server_hostname=self._relay_config.host,
+                )
+            except BaseException:
+                raw.close()
+                raise
+        try:
+            stream.settimeout(10)
+            stream.sendall(
+                json.dumps(
+                    {
+                        "relay_token": token,
+                        "station_peer_id": station_peer_id,
+                    },
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                + b"\n"
+            )
+            acknowledgement = json.loads(
+                self._read_line(stream).decode("utf-8")
+            )
+            if acknowledgement.get("ok") is not True:
+                raise GateError("Relay stream handshake rejected a valid mount")
+        except BaseException:
             stream.close()
-            raise GateError("Relay stream handshake rejected a valid mount")
+            raise
         return stream
 
-    def _try_stream_handshake(self, token: str, station_peer_id: str) -> bool:
+    def _try_stream_handshake(
+        self,
+        token: str,
+        station_peer_id: str,
+    ) -> bool:
         try:
             stream = self._open_stream(token, station_peer_id)
         except GateError:
@@ -621,7 +739,7 @@ sys.stdout.write((unsigned + b"." + signature).decode())
         return True
 
     @staticmethod
-    def _read_line(stream: ssl.SSLSocket) -> bytes:
+    def _read_line(stream: _RelayStream) -> bytes:
         output = bytearray()
         while len(output) < 4096:
             chunk = stream.recv(1)
@@ -633,7 +751,7 @@ sys.stdout.write((unsigned + b"." + signature).decode())
         raise GateError("Relay stream returned an invalid handshake response")
 
     @staticmethod
-    def _wait_for_stream_close(stream: ssl.SSLSocket) -> bool:
+    def _wait_for_stream_close(stream: _RelayStream) -> bool:
         stream.settimeout(5)
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
