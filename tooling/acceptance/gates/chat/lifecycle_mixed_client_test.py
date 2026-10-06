@@ -933,10 +933,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         )
         gate.accept_call.assert_called_once_with("desktop-bob", "call-1")
 
-    @patch(
-        "tooling.acceptance.gates.chat.mixed_native_runtime."
-        "wait_for_peer_key_bundle"
-    )
+    @patch.object(MixedNativeRuntime, "_wait_for_peer_key_bundles")
     def test_desktop_direct_waits_for_peer_key_bundle(
         self,
         wait_for_bundle: MagicMock,
@@ -1001,12 +998,52 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             desktop_session,
             "ptid:bob",
             "peer-secondary",
-            timeout=12.0,
-            expected_device_identity_digests=(
+            (
                 "bob-desktop-device",
                 "bob-mobile-device",
             ),
+            timeout=12.0,
         )
+
+    def test_mixed_peer_readiness_waits_for_every_expected_device(
+        self,
+    ) -> None:
+        first_device = "bob-desktop-device"
+        second_device = "bob-mobile-device"
+        expected_devices = tuple(
+            sorted(
+                hashlib.sha256(device.encode("utf-8")).hexdigest()
+                for device in (first_device, second_device)
+            )
+        )
+        runtime = object.__new__(MixedNativeRuntime)
+        with patch(
+            "tooling.acceptance.gates.chat.mixed_native_runtime.async_harness",
+            side_effect=(
+                {
+                    "peerPtid": "ptid:bob",
+                    "bundleCount": 1,
+                    "deviceIds": [first_device],
+                },
+                {
+                    "peerPtid": "ptid:bob",
+                    "bundleCount": 2,
+                    "deviceIds": [first_device, second_device],
+                },
+            ),
+        ) as harness, patch(
+            "tooling.acceptance.gates.chat.mixed_native_runtime.time.sleep",
+        ):
+            result = runtime._wait_for_peer_key_bundles(
+                object(),  # type: ignore[arg-type]
+                "ptid:bob",
+                "peer-secondary",
+                expected_devices,
+                timeout=1,
+            )
+
+        self.assertEqual(result["bundleCount"], 2)
+        self.assertEqual(harness.call_count, 2)
 
 
 if __name__ == "__main__":

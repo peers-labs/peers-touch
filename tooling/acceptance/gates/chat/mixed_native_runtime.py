@@ -33,7 +33,6 @@ from tooling.acceptance.gates.chat.native_support import (
     is_native_tauri_url,
     read_station_version,
     verify_runtime_fixture_ready,
-    wait_for_peer_key_bundle,
 )
 from tooling.acceptance.gates.mobile.simulator_harness_contract import (
     STATION_ACCESS_NATIVE_GATE_IDS,
@@ -689,12 +688,12 @@ class MixedNativeRuntime:
                     }
                 )
             )
-            wait_for_peer_key_bundle(
+            self._wait_for_peer_key_bundles(
                 self.desktop_sessions[sender_id],
                 receiver.ptid,
                 receiver.station_peer_id,
+                expected_peer_devices,
                 timeout=timeout_seconds,
-                expected_device_identity_digests=expected_peer_devices,
             )
             created = self.call_action(
                 sender_id,
@@ -724,6 +723,53 @@ class MixedNativeRuntime:
             timeout_seconds=timeout_seconds,
         )
         return conversation_id
+
+    def _wait_for_peer_key_bundles(
+        self,
+        client: TauriSession,
+        peer_ptid: str,
+        home_station_peer_id: str,
+        expected_device_identity_digests: tuple[str, ...],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        expected_devices = set(expected_device_identity_digests)
+
+        def ready() -> dict[str, Any] | None:
+            state = async_harness(
+                client,
+                "peerKeyBundleState",
+                {
+                    "peerPtid": peer_ptid,
+                    "homeStationPeerId": home_station_peer_id,
+                },
+                timeout=10,
+            )
+            device_ids = (
+                state.get("deviceIds", [])
+                if isinstance(state, Mapping)
+                else []
+            )
+            observed_devices = {
+                hashlib.sha256(device_id.encode("utf-8")).hexdigest()
+                for device_id in device_ids
+                if isinstance(device_id, str) and device_id
+            }
+            return (
+                dict(state)
+                if (
+                    isinstance(state, Mapping)
+                    and int(state.get("bundleCount") or 0) > 0
+                    and expected_devices.issubset(observed_devices)
+                )
+                else None
+            )
+
+        return self.wait_until(
+            ready,
+            f"complete peer key bundles for {peer_ptid}",
+            timeout_seconds=timeout,
+        )
 
     def create_group(
         self,

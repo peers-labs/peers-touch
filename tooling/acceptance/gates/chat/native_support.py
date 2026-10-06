@@ -535,11 +535,9 @@ def wait_for_peer_key_bundle(
     home_station_peer_id: str,
     *,
     timeout: float = 60.0,
-    expected_device_identity_digests: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     if not home_station_peer_id:
         raise GateError("peer key readiness requires a Home Station peer ID")
-    expected_devices = set(expected_device_identity_digests)
 
     def ready() -> dict[str, Any] | None:
         state = async_harness(
@@ -551,21 +549,10 @@ def wait_for_peer_key_bundle(
             },
             timeout=10,
         )
-        device_ids = (
-            state.get("deviceIds", [])
-            if isinstance(state, dict)
-            else []
-        )
-        observed_devices = {
-            hashlib.sha256(device_id.encode("utf-8")).hexdigest()
-            for device_id in device_ids
-            if isinstance(device_id, str) and device_id
-        }
         return (
             state
             if isinstance(state, dict)
             and int(state.get("bundleCount") or 0) > 0
-            and expected_devices.issubset(observed_devices)
             else None
         )
 

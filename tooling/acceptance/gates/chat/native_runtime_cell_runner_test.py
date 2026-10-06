@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import os
 import sqlite3
@@ -1051,40 +1050,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 "homeStationPeerId": "station-five",
             },
         )
-
-    def test_peer_key_readiness_waits_for_every_expected_device(self) -> None:
-        first_device = "bob-desktop-device"
-        second_device = "bob-mobile-device"
-        second_digest = hashlib.sha256(
-            second_device.encode("utf-8")
-        ).hexdigest()
-        with patch(
-            "tooling.acceptance.gates.chat.native_support.async_harness",
-            side_effect=(
-                {
-                    "peerPtid": "ptid:bob",
-                    "bundleCount": 1,
-                    "deviceIds": [first_device],
-                },
-                {
-                    "peerPtid": "ptid:bob",
-                    "bundleCount": 2,
-                    "deviceIds": [first_device, second_device],
-                },
-            ),
-        ) as harness, patch(
-            "tooling.acceptance.gates.chat.native_support.time.sleep",
-        ):
-            result = wait_for_peer_key_bundle(
-                object(),  # type: ignore[arg-type]
-                "ptid:bob",
-                "station-five",
-                timeout=1,
-                expected_device_identity_digests=(second_digest,),
-            )
-
-        self.assertEqual(result["bundleCount"], 2)
-        self.assertEqual(harness.call_count, 2)
 
     def test_station_readback_supports_bound_local_source_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
