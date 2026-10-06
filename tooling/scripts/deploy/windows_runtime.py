@@ -430,6 +430,8 @@ def _remote_runtime_script() -> str:
                     "rsa:2048",
                     "-sha256",
                     "-nodes",
+                    "-config",
+                    "NUL",
                     "-keyout",
                     str(key_path),
                     "-out",
