@@ -61,9 +61,11 @@
 | [data-model.md](./data-model.md) | endpoint、route binding 与 scope 数据模型 |
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 当前实现证据、差距与切换策略 |
-| [execution-plans/20261006-unified-relay-station-access/plan.md](./execution-plans/20261006-unified-relay-station-access/plan.md) | 待批准、未挂载的执行 Plan Version |
+| [execution-plans/20261006-unified-relay-station-access-v2/plan.md](./execution-plans/20261006-unified-relay-station-access-v2/plan.md) | 当前执行 Plan Version；v2 授权 sixwin Windows-native Station/Relay runtime |
+| [execution-plans/20261006-unified-relay-station-access/plan.md](./execution-plans/20261006-unified-relay-station-access/plan.md) | 已取消的 frozen v1；保留历史快照，不再执行 |
 | [reviews/review-03-unified-relay-product-architecture.md](./reviews/review-03-unified-relay-product-architecture.md) | 产品与架构 findings-first review |
 | [reviews/review-04-unified-relay-plan-readiness.md](./reviews/review-04-unified-relay-plan-readiness.md) | Plan、安全与验收 readiness review |
+| [reviews/review-05-unified-relay-plan-v2.md](./reviews/review-05-unified-relay-plan-v2.md) | sixwin 执行范围修订与 v2 readiness review |
 
 ## 5. 上游真源
 
@@ -78,5 +80,5 @@
 
 - 既有直连 Access Gate：已实现并验收。
 - Relay Station-to-Station 原型：存在，但不满足客户端接入与生产安全条件。
-- 统一 Relay/Station 接入：产品与架构已形成 v2 当前口径，执行计划待 Owner 批准，
-  尚未 mount 或实施。
+- 统一 Relay/Station 接入：产品与架构已形成 v2 当前口径；frozen v1 因旧
+  `relay-1` 不具备安全材料而取消，当前 v2 改用 Owner 授权的 sixwin 隔离 runtime。
