@@ -223,6 +223,20 @@ EXCLUDED_BUILD_INPUT_PARTS = frozenset(
         "jniLibs",
     }
 )
+ANDROID_TAURI_GENERATED_BUILD_OUTPUTS = frozenset(
+    {
+        "apps/mobile/src-tauri/gen/android/.tauri",
+        "apps/mobile/src-tauri/gen/android/app/proguard-tauri.pro",
+        "apps/mobile/src-tauri/gen/android/app/src/main/assets/tauri.conf.json",
+        (
+            "apps/mobile/src-tauri/gen/android/app/src/main/java/"
+            "com/peers/touch/mobile/generated"
+        ),
+        "apps/mobile/src-tauri/gen/android/app/tauri.build.gradle.kts",
+        "apps/mobile/src-tauri/gen/android/app/tauri.properties",
+        "apps/mobile/src-tauri/gen/android/tauri.settings.gradle",
+    }
+)
 SECRET_BUILD_INPUT_NAMES = frozenset(
     {
         "local.properties",
@@ -887,6 +901,13 @@ def _repository_relative(root: Path, path: Path) -> str:
 
 def _is_excluded_build_input(relative: PurePosixPath) -> bool:
     if any(part in EXCLUDED_BUILD_INPUT_PARTS for part in relative.parts):
+        return True
+    relative_path = relative.as_posix()
+    if any(
+        relative_path == generated
+        or relative_path.startswith(f"{generated}/")
+        for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS
+    ):
         return True
     if relative.name in SECRET_BUILD_INPUT_NAMES:
         return True
