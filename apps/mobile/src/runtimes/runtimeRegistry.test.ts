@@ -8,6 +8,7 @@ const socialRuntimeMocks = vi.hoisted(() => ({
   reconcileSocialRuntimeDomains: vi.fn(async () => undefined),
   startSocialRuntime: vi.fn(),
   installMobileNativeEventBridge: vi.fn(),
+  fencePrivateMomentsRuntimeProjection: vi.fn(),
 }));
 
 vi.mock('../features/social/socialRuntime', () => ({
@@ -23,6 +24,15 @@ vi.mock('./mobileNativeEventBridge', () => ({
   installMobileNativeEventBridge:
     socialRuntimeMocks.installMobileNativeEventBridge,
 }));
+
+vi.mock('./privateMomentsRuntime', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./privateMomentsRuntime')>();
+  return {
+    ...actual,
+    fencePrivateMomentsRuntimeProjection:
+      socialRuntimeMocks.fencePrivateMomentsRuntimeProjection,
+  };
+});
 
 vi.mock('./commandRuntime', () => ({
   activateReliabilityRuntime: vi.fn(),
@@ -59,6 +69,7 @@ import { ACCESS_DECISION_GRANTED } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import {
   createMobileRuntimeDescriptors,
+  fenceMobileRuntimeProjections,
   resolveMobileLaunchStateFromState,
 } from './runtimeRegistry';
 
@@ -192,6 +203,9 @@ describe('mobile runtime registry', () => {
     const auth = descriptors.find((descriptor) => descriptor.id === 'auth');
     const access = descriptors.find((descriptor) => descriptor.id === 'access');
     const session = descriptors.find((descriptor) => descriptor.id === 'session');
+    const privateSocial = descriptors.find(
+      (descriptor) => descriptor.id === 'private-social',
+    );
     const social = descriptors.find((descriptor) => descriptor.id === 'social');
     const group = descriptors.find((descriptor) => descriptor.id === 'group');
     const recovery = descriptors.find(
@@ -207,6 +221,10 @@ describe('mobile runtime registry', () => {
     expect(auth?.dependsOn).toContain('station');
     expect(access?.dependsOn).toEqual(['station', 'auth']);
     expect(session?.dependsOn).toEqual(['station', 'auth', 'access']);
+    expect(privateSocial?.dependsOn).toEqual(['session', 'secure-storage']);
+    expect(privateSocial?.responsibility).toContain(
+      'Native private Social durability',
+    );
     expect(ids).not.toContain('social-projection');
     expect(ids).not.toContain('moments-projection');
     expect(ids).not.toContain('profile-projection');
@@ -217,6 +235,14 @@ describe('mobile runtime registry', () => {
     expect(recovery?.dependsOn).toEqual(
       expect.arrayContaining(['social', 'group']),
     );
+  });
+
+  it('synchronously fences the private Social projection with the other scope projections', () => {
+    fenceMobileRuntimeProjections();
+
+    expect(
+      socialRuntimeMocks.fencePrivateMomentsRuntimeProjection,
+    ).toHaveBeenCalledOnce();
   });
 
   it('owns persisted Friend Request retry wakeups in the command runtime', () => {
