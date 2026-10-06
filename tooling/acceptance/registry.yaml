@@ -1690,6 +1690,7 @@
           "tooling/acceptance/gates/mobile/simulator_social_e2e.py",
           "tooling/acceptance/gates/mobile/simulator_social_e2e_test.py",
           "tooling/acceptance/environments/mobile-direct-simulator.yaml",
+          "tooling/acceptance/environments/mobile-social-ios-simulator.yaml",
           "tooling/acceptance/environments/mobile-social-simulator.yaml"
         ]
       },

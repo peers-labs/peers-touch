@@ -6,6 +6,7 @@ from unittest.mock import patch
 from tooling.acceptance.core import DriverError, SuiteRuntimeAction
 from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     ENVIRONMENT_ID,
+    IOS_SOCIAL_ENVIRONMENT_ID,
     IOS_SOCIAL_PARITY_SCENARIOS,
     IOS_SOCIAL_RUNTIME_REUSE,
     SCENARIO_GATES,
@@ -14,7 +15,7 @@ from tooling.acceptance.gates.mobile.simulator_social_e2e import (
 from tooling.acceptance.gates.mobile.simulator_e2e import SimulatorGateBlocked
 from tooling.acceptance.gates.mobile.messaging_journey import MessagingActor
 from tooling.acceptance.provisioners.mobile_simulator import (
-    MobileDirectSimulatorProvisioner,
+    MobileSocialIOSSimulatorProvisioner,
 )
 
 
@@ -205,9 +206,16 @@ class SimulatorSocialGateTests(unittest.TestCase):
             0.8,
         )
         self.assertEqual(
-            MobileDirectSimulatorProvisioner
+            MobileSocialIOSSimulatorProvisioner
             .additional_fixture_roles_by_gate["mobile-social-ios-native"],
             ("eve",),
+        )
+        self.assertFalse(
+            MobileSocialIOSSimulatorProvisioner.requires_actor_reset,
+        )
+        self.assertEqual(
+            SimulatorSocialGate("ios-social-parity").environment_id,
+            IOS_SOCIAL_ENVIRONMENT_ID,
         )
 
     def test_ios_social_parity_records_each_scenario_once(self) -> None:
@@ -368,6 +376,38 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 ENVIRONMENT_ID,
             ):
                 gate._load_social_manifest()
+
+    def test_ios_social_parity_requires_non_destructive_environment(
+        self,
+    ) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+
+        with (
+            patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_RUNTIME_MANIFEST": "/tmp/ios-social.json"},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "load_runtime_manifest",
+                return_value={"environmentId": IOS_SOCIAL_ENVIRONMENT_ID},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "require_runtime_service",
+            ) as require_service,
+        ):
+            manifest = gate._load_social_manifest()
+
+        self.assertEqual(
+            manifest["environmentId"],
+            IOS_SOCIAL_ENVIRONMENT_ID,
+        )
+        require_service.assert_called_once_with(
+            manifest,
+            "station",
+            "station",
+        )
 
     def test_unknown_scenario_fails_before_runtime_allocation(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported"):

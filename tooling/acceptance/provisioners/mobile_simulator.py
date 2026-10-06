@@ -6928,6 +6928,17 @@ class MobileDirectSimulatorProvisioner(
     station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
     actor_manifest_kind = "mobile-direct-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-direct-simulator-actors.json"
+
+
+class MobileSocialIOSSimulatorProvisioner(
+    _MobileTwoActorSimulatorProvisioner
+):
+    environment_id = "mobile-social-ios-simulator"
+    overlay_filename = "mobile-social-ios-simulator.yaml"
+    station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
+    requires_actor_reset = False
+    actor_manifest_kind = "mobile-social-ios-simulator-actor-manifest"
+    actor_manifest_path = "runtime/mobile-social-ios-simulator-actors.json"
     additional_fixture_roles_by_gate = {
         "mobile-social-ios-native": ("eve",),
     }

@@ -42,6 +42,7 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
 
 
 ENVIRONMENT_ID = "mobile-direct-simulator"
+IOS_SOCIAL_ENVIRONMENT_ID = "mobile-social-ios-simulator"
 SCENARIO_GATES = {
     "ios-social-parity": "mobile-social-ios-native",
     "social-convergence": "mobile-simulator-social-convergence-e2e",
@@ -164,6 +165,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         self.gate_id = SCENARIO_GATES[scenario]
         super().__init__(**kwargs)
         self.scenario = scenario
+        self.environment_id = (
+            IOS_SOCIAL_ENVIRONMENT_ID
+            if scenario == "ios-social-parity"
+            else ENVIRONMENT_ID
+        )
         self.suite_runtime_ledger: SuiteRuntimeLedger | None = None
 
     def execute(self) -> int:
@@ -271,7 +277,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 completion_status=completion_status,
                 proof_status=proof_status,
                 runtime={
-                    "environment": ENVIRONMENT_ID,
+                    "environment": self.environment_id,
                     "runtimeCell": self.gate_id,
                     "clients": sorted(
                         {
@@ -293,7 +299,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         if not manifest_path:
             raise SimulatorGateBlocked(
                 "PT_ACCEPTANCE_RUNTIME_MANIFEST is required",
-                f"{ENVIRONMENT_ID}:manifest",
+                f"{self.environment_id}:manifest",
             )
         try:
             manifest = load_runtime_manifest(
@@ -304,12 +310,13 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         except ProvisioningError as error:
             raise SimulatorGateBlocked(
                 str(error),
-                f"{ENVIRONMENT_ID}:manifest",
+                f"{self.environment_id}:manifest",
             ) from error
-        if manifest.get("environmentId") != ENVIRONMENT_ID:
+        if manifest.get("environmentId") != self.environment_id:
             raise SimulatorGateBlocked(
-                f"RuntimeManifest environment must be {ENVIRONMENT_ID}",
-                f"{ENVIRONMENT_ID}:environment",
+                "RuntimeManifest environment must be "
+                f"{self.environment_id}",
+                f"{self.environment_id}:environment",
             )
         return manifest
 
@@ -329,12 +336,12 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         appium = self._required_object(
             resources,
             "appium",
-            f"{ENVIRONMENT_ID} resources",
+            f"{self.environment_id} resources",
         )
         server_url = self._required_text(
             appium,
             "serverUrl",
-            f"{ENVIRONMENT_ID} Appium",
+            f"{self.environment_id} Appium",
         )
         specs = self._client_specs(resources)
         sessions = {
@@ -473,7 +480,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         if not isinstance(raw_reference, Mapping):
             raise SimulatorGateBlocked(
                 "Mobile direct simulator actor manifest is missing",
-                f"{ENVIRONMENT_ID}:actor-manifest",
+                f"{self.environment_id}:actor-manifest",
             )
         try:
             reference = ArtifactRef.from_dict(raw_reference)
@@ -487,7 +494,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         except Exception as error:
             raise SimulatorGateBlocked(
                 "Mobile direct simulator actor manifest is invalid",
-                f"{ENVIRONMENT_ID}:actor-manifest",
+                f"{self.environment_id}:actor-manifest",
             ) from error
         stations = self._required_object(
             payload,
@@ -506,7 +513,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             if not isinstance(entries, list):
                 raise SimulatorGateBlocked(
                     f"Mobile direct actor manifest {service_id} has no actors",
-                    f"{ENVIRONMENT_ID}:actor-manifest",
+                    f"{self.environment_id}:actor-manifest",
                 )
             actor = next(
                 (
@@ -519,7 +526,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             if not isinstance(actor, Mapping):
                 raise SimulatorGateBlocked(
                     f"Mobile direct actor manifest has no {role}",
-                    f"{ENVIRONMENT_ID}:actor-manifest",
+                    f"{self.environment_id}:actor-manifest",
                 )
             actors[client_id] = MessagingActor(
                 client_id=client_id,
@@ -575,7 +582,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             if not isinstance(eve, Mapping):
                 raise SimulatorGateBlocked(
                     "Mobile Social parity actor manifest has no eve",
-                    f"{ENVIRONMENT_ID}:actor-manifest",
+                    f"{self.environment_id}:actor-manifest",
                 )
             actors["fixture-eve"] = MessagingActor(
                 client_id="sim-ios",
@@ -642,7 +649,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         self.suite_runtime_ledger = ledger
         ledger.record(
             SuiteRuntimeAction.PROVISION,
-            resource_id=f"{ENVIRONMENT_ID}:{fixture_epoch}",
+            resource_id=f"{self.environment_id}:{fixture_epoch}",
         )
         ledger.record(
             SuiteRuntimeAction.ACCOUNT_PROVISION,
@@ -3852,7 +3859,7 @@ return {
             "artifactKind": "acceptance-gate-evidence-report",
             "gateId": self.gate_id,
             "gate": self.gate_id,
-            "environment": ENVIRONMENT_ID,
+            "environment": self.environment_id,
             "runtimeCell": self.gate_id,
             "scenario": self.scenario,
             "status": status,

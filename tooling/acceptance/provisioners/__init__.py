@@ -20,6 +20,7 @@ from .mobile_simulator import (
     MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
     MobileSimulatorProvisioner,
+    MobileSocialIOSSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
     MobileStationLifecycleSimulatorProvisioner,
     StationAccessNativeProvisioner,
@@ -61,6 +62,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
         MobileIOSLayoutSimulatorProvisioner
     ),
     MobileSimulatorProvisioner.environment_id: MobileSimulatorProvisioner,
+    MobileSocialIOSSimulatorProvisioner.environment_id: (
+        MobileSocialIOSSimulatorProvisioner
+    ),
     MobileSocialSimulatorProvisioner.environment_id: (
         MobileSocialSimulatorProvisioner
     ),
@@ -127,6 +131,7 @@ def get_provisioner(
     if provisioner_class in {
         ChatMixedNativeProvisioner,
         MobileDirectSimulatorProvisioner,
+        MobileSocialIOSSimulatorProvisioner,
         MobileSocialSimulatorProvisioner,
         StationAccessNativeProvisioner,
     }:
@@ -167,6 +172,7 @@ __all__ = [
     "MobileIOSLayoutSimulatorProvisioner",
     "MobileNativeProvisioner",
     "MobileSimulatorProvisioner",
+    "MobileSocialIOSSimulatorProvisioner",
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
     "StationAccessDesktopOAuthNativeProvisioner",
