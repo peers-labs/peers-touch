@@ -506,9 +506,10 @@ func (s *SubServer) makeCredentialRejected(
 		if err := s.clearRelayCredential(); err != nil {
 			logger.Warnf(ctx, "[relay-client] clear rejected credential: %v", err)
 		}
-		s.setEnrollmentFailure(ErrEnrollmentRequired)
+		s.setEnrollmentRequired()
 		credential, err := s.acquireRelayCredential(ctx, stationPeerID)
 		if err != nil {
+			s.setEnrollmentFailure(err)
 			return "", err
 		}
 		s.setToken(credential.Token)
@@ -530,6 +531,16 @@ func (s *SubServer) setMountReady(connected bool) {
 		s.enrollmentState = "reconnecting"
 	}
 	federation.ClearRelayClient()
+}
+
+func (s *SubServer) setEnrollmentRequired() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status == server.StatusStopping || s.status == server.StatusStopped {
+		return
+	}
+	s.status = server.StatusStarting
+	s.enrollmentState = "enrollment_required"
 }
 
 func (s *SubServer) setEnrollmentFailure(err error) {

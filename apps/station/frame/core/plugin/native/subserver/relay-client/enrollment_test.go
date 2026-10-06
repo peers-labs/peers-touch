@@ -157,6 +157,20 @@ func TestRelayClientReadinessTracksVerifiedMount(t *testing.T) {
 	if subserver.Status() != server.StatusStarting {
 		t.Fatalf("status = %s, want starting", subserver.Status())
 	}
+	subserver.status = server.StatusError
+	subserver.setEnrollmentRequired()
+	if subserver.Status() != server.StatusStarting {
+		t.Fatalf(
+			"re-enrollment status = %s, want starting",
+			subserver.Status(),
+		)
+	}
+	if subserver.enrollmentState != "enrollment_required" {
+		t.Fatalf(
+			"enrollment state = %q, want enrollment_required",
+			subserver.enrollmentState,
+		)
+	}
 }
 
 func TestRelayClientRequiresProtectedTransport(t *testing.T) {
