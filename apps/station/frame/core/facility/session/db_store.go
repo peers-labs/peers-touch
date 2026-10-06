@@ -469,6 +469,11 @@ func migrateCanonicalClientClasses(tx *gorm.DB) error {
 		Update("device_type", DeviceTypeDesktop).Error; err != nil {
 		return fmt.Errorf("normalize legacy desktop session class: %w", err)
 	}
+	if err := tx.Model(&SessionRecord{}).
+		Where("device_type = ?", "desktop-browser").
+		Update("device_type", DeviceTypeWeb).Error; err != nil {
+		return fmt.Errorf("normalize legacy browser session class: %w", err)
+	}
 
 	var invalidCount int64
 	if err := tx.Model(&SessionRecord{}).

@@ -216,6 +216,11 @@ func TestDBStoreAutoMigrateNormalizesAndDeduplicatesClientClasses(t *testing.T) 
 			UserID:    41, DeviceType: DeviceTypeMobile,
 			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
 		},
+		{
+			SessionID: "web-legacy",
+			UserID:    42, DeviceType: DeviceType("desktop-browser"),
+			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
+		},
 	}
 	require.NoError(t, db.Create(&records).Error)
 
@@ -229,6 +234,11 @@ func TestDBStoreAutoMigrateNormalizesAndDeduplicatesClientClasses(t *testing.T) 
 	require.Equal(t, DeviceTypeDesktop, legacy.DeviceType)
 	require.True(t, legacy.Revoked)
 	require.Equal(t, "kicked", legacy.RevokedReason)
+
+	var webLegacy SessionRecord
+	require.NoError(t, db.Where("session_id = ?", "web-legacy").First(&webLegacy).Error)
+	require.Equal(t, DeviceTypeWeb, webLegacy.DeviceType)
+	require.False(t, webLegacy.Revoked)
 
 	for _, sessionID := range []string{"desktop-winner", "mobile-current"} {
 		var record SessionRecord
