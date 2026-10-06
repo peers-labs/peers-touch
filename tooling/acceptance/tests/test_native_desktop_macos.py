@@ -58,6 +58,118 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         lifecycle = get_runtime_cell_lifecycle("desktop-macos-native")
         self.assertIsInstance(lifecycle, NativeDesktopMacOSProvisioner)
 
+    def test_probe_launcher_places_window_on_primary_display(self) -> None:
+        launcher = Mock(log_path=None)
+        session = Mock()
+        session.start.side_effect = RuntimeError("stop after launch")
+        lifecycle = NativeDesktopMacOSProvisioner()
+
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "resolve_smoke_port",
+            return_value=45123,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "find_app_binary",
+            return_value="/tmp/peers-touch-desktop",
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "LocalTauriLauncher",
+            return_value=launcher,
+        ) as launcher_type, patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "TauriSession",
+            return_value=session,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "stop after launch"):
+                lifecycle._probe_native_adapter()
+
+        launcher_type.assert_called_once_with(
+            app_binary="/tmp/peers-touch-desktop",
+            port=45123,
+            profile="desktop-macos-native-probe",
+            environment={
+                "PT_ACCEPTANCE_WINDOW_SLOT": "0",
+                "PT_ACCEPTANCE_WINDOW_COUNT": "1",
+            },
+        )
+        session.stop.assert_called_once_with()
+
+    def test_window_bounds_wait_retries_transient_visibility(self) -> None:
+        transient = BlockedError(
+            reason=(
+                "macOS runtime-cell window bounds probe failed: "
+                "no visible process-owned window"
+            ),
+            resource="runtime-cell-window-bounds",
+        )
+        bounds = {
+            "left": 0.0,
+            "top": 0.0,
+            "width": 1280.0,
+            "height": 720.0,
+        }
+
+        with patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_json_probe",
+            side_effect=(transient, bounds),
+        ) as probe:
+            result = NativeDesktopMacOSProvisioner._await_window_bounds(
+                42,
+                timeout_seconds=1,
+                interval_seconds=0,
+            )
+
+        self.assertEqual(result, bounds)
+        self.assertEqual(probe.call_count, 2)
+
+    def test_window_bounds_wait_fails_closed_after_timeout(self) -> None:
+        transient = BlockedError(
+            reason=(
+                "macOS runtime-cell window bounds probe failed: "
+                "no visible process-owned window"
+            ),
+            resource="runtime-cell-window-bounds",
+        )
+
+        with patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_json_probe",
+            side_effect=transient,
+        ) as probe, self.assertRaisesRegex(
+            BlockedError,
+            "did not become visible within 0.0s",
+        ):
+            NativeDesktopMacOSProvisioner._await_window_bounds(
+                42,
+                timeout_seconds=0,
+                interval_seconds=0,
+            )
+
+        probe.assert_called_once()
+
+    def test_window_bounds_wait_does_not_retry_other_probe_errors(
+        self,
+    ) -> None:
+        failure = BlockedError(
+            reason="macOS runtime-cell window bounds probe failed: Quartz error",
+            resource="runtime-cell-window-bounds",
+        )
+
+        with patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_json_probe",
+            side_effect=failure,
+        ) as probe, self.assertRaisesRegex(BlockedError, "Quartz error"):
+            NativeDesktopMacOSProvisioner._await_window_bounds(
+                42,
+                timeout_seconds=1,
+                interval_seconds=0,
+            )
+
+        probe.assert_called_once()
+
     def test_window_sample_ignores_transparent_little_endian_surface(
         self,
     ) -> None:
