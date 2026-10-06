@@ -142,7 +142,7 @@ export function MomentsPage({
   // -- Handlers --
 
   const handlePublished = useCallback(
-    (_post: Post) => {
+    () => {
       setShowNewPost(false);
     },
     [],

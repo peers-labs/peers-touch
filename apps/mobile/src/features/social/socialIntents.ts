@@ -2,10 +2,9 @@ import type {
   PrivateCommentIntent,
   PrivateCommentPage,
   PrivateCommentSubmitResult,
+  PrivateMomentFileIntent,
   PrivateMomentProjection,
   PrivateMomentReadProjection,
-  PrivateSocialMomentIntent,
-  PrivateSocialTextIntent,
   PrivateSocialWorkerReport,
 } from '../../services/mobileCommands';
 import type {
@@ -19,11 +18,26 @@ import type {
 } from '../../services/gateways/momentsGateway';
 import type { MobileMomentDraft } from './socialApiTypes';
 
+export interface SocialMomentPublishIntent {
+  readonly draftId: string;
+  readonly draftRevision: number;
+  readonly draft: MobileMomentDraft;
+  readonly privateFiles?: readonly PrivateMomentFileIntent[];
+}
+
+export type SocialMomentPublishResult =
+  | {
+    readonly route: 'PUBLIC';
+    readonly outcome: CommandOutcome<MomentCreatedResult>;
+  }
+  | {
+    readonly route: 'PRIVATE';
+    readonly projection: PrivateMomentProjection;
+  };
+
 export interface SocialIntentPort {
   refreshPublicFeed(scope?: 'home' | 'explore'): Promise<boolean>;
-  publishPublic(
-    draft: MobileMomentDraft,
-  ): Promise<CommandOutcome<MomentCreatedResult>>;
+  publishMoment(intent: SocialMomentPublishIntent): Promise<SocialMomentPublishResult>;
   setPublicReaction(
     postId: string,
     reactionKind: number,
@@ -48,12 +62,6 @@ export interface SocialIntentPort {
   deleteComment(postId: string, commentId: string): Promise<boolean>;
   retry(): Promise<boolean>;
 
-  publishPrivateText(
-    intent: PrivateSocialTextIntent,
-  ): Promise<PrivateMomentProjection>;
-  publishPrivate(
-    intent: PrivateSocialMomentIntent,
-  ): Promise<PrivateMomentProjection>;
   readPrivate(postId: string): Promise<PrivateMomentReadProjection>;
   openPrivateMedia(
     postId: string,
