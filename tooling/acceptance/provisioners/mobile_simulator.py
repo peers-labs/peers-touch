@@ -4547,6 +4547,34 @@ def _sanitize_lifecycle_scope(value: object) -> dict[str, Any]:
     }
 
 
+def _device_identity_digest(value: object) -> str | None:
+    raw = str(value or "")
+    if not raw:
+        return None
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _project_device_identity_fields(value: object) -> object:
+    if isinstance(value, Mapping):
+        projected: dict[str, object] = {}
+        for key, item in value.items():
+            normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if normalized == "deviceid":
+                projected["deviceIdentityDigest"] = (
+                    _device_identity_digest(item)
+                )
+            elif normalized == "winningdeviceid":
+                projected["winningDeviceIdentityDigest"] = (
+                    _device_identity_digest(item)
+                )
+            else:
+                projected[str(key)] = _project_device_identity_fields(item)
+        return projected
+    if isinstance(value, (list, tuple)):
+        return [_project_device_identity_fields(item) for item in value]
+    return value
+
+
 class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
     """Keep simulator, Appium, build, and Station topology in the parent."""
 
@@ -5751,6 +5779,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 self.session_factory or self._new_appium_session
             ),
             harness_actions=self._overlay_spec.harness_actions,
+            harness_result_projector=self._project_lifecycle_harness_result,
             sensitive_values=self._raw_authority_values(),
         )
         context = EphemeralGateLaunchContext(
@@ -5769,6 +5798,15 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             )
             self._appium_cleanup_registered = True
         return context
+
+    @staticmethod
+    def _project_lifecycle_harness_result(
+        action: str,
+        value: object,
+    ) -> object:
+        if action == "lifecycle.scope.read":
+            return value
+        return _project_device_identity_fields(value)
 
     def _cleanup_appium_sessions(self) -> None:
         if self._appium_handler is None:
@@ -7198,41 +7236,15 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         if action == "social.people.search" and isinstance(value, (list, tuple)):
             return {
                 "entries": [
-                    cls._project_chat_harness_result("", item)
+                    _project_device_identity_fields(item)
                     for item in value
                 ],
             }
-        if isinstance(value, Mapping):
-            projected: dict[str, object] = {}
-            for key, item in value.items():
-                normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
-                if normalized == "deviceid":
-                    projected["deviceIdentityDigest"] = cls._identity_digest(
-                        item
-                    )
-                elif normalized == "winningdeviceid":
-                    projected["winningDeviceIdentityDigest"] = (
-                        cls._identity_digest(item)
-                    )
-                else:
-                    projected[str(key)] = cls._project_chat_harness_result(
-                        "",
-                        item,
-                    )
-            return projected
-        if isinstance(value, (list, tuple)):
-            return [
-                cls._project_chat_harness_result("", item)
-                for item in value
-            ]
-        return value
+        return _project_device_identity_fields(value)
 
     @staticmethod
     def _identity_digest(value: object) -> str | None:
-        raw = str(value or "")
-        if not raw:
-            return None
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        return _device_identity_digest(value)
 
     def _raw_authority_values(self) -> tuple[str, ...]:
         return (

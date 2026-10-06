@@ -1784,6 +1784,44 @@ class MobileSimulatorContractTests(unittest.TestCase):
 
 
 class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
+    def test_lifecycle_projector_keeps_scope_and_digests_nested_device_ids(
+        self,
+    ) -> None:
+        scope = {"deviceId": "device-one", "group": {}}
+        self.assertIs(
+            MobileStationLifecycleSimulatorProvisioner
+            ._project_lifecycle_harness_result(
+                "lifecycle.scope.read",
+                scope,
+            ),
+            scope,
+        )
+
+        projected = (
+            MobileStationLifecycleSimulatorProvisioner
+            ._project_lifecycle_harness_result(
+                "session.logout",
+                {
+                    "runtime": {"deviceId": "device-one"},
+                    "winningDeviceId": "device-two",
+                },
+            )
+        )
+
+        self.assertEqual(
+            projected,
+            {
+                "runtime": {
+                    "deviceIdentityDigest": hashlib.sha256(
+                        b"device-one"
+                    ).hexdigest(),
+                },
+                "winningDeviceIdentityDigest": hashlib.sha256(
+                    b"device-two"
+                ).hexdigest(),
+            },
+        )
+
     def setUp(self) -> None:
         self.contract_path = (
             ENVIRONMENTS_DIR / "mobile-station-lifecycle-simulator.yaml"
