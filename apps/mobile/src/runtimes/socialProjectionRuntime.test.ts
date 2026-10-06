@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gatewayMocks = vi.hoisted(() => ({
   fetchFeed: vi.fn(),
+  fetchPublicFeed: vi.fn(),
   getPost: vi.fn(),
   fetchComments: vi.fn(),
   getCurrentProfile: vi.fn(),
@@ -14,6 +15,7 @@ const gatewayMocks = vi.hoisted(() => ({
 vi.mock('../services/gateways/momentsGateway', () => ({
   createMomentsGateway: () => ({
     fetchFeed: gatewayMocks.fetchFeed,
+    fetchPublicFeed: gatewayMocks.fetchPublicFeed,
     getPost: gatewayMocks.getPost,
     fetchComments: gatewayMocks.fetchComments,
   }),
@@ -62,6 +64,14 @@ describe('social projection runtime', () => {
       reason: 'session_active',
     }));
     gatewayMocks.fetchFeed.mockReset().mockResolvedValue({
+      ok: true,
+      data: {
+        posts: [],
+        nextCursor: '',
+        hasMore: false,
+      },
+    });
+    gatewayMocks.fetchPublicFeed.mockReset().mockResolvedValue({
       ok: true,
       data: {
         posts: [],
