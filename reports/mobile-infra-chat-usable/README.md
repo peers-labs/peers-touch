@@ -14,19 +14,21 @@ explicit.
 
 | Identity | Value |
 |---|---|
-| Plan | `mobile-infra-chat-usability-20261006-v34` |
-| Plan checkpoint | `85e025e97c28d13fd2535981939a0bcfba18e337` |
+| Plan | `mobile-infra-chat-usability-20261006-v35` |
+| Plan checkpoint | `cf8be18a2e568539096817154f166fa7dd538f0d` |
 | Evidence commit | `f9dd38b6ceddca825945212a717583d274361955` |
+| Contract repair commit | `36e70f0f9b50b85d3e0e0d3048a1cb682446da16` |
 | Evidence workspace digest | `clean` |
 | Workspace ID | `293b40f94701d443` |
 | Branch | `feat/mobile-infra-chat-usable` |
 | Worktree | `/Users/bytedance/Documents/Projects/peers-touch/peers-touch-mobile-usable` |
 | Runtime evidence work item | `MICU-03-V33-20261007` |
-| Final review work item | `MICU-04-V34-20261007` |
+| Final review work item | `MICU-04-V35-20261007` |
 
-The final checkpoint changes only this report and stale Chat contract
-assertions. Final Gap, quality, and completion audits must bind that checkpoint
-exactly; their machine-local latest pointers are linked under
+The contract repair changes only this report and stale Chat contract
+assertions. Product Gap artifacts remain bound to the exact runtime-evidence
+commit. Final source structure, quality, Completion Review, and close audits
+bind the report commit through the machine-local pointers under
 [Final Audit Pointers](#final-audit-pointers).
 
 ## Runtime Identity
@@ -89,7 +91,7 @@ actors and client-to-Station bindings.
   2/2 passed, no blocked, failed, incomplete, or unproven Gate.
 - [MICU-03 formal aggregate](file:///Users/bytedance/Library/Application%20Support/PeersTouch/acceptance/293b40f94701d443/acceptance-run/20261006T190038910609Z-a32cc677473d8c30e70d795ca078d6ec/manifest.json):
   4/4 passed, no blocked, failed, incomplete, or unproven Gate.
-MICU-J04 focused checks:
+MICU-J04 contract-repair focused checks:
 
 - `mobile-contract-static`: PASS, run
   `20261006T200954577044Z-a672b94cc7390ae9e48e98dbf8009d77`.
@@ -98,6 +100,11 @@ MICU-J04 focused checks:
 - `messaging-platform-contract`: PASS, run
   `20261006T201136611088Z-b125f36782282051f71286d4c1d5b4a1`.
 - `architecture-module-governance`: PASS.
+
+The final report-only successor reruns the same four checks after its report
+wording is committed. Those source-bound results are consumed by the final
+Session and Completion Review rather than copied back into this self-referential
+report.
 
 ## Dual-iOS Visible And Appium Evidence
 
@@ -137,13 +144,37 @@ records:
 
 ## Final Audit Pointers
 
-These stable machine-local pointers are updated by the final exact-source
-close sequence:
+Product Gap reports remain attached to the exact source that executed the
+native Journeys:
 
-- [Gap Detector latest](file:///Users/bytedance/Library/Application%20Support/PeersTouch/acceptance/293b40f94701d443/acceptance-gap-detect/latest.json)
+- [MICU-02 Gap report](file:///Users/bytedance/Library/Application%20Support/PeersTouch/acceptance/293b40f94701d443/acceptance-gap-detect/20261006T194650298649Z-536c8bc996feaee62e0df1d0ebba44a9/reports/gap-report.json)
+- [MICU-03 Gap report](file:///Users/bytedance/Library/Application%20Support/PeersTouch/acceptance/293b40f94701d443/acceptance-gap-detect/20261006T190847209438Z-3e715b98bd35f6a2e93386ca03bf8230/reports/gap-report.json)
+
+These stable pointers are updated by the final source-only close sequence:
+
 - [Quality evidence latest](file:///Users/bytedance/Library/Application%20Support/PeersTouch/acceptance/293b40f94701d443/quality-evidence/latest.json)
 - Completion Review and close-ready Completion Audit are owned by the
-  Development Workflow receipt for `MICU-04-V34-20261007`.
+  Development Workflow receipt for `MICU-04-V35-20261007`.
+
+## Repository-Wide Residual Evidence
+
+The final review also ran the deterministic Acceptance profile selected by the
+two-file contract-repair range. Three failures are outside that range and do
+not invalidate the bounded Mobile runtime claim:
+
+- `chat-lifecycle-tree-zero-reference-e2e`: the scanner still reads
+  `docs/architecture/chat-lifecycle/legacy-inventory.json`; the current
+  inventory lives under `docs/architecture/domains/chat/lifecycle/`.
+- `acceptance-runtime-provisioning-self`: its coverage-report digest test uses
+  `docs/architecture/acceptance-framework/coverage-report.md`, while the
+  attestation ignore list still names the retired
+  `docs/architecture/engineering/acceptance/coverage-report.md`.
+- `acceptance-workflow-contract`: 218 of 219 Node tests passed; one fixture
+  cleanup returned `ENOTEMPTY` for its temporary Plan repository.
+
+The source-bound MICU-04 checks and architecture governance pass. These
+repository-wide observations are not relabeled as product failures, and this
+report does not claim they are fixed.
 
 ## Explicit Non-Claims
 
