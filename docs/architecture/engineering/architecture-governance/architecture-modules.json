@@ -38,7 +38,6 @@
     "docs/architecture/platform/applet-runtime",
     "docs/architecture/platform/client/frontend-runtime",
     "docs/architecture/platform/client/mobile",
-    "docs/architecture/shared/federation",
     "docs/architecture/shared/i18n",
     "docs/architecture/shared/notification",
     "docs/architecture/shared/security/secure-content"
@@ -506,15 +505,23 @@
         "SAL-D02",
         "SAL-D03",
         "SAL-D04",
-        "SAL-D05",
-        "SAL-D06"
+        "SAL-D06",
+        "SAL-D07",
+        "SAL-D08",
+        "SAL-D09",
+        "SAL-D10",
+        "SAL-D11"
       ],
       "governedPaths": [
+        "apps/desktop/src/components/common/StationPicker.tsx",
+        "apps/desktop/src-tauri/src/application/station_binding",
+        "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
         "apps/desktop/src/services/desktop_api.ts",
         "apps/desktop/src-tauri/src/application/auth",
         "apps/desktop/src-tauri/src/application/federation",
         "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/federation.rs",
+        "apps/mobile/src/features/station",
         "apps/mobile/src/services/gateways/gatewayTypes.ts",
         "apps/mobile/src/services/gateways/profileGateway.ts",
         "apps/mobile/src/services/mobileCommands.ts",
@@ -525,7 +532,7 @@
         "apps/station/frame/touch",
         "docs/architecture/platform/station/access",
         "model/domain/access_gate",
-        "model/domain/peer/station_identity.proto",
+        "model/domain/peer",
         "tooling/acceptance/gates/station_access"
       ],
       "capabilities": [],
@@ -542,6 +549,59 @@
           "gate": "station-api-ownership"
         }
       ]
+    },
+    {
+      "id": "shared-federation",
+      "root": "docs/architecture/shared/federation",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "D-01",
+        "D-02",
+        "D-03",
+        "D-04",
+        "D-05",
+        "D-06",
+        "D-07",
+        "D-08",
+        "D-09",
+        "D-10",
+        "D-11",
+        "D-12",
+        "D-13",
+        "D-14",
+        "D-15",
+        "D-16"
+      ],
+      "governedPaths": [
+        "apps/station/app/subserver/federation",
+        "apps/station/frame/core/federation",
+        "apps/station/frame/core/plugin/native/federation",
+        "apps/station/frame/core/plugin/native/subserver/relay",
+        "apps/station/frame/core/plugin/native/subserver/relay-client",
+        "docs/architecture/shared/federation",
+        "model/domain/federation",
+        "tooling/acceptance/gates/federation"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
     },
     {
       "id": "chat-storage-governance",

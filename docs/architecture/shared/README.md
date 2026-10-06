@@ -17,7 +17,7 @@ business authority.
 
 | Capability | Entry |
 |---|---|
-| Federation transport and governance | [federation/](./federation/README.md) |
+| Federation governance and secure Relay transport | [federation/](./federation/README.md) |
 | Realtime event transport | [communication/](./communication/README.md) |
 | Cross-domain content security | [security/](./security/README.md) |
 | Object storage | [object-storage.md](./object-storage.md) |

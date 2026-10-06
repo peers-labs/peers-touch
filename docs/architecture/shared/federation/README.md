@@ -1,8 +1,8 @@
 # Federation Architecture
 
 > **Status**: active
-> **Version**: v0.3
-> **Created**: 2026-05-31 | **Updated**: 2026-10-05
+> **Version**: v1.0
+> **Created**: 2026-05-31 | **Updated**: 2026-10-06
 > **Owner**: Architecture Team
 
 ---
@@ -17,6 +17,8 @@
 - 联邦的产品心智：基础设施渗透而非独立入口。
 - Federation Ledger 的可验证、可复制、追加式治理账本模型。
 - Federation discovery、scope、security、Station 分层和现有 Catalog / Locator 的关系。
+- Relay 作为不可信 rendezvous/transport 的角色、Station enrollment、route
+  attestation、opaque tunnel 与资源边界。
 
 本文档集不定义：
 
@@ -24,6 +26,8 @@
 - 联邦 IM 的群 authority、Group Event Log、Sender Key 跨站路由；见 `../../../context/architecture/chat/federated-im/README.md`。
 - 具体 Desktop 页面实现细节。
 - 具体 Station handler、repository、database migration 实现。
+- 客户端如何选择 Home Station、持久化 binding 或执行 Access Gate；见
+  [Station Access](../../platform/station/access/README.md)。
 - 完整公链、token、gas、PoW/PoS 或通用区块链系统。
 
 ---
@@ -37,8 +41,12 @@
 - 联邦是否是持久实体，是否独立于创建者存在。
 - 多个 Station 如何复制和验证联邦治理事实。
 - 用户如何不记地址地发现 Federation、Station 和人。
+- 一个 Station 如何安全证明身份并注册到 Relay。
+- Relay 如何在不读取 Session credential 或业务明文的前提下提供客户端与
+  Station-to-Station 连通性。
 
 因此需要把 Federation 上升为架构层实体，而不是把它隐藏在 Station-to-Station 连接或用户输入 handle 的交互里。
+Relay 仍是无业务 authority 的共享传输能力，不能演变成第二个 Station。
 
 ---
 
@@ -54,6 +62,11 @@
 8. 第一阶段采用单 Federation active sequencer 模型，避免在未引入完整共识前出现并发 head 分叉。
 9. 所有 Catalog、Resolver、Station list、Public actor list 查询必须显式带 Federation 语境。
 10. 跨 Station 身份语义必须复用 `ActorRef` / federated handle / `station_peer_id`，不得发明并行 Account 身份模型。
+11. Relay enrollment 必须绑定 Station host-key proof，并提供可轮换、可撤销的
+    generation credential。
+12. Relay 数据面只转发有界 opaque tunnel；Station 凭据与业务明文端到端终止于
+    Station。
+13. Relay 使用显式最小运行角色，复用同一代码库和 binary，不复制业务服务。
 
 ---
 
@@ -64,9 +77,11 @@
 | [design.md](./design.md) | 核心架构设计、角色边界、用户感知模型、生命周期 |
 | [decisions.md](./decisions.md) | 关键设计决策与替代方案 |
 | [data-model.md](./data-model.md) | Federation、ledger、membership、role、scope、sync 的概念数据模型 |
+| [module-layout.md](./module-layout.md) | Federation 与 Relay transport 的代码 ownership 和依赖方向 |
 | [wire-protocol.md](./wire-protocol.md) | Wire Protocol：hash/签名规范、RPC 定义、payload schema、sync 协议 |
 | [integration.md](./integration.md) | 与 Station、Catalog、Resolver、ActivityPub、Client projection 的映射 |
 | [execution-plans/phase-1-federation-ledger.md](./execution-plans/phase-1-federation-ledger.md) | Federation Ledger 最小闭环落地计划 |
+| [Station Access Relay Plan](../../platform/station/access/execution-plans/20261006-unified-relay-station-access/plan.md) | 统一接入与 Relay 安全硬切计划 |
 | [Historical Federated IM](../../../context/architecture/chat/federated-im/README.md) | 已 supersede 的跨 Station 群/私聊、group authority 与事件日志设计 |
 
 ---
