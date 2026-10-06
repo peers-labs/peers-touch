@@ -267,6 +267,9 @@
           "tooling/docker/README.md",
           "tooling/docker/compose.yml",
           "tooling/docker/entrypoint.sh",
+          "tooling/acceptance/environments/station-access-relay-role.yaml",
+          "tooling/acceptance/provisioners/station_access_relay_role.py",
+          "tooling/acceptance/tests/test_station_access_relay_role.py",
           "tooling/scripts/local-dev/relay-check.sh",
           "tooling/scripts/local-dev/station-dev.sh"
         ]
@@ -293,8 +296,10 @@
           "tooling/acceptance/features/station-access-*.yaml",
           "tooling/acceptance/environments/station-access-desktop-oauth-native.yaml",
           "tooling/acceptance/environments/station-access-native.yaml",
+          "tooling/acceptance/environments/station-access-relay-role.yaml",
           "tooling/acceptance/gates/station_access/**",
-          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py"
+          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
+          "tooling/acceptance/provisioners/station_access_relay_role.py"
         ]
       },
       "require": [

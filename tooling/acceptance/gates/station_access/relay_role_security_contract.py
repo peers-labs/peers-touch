@@ -3,15 +3,39 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import socket
+import ssl
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
-from tooling.acceptance.core import AcceptanceGate, GateError, REPO_ROOT
+from tooling.acceptance.core import (
+    AcceptanceGate,
+    ArtifactRef,
+    EvidenceStore,
+    GateError,
+    REPO_ROOT,
+    load_runtime_manifest,
+    require_runtime_service,
+)
 
 
 GATE_ID = "relay-role-security-contract"
+ENVIRONMENT_ID = "station-access-relay-role"
+RUNTIME_MANIFEST_ENV = "PT_ACCEPTANCE_RUNTIME_MANIFEST"
 FORBIDDEN_EGRESS = "http://192.0.2.12:7784/event"
+ISOLATED_ROUTES = (
+    "/actor",
+    "/api/oauth/providers",
+    "/conversation/list",
+    "/debug",
+)
 
 
 def _read(relative_path: str) -> str:
@@ -228,6 +252,247 @@ def validate_relay_role_security_contract() -> None:
     )
 
 
+def _http_status(url: str) -> int:
+    request = Request(url, headers={"Accept": "application/json"})
+    try:
+        with urlopen(request, timeout=8) as response:
+            response.read(1)
+            return response.status
+    except HTTPError as error:
+        return error.code
+    except (OSError, TimeoutError, URLError) as error:
+        raise GateError(f"HTTP probe failed for {url}: {error}") from error
+
+
+def _probe_tls(stream_endpoint: str) -> dict[str, str]:
+    parsed = urlparse(stream_endpoint)
+    if (
+        parsed.scheme != "tls"
+        or not parsed.hostname
+        or parsed.port is None
+    ):
+        raise GateError("Relay stream endpoint must be a tls:// host and port")
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    context.minimum_version = ssl.TLSVersion.TLSv1_3
+    context.maximum_version = ssl.TLSVersion.TLSv1_3
+    try:
+        with socket.create_connection(
+            (parsed.hostname, parsed.port),
+            timeout=8,
+        ) as raw_socket:
+            with context.wrap_socket(
+                raw_socket,
+                server_hostname=parsed.hostname,
+            ) as tls_socket:
+                version = tls_socket.version()
+                certificate = tls_socket.getpeercert(binary_form=True)
+    except (OSError, ssl.SSLError) as error:
+        raise GateError(
+            f"Relay TLS 1.3 handshake failed at {stream_endpoint}: {error}"
+        ) from error
+    if version != "TLSv1.3" or not certificate:
+        raise GateError("Relay stream did not negotiate TLS 1.3 with a certificate")
+
+    legacy = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    legacy.check_hostname = False
+    legacy.verify_mode = ssl.CERT_NONE
+    legacy.minimum_version = ssl.TLSVersion.TLSv1_2
+    legacy.maximum_version = ssl.TLSVersion.TLSv1_2
+    try:
+        with socket.create_connection(
+            (parsed.hostname, parsed.port),
+            timeout=8,
+        ) as raw_socket:
+            with legacy.wrap_socket(
+                raw_socket,
+                server_hostname=parsed.hostname,
+            ):
+                pass
+    except (OSError, ssl.SSLError):
+        legacy_rejected = True
+    else:
+        legacy_rejected = False
+    if not legacy_rejected:
+        raise GateError("Relay stream accepted forbidden TLS 1.2")
+    return {
+        "endpoint": stream_endpoint,
+        "protocol": version,
+        "certificateSha256": hashlib.sha256(certificate).hexdigest(),
+        "tls12": "rejected",
+    }
+
+
+def _required_object(
+    value: object,
+    field: str,
+    label: str,
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise GateError(f"{label} {field} must be an object")
+    return value
+
+
+def _validate_runtime_evidence(
+    manifest: dict[str, Any],
+    relay_attestation: dict[str, Any],
+) -> dict[str, Any]:
+    if manifest.get("environmentId") != ENVIRONMENT_ID:
+        raise GateError(
+            f"Runtime manifest environment must be {ENVIRONMENT_ID}"
+        )
+    source = _required_object(
+        manifest.get("source"),
+        "source",
+        "Runtime manifest",
+    )
+    source_commit = str(source.get("commit") or "")
+    station = require_runtime_service(manifest, "station", "station")
+    relay = require_runtime_service(manifest, "relay", "relay")
+    for service_id, service in (("station", station), ("relay", relay)):
+        live_commit = str(service.get("liveCommit") or "")
+        if (
+            service.get("workspaceDigest") != "clean"
+            or len(live_commit) < 7
+            or not (
+                live_commit.startswith(source_commit)
+                or source_commit.startswith(live_commit)
+            )
+        ):
+            raise GateError(
+                f"{service_id} service is not bound to the clean Gate source"
+            )
+    if station.get("protocolDigest") != relay.get("protocolDigest"):
+        raise GateError("Station and Relay protocol identities differ")
+
+    if (
+        relay_attestation.get("artifactKind")
+        != "service-deployment-attestation"
+        or relay_attestation.get("serviceId") != "relay"
+        or relay_attestation.get("serviceKind") != "relay"
+        or relay_attestation.get("commit") != relay.get("liveCommit")
+    ):
+        raise GateError("Relay deployment attestation is invalid")
+    security = _required_object(
+        relay_attestation.get("runtimeSecurity"),
+        "runtimeSecurity",
+        "Relay attestation",
+    )
+    station_runtime = _required_object(
+        security.get("stationRuntime"),
+        "stationRuntime",
+        "Relay runtime security",
+    )
+    relay_runtime = _required_object(
+        security.get("relayRuntime"),
+        "relayRuntime",
+        "Relay runtime security",
+    )
+    secrets = _required_object(
+        security.get("relaySecrets"),
+        "relaySecrets",
+        "Relay runtime security",
+    )
+    required_files = _required_object(
+        secrets.get("requiredSecretFiles"),
+        "requiredSecretFiles",
+        "Relay secrets",
+    )
+    if (
+        security.get("attachmentMode") != "existing-owner-managed"
+        or station_runtime.get("role") != "station"
+        or relay_runtime.get("role") != "relay"
+        or station_runtime.get("taskName") == relay_runtime.get("taskName")
+        or station_runtime.get("runtimePath") == relay_runtime.get("runtimePath")
+        or set(station_runtime.get("processIds") or ())
+        & set(relay_runtime.get("processIds") or ())
+        or secrets.get("rootAclProtected") is not True
+        or secrets.get("unexpectedPrincipals") != []
+        or secrets.get("processBinaryMatches") is not True
+        or secrets.get("stationDatabaseExists") is not True
+        or secrets.get("relayDatabaseExists") is not True
+        or secrets.get("stationDatabasePath")
+        == secrets.get("relayDatabasePath")
+        or not required_files
+        or not all(value is True for value in required_files.values())
+    ):
+        raise GateError("Attached Station/Relay runtime security is incomplete")
+    stream_endpoint = str(security.get("streamEndpoint") or "")
+    if not stream_endpoint:
+        raise GateError("Relay stream endpoint is missing")
+    return {
+        "sourceCommit": source_commit,
+        "station": station,
+        "relay": relay,
+        "stationRuntime": station_runtime,
+        "relayRuntime": relay_runtime,
+        "relaySecrets": secrets,
+        "streamEndpoint": stream_endpoint,
+    }
+
+
+def validate_relay_role_runtime_contract() -> dict[str, Any]:
+    manifest_path = os.environ.get(RUNTIME_MANIFEST_ENV, "").strip()
+    if not manifest_path:
+        raise GateError(f"{RUNTIME_MANIFEST_ENV} is required")
+    try:
+        manifest = load_runtime_manifest(Path(manifest_path), GATE_ID)
+        relay = require_runtime_service(manifest, "relay", "relay")
+        reference = ArtifactRef.from_dict(relay["attestationArtifact"])
+        store = EvidenceStore.from_environment(
+            repo_root=REPO_ROOT,
+            worktree=REPO_ROOT,
+        )
+        relay_attestation = store.read_json(reference)
+    except Exception as error:
+        raise GateError(f"Relay runtime manifest is invalid: {error}") from error
+    evidence = _validate_runtime_evidence(manifest, relay_attestation)
+
+    station_endpoint = str(evidence["station"]["endpoint"]).rstrip("/")
+    relay_endpoint = str(evidence["relay"]["endpoint"]).rstrip("/")
+    station_version_status = _http_status(
+        f"{station_endpoint}/app-meta/version"
+    )
+    relay_health_status = _http_status(f"{relay_endpoint}/healthz")
+    metrics_status = _http_status(f"{relay_endpoint}/metrics")
+    isolated_routes = {
+        route: _http_status(f"{relay_endpoint}{route}")
+        for route in ISOLATED_ROUTES
+    }
+    if station_version_status != 200:
+        raise GateError("Station live version endpoint is unavailable")
+    if relay_health_status != 200:
+        raise GateError("Relay live health endpoint is unavailable")
+    if metrics_status != 401:
+        raise GateError("Relay metrics endpoint is not operator-protected")
+    unexpected_routes = {
+        route: status
+        for route, status in isolated_routes.items()
+        if status != 404
+    }
+    if unexpected_routes:
+        raise GateError(
+            f"Relay exposes forbidden Station routes: {unexpected_routes}"
+        )
+    tls = _probe_tls(str(evidence["streamEndpoint"]))
+    return {
+        "environmentId": ENVIRONMENT_ID,
+        "sourceCommit": evidence["sourceCommit"],
+        "stationRuntime": evidence["stationRuntime"],
+        "relayRuntime": evidence["relayRuntime"],
+        "relaySecrets": evidence["relaySecrets"],
+        "http": {
+            "stationVersion": station_version_status,
+            "relayHealth": relay_health_status,
+            "relayMetricsWithoutOperatorCredential": metrics_status,
+            "isolatedRoutes": isolated_routes,
+        },
+        "tls": tls,
+    }
+
+
 class RelayRoleSecurityContractGate(AcceptanceGate):
     gate_id = GATE_ID
     phase = "SAL-REL-01"
@@ -236,6 +501,7 @@ class RelayRoleSecurityContractGate(AcceptanceGate):
 
     def run(self) -> dict[str, object]:
         validate_relay_role_security_contract()
+        runtime = validate_relay_role_runtime_contract()
         self.assert_condition(
             "relay_role_security_contract",
             True,
@@ -245,15 +511,22 @@ class RelayRoleSecurityContractGate(AcceptanceGate):
         return {
             "proven_scope": [
                 "explicit Station/Relay process role and composition allowlists",
-                "fail-closed Relay TLS, signing-key, operator-policy, and quota configuration",
+                "fail-closed Relay TLS, signing-key, operator-policy, and "
+                "quota configuration",
                 "dedicated operator credential issuer, audience, scope, and key",
                 "Relay health and operator-protected metrics route inventory",
+                "exact-source isolated Station and Relay processes on the "
+                "attached profile",
+                "live TLS 1.3 negotiation with TLS 1.2 rejection",
+                "live Relay route isolation and Windows secret ACL ownership",
                 "absence of the undeclared hardcoded Station debug egress",
             ],
             "unproven_scope": [
-                "live public certificate negotiation and hostile-client behavior",
-                "proof-of-possession enrollment, signed discovery, and opaque tunnel behavior",
+                "public CA certificate negotiation and hostile-client load behavior",
+                "proof-of-possession enrollment, signed discovery, and "
+                "opaque tunnel behavior",
             ],
+            "runtime": runtime,
         }
 
 
