@@ -208,6 +208,25 @@ def _add_invoked_user_site_packages() -> None:
 
 
 def _add_invoked_system_site_packages() -> None:
+    candidates: list[Path] = []
+    for path_name in ("purelib", "platlib"):
+        candidate_value = sysconfig.get_path(path_name)
+        if not isinstance(candidate_value, str) or not candidate_value:
+            continue
+        candidate = Path(candidate_value)
+        try:
+            candidate.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            raise RuntimeError(
+                "isolated Gate system package path is invalid"
+            ) from error
+        candidates.append(candidate)
+
+    if not candidates:
+        return
+
     data_path_value = sysconfig.get_path("data")
     if not isinstance(data_path_value, str) or not data_path_value:
         raise RuntimeError("isolated Gate system package root is unavailable")
@@ -222,19 +241,7 @@ def _add_invoked_system_site_packages() -> None:
         raise RuntimeError("isolated Gate system package root is invalid")
 
     resolved_paths: list[str] = []
-    for path_name in ("purelib", "platlib"):
-        candidate_value = sysconfig.get_path(path_name)
-        if not isinstance(candidate_value, str) or not candidate_value:
-            continue
-        candidate = Path(candidate_value)
-        try:
-            candidate.lstat()
-        except FileNotFoundError:
-            continue
-        except OSError as error:
-            raise RuntimeError(
-                "isolated Gate system package path is invalid"
-            ) from error
+    for candidate in candidates:
         try:
             resolved_candidate = candidate.resolve(strict=True)
             resolved_candidate.relative_to(resolved_root)

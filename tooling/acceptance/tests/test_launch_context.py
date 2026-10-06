@@ -1839,6 +1839,33 @@ with EphemeralGateClient.from_environment():
             ):
                 gate_bootstrap_module._add_invoked_user_site_packages()
 
+    def test_bootstrap_ignores_absent_system_root_without_package_paths(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            absent_root = Path(directory) / "interpreter-data"
+            absent_site = absent_root / "lib" / "python" / "site-packages"
+
+            def get_path(name: str) -> str:
+                if name == "data":
+                    return str(absent_root)
+                return str(absent_site)
+
+            with (
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_path",
+                    side_effect=get_path,
+                ) as get_path_mock,
+                patch.object(sys, "path", ["stdlib"]),
+            ):
+                gate_bootstrap_module._add_invoked_system_site_packages()
+                self.assertEqual(sys.path, ["stdlib"])
+                self.assertEqual(
+                    get_path_mock.call_args_list,
+                    [call("purelib"), call("platlib")],
+                )
+
     def test_bootstrap_loads_system_site_inside_interpreter_data_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             data_root = Path(directory) / "interpreter-data"
