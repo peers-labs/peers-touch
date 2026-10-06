@@ -1,4 +1,5 @@
 pub mod adapter;
+pub(crate) mod private_reaction;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -50,6 +51,14 @@ use crate::secure_content::transport::{
 };
 use crate::secure_content::worker::{PrivateSocialWorker, PrivateSocialWorkerReport};
 use crate::secure_content::{NativeSocialSession, PrivateSocialScope};
+
+use private_reaction::{
+    command_projection as private_reaction_command_projection, reconcile_private_reactions,
+    PrivateReactionCommandProjection,
+};
+pub use private_reaction::{
+    social_private_react, social_private_reaction_retry, social_private_unreact,
+};
 
 const DATABASE_KEY_PREFIX: &str = "secure-content.social.v1.sqlcipher";
 
@@ -197,6 +206,7 @@ pub struct PrivateSocialSnapshot {
     pub read_projections: Vec<PrivateMomentReadProjection>,
     pub comment_drafts: Vec<PrivateCommentDraftProjection>,
     pub comments: Vec<PrivateCommentProjection>,
+    pub reaction_commands: Vec<PrivateReactionCommandProjection>,
 }
 
 struct PrivateSocialEngine {
@@ -685,6 +695,7 @@ impl PrivateSocialEngine {
             .map_err(|_| "private Social operation lock poisoned".to_string())?;
         self.ensure_activation_generation(activation_generation)?;
         self.ensure_current()?;
+        reconcile_private_reactions(self)?;
         self.worker.reconcile()
     }
 
@@ -1170,11 +1181,18 @@ impl PrivateSocialEngine {
             .iter()
             .map(|projection| PrivateCommentProjection::decode(projection))
             .collect::<Result<Vec<_>, _>>()?;
+        let reaction_commands = self
+            .store
+            .reaction_commands()?
+            .iter()
+            .map(private_reaction_command_projection)
+            .collect();
         Ok(PrivateSocialSnapshot {
             publish_projections,
             read_projections,
             comment_drafts,
             comments,
+            reaction_commands,
         })
     }
 

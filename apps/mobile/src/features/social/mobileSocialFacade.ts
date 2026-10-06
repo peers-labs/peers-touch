@@ -26,6 +26,7 @@ import {
   readPrivateMomentsSnapshot,
   reconcilePrivateMoments,
   recoverPrivateMoment,
+  setPrivateMomentReaction,
   storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
   subscribePrivateMomentsRuntime,
@@ -268,6 +269,19 @@ export function createMobileSocialFacade(
       ),
       react: async (postId, reactionKind) => {
         assertCurrent();
+        const privateSnapshot = readPrivateMomentsSnapshot();
+        const privatePost = privateProjectionMatchesScope(privateSnapshot, scope)
+          ? privateSnapshot.postsById[postId]
+          : undefined;
+        if (privatePost?.state === 'CONTENT_READY') {
+          const active = privatePost.reactions?.some(
+            (reaction) => reaction.kind === reactionKind && reaction.reactedByViewer,
+          ) ?? false;
+          const result = await completeCurrent(
+            () => setPrivateMomentReaction(postId, reactionKind, !active),
+          );
+          return result.command.state === 'REACTION_COMMITTED';
+        }
         const targetFeed = feedForPost(postId);
         const transaction = targetFeed.beginReaction(postId, reactionKind);
         if (!transaction) return false;
