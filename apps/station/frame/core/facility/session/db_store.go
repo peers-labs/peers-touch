@@ -2,6 +2,9 @@ package session
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -16,6 +19,32 @@ const (
 	DeviceTypeMobile  DeviceType = "mobile"
 	DeviceTypeWeb     DeviceType = "web"
 )
+
+const (
+	activeClientClassIndex = "uidx_actor_sessions_active_client_class"
+	actorTableName         = "touch_actor"
+)
+
+var ErrInvalidDeviceType = errors.New("invalid session client class")
+
+// ParseDeviceType returns the canonical client class persisted in actor_sessions.
+func ParseDeviceType(value string) (DeviceType, error) {
+	deviceType := DeviceType(strings.TrimSpace(value))
+	if err := deviceType.Validate(); err != nil {
+		return "", err
+	}
+	return deviceType, nil
+}
+
+// Validate rejects runtime labels and aliases before they reach persistence.
+func (d DeviceType) Validate() error {
+	switch d {
+	case DeviceTypeDesktop, DeviceTypeMobile, DeviceTypeWeb:
+		return nil
+	default:
+		return fmt.Errorf("%w %q", ErrInvalidDeviceType, d)
+	}
+}
 
 // SessionRecord is the database model for persistent sessions
 type SessionRecord struct {
@@ -92,7 +121,12 @@ func (s *DBStore) AutoMigrate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return db.AutoMigrate(&SessionRecord{})
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&SessionRecord{}); err != nil {
+			return err
+		}
+		return migrateCanonicalClientClasses(tx)
+	})
 }
 
 // Set stores or updates a session
@@ -102,38 +136,56 @@ func (s *DBStore) Set(ctx context.Context, sessionID string, sess *Session) erro
 		return err
 	}
 
-	record := newSessionRecord(sessionID, sess)
+	record, err := newSessionRecord(sessionID, sess)
+	if err != nil {
+		return err
+	}
 
-	return db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "session_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"user_id",
-			"email",
-			"device_type",
-			"token_hash",
-			"ip_address",
-			"user_agent",
-			"oauth_candidate_id",
-			"access_attempt_id",
-			"station_peer_id",
-			"access_decision_revision",
-			"device_id",
-			"lifecycle_generation",
-			"auth_method",
-			"created_at",
-			"expires_at",
-			"last_active_at",
-			"revoked",
-			"revoked_at",
-			"revoked_reason",
-		}),
-	}).Create(record).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := RevokeReplacedClientClassSessions(
+			tx,
+			record.UserID,
+			record.DeviceType,
+			record.SessionID,
+			time.Now().UTC(),
+		); err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "session_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"user_id",
+				"email",
+				"device_type",
+				"token_hash",
+				"ip_address",
+				"user_agent",
+				"oauth_candidate_id",
+				"access_attempt_id",
+				"station_peer_id",
+				"access_decision_revision",
+				"device_id",
+				"lifecycle_generation",
+				"auth_method",
+				"created_at",
+				"expires_at",
+				"last_active_at",
+				"revoked",
+				"revoked_at",
+				"revoked_reason",
+			}),
+		}).Create(record).Error
+	})
 }
 
-func newSessionRecord(sessionID string, sess *Session) *SessionRecord {
-	deviceType := DeviceTypeDesktop
-	if dt, ok := sessionDataString(sess.Data, "device_type"); ok {
-		deviceType = DeviceType(dt)
+func newSessionRecord(sessionID string, sess *Session) (*SessionRecord, error) {
+	rawDeviceType, ok := sessionDataString(sess.Data, "device_type")
+	if !ok {
+		return nil, fmt.Errorf("%w: device_type is required", ErrInvalidDeviceType)
+	}
+	deviceType, err := ParseDeviceType(rawDeviceType)
+	if err != nil {
+		return nil, err
 	}
 
 	return &SessionRecord{
@@ -154,7 +206,7 @@ func newSessionRecord(sessionID string, sess *Session) *SessionRecord {
 		ExpiresAt:              sess.ExpiresAt,
 		LastActiveAt:           sess.LastSeen,
 		Revoked:                false,
-	}
+	}, nil
 }
 
 func sessionDataString(data map[string]interface{}, key string) (string, bool) {
@@ -255,6 +307,9 @@ func (s *DBStore) Cleanup(ctx context.Context) error {
 // RevokeByUserAndDevice revokes all sessions for a user on a specific device type
 // Returns the count of revoked sessions
 func (s *DBStore) RevokeByUserAndDevice(ctx context.Context, userID uint64, deviceType DeviceType, reason string) (int64, error) {
+	if err := deviceType.Validate(); err != nil {
+		return 0, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return 0, err
@@ -272,9 +327,8 @@ func (s *DBStore) RevokeByUserAndDevice(ctx context.Context, userID uint64, devi
 	return result.RowsAffected, result.Error
 }
 
-// RevokeByUser revokes every active session for a user on this Station.
-// A Station owns its own actor_sessions table, so user_id is the correct
-// boundary for the "one account, one active login per Station" invariant.
+// RevokeByUser is the explicit account-wide revocation operation. Session
+// activation must use RevokeReplacedClientClassSessions instead.
 func (s *DBStore) RevokeByUser(ctx context.Context, userID uint64, reason string) (int64, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -295,6 +349,9 @@ func (s *DBStore) RevokeByUser(ctx context.Context, userID uint64, reason string
 
 // GetActiveSessionByUserAndDevice returns the active session for a user on a device type
 func (s *DBStore) GetActiveSessionByUserAndDevice(ctx context.Context, userID uint64, deviceType DeviceType) (*SessionRecord, error) {
+	if err := deviceType.Validate(); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -315,19 +372,19 @@ func (s *DBStore) GetActiveSessionByUserAndDevice(ctx context.Context, userID ui
 	return &record, nil
 }
 
-// CreateWithKick creates a new session and revokes existing sessions that
-// conflict with it. The revocation scope depends on the provided deviceType:
-//
-//   - If deviceType is non-empty, only sessions for the same user_id AND
-//     device_type are revoked. This allows parallel sessions across different
-//     device types (e.g. Desktop native + Browser), as required by MCA-D19.
-//   - If deviceType is empty (backward-compat / legacy callers), ALL active
-//     sessions for the user are revoked (original "one active login" behavior).
+// CreateWithKick creates a new session in one canonical client-class slot.
 func (s *DBStore) CreateWithKick(ctx context.Context, sess *Session, deviceType DeviceType) (*Session, int64, error) {
+	if err := deviceType.Validate(); err != nil {
+		return nil, 0, err
+	}
 	if sess.Data == nil {
 		sess.Data = make(map[string]interface{})
 	}
 	sess.Data["device_type"] = string(deviceType)
+	record, err := newSessionRecord(sess.ID, sess)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -336,39 +393,134 @@ func (s *DBStore) CreateWithKick(ctx context.Context, sess *Session, deviceType 
 
 	var kicked int64
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now := time.Now()
-
-		// Scope revocation: same device_type if provided, otherwise all.
-		var result *gorm.DB
-		if deviceType != "" {
-			result = tx.Model(&SessionRecord{}).
-				Where("user_id = ? AND device_type = ? AND revoked = ?", sess.UserID, deviceType, false).
-				Updates(map[string]interface{}{
-					"revoked":        true,
-					"revoked_at":     now,
-					"revoked_reason": "kicked",
-				})
-		} else {
-			result = tx.Model(&SessionRecord{}).
-				Where("user_id = ? AND revoked = ?", sess.UserID, false).
-				Updates(map[string]interface{}{
-					"revoked":        true,
-					"revoked_at":     now,
-					"revoked_reason": "kicked",
-				})
+		var err error
+		kicked, err = RevokeReplacedClientClassSessions(
+			tx,
+			sess.UserID,
+			deviceType,
+			sess.ID,
+			time.Now().UTC(),
+		)
+		if err != nil {
+			return err
 		}
-		if result.Error != nil {
-			return result.Error
-		}
-		kicked = result.RowsAffected
-
-		return tx.Create(newSessionRecord(sess.ID, sess)).Error
+		return tx.Create(record).Error
 	})
 	if err != nil {
 		return nil, kicked, err
 	}
 
 	return sess, kicked, nil
+}
+
+// RevokeReplacedClientClassSessions serializes one actor's session activation
+// and revokes only older active sessions in the same canonical client class.
+func RevokeReplacedClientClassSessions(
+	tx *gorm.DB,
+	userID uint64,
+	deviceType DeviceType,
+	currentSessionID string,
+	now time.Time,
+) (int64, error) {
+	if tx == nil {
+		return 0, errors.New("session activation requires a database transaction")
+	}
+	if userID == 0 {
+		return 0, errors.New("session activation requires an actor id")
+	}
+	if err := deviceType.Validate(); err != nil {
+		return 0, err
+	}
+	currentSessionID = strings.TrimSpace(currentSessionID)
+	if currentSessionID == "" {
+		return 0, errors.New("session activation requires a session id")
+	}
+
+	var actor struct {
+		ID uint64
+	}
+	if err := tx.Table(actorTableName).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").
+		Where("id = ?", userID).
+		Take(&actor).Error; err != nil {
+		return 0, fmt.Errorf("lock actor %d for session activation: %w", userID, err)
+	}
+
+	result := tx.Model(&SessionRecord{}).
+		Where(
+			"user_id = ? AND device_type = ? AND session_id <> ? AND revoked = ?",
+			userID,
+			deviceType,
+			currentSessionID,
+			false,
+		).
+		Updates(map[string]interface{}{
+			"revoked":        true,
+			"revoked_at":     now,
+			"revoked_reason": "kicked",
+		})
+	return result.RowsAffected, result.Error
+}
+
+func migrateCanonicalClientClasses(tx *gorm.DB) error {
+	if err := tx.Model(&SessionRecord{}).
+		Where("device_type = ?", "desktop-native").
+		Update("device_type", DeviceTypeDesktop).Error; err != nil {
+		return fmt.Errorf("normalize legacy desktop session class: %w", err)
+	}
+
+	var invalidCount int64
+	if err := tx.Model(&SessionRecord{}).
+		Where("device_type NOT IN ?", []DeviceType{
+			DeviceTypeDesktop,
+			DeviceTypeMobile,
+			DeviceTypeWeb,
+		}).
+		Count(&invalidCount).Error; err != nil {
+		return fmt.Errorf("count non-canonical session classes: %w", err)
+	}
+	if invalidCount > 0 {
+		return fmt.Errorf("%w: actor_sessions contains %d non-canonical rows", ErrInvalidDeviceType, invalidCount)
+	}
+
+	var active []SessionRecord
+	if err := tx.Where("revoked = ?", false).
+		Order("user_id ASC, device_type ASC, created_at DESC, id DESC").
+		Find(&active).Error; err != nil {
+		return fmt.Errorf("load active sessions for class migration: %w", err)
+	}
+
+	seen := make(map[string]struct{}, len(active))
+	duplicates := make([]uint64, 0)
+	for i := range active {
+		key := fmt.Sprintf("%d:%s", active[i].UserID, active[i].DeviceType)
+		if _, exists := seen[key]; exists {
+			duplicates = append(duplicates, active[i].ID)
+			continue
+		}
+		seen[key] = struct{}{}
+	}
+	if len(duplicates) > 0 {
+		now := time.Now().UTC()
+		if err := tx.Model(&SessionRecord{}).
+			Where("id IN ?", duplicates).
+			Updates(map[string]interface{}{
+				"revoked":        true,
+				"revoked_at":     now,
+				"revoked_reason": "kicked",
+			}).Error; err != nil {
+			return fmt.Errorf("revoke duplicate active client-class sessions: %w", err)
+		}
+	}
+
+	if err := tx.Exec(
+		"CREATE UNIQUE INDEX IF NOT EXISTS " + activeClientClassIndex +
+			" ON actor_sessions(user_id, device_type) WHERE revoked = false",
+	).Error; err != nil {
+		return fmt.Errorf("create active client-class session constraint: %w", err)
+	}
+	return nil
 }
 
 // CheckSessionValid checks if a session is valid (not revoked, not expired)
