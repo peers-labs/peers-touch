@@ -1517,6 +1517,15 @@ def record_development_result(
         secret_values,
         execution_policy="development",
     )
+    runtime_manifest_ref = redacted_runtime.get("_manifest_ref")
+    if (
+        isinstance(standardized.get("manifest"), dict)
+        and isinstance(runtime_manifest_ref, dict)
+    ):
+        standardized["manifest"] = {
+            **standardized["manifest"],
+            "_manifest_ref": runtime_manifest_ref,
+        }
     reference = gate_run.write_json(
         "development/result.json",
         standardized,
