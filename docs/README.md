@@ -203,9 +203,10 @@
 - Service API capability ownership：`architecture/engineering/api-governance/README.md`
   （active；已接受统一业务 API owner、公开路由、真源存储与机械防重复 Gate）
 - 统一存储架构：`architecture/platform/runtime/storage.md`
+- Station 对象存储与 OSS：`architecture/platform/station/object-storage.md`
 - 大前端运行时架构：`architecture/platform/client/frontend-runtime/README.md`
 - i18n 架构：`architecture/shared/i18n/i18n-architecture.md`
-- 通知系统架构：`architecture/shared/notification/notification-architecture.md`
+- 通知系统架构：`architecture/domains/notification/notification-architecture.md`
 - 实时平面：`architecture/shared/communication/event-stream.md`
 - 语音 / 视频通话架构：`architecture/domains/chat/calling/voice-video.md`
 - Chat 端到端加密、设备级投递与恢复：`architecture/domains/chat/encryption/README.md`
@@ -260,7 +261,7 @@
   （product-accepted / design-accepted；包含 LobeHub benchmark disposition、
   产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/platform/station/actor-isolation.md`
-- Federation 虚拟网络与治理账本：`architecture/shared/federation/README.md`
+- Federation 虚拟网络与治理账本：`architecture/domains/federation/README.md`
 - 质量保证闭环：`architecture/engineering/quality/README.md`
 - 产品验收框架：`architecture/engineering/acceptance/README.md`
 - Human 联邦社交活动层：`architecture/domains/social/federation/README.md`
@@ -374,12 +375,12 @@
 
 ### 我想看通知系统
 
-- 先看 `architecture/shared/notification/notification-architecture.md`
-- 再看执行计划 `architecture/shared/notification/execution-plans/`
+- 先看 `architecture/domains/notification/notification-architecture.md`
+- 再看执行计划 `architecture/domains/notification/execution-plans/`
 
 ### 我想看联邦 / Federation
 
-- 先看 `architecture/shared/federation/README.md`
+- 先看 `architecture/domains/federation/README.md`
 - 再看跨站用户目录 `architecture/domains/identity/federation-catalog.md`
 - 再看 Actor 身份模型 `architecture/domains/identity/unified-actor-system.md`
 

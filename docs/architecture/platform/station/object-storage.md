@@ -1,8 +1,9 @@
-# Chat File Storage & OSS Subserver
+# Station Object Storage & OSS Subserver
 
 > Status: **v3 (terminal, shipped)**, 2026-04-28
 >
-> Scope: All file objects exchanged through a Peers-Touch station —
+> Scope: Domain-neutral object storage mechanics for file objects exchanged
+> through a Peers-Touch Station —
 > friend / group chat attachments (image, document, audio, video),
 > avatars and profile media, applet-managed objects. v3 closes the
 > subsystem: full object lifecycle (delete / patch / restore / TTL /

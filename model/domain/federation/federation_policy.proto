@@ -6,7 +6,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/fed
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Federation Policy — Strategy types for sequencer selection and governance.
-// Source of truth: docs/architecture/shared/federation/wire-protocol.md §8.5
+// Source of truth: docs/architecture/domains/federation/wire-protocol.md §8.5
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // PolicyType identifies the sequencer election and handover strategy.

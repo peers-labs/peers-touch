@@ -157,8 +157,8 @@ Accepted `PostCleanupEvidenceFinalizer` target architecture由`D-19`定义：
 
 ## 5. 相关文档
 
-- [Federation Architecture](../../shared/federation/README.md) — 双边互验证的首个复杂产品域。
-- [Federation Ledger Phase 1](../../shared/federation/execution-plans/phase-1-federation-ledger.md) — 当前仓库保留的 Federation Ledger 实施计划；后续产品治理以 Federation 架构与新计划为准。
+- [Federation Architecture](../../domains/federation/README.md) — 双边互验证的首个复杂产品域。
+- [Federation Ledger Phase 1](../../domains/federation/execution-plans/phase-1-federation-ledger.md) — 当前仓库保留的 Federation Ledger 实施计划；后续产品治理以 Federation 架构与新计划为准。
 - [Project Docs Entry](../../../README.md) — 文档层级与当前真源规则。
 - [`pt-acceptance-infra-engineering`](../../../../tooling/skills/pt-acceptance-infra-engineering/SKILL.md) — Acceptance Infra 优化、审计与责任防火墙入口。
 - [`pt-acceptance-engineering`](../../../../tooling/skills/pt-acceptance-engineering/SKILL.md) — Acceptance 补齐、升级与审计入口。
