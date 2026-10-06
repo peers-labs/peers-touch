@@ -256,6 +256,47 @@
       }
     },
     {
+      "id": "station-access-endpoint-discovery",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-endpoint-discovery"],
+      "required_gates": [
+        "proto-build",
+        "station-api-ownership",
+        "relay-endpoint-discovery-contract"
+      ],
+      "synthetic_paths": [
+        "model/domain/peer/access_endpoint.proto",
+        "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station host identity",
+          "Relay endpoint signing identity",
+          "Station-signed route attestations",
+          "Relay connection-grant registry"
+        ],
+        "surfaces": [
+          "POST /.well-known/peers-touch/access",
+          "Relay route publication and private grant registration"
+        ],
+        "proven_by": [
+          "relay-endpoint-discovery-contract"
+        ],
+        "proven_scope": [
+          "Station and Relay roles use one challenge-bound protobuf discovery contract",
+          "Relay lists only current public routes without a grant",
+          "private grants are Station-signed, Relay-bound, expiring, and replay-limited",
+          "forged Station routes and wrong-Relay grants fail closed"
+        ],
+        "unproven_scope": [
+          "Desktop and Mobile route binding are owned by later Relay closures"
+        ]
+      }
+    },
+    {
       "id": "station-access-interface-integrity",
       "domain": "station-access",
       "direction": "acceptance_validates_product",

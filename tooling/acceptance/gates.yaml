@@ -382,6 +382,21 @@
       "tier": "env-evidence",
       "description": "Prove sixwin Station host-key PoP enrollment, hash-only one-time invites, Relay EdDSA credential rotation, generation revoke, stream closure, and explicit re-enrollment."
     },
+    "relay-endpoint-discovery-contract": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_endpoint_discovery_contract"
+      ],
+      "ephemeralCapabilities": [
+        "station-access.endpoint-discovery-probe"
+      ],
+      "timeout_seconds": 1200,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "tier": "env-evidence",
+      "description": "Prove the shared protobuf discovery endpoint reports challenge-bound signed Station and Relay roles and that route/grant filtering passes its canonical contract."
+    },
     "station-access-auth-e2e": {
       "argv": [
         "python3",

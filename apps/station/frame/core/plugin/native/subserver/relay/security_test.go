@@ -208,13 +208,16 @@ func TestRelayRouteInventoryIsRoleBounded(t *testing.T) {
 	}
 
 	want := map[string]server.Method{
+		"/.well-known/peers-touch/access":    server.POST,
 		"/healthz":                           server.GET,
 		"/metrics":                           server.GET,
+		"/api/v1/relay/grants":               server.POST,
 		"/api/v1/relay/invite":               server.POST,
 		"/api/v1/relay/invites":              server.GET,
 		"/api/v1/relay/invite/revoke":        server.POST,
 		"/api/v1/relay/mounts":               server.GET,
 		"/api/v1/relay/mount":                server.DELETE,
+		"/api/v1/relay/routes":               server.POST,
 		"/api/v1/relay/stats":                server.GET,
 		"/api/v1/relay/enrollment/challenge": server.POST,
 		"/api/v1/relay/register":             server.POST,

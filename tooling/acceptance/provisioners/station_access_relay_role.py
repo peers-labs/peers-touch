@@ -40,6 +40,11 @@ from tooling.acceptance.gates.station_access.relay_enrollment_e2e import (
     GATE_ID as ENROLLMENT_GATE_ID,
     RelayEnrollmentCapabilityHandler,
 )
+from tooling.acceptance.gates.station_access.relay_endpoint_discovery_contract import (
+    CAPABILITY_ID as DISCOVERY_CAPABILITY_ID,
+    GATE_ID as DISCOVERY_GATE_ID,
+    RelayEndpointDiscoveryCapabilityHandler,
+)
 from tooling.scripts.deploy.windows_runtime import (
     WindowsRuntimeConfig,
     execute as execute_windows_runtime,
@@ -473,6 +478,29 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
         if not required_capabilities:
             return None
         if (
+            gate_id == DISCOVERY_GATE_ID
+            and required_capabilities == (DISCOVERY_CAPABILITY_ID,)
+            and self._manifest is not None
+            and self._manifest.is_ready()
+            and evidence_run_id != provisioning_run_id
+            and evidence_run_id == self.evidence_run.run_id
+            and provisioning_run_id == self._manifest.run_id
+            and self._station_config is not None
+            and self._relay_config is not None
+        ):
+            context = EphemeralGateLaunchContext(
+                required_capabilities=required_capabilities
+            )
+            context.register_capability(
+                DISCOVERY_CAPABILITY_ID,
+                RelayEndpointDiscoveryCapabilityHandler(
+                    _windows_transport(self._relay_config),
+                    self._station_config,
+                    self._relay_config,
+                ),
+            )
+            return context
+        if (
             gate_id != ENROLLMENT_GATE_ID
             or required_capabilities != (ENROLLMENT_CAPABILITY_ID,)
             or self._manifest is None
@@ -503,7 +531,11 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
-            if gate_id not in {ROLE_SECURITY_GATE_ID, ENROLLMENT_GATE_ID}:
+            if gate_id not in {
+                ROLE_SECURITY_GATE_ID,
+                ENROLLMENT_GATE_ID,
+                DISCOVERY_GATE_ID,
+            }:
                 raise BlockedError(
                     reason=f"{self.environment_id} does not support {gate_id}",
                     resource=f"gate-environment:{gate_id}",

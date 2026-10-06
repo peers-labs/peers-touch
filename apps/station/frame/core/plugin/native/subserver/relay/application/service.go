@@ -40,6 +40,10 @@ type Service struct {
 
 	challengeMu sync.Mutex
 	challenges  map[string]domain.EnrollmentChallenge
+
+	discoveryMu sync.Mutex
+	routes      map[string]domain.RouteRecord
+	grants      map[string]domain.GrantRecord
 }
 
 func NewService(
@@ -51,6 +55,8 @@ func NewService(
 		authority:  authority,
 		now:        func() time.Time { return time.Now().UTC() },
 		challenges: make(map[string]domain.EnrollmentChallenge),
+		routes:     make(map[string]domain.RouteRecord),
+		grants:     make(map[string]domain.GrantRecord),
 	}
 }
 
@@ -382,14 +388,25 @@ func (s *Service) authenticateMountCredential(
 	if err != nil {
 		return domain.MountIdentity{}, nil, ErrCredentialInvalid
 	}
+	mount, err := s.authenticateMountIdentity(ctx, identity)
+	if err != nil {
+		return domain.MountIdentity{}, nil, err
+	}
+	return identity, mount, nil
+}
+
+func (s *Service) authenticateMountIdentity(
+	ctx context.Context,
+	identity domain.MountIdentity,
+) (*domain.Mount, error) {
 	mount, err := s.repo.GetMountByStationPeerID(ctx, identity.StationPeerID)
 	if err != nil || mount.Status == domain.MountStatusRevoked ||
 		mount.ID != identity.MountID ||
 		mount.Generation != identity.Generation ||
 		mount.CredentialJTI != identity.JTI {
-		return domain.MountIdentity{}, nil, ErrCredentialInvalid
+		return nil, ErrCredentialInvalid
 	}
-	return identity, mount, nil
+	return mount, nil
 }
 
 func (s *Service) AuthenticateNetworkCredential(

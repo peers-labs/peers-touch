@@ -79,6 +79,27 @@ func (a *CredentialAuthority) RelayPeerID() string {
 	return a.relayPeerID
 }
 
+func (a *CredentialAuthority) SignEndpointStatement(
+	statement []byte,
+) ([]byte, []byte, error) {
+	if len(statement) == 0 {
+		return nil, nil, ErrInvalidCredential
+	}
+	signature := ed25519.Sign(
+		a.privateKey,
+		append([]byte(domain.AccessEndpointDomain), statement...),
+	)
+	libp2pPublicKey, err := libp2pcrypto.UnmarshalEd25519PublicKey(a.publicKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode Relay endpoint public key: %w", err)
+	}
+	publicKey, err := libp2pcrypto.MarshalPublicKey(libp2pPublicKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal Relay endpoint public key: %w", err)
+	}
+	return publicKey, signature, nil
+}
+
 func (a *CredentialAuthority) DigestInvite(secret string) string {
 	mac := hmac.New(sha256.New, a.inviteKey)
 	_, _ = mac.Write([]byte(secret))

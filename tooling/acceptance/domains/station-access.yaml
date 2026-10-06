@@ -10,6 +10,7 @@
     "station-access-federation-context-boundary",
     "station-access-relay-runtime-security",
     "station-access-relay-enrollment",
+    "station-access-endpoint-discovery",
     "station-access-interface-integrity"
   ],
   "validation_gate_id": "station-access-domain-validation"
