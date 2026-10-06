@@ -159,6 +159,7 @@ func (s *native) initComponents(ctx context.Context) error {
 		}
 
 		logger.Infof(ctx, "initial server's name is: %s", serverName)
+		s.primeServerOptions()
 		s.opts.Server = plugin.ServerPlugins[serverName].New()
 
 		// Inject plugin subservers into subServerNewFunctions
@@ -203,4 +204,10 @@ func (s *native) initComponents(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *native) primeServerOptions() {
+	// Server constructors read typed options before Init. Roles without
+	// app-level server options still need that option context initialized.
+	s.opts.Apply(server.WithTransport(s.opts.Transport))
 }
