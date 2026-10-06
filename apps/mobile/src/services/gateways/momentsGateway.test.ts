@@ -23,6 +23,7 @@ import {
   PostType,
   ReactionKind,
   TimelinePageOutcome,
+  TimelineSort,
 } from '../../gen/proto/domain/social/post_pb';
 import { createMomentsGateway } from './momentsGateway';
 
@@ -73,6 +74,36 @@ describe('Moments reaction routes', () => {
 });
 
 describe('Moments Station protobuf JSON decoding', () => {
+  it('sends canonical HOT ranking only on the public Explore timeline', async () => {
+    commandMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        posts: [],
+        next_cursor: '',
+        has_more: false,
+        outcome: 'TIMELINE_PAGE_OUTCOME_EMPTY',
+        policy_summary: { scanned_count: 0, filtered_count: 0 },
+      },
+    });
+
+    await createMomentsGateway(session).fetchPublicFeed(
+      'explore-cursor',
+      20,
+      TimelineSort.HOT,
+    );
+
+    expect(commandMock).toHaveBeenCalledWith({
+      method: 'GET',
+      path: '/api/v1/social/timeline',
+      query: {
+        type: 2,
+        cursor: 'explore-cursor',
+        limit: 20,
+        sort: TimelineSort.HOT,
+      },
+    });
+  });
+
   it('decodes snake-case timeline, post, reaction, and comment responses', async () => {
     commandMock
       .mockResolvedValueOnce({

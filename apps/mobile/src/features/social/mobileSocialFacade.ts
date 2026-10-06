@@ -3,6 +3,7 @@ import {
   createMomentsFeedStore,
   type MomentsFeedStoreController,
 } from './momentsFeedStore';
+import { composeHomeFeedState } from './privateMomentFeedProjection';
 import type {
   MobileSocialScope,
   SocialExperienceProjection,
@@ -36,7 +37,12 @@ export interface MobileSocialFacadeOwnerPort {
 
 export interface MobileSocialFacadeController {
   readonly scope: MobileSocialScope;
+  /** Compatibility owner used by runtime ingress; product pages use `feeds`. */
   readonly feed: MomentsFeedStoreController;
+  readonly feeds: {
+    readonly home: MomentsFeedStoreController;
+    readonly explore: MomentsFeedStoreController;
+  };
   readonly intents: SocialIntentPort;
   /** Acceptance harness compatibility; product pages must use `intents`. */
   readonly gateway: MomentsGateway;
@@ -79,7 +85,29 @@ export function createMobileSocialFacade(
     lifecycleGeneration: String(session.lifecycleGeneration),
   });
   const gateway = createMomentsGateway(session);
-  const feed = createMomentsFeedStore(gateway);
+  const homeFeed = createMomentsFeedStore(gateway);
+  const exploreFeed = createMomentsFeedStore(gateway, { scope: 'explore' });
+  const feed: MomentsFeedStoreController = {
+    ...homeFeed,
+    reconcile: async () => {
+      const [home, explore] = await Promise.all([
+        homeFeed.reconcile(),
+        exploreFeed.reconcile(),
+      ]);
+      if (home === false || explore === false) return false;
+      if (home === null || explore === null) return null;
+      return true;
+    },
+    prependPost: (post) => homeFeed.prependPost(post),
+    removePost: (postId) => {
+      homeFeed.removePost(postId);
+      exploreFeed.removePost(postId);
+    },
+    teardown: () => {
+      homeFeed.teardown();
+      exploreFeed.teardown();
+    },
+  };
   const momentsProjection = createMomentsProjection();
   const listeners = new Set<() => void>();
   let revision = 0;
@@ -92,13 +120,15 @@ export function createMobileSocialFacade(
     currentProjection = buildProjection();
     listeners.forEach((listener) => listener());
   };
-  const releaseFeed = feed.subscribe(emit);
+  const releaseHomeFeed = homeFeed.subscribe(emit);
+  const releaseExploreFeed = exploreFeed.subscribe(emit);
   const releaseMomentsProjection = momentsProjection.subscribe(emit);
   const releasePrivateProjection = subscribePrivateMomentsRuntime(emit);
 
   const controller: MobileSocialFacadeController = {
     scope,
     feed,
+    feeds: { home: homeFeed, explore: exploreFeed },
     intents: createIntentPort(),
     gateway,
     owner: { momentsProjection },
@@ -114,15 +144,17 @@ export function createMobileSocialFacade(
 
   function buildProjection(): SocialExperienceProjection {
     const privateSocial = readPrivateMomentsSnapshot();
+    const scopedPrivateSocial = privateProjectionMatchesScope(privateSocial, scope)
+      ? privateSocial
+      : null;
     return Object.freeze({
       scope,
       revision,
-      home: feed.state(),
+      home: composeHomeFeedState(homeFeed.state(), scopedPrivateSocial),
+      explore: exploreFeed.state(),
       runtime: Object.freeze({
         availability: momentsProjection.state().availability,
-        privateSocial: privateProjectionMatchesScope(privateSocial, scope)
-          ? privateSocial
-          : null,
+        privateSocial: scopedPrivateSocial,
       }),
     });
   }
@@ -146,7 +178,8 @@ export function createMobileSocialFacade(
   function teardown(): void {
     if (torn) return;
     torn = true;
-    releaseFeed();
+    releaseHomeFeed();
+    releaseExploreFeed();
     releaseMomentsProjection();
     releasePrivateProjection();
     feed.teardown();
@@ -180,12 +213,13 @@ export function createMobileSocialFacade(
     return {
       publishPublic: async (draft) => {
         const result = await completeCurrent(() => gateway.createMoment(draft));
-        if (result.ok && result.data.post) feed.prependPost(result.data.post);
+        if (result.ok && result.data.post) homeFeed.prependPost(result.data.post);
         return result;
       },
       react: async (postId, reactionKind) => {
         assertCurrent();
-        const transaction = feed.beginReaction(postId, reactionKind);
+        const targetFeed = feedForPost(postId);
+        const transaction = targetFeed.beginReaction(postId, reactionKind);
         if (!transaction) return false;
         const result = await completeCurrent(() => (
           transaction.operation === 'unreact'
@@ -193,23 +227,23 @@ export function createMobileSocialFacade(
             : gateway.reactToPost(postId, reactionKind)
         ));
         if (result.ok) {
-          feed.commitReaction(transaction, result.data.reactions);
+          targetFeed.commitReaction(transaction, result.data.reactions);
           return true;
         }
-        feed.rollbackReaction(transaction, result.error.message);
+        targetFeed.rollbackReaction(transaction, result.error.message);
         return false;
       },
       comment: async (postId, content, replyToCommentId) => {
         const result = await completeCurrent(
           () => gateway.createComment(postId, content, replyToCommentId),
         );
-        return result.ok && await feed.refreshPost(postId);
+        return result.ok && await feedForPost(postId).refreshPost(postId);
       },
       deleteComment: async (postId, commentId) => {
         const result = await completeCurrent(
           () => gateway.deleteComment(commentId),
         );
-        return result.ok && await feed.reloadMoment(postId);
+        return result.ok && await feedForPost(postId).reloadMoment(postId);
       },
       retry: () => completeCurrent(dependencies.retry),
       publishPrivateText: (intent) => completeCurrent(
@@ -238,6 +272,10 @@ export function createMobileSocialFacade(
       ),
       reconcilePrivate: () => completeCurrent(reconcilePrivateMoments),
     };
+  }
+
+  function feedForPost(postId: string): MomentsFeedStoreController {
+    return exploreFeed.state().postIndex.has(postId) ? exploreFeed : homeFeed;
   }
 
   return controller;

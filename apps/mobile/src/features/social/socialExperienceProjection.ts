@@ -18,5 +18,6 @@ export interface SocialExperienceProjection {
   readonly scope: MobileSocialScope;
   readonly revision: number;
   readonly home: MomentsFeedState;
+  readonly explore: MomentsFeedState;
   readonly runtime: SocialRuntimeProjection;
 }

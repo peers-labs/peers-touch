@@ -22,6 +22,7 @@ import {
   PostDetailOutcome,
   ReactionSummarySchema,
   TimelinePageOutcome,
+  TimelineSort,
   type FeedObjectExplanation,
   type Post,
   type ReactionKind,
@@ -138,6 +139,12 @@ export interface MomentsFeedStoreController {
   /** Refresh the feed from the beginning */
   refresh: () => Promise<boolean>;
 
+  /** Select Station-owned Explore ranking and restart its cursor window. */
+  setSort: (sort: TimelineSort) => Promise<boolean>;
+
+  /** Active canonical ranking for this feed window. */
+  sort: () => TimelineSort;
+
   /** Null means superseded: do not change availability or acknowledge a cursor. */
   reconcile: () => Promise<boolean | null>;
 
@@ -191,6 +198,13 @@ type FeedPageWithExplanations = MomentsFeedPage & {
 
 type FeedPageMode = 'replace' | 'refresh' | 'append';
 
+export type MomentsFeedScope = 'home' | 'explore';
+
+export interface MomentsFeedStoreOptions {
+  readonly scope?: MomentsFeedScope;
+  readonly initialSort?: TimelineSort;
+}
+
 export function resolveMomentPolicyState(
   explanation: FeedObjectExplanation | undefined,
 ): MomentPolicyState {
@@ -237,7 +251,10 @@ export async function readAuthoritativeMomentDetail(
 
 export function createMomentsFeedStore(
   gateway: MomentsGateway,
+  options: MomentsFeedStoreOptions = {},
 ): MomentsFeedStoreController {
+  const feedScope = options.scope ?? 'home';
+  let feedSort = options.initialSort ?? TimelineSort.RECENT;
   let feedState: MomentsFeedState = {
     posts: [],
     postIndex: new Map(),
@@ -268,6 +285,12 @@ export function createMomentsFeedStore(
   const listeners = new Set<() => void>();
 
   // -- Internal helpers --
+
+  function fetchPage(cursor: string): ReturnType<MomentsGateway['fetchFeed']> {
+    return feedScope === 'explore'
+      ? gateway.fetchPublicFeed(cursor, DEFAULT_PAGE_SIZE, feedSort)
+      : gateway.fetchFeed(cursor, DEFAULT_PAGE_SIZE);
+  }
 
   function emit(): void {
     if (torn) return;
@@ -461,7 +484,7 @@ export function createMomentsFeedStore(
     };
     emit();
 
-    const result = await gateway.fetchFeed('', DEFAULT_PAGE_SIZE);
+    const result = await fetchPage('');
     if (!isFeedRequestCurrent(requestLifecycle, requestRevision, requestId)) return;
 
     if (result.ok) {
@@ -506,7 +529,7 @@ export function createMomentsFeedStore(
     };
     emit();
 
-    const result = await gateway.fetchFeed(cursor, DEFAULT_PAGE_SIZE);
+    const result = await fetchPage(cursor);
     if (!isFeedRequestCurrent(requestLifecycle, requestRevision, requestId)) return;
 
     if (result.ok) {
@@ -529,6 +552,19 @@ export function createMomentsFeedStore(
     return await refreshFeed() === true;
   }
 
+  async function setSort(sort: TimelineSort): Promise<boolean> {
+    const canonicalSort = sort === TimelineSort.HOT
+      ? TimelineSort.HOT
+      : TimelineSort.RECENT;
+    if (feedScope !== 'explore' || canonicalSort === feedSort) return true;
+    feedSort = canonicalSort;
+    return await refresh();
+  }
+
+  function sort(): TimelineSort {
+    return feedSort;
+  }
+
   async function refreshFeed(): Promise<boolean | null> {
     if (torn) return null;
     const requestLifecycle = lifecycleRevision;
@@ -543,7 +579,7 @@ export function createMomentsFeedStore(
     };
     emit();
 
-    const result = await gateway.fetchFeed('', DEFAULT_PAGE_SIZE);
+    const result = await fetchPage('');
     if (!isFeedRequestCurrent(requestLifecycle, requestRevision, requestId)) return null;
 
     if (result.ok) {
@@ -1016,6 +1052,8 @@ export function createMomentsFeedStore(
     loadFeed,
     loadMore,
     refresh,
+    setSort,
+    sort,
     reconcile,
     refreshPost,
     prependPost,

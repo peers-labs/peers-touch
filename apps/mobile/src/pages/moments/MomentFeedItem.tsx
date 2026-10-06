@@ -17,7 +17,18 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Card, Typography } from 'antd';
-import { Heart, MessageCircle, Send, Share2, ShieldAlert } from 'lucide-react';
+import {
+  BarChart3,
+  Heart,
+  Link as LinkIcon,
+  MapPin,
+  MessageCircle,
+  Play,
+  Repeat2,
+  Send,
+  Share2,
+  ShieldAlert,
+} from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
@@ -151,6 +162,7 @@ export function MomentFeedItem({
     }
     return [];
   }, [post.content]);
+  const contentKind = post.content.case ?? 'unknown';
 
   // Reaction state — build per-kind counts from the reactions array
   const reactionCounts = useMemo(() => {
@@ -260,8 +272,80 @@ export function MomentFeedItem({
     );
   };
 
+  const renderStructuredContent = () => {
+    switch (post.content.case) {
+      case 'videoPost': {
+        const video = post.content.value.video;
+        return (
+          <div className="moments-content-detail moments-content-video">
+            <Play size={18} aria-hidden="true" />
+            <span>
+              {video
+                ? `${video.width || 0}\u00d7${video.height || 0} \u00b7 ${video.durationSeconds || 0}s`
+                : t('mobile.moments.content.video')}
+            </span>
+          </div>
+        );
+      }
+      case 'linkPost': {
+        const link = post.content.value.link;
+        return link ? (
+          <div className="moments-content-detail moments-content-link">
+            <LinkIcon size={18} aria-hidden="true" />
+            <div>
+              <strong>{link.title || link.url}</strong>
+              <span>{link.url}</span>
+            </div>
+          </div>
+        ) : null;
+      }
+      case 'pollPost': {
+        const poll = post.content.value.poll;
+        return poll ? (
+          <div className="moments-content-detail moments-content-poll">
+            <BarChart3 size={18} aria-hidden="true" />
+            <div>
+              {poll.options.map((option, index) => (
+                <div key={`${index}:${option.text}`} className="moments-poll-option">
+                  {option.text}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      }
+      case 'repostPost':
+        return (
+          <div className="moments-content-detail moments-content-repost">
+            <Repeat2 size={18} aria-hidden="true" />
+            <span>{post.content.value.originalPostId}</span>
+          </div>
+        );
+      case 'locationPost': {
+        const location = post.content.value.location;
+        return location ? (
+          <div className="moments-content-detail moments-content-location">
+            <MapPin size={18} aria-hidden="true" />
+            <div>
+              <strong>{location.name}</strong>
+              <span>{location.address}</span>
+            </div>
+          </div>
+        ) : null;
+      }
+      case 'textPost':
+      case 'imagePost':
+      default:
+        return null;
+    }
+  };
+
   return (
-    <Card className="moments-card" variant="borderless">
+    <Card
+      className="moments-card"
+      variant="borderless"
+      data-moment-content-kind={contentKind}
+    >
       {/* Author header — Avatar 42px + name + time */}
       <div className="moments-card-header" onClick={() => onOpenDetail(post.id)}>
         <MobileAvatar
@@ -282,6 +366,7 @@ export function MomentFeedItem({
 
       {/* Image grid (1/2/3+ layout) */}
       {renderImageGrid()}
+      {renderStructuredContent()}
 
       {/* Reaction summary tags */}
       {totalReactions > 0 && (
