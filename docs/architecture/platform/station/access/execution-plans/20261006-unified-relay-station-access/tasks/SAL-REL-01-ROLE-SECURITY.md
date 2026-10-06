@@ -17,9 +17,14 @@
   "runtimeClass": "service",
   "writeSet": [
     "apps/station/app/conf",
+    "apps/station/app/main.go",
     "apps/station/app/subserver/events/bus.go",
+    "apps/station/frame/peers.go",
     "apps/station/frame/core/federation",
+    "apps/station/frame/core/plugin/native/node",
     "apps/station/frame/core/plugin/native/subserver/relay",
+    "apps/station/frame/core/runtime/role",
+    "docs/architecture/engineering/architecture-governance/architecture-modules.json",
     "docs/architecture/engineering/api-governance",
     "docs/architecture/shared/federation",
     "docs/knowledge",
@@ -69,7 +74,7 @@
     "Do not allow production plaintext or insecure TLS verification",
     "Do not log credentials, grants, payloads, or high-cardinality route identifiers"
   ],
-  "updatedAt": "2026-10-06T05:56:57.000Z"
+  "updatedAt": "2026-10-06T06:36:41.000Z"
 }
 ```
 
@@ -80,5 +85,6 @@
 ## Current Snapshot
 
 - Relay compose 使用 Station image，但没有明确 role allowlist。
+- `app/main.go`、`frame/peers.go` 与 native plugin injection 当前无条件装配业务面。
 - stream TLS 为空时回退明文，relay-client 默认 `use-tls: false`。
 - 两处 Station 源码仍向 `http://192.0.2.12:7784/event` 发送 debug 数据。
