@@ -1777,6 +1777,68 @@ with EphemeralGateClient.from_environment():
             ):
                 self.assertFalse(marker.exists(), marker)
 
+    def test_bootstrap_loads_default_user_site_without_site_initialization(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user_base = Path(directory) / "user-base"
+            site_packages = user_base / "lib" / "python" / "site-packages"
+            site_packages.mkdir(parents=True)
+
+            with (
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_config_var",
+                    return_value=str(user_base),
+                ),
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_preferred_scheme",
+                    return_value="synthetic_user",
+                ),
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_path",
+                    return_value=str(site_packages),
+                ),
+                patch.object(sys, "path", ["stdlib"]),
+            ):
+                gate_bootstrap_module._add_invoked_user_site_packages()
+                self.assertEqual(
+                    sys.path,
+                    ["stdlib", str(site_packages.resolve())],
+                )
+
+    def test_bootstrap_rejects_user_site_outside_default_user_base(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user_base = Path(directory) / "user-base"
+            user_base.mkdir()
+            outside = Path(directory) / "outside-site-packages"
+            outside.mkdir()
+
+            with (
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_config_var",
+                    return_value=str(user_base),
+                ),
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_preferred_scheme",
+                    return_value="synthetic_user",
+                ),
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_path",
+                    return_value=str(outside),
+                ),
+                self.assertRaisesRegex(
+                    RuntimeError,
+                    "user package path is unsafe",
+                ),
+            ):
+                gate_bootstrap_module._add_invoked_user_site_packages()
+
     def test_context_launcher_rejects_unsafe_venv_layouts(self) -> None:
         cases = (
             ("site-packages-symlink-escape", "package path is unsafe"),
