@@ -613,8 +613,20 @@ def _remote_runtime_script() -> str:
             if not log_path.is_file():
                 return
             previous_log_path = log_path.with_suffix(".previous.log")
-            previous_log_path.unlink(missing_ok=True)
-            log_path.replace(previous_log_path)
+            deadline = time.monotonic() + 15
+            while True:
+                try:
+                    previous_log_path.unlink(missing_ok=True)
+                    log_path.replace(previous_log_path)
+                    return
+                except FileNotFoundError:
+                    return
+                except PermissionError as error:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(
+                            "timed out waiting for Windows service log release"
+                        ) from error
+                    time.sleep(0.25)
 
         def materialize_binary(source_commit, build_env):
             station_tree = station_source_tree(source_commit)
