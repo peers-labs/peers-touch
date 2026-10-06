@@ -120,9 +120,10 @@ func TestStreamManager_BroadcastFanOut(t *testing.T) {
 	sm.SetAllowedBroadcastTopics(topic)
 
 	ctx := context.Background()
-	sm.Add(ctx, a.peerID, a.relayConn)
-	sm.Add(ctx, b.peerID, b.relayConn)
-	sm.Add(ctx, c.peerID, c.relayConn)
+	expiresAt := time.Now().Add(time.Hour)
+	sm.Add(ctx, a.peerID, 1, expiresAt, a.relayConn)
+	sm.Add(ctx, b.peerID, 1, expiresAt, b.relayConn)
+	sm.Add(ctx, c.peerID, 1, expiresAt, c.relayConn)
 
 	// A publishes; lie about the origin so we can prove the relay
 	// rewrites it to the authenticated peer id.
@@ -160,8 +161,9 @@ func TestStreamManager_BroadcastDropsDisallowedTopic(t *testing.T) {
 	// allow-list deliberately empty → every topic is disallowed.
 
 	ctx := context.Background()
-	sm.Add(ctx, a.peerID, a.relayConn)
-	sm.Add(ctx, b.peerID, b.relayConn)
+	expiresAt := time.Now().Add(time.Hour)
+	sm.Add(ctx, a.peerID, 1, expiresAt, a.relayConn)
+	sm.Add(ctx, b.peerID, 1, expiresAt, b.relayConn)
 
 	a.publish(t, "rogue.topic.v1", "", []byte("payload"))
 
@@ -169,4 +171,31 @@ func TestStreamManager_BroadcastDropsDisallowedTopic(t *testing.T) {
 	b.expectNoFrame(t, 150*time.Millisecond)
 
 	sm.DrainAndClose(ctx, time.Second)
+}
+
+func TestStreamManagerClosesExpiredCredential(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	relayConn, stationConn := net.Pipe()
+	defer stationConn.Close()
+
+	manager := NewStreamManager(nil, 1)
+	manager.Add(
+		ctx,
+		"peer-expired",
+		3,
+		time.Now().Add(-time.Second),
+		relayConn,
+	)
+	if cleaned := manager.PingAll(
+		ctx,
+		time.Second,
+		time.Second,
+	); cleaned != 1 {
+		t.Fatalf("cleaned streams = %d, want 1", cleaned)
+	}
+	if manager.Count() != 0 {
+		t.Fatalf("active streams = %d, want 0", manager.Count())
+	}
 }

@@ -13,6 +13,7 @@ package relay
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -38,6 +39,8 @@ func newRelayHandler(sub *SubServer) *relayHandler {
 
 func (h *relayHandler) handlers() []server.Handler {
 	networkJWT := h.sub.networkJWTWrapper
+	mountJWT := h.sub.mountJWTWrapper
+	mountRotateJWT := h.sub.mountRotateJWTWrapper
 	operatorJWT := h.sub.operatorJWTWrapper
 	logID := serverwrapper.LogID()
 
@@ -63,16 +66,31 @@ func (h *relayHandler) handlers() []server.Handler {
 			h.requireAdmin(h.handleStats), logID, operatorJWT),
 
 		// Public — no auth
+		server.NewHTTPHandler(
+			"relay-enrollment-challenge",
+			"/api/v1/relay/enrollment/challenge",
+			server.POST,
+			server.HTTPHandlerFunc(h.handleEnrollmentChallenge),
+			logID,
+		),
 		server.NewHTTPHandler("relay-register", "/api/v1/relay/register", server.POST,
 			server.HTTPHandlerFunc(h.handleRegister), logID),
 
-		// Station only — requires relay-access token
+		// Station only — requires a current Relay mount credential.
 		server.NewHTTPHandler("relay-heartbeat", "/api/v1/relay/heartbeat", server.POST,
-			h.requireStation(h.handleHeartbeat), logID, networkJWT),
+			h.requireStation(h.handleHeartbeat), logID, mountJWT),
+		server.NewHTTPHandler(
+			"relay-rotation-challenge",
+			"/api/v1/relay/rotation/challenge",
+			server.POST,
+			h.requireStation(h.handleRotationChallenge),
+			logID,
+			mountRotateJWT,
+		),
 		server.NewHTTPHandler("relay-token-refresh", "/api/v1/relay/token/refresh", server.POST,
-			h.requireStation(h.handleTokenRefresh), logID, networkJWT),
+			h.requireStation(h.handleTokenRefresh), logID, mountRotateJWT),
 		server.NewHTTPHandler("relay-client-token", "/api/v1/relay/client-token", server.POST,
-			h.requireStation(h.handleMintClientToken), logID, networkJWT),
+			h.requireStation(h.handleMintClientToken), logID, mountJWT),
 
 		// Network access — relay-access OR relay-client token
 		server.NewHTTPHandler("relay-forward", relayForwardPrefix+"*path", server.ANY,
@@ -149,6 +167,39 @@ func stationPeerIDFromRequest(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return strings.TrimPrefix(subj.ID, domain.SubjectRelayAccess), true
+}
+
+func mountIdentityFromRequest(
+	r *http.Request,
+) (domain.MountIdentity, bool) {
+	subject := coreauth.GetSubject(r.Context())
+	if subject == nil {
+		return domain.MountIdentity{}, false
+	}
+	mountID, err := strconv.ParseUint(subject.Attributes["mount_id"], 10, 64)
+	if err != nil || mountID == 0 {
+		return domain.MountIdentity{}, false
+	}
+	generation, err := strconv.ParseUint(
+		subject.Attributes["generation"],
+		10,
+		64,
+	)
+	if err != nil || generation == 0 {
+		return domain.MountIdentity{}, false
+	}
+	stationPeerID := subject.Attributes["station_peer_id"]
+	jti := subject.Attributes["jti"]
+	if stationPeerID == "" || jti == "" {
+		return domain.MountIdentity{}, false
+	}
+	return domain.MountIdentity{
+		RelayPeerID:   subject.Attributes["relay_peer_id"],
+		StationPeerID: stationPeerID,
+		MountID:       mountID,
+		Generation:    generation,
+		JTI:           jti,
+	}, true
 }
 
 // ---- JSON helpers (shared by handler_admin.go + handler_station.go) ----

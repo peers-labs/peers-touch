@@ -14,6 +14,7 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
+from tooling.acceptance.core.launch_context import EphemeralGateLaunchContext
 from tooling.acceptance.core.evidence_store import (
     current_artifact_ref,
     write_current_artifact,
@@ -34,13 +35,18 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 )
 from tooling.acceptance.remote_platform import RemotePlatform
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
+from tooling.acceptance.gates.station_access.relay_enrollment_e2e import (
+    CAPABILITY_ID as ENROLLMENT_CAPABILITY_ID,
+    GATE_ID as ENROLLMENT_GATE_ID,
+    RelayEnrollmentCapabilityHandler,
+)
 from tooling.scripts.deploy.windows_runtime import (
     WindowsRuntimeConfig,
     execute as execute_windows_runtime,
 )
 
 
-GATE_ID = "relay-role-security-contract"
+ROLE_SECURITY_GATE_ID = "relay-role-security-contract"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _RELAY_SECRET_FILES = frozenset(
     {
@@ -451,10 +457,53 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
 
     environment_id = "station-access-relay-role"
 
+    def __init__(self, contract: EnvironmentContract) -> None:
+        super().__init__(contract)
+        self._station_config: WindowsRuntimeConfig | None = None
+        self._relay_config: WindowsRuntimeConfig | None = None
+
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext | None:
+        if not required_capabilities:
+            return None
+        if (
+            gate_id != ENROLLMENT_GATE_ID
+            or required_capabilities != (ENROLLMENT_CAPABILITY_ID,)
+            or self._manifest is None
+            or not self._manifest.is_ready()
+            or evidence_run_id == provisioning_run_id
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != self._manifest.run_id
+            or self._station_config is None
+            or self._relay_config is None
+        ):
+            raise BlockedError(
+                reason="Relay enrollment capability contract is incomplete",
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities
+        )
+        context.register_capability(
+            ENROLLMENT_CAPABILITY_ID,
+            RelayEnrollmentCapabilityHandler(
+                _windows_transport(self._relay_config),
+                self._station_config,
+                self._relay_config,
+            ),
+        )
+        return context
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
-            if gate_id != GATE_ID:
+            if gate_id not in {ROLE_SECURITY_GATE_ID, ENROLLMENT_GATE_ID}:
                 raise BlockedError(
                     reason=f"{self.environment_id} does not support {gate_id}",
                     resource=f"gate-environment:{gate_id}",
@@ -525,6 +574,8 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                     reason="Station and Relay deployment roles are inconsistent",
                     resource=f"profile:{profile_name}",
                 )
+            self._station_config = station_config
+            self._relay_config = relay_config
 
             station_identity = resolve_remote_source_identity(
                 station_deployment

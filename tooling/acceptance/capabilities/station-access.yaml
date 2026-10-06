@@ -212,7 +212,46 @@
         ],
         "unproven_scope": [
           "live public-certificate negotiation and hostile-client behavior are proven by station-access-relay-security-e2e",
-          "signed discovery, proof-of-possession enrollment, and opaque tunnel behavior are owned by later Relay closures"
+          "signed discovery and opaque tunnel behavior are owned by later Relay closures"
+        ]
+      }
+    },
+    {
+      "id": "station-access-relay-enrollment",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-relay-enrollment"],
+      "required_gates": [
+        "relay-station-enrollment-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/frame/core/plugin/native/subserver/relay/application/credential.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/application/service.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/infrastructure/repo.go",
+        "apps/station/frame/core/plugin/native/subserver/relay-client/enrollment.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station libp2p host identity",
+          "Relay invite and mount persistence",
+          "Relay asymmetric credential authority"
+        ],
+        "surfaces": [
+          "Relay operator enrollment lifecycle",
+          "Station Relay mount readiness"
+        ],
+        "proven_by": [
+          "relay-station-enrollment-e2e"
+        ],
+        "proven_scope": [
+          "Station host-key proof determines station_peer_id",
+          "one-time invite plaintext is absent from storage and list responses",
+          "Relay EdDSA credentials rotate with jti and generation checks",
+          "revoke closes the stream and rejects old refresh and reconnect",
+          "a new invite restores the same Station at a later generation"
+        ],
+        "unproven_scope": [
+          "signed route discovery and opaque client tunnels are owned by later Relay closures"
         ]
       }
     },

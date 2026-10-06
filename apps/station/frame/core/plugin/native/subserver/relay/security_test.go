@@ -17,12 +17,23 @@ func TestValidateRelaySecurityOptions(t *testing.T) {
 	t.Parallel()
 
 	valid := validRelaySecurityOptions(t)
-	key, err := validateRelaySecurityOptions(valid)
+	material, err := validateRelaySecurityOptions(valid)
 	if err != nil {
 		t.Fatalf("valid relay security options: %v", err)
 	}
-	if len(key) < minimumOperatorKeyBytes {
-		t.Fatalf("operator key length = %d, want at least %d", len(key), minimumOperatorKeyBytes)
+	if len(material.operatorKey) < minimumOperatorKeyBytes {
+		t.Fatalf(
+			"operator key length = %d, want at least %d",
+			len(material.operatorKey),
+			minimumOperatorKeyBytes,
+		)
+	}
+	if len(material.signingKey) < minimumOperatorKeyBytes {
+		t.Fatalf(
+			"signing key length = %d, want at least %d",
+			len(material.signingKey),
+			minimumOperatorKeyBytes,
+		)
 	}
 
 	tests := []struct {
@@ -197,19 +208,21 @@ func TestRelayRouteInventoryIsRoleBounded(t *testing.T) {
 	}
 
 	want := map[string]server.Method{
-		"/healthz":                    server.GET,
-		"/metrics":                    server.GET,
-		"/api/v1/relay/invite":        server.POST,
-		"/api/v1/relay/invites":       server.GET,
-		"/api/v1/relay/invite/revoke": server.POST,
-		"/api/v1/relay/mounts":        server.GET,
-		"/api/v1/relay/mount":         server.DELETE,
-		"/api/v1/relay/stats":         server.GET,
-		"/api/v1/relay/register":      server.POST,
-		"/api/v1/relay/heartbeat":     server.POST,
-		"/api/v1/relay/token/refresh": server.POST,
-		"/api/v1/relay/client-token":  server.POST,
-		"/relay/forward/*path":        server.ANY,
+		"/healthz":                           server.GET,
+		"/metrics":                           server.GET,
+		"/api/v1/relay/invite":               server.POST,
+		"/api/v1/relay/invites":              server.GET,
+		"/api/v1/relay/invite/revoke":        server.POST,
+		"/api/v1/relay/mounts":               server.GET,
+		"/api/v1/relay/mount":                server.DELETE,
+		"/api/v1/relay/stats":                server.GET,
+		"/api/v1/relay/enrollment/challenge": server.POST,
+		"/api/v1/relay/register":             server.POST,
+		"/api/v1/relay/heartbeat":            server.POST,
+		"/api/v1/relay/rotation/challenge":   server.POST,
+		"/api/v1/relay/token/refresh":        server.POST,
+		"/api/v1/relay/client-token":         server.POST,
+		"/relay/forward/*path":               server.ANY,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Relay route inventory = %#v, want %#v", got, want)

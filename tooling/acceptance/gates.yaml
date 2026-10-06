@@ -367,6 +367,21 @@
       "tier": "env-evidence",
       "description": "Validate explicit Station/Relay composition and attach to exact-source owner-managed runtimes to prove isolated processes, live route inventory, TLS 1.3-only negotiation, dedicated operator protection, restricted secret ACLs, positive quotas, deployment wiring, and zero hardcoded debug egress."
     },
+    "relay-station-enrollment-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_enrollment_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "station-access.relay-enrollment-operator"
+      ],
+      "timeout_seconds": 1200,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "tier": "env-evidence",
+      "description": "Prove sixwin Station host-key PoP enrollment, hash-only one-time invites, Relay EdDSA credential rotation, generation revoke, stream closure, and explicit re-enrollment."
+    },
     "station-access-auth-e2e": {
       "argv": [
         "python3",
