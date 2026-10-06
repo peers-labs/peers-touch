@@ -60,6 +60,7 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 | [prototype/README.md](./prototype/README.md) | Confirmed prototype reference |
 | [execution-plans/20260827-mobile-shell-implementation/plan.md](./execution-plans/20260827-mobile-shell-implementation/plan.md) | Dependency-ordered implementation and Acceptance plan |
 | [execution-plans/20260829-mobile-native-oauth-proof.md](./execution-plans/20260829-mobile-native-oauth-proof.md) | Historical focused W2-E2 physical-diagnostics plan |
+| [execution-plans/20261006-infra-chat-usability/plan.md](./execution-plans/20261006-infra-chat-usability/plan.md) | Focused Infra/Chat usability, mixed-client parity, and Session class takeover plan |
 
 ## 5. Upstream Sources
 

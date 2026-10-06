@@ -209,7 +209,8 @@ Current Mobile code now implements the local owner layer of this lifecycle:
   mismatch/replacement evidence remains pending.
 - Pre-session auth/OAuth restoration and runtime graph ownership are
   implemented. The Station-bound simulator path now covers restore,
-  same-device takeover, revocation, Station switching, logout, and old-scope
+  same-client-class takeover across distinct Mobile installations, revocation,
+  Station switching, logout, and old-scope
   isolation through parent-owned Runtime Binding and Fixture operations;
   destructive current-source proof still requires explicit reset
   authorization.
