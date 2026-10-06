@@ -208,10 +208,10 @@ def _relay_runtime_security(
     required_files = ",".join(
         _powershell_literal(name) for name in sorted(_RELAY_SECRET_FILES)
     )
+    secret_root = _powershell_literal(runtime_path + "\\secrets")
     script = (
         "$ErrorActionPreference='Stop';"
-        f"$root=Join-Path $env:USERPROFILE "
-        f"{_powershell_literal(runtime_path + '\\\\secrets')};"
+        f"$root=Join-Path $env:USERPROFILE {secret_root};"
         f"$binary={_powershell_literal(binary_path)};"
         f"$stationDb={_powershell_literal(station_database)};"
         f"$relayDb={_powershell_literal(relay_database)};"
