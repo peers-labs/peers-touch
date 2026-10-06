@@ -944,6 +944,7 @@ function readArtifactReference(reference, artifactRoot, current) {
 
 function normalizeStandardizedResult(
   result,
+  gateManifest,
   artifactRoot,
   current,
   expectedGate,
@@ -1039,8 +1040,19 @@ function normalizeStandardizedResult(
     artifactRoot,
     current,
   );
+  const runtimeManifestReference = gateManifest.runtime?._manifest_ref;
+  const childManifestReference = result.manifest?._manifest_ref;
+  if (
+    childManifestReference !== undefined &&
+    !sameCanonical(childManifestReference, runtimeManifestReference)
+  ) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'Development result runtime manifest reference conflicts with its Gate manifest',
+    );
+  }
   const manifestArtifact = readArtifactReference(
-    result.manifest?._manifest_ref,
+    runtimeManifestReference,
     artifactRoot,
     current,
   );
@@ -1661,6 +1673,7 @@ function functionalResultUpdates(
     );
     const normalized = normalizeStandardizedResult(
       resultArtifact.value,
+      gateManifest,
       artifactRoot,
       current,
       gateId,

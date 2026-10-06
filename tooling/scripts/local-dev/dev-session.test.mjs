@@ -525,7 +525,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
       workspaceDigest: 'clean',
       canonicalWorktreeHash: WORKSPACE_ID,
     },
-    runtime: {},
+    runtime: runtimeEvidence ? { _manifest_ref: manifestRef } : {},
     result: {
       ...standardizedResult,
       workItemId: scope.workItemId,
@@ -1394,6 +1394,55 @@ test('functional result commit accepts the standard development policy envelope'
       'development-functional-evidence-bundle',
     );
     assert.ok(sealed.artifacts.length >= 7);
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result accepts the Gate-owned runtime manifest reference', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-desktop',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    const committed = await commitStandardizedFunctionalPass(scope, {
+      result: { manifest: undefined },
+    });
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result rejects a conflicting child runtime manifest reference', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-desktop',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    await rejectCode('SESSION_EVIDENCE_OUT_OF_SEQUENCE', () =>
+      commitStandardizedFunctionalPass(scope, {
+        result: { manifest: { _manifest_ref: {} } },
+      }),
+    );
   } finally {
     scope.close();
   }
