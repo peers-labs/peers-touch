@@ -65,6 +65,9 @@ ANDROID_GRADLE_LOCK_REQUIREMENTS = {
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-opener.lockfile": (
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
+    "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-peers-platform-permissions.lockfile": (
+        "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
+    ),
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-peers-secure-storage.lockfile": (
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
@@ -97,6 +100,10 @@ ANDROID_CARGO_GRADLE_PROJECTS = (
     (":tauri-plugin-opener", "tauri-plugin-opener", "2.5.4", "android"),
 )
 ANDROID_LOCAL_GRADLE_PROJECTS = (
+    (
+        ":tauri-plugin-peers-platform-permissions",
+        "apps/mobile/src-tauri/plugins/platform-permissions/android",
+    ),
     (
         ":tauri-plugin-peers-secure-storage",
         "apps/mobile/src-tauri/plugins/secure-storage/android",

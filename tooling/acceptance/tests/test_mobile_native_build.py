@@ -445,14 +445,18 @@ def fake_toolchain(root: Path) -> ToolchainIdentity:
             f"// {crate_name} {crate_version}\n",
             encoding="utf-8",
         )
-    local_plugin = (
-        root / "apps/mobile/src-tauri/plugins/secure-storage/android"
-    )
-    local_plugin.mkdir(parents=True)
-    (local_plugin / "build.gradle.kts").write_text(
-        "// local secure storage plugin\n",
-        encoding="utf-8",
-    )
+    for plugin, marker in (
+        ("platform-permissions", "platform permissions"),
+        ("secure-storage", "secure storage"),
+    ):
+        local_plugin = (
+            root / f"apps/mobile/src-tauri/plugins/{plugin}/android"
+        )
+        local_plugin.mkdir(parents=True)
+        (local_plugin / "build.gradle.kts").write_text(
+            f"// local {marker} plugin\n",
+            encoding="utf-8",
+        )
     android_app = root / "apps/mobile/src-tauri/gen/android/app"
     android_app.mkdir(parents=True, exist_ok=True)
     (android_app / "build.gradle.kts").write_text(
