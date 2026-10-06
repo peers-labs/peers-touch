@@ -14,8 +14,11 @@ const (
 	StationRouteDomain    = "peers-touch/station-route/v1\x00"
 	ConnectionGrantDomain = "peers-touch/station-connection-grant/v1\x00"
 
-	AccessProtocolVersion  = uint32(1)
-	DiscoveryChallengeSize = 32
+	AccessProtocolVersion       = uint32(1)
+	DiscoveryChallengeSize      = 32
+	MaxRouteAttestationLifetime = 24 * time.Hour
+	MaxConnectionGrantLifetime  = 15 * time.Minute
+	MaxConnectionGrantUses      = uint32(32)
 )
 
 type RouteRecord struct {

@@ -379,7 +379,7 @@ func (s *SubServer) persistRelayCredential(
 }
 
 func (s *SubServer) clearRelayCredential() error {
-	s.setToken("")
+	s.setCredential(nil)
 	if strings.TrimSpace(s.opts.TokenStorePath) == "" {
 		return nil
 	}

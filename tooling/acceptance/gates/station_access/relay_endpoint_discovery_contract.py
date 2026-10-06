@@ -65,6 +65,28 @@ def validate_discovery_source_contract() -> None:
             "GRANT_WRONG_RELAY",
         ),
         (
+            "apps/station/frame/core/plugin/native/subserver/relay-client/"
+            "connection_material.go"
+        ): (
+            "IssueConnectionMaterial",
+            "RegisterStationConnectionGrantRequest",
+            "connectionCodePrefix = \"ptc1:\"",
+            "proto.MarshalOptions{Deterministic: true}",
+        ),
+        (
+            "apps/station/frame/core/plugin/native/subserver/relay/handler.go"
+        ): (
+            "routePublishJWT := h.sub.routePublishJWTWrapper",
+            "h.handlePublishStationRoute",
+            "h.handleRegisterConnectionGrant",
+        ),
+        (
+            "apps/station/frame/core/plugin/native/subserver/relay/relay.go"
+        ): (
+            "routePublishJWTWrapper = mountAuthenticationWrapper",
+            "domain.ScopeRoutePublish",
+        ),
+        (
             "apps/station/frame/core/plugin/native/subserver/bootstrap/"
             "accessendpoint/handler.go"
         ): (
@@ -270,8 +292,14 @@ class RelayEndpointDiscoveryGate(AcceptanceGate):
                 "test",
                 "./frame/core/plugin/native/subserver/bootstrap",
                 "./frame/core/plugin/native/subserver/relay/...",
+                "./frame/core/plugin/native/subserver/relay-client/...",
                 "-run",
-                "TestSignAccessEndpoint|TestStationSignsRoute|TestRelayDiscovery",
+                (
+                    "TestSignAccessEndpoint|TestStationSignsRoute|"
+                    "TestRelayDiscovery|TestIssueConnectionMaterial|"
+                    "TestRegisterConnectionGrantRetry|"
+                    "TestDiscoveryControlRoutesUseRoutePublishCredential"
+                ),
                 "-count=1",
             ],
             cwd=REPO_ROOT / "apps/station",

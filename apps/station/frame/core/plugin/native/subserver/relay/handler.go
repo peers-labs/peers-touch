@@ -42,6 +42,7 @@ func (h *relayHandler) handlers() []server.Handler {
 	networkJWT := h.sub.networkJWTWrapper
 	mountJWT := h.sub.mountJWTWrapper
 	mountRotateJWT := h.sub.mountRotateJWTWrapper
+	routePublishJWT := h.sub.routePublishJWTWrapper
 	operatorJWT := h.sub.operatorJWTWrapper
 	logID := serverwrapper.LogID()
 
@@ -99,7 +100,7 @@ func (h *relayHandler) handlers() []server.Handler {
 			server.POST,
 			h.handlePublishStationRoute,
 			logID,
-			mountJWT,
+			routePublishJWT,
 		),
 		server.NewStrictTypedHandler(
 			"relay-grant-register",
@@ -107,7 +108,7 @@ func (h *relayHandler) handlers() []server.Handler {
 			server.POST,
 			h.handleRegisterConnectionGrant,
 			logID,
-			mountJWT,
+			routePublishJWT,
 		),
 
 		// Network access — relay-access OR relay-client token

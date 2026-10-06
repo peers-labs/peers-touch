@@ -36,10 +36,11 @@ type SubServer struct {
 	svc     *application.Service
 	streams *StreamManager
 
-	mountJWTWrapper       server.Wrapper
-	mountRotateJWTWrapper server.Wrapper
-	networkJWTWrapper     server.Wrapper
-	operatorJWTWrapper    server.Wrapper
+	mountJWTWrapper        server.Wrapper
+	mountRotateJWTWrapper  server.Wrapper
+	routePublishJWTWrapper server.Wrapper
+	networkJWTWrapper      server.Wrapper
+	operatorJWTWrapper     server.Wrapper
 
 	listener net.Listener
 	stopCh   chan struct{}
@@ -89,6 +90,10 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.mountRotateJWTWrapper = mountAuthenticationWrapper(
 		s.svc,
 		domain.ScopeMountRotate,
+	)
+	s.routePublishJWTWrapper = mountAuthenticationWrapper(
+		s.svc,
+		domain.ScopeRoutePublish,
 	)
 	s.networkJWTWrapper = networkAuthenticationWrapper(s.svc)
 	s.operatorJWTWrapper = operatorAuthenticationWrapper(

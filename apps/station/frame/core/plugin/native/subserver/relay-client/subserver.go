@@ -111,27 +111,44 @@ type SubServer struct {
 	enrollmentState string
 	cancel          context.CancelFunc
 	runner          *client.Client
+	stationSigner   stationConnectionSigner
 
-	// tokenMu guards currentToken. The token is read by both the heartbeat
-	// goroutine and the token-refresher callback; we keep them in lockstep
-	// instead of re-reading from disk on every tick.
-	tokenMu      sync.RWMutex
-	currentToken string
-}
-
-// setToken stores the latest relay_token. Callers are: initial register,
-// token refresher, and any future revoke-and-replace path.
-func (s *SubServer) setToken(t string) {
-	s.tokenMu.Lock()
-	s.currentToken = t
-	s.tokenMu.Unlock()
+	// tokenMu guards the complete current mount credential. Route and grant
+	// issuance must bind the same Relay, Station, and generation as the token
+	// used for registration.
+	tokenMu           sync.RWMutex
+	currentCredential *cachedMountCredential
 }
 
 // getToken returns the latest relay_token, or empty string if none acquired.
 func (s *SubServer) getToken() string {
 	s.tokenMu.RLock()
 	defer s.tokenMu.RUnlock()
-	return s.currentToken
+	if s.currentCredential == nil {
+		return ""
+	}
+	return s.currentCredential.Token
+}
+
+func (s *SubServer) setCredential(credential *cachedMountCredential) {
+	s.tokenMu.Lock()
+	defer s.tokenMu.Unlock()
+	if credential == nil {
+		s.currentCredential = nil
+		return
+	}
+	copy := *credential
+	s.currentCredential = &copy
+}
+
+func (s *SubServer) getCredential() (*cachedMountCredential, bool) {
+	s.tokenMu.RLock()
+	defer s.tokenMu.RUnlock()
+	if s.currentCredential == nil {
+		return nil, false
+	}
+	copy := *s.currentCredential
+	return &copy, true
 }
 
 // getRunner returns the live *client.Client under the subserver lock,
@@ -206,6 +223,13 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	if err := validateRelayClientOptions(s.opts); err != nil {
 		return fmt.Errorf("[relay-client] %w", err)
 	}
+	if s.stationSigner == nil {
+		signer, err := resolveStationConnectionSigner()
+		if err != nil {
+			return fmt.Errorf("[relay-client] %w", err)
+		}
+		s.stationSigner = signer
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
@@ -236,6 +260,7 @@ func (s *SubServer) Stop(ctx context.Context) error {
 		runner.Stop()
 	}
 
+	s.setCredential(nil)
 	federation.ClearRelayClient()
 
 	s.mu.Lock()
@@ -266,7 +291,7 @@ func (s *SubServer) run(ctx context.Context) {
 		s.setEnrollmentFailure(err)
 		return
 	}
-	s.setToken(credential.Token)
+	s.setCredential(credential)
 	logger.Infof(ctx, "[relay-client] relay token acquired, opening stream")
 
 	cli := client.New(client.Config{
@@ -487,7 +512,7 @@ func (s *SubServer) makeTokenRefresher() client.TokenRefresher {
 		if err != nil {
 			return "", err
 		}
-		s.setToken(credential.Token)
+		s.setCredential(credential)
 		if err := s.persistRelayCredential(credential); err != nil {
 			logger.Warnf(
 				ctx,
@@ -512,7 +537,7 @@ func (s *SubServer) makeCredentialRejected(
 			s.setEnrollmentFailure(err)
 			return "", err
 		}
-		s.setToken(credential.Token)
+		s.setCredential(credential)
 		return credential.Token, nil
 	}
 }

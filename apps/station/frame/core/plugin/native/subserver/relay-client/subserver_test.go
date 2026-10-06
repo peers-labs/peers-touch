@@ -13,6 +13,26 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/protocol"
 )
 
+func TestStopClearsMountCredential(t *testing.T) {
+	sub := &SubServer{}
+	sub.setCredential(&cachedMountCredential{
+		Token:         "mount-token",
+		RelayPeerID:   "relay-peer",
+		StationPeerID: "station-peer",
+		MountID:       1,
+		Generation:    1,
+	})
+	if sub.getToken() == "" {
+		t.Fatal("test mount credential was not installed")
+	}
+	if err := sub.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if sub.getToken() != "" {
+		t.Fatal("Relay mount credential remained in memory after Stop")
+	}
+}
+
 func TestMakeDispatcherMapsForwardAuthorizationToLocalAuthorization(t *testing.T) {
 	var sawAuthorization string
 	var sawForwardAuthorization string

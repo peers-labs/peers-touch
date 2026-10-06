@@ -26,8 +26,6 @@ var (
 
 const (
 	discoveryLifetime = time.Minute
-	maxRouteLifetime  = 24 * time.Hour
-	maxGrantLifetime  = 15 * time.Minute
 )
 
 var relayEndpointCapabilities = []string{
@@ -90,7 +88,7 @@ func (s *Service) RegisterConnectionGrant(
 		strings.TrimSpace(req.GetRouteId()) == "" ||
 		req.GetRouteGeneration() == 0 ||
 		req.GetMaxUses() == 0 ||
-		req.GetMaxUses() > 32 {
+		req.GetMaxUses() > domain.MaxConnectionGrantUses {
 		return nil, ErrGrantInvalid
 	}
 	if _, err := s.authenticateMountIdentity(ctx, identity); err != nil {
@@ -98,7 +96,8 @@ func (s *Service) RegisterConnectionGrant(
 	}
 	now := s.now()
 	expiresAt := time.UnixMilli(req.GetExpiresAtUnixMs()).UTC()
-	if !expiresAt.After(now) || expiresAt.After(now.Add(maxGrantLifetime)) {
+	if !expiresAt.After(now) ||
+		expiresAt.After(now.Add(domain.MaxConnectionGrantLifetime)) {
 		return nil, ErrGrantInvalid
 	}
 
@@ -114,6 +113,19 @@ func (s *Service) RegisterConnectionGrant(
 		return nil, ErrRouteNotFound
 	}
 	digest := hex.EncodeToString(req.GetGrantDigest())
+	if current, ok := s.grants[digest]; ok {
+		if current.GrantID != req.GetGrantId() ||
+			current.StationPeerID != identity.StationPeerID ||
+			current.RelayPeerID != identity.RelayPeerID ||
+			current.RouteID != route.RouteID ||
+			current.RouteGeneration != route.RouteGeneration ||
+			current.MaxUses != req.GetMaxUses() ||
+			!current.ExpiresAt.Equal(expiresAt) {
+			return nil, ErrGrantInvalid
+		}
+		out := current
+		return &out, nil
+	}
 	record := domain.GrantRecord{
 		GrantID:         req.GetGrantId(),
 		GrantDigest:     digest,
@@ -250,9 +262,9 @@ func (s *Service) consumeConnectionGrant(
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_GRANT_EXPIRED
 	}
 	if statement.GetMaxUses() == 0 ||
-		statement.GetMaxUses() > 32 ||
+		statement.GetMaxUses() > domain.MaxConnectionGrantUses ||
 		expiresAt.Sub(issuedAt) <= 0 ||
-		expiresAt.Sub(issuedAt) > maxGrantLifetime {
+		expiresAt.Sub(issuedAt) > domain.MaxConnectionGrantLifetime {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
 	}
 	if err := verifyStationSignature(
@@ -351,7 +363,7 @@ func verifyStationRouteAttestation(
 		issuedAt.After(now.Add(time.Minute)) ||
 		!expiresAt.After(now) ||
 		expiresAt.Sub(issuedAt) <= 0 ||
-		expiresAt.Sub(issuedAt) > maxRouteLifetime {
+		expiresAt.Sub(issuedAt) > domain.MaxRouteAttestationLifetime {
 		return nil, ErrRouteAttestationInvalid
 	}
 	if err := verifyStationSignature(
