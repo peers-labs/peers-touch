@@ -85,6 +85,30 @@ def open_reviewed_remote_tunnel(
         ) from error
 
 
+def _windows_source_identity_script() -> str:
+    protocol_pathspecs = repr(list(PROTOCOL_SOURCE_PATHS))
+    return (
+        "import hashlib,json,pathlib,subprocess,sys;"
+        "r=(pathlib.Path.home()/sys.argv[1]).resolve();"
+        "commit=subprocess.check_output("
+        "['git','rev-parse','HEAD'],cwd=r,text=True).strip();"
+        "status=subprocess.check_output("
+        "['git','status','--porcelain'],cwd=r,text=True);"
+        "dirty=any(line.strip()!='?? .bare.git/' "
+        "for line in status.splitlines() if line.strip());"
+        "raw=subprocess.check_output("
+        f"['git','ls-files','-z','--']+{protocol_pathspecs},cwd=r);"
+        "p=[x.decode() for x in raw.split(b'\\0') if x];"
+        "h=hashlib.sha256();"
+        "[(h.update(x.replace('\\\\','/').encode()),h.update(b'\\0'),"
+        "h.update(subprocess.check_output("
+        "['git','show','HEAD:'+x.replace('\\\\','/')],cwd=r)),"
+        "h.update(b'\\0')) for x in sorted(p,key=lambda x:x.replace('\\\\','/'))];"
+        "print(json.dumps([commit,'dirty' if dirty else 'clean',"
+        "h.hexdigest()]))"
+    )
+
+
 def resolve_remote_source_identity(
     deploy_environment: str,
 ) -> tuple[str, str, str]:
@@ -105,27 +129,8 @@ def resolve_remote_source_identity(
         "print(h.hexdigest())"
     )
     if transport.target.remote_platform == RemotePlatform.WINDOWS:
-        windows_script = (
-            "import hashlib,json,pathlib,subprocess,sys;"
-            "r=(pathlib.Path.home()/sys.argv[1]).resolve();"
-            "commit=subprocess.check_output("
-            "['git','rev-parse','HEAD'],cwd=r,text=True).strip();"
-            "status=subprocess.check_output("
-            "['git','status','--porcelain'],cwd=r,text=True);"
-            "dirty=any(line.strip()!='?? .bare.git/' "
-            "for line in status.splitlines() if line.strip());"
-            "raw=subprocess.check_output("
-            f"['git','ls-files','-z','--']+{protocol_pathspecs},cwd=r);"
-            "p=[r/x.decode() for x in raw.split(b'\\0') if x];"
-            "h=hashlib.sha256();"
-            "[(h.update(x.relative_to(r).as_posix().encode()),h.update(b'\\0'),"
-            "h.update(x.read_bytes()),h.update(b'\\0')) for x in "
-            "sorted(p,key=lambda x:x.relative_to(r).as_posix())];"
-            "print(json.dumps([commit,'dirty' if dirty else 'clean',"
-            "h.hexdigest()]))"
-        )
         completed = transport.run_argv(
-            ["python", "-c", windows_script, deploy_path],
+            ["python", "-c", _windows_source_identity_script(), deploy_path],
             timeout=30,
             check=False,
         )
