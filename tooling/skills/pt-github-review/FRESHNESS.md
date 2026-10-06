@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-05
-covered_docs_hash: 9c39335b3c13e2a86824fa332641c9781bb0cc70c730136711577fba60912336
+covered_docs_hash: 1d42492bd4db10dc55ba4e724b3b2a3d471bf6062abceb8747a53814a1f11d55
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,30 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-05 Cross-Station Social Taxonomy Integration Review
+
+After the semantic merge onto the architecture-taxonomy master, the covered
+documents retain two intentional Cross-Station Social deltas.
+
+First, `docs/README.md` adds the active
+`architecture/domains/social/cross-station` module and its current Native-only
+execution-plan scope alongside the federated-human-social-activity index.
+Architecture module governance already requires every active module to appear
+in this index, so no new review rule is needed.
+
+Second, `docs/client/desktop/runtime-projections.md` narrows `socialRealtime` to
+social graph, presence, relationship, and notification projections, records the
+extraction of chat/messaging consumption into the separate `messaging` runtime,
+and lists the migrated `moments` page under `social` and `messaging`.
+
+The runtime-projections delta is the same producer-to-runtime ownership and
+duplicate-owner problem recorded in the 2026-10-03 Social EventBus Acceptance
+Review: `pt-github-review/SKILL.md` already requires tracing the full
+producer-to-owner path, rejecting module-private listener bypasses and duplicate
+owners, and demanding hidden-page plus missed-event recovery evidence. No
+additional `SKILL.md` behavior, generic fixture, or knowledge entry is required;
+this entry advances only the covered-docs pin to the post-rebase source bytes.
 
 ## 2026-10-05 Architecture Taxonomy Review
 
@@ -211,6 +235,19 @@ The review interface now accepts one range, path/depth, or PR selector and
 derives file classification, advisory signals, source identity, rubric hash,
 verdict fields, and per-file coverage. Reviewers submit semantic findings only;
 the source-bound and fail-closed requirements are unchanged.
+
+## 2026-10-03 Social EventBus Acceptance Review
+
+Cross-Station Private Social now makes the accepted Desktop runtime projection
+contract explicit in its Plan and Acceptance Review. `pt-github-review` was
+updated because the escaped-defect pattern is reusable: a typed event may exist
+without a producer, consumer, unique runtime owner, reconcile path, scope
+teardown, or receiver-visible proof. Desktop Social review must trace the full
+producer-to-`momentsRuntime` path, reject direct module-private listener
+bypasses and duplicate owners, and require hidden-page plus missed-event
+recovery evidence. The plan-owned
+`social-cross-station-eventbus-contract` supplies the deterministic fixture;
+the Native two-client Gate remains the product-behavior proof.
 
 ## 2026-09-29 Suite Runtime Review
 

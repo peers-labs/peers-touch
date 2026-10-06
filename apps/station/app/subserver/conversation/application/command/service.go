@@ -2702,17 +2702,37 @@ func canonicalizeMembershipChanges(
 		homeByActor[member.Actor] = member.HomeStation
 	}
 	homeByEndpoint := make(map[string]valueobject.StationID, len(routes))
+	firstEndpointByActor := make(map[valueobject.PTID]valueobject.Endpoint, len(routes))
 	for _, route := range routes {
 		homeByActor[route.Endpoint.Actor] = route.HomeStation
 		homeByEndpoint[route.Endpoint.Key()] = route.HomeStation
+		first, exists := firstEndpointByActor[route.Endpoint.Actor]
+		if !exists || route.Endpoint.Device < first.Device {
+			firstEndpointByActor[route.Endpoint.Actor] = route.Endpoint
+		}
 	}
 
 	canonical := append([]entity.MembershipChange(nil), changes...)
 	for index := range canonical {
 		change := &canonical[index]
 		switch change.Action {
-		case entity.MembershipActionAddActor,
-			entity.MembershipActionAddDevice,
+		case entity.MembershipActionAddActor:
+			endpoint := valueobject.Endpoint{Actor: change.Actor, Device: change.Device}
+			if endpoint.Device == "" {
+				endpoint = firstEndpointByActor[change.Actor]
+				change.Device = endpoint.Device
+			}
+			home := homeByEndpoint[endpoint.Key()]
+			if home == "" {
+				return nil, conversationdomain.NewError(
+					conversationdomain.ErrorCodeDeviceConflict,
+					"application.canonicalize_membership_changes",
+					"endpoint",
+					"does not resolve to an active identity route",
+				)
+			}
+			change.HomeStation = home
+		case entity.MembershipActionAddDevice,
 			entity.MembershipActionRemoveDevice:
 			endpoint := valueobject.Endpoint{Actor: change.Actor, Device: change.Device}
 			home := homeByEndpoint[endpoint.Key()]

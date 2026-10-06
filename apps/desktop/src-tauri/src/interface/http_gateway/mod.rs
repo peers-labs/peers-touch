@@ -1891,13 +1891,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let path = format!("/api/v1/social/moments/{}", input.id);
-            let resp = match station_client::request_proto::<(), model::social::GetPostResponse>(
-                Method::GET,
-                &path,
-                &token,
-                None,
-                None::<&()>,
-            ) {
+            let resp = match station_client::request_proto::<
+                (),
+                model::social::GetMomentResourceResponse,
+            >(Method::GET, &path, &token, None, None::<&()>)
+            {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get moment failed")),
             };
@@ -2095,6 +2093,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::social::ReactToPostRequest {
                 post_id: input.post_id.clone(),
                 kind: input.kind,
+                command_id: String::new(),
+                actor_signing_key_id: String::new(),
+                actor_device_signature: Vec::new(),
             };
             let path = format!("/api/v1/social/posts/{}/react", input.post_id);
             let resp = match station_client::request_proto::<
@@ -2126,6 +2127,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::social::UnreactToPostRequest {
                 post_id: input.post_id.clone(),
                 kind: input.kind,
+                command_id: String::new(),
+                actor_signing_key_id: String::new(),
+                actor_device_signature: Vec::new(),
             };
             let path = format!("/api/v1/social/posts/{}/unreact", input.post_id);
             let resp = match station_client::request_proto::<

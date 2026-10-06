@@ -18,9 +18,10 @@ use crate::secure_content::adapter::SocialObjectCodec;
 use crate::secure_content::store::SecureContentStore;
 use crate::secure_content::SecureContentSession;
 
+use super::private_media::PrivateMediaAccessPath;
 use super::private_mention::{validated_mention_routing_hash, verify_decrypted_mentions};
 
-const STATION_ATTESTATION_DOMAIN: &[u8] =
+pub(super) const STATION_ATTESTATION_DOMAIN: &[u8] =
     b"peers-touch:secure-content:station-content-signing-key-attestation:v1\0";
 const CLOCK_SKEW_SECONDS: i64 = 60;
 const MAX_IDENTIFIER_BYTES: usize = 128;
@@ -33,6 +34,8 @@ type HmacSha256 = Hmac<Sha256>;
 pub enum PrivateReadState {
     LoadingAuthorizedResource,
     WaitingForPrivateKey,
+    WaitingForRemoteDelivery,
+    RemoteSourceUnavailable,
     RecoveryRequired,
     RecoveryKeyUnavailable,
     Decrypting,
@@ -42,6 +45,17 @@ pub enum PrivateReadState {
     IntegrityFailure,
     PrivateUnsupportedOnDevice,
     DeletedOrRevoked,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PrivateRemoteDeliveryState {
+    NotRequired,
+    Pending,
+    Retrying,
+    Delivered,
+    Terminal,
+    Expired,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -61,6 +75,10 @@ pub enum PrivateMediaState {
 pub struct PrivateMomentMediaProjection {
     pub object_id: String,
     pub state: PrivateMediaState,
+    #[serde(default)]
+    pub access_path: PrivateMediaAccessPath,
+    #[serde(default)]
+    pub retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub render_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,6 +151,37 @@ pub struct PrivateMentionProjection {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrivateReactionSummaryProjection {
+    pub kind: i32,
+    pub count: String,
+    pub reacted_by_viewer: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PrivateReactionOperation {
+    React,
+    Unreact,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct PrivateReactionCommandProjection {
+    pub command_id: String,
+    pub post_id: String,
+    pub kind: i32,
+    pub operation: PrivateReactionOperation,
+    pub state: String,
+    pub attempt_count: u32,
+    pub projection_revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_not_before_unix_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrivateMomentProjection {
     pub post_id: String,
     pub content_id: String,
@@ -140,8 +189,16 @@ pub struct PrivateMomentProjection {
     pub author_ptid: String,
     pub audience_kind: String,
     pub state: PrivateReadState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_delivery_state: Option<PrivateRemoteDeliveryState>,
     #[serde(default)]
     pub mentions: Vec<PrivateMentionProjection>,
+    #[serde(default)]
+    pub reactions: Vec<PrivateReactionSummaryProjection>,
+    #[serde(default = "zero_revision")]
+    pub reaction_revision: String,
+    #[serde(default)]
+    pub reactions_hydrated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<PrivateMomentContentProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -170,6 +227,7 @@ pub struct PrivateMomentsSnapshot {
     pub device_id: String,
     pub session_generation: String,
     pub projections: Vec<PrivateMomentProjection>,
+    pub reaction_commands: Vec<PrivateReactionCommandProjection>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -241,12 +299,36 @@ pub fn decrypt_projection_from_response(
     supplied_root: Option<ContentKey>,
     expected_recovery_epoch: Option<u64>,
 ) -> Result<DecryptedPrivateMoment, PrivateProjectionError> {
-    verify_response_integrity(
+    decrypt_projection_from_response_at(
+        session,
+        store,
+        expected_post_id,
+        response,
+        sender_signing_key,
+        supplied_root,
+        expected_recovery_epoch,
+        current_unix_seconds(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decrypt_projection_from_response_at(
+    session: &SecureContentSession,
+    store: &SecureContentStore,
+    expected_post_id: &str,
+    response: &social::GetMomentResourceResponse,
+    sender_signing_key: Option<&VerifyingKey>,
+    supplied_root: Option<ContentKey>,
+    expected_recovery_epoch: Option<u64>,
+    now: i64,
+) -> Result<DecryptedPrivateMoment, PrivateProjectionError> {
+    verify_response_integrity_at(
         session,
         expected_post_id,
         response,
         sender_signing_key,
         expected_recovery_epoch,
+        now,
     )?;
     let parts = private_response_parts(response)?;
     let metadata = parts.metadata;
@@ -368,7 +450,18 @@ pub fn decrypt_projection_from_response(
             .into());
     }
     let mentions = verified_private_mentions(&decoded, private)?;
-    let content = project_plaintext(&decoded, private, kind)?;
+    let access_path = if matches!(
+        kind,
+        social::PrivateMomentKind::Image | social::PrivateMomentKind::Video
+    ) {
+        PrivateMediaAccessPath::from_response(response, &session.key.station_peer_id)?
+    } else {
+        PrivateMediaAccessPath::HomeStationLocalObject
+    };
+    let content = project_plaintext(&decoded, private, kind, access_path)?;
+    let (reactions, reaction_revision, reactions_hydrated) =
+        source_reaction_summaries(response, expected_post_id)?;
+    let remote_delivery_state = remote_delivery_state(response)?;
     let projection = PrivateMomentProjection {
         post_id: metadata.post_id.clone(),
         content_id: metadata.content_id.clone(),
@@ -380,7 +473,11 @@ pub fn decrypt_projection_from_response(
             .unwrap_or_default(),
         audience_kind: private_audience_kind(metadata.audience_kind)?.to_string(),
         state: PrivateReadState::ContentReady,
+        remote_delivery_state,
         mentions,
+        reactions,
+        reaction_revision,
+        reactions_hydrated,
         content: Some(content),
         error_code: None,
         retry_after_seconds: None,
@@ -393,6 +490,117 @@ pub fn decrypt_projection_from_response(
         content_key,
         consumed_prekey,
     })
+}
+
+pub(super) fn remote_delivery_state(
+    response: &social::GetMomentResourceResponse,
+) -> Result<Option<PrivateRemoteDeliveryState>, String> {
+    let Some(status) = response.remote_delivery.as_ref() else {
+        return Ok(None);
+    };
+    let state = social::FederatedPrivateDeliveryState::try_from(status.state)
+        .map_err(|_| "private Moment remote delivery state is invalid".to_string())?;
+    let projected = match state {
+        social::FederatedPrivateDeliveryState::Unspecified => {
+            return Err("private Moment remote delivery state is unspecified".to_string())
+        }
+        social::FederatedPrivateDeliveryState::NotRequired => {
+            PrivateRemoteDeliveryState::NotRequired
+        }
+        social::FederatedPrivateDeliveryState::Pending => PrivateRemoteDeliveryState::Pending,
+        social::FederatedPrivateDeliveryState::Retrying => PrivateRemoteDeliveryState::Retrying,
+        social::FederatedPrivateDeliveryState::Delivered => PrivateRemoteDeliveryState::Delivered,
+        social::FederatedPrivateDeliveryState::Terminal => PrivateRemoteDeliveryState::Terminal,
+        social::FederatedPrivateDeliveryState::Expired => PrivateRemoteDeliveryState::Expired,
+    };
+    let completed = status
+        .delivered_count
+        .saturating_add(status.retrying_count)
+        .saturating_add(status.terminal_count)
+        .saturating_add(status.expired_count);
+    if completed > status.total_count {
+        return Err("private Moment remote delivery counts are invalid".to_string());
+    }
+    let pending_count = status.total_count - completed;
+    let state_matches_counts = match projected {
+        PrivateRemoteDeliveryState::NotRequired => status.total_count == 0,
+        PrivateRemoteDeliveryState::Pending => {
+            pending_count > 0
+                && status.retrying_count == 0
+                && status.terminal_count == 0
+                && status.expired_count == 0
+        }
+        PrivateRemoteDeliveryState::Retrying => {
+            status.retrying_count > 0 && status.terminal_count == 0 && status.expired_count == 0
+        }
+        PrivateRemoteDeliveryState::Delivered => {
+            status.total_count > 0 && status.delivered_count == status.total_count
+        }
+        PrivateRemoteDeliveryState::Terminal => status.terminal_count > 0,
+        PrivateRemoteDeliveryState::Expired => {
+            status.expired_count > 0 && status.terminal_count == 0
+        }
+    };
+    if !state_matches_counts {
+        return Err("private Moment remote delivery state disagrees with its counts".to_string());
+    }
+    Ok(Some(projected))
+}
+
+pub(super) fn canonical_reaction_summaries(
+    reactions: &[social::ReactionSummary],
+) -> Result<Vec<PrivateReactionSummaryProjection>, String> {
+    if reactions.len() > 5 {
+        return Err("private Reaction summary exceeds the supported kind count".to_string());
+    }
+    let mut seen = [false; 6];
+    let mut projected = Vec::with_capacity(reactions.len());
+    for reaction in reactions {
+        let kind = social::ReactionKind::try_from(reaction.kind)
+            .map_err(|_| "private Reaction summary kind is invalid".to_string())?;
+        let index = kind as usize;
+        if kind == social::ReactionKind::ReactionUnspecified
+            || reaction.count < 0
+            || index >= seen.len()
+            || seen[index]
+        {
+            return Err("private Reaction summary is invalid".to_string());
+        }
+        seen[index] = true;
+        projected.push(PrivateReactionSummaryProjection {
+            kind: reaction.kind,
+            count: reaction.count.to_string(),
+            reacted_by_viewer: reaction.reacted_by_viewer,
+        });
+    }
+    projected.sort_by_key(|reaction| reaction.kind);
+    Ok(projected)
+}
+
+fn source_reaction_summaries(
+    response: &social::GetMomentResourceResponse,
+    expected_post_id: &str,
+) -> Result<(Vec<PrivateReactionSummaryProjection>, String, bool), String> {
+    let Some(post) = response.post.as_ref() else {
+        if response.reaction_projection_revision != 0 {
+            return Err("private Reaction readback revision has no post projection".to_string());
+        }
+        return Ok((Vec::new(), zero_revision(), false));
+    };
+    if post.id != expected_post_id || response.reaction_projection_revision == 0 {
+        return Err("private Reaction readback identity or revision is invalid".to_string());
+    }
+    canonical_reaction_summaries(&post.reactions).map(|reactions| {
+        (
+            reactions,
+            response.reaction_projection_revision.to_string(),
+            true,
+        )
+    })
+}
+
+fn zero_revision() -> String {
+    "0".to_string()
 }
 
 pub(super) fn sender_key_requirement(
@@ -925,11 +1133,13 @@ fn project_plaintext(
     content: &social::PrivateMomentContent,
     private: &social::PrivateContentAccess,
     kind: social::PrivateMomentKind,
+    access_path: PrivateMediaAccessPath,
 ) -> Result<PrivateMomentContentProjection, String> {
     fn project_media(
         metadata: &[social::PrivateAttachmentMetadata],
         objects: &[wire::EncryptedObjectDescriptor],
         label: &str,
+        access_path: PrivateMediaAccessPath,
     ) -> Result<Vec<PrivateMomentMediaProjection>, String> {
         if metadata.len() != objects.len() {
             return Err(format!("private {label} Moment object coverage mismatch"));
@@ -948,6 +1158,8 @@ fn project_plaintext(
                 Ok(PrivateMomentMediaProjection {
                     object_id: descriptor.object_id.clone(),
                     state: PrivateMediaState::MediaPlaceholder,
+                    access_path,
+                    retryable: false,
                     render_url: None,
                     local_path: None,
                     plaintext_sha256: None,
@@ -974,7 +1186,7 @@ fn project_plaintext(
             if kind != social::PrivateMomentKind::Image {
                 return Err("private image Moment object coverage mismatch".to_string());
             }
-            let media = project_media(&image.images, &private.objects, "image")?;
+            let media = project_media(&image.images, &private.objects, "image", access_path)?;
             Ok(PrivateMomentContentProjection::Image {
                 text: image.text.clone(),
                 media,
@@ -1003,7 +1215,7 @@ fn project_plaintext(
                 }
                 attachments.push(media.clone());
             }
-            let media = project_media(&attachments, &private.objects, "video")?;
+            let media = project_media(&attachments, &private.objects, "video", access_path)?;
             Ok(PrivateMomentContentProjection::Video {
                 text: video.text.clone(),
                 media,
@@ -1878,6 +2090,40 @@ mod tests {
     use crate::secure_content::station_trust::TrustedStationSigningKey;
     use ed25519_dalek::{Signer, SigningKey};
 
+    #[test]
+    fn secure_content_remote_delivery_status_is_typed_and_bounded() {
+        let response = social::GetMomentResourceResponse {
+            remote_delivery: Some(social::FederatedPrivateDeliveryStatus {
+                state: social::FederatedPrivateDeliveryState::Retrying as i32,
+                total_count: 2,
+                delivered_count: 1,
+                retrying_count: 1,
+                terminal_count: 0,
+                expired_count: 0,
+                next_attempt_at: Some(prost_types::Timestamp {
+                    seconds: 1_800_000_001,
+                    nanos: 0,
+                }),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            remote_delivery_state(&response).unwrap(),
+            Some(PrivateRemoteDeliveryState::Retrying),
+        );
+
+        let invalid = social::GetMomentResourceResponse {
+            remote_delivery: Some(social::FederatedPrivateDeliveryStatus {
+                state: social::FederatedPrivateDeliveryState::Delivered as i32,
+                total_count: 1,
+                delivered_count: 2,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(remote_delivery_state(&invalid).is_err());
+    }
+
     fn session(trusted_signing_key: &SigningKey) -> SecureContentSession {
         SecureContentSession::new(
             crate::secure_content::SecureContentSessionKey {
@@ -2026,6 +2272,8 @@ mod tests {
         social::GetMomentResourceResponse {
             post: None,
             explanation: None,
+            reaction_projection_revision: 0,
+            remote_delivery: None,
             resource: Some(social::PostResource {
                 metadata: Some(social::PostMetadata {
                     post_id: "post-1".to_string(),
@@ -2056,6 +2304,7 @@ mod tests {
                                 proof_key,
                                 now,
                             )),
+                            receiver_verified_sender_signing_key: None,
                         }),
                     },
                 )),
@@ -2115,7 +2364,11 @@ mod tests {
             author_ptid: "ptid:alice".to_string(),
             audience_kind: "FRIENDS".to_string(),
             state: PrivateReadState::RecoveryRequired,
+            remote_delivery_state: None,
             mentions: Vec::new(),
+            reactions: Vec::new(),
+            reaction_revision: "0".to_string(),
+            reactions_hydrated: false,
             content: None,
             error_code: Some("RECOVERY_REQUIRED".to_string()),
             retry_after_seconds: None,
@@ -2128,6 +2381,50 @@ mod tests {
             PrivateMomentProjection::decode_local(&encoded).unwrap(),
             projection
         );
+    }
+
+    #[test]
+    fn private_reaction_readback_rejects_duplicates_and_preserves_large_counts() {
+        let response = social::GetMomentResourceResponse {
+            post: Some(social::Post {
+                id: "post-1".to_string(),
+                reactions: vec![
+                    social::ReactionSummary {
+                        kind: social::ReactionKind::ReactionLove as i32,
+                        count: i64::MAX,
+                        reacted_by_viewer: true,
+                    },
+                    social::ReactionSummary {
+                        kind: social::ReactionKind::ReactionLike as i32,
+                        count: 2,
+                        reacted_by_viewer: false,
+                    },
+                ],
+                ..Default::default()
+            }),
+            reaction_projection_revision: 7,
+            ..Default::default()
+        };
+        let (summaries, revision, hydrated) =
+            source_reaction_summaries(&response, "post-1").unwrap();
+        assert_eq!(summaries[0].kind, social::ReactionKind::ReactionLike as i32);
+        assert_eq!(summaries[1].count, i64::MAX.to_string());
+        assert_eq!(revision, "7");
+        assert!(hydrated);
+
+        assert!(canonical_reaction_summaries(&[
+            social::ReactionSummary {
+                kind: social::ReactionKind::ReactionLike as i32,
+                count: 1,
+                reacted_by_viewer: true,
+            },
+            social::ReactionSummary {
+                kind: social::ReactionKind::ReactionLike as i32,
+                count: 1,
+                reacted_by_viewer: true,
+            },
+        ])
+        .is_err());
     }
 
     #[test]
@@ -2210,7 +2507,13 @@ mod tests {
             mention_commitment_salt: Vec::new(),
         };
         assert!(matches!(
-            project_plaintext(&content, &private, social::PrivateMomentKind::Poll).unwrap(),
+            project_plaintext(
+                &content,
+                &private,
+                social::PrivateMomentKind::Poll,
+                PrivateMediaAccessPath::HomeStationLocalObject,
+            )
+            .unwrap(),
             PrivateMomentContentProjection::Poll { .. }
         ));
 
@@ -2219,7 +2522,13 @@ mod tests {
             unreachable!();
         };
         poll.options[0].opaque_option_id[0] ^= 1;
-        assert!(project_plaintext(&tampered, &private, social::PrivateMomentKind::Poll).is_err());
+        assert!(project_plaintext(
+            &tampered,
+            &private,
+            social::PrivateMomentKind::Poll,
+            PrivateMediaAccessPath::HomeStationLocalObject,
+        )
+        .is_err());
     }
 
     #[test]
@@ -2357,7 +2666,13 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            project_plaintext(&content, &private, social::PrivateMomentKind::Repost,).unwrap(),
+            project_plaintext(
+                &content,
+                &private,
+                social::PrivateMomentKind::Repost,
+                PrivateMediaAccessPath::HomeStationLocalObject,
+            )
+            .unwrap(),
             PrivateMomentContentProjection::Repost { .. }
         ));
 
@@ -2378,14 +2693,18 @@ mod tests {
             unreachable!();
         };
         text.text = "tampered".to_string();
-        assert!(
-            project_plaintext(&tampered, &private, social::PrivateMomentKind::Repost,).is_err()
-        );
+        assert!(project_plaintext(
+            &tampered,
+            &private,
+            social::PrivateMomentKind::Repost,
+            PrivateMediaAccessPath::HomeStationLocalObject,
+        )
+        .is_err());
     }
 
     #[test]
     fn secure_content_historical_proof_key_requires_current_station_pin() {
-        let now = 1_900_000_000;
+        let now = current_unix_seconds();
         let trusted = SigningKey::from_bytes(&[7; 32]);
         let historical = SigningKey::from_bytes(&[8; 32]);
         let session = session(&trusted);
@@ -2449,6 +2768,135 @@ mod tests {
             now,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn federated_private_text_decrypts_exact_receiver_projection() {
+        use crate::secure_content::store::{PublicationState, StoredPublication};
+
+        let response_bytes = hex::decode(
+            include_str!(
+                "../../../../../model/domain/social/testdata/federated_private_text_receiver_response.hex"
+            )
+            .trim(),
+        )
+        .unwrap();
+        let response =
+            social::GetMomentResourceResponse::decode(response_bytes.as_slice()).unwrap();
+        let private = match response
+            .resource
+            .as_ref()
+            .and_then(|resource| resource.body.as_ref())
+        {
+            Some(social::post_resource::Body::PrivateContent(private)) => private,
+            _ => panic!("fixture must contain receiver private content"),
+        };
+        let verification = private.verification.as_ref().unwrap();
+        let attestation = verification
+            .station_signing_key_attestation
+            .as_ref()
+            .unwrap();
+        let endpoint = match private
+            .viewer_envelope
+            .as_ref()
+            .and_then(|envelope| envelope.recipient.as_ref())
+        {
+            Some(wire::viewer_content_key_envelope::Recipient::Endpoint(endpoint)) => endpoint,
+            _ => panic!("fixture must contain Bob's endpoint envelope"),
+        };
+        let envelope = private.viewer_envelope.as_ref().unwrap();
+        let binding = envelope.binding.as_ref().unwrap();
+        let receiver_station_key = SigningKey::from_bytes(&[0x62; 32]);
+        let receiver_session = SecureContentSession::new(
+            crate::secure_content::SecureContentSessionKey {
+                station_peer_id: attestation.station_peer_id.clone(),
+                actor_ptid: endpoint.actor.as_ref().unwrap().ptid.clone(),
+                device_id: endpoint.device_id.clone(),
+                jwt_session_id: "fixture-session".to_string(),
+                window_label: "main".to_string(),
+                session_generation: 1,
+            },
+            "fixture-account".to_string(),
+            "https://station-remote.test".to_string(),
+            "fixture-token".to_string(),
+            "fixture-device-key".to_string(),
+            1,
+            SigningKey::from_bytes(&[9; 32]),
+            TrustedStationSigningKey {
+                key_id: attestation.attesting_signing_key_id.clone(),
+                verifying_key: receiver_station_key.verifying_key(),
+            },
+        );
+        let post_id = response
+            .resource
+            .as_ref()
+            .and_then(|resource| resource.metadata.as_ref())
+            .map(|metadata| metadata.post_id.as_str())
+            .unwrap();
+        let now = attestation.issued_at.as_ref().unwrap().seconds;
+        let sender = sender_key_requirement(post_id, &response).unwrap();
+        let sender_key = super::super::private_moment::receiver_verified_sender_signing_key(
+            &response,
+            &sender.sender,
+            sender.signing_key_id.as_deref().unwrap(),
+            sender.committed_at_unix_ms,
+        )
+        .unwrap()
+        .unwrap();
+        let endpoint_prekey = ContentPreKeyPrivate::from_bytes([0x0b; 32]);
+        let endpoint_public = *endpoint_prekey.public_key().as_bytes();
+        let store = SecureContentStore::in_memory().unwrap();
+        let publication_bytes = b"federated-private-text-fixture".to_vec();
+        store
+            .persist_prekey_publication(
+                &StoredPublication {
+                    command_id: "federated-private-text-fixture".to_string(),
+                    key_kind: wire::ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+                    pool_epoch: envelope.principal_epoch,
+                    request_sha256: Sha256::digest(&publication_bytes).into(),
+                    request_bytes: publication_bytes,
+                    state: PublicationState::PendingPublication,
+                    lease_generation: 0,
+                    session_generation: 0,
+                },
+                &[(
+                    binding.recipient_key_id.clone(),
+                    Some(endpoint_prekey.to_bytes()),
+                    endpoint_public,
+                )],
+            )
+            .unwrap();
+
+        let decrypted = decrypt_projection_from_response_at(
+            &receiver_session,
+            &store,
+            post_id,
+            &response,
+            Some(&sender_key),
+            None,
+            None,
+            now,
+        )
+        .unwrap();
+        assert_eq!(
+            response
+                .explanation
+                .as_ref()
+                .and_then(|explanation| explanation.source.as_ref())
+                .map(|source| source.station_peer_id.as_str()),
+            Some("station-local"),
+        );
+        assert_eq!(attestation.station_peer_id, "station-remote");
+        assert_eq!(
+            decrypted.projection.content,
+            Some(PrivateMomentContentProjection::Text {
+                text: "cross-station exact text".to_string(),
+            }),
+        );
+        assert_eq!(
+            decrypted.consumed_prekey.as_deref(),
+            Some(binding.recipient_key_id.as_str()),
+        );
     }
 
     #[test]

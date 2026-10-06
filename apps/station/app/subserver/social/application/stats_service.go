@@ -64,12 +64,12 @@ func (s *StatsService) MyStats(ctx context.Context, actorPTID string) (*MomentsS
 	if c, err := s.repos.Follows.GetFollowingCount(ctx, actorPTID); err == nil {
 		stats.FollowingCount = c
 	} else {
-		logger.Warn(ctx, "stats: following count failed", "error", err, "actor_ptid", actorPTID)
+		logger.Warn(ctx, "stats: following count failed", "error", err)
 	}
 	if c, err := s.repos.Follows.GetFollowerCount(ctx, actorPTID); err == nil {
 		stats.FollowersCount = c
 	} else {
-		logger.Warn(ctx, "stats: followers count failed", "error", err, "actor_ptid", actorPTID)
+		logger.Warn(ctx, "stats: followers count failed", "error", err)
 	}
 
 	return stats, nil

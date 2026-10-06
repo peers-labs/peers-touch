@@ -142,20 +142,16 @@ fn identity_json(engine: &MessagingEngine) -> Result<serde_json::Value, String> 
     }))
 }
 
-fn latest_revision(
-    session: &RecoverySession,
-    device_id: &str,
-) -> Result<
+fn latest_revision(session: &RecoverySession) -> Result<
     ReadLatestRecoveryRevisionResponse,
     crate::infrastructure::station_client::StationClientError,
 > {
-    let revision: ReadLatestRecoveryRevisionResponse = station_client::request_proto_for_device(
+    let revision: ReadLatestRecoveryRevisionResponse = station_client::request_proto_for_actor(
         Method::GET,
         "/recovery/latest",
         &session.token,
         None,
         None::<&ReadLatestRecoveryRevisionRequest>,
-        device_id,
     )?;
     #[cfg(feature = "acceptance-webdriver")]
     {
@@ -351,8 +347,7 @@ pub fn messaging_recovery_restore_latest(
         }
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let device_id = engine.endpoint().device_id.clone();
-    let revision = match latest_revision(&session, &device_id) {
+    let revision = match latest_revision(&session) {
         Ok(revision) => revision,
         Err(error) => return error.into_app_result("failed to fetch latest recovery revision"),
     };
@@ -396,6 +391,13 @@ pub fn messaging_recovery_restore_latest(
             }
         };
     drop(engine);
+    if let Err(error) = state.secure_content.teardown_actor(&session.actor_ptid) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("failed to fence Secure Content before identity recovery: {error}"),
+            None,
+        );
+    }
 
     let key_ref = identity_key_ref(&session.ptid);
     let previous_seed = match crypto::load_identity_key(&key_ref) {
@@ -436,6 +438,13 @@ pub fn messaging_recovery_restore_latest(
             return AppResult::fail(ErrorCode::InternalError, error, None);
         }
     };
+    if let Err(error) = state.secure_content.teardown_actor(&session.actor_ptid) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("failed to fence Secure Content after identity recovery: {error}"),
+            None,
+        );
+    }
     let restored_device_id = match enrollment.certificate.device.as_ref() {
         Some(device) => device.device_id.clone(),
         None => {
@@ -490,7 +499,7 @@ pub fn messaging_recovery_status(
         Ok(identity) => identity,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    match latest_revision(&session, &engine.endpoint().device_id) {
+    match latest_revision(&session) {
         Ok(revision) => to_stub(
             "messaging_recovery_status",
             json!({ "identity": identity, "exists": true, "latest": revision_json(&revision) }),
@@ -525,7 +534,7 @@ pub fn messaging_recovery_list_revisions(
         }
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    match latest_revision(&session, &engine.endpoint().device_id) {
+    match latest_revision(&session) {
         Ok(revision) => to_stub(
             "messaging_recovery_list_revisions",
             json!({ "backups": [revision_json(&revision)] }),

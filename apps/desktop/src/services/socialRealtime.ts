@@ -54,7 +54,7 @@ let socialReconcileTimer: number | null = null;
 let externalHostReconcileTimer: number | null = null;
 let bootstrappedActorPtid: string | null = null;
 let bootstrapSequence = 0;
-let realtimeStreamActorPtid: string | null = null;
+let realtimeStreamScopeKey: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
 let socialRefreshInFlight: Promise<void> | null = null;
 let coldResyncInFlight = false;
@@ -176,11 +176,10 @@ function rememberBounded(set: Set<string>, key: string, maxSize: number): boolea
 }
 
 /**
- * Re-pull friend requests, sessions, groups, group unread counts, and
- * conversation previews into the projection stores. Exported for the
- * `socialRuntime` adapter's `reconcile` hook (see
- * `apps/desktop/src/runtimes/socialRuntime.ts`); callers should never
- * trigger a refresh from view-mount effects.
+ * Re-pull Social-owned relationship, profile, presence, and notification
+ * projections. Messaging-owned conversations and messages reconcile through
+ * messagingRealtime. Callers should never trigger a refresh from view-mount
+ * effects.
  */
 export async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
   if (!currentAuthenticatedActorPtid()) return;
@@ -193,8 +192,6 @@ export async function refreshSocialProjection(label: string, includeNotification
     const notifications = useNotificationStore.getState();
     await Promise.allSettled([
       chat.loadFriendRequests(),
-      chat.loadSessions(),
-      chat.loadGroups(),
       refreshFriendshipProjection(true),
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
@@ -209,15 +206,7 @@ export async function refreshSocialProjection(label: string, includeNotification
     await Promise.allSettled([
       refreshFriendStationIdentities(),
       refreshPeerPresence(peerPtids),
-      refreshed.activeTab === 'friend' && refreshed.activeSessionUlid
-        ? refreshed.loadMessages(refreshed.activeSessionUlid, 'friend')
-        : refreshed.activeTab === 'group' && refreshed.activeGroupUlid
-          ? refreshed.loadMessages(refreshed.activeGroupUlid, 'group')
-          : Promise.resolve(),
-      refreshed.loadGroupUnreadCounts(),
-      refreshed.loadConversationPreviews(),
     ]);
-    useNavigationBadgeStore.getState().reconcileChatBadge();
 
     log.info('socialRealtime', 'social projection refresh completed', { label });
   })().finally(() => {
@@ -272,7 +261,7 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
     chat.loadSessions(),
     chat.loadGroups(),
     chat.loadFriendRequests(),
-    useRelationshipsStore.getState().loadMutualFriends(actorPtid, true),
+    refreshFriendshipProjection(true),
     notifications.refreshUnreadCounts(),
   ]);
 
@@ -308,19 +297,33 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
 }
 
 async function stopRealtimeStreamSupervisor(): Promise<void> {
-  if (!realtimeStreamActorPtid) return;
+  if (!realtimeStreamScopeKey) return;
+  realtimeStreamScopeKey = null;
   await stopEventStream();
-  realtimeStreamActorPtid = null;
 }
 
 async function startRealtimeStreamSupervisor(actorPtid: string): Promise<void> {
-  if (realtimeStreamActorPtid === actorPtid) return;
-  if (realtimeStreamActorPtid) {
+  const sessionEpoch = useSessionStore.getState().sessionEpoch;
+  const scopeKey = `${actorPtid}\0${sessionEpoch}`;
+  if (realtimeStreamScopeKey === scopeKey) return;
+  if (realtimeStreamScopeKey) {
     await stopRealtimeStreamSupervisor();
   }
   await installEventStreamBridge();
-  await startEventStream();
-  realtimeStreamActorPtid = actorPtid;
+  await startEventStream(sessionEpoch);
+  realtimeStreamScopeKey = scopeKey;
+}
+
+function restartRealtimeStreamForStationChange(): void {
+  realtimeStreamTransition = realtimeStreamTransition.then(async () => {
+    await stopRealtimeStreamSupervisor();
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (actorPtid) {
+      await startRealtimeStreamSupervisor(actorPtid);
+    }
+  }).catch((error) => {
+    log.warn('socialRealtime', 'realtime stream Station restart failed', error);
+  });
 }
 
 function reconcileAuthenticatedRuntime(): void {
@@ -335,7 +338,7 @@ function reconcileAuthenticatedRuntime(): void {
       bootstrappedActorPtid = null;
       bootstrapSequence += 1;
     }
-    useRelationshipsStore.getState().resetMutualFriends();
+    useRelationshipsStore.getState().reset();
     return;
   }
 
@@ -345,6 +348,9 @@ function reconcileAuthenticatedRuntime(): void {
   startSocialReconcile();
 
   if (bootstrappedActorPtid === actorPtid) return;
+  if (bootstrappedActorPtid) {
+    useRelationshipsStore.getState().reset();
+  }
   bootstrappedActorPtid = actorPtid;
   const sequence = ++bootstrapSequence;
   runDetached('social projection bootstrap', () => bootstrapSocialProjection(actorPtid, sequence));
@@ -798,6 +804,7 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),
     eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
     eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
+    eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, restartRealtimeStreamForStationChange),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 

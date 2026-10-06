@@ -7386,9 +7386,13 @@ export const api = {
    * See docs/architecture/shared/communication/event-stream.md for the wire
    * contract and the per-window device id semantics.
    */
-  realtimeStreamStart: () =>
-    invokeRustDataFromStatus<void, { actor_ptid: string; device_id: string }>(
+  realtimeStreamStart: (sessionEpoch: number) =>
+    invokeRustDataFromStatus<
+      { session_epoch: number },
+      { actor_ptid: string; device_id: string; session_epoch: number }
+    >(
       'realtime_stream_start',
+      { session_epoch: toPositiveRustUint64(sessionEpoch, 'session_epoch') },
     ),
 
   /** Cancel the realtime SSE consumer for the current actor. */

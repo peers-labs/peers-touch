@@ -752,6 +752,89 @@ where
     )
 }
 
+/// Actor-scoped authenticated protobuf call that intentionally omits the
+/// device header. This is reserved for bootstrap operations that must work
+/// before a replacement device has restored its enrolled identity.
+pub(crate) fn request_proto_for_actor<Req, Payload>(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
+    request_proto_for_actor_at(&station_base_url(), method, path, token, query, body)
+}
+
+pub(crate) fn request_proto_for_actor_at<Req, Payload>(
+    station_url: &str,
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
+    let url = format!("{}{}", station_url.trim_end_matches('/'), path);
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+    let mut request = client.request(method, &url).bearer_auth(token);
+    if let Some(query) = query {
+        request = request.query(query);
+    }
+    request = request.header("Content-Type", "application/protobuf");
+    if let Some(body) = body {
+        request = request.body(body.encode_to_vec());
+    }
+    let response = request
+        .header("Accept", "application/protobuf")
+        .send()
+        .map_err(|error| {
+            StationClientError::new(
+                StationClientErrorKind::Network,
+                format!("request failed: {error}"),
+                None,
+            )
+        })?;
+    let status = response.status();
+    let headers = headers_to_json(response.headers());
+    let bytes = response.bytes().map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {error}"),
+            None,
+        )
+    })?;
+    if !status.is_success() {
+        let body = String::from_utf8_lossy(&bytes).to_string();
+        return Err(build_error_for_status_with_headers(
+            status.as_u16(),
+            path,
+            &body,
+            Some(&headers),
+        ));
+    }
+    tracing::debug!(
+        path = %path,
+        status = status.as_u16(),
+        elapsed_ms = start.elapsed().as_millis(),
+        "← station OK (actor-scoped proto)"
+    );
+    Payload::decode(bytes.as_ref()).map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode proto response failed: {error}"),
+            None,
+        )
+    })
+}
+
 pub(crate) fn request_peers_proto_no_body_for_device_at<Payload>(
     station_url: &str,
     method: Method,
@@ -1816,7 +1899,7 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
 mod tests {
     use super::{
         build_error_for_status_with_headers, request_json_with_policy_base_url,
-        StationTransportPolicy,
+        request_proto_for_actor_at, StationTransportPolicy,
     };
     use crate::error::ErrorCode;
     use reqwest::Method;
@@ -1841,6 +1924,41 @@ mod tests {
             StationTransportPolicy::TurnExecution.label(),
             "turn_execution"
         );
+    }
+
+    #[test]
+    fn actor_scoped_proto_request_omits_device_header() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind actor proto fixture");
+        let address = listener
+            .local_addr()
+            .expect("read actor proto fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept actor proto request");
+            let mut request = [0_u8; 4096];
+            let request_len = stream.read(&mut request).expect("read actor proto request");
+            let request = String::from_utf8_lossy(&request[..request_len]).to_ascii_lowercase();
+            assert!(request.starts_with("get /recovery/latest http/1.1\r\n"));
+            assert!(request.contains("\r\nauthorization: bearer fixture-token\r\n"));
+            assert!(!request.contains("\r\nx-device-id:"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write actor proto response");
+        });
+
+        let response = request_proto_for_actor_at::<(), ()>(
+            &format!("http://{address}"),
+            Method::GET,
+            "/recovery/latest",
+            "fixture-token",
+            None,
+            None,
+        )
+        .expect("actor-scoped proto request must succeed");
+        server.join().expect("join actor proto fixture");
+
+        assert_eq!(response, ());
     }
 
     #[test]

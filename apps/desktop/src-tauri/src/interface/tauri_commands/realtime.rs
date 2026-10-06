@@ -53,12 +53,25 @@ fn device_id_from(window: &Window) -> String {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealtimeStreamStartInput {
+    pub session_epoch: u64,
+}
+
 #[tauri::command]
 pub fn realtime_stream_start(
+    input: RealtimeStreamStartInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
     app: AppHandle,
 ) -> AppResult<StubPayload> {
+    if input.session_epoch == 0 {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "session_epoch is required",
+            None,
+        );
+    }
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
@@ -67,10 +80,20 @@ pub fn realtime_stream_start(
         return AppResult::fail(ErrorCode::Unauthorized, "no active actor", None);
     };
     let device_id = device_id_from(&window);
-    event_stream::start(app, actor_ptid.clone(), token, device_id.clone());
+    event_stream::start(
+        app,
+        actor_ptid.clone(),
+        input.session_epoch,
+        token,
+        device_id.clone(),
+    );
     to_stub(
         "realtime_stream_start",
-        json!({ "actor_ptid": actor_ptid, "device_id": device_id }),
+        json!({
+            "actor_ptid": actor_ptid,
+            "device_id": device_id,
+            "session_epoch": input.session_epoch,
+        }),
     )
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/protocol"
 )
 
 // ---- DTO: ICE server ----
@@ -230,39 +231,57 @@ func (h *relayHandler) handleForward(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
 		targetPath += "?" + r.URL.RawQuery
 	}
+	routePolicy, hasRoutePolicy := protocol.RoutePolicyForPath(targetPath)
+	privateObjectLog, _ := protocol.PrivateObjectRouteLogContext(
+		r.Method,
+		targetPath,
+		map[string]string{
+			protocol.PeerHopRequestIDHeader: r.Header.Get(protocol.PeerHopRequestIDHeader),
+		},
+	)
 
 	// 4. Lookup stream entry.
 	entry, ok := h.sub.streams.GetEntry(stationPeerID)
 	if !ok {
+		if hasRoutePolicy {
+			logPrivateObjectForward(ctx, privateObjectLog, protocol.RouteLogOutcomeRetryable)
+		}
 		writeJSON(w, http.StatusServiceUnavailable,
 			errorBody(fmt.Sprintf("station %s is not available", stationPeerID)))
 		return
 	}
 
-	// 5. Per-station concurrency limiter.
-	if !entry.AcquireSemaphore() {
-		writeJSON(w, http.StatusServiceUnavailable,
-			errorBody(fmt.Sprintf("station %s: too many concurrent requests", stationPeerID)))
-		return
-	}
-	defer entry.ReleaseSemaphore()
-
-	// 6. Inflight tracking + metrics.
+	// 5. Inflight tracking + metrics.
 	h.sub.streams.TrackInflight()
 	defer h.sub.streams.UntrackInflight()
 
 	metInflightForwards.Inc()
 	defer metInflightForwards.Dec()
 
-	// 7. Read body.
-	body, err := io.ReadAll(io.LimitReader(r.Body, int64(h.sub.opts.MaxBodySize)))
+	// 6. Read body under the route-specific request cap.
+	maxRequestBodyLen := uint32(h.sub.opts.MaxBodySize)
+	if hasRoutePolicy {
+		maxRequestBodyLen = routePolicy.MaxRequestBodyLen
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, int64(maxRequestBodyLen)+1))
 	if err != nil {
 		metForwardTotal.Inc("read_error")
+		if hasRoutePolicy {
+			logPrivateObjectForward(ctx, privateObjectLog, protocol.RouteLogOutcomeRejected)
+		}
 		writeJSON(w, http.StatusBadRequest, errorBody("failed to read request body"))
 		return
 	}
+	if uint64(len(body)) > uint64(maxRequestBodyLen) {
+		metForwardTotal.Inc("body_too_large")
+		if hasRoutePolicy {
+			logPrivateObjectForward(ctx, privateObjectLog, protocol.RouteLogOutcomeRejected)
+		}
+		writeJSON(w, http.StatusRequestEntityTooLarge, errorBody("request body exceeds relay limit"))
+		return
+	}
 
-	// 8. Collect headers.
+	// 7. Collect headers.
 	headers := make(map[string]string, len(r.Header))
 	for k, v := range r.Header {
 		if len(v) > 0 {
@@ -270,35 +289,78 @@ func (h *relayHandler) handleForward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 9. Send request frame to station.
-	reqID := h.sub.streams.NextRequestID()
-	logger.Debugf(ctx, "[relay] forwarding %s %s to %s (req_id=%d)", r.Method, targetPath, stationPeerID, reqID)
-
+	// 8. Send request frame to station.
 	fwdTimeout := time.Duration(h.sub.opts.ForwardTimeout) * time.Second
 	fwdCtx, fwdCancel := context.WithTimeout(ctx, fwdTimeout)
 	defer fwdCancel()
 
-	resp, err := entry.SendRequest(fwdCtx, reqID, r.Method, targetPath, headers, body)
+	responsePayloadLimit := uint32(protocol.MaxPayloadLen)
+	if hasRoutePolicy {
+		responsePayloadLimit = routePolicy.MaxResponsePayloadLen
+	}
+	resp, reqID, err := entry.SendRequest(
+		fwdCtx,
+		r.Method,
+		targetPath,
+		headers,
+		body,
+		responsePayloadLimit,
+		fwdTimeout,
+	)
 	if err != nil {
 		elapsed := time.Since(start).Seconds()
 		metForwardDuration.Observe(elapsed)
 
-		if fwdCtx.Err() != nil {
+		switch {
+		case errors.Is(err, ErrTooManyConcurrent):
+			metForwardTotal.Inc("concurrency_limit")
+			if hasRoutePolicy {
+				logPrivateObjectForward(ctx, privateObjectLog, protocol.RouteLogOutcomeRetryable)
+			}
+			writeJSON(w, http.StatusServiceUnavailable,
+				errorBody(fmt.Sprintf("station %s: too many concurrent requests", stationPeerID)))
+		case errors.Is(err, ErrRequestIDExhausted):
+			metForwardTotal.Inc("stream_retiring")
+			if hasRoutePolicy {
+				logPrivateObjectForward(ctx, privateObjectLog, protocol.RouteLogOutcomeRetryable)
+			}
+			writeJSON(w, http.StatusServiceUnavailable, errorBody("station stream is recycling"))
+		case fwdCtx.Err() != nil:
 			metForwardTotal.Inc("timeout")
+			if hasRoutePolicy {
+				logPrivateObjectForward(ctx, privateObjectLog, protocol.RouteLogOutcomeInterrupted)
+			}
 			writeJSON(w, http.StatusGatewayTimeout,
 				errorBody(fmt.Sprintf("station %s did not respond within %v", stationPeerID, fwdTimeout)))
-		} else {
+		default:
 			metForwardTotal.Inc("error")
-			h.sub.streams.Remove(ctx, stationPeerID)
+			if hasRoutePolicy {
+				logPrivateObjectForward(ctx, privateObjectLog, protocol.RouteLogOutcomeRetryable)
+			}
+			h.sub.streams.RemoveIfSame(ctx, stationPeerID, entry)
 			writeJSON(w, http.StatusBadGateway, errorBody("failed to communicate with station stream"))
 		}
 		return
 	}
 
-	// 10. Write station response back to client.
+	if !hasRoutePolicy {
+		logger.Debugf(
+			ctx,
+			"[relay] forwarded %s %s to %s (req_id=%d)",
+			r.Method,
+			targetPath,
+			stationPeerID,
+			reqID,
+		)
+	}
+
+	// 9. Write station response back to client.
 	elapsed := time.Since(start).Seconds()
 	metForwardDuration.Observe(elapsed)
 	metForwardTotal.Inc("success")
+	if hasRoutePolicy {
+		logPrivateObjectForward(ctx, privateObjectLog, protocol.RouteLogOutcomeAccepted)
+	}
 
 	for k, v := range resp.Headers {
 		w.Header().Set(k, v)
@@ -307,4 +369,19 @@ func (h *relayHandler) handleForward(w http.ResponseWriter, r *http.Request) {
 	if len(resp.Body) > 0 {
 		_, _ = w.Write(resp.Body)
 	}
+}
+
+func logPrivateObjectForward(
+	ctx context.Context,
+	logContext protocol.RouteLogContext,
+	outcome string,
+) {
+	logger.Debugf(
+		ctx,
+		"[relay] route=%s method=%s outcome=%s request_id=%s",
+		logContext.Category,
+		logContext.Method,
+		outcome,
+		logContext.RequestID,
+	)
 }

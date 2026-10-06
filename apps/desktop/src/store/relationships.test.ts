@@ -57,6 +57,10 @@ describe('relationships mutual-friend projection', () => {
     expect(
       useRelationshipsStore.getState().mutualFriends.map((friend) => friend.actorPtid),
     ).toEqual(['ptid:alice', 'ptid:carol']);
+    expect(
+      useRelationshipsStore.getState().followersByActor['ptid:self']?.items
+        .map((follower) => follower.actorPtid),
+    ).toEqual(['ptid:alice', 'ptid:follower-only', 'ptid:carol']);
     expect(mocks.socialGetFollowers).toHaveBeenNthCalledWith(
       2,
       'ptid:self',
@@ -106,5 +110,26 @@ describe('relationships mutual-friend projection', () => {
     expect(useRelationshipsStore.getState().mutualFriends).toEqual([
       expect.objectContaining({ actorPtid: 'ptid:new-friend' }),
     ]);
+  });
+
+  it('drops an in-flight follower page after the relationship scope resets', async () => {
+    let resolveFollowers: ((value: unknown) => void) | undefined;
+    mocks.socialGetFollowers.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveFollowers = resolve;
+    }));
+
+    const staleLoad = useRelationshipsStore.getState().loadFollowers(
+      'ptid:old',
+      true,
+    );
+    useRelationshipsStore.getState().reset();
+    resolveFollowers?.({
+      followers: [{ actorPtid: 'ptid:old-follower' }],
+      nextCursor: '',
+      total: 1,
+    });
+    await staleLoad;
+
+    expect(useRelationshipsStore.getState().followersByActor).toEqual({});
   });
 });

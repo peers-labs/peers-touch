@@ -460,7 +460,7 @@ pub fn social_get_moment(
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
     let path = format!("/api/v1/social/moments/{}", input.id);
-    let resp: model::social::GetPostResponse =
+    let resp: model::social::GetMomentResourceResponse =
         match get_proto_optional_auth(&path, token.as_deref(), None) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "get moment failed"),
@@ -727,6 +727,9 @@ pub fn social_react(
     let req = model::social::ReactToPostRequest {
         post_id: input.post_id.clone(),
         kind: input.kind,
+        command_id: String::new(),
+        actor_signing_key_id: String::new(),
+        actor_device_signature: Vec::new(),
     };
     let path = format!("/api/v1/social/moments/{}/react", input.post_id);
     let resp: model::social::ReactToPostResponse = match post_proto(&path, &token, &req) {
@@ -752,6 +755,9 @@ pub fn social_unreact(
     let req = model::social::UnreactToPostRequest {
         post_id: input.post_id.clone(),
         kind: input.kind,
+        command_id: String::new(),
+        actor_signing_key_id: String::new(),
+        actor_device_signature: Vec::new(),
     };
     let path = format!("/api/v1/social/moments/{}/unreact", input.post_id);
     let resp: model::social::UnreactToPostResponse = match post_proto(&path, &token, &req) {

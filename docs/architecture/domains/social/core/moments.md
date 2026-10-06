@@ -20,6 +20,12 @@
 > Specifically, the key-envelope shape in §4, private plaintext schema in §6,
 > authentication wiring in §8, media path in §10, legacy route aliases, and
 > phased implementation notes are superseded for this security hard cut.
+>
+> **Cross-Station ownership amendment (2026-10-03)**: private cross-Station
+> delivery, interaction, recovery, and revocation are governed by
+> [`../cross-station-social/`](../cross-station-social/README.md). Historical
+> private fan-out and remote object URL sketches are superseded; Social now
+> uses the shared durable Federation transport.
 
 ## 1. 目标与非目标
 
@@ -35,14 +41,13 @@
 3. **跨端一致由协议保证**。Desktop / Mobile 各自实现 UI，但
    `model/domain/social/*.proto` 是唯一真实来源；
    AudienceSelector、Reaction、Comment 的语义跨端一致来自协议。
-4. **为未来联邦留口子**。v1 不实现 ActivityPub 出/入站，但今天
-   的存储分层和投递队列结构已经按"未来联邦只能读公开存储"的
-   方向预留。
+4. **保持跨站边界清晰**。公开与私密存储物理分离；跨 Station
+   私密投递由独立的 `cross-station-social` 架构管理，不在本设计
+   中引入第二套 transport 或 authority。
 
 ### 1.2 非目标（v1 不做）
 
-- ❌ ActivityPub 出/入站（公开内容会先入 `outbox_public`，但
-  v1 不消费它）
+- ❌ 外部公开内容互操作或跨站公开 Feed
 - ❌ Story / 24 小时阅后即焚 / 直播 / 语音空间
 - ❌ 算法推荐 feed（v1 严格按时间 + 关注/圈子/群关系）
 - ❌ 广告、计费、商业化
@@ -82,7 +87,7 @@ message，不另起新名。"Moments" 是产品语义，"Post" 是协议语义�
 
 | `Audience.kind` | 语义 | 示例 |
 |---|---|---|
-| `PUBLIC`        | 全网可见，未来对接 ActivityPub | 一条公开技术随笔 |
+| `PUBLIC`        | 公开接口可见，不受私密 E2EE 承诺保护 | 一条公开技术随笔 |
 | `FOLLOWERS`     | 仅当前 Station 上的关注者可见 | 给关注者的近况 |
 | `CIRCLE`        | 仅指定 Circle 成员可见 | "家人"圈 |
 | `GROUP`         | 仅指定 chat.Group 成员可见 | "项目组 A" |
@@ -126,7 +131,7 @@ message，不另起新名。"Moments" 是产品语义，"Post" 是协议语义�
 | 群成员关系 | `chat.Group` + `chat/group_chat.proto` | `Audience.kind=GROUP` 直接引用 group_id |
 | 媒体上传 / `cid` URI | `peers-oss` + `chat_upload_attachment` | 附件用 `cid`（与 chat 完全一致） |
 | 跨 subserver 通知 | `notification.Bridge` + `POST_LIKED/POST_COMMENTED/POST_REPOSTED` 已存在 | 直接发布，新增 `POST_MENTIONED / COMMENT_REPLIED` |
-| 异步 fan-out 模式 | `friend_chat / group_chat` 的 outbox tick | 复用同一模式（`outbox_relay`） |
+| 异步 fan-out 模式 | shared Federation durable delivery | Social UOW 写 viewer-scoped Federation outbox |
 | 实时新动态推到在线客户端 | `events` subserver + `event.broker`（SSE/WebSocket） | 发 `MomentCreated` 域事件 |
 | HTTP 路由 / 鉴权 | `server.NewTypedHandler` + `RequireJWT` + `CommonAccessControlWrapper(RouteNameSocial)` | 完全复用 |
 | Desktop UI 组件 | `UserSquareAvatar / Markdown / AttachmentItem / theme.useToken()` | 直接拼装 `MomentCard` |
@@ -156,7 +161,7 @@ message，不另起新名。"Moments" 是产品语义，"Post" 是协议语义�
 | `attachments` | `repeated Attachment` | 取代 `media_urls`（保留 `media_urls` 一段时间作 read-side 兼容字段） |
 | `mentions` | `repeated Mention` | |
 | `link_preview` | `LinkPreview` | 服务端写回，客户端只读 |
-| `repost_of_id` | `string` | 形如 `oss://{station}/post/{id}` 跨站 ready；同站可写裸 id |
+| `repost_of_id` | `string` | 使用 canonical Social resource identity，不使用远端对象 URL |
 | `reactions` | `repeated ReactionSummary` | 计算字段，`liked_by_me / like_count` 进入 deprecated 路径 |
 
 **`Comment` 新增：**
@@ -214,7 +219,7 @@ apps/station/app/subserver/social/
 │   ├── circle_service.go      ⭐ NEW
 │   ├── reaction_service.go    ⭐ NEW（升级 like → typed reaction）
 │   ├── comment_service.go     ⭐ NEW（cursor + threaded 1-level）
-│   └── outbox_dispatcher.go   ⭐ NEW：私密走 Relay；公开入 outbox_public 待消费
+│   └── delivery_port.go       ⭐ NEW：私密写共享 Federation outbox port
 ├── domain/
 │   ├── post.go                (existing)
 │   ├── audience.go            ⭐ NEW：可见性决策的"唯一真理"
@@ -230,7 +235,7 @@ apps/station/app/subserver/social/
     ├── reaction_repo.go
     ├── comment_repo.go
     ├── outbox_repo.go
-    └── relay_gateway.go       ⭐ 私密 fan-out 经由 Relay
+    └── federation_delivery_port.go ⭐ shared Federation transport adapter
 ```
 
 ## 6. 隐私 / 公开内容的物理分离存储
@@ -241,8 +246,9 @@ apps/station/app/subserver/social/
 
 1. **爆炸半径隔离**：公开 timeline 查询哪怕 SQL 写错，也物理上读不到私密表。
 2. **备份策略不同**：公开数据可镜像、可快照；私密数据严格加密备份、有明确擦除路径。
-3. **未来联邦绝对清晰**：未来 ActivityPub 出站代码路径**只允许**访问公开存储；
-   架构上杜绝"Bug 把私密帖泄漏到 federation outbox"。
+3. **跨站边界绝对清晰**：任何公开分发路径**只允许**访问公开存储；
+   私密跨站投递只能消费已授权的密文投影，架构上杜绝私密明文进入
+   Federation outbox。
 4. **审计/合规清晰**：导出/删除请求时，私密内容的范围非常明确。
 
 ### 6.2 物理布局：单实例 PostgreSQL，三个 schema
@@ -256,7 +262,7 @@ PostgreSQL（单实例，单备份，单运维）
 │   ├── reactions
 │   ├── comments
 │   ├── reposts
-│   └── outbox_public             ── 未来 AP 投递队列（v1 写入，不消费）
+│   └── outbox_public             ── 预留公开分发队列（v1 写入，不消费）
 │
 ├── schema: social_private
 │   ├── posts                     ── audience.kind ∈ {FOLLOWERS, CIRCLE, GROUP, SELF, CUSTOM_*}
@@ -268,9 +274,7 @@ PostgreSQL（单实例，单备份，单运维）
 │   ├── audience_actor_grants     ── CUSTOM_ALLOW/DENY 的 actor_did 列表
 │   ├── circles                   ── Circle 元数据
 │   ├── circle_members            ── 成员（圈子人员名单也算隐私元数据）
-│   └── outbox_relay              ── 私密 Relay 投递队列
 │
-└── （social_shared 暂不引入 —— circle / circle_members 放 social_private 更保守一致）
 ```
 
 ### 6.3 仓库接口按可见性分接口（编译期防越界）
@@ -309,10 +313,10 @@ type PrivatePostRepository interface {
 ```go
 if post.Audience.Kind == domain.AudiencePublic {
     s.publicRepo.Create(ctx, post)
-    s.publicOutbox.Enqueue(ctx, post.ID)   // 给未来 AP
+    s.publicOutbox.Enqueue(ctx, post.ID)
 } else {
     s.privateRepo.Create(ctx, post)
-    s.relayOutbox.Enqueue(ctx, post.ID)    // 给 Relay
+    s.federationDelivery.EnqueuePerActor(ctx, post.ID)
 }
 ```
 
@@ -353,7 +357,7 @@ Client ──Tauri invoke──▶ Rust ──HTTP/proto──▶ Station: POST 
                                 │     · CUSTOM_ALLOW/DENY：actor_dids 解析
                                 ├─ resolveLinkPreview（异步标记，不阻塞返回）
                                 ├─ 路由到 publicRepo.Create / privateRepo.Create   (TX)
-                                ├─ 路由到 publicOutbox / relayOutbox.Enqueue       (TX)
+                                ├─ 路由到 publicOutbox / Federation outbox port   (TX)
                                 └─ events.Publish(MomentCreated{IsPublic, AuthorID, ...})
                                                 │
                                                 ▼
@@ -362,7 +366,7 @@ Client ──Tauri invoke──▶ Rust ──HTTP/proto──▶ Station: POST 
     events.broker (SSE)         outbox_dispatcher (2s tick)        notification.Bridge
     推给在线 followers          - PUBLIC：暂存 outbox_public        - 给 @mentioned 发通知
                                   （v1 不消费）                      - 给作者 followers 选择性发
-                                - 其它：Relay 投递
+                                - 其它：viewer-scoped Federation durable delivery
 
 ```
 
@@ -384,14 +388,12 @@ audience.FilterReadable(viewer, posts)   ── 第二道防线（防御性，�
 Hydrate(attachments + reactions(grouped) + comment_count + link_preview)
 ```
 
-### 7.3 入站联邦（v1 不实现，仅占位）
+### 7.3 跨站输入边界
 
-入站 ActivityPub 处理器在 v1 之后引入，路径示意：
-`POST /inbox` → 验证签名 → `IngestRemoteCreate(activity)` →
-解析 `to/cc/bto/bcc` 派生 audience → 镜像媒体到本地 OSS →
-**仅写入** `social_public` 或 "联邦私密镜像" schema（待设计）。
-**入站永远不允许直接写入** `social_private`——确保私密 schema 的
-作者必须是本站用户。
+跨站私密资源只能通过
+[`../cross-station-social/`](../cross-station-social/README.md) 定义的
+viewer-scoped 密文投影进入接收 Station。接收端不得把远端资源伪装成
+本站作者数据，也不得直接写入本站 canonical `social_private` authority。
 
 ## 8. 鉴权与可见性（防御深度）
 
@@ -489,7 +491,8 @@ Flexbox`，与 chat 视觉完全一致。
 2. **`social_private` schema 的所有写入**必须满足 `audience.kind != PUBLIC`。
 3. **`audience.kind` 创建后不可变**（v1）；要换 = 删了重发。
 4. **`outbox_public` 的来源**有且仅有 `social_public.posts`。
-5. **`outbox_relay` 的来源**有且仅有 `social_private.posts`。
+5. **私密 Federation outbox intent** 只能与 canonical private resource
+   在同一 Social UOW 中产生。
 6. **可见性决策**只能调用 `domain.audience.CanRead`；其它处直接读
    `post.Audience.Kind` 做分支的代码不允许进 main。
 7. **媒体引用**只能是 `oss://...` 形式的 `cid`；不允许第三方 URL
@@ -498,7 +501,8 @@ Flexbox`，与 chat 视觉完全一致。
    非 PUBLIC 帖时，目标受众**不能比源帖更宽**（服务端硬拒绝）。
 9. **Comment / Reaction 的可见性继承自父 Post**——不存在父 Post
    不可见但其评论可见的状态。
-10. **联邦入站（v1 之后）**永远不允许直接写入 `social_private`。
+10. **跨站输入**永远不允许直接写入本站 canonical `social_private`
+    authority。
 
 ## 13. 落地路线（建议分 4 个 PR）
 
@@ -514,8 +518,8 @@ Flexbox`，与 chat 视觉完全一致。
 
 ## 14. Open work / 后续扩展
 
-- **ActivityPub 出/入站**：`outbox_public` 已存在；新增 dispatcher
-  消费它，`POST /inbox` 验签 + 入站映射；私密内容**永远不进** AP。
+- **公开内容跨站分发**：需要独立产品与架构决策，不复用私密密文投递
+  作为公开 Feed。
 - **Story / 临时动态**：增加 `Post.expires_at`；schema 增加
   `social_private.posts_ttl` partial index；定时清理。
 - **算法/兴趣 feed**：在 `TimelineService.GetTimeline` 增加
@@ -524,7 +528,8 @@ Flexbox`，与 chat 视觉完全一致。
   需要一个新的 aggregate（不要塞进 Post）。
 - **审计/操作日志**：dashboard 视角下的"我的动态历史"——参考
   `oss_audit` 的 append-only 设计。
-- **跨 station 私密分享**（联邦私密内容）：方案分歧大（端到端
-  加密 vs 信任目标 station），单开 ADR 讨论。
+- **跨 Station 私密分享**：由
+  [`../cross-station-social/`](../cross-station-social/README.md)
+  统一定义 authority、密文投递、互动、恢复和撤销。
 - **媒体 GC**：动态删除时附件何时回收？参考 `oss/file-storage.md`
   的 LRU 思路，触发点放在 `MomentDeleted` 域事件。

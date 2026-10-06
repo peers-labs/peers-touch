@@ -27,4 +27,4 @@
 
 ## UI Identity Modules
 
-- [ui-identity/modules/social/README.md](./ui-identity/modules/social/README.md) — Human 联邦社交 UI ID，当前作为方法论验证样板。
+- [ui-identity/modules/social/README.md](./ui-identity/modules/social/README.md) — Human Social UI ID，当前作为方法论验证样板。

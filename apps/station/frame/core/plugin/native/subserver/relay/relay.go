@@ -20,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/infrastructure"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/protocol"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
@@ -82,11 +83,11 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.streams = NewStreamManager(func(ctx context.Context, peerID string, online bool) {
 		if online {
 			if err := s.svc.UpdateMountStatus(ctx, peerID, domain.MountStatusOnline); err != nil {
-				logger.Errorf(ctx, "[relay] update mount status online for %s: %v", peerID, err)
+				logger.Errorf(ctx, "[relay] update mount status online failed")
 			}
 		} else {
 			if err := s.svc.UpdateMountStatus(ctx, peerID, domain.MountStatusOffline); err != nil {
-				logger.Errorf(ctx, "[relay] update mount status offline for %s: %v", peerID, err)
+				logger.Errorf(ctx, "[relay] update mount status offline failed")
 			}
 		}
 	}, s.opts.MaxConcurrentPerStation)
@@ -290,10 +291,10 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 		}
 	} else {
 		if err := s.svc.UpdateMountStatus(ctx, hs.StationPeerID, domain.MountStatusOnline); err != nil {
-			logger.Errorf(ctx, "[relay] update mount for %s: %v", hs.StationPeerID, err)
+			logger.Errorf(ctx, "[relay] update mount after handshake failed")
 		}
 		if err := s.svc.UpdateHeartbeat(ctx, hs.StationPeerID); err != nil {
-			logger.Errorf(ctx, "[relay] update heartbeat for %s: %v", hs.StationPeerID, err)
+			logger.Errorf(ctx, "[relay] update heartbeat after handshake failed")
 		}
 	}
 
@@ -307,7 +308,7 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 
 	metConnectionsTotal.Inc("success")
 	metActiveStreams.Inc()
-	logger.Infof(ctx, "[relay] stream connected for %s from %s", hs.StationPeerID, conn.RemoteAddr())
+	logger.Infof(ctx, "[relay] stream connected")
 
 	// Wait for this entry's readLoop to exit (stream disconnect).
 	entry, ok := s.streams.GetEntry(hs.StationPeerID)
@@ -321,7 +322,25 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 	// may have already replaced it via Add(), in which case Remove would kill
 	// the new entry — a critical race condition.
 	s.streams.RemoveIfSame(ctx, hs.StationPeerID, entry)
-	logger.Infof(ctx, "[relay] stream disconnected for %s", hs.StationPeerID)
+	logStreamDisconnected(ctx, entry)
+}
+
+func logStreamDisconnected(
+	ctx context.Context,
+	entry *streamEntry,
+) {
+	if entry != nil {
+		if logContext, privateObjectSeen := entry.privateObjectLogContext(); privateObjectSeen {
+			logPrivateObjectStream(
+				ctx,
+				logContext,
+				protocol.RouteLogOutcomeInterrupted,
+			)
+
+			return
+		}
+	}
+	logger.Infof(ctx, "[relay] stream disconnected")
 }
 
 // ---- Background goroutines ----

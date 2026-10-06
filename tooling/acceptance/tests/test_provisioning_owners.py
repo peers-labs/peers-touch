@@ -17,6 +17,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
+from tooling.acceptance.core import (
+    ENVIRONMENTS_DIR,
+    EnvironmentContract,
+    ProvisioningError,
+)
 from tooling.acceptance.core.attestation import (
     PROTOCOL_SOURCE_PATHS,
     produce_station_attestation,
@@ -32,6 +37,10 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     produce_actor_manifest,
     produce_bound_actor_manifest,
     reset_fixture,
+)
+from tooling.acceptance.provisioners import (
+    CrossStationSocialNativeProvisioner,
+    get_provisioner,
 )
 
 
@@ -417,7 +426,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     root
                     / "docs"
                     / "architecture"
-                    / "acceptance-framework"
+                    / "engineering"
+                    / "acceptance"
                     / "coverage-report.md"
                 )
                 report.parent.mkdir(parents=True)
@@ -717,6 +727,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 "alice": "alice@p.t",
                 "bob": "bob@p.t",
                 "charlie": "carol@p.t",
+                "eve": "carol@p.t",
             },
         )
 
@@ -972,6 +983,47 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 ),
             ],
         )
+
+
+class CrossStationSocialProvisioningOwnerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "cross-station-social-native.yaml"
+        )
+
+    def test_service_profiles_bind_cross_station_social_services(self) -> None:
+        bindings = {
+            "station-four": "four",
+            "station-five-arm": "fiveArm",
+        }
+
+        provisioner = get_provisioner(
+            self.contract,
+            service_profiles=bindings,
+        )
+
+        self.assertIsInstance(
+            provisioner,
+            CrossStationSocialNativeProvisioner,
+        )
+        self.assertEqual(bindings, provisioner._required_station_profiles())
+
+    def test_conflicting_profile_binding_kinds_fail_closed(self) -> None:
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "conflicting station and service profile bindings",
+        ):
+            get_provisioner(
+                self.contract,
+                station_profiles={
+                    "station-four": "four",
+                    "station-five-arm": "fiveArm",
+                },
+                service_profiles={
+                    "station-four": "fiveArm",
+                    "station-five-arm": "four",
+                },
+            )
 
 
 class ProfileActivationContractTests(unittest.TestCase):
