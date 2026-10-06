@@ -57,6 +57,7 @@ describe('Moment detail', () => {
       <MomentCommentsSection
         postId="post-1"
         post={feedPost}
+        mode="detail"
         intents={{}}
         onReact={vi.fn()}
         onClose={vi.fn()}
@@ -95,7 +96,7 @@ describe('Moment detail', () => {
     expect(getPost).toHaveBeenCalledWith('post-1');
   });
 
-  it('renders comments through one stable bounded-list surface', () => {
+  it('mounts only the first ten comments until the selected thread expands', () => {
     detailHook.current = {
       detail: { kind: 'available', post: feedPost },
       comments: Array.from({ length: 150 }, (_, index) => ({
@@ -123,11 +124,12 @@ describe('Moment detail', () => {
       />,
     );
 
-    expect(markup).toContain('data-window-surface="moments:comments:post-1"');
-    expect(markup).toContain('data-window-total="150"');
+    expect(markup).toContain('data-comment-total="150"');
+    expect(markup).toContain('data-comment-visible="10"');
     expect(markup).toContain('data-scroll-anchor-id="comment-0"');
-    expect(markup).toContain('data-scroll-anchor-id="comment-99"');
-    expect(markup).not.toContain('data-scroll-anchor-id="comment-100"');
+    expect(markup).toContain('data-scroll-anchor-id="comment-9"');
+    expect(markup).not.toContain('data-scroll-anchor-id="comment-10"');
+    expect(markup).toContain('mobile.moments.comment.showMore');
   });
 
   it('reloads runtime-owned detail and comments after successful mutations', async () => {

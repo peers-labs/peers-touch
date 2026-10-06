@@ -1605,6 +1605,13 @@
       "tier": "local-evidence",
       "description": "Prove complete generated Audience selection, exact draft restoration, one public/private facade route, Native staged-media privacy, and authoritative publish completion without claiming native device behavior."
     },
+    "mobile-social-thread-media-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_thread_media_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove one lazy inline comment thread, public/private comment authority separation, runtime-owned private pagination, and temporary public/private media lifecycle without claiming native device behavior."
+    },
     "mobile-identity-contract": {
       "command": "python3 -m tooling.acceptance.gates.mobile.identity_contract",
       "timeout_seconds": 120,

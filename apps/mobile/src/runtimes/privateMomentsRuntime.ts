@@ -65,6 +65,15 @@ export type PrivateSocialVisibleReadState =
   | 'PRIVATE_UNSUPPORTED_ON_DEVICE'
   | 'DELETED_OR_REVOKED';
 
+export interface PrivateCommentThreadProjection {
+  readonly comments: readonly NonNullable<PrivateCommentSubmitResult['comment']>[];
+  readonly nextCursor: string;
+  readonly hasMore: boolean;
+  readonly loading: boolean;
+  readonly initialized: boolean;
+  readonly errorMessage: string | null;
+}
+
 export interface PrivateMomentsRuntimeSnapshot {
   readonly active: boolean;
   readonly reconciling: boolean;
@@ -77,6 +86,7 @@ export interface PrivateMomentsRuntimeSnapshot {
   readonly postsById: Readonly<Record<string, PrivateMomentReadProjection>>;
   readonly commentDrafts: readonly PrivateCommentSubmitResult['draft'][];
   readonly comments: readonly NonNullable<PrivateCommentSubmitResult['comment']>[];
+  readonly commentThreadsByPostId: Readonly<Record<string, PrivateCommentThreadProjection>>;
   readonly publishStateHistory: readonly PrivateSocialVisiblePublishState[];
   readonly readStateHistoryByPostId: Readonly<Record<string, readonly PrivateSocialVisibleReadState[]>>;
   readonly lastReport: PrivateSocialWorkerReport | null;
@@ -440,6 +450,18 @@ export async function submitPrivateComment(
     comments: result.comment
       ? mergeCommentLists(snapshot.comments, [result.comment])
       : snapshot.comments,
+    commentThreadsByPostId: result.comment
+      ? updatePrivateCommentThread(
+        snapshot.commentThreadsByPostId,
+        intent.postId,
+        (thread) => ({
+          ...thread,
+          comments: mergeCommentLists(thread.comments, [result.comment!]),
+          initialized: true,
+          errorMessage: null,
+        }),
+      )
+      : snapshot.commentThreadsByPostId,
     errorMessage: null,
   });
   return result;
@@ -451,14 +473,64 @@ export async function readPrivateComments(
   limit = 20,
 ): Promise<PrivateCommentPage> {
   const scope = requireActiveScope();
-  const page = await privateSocialComments({ ...operationScope(scope), postId, cursor, limit });
-  if (!isCurrentScope(scope)) throw new Error('mobile.privateSocial.staleCommentReadCompletion');
+  const stablePostId = postId.trim();
+  if (!stablePostId || stablePostId !== postId) {
+    throw new Error('mobile.privateSocial.invalidPostId');
+  }
   setSnapshot({
     ...snapshot,
-    comments: mergeCommentLists(snapshot.comments, page.comments),
-    errorMessage: null,
+    commentThreadsByPostId: updatePrivateCommentThread(
+      snapshot.commentThreadsByPostId,
+      stablePostId,
+      (thread) => ({ ...thread, loading: true, errorMessage: null }),
+    ),
   });
-  return page;
+  try {
+    const page = await privateSocialComments({
+      ...operationScope(scope),
+      postId: stablePostId,
+      cursor,
+      limit,
+    });
+    if (!isCurrentScope(scope)) throw new Error('mobile.privateSocial.staleCommentReadCompletion');
+    setSnapshot({
+      ...snapshot,
+      comments: mergeCommentLists(snapshot.comments, page.comments),
+      commentThreadsByPostId: updatePrivateCommentThread(
+        snapshot.commentThreadsByPostId,
+        stablePostId,
+        (thread) => ({
+          comments: cursor
+            ? mergeCommentLists(thread.comments, page.comments)
+            : mergeCommentLists([], page.comments),
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+          loading: false,
+          initialized: true,
+          errorMessage: null,
+        }),
+      ),
+      errorMessage: null,
+    });
+    return page;
+  } catch (error) {
+    if (isCurrentScope(scope)) {
+      setSnapshot({
+        ...snapshot,
+        commentThreadsByPostId: updatePrivateCommentThread(
+          snapshot.commentThreadsByPostId,
+          stablePostId,
+          (thread) => ({
+            ...thread,
+            loading: false,
+            initialized: true,
+            errorMessage: readableErrorMessage(error),
+          }),
+        ),
+      });
+    }
+    throw error;
+  }
 }
 
 export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerReport | null> {
@@ -571,6 +643,27 @@ function mergeCommentLists(
   return [...byComment.values()];
 }
 
+function updatePrivateCommentThread(
+  current: PrivateMomentsRuntimeSnapshot['commentThreadsByPostId'],
+  postId: string,
+  update: (
+    thread: PrivateCommentThreadProjection,
+  ) => PrivateCommentThreadProjection,
+): PrivateMomentsRuntimeSnapshot['commentThreadsByPostId'] {
+  const existing = current[postId] ?? {
+    comments: [],
+    nextCursor: '',
+    hasMore: true,
+    loading: false,
+    initialized: false,
+    errorMessage: null,
+  };
+  return {
+    ...current,
+    [postId]: update(existing),
+  };
+}
+
 function enqueueSessionTransition(
   session: MobileAuthSession | null,
   suspended: boolean,
@@ -657,6 +750,7 @@ async function synchronizeSession(
       projections: nativeSnapshot.publishProjections,
       commentDrafts: nativeSnapshot.commentDrafts,
       comments: nativeSnapshot.comments,
+      commentThreadsByPostId: {},
       postsById: mergeReadProjectionMap({}, nativeSnapshot.readProjections),
       publishStateHistory: ['AUDIENCE_REQUIRED'],
       readStateHistoryByPostId: {},
@@ -868,6 +962,7 @@ function emptySnapshot(): PrivateMomentsRuntimeSnapshot {
     postsById: {},
     commentDrafts: [],
     comments: [],
+    commentThreadsByPostId: {},
     publishStateHistory: ['AUDIENCE_REQUIRED'],
     readStateHistoryByPostId: {},
     lastReport: null,

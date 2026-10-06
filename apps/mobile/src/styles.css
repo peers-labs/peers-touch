@@ -3033,6 +3033,19 @@ select,
   margin-bottom: 10px;
 }
 
+.moments-author-trigger {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.moments-author-trigger:disabled {
+  opacity: 1;
+}
+
 .moments-card-author {
   display: flex;
   flex-direction: column;
@@ -3133,6 +3146,18 @@ select,
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.moments-media-trigger {
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.moments-content-video.moments-media-trigger {
+  width: 100%;
 }
 
 /* Moments reaction summary */
@@ -3295,6 +3320,114 @@ select,
 
 /* Moments comment section */
 
+.moments-comments-section {
+  min-width: 0;
+}
+
+.moments-comments-section--inline {
+  margin-top: -4px;
+  padding: 10px 12px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-top: 0;
+  background: #fff;
+}
+
+.moments-comments-header {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 10px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  text-align: center;
+}
+
+.moments-comments-header-spacer {
+  width: 32px;
+}
+
+.moments-comments-list,
+.moments-comments-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.moments-comments-section--detail .moments-comments-list {
+  padding: 10px 12px;
+}
+
+.moments-comments-empty,
+.moments-comments-error,
+.moments-media-overlay-state {
+  display: flex;
+  min-height: 72px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.moments-comment-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.moments-comment-item__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.moments-comment-item__author,
+.moments-comment-item__reply-badge {
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+.moments-comment-item__content {
+  margin: 2px 0 !important;
+  font-size: 13px;
+}
+
+.moments-comment-item__actions {
+  display: flex;
+  gap: 12px;
+}
+
+.moments-comment-item__actions button,
+.moments-comments-reply-indicator button {
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--brand-primary);
+  font: inherit;
+  font-size: 11px;
+}
+
+.moments-comments-input,
+.moments-comments-reply-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.moments-comments-reply-indicator {
+  justify-content: space-between;
+}
+
+.moments-comments-input .ant-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.moments-comments-expand,
+.moments-comments-load-more {
+  align-self: flex-start;
+}
+
 .moments-comments {
   margin-top: 8px;
   padding: 8px 10px;
@@ -3392,6 +3525,48 @@ select,
 .moments-comment-send.active {
   background: var(--brand-primary);
   color: #ffffff;
+}
+
+.moments-media-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: max(48px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+  background: rgba(8, 10, 14, 0.94);
+}
+
+.moments-media-overlay-close {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #fff;
+}
+
+.moments-media-overlay-content {
+  display: grid;
+  width: min(100%, 720px);
+  max-height: 100%;
+  place-items: center;
+}
+
+.moments-media-overlay-content img,
+.moments-media-overlay-content video {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100dvh - 96px);
+  object-fit: contain;
+}
+
+.moments-media-overlay-state {
+  color: #fff;
 }
 
 /* Moments new post card */

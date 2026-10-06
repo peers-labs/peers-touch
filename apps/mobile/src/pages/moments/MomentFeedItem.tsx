@@ -2,8 +2,7 @@
  * MomentFeedItem.tsx — Single moment card in the feed
  *
  * Pure renderer that displays a Post with author info, content,
- * reaction summary, reaction picker, comment preview, and inline
- * comment input. Visual hierarchy aligned with the prototype
+ * reaction summary, reaction picker, and media triggers. Visual hierarchy aligned with the prototype
  * MomentsPage card layout (antd Card borderless, Avatar 42 px,
  * reaction tag row, 5-emoji picker, inline comment input).
  *
@@ -25,7 +24,6 @@ import {
   MessageCircle,
   Play,
   Repeat2,
-  Send,
   Share2,
   ShieldAlert,
 } from 'lucide-react';
@@ -83,54 +81,29 @@ interface MomentFeedItemProps {
   readonly post: Post;
   readonly onReact: (postId: string, reactionKind: number) => void;
   readonly onOpenComments: (postId: string) => void;
-  readonly onOpenDetail: (postId: string) => void;
-  readonly onSubmitComment?: (postId: string, content: string) => Promise<boolean>;
+  readonly onOpenAuthor?: (actorPtid: string, federationId: string) => void;
+  readonly onOpenMedia?: (
+    postId: string,
+    attachmentId: string,
+    kind: 'image' | 'video',
+    trigger: HTMLButtonElement,
+  ) => void;
   readonly reactionMutation?: ReactionMutationState;
   readonly policyState?: MomentPolicyState;
-  readonly showInlineComment?: boolean;
-}
-
-export interface InlineCommentSubmission {
-  readonly submitted: boolean;
-  readonly nextText: string;
-}
-
-export async function submitInlineMomentComment(
-  currentText: string,
-  submit: (content: string) => Promise<boolean>,
-): Promise<InlineCommentSubmission> {
-  const trimmed = currentText.trim();
-  if (!trimmed) {
-    return { submitted: false, nextText: currentText };
-  }
-
-  try {
-    const submitted = await submit(trimmed);
-    return {
-      submitted,
-      nextText: submitted ? '' : currentText,
-    };
-  } catch {
-    return { submitted: false, nextText: currentText };
-  }
 }
 
 export function MomentFeedItem({
   post,
   onReact,
   onOpenComments,
-  onOpenDetail,
-  onSubmitComment,
+  onOpenAuthor,
+  onOpenMedia,
   reactionMutation,
   policyState = 'visible',
-  showInlineComment = true,
 }: MomentFeedItemProps) {
   const { t } = useMobileI18n();
 
-  // Local UI state for reaction picker and comment input
   const [showReactionPicker, setShowReactionPicker] = useState(false);
-  const [commentText, setCommentText] = useState('');
-  const [commentSending, setCommentSending] = useState(false);
 
   const createdAtMs = useMemo(() => {
     if (!post.createdAt) return 0;
@@ -196,22 +169,6 @@ export function MomentFeedItem({
     [post.id, onReact],
   );
 
-  const handleSendComment = useCallback(async () => {
-    if (commentSending || !commentText.trim()) return;
-    if (!onSubmitComment) {
-      onOpenComments(post.id);
-      return;
-    }
-
-    setCommentSending(true);
-    const result = await submitInlineMomentComment(
-      commentText,
-      (content) => onSubmitComment(post.id, content),
-    );
-    setCommentText(result.nextText);
-    setCommentSending(false);
-  }, [commentSending, commentText, onSubmitComment, onOpenComments, post.id]);
-
   // Policy / block states
   if (policyState !== 'visible') {
     const blocked = policyState === 'blocked';
@@ -249,24 +206,45 @@ export function MomentFeedItem({
     if (images.length === 0) return null;
     if (images.length === 1) {
       return (
-        <div className="moments-image-single">
+        <button
+          type="button"
+          className="moments-image-single moments-media-trigger"
+          onClick={(event) => onOpenMedia?.(
+            post.id,
+            images[0].id,
+            'image',
+            event.currentTarget,
+          )}
+          aria-label={t('mobile.moments.media.open')}
+        >
           <MomentImage
             attachment={images[0]}
             alt={images[0].altText || ''}
           />
-        </div>
+        </button>
       );
     }
     const gridClass = images.length === 2 ? 'moments-image-grid-2' : 'moments-image-grid-3';
     return (
       <div className={gridClass}>
         {images.map((img, idx) => (
-          <div className="moments-grid-image" key={img.id || idx}>
+          <button
+            type="button"
+            className="moments-grid-image moments-media-trigger"
+            key={img.id || idx}
+            onClick={(event) => onOpenMedia?.(
+              post.id,
+              img.id,
+              'image',
+              event.currentTarget,
+            )}
+            aria-label={t('mobile.moments.media.open')}
+          >
             <MomentImage
               attachment={img}
               alt={img.altText || ''}
             />
-          </div>
+          </button>
         ))}
       </div>
     );
@@ -277,14 +255,24 @@ export function MomentFeedItem({
       case 'videoPost': {
         const video = post.content.value.video;
         return (
-          <div className="moments-content-detail moments-content-video">
+          <button
+            type="button"
+            className="moments-content-detail moments-content-video moments-media-trigger"
+            onClick={(event) => video && onOpenMedia?.(
+              post.id,
+              video.id,
+              'video',
+              event.currentTarget,
+            )}
+            disabled={!video}
+          >
             <Play size={18} aria-hidden="true" />
             <span>
               {video
                 ? `${video.width || 0}\u00d7${video.height || 0} \u00b7 ${video.durationSeconds || 0}s`
                 : t('mobile.moments.content.video')}
             </span>
-          </div>
+          </button>
         );
       }
       case 'linkPost': {
@@ -347,7 +335,15 @@ export function MomentFeedItem({
       data-moment-content-kind={contentKind}
     >
       {/* Author header — Avatar 42px + name + time */}
-      <div className="moments-card-header" onClick={() => onOpenDetail(post.id)}>
+      <button
+        type="button"
+        className="moments-card-header moments-author-trigger"
+        onClick={() => onOpenAuthor?.(
+          post.authorPtid || post.author?.id || '',
+          post.author?.homeStationDomain || '',
+        )}
+        disabled={!onOpenAuthor}
+      >
         <MobileAvatar
           src={post.author?.avatarUrl}
           size={42}
@@ -357,7 +353,7 @@ export function MomentFeedItem({
           <Text strong className="moments-card-name">{authorName}</Text>
           <Text type="secondary" className="moments-card-time">{timeLabel}</Text>
         </div>
-      </div>
+      </button>
 
       {/* Text content */}
       {textContent && (
@@ -451,35 +447,6 @@ export function MomentFeedItem({
             : t('mobile.moments.reaction.rolledBack')
           }
         </Text>
-      )}
-
-      {/* Inline comment input with Send button */}
-      {showInlineComment && (
-        <div className="moments-comment-input-row" aria-busy={commentSending}>
-          <input
-            type="text"
-            className="moments-comment-input"
-            placeholder={t('mobile.moments.comment.placeholder')}
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void handleSendComment();
-              }
-            }}
-            disabled={commentSending}
-          />
-          <button
-            type="button"
-            className={`moments-comment-send ${commentText.trim() ? 'active' : ''}`}
-            onClick={() => void handleSendComment()}
-            disabled={!commentText.trim() || commentSending}
-            aria-label={t('mobile.moments.comment.send')}
-          >
-            <Send size={14} />
-          </button>
-        </div>
       )}
     </Card>
   );

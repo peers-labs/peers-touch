@@ -4,7 +4,10 @@ import {
 } from '@peers-touch/client-media-security';
 
 import type { MobileAuthSession } from '../../features/auth/authSession';
-import type { ImageAttachment } from '../../gen/proto/domain/social/post_pb';
+import type {
+  ImageAttachment,
+  VideoAttachment,
+} from '../../gen/proto/domain/social/post_pb';
 import {
   executeStationOperation,
   responseArrayBuffer,
@@ -23,6 +26,11 @@ export interface ResolvedMomentMediaSource {
 export interface MomentMediaGateway {
   loadImage(
     attachment: ImageAttachment,
+    signal?: AbortSignal,
+  ): Promise<Blob>;
+  loadMedia(
+    attachment: ImageAttachment | VideoAttachment,
+    mimeType: string,
     signal?: AbortSignal,
   ): Promise<Blob>;
 }
@@ -62,27 +70,34 @@ export function createMomentMediaGateway(
   session: MobileAuthSession,
   fetcher: MomentMediaFetch = globalThis.fetch,
 ): MomentMediaGateway {
-  return {
-    async loadImage(attachment, signal): Promise<Blob> {
-      const reference = attachment.url || attachment.id;
-      const source = resolveMomentMediaSource(reference, session.stationUrl);
-      const descriptor = clientMediaEncryptionDescriptorFromAttachment(attachment);
-      if (attachment.mediaEncryption && !descriptor) {
-        throw new Error('mobile.moments.media.invalidDescriptor');
-      }
-      const headers: Record<string, string> = {
-        Accept: 'application/octet-stream',
-      };
-      const ciphertext = source.authenticated
-        ? await loadAuthenticatedObject(session, source.url, signal)
-        : await loadPublicObject(fetcher, source.url, headers, signal);
+  const loadMedia = async (
+    attachment: ImageAttachment | VideoAttachment,
+    mimeType: string,
+    signal?: AbortSignal,
+  ): Promise<Blob> => {
+    const reference = attachment.url || attachment.id;
+    const source = resolveMomentMediaSource(reference, session.stationUrl);
+    const descriptor = clientMediaEncryptionDescriptorFromAttachment(attachment);
+    if (attachment.mediaEncryption && !descriptor) {
+      throw new Error('mobile.moments.media.invalidDescriptor');
+    }
+    const headers: Record<string, string> = {
+      Accept: 'application/octet-stream',
+    };
+    const ciphertext = source.authenticated
+      ? await loadAuthenticatedObject(session, source.url, signal)
+      : await loadPublicObject(fetcher, source.url, headers, signal);
 
-      return decryptClientMediaBlob({
-        ciphertext,
-        descriptor,
-        mimeType: 'image/*',
-      });
-    },
+    return decryptClientMediaBlob({
+      ciphertext,
+      descriptor,
+      mimeType,
+    });
+  };
+
+  return {
+    loadImage: (attachment, signal) => loadMedia(attachment, 'image/*', signal),
+    loadMedia,
   };
 }
 
