@@ -57,7 +57,6 @@ func setupTestEnv(t *testing.T) *testEnv {
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
 
 	repo := infrastructure.NewGormRepo(db)
 	require.NoError(t, repo.AutoMigrate())
