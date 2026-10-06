@@ -93,7 +93,7 @@ func (s *ReactionService) React(ctx context.Context, postIDStr, viewerPTID strin
 	}
 
 	if err := s.refreshSnapshot(ctx, postID, publicPostID, postClass); err != nil {
-		logger.Warn(ctx, "react: snapshot refresh failed", "post_id", postID, "error", err)
+		logger.Warn(ctx, "react: snapshot refresh failed", "error", err)
 	}
 
 	summaries, err := s.Aggregate(ctx, postID, postAuthorPTID, viewerPTID)
@@ -154,7 +154,7 @@ func (s *ReactionService) Unreact(ctx context.Context, postIDStr, viewerPTID str
 	}
 
 	if err := s.refreshSnapshot(ctx, postID, publicPostID, postClass); err != nil {
-		logger.Warn(ctx, "unreact: snapshot refresh failed", "post_id", postID, "error", err)
+		logger.Warn(ctx, "unreact: snapshot refresh failed", "error", err)
 	}
 
 	summaries, err := s.Aggregate(ctx, postID, postAuthorPTID, viewerPTID)

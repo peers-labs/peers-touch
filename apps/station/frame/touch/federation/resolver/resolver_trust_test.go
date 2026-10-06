@@ -12,8 +12,10 @@ import (
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	locatorpb "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb"
+	fedcache "github.com/peers-labs/peers-touch/station/frame/touch/federation/cache"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 type resolverRelayClient struct {
@@ -102,6 +104,41 @@ func TestResolveByHandleInFederationRequiresContextAndReader(t *testing.T) {
 		nil,
 	); !errors.Is(err, ErrMembershipReaderMissing) {
 		t.Fatalf("missing reader error = %v", err)
+	}
+}
+
+func TestCachedToProtosPreservesCanonicalActorIdentity(t *testing.T) {
+	envelope, locator := cachedToProtos(
+		&fedcache.Cached{
+			Actor: &modeldb.Actor{
+				PTID:              "ptid:bob",
+				Kind:              "p",
+				Name:              "Bob",
+				FederatedHandle:   "bob@remote.invalid",
+				HomeStationPeerID: "station-remote",
+				HomeStationDomain: "remote.invalid",
+				Visibility:        int16(modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE),
+				LocatorSeq:        7,
+			},
+			CachedUntilUTC: time.Unix(1_700_000_000, 0).UTC(),
+		},
+		"bob@remote.invalid",
+	)
+
+	if envelope == nil || locator == nil || envelope.GetProfile() == nil {
+		t.Fatal("cached projection is incomplete")
+	}
+	profile := envelope.GetProfile()
+	if profile.GetRef().GetPtid() != "ptid:bob" ||
+		profile.GetRef().GetAcct() != "bob@remote.invalid" ||
+		profile.GetRef().GetKind() != modelpb.ActorKind_ACTOR_KIND_PERSON {
+		t.Fatalf("cached Actor ref = %+v", profile.GetRef())
+	}
+	if profile.GetFederatedHandle() != "bob@remote.invalid" ||
+		profile.GetHomeStationPeerId() != "station-remote" ||
+		profile.GetHomeStationDomain() != "remote.invalid" ||
+		profile.GetDiscoverability() != modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE {
+		t.Fatalf("cached federation identity = %+v", profile)
 	}
 }
 

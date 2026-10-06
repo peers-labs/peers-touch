@@ -1,204 +1,90 @@
 #!/usr/bin/env python3
-"""Formal Native Desktop Acceptance gate for Social Private Moments."""
+"""Formal same-Station Social proof attached to the CSS-09 Native Suite."""
 
 from __future__ import annotations
 
-import json
-import re
-import subprocess
-import sys
-import tempfile
-from collections.abc import Mapping, Sequence
-from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 from tooling.acceptance.core import AcceptanceGate, GateError
 
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-GATE_ID = "social-private-desktop-e2e"
-REQUIRED_SCENARIOS = (
-    "SOC-SEC-AS01",
-    "SOC-SEC-AS02",
-    "SOC-SEC-AS03",
-    "SOC-SEC-AS04",
-    "SOC-SEC-AS05",
-    "SOC-SEC-AS06",
-    "SOC-SEC-AS07",
-    "SOC-SEC-AS08",
-    "SOC-SEC-AS09",
-    "SOC-SEC-AS10",
-    "SOC-SEC-AS12",
-    "SOC-SEC-AS13",
-    "SOC-SEC-AS15",
-    "SOC-SEC-AS16",
+from .cross_station_support import (
+    SourceCommand,
+    attach_suite_evidence,
+    load_suite_result,
+    run_source_commands,
 )
+
+
+GATE_ID = "social-private-desktop-e2e"
+SAME_STATION_SCENARIO = "same-station-regression"
+HISTORICAL_SCENARIOS = ("SOC-SEC-AS12",)
 EXPLICITLY_UNPROVEN_SCENARIOS = (
     "SOC-SEC-AS11",
     "SOC-SEC-AS14",
 )
-RUNTIME_SCENARIOS = (
-    "private-comment",
-    "social-expansion",
-    "social-subtype",
-    "social-object",
-    "social-delete-block",
-    "social-bounds",
+SOURCE_COMMANDS = (
+    SourceCommand(
+        name="viewer-envelope-and-prekey-source-check",
+        argv=(
+            "go",
+            "test",
+            "-count=1",
+            "-run",
+            (
+                "^(TestPrivateContentServicePrepareSubmitReplay|"
+                "TestPrivateContentServicePrepareSubmitComment|"
+                "TestContentPreKeyDifferentPlansConsumeDistinctKeys)$"
+            ),
+            "./app/subserver/social/application",
+            "./app/subserver/key_exchange",
+        ),
+        cwd="apps/station",
+        timeout_seconds=900,
+    ),
 )
-RUNTIME_CLIENT_IDS = (
-    "secure-content-desktop-alice",
-    "secure-content-desktop-bob",
-    "secure-content-desktop-eve",
-)
-RUNTIME_SERVICE_IDS = ("station-five-arm", "station-four")
-RUNTIME_MANIFEST_FIELDS = frozenset(
-    {
-        "artifactKind",
-        "schemaVersion",
-        "state",
-        "cleanupState",
-        "runId",
-        "workspaceId",
-        "sourceCommit",
-        "worktreeSetDigest",
-        "scenarioManifestDigests",
-        "serviceIds",
-        "clientIds",
-        "suiteRuntimeReportDigest",
-    }
-)
-SHA256 = re.compile(r"^[0-9a-f]{64}$")
-COMMIT = re.compile(r"^[0-9a-f]{40}$")
-WORKSPACE_ID = re.compile(r"^[0-9a-f]{16}$")
 
 
-def _parse_owner_output(stdout: str) -> dict[str, Any]:
-    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
-    if not lines:
-        raise GateError("Social Desktop runtime owner returned no result")
-    try:
-        payload = json.loads(lines[-1])
-    except json.JSONDecodeError as error:
-        raise GateError(
-            "Social Desktop runtime owner returned invalid JSON"
-        ) from error
-    if not isinstance(payload, dict):
-        raise GateError("Social Desktop runtime owner result must be an object")
-    return payload
-
-
-def _validate_runtime_manifest(
+def _validate_attached_suite(
     payload: Mapping[str, Any],
-    suite_report_digest: str,
-) -> dict[str, Any]:
-    manifest = payload.get("runtimeManifest")
-    if (
-        not isinstance(manifest, Mapping)
-        or set(manifest) != RUNTIME_MANIFEST_FIELDS
-        or manifest.get("artifactKind")
-        != "social-private-desktop-suite-runtime-manifest"
-        or manifest.get("schemaVersion") != 1
-        or manifest.get("state") != "FIXTURE_READY"
-        or manifest.get("cleanupState") != "CLEANED"
-        or not isinstance(manifest.get("runId"), str)
-        or not manifest["runId"]
-        or WORKSPACE_ID.fullmatch(str(manifest.get("workspaceId"))) is None
-        or COMMIT.fullmatch(str(manifest.get("sourceCommit"))) is None
-        or SHA256.fullmatch(str(manifest.get("worktreeSetDigest"))) is None
-        or manifest.get("suiteRuntimeReportDigest") != suite_report_digest
-        or tuple(manifest.get("serviceIds") or ()) != RUNTIME_SERVICE_IDS
-        or tuple(manifest.get("clientIds") or ()) != RUNTIME_CLIENT_IDS
-    ):
-        raise GateError("Social Desktop runtime evidence manifest is invalid")
-    scenario_digests = manifest.get("scenarioManifestDigests")
-    if (
-        not isinstance(scenario_digests, Mapping)
-        or set(scenario_digests) != set(RUNTIME_SCENARIOS)
-        or any(
-            SHA256.fullmatch(str(digest)) is None
-            for digest in scenario_digests.values()
-        )
-    ):
-        raise GateError(
-            "Social Desktop scenario runtime manifest closure is invalid"
-        )
-    return dict(manifest)
-
-
-def _validate_owner_result(
-    payload: Mapping[str, Any],
-) -> tuple[Path, list[Path], dict[str, Any]]:
-    if (
-        payload.get("status") != "FUNCTIONAL_PASS"
-        or payload.get("proofState") != "UNPROVEN"
-    ):
-        raise GateError("Social Desktop runtime owner did not functionally pass")
-
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     scenario_results = payload.get("scenarioResults")
     if not isinstance(scenario_results, Mapping):
-        raise GateError("Social Desktop scenario results are missing")
-    if tuple(sorted(scenario_results)) != tuple(sorted(REQUIRED_SCENARIOS)):
-        raise GateError("Social Desktop scenario result set is incomplete")
-    failed = [
-        scenario_id
-        for scenario_id in REQUIRED_SCENARIOS
-        if scenario_results.get(scenario_id) != "PASS"
-    ]
-    if failed:
-        raise GateError(f"Social Desktop scenarios did not pass: {failed}")
-
-    if tuple(payload.get("unprovenScenarios") or ()) != (
-        EXPLICITLY_UNPROVEN_SCENARIOS
+        raise GateError("CSS-09 Social scenario results are missing")
+    same_station = scenario_results.get(SAME_STATION_SCENARIO)
+    if (
+        not isinstance(same_station, Mapping)
+        or same_station.get("status") != "PASS"
+        or not same_station.get("evidenceRefs")
     ):
-        raise GateError("Browser and Mobile non-claims are missing or changed")
+        raise GateError(
+            "CSS-09 same-Station regression lacks receiver-visible evidence"
+        )
 
     reuse = payload.get("resourceReuse")
     if not isinstance(reuse, Mapping):
-        raise GateError("Social Desktop resource reuse evidence is missing")
+        raise GateError("CSS-09 Social resource reuse evidence is missing")
     if (
         reuse.get("provisioningRuns") != 1
-        or reuse.get("clientLaunches", 99) > 5
-        or reuse.get("maxConcurrentNativeClients", 99) > 3
+        or reuse.get("clientLaunches") != 3
+        or reuse.get("maxConcurrentNativeClients", 99) > 2
         or reuse.get("newAccountRegistrations") != 3
         or reuse.get("stationBuilds") != 0
         or reuse.get("stationDeployments") != 0
         or reuse.get("desktopBuilds") != 0
-        or reuse.get("clientReplacements") != ["bob"]
+        or reuse.get("clientReplacements") != ["bob2"]
+        or reuse.get("fixtureOnlyClients") != ["eve"]
     ):
-        raise GateError("Social Desktop Suite exceeded its resource budget")
+        raise GateError("CSS-09 Social Suite exceeded its resource budget")
 
-    suite_report = Path(str(payload.get("suiteRuntimeReport") or ""))
-    if not suite_report.is_file():
-        raise GateError("Social Desktop Suite Runtime report is missing")
-    try:
-        suite_payload = json.loads(suite_report.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise GateError(
-            "Social Desktop Suite Runtime report is invalid"
-        ) from error
-    suite_report_digest = str(payload.get("suiteRuntimeReportDigest") or "")
+    runtime_manifest = payload.get("runtimeManifest")
     if (
-        not isinstance(suite_payload, Mapping)
-        or SHA256.fullmatch(suite_report_digest) is None
-        or suite_payload.get("reportDigest") != suite_report_digest
+        not isinstance(runtime_manifest, Mapping)
+        or runtime_manifest.get("state") != "FIXTURE_READY"
+        or not runtime_manifest.get("runId")
     ):
-        raise GateError(
-            "Social Desktop Suite Runtime report digest is invalid"
-        )
-    runtime_manifest = _validate_runtime_manifest(
-        payload,
-        suite_report_digest,
-    )
-    supporting = payload.get("supportingArtifacts") or []
-    if (
-        not isinstance(supporting, Sequence)
-        or isinstance(supporting, (str, bytes))
-    ):
-        raise GateError("Social Desktop supporting artifact list is invalid")
-    artifact_paths = [Path(str(path)) for path in supporting]
-    if any(not path.is_file() for path in artifact_paths):
-        raise GateError("Social Desktop supporting artifact is missing")
-    return suite_report, artifact_paths, runtime_manifest
+        raise GateError("CSS-09 Social runtime manifest is incomplete")
+    return dict(same_station), dict(reuse), dict(runtime_manifest)
 
 
 class SocialPrivateDesktopGate(AcceptanceGate):
@@ -216,102 +102,54 @@ class SocialPrivateDesktopGate(AcceptanceGate):
         "docs/architecture/domains/social/core/experience-contract.md",
         "docs/architecture/domains/social/core/product-state-model.md",
         "docs/architecture/domains/social/core/acceptance-matrix.md",
+        "docs/architecture/domains/social/cross-station/execution-plans/"
+        "20261003-native-private-social/plan.md",
     )
 
     def run(self) -> dict[str, Any]:
-        source_check = subprocess.run(
-            [
-                "go",
-                "test",
-                "-count=1",
-                "-run",
-                (
-                    "^(TestPrivateContentServicePrepareSubmitReplay|"
-                    "TestPrivateContentServicePrepareSubmitComment|"
-                    "TestContentPreKeyDifferentPlansConsumeDistinctKeys)$"
-                ),
-                "./app/subserver/social/application",
-                "./app/subserver/key_exchange",
-            ],
-            cwd=REPO_ROOT / "apps" / "station",
-            text=True,
-            capture_output=True,
-            timeout=900,
-            check=False,
-        )
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            prefix="social-private-desktop-source-",
-            suffix=".log",
-            delete=False,
-        ) as output:
-            output.write(source_check.stdout)
-            output.write(source_check.stderr)
-            source_log = Path(output.name)
-        try:
-            self.report.add_evidence_file(
-                "viewer-envelope-and-prekey-source-check",
-                source_log,
-            )
-        finally:
-            source_log.unlink(missing_ok=True)
-        if source_check.returncode != 0:
-            raise GateError(
-                "Social viewer-envelope or one-time PreKey source check failed"
-            )
-
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "tooling.development.secure_content.runtime_owner",
-                "run-social-desktop-acceptance-suite",
-                "--profiles",
-                "four,fiveArm",
-                "--slot",
-                "12",
-            ],
-            cwd=REPO_ROOT,
-            text=True,
-            capture_output=True,
-            timeout=8800,
-            check=False,
-        )
-        if completed.returncode != 0:
-            detail = (completed.stdout + completed.stderr)[-6000:]
-            raise GateError(f"Social Desktop runtime owner failed: {detail}")
-
-        payload = _parse_owner_output(completed.stdout)
-        suite_report, supporting, runtime_manifest = _validate_owner_result(
-            payload
+        commands = run_source_commands(self, SOURCE_COMMANDS)
+        result = load_suite_result()
+        same_station, resource_reuse, runtime_manifest = (
+            _validate_attached_suite(result.payload)
         )
         self.report.manifest = runtime_manifest
-        self.report.add_evidence_file("suite-runtime", suite_report)
-        for index, path in enumerate(supporting):
-            self.report.add_evidence_file(
-                f"social-supporting-{index + 1}",
-                path,
-            )
+        attach_suite_evidence(self, result)
 
-        for scenario_id in REQUIRED_SCENARIOS:
-            self.assert_condition(
-                scenario_id,
-                payload["scenarioResults"][scenario_id] == "PASS",
-            )
         self.assert_condition(
-            "desktop-only-non-claims",
-            payload["unprovenScenarios"]
-            == list(EXPLICITLY_UNPROVEN_SCENARIOS),
+            SAME_STATION_SCENARIO,
+            same_station["status"] == "PASS"
+            and bool(same_station["evidenceRefs"]),
+            "PASS with receiver-visible evidence",
+        )
+        self.assert_condition(
+            "suite-runtime-cleanup",
+            result.payload["cleanup"]["status"] == "CLEANED",
+        )
+        self.assert_condition(
+            "suite-artifact-remains-non-self-proving",
+            result.payload["proofState"] == "UNPROVEN",
         )
         return {
-            "runtimeCell": "social-private-desktop-native",
-            "scenarioResults": payload["scenarioResults"],
-            "resourceReuse": payload["resourceReuse"],
-            "unprovenScenarios": payload["unprovenScenarios"],
-            "suiteRuntimeReportDigest": payload.get(
+            "evidenceClass": "NATIVE_RECEIVER_PROOF",
+            "suiteArtifactProofState": result.payload["proofState"],
+            "runtimeCell": "cross-station-social-native",
+            "controlCommit": result.payload["controlCommit"],
+            "sourceCommit": result.payload["sourceCommit"],
+            "scenarioResults": {
+                SAME_STATION_SCENARIO: same_station,
+            },
+            "resourceReuse": resource_reuse,
+            "commands": commands,
+            "historicalScenarios": list(HISTORICAL_SCENARIOS),
+            "unprovenScenarios": list(EXPLICITLY_UNPROVEN_SCENARIOS),
+            "suiteRuntimeReportDigest": result.payload[
                 "suiteRuntimeReportDigest"
-            ),
+            ],
+            "provenScope": [SAME_STATION_SCENARIO],
+            "unprovenScope": [
+                "Browser private Social",
+                "Mobile Native parity",
+            ],
         }
 
 

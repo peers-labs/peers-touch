@@ -264,6 +264,11 @@
 - 质量保证闭环：`architecture/engineering/quality/README.md`
 - 产品验收框架：`architecture/engineering/acceptance/README.md`
 - Human 联邦社交活动层：`architecture/domains/social/federation/README.md`
+ - 跨 Station 私密 Social：`architecture/domains/social/cross-station/README.md`
+  （active；执行计划
+  `architecture/domains/social/cross-station/execution-plans/20261003-native-private-social/plan.md`
+  覆盖 Native Desktop 的私密 Post/Media/Comment/Reaction/Recovery/Revocation；
+  Mobile deferred，Browser Social prohibited）
 - Agent LobeHub 蓝本重构：`architecture/domains/agent/agent-lobehub-blueprint.md`
 - Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/domains/applets/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
 - 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/engineering/prototypes/README.md`

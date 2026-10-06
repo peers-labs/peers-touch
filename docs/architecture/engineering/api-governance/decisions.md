@@ -86,7 +86,7 @@ second public Chat API and second authority store.
 These planes have different state, authorization, retry, and lifecycle semantics.
 Naming them separately makes forbidden dependencies enforceable.
 
-### Rejected Patterns
+### Alternatives Considered
 
 - An implementation-shaped catch-all facade was rejected because every route has a
   precise resource owner and the facade would invite authority drift.
@@ -299,6 +299,27 @@ consequences are documented in
 The Owner accepted AO-D07.1 through AO-D07.6 as one coherent v1 hard-cut
 amendment on 2026-09-07.
 
+### Rationale
+
+Caller-owned identity plus stored replay results make ambiguous timed-out
+mutations deterministic instead of forcing the Station to synthesize command
+identity. A single committed event type and one authority journal keep
+Conversation truth single-sourced, and verified Station state, not a
+client-supplied epoch, defines authority scope.
+
+### Alternatives Considered
+
+- Server-generated creation IDs were rejected because clients cannot safely
+  replay an ambiguous timed-out mutation.
+- Trusting a client-supplied authority epoch or Home Station was rejected
+  because authority scope belongs to verified Station state.
+- Keeping both event messages through a compatibility adapter was rejected by
+  the atomic hard-cut rule.
+- Keeping the proposal table and polling endpoint beside shared Federation was
+  rejected as a second command-result truth.
+- Reusing one generic peer token scope for all routes was rejected because
+  claims and authorization differ by capability.
+
 ### Consequences
 
 CA-W5 may resume proto-first mutation, production route registration, consumer
@@ -312,6 +333,24 @@ NDR-W10-D remain `UNPROVEN` until CA-W6.
 
 **Status**: accepted
 **Date**: 2026-09-18
+
+### Context
+
+Actor-local member preference state must not become authority change. Target
+member role/mute edits and ownership transfer require one Conversation-owned
+transaction that binds the operator, target member, authority Station, epoch,
+head, membership and MLS epochs, deadline, and an exact idempotency identity up
+front. Ownership transfer can demote the current owner and promote another
+member in a single step, so partial or two-step states are unsafe.
+
+### Rationale
+
+Role, mute, and ownership share the same Conversation aggregate truth.
+Committing them as one hash-chained member-authority event inside the existing
+Conversation unit of work preserves exactly one active owner and full rollback
+safety. Member authority changes advance the membership epoch because
+authorization state changes, but the MLS leaf set is unchanged, so the MLS
+epoch does not advance and no MLS commit is fabricated.
 
 ### Decision
 
@@ -329,6 +368,17 @@ advance membership epoch but not MLS epoch because the MLS leaf set is unchanged
 The full contract and failure matrix are documented in
 [`proposals/20260918-conversation-member-authority.md`](./proposals/20260918-conversation-member-authority.md).
 
+### Alternatives Considered
+
+- Changing authority roles through `/conversation/member/settings` was rejected
+  because that endpoint is actor-local preference state.
+- A two-step ownership transfer or compatibility route was rejected because it
+  would expose externally observable intermediate owner state.
+- Changing the owner row through the ordinary member update was rejected
+  because only the explicit ownership transfer may change ownership.
+- Advancing the MLS epoch on role or mute change was rejected because the MLS
+  leaf set is unchanged.
+
 ### Consequences
 
 - `/conversation/member/settings` remains actor-local preference state.
@@ -342,6 +392,26 @@ The full contract and failure matrix are documented in
 
 **Status**: accepted
 **Date**: 2026-09-19
+
+### Context
+
+The initial group owner normally reaches the authority through the same Home
+Station, so AO-D10 works in that topology. An atomic ownership transfer can
+move ownership to an actor whose Home Station is a follower; the new owner's
+member-authority command is then rejected because the authority Station is not
+its local Station. Calling the authority Station directly is invalid because
+the Mobile session is Home-Station scoped and may not export or reuse its Home
+Station bearer, while forwarding an unsigned command would make the Home
+Station an unverifiable authority for another actor's mutation. This is a
+missing trust contract, not only a routing defect.
+
+### Rationale
+
+Reusing the existing actor-device-signed `ConversationCommandProposal` binds
+the exact authorizing device to the exact bytes, and the established durable
+`AUTHORITY_COMMAND` Federation frame plus `SubmitForwarded` unit of work already
+provide forwarding trust, reliability, and ordered completion. This avoids both
+a credential trust-boundary expansion and a second member-authority protocol.
 
 ### Decision
 
@@ -362,6 +432,21 @@ and runtime gates are documented in
 [`proposals/20260918-conversation-member-authority-remote-routing-amendment.md`](./proposals/20260918-conversation-member-authority-remote-routing-amendment.md).
 
 The Owner accepted AO-D10A.1 through AO-D10A.6 on 2026-09-19.
+
+### Alternatives Considered
+
+- A direct Mobile call to the authority Station was rejected because the Mobile
+  session is Home-Station scoped; exporting, exchanging, or reusing bearer
+  credentials would expand the credential trust boundary.
+- Unsigned Home Station forwarding was rejected because the authority could
+  prove only which Station forwarded the request, not which actor device
+  authorized the exact bytes.
+- A new member-authority-only Federation protocol was rejected because the
+  existing signed proposal, durable `AUTHORITY_COMMAND` frame, result delivery,
+  and `SubmitForwarded` unit of work already own this trust and reliability.
+- Keeping same-Station support and deferring remote owners was rejected because
+  ownership transfer itself can create a remote owner who must remain able to
+  exercise the accepted owner capability.
 
 ### Consequences
 

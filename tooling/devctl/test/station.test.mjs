@@ -195,6 +195,47 @@ test(
 );
 
 test(
+  'remote start honors an explicit product source commit',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const root = temporaryRoot(t);
+    const environment = machineEnvironment(t, root);
+    const productCommit = 'a'.repeat(40);
+    const port = await startHealthServer(
+      t,
+      0,
+      () => true,
+      productCommit,
+    );
+    const profilePath = writeProfile(
+      root,
+      'remote-product-source',
+      'remote',
+      port,
+    );
+    writeRemoteBridge(
+      root,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "remote\\n" > "$PWD/remote-bridge-ran"',
+        '',
+      ].join('\n'),
+    );
+
+    const result = await startStation(root, {
+      ...environment,
+      PT_BUILD_SOURCE_COMMIT: productCommit,
+      PT_DEV_PROFILE_FILE: profilePath,
+    });
+
+    assert.equal(result.deployed, false);
+    assert.equal(result.reused, true);
+    assert.equal(fs.existsSync(path.join(root, 'remote-bridge-ran')), false);
+  },
+);
+
+test(
   'remote start deploys when the healthy Station build is stale',
   { skip: process.platform === 'win32' },
   async (t) => {

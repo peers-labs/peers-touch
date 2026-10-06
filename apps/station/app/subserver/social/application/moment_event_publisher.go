@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 )
 
@@ -36,6 +38,176 @@ func (p *MomentEventPublisher) PublishCreated(ctx context.Context, postID uint64
 		Audience:         audienceKind(audience),
 		OccurredTsUnixMs: p.now().UTC().UnixMilli(),
 	})
+}
+
+func (p *MomentEventPublisher) StageImportedCreated(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	postID string,
+	authorPTID string,
+	targetActorPTID string,
+	audience model.Audience_Kind,
+	_ uint64,
+) error {
+	if p == nil || postID == "" || authorPTID == "" || targetActorPTID == "" {
+		return fmt.Errorf("imported Moment event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(
+		ctx,
+		transaction,
+		targetActorPTID,
+		&realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Moment{
+				Moment: &realtime.MomentEvent{
+					Kind:             realtime.MomentEvent_CREATED,
+					PostId:           postID,
+					AuthorActorPtid:  authorPTID,
+					ActorPtid:        targetActorPTID,
+					Audience:         audience.String(),
+					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+				},
+			},
+		},
+	)
+	return err
+}
+
+func (p *MomentEventPublisher) StageImportedCommented(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	postID string,
+	commentID string,
+	commentAuthorPTID string,
+	targetActorPTID string,
+) error {
+	if p == nil ||
+		postID == "" ||
+		commentID == "" ||
+		commentAuthorPTID == "" ||
+		targetActorPTID == "" {
+		return fmt.Errorf("private Comment event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(
+		ctx,
+		transaction,
+		targetActorPTID,
+		&realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Moment{
+				Moment: &realtime.MomentEvent{
+					Kind:             realtime.MomentEvent_COMMENTED,
+					PostId:           postID,
+					AuthorActorPtid:  commentAuthorPTID,
+					ActorPtid:        targetActorPTID,
+					CommentId:        commentID,
+					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+				},
+			},
+		},
+	)
+	return err
+}
+
+func (p *MomentEventPublisher) StagePrivateReacted(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	postID string,
+	reactionActorPTID string,
+	targetActorPTID string,
+	kind model.ReactionKind,
+	removed bool,
+) error {
+	if p == nil ||
+		postID == "" ||
+		reactionActorPTID == "" ||
+		targetActorPTID == "" ||
+		kind == model.ReactionKind_REACTION_UNSPECIFIED {
+		return fmt.Errorf("private Reaction event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(
+		ctx,
+		transaction,
+		targetActorPTID,
+		&realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Moment{
+				Moment: &realtime.MomentEvent{
+					Kind:             realtime.MomentEvent_REACTED,
+					PostId:           postID,
+					ActorPtid:        reactionActorPTID,
+					ReactionKind:     kind.String(),
+					Removed:          removed,
+					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+				},
+			},
+		},
+	)
+	return err
+}
+
+func (p *MomentEventPublisher) StageImportedRevoked(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	postID string,
+	targetActorPTID string,
+	reason privatecontentpb.PrivateResourceInvalidationReason,
+) error {
+	if p == nil ||
+		postID == "" ||
+		targetActorPTID == "" ||
+		reason == privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_UNSPECIFIED {
+		return fmt.Errorf("private revocation event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(
+		ctx,
+		transaction,
+		targetActorPTID,
+		&realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Moment{
+				Moment: &realtime.MomentEvent{
+					Kind:      realtime.MomentEvent_DELETED,
+					PostId:    postID,
+					ActorPtid: targetActorPTID,
+					// The canonical realtime schema has no separate revocation
+					// arm yet. Audience is otherwise unused for DELETED and
+					// carries the closed invalidation-reason enum.
+					Audience:         reason.String(),
+					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+				},
+			},
+		},
+	)
+	return err
 }
 
 func (p *MomentEventPublisher) PublishDeleted(ctx context.Context, postID uint64, authorPTID string) {
@@ -86,7 +258,14 @@ func (p *MomentEventPublisher) publish(ctx context.Context, targetActorPTID stri
 	if _, err := liveBus.Publish(targetActorPTID, &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_Moment{Moment: ev},
 	}); err != nil {
-		logger.Warn(ctx, "moment.realtime: publish failed", "target_actor_ptid", targetActorPTID, "post_id", ev.PostId, "kind", ev.Kind.String(), "error", err)
+		logger.Warn(
+			ctx,
+			"moment.realtime: publish failed",
+			"kind",
+			ev.Kind.String(),
+			"error",
+			err,
+		)
 	}
 }
 

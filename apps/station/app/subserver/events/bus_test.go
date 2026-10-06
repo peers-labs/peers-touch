@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
@@ -222,6 +223,107 @@ func TestSubscribe_ReplaysFromDurableStoreAfterRestart(t *testing.T) {
 	}
 	if got[0].GetMessage().GetUlid() != "b" || got[1].GetMessage().GetUlid() != "c" {
 		t.Fatalf("durable replay order = %v", []string{got[0].GetMessage().GetUlid(), got[1].GetMessage().GetUlid()})
+	}
+}
+
+func TestPublishInTransactionSurvivesPostCommitFanoutFailure(t *testing.T) {
+	dsn := fmt.Sprintf(
+		"file:%s-%d?mode=memory&cache=shared",
+		t.Name(),
+		time.Now().UnixNano(),
+	)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newGormEventStore(db)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	bus := newTestBus(t, WithDurableStore(store))
+	cursor, err := bus.Publish("alice", msg("cursor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var transaction *stagedEventTransaction
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		transaction = &stagedEventTransaction{db: tx}
+		_, publishErr := bus.PublishInTransaction(
+			context.Background(),
+			transaction,
+			"alice",
+			msg("committed"),
+		)
+		return publishErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bus.Close()
+	if err := transaction.runAfterCommit(context.Background()); err != ErrBusClosed {
+		t.Fatalf("post-commit fan-out error = %v, want %v", err, ErrBusClosed)
+	}
+
+	restarted := newTestBus(t, WithDurableStore(store))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	subscription, _, err := restarted.Subscribe(ctx, "alice", "device-1", cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := drainN(t, subscription, 1, 50*time.Millisecond)
+	if len(replayed) != 1 ||
+		replayed[0].GetMessage().GetUlid() != "committed" {
+		t.Fatalf("durable staged replay = %#v", replayed)
+	}
+}
+
+func TestPublishInTransactionPersistenceFailureRollsBackDomainWrite(t *testing.T) {
+	dsn := fmt.Sprintf(
+		"file:%s-%d?mode=memory&cache=shared",
+		t.Name(),
+		time.Now().UnixNano(),
+	)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newGormEventStore(db)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&stagedEventDomainRecord{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&realtimeEventModel{}); err != nil {
+		t.Fatal(err)
+	}
+	bus := newTestBus(t, WithDurableStore(store))
+
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&stagedEventDomainRecord{
+			ID:    "domain-one",
+			Value: "committed",
+		}).Error; err != nil {
+			return err
+		}
+		_, publishErr := bus.PublishInTransaction(
+			context.Background(),
+			&stagedEventTransaction{db: tx},
+			"alice",
+			msg("wake"),
+		)
+		return publishErr
+	})
+	if err == nil {
+		t.Fatal("missing durable event table did not fail the transaction")
+	}
+	var count int64
+	if err := db.Model(&stagedEventDomainRecord{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("domain rows = %d, want rollback", count)
 	}
 }
 
@@ -577,6 +679,40 @@ type blockingReplayStore struct {
 	blockPersist bool
 	persisted    chan struct{}
 	release      chan struct{}
+}
+
+type stagedEventTransaction struct {
+	db        *gorm.DB
+	callbacks []delivery.AfterCommitFunc
+}
+
+type stagedEventDomainRecord struct {
+	ID    string `gorm:"primaryKey"`
+	Value string
+}
+
+func (t *stagedEventTransaction) DB() *gorm.DB {
+	return t.db
+}
+
+func (t *stagedEventTransaction) Outbox() delivery.OutboxWriter {
+	return nil
+}
+
+func (t *stagedEventTransaction) AfterCommit(
+	callback delivery.AfterCommitFunc,
+) error {
+	t.callbacks = append(t.callbacks, callback)
+	return nil
+}
+
+func (t *stagedEventTransaction) runAfterCommit(ctx context.Context) error {
+	for _, callback := range t.callbacks {
+		if err := callback(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newBlockingReplayStore() *blockingReplayStore {

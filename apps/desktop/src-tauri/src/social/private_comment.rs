@@ -12,7 +12,7 @@ use secure_content_core::prekey::ContentPreKeyPrivate;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::model::{secure_content as wire, social};
+use crate::model::{actor, secure_content as wire, social};
 use crate::secure_content::adapter::{
     NativeErrorDisposition, NativeTransportError, SecureContentTransport,
 };
@@ -43,6 +43,8 @@ const PRIVATE_COMMENT_PAYLOAD_KIND: u32 = social::PrivateMomentKind::Text as u32
 const CLOCK_SKEW_SECONDS: i64 = 60;
 const COMMENT_READBACK_PENDING: &str = "COMMENT_READBACK_PENDING";
 const PRIVATE_CONTENT_STALE_PLAN: &str = "SOCIAL_PRIVATE_STALE_PLAN";
+const FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN: &[u8] =
+    b"peers-touch:social:federated-private-interaction:v1\0";
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PrivateCommentIntent {
@@ -332,32 +334,45 @@ impl<'a> PrivateCommentOrchestrator<'a> {
             maintain_content_prekeys(self.supervisor, &self.lease)
                 .map_err(|error| PrivateCommentFailure::failed("COMMENT_PREKEY_FAILED", error))?;
             self.set_state(intent, CommentState::Encrypting, None, None)?;
-            let prepare_request = social::PreparePrivateCommentRequest {
+            let mut prepare_request = social::PreparePrivateCommentRequest {
                 post_id: stored.post_id.clone(),
                 comment_content_id: stored.content_id.clone(),
                 reply_to_comment_id: stored.reply_to_comment_id.clone(),
                 object_count: 0,
                 command_id: stored.prepare_command_id.clone(),
+                actor_signing_key_id: self.lease.session.signing_key_id.clone(),
+                actor_device_signature: Vec::new(),
             };
-            let plan = match self
+            prepare_request.actor_device_signature = self
+                .lease
+                .session
+                .sign(&federated_private_interaction_request_signing_bytes(
+                    social::FederatedPrivateInteractionOperation::PrepareComment,
+                    &prepare_request.encode_to_vec(),
+                ))
+                .map_err(|error| PrivateCommentFailure::failed("COMMENT_PREPARE_INVALID", error))?;
+            let prepare_response = match self
                 .transport
                 .prepare_private_comment(&stored.post_id, &prepare_request)
             {
-                Ok(response) => response.plan.ok_or_else(|| {
-                    PrivateCommentFailure::failed(
-                        "COMMENT_PREPARE_INVALID",
-                        "private Comment prepare response omitted its plan",
-                    )
-                })?,
+                Ok(response) => response,
                 Err(error) => {
                     return Err(PrivateCommentFailure::from_transport(error));
                 }
             };
+            let station_attestation = prepare_response.station_signing_key_attestation.clone();
+            let plan = prepare_response.plan.ok_or_else(|| {
+                PrivateCommentFailure::failed(
+                    "COMMENT_PREPARE_INVALID",
+                    "private Comment prepare response omitted its plan",
+                )
+            })?;
             self.ensure_current()?;
             let domain_binding =
                 comment_domain_binding(&stored.post_id, &stored.reply_to_comment_id);
             validate_content_plan(
                 &plan,
+                station_attestation.as_ref(),
                 &self.lease,
                 &stored.content_id,
                 0,
@@ -448,7 +463,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 &format!("{}:{}", intent.draft_id, stored.content_id),
                 intent.draft_revision,
             );
-            let request = social::SubmitPrivateCommentRequest {
+            let mut request = social::SubmitPrivateCommentRequest {
                 plan: Some(plan.clone()),
                 payload: Some(payload),
                 envelopes,
@@ -456,7 +471,17 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 mention_routing,
                 command_id: submit_command_id.clone(),
                 post_id: intent.post_id.clone(),
+                actor_signing_key_id: self.lease.session.signing_key_id.clone(),
+                actor_device_signature: Vec::new(),
             };
+            request.actor_device_signature = self
+                .lease
+                .session
+                .sign(&federated_private_interaction_request_signing_bytes(
+                    social::FederatedPrivateInteractionOperation::SubmitComment,
+                    &request.encode_to_vec(),
+                ))
+                .map_err(|error| PrivateCommentFailure::failed("COMMENT_ENCRYPT_FAILED", error))?;
             let request_bytes = request.encode_to_vec();
             self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
                 store.persist_comment_submission(
@@ -1027,6 +1052,16 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         {
             return Ok(key);
         }
+        if let Some(key) = receiver_verified_comment_sender_key(
+            resource,
+            &requirement.sender,
+            signing_key_id,
+            requirement.committed_at_unix_ms,
+        )
+        .map_err(|error| PrivateCommentFailure::failed("COMMENT_INTEGRITY_FAILURE", error))?
+        {
+            return Ok(key);
+        }
         let actor = requirement.sender.actor.as_ref().ok_or_else(|| {
             PrivateCommentFailure::failed(
                 "COMMENT_INTEGRITY_FAILURE",
@@ -1208,6 +1243,61 @@ impl<'a> PrivateCommentOrchestrator<'a> {
     }
 }
 
+fn receiver_verified_comment_sender_key(
+    resource: &social::CommentResource,
+    expected_sender: &actor::ActorDeviceRef,
+    expected_signing_key_id: &str,
+    committed_at_unix_ms: i64,
+) -> Result<Option<VerifyingKey>, String> {
+    let key = match resource
+        .body
+        .as_ref()
+        .and_then(|body| match body {
+            social::comment_resource::Body::PrivateContent(private) => {
+                private.verification.as_ref()
+            }
+            _ => None,
+        })
+        .and_then(|verification| verification.receiver_verified_sender_signing_key.as_ref())
+    {
+        Some(key) => key,
+        None => return Ok(None),
+    };
+    let expected_actor_ptid = expected_sender
+        .actor
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .unwrap_or_default();
+    if expected_actor_ptid.is_empty()
+        || expected_sender.device_id.is_empty()
+        || expected_signing_key_id.is_empty()
+        || key.actor_ptid != expected_actor_ptid
+        || key.actor_device_id != expected_sender.device_id
+        || key.home_station_peer_id.trim().is_empty()
+        || key.signing_key_id != expected_signing_key_id
+        || key.ed25519_public_key.len() != 32
+        || key.profile_version <= 0
+        || key.valid_from_unix_ms <= 0
+        || key.valid_from_unix_ms > committed_at_unix_ms
+        || (key.revoked_at_unix_ms != 0
+            && (key.revoked_at_unix_ms <= key.valid_from_unix_ms
+                || committed_at_unix_ms >= key.revoked_at_unix_ms))
+        || !matches!(
+            actor::ActorSigningKeyVerificationSource::try_from(key.verification_source).ok(),
+            Some(actor::ActorSigningKeyVerificationSource::LocalDeviceRegistration)
+                | Some(actor::ActorSigningKeyVerificationSource::VerifiedProfile)
+                | Some(actor::ActorSigningKeyVerificationSource::VerifiedLocator)
+        )
+    {
+        return Err("receiver-verified private Comment sender signing key is invalid".to_string());
+    }
+    VerifyingKey::from_bytes(key.ed25519_public_key.as_slice().try_into().map_err(|_| {
+        "receiver-verified private Comment sender signing key is invalid".to_string()
+    })?)
+    .map(Some)
+    .map_err(|_| "receiver-verified private Comment sender signing key is invalid".to_string())
+}
+
 fn submit_failure_publication_state(error: &NativeTransportError) -> PublicationState {
     if matches!(
         error.message.as_str(),
@@ -1312,6 +1402,21 @@ fn publication_state_name(state: PublicationState) -> String {
 fn retry_not_before_unix_ms(retry_after_seconds: Option<u64>) -> Option<i64> {
     let delay = i64::try_from(retry_after_seconds?.checked_mul(1_000)?).ok()?;
     super::crypto::now_unix_ms().checked_add(delay)
+}
+
+fn federated_private_interaction_request_signing_bytes(
+    operation: social::FederatedPrivateInteractionOperation,
+    canonical_operation: &[u8],
+) -> Vec<u8> {
+    let mut signing_bytes = Vec::with_capacity(
+        FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN.len()
+            + std::mem::size_of::<u32>()
+            + canonical_operation.len(),
+    );
+    signing_bytes.extend_from_slice(FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN);
+    signing_bytes.extend_from_slice(&(operation as u32).to_be_bytes());
+    signing_bytes.extend_from_slice(canonical_operation);
+    signing_bytes
 }
 
 fn enforce_comment_retry_deadline(draft: &StoredCommentDraft) -> Result<(), PrivateCommentFailure> {
@@ -1916,7 +2021,7 @@ mod tests {
     use super::*;
     use crate::secure_content::station_trust::TrustedStationSigningKey;
     use crate::secure_content::{SecureContentSession, SecureContentSessionKey};
-    use ed25519_dalek::SigningKey;
+    use ed25519_dalek::{Signer, SigningKey};
     use std::sync::Arc;
 
     fn session() -> SecureContentSession {
@@ -1941,6 +2046,71 @@ mod tests {
                 verifying_key: station_key.verifying_key(),
             },
         )
+    }
+
+    #[test]
+    fn remote_private_comment_uses_source_verified_author_key() {
+        let signing_key = SigningKey::from_bytes(&[6; 32]);
+        let sender = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:bob".to_string(),
+                acct: "bob@station.remote".to_string(),
+                kind: actor::ActorKind::Person as i32,
+            }),
+            device_id: "bob-device".to_string(),
+        };
+        let signing_bytes = b"remote Comment envelope";
+        let signature = signing_key.sign(signing_bytes).to_bytes().to_vec();
+        let resource = social::CommentResource {
+            body: Some(social::comment_resource::Body::PrivateContent(
+                social::PrivateContentAccess {
+                    verification: Some(social::PrivateContentVerification {
+                        receiver_verified_sender_signing_key: Some(
+                            actor::VerifiedActorDeviceSigningKey {
+                                actor_ptid: "ptid:bob".to_string(),
+                                actor_device_id: "bob-device".to_string(),
+                                home_station_peer_id: "station-remote".to_string(),
+                                signing_key_id: "bob-signing-key".to_string(),
+                                ed25519_public_key: signing_key
+                                    .verifying_key()
+                                    .to_bytes()
+                                    .to_vec(),
+                                profile_version: 1,
+                                verification_source:
+                                    actor::ActorSigningKeyVerificationSource::VerifiedProfile
+                                        as i32,
+                                valid_from_unix_ms: 1_000,
+                                revoked_at_unix_ms: 0,
+                            },
+                        ),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            receiver_verified_comment_sender_key(
+                &resource,
+                &sender,
+                "bob-signing-key",
+                2_000,
+            )
+            .unwrap(),
+            Some(signing_key.verifying_key()),
+        );
+        assert!(receiver_verified_comment_sender_key(
+            &resource,
+            &sender,
+            "bob-signing-key",
+            2_000,
+        )
+        .unwrap()
+        .unwrap()
+        .verify(signing_bytes, &Signature::from_slice(&signature).unwrap())
+        .is_ok());
     }
 
     fn comment_draft(draft_id: &str, session_generation: u64) -> StoredCommentDraft {

@@ -98,6 +98,7 @@ func SigningBytes(frame *Frame) ([]byte, error) {
 		IssuedAt:            frame.IssuedAt,
 		ExpiresAt:           frame.ExpiresAt,
 		SigningKeyId:        frame.SigningKeyId,
+		TraceId:             frame.TraceId,
 	}
 	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(input)
 	if err != nil {
@@ -221,6 +222,15 @@ func validateFrame(
 	}
 	for _, identifier := range identifiers {
 		if err := validateIdentifier(identifier.name, identifier.value, policy.MaxIdentifierBytes); err != nil {
+			return err
+		}
+	}
+	if frame.TraceId != "" {
+		if err := validateIdentifier(
+			"trace_id",
+			frame.TraceId,
+			policy.MaxIdentifierBytes,
+		); err != nil {
 			return err
 		}
 	}

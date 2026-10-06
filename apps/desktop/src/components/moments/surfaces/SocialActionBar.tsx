@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ReactionKind, type ReactionSummary } from '../../../gen/proto/domain/social/post_pb';
+import type { PrivateReactionState } from '../../../services/privateMomentsNative';
 
 // SocialActionBar — a compact action row for a single post.
 //
@@ -39,6 +40,8 @@ export interface SocialActionBarProps {
   loading?: boolean;
   onReact?: (kind: ReactionKind) => void;
   onUnreact?: (kind?: ReactionKind) => void;
+  reactionState?: PrivateReactionState;
+  onRetryReaction?: () => void;
   onOpenComments?: () => void;
   extra?: ReactNode;
   compact?: boolean;
@@ -84,6 +87,8 @@ export function SocialActionBar({
   loading,
   onReact,
   onUnreact,
+  reactionState,
+  onRetryReaction,
   onOpenComments,
   extra,
   compact,
@@ -94,6 +99,9 @@ export function SocialActionBar({
   const existing = reactions.filter((r) => Number(r.count ?? 0n) > 0);
   const reactedKind = viewerReactedKind(reactions);
   const iconSize = compact ? 13 : 14;
+  const commandPending = reactionState === 'REACTION_PENDING'
+    || reactionState === 'REACTION_RETRYING';
+  const reactionDisabled = loading || commandPending;
 
   const picker = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -107,7 +115,7 @@ export function SocialActionBar({
               size="small"
               shape="circle"
               icon={<meta.Icon size={iconSize} color={active ? '#fff' : token.colorTextSecondary} />}
-              disabled={loading}
+              disabled={reactionDisabled}
               onClick={() => (active ? onUnreact?.(kind) : onReact?.(kind))}
               style={{ width: 28, height: 28 }}
             />
@@ -127,7 +135,7 @@ export function SocialActionBar({
             size="small"
             icon={<meta.Icon size={iconSize} color={token.colorPrimary} />}
             onClick={() => onUnreact?.(reactedKind)}
-            disabled={loading}
+            disabled={reactionDisabled}
             style={{
               color: token.colorPrimary,
               background: token.colorPrimaryBg,
@@ -177,7 +185,7 @@ export function SocialActionBar({
           type="text"
           size="small"
           icon={<ThumbsUp size={iconSize} />}
-          disabled={loading}
+          disabled={reactionDisabled}
           style={{
             color: token.colorTextSecondary,
             background: token.colorFillQuaternary,
@@ -210,18 +218,41 @@ export function SocialActionBar({
             size="small"
             shape="circle"
             icon={<MoreHorizontal size={iconSize} color={token.colorTextSecondary} />}
-            disabled={loading}
+            disabled={reactionDisabled}
             style={{ width: 28, height: 28 }}
           />
         </Popover>
       )}
       {!existing.length && null /* picker already embedded above */}
+      {reactionState && reactionState !== 'REACTION_COMMITTED' && (
+        <span
+          role="status"
+          style={{
+            color: reactionState === 'REACTION_REJECTED'
+              ? token.colorError
+              : token.colorTextSecondary,
+            fontSize: 12,
+          }}
+        >
+          {t(`moments.reaction.status.${reactionState}`)}
+          {commandPending && onRetryReaction && (
+            <Button
+              type="link"
+              size="small"
+              disabled={loading}
+              onClick={onRetryReaction}
+              style={{ height: 24, paddingInline: 6, fontSize: 12 }}
+            >
+              {t('moments.reaction.retry')}
+            </Button>
+          )}
+        </span>
+      )}
       <Button
         type="text"
         size="small"
         icon={<MessageCircle size={iconSize} color={token.colorTextSecondary} />}
         onClick={onOpenComments}
-        disabled={loading}
         style={{
           color: token.colorTextSecondary,
           borderRadius: 999,

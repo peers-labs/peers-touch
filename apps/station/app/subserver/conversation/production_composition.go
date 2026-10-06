@@ -497,20 +497,10 @@ func migrateProductionConversationSchema(
 	database *gorm.DB,
 ) error {
 	err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := persistence.MigrateCanonicalSchema(ctx, tx); err != nil {
+			return err
+		}
 		if err := tx.AutoMigrate(
-			&persistence.ConversationModel{},
-			&persistence.ConversationMemberModel{},
-			&persistence.ConversationMemberDeviceModel{},
-			&persistence.ConversationEventModel{},
-			&persistence.ConversationCommandReceiptModel{},
-			&persistence.ConversationAuthorityPlanModel{},
-			&persistence.ConversationMemberSettingsModel{},
-			&persistence.ConversationReadCursorModel{},
-			&persistence.ConversationLeaveIntentModel{},
-			&persistence.ConversationFollowerHeadModel{},
-			&persistence.ConversationFollowerStateModel{},
-			&persistence.ConversationFollowerPendingEventModel{},
-			&persistence.ConversationFollowerMemberModel{},
 			&deliveryinfra.DeviceQueueLaneModel{},
 			&deliveryinfra.DeviceQueueItemModel{},
 			&deliveryinfra.AuthorityDeliveryCommitmentModel{},

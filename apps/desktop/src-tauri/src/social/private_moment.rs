@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use ed25519_dalek::VerifyingKey;
@@ -16,7 +17,7 @@ use secure_content_core::ports::{ObjectBlob, ObjectTransferRepository};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::model::{secure_content as wire, social};
+use crate::model::{actor, secure_content as wire, social};
 use crate::secure_content::adapter::{NativeErrorDisposition, SecureContentTransport};
 use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::station_trust::{
@@ -35,16 +36,21 @@ use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 use super::crypto::{
     bounded_command_id, now_unix_ms, seal_content_envelopes, validate_content_plan,
 };
+use super::private_media::{verify_descriptor_binding, PrivateMediaOpenError};
 use super::private_mention::{
     build_signed_mention_routing, canonical_private_mentions, PrivateMentionIntent,
 };
 use super::projection::{
-    decrypt_projection_from_response, object_descriptor_set_hash, private_poll_option_set_hash,
+    canonical_identifier, checked_timestamp_millis, decrypt_projection_from_response,
+    object_descriptor_set_hash, private_poll_option_set_hash, remote_delivery_state,
     repost_source_material_from_response, sender_key_requirement,
     verify_recovery_envelope_for_response, DecryptedPrivateMoment, PrivateMediaState,
     PrivateMomentContentProjection, PrivateMomentProjection, PrivateMomentPublishResult,
-    PrivateMomentsSnapshot, PrivateProjectionFailureKind, PrivateRepostSourceMaterial,
+    PrivateMomentsSnapshot, PrivateProjectionFailureKind, PrivateRemoteDeliveryState,
+    PrivateRepostSourceMaterial,
 };
+
+const MAX_REMOTE_PRIVATE_REFERENCE_PAGES: usize = 100;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PrivateMomentFileIntent {
@@ -138,6 +144,15 @@ pub struct PrivateMomentPublishIntent {
     pub poll: Option<PrivateMomentPollIntent>,
     #[serde(default)]
     pub repost: Option<PrivateMomentRepostIntent>,
+    #[serde(default)]
+    pub admission_only: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateMomentAdmissionResult {
+    pub state: &'static str,
+    pub draft_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -169,6 +184,7 @@ pub struct PrivateMomentPublishRejection {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum PrivateMomentPublishOutcome {
+    Ready(PrivateMomentAdmissionResult),
     Published(PrivateMomentPublishResult),
     Rejected(PrivateMomentPublishRejection),
 }
@@ -211,6 +227,7 @@ enum PrivatePublishFailure {
     Preserve(String),
     Cleanup(String),
     RejectedBeforePrepare { station_error_code: String },
+    RecipientUnavailable,
 }
 
 impl PrivatePublishFailure {
@@ -234,6 +251,9 @@ impl PrivatePublishFailure {
     }
 
     fn from_prepare_transport(error: crate::secure_content::adapter::NativeTransportError) -> Self {
+        if matches!(error.stable_code, 30203 | 30206 | 30209) {
+            return Self::RecipientUnavailable;
+        }
         if error.http_status == Some(400)
             && error.stable_code == crate::model::error::ErrorCode::InvalidRequest as i32
             && error.disposition == NativeErrorDisposition::Terminal
@@ -262,6 +282,7 @@ impl PrivatePublishFailure {
                 format!("private Moment prepare was rejected: {station_error_code}"),
                 true,
             ),
+            Self::RecipientUnavailable => ("RECIPIENT_KEY_UNAVAILABLE".to_string(), false),
         }
     }
 }
@@ -303,6 +324,13 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             device_id: self.lease.session.key.device_id.clone(),
             session_generation: self.lease.session.key.session_generation.to_string(),
             projections,
+            reaction_commands: self
+                .lease
+                .store
+                .reaction_commands()?
+                .iter()
+                .map(super::private_reaction::command_projection)
+                .collect::<Result<Vec<_>, _>>()?,
         })
     }
 
@@ -334,12 +362,65 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             };
             self.replay_submit(command)?;
         }
-        for post_id in post_ids {
-            if !post_id.trim().is_empty() {
-                self.read(post_id, revoke_media)?;
+        let mut reconciled_post_ids = post_ids
+            .iter()
+            .map(|post_id| post_id.trim())
+            .filter(|post_id| canonical_identifier(post_id))
+            .map(ToOwned::to_owned)
+            .collect::<BTreeSet<_>>();
+        match self.remote_private_moment_ids() {
+            Ok(discovered) => reconciled_post_ids.extend(discovered),
+            Err(error) if error == "secure content session generation is stale" => {
+                return Err(error)
+            }
+            Err(error) if reconciled_post_ids.is_empty() => return Err(error),
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "remote private Moment reference reconcile is unavailable"
+                );
             }
         }
+        for post_id in reconciled_post_ids {
+            self.ensure_current()?;
+            self.read(&post_id, revoke_media)?;
+        }
         self.snapshot()
+    }
+
+    fn remote_private_moment_ids(&self) -> Result<Vec<String>, String> {
+        let mut cursor = String::new();
+        let mut post_ids = BTreeSet::new();
+        for _ in 0..MAX_REMOTE_PRIVATE_REFERENCE_PAGES {
+            let response = self
+                .transport
+                .list_remote_private_moments(&cursor, 100)
+                .map_err(|error| error.to_string())?;
+            self.ensure_current()?;
+            for reference in response.moments {
+                if !canonical_identifier(&reference.post_id)
+                    || reference.lifecycle_revision == 0
+                    || checked_timestamp_millis(
+                        reference.updated_at.as_ref(),
+                        "remote private Moment reference updated_at",
+                    )
+                    .is_err()
+                {
+                    return Err("remote private Moment reference identity is invalid".to_string());
+                }
+                post_ids.insert(reference.post_id);
+            }
+            if !response.has_more {
+                return Ok(post_ids.into_iter().collect());
+            }
+            if response.next_cursor.trim().is_empty() || response.next_cursor == cursor {
+                return Err(
+                    "remote private Moment reference pagination did not advance".to_string()
+                );
+            }
+            cursor = response.next_cursor;
+        }
+        Err("remote private Moment reference pagination exceeded its bound".to_string())
     }
 
     pub fn publish(
@@ -358,7 +439,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         let mut upload_transfer_ids = Vec::new();
         let mut content_id = None;
         match self.publish_new(intent, &mut upload_transfer_ids, &mut content_id) {
-            Ok(result) => Ok(result.into()),
+            Ok(result) => Ok(result),
             Err(failure) => {
                 self.finish_publish_failure(intent, failure, content_id, upload_transfer_ids)
             }
@@ -370,7 +451,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         intent: &PrivateMomentPublishIntent,
         upload_transfer_ids: &mut Vec<String>,
         cleanup_content_id: &mut Option<String>,
-    ) -> Result<PrivateMomentPublishResult, PrivatePublishFailure> {
+    ) -> Result<PrivateMomentPublishOutcome, PrivatePublishFailure> {
         let prepare_command_id =
             bounded_command_id("moment-prepare", &intent.draft_id, intent.draft_revision);
         let kind =
@@ -453,6 +534,14 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             &subtype_prepare_authority_sha256,
         )
         .map_err(PrivatePublishFailure::cleanup)?;
+        if intent.admission_only {
+            return Ok(PrivateMomentPublishOutcome::Ready(
+                PrivateMomentAdmissionResult {
+                    state: "READY_PRIVATE",
+                    draft_id: intent.draft_id.clone(),
+                },
+            ));
+        }
 
         let mut attachment_metadata = Vec::with_capacity(intent.files.len());
         let mut descriptors = Vec::with_capacity(intent.files.len());
@@ -662,6 +751,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .persist_moment_command(&command)
             .map_err(PrivatePublishFailure::preserve)?;
         self.replay_submit(command)
+            .map(PrivateMomentPublishOutcome::from)
             .map_err(PrivatePublishFailure::preserve)
     }
 
@@ -672,6 +762,18 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         content_id: Option<String>,
         upload_transfer_ids: Vec<String>,
     ) -> Result<PrivateMomentPublishOutcome, String> {
+        if intent.admission_only {
+            return Err(match failure {
+                PrivatePublishFailure::RejectedBeforePrepare { .. } => {
+                    "PRIVATE_UNSUPPORTED".to_string()
+                }
+                PrivatePublishFailure::RecipientUnavailable => {
+                    "RECIPIENT_KEY_UNAVAILABLE".to_string()
+                }
+                PrivatePublishFailure::Preserve(message)
+                | PrivatePublishFailure::Cleanup(message) => message,
+            });
+        }
         let station_error_code = match &failure {
             PrivatePublishFailure::RejectedBeforePrepare { station_error_code } => {
                 Some(station_error_code.clone())
@@ -875,6 +977,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         post_id: &str,
         revoke_media: &dyn Fn(&Path) -> Result<(), String>,
     ) -> Result<PrivateMomentProjection, String> {
+        self.ensure_current()?;
         let projection = match self.transport.get_private_moment(post_id) {
             Ok(response) => {
                 self.ensure_current()?;
@@ -934,7 +1037,13 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 if requires_private_resource_purge(&error) {
                     self.purge_private_resource(post_id, revoke_media)?;
                 }
-                private_transport_failure_projection(post_id, &error)
+                let cached = self
+                    .lease
+                    .store
+                    .projection(post_id)?
+                    .map(|bytes| PrivateMomentProjection::decode_local(&bytes))
+                    .transpose()?;
+                private_transport_failure_projection(post_id, &error, cached)
             }
         };
         self.save_projection_if_current(post_id, &projection.encode_local()?)?;
@@ -1051,21 +1160,34 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         post_id: &str,
         object_id: &str,
         revoke_media: &dyn Fn(&Path) -> Result<(), String>,
-    ) -> Result<PrivateMomentProjection, String> {
+    ) -> Result<PrivateMomentProjection, PrivateMediaOpenError> {
         let response = match self.transport.get_private_moment(post_id) {
             Ok(response) => response,
             Err(error) => {
-                self.ensure_current()?;
+                self.ensure_current()
+                    .map_err(PrivateMediaOpenError::cancelled)?;
                 if requires_private_resource_purge(&error) {
                     self.purge_private_resource(post_id, revoke_media)?;
                 }
                 if matches!(error.http_status, Some(401 | 403 | 404 | 410)) {
-                    return Ok(private_transport_failure_projection(post_id, &error));
+                    let cached = self
+                        .lease
+                        .store
+                        .projection(post_id)?
+                        .map(|bytes| PrivateMomentProjection::decode_local(&bytes))
+                        .transpose()?;
+                    return Ok(private_transport_failure_projection(
+                        post_id, &error, cached,
+                    ));
                 }
-                return Err(error.to_string());
+                return Err(PrivateMediaOpenError::dependency(
+                    error.to_string(),
+                    error.retry_after_seconds,
+                ));
             }
         };
-        self.ensure_current()?;
+        self.ensure_current()
+            .map_err(PrivateMediaOpenError::cancelled)?;
         let private = response
             .resource
             .as_ref()
@@ -1128,7 +1250,11 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                         .as_ref()
                         .is_some_and(|descriptor| descriptor.object_id == object_id)
                 })
-                .ok_or_else(|| "private Moment media object is unavailable".to_string())?,
+                .ok_or_else(|| {
+                    PrivateMediaOpenError::access_denied(
+                        "private Moment media object is unavailable",
+                    )
+                })?,
             Some(social::private_moment_content::Body::Video(video)) => video
                 .source
                 .iter()
@@ -1145,13 +1271,23 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                         .as_ref()
                         .is_some_and(|descriptor| descriptor.object_id == object_id)
                 })
-                .ok_or_else(|| "private Moment media object is unavailable".to_string())?,
-            _ => return Err("private Moment has no encrypted media".to_string()),
+                .ok_or_else(|| {
+                    PrivateMediaOpenError::access_denied(
+                        "private Moment media object is unavailable",
+                    )
+                })?,
+            _ => {
+                return Err(PrivateMediaOpenError::access_denied(
+                    "private Moment has no encrypted media",
+                ))
+            }
         };
         if !(attachment.mime_type.starts_with("image/")
             || attachment.mime_type.starts_with("video/"))
         {
-            return Err("private Moment media type is invalid".to_string());
+            return Err(PrivateMediaOpenError::integrity(
+                "private Moment media type is invalid",
+            ));
         }
         let descriptor_wire = attachment
             .object
@@ -1172,12 +1308,13 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             &resource,
             attachment,
         )?;
-        self.lease.store.ensure_object_download_transfer(
-            &record,
-            &attachment.mime_type,
-            &cache_path,
-        )?;
-        let worker = new_download_worker(&self.lease, descriptor_wire)?;
+        verify_descriptor_binding(descriptor_wire, &record.descriptor_sha256)?;
+        self.lease
+            .store
+            .ensure_object_download_transfer(&record, &attachment.mime_type, &cache_path)
+            .map_err(|error| PrivateMediaOpenError::dependency(error, None))?;
+        let worker = new_download_worker(&self.lease, descriptor_wire)
+            .map_err(|error| PrivateMediaOpenError::dependency(error, None))?;
         let progress = worker.run_download_once(
             &record.transfer_id,
             &descriptor,
@@ -1189,7 +1326,11 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         let media = match projection.content.as_mut() {
             Some(PrivateMomentContentProjection::Image { media, .. })
             | Some(PrivateMomentContentProjection::Video { media, .. }) => media,
-            _ => return Err("private Moment has no encrypted media".to_string()),
+            _ => {
+                return Err(PrivateMediaOpenError::integrity(
+                    "private Moment has no encrypted media",
+                ))
+            }
         };
         let item = media
             .iter_mut()
@@ -1197,9 +1338,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .ok_or_else(|| "private Moment media object is unavailable".to_string())?;
         match progress {
             Ok(ObjectTransferProgress::Complete) => {
-                self.ensure_current()?;
+                self.ensure_current()
+                    .map_err(PrivateMediaOpenError::cancelled)?;
                 if !cache_path.is_file() {
-                    return Err("private Moment media cache is unavailable".to_string());
+                    return Err(PrivateMediaOpenError::integrity(
+                        "private Moment media cache is unavailable",
+                    ));
                 }
                 apply_ready_media(
                     item,
@@ -1216,6 +1360,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 item.plaintext_sha256 = None;
                 item.plaintext_size = None;
                 item.error_code = Some("MEDIA_OFFLINE_RETRYABLE".to_string());
+                item.retryable = true;
             }
             Ok(ObjectTransferProgress::Terminal { code }) => {
                 if code == ObjectTransferErrorCode::NotGranted {
@@ -1251,7 +1396,9 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             }
         }
         let persisted = scrub_persisted_media_projection(decrypted.projection.clone());
-        self.save_projection_if_current(post_id, &persisted.encode_local()?)?;
+        let encoded = persisted.encode_local()?;
+        self.save_projection_if_current(post_id, &encoded)
+            .map_err(|error| PrivateMediaOpenError::dependency(error, None))?;
         Ok(decrypted.projection)
     }
 
@@ -1268,6 +1415,9 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         &self,
         intent: &PrivateMomentPublishIntent,
     ) -> Result<Option<PrivateMomentPublishResult>, String> {
+        if intent.admission_only {
+            return Ok(None);
+        }
         let existing = self
             .lease
             .store
@@ -1293,14 +1443,28 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 let post_id = command
                     .post_id
                     .ok_or_else(|| "published private Moment has no post ID".to_string())?;
-                let projection = self
+                let mut projection = self
                     .lease
                     .store
                     .projection(&post_id)?
                     .ok_or_else(|| "published private Moment projection is unavailable".to_string())
                     .and_then(|bytes| PrivateMomentProjection::decode_local(&bytes))?;
+                if matches!(
+                    projection.remote_delivery_state,
+                    Some(
+                        PrivateRemoteDeliveryState::Pending | PrivateRemoteDeliveryState::Retrying
+                    )
+                ) {
+                    let response = self
+                        .transport
+                        .get_private_moment(&post_id)
+                        .map_err(|error| error.to_string())?;
+                    self.ensure_current()?;
+                    refresh_published_delivery_projection(&mut projection, &response)?;
+                    self.save_projection_if_current(&post_id, &projection.encode_local()?)?;
+                }
                 Ok(Some(PrivateMomentPublishResult {
-                    state: "PUBLISHED".to_string(),
+                    state: private_moment_publish_state(&projection),
                     draft_id: command.draft_id,
                     post_id: Some(post_id),
                     projection: Some(projection),
@@ -1400,7 +1564,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 })();
                 match verified {
                     Ok(projection) => Ok(PrivateMomentPublishResult {
-                        state: "PUBLISHED".to_string(),
+                        state: private_moment_publish_state(&projection),
                         draft_id: command.draft_id,
                         post_id: Some(projection.post_id.clone()),
                         projection: Some(projection),
@@ -1477,6 +1641,25 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         )? {
             return Ok(Some(key));
         }
+        if let Some(key) = receiver_verified_sender_signing_key(
+            response,
+            &requirement.sender,
+            signing_key_id,
+            requirement.committed_at_unix_ms,
+        )? {
+            return Ok(Some(key));
+        }
+        let source_station_peer_id = response
+            .explanation
+            .as_ref()
+            .and_then(|explanation| explanation.source.as_ref())
+            .map(|source| source.station_peer_id.as_str())
+            .unwrap_or_default();
+        if !source_station_peer_id.is_empty()
+            && source_station_peer_id != self.lease.session.key.station_peer_id
+        {
+            return Err("remote private Moment sender signing key is unavailable".to_string());
+        }
         let profile = self
             .transport
             .get_actor_federation_profile(
@@ -1519,12 +1702,35 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         &self,
         decrypted: &DecryptedPrivateMoment,
     ) -> Result<(), String> {
+        let mut projection = decrypted.projection.clone();
+        if let Some(existing) = self.lease.store.projection(&projection.post_id)? {
+            let existing = PrivateMomentProjection::decode_local(&existing)?;
+            let incoming_revision = projection
+                .reaction_revision
+                .parse::<u64>()
+                .map_err(|_| "private Reaction projection revision is invalid".to_string())?;
+            let existing_revision = existing.reaction_revision.parse::<u64>().map_err(|_| {
+                "stored private Reaction projection revision is invalid".to_string()
+            })?;
+            if projection.reactions_hydrated
+                && existing.reactions_hydrated
+                && incoming_revision == existing_revision
+                && projection.reactions != existing.reactions
+            {
+                return Err("private Reaction readback conflicts at the same revision".to_string());
+            }
+            if !projection.reactions_hydrated || incoming_revision < existing_revision {
+                projection.reactions = existing.reactions;
+                projection.reaction_revision = existing.reaction_revision;
+                projection.reactions_hydrated = existing.reactions_hydrated;
+            }
+        }
         let generation = decrypted
             .projection
             .generation
             .parse::<u64>()
             .map_err(|_| "private Moment projection generation is invalid".to_string())?;
-        let projection_bytes = decrypted.projection.encode_local()?;
+        let projection_bytes = projection.encode_local()?;
         self.supervisor.with_current(&self.lease.session.key, |_| {
             self.lease.store.commit_content_root(
                 &decrypted.projection.content_id,
@@ -1682,6 +1888,66 @@ impl<'a> PrivateMomentOrchestrator<'a> {
     }
 }
 
+pub(super) fn receiver_verified_sender_signing_key(
+    response: &social::GetMomentResourceResponse,
+    expected_sender: &actor::ActorDeviceRef,
+    expected_signing_key_id: &str,
+    committed_at_unix_ms: i64,
+) -> Result<Option<VerifyingKey>, String> {
+    let key = match response
+        .resource
+        .as_ref()
+        .and_then(|resource| resource.body.as_ref())
+        .and_then(|body| match body {
+            social::post_resource::Body::PrivateContent(private) => private.verification.as_ref(),
+            _ => None,
+        })
+        .and_then(|verification| verification.receiver_verified_sender_signing_key.as_ref())
+    {
+        Some(key) => key,
+        None => return Ok(None),
+    };
+    let expected_actor_ptid = expected_sender
+        .actor
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .unwrap_or_default();
+    let source_station_peer_id = response
+        .explanation
+        .as_ref()
+        .and_then(|explanation| explanation.source.as_ref())
+        .map(|source| source.station_peer_id.as_str())
+        .unwrap_or_default();
+    if expected_actor_ptid.is_empty()
+        || expected_sender.device_id.is_empty()
+        || expected_signing_key_id.is_empty()
+        || source_station_peer_id.is_empty()
+        || key.actor_ptid != expected_actor_ptid
+        || key.actor_device_id != expected_sender.device_id
+        || key.home_station_peer_id != source_station_peer_id
+        || key.signing_key_id != expected_signing_key_id
+        || key.ed25519_public_key.len() != 32
+        || key.profile_version <= 0
+        || key.valid_from_unix_ms <= 0
+        || key.valid_from_unix_ms > committed_at_unix_ms
+        || (key.revoked_at_unix_ms != 0
+            && (key.revoked_at_unix_ms <= key.valid_from_unix_ms
+                || committed_at_unix_ms >= key.revoked_at_unix_ms))
+        || !matches!(
+            actor::ActorSigningKeyVerificationSource::try_from(key.verification_source).ok(),
+            Some(actor::ActorSigningKeyVerificationSource::VerifiedProfile)
+                | Some(actor::ActorSigningKeyVerificationSource::VerifiedLocator)
+        )
+    {
+        return Err("receiver-verified private Moment sender signing key is invalid".to_string());
+    }
+    VerifyingKey::from_bytes(key.ed25519_public_key.as_slice().try_into().map_err(|_| {
+        "receiver-verified private Moment sender signing key is invalid".to_string()
+    })?)
+    .map(Some)
+    .map_err(|_| "receiver-verified private Moment sender signing key is invalid".to_string())
+}
+
 fn private_moment_intent_hash(intent: &PrivateMomentPublishIntent) -> Result<[u8; 32], String> {
     let mut encoder = CanonicalMessageEncoder::new();
     encoder
@@ -1806,6 +2072,7 @@ fn apply_ready_media(
     media.plaintext_sha256 = Some(hex::encode(plaintext_sha256));
     media.plaintext_size = Some(plaintext_size);
     media.error_code = None;
+    media.retryable = false;
 }
 
 fn apply_terminal_media_failure(
@@ -1817,6 +2084,7 @@ fn apply_terminal_media_failure(
     media.plaintext_sha256 = None;
     media.plaintext_size = None;
     media.error_code = Some(code.as_str().to_string());
+    media.retryable = false;
     media.state = if code == ObjectTransferErrorCode::NotGranted {
         PrivateMediaState::MediaAccessDenied
     } else {
@@ -1838,6 +2106,7 @@ fn scrub_persisted_media_projection(
                 if item.state == PrivateMediaState::MediaReady {
                     item.state = PrivateMediaState::MediaPlaceholder;
                 }
+                item.retryable = false;
             }
         }
         _ => {}
@@ -1854,6 +2123,7 @@ fn apply_media_failure(
         media.plaintext_sha256 = None;
         media.plaintext_size = None;
         media.error_code = Some("MEDIA_OFFLINE_RETRYABLE".to_string());
+        media.retryable = true;
     } else {
         apply_terminal_media_failure(media, failure.code);
     }
@@ -1862,13 +2132,39 @@ fn apply_media_failure(
 fn private_transport_failure_projection(
     post_id: &str,
     error: &crate::secure_content::adapter::NativeTransportError,
+    cached: Option<PrivateMomentProjection>,
 ) -> PrivateMomentProjection {
+    let has_verified_cache = cached
+        .as_ref()
+        .is_some_and(|projection| projection.content.is_some());
     let state = match error.http_status {
         Some(401) => super::projection::PrivateReadState::AuthenticationRequired,
         Some(403 | 404) => super::projection::PrivateReadState::NotFoundOrNotAuthorized,
         Some(410) => super::projection::PrivateReadState::DeletedOrRevoked,
+        _ if matches!(
+            error.disposition,
+            NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
+        ) && has_verified_cache =>
+        {
+            super::projection::PrivateReadState::RemoteSourceUnavailable
+        }
+        _ if matches!(
+            error.disposition,
+            NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
+        ) =>
+        {
+            super::projection::PrivateReadState::WaitingForRemoteDelivery
+        }
         _ => super::projection::PrivateReadState::IntegrityFailure,
     };
+    if state == super::projection::PrivateReadState::RemoteSourceUnavailable {
+        if let Some(mut projection) = cached.filter(|projection| projection.content.is_some()) {
+            projection.state = state;
+            projection.error_code = Some("REMOTE_SOURCE_UNAVAILABLE".to_string());
+            projection.retry_after_seconds = error.retry_after_seconds;
+            return projection;
+        }
+    }
     PrivateMomentProjection {
         post_id: post_id.to_string(),
         content_id: format!("unavailable:{post_id}"),
@@ -1876,13 +2172,45 @@ fn private_transport_failure_projection(
         author_ptid: String::new(),
         audience_kind: "UNKNOWN".to_string(),
         state,
+        remote_delivery_state: None,
         mentions: Vec::new(),
+        reactions: Vec::new(),
+        reaction_revision: "0".to_string(),
+        reactions_hydrated: false,
         content: None,
         error_code: Some(error.message.clone()),
         retry_after_seconds: error.retry_after_seconds,
         created_at_millis: None,
         updated_at_millis: None,
     }
+}
+
+fn private_moment_publish_state(projection: &PrivateMomentProjection) -> String {
+    match projection.remote_delivery_state {
+        Some(super::projection::PrivateRemoteDeliveryState::Pending) => "REMOTE_DELIVERY_PENDING",
+        Some(super::projection::PrivateRemoteDeliveryState::Retrying) => "REMOTE_DELIVERY_RETRYING",
+        _ => "PUBLISHED",
+    }
+    .to_string()
+}
+
+fn refresh_published_delivery_projection(
+    projection: &mut PrivateMomentProjection,
+    response: &social::GetMomentResourceResponse,
+) -> Result<(), String> {
+    let metadata = response
+        .resource
+        .as_ref()
+        .and_then(|resource| resource.metadata.as_ref())
+        .ok_or_else(|| "published private Moment readback omitted metadata".to_string())?;
+    if metadata.post_id != projection.post_id || metadata.content_id != projection.content_id {
+        return Err("published private Moment readback changed the resource identity".to_string());
+    }
+    projection.remote_delivery_state =
+        Some(remote_delivery_state(response)?.ok_or_else(|| {
+            "published private Moment delivery status is unavailable".to_string()
+        })?);
+    Ok(())
 }
 
 fn attach_recovery_envelope(
@@ -1980,7 +2308,11 @@ fn private_read_projection(
                 super::projection::PrivateReadState::IntegrityFailure
             }
         },
+        remote_delivery_state: None,
         mentions: Vec::new(),
+        reactions: Vec::new(),
+        reaction_revision: "0".to_string(),
+        reactions_hydrated: false,
         content: None,
         error_code: Some(error_code.to_string()),
         retry_after_seconds,
@@ -2147,6 +2479,7 @@ fn validate_plan(
     .encode_to_vec();
     validate_content_plan(
         plan,
+        None,
         lease,
         content_id,
         object_count,
@@ -2502,6 +2835,7 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         }
     }
 
@@ -2558,6 +2892,91 @@ mod tests {
     }
 
     #[test]
+    fn remote_sender_key_uses_receiver_verified_historical_projection() {
+        let sender_key = SigningKey::from_bytes(&[6; 32]);
+        let committed_at_unix_ms = 1_900_000_000_000;
+        let sender = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:alice".to_string(),
+                kind: actor::ActorKind::Person as i32,
+                ..Default::default()
+            }),
+            device_id: "alice-device".to_string(),
+        };
+        let mut response = social::GetMomentResourceResponse {
+            explanation: Some(social::FeedObjectExplanation {
+                source: Some(social::ActivitySource {
+                    kind: social::activity_source::Kind::ActivitySourceRemote as i32,
+                    station_peer_id: "station-a".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            resource: Some(social::PostResource {
+                body: Some(social::post_resource::Body::PrivateContent(
+                    social::PrivateContentAccess {
+                        verification: Some(social::PrivateContentVerification {
+                            receiver_verified_sender_signing_key: Some(
+                                actor::VerifiedActorDeviceSigningKey {
+                                    actor_ptid: "ptid:alice".to_string(),
+                                    actor_device_id: "alice-device".to_string(),
+                                    home_station_peer_id: "station-a".to_string(),
+                                    signing_key_id: "alice-signing-key".to_string(),
+                                    ed25519_public_key: sender_key
+                                        .verifying_key()
+                                        .to_bytes()
+                                        .to_vec(),
+                                    profile_version: 7,
+                                    verification_source:
+                                        actor::ActorSigningKeyVerificationSource::VerifiedProfile
+                                            as i32,
+                                    valid_from_unix_ms: committed_at_unix_ms - 60_000,
+                                    revoked_at_unix_ms: committed_at_unix_ms + 1,
+                                },
+                            ),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let resolved = receiver_verified_sender_signing_key(
+            &response,
+            &sender,
+            "alice-signing-key",
+            committed_at_unix_ms,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(resolved, sender_key.verifying_key());
+
+        response
+            .resource
+            .as_mut()
+            .and_then(|resource| resource.body.as_mut())
+            .and_then(|body| match body {
+                social::post_resource::Body::PrivateContent(private) => {
+                    private.verification.as_mut()
+                }
+                _ => None,
+            })
+            .and_then(|verification| verification.receiver_verified_sender_signing_key.as_mut())
+            .unwrap()
+            .revoked_at_unix_ms = committed_at_unix_ms;
+        assert!(receiver_verified_sender_signing_key(
+            &response,
+            &sender,
+            "alice-signing-key",
+            committed_at_unix_ms,
+        )
+        .is_err());
+    }
+
+    #[test]
     fn secure_content_private_publish_intent_validates_audience_kinds() {
         let valid = PrivateMomentPublishIntent {
             actor_ptid: "ptid:alice".to_string(),
@@ -2579,6 +2998,7 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         };
         assert!(validate_publish_intent(&valid).is_ok());
         for kind in &["FOLLOWERS", "SELF"] {
@@ -2777,10 +3197,18 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         };
         assert_eq!(
             private_moment_intent_hash(&intent).unwrap(),
             private_moment_intent_hash(&intent).unwrap()
+        );
+        let mut admission = intent.clone();
+        admission.admission_only = true;
+        assert_eq!(
+            private_moment_intent_hash(&intent).unwrap(),
+            private_moment_intent_hash(&admission).unwrap(),
+            "admission and publish must reuse one durable draft identity"
         );
 
         let mut changed = intent;
@@ -2796,6 +3224,119 @@ mod tests {
     }
 
     #[test]
+    fn remote_prekey_unavailable_preserves_the_admission_draft() {
+        let failure = PrivatePublishFailure::from_prepare_transport(
+            crate::secure_content::adapter::NativeTransportError {
+                http_status: Some(409),
+                stable_code: 30206,
+                retry_after_seconds: None,
+                disposition: NativeErrorDisposition::Terminal,
+                message: "CONTENT_PREKEY_POOL_DEPLETED".to_string(),
+            },
+        );
+        let (message, should_cleanup) = failure.into_parts();
+        assert_eq!(message, "RECIPIENT_KEY_UNAVAILABLE");
+        assert!(!should_cleanup);
+    }
+
+    #[test]
+    fn remote_prekey_admission_returns_only_typed_readiness() {
+        let value = serde_json::to_value(PrivateMomentPublishOutcome::Ready(
+            PrivateMomentAdmissionResult {
+                state: "READY_PRIVATE",
+                draft_id: "draft-remote".to_string(),
+            },
+        ))
+        .unwrap();
+        assert_eq!(value["state"], "READY_PRIVATE");
+        assert_eq!(value["draftId"], "draft-remote");
+        assert!(value.get("plan").is_none());
+        assert!(value.get("claims").is_none());
+    }
+
+    #[test]
+    fn remote_prekey_admission_never_replays_a_pending_publish() {
+        let station_key = SigningKey::from_bytes(&[8; 32]);
+        let lease = lease(&station_key);
+        let store = lease.store.clone();
+        let request_bytes = b"pending-private-publication".to_vec();
+        store
+            .persist_moment_command(&StoredMomentCommand {
+                draft_id: "draft-pending".to_string(),
+                draft_revision: 1,
+                content_id: "content-pending".to_string(),
+                generation: 1,
+                submit_command_id: "submit-pending".to_string(),
+                plan_bytes: vec![1],
+                request_sha256: Sha256::digest(&request_bytes).into(),
+                request_bytes,
+                root_key: [2; 32],
+                state: PublicationState::PendingPublication,
+                session_generation: lease.session.key.session_generation,
+                post_id: None,
+            })
+            .unwrap();
+        let supervisor = SecureContentSupervisor::new();
+        let orchestrator = PrivateMomentOrchestrator {
+            supervisor: &supervisor,
+            transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
+            lease,
+        };
+        let mut admission = publish_intent("draft-pending", 1);
+        admission.admission_only = true;
+
+        assert!(orchestrator
+            .existing_publish_result(&admission)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            store
+                .moment_command("draft-pending", 1)
+                .unwrap()
+                .unwrap()
+                .state,
+            PublicationState::PendingPublication,
+        );
+    }
+
+    #[test]
+    fn published_private_moment_refreshes_remote_delivery_state() {
+        let mut projection = private_read_projection(
+            "post-delivered",
+            PrivateProjectionFailureKind::RecoveryRequired,
+            "RECOVERY_REQUIRED",
+            None,
+        );
+        projection.content_id = "content-delivered".to_string();
+        projection.remote_delivery_state = Some(PrivateRemoteDeliveryState::Pending);
+        let response = social::GetMomentResourceResponse {
+            resource: Some(social::PostResource {
+                metadata: Some(social::PostMetadata {
+                    post_id: projection.post_id.clone(),
+                    content_id: projection.content_id.clone(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            remote_delivery: Some(social::FederatedPrivateDeliveryStatus {
+                state: social::FederatedPrivateDeliveryState::Delivered as i32,
+                total_count: 1,
+                delivered_count: 1,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        refresh_published_delivery_projection(&mut projection, &response).unwrap();
+
+        assert_eq!(
+            projection.remote_delivery_state,
+            Some(PrivateRemoteDeliveryState::Delivered),
+        );
+        assert_eq!(private_moment_publish_state(&projection), "PUBLISHED");
+    }
+
+    #[test]
     fn secure_content_private_read_failure_is_persistable_and_typed() {
         let error = crate::secure_content::adapter::NativeTransportError {
             http_status: Some(404),
@@ -2805,7 +3346,7 @@ mod tests {
             message: "ERROR_CODE_NOT_FOUND".to_string(),
         };
 
-        let projection = private_transport_failure_projection("post-1", &error);
+        let projection = private_transport_failure_projection("post-1", &error, None);
 
         assert_eq!(
             projection.state,
@@ -2813,6 +3354,63 @@ mod tests {
         );
         assert!(projection.content.is_none());
         assert!(projection.encode_local().is_ok());
+
+        let retryable = crate::secure_content::adapter::NativeTransportError {
+            http_status: Some(503),
+            stable_code: crate::model::error::ErrorCode::Undefined as i32,
+            retry_after_seconds: Some(5),
+            disposition: NativeErrorDisposition::Retryable,
+            message: "REMOTE_SOURCE_UNAVAILABLE".to_string(),
+        };
+        let waiting = private_transport_failure_projection("post-remote", &retryable, None);
+        assert_eq!(
+            waiting.state,
+            super::super::projection::PrivateReadState::WaitingForRemoteDelivery
+        );
+
+        let terminal = crate::secure_content::adapter::NativeTransportError {
+            disposition: NativeErrorDisposition::Terminal,
+            ..retryable
+        };
+        let rejected = private_transport_failure_projection("post-rejected", &terminal, None);
+        assert_eq!(
+            rejected.state,
+            super::super::projection::PrivateReadState::IntegrityFailure
+        );
+    }
+
+    #[test]
+    fn secure_content_remote_source_failure_preserves_verified_plaintext() {
+        let error = crate::secure_content::adapter::NativeTransportError {
+            http_status: Some(503),
+            stable_code: crate::model::error::ErrorCode::Undefined as i32,
+            retry_after_seconds: Some(5),
+            disposition: NativeErrorDisposition::Retryable,
+            message: "REMOTE_SOURCE_UNAVAILABLE".to_string(),
+        };
+        let mut cached = private_read_projection(
+            "post-1",
+            PrivateProjectionFailureKind::IntegrityFailure,
+            "unused",
+            None,
+        );
+        cached.content_id = "post-1".to_string();
+        cached.generation = "1".to_string();
+        cached.author_ptid = "ptid:alice".to_string();
+        cached.audience_kind = "FRIENDS".to_string();
+        cached.state = super::super::projection::PrivateReadState::ContentReady;
+        cached.content = Some(PrivateMomentContentProjection::Text {
+            text: "verified offline content".to_string(),
+        });
+
+        let projection = private_transport_failure_projection("post-1", &error, Some(cached));
+
+        assert_eq!(
+            projection.state,
+            super::super::projection::PrivateReadState::RemoteSourceUnavailable
+        );
+        assert!(projection.content.is_some());
+        assert_eq!(projection.retry_after_seconds, Some(5));
     }
 
     #[test]
@@ -3304,10 +3902,90 @@ mod tests {
     }
 
     #[test]
+    fn remote_private_comment_plan_accepts_home_station_attestation() {
+        let home_station_key = SigningKey::from_bytes(&[8; 32]);
+        let source_station_key = SigningKey::from_bytes(&[9; 32]);
+        let lease = lease(&home_station_key);
+        let mut plan = signed_plan(&source_station_key);
+        plan.station_signing_key_id = "source-station-key".to_string();
+        plan.canonical_plan_sha256.clear();
+        plan.station_signature.clear();
+        let mut hash_input = plan.clone();
+        hash_input.canonical_plan_sha256.clear();
+        hash_input.station_signature.clear();
+        plan.canonical_plan_sha256 = Sha256::digest(hash_input.encode_to_vec()).to_vec();
+        let mut signing_input = plan.clone();
+        signing_input.station_signature.clear();
+        plan.station_signature = source_station_key
+            .sign(&signing_input.encode_to_vec())
+            .to_bytes()
+            .to_vec();
+
+        let now = super::super::projection::current_unix_seconds();
+        let mut attestation = wire::StationContentSigningKeyAttestation {
+            format_version: 1,
+            station_peer_id: "station-1".to_string(),
+            proof_signing_key_id: plan.station_signing_key_id.clone(),
+            proof_ed25519_public_key: source_station_key.verifying_key().to_bytes().to_vec(),
+            attesting_signing_key_id: "station-key-current".to_string(),
+            issued_at: Some(prost_types::Timestamp {
+                seconds: now,
+                nanos: 0,
+            }),
+            expires_at: Some(prost_types::Timestamp {
+                seconds: now + 300,
+                nanos: 0,
+            }),
+            station_signature: Vec::new(),
+        };
+        let mut attestation_bytes = Vec::with_capacity(
+            super::super::projection::STATION_ATTESTATION_DOMAIN.len() + attestation.encoded_len(),
+        );
+        attestation_bytes.extend_from_slice(super::super::projection::STATION_ATTESTATION_DOMAIN);
+        attestation_bytes.extend_from_slice(&attestation.encode_to_vec());
+        attestation.station_signature = home_station_key
+            .sign(&attestation_bytes)
+            .to_bytes()
+            .to_vec();
+        let domain_binding = social::PrivateMomentDomainBinding {
+            format_version: 1,
+            kind: social::PrivateMomentKind::Text as i32,
+            subtype_prepare_authority_sha256: Vec::new(),
+        }
+        .encode_to_vec();
+
+        assert!(validate_content_plan(
+            &plan,
+            Some(&attestation),
+            &lease,
+            "content-1",
+            0,
+            &domain_binding,
+            "private Comment",
+        )
+        .is_ok());
+
+        attestation.proof_ed25519_public_key[0] ^= 1;
+        assert!(validate_content_plan(
+            &plan,
+            Some(&attestation),
+            &lease,
+            "content-1",
+            0,
+            &domain_binding,
+            "private Comment",
+        )
+        .is_err());
+    }
+
+    #[test]
     fn ready_media_projects_native_verified_plaintext_evidence() {
         let mut media = super::super::projection::PrivateMomentMediaProjection {
             object_id: "object-1".to_string(),
             state: PrivateMediaState::MediaDownloading,
+            access_path:
+                super::super::private_media::PrivateMediaAccessPath::HomeStationLocalObject,
+            retryable: false,
             render_url: None,
             local_path: None,
             plaintext_sha256: None,

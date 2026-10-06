@@ -18,6 +18,7 @@ governed_prefixes:
   - /key-exchange/
   - /api/v1/social/friend-request
   - /api/v1/social/friend-requests
+  - /api/v1/social/moments/remote-private
   - /api/v1/social/relationships/block
   - /api/v1/social/relationships/unblock
   - /api/v1/social/relationships/blocked
@@ -185,6 +186,18 @@ capabilities:
     response_proto: ""
     truth_stores: []
     allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: social.private_moment.remote_projection_list
+    domain_owner: station.social
+    truth_owner: social.remote_private_projection
+    exposure: client
+    canonical_route: { method: GET, path: /api/v1/social/moments/remote-private }
+    request_proto: peers_touch.model.social.v1.ListRemotePrivateMomentReferencesRequest
+    response_proto: peers_touch.model.social.v1.ListRemotePrivateMomentReferencesResponse
+    truth_stores: [social_remote_private_resources]
+    allowed_dependencies: [social.relationship.read]
     forbidden_aliases: []
     superseded_symbols: []
 
@@ -1210,6 +1223,42 @@ capabilities:
     response_proto: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse
     truth_stores: [mls_key_packages, key_exchange_mls_fetch_receipts]
     allowed_dependencies: [federation.auth.verify, key_exchange.mls_key_package.fetch]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.key_exchange.content_prekey.claim
+    domain_owner: station.federation
+    truth_owner: key_exchange.content_prekey_public_material
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/key-exchange/content-prekeys/claim }
+    request_proto: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysRequest
+    response_proto: peers_touch.model.key_exchange.v1.ClaimFederatedContentPreKeysResponse
+    truth_stores: [key_exchange_content_prekey_pools, key_exchange_content_prekeys, key_exchange_content_prekey_claim_receipts]
+    allowed_dependencies: [federation.auth.verify, federation.membership.read, key_exchange.content_prekey.claim]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.key_exchange.content_prekey.validate
+    domain_owner: station.federation
+    truth_owner: key_exchange.content_prekey_public_material
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/key-exchange/content-prekeys/validate }
+    request_proto: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsRequest
+    response_proto: peers_touch.model.key_exchange.v1.ValidateFederatedContentPreKeyClaimsResponse
+    truth_stores: [key_exchange_content_prekey_claim_receipts, key_exchange_content_prekey_pools]
+    allowed_dependencies: [federation.auth.verify, federation.membership.read, key_exchange.content_prekey.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.social.private_object.read
+    domain_owner: station.federation
+    truth_owner: social.private_object
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/social/private/objects/:object_id/read }
+    request_proto: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest
+    response_proto: peers_touch.model.social.v1.ReadFederatedPrivateObjectResponse
+    truth_stores: [social_private_content_posts, social_private_content_comments, social_private_objects, social_private_object_grants]
+    allowed_dependencies: [federation.auth.verify, federation.membership.read, social.private_object.read]
     forbidden_aliases: []
     superseded_symbols: []
 

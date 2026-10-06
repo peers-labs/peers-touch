@@ -130,6 +130,14 @@ func (s *PrivateContentService) projectRecoverablePrivateContent(
 			err,
 		)
 	}
+	if len(record.ViewerEnvelopeBytes) != 0 {
+		return s.projectRemoteRecoverablePrivateContent(
+			operation,
+			actorPTID,
+			record,
+			payload,
+		)
+	}
 	payloadBytes, err := socialdomain.CanonicalProtoBytes(payload)
 	if err != nil ||
 		!bytes.Equal(
@@ -263,6 +271,96 @@ func (s *PrivateContentService) projectRecoverablePrivateContent(
 		).(*securecontentpb.SecureResourceRef),
 		Locator:          recoverablePrivateContentLocator(record),
 		RecoveryEnvelope: viewerEnvelope,
+		PayloadCiphertextSha256: cloneApplicationBytes(
+			payload.GetCiphertextSha256(),
+		),
+	}, nil
+}
+
+func (s *PrivateContentService) projectRemoteRecoverablePrivateContent(
+	operation string,
+	actorPTID string,
+	record infrastructure.RecoverablePrivateContentRecord,
+	payload *securecontentpb.EncryptedPayload,
+) (*privatecontentpb.RecoverablePrivateContent, error) {
+	payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		payload,
+	)
+	if err != nil ||
+		!bytes.Equal(payloadBytes, record.EncryptedPayloadBytes) ||
+		securecontentkernel.ValidateEncryptedPayload(payload, s.policy) != nil {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"payload",
+			"does not match its retained remote projection",
+		)
+	}
+
+	viewerEnvelope := &securecontentpb.ViewerContentKeyEnvelope{}
+	if err := proto.Unmarshal(
+		record.ViewerEnvelopeBytes,
+		viewerEnvelope,
+	); err != nil {
+		return nil, socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			err,
+		)
+	}
+	envelopeBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		viewerEnvelope,
+	)
+	if err != nil ||
+		!bytes.Equal(envelopeBytes, record.ViewerEnvelopeBytes) ||
+		securecontentkernel.ValidateViewerContentKeyEnvelope(
+			viewerEnvelope,
+			s.policy,
+		) != nil {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"recovery_envelope",
+			"does not match its retained remote projection",
+		)
+	}
+
+	resource := payload.GetResource()
+	binding := viewerEnvelope.GetBinding()
+	recoveryActor := viewerEnvelope.GetRecoveryActor()
+	if len(record.PreparedEnvelopeBytes) != 0 ||
+		resource.GetOwnerDomain() !=
+			securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
+		resource.GetContentId() != record.ContentID ||
+		resource.GetGeneration() != record.Generation ||
+		!proto.Equal(binding.GetResource(), resource) ||
+		binding.GetRecipientKeyKind() !=
+			securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY ||
+		binding.GetRecipientKeyId() != record.EnvelopeOneTimeKeyID ||
+		binding.GetSender().GetActor().GetPtid() != record.AuthorPTID ||
+		recoveryActor.GetPtid() != actorPTID ||
+		viewerEnvelope.GetEndpoint() != nil ||
+		viewerEnvelope.GetPrincipalEpoch() != record.EnvelopePrincipalEpoch ||
+		!bytes.Equal(
+			binding.GetPayloadCiphertextSha256(),
+			payload.GetCiphertextSha256(),
+		) {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"binding",
+			"retained remote locator, actor, content, or generation diverges",
+		)
+	}
+
+	return &privatecontentpb.RecoverablePrivateContent{
+		Resource: proto.Clone(
+			resource,
+		).(*securecontentpb.SecureResourceRef),
+		Locator: recoverablePrivateContentLocator(record),
+		RecoveryEnvelope: proto.Clone(
+			viewerEnvelope,
+		).(*securecontentpb.ViewerContentKeyEnvelope),
 		PayloadCiphertextSha256: cloneApplicationBytes(
 			payload.GetCiphertextSha256(),
 		),

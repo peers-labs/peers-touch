@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   CONTENT_PREKEY_CLIENT_PROTO_INPUTS,
@@ -37,8 +38,14 @@ function goPackageFor(input) {
   if (input.startsWith('domain/secure_content/')) {
     return `${STATION_PREFIX}frame/core/types/securecontent;securecontent`;
   }
-  if (input === 'domain/social/private_content.proto') {
+  if (
+    input === 'domain/social/private_content.proto'
+    || input === 'domain/social/private_federation.proto'
+  ) {
     return `${STATION_PREFIX}frame/touch/model/privatecontent;privatecontent`;
+  }
+  if (input === 'domain/federation/delivery.proto') {
+    return `${STATION_PREFIX}frame/core/federation/model;model`;
   }
   if (input.startsWith('domain/social/')) {
     return `${STATION_PREFIX}frame/touch/model;model`;
@@ -245,6 +252,29 @@ test('builds one fixed three-channel output manifest', () => {
           'apps/station/frame/touch/model/privatecontent/private_content.pb.go',
       ),
     );
+    for (const destination of [
+      'apps/station/frame/touch/model/privatecontent/private_federation.pb.go',
+      'apps/station/frame/core/federation/model/delivery.pb.go',
+      'apps/desktop/src/gen/proto/domain/social/private_federation_pb.ts',
+      'apps/desktop/src/gen/proto/domain/federation/delivery_pb.ts',
+      'apps/mobile/src/gen/proto/domain/social/private_federation_pb.ts',
+      'apps/mobile/src/gen/proto/domain/federation/delivery_pb.ts',
+    ]) {
+      assert.ok(
+        manifest.outputs.some((output) => output.destination === destination),
+        `missing federated private Social generated output ${destination}`,
+      );
+    }
+    for (const destination of [
+      'apps/station/app/subserver/key_exchange/model/key_exchange.pb.go',
+      'apps/desktop/src/gen/proto/domain/key_exchange/key_exchange_pb.ts',
+      'apps/mobile/src/gen/proto/domain/key_exchange/key_exchange_pb.ts',
+    ]) {
+      assert.ok(
+        manifest.outputs.some((output) => output.destination === destination),
+        `missing Key Exchange generated output ${destination}`,
+      );
+    }
   } finally {
     scope.close();
   }
@@ -271,6 +301,51 @@ test('content-prekey-client scope contains exactly its six declared outputs', ()
     );
   } finally {
     scope.close();
+  }
+});
+
+test('secure-content generator preserves federated private object reservations and parity', () => {
+  const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const proto = readFileSync(
+    path.join(projectRoot, 'model/domain/social/private_federation.proto'),
+    'utf8',
+  );
+  assert.match(proto, /reserved 6, 7;/u);
+  assert.match(proto, /reserved "range_start", "range_end_exclusive";/u);
+  assert.match(proto, /FederatedPrivateObjectRange range = 9;/u);
+
+  const generated = [
+    readFileSync(
+      path.join(
+        projectRoot,
+        'apps/station/frame/touch/model/privatecontent/private_federation.pb.go',
+      ),
+      'utf8',
+    ),
+    readFileSync(
+      path.join(
+        projectRoot,
+        'apps/desktop/src/gen/proto/domain/social/private_federation_pb.ts',
+      ),
+      'utf8',
+    ),
+    readFileSync(
+      path.join(
+        projectRoot,
+        'apps/mobile/src/gen/proto/domain/social/private_federation_pb.ts',
+      ),
+      'utf8',
+    ),
+  ];
+  for (const output of generated) {
+    for (const message of [
+      'FederatedPrivateObjectGrantBinding',
+      'FederatedPrivateObjectRange',
+      'ReadFederatedPrivateObjectResponse',
+    ]) {
+      assert.match(output, new RegExp(`\\b${message}\\b`, 'u'));
+    }
+    assert.doesNotMatch(output, /\brangeStart\b|\brangeEndExclusive\b/u);
   }
 });
 

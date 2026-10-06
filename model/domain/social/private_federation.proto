@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package peers_touch.model.social.v1;
+
+import "domain/actor/actor.proto";
+import "domain/secure_content/content.proto";
+import "domain/secure_content/object.proto";
+import "domain/social/post.proto";
+import "domain/social/private_content.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent;privatecontent";
+
+enum FederatedPrivateResourceKind {
+  FEDERATED_PRIVATE_RESOURCE_KIND_UNSPECIFIED = 0;
+  FEDERATED_PRIVATE_RESOURCE_KIND_POST = 1;
+  FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT = 2;
+}
+
+message FederatedPrivateResourceDelivery {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string delivery_id = 3;
+  string source_station_peer_id = 4;
+  string target_station_peer_id = 5;
+  .peers_touch.model.actor.v1.ActorRef target_actor = 6;
+  FederatedPrivateResourceKind resource_kind = 7;
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 8;
+  uint64 lifecycle_revision = 9;
+  oneof metadata {
+    PostMetadata post = 10;
+    CommentMetadata comment = 11;
+  }
+  .peers_touch.model.secure_content.v1.EncryptedPayload payload = 12;
+  repeated .peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope target_actor_envelopes = 13;
+  repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 14;
+  PrivateContentVerification verification = 15;
+  AudienceExplanation audience_explanation = 16;
+  .google.protobuf.Timestamp committed_at = 17;
+}
+
+message FederatedPrivateObjectDescriptorSet {
+  repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 1;
+}
+
+message FederatedPrivateObjectGrantBinding {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string delivery_id = 3;
+  string source_station_peer_id = 4;
+  string target_station_peer_id = 5;
+  string target_actor_ptid = 6;
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 7;
+  uint64 lifecycle_revision = 8;
+  string object_id = 9;
+  bytes descriptor_sha256 = 10;
+}
+
+message FederatedPrivateObjectRange {
+  uint64 start = 1;
+  uint64 end_exclusive = 2;
+}
+
+enum PrivateResourceInvalidationReason {
+  PRIVATE_RESOURCE_INVALIDATION_REASON_UNSPECIFIED = 0;
+  PRIVATE_RESOURCE_INVALIDATION_REASON_RESOURCE_DELETED = 1;
+  PRIVATE_RESOURCE_INVALIDATION_REASON_RELATIONSHIP_REVOKED = 2;
+  PRIVATE_RESOURCE_INVALIDATION_REASON_RECIPIENT_BLOCKED = 3;
+}
+
+message FederatedPrivateResourceInvalidation {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string source_station_peer_id = 3;
+  string target_station_peer_id = 4;
+  .peers_touch.model.actor.v1.ActorRef target_actor = 5;
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 6;
+  uint64 lifecycle_revision = 7;
+  PrivateResourceInvalidationReason reason = 8;
+  .google.protobuf.Timestamp committed_at = 9;
+}
+
+enum FederatedPrivateInteractionOperation {
+  FEDERATED_PRIVATE_INTERACTION_OPERATION_UNSPECIFIED = 0;
+  FEDERATED_PRIVATE_INTERACTION_OPERATION_PREPARE_COMMENT = 1;
+  FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT = 2;
+  FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT = 3;
+  FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT = 4;
+}
+
+enum FederatedPrivateInteractionResultKind {
+  FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_UNSPECIFIED = 0;
+  FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_COMMITTED = 1;
+  FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_RETRYABLE_REJECTION = 2;
+  FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_TERMINAL_REJECTION = 3;
+}
+
+message FederatedPrivateInteractionCommand {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string command_id = 3;
+  bytes canonical_command_sha256 = 4;
+  .peers_touch.model.actor.v1.ActorDeviceRef actor = 5;
+  string actor_home_station_peer_id = 6;
+  string source_resource_station_peer_id = 7;
+  .peers_touch.model.secure_content.v1.SecureResourceRef parent = 8;
+  FederatedPrivateInteractionOperation operation = 9;
+  bytes canonical_operation = 10;
+  string actor_signing_key_id = 11;
+  bytes actor_device_signature = 12;
+}
+
+message FederatedPrivateInteractionResult {
+  uint32 format_version = 1;
+  string command_id = 2;
+  bytes canonical_command_sha256 = 3;
+  FederatedPrivateInteractionResultKind kind = 4;
+  bytes canonical_result = 5;
+  bytes canonical_result_sha256 = 6;
+}
+
+message ReadFederatedPrivateObjectRequest {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  .peers_touch.model.actor.v1.ActorDeviceRef viewer = 3;
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 4;
+  string object_id = 5;
+  reserved 6, 7;
+  reserved "range_start", "range_end_exclusive";
+  bytes imported_grant_sha256 = 8;
+  FederatedPrivateObjectRange range = 9;
+}
+
+message ReadFederatedPrivateObjectResponse {
+  bytes descriptor_sha256 = 1;
+  FederatedPrivateObjectRange range = 2;
+  uint64 total_ciphertext_size = 3;
+}

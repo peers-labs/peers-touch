@@ -460,6 +460,26 @@ and digest verification. Native Desktop claims must bind the requested runtime
 cell, clean source commit, Station commit, binary digest, platform probes, and
 reverse-order cleanup; evidence from one platform cannot prove another.
 
+For Desktop Social changes that affect Post, Comment, Reaction, relationship,
+revocation, notification, or resync freshness, the following checks are
+mandatory:
+
+- trace each committed fact through a typed producer, Station EventBus or
+  durable wake, Desktop Rust bridge, desktop-web kernel `eventBus`, the single
+  owning `momentsRuntime`, and the resulting store effect;
+- reject orphan producers, orphan consumers, dropped enum arms, duplicate
+  subscriptions, overlapping runtime owners, page/component polling used as
+  primary freshness, and module-private Tauri-to-store listeners that bypass
+  the typed kernel event catalog;
+- require both immediate event consumption and Station-backed periodic
+  reconcile; an event is only a wake/invalidation hint and must not become a
+  second business truth;
+- verify actor/session/Station scope fencing, dedup/order behavior, and teardown
+  on logout, actor switch, Station switch, runtime teardown, and failed tests;
+- require receiver-visible Native evidence while the Moments page is unopened
+  or hidden, plus duplicate-event idempotence and disconnect/missed-event
+  recovery. Static wiring checks cannot substitute for the live receiver path.
+
 ## Severity Levels
 
 | Severity | Blocks merge? | Use when |

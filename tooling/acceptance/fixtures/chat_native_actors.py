@@ -35,6 +35,7 @@ ACTOR_ACCOUNTS = {
     "alice": "alice@p.t",
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
+    "eve": "carol@p.t",
 }
 
 ACTOR_FIXTURE = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"

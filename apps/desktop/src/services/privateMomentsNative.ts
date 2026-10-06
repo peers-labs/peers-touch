@@ -1,4 +1,11 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { create } from '@bufbuild/protobuf';
+import {
+  ReactionKind,
+  ReactionSummarySchema,
+  type ReactionSummary,
+} from '../gen/proto/domain/social/post_pb';
+import type { PrivateResourceRevocationReason } from '../kernel/events/types';
 
 export const PRIVATE_MOMENTS_COMMANDS = {
   bootstrap: 'social_private_moments_bootstrap',
@@ -9,6 +16,9 @@ export const PRIVATE_MOMENTS_COMMANDS = {
   recover: 'social_private_moment_recover',
   purge: 'social_private_moment_purge',
   teardown: 'social_private_moments_teardown',
+  react: 'social_private_react',
+  unreact: 'social_private_unreact',
+  retryReaction: 'social_private_reaction_retry',
 } as const;
 
 export type PrivateMomentsPlatform = 'native' | 'unknown';
@@ -36,18 +46,23 @@ export type PrivatePublishState =
   | 'IDLE'
   | 'AUDIENCE_REQUIRED'
   | 'CHECKING_PRIVATE_READINESS'
+  | 'CHECKING_REMOTE_READINESS'
   | 'READY_PRIVATE'
   | 'PRIVATE_UNSUPPORTED'
   | 'RECIPIENT_KEY_UNAVAILABLE'
   | 'AUDIENCE_TOO_LARGE'
   | 'PUBLISHING'
   | 'UNKNOWN_COMMIT'
+  | 'REMOTE_DELIVERY_PENDING'
+  | 'REMOTE_DELIVERY_RETRYING'
   | 'PUBLISHED'
   | 'PUBLISH_FAILED';
 
 export type PrivateReadState =
   | 'LOADING_AUTHORIZED_RESOURCE'
   | 'WAITING_FOR_PRIVATE_KEY'
+  | 'WAITING_FOR_REMOTE_DELIVERY'
+  | 'REMOTE_SOURCE_UNAVAILABLE'
   | 'RECOVERY_REQUIRED'
   | 'RECOVERY_KEY_UNAVAILABLE'
   | 'DECRYPTING'
@@ -58,6 +73,20 @@ export type PrivateReadState =
   | 'PRIVATE_UNSUPPORTED_ON_DEVICE'
   | 'DELETED_OR_REVOKED';
 
+export type PrivateRemoteDeliveryState =
+  | 'NOT_REQUIRED'
+  | 'PENDING'
+  | 'RETRYING'
+  | 'DELIVERED'
+  | 'TERMINAL'
+  | 'EXPIRED';
+
+export type PrivateDeliveryNoticeState =
+  | 'REMOTE_DELIVERY_PENDING'
+  | 'REMOTE_DELIVERY_RETRYING'
+  | 'REMOTE_DELIVERY_FAILED'
+  | 'REMOTE_DELIVERY_EXPIRED';
+
 export type PrivateMediaState =
   | 'MEDIA_PLACEHOLDER'
   | 'MEDIA_GRANT_PENDING'
@@ -67,6 +96,36 @@ export type PrivateMediaState =
   | 'MEDIA_ACCESS_DENIED'
   | 'MEDIA_INTEGRITY_FAILURE'
   | 'MEDIA_OFFLINE_RETRYABLE';
+
+export type PrivateMediaAccessPath =
+  | 'HOME_STATION_LOCAL_OBJECT'
+  | 'HOME_STATION_REMOTE_PEER_STREAM';
+
+export type PrivateReactionState =
+  | 'REACTION_PENDING'
+  | 'REACTION_RETRYING'
+  | 'REACTION_REJECTED'
+  | 'REACTION_COMMITTED';
+
+export interface PrivateReactionCommandProjection {
+  commandId: string;
+  postId: string;
+  kind: ReactionKind;
+  operation: 'REACT' | 'UNREACT';
+  state: PrivateReactionState;
+  attemptCount: number;
+  projectionRevision: string;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+  retryNotBeforeUnixMs?: number;
+}
+
+export interface PrivateReactionMutationResult {
+  command: PrivateReactionCommandProjection;
+  reactions: ReactionSummary[];
+  projectionRevision: string;
+  exactReplay: boolean;
+}
 
 export interface PrivateMomentMention {
   actorPtid: string;
@@ -84,6 +143,8 @@ export interface PrivateMomentLocalFileIntent {
 export interface PrivateMomentMediaProjection {
   objectId: string;
   state: PrivateMediaState;
+  accessPath: PrivateMediaAccessPath;
+  retryable: boolean;
   renderUrl?: string;
   plaintextSha256?: string;
   plaintextSize?: number;
@@ -151,7 +212,12 @@ export interface PrivateMomentProjection {
   authorPtid: string;
   audienceKind: PrivateAudienceKind | 'UNKNOWN';
   state: PrivateReadState;
+  remoteDeliveryState?: PrivateRemoteDeliveryState;
+  revocationReason?: PrivateResourceRevocationReason;
   mentions: PrivateMomentMention[];
+  reactions?: ReactionSummary[];
+  reactionRevision?: string;
+  reactionsHydrated?: boolean;
   content?: PrivateMomentContentProjection;
   errorCode?: string;
   retryAfterSeconds?: number;
@@ -159,11 +225,39 @@ export interface PrivateMomentProjection {
   updatedAtMillis?: number;
 }
 
+export function privateDeliveryNoticeState(
+  state: PrivateRemoteDeliveryState | undefined,
+): PrivateDeliveryNoticeState | undefined {
+  switch (state) {
+    case 'PENDING':
+      return 'REMOTE_DELIVERY_PENDING';
+    case 'RETRYING':
+      return 'REMOTE_DELIVERY_RETRYING';
+    case 'TERMINAL':
+      return 'REMOTE_DELIVERY_FAILED';
+    case 'EXPIRED':
+      return 'REMOTE_DELIVERY_EXPIRED';
+    default:
+      return undefined;
+  }
+}
+
+export function isReadablePrivateMomentProjection(
+  projection: PrivateMomentProjection,
+): boolean {
+  return projection.state === 'CONTENT_READY'
+    || (
+      projection.state === 'REMOTE_SOURCE_UNAVAILABLE'
+      && projection.content !== undefined
+    );
+}
+
 export interface PrivateMomentsNativeSnapshot {
   actorPtid: string;
   deviceId: string;
   sessionGeneration: string;
   projections: PrivateMomentProjection[];
+  reactionCommands: PrivateReactionCommandProjection[];
 }
 
 export interface PrivateMomentPublishIntent {
@@ -204,7 +298,14 @@ export interface PrivateMomentPublishIntent {
 }
 
 interface PrivateMomentPublishSuccess {
-  state: Extract<PrivatePublishState, 'UNKNOWN_COMMIT' | 'PUBLISHED'>;
+  state: Extract<
+    PrivatePublishState,
+    | 'READY_PRIVATE'
+    | 'UNKNOWN_COMMIT'
+    | 'REMOTE_DELIVERY_PENDING'
+    | 'REMOTE_DELIVERY_RETRYING'
+    | 'PUBLISHED'
+  >;
   draftId: string;
   postId?: string;
   projection?: PrivateMomentProjection;
@@ -256,6 +357,8 @@ interface NativeSnapshotWire {
   session_generation?: unknown;
   sessionGeneration?: unknown;
   projections?: unknown;
+  reaction_commands?: unknown;
+  reactionCommands?: unknown;
 }
 
 interface NativeProjectionWire {
@@ -269,7 +372,14 @@ interface NativeProjectionWire {
   audience_kind?: unknown;
   audienceKind?: unknown;
   state?: unknown;
+  remote_delivery_state?: unknown;
+  remoteDeliveryState?: unknown;
   mentions?: unknown;
+  reactions?: unknown;
+  reaction_revision?: unknown;
+  reactionRevision?: unknown;
+  reactions_hydrated?: unknown;
+  reactionsHydrated?: unknown;
   content?: unknown;
   error_code?: unknown;
   errorCode?: unknown;
@@ -285,12 +395,15 @@ const PUBLISH_STATES = new Set<PrivatePublishState>([
   'IDLE',
   'AUDIENCE_REQUIRED',
   'CHECKING_PRIVATE_READINESS',
+  'CHECKING_REMOTE_READINESS',
   'READY_PRIVATE',
   'PRIVATE_UNSUPPORTED',
   'RECIPIENT_KEY_UNAVAILABLE',
   'AUDIENCE_TOO_LARGE',
   'PUBLISHING',
   'UNKNOWN_COMMIT',
+  'REMOTE_DELIVERY_PENDING',
+  'REMOTE_DELIVERY_RETRYING',
   'PUBLISHED',
   'PUBLISH_FAILED',
 ]);
@@ -298,6 +411,8 @@ const PUBLISH_STATES = new Set<PrivatePublishState>([
 const READ_STATES = new Set<PrivateReadState>([
   'LOADING_AUTHORIZED_RESOURCE',
   'WAITING_FOR_PRIVATE_KEY',
+  'WAITING_FOR_REMOTE_DELIVERY',
+  'REMOTE_SOURCE_UNAVAILABLE',
   'RECOVERY_REQUIRED',
   'RECOVERY_KEY_UNAVAILABLE',
   'DECRYPTING',
@@ -307,6 +422,14 @@ const READ_STATES = new Set<PrivateReadState>([
   'INTEGRITY_FAILURE',
   'PRIVATE_UNSUPPORTED_ON_DEVICE',
   'DELETED_OR_REVOKED',
+]);
+const REMOTE_DELIVERY_STATES = new Set<PrivateRemoteDeliveryState>([
+  'NOT_REQUIRED',
+  'PENDING',
+  'RETRYING',
+  'DELIVERED',
+  'TERMINAL',
+  'EXPIRED',
 ]);
 
 const MEDIA_STATES = new Set<PrivateMediaState>([
@@ -319,6 +442,10 @@ const MEDIA_STATES = new Set<PrivateMediaState>([
   'MEDIA_INTEGRITY_FAILURE',
   'MEDIA_OFFLINE_RETRYABLE',
 ]);
+const MEDIA_ACCESS_PATHS = new Set<PrivateMediaAccessPath>([
+  'HOME_STATION_LOCAL_OBJECT',
+  'HOME_STATION_REMOTE_PEER_STREAM',
+]);
 const PRIVATE_AUDIENCE_KINDS = new Set<PrivateAudienceKind>([
   'FRIENDS',
   'FOLLOWERS',
@@ -328,22 +455,43 @@ const PRIVATE_AUDIENCE_KINDS = new Set<PrivateAudienceKind>([
   'CUSTOM_ALLOW',
   'CUSTOM_DENY',
 ]);
+const REACTION_STATES = new Set<PrivateReactionState>([
+  'REACTION_PENDING',
+  'REACTION_RETRYING',
+  'REACTION_REJECTED',
+  'REACTION_COMMITTED',
+]);
+const REACTION_OPERATIONS = new Set<PrivateReactionCommandProjection['operation']>([
+  'REACT',
+  'UNREACT',
+]);
 
 export class PrivateMomentsNativeError extends Error {
   readonly code: string;
-  readonly state: PrivatePublishState | PrivateReadState;
+  readonly state:
+    | PrivatePublishState
+    | PrivateReadState
+    | PrivateMediaState
+    | PrivateReactionState;
+  readonly retryable: boolean;
   readonly retryAfterSeconds?: number;
 
   constructor(options: {
     code: string;
-    state: PrivatePublishState | PrivateReadState;
+    state:
+      | PrivatePublishState
+      | PrivateReadState
+      | PrivateMediaState
+      | PrivateReactionState;
     message?: string;
+    retryable?: boolean;
     retryAfterSeconds?: number;
   }) {
     super(options.message || options.code);
     this.name = 'PrivateMomentsNativeError';
     this.code = options.code;
     this.state = options.state;
+    this.retryable = options.retryable ?? false;
     this.retryAfterSeconds = options.retryAfterSeconds;
   }
 }
@@ -385,6 +533,111 @@ function generationField(value: unknown): string {
   return /^\d+$/.test(raw) ? raw : '';
 }
 
+function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
+  if (!Array.isArray(value) || value.length > 5) {
+    throw privateProjectionContractError('private Reaction summaries are malformed');
+  }
+  const seen = new Set<ReactionKind>();
+  return value.map((entry) => {
+    if (!isRecord(entry)) {
+      throw privateProjectionContractError('private Reaction summary is malformed');
+    }
+    const kind = optionalNumber(entry.kind) as ReactionKind | undefined;
+    const count = generationField(entry.count);
+    const reactedByViewer = entry.reacted_by_viewer ?? entry.reactedByViewer;
+    if (
+      kind === undefined
+      || kind === ReactionKind.REACTION_UNSPECIFIED
+      || ![
+        ReactionKind.REACTION_LIKE,
+        ReactionKind.REACTION_LOVE,
+        ReactionKind.REACTION_LAUGH,
+        ReactionKind.REACTION_WOW,
+        ReactionKind.REACTION_CELEBRATE,
+      ].includes(kind)
+      || seen.has(kind)
+      || !count
+      || typeof reactedByViewer !== 'boolean'
+    ) {
+      throw privateProjectionContractError('private Reaction summary is invalid');
+    }
+    seen.add(kind);
+    return create(ReactionSummarySchema, {
+      kind,
+      count: BigInt(count),
+      reactedByViewer,
+    });
+  });
+}
+
+function normalizeReactionCommand(value: unknown): PrivateReactionCommandProjection {
+  if (!isRecord(value)) {
+    throw privateProjectionContractError('private Reaction command is malformed');
+  }
+  const commandId = stringField(value.command_id ?? value.commandId);
+  const postId = stringField(value.post_id ?? value.postId);
+  const kind = optionalNumber(value.kind) as ReactionKind | undefined;
+  const operation = stringField(value.operation).toUpperCase() as
+    PrivateReactionCommandProjection['operation'];
+  const state = stringField(value.state).toUpperCase() as PrivateReactionState;
+  const attemptCount = optionalNumber(value.attempt_count ?? value.attemptCount);
+  const projectionRevision = generationField(
+    value.projection_revision ?? value.projectionRevision,
+  );
+  const retryNotBeforeUnixMs = optionalNumber(
+    value.retry_not_before_unix_ms ?? value.retryNotBeforeUnixMs,
+  );
+  if (
+    !commandId
+    || !postId
+    || kind === undefined
+    || !REACTION_OPERATIONS.has(operation)
+    || !REACTION_STATES.has(state)
+    || attemptCount === undefined
+    || !Number.isSafeInteger(attemptCount)
+    || attemptCount < 0
+    || !projectionRevision
+  ) {
+    throw privateProjectionContractError('private Reaction command identity is invalid');
+  }
+  return {
+    commandId,
+    postId,
+    kind,
+    operation,
+    state,
+    attemptCount,
+    projectionRevision,
+    errorCode: stringField(value.error_code ?? value.errorCode) || undefined,
+    retryAfterSeconds: optionalNumber(
+      value.retry_after_seconds ?? value.retryAfterSeconds,
+    ),
+    retryNotBeforeUnixMs,
+  };
+}
+
+function normalizeReactionMutationResult(value: unknown): PrivateReactionMutationResult {
+  if (!isRecord(value)) {
+    throw privateProjectionContractError('private Reaction result is malformed');
+  }
+  const projectionRevision = generationField(
+    value.projection_revision ?? value.projectionRevision,
+  );
+  if (!projectionRevision) {
+    throw privateProjectionContractError('private Reaction result revision is invalid');
+  }
+  const exactReplay = value.exact_replay ?? value.exactReplay;
+  if (typeof exactReplay !== 'boolean') {
+    throw privateProjectionContractError('private Reaction replay marker is invalid');
+  }
+  return {
+    command: normalizeReactionCommand(value.command),
+    reactions: normalizeReactionSummaries(value.reactions),
+    projectionRevision,
+    exactReplay,
+  };
+}
+
 function privateProjectionContractError(message: string): PrivateMomentsNativeError {
   return new PrivateMomentsNativeError({
     code: 'PRIVATE_PROJECTION_INVALID',
@@ -401,6 +654,23 @@ function normalizeMedia(value: unknown): PrivateMomentMediaProjection {
   const state = stringField(value.state) as PrivateMediaState;
   if (!objectId || !MEDIA_STATES.has(state)) {
     throw privateProjectionContractError('private media projection identity or state is invalid');
+  }
+  const rawAccessPath = stringField(value.access_path ?? value.accessPath);
+  const accessPath = (
+    rawAccessPath || 'HOME_STATION_LOCAL_OBJECT'
+  ) as PrivateMediaAccessPath;
+  if (!MEDIA_ACCESS_PATHS.has(accessPath)) {
+    throw privateProjectionContractError('private media access path is invalid');
+  }
+  const rawRetryable = value.retryable;
+  if (rawRetryable !== undefined && typeof rawRetryable !== 'boolean') {
+    throw privateProjectionContractError('private media retry state is invalid');
+  }
+  const retryable = typeof rawRetryable === 'boolean'
+    ? rawRetryable
+    : state === 'MEDIA_OFFLINE_RETRYABLE';
+  if (retryable !== (state === 'MEDIA_OFFLINE_RETRYABLE')) {
+    throw privateProjectionContractError('private media retry state disagrees with its status');
   }
 
   const localPath = stringField(value.local_path ?? value.localPath);
@@ -451,6 +721,8 @@ function normalizeMedia(value: unknown): PrivateMomentMediaProjection {
   return {
     objectId,
     state,
+    accessPath,
+    retryable,
     renderUrl,
     plaintextSha256: plaintextSha256 || undefined,
     plaintextSize,
@@ -585,6 +857,19 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
   const authorPtid = stringField(wire.author_ptid ?? wire.authorPtid);
   const audienceKind = stringField(wire.audience_kind ?? wire.audienceKind).toUpperCase();
   const state = stringField(wire.state).toUpperCase() as PrivateReadState;
+  const remoteDeliveryStateValue = stringField(
+    wire.remote_delivery_state ?? wire.remoteDeliveryState,
+  ).toUpperCase();
+  const remoteDeliveryState = remoteDeliveryStateValue
+    ? remoteDeliveryStateValue as PrivateRemoteDeliveryState
+    : undefined;
+  const reactions = normalizeReactionSummaries(wire.reactions ?? []);
+  const reactionRevision = generationField(
+    wire.reaction_revision ?? wire.reactionRevision ?? '0',
+  );
+  const reactionsHydrated = wire.reactions_hydrated
+    ?? wire.reactionsHydrated
+    ?? false;
   const mentions = Array.isArray(wire.mentions)
     ? wire.mentions.map((value) => {
         if (!isRecord(value)) {
@@ -618,19 +903,38 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
       && !(audienceKind === 'UNKNOWN' && state !== 'CONTENT_READY')
     )
     || !READ_STATES.has(state)
-    || (state === 'CONTENT_READY' && !authorPtid)
+    || (remoteDeliveryState !== undefined && !REMOTE_DELIVERY_STATES.has(remoteDeliveryState))
+    || !reactionRevision
+    || typeof reactionsHydrated !== 'boolean'
   ) {
     throw privateProjectionContractError('private Moment projection identity or state is invalid');
   }
 
   const content = normalizeContent(wire.content);
+  if (
+    (state === 'CONTENT_READY' || state === 'REMOTE_SOURCE_UNAVAILABLE')
+    && content
+    && !authorPtid
+  ) {
+    throw privateProjectionContractError(
+      'readable private Moment projection is missing its author',
+    );
+  }
   if (state === 'CONTENT_READY' && !content) {
     throw privateProjectionContractError('ready private Moment projection is missing decrypted content');
   }
-  if (state !== 'CONTENT_READY' && content) {
+  if (
+    state !== 'CONTENT_READY'
+    && state !== 'REMOTE_SOURCE_UNAVAILABLE'
+    && content
+  ) {
     throw privateProjectionContractError('non-ready private Moment projection exposed plaintext');
   }
-  if (state !== 'CONTENT_READY' && mentions.length > 0) {
+  if (
+    state !== 'CONTENT_READY'
+    && state !== 'REMOTE_SOURCE_UNAVAILABLE'
+    && mentions.length > 0
+  ) {
     throw privateProjectionContractError('non-ready private Moment projection exposed mentions');
   }
 
@@ -641,7 +945,11 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     authorPtid,
     audienceKind: audienceKind as PrivateAudienceKind | 'UNKNOWN',
     state,
+    remoteDeliveryState,
     mentions,
+    reactions,
+    reactionRevision,
+    reactionsHydrated,
     content,
     errorCode: stringField(wire.error_code ?? wire.errorCode) || undefined,
     retryAfterSeconds: optionalNumber(wire.retry_after_seconds ?? wire.retryAfterSeconds),
@@ -660,14 +968,31 @@ function normalizeSnapshot(value: unknown): PrivateMomentsNativeSnapshot {
   const sessionGeneration = generationField(
     wire.session_generation ?? wire.sessionGeneration,
   );
-  if (!actorPtid || !deviceId || !sessionGeneration || !Array.isArray(wire.projections)) {
+  const reactionCommands = wire.reaction_commands ?? wire.reactionCommands ?? [];
+  if (
+    !actorPtid
+    || !deviceId
+    || !sessionGeneration
+    || !Array.isArray(wire.projections)
+    || !Array.isArray(reactionCommands)
+  ) {
     throw privateProjectionContractError('private Moments snapshot identity is incomplete');
+  }
+  const normalizedReactionCommands = reactionCommands.map(normalizeReactionCommand);
+  if (
+    new Set(normalizedReactionCommands.map((command) => command.postId)).size
+      !== normalizedReactionCommands.length
+  ) {
+    throw privateProjectionContractError(
+      'private Reaction snapshot contains duplicate post commands',
+    );
   }
   return {
     actorPtid,
     deviceId,
     sessionGeneration,
     projections: wire.projections.map(normalizePrivateMomentProjection),
+    reactionCommands: normalizedReactionCommands,
   };
 }
 
@@ -751,7 +1076,13 @@ function normalizePublishResult(value: unknown): PrivateMomentPublishResult {
       },
     };
   }
-  if (state !== 'PUBLISHED' && state !== 'UNKNOWN_COMMIT') {
+  if (
+    state !== 'READY_PRIVATE'
+    && state !== 'PUBLISHED'
+    && state !== 'UNKNOWN_COMMIT'
+    && state !== 'REMOTE_DELIVERY_PENDING'
+    && state !== 'REMOTE_DELIVERY_RETRYING'
+  ) {
     throw privateProjectionContractError('private publish result state is invalid');
   }
   const projectionValue = value.projection;
@@ -782,14 +1113,24 @@ function unpackNativeData(data: unknown): unknown {
 
 function stateFromNativeError(
   error: NativeCommandResult<unknown>['error'],
-  fallback: PrivatePublishState | PrivateReadState,
-): PrivatePublishState | PrivateReadState {
+  fallback:
+    | PrivatePublishState
+    | PrivateReadState
+    | PrivateMediaState
+    | PrivateReactionState,
+): PrivatePublishState | PrivateReadState | PrivateMediaState | PrivateReactionState {
   const candidate = stringField(error?.details?.state).toUpperCase();
   if (PUBLISH_STATES.has(candidate as PrivatePublishState)) {
     return candidate as PrivatePublishState;
   }
   if (READ_STATES.has(candidate as PrivateReadState)) {
     return candidate as PrivateReadState;
+  }
+  if (MEDIA_STATES.has(candidate as PrivateMediaState)) {
+    return candidate as PrivateMediaState;
+  }
+  if (REACTION_STATES.has(candidate as PrivateReactionState)) {
+    return candidate as PrivateReactionState;
   }
   if (error?.code === 'UNAUTHORIZED') return 'AUTHENTICATION_REQUIRED';
   return fallback;
@@ -798,21 +1139,31 @@ function stateFromNativeError(
 async function invokePrivateNative<T>(
   command: string,
   input: Record<string, unknown>,
-  fallbackState: PrivatePublishState | PrivateReadState,
+  fallbackState:
+    | PrivatePublishState
+    | PrivateReadState
+    | PrivateMediaState
+    | PrivateReactionState,
 ): Promise<T> {
   const result = await invoke<NativeCommandResult<T>>(command, { input });
   if (!result.ok || result.data === undefined) {
     throw new PrivateMomentsNativeError({
-      code: stringField(result.error?.code) || 'PRIVATE_NATIVE_COMMAND_FAILED',
+      code: stringField(result.error?.details?.native_error_code)
+        || stringField(result.error?.code)
+        || 'PRIVATE_NATIVE_COMMAND_FAILED',
       state: stateFromNativeError(result.error, fallbackState),
       message: stringField(result.error?.message) || `${command} failed`,
+      retryable: result.error?.details?.retryable === true,
       retryAfterSeconds: optionalNumber(result.error?.details?.retry_after_seconds),
     });
   }
   return unpackNativeData(result.data) as T;
 }
 
-function nativeIntent(intent: PrivateMomentPublishIntent): Record<string, unknown> {
+function nativeIntent(
+  intent: PrivateMomentPublishIntent,
+  admissionOnly = false,
+): Record<string, unknown> {
   return {
     actor_ptid: intent.actorPtid,
     renderer_generation: intent.rendererGeneration,
@@ -864,6 +1215,7 @@ function nativeIntent(intent: PrivateMomentPublishIntent): Record<string, unknow
           source_post_id: intent.repost.sourcePostId,
         }
       : undefined,
+    admission_only: admissionOnly,
   };
 }
 
@@ -908,8 +1260,17 @@ export const privateMomentsNative = {
     assertNative('PRIVATE_UNSUPPORTED');
     return normalizePublishResult(await invokePrivateNative(
       PRIVATE_MOMENTS_COMMANDS.publish,
-      nativeIntent(intent),
+      nativeIntent(intent, false),
       'PUBLISH_FAILED',
+    ));
+  },
+
+  async admit(intent: PrivateMomentPublishIntent): Promise<PrivateMomentPublishResult> {
+    assertNative('PRIVATE_UNSUPPORTED');
+    return normalizePublishResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.publish,
+      nativeIntent(intent, true),
+      'RECIPIENT_KEY_UNAVAILABLE',
     ));
   },
 
@@ -945,7 +1306,7 @@ export const privateMomentsNative = {
         post_id: input.postId,
         object_id: input.objectId,
       },
-      'NOT_FOUND_OR_NOT_AUTHORIZED',
+      'MEDIA_OFFLINE_RETRYABLE',
     ));
   },
 
@@ -963,6 +1324,61 @@ export const privateMomentsNative = {
         post_id: input.postId,
       },
       'RECOVERY_KEY_UNAVAILABLE',
+    ));
+  },
+
+  async react(input: {
+    actorPtid: string;
+    rendererGeneration: number;
+    postId: string;
+    kind: ReactionKind;
+  }): Promise<PrivateReactionMutationResult> {
+    assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
+    return normalizeReactionMutationResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.react,
+      {
+        actor_ptid: input.actorPtid,
+        renderer_generation: input.rendererGeneration,
+        post_id: input.postId,
+        kind: input.kind,
+      },
+      'REACTION_REJECTED',
+    ));
+  },
+
+  async unreact(input: {
+    actorPtid: string;
+    rendererGeneration: number;
+    postId: string;
+    kind: ReactionKind;
+  }): Promise<PrivateReactionMutationResult> {
+    assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
+    return normalizeReactionMutationResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.unreact,
+      {
+        actor_ptid: input.actorPtid,
+        renderer_generation: input.rendererGeneration,
+        post_id: input.postId,
+        kind: input.kind,
+      },
+      'REACTION_REJECTED',
+    ));
+  },
+
+  async retryReaction(input: {
+    actorPtid: string;
+    rendererGeneration: number;
+    commandId: string;
+  }): Promise<PrivateReactionMutationResult> {
+    assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
+    return normalizeReactionMutationResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.retryReaction,
+      {
+        actor_ptid: input.actorPtid,
+        renderer_generation: input.rendererGeneration,
+        command_id: input.commandId,
+      },
+      'REACTION_REJECTED',
     ));
   },
 

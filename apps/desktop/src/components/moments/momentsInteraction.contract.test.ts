@@ -7,6 +7,7 @@ function source(relativePath: string): string {
 }
 
 const composerSource = source('./MomentComposer.tsx');
+const audiencePickerSource = source('./AudiencePicker.tsx');
 const commentListSource = source('./CommentList.tsx');
 const detailSource = source('../../pages/moments/MomentDetailPage.tsx');
 const appSource = source('../../pages/moments/MomentsApp.tsx');
@@ -16,6 +17,8 @@ const userSource = source('../../pages/moments/MomentsUserPage.tsx');
 const circleSource = source('../../pages/moments/CircleManagePage.tsx');
 const discoverySource = source('../../store/discovery.ts');
 const runtimeSource = source('../../runtimes/momentsRuntime.ts');
+const momentCardSource = source('./MomentCard.tsx');
+const actionBarSource = source('./surfaces/SocialActionBar.tsx');
 const enMoments = JSON.parse(
   source('../../../../../packages/locales/en/moments.json'),
 ) as Record<string, string>;
@@ -76,5 +79,35 @@ describe('Desktop Moments interaction contract', () => {
     );
     expect(enMoments['moments.circle.explanation']).toContain('private lists');
     expect(enMoments['moments.circle.searchPeoplePlaceholder']).not.toContain('DID');
+  });
+
+  it('gates a remote recipient publish behind typed readiness', () => {
+    const admissionIndex = composerSource.indexOf('prepareRemotePrivateRecipient(');
+    const publishIndex = composerSource.indexOf('const id = await createPost(privateDraft)');
+
+    expect(admissionIndex).toBeGreaterThan(-1);
+    expect(publishIndex).toBeGreaterThan(admissionIndex);
+    expect(composerSource).toContain('privateMomentPublishIntent(privateDraft)');
+    expect(audiencePickerSource).toContain('data-moments-audience-kind');
+    expect(audiencePickerSource).toContain('data-moments-audience-target="circle"');
+    expect(audiencePickerSource).toContain('data-moments-audience-target="group"');
+    expect(audiencePickerSource).toContain('data-moments-audience-actors');
+    expect(composerSource).toContain('homeStationPeerId !== localStationPeerId');
+    expect(composerSource).toContain('await preparePrivateAudience(intent)');
+    expect(composerSource).toContain("privatePublishState === 'READY_PRIVATE'");
+    expect(composerSource).toContain('<SocialPrivateState');
+    expect(composerSource).toContain('clearPrivatePublishState();');
+    expect(enMoments['moments.compose.checkRecipients']).toBe('Check recipients');
+  });
+
+  it('renders private Reaction status and explicit retry through SocialActionBar', () => {
+    expect(momentCardSource).toContain('privateReaction: s.reactionsByPost[post.id]');
+    expect(momentCardSource).toContain('retryPrivateReaction(post.id)');
+    expect(momentCardSource).not.toContain('message.error(String(err))');
+    expect(actionBarSource).toContain("reactionState === 'REACTION_PENDING'");
+    expect(actionBarSource).toContain("t('moments.reaction.retry')");
+    expect(enMoments['moments.reaction.status.REACTION_PENDING']).toBe(
+      'Reaction pending',
+    );
   });
 });

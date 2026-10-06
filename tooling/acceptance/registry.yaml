@@ -2565,6 +2565,48 @@
       ]
     },
     {
+      "id": "social-cross-station-private",
+      "features": [
+        "social-private-cross-station-desktop"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src/kernel/**",
+          "apps/desktop/src/pages/moments/**",
+          "apps/desktop/src/runtimes/momentsRuntime*",
+          "apps/desktop/src/services/privateMomentsNative*",
+          "apps/desktop/src/store/moments*",
+          "apps/station/app/subserver/conversation/**",
+          "apps/station/app/subserver/key_exchange/**",
+          "apps/station/app/subserver/social/**",
+          "apps/station/frame/core/federation/**",
+          "docs/architecture/domains/social/cross-station/**",
+          "model/domain/federation/**",
+          "model/domain/key_exchange/**",
+          "model/domain/social/**",
+          "packages/locales/en/errors.json",
+          "packages/locales/en/moments.json",
+          "packages/locales/zh-CN/errors.json",
+          "packages/locales/zh-CN/moments.json",
+          "tooling/scripts/check-social-cross-station-operability.mjs"
+        ]
+      },
+      "require": [
+        "station-api-ownership",
+        "social-cross-station-contract",
+        "social-cross-station-eventbus-contract",
+        "social-cross-station-prekey",
+        "social-cross-station-delivery",
+        "social-cross-station-interaction",
+        "social-cross-station-revocation-recovery",
+        "social-cross-station-desktop-functional",
+        "social-private-desktop-e2e",
+        "social-cross-station-native-e2e",
+        "browser-social-zero-registration",
+        "social-domain-validation"
+      ]
+    },
+    {
       "id": "social-private-moments-desktop",
       "features": [
         "social-private-moments-desktop"

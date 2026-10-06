@@ -2,28 +2,426 @@ package application
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
+	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestRemoteContentPreKeyValidationRunsBeforeSubmitTransactionAndClassifiesFailures(
+	t *testing.T,
+) {
+	tests := []struct {
+		name      string
+		failure   error
+		wantCode  socialdomain.PrivateContentErrorCode
+		wantState string
+	}{
+		{
+			name: "terminal stale material",
+			failure: keyexchangedomain.NewError(
+				keyexchangedomain.ErrorCodeStaleMaterial,
+				"test.remote_validation",
+				"claim",
+				"is stale",
+			),
+			wantCode:  socialdomain.PrivateContentStalePlan,
+			wantState: dbmodel.SocialPrivatePlanStateRejectedStale,
+		},
+		{
+			name:      "retryable peer outage",
+			failure:   errors.New("remote validation peer unavailable"),
+			wantCode:  socialdomain.PrivateContentDependency,
+			wantState: dbmodel.SocialPrivatePlanStatePrepared,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newPrivateContentServiceFixture(t)
+			fixture.audiences.snapshot.RecipientLocalities = nil
+			fixture.service.recipients = &privateContentRemoteRecipientDirectory{
+				delegate: privateContentTestRecipients{
+					author: fixture.author.Endpoint,
+				},
+				localities: []socialdomain.RecipientLocality{{
+					ActorPTID:         "ptid:bob",
+					HomeStationPeerID: "station-remote",
+					FederationID:      "federation-one",
+				}},
+			}
+			prepared, err := fixture.service.PreparePrivateMoment(
+				context.Background(),
+				fixture.author,
+				privateMomentPrepareRequest(
+					"prepare-remote-validation-"+testCase.name,
+					"content-remote-validation-"+testCase.name,
+				),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			transactionStarted := false
+			fixture.service.store = &remoteValidationBoundaryStore{
+				PrivateContentStore: fixture.store,
+				started:             &transactionStarted,
+			}
+			fixture.keyExchange.remoteValidationError = testCase.failure
+			fixture.keyExchange.submitTransactionStarted = &transactionStarted
+
+			_, err = fixture.service.SubmitPrivateMoment(
+				context.Background(),
+				fixture.author.Endpoint,
+				privateTextSubmitRequest(
+					t,
+					prepared.GetPlan(),
+					fixture.author.Endpoint,
+					fixture.authorPrivateKey,
+					"submit-remote-validation-"+testCase.name,
+					"remote validation ciphertext",
+				),
+			)
+			if !socialdomain.IsPrivateContentCode(err, testCase.wantCode) {
+				t.Fatalf("submit error = %v, want %s", err, testCase.wantCode)
+			}
+			if fixture.keyExchange.remoteValidationCalls != 1 {
+				t.Fatalf(
+					"remote validation calls = %d, want 1",
+					fixture.keyExchange.remoteValidationCalls,
+				)
+			}
+			if fixture.keyExchange.remoteValidationObservedSubmitTransaction {
+				t.Fatal("remote validation ran after ExecuteSubmit started")
+			}
+			persisted, err := fixture.store.LoadSubmitPreparation(
+				context.Background(),
+				prepared.GetPlan().GetPlanId(),
+				fixture.author.Endpoint.GetActor().GetPtid(),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if persisted.Plan.State != testCase.wantState {
+				t.Fatalf(
+					"plan state = %s, want %s",
+					persisted.Plan.State,
+					testCase.wantState,
+				)
+			}
+			assertPrivateContentCount(
+				t,
+				fixture.database,
+				&dbmodel.SocialPrivateContentPost{},
+				0,
+			)
+			assertPrivateContentCount(
+				t,
+				fixture.database,
+				&dbmodel.SocialPrivateCommandReceipt{},
+				0,
+			)
+		})
+	}
+}
+
+func TestRemoteRecipientAdmissionClaimsSingleRemoteFriendsAudience(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	fixture.audiences.snapshot.RecipientLocalities = nil
+	recipients := &privateContentRemoteRecipientDirectory{
+		delegate: privateContentTestRecipients{author: fixture.author.Endpoint},
+		localities: []socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+	}
+	fixture.service.recipients = recipients
+
+	prepared, err := fixture.service.PreparePrivateMoment(
+		context.Background(),
+		fixture.author,
+		privateMomentPrepareRequest(
+			"prepare-broad-remote-friends",
+			"content-broad-remote-friends",
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.GetPlan() == nil ||
+		prepared.GetPlan().GetResource().GetContentId() == "" {
+		t.Fatalf("remote FRIENDS plan = %+v", prepared.GetPlan())
+	}
+	if recipients.preKeyTargetCalls != 1 ||
+		fixture.keyExchange.claimCalls != 1 {
+		t.Fatalf(
+			"remote FRIENDS target/claim calls = %d/%d, want 1/1",
+			recipients.preKeyTargetCalls,
+			fixture.keyExchange.claimCalls,
+		)
+	}
+	assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+}
+
+func TestRemoteRecipientAdmissionAllowsPrivateMediaWithoutBusinessCommit(
+	t *testing.T,
+) {
+	tests := []struct {
+		name string
+		kind privatecontentpb.PrivateMomentKind
+	}{
+		{
+			name: "image",
+			kind: privatecontentpb.
+				PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE,
+		},
+		{
+			name: "video",
+			kind: privatecontentpb.
+				PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newPrivateContentServiceFixture(t)
+			fixture.audiences.snapshot.RecipientLocalities = nil
+			recipients := &privateContentRemoteRecipientDirectory{
+				delegate: privateContentTestRecipients{
+					author: fixture.author.Endpoint,
+				},
+				localities: []socialdomain.RecipientLocality{{
+					ActorPTID:         "ptid:bob",
+					HomeStationPeerID: "station-remote",
+					FederationID:      "federation-one",
+				}},
+			}
+			fixture.service.recipients = recipients
+			request := privateMomentPrepareRequest(
+				"prepare-remote-"+testCase.name,
+				"content-remote-"+testCase.name,
+			)
+			request.Kind = testCase.kind
+			request.ObjectCount = 1
+
+			prepared, err := fixture.service.PreparePrivateMoment(
+				context.Background(),
+				fixture.author,
+				request,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(prepared.GetPlan().GetObjectIds()) != 1 {
+				t.Fatalf(
+					"remote %s object IDs = %v, want one",
+					testCase.name,
+					prepared.GetPlan().GetObjectIds(),
+				)
+			}
+			if recipients.preKeyTargetCalls != 1 ||
+				fixture.keyExchange.claimCalls != 1 {
+				t.Fatalf(
+					"remote %s target/claim calls = %d/%d, want 1/1",
+					testCase.name,
+					recipients.preKeyTargetCalls,
+					fixture.keyExchange.claimCalls,
+				)
+			}
+			assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+		})
+	}
+}
+
+func TestFederatedAuthorClaimLocalitiesIncludesRemoteCommentAuthor(
+	t *testing.T,
+) {
+	author := socialdomain.PrivateContentAuthor{
+		Endpoint: &actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: "bob-device",
+		},
+		HomeStationPeerID: "station-remote",
+	}
+	localities, err := federatedAuthorClaimLocalities(
+		"test.remote_comment_author",
+		"station-local",
+		author,
+		"federation-one",
+		[]socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:alice",
+			HomeStationPeerID: "station-local",
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(localities) != 2 ||
+		localities[1].ActorPTID != "ptid:bob" ||
+		localities[1].HomeStationPeerID != "station-remote" ||
+		localities[1].FederationID != "federation-one" {
+		t.Fatalf("remote author claim localities = %+v", localities)
+	}
+}
+
+func TestFederatedAuthorClaimLocalitiesRejectsMissingFederation(
+	t *testing.T,
+) {
+	_, err := federatedAuthorClaimLocalities(
+		"test.remote_comment_author",
+		"station-local",
+		socialdomain.PrivateContentAuthor{
+			Endpoint: &actormodel.ActorDeviceRef{
+				Actor: &actormodel.ActorRef{
+					Ptid: "ptid:bob",
+					Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+				},
+				DeviceId: "bob-device",
+			},
+			HomeStationPeerID: "station-remote",
+		},
+		"",
+		nil,
+	)
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentInvalidArgument,
+	) {
+		t.Fatalf("missing remote author Federation error = %v", err)
+	}
+}
+
+type remoteValidationBoundaryStore struct {
+	infrastructure.PrivateContentStore
+	started *bool
+}
+
+func (s *remoteValidationBoundaryStore) ExecuteSubmit(
+	ctx context.Context,
+	command infrastructure.SubmitCommand,
+	mutation infrastructure.SubmitMutation,
+) (infrastructure.SubmitResult, error) {
+	*s.started = true
+	return s.PrivateContentStore.ExecuteSubmit(ctx, command, mutation)
+}
+
+func TestRemoteRecipientAdmissionClaimsSelectedFriendPreKeysWithoutBusinessCommit(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	fixture.audiences.snapshot.Audience = &actormodel.Audience{
+		Kind:       actormodel.Audience_CUSTOM_ALLOW,
+		ActorPtids: []string{"ptid:bob"},
+	}
+	fixture.audiences.snapshot.RecipientLocalities = nil
+	recipients := &privateContentRemoteRecipientDirectory{
+		delegate: privateContentTestRecipients{author: fixture.author.Endpoint},
+		localities: []socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+	}
+	fixture.service.recipients = recipients
+	request := privateMomentPrepareRequest(
+		"prepare-selected-remote-friend",
+		"content-selected-remote-friend",
+	)
+	request.Audience = proto.Clone(
+		fixture.audiences.snapshot.Audience,
+	).(*actormodel.Audience)
+
+	prepared, err := fixture.service.PreparePrivateMoment(
+		context.Background(),
+		fixture.author,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.GetPlan() == nil {
+		t.Fatal("selected remote friend admission returned no encryption plan")
+	}
+	if recipients.preKeyTargetCalls != 1 ||
+		fixture.keyExchange.claimCalls != 1 {
+		t.Fatalf(
+			"selected remote friend target/claim calls = %d/%d, want 1/1",
+			recipients.preKeyTargetCalls,
+			fixture.keyExchange.claimCalls,
+		)
+	}
+	assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+}
+
+func TestRemoteRecipientAdmissionUnavailablePreservesNoBusinessCommit(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	fixture.audiences.snapshot.Audience = &actormodel.Audience{
+		Kind:       actormodel.Audience_CUSTOM_ALLOW,
+		ActorPtids: []string{"ptid:bob"},
+	}
+	fixture.audiences.snapshot.RecipientLocalities = nil
+	fixture.service.recipients = &privateContentRemoteRecipientDirectory{
+		delegate: privateContentTestRecipients{author: fixture.author.Endpoint},
+		localities: []socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+	}
+	fixture.keyExchange.claimError = keyexchangedomain.NewError(
+		keyexchangedomain.ErrorCodePoolDepleted,
+		"test.remote_content_prekey",
+		"pool",
+		"is depleted",
+	)
+
+	request := privateMomentPrepareRequest(
+		"prepare-remote-unavailable",
+		"content-remote-unavailable",
+	)
+	request.Audience = proto.Clone(
+		fixture.audiences.snapshot.Audience,
+	).(*actormodel.Audience)
+	_, err := fixture.service.PreparePrivateMoment(
+		context.Background(),
+		fixture.author,
+		request,
+	)
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentRecipientKeyUnavailable,
+	) {
+		t.Fatalf("remote unavailable error = %v", err)
+	}
+	assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+}
 
 func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 	t *testing.T,
 ) {
 	tests := []struct {
-		name              string
-		audience          *actormodel.Audience
-		group             socialdomain.GroupRecipientSnapshot
-		resolvedLocality  []socialdomain.RecipientLocality
-		blockRemote       bool
-		wantGroupCalls    int
-		wantLocalityCalls int
+		name               string
+		audience           *actormodel.Audience
+		group              socialdomain.GroupRecipientSnapshot
+		resolvedLocality   []socialdomain.RecipientLocality
+		blockRemote        bool
+		configureFederated bool
+		wantCode           socialdomain.PrivateContentErrorCode
+		wantGroupCalls     int
+		wantLocalityCalls  int
 	}{
 		{
 			name: "GROUP uses Conversation locality projection",
@@ -34,6 +432,7 @@ func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 				},
 			},
 			group: socialdomain.GroupRecipientSnapshot{
+				FederationID:        "federation-one",
 				ConversationID:      "group-remote-recipient",
 				AuthorPTID:          "ptid:alice",
 				MembershipEpoch:     7,
@@ -49,8 +448,10 @@ func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 					},
 				},
 			},
-			blockRemote:    true,
-			wantGroupCalls: 1,
+			blockRemote:        true,
+			configureFederated: true,
+			wantCode:           socialdomain.PrivateContentInvalidArgument,
+			wantGroupCalls:     1,
 		},
 		{
 			name: "CUSTOM_ALLOW uses Actor Identity locality projection",
@@ -64,6 +465,7 @@ func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 					HomeStationPeerID: "station-remote",
 				},
 			},
+			wantCode:          socialdomain.PrivateContentUnsupported,
 			wantLocalityCalls: 1,
 		},
 	}
@@ -89,6 +491,15 @@ func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 			fixture.service.audiences = audiences
 			fixture.service.recipients = recipients
 			fixture.service.groups = groups
+			if testCase.configureFederated {
+				if err := fixture.service.ConfigureFederatedPrivateDelivery(
+					"station-local",
+					allowFederatedPrivateMembership{},
+					NewMomentEventPublisher(),
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if testCase.blockRemote {
 				if err := fixture.database.Exec(
 					"INSERT INTO social_directional_relationships "+
@@ -120,7 +531,7 @@ func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 			)
 			if !socialdomain.IsPrivateContentCode(
 				err,
-				socialdomain.PrivateContentUnsupported,
+				testCase.wantCode,
 			) {
 				t.Fatalf("PreparePrivateMoment() error = %v", err)
 			}
@@ -155,7 +566,7 @@ func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 	}
 }
 
-func TestPrivateContentServiceFencesExactPreparedGroupSnapshot(t *testing.T) {
+func TestPrivateContentServiceSubmitFenceRejectsStaleFederationID(t *testing.T) {
 	fixture := newPrivateContentServiceFixture(t)
 	audiences, err := infrastructure.NewGORMPrivateAudienceAuthority(
 		fixture.database,
@@ -164,6 +575,7 @@ func TestPrivateContentServiceFencesExactPreparedGroupSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	preparedGroup := socialdomain.GroupRecipientSnapshot{
+		FederationID:        "federation-prepared-snapshot",
 		ConversationID:      "group-prepared-snapshot",
 		AuthorPTID:          "ptid:alice",
 		MembershipEpoch:     7,
@@ -227,10 +639,7 @@ func TestPrivateContentServiceFencesExactPreparedGroupSnapshot(t *testing.T) {
 		)
 	}
 
-	groups.current.MembershipEpoch++
-	groups.current.AuthorityHeadSHA256 = privateDigest(
-		"group-authority-head-8",
-	)
+	groups.current.FederationID = "federation-other"
 	submit := privateTextSubmitRequest(
 		t,
 		prepared.GetPlan(),
@@ -257,11 +666,28 @@ func TestPrivateContentServiceFencesExactPreparedGroupSnapshot(t *testing.T) {
 		)
 	}
 	if groups.fenceCalls != 1 ||
+		groups.commitCalls != 0 ||
 		!reflect.DeepEqual(groups.expected, preparedGroup) {
 		t.Fatalf(
-			"submit fence = calls %d expected %+v",
+			"submit fence = calls %d commit calls %d expected %+v",
 			groups.fenceCalls,
+			groups.commitCalls,
 			groups.expected,
+		)
+	}
+	afterReject, err := fixture.store.LoadSubmitPreparation(
+		context.Background(),
+		prepared.GetPlan().GetPlanId(),
+		fixture.author.Endpoint.GetActor().GetPtid(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterReject.Plan.State != persisted.Plan.State {
+		t.Fatalf(
+			"plan state after stale Federation ID = %s, want %s",
+			afterReject.Plan.State,
+			persisted.Plan.State,
 		)
 	}
 	assertPrivateContentCount(
@@ -287,6 +713,7 @@ type privateContentRemoteRecipientDirectory struct {
 
 func (r *privateContentRemoteRecipientDirectory) ResolveRecipientLocalities(
 	context.Context,
+	string,
 	string,
 	[]string,
 ) ([]socialdomain.RecipientLocality, error) {
@@ -363,6 +790,26 @@ func assertPrivateContentRemotePrepareLeftNoRows(
 	}
 }
 
+func assertRemoteRecipientAdmissionHasNoBusinessRows(
+	t *testing.T,
+	fixture *privateContentServiceFixture,
+) {
+	t.Helper()
+	models := []any{
+		&dbmodel.SocialPrivateAudienceSnapshot{},
+		&dbmodel.SocialPrivateRecipientGrant{},
+		&dbmodel.SocialPrivateContentPost{},
+		&dbmodel.SocialPrivateContentEnvelope{},
+		&dbmodel.SocialPrivateDeliveryIntent{},
+		&dbmodel.SocialPrivateObjectAttachment{},
+		&dbmodel.SocialPrivateObjectGrant{},
+		&dbmodel.SocialPrivateCommandReceipt{},
+	}
+	for _, model := range models {
+		assertPrivateContentCount(t, fixture.database, model, 0)
+	}
+}
+
 var _ PrivateRecipientDirectory = (*privateContentRemoteRecipientDirectory)(nil)
 var _ GroupRecipientSnapshotReader = (*privateContentRemoteGroupReader)(nil)
 
@@ -372,6 +819,7 @@ type privateContentFencedGroupReader struct {
 	expected     socialdomain.GroupRecipientSnapshot
 	prepareCalls int
 	fenceCalls   int
+	commitCalls  int
 }
 
 func (r *privateContentFencedGroupReader) PrepareSnapshot(
@@ -400,6 +848,7 @@ func (r *privateContentFencedGroupReader) WithSubmitFence(
 		)
 	}
 
+	r.commitCalls++
 	return commit(clonePrivateContentGroupSnapshot(r.current))
 }
 

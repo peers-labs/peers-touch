@@ -1,7 +1,9 @@
 mod crypto;
 mod private_comment;
+mod private_media;
 mod private_mention;
 mod private_moment;
+mod private_reaction;
 mod projection;
 
 use std::path::Path;
@@ -30,10 +32,15 @@ use self::private_comment::{
     PrivateCommentFailure, PrivateCommentIntent, PrivateCommentListInput,
     PrivateCommentOrchestrator, PrivateCommentSubmitInput,
 };
+use self::private_media::{PrivateMediaOpenError, PrivateMediaOpenFailureKind};
 use self::private_moment::{
     pending_device_recovery_projection, PrivateMomentOrchestrator, PrivateMomentPublishIntent,
     PrivateRecoveryFailureKind,
 };
+use self::private_reaction::{
+    PrivateReactionMutationInput, PrivateReactionOrchestrator, PrivateReactionRetryInput,
+};
+use self::projection::PrivateReactionOperation;
 
 #[cfg(feature = "acceptance-webdriver")]
 static ACCEPTANCE_RUNTIME_BOOT_ID: OnceLock<String> = OnceLock::new();
@@ -120,6 +127,80 @@ pub struct PrivateMomentMediaOpenInput {
 pub struct PrivateMomentsTeardownInput {
     pub actor_ptid: String,
     pub renderer_generation: u64,
+}
+
+#[tauri::command]
+pub fn social_private_react(
+    input: PrivateReactionMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    private_reaction_mutation(
+        input,
+        PrivateReactionOperation::React,
+        state.inner(),
+        &window,
+    )
+}
+
+#[tauri::command]
+pub fn social_private_unreact(
+    input: PrivateReactionMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    private_reaction_mutation(
+        input,
+        PrivateReactionOperation::Unreact,
+        state.inner(),
+        &window,
+    )
+}
+
+#[tauri::command]
+pub fn social_private_reaction_retry(
+    input: PrivateReactionRetryInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "REACTION_REJECTED"),
+    };
+    match PrivateReactionOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.retry(&input))
+    {
+        Ok(result) => AppResult::success(json!(result)),
+        Err(error) => private_reaction_failure(error),
+    }
+}
+
+fn private_reaction_mutation(
+    input: PrivateReactionMutationInput,
+    operation: PrivateReactionOperation,
+    state: &AppState,
+    window: &Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state,
+        window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "REACTION_REJECTED"),
+    };
+    match PrivateReactionOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.mutate(&input, operation))
+    {
+        Ok(result) => AppResult::success(json!(result)),
+        Err(error) => private_reaction_failure(error),
+    }
 }
 
 #[tauri::command]
@@ -332,7 +413,16 @@ pub fn social_private_moment_publish(
         .and_then(|service| service.publish(&input))
     {
         Ok(result) => AppResult::success(json!(result)),
-        Err(error) => native_failure(error, "PUBLISH_FAILED"),
+        Err(error) => {
+            let failure_state = if error.contains("RECIPIENT_KEY_UNAVAILABLE") {
+                "RECIPIENT_KEY_UNAVAILABLE"
+            } else if error.contains("PRIVATE_UNSUPPORTED") {
+                "PRIVATE_UNSUPPORTED"
+            } else {
+                "PUBLISH_FAILED"
+            };
+            native_failure(error, failure_state)
+        }
     }
 }
 
@@ -402,9 +492,11 @@ pub fn social_private_moment_media_open(
             .secure_content
             .revoke_private_media_path(&authority_key, path)
     };
-    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
-        .and_then(|service| service.open_media(&input.post_id, &input.object_id, &revoke_media))
-    {
+    let result = match PrivateMomentOrchestrator::new(&state.secure_content, lease) {
+        Ok(service) => service.open_media(&input.post_id, &input.object_id, &revoke_media),
+        Err(error) => Err(PrivateMediaOpenError::dependency(error, None)),
+    };
+    match result {
         Ok(mut projection) => {
             if let Err(error) = grant_private_media_preview(
                 &state.secure_content,
@@ -416,7 +508,7 @@ pub fn social_private_moment_media_open(
             }
             AppResult::success(json!(projection))
         }
-        Err(error) => native_failure(error, "MEDIA_OFFLINE_RETRYABLE"),
+        Err(error) => private_media_failure(error),
     }
 }
 
@@ -795,7 +887,10 @@ fn recovery_lease_for_window(
     actor_ptid: &str,
     renderer_generation: u64,
 ) -> Result<SecureContentLease, String> {
-    let lease = lease_for_window(state, window, actor_ptid, renderer_generation)?;
+    let lease = match lease_for_window(state, window, actor_ptid, renderer_generation) {
+        Ok(lease) => lease,
+        Err(_) => return activate(state, window, actor_ptid, renderer_generation),
+    };
     let engine = state
         .messaging_engines
         .get(&lease.session.account_id)?
@@ -811,7 +906,11 @@ fn recovery_lease_for_window(
 
 fn native_failure(message: String, state: &str) -> AppResult<Value> {
     let lower = message.to_ascii_lowercase();
-    let (code, app_code) = if lower.contains("auth") || lower.contains("session") {
+    let (code, app_code) = if state == "RECIPIENT_KEY_UNAVAILABLE" {
+        ("RECIPIENT_KEY_UNAVAILABLE", ErrorCode::InvalidArgument)
+    } else if state == "PRIVATE_UNSUPPORTED" {
+        ("PRIVATE_UNSUPPORTED", ErrorCode::InvalidArgument)
+    } else if lower.contains("auth") || lower.contains("session") {
         ("UNAUTHORIZED", ErrorCode::Unauthorized)
     } else if lower.contains("not authorized") || lower.contains("not found") {
         ("NOT_FOUND_OR_NOT_AUTHORIZED", ErrorCode::NotFound)
@@ -826,6 +925,54 @@ fn native_failure(message: String, state: &str) -> AppResult<Value> {
         Some(json!({
             "state": state,
             "native_error_code": code,
+        })),
+    )
+}
+
+fn private_reaction_failure(message: String) -> AppResult<Value> {
+    let lower = message.to_ascii_lowercase();
+    let pending = lower.contains("reaction command is already pending");
+    let retrying = lower.contains("reaction command is not retryable yet");
+    if !pending && !retrying {
+        return native_failure(message, "REACTION_REJECTED");
+    }
+    AppResult::fail(
+        ErrorCode::Conflict,
+        message,
+        Some(json!({
+            "state": if pending {
+                "REACTION_PENDING"
+            } else {
+                "REACTION_RETRYING"
+            },
+            "native_error_code": if pending {
+                "REACTION_COMMAND_PENDING"
+            } else {
+                "REACTION_RETRY_NOT_READY"
+            },
+            "retryable": true,
+        })),
+    )
+}
+
+fn private_media_failure(error: PrivateMediaOpenError) -> AppResult<Value> {
+    let state = error.state();
+    let retryable = error.retryable();
+    let app_code = match error.kind {
+        PrivateMediaOpenFailureKind::AccessDenied => ErrorCode::NotFound,
+        PrivateMediaOpenFailureKind::Integrity => ErrorCode::Conflict,
+        PrivateMediaOpenFailureKind::Dependency | PrivateMediaOpenFailureKind::Cancelled => {
+            ErrorCode::InternalError
+        }
+    };
+    AppResult::fail(
+        app_code,
+        error.message,
+        Some(json!({
+            "state": state,
+            "native_error_code": error.code,
+            "retryable": retryable,
+            "retry_after_seconds": error.retry_after_seconds,
         })),
     )
 }
@@ -846,6 +993,38 @@ fn private_comment_failure(error: PrivateCommentFailure) -> AppResult<Value> {
             "retry_not_before_unix_ms": error.retry_not_before_unix_ms,
         })),
     )
+}
+
+#[cfg(test)]
+mod private_reaction_failure_tests {
+    use super::private_reaction_failure;
+    use crate::error::ErrorCode;
+
+    #[test]
+    fn preserves_existing_reaction_command_as_retryable_pending() {
+        let result = private_reaction_failure(
+            "secure content Reaction command is already pending".to_string(),
+        );
+        let error = result.error.expect("pending conflict should fail");
+        assert_eq!(error.code, ErrorCode::Conflict);
+        let details = error.details.expect("pending conflict should be typed");
+        assert_eq!(details["state"], "REACTION_PENDING");
+        assert_eq!(details["native_error_code"], "REACTION_COMMAND_PENDING");
+        assert_eq!(details["retryable"], true);
+    }
+
+    #[test]
+    fn preserves_reaction_backoff_as_retryable_state() {
+        let result = private_reaction_failure(
+            "secure content Reaction command is not retryable yet".to_string(),
+        );
+        let error = result.error.expect("retry backoff should fail");
+        assert_eq!(error.code, ErrorCode::Conflict);
+        let details = error.details.expect("retry backoff should be typed");
+        assert_eq!(details["state"], "REACTION_RETRYING");
+        assert_eq!(details["native_error_code"], "REACTION_RETRY_NOT_READY");
+        assert_eq!(details["retryable"], true);
+    }
 }
 
 #[cfg(all(test, feature = "acceptance-webdriver"))]

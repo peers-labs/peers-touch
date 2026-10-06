@@ -97,10 +97,10 @@ Accepted product inputs:
 - [`../../../domains/social/core/product-definition.md`](../../../domains/social/core/product-definition.md):
   `SOC-SEC-C01` through `SOC-SEC-C09`.
 - [`../../../domains/social/core/experience-contract.md`](../../../domains/social/core/experience-contract.md):
-  `SOC-SEC-J01` through `SOC-SEC-J09`.
+  `SOC-SEC-J01` through `SOC-SEC-J12`.
 - [`../../../domains/social/core/product-state-model.md`](../../../domains/social/core/product-state-model.md).
 - [`../../../domains/social/core/acceptance-matrix.md`](../../../domains/social/core/acceptance-matrix.md):
-  `SOC-SEC-AS01` through `SOC-SEC-AS16`.
+  `SOC-SEC-AS01` through `SOC-SEC-AS24`.
 
 The product contract and `SC-D01` through `SC-D29` are accepted. `SC-D21`
 defines deterministic Native lifecycle barriers, runtime-owner restart
@@ -132,3 +132,9 @@ On 2026-10-01, the Owner narrowed the active hard-cut milestone to
 two-Station schema activation. `DWF-D39` subsequently removed Desktop Browser
 from all current runtime and proof contracts. Mobile, Chat product runtime,
 `FINAL_CUT`, and formal release Acceptance remain explicit future scope.
+
+On 2026-10-03, the Owner selected Native Desktop cross-Station Social as the
+next product milestone, prohibited Browser Social, and deferred Mobile. Secure
+Content remains the crypto/validation substrate; Social and the shared
+Federation runtime own the new business and transport closures documented in
+[`../../../domains/social/cross-station/`](../../../domains/social/cross-station/README.md).

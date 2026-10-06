@@ -31,7 +31,11 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
-import type { RealtimeCallSignalKind, RealtimeSocialGraphEventPayload } from '../kernel/events/types';
+import type {
+  PrivateResourceRevocationReason,
+  RealtimeCallSignalKind,
+  RealtimeSocialGraphEventPayload,
+} from '../kernel/events/types';
 import {
   ConversationSettingsChanged_Kind,
   MomentEvent_Kind,
@@ -45,6 +49,10 @@ const REALTIME_EVENT = 'realtime:event';
 const REALTIME_CONNECTION_STATE = 'realtime:connection-state';
 
 interface RawRealtimeEnvelope {
+  actor_ptid?: string;
+  session_epoch?: number;
+  station_peer_id?: string;
+  station_url?: string;
   event_id?: string;
   data_b64?: string;
 }
@@ -111,9 +119,9 @@ export function teardownEventStreamBridge(): void {
  * Ask the Rust supervisor to open the SSE socket for the current
  * window's authenticated actor. Idempotent.
  */
-export async function startEventStream(): Promise<void> {
+export async function startEventStream(sessionEpoch: number): Promise<void> {
   try {
-    await api.realtimeStreamStart();
+    await api.realtimeStreamStart(sessionEpoch);
   } catch (error) {
     log.warn('eventStream', 'realtimeStreamStart failed', error);
   }
@@ -359,10 +367,32 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         conversationId: s.conversationId,
         actorDisplayName: s.actorDisplayName,
       });
+      if (
+        kindStr === 'relationship_blocked'
+        || kindStr === 'relationship_unblocked'
+      ) {
+        const streamActorPtid = raw.actor_ptid?.trim() ?? '';
+        const targetActorPtid = s.actorPtid === streamActorPtid
+          ? s.targetPtid
+          : s.actorPtid;
+        if (streamActorPtid && targetActorPtid) {
+          eventBus.publish(EVENT.RELATIONSHIP_CHANGED, {
+            targetActorPtid,
+            action: kindStr === 'relationship_blocked' ? 'block' : 'unblock',
+          });
+        }
+      }
       return;
     }
     case 'moment':
-      dispatchMomentEvent(eventId, kind.value);
+      dispatchMomentEvent(
+        eventId,
+        raw.actor_ptid?.trim() ?? '',
+        raw.session_epoch ?? 0,
+        raw.station_peer_id?.trim() ?? '',
+        normalizeStationUrl(raw.station_url),
+        kind.value,
+      );
       return;
     default:
       return;
@@ -373,10 +403,32 @@ export function dispatchRealtimeFrameForAcceptance(raw: RawRealtimeEnvelope | un
   handleFrame(raw);
 }
 
-function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
+function dispatchMomentEvent(
+  eventId: string,
+  targetActorPtid: string,
+  sessionEpoch: number,
+  stationPeerId: string,
+  stationUrl: string,
+  event: MomentEvent,
+): void {
+  if (
+    !targetActorPtid
+    || (!stationPeerId && !stationUrl)
+    || event.actorPtid !== targetActorPtid
+  ) {
+    log.warn('eventStream', 'MomentEvent stream scope mismatch, dropping', {
+      targetActorPtid,
+      eventActorPtid: event.actorPtid,
+    });
+    return;
+  }
   const occurredAtUnixMs = Number(event.occurredTsUnixMs || 0n);
   const base = {
     eventId,
+    targetActorPtid,
+    sessionEpoch,
+    stationPeerId,
+    stationUrl,
     postId: event.postId,
     authorActorPtid: event.authorActorPtid || undefined,
     occurredAtUnixMs,
@@ -390,6 +442,21 @@ function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
       });
       return;
     case MomentEvent_Kind.DELETED:
+      if (event.audience) {
+        const reason = privateRevocationReasonFromWire(event.audience);
+        if (!reason) {
+          eventBus.publish(EVENT.MOMENT_RESYNC_REQUESTED, {
+            newestEventId: eventId,
+            reason: 'unknown-private-revocation',
+          });
+          return;
+        }
+        eventBus.publish(EVENT.MOMENT_REVOKED, {
+          ...base,
+          reason,
+        });
+        return;
+      }
       eventBus.publish(EVENT.MOMENT_DELETED, {
         ...base,
         deletedByActorPtid: event.actorPtid || undefined,
@@ -413,6 +480,10 @@ function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
     default:
       log.warn('eventStream', 'unknown MomentEvent kind, dropping', { kind: event.kind });
   }
+}
+
+function normalizeStationUrl(stationUrl: string | undefined): string {
+  return stationUrl?.trim().replace(/\/+$/, '') ?? '';
 }
 
 // Inverse of GroupMembershipChange.Kind enum. Align with proto:
@@ -479,7 +550,24 @@ function socialGraphKindFromEnum(value: number): RealtimeSocialGraphEventPayload
     case 3: return 'friend_request_rejected';
     case 4: return 'conversation_created';
     case 5: return 'unfriended';
+    case 6: return 'relationship_blocked';
+    case 7: return 'relationship_unblocked';
     default: return null;
+  }
+}
+
+function privateRevocationReasonFromWire(
+  value: string,
+): PrivateResourceRevocationReason | null {
+  switch (value) {
+    case 'PRIVATE_RESOURCE_INVALIDATION_REASON_RESOURCE_DELETED':
+      return 'RESOURCE_DELETED';
+    case 'PRIVATE_RESOURCE_INVALIDATION_REASON_RELATIONSHIP_REVOKED':
+      return 'RELATIONSHIP_REVOKED';
+    case 'PRIVATE_RESOURCE_INVALIDATION_REASON_RECIPIENT_BLOCKED':
+      return 'RECIPIENT_BLOCKED';
+    default:
+      return null;
   }
 }
 

@@ -155,11 +155,14 @@ test('current repository satisfies the module registry', () => {
   const result = validateArchitectureRegistry({ repoRoot: REPO_ROOT });
   assert.deepEqual(result.moduleIds, [
     'agent',
+    'api-ownership',
     'architecture-module-governance',
     'chat-storage-governance',
+    'cross-station-social',
     'development-workflow',
     'local-dev-control-plane',
     'oauth-login-broker',
+    'secure-content',
     'station-access-lifecycle',
   ]);
   assert.deepEqual(result.capabilityIds, [

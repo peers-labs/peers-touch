@@ -125,13 +125,14 @@ func (s *subServer) Handlers() []server.Handler {
 
 		// Moments (read)
 		server.NewStrictTypedHandler("social-list-recoverable-private-content", routeSocialRecoverablePrivateContent, server.GET, s.handleListRecoverablePrivateContent, socialRecoverableQueryWrapper, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-list-remote-private-moments", routeSocialRemotePrivateMomentReferences, server.GET, s.handleListRemotePrivateMomentReferences, socialRecoverableQueryWrapper, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper),
 		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetMomentResource, socialMomentPathWrapper, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
 		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, ojw),
 		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),
 
 		// Reactions
-		server.NewTypedHandler("social-react", routeSocialMomentReact, server.POST, s.handleReact, cw, jw),
-		server.NewTypedHandler("social-unreact", routeSocialMomentUnreact, server.POST, s.handleUnreact, cw, jw),
+		server.NewTypedHandler("social-react", routeSocialMomentReact, server.POST, s.handleReact, cw, deviceIDWrapper, jw),
+		server.NewTypedHandler("social-unreact", routeSocialMomentUnreact, server.POST, s.handleUnreact, cw, deviceIDWrapper, jw),
 
 		// Comments
 		server.NewStrictTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleListMomentComments, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
@@ -239,9 +240,9 @@ func (s *subServer) handleSubmitPrivateComment(
 	if err != nil {
 		return nil, err
 	}
-	response, err := s.privateContentSvc.SubmitPrivateComment(
+	response, err := s.privateContentSvc.SubmitPrivateCommentForAuthor(
 		ctx,
-		author.Endpoint,
+		author,
 		req,
 	)
 	if err != nil {
@@ -1052,6 +1053,14 @@ func privateContentHandlerError(err error) error {
 		status = nethttp.StatusConflict
 		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
 		message = "private-content command conflicts with current authority"
+	case domain.PrivateContentRecipientKeyUnavailable:
+		status = nethttp.StatusConflict
+		code = model.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED
+		message = "private-content recipient key is unavailable"
+	case domain.PrivateContentRateLimited:
+		status = nethttp.StatusTooManyRequests
+		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
+		message = "private-content interaction is rate limited"
 	}
 	return privateContentResponseError(status, code, message, err)
 }
@@ -1069,12 +1078,21 @@ func privateContentResponseError(
 			err,
 		)
 	}
+	headers := map[string]string(nil)
+	if retryAfter := domain.PrivateContentRetryAfter(cause); retryAfter > 0 {
+		headers = map[string]string{
+			"Retry-After": strconv.FormatInt(
+				max(int64(retryAfter.Seconds()), 1),
+				10,
+			),
+		}
+	}
 	handlerError := server.NewHandlerErrorWithResponse(
 		status,
 		message,
 		server.CanonicalProtobufContentType,
 		body,
-		nil,
+		headers,
 	)
 	handlerError.Err = cause
 	return handlerError
@@ -1169,15 +1187,13 @@ func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostR
 				"failed to delete private moment",
 				"error",
 				err,
-				"post_id",
-				req.PostId,
 			)
 			return nil, privateContentHandlerError(err)
 		}
 		return &model.DeletePostResponse{Success: true}, nil
 	}
 	if err := s.momentSvc.DeleteMoment(ctx, req.PostId, actorPTID); err != nil {
-		logger.Error(ctx, "failed to delete moment", "error", err, "post_id", req.PostId)
+		logger.Error(ctx, "failed to delete moment", "error", err)
 		return nil, server.InternalErrorWithCause("failed to delete moment", err)
 	}
 	return &model.DeletePostResponse{Success: true}, nil
@@ -1343,6 +1359,32 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
 		return nil, server.BadRequest("reaction kind is required")
 	}
+	if _, public := canonicalPublicSocialID(req.PostId); !public &&
+		s.privateContentSvc != nil {
+		remote, err := s.privateContentSvc.IsRemotePrivateMoment(
+			ctx,
+			req.PostId,
+			actorPTID,
+		)
+		if err != nil {
+			return nil, privateContentHandlerError(err)
+		}
+		if remote {
+			author, err := s.privateContentAuthor(ctx)
+			if err != nil {
+				return nil, err
+			}
+			response, err := s.privateContentSvc.ReactPrivateMoment(
+				ctx,
+				author,
+				req,
+			)
+			if err != nil {
+				return nil, privateContentHandlerError(err)
+			}
+			return response, nil
+		}
+	}
 	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err
 	}
@@ -1363,6 +1405,35 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 	}
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
+	}
+	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
+		return nil, server.BadRequest("reaction kind is required")
+	}
+	if _, public := canonicalPublicSocialID(req.PostId); !public &&
+		s.privateContentSvc != nil {
+		remote, err := s.privateContentSvc.IsRemotePrivateMoment(
+			ctx,
+			req.PostId,
+			actorPTID,
+		)
+		if err != nil {
+			return nil, privateContentHandlerError(err)
+		}
+		if remote {
+			author, err := s.privateContentAuthor(ctx)
+			if err != nil {
+				return nil, err
+			}
+			response, err := s.privateContentSvc.UnreactPrivateMoment(
+				ctx,
+				author,
+				req,
+			)
+			if err != nil {
+				return nil, privateContentHandlerError(err)
+			}
+			return response, nil
+		}
 	}
 	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err

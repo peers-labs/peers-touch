@@ -10,7 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
-func TestRecoverablePrivateContentRoute(t *testing.T) {
+func TestFederatedPrivateRecoveryRoute(t *testing.T) {
 	fixture := newHandlerFixture(t)
 	fixture.subserver.commonWrapper = func(
 		next server.EndpointHandler,

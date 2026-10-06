@@ -28,6 +28,7 @@ from .native_desktop_linux import NativeDesktopLinuxProvisioner
 from .native_desktop_macos import NativeDesktopMacOSProvisioner
 from .native_desktop_windows import NativeDesktopWindowsProvisioner
 from .native_tauri_embedded_webdriver import (
+    CrossStationSocialNativeProvisioner,
     NativeTauriEmbeddedWebDriverProvisioner,
 )
 from .native_tauri_current_profile import (
@@ -45,6 +46,9 @@ from .station_access_desktop_oauth_native import (
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ChatMixedNativeProvisioner.environment_id: ChatMixedNativeProvisioner,
     ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
+    CrossStationSocialNativeProvisioner.environment_id: (
+        CrossStationSocialNativeProvisioner
+    ),
     DesktopPrimaryNavigationNativeProvisioner.environment_id: (
         DesktopPrimaryNavigationNativeProvisioner
     ),
@@ -97,6 +101,20 @@ def get_provisioner(
         raise ProvisioningError(
             f"no provisioner registered for environment: {contract.id}"
         )
+    if provisioner_class is CrossStationSocialNativeProvisioner:
+        if (
+            station_profiles
+            and service_profiles
+            and dict(station_profiles) != dict(service_profiles)
+        ):
+            raise ProvisioningError(
+                f"environment {contract.id!r} received conflicting "
+                "station and service profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            station_profiles=service_profiles or station_profiles,
+        )
     if provisioner_class is NativeTauriEmbeddedWebDriverProvisioner:
         if service_profiles:
             raise ProvisioningError(
@@ -142,6 +160,8 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "ChatMixedNativeProvisioner",
     "ChatStorageNativeProvisioner",
+    "CrossStationSocialNativeProvisioner",
+    "DesktopPrimaryNavigationNativeProvisioner",
     "HomeStationProvisioner",
     "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",
