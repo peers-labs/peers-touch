@@ -1,0 +1,61 @@
+{
+  "id": "mobile-android-physical",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "services": {
+    "station-primary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_PRIMARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "mobile-social-existing-actors",
+      "authorization_required": false,
+      "target_assertion": "the selected Station is an approved non-stable development target",
+      "initial_assertion": "Alice, Bob and Eve already exist with distinct canonical PTIDs"
+    }
+  ],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "alice-android",
+      "actor": "alice",
+      "runtime": "tauri-android-physical",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "cleanup": {
+    "resources": [
+      "processes",
+      "appium-sessions",
+      "ports",
+      "storage",
+      "sessions",
+      "fixture-data",
+      "physical-device-leases",
+      "correlation-channel",
+      "profile-leases",
+      "deployment-leases"
+    ],
+    "deterministic": true
+  }
+}

@@ -14,7 +14,10 @@ from .desktop_primary_navigation_native import (
     DesktopPrimaryNavigationNativeProvisioner,
 )
 from .home_station import HomeStationProvisioner
-from .mobile_native import MobileNativeProvisioner
+from .mobile_native import (
+    MobileAndroidPhysicalProvisioner,
+    MobileNativeProvisioner,
+)
 from .mobile_simulator import (
     ChatMixedNativeProvisioner,
     MobileDirectSimulatorProvisioner,
@@ -55,6 +58,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
+    MobileAndroidPhysicalProvisioner.environment_id: (
+        MobileAndroidPhysicalProvisioner
+    ),
     MobileDirectSimulatorProvisioner.environment_id: (
         MobileDirectSimulatorProvisioner
     ),
@@ -128,6 +134,15 @@ def get_provisioner(
             contract,
             station_profiles=station_profiles,
         )
+    if provisioner_class is MobileAndroidPhysicalProvisioner:
+        if service_profiles:
+            raise ProvisioningError(
+                f"environment {contract.id!r} does not accept service profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+        )
     if provisioner_class in {
         ChatMixedNativeProvisioner,
         MobileDirectSimulatorProvisioner,
@@ -170,6 +185,7 @@ __all__ = [
     "HomeStationProvisioner",
     "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",
+    "MobileAndroidPhysicalProvisioner",
     "MobileNativeProvisioner",
     "MobileSimulatorProvisioner",
     "MobileSocialIOSSimulatorProvisioner",

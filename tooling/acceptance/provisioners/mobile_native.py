@@ -51,7 +51,10 @@ from tooling.acceptance.core.errors import (
     ProvisioningError,
 )
 from tooling.acceptance.core.evidence_store import ArtifactRef
-from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.provisioner import (
+    EnvironmentProvisioner,
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.core.provisioning import (
     EnvironmentContract,
     ProvisioningState,
@@ -59,6 +62,9 @@ from tooling.acceptance.core.provisioning import (
     utc_now,
 )
 from tooling.acceptance.core.redaction import redact_value
+from tooling.acceptance.fixtures.chat_native_reset import (
+    fixture_federation_id_from_station_ids,
+)
 from tooling.acceptance.fixtures.mobile_native_reset import (
     ROLES,
     _write_fixture_outcomes,
@@ -127,6 +133,9 @@ MOBILE_NATIVE_SCENARIO_GATES = {
     "settings": "mobile-native-settings-e2e",
     "platform": "mobile-native-platform-e2e",
 }
+MOBILE_ANDROID_PHYSICAL_SCENARIO_GATES = {
+    "android-social": "mobile-social-android-native",
+}
 MOBILE_NATIVE_BLOCKED_SCENARIO_DEPENDENCIES = {
     "recovery-ui": "W5-OWNER",
     "social-convergence": "W5-OWNER",
@@ -138,7 +147,11 @@ MOBILE_NATIVE_SERVICE_INDEPENDENT_SCENARIOS = frozenset(
     {"lifecycle", "platform"}
 )
 MOBILE_NATIVE_NON_OAUTH_SCENARIOS = frozenset(
-    set(MOBILE_NATIVE_SCENARIO_GATES) - {"access"}
+    (
+        set(MOBILE_NATIVE_SCENARIO_GATES)
+        | set(MOBILE_ANDROID_PHYSICAL_SCENARIO_GATES)
+    )
+    - {"access"}
 )
 MOBILE_NATIVE_PRODUCT_SCENARIOS = frozenset(
     {
@@ -151,6 +164,36 @@ MOBILE_NATIVE_PRODUCT_SCENARIOS = frozenset(
     }
 )
 MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS = {
+    "android-social": (
+        "station.add",
+        "access.submit",
+        "lifecycle.restart",
+        "lifecycle.scope.read",
+        "session.logout",
+        "navigation.snapshot",
+        "navigation.apply",
+        "projection.read",
+        "messaging.createDirect",
+        "messaging.createGroup",
+        "messaging.reconcile",
+        "messaging.projection.read",
+        "social.people.search",
+        "social.request.send",
+        "social.request.accept",
+        "social.reconcile",
+        "social.projection.read",
+        "reliability.draft.write",
+        "reliability.draft.read",
+        "reliability.draft.action",
+        "recovery.snapshot",
+        "moments.feed.read",
+        "moments.publish",
+        "moments.private.read",
+        "moments.private.comment.submit",
+        "moments.private.reconcile",
+        "moments.private.snapshot",
+        "cleanup",
+    ),
     "recovery": (
         "station.add",
         "access.submit",
@@ -292,6 +335,7 @@ MOBILE_NATIVE_SCENARIO_APPIUM_OPERATIONS = frozenset(
     (
         *MOBILE_NATIVE_CAPABILITIES["mobile.native.appium-session"],
         "background_app",
+        "social_ui",
     )
 )
 MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS = (
@@ -308,6 +352,11 @@ MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS = (
     "capture_screenshot",
     "verify_build_identity",
 )
+MOBILE_NATIVE_ANDROID_SOCIAL_APPIUM_OPERATIONS = (
+    *MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS[:-1],
+    "social_ui",
+    MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS[-1],
+)
 MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES = (
     "processes",
     "appium-sessions",
@@ -319,6 +368,25 @@ MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES = (
     "correlation-channel",
     "profile-leases",
     "deployment-leases",
+)
+MOBILE_NATIVE_ANDROID_SOCIAL_CLIENT = "alice-android"
+MOBILE_NATIVE_ANDROID_SOCIAL_FIXTURE = "mobile-social-existing-actors"
+MOBILE_NATIVE_ANDROID_SOCIAL_PROFILE_KEY = "station-a"
+MOBILE_NATIVE_ANDROID_SOCIAL_ROLES = ("alice", "bob", "eve")
+MOBILE_NATIVE_ANDROID_SOCIAL_GENERIC_ACTIONS = frozenset(
+    {
+        "session.logout",
+        "lifecycle.scope.read",
+        "navigation.snapshot",
+        "navigation.apply",
+        "social.people.search",
+        "moments.feed.read",
+        "moments.publish",
+        "moments.private.read",
+        "moments.private.comment.submit",
+        "moments.private.reconcile",
+        "moments.private.snapshot",
+    }
 )
 EXPECTED_PARENT_HARNESS_ACTIONS = frozenset(
     {
@@ -1237,7 +1305,12 @@ def _load_mobile_native_scenario(
         str(scenario_id)
         for scenario_id in scenarios
     }
-    expected_scenario_ids = set(MOBILE_NATIVE_SCENARIO_GATES)
+    scenario_gate_map = (
+        MOBILE_ANDROID_PHYSICAL_SCENARIO_GATES
+        if payload.get("id") == "mobile-android-physical-runtime"
+        else MOBILE_NATIVE_SCENARIO_GATES
+    )
+    expected_scenario_ids = set(scenario_gate_map)
     if scenario_ids != expected_scenario_ids:
         raise BlockedError(
             reason=(
@@ -1258,7 +1331,7 @@ def _load_mobile_native_scenario(
         len(scenario_gate_ids) != len(scenarios)
         or len(set(scenario_gate_ids)) != len(scenario_gate_ids)
         or set(scenario_gate_ids)
-        != set(MOBILE_NATIVE_SCENARIO_GATES.values())
+        != set(scenario_gate_map.values())
     ):
         raise BlockedError(
             reason=(
@@ -1281,7 +1354,7 @@ def _load_mobile_native_scenario(
             resource=f"mobile-contract:scenario:{gate_id}",
         )
     scenario_id, raw = matching[0]
-    if MOBILE_NATIVE_SCENARIO_GATES.get(scenario_id) != gate_id:
+    if scenario_gate_map.get(scenario_id) != gate_id:
         raise BlockedError(
             reason=(
                 f"Mobile native scenario {scenario_id!r} does not own "
@@ -1448,14 +1521,30 @@ def _load_mobile_native_scenario(
                 "physical-session"
             ),
         )
+    if scenario_id == "android-social" and (
+        scenario.client_ids != (MOBILE_NATIVE_ANDROID_SOCIAL_CLIENT,)
+        or scenario.service_ids != ("station-primary",)
+        or scenario.fixture_ids != (MOBILE_NATIVE_ANDROID_SOCIAL_FIXTURE,)
+        or scenario.harness_actions
+        != MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS["android-social"]
+        or scenario.parent_harness_actions != ("build.identity",)
+        or scenario.appium_operations
+        != MOBILE_NATIVE_ANDROID_SOCIAL_APPIUM_OPERATIONS
+        or not scenario.require_exact_device_count
+        or scenario.cleanup_resources
+        != MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES
+    ):
+        raise BlockedError(
+            reason=(
+                "Mobile native Android Social scenario does not match the "
+                "single physical-device session contract"
+            ),
+            resource="mobile-contract:scenario:android-social",
+        )
     return scenario
 
 
-def load_mobile_native_preflight_spec(
-    path: Path = ENVIRONMENTS_DIR / "mobile-native.yaml",
-    *,
-    gate_id: str = MOBILE_OAUTH_PROOF_GATE_ID,
-) -> MobileNativePreflightSpec:
+def _load_mobile_native_contract_payload(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -1463,6 +1552,58 @@ def load_mobile_native_preflight_spec(
             reason=f"Cannot load Mobile native environment contract: {error}",
             resource="mobile-contract:environment",
         ) from error
+    if not isinstance(payload, dict):
+        raise BlockedError(
+            reason="Mobile native environment contract must be an object",
+            resource="mobile-contract:environment",
+        )
+    if payload.get("base_environment") != "mobile-native":
+        return payload
+    if payload.get("id") != "mobile-android-physical-runtime":
+        raise BlockedError(
+            reason="Mobile native environment overlay identity is invalid",
+            resource="mobile-contract:environment",
+        )
+    base_path = path.parent / "mobile-native.yaml"
+    try:
+        base = json.loads(base_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BlockedError(
+            reason=f"Cannot load Mobile native base environment: {error}",
+            resource="mobile-contract:environment",
+        ) from error
+    if not isinstance(base, dict) or base.get("id") != "mobile-native":
+        raise BlockedError(
+            reason="Mobile native base environment identity is invalid",
+            resource="mobile-contract:environment",
+        )
+    required_overlay_fields = {
+        "id",
+        "base_environment",
+        "scenarios",
+        "services",
+        "fixtures",
+    }
+    if set(payload) != required_overlay_fields:
+        raise BlockedError(
+            reason="Mobile native environment overlay shape is invalid",
+            resource="mobile-contract:environment",
+        )
+    return {
+        **base,
+        "id": payload["id"],
+        "scenarios": payload["scenarios"],
+        "services": payload["services"],
+        "fixtures": payload["fixtures"],
+    }
+
+
+def load_mobile_native_preflight_spec(
+    path: Path = ENVIRONMENTS_DIR / "mobile-native.yaml",
+    *,
+    gate_id: str = MOBILE_OAUTH_PROOF_GATE_ID,
+) -> MobileNativePreflightSpec:
+    payload = _load_mobile_native_contract_payload(path)
 
     scenario = _load_mobile_native_scenario(payload, gate_id)
     appium = _required_object(payload, "appium", "mobile-contract:appium")
@@ -1871,8 +2012,21 @@ def load_mobile_native_preflight_spec(
     clients = tuple(
         clients_by_id[client_id] for client_id in scenario.client_ids
     )
-    if {client.platform for client in clients} != set(
-        EXPECTED_DRIVER_IDENTITIES
+    selected_platforms = {client.platform for client in clients}
+    if (
+        scenario.id == "android-social"
+        and selected_platforms != {"android"}
+    ):
+        raise BlockedError(
+            reason=(
+                "Mobile native Android Social scenario requires exactly one "
+                "Android physical client"
+            ),
+            resource="mobile-contract:scenario:android-social:platforms",
+        )
+    if (
+        scenario.id != "android-social"
+        and selected_platforms != set(EXPECTED_DRIVER_IDENTITIES)
     ):
         raise BlockedError(
             reason=(
@@ -2144,12 +2298,13 @@ def _discover_android_browser(
     repo_root: Path,
     environment: Mapping[str, str],
 ) -> tuple[str, str, int]:
+    device_ref = hashlib.sha256(serial.encode("utf-8")).hexdigest()[:12]
     result = _run_checked(
         executor,
         ("adb", "-s", serial, "shell", "dumpsys", "webviewupdate"),
         repo_root=repo_root,
         environment=environment,
-        resource=f"mobile-runtime:android-webview:{serial}",
+        resource=f"mobile-runtime:android-webview:{device_ref}",
     )
     provider_line = next(
         (
@@ -2167,18 +2322,18 @@ def _discover_android_browser(
     if not provider or version_match is None:
         raise BlockedError(
             reason="Android active WebView provider is missing or ambiguous",
-            resource=f"mobile-runtime:android-webview:{serial}",
+            resource=f"mobile-runtime:android-webview:{device_ref}",
         )
     version, major = _parse_version(
         version_match.group(0),
-        f"mobile-runtime:android-webview:{serial}",
+        f"mobile-runtime:android-webview:{device_ref}",
     )
     package_result = _run_checked(
         executor,
         ("adb", "-s", serial, "shell", "dumpsys", "package", provider),
         repo_root=repo_root,
         environment=environment,
-        resource=f"mobile-runtime:android-browser:{serial}",
+        resource=f"mobile-runtime:android-browser:{device_ref}",
     )
     package_version = re.search(
         r"(?m)^\s*versionName=(\S+)\s*$",
@@ -2187,7 +2342,7 @@ def _discover_android_browser(
     if package_version is None or package_version.group(1) != version:
         raise BlockedError(
             reason="Android WebView provider and package versions do not match",
-            resource=f"mobile-runtime:android-browser:{serial}",
+            resource=f"mobile-runtime:android-browser:{device_ref}",
         )
     return provider, version, major
 
@@ -2410,58 +2565,65 @@ def preflight_mobile_native_inputs(
     android_clients = [
         client for client in spec.clients if client.platform == "android"
     ]
-    ios_inventory = _run_checked(
-        executor,
-        spec.ios_device_inventory_command,
-        repo_root=repo_root,
-        environment=command_environment,
-        resource="mobile-runtime:ios-device-inventory",
-    )
-    connected_ios = _connected_ios_devices(ios_inventory.stdout)
-    ios_count_matches = (
-        len(connected_ios) == len(ios_clients)
-        if spec.scenario.require_exact_device_count
-        else len(connected_ios) >= len(ios_clients)
-    )
-    if not ios_count_matches:
-        reason = (
-            "Mobile native requires exactly two connected physical iOS devices"
-            if spec.scenario.id == "access"
-            else (
-                f"Mobile native scenario {spec.scenario.id!r} requires at "
-                f"least {len(ios_clients)} connected physical iOS device(s)"
+    connected_ios: set[str] = set()
+    if ios_clients:
+        ios_inventory = _run_checked(
+            executor,
+            spec.ios_device_inventory_command,
+            repo_root=repo_root,
+            environment=command_environment,
+            resource="mobile-runtime:ios-device-inventory",
+        )
+        connected_ios = _connected_ios_devices(ios_inventory.stdout)
+        ios_count_matches = (
+            len(connected_ios) == len(ios_clients)
+            if spec.scenario.require_exact_device_count
+            else len(connected_ios) >= len(ios_clients)
+        )
+        if not ios_count_matches:
+            reason = (
+                "Mobile native requires exactly two connected physical iOS devices"
+                if spec.scenario.id == "access"
+                else (
+                    f"Mobile native scenario {spec.scenario.id!r} requires at "
+                    f"least {len(ios_clients)} connected physical iOS device(s)"
+                )
             )
-        )
-        raise BlockedError(
-            reason=reason,
-            resource="mobile-runtime:ios-device-isolation",
-        )
+            raise BlockedError(
+                reason=reason,
+                resource="mobile-runtime:ios-device-isolation",
+            )
 
-    _, ios_wda_bundle_id = _required_env_ref(
-        spec.ios_wda_bundle_id_ref,
-        "mobile-runtime:ios-wda-bundle",
-    )
-    _, ios_webview_bundle_id = _required_env_ref(
-        spec.ios_webview_bundle_id_ref,
-        "mobile-runtime:ios-webview-bundle",
-    )
-    if (
-        spec.ios_native_context != "NATIVE_APP"
-        or not spec.ios_webview_context_prefix.startswith("WEBVIEW")
-    ):
-        raise BlockedError(
-            reason="iOS native and WebView readiness inputs are invalid",
-            resource="mobile-runtime:ios-context-readiness",
+    ios_wda_bundle_id = ""
+    ios_webview_bundle_id = ""
+    if ios_clients:
+        _, ios_wda_bundle_id = _required_env_ref(
+            spec.ios_wda_bundle_id_ref,
+            "mobile-runtime:ios-wda-bundle",
         )
+        _, ios_webview_bundle_id = _required_env_ref(
+            spec.ios_webview_bundle_id_ref,
+            "mobile-runtime:ios-webview-bundle",
+        )
+        if (
+            spec.ios_native_context != "NATIVE_APP"
+            or not spec.ios_webview_context_prefix.startswith("WEBVIEW")
+        ):
+            raise BlockedError(
+                reason="iOS native and WebView readiness inputs are invalid",
+                resource="mobile-runtime:ios-context-readiness",
+            )
 
-    android_inventory = _run_checked(
-        executor,
-        spec.android_device_inventory_command,
-        repo_root=repo_root,
-        environment=command_environment,
-        resource="mobile-runtime:android-device-inventory",
-    )
-    connected_android = _connected_android_devices(android_inventory.stdout)
+    connected_android: set[str] = set()
+    if android_clients:
+        android_inventory = _run_checked(
+            executor,
+            spec.android_device_inventory_command,
+            repo_root=repo_root,
+            environment=command_environment,
+            resource="mobile-runtime:android-device-inventory",
+        )
+        connected_android = _connected_android_devices(android_inventory.stdout)
     android_count_matches = (
         len(connected_android) == len(android_clients)
         if spec.scenario.require_exact_device_count
@@ -2506,6 +2668,7 @@ def preflight_mobile_native_inputs(
         for client in spec.clients
     }
     android_abis: set[str] = set()
+    android_device_facts: dict[str, dict[str, Any]] = {}
     browser_details: dict[str, dict[str, Any]] = {}
     browser_majors: set[int] = set()
     for client in android_clients:
@@ -2543,6 +2706,79 @@ def preflight_mobile_native_inputs(
                 resource=f"mobile-runtime:android-abi:{client.id}",
             )
         android_abis.add(abi)
+        if spec.scenario.id == "android-social":
+            model = _run_checked(
+                executor,
+                ("adb", "-s", device, "shell", "getprop", "ro.product.model"),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-model:{client.id}",
+            ).stdout.strip()
+            version = _run_checked(
+                executor,
+                (
+                    "adb",
+                    "-s",
+                    device,
+                    "shell",
+                    "getprop",
+                    "ro.build.version.release",
+                ),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-version:{client.id}",
+            ).stdout.strip()
+            api_level = _run_checked(
+                executor,
+                (
+                    "adb",
+                    "-s",
+                    device,
+                    "shell",
+                    "getprop",
+                    "ro.build.version.sdk",
+                ),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-api:{client.id}",
+            ).stdout.strip()
+            fingerprint = _run_checked(
+                executor,
+                (
+                    "adb",
+                    "-s",
+                    device,
+                    "shell",
+                    "getprop",
+                    "ro.build.fingerprint",
+                ),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-fingerprint:{client.id}",
+            ).stdout.strip()
+            if (
+                not model
+                or not version
+                or not api_level.isdigit()
+                or not fingerprint
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"Android client {client.id!r} has incomplete physical "
+                        "device facts"
+                    ),
+                    resource=f"mobile-runtime:android-facts:{client.id}",
+                )
+            android_device_facts[client.id] = {
+                "model": model,
+                "androidVersion": version,
+                "apiLevel": int(api_level),
+                "abi": abi,
+                "kernelQemu": qemu,
+                "fingerprint": fingerprint,
+                "physical": True,
+                "authorized": True,
+            }
         provider, version, major = _discover_android_browser(
             spec.chromedriver,
             device,
@@ -2607,6 +2843,7 @@ def preflight_mobile_native_inputs(
             "webviewBundleId": ios_webview_bundle_id,
         },
         "androidBrowsers": browser_details,
+        "androidDeviceFacts": android_device_facts,
         "chromedriver": chromedriver,
         "physicalDevices": physical_devices,
         "storageRoot": storage_root,
@@ -5079,6 +5316,14 @@ def _validate_permission_result(value: object, *, requested: bool) -> None:
 
 
 def _validate_harness_action_result(action: str, value: object) -> None:
+    if action in MOBILE_NATIVE_ANDROID_SOCIAL_GENERIC_ACTIONS:
+        if not isinstance(value, (Mapping, list, tuple)) and value is not None:
+            raise EphemeralCapabilityBlocked(
+                f"{action} response must be structured",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _assert_mobile_channel_safe(value)
+        return
     if action in {"station.add", "station.replace"}:
         result = _closed_mapping(
             value,
@@ -6071,6 +6316,16 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 "backgrounded": True,
                 "durationSeconds": float(duration_seconds),
             }
+        if operation == "social_ui":
+            return {
+                "clientId": client_id,
+                "value": _mobile_social_ui_operation(
+                    session,
+                    payload,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            }
         if operation == "find_element":
             element_ref = session.find_element(
                 _capability_text(
@@ -6233,6 +6488,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "backgrounded",
                     "durationSeconds",
                 },
+                "social_ui": {"clientId", "value"},
                 "find_element": {"clientId", "elementRef"},
                 "click": {"clientId", "clicked"},
                 "capture_page_source": {"clientId", "pageSource"},
@@ -6671,6 +6927,320 @@ class MobileNativeStationFixtureCapabilityHandler(EphemeralCapabilityHandler):
         return EphemeralHandlerCleanup(closed=True, secrets_zeroized=True)
 
 
+_SOCIAL_UI_ATTRIBUTES = (
+    "data-acceptance-id",
+    "data-feed-scope",
+    "data-circle-id",
+    "data-comment-visible",
+    "data-post-id",
+    "data-moment-content-kind",
+    "data-actor-ptid",
+    "data-profile-actor-ptid",
+    "data-audience-choice",
+    "aria-label",
+    "value",
+)
+
+
+def _mobile_social_ui_operation(
+    session: _ParentAppiumSession,
+    payload: Mapping[str, object],
+    *,
+    deadline_monotonic: float,
+    cancellation: threading.Event,
+) -> dict[str, Any]:
+    action = _capability_text(
+        payload,
+        "uiAction",
+        resource="mobile.native.appium-session:social-ui",
+    )
+    raw_input = _capability_mapping(
+        payload,
+        "input",
+        resource="mobile.native.appium-session:social-ui",
+    )
+    ui_input = dict(raw_input)
+
+    if action in {"query", "click", "set-value"}:
+        selector = ui_input.get("selector")
+        if (
+            not isinstance(selector, str)
+            or not selector
+            or len(selector) > 512
+            or "data-acceptance-id" not in selector
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social UI selector is not acceptance-scoped",
+                resource="mobile.native.appium-session:social-ui",
+            )
+    if action == "query":
+        if set(ui_input) != {"selector"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social query input has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) return {exists: false, text: '', attributes: {}};
+const names = arguments[1];
+const attributes = {};
+for (const name of names) {
+  const value = name === 'value' ? node.value : node.getAttribute(name);
+  if (typeof value === 'string') attributes[name] = value;
+}
+return {
+  exists: true,
+  text: String(node.textContent || '').slice(0, 8192),
+  attributes,
+};
+""",
+            ui_input["selector"],
+            list(_SOCIAL_UI_ATTRIBUTES),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "click":
+        if set(ui_input) != {"selector"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social click input has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) return {clicked: false};
+node.scrollIntoView({block: 'center', inline: 'nearest'});
+node.dispatchEvent(new MouseEvent('click', {
+  bubbles: true,
+  cancelable: true,
+  view: window,
+}));
+return {clicked: true};
+""",
+            ui_input["selector"],
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "set-value":
+        if set(ui_input) != {"selector", "value"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social set-value input has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        text = ui_input.get("value")
+        if not isinstance(text, str) or len(text) > 4096:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social input value is invalid",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) return {updated: false};
+const value = arguments[1];
+const proto = node.tagName === 'TEXTAREA'
+  ? HTMLTextAreaElement.prototype
+  : HTMLInputElement.prototype;
+const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+if (setter) setter.call(node, value);
+else node.value = value;
+node.dispatchEvent(new Event('input', {bubbles: true}));
+node.dispatchEvent(new Event('change', {bubbles: true}));
+node.focus();
+return {updated: true};
+""",
+            ui_input["selector"],
+            text,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "select-option":
+        if set(ui_input) != {"selector", "optionValue"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social select-option input has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        selector = ui_input.get("selector")
+        option_value = ui_input.get("optionValue")
+        if (
+            not isinstance(selector, str)
+            or "data-acceptance-id" not in selector
+            or not isinstance(option_value, int)
+            or isinstance(option_value, bool)
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social select-option input is invalid",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_async_script(
+            """
+const owner = document.querySelector(arguments[0]);
+const done = arguments[arguments.length - 1];
+if (!owner) {
+  done({selected: false});
+  return;
+}
+owner.dispatchEvent(new MouseEvent('click', {
+  bubbles: true,
+  cancelable: true,
+  view: window,
+}));
+const expected = String(arguments[1]);
+const deadline = Date.now() + 3000;
+const select = () => {
+  const options = Array.from(document.querySelectorAll(
+    '.ant-select-dropdown [role="option"]'
+  ));
+  const option = options.find((item) =>
+    item.getAttribute('data-value') === expected ||
+    item.getAttribute('title') === expected ||
+    item.textContent?.trim() === expected
+  );
+  if (option) {
+    option.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }));
+    done({selected: true});
+    return;
+  }
+  if (Date.now() >= deadline) {
+    done({selected: false});
+    return;
+  }
+  setTimeout(select, 50);
+};
+select();
+""",
+            selector,
+            option_value,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "post-query":
+        if set(ui_input) != {"postId"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social post query has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        post_id = ui_input.get("postId")
+        if not isinstance(post_id, str) or not post_id or len(post_id) > 256:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social post identity is invalid",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const postId = arguments[0];
+const cards = Array.from(document.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+));
+const card = cards.find((item) => item.getAttribute('data-post-id') === postId);
+return card ? {
+  exists: true,
+  postId,
+  text: String(card.textContent || '').slice(0, 8192),
+  contentKind: card.getAttribute('data-moment-content-kind') || '',
+} : {exists: false, postId, text: '', contentKind: ''};
+""",
+            post_id,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "metrics":
+        if ui_input:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social metrics input must be empty",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const page = document.querySelector(
+  '[data-acceptance-id="social-moments-page"]'
+);
+const tablist = page?.querySelector('[role="tablist"]');
+const cards = page?.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+) || [];
+const viewport = window.visualViewport;
+return {
+  viewportWidth: Number(viewport?.width || window.innerWidth || 0),
+  viewportHeight: Number(viewport?.height || window.innerHeight || 0),
+  viewportOffsetTop: Number(viewport?.offsetTop || 0),
+  tabCount: tablist?.querySelectorAll('[role="tab"]').length || 0,
+  cardCount: cards.length,
+  searchLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-search-open"][aria-label]')
+  ),
+  composerLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-composer-open"][aria-label]')
+  ),
+  activeElementAcceptanceId:
+    document.activeElement?.getAttribute?.('data-acceptance-id') || '',
+};
+""",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "keyboard-state":
+        if ui_input:
+            raise EphemeralCapabilityBlocked(
+                "Mobile keyboard-state input must be empty",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        session.switch_to_native(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        shown = session.execute_script(
+            "mobile: isKeyboardShown",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        session.switch_to_app_webview(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        value = {"shown": bool(shown)}
+    elif action == "system-back":
+        if ui_input:
+            raise EphemeralCapabilityBlocked(
+                "Mobile system-back input must be empty",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        session.switch_to_native(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        session.execute_script(
+            "mobile: pressKey",
+            {"keycode": 4},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        session.switch_to_app_webview(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        value = {"pressed": True}
+    else:
+        raise EphemeralCapabilityBlocked(
+            f"Mobile Social UI action is unsupported: {action!r}",
+            resource="mobile.native.appium-session:social-ui",
+        )
+
+    if not isinstance(value, Mapping):
+        raise EphemeralCapabilityBlocked(
+            "Mobile Social UI result must be an object",
+            resource="mobile.native.appium-session:social-ui",
+        )
+    projected = json.loads(json.dumps(dict(value)))
+    _assert_mobile_channel_safe(projected)
+    return projected
+
+
 class MobileNativeProvisioner(EnvironmentProvisioner):
     environment_id = "mobile-native"
 
@@ -6726,6 +7296,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         if self._native_spec is None:
             gate_id = self.evidence_run.gate_id
             self._native_spec = load_mobile_native_preflight_spec(
+                self.contract_path,
                 gate_id=gate_id
             )
             self._select_scenario_contract(self._native_spec.scenario)
@@ -7827,10 +8398,70 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         )
         owner_prefix = f"acceptance:{gate_id}:{manifest.run_id}"
         self.acquire_profile_lease(self.environment_id, owner_prefix)
+        services: dict[str, Any] = {}
+        service_bindings = resolve_mobile_service_bindings(
+            self.contract,
+            self.contract_path,
+            environment=self._scenario_service_environment(),
+        )
+        for deployment_environment in sorted(
+            {
+                binding.deployment_environment
+                for binding in service_bindings.values()
+            }
+        ):
+            self.acquire_profile_lease(
+                deployment_environment,
+                owner_prefix,
+            )
+            self.acquire_remote_git_source_lease(
+                deployment_environment,
+                owner_prefix,
+            )
+        for service_id, binding in service_bindings.items():
+            if not self._station_ready(
+                binding.endpoint,
+                binding.health_endpoint,
+            ):
+                raise BlockedError(
+                    reason=f"Required Mobile service {service_id!r} is unhealthy",
+                    resource=f"service-health:{service_id}",
+                )
+            if binding.kind != "station":
+                raise BlockedError(
+                    reason=(
+                        "Android Social physical proof supports only an "
+                        "attested Station service"
+                    ),
+                    resource=f"service-kind:{service_id}",
+                )
+            attestation = produce_station_attestation(
+                environment_id=self.environment_id,
+                run_id=manifest.run_id,
+                service_id=service_id,
+                station_url=binding.endpoint,
+                profile_env={
+                    "PT_STATION_MODE": "remote",
+                    "PT_STATION_DEPLOY_ENV": (
+                        binding.deployment_environment
+                    ),
+                },
+                require_runtime_identity=True,
+                remote_source_identity_provider=resolve_remote_source_identity,
+            )
+            if attestation.live_commit != manifest.source_commit:
+                raise BlockedError(
+                    reason=(
+                        f"Station {service_id!r} source does not match the "
+                        "Android Social worktree"
+                    ),
+                    resource=f"source-identity:{service_id}",
+                )
+            services[service_id] = attestation
         manifest = dataclasses.replace(
             manifest,
             state=ProvisioningState.PROVISIONED,
-            services={},
+            services=services,
             credential_refs=(),
             cleanup_resources=native_spec.scenario.cleanup_resources,
         )
@@ -7877,8 +8508,22 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             gate_id=gate_id,
             runtime_root=runtime_root,
         )
+        actor_manifest_ref = (
+            self._prepare_android_social_actor_manifest()
+            if native_spec.scenario.id == "android-social"
+            else None
+        )
+        android_device_facts = native_inputs.get("androidDeviceFacts")
+        if not isinstance(android_device_facts, Mapping):
+            android_device_facts = {}
+        for client_id, facts in android_device_facts.items():
+            if client_id in client_resources and isinstance(facts, Mapping):
+                client_resources[client_id]["deviceFacts"] = dict(facts)
         manifest = _with_mobile_resources(
-            manifest,
+            dataclasses.replace(
+                manifest,
+                actor_manifest_ref=actor_manifest_ref,
+            ),
             _mobile_native_scenario_manifest_resources(
                 source_projection,
                 native_spec,
@@ -7890,6 +8535,96 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self._manifest = manifest
         return self._ready(manifest)
 
+    def _scenario_service_environment(self) -> Mapping[str, str]:
+        return os.environ
+
+    def _prepare_android_social_actor_manifest(self) -> dict[str, Any]:
+        if (
+            self._artifact_session is None
+            or self._native_spec is None
+            or self._manifest is None
+        ):
+            raise BlockedError(
+                reason="Android Social actor Fixture has no artifact authority",
+                resource="fixture-artifact-authority",
+            )
+        service = self._manifest.services.get("station-primary")
+        if service is None or service.service_kind != "station":
+            raise BlockedError(
+                reason="Android Social actor Fixture requires station-primary",
+                resource="fixture-service:station-primary",
+            )
+        actors = [
+            resolve_actor_identity(
+                service.endpoint,
+                service.deployment_environment,
+                role,
+            )
+            for role in MOBILE_NATIVE_ANDROID_SOCIAL_ROLES
+        ]
+        home_station_ids = {
+            actor.home_station_peer_id for actor in actors
+        }
+        if len(home_station_ids) != 1:
+            raise BlockedError(
+                reason=(
+                    "Android Social actors do not share one canonical "
+                    "Home Station"
+                ),
+                resource="fixture-actors:home-station",
+            )
+        federation_id = fixture_federation_id_from_station_ids(
+            home_station_ids
+        )
+        payload = {
+            "artifactKind": "mobile-social-android-actor-manifest",
+            "fixtureId": MOBILE_NATIVE_ANDROID_SOCIAL_FIXTURE,
+            "environmentId": self.environment_id,
+            "gateId": self.evidence_run.gate_id,
+            "runId": self.evidence_run.run_id,
+            "createdAt": utc_now(),
+            "initialState": "ready",
+            "stations": {
+                "station-primary": {
+                    "targetVerified": False,
+                    "existingActorsVerified": True,
+                    "actors": [
+                        {
+                            "role": actor.role,
+                            "accountRef": actor.account_ref,
+                            "ptid": actor.ptid,
+                            "devicePolicy": actor.device_policy,
+                            "federatedHandle": actor.federated_handle,
+                            "homeStationPeerId": actor.home_station_peer_id,
+                            "federationId": federation_id,
+                        }
+                        for actor in actors
+                    ],
+                }
+            },
+            "clients": [
+                {
+                    "id": MOBILE_NATIVE_ANDROID_SOCIAL_CLIENT,
+                    "platform": "android",
+                    "actors": list(MOBILE_NATIVE_ANDROID_SOCIAL_ROLES),
+                    "serviceId": "station-primary",
+                }
+            ],
+            "reset": {
+                "authorized": False,
+                "targetVerified": False,
+            },
+            "cleanup": {
+                "deterministic": True,
+                "action": "logout and release physical-device authority",
+            },
+        }
+        return self._artifact_session.write_json(
+            "runtime/mobile-social-android-actors.json",
+            payload,
+            role="mobile-social-android-actor-manifest",
+        ).to_dict()
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         native_spec = self._native_spec
         selected_gate_id = getattr(
@@ -7898,7 +8633,10 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             MOBILE_OAUTH_PROOF_GATE_ID,
         )
         if native_spec is None or selected_gate_id != gate_id:
-            native_spec = load_mobile_native_preflight_spec(gate_id=gate_id)
+            native_spec = load_mobile_native_preflight_spec(
+                self.contract_path,
+                gate_id=gate_id,
+            )
             self._select_scenario_contract(native_spec.scenario)
             self._native_spec = native_spec
         self._manifest = self._new_base_manifest(gate_id)
@@ -8128,3 +8866,73 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         finally:
             if self._lease_broker is None:
                 self._zeroize_pending_lease_authentication_key()
+
+
+class MobileAndroidPhysicalProvisioner(MobileNativeProvisioner):
+    environment_id = "mobile-android-physical"
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        station_profiles: Mapping[str, str] | None = None,
+        contract_path: Path | None = None,
+    ) -> None:
+        super().__init__(
+            contract,
+            contract_path=contract_path
+            or (
+                ENVIRONMENTS_DIR
+                / "mobile-android-physical-runtime.yaml"
+            ),
+        )
+        self._station_profiles = dict(station_profiles or {})
+
+    def _scenario_service_environment(self) -> Mapping[str, str]:
+        if set(self._station_profiles) != {
+            MOBILE_NATIVE_ANDROID_SOCIAL_PROFILE_KEY
+        }:
+            raise BlockedError(
+                reason=(
+                    "Android Social requires exactly one runtime Station "
+                    "binding: --station-profile station-a=PROFILE"
+                ),
+                resource="station-profile-bindings",
+            )
+        selected_profile = self._station_profiles[
+            MOBILE_NATIVE_ANDROID_SOCIAL_PROFILE_KEY
+        ]
+        active_profile, _profile_path, _slot, profile = (
+            resolve_machine_profile_environment(REPO_ROOT)
+        )
+        if selected_profile != active_profile:
+            raise BlockedError(
+                reason=(
+                    f"Android Social selected Station profile "
+                    f"{selected_profile!r} does not match active profile "
+                    f"{active_profile!r}"
+                ),
+                resource="station-profile-bindings",
+            )
+        station_url = profile.get("PT_STATION_URL", "").rstrip("/")
+        deployment_environment = profile.get(
+            "PT_STATION_DEPLOY_ENV",
+            "",
+        ).strip()
+        if (
+            profile.get("PT_STATION_MODE", "").strip() != "remote"
+            or not station_url
+            or not deployment_environment
+        ):
+            raise BlockedError(
+                reason=(
+                    f"Android Social Station profile {active_profile!r} "
+                    "is not a complete remote binding"
+                ),
+                resource=f"station-profile:{active_profile}",
+            )
+        return {
+            **os.environ,
+            "PT_MOBILE_STATION_PRIMARY_URL": station_url,
+            "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": deployment_environment,
+        }
