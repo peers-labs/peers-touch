@@ -394,7 +394,7 @@ def fake_toolchain(root: Path) -> ToolchainIdentity:
     bin_root = root / "tools"
     bin_root.mkdir(parents=True)
     executables: dict[str, str] = {}
-    for name in ("pnpm", "cargo", "gradle", "protoc"):
+    for name in ("pnpm", "cargo", "gradle", "protoc", "rustc"):
         path = bin_root / name
         path.write_text(name, encoding="utf-8")
         path.chmod(0o700)
@@ -744,10 +744,15 @@ class MobileNativeBuildTest(unittest.TestCase):
             java.mkdir()
             executable = tools / "tool"
             executable.write_text("tool", encoding="utf-8")
+            rustc = tools / "rustc"
+            rustc.write_text("rustc", encoding="utf-8")
             environment = construct_build_environment(
                 platform="android",
                 run_root=root / "run",
-                executable_paths={"tool": str(executable)},
+                executable_paths={
+                    "rustc": str(rustc),
+                    "tool": str(executable),
+                },
                 sdk_paths={
                     "ANDROID_HOME": str(sdk),
                     "ANDROID_SDK_ROOT": str(sdk),
@@ -760,6 +765,8 @@ class MobileNativeBuildTest(unittest.TestCase):
             {
                 "ANDROID_HOME",
                 "ANDROID_SDK_ROOT",
+                "CARGO_BUILD_RUSTC",
+                "CARGO_BUILD_RUSTC_WRAPPER",
                 "CARGO_HOME",
                 "CARGO_TARGET_DIR",
                 "GRADLE_USER_HOME",
@@ -1304,7 +1311,10 @@ class MobileNativeBuildTest(unittest.TestCase):
                     environment = construct_build_environment(
                         platform=platform,
                         run_root=run_root,
-                        executable_paths={"cargo": str(real_cargo)},
+                        executable_paths={
+                            "cargo": str(real_cargo),
+                            "rustc": str(real_cargo),
+                        },
                         sdk_paths=sdk_paths,
                     )
                     environment = _prepend_controlled_path(
@@ -1349,7 +1359,10 @@ class MobileNativeBuildTest(unittest.TestCase):
                     release_environment = construct_build_environment(
                         platform=platform,
                         run_root=release_root,
-                        executable_paths={"cargo": str(real_cargo)},
+                        executable_paths={
+                            "cargo": str(real_cargo),
+                            "rustc": str(real_cargo),
+                        },
                         sdk_paths=sdk_paths,
                         acceptance_harness=False,
                     )

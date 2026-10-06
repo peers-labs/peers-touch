@@ -129,6 +129,8 @@ CONSTRUCTED_BUILD_ENVIRONMENT = frozenset(
     {
         "ANDROID_HOME",
         "ANDROID_SDK_ROOT",
+        "CARGO_BUILD_RUSTC",
+        "CARGO_BUILD_RUSTC_WRAPPER",
         "CARGO_HOME",
         "CARGO_TARGET_DIR",
         "DEVELOPER_DIR",
@@ -1167,6 +1169,10 @@ def construct_build_environment(
     environment = {
         "PATH": os.pathsep.join(path_entries),
         "HOME": str((run_root / "home").resolve()),
+        "CARGO_BUILD_RUSTC": str(
+            Path(executable_paths["rustc"]).resolve(strict=True)
+        ),
+        "CARGO_BUILD_RUSTC_WRAPPER": "",
         "TMPDIR": str((run_root / "tmp").resolve()),
         "CARGO_HOME": str((run_root / "cargo-home").resolve()),
         "CARGO_TARGET_DIR": str((run_root / "cargo-target").resolve()),
