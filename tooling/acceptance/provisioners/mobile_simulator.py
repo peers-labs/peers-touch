@@ -53,6 +53,7 @@ from tooling.acceptance.core.attestation import (
 from tooling.acceptance.core.provisioner import (
     load_env_file,
     resolve_machine_profile_environment,
+    resolve_reviewed_profile_environment,
 )
 from tooling.acceptance.core.redaction import (
     is_sensitive_key,
@@ -107,6 +108,20 @@ SIMULATOR_APPIUM_CAPABILITY_ID = "mobile.simulator.appium-session"
 SIMULATOR_CAPABILITY_TIMEOUT_SECONDS = 180.0
 SIMULATOR_BINDING_PROOF_MECHANISM = (
     "mobile-simulator-active-station-peer-id"
+)
+MOBILE_LIFECYCLE_SCOPE_FIELDS = frozenset(
+    {
+        "generation",
+        "phase",
+        "launchState",
+        "activeStationPeerId",
+        "activeActorPtid",
+        "runtimeStationPeerId",
+        "deviceId",
+        "social",
+        "group",
+        "navigation",
+    }
 )
 CHAT_MIXED_NATIVE_GATE_IDS = frozenset(
     {
@@ -194,113 +209,6 @@ SELECTED_BUILD_ENVIRONMENT_KEYS = frozenset(
         "VITE_ACCEPTANCE_HARNESS",
     }
 )
-
-
-def resolve_reviewed_profile_environment(
-    profile_name: str,
-    *,
-    repo_root: Path = REPO_ROOT,
-) -> tuple[Path, dict[str, str]]:
-    if not PROFILE_NAME_PATTERN.fullmatch(profile_name):
-        raise BlockedError(
-            reason=f"Invalid reviewed profile name: {profile_name!r}",
-            resource="service-profile-bindings",
-        )
-    configured_env_repo = os.environ.get("PT_ENV_REPO", "").strip()
-    env_repo = (
-        Path(configured_env_repo).expanduser().resolve()
-        if configured_env_repo
-        else repo_root.resolve().parent / "env"
-    )
-    relative_directory = Path("peers-touch") / profile_name
-    relative_profile = relative_directory / "profile.env.example"
-    resource = f"service-profile:{profile_name}"
-    try:
-        worktree = subprocess.run(
-            ["git", "-C", str(env_repo), "rev-parse", "--is-inside-work-tree"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        tracked = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(env_repo),
-                "ls-files",
-                "--error-unmatch",
-                relative_profile.as_posix(),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        source_state = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(env_repo),
-                "status",
-                "--porcelain",
-                "--untracked-files=all",
-                "--",
-                relative_directory.as_posix(),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise BlockedError(
-            reason=(
-                f"Reviewed profile {profile_name!r} authority is unavailable: "
-                f"{error}"
-            ),
-            resource=resource,
-        ) from error
-    if (
-        worktree.returncode != 0
-        or worktree.stdout.strip() != "true"
-        or tracked.returncode != 0
-        or source_state.returncode != 0
-    ):
-        raise BlockedError(
-            reason=(
-                f"Reviewed profile {profile_name!r} is not a tracked "
-                "environment-repository definition"
-            ),
-            resource=resource,
-        )
-    if source_state.stdout.strip():
-        raise BlockedError(
-            reason=(
-                f"Reviewed profile {profile_name!r} has dirty or untracked "
-                "environment definitions"
-            ),
-            resource=resource,
-        )
-    try:
-        profile_path = (env_repo / relative_profile).resolve(strict=True)
-        profile_path.relative_to(env_repo.resolve(strict=True))
-    except (OSError, RuntimeError, ValueError) as error:
-        raise BlockedError(
-            reason=f"Reviewed profile {profile_name!r} path is unavailable",
-            resource=resource,
-        ) from error
-    values = load_env_file(profile_path)
-    declared_profile = values.get("PT_DEV_PROFILE", "").strip()
-    if declared_profile != profile_name:
-        raise BlockedError(
-            reason=(
-                f"Reviewed profile {profile_name!r} declares "
-                f"PT_DEV_PROFILE={declared_profile!r}"
-            ),
-            resource=resource,
-        )
-    return profile_path, values
 
 
 IOS_LAYOUT_CLIENTS = {
@@ -4514,18 +4422,7 @@ def _scope_count(value: object, *, label: str) -> int:
 
 def _sanitize_lifecycle_scope(value: object) -> dict[str, Any]:
     scope = _json_safe_mapping(value, label="Mobile lifecycle scope")
-    expected_fields = {
-        "generation",
-        "phase",
-        "launchState",
-        "activeStationPeerId",
-        "activeActorPtid",
-        "runtimeStationPeerId",
-        "social",
-        "group",
-        "navigation",
-    }
-    if set(scope) != expected_fields:
+    if set(scope) != MOBILE_LIFECYCLE_SCOPE_FIELDS:
         raise EphemeralCapabilityBlocked(
             "Mobile lifecycle scope has an invalid shape",
             resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:scope",
@@ -4597,6 +4494,10 @@ def _sanitize_lifecycle_scope(value: object) -> dict[str, Any]:
         "runtimeStationPeerId": _optional_scope_text(
             scope.get("runtimeStationPeerId"),
             label="Mobile runtime Station peer ID",
+        ),
+        "deviceId": _optional_scope_text(
+            scope.get("deviceId"),
+            label="Mobile device ID",
         ),
         "social": {
             "stationPeerId": _optional_scope_text(
@@ -5594,9 +5495,18 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             "url",
         }
         if isinstance(value, Mapping):
+            is_lifecycle_scope = (
+                set(value) == MOBILE_LIFECYCLE_SCOPE_FIELDS
+            )
             for key, item in value.items():
                 normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
-                if normalized in forbidden_fields:
+                if (
+                    normalized in forbidden_fields
+                    and not (
+                        normalized == "deviceid"
+                        and is_lifecycle_scope
+                    )
+                ):
                     raise ValueError(
                         "Mobile simulator response exposes raw authority"
                     )

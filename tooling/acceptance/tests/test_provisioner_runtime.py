@@ -165,24 +165,30 @@ class ProvisionerBaseClassTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            profile_dir = root / ".local" / "dev" / "profiles"
-            profile_dir.mkdir(parents=True)
-            (profile_dir / "sixwin.env").write_text(
-                "\n".join(
-                    (
-                        "PT_DEV_PROFILE=sixwin",
-                        "PT_STATION_MODE=local",
-                        "PT_STATION_URL=http://127.0.0.1:18080",
-                    )
-                )
-                + "\n",
-                encoding="utf-8",
-            )
+            profile_path = root / "reviewed-env" / "profile.env.example"
+            profile_path.parent.mkdir(parents=True)
+            profile_path.write_text("PT_DEV_PROFILE=sixwin\n", encoding="utf-8")
             with patch(
                 "tooling.acceptance.provisioners."
                 "native_tauri_embedded_webdriver.REPO_ROOT",
                 root,
-            ), patch.object(
+            ), patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver."
+                "resolve_reviewed_profile_environment",
+                return_value=(
+                    profile_path,
+                    {
+                        "PT_DEV_PROFILE": "sixwin",
+                        "PT_STATION_MODE": "local",
+                        "PT_STATION_URL": "http://127.0.0.1:18080",
+                    },
+                ),
+            ) as resolve_profile, patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver."
+                "resolve_deployment_environment_path",
+            ) as resolve_deployment, patch.object(
                 provisioner,
                 "_station_ready",
                 return_value=True,
@@ -204,6 +210,8 @@ class ProvisionerBaseClassTests(unittest.TestCase):
                 services = provisioner._provision_station_services(manifest)
 
         self.assertEqual(services, {"station-four": attestation})
+        resolve_profile.assert_called_once_with("sixwin", repo_root=root)
+        resolve_deployment.assert_not_called()
         profile_lease.assert_called_once()
         remote_lease.assert_not_called()
         self.assertEqual(
@@ -213,6 +221,116 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         self.assertIsNone(
             produce.call_args.kwargs["remote_source_identity_provider"]
         )
+
+    def test_native_tauri_remote_station_uses_canonical_resolvers(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
+        )
+        contract = dataclasses.replace(
+            contract,
+            services={"station-four": contract.services["station-four"]},
+            clients=tuple(
+                client
+                for client in contract.clients
+                if client.service_bindings["station"].service_id
+                == "station-four"
+            ),
+        )
+        provisioner = get_provisioner(
+            contract,
+            station_profiles={"station-four": "chat-native-disposable"},
+        )
+        manifest = provisioner._new_base_manifest(
+            "chat-native-product-closure-e2e"
+        )
+        attestation = ServiceAttestation(
+            service_id="station-four",
+            service_kind="station",
+            environment_id=contract.id,
+            deployment_environment="chat-native-disposable-station",
+            endpoint="https://station.example",
+            live_commit=manifest.source_commit,
+            workspace_digest="clean",
+            protocol_digest="proto-digest",
+            artifact_ref={},
+            produced_at="2026-09-10T00:00:00+00:00",
+            producer="station-deployment",
+            runtime_identity="chat-native-disposable-station",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_path = root / "reviewed-env" / "profile.env.example"
+            deployment_path = root / "reviewed-env" / "deployment.env"
+            profile_path.parent.mkdir(parents=True)
+            profile_path.write_text(
+                "PT_DEV_PROFILE=chat-native-disposable\n",
+                encoding="utf-8",
+            )
+            deployment_path.write_text(
+                "PT_DEPLOY_HEALTH_URL=https://station.example/healthz\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver.REPO_ROOT",
+                root,
+            ), patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver."
+                "resolve_reviewed_profile_environment",
+                return_value=(
+                    profile_path,
+                    {
+                        "PT_DEV_PROFILE": "chat-native-disposable",
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_URL": "https://station.example",
+                        "PT_STATION_DEPLOY_ENV": (
+                            "chat-native-disposable-station"
+                        ),
+                    },
+                ),
+            ) as resolve_profile, patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver."
+                "resolve_deployment_environment_path",
+                return_value=deployment_path,
+            ) as resolve_deployment, patch.object(
+                provisioner,
+                "_station_ready",
+                return_value=True,
+            ) as station_ready, patch.object(
+                provisioner,
+                "acquire_profile_lease",
+            ) as profile_lease, patch.object(
+                provisioner,
+                "acquire_remote_git_source_lease",
+            ) as remote_lease, patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver.source_proto_digest",
+                return_value="proto-digest",
+            ), patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver.produce_station_attestation",
+                return_value=attestation,
+            ):
+                services = provisioner._provision_station_services(manifest)
+
+        self.assertEqual(services, {"station-four": attestation})
+        resolve_profile.assert_called_once_with(
+            "chat-native-disposable",
+            repo_root=root,
+        )
+        resolve_deployment.assert_called_once_with(
+            "chat-native-disposable-station",
+            repo_root=root,
+        )
+        station_ready.assert_called_once_with(
+            "https://station.example",
+            "https://station.example/healthz",
+        )
+        profile_lease.assert_called_once()
+        remote_lease.assert_called_once()
 
     def test_cleanup_runs_in_reverse_order(self):
         provisioner = HomeStationProvisioner(

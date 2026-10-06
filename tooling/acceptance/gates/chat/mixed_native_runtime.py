@@ -625,11 +625,12 @@ class MixedNativeRuntime:
             "runtimeStationPeerId": scope.get("runtimeStationPeerId"),
             "actorPtid": scope.get("activeActorPtid"),
             "deviceIdentityDigest": (
-                scope.get("deviceIdentityDigest")
+                self._identity_digest(scope.get("deviceId"))
                 if self.gate_id in STATION_ACCESS_GATE_IDS
                 else device.get("deviceIdentityDigest")
             ),
             "social": scope.get("social"),
+            "group": scope.get("group"),
             "navigation": scope.get("navigation"),
         }
 

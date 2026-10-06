@@ -527,6 +527,7 @@ class FakeParentSimulatorSession:
                 "runtimeStationPeerId": (
                     self.active_station_peer_id if active else None
                 ),
+                "deviceId": f"device-{self.client_id}",
                 "social": {
                     "stationPeerId": (
                         self.active_station_peer_id if active else None
@@ -946,65 +947,6 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 )
                 with self.assertRaises(BlockedError):
                     provisioner._required_service_profiles()
-
-    def test_reviewed_profile_resolver_uses_env_repository(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_directory:
-            env_repo = Path(temp_directory)
-            profile_path = (
-                env_repo
-                / "peers-touch"
-                / "chat-native-disposable"
-                / "profile.env.example"
-            )
-            profile_path.parent.mkdir(parents=True)
-            profile_path.write_text(
-                "\n".join(
-                    (
-                        "PT_DEV_PROFILE=chat-native-disposable",
-                        "PT_STATION_MODE=remote",
-                        "PT_STATION_URL=https://station.example",
-                        "PT_STATION_DEPLOY_ENV=station-disposable",
-                    )
-                ),
-                encoding="utf-8",
-            )
-            git_results = (
-                SimpleNamespace(returncode=0, stdout="true\n", stderr=""),
-                SimpleNamespace(
-                    returncode=0,
-                    stdout=(
-                        "peers-touch/chat-native-disposable/"
-                        "profile.env.example\n"
-                    ),
-                    stderr="",
-                ),
-                SimpleNamespace(returncode=0, stdout="", stderr=""),
-            )
-            with (
-                patch.dict(
-                    mobile_simulator_module.os.environ,
-                    {"PT_ENV_REPO": str(env_repo)},
-                ),
-                patch.object(
-                    mobile_simulator_module.subprocess,
-                    "run",
-                    side_effect=git_results,
-                ) as run,
-            ):
-                resolved_path, values = (
-                    mobile_simulator_module
-                    .resolve_reviewed_profile_environment(
-                        "chat-native-disposable"
-                    )
-                )
-
-        self.assertEqual(resolved_path, profile_path.resolve())
-        self.assertEqual(
-            values["PT_STATION_DEPLOY_ENV"],
-            "station-disposable",
-        )
-        self.assertEqual(run.call_count, 3)
-        self.assertNotIn(".local/dev/profiles", str(resolved_path))
 
     def test_social_simulator_injects_station_profiles_in_memory(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
@@ -2521,6 +2463,19 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 "error": None,
             },
         )
+        with self.assertRaisesRegex(ValueError, "raw authority"):
+            handler.project_response(
+                "harness_action",
+                {
+                    "requestId": "unsafe-request",
+                    "status": "OK",
+                    "result": {
+                        "clientId": "sim-ios",
+                        "value": {"deviceId": "unscoped-device"},
+                    },
+                    "error": None,
+                },
+            )
         self.assertTrue(handler.close().closed)
 
 

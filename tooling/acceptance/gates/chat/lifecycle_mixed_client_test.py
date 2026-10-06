@@ -568,12 +568,18 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "activeStationPeerId": "station-peer",
                 "activeActorPtid": None,
                 "runtimeStationPeerId": None,
-                "deviceIdentityDigest": None,
+                "deviceId": "mobile-device",
                 "social": {
                     "stationPeerId": None,
                     "actorPtid": None,
                     "sessionCount": 0,
                     "requestCount": 0,
+                    "messageThreadCount": 0,
+                },
+                "group": {
+                    "stationPeerId": None,
+                    "actorPtid": None,
+                    "groupCount": 0,
                     "messageThreadCount": 0,
                 },
                 "navigation": {
@@ -587,6 +593,11 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         result = runtime.scope_snapshot("sim-ios")
 
         self.assertEqual(result["social"]["sessionCount"], 0)
+        self.assertEqual(result["group"]["groupCount"], 0)
+        self.assertEqual(
+            result["deviceIdentityDigest"],
+            runtime._identity_digest("mobile-device"),
+        )
         self.assertEqual(result["navigation"]["detailKeys"], [])
 
     @patch(

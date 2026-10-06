@@ -404,7 +404,9 @@ class MobileSimulatorRuntimeBinding:
 
 def validate_scope_projection(value: object) -> dict[str, Any]:
     scope = _mapping(value, "lifecycle scope")
-    _assert_no_raw_authority(scope)
+    projected_scope = dict(scope)
+    projected_scope.pop("deviceId", None)
+    _assert_no_raw_authority(projected_scope)
     if set(scope) != {
         "generation",
         "phase",
@@ -412,6 +414,7 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "activeStationPeerId",
         "activeActorPtid",
         "runtimeStationPeerId",
+        "deviceId",
         "social",
         "group",
         "navigation",
@@ -430,7 +433,7 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
             raise DriverError(
                 f"Mobile lifecycle scope {field} is invalid"
             )
-    for field in ("activeActorPtid", "runtimeStationPeerId"):
+    for field in ("activeActorPtid", "runtimeStationPeerId", "deviceId"):
         _optional_text(scope.get(field), field)
 
     social = _mapping(scope.get("social"), "social scope")

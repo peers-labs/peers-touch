@@ -23,6 +23,7 @@ def scope(
     station_peer_id: str = "station-peer-primary",
     actor_ptid: str | None = None,
     launch_state: str | None = None,
+    device_id: str = "device-sim-ios",
 ) -> dict[str, object]:
     active = actor_ptid is not None
     return {
@@ -34,6 +35,7 @@ def scope(
         "activeStationPeerId": station_peer_id,
         "activeActorPtid": actor_ptid,
         "runtimeStationPeerId": station_peer_id if active else None,
+        "deviceId": device_id,
         "social": {
             "stationPeerId": station_peer_id if active else None,
             "actorPtid": actor_ptid,
@@ -307,7 +309,11 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
         )
 
     def test_scope_rejects_raw_endpoint_or_device_authority(self) -> None:
-        for field in ("url", "serverUrl", "deviceId", "artifact"):
+        self.assertEqual(
+            validate_scope_projection(scope())["deviceId"],
+            "device-sim-ios",
+        )
+        for field in ("url", "serverUrl", "device", "artifact"):
             invalid = scope()
             invalid[field] = "raw-authority"
             with self.subTest(field=field):
