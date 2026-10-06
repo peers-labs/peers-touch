@@ -127,6 +127,10 @@ class RelayEndpointDiscoveryCapabilityHandler(EphemeralCapabilityHandler):
     def allowed_operations(self) -> tuple[str, ...]:
         return (RUN_OPERATION,)
 
+    @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        return (self._station_url, self._relay_url)
+
     def invoke(
         self,
         operation: str,
