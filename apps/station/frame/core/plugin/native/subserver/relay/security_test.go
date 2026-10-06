@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"crypto/tls"
 	"os"
 	"path/filepath"
@@ -12,6 +13,55 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
+
+func TestDiscoveryControlRoutesUseRoutePublishCredential(t *testing.T) {
+	t.Parallel()
+
+	routePublishCalls := 0
+	mountConnectCalls := 0
+	marker := func(calls *int) server.Wrapper {
+		return func(next server.EndpointHandler) server.EndpointHandler {
+			return func(
+				ctx context.Context,
+				req server.Request,
+				resp server.Response,
+			) error {
+				(*calls)++
+				return next(ctx, req, resp)
+			}
+		}
+	}
+	subserver := &SubServer{
+		opts:                   &Options{},
+		mountJWTWrapper:        marker(&mountConnectCalls),
+		routePublishJWTWrapper: marker(&routePublishCalls),
+	}
+
+	for _, handler := range newRelayHandler(subserver).handlers() {
+		if handler.Path() != "/api/v1/relay/routes" &&
+			handler.Path() != "/api/v1/relay/grants" {
+			continue
+		}
+		wrappers := handler.Wrappers()
+		if len(wrappers) == 0 {
+			t.Fatalf("%s has no authentication wrapper", handler.Path())
+		}
+		err := wrappers[len(wrappers)-1](
+			func(context.Context, server.Request, server.Response) error {
+				return nil
+			},
+		)(context.Background(), nil, nil)
+		if err != nil {
+			t.Fatalf("%s wrapper probe: %v", handler.Path(), err)
+		}
+	}
+	if routePublishCalls != 2 {
+		t.Fatalf("route publish wrapper calls = %d, want 2", routePublishCalls)
+	}
+	if mountConnectCalls != 0 {
+		t.Fatalf("mount connect wrapper handled discovery control routes")
+	}
+}
 
 func TestValidateRelaySecurityOptions(t *testing.T) {
 	t.Parallel()

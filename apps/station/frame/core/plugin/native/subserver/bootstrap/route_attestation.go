@@ -11,11 +11,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	maxRouteAttestationLifetime = 24 * time.Hour
-	maxConnectionGrantLifetime  = 15 * time.Minute
-)
-
 func (s *SubServer) SignStationRouteAttestation(
 	statement *peerpb.StationRouteStatement,
 ) (*peerpb.StationRouteAttestation, error) {
@@ -64,7 +59,7 @@ func signStationRouteAttestation(
 		statement.GetIssuedAtUnixMs() > now.Add(time.Minute).UnixMilli() ||
 		statement.GetExpiresAtUnixMs() <= now.UnixMilli() ||
 		statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() >
-			maxRouteAttestationLifetime.Milliseconds() {
+			domain.MaxRouteAttestationLifetime.Milliseconds() {
 		return nil, fmt.Errorf("Station route statement is invalid")
 	}
 	return signStationStatement(
@@ -95,11 +90,11 @@ func signStationConnectionGrant(
 		statement.GetRouteGeneration() == 0 ||
 		statement.GetGrantId() == "" ||
 		statement.GetMaxUses() == 0 ||
-		statement.GetMaxUses() > 32 ||
+		statement.GetMaxUses() > domain.MaxConnectionGrantUses ||
 		statement.GetIssuedAtUnixMs() > now.Add(time.Minute).UnixMilli() ||
 		statement.GetExpiresAtUnixMs() <= now.UnixMilli() ||
 		statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() >
-			maxConnectionGrantLifetime.Milliseconds() {
+			domain.MaxConnectionGrantLifetime.Milliseconds() {
 		return nil, fmt.Errorf("Station connection grant statement is invalid")
 	}
 	return signStationStatement(

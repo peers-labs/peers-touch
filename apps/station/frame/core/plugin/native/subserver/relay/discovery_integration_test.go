@@ -321,6 +321,100 @@ func TestRelayDiscoveryReturnsTypedCandidateAndGrantFailures(t *testing.T) {
 	)
 }
 
+func TestRegisterConnectionGrantRetryPreservesRemainingUses(t *testing.T) {
+	env := setupTestEnv(t)
+	defer env.cleanup()
+	ctx := context.Background()
+	station := newTestStation(t)
+	_, secret, err := env.svc.CreateInvite(
+		ctx,
+		station.peerID,
+		"grant-retry",
+		2,
+		time.Hour,
+	)
+	require.NoError(t, err)
+	enrolled := enrollStation(t, env, secret, "grant-retry", station, 10)
+	identity, err := env.svc.AuthenticateMountCredential(
+		ctx,
+		enrolled.Credential.Token,
+		domain.ScopeRoutePublish,
+	)
+	require.NoError(t, err)
+	require.NoError(t, env.svc.ActivateMount(ctx, identity))
+
+	route := signRouteAttestation(
+		t,
+		station,
+		enrolled.Credential.RelayPeerID,
+		"retry-route",
+		enrolled.Credential.Generation,
+		peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_GRANT_ONLY,
+	)
+	_, err = env.svc.PublishStationRoute(ctx, identity, route)
+	require.NoError(t, err)
+
+	grant := signConnectionGrantWithMaxUses(
+		t,
+		station,
+		enrolled.Credential.RelayPeerID,
+		"retry-grant",
+		"retry-route",
+		enrolled.Credential.Generation,
+		2,
+		time.Now().UTC(),
+	)
+	grantBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(grant)
+	require.NoError(t, err)
+	grantDigest := sha256.Sum256(grantBytes)
+	statement := &peerpb.StationConnectionGrantStatement{}
+	require.NoError(t, proto.Unmarshal(grant.GetStatementBytes(), statement))
+	register := &peerpb.RegisterStationConnectionGrantRequest{
+		GrantDigest:     grantDigest[:],
+		GrantId:         statement.GetGrantId(),
+		RouteId:         statement.GetRouteId(),
+		RouteGeneration: statement.GetRouteGeneration(),
+		MaxUses:         statement.GetMaxUses(),
+		ExpiresAtUnixMs: statement.GetExpiresAtUnixMs(),
+	}
+	first, err := env.svc.RegisterConnectionGrant(ctx, identity, register)
+	require.NoError(t, err)
+	require.Equal(t, uint32(2), first.RemainingUses)
+
+	discover := func(challenge byte) peerpb.AccessEndpointOutcome {
+		response, discoverErr := env.svc.DiscoverEndpoint(
+			ctx,
+			&peerpb.AccessEndpointRequest{
+				Challenge:             bytes.Repeat([]byte{challenge}, 32),
+				ConnectionGrant:       grantBytes,
+				ClientProtocolVersion: domain.AccessProtocolVersion,
+			},
+			"https://relay.example:443",
+		)
+		require.NoError(t, discoverErr)
+		return response.GetOutcome()
+	}
+	require.Equal(
+		t,
+		peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_READY,
+		discover(0x61),
+	)
+
+	retried, err := env.svc.RegisterConnectionGrant(ctx, identity, register)
+	require.NoError(t, err)
+	require.Equal(t, uint32(1), retried.RemainingUses)
+	require.Equal(
+		t,
+		peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_READY,
+		discover(0x62),
+	)
+	require.Equal(
+		t,
+		peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_GRANT_REPLAYED,
+		discover(0x63),
+	)
+}
+
 func signRouteAttestation(
 	t *testing.T,
 	station testStation,
@@ -369,6 +463,28 @@ func signConnectionGrant(
 	generation uint64,
 	now time.Time,
 ) *peerpb.StationConnectionGrant {
+	return signConnectionGrantWithMaxUses(
+		t,
+		station,
+		relayPeerID,
+		grantID,
+		routeID,
+		generation,
+		1,
+		now,
+	)
+}
+
+func signConnectionGrantWithMaxUses(
+	t *testing.T,
+	station testStation,
+	relayPeerID string,
+	grantID string,
+	routeID string,
+	generation uint64,
+	maxUses uint32,
+	now time.Time,
+) *peerpb.StationConnectionGrant {
 	t.Helper()
 	statement := &peerpb.StationConnectionGrantStatement{
 		GrantId:         grantID,
@@ -376,7 +492,7 @@ func signConnectionGrant(
 		RelayPeerId:     relayPeerID,
 		RouteId:         routeID,
 		RouteGeneration: generation,
-		MaxUses:         1,
+		MaxUses:         maxUses,
 		IssuedAtUnixMs:  now.UnixMilli(),
 		ExpiresAtUnixMs: now.Add(time.Minute).UnixMilli(),
 	}
