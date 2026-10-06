@@ -44,6 +44,16 @@ type Dispatcher func(ctx context.Context, req *protocol.RequestFrame) (statusCod
 // TokenRefresher returns a fresh relay token when the current one is near expiry.
 type TokenRefresher func(ctx context.Context, currentToken string) (newToken string, err error)
 
+// CredentialRejectedHandler is invoked after the Relay rejects a stream
+// credential. It may return a newly enrolled credential for the next attempt.
+type CredentialRejectedHandler func(
+	ctx context.Context,
+	currentToken string,
+) (newToken string, err error)
+
+// ConnectionStateChanged reports verified stream readiness.
+type ConnectionStateChanged func(connected bool)
+
 // BroadcastHandler is invoked when the relay forwards a Broadcast
 // frame to this station. `originPeerID` is the publisher's
 // authenticated peer id (relay-stamped). Implementations should
@@ -57,8 +67,10 @@ type Config struct {
 	RelayToken    string
 	StationPeerID string
 
-	Dispatcher     Dispatcher
-	TokenRefresher TokenRefresher
+	Dispatcher             Dispatcher
+	TokenRefresher         TokenRefresher
+	CredentialRejected     CredentialRejectedHandler
+	ConnectionStateChanged ConnectionStateChanged
 
 	// BroadcastHandler receives pub/sub events forwarded by the relay
 	// (Tier C1: federation invalidation). Optional — when nil, all
@@ -175,6 +187,33 @@ func (c *Client) connectLoop(ctx context.Context) {
 
 		conn, br, err := c.dialAndHandshake(ctx)
 		if err != nil {
+			if c.cfg.ConnectionStateChanged != nil {
+				c.cfg.ConnectionStateChanged(false)
+			}
+			if errors.Is(err, ErrHandshakeRejected) &&
+				c.cfg.CredentialRejected != nil {
+				c.mu.Lock()
+				currentToken := c.token
+				c.mu.Unlock()
+				replacement, replaceErr := c.cfg.CredentialRejected(
+					ctx,
+					currentToken,
+				)
+				if replaceErr == nil && replacement != "" {
+					c.mu.Lock()
+					c.token = replacement
+					c.mu.Unlock()
+					backoff = c.cfg.InitialBackoff
+					continue
+				}
+				if replaceErr != nil {
+					logger.Warnf(
+						ctx,
+						"[relay-client] rejected credential requires enrollment: %v",
+						replaceErr,
+					)
+				}
+			}
 			logger.Warnf(ctx, "[relay-client] connect failed: %v, retry in %v", err, backoff)
 			select {
 			case <-time.After(backoff):
@@ -189,6 +228,9 @@ func (c *Client) connectLoop(ctx context.Context) {
 		c.mu.Lock()
 		c.conn = conn
 		c.mu.Unlock()
+		if c.cfg.ConnectionStateChanged != nil {
+			c.cfg.ConnectionStateChanged(true)
+		}
 
 		logger.Infof(ctx, "[relay-client] connected to %s", c.cfg.RelayAddr)
 
@@ -201,8 +243,13 @@ func (c *Client) connectLoop(ctx context.Context) {
 		_ = conn.Close()
 
 		c.mu.Lock()
-		c.conn = nil
+		if c.conn == conn {
+			c.conn = nil
+		}
 		c.mu.Unlock()
+		if c.cfg.ConnectionStateChanged != nil {
+			c.cfg.ConnectionStateChanged(false)
+		}
 
 		logger.Infof(ctx, "[relay-client] disconnected, will reconnect")
 	}

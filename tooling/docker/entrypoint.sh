@@ -272,7 +272,11 @@ peers:
           invite-token: "${RELAY_CLIENT_INVITE_TOKEN:-}"
           label: "${RELAY_CLIENT_LABEL:-}"
           local-http-port: ${RELAY_CLIENT_LOCAL_HTTP_PORT:-18080}
+          bootstrap-identity-url: "${RELAY_CLIENT_BOOTSTRAP_IDENTITY_URL:-http://127.0.0.1:18080/sub-bootstrap/station-identity}"
           token-store-path: "${RELAY_CLIENT_TOKEN_STORE_PATH:-data/relay_token}"
+          use-tls: ${RELAY_CLIENT_USE_TLS:-true}
+          tls-insecure-skip-verify: ${RELAY_CLIENT_TLS_INSECURE_SKIP_VERIFY:-false}
+          credential-refresh-interval-sec: ${RELAY_CLIENT_CREDENTIAL_REFRESH_INTERVAL_SEC:-300}
 EOF
   OVERLAYS="${OVERLAYS}, relay_client.docker.yml"
 fi

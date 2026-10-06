@@ -31,15 +31,103 @@ type iceServerJSON struct {
 	Priority   int      `json:"priority,omitempty"`
 }
 
-// ---- Public: Register ----
+type enrollmentChallengeRequest struct {
+	InviteToken string `json:"invite_token"`
+	Label       string `json:"label,omitempty"`
+}
+
+type enrollmentChallengeResponse struct {
+	ChallengeID string `json:"challenge_id"`
+	InviteID    uint64 `json:"invite_id,omitempty"`
+	RelayPeerID string `json:"relay_peer_id"`
+	Challenge   []byte `json:"challenge"`
+	IssuedAt    string `json:"issued_at"`
+	ExpiresAt   string `json:"expires_at"`
+}
+
+type registerRequest struct {
+	InviteToken string                      `json:"invite_token"`
+	Proof       domain.StationIdentityProof `json:"proof"`
+}
+
+type rotateCredentialRequest struct {
+	Proof domain.StationIdentityProof `json:"proof"`
+}
+
+func challengeResponse(
+	challenge *domain.EnrollmentChallenge,
+) enrollmentChallengeResponse {
+	return enrollmentChallengeResponse{
+		ChallengeID: challenge.ID,
+		InviteID:    challenge.InviteID,
+		RelayPeerID: challenge.RelayPeerID,
+		Challenge:   append([]byte(nil), challenge.Challenge...),
+		IssuedAt:    challenge.IssuedAt.Format(time.RFC3339),
+		ExpiresAt:   challenge.ExpiresAt.Format(time.RFC3339),
+	}
+}
+
+func credentialResponse(
+	credential *domain.MountCredential,
+) map[string]interface{} {
+	return map[string]interface{}{
+		"relay_token":     credential.Token,
+		"relay_peer_id":   credential.RelayPeerID,
+		"station_peer_id": credential.StationPeerID,
+		"mount_id":        credential.MountID,
+		"generation":      credential.Generation,
+		"expires_at":      credential.ExpiresAt.Format(time.RFC3339),
+	}
+}
+
+// ---- Public: Challenge + Register ----
+
+func (h *relayHandler) handleEnrollmentChallenge(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	var req enrollmentChallengeRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	if strings.TrimSpace(req.InviteToken) == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("invite_token is required"))
+		return
+	}
+	challenge, err := h.sub.svc.BeginEnrollmentChallenge(
+		r.Context(),
+		req.InviteToken,
+		req.Label,
+	)
+	if err != nil {
+		h.writeEnrollmentError(w, r.Context(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, challengeResponse(challenge))
+}
+
+func (h *relayHandler) handleRotationChallenge(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	token, ok := bearerToken(r.Header.Get("Authorization"))
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, errorBody("valid Relay mount credential required"))
+		return
+	}
+	challenge, err := h.sub.svc.BeginRotationChallenge(r.Context(), token)
+	if err != nil {
+		h.writeEnrollmentError(w, r.Context(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, challengeResponse(challenge))
+}
 
 func (h *relayHandler) handleRegister(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req struct {
-		InviteToken string `json:"invite_token"`
-		Label       string `json:"label,omitempty"`
-	}
+	var req registerRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
@@ -49,12 +137,17 @@ func (h *relayHandler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.sub.svc.Register(ctx, req.InviteToken, req.Label,
-		r.Header.Get("X-Station-Peer-ID"), h.sub.opts.MaxStations)
+	result, err := h.sub.svc.Register(
+		ctx,
+		req.InviteToken,
+		req.Proof,
+		h.sub.opts.MaxStations,
+	)
 	if err != nil {
-		h.writeRegisterError(w, ctx, err)
+		h.writeEnrollmentError(w, ctx, err)
 		return
 	}
+	h.sub.streams.Remove(ctx, result.Credential.StationPeerID)
 
 	iceServers := h.sub.svc.BuildICEServers(application.TurnConfig{
 		Enabled:    h.sub.opts.TurnEnabled,
@@ -74,18 +167,23 @@ func (h *relayHandler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	logger.Infof(ctx, "[relay] station %s registered", result.StationPeerID)
+	logger.Infof(
+		ctx,
+		"[relay] station %s registered generation=%d",
+		result.Credential.StationPeerID,
+		result.Credential.Generation,
+	)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"station_peer_id": result.StationPeerID,
-		"relay_token":     result.RelayToken,
-		"expires_at":      result.ExpiresAt.Format(time.RFC3339),
-		"ice_servers":     iceOut,
-	})
+	response := credentialResponse(result.Credential)
+	response["ice_servers"] = iceOut
+	writeJSON(w, http.StatusOK, response)
 }
 
-// writeRegisterError maps application-layer sentinel errors to HTTP responses.
-func (h *relayHandler) writeRegisterError(w http.ResponseWriter, ctx context.Context, err error) {
+func (h *relayHandler) writeEnrollmentError(
+	w http.ResponseWriter,
+	ctx context.Context,
+	err error,
+) {
 	switch {
 	case errors.Is(err, application.ErrInviteNotFound):
 		writeJSON(w, http.StatusUnauthorized, errorBody("invalid invite token"))
@@ -93,8 +191,15 @@ func (h *relayHandler) writeRegisterError(w http.ResponseWriter, ctx context.Con
 		writeJSON(w, http.StatusForbidden, errorBody("invite token is no longer active"))
 	case errors.Is(err, application.ErrInviteExpired):
 		writeJSON(w, http.StatusForbidden, errorBody("invite token has expired"))
-	case errors.Is(err, application.ErrNoPeerID):
-		writeJSON(w, http.StatusBadRequest, errorBody("station_peer_id cannot be determined"))
+	case errors.Is(err, application.ErrChallengeInvalid),
+		errors.Is(err, application.ErrChallengeExpired),
+		errors.Is(err, application.ErrProofInvalid),
+		errors.Is(err, application.ErrStationMismatch):
+		writeJSON(w, http.StatusForbidden, errorBody("station identity proof rejected"))
+	case errors.Is(err, application.ErrCredentialInvalid):
+		writeJSON(w, http.StatusUnauthorized, errorBody("Relay enrollment required"))
+	case errors.Is(err, application.ErrInvalidRequest):
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid enrollment request"))
 	case errors.Is(err, application.ErrCapacityFull):
 		writeJSON(w, http.StatusServiceUnavailable, errorBody("relay capacity exceeded"))
 	default:
@@ -114,9 +219,14 @@ func (h *relayHandler) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.sub.svc.UpdateHeartbeat(ctx, peerID); err != nil {
+	identity, ok := mountIdentityFromRequest(r)
+	if !ok || identity.StationPeerID != peerID {
+		writeJSON(w, http.StatusUnauthorized, errorBody("invalid Relay mount identity"))
+		return
+	}
+	if err := h.sub.svc.UpdateHeartbeat(ctx, identity); err != nil {
 		logger.Errorf(ctx, "[relay] heartbeat failed for %s: %v", peerID, err)
-		writeJSON(w, http.StatusInternalServerError, errorBody("heartbeat failed"))
+		writeJSON(w, http.StatusUnauthorized, errorBody("Relay enrollment required"))
 		return
 	}
 
@@ -134,17 +244,24 @@ func (h *relayHandler) handleTokenRefresh(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	newToken, expiresAt, err := h.sub.svc.RefreshToken(ctx, peerID)
-	if err != nil {
-		logger.Errorf(ctx, "[relay] token refresh failed for %s: %v", peerID, err)
-		writeJSON(w, http.StatusInternalServerError, errorBody("failed to refresh token"))
+	token, ok := bearerToken(r.Header.Get("Authorization"))
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, errorBody("valid Relay mount credential required"))
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"relay_token": newToken,
-		"expires_at":  expiresAt.Format(time.RFC3339),
-	})
+	var req rotateCredentialRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	credential, err := h.sub.svc.RotateCredential(ctx, token, req.Proof)
+	if err != nil {
+		logger.Errorf(ctx, "[relay] credential rotation failed for %s: %v", peerID, err)
+		h.writeEnrollmentError(w, ctx, err)
+		return
+	}
+	h.sub.streams.Remove(ctx, peerID)
+	writeJSON(w, http.StatusOK, credentialResponse(credential))
 }
 
 // ---- Station: Mint client token ----
@@ -178,7 +295,12 @@ func (h *relayHandler) handleMintClientToken(w http.ResponseWriter, r *http.Requ
 		ttl = d
 	}
 
-	token, expiresAt, err := h.sub.svc.MintClientToken(ctx, peerID, ttl)
+	currentToken, ok := bearerToken(r.Header.Get("Authorization"))
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, errorBody("valid Relay mount credential required"))
+		return
+	}
+	credential, err := h.sub.svc.MintClientToken(ctx, currentToken, ttl)
 	if err != nil {
 		if errors.Is(err, application.ErrMountNotFound) {
 			writeJSON(w, http.StatusNotFound, errorBody("station is not mounted on this relay"))
@@ -190,9 +312,10 @@ func (h *relayHandler) handleMintClientToken(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"client_token":    token,
-		"station_peer_id": peerID,
-		"expires_at":      expiresAt.Format(time.RFC3339),
+		"client_token":    credential.Token,
+		"station_peer_id": credential.StationPeerID,
+		"generation":      credential.Generation,
+		"expires_at":      credential.ExpiresAt.Format(time.RFC3339),
 	})
 }
 

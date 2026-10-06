@@ -10,22 +10,30 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 const minimumOperatorKeyBytes = 32
+
+type relaySecurityMaterial struct {
+	signingKey  []byte
+	operatorKey []byte
+}
 
 type operatorClaims struct {
 	Scope string `json:"scope"`
 	jwt.RegisteredClaims
 }
 
-func validateRelaySecurityOptions(options *Options) ([]byte, error) {
+func validateRelaySecurityOptions(options *Options) (*relaySecurityMaterial, error) {
 	if strings.TrimSpace(options.StreamListenAddr) == "" {
 		return nil, fmt.Errorf("relay security: stream listen address is required")
 	}
@@ -103,7 +111,10 @@ func validateRelaySecurityOptions(options *Options) ([]byte, error) {
 		if bytes.Equal(tlsKey, operatorKey) || bytes.Equal(tlsKey, signingKey) {
 			return nil, fmt.Errorf("relay security: TLS, signing, and operator key material must be distinct")
 		}
-		return operatorKey, nil
+		return &relaySecurityMaterial{
+			signingKey:  signingKey,
+			operatorKey: operatorKey,
+		}, nil
 	}
 
 	if !options.AllowInsecureLoopback {
@@ -122,7 +133,10 @@ func validateRelaySecurityOptions(options *Options) ([]byte, error) {
 			options.PublicBaseURL,
 		)
 	}
-	return operatorKey, nil
+	return &relaySecurityMaterial{
+		signingKey:  signingKey,
+		operatorKey: operatorKey,
+	}, nil
 }
 
 func validateRelayQuotas(options *Options) error {
@@ -227,6 +241,112 @@ func operatorAuthenticationWrapper(
 			})
 		},
 	)
+}
+
+func mountAuthenticationWrapper(
+	service *application.Service,
+	requiredScope string,
+) server.Wrapper {
+	return server.HTTPWrapperAdapter(
+		func(ctx context.Context, next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				token, ok := bearerToken(request.Header.Get("Authorization"))
+				if !ok {
+					writeJSON(
+						w,
+						http.StatusUnauthorized,
+						errorBody("valid Relay mount credential required"),
+					)
+					return
+				}
+				identity, err := service.AuthenticateMountCredential(
+					request.Context(),
+					token,
+					requiredScope,
+				)
+				if err != nil {
+					writeJSON(
+						w,
+						http.StatusUnauthorized,
+						errorBody("valid Relay mount credential required"),
+					)
+					return
+				}
+				subject := &coreauth.Subject{
+					ID: domain.SubjectRelayAccess + identity.StationPeerID,
+					Attributes: map[string]string{
+						"audience":        domain.MountCredentialAudience,
+						"scope":           requiredScope,
+						"relay_peer_id":   identity.RelayPeerID,
+						"station_peer_id": identity.StationPeerID,
+						"mount_id":        strconv.FormatUint(identity.MountID, 10),
+						"generation":      strconv.FormatUint(identity.Generation, 10),
+						"jti":             identity.JTI,
+					},
+				}
+				next.ServeHTTP(
+					w,
+					request.WithContext(coreauth.WithSubject(request.Context(), subject)),
+				)
+			})
+		},
+	)
+}
+
+func networkAuthenticationWrapper(service *application.Service) server.Wrapper {
+	return server.HTTPWrapperAdapter(
+		func(ctx context.Context, next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				token, ok := bearerToken(request.Header.Get("Authorization"))
+				if !ok {
+					writeJSON(
+						w,
+						http.StatusUnauthorized,
+						errorBody("valid Relay network credential required"),
+					)
+					return
+				}
+				identity, err := service.AuthenticateNetworkCredential(
+					request.Context(),
+					token,
+				)
+				if err != nil {
+					writeJSON(
+						w,
+						http.StatusUnauthorized,
+						errorBody("valid Relay network credential required"),
+					)
+					return
+				}
+				subject := &coreauth.Subject{
+					ID: domain.SubjectRelayClient + identity.StationPeerID,
+					Attributes: map[string]string{
+						"station_peer_id": identity.StationPeerID,
+						"mount_id":        strconv.FormatUint(identity.MountID, 10),
+						"generation":      strconv.FormatUint(identity.Generation, 10),
+						"jti":             identity.JTI,
+					},
+				}
+				next.ServeHTTP(
+					w,
+					request.WithContext(coreauth.WithSubject(request.Context(), subject)),
+				)
+			})
+		},
+	)
+}
+
+func bearerToken(authorization string) (string, bool) {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(authorization, prefix) {
+		return "", false
+	}
+	token := strings.TrimPrefix(authorization, prefix)
+	if token == "" || strings.TrimSpace(token) != token ||
+		strings.ContainsAny(token, " \t\r\n") {
+		return "", false
+	}
+	return token, true
 }
 
 func authenticateOperator(

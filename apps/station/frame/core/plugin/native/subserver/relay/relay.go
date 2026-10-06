@@ -9,12 +9,11 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"time"
 
-	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
@@ -37,8 +36,10 @@ type SubServer struct {
 	svc     *application.Service
 	streams *StreamManager
 
-	networkJWTWrapper  server.Wrapper
-	operatorJWTWrapper server.Wrapper
+	mountJWTWrapper       server.Wrapper
+	mountRotateJWTWrapper server.Wrapper
+	networkJWTWrapper     server.Wrapper
+	operatorJWTWrapper    server.Wrapper
 
 	listener net.Listener
 	stopCh   chan struct{}
@@ -57,21 +58,16 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 		return fmt.Errorf("[relay] subserver cannot initialize under %q role", processRole)
 	}
 
-	operatorKey, err := validateRelaySecurityOptions(s.opts)
+	securityMaterial, err := validateRelaySecurityOptions(s.opts)
 	if err != nil {
 		return err
 	}
-
-	// Network credentials remain on the legacy mount path until Task 2 replaces
-	// them with Station proof-of-possession credentials.
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.networkJWTWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
-	s.operatorJWTWrapper = operatorAuthenticationWrapper(
-		operatorKey,
-		s.opts.OperatorIssuer,
-		s.opts.OperatorAudience,
-		s.opts.OperatorScope,
+	authority, err := application.NewCredentialAuthority(
+		securityMaterial.signingKey,
 	)
+	if err != nil {
+		return fmt.Errorf("[relay] initialize credential authority: %w", err)
+	}
 
 	// Infrastructure layer: persistence
 	rds, err := store.GetRDS(ctx)
@@ -85,16 +81,46 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 	}
 
 	// Application layer: business logic
-	s.svc = application.NewService(repo)
+	s.svc = application.NewService(repo, authority)
+	s.mountJWTWrapper = mountAuthenticationWrapper(
+		s.svc,
+		domain.ScopeMountConnect,
+	)
+	s.mountRotateJWTWrapper = mountAuthenticationWrapper(
+		s.svc,
+		domain.ScopeMountRotate,
+	)
+	s.networkJWTWrapper = networkAuthenticationWrapper(s.svc)
+	s.operatorJWTWrapper = operatorAuthenticationWrapper(
+		securityMaterial.operatorKey,
+		s.opts.OperatorIssuer,
+		s.opts.OperatorAudience,
+		s.opts.OperatorScope,
+	)
 
 	// Stream manager with status callback (Block 7: pass maxConcurrent).
-	s.streams = NewStreamManager(func(ctx context.Context, peerID string, online bool) {
+	s.streams = NewStreamManager(func(
+		ctx context.Context,
+		peerID string,
+		generation uint64,
+		online bool,
+	) {
 		if online {
-			if err := s.svc.UpdateMountStatus(ctx, peerID, domain.MountStatusOnline); err != nil {
+			if err := s.svc.UpdateMountStatus(
+				ctx,
+				peerID,
+				generation,
+				domain.MountStatusOnline,
+			); err != nil && !errors.Is(err, domain.ErrMountCredentialStale) {
 				logger.Errorf(ctx, "[relay] update mount status online for %s: %v", peerID, err)
 			}
 		} else {
-			if err := s.svc.UpdateMountStatus(ctx, peerID, domain.MountStatusOffline); err != nil {
+			if err := s.svc.UpdateMountStatus(
+				ctx,
+				peerID,
+				generation,
+				domain.MountStatusOffline,
+			); err != nil && !errors.Is(err, domain.ErrMountCredentialStale) {
 				logger.Errorf(ctx, "[relay] update mount status offline for %s: %v", peerID, err)
 			}
 		}
@@ -259,20 +285,21 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	// Block 4: Validate relay token via JWT provider.
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	subj, err := provider.Validate(ctx, hs.RelayToken)
+	identity, err := s.svc.AuthenticateMountCredential(
+		ctx,
+		hs.RelayToken,
+		domain.ScopeMountConnect,
+	)
 	if err != nil {
-		logger.Warnf(ctx, "[relay] handshake JWT validation failed for %s: %v", hs.StationPeerID, err)
+		logger.Warnf(ctx, "[relay] handshake credential validation failed for %s: %v", hs.StationPeerID, err)
 		s.writeHandshakeACK(conn, false, "invalid relay token")
 		_ = conn.Close()
 		metConnectionsTotal.Inc("auth_error")
 		return
 	}
 
-	expectedSubject := domain.SubjectRelayAccess + hs.StationPeerID
-	if subj.ID != expectedSubject {
-		logger.Warnf(ctx, "[relay] handshake subject mismatch: want %s, got %s", expectedSubject, subj.ID)
+	if identity.StationPeerID != hs.StationPeerID {
+		logger.Warnf(ctx, "[relay] handshake subject mismatch for %s", hs.StationPeerID)
 		s.writeHandshakeACK(conn, false, "token subject does not match station_peer_id")
 		_ = conn.Close()
 		metConnectionsTotal.Inc("auth_error")
@@ -289,28 +316,12 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	// Block 5: DB upsert — errors are NOT silenced.
-	now := time.Now()
-	if _, getErr := s.svc.GetMountByStationPeerID(ctx, hs.StationPeerID); getErr != nil {
-		if err := s.svc.CreateMount(ctx, &domain.Mount{
-			StationPeerID: hs.StationPeerID,
-			Status:        domain.MountStatusOnline,
-			LastHeartbeat: now,
-			MountedAt:     now,
-		}); err != nil {
-			logger.Errorf(ctx, "[relay] create mount for %s: %v", hs.StationPeerID, err)
-			s.writeHandshakeACK(conn, false, "internal error")
-			_ = conn.Close()
-			metConnectionsTotal.Inc("db_error")
-			return
-		}
-	} else {
-		if err := s.svc.UpdateMountStatus(ctx, hs.StationPeerID, domain.MountStatusOnline); err != nil {
-			logger.Errorf(ctx, "[relay] update mount for %s: %v", hs.StationPeerID, err)
-		}
-		if err := s.svc.UpdateHeartbeat(ctx, hs.StationPeerID); err != nil {
-			logger.Errorf(ctx, "[relay] update heartbeat for %s: %v", hs.StationPeerID, err)
-		}
+	if err := s.svc.ActivateMount(ctx, identity); err != nil {
+		logger.Warnf(ctx, "[relay] handshake mount activation failed for %s: %v", hs.StationPeerID, err)
+		s.writeHandshakeACK(conn, false, "mount is revoked or stale")
+		_ = conn.Close()
+		metConnectionsTotal.Inc("auth_error")
+		return
 	}
 
 	// Block 4: Send ACK to station — handshake succeeded.
@@ -319,7 +330,13 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 	brc := &bufferedReadConn{Reader: br, Conn: conn}
 
 	// Block 1: Add starts readLoop goroutine internally — no handleIncomingFrames.
-	s.streams.Add(ctx, hs.StationPeerID, brc)
+	s.streams.Add(
+		ctx,
+		hs.StationPeerID,
+		identity.Generation,
+		identity.ExpiresAt,
+		brc,
+	)
 
 	metConnectionsTotal.Inc("success")
 	metActiveStreams.Inc()

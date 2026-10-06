@@ -251,7 +251,8 @@
     {
       "id": "station-access-relay-role-security",
       "features": [
-        "station-access-relay-role-security"
+        "station-access-relay-role-security",
+        "station-access-relay-enrollment"
       ],
       "when": {
         "paths": [
@@ -261,6 +262,7 @@
           "apps/station/frame/core/federation/transport.go",
           "apps/station/frame/core/plugin/native/node/**",
           "apps/station/frame/core/plugin/native/subserver/relay/**",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/**",
           "apps/station/frame/core/runtime/role/**",
           "apps/station/frame/peers.go",
           "tooling/docker/.env.example",
@@ -275,7 +277,8 @@
         ]
       },
       "require": [
-        "relay-role-security-contract"
+        "relay-role-security-contract",
+        "relay-station-enrollment-e2e"
       ]
     },
     {
@@ -286,6 +289,7 @@
         "station-access-scope-isolation",
         "station-access-federation-boundary",
         "station-access-relay-role-security",
+        "station-access-relay-enrollment",
         "station-access-interface-contract"
       ],
       "when": {
@@ -311,6 +315,7 @@
         "station-access-scope-isolation-e2e",
         "station-access-federation-boundary-e2e",
         "relay-role-security-contract",
+        "relay-station-enrollment-e2e",
         "desktop-release-build",
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",

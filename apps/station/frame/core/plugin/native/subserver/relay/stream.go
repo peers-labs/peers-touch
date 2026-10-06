@@ -36,8 +36,14 @@ var (
 	ErrStreamDisconnected = errors.New("stream disconnected while waiting for response")
 )
 
-// StatusCallback is invoked when a stream goes online/offline.
-type StatusCallback func(ctx context.Context, peerID string, online bool)
+// StatusCallback is invoked when a specific mount generation goes
+// online/offline.
+type StatusCallback func(
+	ctx context.Context,
+	peerID string,
+	generation uint64,
+	online bool,
+)
 
 // BroadcastCallback is invoked by the readLoop when a station
 // publishes a Broadcast frame on its stream. The relay (StreamManager)
@@ -61,9 +67,11 @@ type pendingRequest struct {
 // streamEntry represents a live TCP connection to a station.
 // It owns its readLoop goroutine and serialises all writes via writeMu.
 type streamEntry struct {
-	peerID    string
-	conn      net.Conn
-	mountedAt time.Time
+	peerID              string
+	generation          uint64
+	conn                net.Conn
+	mountedAt           time.Time
+	credentialExpiresAt time.Time
 
 	// writeMu serialises ALL writes to conn (request frames, pong, ping).
 	writeMu sync.Mutex
@@ -96,18 +104,28 @@ type streamEntry struct {
 
 // newStreamEntry creates and starts a stream entry. The readLoop goroutine
 // begins immediately — the entry is "live" after this call.
-func newStreamEntry(parentCtx context.Context, peerID string, conn net.Conn, maxConcurrent int, onBroadcast BroadcastCallback) *streamEntry {
+func newStreamEntry(
+	parentCtx context.Context,
+	peerID string,
+	generation uint64,
+	credentialExpiresAt time.Time,
+	conn net.Conn,
+	maxConcurrent int,
+	onBroadcast BroadcastCallback,
+) *streamEntry {
 	ctx, cancel := context.WithCancel(parentCtx)
 	e := &streamEntry{
-		peerID:      peerID,
-		conn:        conn,
-		mountedAt:   time.Now(),
-		pending:     make(map[uint32]*pendingRequest),
-		semaphore:   make(chan struct{}, maxConcurrent),
-		done:        make(chan struct{}),
-		ctx:         ctx,
-		cancel:      cancel,
-		onBroadcast: onBroadcast,
+		peerID:              peerID,
+		generation:          generation,
+		conn:                conn,
+		mountedAt:           time.Now(),
+		credentialExpiresAt: credentialExpiresAt,
+		pending:             make(map[uint32]*pendingRequest),
+		semaphore:           make(chan struct{}, maxConcurrent),
+		done:                make(chan struct{}),
+		ctx:                 ctx,
+		cancel:              cancel,
+		onBroadcast:         onBroadcast,
 	}
 	e.lastPong.Store(time.Now())
 	go e.readLoop()
@@ -377,11 +395,25 @@ func (sm *StreamManager) IsBroadcastTopicAllowed(topic string) bool {
 // Add registers (or replaces) a stream for the given peerID.
 // If an old stream exists it is closed first.
 // The new entry starts its readLoop immediately.
-func (sm *StreamManager) Add(ctx context.Context, peerID string, conn net.Conn) {
+func (sm *StreamManager) Add(
+	ctx context.Context,
+	peerID string,
+	generation uint64,
+	credentialExpiresAt time.Time,
+	conn net.Conn,
+) {
 	// We bind the broadcast hook here (not in NewStreamManager) so
 	// each entry's readLoop dispatches into the same fan-out path,
 	// without the entry having to know about its peers.
-	entry := newStreamEntry(ctx, peerID, conn, sm.maxConcurrentPerStation, sm.handleInboundBroadcast)
+	entry := newStreamEntry(
+		ctx,
+		peerID,
+		generation,
+		credentialExpiresAt,
+		conn,
+		sm.maxConcurrentPerStation,
+		sm.handleInboundBroadcast,
+	)
 
 	sm.mu.Lock()
 	if old, exists := sm.streams[peerID]; exists {
@@ -391,7 +423,7 @@ func (sm *StreamManager) Add(ctx context.Context, peerID string, conn net.Conn) 
 	sm.mu.Unlock()
 
 	if sm.callback != nil {
-		sm.callback(ctx, peerID, true)
+		sm.callback(ctx, peerID, generation, true)
 	}
 	logger.Infof(ctx, "[stream] added stream for %s", peerID)
 }
@@ -470,7 +502,7 @@ func (sm *StreamManager) Remove(ctx context.Context, peerID string) {
 	sm.mu.Unlock()
 
 	if exists && sm.callback != nil {
-		sm.callback(ctx, peerID, false)
+		sm.callback(ctx, peerID, entry.generation, false)
 	}
 }
 
@@ -493,7 +525,7 @@ func (sm *StreamManager) RemoveIfSame(ctx context.Context, peerID string, expect
 	sm.mu.Unlock()
 
 	if exists && sm.callback != nil {
-		sm.callback(ctx, peerID, false)
+		sm.callback(ctx, peerID, expected.generation, false)
 	}
 }
 
@@ -566,6 +598,15 @@ func (sm *StreamManager) PingAll(ctx context.Context, interval, timeout time.Dur
 		if e.closed.Load() {
 			continue
 		}
+		if !e.credentialExpiresAt.After(time.Now()) {
+			logger.Warnf(
+				ctx,
+				"[stream] credential expired for %s, removing",
+				e.peerID,
+			)
+			failed = append(failed, e.peerID)
+			continue
+		}
 
 		// Check if last pong is too old (station not responding).
 		if e.LastPong().Before(cutoff) {
@@ -605,7 +646,7 @@ func (sm *StreamManager) CleanupStale(ctx context.Context, cutoff time.Time) int
 
 	for _, e := range stale {
 		if sm.callback != nil {
-			sm.callback(ctx, e.peerID, false)
+			sm.callback(ctx, e.peerID, e.generation, false)
 		}
 		logger.Infof(ctx, "[stream] cleaned stale stream for %s", e.peerID)
 	}
