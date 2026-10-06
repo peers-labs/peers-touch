@@ -277,6 +277,7 @@ def write_tauri_codegen_asset(
     profile: str,
     identity_bytes: bytes,
     *,
+    address: str | None = None,
     representation: bytes | None = None,
 ) -> bytes:
     embedded_bytes = (
@@ -284,7 +285,7 @@ def write_tauri_codegen_asset(
         if representation is None
         else representation
     )
-    digest = hashlib.sha256(identity_bytes).hexdigest()
+    digest = address or hashlib.sha256(identity_bytes).hexdigest()
     cache = (
         target
         / profile
@@ -3096,6 +3097,7 @@ time.sleep(60)
                         target,
                         "debug",
                         identity_bytes,
+                        address=("a" * 64 if platform == "android" else None),
                     )
                     writer(
                         artifact,
@@ -3227,7 +3229,7 @@ time.sleep(60)
             }
             with self.assertRaisesRegex(
                 MobileNativeBuildError,
-                "missing the digest-bound Web identity representation",
+                "missing a content-addressed Web identity representation",
             ):
                 _scan_packaged_web_identity(
                     apk,
