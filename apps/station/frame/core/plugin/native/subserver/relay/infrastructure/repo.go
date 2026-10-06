@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
@@ -146,7 +147,8 @@ func toInvitePO(i *domain.Invite) invitePO {
 var _ domain.Repository = (*GormRepo)(nil)
 
 type GormRepo struct {
-	db *gorm.DB
+	db           *gorm.DB
+	enrollmentMu sync.Mutex
 }
 
 func NewGormRepo(db *gorm.DB) *GormRepo {
@@ -238,6 +240,9 @@ func (r *GormRepo) ConsumeInviteAndActivateMount(
 	mount *domain.Mount,
 	maxStations int,
 ) (*domain.Mount, error) {
+	r.enrollmentMu.Lock()
+	defer r.enrollmentMu.Unlock()
+
 	now := time.Now().UTC()
 	var activated domain.Mount
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -418,6 +423,9 @@ func (r *GormRepo) RotateMountCredential(
 	current domain.MountIdentity,
 	nextCredentialJTI string,
 ) (*domain.Mount, error) {
+	r.enrollmentMu.Lock()
+	defer r.enrollmentMu.Unlock()
+
 	result := r.db.WithContext(ctx).Model(&mountPO{}).
 		Where(
 			"id = ? AND station_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
@@ -441,6 +449,9 @@ func (r *GormRepo) RevokeMount(
 	ctx context.Context,
 	stationPeerID string,
 ) (*domain.Mount, error) {
+	r.enrollmentMu.Lock()
+	defer r.enrollmentMu.Unlock()
+
 	var revoked domain.Mount
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current mountPO
