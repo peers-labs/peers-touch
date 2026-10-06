@@ -1080,6 +1080,26 @@ test('static functional result accepts and seals an emitted acceptance report', 
   }
 });
 
+test('static functional result accepts complete acceptance report traceability', async () => {
+  const scope = fixture({ gates: ['chat-gate'] });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await transition(scope, 'FUNCTIONAL_RUNNING');
+    const committed = await commitFunctionalPass(scope, {
+      staticEvidenceReport: true,
+      result: { traceability: { status: 'complete' } },
+    });
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+  } finally {
+    scope.close();
+  }
+});
+
 test('static functional result accepts a generic source artifact without evidence claims', async () => {
   const scope = fixture({ gates: ['chat-gate'] });
   try {
