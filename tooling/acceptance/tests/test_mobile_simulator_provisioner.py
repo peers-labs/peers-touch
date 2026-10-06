@@ -1796,6 +1796,14 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             ),
             scope,
         )
+        self.assertIs(
+            mobile_simulator_module.ChatMixedNativeProvisioner
+            ._project_chat_harness_result(
+                "lifecycle.scope.read",
+                scope,
+            ),
+            scope,
+        )
 
         projected = (
             MobileStationLifecycleSimulatorProvisioner

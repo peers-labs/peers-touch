@@ -146,7 +146,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "lifecycle.scope.read",
                 {"activeActorPtid": None, "deviceId": ""},
             ),
-            {"activeActorPtid": None, "deviceIdentityDigest": None},
+            {"activeActorPtid": None, "deviceId": ""},
         )
         self.assertEqual(
             ChatMixedNativeProvisioner._project_chat_harness_result(

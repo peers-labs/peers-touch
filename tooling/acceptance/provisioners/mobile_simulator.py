@@ -7233,6 +7233,8 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         action: str,
         value: object,
     ) -> object:
+        if action == "lifecycle.scope.read":
+            return value
         if action == "social.people.search" and isinstance(value, (list, tuple)):
             return {
                 "entries": [
