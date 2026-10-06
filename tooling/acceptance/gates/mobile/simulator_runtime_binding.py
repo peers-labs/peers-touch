@@ -11,28 +11,16 @@ from tooling.acceptance.core import (
     EphemeralGateClient,
     EvidenceError,
 )
+from tooling.acceptance.gates.mobile.simulator_harness_contract import (
+    STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS,
+    child_callable_harness_actions,
+)
 
 
 CAPABILITY_ID = "mobile.simulator.appium-session"
 DEFAULT_GATE_ID = "mobile-simulator-station-lifecycle-e2e"
 DEFAULT_TIMEOUT_SECONDS = 60.0
-CALLABLE_HARNESS_ACTIONS = frozenset(
-    {
-        "cleanup",
-        "lifecycle.restart",
-        "lifecycle.resume",
-        "lifecycle.scope.read",
-        "lifecycle.snapshot",
-        "lifecycle.suspend",
-        "session.logout",
-        "settings.device.read",
-        "settings.device.update",
-        "settings.notifications.read",
-        "settings.notifications.update",
-        "settings.profile.read",
-        "settings.profile.update",
-    }
-)
+CALLABLE_HARNESS_ACTIONS = STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS
 
 
 @dataclass(frozen=True)
@@ -80,6 +68,7 @@ class MobileSimulatorRuntimeBinding:
         self._require_identifier(gate_id, "Gate")
         self._client = client
         self._gate_id = gate_id
+        self._callable_harness_actions = child_callable_harness_actions(gate_id)
         self._active_clients: list[str] = []
 
     @classmethod
@@ -256,7 +245,7 @@ class MobileSimulatorRuntimeBinding:
         action: str,
         payload: Mapping[str, Any] | None = None,
     ) -> Any:
-        if action not in CALLABLE_HARNESS_ACTIONS:
+        if action not in self._callable_harness_actions:
             raise DriverError(
                 f"Mobile simulator Harness action is not callable: {action!r}"
             )

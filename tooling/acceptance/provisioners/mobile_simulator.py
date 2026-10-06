@@ -71,6 +71,13 @@ from tooling.acceptance.fixtures.chat_native_actors import (
 from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_federation_id_from_station_ids,
 )
+from tooling.acceptance.gates.mobile.simulator_harness_contract import (
+    CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS,
+    CHAT_MIXED_NATIVE_GATE_IDS,
+    STATION_ACCESS_NATIVE_CHILD_HARNESS_ACTIONS,
+    STATION_ACCESS_NATIVE_GATE_IDS,
+    STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS,
+)
 from tooling.acceptance.provisioners.mobile_service_bindings import (
     MobileServiceBinding,
     resolve_mobile_service_bindings,
@@ -123,43 +130,8 @@ MOBILE_LIFECYCLE_SCOPE_FIELDS = frozenset(
         "navigation",
     }
 )
-CHAT_MIXED_NATIVE_GATE_IDS = frozenset(
-    {
-        "chat-lifecycle-call-resolution-e2e",
-        "chat-lifecycle-mixed-client-same-station-e2e",
-        "chat-lifecycle-mixed-client-cross-station-e2e",
-        "chat-lifecycle-mixed-client-multi-device-e2e",
-        "chat-lifecycle-mixed-client-group-mls-e2e",
-    }
-)
-CHAT_MIXED_NATIVE_HARNESS_ACTIONS = frozenset(
-    {
-        "lifecycle.resume",
-        "lifecycle.restart",
-        "lifecycle.scope.read",
-        "lifecycle.suspend",
-        "messaging.createDirect",
-        "messaging.createGroup",
-        "messaging.attachment.stage",
-        "messaging.attachment.open",
-        "messaging.send",
-        "messaging.interact",
-        "messaging.read",
-        "messaging.typing",
-        "messaging.reconcile",
-        "messaging.command.read",
-        "messaging.search",
-        "messaging.projection.read",
-        "recovery.snapshot",
-        "social.projection.read",
-        "social.reconcile",
-        "getRealtimeDevice",
-        "initiateCall",
-        "callResolutionState",
-        "acceptCall",
-        "rejectCall",
-        "cleanup",
-    }
+CHAT_MIXED_NATIVE_HARNESS_ACTIONS = (
+    CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS
 )
 STATION_LIFECYCLE_SERVICES = (
     "station-primary",
@@ -4586,13 +4558,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         "harness_action",
         "stop",
     )
-    _CHILD_HARNESS_ACTIONS = STATION_LIFECYCLE_HARNESS_ACTIONS - {
-        "native.deliverDeepLink",
-        "projection.read",
-        "station.add",
-        "station.select",
-        "access.submit",
-    }
+    _CHILD_HARNESS_ACTIONS = STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS
 
     def __init__(
         self,
@@ -7272,31 +7238,8 @@ class StationAccessNativeProvisioner(ChatMixedNativeProvisioner):
     derives_fixture_federation_id = False
     actor_manifest_kind = "station-access-native-actor-manifest"
     actor_manifest_path = "runtime/station-access-native-actors.json"
-    gate_ids = frozenset(
-        {
-            "station-access-auth-e2e",
-            "station-access-scope-isolation-e2e",
-            "station-access-federation-boundary-e2e",
-        }
-    )
-    child_harness_actions = frozenset(
-        {
-            "cleanup",
-            "getRealtimeDevice",
-            "lifecycle.restart",
-            "lifecycle.waitReady",
-            "lifecycle.scope.read",
-            "messaging.reconcile",
-            "federation.context.read",
-            "social.people.search",
-            "messaging.createDirect",
-            "messaging.createGroup",
-            "messaging.projection.read",
-            "recovery.snapshot",
-            "social.reconcile",
-            "session.logout",
-        }
-    )
+    gate_ids = STATION_ACCESS_NATIVE_GATE_IDS
+    child_harness_actions = STATION_ACCESS_NATIVE_CHILD_HARNESS_ACTIONS
 
     def _inject_station_profile_bindings(
         self,

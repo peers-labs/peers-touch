@@ -292,6 +292,31 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
                 ):
                     binding.call_action("sim-ios", action, {})
 
+    def test_chat_gate_uses_the_shared_child_action_contract(self) -> None:
+        gate_id = "chat-lifecycle-mixed-client-multi-device-e2e"
+        client = RecordingClient(gate_id)
+        binding = MobileSimulatorRuntimeBinding(  # type: ignore[arg-type]
+            client,
+            gate_id=gate_id,
+        )
+
+        result = binding.call_action(
+            "sim-ios",
+            "messaging.reconcile",
+            {},
+        )
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(client.calls[-1][1], "harness_action")
+        self.assertEqual(
+            client.calls[-1][2],
+            {
+                "clientId": "sim-ios",
+                "action": "messaging.reconcile",
+                "actionPayload": {},
+            },
+        )
+
     def test_fixture_authentication_keeps_credentials_parent_owned(self) -> None:
         client = RecordingClient()
         binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]

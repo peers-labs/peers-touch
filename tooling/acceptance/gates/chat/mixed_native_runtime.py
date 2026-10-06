@@ -35,6 +35,9 @@ from tooling.acceptance.gates.chat.native_support import (
     verify_runtime_fixture_ready,
     wait_for_peer_key_bundle,
 )
+from tooling.acceptance.gates.mobile.simulator_harness_contract import (
+    STATION_ACCESS_NATIVE_GATE_IDS,
+)
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
     MobileSimulatorRuntimeBinding,
 )
@@ -42,13 +45,7 @@ from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
 
 ENVIRONMENT_ID = "chat-mixed-native"
 STATION_ACCESS_ENVIRONMENT_ID = "station-access-native"
-STATION_ACCESS_GATE_IDS = frozenset(
-    {
-        "station-access-auth-e2e",
-        "station-access-scope-isolation-e2e",
-        "station-access-federation-boundary-e2e",
-    }
-)
+STATION_ACCESS_GATE_IDS = STATION_ACCESS_NATIVE_GATE_IDS
 DESKTOP_RUNTIME = "native-tauri"
 MOBILE_RUNTIME = "tauri-ios-simulator"
 POLL_INTERVAL_SECONDS = 0.25
