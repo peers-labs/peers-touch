@@ -2177,20 +2177,17 @@ def _tauri_embedded_asset_bytes(
         raise MobileNativeBuildError(
             "Tauri Web identity asset path has no file extension"
         )
-    expected_filename = (
-        hashlib.sha256(expected_identity).hexdigest() + asset_suffix
-    )
     candidates = sorted(
         path
         for path in cargo_target_dir.glob(
-            f"**/tauri-codegen-assets/{expected_filename}"
+            f"**/tauri-codegen-assets/*{asset_suffix}"
         )
-        if path.is_file()
+        if path.is_file() and SHA256_PATTERN.fullmatch(path.stem)
     )
     if not candidates:
         raise MobileNativeBuildError(
-            "Tauri codegen metadata is missing the digest-bound Web identity "
-            f"representation {expected_filename}"
+            "Tauri codegen metadata is missing a content-addressed Web identity "
+            "representation"
         )
     if any(candidate.is_symlink() for candidate in candidates):
         raise MobileNativeBuildError(
@@ -2202,7 +2199,8 @@ def _tauri_embedded_asset_bytes(
         raise MobileNativeBuildError(
             "Node.js is required to verify Tauri codegen Web identity metadata"
         )
-    representations: set[bytes] = set()
+    matching_representations: list[bytes] = []
+    mismatched_candidates = 0
     for candidate in candidates:
         representation = candidate.read_bytes()
         try:
@@ -2232,17 +2230,20 @@ def _tauri_embedded_asset_bytes(
                 "Tauri codegen Web identity metadata is structurally malformed"
             )
         if decoded.stdout != expected_identity:
-            raise MobileNativeBuildError(
-                "Tauri codegen Web identity metadata does not map to the exact "
-                "canonical identity bytes"
-            )
-        representations.add(representation)
-    if len(representations) != 1:
+            mismatched_candidates += 1
+            continue
+        matching_representations.append(representation)
+    if not matching_representations and mismatched_candidates:
+        raise MobileNativeBuildError(
+            "Tauri codegen Web identity metadata does not map to the exact "
+            "canonical identity bytes"
+        )
+    if len(matching_representations) != 1:
         raise MobileNativeBuildError(
             "application package omits the Web identity asset or its Tauri build "
             "output does not contain one deterministic representation"
         )
-    return representations.pop()
+    return matching_representations[0]
 
 
 def _scan_packaged_web_identity(
