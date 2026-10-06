@@ -35,8 +35,13 @@ import {
   privateSocialCommentSubmit,
   privateSocialComments,
   privateSocialOpenMedia,
+  privateSocialPrepareText,
   privateSocialPublish,
+  privateSocialReact,
   privateSocialRead,
+  privateSocialReactionRetry,
+  privateSocialSubmitText,
+  privateSocialUnreact,
   uploadNativeMomentMedia,
 } from './mobileCommands';
 
@@ -164,6 +169,61 @@ describe('Mobile command mutation admission', () => {
         },
       ],
     ]);
+  });
+
+  it('routes every private Social write through the canonical Social admission owner', async () => {
+    admission.writeAdmission = {
+      open: false,
+      reason: 'runtime_suspended',
+      closedAt: 10,
+    };
+    const scope = { ...account, activationGeneration: 7 };
+    const writes = [
+      () => privateSocialPrepareText({
+        ...scope,
+        draftId: 'draft-1',
+        draftRevision: 1,
+        text: 'private',
+        audience: { kind: 'FRIENDS' },
+      }),
+      () => privateSocialSubmitText({
+        ...scope,
+        draftId: 'draft-1',
+        draftRevision: 1,
+      }),
+      () => privateSocialPublish({
+        ...scope,
+        draftId: 'draft-1',
+        draftRevision: 1,
+        text: 'private',
+        audience: { kind: 'FRIENDS' },
+        momentKind: 'TEXT',
+      }),
+      () => privateSocialCommentSubmit({
+        ...scope,
+        draftId: 'comment-draft-1',
+        draftRevision: 1,
+        postId: 'post-1',
+        text: 'reply',
+      }),
+      () => privateSocialReact({ ...scope, postId: 'post-1', kind: 2 }),
+      () => privateSocialUnreact({ ...scope, postId: 'post-1', kind: 2 }),
+      () => privateSocialReactionRetry({ ...scope, commandId: 'reaction-1' }),
+    ];
+
+    for (const write of writes) {
+      await expect(write()).rejects.toMatchObject({
+        code: 'MOBILE_WRITE_ADMISSION_CLOSED',
+        reason: 'runtime_suspended',
+      });
+    }
+    expect(invokeMock).not.toHaveBeenCalled();
+
+    await expect(privateSocialRead({
+      ...scope,
+      postId: 'post-1',
+    })).resolves.toEqual({});
+    expect(invokeMock).toHaveBeenCalledOnce();
   });
 
   it('uploads and discards Moments media using only an opaque native handle', async () => {

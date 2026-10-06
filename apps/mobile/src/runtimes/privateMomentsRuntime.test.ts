@@ -257,6 +257,13 @@ describe('privateMomentsRuntime projection', () => {
       text: 'blocked',
       audience: { kind: 'FRIENDS' },
     })).rejects.toThrow('mobile.privateSocial.runtimeInactive');
+    await expect(reconcilePrivateMoments()).resolves.toBeNull();
+    await expect(invalidatePrivateMoments([{
+      reason: 'RESOURCE_DELETED',
+      sourceCursor: 'cursor-1',
+      postId: 'post-a',
+    }])).resolves.toEqual([]);
+    expect(commandMocks.reconcile).toHaveBeenCalledOnce();
 
     resolvePublish?.(projection('draft-a', 1, 'PUBLISHED'));
     await expect(completion).rejects.toThrow(
@@ -265,11 +272,8 @@ describe('privateMomentsRuntime projection', () => {
     expect(readPrivateMomentsSnapshot().projections).toEqual([]);
   });
 
-  it('keeps writes closed while suspended and until resume reconciliation completes', async () => {
+  it('preserves projections while suspended and reconciles before resume completes', async () => {
     commandMocks.activate.mockResolvedValue(activeStatus(1));
-    commandMocks.submitText.mockResolvedValue(
-      projection('draft-a', 1, 'PUBLISHED'),
-    );
     useAuthStore.setState({
       session: authSession('session-1'),
       accessDecision: {
@@ -283,12 +287,6 @@ describe('privateMomentsRuntime projection', () => {
     await activeDescriptor.suspend();
 
     expect(readPrivateMomentsSnapshot().active).toBe(true);
-    await expect(publishPrivateTextMoment({
-      draftId: 'draft-a',
-      draftRevision: 1,
-      text: 'suspended',
-      audience: { kind: 'FRIENDS' },
-    })).rejects.toThrow('MOBILE_WRITE_ADMISSION_CLOSED');
 
     let resolveReconcile: ((report: {
       endpointPrekeysAvailable: number;
@@ -304,12 +302,7 @@ describe('privateMomentsRuntime projection', () => {
     await vi.waitFor(() => {
       expect(commandMocks.reconcile).toHaveBeenCalledTimes(2);
     });
-    await expect(publishPrivateTextMoment({
-      draftId: 'draft-a',
-      draftRevision: 1,
-      text: 'revalidating',
-      audience: { kind: 'FRIENDS' },
-    })).rejects.toThrow('MOBILE_WRITE_ADMISSION_CLOSED');
+    expect(readPrivateMomentsSnapshot().reconciling).toBe(true);
 
     resolveReconcile?.({
       endpointPrekeysAvailable: 8,
@@ -320,12 +313,12 @@ describe('privateMomentsRuntime projection', () => {
     });
     await resume;
 
-    await expect(publishPrivateTextMoment({
-      draftId: 'draft-a',
-      draftRevision: 1,
-      text: 'ready',
-      audience: { kind: 'FRIENDS' },
-    })).resolves.toEqual(expect.objectContaining({ state: 'PUBLISHED' }));
+    expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
+      active: true,
+      reconciling: false,
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+    }));
   });
 
   it('tears down a native activation superseded by a lifecycle fence', async () => {
@@ -1080,7 +1073,7 @@ describe('privateMomentsRuntime projection', () => {
     expect(commandMocks.snapshot).not.toHaveBeenCalled();
     expect(commandMocks.teardown).toHaveBeenCalledWith({
       stationPeerId: 'station-1',
-      actorPtid: 'ptid:alice',
+      actorPtid: 'ptid:eve',
       deviceId: 'device-1',
       lifecycleGeneration: 1,
       activationGeneration: 13,

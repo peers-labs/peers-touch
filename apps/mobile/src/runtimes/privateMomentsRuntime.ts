@@ -109,7 +109,6 @@ let snapshot: PrivateMomentsRuntimeSnapshot = emptySnapshot();
 let activeScope: PrivateSocialSessionScope | null = null;
 let transition: Promise<void> = Promise.resolve();
 let projectionFenceRevision = 0;
-let privateSocialAdmissionOpen = false;
 
 export function usePrivateMomentsRuntime(): PrivateMomentsRuntimeSnapshot {
   return useSyncExternalStore(subscribe, readPrivateMomentsSnapshot, readPrivateMomentsSnapshot);
@@ -121,7 +120,6 @@ export function readPrivateMomentsSnapshot(): PrivateMomentsRuntimeSnapshot {
 
 export function fencePrivateMomentsRuntimeProjection(): void {
   projectionFenceRevision += 1;
-  privateSocialAdmissionOpen = false;
   setSnapshot(emptySnapshot());
 }
 
@@ -140,7 +138,6 @@ export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor
     async bootstrap(context): Promise<void> {
       runtimeContext = context;
       suspended = false;
-      privateSocialAdmissionOpen = false;
       unsubscribe = useAuthStore.subscribe((state, previous) => {
         const session = admittedSession(state);
         const previousSession = admittedSession(previous);
@@ -148,40 +145,24 @@ export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor
         fencePrivateMomentsRuntimeProjection();
         if (runtimeContext) {
           void enqueueSessionTransition(session, suspended, runtimeContext)
-            .then(() => {
-              privateSocialAdmissionOpen = canOpenPrivateSocialAdmission(
-                session,
-                suspended,
-              );
-            })
             .catch(() => undefined);
         }
       });
       const session = admittedSession(useAuthStore.getState());
       await enqueueSessionTransition(session, suspended, context);
-      privateSocialAdmissionOpen = canOpenPrivateSocialAdmission(
-        session,
-        suspended,
-      );
     },
 
     async suspend(): Promise<void> {
       suspended = true;
-      privateSocialAdmissionOpen = false;
       await transition;
     },
 
     async resume(context): Promise<void> {
       runtimeContext = context;
       suspended = false;
-      privateSocialAdmissionOpen = false;
       const session = admittedSession(useAuthStore.getState());
       await enqueueSessionTransition(session, suspended, context);
       await reconcilePrivateMoments();
-      privateSocialAdmissionOpen = canOpenPrivateSocialAdmission(
-        session,
-        suspended,
-      );
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
@@ -206,7 +187,7 @@ export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor
 export async function publishPrivateTextMoment(
   intent: PrivateSocialTextIntent,
 ): Promise<PrivateMomentProjection> {
-  const scope = requireWritableActiveScope();
+  const scope = requireActiveScope();
   appendPublishStates('CHECKING_PRIVATE_READINESS');
   try {
     const prepared = await privateSocialPrepareText({
@@ -283,7 +264,7 @@ export async function trackPublicMomentPublish<T>(
 export async function publishPrivateMoment(
   intent: PrivateSocialMomentIntent,
 ): Promise<PrivateMomentProjection> {
-  const scope = requireWritableActiveScope();
+  const scope = requireActiveScope();
   appendPublishStates('CHECKING_PRIVATE_READINESS');
   try {
     const projection = await privateSocialPublish({
@@ -442,7 +423,7 @@ export async function recoverPrivateMoment(
 export async function submitPrivateComment(
   intent: PrivateCommentIntent,
 ): Promise<PrivateCommentSubmitResult> {
-  const scope = requireWritableActiveScope();
+  const scope = requireActiveScope();
   requirePrivateMomentAccessOpen(intent.postId);
   const result = await privateSocialCommentSubmit({ ...operationScope(scope), ...intent });
   requireCurrentPostCompletion(
@@ -549,7 +530,7 @@ export async function setPrivateMomentReaction(
   kind: number,
   active: boolean,
 ): Promise<PrivateReactionMutationResult> {
-  const scope = requireWritableActiveScope();
+  const scope = requireActiveScope();
   const stablePostId = postId.trim();
   if (!stablePostId || stablePostId !== postId || !Number.isInteger(kind) || kind <= 0) {
     throw new Error('mobile.privateSocial.invalidReaction');
@@ -568,7 +549,7 @@ export async function setPrivateMomentReaction(
 export async function retryPrivateMomentReaction(
   commandId: string,
 ): Promise<PrivateReactionMutationResult> {
-  const scope = requireWritableActiveScope();
+  const scope = requireActiveScope();
   const result = await privateSocialReactionRetry({
     ...operationScope(scope),
     commandId,
@@ -582,7 +563,7 @@ export async function retryPrivateMomentReaction(
 
 export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerReport | null> {
   const scope = activeScope;
-  if (!scope) return null;
+  if (!scope || !isCurrentScope(scope)) return null;
   setSnapshot({ ...snapshot, reconciling: true, errorMessage: null });
   try {
     const operation = operationScope(scope);
@@ -637,7 +618,7 @@ export async function invalidatePrivateMoments(
 ): Promise<readonly PrivateMomentReadProjection[]> {
   if (invalidations.length === 0) return [];
   const scope = activeScope;
-  if (!scope) return [];
+  if (!scope || !isCurrentScope(scope)) return [];
 
   const localTombstones = localInvalidationProjections(invalidations);
   applyPrivateInvalidationProjections(localTombstones);
@@ -948,10 +929,10 @@ async function synchronizeSession(
   }
   const account = accountInput(session);
   const status = await privateSocialActivate(account);
-  const cleanupScope = Number.isSafeInteger(status.activationGeneration)
-    && status.activationGeneration > 0
-    ? { ...account, activationGeneration: status.activationGeneration }
-    : null;
+  const cleanupScope = cleanupScopeFromStatus(
+    status,
+    account.lifecycleGeneration,
+  );
   try {
     const scope = activatedScope(session, status, requestedFenceRevision);
     if (
@@ -999,7 +980,13 @@ async function synchronizeSession(
       errorMessage: null,
     });
   } catch (error) {
-    if (!cleanupScope) throw error;
+    if (!cleanupScope) {
+      if (!status.active) throw error;
+      throw new Error(
+        `${readableErrorMessage(error)}; native cleanup failed: ` +
+        'mobile.privateSocial.activationCleanupIdentityUnavailable',
+      );
+    }
     try {
       await privateSocialTeardown(cleanupScope);
     } catch (cleanupError) {
@@ -1095,14 +1082,6 @@ function requireActiveScope(): PrivateSocialSessionScope {
   return activeScope;
 }
 
-function requireWritableActiveScope(): PrivateSocialSessionScope {
-  const scope = requireActiveScope();
-  if (!privateSocialAdmissionOpen) {
-    throw new Error('MOBILE_WRITE_ADMISSION_CLOSED');
-  }
-  return scope;
-}
-
 function requirePrivateMomentAccessOpen(postId: string): void {
   if (snapshot.postsById[postId]?.state === 'DELETED_OR_REVOKED') {
     throw new Error('mobile.privateSocial.deletedOrRevoked');
@@ -1137,6 +1116,32 @@ function operationScope(scope: PrivateSocialSessionScope): PrivateSocialAccountI
   };
 }
 
+function cleanupScopeFromStatus(
+  status: Awaited<ReturnType<typeof privateSocialActivate>>,
+  lifecycleGeneration: number,
+): PrivateSocialAccountInput | null {
+  if (
+    !status.active
+    || !status.stationPeerId
+    || status.stationPeerId.trim() !== status.stationPeerId
+    || !status.actorPtid
+    || status.actorPtid.trim() !== status.actorPtid
+    || !status.deviceId
+    || status.deviceId.trim() !== status.deviceId
+    || !Number.isSafeInteger(status.activationGeneration)
+    || status.activationGeneration <= 0
+  ) {
+    return null;
+  }
+  return {
+    stationPeerId: status.stationPeerId,
+    actorPtid: status.actorPtid,
+    deviceId: status.deviceId,
+    lifecycleGeneration,
+    activationGeneration: status.activationGeneration,
+  };
+}
+
 function activatedScope(
   session: MobileAuthSession,
   status: Awaited<ReturnType<typeof privateSocialActivate>>,
@@ -1147,6 +1152,7 @@ function activatedScope(
     !status.active
     || status.stationPeerId !== account.stationPeerId
     || status.actorPtid !== account.actorPtid
+    || status.deviceId !== account.deviceId
     || !Number.isSafeInteger(status.activationGeneration)
     || status.activationGeneration <= 0
   ) {
@@ -1202,18 +1208,6 @@ function isCurrentScope(scope: PrivateSocialSessionScope): boolean {
     && scope.projectionFenceRevision === activeScope.projectionFenceRevision
     && scope.projectionFenceRevision === projectionFenceRevision
     && matchesAuthSession(scope, admittedSession(useAuthStore.getState())),
-  );
-}
-
-function canOpenPrivateSocialAdmission(
-  session: MobileAuthSession | null,
-  suspended: boolean,
-): boolean {
-  return Boolean(
-    !suspended
-    && activeScope
-    && matchesAuthSession(activeScope, session)
-    && isCurrentScope(activeScope),
   );
 }
 
