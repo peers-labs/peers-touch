@@ -30,6 +30,7 @@ class MobileSocialFacadeContractGate(AcceptanceGate):
                 "vitest",
                 "run",
                 "src/features/social/mobileSocialFacade.test.ts",
+                "src/acceptance/actions.social.test.ts",
                 "src/runtimes/privateMomentsRuntime.test.ts",
                 "src/runtimes/socialProjectionRuntime.test.ts",
                 "src/services/socialNativeAdapter.test.ts",
@@ -67,6 +68,8 @@ class MobileSocialFacadeContractGate(AcceptanceGate):
                 "Station/PTID/device/generation projection fencing",
                 "facade teardown and stale-completion rejection",
                 "typed public/private Social intent mapping",
+                "deeply immutable nested projection objects and collections",
+                "Acceptance actions use the product Social intent port",
                 "zero direct Moments gateway or private runtime ownership in pages",
                 "no sensitive transport or cryptographic material in Web projections",
             ],
@@ -98,6 +101,13 @@ class MobileSocialFacadeContractGate(AcceptanceGate):
         projection = self._read(
             "apps/mobile/src/features/social/socialExperienceProjection.ts"
         )
+        facade_test = self._read(
+            "apps/mobile/src/features/social/mobileSocialFacade.test.ts"
+        )
+        acceptance_actions = self._read("apps/mobile/src/acceptance/actions.ts")
+        acceptance_test = self._read(
+            "apps/mobile/src/acceptance/actions.social.test.ts"
+        )
         native_adapter = self._read(
             "apps/mobile/src/services/socialNativeAdapter.ts"
         )
@@ -127,6 +137,23 @@ class MobileSocialFacadeContractGate(AcceptanceGate):
             ),
             "Mobile Social facade",
         )
+        if "readonly gateway:" in facade:
+            raise GateError("Mobile Social facade exposes a gateway escape hatch")
+        if "runtime.gateway" in acceptance_actions:
+            raise GateError(
+                "Mobile Acceptance Social actions bypass the Social intent port"
+            )
+        self._require_markers(
+            facade,
+            (
+                "refreshPublicFeed",
+                "setPublicReaction",
+                "createPublicComment",
+                "readPublicComments",
+                "createDeepImmutableSocialProjection",
+            ),
+            "Mobile Social intent owner",
+        )
         self._require_markers(
             projection,
             (
@@ -135,8 +162,34 @@ class MobileSocialFacadeContractGate(AcceptanceGate):
                 "deviceId",
                 "lifecycleGeneration",
                 "PrivateMomentsRuntimeSnapshot | null",
+                "ImmutableMapSnapshot",
+                "immutableSnapshot",
             ),
             "Social experience projection",
+        )
+        self._require_markers(
+            facade_test,
+            (
+                "rejects nested projection mutation",
+                "postIndex as Map<string, number>).set",
+                "toThrow(TypeError)",
+            ),
+            "Mobile Social deep immutability tests",
+        )
+        self._require_markers(
+            acceptance_actions,
+            (
+                "runtime.intents.publishPublic",
+                "runtime.intents.setPublicReaction",
+                "runtime.intents.createPublicComment",
+                "runtime.intents.readPublicComments",
+            ),
+            "Mobile Acceptance Social intent dispatch",
+        )
+        self._require_markers(
+            acceptance_test,
+            ("through the facade intent port",),
+            "Mobile Acceptance Social intent tests",
         )
         self._require_markers(
             native_adapter,

@@ -8,10 +8,10 @@ import type {
   MobileSocialScope,
   SocialExperienceProjection,
 } from './socialExperienceProjection';
+import { createDeepImmutableSocialProjection } from './socialExperienceProjection';
 import type { SocialIntentPort } from './socialIntents';
 import {
   createMomentsGateway,
-  type MomentsGateway,
 } from '../../services/gateways/momentsGateway';
 import {
   openPrivateMomentMedia,
@@ -25,6 +25,7 @@ import {
   storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
   subscribePrivateMomentsRuntime,
+  trackPublicMomentPublish,
 } from '../../runtimes/privateMomentsRuntime';
 import {
   createMomentsProjection,
@@ -44,8 +45,6 @@ export interface MobileSocialFacadeController {
     readonly explore: MomentsFeedStoreController;
   };
   readonly intents: SocialIntentPort;
-  /** Acceptance harness compatibility; product pages must use `intents`. */
-  readonly gateway: MomentsGateway;
   readonly owner: MobileSocialFacadeOwnerPort;
   state(): SocialExperienceProjection;
   subscribe(listener: () => void): () => void;
@@ -130,7 +129,6 @@ export function createMobileSocialFacade(
     feed,
     feeds: { home: homeFeed, explore: exploreFeed },
     intents: createIntentPort(),
-    gateway,
     owner: { momentsProjection },
     state,
     subscribe,
@@ -147,7 +145,7 @@ export function createMobileSocialFacade(
     const scopedPrivateSocial = privateProjectionMatchesScope(privateSocial, scope)
       ? privateSocial
       : null;
-    return Object.freeze({
+    return createDeepImmutableSocialProjection({
       scope,
       revision,
       home: composeHomeFeedState(homeFeed.state(), scopedPrivateSocial),
@@ -211,11 +209,38 @@ export function createMobileSocialFacade(
 
   function createIntentPort(): SocialIntentPort {
     return {
+      refreshPublicFeed: (feedScope = 'home') => completeCurrent(
+        () => (feedScope === 'explore' ? exploreFeed : homeFeed).refresh(),
+      ),
       publishPublic: async (draft) => {
-        const result = await completeCurrent(() => gateway.createMoment(draft));
+        const result = await completeCurrent(() => trackPublicMomentPublish(
+          () => gateway.createMoment(draft),
+          (outcome) => outcome.ok && Boolean(outcome.data.post),
+        ));
         if (result.ok && result.data.post) homeFeed.prependPost(result.data.post);
         return result;
       },
+      setPublicReaction: async (postId, reactionKind, active) => {
+        const result = await completeCurrent(() => (
+          active
+            ? gateway.reactToPost(postId, reactionKind)
+            : gateway.unreactToPost(postId, reactionKind)
+        ));
+        if (result.ok) {
+          feedForPost(postId).updateReaction(postId, result.data.reactions);
+        }
+        return result;
+      },
+      createPublicComment: async (postId, content, replyToCommentId) => {
+        const result = await completeCurrent(
+          () => gateway.createComment(postId, content, replyToCommentId),
+        );
+        if (result.ok) await feedForPost(postId).refreshPost(postId);
+        return result;
+      },
+      readPublicComments: (postId, cursor = '', limit = 50) => completeCurrent(
+        () => gateway.fetchComments(postId, cursor, limit),
+      ),
       react: async (postId, reactionKind) => {
         assertCurrent();
         const targetFeed = feedForPost(postId);
@@ -234,10 +259,12 @@ export function createMobileSocialFacade(
         return false;
       },
       comment: async (postId, content, replyToCommentId) => {
-        const result = await completeCurrent(
-          () => gateway.createComment(postId, content, replyToCommentId),
+        const result = await controller.intents.createPublicComment(
+          postId,
+          content,
+          replyToCommentId,
         );
-        return result.ok && await feedForPost(postId).refreshPost(postId);
+        return result.ok;
       },
       deleteComment: async (postId, commentId) => {
         const result = await completeCurrent(

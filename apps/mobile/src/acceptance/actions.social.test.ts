@@ -105,7 +105,7 @@ describe('Mobile Acceptance social actions', () => {
       });
   });
 
-  it('routes Moments mutations through the active owner runtime', async () => {
+  it('routes Moments reads and mutations through the facade intent port', async () => {
     const post = {
       id: 'post-1',
       authorPtid: 'ptid:alice',
@@ -121,17 +121,17 @@ describe('Mobile Acceptance social actions', () => {
       count: 1n,
       reactedByViewer: true,
     };
-    const gateway = {
-      createMoment: vi.fn(async () => ({
+    const intents = {
+      refreshPublicFeed: vi.fn(async () => true),
+      publishPublic: vi.fn(async () => ({
         ok: true,
         data: { post },
       })),
-      reactToPost: vi.fn(async () => ({
+      setPublicReaction: vi.fn(async () => ({
         ok: true,
         data: { reactions: [reaction] },
       })),
-      unreactToPost: vi.fn(),
-      createComment: vi.fn(async () => ({
+      createPublicComment: vi.fn(async () => ({
         ok: true,
         data: {
           comment: {
@@ -144,7 +144,7 @@ describe('Mobile Acceptance social actions', () => {
           },
         },
       })),
-      fetchComments: vi.fn(async () => ({
+      readPublicComments: vi.fn(async () => ({
         ok: true,
         data: {
           comments: [],
@@ -153,19 +153,17 @@ describe('Mobile Acceptance social actions', () => {
         },
       })),
     };
-    const feed = {
-      refresh: vi.fn(async () => true),
-      state: vi.fn(() => ({
+    const state = vi.fn(() => ({
+      home: {
         pageOutcome: 1,
         hasMore: false,
         cursor: '',
         posts: [post],
-      })),
-      updateReaction: vi.fn(),
-    };
+      },
+    }));
     projectionMocks.readCurrentActiveMomentsRuntime.mockReturnValue({
-      gateway,
-      feed,
+      intents,
+      state,
     });
 
     await expect(mobileAcceptanceActions['moments.feed.read']())
@@ -179,8 +177,6 @@ describe('Mobile Acceptance social actions', () => {
       postId: 'post-1',
       authorPtid: 'ptid:alice',
     });
-    expect(privateMomentRuntimeMocks.trackPublicMomentPublish)
-      .toHaveBeenCalledOnce();
     await expect(mobileAcceptanceActions['moments.react']({
       postId: 'post-1',
       reactionKind: 1,
@@ -197,20 +193,22 @@ describe('Mobile Acceptance social actions', () => {
       commentId: 'comment-1',
       postId: 'post-1',
     });
+    await expect(mobileAcceptanceActions['moments.comments.read']({
+      postId: 'post-1',
+    })).resolves.toEqual([]);
 
-    expect(gateway.createMoment).toHaveBeenCalledOnce();
-    expect(gateway.reactToPost).toHaveBeenCalledWith('post-1', 1);
-    expect(feed.updateReaction).toHaveBeenCalledWith(
-      'post-1',
-      [reaction],
-    );
+    expect(intents.refreshPublicFeed).toHaveBeenCalledOnce();
+    expect(intents.publishPublic).toHaveBeenCalledOnce();
+    expect(intents.setPublicReaction).toHaveBeenCalledWith('post-1', 1, true);
+    expect(intents.createPublicComment).toHaveBeenCalledOnce();
+    expect(intents.readPublicComments).toHaveBeenCalledWith('post-1', '', 50);
   });
 
   it('does not route a private audience through the legacy public publish action', async () => {
-    const createMoment = vi.fn();
+    const publishPublic = vi.fn();
     projectionMocks.readCurrentActiveMomentsRuntime.mockReturnValue({
-      gateway: { createMoment },
-      feed: { refresh: vi.fn(), state: vi.fn(), updateReaction: vi.fn() },
+      intents: { publishPublic },
+      state: vi.fn(),
     });
 
     await expect(mobileAcceptanceActions['moments.publish']({
@@ -218,9 +216,7 @@ describe('Mobile Acceptance social actions', () => {
       audienceKind: 2,
     })).rejects.toThrow('acceptance.mobile.privateMomentRequiresNativeAction');
 
-    expect(createMoment).not.toHaveBeenCalled();
-    expect(privateMomentRuntimeMocks.trackPublicMomentPublish)
-      .not.toHaveBeenCalled();
+    expect(publishPublic).not.toHaveBeenCalled();
   });
 
   it('routes Settings writes through independent owner runtimes', async () => {

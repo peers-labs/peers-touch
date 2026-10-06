@@ -44,6 +44,11 @@ const privateRuntime = vi.hoisted(() => {
     readPrivateComments: vi.fn(),
     storeRecoveryPhrase: vi.fn(),
     reconcilePrivate: vi.fn(),
+    trackPublicMomentPublish: vi.fn(async (operation, isPublished) => {
+      const result = await operation();
+      isPublished(result);
+      return result;
+    }),
   };
 });
 
@@ -66,6 +71,7 @@ vi.mock('../../runtimes/privateMomentsRuntime', () => ({
   readPrivateComments: privateRuntime.readPrivateComments,
   storePrivateSocialRecoveryPhrase: privateRuntime.storeRecoveryPhrase,
   reconcilePrivateMoments: privateRuntime.reconcilePrivate,
+  trackPublicMomentPublish: privateRuntime.trackPublicMomentPublish,
 }));
 
 import {
@@ -115,6 +121,8 @@ beforeEach(() => {
     ok: true,
     data: { success: true, reactions: [{ kind: 2, count: 1n, reactedByMe: true }] },
   });
+  privateRuntime.snapshot.projections = [];
+  privateRuntime.snapshot.postsById = {};
 });
 
 afterEach(() => {
@@ -136,8 +144,65 @@ describe('Mobile Social facade', () => {
       deviceId: 'device-a',
       lifecycleGeneration: '7',
     });
-    expect(projection.runtime.privateSocial).toBe(privateRuntime.snapshot);
+    expect(projection.runtime.privateSocial).not.toBe(privateRuntime.snapshot);
+    expect(Object.isFrozen(projection.runtime.privateSocial)).toBe(true);
+    expect('gateway' in facade).toBe(false);
     expect(readActiveMobileSocialFacade(session)).toBe(facade);
+  });
+
+  it('rejects nested projection mutation without changing current or future state', async () => {
+    privateRuntime.snapshot.postsById = {
+      'private-1': {
+        postId: 'private-1',
+        state: 'CONTENT_READY',
+        payload: { text: 'private original' },
+      },
+    };
+    facade = createMobileSocialFacade(session, { retry: vi.fn(async () => true) });
+    facade.activate();
+    gateway.createMoment.mockResolvedValue({
+      ok: true,
+      data: {
+        post: {
+          id: 'post-1',
+          content: {
+            case: 'textPost',
+            value: { text: 'public original' },
+          },
+          reactions: [],
+        },
+      },
+    });
+
+    await facade.intents.publishPublic({
+      kind: 'text',
+      text: 'public original',
+      audience: { kind: 1 },
+    });
+    const projection = facade.state();
+
+    expect(() => {
+      projection.home.posts[0].content.value.text = 'mutated';
+    }).toThrow(TypeError);
+    expect(() => {
+      projection.home.posts.push({ id: 'injected' });
+    }).toThrow(TypeError);
+    expect((projection.home.postIndex as Map<string, number>).set).toBeUndefined();
+    expect(() => {
+      projection.runtime.privateSocial.postsById['private-1'].payload.text =
+        'mutated';
+    }).toThrow(TypeError);
+
+    expect(facade.state().home.posts[0].content.value.text)
+      .toBe('public original');
+    expect(facade.state().runtime.privateSocial.postsById['private-1'].payload.text)
+      .toBe('private original');
+
+    privateRuntime.listeners.forEach((listener) => listener());
+    expect(facade.state().home.posts[0].content.value.text)
+      .toBe('public original');
+    expect(facade.state().runtime.privateSocial.postsById['private-1'].payload.text)
+      .toBe('private original');
   });
 
   it('routes public mutations through one intent port and authoritative readback', async () => {
@@ -157,6 +222,7 @@ describe('Mobile Social facade', () => {
     await expect(facade.intents.comment('post-1', 'reply')).resolves.toBe(true);
 
     expect(facade.state().home.posts).toHaveLength(1);
+    expect(privateRuntime.trackPublicMomentPublish).toHaveBeenCalledOnce();
     expect(gateway.reactToPost).toHaveBeenCalledWith('post-1', 2);
     expect(gateway.createComment).toHaveBeenCalledWith('post-1', 'reply', undefined);
     expect(gateway.getPost).toHaveBeenCalledWith('post-1');
