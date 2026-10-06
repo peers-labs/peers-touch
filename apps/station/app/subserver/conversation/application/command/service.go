@@ -462,8 +462,9 @@ func (s *Service) createDirect(
 	commandHash := valueobject.HashBytes(request.ExactCommandBytes)
 	var result Result
 	var notifications []ports.CommittedDelivery
-	err = s.unitOfWork.ExecuteSerialized(
+	err = executeDirectGenesisTransaction(
 		ctx,
+		s.unitOfWork,
 		conversationGenesisLockKey(conversationID),
 		func(transaction ports.Transaction) error {
 			if err := validateTransaction(transaction); err != nil {
@@ -649,6 +650,33 @@ func (s *Service) createDirect(
 	}
 	result.PostCommitError = s.notify(ctx, notifications)
 	return result, nil
+}
+
+func executeDirectGenesisTransaction(
+	ctx context.Context,
+	unitOfWork ports.UnitOfWork,
+	key string,
+	transaction func(ports.Transaction) error,
+) error {
+	const maxAttempts = 2
+
+	var err error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err = unitOfWork.ExecuteSerialized(ctx, key, transaction)
+		if err == nil || !isDirectGenesisContention(err) {
+			return err
+		}
+	}
+	return err
+}
+
+func isDirectGenesisContention(err error) bool {
+	var typed *conversationdomain.Error
+	if !errors.As(err, &typed) {
+		return false
+	}
+	return typed.Code == conversationdomain.ErrorCodeCommandConflict &&
+		typed.Operation == "persistence.create_aggregate"
 }
 
 func validateExistingDirect(

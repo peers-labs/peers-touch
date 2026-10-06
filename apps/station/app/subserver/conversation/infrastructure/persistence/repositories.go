@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -39,9 +40,47 @@ func (r *authorityRepository) Create(
 ) error {
 	model := conversationModelFromSnapshot(snapshot)
 	if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
-		return fmt.Errorf("conversation persistence: create aggregate: %w", err)
+		return aggregateCreationPersistenceError(err)
 	}
 	return r.replaceChildren(ctx, snapshot)
+}
+
+func aggregateCreationPersistenceError(err error) error {
+	if isAggregateCreationContention(err) {
+		return &conversationdomain.Error{
+			Code:      conversationdomain.ErrorCodeCommandConflict,
+			Operation: "persistence.create_aggregate",
+			Field:     "aggregate",
+			Message:   "creation contended with a concurrent transaction",
+			Cause:     err,
+		}
+	}
+	return fmt.Errorf("conversation persistence: create aggregate: %w", err)
+}
+
+func isAggregateCreationContention(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+
+	var sqlState interface {
+		SQLState() string
+	}
+	if errors.As(err, &sqlState) {
+		switch sqlState.SQLState() {
+		case "23505", "40001", "40P01":
+			return true
+		}
+	}
+
+	message := err.Error()
+	return strings.Contains(message, "SQLSTATE 23505") ||
+		strings.Contains(message, "SQLSTATE 40001") ||
+		strings.Contains(message, "SQLSTATE 40P01") ||
+		strings.Contains(message, "UNIQUE constraint failed")
 }
 
 func (r *authorityRepository) LoadForUpdate(
