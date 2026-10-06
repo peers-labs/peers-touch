@@ -19,6 +19,7 @@ import (
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/metrics"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
@@ -75,6 +76,7 @@ func (h *relayHandler) handlers() []server.Handler {
 		),
 		server.NewHTTPHandler("relay-register", "/api/v1/relay/register", server.POST,
 			server.HTTPHandlerFunc(h.handleRegister), logID),
+		accessendpoint.Handler(h.sub, logID),
 
 		// Station only — requires a current Relay mount credential.
 		server.NewHTTPHandler("relay-heartbeat", "/api/v1/relay/heartbeat", server.POST,
@@ -91,6 +93,22 @@ func (h *relayHandler) handlers() []server.Handler {
 			h.requireStation(h.handleTokenRefresh), logID, mountRotateJWT),
 		server.NewHTTPHandler("relay-client-token", "/api/v1/relay/client-token", server.POST,
 			h.requireStation(h.handleMintClientToken), logID, mountJWT),
+		server.NewStrictTypedHandler(
+			"relay-route-publish",
+			"/api/v1/relay/routes",
+			server.POST,
+			h.handlePublishStationRoute,
+			logID,
+			mountJWT,
+		),
+		server.NewStrictTypedHandler(
+			"relay-grant-register",
+			"/api/v1/relay/grants",
+			server.POST,
+			h.handleRegisterConnectionGrant,
+			logID,
+			mountJWT,
+		),
 
 		// Network access — relay-access OR relay-client token
 		server.NewHTTPHandler("relay-forward", relayForwardPrefix+"*path", server.ANY,
@@ -176,25 +194,35 @@ func mountIdentityFromRequest(
 	if subject == nil {
 		return domain.MountIdentity{}, false
 	}
-	mountID, err := strconv.ParseUint(subject.Attributes["mount_id"], 10, 64)
+	return mountIdentityFromSubject(subject.ID, subject.Attributes)
+}
+
+func mountIdentityFromSubject(
+	subjectID string,
+	attributes map[string]string,
+) (domain.MountIdentity, bool) {
+	if !strings.HasPrefix(subjectID, domain.SubjectRelayAccess) {
+		return domain.MountIdentity{}, false
+	}
+	mountID, err := strconv.ParseUint(attributes["mount_id"], 10, 64)
 	if err != nil || mountID == 0 {
 		return domain.MountIdentity{}, false
 	}
 	generation, err := strconv.ParseUint(
-		subject.Attributes["generation"],
+		attributes["generation"],
 		10,
 		64,
 	)
 	if err != nil || generation == 0 {
 		return domain.MountIdentity{}, false
 	}
-	stationPeerID := subject.Attributes["station_peer_id"]
-	jti := subject.Attributes["jti"]
+	stationPeerID := attributes["station_peer_id"]
+	jti := attributes["jti"]
 	if stationPeerID == "" || jti == "" {
 		return domain.MountIdentity{}, false
 	}
 	return domain.MountIdentity{
-		RelayPeerID:   subject.Attributes["relay_peer_id"],
+		RelayPeerID:   attributes["relay_peer_id"],
 		StationPeerID: stationPeerID,
 		MountID:       mountID,
 		Generation:    generation,
