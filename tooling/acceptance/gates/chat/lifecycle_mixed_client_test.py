@@ -954,6 +954,17 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 federation_id="fed-1",
                 device_id="alice-device",
             ),
+            "desktop-bob": MixedClientIdentity(
+                client_id="desktop-bob",
+                actor="bob",
+                runtime="desktop-macos-native",
+                station_service_id="station-secondary",
+                station_peer_id="peer-secondary",
+                ptid="ptid:bob",
+                account_ref="station-account:bob",
+                federation_id="fed-1",
+                device_id="bob-desktop-device",
+            ),
             "sim-ios": MixedClientIdentity(
                 client_id="sim-ios",
                 actor="bob",
@@ -970,6 +981,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         runtime.desktop_sessions = {"desktop-alice": desktop_session}
         runtime.client_specs = {
             "desktop-alice": {"runtime": "native-tauri"},
+            "desktop-bob": {"runtime": "native-tauri"},
             "sim-ios": {"runtime": "tauri-ios-simulator"},
         }
         runtime.call_action = MagicMock(
@@ -990,6 +1002,10 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             "ptid:bob",
             "peer-secondary",
             timeout=12.0,
+            expected_device_identity_digests=(
+                "bob-desktop-device",
+                "bob-mobile-device",
+            ),
         )
 
 

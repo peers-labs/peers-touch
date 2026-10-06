@@ -676,11 +676,25 @@ class MixedNativeRuntime:
             "Direct Federation context",
         )
         if self._is_desktop(sender_id):
+            expected_peer_devices = tuple(
+                sorted(
+                    {
+                        identity.device_id
+                        for identity in self.identities.values()
+                        if (
+                            identity.ptid == receiver.ptid
+                            and identity.station_peer_id
+                            == receiver.station_peer_id
+                        )
+                    }
+                )
+            )
             wait_for_peer_key_bundle(
                 self.desktop_sessions[sender_id],
                 receiver.ptid,
                 receiver.station_peer_id,
                 timeout=timeout_seconds,
+                expected_device_identity_digests=expected_peer_devices,
             )
             created = self.call_action(
                 sender_id,
