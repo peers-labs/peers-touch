@@ -147,6 +147,40 @@ func TestConfigFileAllowedReturnToCanBeOverridden(t *testing.T) {
 	}
 }
 
+func TestEmbeddedSitesConfigLoadsWithoutWorkingDirectoryFile(t *testing.T) {
+	originalDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(originalDirectory); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	})
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("VERCEL", "")
+	t.Setenv("OAUTH_SITES_JSON", "")
+	t.Setenv("OAUTH_CONFIG_FILE", "")
+	t.Setenv("OAUTH_BASE_URL", "https://broker.example")
+	t.Setenv("OAUTH_GITHUB_CLIENT_ID", "client")
+	t.Setenv("OAUTH_GITHUB_CLIENT_SECRET", "secret")
+
+	registry, err := LoadSiteRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	site, ok := registry.Get("default")
+	if !ok {
+		t.Fatal("embedded default site not found")
+	}
+	if _, ok := site.Providers["github"]; !ok {
+		t.Fatal("embedded default GitHub provider not found")
+	}
+}
+
 func TestGitHubAPIBaseRequiresHTTPSOnVercel(t *testing.T) {
 	t.Setenv("VERCEL", "1")
 	t.Setenv("OAUTH_STORAGE_DRIVER", "github")

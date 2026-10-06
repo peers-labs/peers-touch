@@ -101,7 +101,6 @@ export const LoginFormView = memo(function LoginFormView({
   const [loading, setLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const oauthActionRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
-  const oauthButtonRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const oauthCancelRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const previousOAuthProviderRef = React.useRef<string | null>(null);
 
@@ -117,11 +116,21 @@ export const LoginFormView = memo(function LoginFormView({
     previousOAuthProviderRef.current = oauthActionProviderId ?? null;
     const frame = window.requestAnimationFrame(() => {
       if (!oauthActionProviderId) {
-        if (previousProviderId) oauthButtonRefs.current[previousProviderId]?.focus();
+        if (previousProviderId) {
+          oauthActionRefs.current[previousProviderId]
+            ?.querySelector<HTMLElement>('[data-pt-login-oauth-provider]')
+            ?.focus();
+        }
         return;
       }
-      if (['opening', 'waiting', 'error'].includes(oauthActionState)) {
+      if (['opening', 'waiting'].includes(oauthActionState)) {
         oauthCancelRefs.current[oauthActionProviderId]?.focus();
+        return;
+      }
+      if (oauthActionState === 'error') {
+        oauthActionRefs.current[oauthActionProviderId]
+          ?.querySelector<HTMLElement>('[data-pt-login-oauth-provider]')
+          ?.focus();
         return;
       }
       oauthActionRefs.current[oauthActionProviderId]?.focus();
@@ -386,7 +395,6 @@ export const LoginFormView = memo(function LoginFormView({
                     data-pt-login-oauth-state={actionState}
                     disabled={anotherProviderActive || actionPending}
                     onClick={() => onOAuthLogin(provider)}
-                    ref={(element) => { oauthButtonRefs.current[provider.id] = element; }}
                     style={{
                       ...oauthButtonStyle,
                       ...(highlight

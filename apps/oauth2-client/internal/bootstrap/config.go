@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	oauthconfig "github.com/peers-labs/peers-touch/oauth2-client/config"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/port"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/usecase"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/valueobject"
@@ -114,16 +115,21 @@ func LoadSiteRegistry() (usecase.SiteRegistry, error) {
 }
 
 func loadFromConfigFile() (usecase.SiteRegistry, bool, error) {
-	path := strings.TrimSpace(os.Getenv("OAUTH_CONFIG_FILE"))
-	if path == "" {
+	configuredPath := strings.TrimSpace(os.Getenv("OAUTH_CONFIG_FILE"))
+	path := configuredPath
+	if configuredPath == "" {
 		path = "config/sites.json"
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, false, nil
+			if configuredPath != "" {
+				return nil, false, nil
+			}
+			content = oauthconfig.SitesJSON()
+		} else {
+			return nil, false, err
 		}
-		return nil, false, err
 	}
 	var rawCfg rawFileConfig
 	if err := json.Unmarshal(content, &rawCfg); err == nil && len(rawCfg.Sites) > 0 {

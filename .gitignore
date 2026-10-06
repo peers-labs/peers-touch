@@ -111,3 +111,4 @@ tooling/acceptance/reports/
 apps/desktop/test-results/
 tooling/scripts/__pycache__/
 *.pyc
+.vercel
