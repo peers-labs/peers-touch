@@ -8,6 +8,17 @@ from tooling.scripts.deploy.windows_runtime import _remote_runtime_script
 
 
 class WindowsRuntimeScriptTest(unittest.TestCase):
+    def test_remote_runtime_script_is_valid_python(self) -> None:
+        compile(_remote_runtime_script(), "<windows-runtime>", "exec")
+
+    def test_build_artifact_is_reused_by_exact_station_tree(self) -> None:
+        script = _remote_runtime_script()
+
+        self.assertIn('commit + ":apps/station"', script)
+        self.assertIn('"buildIdentity": build_identity', script)
+        self.assertIn("shutil.copy2(binary, temporary)", script)
+        self.assertIn("shutil.copy2(artifact_path, binary)", script)
+
     def test_build_limits_memory_and_strips_debug_symbols(self) -> None:
         script = _remote_runtime_script()
 
