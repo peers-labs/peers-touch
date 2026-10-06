@@ -15,6 +15,23 @@ type scriptedUnitOfWork struct {
 	attempts int
 }
 
+type testPersistenceStageError struct {
+	stage string
+	cause error
+}
+
+func (e *testPersistenceStageError) Error() string {
+	return e.cause.Error()
+}
+
+func (e *testPersistenceStageError) Unwrap() error {
+	return e.cause
+}
+
+func (e *testPersistenceStageError) PersistenceFailureStage() string {
+	return e.stage
+}
+
 func (u *scriptedUnitOfWork) Execute(
 	_ context.Context,
 	_ func(ports.Transaction) error,
@@ -68,6 +85,24 @@ func TestDirectCreationFailureStagePreservesCause(t *testing.T) {
 	}
 	if !errors.Is(persisted, cause) {
 		t.Fatal("persistence stage did not retain its cause")
+	}
+
+	persisted = directPersistTransitionStage(
+		transitionPersistenceStage(
+			"create_authority",
+			&testPersistenceStageError{
+				stage: "insert_members",
+				cause: cause,
+			},
+		),
+	)
+	stage, ok = DirectCreationFailureStage(persisted)
+	if !ok ||
+		stage != "persist_transition_create_authority_insert_members" {
+		t.Fatalf("nested persistence stage = %q, ok = %v", stage, ok)
+	}
+	if !errors.Is(persisted, cause) {
+		t.Fatal("nested persistence stage did not retain its cause")
 	}
 }
 

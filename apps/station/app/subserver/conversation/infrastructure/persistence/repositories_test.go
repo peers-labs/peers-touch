@@ -78,3 +78,42 @@ func TestAggregateCreationContentionMapsToSpecificConflict(t *testing.T) {
 		t.Fatal("generic error did not preserve its cause")
 	}
 }
+
+func TestAggregateCreationStepPreservesSafeStage(t *testing.T) {
+	cause := errors.New("private persistence failure")
+	err := aggregateCreationStepError(
+		"insert_members",
+		"insert members",
+		cause,
+	)
+
+	var staged interface {
+		PersistenceFailureStage() string
+	}
+	if !errors.As(err, &staged) {
+		t.Fatalf("staged error type = %T", err)
+	}
+	if staged.PersistenceFailureStage() != "insert_members" {
+		t.Fatalf(
+			"persistence stage = %q",
+			staged.PersistenceFailureStage(),
+		)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatal("staged error did not preserve its cause")
+	}
+
+	contention := aggregateCreationChildrenError(
+		aggregateCreationStepError(
+			"insert_devices",
+			"insert devices",
+			postgresStateError{code: "40001"},
+		),
+	)
+	if !conversationdomain.IsCode(
+		contention,
+		conversationdomain.ErrorCodeCommandConflict,
+	) {
+		t.Fatalf("child contention was not mapped: %v", contention)
+	}
+}

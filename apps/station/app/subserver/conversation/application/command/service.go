@@ -72,7 +72,14 @@ func transitionPersistenceStage(stage string, err error) error {
 func directPersistTransitionStage(err error) error {
 	var staged *transitionPersistenceStageError
 	if errors.As(err, &staged) {
-		return directCreationStage("persist_transition_"+staged.stage, err)
+		stage := "persist_transition_" + staged.stage
+		var persistenceStage interface {
+			PersistenceFailureStage() string
+		}
+		if errors.As(err, &persistenceStage) {
+			stage += "_" + persistenceStage.PersistenceFailureStage()
+		}
+		return directCreationStage(stage, err)
 	}
 	return directCreationStage("persist_transition", err)
 }
