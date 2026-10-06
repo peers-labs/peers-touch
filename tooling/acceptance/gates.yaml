@@ -1678,8 +1678,8 @@
     "mobile-social-ios-native": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario ios-social-parity",
       "timeout_seconds": 7200,
-      "environment": "mobile-direct-simulator",
-      "provisioner": "mobile-direct-simulator",
+      "environment": "mobile-social-ios-simulator",
+      "provisioner": "mobile-social-ios-simulator",
       "tier": "env-evidence",
       "description": "Prove the MPS-RC01 same-Station Social suite on one source-bound pair of isolated iOS Simulators, with reusable Home/Explore, Search/Profile, Circles/Audience/Publish, Thread/Reaction, Recovery/Lifecycle, native-quality, receiver-visible, and cleanup evidence."
     },

@@ -36,6 +36,7 @@ from tooling.acceptance.provisioners import (
     MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
     MobileSimulatorProvisioner,
+    MobileSocialIOSSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
     MobileStationLifecycleSimulatorProvisioner,
     get_provisioner,
@@ -845,6 +846,36 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     gates[gate_id]["provisioner"],
                     DIRECT_SIMULATOR_ENVIRONMENT_ID,
                 )
+
+    def test_mobile_social_ios_gate_uses_non_destructive_environment(
+        self,
+    ) -> None:
+        catalog = json.loads(
+            (ENVIRONMENTS_DIR.parent / "gates.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        gate = catalog["gates"]["mobile-social-ios-native"]
+        self.assertEqual(
+            gate["environment"],
+            "mobile-social-ios-simulator",
+        )
+        self.assertEqual(
+            gate["provisioner"],
+            "mobile-social-ios-simulator",
+        )
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "mobile-social-ios-simulator.yaml"
+        )
+        provisioner = get_provisioner(
+            contract,
+            station_profiles={"station": "four"},
+        )
+        self.assertIsInstance(
+            provisioner,
+            MobileSocialIOSSimulatorProvisioner,
+        )
+        self.assertFalse(provisioner.requires_actor_reset)
 
     def test_social_simulator_accepts_explicit_station_profiles(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
