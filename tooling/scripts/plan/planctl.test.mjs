@@ -4,11 +4,13 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { digestCompletionCandidate } from '../local-dev/completion-review.mjs';
 import { mountPlanVersion, resolvePlanExecution } from './plan-mount.mjs';
 import { createPlanRepository } from './plan-test-fixture.mjs';
 import {
   activatePlan,
   cancelPlan,
+  completionCandidateDigestForPlanAdvance,
   runPlanctl,
   summarizeExecution,
 } from './planctl.mjs';
@@ -132,4 +134,37 @@ test('completion review precedes the single guarded Run update', () => {
   assert.match(advance, /run\.revision !== resolved\.run\.revision/u);
   assert.match(advance, /run\.recordDigest !== resolved\.run\.recordDigest/u);
   assert.doesNotMatch(advance, /Restore the exact previous run|rollback/u);
+});
+
+test('plan advance and completion review hash the same candidate envelope', async (t) => {
+  const options = scope(t);
+  const mounted = await mountPlanVersion(options);
+  const taskId = mounted.snapshot.plan.tasks.find(
+    (task) => task.dependsOn.length === 0,
+  ).id;
+  const resolved = await activatePlan(options.plan, {
+    ...options,
+    task: taskId,
+  });
+  const candidate = structuredClone(resolved.run);
+  candidate.taskStates[taskId] = { state: 'done', blocker: null };
+  candidate.currentTaskId = null;
+  candidate.exhaustion = null;
+  candidate.state = 'completed';
+
+  const transition = {
+    to: 'done',
+    nextTaskId: null,
+    exhaustion: null,
+  };
+  assert.equal(
+    completionCandidateDigestForPlanAdvance(resolved, candidate),
+    digestCompletionCandidate({
+      planVersionDigest: resolved.planPackage.planVersionDigest,
+      snapshotDigest: resolved.snapshot.recordDigest,
+      runId: resolved.run.runId,
+      runRevision: resolved.run.revision,
+      transition,
+    }),
+  );
 });
