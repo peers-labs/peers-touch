@@ -29,6 +29,22 @@ BINARY_SHA256 = "b" * 64
 PROTO_DIGEST = "c" * 64
 
 
+def _protected_file(name: str) -> dict[str, object]:
+    return {
+        "name": name,
+        "exists": True,
+        "nonEmpty": True,
+        "aclProtected": True,
+        "principals": [
+            "SIXWIN\\Administrator",
+            "NT AUTHORITY\\SYSTEM",
+        ],
+        "unexpectedPrincipals": [],
+        "expectedPrincipalsPresent": True,
+        "protected": True,
+    }
+
+
 def _config(role: str) -> SimpleNamespace:
     http_port = 18080 if role == "station" else 18081
     return SimpleNamespace(
@@ -220,13 +236,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 "NT AUTHORITY\\SYSTEM",
             ],
             "unexpectedPrincipals": [],
-            "requiredSecretFiles": {
-                "auth-secret": True,
-                "relay-operator.key": True,
-                "relay-signing.key": True,
-                "relay-tls.key": True,
-                "relay.crt": True,
-            },
+            "requiredSecretFiles": [
+                _protected_file("auth-secret"),
+                _protected_file("relay-operator.key"),
+                _protected_file("relay-signing.key"),
+                _protected_file("relay-tls.key"),
+                _protected_file("relay.crt"),
+            ],
             "binarySha256": BINARY_SHA256,
             "processBinaryMatches": True,
             "stationDatabasePath": "C:\\runtime\\sixwin-station\\data\\station.db",
@@ -258,8 +274,73 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             )
 
         self.assertTrue(evidence["rootAclProtected"])
+        protected_files = {
+            record["name"]: record
+            for record in evidence["requiredProtectedFiles"]
+        }
+        self.assertTrue(
+            protected_files["relay-tls.key"]["protected"]
+        )
         command = transport.run_argv.call_args.args[0]
         self.assertIn("Join-Path $env:USERPROFILE", command[-1])
+        self.assertIn("$fileAcl=Get-Acl -LiteralPath $path", command[-1])
+        self.assertIn("expectedPrincipalsPresent", command[-1])
+
+    def test_secret_audit_rejects_unsafe_file_acl(self) -> None:
+        payload = {
+            "secretRootExists": True,
+            "rootAclProtected": True,
+            "principals": [
+                "SIXWIN\\Administrator",
+                "NT AUTHORITY\\SYSTEM",
+            ],
+            "unexpectedPrincipals": [],
+            "requiredSecretFiles": [
+                _protected_file("auth-secret"),
+                _protected_file("relay-operator.key"),
+                _protected_file("relay-signing.key"),
+                {
+                    **_protected_file("relay-tls.key"),
+                    "unexpectedPrincipals": ["BUILTIN\\Users"],
+                    "protected": False,
+                },
+                _protected_file("relay.crt"),
+            ],
+            "binarySha256": BINARY_SHA256,
+            "processBinaryMatches": True,
+            "stationDatabasePath": "C:\\runtime\\sixwin-station\\data\\station.db",
+            "stationDatabaseExists": True,
+            "relayDatabasePath": "C:\\runtime\\sixwin-relay\\data\\relay.db",
+            "relayDatabaseExists": True,
+        }
+        transport = MagicMock()
+        transport.run_argv.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_windows_transport",
+                return_value=transport,
+            ),
+            self.assertRaisesRegex(
+                BlockedError,
+                "security ownership is incomplete",
+            ),
+        ):
+            _relay_runtime_security(
+                _config("relay"),
+                _status("relay", 202),
+                _validate_runtime_status(
+                    _status("station", 101),
+                    config=_config("station"),
+                    source_commit=COMMIT,
+                ),
+            )
 
 
 if __name__ == "__main__":

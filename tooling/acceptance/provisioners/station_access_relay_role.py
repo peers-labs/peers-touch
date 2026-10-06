@@ -5,7 +5,7 @@ import json
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -70,6 +70,39 @@ def _powershell_literal(value: str) -> str:
 def _sha256_digest(value: object) -> str:
     normalized = str(value or "").lower()
     return normalized.removeprefix("sha256:")
+
+
+def _protected_secret_files(
+    value: object,
+) -> Optional[list[dict[str, Any]]]:
+    if not isinstance(value, list) or len(value) != len(_RELAY_SECRET_FILES):
+        return None
+    protected: list[dict[str, Any]] = []
+    names: set[str] = set()
+    for record in value:
+        if not isinstance(record, dict):
+            return None
+        name = record.get("name")
+        principals = record.get("principals")
+        if (
+            not isinstance(name, str)
+            or name in names
+            or record.get("exists") is not True
+            or record.get("nonEmpty") is not True
+            or record.get("aclProtected") is not True
+            or record.get("expectedPrincipalsPresent") is not True
+            or record.get("unexpectedPrincipals") != []
+            or record.get("protected") is not True
+            or not isinstance(principals, list)
+            or not principals
+            or any(not isinstance(principal, str) for principal in principals)
+        ):
+            return None
+        names.add(name)
+        protected.append(dict(record))
+    if names != _RELAY_SECRET_FILES:
+        return None
+    return sorted(protected, key=lambda record: str(record["name"]))
 
 
 def _windows_transport(config: WindowsRuntimeConfig) -> SshTransport:
@@ -223,11 +256,39 @@ def _relay_runtime_security(
         "$allowed=@(\"$env:COMPUTERNAME\\$env:USERNAME\","
         "'NT AUTHORITY\\SYSTEM');"
         "$unexpected=@($principals | Where-Object {$allowed -notcontains $_});"
-        "$files=@{};"
+        "$files=@();"
         "foreach($name in $required){"
         "$path=Join-Path $root $name;"
-        "$files[$name]=[bool]((Test-Path -LiteralPath $path -PathType Leaf)"
-        " -and ((Get-Item -LiteralPath $path).Length -gt 0));"
+        "$exists=[bool](Test-Path -LiteralPath $path -PathType Leaf);"
+        "$nonEmpty=$false;"
+        "$aclProtected=$false;"
+        "$filePrincipals=@();"
+        "$fileUnexpected=@();"
+        "$expectedPrincipalsPresent=$false;"
+        "if($exists){"
+        "$nonEmpty=[bool]((Get-Item -LiteralPath $path).Length -gt 0);"
+        "$fileAcl=Get-Acl -LiteralPath $path;"
+        "$aclProtected=[bool]$fileAcl.AreAccessRulesProtected;"
+        "$filePrincipals=@($fileAcl.Access | ForEach-Object "
+        "{$_.IdentityReference.Value} | Sort-Object -Unique);"
+        "$fileUnexpected=@($filePrincipals | "
+        "Where-Object {$allowed -notcontains $_});"
+        "$expectedPrincipalsPresent=[bool]("
+        "@($allowed | Where-Object {$filePrincipals -notcontains $_})."
+        "Count -eq 0);"
+        "};"
+        "$files += [PSCustomObject]@{"
+        "name=$name;"
+        "exists=$exists;"
+        "nonEmpty=$nonEmpty;"
+        "aclProtected=$aclProtected;"
+        "principals=$filePrincipals;"
+        "unexpectedPrincipals=$fileUnexpected;"
+        "expectedPrincipalsPresent=$expectedPrincipalsPresent;"
+        "protected=[bool]("
+        "$exists -and $nonEmpty -and $aclProtected -and "
+        "$expectedPrincipalsPresent -and $fileUnexpected.Count -eq 0)"
+        "};"
         "};"
         "$processPaths=@(Get-CimInstance Win32_Process | "
         "Where-Object {$ids -contains [int]$_.ProcessId} | "
@@ -277,15 +338,13 @@ def _relay_runtime_security(
             reason="Relay runtime security audit must return an object",
             resource=f"runtime-security:{config.environment_name}",
         )
-    files = payload.get("requiredSecretFiles")
+    files = _protected_secret_files(payload.get("requiredSecretFiles"))
     if (
         completed.returncode != 0
         or payload.get("secretRootExists") is not True
         or payload.get("rootAclProtected") is not True
         or payload.get("unexpectedPrincipals") != []
-        or not isinstance(files, dict)
-        or set(files) != _RELAY_SECRET_FILES
-        or not all(value is True for value in files.values())
+        or files is None
         or _sha256_digest(payload.get("binarySha256")) != binary_sha256
         or payload.get("processBinaryMatches") is not True
         or payload.get("stationDatabasePath")
@@ -306,7 +365,7 @@ def _relay_runtime_security(
         "rootAclProtected": True,
         "principals": list(payload.get("principals") or ()),
         "unexpectedPrincipals": [],
-        "requiredProtectedFiles": dict(files),
+        "requiredProtectedFiles": list(files),
         "binarySha256": binary_sha256,
         "processBinaryMatches": True,
         "stationDatabasePath": str(payload["stationDatabasePath"]),

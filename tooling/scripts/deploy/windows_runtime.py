@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import re
 import subprocess
 import sys
 import textwrap
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
@@ -28,6 +30,33 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _RELATIVE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
 _HEALTH_PATH = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+$")
 _ROLE = {"station", "relay"}
+
+
+def _rotate_service_log(
+    log_path,
+    *,
+    timeout_seconds=15.0,
+    retry_interval_seconds=0.25,
+    monotonic=time.monotonic,
+    sleep=time.sleep,
+):
+    if not log_path.is_file():
+        return
+    previous_log_path = log_path.with_suffix(".previous.log")
+    deadline = monotonic() + timeout_seconds
+    while True:
+        try:
+            previous_log_path.unlink(missing_ok=True)
+            log_path.replace(previous_log_path)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError as error:
+            if monotonic() >= deadline:
+                raise RuntimeError(
+                    "timed out waiting for Windows service log release"
+                ) from error
+            sleep(retry_interval_seconds)
 
 
 def _required(values: dict[str, str], key: str, source: Path) -> str:
@@ -223,7 +252,7 @@ class WindowsRuntimeConfig:
 
 
 def _remote_runtime_script() -> str:
-    return textwrap.dedent(
+    script = textwrap.dedent(
         r"""
         import getpass
         import hashlib
@@ -262,6 +291,8 @@ def _remote_runtime_script() -> str:
             + str(cfg["httpPort"])
             + cfg["healthPath"]
         )
+
+        __ROTATE_SERVICE_LOG__
 
         def run(argv, *, cwd=None, env=None, check=True, binary_output=False):
             completed = subprocess.run(
@@ -481,6 +512,27 @@ def _remote_runtime_script() -> str:
                     "SYSTEM:(OI)(CI)F",
                 ]
             )
+            secret_paths = [secret_root / "auth-secret"]
+            if role == "relay":
+                secret_paths.extend(
+                    [
+                        secret_root / "relay-operator.key",
+                        secret_root / "relay-signing.key",
+                        secret_root / "relay-tls.key",
+                        secret_root / "relay.crt",
+                    ]
+                )
+            for secret_path in secret_paths:
+                run(
+                    [
+                        "icacls.exe",
+                        str(secret_path),
+                        "/inheritance:r",
+                        "/grant:r",
+                        username + ":F",
+                        "SYSTEM:F",
+                    ]
+                )
 
         def yaml_path(path):
             return str(path).replace("\\", "/")
@@ -608,25 +660,6 @@ def _remote_runtime_script() -> str:
                 ]
             )
             runner_path.write_text("\n".join(lines) + "\n", encoding="ascii")
-
-        def rotate_service_log():
-            if not log_path.is_file():
-                return
-            previous_log_path = log_path.with_suffix(".previous.log")
-            deadline = time.monotonic() + 15
-            while True:
-                try:
-                    previous_log_path.unlink(missing_ok=True)
-                    log_path.replace(previous_log_path)
-                    return
-                except FileNotFoundError:
-                    return
-                except PermissionError as error:
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError(
-                            "timed out waiting for Windows service log release"
-                        ) from error
-                    time.sleep(0.25)
 
         def materialize_binary(source_commit, build_env):
             station_tree = station_source_tree(source_commit)
@@ -804,7 +837,7 @@ def _remote_runtime_script() -> str:
             apply_secret_acl()
             prepare_config()
             stop_owned()
-            rotate_service_log()
+            _rotate_service_log(log_path)
             build_env = os.environ.copy()
             build_env.update(
                 {
@@ -932,6 +965,8 @@ def _remote_runtime_script() -> str:
             raise SystemExit(1)
         """
     ).strip() + "\n"
+    helper = textwrap.dedent(inspect.getsource(_rotate_service_log)).strip()
+    return script.replace("__ROTATE_SERVICE_LOG__", helper)
 
 
 def execute(

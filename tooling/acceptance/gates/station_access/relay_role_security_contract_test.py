@@ -18,6 +18,22 @@ from tooling.acceptance.gates.station_access.relay_role_security_contract import
 )
 
 
+def _protected_file(name: str) -> dict[str, object]:
+    return {
+        "name": name,
+        "exists": True,
+        "nonEmpty": True,
+        "aclProtected": True,
+        "principals": [
+            "SIXWIN\\Administrator",
+            "NT AUTHORITY\\SYSTEM",
+        ],
+        "unexpectedPrincipals": [],
+        "expectedPrincipalsPresent": True,
+        "protected": True,
+    }
+
+
 class RelayRoleSecurityContractTest(unittest.TestCase):
     def test_current_repository_satisfies_source_contract(self) -> None:
         validate_relay_role_source_contract()
@@ -59,6 +75,20 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         ] = ["BUILTIN\\Users"]
 
         with self.assertRaisesRegex(GateError, "security is incomplete"):
+            _validate_runtime_evidence(manifest, attestation)
+
+    def test_runtime_evidence_rejects_unprotected_secret_file(self) -> None:
+        manifest, attestation = self._runtime_evidence()
+        file_evidence = attestation["runtimeSecurity"][
+            "relayStorageSecurity"
+        ]["requiredProtectedFiles"][3]
+        file_evidence["aclProtected"] = False
+        file_evidence["protected"] = False
+
+        with self.assertRaisesRegex(
+            GateError,
+            "protected-file evidence is incomplete",
+        ):
             _validate_runtime_evidence(manifest, attestation)
 
     def test_runtime_evidence_survives_canonical_redaction(self) -> None:
@@ -142,6 +172,63 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         with self.assertRaisesRegex(GateError, "accepted forbidden TLS 1.2"):
             _probe_tls_with_openssl("relay.example", 4501)
 
+    @patch(
+        "tooling.acceptance.gates.station_access."
+        "relay_role_security_contract.subprocess.run"
+    )
+    def test_openssl_fallback_rejects_ambiguous_tls12_failure(
+        self,
+        run: MagicMock,
+    ) -> None:
+        certificate = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "YWJj\n"
+            "-----END CERTIFICATE-----"
+        )
+        run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=f"{certificate}\nProtocol  : TLSv1.3\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout="",
+                stderr="connect: Connection refused",
+            ),
+        ]
+
+        with self.assertRaisesRegex(GateError, "was inconclusive"):
+            _probe_tls_with_openssl("relay.example", 4501)
+
+    @patch(
+        "tooling.acceptance.gates.station_access."
+        "relay_role_security_contract.subprocess.run"
+    )
+    def test_openssl_fallback_rejects_tls12_probe_timeout(
+        self,
+        run: MagicMock,
+    ) -> None:
+        certificate = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "YWJj\n"
+            "-----END CERTIFICATE-----"
+        )
+        run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=f"{certificate}\nProtocol  : TLSv1.3\n",
+                stderr="",
+            ),
+            subprocess.TimeoutExpired(cmd=["openssl"], timeout=12),
+        ]
+
+        with self.assertRaisesRegex(GateError, "rejection probe failed"):
+            _probe_tls_with_openssl("relay.example", 4501)
+
     @staticmethod
     def _runtime_evidence() -> tuple[dict[str, object], dict[str, object]]:
         commit = "a" * 40
@@ -204,13 +291,13 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
                     "stationDatabaseExists": True,
                     "relayDatabasePath": "relay/data/relay.db",
                     "relayDatabaseExists": True,
-                    "requiredProtectedFiles": {
-                        "auth-secret": True,
-                        "relay-operator.key": True,
-                        "relay-signing.key": True,
-                        "relay-tls.key": True,
-                        "relay.crt": True,
-                    },
+                    "requiredProtectedFiles": [
+                        _protected_file("auth-secret"),
+                        _protected_file("relay-operator.key"),
+                        _protected_file("relay-signing.key"),
+                        _protected_file("relay-tls.key"),
+                        _protected_file("relay.crt"),
+                    ],
                 },
             },
         }

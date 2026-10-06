@@ -36,6 +36,19 @@ ISOLATED_ROUTES = (
     "/conversation/list",
     "/debug",
 )
+_TLS12_PROTOCOL_REJECTION_MARKERS = (
+    "alert protocol version",
+    "tlsv1_alert_protocol_version",
+)
+_RELAY_SECRET_FILES = frozenset(
+    {
+        "auth-secret",
+        "relay-operator.key",
+        "relay-signing.key",
+        "relay-tls.key",
+        "relay.crt",
+    }
+)
 
 
 def _read(relative_path: str) -> str:
@@ -264,6 +277,14 @@ def _http_status(url: str) -> int:
         raise GateError(f"HTTP probe failed for {url}: {error}") from error
 
 
+def _is_explicit_tls12_protocol_rejection(detail: str) -> bool:
+    normalized = detail.lower()
+    return any(
+        marker in normalized
+        for marker in _TLS12_PROTOCOL_REJECTION_MARKERS
+    )
+
+
 def _probe_tls_with_openssl(host: str, port: int) -> dict[str, str]:
     target = f"{host}:{port}"
     base_command = [
@@ -318,8 +339,15 @@ def _probe_tls_with_openssl(host: str, port: int) -> dict[str, str]:
         raise GateError(
             f"OpenSSL TLS 1.2 rejection probe failed for {target}: {error}"
         ) from error
-    if legacy.returncode == 0:
+    legacy_output = f"{legacy.stdout}\n{legacy.stderr}"
+    if "TLSv1.2" in legacy_output:
         raise GateError("Relay stream accepted forbidden TLS 1.2")
+    if not _is_explicit_tls12_protocol_rejection(legacy_output):
+        detail = legacy_output.strip()[-1000:] or "no OpenSSL diagnostic"
+        raise GateError(
+            "Relay TLS 1.2 rejection probe was inconclusive "
+            f"at tls://{target} (exit {legacy.returncode}): {detail}"
+        )
     return {
         "endpoint": f"tls://{target}",
         "protocol": "TLSv1.3",
@@ -378,8 +406,20 @@ def _probe_tls(stream_endpoint: str) -> dict[str, str]:
                 server_hostname=parsed.hostname,
             ):
                 pass
-    except (OSError, ssl.SSLError):
+    except ssl.SSLError as error:
+        if not _is_explicit_tls12_protocol_rejection(
+            f"{getattr(error, 'reason', '')} {error}"
+        ):
+            raise GateError(
+                "Relay TLS 1.2 rejection probe was inconclusive "
+                f"at {stream_endpoint}: {error}"
+            ) from error
         legacy_rejected = True
+    except OSError as error:
+        raise GateError(
+            "Relay TLS 1.2 rejection probe failed "
+            f"at {stream_endpoint}: {error}"
+        ) from error
     else:
         legacy_rejected = False
     if not legacy_rejected:
@@ -400,6 +440,44 @@ def _required_object(
     if not isinstance(value, dict):
         raise GateError(f"{label} {field} must be an object")
     return value
+
+
+def _required_protected_files(
+    value: object,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) != len(_RELAY_SECRET_FILES):
+        raise GateError("Relay storage security protected-file set is incomplete")
+    files: list[dict[str, Any]] = []
+    names: set[str] = set()
+    for record_value in value:
+        record = _required_object(
+            record_value,
+            "entry",
+            "Relay protected-file evidence",
+        )
+        name = record.get("name")
+        principals = record.get("principals")
+        if (
+            not isinstance(name, str)
+            or name in names
+            or record.get("exists") is not True
+            or record.get("nonEmpty") is not True
+            or record.get("aclProtected") is not True
+            or record.get("expectedPrincipalsPresent") is not True
+            or record.get("unexpectedPrincipals") != []
+            or record.get("protected") is not True
+            or not isinstance(principals, list)
+            or not principals
+            or any(not isinstance(principal, str) for principal in principals)
+        ):
+            raise GateError(
+                f"Relay protected-file evidence is incomplete for {name}"
+            )
+        names.add(name)
+        files.append(record)
+    if names != _RELAY_SECRET_FILES:
+        raise GateError("Relay storage security protected-file set is incomplete")
+    return sorted(files, key=lambda record: str(record["name"]))
 
 
 def _validate_runtime_evidence(
@@ -462,10 +540,8 @@ def _validate_runtime_evidence(
         "relayStorageSecurity",
         "Relay runtime security",
     )
-    required_files = _required_object(
+    _required_protected_files(
         storage_security.get("requiredProtectedFiles"),
-        "requiredProtectedFiles",
-        "Relay storage security",
     )
     if (
         security.get("attachmentMode") != "existing-owner-managed"
@@ -482,8 +558,6 @@ def _validate_runtime_evidence(
         or storage_security.get("relayDatabaseExists") is not True
         or storage_security.get("stationDatabasePath")
         == storage_security.get("relayDatabasePath")
-        or not required_files
-        or not all(value is True for value in required_files.values())
     ):
         raise GateError("Attached Station/Relay runtime security is incomplete")
     stream_endpoint = str(security.get("streamEndpoint") or "")
