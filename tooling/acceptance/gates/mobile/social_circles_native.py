@@ -55,7 +55,7 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
                 "member writes pending until list and member-count readback converge",
                 "remote lookup failure preserves the member-picker edit surface",
                 "descriptor-owned Circle list, editor, and full-screen member picker",
-                "composer Audience behavior remains unchanged",
+                "composer Circle Audience consumes the Station-owned Circle projection",
             ],
             "unproven_scope": [
                 "native iOS visual and interaction journey",
@@ -136,8 +136,16 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
             ),
             "Circle member picker",
         )
-        if "useSocialCirclesStore" in composer:
-            raise GateError("Moment composer changed before the Audience closure")
+        self._require_markers(
+            composer,
+            (
+                "useSocialCirclesStore",
+                'data-acceptance-id="social-audience-select"',
+                'data-acceptance-id="social-audience-circle"',
+                "circles[0].id.toString()",
+            ),
+            "Moment composer Circle Audience",
+        )
 
     def _read(self, relative_path: str) -> str:
         return (REPO_ROOT / relative_path).read_text(encoding="utf-8")

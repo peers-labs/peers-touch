@@ -286,6 +286,25 @@ class AppiumSession:
         ):
             raise DriverError("Appium background response is invalid")
 
+    def social_ui(
+        self,
+        action: str,
+        payload: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if not action or action.strip() != action:
+            raise DriverError("Mobile Social UI action is invalid")
+        result = self._invoke(
+            "social_ui",
+            {
+                "uiAction": action,
+                "input": dict(payload or {}),
+            },
+        )
+        value = result.get("value")
+        if not isinstance(value, Mapping):
+            raise DriverError("Mobile Social UI response is invalid")
+        return dict(value)
+
     def find_element(self, using: str, value: str) -> str:
         result = self._invoke(
             "find_element",

@@ -550,6 +550,17 @@
             "sha256": "115e3923a95abfddee333819923ca9ab545aceab4fd56f30f3f7387556798632",
             "cache_target": "124.0.6367.207/darwin-arm64/chromedriver-mac-arm64.zip",
             "executable_target": "124.0.6367.207/darwin-arm64/chromedriver"
+          },
+          {
+            "browser_major": 103,
+            "driver_version": "103.0.5060.134",
+            "source": "https://chromedriver.storage.googleapis.com/103.0.5060.134/chromedriver_mac64_m1.zip",
+            "platform": "darwin",
+            "arch": "arm64",
+            "android_abis": ["arm64-v8a"],
+            "sha256": "8a1fc69e573a15bfa9c53f0be15af3252bafa04e779c8e2074bedc6db9c067a7",
+            "cache_target": "103.0.5060.134/darwin-arm64/chromedriver-mac64-m1.zip",
+            "executable_target": "103.0.5060.134/darwin-arm64/chromedriver"
           }
         ]
       }

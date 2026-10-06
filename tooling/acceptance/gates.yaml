@@ -1683,6 +1683,21 @@
       "tier": "env-evidence",
       "description": "Prove the MPS-RC01 same-Station Social suite on one source-bound pair of isolated iOS Simulators, with reusable Home/Explore, Search/Profile, Circles/Audience/Publish, Thread/Reaction, Recovery/Lifecycle, native-quality, receiver-visible, and cleanup evidence."
     },
+    "mobile-social-android-native": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.mobile.android_social_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.native.appium-session"
+      ],
+      "timeout_seconds": 10800,
+      "environment": "mobile-android-physical",
+      "provisioner": "mobile-android-physical",
+      "tier": "env-evidence",
+      "description": "Prove the MPS-RC02 same-Station Social suite through one USB-authorized physical Android device, sequential non-destructive Alice/Bob/Eve sessions, exact-source build and Station attestation, real UI actions, receiver-visible assertions, native evidence, and deterministic lease cleanup."
+    },
     "mobile-identity-contract": {
       "command": "python3 -m tooling.acceptance.gates.mobile.identity_contract",
       "timeout_seconds": 120,
