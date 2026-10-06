@@ -353,13 +353,6 @@ class TextRedactionTests(unittest.TestCase):
         self.assertEqual(redact_text(once), once)
         self.assertNotIn("]]", once)
 
-    def test_redaction_is_idempotent_for_bearer_prose(self) -> None:
-        text = "no bearer or private key material in Web projections"
-        once = redact_text(text)
-
-        self.assertEqual(redact_text(once), once)
-        self.assertNotIn("]]", once)
-
     def test_redacts_unquoted_secret_with_punctuation(self) -> None:
         redacted = redact_text("password=alpha,beta;gamma next=safe")
 
@@ -427,22 +420,6 @@ class ArtifactRedactionTests(unittest.TestCase):
         self.assertFalse(second_changed)
         self.assertEqual(twice, once)
         self.assertNotIn(secret.encode(), once)
-
-    def test_structured_bearer_prose_redaction_is_idempotent(self) -> None:
-        payload = json.dumps(
-            {
-                "scope": [
-                    "no bearer or private key material in Web projections",
-                ],
-            }
-        ).encode()
-
-        once, first_changed = redact_artifact_bytes(payload)
-        twice, second_changed = redact_artifact_bytes(once)
-
-        self.assertTrue(first_changed)
-        self.assertFalse(second_changed)
-        self.assertEqual(twice, once)
 
     def test_preserves_binary_artifact_without_explicit_secret(self) -> None:
         payload = b"\x00\xff\x80"

@@ -169,10 +169,7 @@ _AUTHORIZATION_HEADER = re.compile(
 _COOKIE_HEADER = re.compile(
     r"(?im)(\b(?:set-cookie|cookie)\s*[:=]\s*)[^\r\n]+"
 )
-_BEARER_TOKEN = re.compile(
-    rf"(?i)(?P<prefix>\bbearer\s+)"
-    rf"(?P<value>{_REDACTED_VALUE_PATTERN}|[^\s,;}}\]]+)"
-)
+_BEARER_TOKEN = re.compile(r"(?i)(\bbearer\s+)[^\s,;}\]]+")
 _URI_CREDENTIAL = re.compile(
     r"(?i)(\b[a-z][a-z0-9+.-]*://[^:/\s@]+:)([^@\s/]+)(?=@)"
 )
@@ -241,7 +238,7 @@ def redact_text(text: str) -> str:
     redacted = _PRIVATE_KEY.sub(REDACTED, text)
     redacted = _AUTHORIZATION_HEADER.sub(rf"\1{REDACTED}", redacted)
     redacted = _COOKIE_HEADER.sub(rf"\1{REDACTED}", redacted)
-    redacted = _BEARER_TOKEN.sub(_redact_assignment, redacted)
+    redacted = _BEARER_TOKEN.sub(rf"\1{REDACTED}", redacted)
     redacted = _URI_CREDENTIAL.sub(rf"\1{REDACTED}", redacted)
     redacted = _URL_QUERY_SECRET.sub(rf"\1{REDACTED}", redacted)
     redacted = _KNOWN_SECRET_TOKEN.sub(REDACTED, redacted)

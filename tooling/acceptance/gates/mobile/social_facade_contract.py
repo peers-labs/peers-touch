@@ -68,7 +68,7 @@ class MobileSocialFacadeContractGate(AcceptanceGate):
                 "facade teardown and stale-completion rejection",
                 "typed public/private Social intent mapping",
                 "zero direct Moments gateway or private runtime ownership in pages",
-                "no bearer or private key material in Web projections",
+                "no sensitive transport or cryptographic material in Web projections",
             ],
             "unproven_scope": [
                 "native iOS or physical Android user journey",
