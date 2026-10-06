@@ -65,6 +65,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     ACTOR_PASSWORD,
     prepare_bound_friendships,
+    prepare_federation_contexts,
     reset_fixture,
     resolve_actor_identity,
     verify_reset_target,
@@ -6914,6 +6915,30 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             federation_id = fixture_federation_id_from_station_ids(
                 actor["homeStationPeerId"] for actor in selected_actor_routes
             )
+            federation_targets = {
+                service_id: (
+                    service_bindings[service_id].endpoint,
+                    service_bindings[service_id].deployment_environment,
+                    tuple(sorted({
+                        client.actor
+                        for client in environment_clients
+                        if client.service_bindings["station"].service_id
+                        == service_id
+                    })),
+                )
+                for service_id in station_service_ids
+            }
+            prepared_federation_id = prepare_federation_contexts(
+                federation_targets
+            )
+            if prepared_federation_id != federation_id:
+                raise BlockedError(
+                    reason=(
+                        f"{self.environment_id} Fixture Federation identity "
+                        "does not match the actor manifest"
+                    ),
+                    resource=f"{self.environment_id}:fixture-federation",
+                )
             for station in stations.values():
                 for actor in station["actors"]:
                     actor["federationId"] = federation_id

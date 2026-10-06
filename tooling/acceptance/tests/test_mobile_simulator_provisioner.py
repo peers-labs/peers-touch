@@ -1249,6 +1249,16 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     ),
                 ),
             ) as resolve_actor,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_federation_contexts",
+                return_value=(
+                    "fed_chat_"
+                    + hashlib.sha256(
+                        b"station-primary\x00station-secondary"
+                    ).hexdigest()[:20]
+                ),
+            ) as prepare_federation,
         ):
             provisioner._prepare_actor_fixture(
                 "mobile-simulator-social-convergence-e2e",
@@ -1299,6 +1309,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             1,
         )
         self.assertTrue(actors[0]["federationId"])
+        prepare_federation.assert_called_once()
 
     def test_direct_actor_fixture_resolves_both_roles_on_same_station(
         self,
@@ -1350,6 +1361,14 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     home_station_peer_id="station-direct",
                 ),
             ) as resolve_actor,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_federation_contexts",
+                return_value=(
+                    "fed_chat_"
+                    + hashlib.sha256(b"station-direct").hexdigest()[:20]
+                ),
+            ) as prepare_federation,
         ):
             provisioner._prepare_actor_fixture(
                 "mobile-simulator-recovery-e2e",
@@ -1396,6 +1415,13 @@ class MobileSimulatorContractTests(unittest.TestCase):
             },
             {"station-direct"},
         )
+        prepare_federation.assert_called_once_with({
+            "station": (
+                "https://direct.example",
+                "chat-native-disposable-station",
+                ("alice", "bob"),
+            ),
+        })
 
     def test_station_lifecycle_overlay_has_exact_topology_and_bindings(
         self,
