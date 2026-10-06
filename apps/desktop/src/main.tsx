@@ -143,7 +143,14 @@ async function bootstrap() {
     <StrictMode>
       <ErrorBoundary i18n={i18n}>
         <I18nextProvider i18n={i18n}>
-          <ThemeProvider>
+          <ThemeProvider
+            theme={{
+              token: {
+                colorPrimaryBorder: '#6f87f5',
+                lineWidthFocus: 2,
+              },
+            }}
+          >
             {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
             <ToastHost />
           </ThemeProvider>

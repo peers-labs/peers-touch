@@ -52,7 +52,7 @@ packages/locales/ (source of truth)
   └── metadata.json      (version + language metadata)
         │
         │ Rust I18nService.deploy_builtin_packs()
-        │ (version-based: only deploys when version changes)
+        │ (version + built-in content consistency)
         │
         ▼
 config/i18n/ (runtime directory)
@@ -79,7 +79,7 @@ Frontend: initI18n() → i18next.init({ resources, keySeparator: false })
 
 ### 数据流详解
 
-1. **App 启动（Rust）** — `main.rs` setup 阶段调用 `state.i18n.deploy_builtin_packs(&resource_dir)`，将 `packages/locales/` 或 Tauri bundled resources 部署到 `config/i18n/`。部署基于 `metadata.json` 的 `version` 字段比较，版本相同则跳过 IO。
+1. **App 启动（Rust）** — `main.rs` setup 阶段调用 `state.i18n.deploy_builtin_packs(&resource_dir)`，将 `packages/locales/` 或 Tauri bundled resources 部署到 `config/i18n/`。只有 `metadata.json` 版本和内置语言包内容都一致时才跳过部署；任一不一致都会重新部署内置包。
 
 2. **前端初始化** — `main.tsx` 的 `bootstrap()` 调用 `await initI18n()`（在 React render 之前），通过 Tauri command `i18n_load_resources` 获取所有翻译资源。
 
@@ -156,7 +156,7 @@ packages/locales/                       ← @peers-touch/locales 包
 }
 ```
 
-`version` 字段用于 Rust 部署时的版本比较。每次翻译内容更新后递增版本号，确保 App 更新时重新部署。
+`version` 字段用于 Rust 部署时的快速版本比较。每次翻译内容更新后仍必须递增版本号；Rust 同时校验内置语言包内容，防止漏升版本时 release 运行目录长期保留旧文案。
 
 ### 4.4 Key 格式
 
@@ -396,7 +396,7 @@ pub struct I18nService {
 | 方法 | 职责 |
 |------|------|
 | `new(config_dir)` | 初始化，解析 `{config_dir}/i18n/` 路径；debug 构建自动探测 dev_source |
-| `deploy_builtin_packs(resource_dir)` | 版本比较部署：source metadata.json version ≠ deployed version → 重新部署 en/ + zh-CN/；相同则跳过（快速路径）。Production 路径必需 |
+| `deploy_builtin_packs(resource_dir)` | 版本与内容一致性部署：source/deployed 的 metadata version 和 en/、zh-CN/ 内容都一致才跳过；任一不一致则重新部署内置包。Production 路径必需 |
 | `load_resources()` | dev_source 存在 → 直接读源目录；否则 → 扫描 config/i18n/ 所有子目录（含社区包），返回 `I18nResources` |
 | `resolve_key(lang, ns, key)` | Rust 侧文本解析，优先读 dev_source，fallback 读 i18n_root |
 
@@ -641,7 +641,7 @@ import { Translation } from 'react-i18next';
 ### Phase 1: 基础设施搭建 ✅ Complete
 
 - ✅ `packages/locales/` 目录，en / zh-CN 两个语言，16 个 namespace
-- ✅ `metadata.json` 版本管理（当前 v0.2.0）
+- ✅ `metadata.json` 版本管理（当前 v0.5.8）
 - ✅ Rust `I18nService` — deploy_builtin_packs + load_resources
 - ✅ Tauri command `i18n_load_resources`
 - ✅ `apps/desktop/src/i18n/index.ts` — runtime 异步加载
@@ -752,7 +752,7 @@ apps/desktop/src/
 | **Station 策略** | 只返回 ErrorCode，不做 i18n | 服务端不应关心展示语言；ErrorCode 是稳定的接口契约 |
 | **Rust Error Key 策略** | message 字段统一为 i18n key | 干净的架构边界——Rust 返回语义化 key，前端 invoke 层自动翻译，消费方零改动。非"渐进替换"，而是明确的架构规范 |
 | **Invoke 层自动闭环** | desktop_api.ts resolveError() | 所有 Rust error 在 invoke 封装层被翻译后才抛出，上层消费方 `catch(err) → message.error(err.message)` 自动显示本地化文本 |
-| **版本化部署** | metadata.json version 比较 | 避免每次启动都进行文件 IO；版本不同时才重新部署；社区语言包永不被覆盖 |
+| **版本化部署** | metadata.json version + 内置包内容比较 | 版本和内容都一致时跳过复制；防止漏升版本导致陈旧文案；社区语言包永不被覆盖 |
 
 ---
 
