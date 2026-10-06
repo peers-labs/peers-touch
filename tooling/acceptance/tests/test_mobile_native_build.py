@@ -24,6 +24,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS,
     ANDROID_GRADLE_LOCK_REQUIREMENTS,
     ANDROID_LOCAL_GRADLE_PROJECTS,
+    ANDROID_TAURI_GENERATED_BUILD_OUTPUTS,
     ANDROIDX_GRADLE_PROPERTY,
     APPLICATION_ID,
     CARGO_CACHE_ROOT_FILES,
@@ -822,6 +823,49 @@ class MobileNativeBuildTest(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(paths), expected - paths)
         self.assertFalse(any("/build/" in path or "/.gradle/" in path for path in paths))
+        self.assertFalse(
+            any(
+                path == generated or path.startswith(f"{generated}/")
+                for path in paths
+                for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS
+            )
+        )
+
+    def test_canonical_inputs_exclude_tauri_android_generated_outputs(self) -> None:
+        from tooling.acceptance.provisioners.mobile_native_build import (
+            _collect_input_tree,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tracked = (
+                root
+                / "apps/mobile/src-tauri/gen/android/app/src/main/"
+                "AndroidManifest.xml"
+            )
+            tracked.parent.mkdir(parents=True)
+            tracked.write_text("<manifest />", encoding="utf-8")
+            for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS:
+                output = root / generated / "generated-output"
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text("generated", encoding="utf-8")
+
+            paths = _collect_input_tree(
+                root,
+                "apps/mobile/src-tauri/gen/android",
+            )
+
+        self.assertIn(
+            "apps/mobile/src-tauri/gen/android/app/src/main/AndroidManifest.xml",
+            paths,
+        )
+        self.assertFalse(
+            any(
+                path == generated or path.startswith(f"{generated}/")
+                for path in paths
+                for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS
+            )
+        )
 
     def test_canonical_inputs_reject_a_symlink_escape(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
