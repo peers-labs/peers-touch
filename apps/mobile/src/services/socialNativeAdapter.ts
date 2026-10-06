@@ -6,6 +6,13 @@ import {
 } from './stationTransport';
 
 type SocialOperationId =
+  | 'social_circles_list'
+  | 'social_circle_create'
+  | 'social_circle_update'
+  | 'social_circle_delete'
+  | 'social_circle_members_list'
+  | 'social_circle_members_add'
+  | 'social_circle_members_remove'
   | 'moments_timeline'
   | 'moments_post_get'
   | 'moments_react'

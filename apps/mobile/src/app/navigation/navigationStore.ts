@@ -50,6 +50,17 @@ export type MobileDetailRoute =
       readonly federationId: string;
     }
   | {
+      readonly routeId: 'detail:social-circles';
+    }
+  | {
+      readonly routeId: 'detail:social-circle';
+      readonly circleId: string;
+    }
+  | {
+      readonly routeId: 'detail:social-circle-members';
+      readonly circleId: string;
+    }
+  | {
       readonly routeId: 'detail:setting';
       readonly settingId: MobileSettingDetailId;
     };
@@ -189,6 +200,11 @@ export function navigationLocationKey(
       return route.routeId;
     case 'detail:social-profile':
       return `${route.routeId}:${route.actorPtid}:${route.federationId}`;
+    case 'detail:social-circles':
+      return route.routeId;
+    case 'detail:social-circle':
+    case 'detail:social-circle-members':
+      return `${route.routeId}:${route.circleId}`;
     case 'detail:setting':
       return `${route.routeId}:${route.settingId}`;
     case 'overlay:add-friend':

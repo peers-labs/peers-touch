@@ -114,6 +114,27 @@ export const detailDescriptors: readonly NavigationDescriptor[] = [
     keepAlive: false,
   },
   {
+    routeId: 'detail:social-circles',
+    labelKey: 'mobile.nav.socialCircles',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
+    routeId: 'detail:social-circle',
+    labelKey: 'mobile.nav.socialCircle',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
+    routeId: 'detail:social-circle-members',
+    labelKey: 'mobile.nav.socialCircleMembers',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
     routeId: 'detail:setting',
     labelKey: 'mobile.nav.settingDetail',
     layout: 'detail',
