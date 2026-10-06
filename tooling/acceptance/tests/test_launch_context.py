@@ -1839,6 +1839,58 @@ with EphemeralGateClient.from_environment():
             ):
                 gate_bootstrap_module._add_invoked_user_site_packages()
 
+    def test_bootstrap_loads_system_site_inside_interpreter_data_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory) / "interpreter-data"
+            site_packages = data_root / "lib" / "python" / "site-packages"
+            site_packages.mkdir(parents=True)
+
+            def get_path(name: str) -> str:
+                if name == "data":
+                    return str(data_root)
+                return str(site_packages)
+
+            with (
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_path",
+                    side_effect=get_path,
+                ),
+                patch.object(sys, "path", ["stdlib"]),
+            ):
+                gate_bootstrap_module._add_invoked_system_site_packages()
+                self.assertEqual(
+                    sys.path,
+                    ["stdlib", str(site_packages.resolve())],
+                )
+
+    def test_bootstrap_rejects_system_site_outside_interpreter_data_root(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory) / "interpreter-data"
+            data_root.mkdir()
+            outside = Path(directory) / "outside-site-packages"
+            outside.mkdir()
+
+            def get_path(name: str) -> str:
+                if name == "data":
+                    return str(data_root)
+                return str(outside)
+
+            with (
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_path",
+                    side_effect=get_path,
+                ),
+                self.assertRaisesRegex(
+                    RuntimeError,
+                    "system package path is unsafe",
+                ),
+            ):
+                gate_bootstrap_module._add_invoked_system_site_packages()
+
     def test_context_launcher_rejects_unsafe_venv_layouts(self) -> None:
         cases = (
             ("site-packages-symlink-escape", "package path is unsafe"),

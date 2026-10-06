@@ -207,6 +207,52 @@ def _add_invoked_user_site_packages() -> None:
     sys.path.extend(resolved_paths)
 
 
+def _add_invoked_system_site_packages() -> None:
+    data_path_value = sysconfig.get_path("data")
+    if not isinstance(data_path_value, str) or not data_path_value:
+        raise RuntimeError("isolated Gate system package root is unavailable")
+
+    try:
+        resolved_root = Path(data_path_value).resolve(strict=True)
+    except OSError as error:
+        raise RuntimeError(
+            "isolated Gate system package root is invalid"
+        ) from error
+    if not resolved_root.is_dir():
+        raise RuntimeError("isolated Gate system package root is invalid")
+
+    resolved_paths: list[str] = []
+    for path_name in ("purelib", "platlib"):
+        candidate_value = sysconfig.get_path(path_name)
+        if not isinstance(candidate_value, str) or not candidate_value:
+            continue
+        candidate = Path(candidate_value)
+        try:
+            candidate.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            raise RuntimeError(
+                "isolated Gate system package path is invalid"
+            ) from error
+        try:
+            resolved_candidate = candidate.resolve(strict=True)
+            resolved_candidate.relative_to(resolved_root)
+        except (OSError, ValueError) as error:
+            raise RuntimeError(
+                "isolated Gate system package path is unsafe"
+            ) from error
+        if not resolved_candidate.is_dir():
+            raise RuntimeError(
+                "isolated Gate system package path is invalid"
+            )
+        resolved_path = str(resolved_candidate)
+        if resolved_path not in resolved_paths:
+            resolved_paths.append(resolved_path)
+
+    sys.path.extend(resolved_paths)
+
+
 def _run_target(argv: list[str]) -> None:
     if len(argv) < 2:
         raise RuntimeError("isolated Gate bootstrap target is missing")
@@ -241,6 +287,7 @@ def _run_target(argv: list[str]) -> None:
 def main() -> None:
     _context_descriptor()
     if not _add_invoked_venv_site_packages():
+        _add_invoked_system_site_packages()
         _add_invoked_user_site_packages()
     _run_target(sys.argv[1:])
 
