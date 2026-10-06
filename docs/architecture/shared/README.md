@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-10-05 | **Updated**: 2026-10-05
+> **Created**: 2026-10-05 | **Updated**: 2026-10-06
 > **Owner**: Architecture Team
 
 ---
@@ -17,9 +17,6 @@ business authority.
 
 | Capability | Entry |
 |---|---|
-| Federation transport and governance | [federation/](./federation/README.md) |
 | Realtime event transport | [communication/](./communication/README.md) |
 | Cross-domain content security | [security/](./security/README.md) |
-| Object storage | [object-storage.md](./object-storage.md) |
 | Internationalization | [i18n/](./i18n/README.md) |
-| Notification | [notification/](./notification/README.md) |

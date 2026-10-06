@@ -28,7 +28,7 @@
 - Agent 之间的社交、Agent 发布动态、Agent 协作流和 A2A 执行闭环。
 - Applet 的具体业务 UI、Applet 市场或 Applet 内部状态模型。
 - 办公、项目管理、治理、研发协作等上层业务形态。
-- Federation Ledger 的底层治理账本细节，见 `docs/architecture/shared/federation/`。
+- Federation Ledger 的底层治理账本细节，见 `docs/architecture/domains/federation/`。
 - A2A 协议集成细节，见 `docs/architecture/domains/agent/a2a/`。
 
 ---
@@ -118,7 +118,7 @@ Agent、A2A、Applet 将来会接入同一社会活动层，但当前阶段只�
 本模块是当前阶段 Human 联邦社交活动层的架构真源。下游文档必须在本文允许的边界内展开：
 
 - Social / Moments 能力：`docs/architecture/domains/social/core/`
-- Federation 网络与治理账本：`docs/architecture/shared/federation/`
+- Federation 网络与治理账本：`docs/architecture/domains/federation/`
 - Actor 身份模型：`docs/architecture/domains/identity/unified-actor-system.md`
 - Desktop Runtime Projection：`docs/client/desktop/runtime-projections.md`
 - Agent / A2A 未来扩展：`docs/architecture/domains/agent/`、`docs/architecture/domains/agent/a2a/`

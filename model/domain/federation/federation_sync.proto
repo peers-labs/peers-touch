@@ -6,7 +6,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/fed
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Federation Sync — Types for ledger replication between Stations.
-// Source of truth: docs/architecture/shared/federation/wire-protocol.md §7
+// Source of truth: docs/architecture/domains/federation/wire-protocol.md §7
 //
 // The SSE delivery message (LedgerEventDelivered) lives in
 // model/domain/realtime/event.proto as StreamEvent oneof arm 24.

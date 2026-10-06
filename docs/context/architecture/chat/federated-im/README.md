@@ -104,7 +104,7 @@ The current group lifecycle source of truth defines local Station group behavior
 
 | Source | Relationship |
 | --- | --- |
-| `docs/architecture/shared/federation/README.md` | Federation entity, governance ledger, Station membership |
+| `docs/architecture/domains/federation/README.md` | Federation entity, governance ledger, Station membership |
 | `docs/context/architecture/social/group-lifecycle.md` | Superseded local group lifecycle design retained for history |
 | `docs/architecture/domains/chat/encryption/README.md` | Current device-addressed direct encryption, MLS, delivery, and recovery contract |
 | `docs/architecture/shared/communication/event-stream.md` | Reliable event stream and recovery model |
