@@ -164,6 +164,11 @@
   "moments.lightbox.next": "Next",
   "moments.lightbox.loading": "Loading…",
 
+  "moments.delete.action": "Delete",
+  "moments.delete.confirmTitle": "Delete this Moment?",
+  "moments.delete.confirmDescription": "This removes the Moment for everyone who can access it.",
+  "moments.delete.error": "The Moment could not be deleted.",
+
   "moments.comment.placeholder": "Reply…",
   "moments.comment.publish": "Post",
   "moments.comment.empty": "No comments yet. Be the first to reply.",
@@ -289,5 +294,6 @@
   "moments.private.revocation.RELATIONSHIP_REVOKED.title": "Access removed",
   "moments.private.revocation.RELATIONSHIP_REVOKED.description": "Your relationship no longer grants access to this private post.",
   "moments.private.revocation.RECIPIENT_BLOCKED.title": "Post hidden",
-  "moments.private.revocation.RECIPIENT_BLOCKED.description": "This private post is unavailable because the relationship is blocked."
+  "moments.private.revocation.RECIPIENT_BLOCKED.description": "This private post is unavailable because the relationship is blocked.",
+  "moments.private.revocation.copyBoundary": "Copies previously exported, captured in screenshots, or saved by a malicious recipient cannot be erased remotely."
 }

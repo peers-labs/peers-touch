@@ -22,8 +22,8 @@
  * Header uses ImagePlus toggle; feed uses Card-based layout.
  */
 
-import { useCallback, useMemo, useState } from 'react';
-import { Button, Typography } from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Modal, Typography } from 'antd';
 import { ArrowLeft, ImagePlus, RefreshCw, Search } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
@@ -68,14 +68,15 @@ function momentPostKey(post: Post): string {
 }
 
 type BlockingPrivateMomentProjection = PrivateMomentReadProjection & {
-  readonly state: 'RECOVERY_REQUIRED' | 'INTEGRITY_FAILURE';
+  readonly state: 'RECOVERY_REQUIRED' | 'INTEGRITY_FAILURE' | 'DELETED_OR_REVOKED';
 };
 
 function isBlockingPrivateMoment(
   projection: PrivateMomentReadProjection,
 ): projection is BlockingPrivateMomentProjection {
   return projection.state === 'RECOVERY_REQUIRED'
-    || projection.state === 'INTEGRITY_FAILURE';
+    || projection.state === 'INTEGRITY_FAILURE'
+    || projection.state === 'DELETED_OR_REVOKED';
 }
 
 function withValue(values: ReadonlySet<string>, value: string): ReadonlySet<string> {
@@ -166,6 +167,7 @@ export function MomentsPage({
   const [showNewPost, setShowNewPost] = useState(false);
   const [selectedThreadPostId, setSelectedThreadPostId] = useState<string | null>(null);
   const [mediaSelection, setMediaSelection] = useState<MomentMediaSelection | null>(null);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [dismissedPrivateStates, setDismissedPrivateStates] =
     useState<ReadonlySet<string>>(() => new Set());
   const [privateActionKey, setPrivateActionKey] = useState<string | null>(null);
@@ -196,6 +198,16 @@ export function MomentsPage({
     return [...blockingPrivateByPostId.values()]
       .filter((privateProjection) => !visiblePostIds.has(privateProjection.postId));
   }, [blockingPrivateByPostId, feed.posts]);
+  useEffect(() => {
+    if (!mediaSelection) return;
+    const postId = mediaSelection.postId;
+    if (
+      blockingPrivateByPostId.get(postId)?.state === 'DELETED_OR_REVOKED'
+      || !feed.posts.some((post) => post.id === postId)
+    ) {
+      setMediaSelection(null);
+    }
+  }, [blockingPrivateByPostId, feed.posts, mediaSelection]);
 
   // -- Projection availability check --
   const availability = projection?.runtime.availability;
@@ -226,6 +238,32 @@ export function MomentsPage({
   const handleOpenComments = useCallback((postId: string) => {
     setSelectedThreadPostId((current) => current === postId ? null : postId);
   }, []);
+
+  const handleDeleteMoment = useCallback((postId: string) => {
+    if (!facade || deletingPostId) return;
+    Modal.confirm({
+      title: t('mobile.moments.delete.confirmTitle'),
+      content: t('mobile.moments.delete.confirmDescription'),
+      okText: t('mobile.moments.delete.action'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setDeletingPostId(postId);
+        try {
+          if (!await facade.intents.deleteMoment(postId)) {
+            throw new Error('mobile.moments.delete.error');
+          }
+          setSelectedThreadPostId((current) => current === postId ? null : current);
+          setMediaSelection((current) => current?.postId === postId ? null : current);
+        } catch {
+          setNoticeError(t('mobile.moments.delete.error'));
+          throw new Error('mobile.moments.delete.error');
+        } finally {
+          setDeletingPostId(null);
+        }
+      },
+    });
+  }, [deletingPostId, facade, t]);
 
   const handleRetry = useCallback(() => {
     if (!facade) return;
@@ -305,6 +343,7 @@ export function MomentsPage({
     setMediaSelection({
       route: 'PUBLIC',
       kind,
+      postId,
       attachment,
       returnFocus: trigger,
     });
@@ -551,6 +590,12 @@ export function MomentsPage({
                             post={post}
                             onReact={(postId, kind) => void handleReact(postId, kind)}
                             onOpenComments={handleOpenComments}
+                            onDelete={
+                              post.authorPtid === authSession?.actorRef.ptid
+                                ? handleDeleteMoment
+                                : undefined
+                            }
+                            deleteBusy={deletingPostId === post.id}
                             onOpenAuthor={onOpenProfile}
                             onOpenMedia={handleOpenMedia}
                             reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}

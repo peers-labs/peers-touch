@@ -12,6 +12,10 @@ const gatewayMocks = vi.hoisted(() => ({
   updateNotificationPreferences: vi.fn(),
 }));
 
+const privateRuntimeMocks = vi.hoisted(() => ({
+  invalidate: vi.fn(async () => []),
+}));
+
 vi.mock('../services/gateways/momentsGateway', () => ({
   createMomentsGateway: () => ({
     fetchFeed: gatewayMocks.fetchFeed,
@@ -30,6 +34,14 @@ vi.mock('../services/gateways/profileGateway', () => ({
     updateNotificationPreferences: gatewayMocks.updateNotificationPreferences,
   }),
 }));
+
+vi.mock('./privateMomentsRuntime', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./privateMomentsRuntime')>();
+  return {
+    ...actual,
+    invalidatePrivateMoments: privateRuntimeMocks.invalidate,
+  };
+});
 
 import {
   createSocialProjectionRuntime,
@@ -57,6 +69,7 @@ let releaseSessionAdmission: (() => void) | null = null;
 
 describe('social projection runtime', () => {
   beforeEach(() => {
+    privateRuntimeMocks.invalidate.mockClear();
     releaseSessionAdmission?.();
     releaseSessionAdmission = bindMobileSessionMutationAdmission(() => ({
       scopeKey: mobileAuthScopeKey(session),
@@ -142,6 +155,7 @@ describe('social projection runtime', () => {
       loadCurrentUserProfile: vi.fn(async () => undefined),
       loadPeerProfile: vi.fn(async () => undefined),
       loadFriendshipStatus: vi.fn(async () => undefined),
+      loadAuthoredPosts: vi.fn(async () => undefined),
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
@@ -266,10 +280,30 @@ describe('social projection runtime', () => {
       cursor: 'cursor-3',
       timestampMs: 13,
     });
+    runtime.ingestRealtimeEvent({
+      kind: 'social-graph',
+      graphKind: 'unfriended',
+      actorPtid: 'ptid:bob',
+      targetPtid: 'ptid:alice',
+      requestId: '',
+      conversationId: '',
+      cursor: 'cursor-4',
+      timestampMs: 14,
+    });
+    runtime.ingestRealtimeEvent({
+      kind: 'social-graph',
+      graphKind: 'relationship-unblocked',
+      actorPtid: 'ptid:bob',
+      targetPtid: 'ptid:alice',
+      requestId: '',
+      conversationId: '',
+      cursor: 'cursor-5',
+      timestampMs: 15,
+    });
     await runtime.drain();
 
-    expect(gatewayMocks.fetchFeed).toHaveBeenCalledTimes(3);
-    expect(gatewayMocks.getPost).toHaveBeenCalledTimes(3);
+    expect(gatewayMocks.fetchFeed).toHaveBeenCalledTimes(6);
+    expect(gatewayMocks.getPost).toHaveBeenCalledTimes(2);
     expect(gatewayMocks.fetchComments).toHaveBeenCalledTimes(2);
     expect(runtime.moments.feed.state().selectedDetail).toMatchObject({
       postId: 'post-1',
@@ -280,9 +314,28 @@ describe('social projection runtime', () => {
     expect(socialStore.refreshFriendRequests).toHaveBeenCalled();
     expect(socialStore.refreshBlockedUsers).toHaveBeenCalled();
     expect(socialStore.loadFriendshipStatus).toHaveBeenCalledWith('ptid:bob');
+    expect(socialStore.loadAuthoredPosts).toHaveBeenCalledTimes(3);
+    expect(socialStore.loadAuthoredPosts).toHaveBeenCalledWith('ptid:bob');
+    expect(privateRuntimeMocks.invalidate.mock.calls).toEqual([
+      [[{
+        reason: 'RESOURCE_DELETED',
+        sourceCursor: 'cursor-1-delete',
+        postId: 'post-1',
+      }]],
+      [[{
+        reason: 'RECIPIENT_BLOCKED',
+        sourceCursor: 'cursor-3',
+        authorPtid: 'ptid:bob',
+      }]],
+      [[{
+        reason: 'RELATIONSHIP_REVOKED',
+        sourceCursor: 'cursor-4',
+        authorPtid: 'ptid:bob',
+      }]],
+    ]);
     expect(socialStore.refreshNotifications).toHaveBeenCalled();
     expect(socialStore.loadPeerProfile).toHaveBeenCalledWith('ptid:bob', true);
-    expect(readActiveSocialIngressState()?.streamCursor).toBe('cursor-3');
+    expect(readActiveSocialIngressState()?.streamCursor).toBe('cursor-5');
 
     await runtime.suspend();
     expect(readActiveSocialIngressState()).toMatchObject({
@@ -341,6 +394,7 @@ describe('social projection runtime', () => {
       loadCurrentUserProfile: vi.fn(async () => undefined),
       loadPeerProfile: vi.fn(async () => undefined),
       loadFriendshipStatus: vi.fn(async () => undefined),
+      loadAuthoredPosts: vi.fn(async () => undefined),
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
@@ -398,6 +452,7 @@ describe('social projection runtime', () => {
       loadCurrentUserProfile: vi.fn(async () => undefined),
       loadPeerProfile: vi.fn(async () => undefined),
       loadFriendshipStatus: vi.fn(async () => undefined),
+      loadAuthoredPosts: vi.fn(async () => undefined),
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };

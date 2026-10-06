@@ -36,6 +36,7 @@ import {
   type PrivateReactionMutationResult,
   type PrivateSocialActivationInput,
   type PrivateSocialAccountInput,
+  type PrivateSocialInvalidation,
   type PrivateSocialMomentIntent,
   type PrivateSocialTextIntent,
   type PrivateSocialWorkerReport,
@@ -287,15 +288,14 @@ export async function readPrivateTextMoment(
   if (!stablePostId || stablePostId !== postId) {
     throw new Error('mobile.privateSocial.invalidPostId');
   }
+  requirePrivateMomentAccessOpen(stablePostId);
   appendReadStates(postId, 'LOADING_AUTHORIZED_RESOURCE');
   try {
     const projection = await privateSocialReadText({
       ...operationScope(scope),
       postId: stablePostId,
     });
-    if (!isCurrentScope(scope)) {
-      throw new Error('mobile.privateSocial.staleReadCompletion');
-    }
+    requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleReadCompletion');
     if (projection.postId !== stablePostId) {
       throw new Error('mobile.privateSocial.receiverIdentityMismatch');
     }
@@ -326,13 +326,15 @@ export async function readPrivateMoment(postId: string): Promise<PrivateMomentRe
   if (!stablePostId || stablePostId !== postId) {
     throw new Error('mobile.privateSocial.invalidPostId');
   }
+  requirePrivateMomentAccessOpen(stablePostId);
   appendReadStates(postId, 'LOADING_AUTHORIZED_RESOURCE');
   try {
     const projection = await privateSocialRead({
       ...operationScope(scope),
       postId: stablePostId,
     });
-    if (!isCurrentScope(scope) || projection.postId !== stablePostId) {
+    requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleReadCompletion');
+    if (projection.postId !== stablePostId) {
       throw new Error('mobile.privateSocial.staleReadCompletion');
     }
     if (projection.state === 'RECOVERY_REQUIRED') {
@@ -363,14 +365,13 @@ export async function openPrivateMomentMedia(
   if (!stablePostId || !stableObjectId) {
     throw new Error('mobile.privateSocial.invalidMediaIdentity');
   }
+  requirePrivateMomentAccessOpen(stablePostId);
   const projection = await privateSocialOpenMedia({
     ...operationScope(scope),
     postId: stablePostId,
     objectId: stableObjectId,
   });
-  if (!isCurrentScope(scope)) {
-    throw new Error('mobile.privateSocial.staleMediaCompletion');
-  }
+  requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleMediaCompletion');
   setSnapshot({
     ...snapshot,
     postsById: mergeReadProjectionMap(snapshot.postsById, [projection]),
@@ -393,15 +394,14 @@ export async function recoverPrivateMoment(
   ) {
     throw new Error('mobile.privateSocial.invalidPostId');
   }
+  requirePrivateMomentAccessOpen(stablePostId);
   appendReadStates(stablePostId, 'WAITING_FOR_PRIVATE_KEY');
   const projection = await privateSocialRecoverWithNativeInput({
     ...operationScope(scope),
     postId: stablePostId,
     recoveryEpoch,
   });
-  if (!isCurrentScope(scope)) {
-    throw new Error('mobile.privateSocial.staleRecoveryCompletion');
-  }
+  requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleRecoveryCompletion');
   setSnapshot({
     ...snapshot,
     postsById: mergeReadProjectionMap(snapshot.postsById, [projection]),
@@ -415,8 +415,13 @@ export async function submitPrivateComment(
   intent: PrivateCommentIntent,
 ): Promise<PrivateCommentSubmitResult> {
   const scope = requireActiveScope();
+  requirePrivateMomentAccessOpen(intent.postId);
   const result = await privateSocialCommentSubmit({ ...operationScope(scope), ...intent });
-  if (!isCurrentScope(scope)) throw new Error('mobile.privateSocial.staleCommentCompletion');
+  requireCurrentPostCompletion(
+    scope,
+    intent.postId,
+    'mobile.privateSocial.staleCommentCompletion',
+  );
   setSnapshot({
     ...snapshot,
     commentDrafts: mergeCommentDraftLists(snapshot.commentDrafts, [result.draft]),
@@ -450,6 +455,7 @@ export async function readPrivateComments(
   if (!stablePostId || stablePostId !== postId) {
     throw new Error('mobile.privateSocial.invalidPostId');
   }
+  requirePrivateMomentAccessOpen(stablePostId);
   setSnapshot({
     ...snapshot,
     commentThreadsByPostId: updatePrivateCommentThread(
@@ -465,7 +471,11 @@ export async function readPrivateComments(
       cursor,
       limit,
     });
-    if (!isCurrentScope(scope)) throw new Error('mobile.privateSocial.staleCommentReadCompletion');
+    requireCurrentPostCompletion(
+      scope,
+      stablePostId,
+      'mobile.privateSocial.staleCommentReadCompletion',
+    );
     setSnapshot({
       ...snapshot,
       comments: mergeCommentLists(snapshot.comments, page.comments),
@@ -516,14 +526,13 @@ export async function setPrivateMomentReaction(
   if (!stablePostId || stablePostId !== postId || !Number.isInteger(kind) || kind <= 0) {
     throw new Error('mobile.privateSocial.invalidReaction');
   }
+  requirePrivateMomentAccessOpen(stablePostId);
   const result = await (active ? privateSocialReact : privateSocialUnreact)({
     ...operationScope(scope),
     postId: stablePostId,
     kind,
   });
-  if (!isCurrentScope(scope)) {
-    throw new Error('mobile.privateSocial.staleReactionCompletion');
-  }
+  requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleReactionCompletion');
   applyPrivateReactionResult(result);
   return result;
 }
@@ -553,6 +562,11 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerRepo
     requirePrivateSocialPreKeyReadiness(report);
     const nativeSnapshot = await privateSocialSnapshot(operation);
     if (!isCurrentScope(scope)) return null;
+    const postsById = mergeReadProjectionMap(
+      snapshot.postsById,
+      nativeSnapshot.readProjections,
+    );
+    const revokedPostIds = deletedOrRevokedPostIds(postsById);
     setSnapshot({
       ...snapshot,
       reconciling: false,
@@ -560,13 +574,20 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerRepo
         snapshot.projections,
         nativeSnapshot.publishProjections,
       ),
-      postsById: mergeReadProjectionMap(
-        snapshot.postsById,
-        nativeSnapshot.readProjections,
+      postsById,
+      commentDrafts: nativeSnapshot.commentDrafts.filter(
+        (draft) => !revokedPostIds.has(draft.postId),
       ),
-      commentDrafts: nativeSnapshot.commentDrafts,
-      comments: nativeSnapshot.comments,
-      reactionCommands: nativeSnapshot.reactionCommands,
+      comments: nativeSnapshot.comments.filter(
+        (comment) => !revokedPostIds.has(comment.postId),
+      ),
+      reactionCommands: nativeSnapshot.reactionCommands.filter(
+        (command) => !revokedPostIds.has(command.postId),
+      ),
+      commentThreadsByPostId: omitPrivateCommentThreads(
+        snapshot.commentThreadsByPostId,
+        revokedPostIds,
+      ),
       lastReport: report,
       errorMessage: null,
     });
@@ -578,6 +599,33 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerRepo
         reconciling: false,
         errorMessage: readableErrorMessage(error),
       });
+    }
+    throw error;
+  }
+}
+
+export async function invalidatePrivateMoments(
+  invalidations: readonly PrivateSocialInvalidation[],
+): Promise<readonly PrivateMomentReadProjection[]> {
+  if (invalidations.length === 0) return [];
+  const scope = activeScope;
+  if (!scope) return [];
+
+  const localTombstones = localInvalidationProjections(invalidations);
+  applyPrivateInvalidationProjections(localTombstones);
+  try {
+    const result = await privateSocialReconcile({
+      ...operationScope(scope),
+      invalidations,
+    });
+    if (!isCurrentScope(scope)) {
+      throw new Error('mobile.privateSocial.staleInvalidationCompletion');
+    }
+    applyPrivateInvalidationProjections(result.invalidatedReadProjections);
+    return result.invalidatedReadProjections;
+  } catch (error) {
+    if (isCurrentScope(scope)) {
+      setSnapshot({ ...snapshot, errorMessage: readableErrorMessage(error) });
     }
     throw error;
   }
@@ -610,6 +658,12 @@ export function mergeReadProjectionMap(
   const merged = { ...current };
   for (const projection of incoming) {
     const existing = merged[projection.postId];
+    if (
+      existing?.state === 'DELETED_OR_REVOKED'
+      && projection.state !== 'DELETED_OR_REVOKED'
+    ) {
+      continue;
+    }
     if (
       !existing
       || projection.state !== 'CONTENT_READY'
@@ -652,6 +706,91 @@ function mergeCommentLists(
     }
   }
   return [...byComment.values()];
+}
+
+function localInvalidationProjections(
+  invalidations: readonly PrivateSocialInvalidation[],
+): PrivateMomentReadProjection[] {
+  const retained = Object.values(snapshot.postsById);
+  const projections: PrivateMomentReadProjection[] = [];
+  for (const invalidation of invalidations) {
+    const postIds = invalidation.reason === 'RESOURCE_DELETED'
+      ? [invalidation.postId]
+      : invalidation.reason === 'DEVICE_REVOKED'
+        ? retained.map((projection) => projection.postId)
+        : retained
+            .filter((projection) => projection.authorPtid === invalidation.authorPtid)
+            .map((projection) => projection.postId);
+    for (const postId of new Set(postIds)) {
+      projections.push({
+        postId,
+        contentId: `unavailable:${postId}`,
+        generation: '0',
+        authorPtid: '',
+        audienceKind: 'UNKNOWN',
+        state: 'DELETED_OR_REVOKED',
+        mentions: [],
+        reactions: [],
+        reactionRevision: '0',
+        reactionsHydrated: false,
+        errorCode: invalidation.reason,
+      });
+    }
+  }
+  return projections;
+}
+
+function applyPrivateInvalidationProjections(
+  projections: readonly PrivateMomentReadProjection[],
+): void {
+  if (projections.length === 0) return;
+  const revokedPostIds = new Set(projections.map((projection) => projection.postId));
+  const readStateHistoryByPostId = { ...snapshot.readStateHistoryByPostId };
+  for (const postId of revokedPostIds) {
+    const history = readStateHistoryByPostId[postId] ?? [];
+    readStateHistoryByPostId[postId] = [
+      ...history,
+      'DELETED_OR_REVOKED' as const,
+    ].slice(-MAX_STATE_HISTORY);
+  }
+  setSnapshot({
+    ...snapshot,
+    postsById: mergeReadProjectionMap(snapshot.postsById, projections),
+    commentDrafts: snapshot.commentDrafts.filter(
+      (draft) => !revokedPostIds.has(draft.postId),
+    ),
+    comments: snapshot.comments.filter(
+      (comment) => !revokedPostIds.has(comment.postId),
+    ),
+    reactionCommands: snapshot.reactionCommands.filter(
+      (command) => !revokedPostIds.has(command.postId),
+    ),
+    commentThreadsByPostId: omitPrivateCommentThreads(
+      snapshot.commentThreadsByPostId,
+      revokedPostIds,
+    ),
+    readStateHistoryByPostId,
+    errorMessage: null,
+  });
+}
+
+function deletedOrRevokedPostIds(
+  postsById: Readonly<Record<string, PrivateMomentReadProjection>>,
+): ReadonlySet<string> {
+  return new Set(
+    Object.values(postsById)
+      .filter((projection) => projection.state === 'DELETED_OR_REVOKED')
+      .map((projection) => projection.postId),
+  );
+}
+
+function omitPrivateCommentThreads(
+  threads: PrivateMomentsRuntimeSnapshot['commentThreadsByPostId'],
+  postIds: ReadonlySet<string>,
+): PrivateMomentsRuntimeSnapshot['commentThreadsByPostId'] {
+  return Object.fromEntries(
+    Object.entries(threads).filter(([postId]) => !postIds.has(postId)),
+  );
 }
 
 function applyPrivateReactionResult(result: PrivateReactionMutationResult): void {
@@ -899,6 +1038,21 @@ function mergeProjection(projection: PrivateMomentProjection): void {
 function requireActiveScope(): PrivateSocialSessionScope {
   if (!activeScope) throw new Error('mobile.privateSocial.runtimeInactive');
   return activeScope;
+}
+
+function requirePrivateMomentAccessOpen(postId: string): void {
+  if (snapshot.postsById[postId]?.state === 'DELETED_OR_REVOKED') {
+    throw new Error('mobile.privateSocial.deletedOrRevoked');
+  }
+}
+
+function requireCurrentPostCompletion(
+  scope: PrivateSocialSessionScope,
+  postId: string,
+  staleError: string,
+): void {
+  if (!isCurrentScope(scope)) throw new Error(staleError);
+  requirePrivateMomentAccessOpen(postId);
 }
 
 function accountInput(session: MobileAuthSession): PrivateSocialActivationInput {

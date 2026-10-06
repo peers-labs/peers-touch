@@ -18,6 +18,7 @@ import {
   createMomentsGateway,
 } from '../../services/gateways/momentsGateway';
 import {
+  invalidatePrivateMoments,
   openPrivateMomentMedia,
   publishPrivateMoment,
   publishPrivateTextMoment,
@@ -105,6 +106,10 @@ export function createMobileSocialFacade(
     removePost: (postId) => {
       homeFeed.removePost(postId);
       exploreFeed.removePost(postId);
+    },
+    hidePost: (postId) => {
+      homeFeed.hidePost(postId);
+      exploreFeed.hidePost(postId);
     },
     teardown: () => {
       homeFeed.teardown();
@@ -303,6 +308,17 @@ export function createMobileSocialFacade(
           replyToCommentId,
         );
         return result.ok;
+      },
+      deleteMoment: async (postId) => {
+        const result = await completeCurrent(() => gateway.deletePost(postId));
+        if (!result.ok || !result.data.success) return false;
+        feed.removePost(postId);
+        await completeCurrent(() => invalidatePrivateMoments([{
+          reason: 'RESOURCE_DELETED',
+          sourceCursor: `author-delete:${postId}`,
+          postId,
+        }]));
+        return true;
       },
       deleteComment: async (postId, commentId) => {
         const result = await completeCurrent(

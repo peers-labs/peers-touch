@@ -164,6 +164,11 @@
   "moments.lightbox.next": "下一张",
   "moments.lightbox.loading": "加载中…",
 
+  "moments.delete.action": "删除",
+  "moments.delete.confirmTitle": "删除这条动态？",
+  "moments.delete.confirmDescription": "删除后，所有有权访问的人都将无法再查看这条动态。",
+  "moments.delete.error": "无法删除这条动态。",
+
   "moments.comment.placeholder": "回复…",
   "moments.comment.publish": "发送",
   "moments.comment.empty": "暂无评论，来发表第一条吧。",
@@ -289,5 +294,6 @@
   "moments.private.revocation.RELATIONSHIP_REVOKED.title": "访问权限已移除",
   "moments.private.revocation.RELATIONSHIP_REVOKED.description": "当前关系已不再授予这条私密动态的访问权限。",
   "moments.private.revocation.RECIPIENT_BLOCKED.title": "动态已隐藏",
-  "moments.private.revocation.RECIPIENT_BLOCKED.description": "由于关系已被屏蔽，这条私密动态当前不可用。"
+  "moments.private.revocation.RECIPIENT_BLOCKED.description": "由于关系已被屏蔽，这条私密动态当前不可用。",
+  "moments.private.revocation.copyBoundary": "此前已导出、截图或被恶意接收方另行保存的副本无法远程抹除。"
 }

@@ -58,6 +58,7 @@ fn require_social_operation(operation: &Value) -> MobileResult<()> {
             | "social_circle_members_remove"
             | "moments_timeline"
             | "moments_post_get"
+            | "moments_delete"
             | "moments_react"
             | "moments_unreact"
             | "moments_comments_list"
@@ -80,6 +81,11 @@ mod tests {
     fn social_adapter_accepts_only_social_operations() {
         assert!(require_social_operation(&json!({
             "operationId": "moments_timeline"
+        }))
+        .is_ok());
+        assert!(require_social_operation(&json!({
+            "operationId": "moments_delete",
+            "post_id": "post-1"
         }))
         .is_ok());
         assert!(require_social_operation(&json!({

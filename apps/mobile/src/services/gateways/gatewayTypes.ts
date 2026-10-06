@@ -365,6 +365,12 @@ function resolveParameterizedGatewayOperation(
       post_id: decodePathValue(post[1]),
     };
   }
+  if (post && options.method === 'DELETE') {
+    return {
+      operationId: 'moments_delete',
+      post_id: decodePathValue(post[1]),
+    };
+  }
   const comment = matchPath(
     options.path,
     /^\/api\/v1\/social\/comments\/([^/]+)$/,

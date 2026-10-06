@@ -85,6 +85,57 @@ pub struct PrivateSocialAccountInput {
     activation_generation: u64,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PrivateSocialInvalidationReason {
+    ResourceDeleted,
+    RelationshipRevoked,
+    RecipientBlocked,
+    DeviceRevoked,
+}
+
+impl PrivateSocialInvalidationReason {
+    fn error_code(self) -> &'static str {
+        match self {
+            Self::ResourceDeleted => "RESOURCE_DELETED",
+            Self::RelationshipRevoked => "RELATIONSHIP_REVOKED",
+            Self::RecipientBlocked => "RECIPIENT_BLOCKED",
+            Self::DeviceRevoked => "DEVICE_REVOKED",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateSocialInvalidation {
+    reason: PrivateSocialInvalidationReason,
+    source_cursor: String,
+    #[serde(default)]
+    post_id: String,
+    #[serde(default)]
+    author_ptid: String,
+    #[serde(default)]
+    entire_scope: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateSocialReconcileInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    activation_generation: u64,
+    #[serde(default)]
+    invalidations: Vec<PrivateSocialInvalidation>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateSocialReconcileResult {
+    #[serde(flatten)]
+    pub report: PrivateSocialWorkerReport,
+    pub invalidated_read_projections: Vec<PrivateMomentReadProjection>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivateSocialPublishTextInput {
@@ -1335,6 +1386,61 @@ impl PrivateSocialEngine {
         self.store
             .invalidate_session_generation(self.activation_generation)
     }
+
+    fn apply_invalidations(
+        &self,
+        activation_generation: u64,
+        invalidations: &[PrivateSocialInvalidation],
+    ) -> Result<Vec<PrivateMomentReadProjection>, String> {
+        let _operation = self
+            .operation_lock
+            .lock()
+            .map_err(|_| "private Social operation lock poisoned".to_string())?;
+        self.ensure_activation_generation(activation_generation)?;
+        self.ensure_current()?;
+
+        let retained = self
+            .store
+            .read_projections()?
+            .iter()
+            .map(|projection| PrivateMomentReadProjection::decode(projection))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut invalidated = Vec::new();
+
+        for invalidation in invalidations {
+            validate_private_social_invalidation(invalidation)?;
+            let mut post_ids = match invalidation.reason {
+                PrivateSocialInvalidationReason::ResourceDeleted => {
+                    vec![invalidation.post_id.clone()]
+                }
+                PrivateSocialInvalidationReason::RelationshipRevoked
+                | PrivateSocialInvalidationReason::RecipientBlocked => retained
+                    .iter()
+                    .filter(|projection| projection.author_ptid == invalidation.author_ptid)
+                    .map(|projection| projection.post_id.clone())
+                    .collect(),
+                PrivateSocialInvalidationReason::DeviceRevoked => retained
+                    .iter()
+                    .map(|projection| projection.post_id.clone())
+                    .collect(),
+            };
+            post_ids.sort();
+            post_ids.dedup();
+
+            for post_id in post_ids {
+                let projection =
+                    revoked_private_moment_projection(&post_id, invalidation.reason.error_code());
+                self.store.persist_receiver_failure(
+                    activation_generation,
+                    &post_id,
+                    &projection.encode()?,
+                    true,
+                )?;
+                invalidated.push(projection);
+            }
+        }
+        Ok(invalidated)
+    }
 }
 
 struct ActivePrivateSocialRuntime {
@@ -1710,18 +1816,40 @@ pub fn social_private_comments(
 }
 
 #[tauri::command]
-pub fn social_private_reconcile(
+pub fn social_private_reconcile<R: Runtime>(
+    app: AppHandle<R>,
     social: State<'_, MobilePrivateSocialRuntime>,
-    input: PrivateSocialAccountInput,
-) -> MobileResult<PrivateSocialWorkerReport> {
-    social
-        .active_engine_at_generation(
-            &input.station_peer_id,
-            &input.actor_ptid,
-            input.activation_generation,
-        )?
-        .reconcile(input.activation_generation)
-        .map_err(MobileError::social)
+    input: PrivateSocialReconcileInput,
+) -> MobileResult<PrivateSocialReconcileResult> {
+    let engine = social.active_engine_at_generation(
+        &input.station_peer_id,
+        &input.actor_ptid,
+        input.activation_generation,
+    )?;
+    if input.invalidations.is_empty() {
+        return engine
+            .reconcile(input.activation_generation)
+            .map(|report| PrivateSocialReconcileResult {
+                report,
+                invalidated_read_projections: Vec::new(),
+            })
+            .map_err(MobileError::social);
+    }
+
+    let invalidated_read_projections = engine
+        .apply_invalidations(input.activation_generation, &input.invalidations)
+        .map_err(MobileError::social)?;
+    purge_private_moment_media_cache(&app, &input.station_peer_id, &input.actor_ptid)?;
+    Ok(PrivateSocialReconcileResult {
+        report: PrivateSocialWorkerReport {
+            endpoint_prekeys_available: 0,
+            recovery_prekeys_available: None,
+            submissions_processed: 0,
+            submissions_unknown: 0,
+            submissions_terminal: 0,
+        },
+        invalidated_read_projections,
+    })
 }
 
 #[tauri::command]
@@ -1771,6 +1899,64 @@ fn status_for_engine(engine: &PrivateSocialEngine, generation: u64) -> PrivateSo
         device_id: Some(engine.session.scope.device_id.clone()),
         activation_generation: generation,
         worker_mode: "on_demand",
+    }
+}
+
+fn validate_private_social_invalidation(
+    invalidation: &PrivateSocialInvalidation,
+) -> Result<(), String> {
+    if invalidation.source_cursor.trim().is_empty()
+        || invalidation.source_cursor != invalidation.source_cursor.trim()
+        || invalidation.source_cursor.len() > 256
+    {
+        return Err("private Social invalidation cursor is invalid".to_string());
+    }
+    let post_selected = !invalidation.post_id.is_empty();
+    let author_selected = !invalidation.author_ptid.is_empty();
+    if post_selected as u8 + author_selected as u8 + invalidation.entire_scope as u8 != 1 {
+        return Err("private Social invalidation selector is invalid".to_string());
+    }
+    if (post_selected
+        && (invalidation.post_id != invalidation.post_id.trim()
+            || invalidation.post_id.len() > 128))
+        || (author_selected
+            && (invalidation.author_ptid != invalidation.author_ptid.trim()
+                || invalidation.author_ptid.len() > 255))
+    {
+        return Err("private Social invalidation identity is invalid".to_string());
+    }
+    let selector_matches_reason = match invalidation.reason {
+        PrivateSocialInvalidationReason::ResourceDeleted => post_selected,
+        PrivateSocialInvalidationReason::RelationshipRevoked
+        | PrivateSocialInvalidationReason::RecipientBlocked => author_selected,
+        PrivateSocialInvalidationReason::DeviceRevoked => invalidation.entire_scope,
+    };
+    if !selector_matches_reason {
+        return Err("private Social invalidation reason is invalid".to_string());
+    }
+    Ok(())
+}
+
+fn revoked_private_moment_projection(
+    post_id: &str,
+    error_code: &str,
+) -> PrivateMomentReadProjection {
+    PrivateMomentReadProjection {
+        post_id: post_id.to_string(),
+        content_id: format!("unavailable:{post_id}"),
+        generation: "0".to_string(),
+        author_ptid: String::new(),
+        audience_kind: "UNKNOWN".to_string(),
+        state: crate::secure_content::receiver::PrivateReadState::DeletedOrRevoked,
+        mentions: Vec::new(),
+        reactions: Vec::new(),
+        reaction_revision: "0".to_string(),
+        reactions_hydrated: false,
+        content: None,
+        error_code: Some(error_code.to_string()),
+        retry_after_seconds: None,
+        created_at_millis: None,
+        updated_at_millis: None,
     }
 }
 
@@ -2112,6 +2298,50 @@ mod tests {
             PrivateMomentReadProjection::decode(&store.read_projection("post-1").unwrap().unwrap())
                 .unwrap();
         assert_eq!(persisted, projection);
+    }
+
+    #[test]
+    fn ordered_revocation_projection_purges_private_material_and_plaintext() {
+        let store = store_with_ready_receiver_projection();
+        let projection = revoked_private_moment_projection("post-1", "RECIPIENT_BLOCKED");
+
+        store
+            .persist_receiver_failure(1, "post-1", &projection.encode().unwrap(), true)
+            .unwrap();
+
+        assert_eq!(
+            projection.state,
+            crate::secure_content::receiver::PrivateReadState::DeletedOrRevoked
+        );
+        assert_eq!(projection.error_code.as_deref(), Some("RECIPIENT_BLOCKED"));
+        assert!(projection.content.is_none());
+        assert!(projection.author_ptid.is_empty());
+        assert!(store.content_root("post-1", 2).unwrap().is_none());
+        let persisted =
+            PrivateMomentReadProjection::decode(&store.read_projection("post-1").unwrap().unwrap())
+                .unwrap();
+        assert_eq!(persisted, projection);
+    }
+
+    #[test]
+    fn revocation_reason_requires_its_exact_selector() {
+        let invalid = PrivateSocialInvalidation {
+            reason: PrivateSocialInvalidationReason::RecipientBlocked,
+            source_cursor: "cursor-1".to_string(),
+            post_id: "post-1".to_string(),
+            author_ptid: String::new(),
+            entire_scope: false,
+        };
+        assert!(validate_private_social_invalidation(&invalid).is_err());
+
+        let valid = PrivateSocialInvalidation {
+            reason: PrivateSocialInvalidationReason::RecipientBlocked,
+            source_cursor: "cursor-1".to_string(),
+            post_id: String::new(),
+            author_ptid: "ptid:bob".to_string(),
+            entire_scope: false,
+        };
+        assert!(validate_private_social_invalidation(&valid).is_ok());
     }
 
     #[test]
