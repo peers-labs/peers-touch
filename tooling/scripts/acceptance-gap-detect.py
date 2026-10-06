@@ -29,6 +29,11 @@ from tooling.scripts.plan.acceptance_admission import (  # noqa: E402
     AcceptanceAdmissionError,
     require_acceptance_admission,
 )
+from tooling.acceptance.core.execution_plan import (  # noqa: E402
+    ExecutionPlanError,
+    changed_paths_for_plan,
+    load_formal_plan,
+)
 
 SCAN_TYPE_TO_GATE = {
     "path-absent": "chat-w11-forbidden-scan",
@@ -89,6 +94,7 @@ def changed_paths(diff_range: str) -> list[str]:
 def resolve_changed_paths(
     diff_range: str,
     explicit_paths: list[str],
+    expected_paths: list[str] | None = None,
 ) -> list[str]:
     if explicit_paths:
         resolved: set[str] = set()
@@ -113,7 +119,11 @@ def resolve_changed_paths(
                 "--changed-file requires at least one non-empty "
                 "repository-relative path"
             )
-        actual = set(changed_paths(diff_range))
+        actual = set(
+            expected_paths
+            if expected_paths is not None
+            else changed_paths(diff_range)
+        )
         if resolved != actual:
             missing = sorted(actual - resolved)
             extra = sorted(resolved - actual)
@@ -122,7 +132,61 @@ def resolve_changed_paths(
                 f"missing={missing}, extra={extra}"
             )
         return sorted(resolved)
-    return changed_paths(diff_range)
+    return (
+        sorted(set(expected_paths))
+        if expected_paths is not None
+        else changed_paths(diff_range)
+    )
+
+
+def formal_closure_paths(plan: dict[str, Any]) -> list[str] | None:
+    execution = plan.get("execution")
+    if not isinstance(execution, dict) or execution.get("mode") != "closure":
+        return None
+    formal_plan_ref = execution.get("formalPlan")
+    if not isinstance(formal_plan_ref, str) or not formal_plan_ref:
+        raise DetectorError(
+            "formal closure Acceptance plan is missing execution.formalPlan"
+        )
+    canonical = PurePosixPath(formal_plan_ref)
+    if (
+        canonical.is_absolute()
+        or canonical.as_posix() != formal_plan_ref
+        or ".." in canonical.parts
+        or "\\" in formal_plan_ref
+    ):
+        raise DetectorError(
+            "execution.formalPlan must be a canonical repository-relative path"
+        )
+    formal_plan_path = (REPO_ROOT / formal_plan_ref).resolve()
+    try:
+        formal_plan_path.relative_to(REPO_ROOT.resolve())
+        formal_plan = load_formal_plan(formal_plan_path)
+    except (ExecutionPlanError, OSError, ValueError) as error:
+        raise DetectorError(
+            f"cannot load formal closure plan {formal_plan_ref!r}: {error}"
+        ) from error
+
+    expected_identity = {
+        "planId": formal_plan.plan_id,
+        "currentTaskId": formal_plan.current_task_id,
+        "closure": formal_plan.current_closure,
+        "workspaceId": formal_plan.workspace_id,
+    }
+    mismatches = {
+        field: {
+            "planned": execution.get(field),
+            "formal": expected,
+        }
+        for field, expected in expected_identity.items()
+        if execution.get(field) != expected
+    }
+    if mismatches:
+        raise DetectorError(
+            "formal closure Acceptance plan identity mismatch: "
+            + json.dumps(mismatches, sort_keys=True)
+        )
+    return changed_paths_for_plan(REPO_ROOT, formal_plan, "closure")
 
 
 def current_source_identity() -> tuple[str, str]:
@@ -634,7 +698,11 @@ def main() -> int:
             if contract_path.exists():
                 contract = _load_contract(contract_path)
         source_commit, workspace_digest = current_source_identity()
-        paths = resolve_changed_paths(args.diff_range, args.changed_file)
+        paths = resolve_changed_paths(
+            args.diff_range,
+            args.changed_file,
+            formal_closure_paths(plan),
+        )
         report = detect(
             claim=args.claim,
             paths=paths,
