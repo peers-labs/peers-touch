@@ -61,7 +61,8 @@
 | [data-model.md](./data-model.md) | endpoint、route binding 与 scope 数据模型 |
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 当前实现证据、差距与切换策略 |
-| [execution-plans/20261006-unified-relay-station-access-v4/plan.md](./execution-plans/20261006-unified-relay-station-access-v4/plan.md) | 当前执行 Plan Version；v4 补齐 externalruntime 路径要求的 formal Gate inventory |
+| [execution-plans/20261006-unified-relay-station-access-v5/plan.md](./execution-plans/20261006-unified-relay-station-access-v5/plan.md) | 待批准的 Plan Version；v5 补齐当前 source impact 要求的 16 个 formal Gate |
+| [execution-plans/20261006-unified-relay-station-access-v4/plan.md](./execution-plans/20261006-unified-relay-station-access-v4/plan.md) | 当前已挂载但因 `ACCEPTANCE_PLAN_DRIFT` 失败的 frozen v4 |
 | [execution-plans/20261006-unified-relay-station-access-v3/plan.md](./execution-plans/20261006-unified-relay-station-access-v3/plan.md) | 已取消的 frozen v3；保留 sixwin exact-source Windows 编译与首次双角色运行快照 |
 | [execution-plans/20261006-unified-relay-station-access-v2/plan.md](./execution-plans/20261006-unified-relay-station-access-v2/plan.md) | 已取消的 frozen v2；保留首次 sixwin exact-source 构建快照 |
 | [execution-plans/20261006-unified-relay-station-access/plan.md](./execution-plans/20261006-unified-relay-station-access/plan.md) | 已取消的 frozen v1；保留历史快照，不再执行 |
@@ -70,6 +71,7 @@
 | [reviews/review-05-unified-relay-plan-v2.md](./reviews/review-05-unified-relay-plan-v2.md) | sixwin 执行范围修订与 v2 readiness review |
 | [reviews/review-06-unified-relay-plan-v3.md](./reviews/review-06-unified-relay-plan-v3.md) | Windows externalruntime 写集修订与 v3 readiness review |
 | [reviews/review-07-unified-relay-plan-v4.md](./reviews/review-07-unified-relay-plan-v4.md) | externalruntime formal Gate inventory 修订与 v4 readiness review |
+| [reviews/review-08-unified-relay-plan-v5.md](./reviews/review-08-unified-relay-plan-v5.md) | 当前 source impact formal Gate inventory 修订与 v5 readiness review |
 
 ## 5. 上游真源
 
@@ -85,5 +87,6 @@
 - 既有直连 Access Gate：已实现并验收。
 - Relay Station-to-Station 原型：存在，但不满足客户端接入与生产安全条件。
 - 统一 Relay/Station 接入：产品与架构口径不变；frozen v1 因旧 `relay-1`
-  不具备安全材料而取消，frozen v2 遗漏 Windows 源码写集，frozen v3 遗漏该
-  写集对应的 formal Gate，当前 v4 机械补齐并继续使用 sixwin 隔离 runtime。
+  不具备安全材料而取消，frozen v2 遗漏 Windows 源码写集，frozen v3/v4
+  依次遗漏当前 source impact 对应的 formal Gate。v5 已机械补齐，等待 Owner
+  批准后替换 v4；运行时继续使用 sixwin 隔离环境。
