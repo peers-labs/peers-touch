@@ -248,6 +248,7 @@ def _remote_runtime_script() -> str:
         runtime = home / cfg["runtimePath"]
         role = cfg["role"]
         binary = runtime / "bin" / ("peers-touch-" + role + ".exe")
+        artifact_root = home / ".peers-touch" / "artifacts" / "windows-amd64"
         config_root = runtime / "conf"
         config_path = config_root / "peers-sqlite.yml"
         data_root = runtime / "data"
@@ -335,6 +336,29 @@ def _remote_runtime_script() -> str:
                 ]
             ).stdout.strip()
             return commit, digest, not bool(dirty)
+
+        def station_source_tree(commit):
+            completed = run(
+                [
+                    "git",
+                    "-C",
+                    str(source),
+                    "rev-parse",
+                    commit + ":apps/station",
+                ],
+                check=False,
+            )
+            tree = completed.stdout.strip()
+            if completed.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", tree):
+                return ""
+            return tree
+
+        def file_digest(path):
+            digest = hashlib.sha256()
+            with path.open("rb") as source_file:
+                while chunk := source_file.read(1024 * 1024):
+                    digest.update(chunk)
+            return "sha256:" + digest.hexdigest()
 
         def read_manifest():
             if not manifest_path.is_file():
@@ -592,6 +616,121 @@ def _remote_runtime_script() -> str:
             previous_log_path.unlink(missing_ok=True)
             log_path.replace(previous_log_path)
 
+        def materialize_binary(source_commit, build_env):
+            station_tree = station_source_tree(source_commit)
+            if not station_tree:
+                raise RuntimeError("cannot resolve apps/station source tree")
+            go_version = run(
+                ["go", "env", "GOVERSION"],
+                env=build_env,
+            ).stdout.strip()
+            cc_version = run(
+                ["gcc", "--version"],
+                env=build_env,
+            ).stdout.splitlines()[0].strip()
+            build_identity = {
+                "cgo": "1",
+                "cgoLdflags": build_env["CGO_LDFLAGS"],
+                "flags": ["-p=1", "-trimpath", "-ldflags=-s -w"],
+                "goVersion": go_version,
+                "ccVersion": cc_version,
+                "stationSourceTree": station_tree,
+            }
+            artifact_key = hashlib.sha256(
+                json.dumps(
+                    build_identity,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            artifact_path = artifact_root / (artifact_key + ".exe")
+            metadata_path = artifact_root / (artifact_key + ".json")
+            lock_path = artifact_root / (artifact_key + ".lock")
+
+            def artifact_valid():
+                if not artifact_path.is_file() or not metadata_path.is_file():
+                    return False
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    return False
+                return (
+                    metadata.get("buildIdentity") == build_identity
+                    and metadata.get("binarySha256") == file_digest(artifact_path)
+                )
+
+            deadline = time.monotonic() + 840
+            acquired = False
+            while not artifact_valid():
+                try:
+                    lock_path.mkdir()
+                    acquired = True
+                    break
+                except FileExistsError:
+                    try:
+                        stale = time.time() - lock_path.stat().st_mtime > 1800
+                    except FileNotFoundError:
+                        continue
+                    if stale:
+                        shutil.rmtree(lock_path, ignore_errors=True)
+                        continue
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("timed out waiting for Windows build artifact")
+                    time.sleep(1)
+
+            if acquired:
+                try:
+                    if not artifact_valid():
+                        temporary = artifact_root / (
+                            artifact_key + "." + str(os.getpid()) + ".tmp.exe"
+                        )
+                        temporary.unlink(missing_ok=True)
+                        previous = read_manifest()
+                        previous_commit = previous.get("sourceCommit", "")
+                        if (
+                            binary.is_file()
+                            and previous_commit
+                            and station_source_tree(previous_commit) == station_tree
+                        ):
+                            shutil.copy2(binary, temporary)
+                        else:
+                            run(
+                                [
+                                    "go",
+                                    "build",
+                                    "-p=1",
+                                    "-trimpath",
+                                    "-ldflags=-s -w",
+                                    "-o",
+                                    str(temporary),
+                                    ".",
+                                ],
+                                cwd=source / "apps" / "station" / "app",
+                                env=build_env,
+                            )
+                        os.replace(temporary, artifact_path)
+                        metadata = {
+                            "artifactKind": "windows-native-build-artifact",
+                            "artifactKey": artifact_key,
+                            "binarySha256": file_digest(artifact_path),
+                            "buildIdentity": build_identity,
+                            "createdAt": datetime.now(timezone.utc).isoformat(),
+                        }
+                        temporary_metadata = metadata_path.with_suffix(".json.tmp")
+                        temporary_metadata.write_text(
+                            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+                            encoding="utf-8",
+                        )
+                        os.replace(temporary_metadata, metadata_path)
+                finally:
+                    shutil.rmtree(lock_path, ignore_errors=True)
+
+            if not artifact_valid():
+                raise RuntimeError("Windows build artifact failed integrity validation")
+            shutil.copy2(artifact_path, binary)
+            return station_tree, artifact_key, file_digest(binary)
+
         def configure_firewall():
             ports = [cfg["httpPort"]]
             if cfg["streamPort"] is not None:
@@ -667,19 +806,9 @@ def _remote_runtime_script() -> str:
                     "GOMAXPROCS": "2",
                 }
             )
-            run(
-                [
-                    "go",
-                    "build",
-                    "-p=1",
-                    "-trimpath",
-                    "-ldflags=-s -w",
-                    "-o",
-                    str(binary),
-                    ".",
-                ],
-                cwd=source / "apps" / "station" / "app",
-                env=build_env,
+            station_tree, artifact_key, binary_digest = materialize_binary(
+                source_commit,
+                build_env,
             )
             prepare_runner(source_commit)
             configure_firewall()
@@ -741,8 +870,11 @@ def _remote_runtime_script() -> str:
                 "taskName": task_name,
                 "sourceCommit": source_commit,
                 "sourceTreeDigest": source_digest,
+                "stationSourceTree": station_tree,
                 "sourceClean": True,
                 "binaryPath": str(binary),
+                "binarySha256": binary_digest,
+                "buildArtifactKey": artifact_key,
                 "configPath": str(config_path),
                 "runtimePath": str(runtime),
                 "healthUrl": health_url,
