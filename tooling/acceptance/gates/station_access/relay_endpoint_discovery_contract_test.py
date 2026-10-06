@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from tooling.acceptance.gates.station_access.relay_endpoint_discovery_contract import (
@@ -95,6 +96,7 @@ class RelayEndpointDiscoveryContractTest(unittest.TestCase):
 
         self.assertEqual(result["runtimeCell"], "sixwin-station-relay")
         self.assertTrue(all(result["assertions"].values()))
+        self.assertEqual(run.call_args.kwargs["env"]["HOME"], str(Path.home()))
 
 
 if __name__ == "__main__":
