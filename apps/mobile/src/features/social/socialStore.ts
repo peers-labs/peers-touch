@@ -4,6 +4,7 @@ import type { DomainCacheRepository } from '@peers-touch/client-storage';
 
 import type { MobileAuthSession } from '../auth/authSession';
 import type { FederationContext } from '../../gen/proto/domain/federation/federation_projection_service_pb';
+import type { Post } from '../../gen/proto/domain/social/post_pb';
 import { mobileAuthScope, mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import {
   createMobileClientStorageRuntime,
@@ -38,10 +39,12 @@ import {
   createSocialGateway,
   createNotificationGateway,
   createProfileGateway,
+  createMomentsGateway,
   unwrapOutcome,
   type SocialGateway,
   type NotificationGateway,
   type ProfileGateway,
+  type MomentsGateway,
   type EditableProfileInput,
   type ProfileUpdateResult,
 } from '../../services/gateways';
@@ -102,6 +105,14 @@ interface ParsedHandle {
   localPart: string;
 }
 
+export interface SocialAuthoredFeedState {
+  readonly posts: readonly Post[];
+  readonly nextCursor: string;
+  readonly hasMore: boolean;
+  readonly loading: boolean;
+  readonly error: SocialApiError | null;
+}
+
 export interface SocialState {
   sessionKey: string | null;
   authSession: MobileAuthSession | null;
@@ -109,6 +120,7 @@ export interface SocialState {
   socialGateway: SocialGateway | null;
   notificationGateway: NotificationGateway | null;
   profileGateway: ProfileGateway | null;
+  momentsGateway: MomentsGateway | null;
   storage: MobileClientStorageRuntime | null;
   sessions: FriendChatSession[];
   friendRequests: FriendRequest[];
@@ -133,6 +145,7 @@ export interface SocialState {
   peopleSearchFederationsError: SocialApiError | null;
   peopleSearchLoading: boolean;
   peopleSearchError: SocialApiError | null;
+  authoredFeeds: Record<string, SocialAuthoredFeedState>;
   activeSessionUlid: string | null;
   loading: boolean;
   error: SocialApiError | null;
@@ -144,6 +157,8 @@ export interface SocialState {
   refreshSessions: () => Promise<void>;
   refreshBlockedUsers: () => Promise<void>;
   loadFriendshipStatus: (targetPtid: string) => Promise<void>;
+  followUser: (targetPtid: string) => Promise<void>;
+  unfollowUser: (targetPtid: string) => Promise<void>;
   blockUser: (targetPtid: string) => Promise<void>;
   unblockUser: (targetPtid: string) => Promise<void>;
   refreshConversationSettings: () => Promise<void>;
@@ -172,6 +187,7 @@ export interface SocialState {
   loadCurrentUserProfile: (force?: boolean) => Promise<void>;
   updateCurrentUserProfile: (input: EditableProfileInput) => Promise<ProfileUpdateResult>;
   loadPeerProfile: (peerPtid: string, force?: boolean) => Promise<void>;
+  loadAuthoredPosts: (actorPtid: string, cursor?: string) => Promise<void>;
   sendMessage: (
     sessionUlid: string,
     content: string,
@@ -226,6 +242,7 @@ let messagingScope = {};
 const messageLoads = new Map<string, object>();
 const summaryReads = new Map<string, object>();
 const readCursors = new Map<string, object>();
+const authoredFeedRequests = new Map<string, object>();
 const friendRequestSubmissions = new WeakMap<MobileAuthSession, Set<string>>();
 const profileCacheWrites = new Set<Promise<void>>();
 const profileCacheWriteTails = new WeakMap<
@@ -240,6 +257,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   socialGateway: null,
   notificationGateway: null,
   profileGateway: null,
+  momentsGateway: null,
   storage: null,
   sessions: [],
   friendRequests: [],
@@ -264,6 +282,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   peopleSearchFederationsError: null,
   peopleSearchLoading: false,
   peopleSearchError: null,
+  authoredFeeds: {},
   activeSessionUlid: null,
   loading: false,
   error: null,
@@ -277,6 +296,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     messageLoads.clear();
     summaryReads.clear();
     readCursors.clear();
+    authoredFeedRequests.clear();
     if (!session) {
       set({
         sessionKey: null,
@@ -285,6 +305,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         socialGateway: null,
         notificationGateway: null,
         profileGateway: null,
+        momentsGateway: null,
         storage: null,
         sessions: [],
         friendRequests: [],
@@ -309,6 +330,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         peopleSearchFederationsError: null,
         peopleSearchLoading: false,
         peopleSearchError: null,
+        authoredFeeds: {},
         activeSessionUlid: null,
         loading: false,
         error: null,
@@ -327,6 +349,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       socialGateway: createSocialGateway(session),
       notificationGateway: createNotificationGateway(session),
       profileGateway: createProfileGateway(session),
+      momentsGateway: createMomentsGateway(session),
       storage: createMobileClientStorageRuntime(session),
       sessions: [],
       friendRequests: [],
@@ -351,6 +374,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       peopleSearchFederationsError: null,
       peopleSearchLoading: false,
       peopleSearchError: null,
+      authoredFeeds: {},
       activeSessionUlid: null,
       loading: false,
       error: null,
@@ -531,6 +555,48 @@ export const useSocialStore = create<SocialState>((set, get) => ({
           [ptid]: { ...status, targetPtid: ptid },
         },
       }));
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  followUser: async (targetPtid) => {
+    const ptid = targetPtid.trim();
+    if (!ptid) return;
+    const state = get();
+    const gw = requireSocialGateway(state);
+    try {
+      const accepted = unwrapOutcome(await gw.followUser(ptid));
+      if (!accepted) throw new Error('mobile.social.followFailed');
+      if (get().authSession !== state.authSession) {
+        throw new Error('mobile.social.notAuthenticated');
+      }
+      await get().loadFriendshipStatus(ptid);
+      if (!get().friendshipStatus[ptid]?.following) {
+        throw new Error('mobile.social.followUnconfirmed');
+      }
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  unfollowUser: async (targetPtid) => {
+    const ptid = targetPtid.trim();
+    if (!ptid) return;
+    const state = get();
+    const gw = requireSocialGateway(state);
+    try {
+      const accepted = unwrapOutcome(await gw.unfollowUser(ptid));
+      if (!accepted) throw new Error('mobile.social.unfollowFailed');
+      if (get().authSession !== state.authSession) {
+        throw new Error('mobile.social.notAuthenticated');
+      }
+      await get().loadFriendshipStatus(ptid);
+      if (get().friendshipStatus[ptid]?.following) {
+        throw new Error('mobile.social.unfollowUnconfirmed');
+      }
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -1214,6 +1280,74 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         peerProfileLoading: { ...prev.peerProfileLoading, [ptid]: false },
         peerProfileErrors: { ...prev.peerProfileErrors, [ptid]: normalizeError(error) },
       }));
+    }
+  },
+
+  loadAuthoredPosts: async (actorPtid, cursor = '') => {
+    const ptid = actorPtid.trim();
+    if (!ptid) return;
+    const state = get();
+    const gateway = state.momentsGateway;
+    if (!gateway) throw new Error('mobile.social.runtimeUnavailable');
+    const request = {};
+    authoredFeedRequests.set(ptid, request);
+    set((current) => ({
+      authoredFeeds: {
+        ...current.authoredFeeds,
+        [ptid]: {
+          posts: cursor ? current.authoredFeeds[ptid]?.posts ?? [] : [],
+          nextCursor: cursor,
+          hasMore: current.authoredFeeds[ptid]?.hasMore ?? true,
+          loading: true,
+          error: null,
+        },
+      },
+    }));
+    try {
+      const page = unwrapOutcome(await gateway.fetchUserFeed(ptid, cursor, 30));
+      if (
+        authoredFeedRequests.get(ptid) !== request
+        || get().momentsGateway !== gateway
+      ) return;
+      set((current) => {
+        const previous = cursor ? current.authoredFeeds[ptid]?.posts ?? [] : [];
+        const posts = [...previous, ...page.posts].filter(
+          (post, index, all) => all.findIndex((item) => item.id === post.id) === index,
+        );
+        return {
+          authoredFeeds: {
+            ...current.authoredFeeds,
+            [ptid]: {
+              posts,
+              nextCursor: page.nextCursor,
+              hasMore: page.hasMore,
+              loading: false,
+              error: null,
+            },
+          },
+        };
+      });
+    } catch (error) {
+      if (
+        authoredFeedRequests.get(ptid) !== request
+        || get().momentsGateway !== gateway
+      ) return;
+      set((current) => ({
+        authoredFeeds: {
+          ...current.authoredFeeds,
+          [ptid]: {
+            posts: current.authoredFeeds[ptid]?.posts ?? [],
+            nextCursor: current.authoredFeeds[ptid]?.nextCursor ?? '',
+            hasMore: current.authoredFeeds[ptid]?.hasMore ?? false,
+            loading: false,
+            error: normalizeError(error),
+          },
+        },
+      }));
+    } finally {
+      if (authoredFeedRequests.get(ptid) === request) {
+        authoredFeedRequests.delete(ptid);
+      }
     }
   },
 

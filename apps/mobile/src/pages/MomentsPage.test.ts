@@ -98,6 +98,7 @@ function renderMomentsPage(): string {
   return renderToStaticMarkup(React.createElement(MomentsPage, {
     activePostId: null,
     onOpenMoment: () => undefined,
+    onOpenSearch: () => undefined,
     onBack: () => undefined,
   }));
 }
@@ -297,6 +298,7 @@ describe('Moments page bounded feed', () => {
     const markup = renderToStaticMarkup(React.createElement(MomentsPage, {
       activePostId: 'post-1',
       onOpenMoment: () => undefined,
+      onOpenSearch: () => undefined,
       onBack: () => undefined,
     }));
 

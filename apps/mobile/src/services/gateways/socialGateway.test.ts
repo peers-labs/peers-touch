@@ -297,3 +297,34 @@ describe('createSocialGateway Friend Request routes', () => {
     });
   });
 });
+
+describe('createSocialGateway follow routes', () => {
+  it('uses generated follow responses on canonical relationship endpoints', async () => {
+    commandMock
+      .mockResolvedValueOnce({ ok: true, data: { success: true } })
+      .mockResolvedValueOnce({ ok: true, data: { success: true } });
+    const gateway = createSocialGateway(session);
+
+    await expect(gateway.followUser('ptid:bob')).resolves.toEqual({
+      ok: true,
+      data: true,
+    });
+    await expect(gateway.unfollowUser('ptid:bob')).resolves.toEqual({
+      ok: true,
+      data: true,
+    });
+
+    expect(commandMock.mock.calls.map(([request]) => request)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/social/relationships/follow',
+        body: { target_actor_ptid: 'ptid:bob' },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/social/relationships/unfollow',
+        body: { target_actor_ptid: 'ptid:bob' },
+      },
+    ]);
+  });
+});
