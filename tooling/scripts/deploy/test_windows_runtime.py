@@ -11,6 +11,8 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
     def test_build_limits_memory_and_strips_debug_symbols(self) -> None:
         script = _remote_runtime_script()
 
+        self.assertIn('"-Wl,--no-keep-memory "', script)
+        self.assertIn('"-Wl,--reduce-memory-overheads"', script)
         self.assertIn('"GOMAXPROCS": "2"', script)
         self.assertIn('"-p=1"', script)
         self.assertIn('"-ldflags=-s -w"', script)

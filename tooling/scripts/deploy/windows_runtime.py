@@ -658,6 +658,10 @@ def _remote_runtime_script() -> str:
             build_env.update(
                 {
                     "CGO_ENABLED": "1",
+                    "CGO_LDFLAGS": (
+                        "-Wl,--no-keep-memory "
+                        "-Wl,--reduce-memory-overheads"
+                    ),
                     "GOMODCACHE": str(runtime / "cache" / "go-mod"),
                     "GOCACHE": str(runtime / "cache" / "go-build"),
                     "GOMAXPROCS": "2",
