@@ -570,6 +570,7 @@ def _remote_runtime_script() -> str:
             lines.extend(
                 [
                     "Set-Location -LiteralPath " + ps_literal(runtime),
+                    "$ErrorActionPreference = 'Continue'",
                     "& "
                     + ps_literal(binary)
                     + " "
