@@ -79,6 +79,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     orchestrate_source_bound_build,
     parse_build_identity,
     produce_build_attestation,
+    produce_scenario_build_attestation,
     require_tool_native_offline_controls,
     resolver_arguments,
     resolver_digest,
@@ -151,7 +152,8 @@ class FakeRunner:
 class FakeRun:
     run_id = RUN_ID
 
-    def __init__(self) -> None:
+    def __init__(self, gate_id: str = "mobile-native-access-e2e") -> None:
+        self.gate_id = gate_id
         self.values: dict[str, bytes | dict[str, Any]] = {}
 
     def write_bytes(
@@ -2472,6 +2474,56 @@ time.sleep(60)
                         receipt=receipt,
                         created_at="2026-08-29T12:00:00Z",
                     )
+
+    def test_scenario_attestation_accepts_android_social_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            artifact = Path(temporary) / "mobile.apk"
+            artifact.write_bytes(b"android-application")
+            run = FakeRun("mobile-social-android-native")
+
+            with patch(
+                "tooling.acceptance.provisioners.mobile_native_build."
+                "SuccessfulBuildReceipt",
+                BuildReceiptStub,
+            ):
+                payload, reference = produce_scenario_build_attestation(
+                    run=run,  # type: ignore[arg-type]
+                    receipt=BuildReceiptStub(artifact, "android"),  # type: ignore[arg-type]
+                    created_at="2026-10-06T23:00:00Z",
+                )
+
+            self.assertEqual(payload["gateId"], "mobile-social-android-native")
+            self.assertEqual(
+                payload["artifactKind"],
+                "mobile-native-scenario-build-attestation",
+            )
+            self.assertEqual(
+                reference.path,
+                "runtime/mobile/builds/android.json",
+            )
+
+    def test_scenario_attestation_rejects_access_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            artifact = Path(temporary) / "mobile.apk"
+            artifact.write_bytes(b"android-application")
+            run = FakeRun()
+
+            with (
+                patch(
+                    "tooling.acceptance.provisioners.mobile_native_build."
+                    "SuccessfulBuildReceipt",
+                    BuildReceiptStub,
+                ),
+                self.assertRaisesRegex(
+                    MobileNativeBuildError,
+                    "requires a non-access physical Gate",
+                ),
+            ):
+                produce_scenario_build_attestation(
+                    run=run,  # type: ignore[arg-type]
+                    receipt=BuildReceiptStub(artifact, "android"),  # type: ignore[arg-type]
+                    created_at="2026-10-06T23:00:00Z",
+                )
 
     def test_real_run_registers_both_platform_attestations_by_canonical_path(
         self,

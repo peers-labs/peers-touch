@@ -32,6 +32,13 @@ from tooling.acceptance.gates.mobile.proof_contracts import validate_contract_pa
 
 
 GATE_ID = "mobile-native-access-e2e"
+SCENARIO_BUILD_ATTESTATION_GATE_IDS = frozenset(
+    {
+        "mobile-native-lifecycle-e2e",
+        "mobile-native-platform-e2e",
+        "mobile-social-android-native",
+    }
+)
 APPLICATION_ID = "com.peers.touch.mobile"
 IOS_CALLBACK_SCHEMES = frozenset({"peers-touch"})
 BUILD_IDENTITY_SCHEMA = "peers-mobile-build-identity"
@@ -4550,10 +4557,7 @@ def produce_scenario_build_attestation(
 ) -> tuple[dict[str, Any], ArtifactRef]:
     """Project a source-bound build without widening the frozen OAuth schema."""
 
-    if run.gate_id not in {
-        "mobile-native-lifecycle-e2e",
-        "mobile-native-platform-e2e",
-    }:
+    if run.gate_id not in SCENARIO_BUILD_ATTESTATION_GATE_IDS:
         raise MobileNativeBuildError(
             "scenario build attestation requires a non-access physical Gate"
         )
