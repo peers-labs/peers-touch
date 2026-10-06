@@ -148,6 +148,20 @@ export async function executeStationOperation(
   operation: StationTransportOperation,
   signal?: AbortSignal,
 ): Promise<StationTransportResponse> {
+  return executeNativeStationOperation(
+    'station_transport_execute',
+    session,
+    operation,
+    signal,
+  );
+}
+
+export async function executeNativeStationOperation(
+  command: 'station_transport_execute' | 'social_adapter_execute',
+  session: MobileAuthSession,
+  operation: StationTransportOperation,
+  signal?: AbortSignal,
+): Promise<StationTransportResponse> {
   throwIfAborted(signal);
   const admission = operationAdmission(operation);
   const response = await runAfterAuthenticated401(
@@ -155,7 +169,7 @@ export async function executeStationOperation(
       throwIfAborted(signal);
       const active = requireCurrentSession(session, admission);
       const response = await invokeCancellable<StationTransportResponse>(
-        'station_transport_execute',
+        command,
         {
           stationPeerId: active.stationPeerId,
           actorPtid: active.actorPtid,
@@ -249,7 +263,10 @@ function requireCurrentSession(
 }
 
 async function invokeCancellable<T>(
-  command: 'station_transport_execute' | 'station_realtime_start',
+  command:
+    | 'station_transport_execute'
+    | 'social_adapter_execute'
+    | 'station_realtime_start',
   input: Readonly<Record<string, unknown>>,
   signal: AbortSignal | undefined,
 ): Promise<T> {

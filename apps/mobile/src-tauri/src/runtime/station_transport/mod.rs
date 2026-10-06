@@ -879,7 +879,7 @@ fn build_request(
             Method::GET,
             url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                &["api", "v1", "social", "moments"],
                 &[clean_id(post_id, "post_id")?],
             )?,
         ),
@@ -890,7 +890,7 @@ fn build_request(
             let post_id = clean_id(post_id, "post_id")?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                &["api", "v1", "social", "moments"],
                 &[post_id.clone(), "react".to_string()],
             )?;
             authenticated_request(client, session, Method::POST, url)
@@ -910,7 +910,7 @@ fn build_request(
             let post_id = clean_id(post_id, "post_id")?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                &["api", "v1", "social", "moments"],
                 &[post_id.clone(), "unreact".to_string()],
             )?;
             authenticated_request(client, session, Method::POST, url)
@@ -931,7 +931,7 @@ fn build_request(
             bounded_limit(limit, 200, "moments_comments_list")?;
             let mut url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                &["api", "v1", "social", "moments"],
                 &[clean_id(post_id, "post_id")?, "comments".to_string()],
             )?;
             url.query_pairs_mut()
@@ -954,7 +954,7 @@ fn build_request(
             )?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                &["api", "v1", "social", "moments"],
                 &[clean_id(post_id, "post_id")?, "comments".to_string()],
             )?;
             let mut body = serde_json::Map::new();

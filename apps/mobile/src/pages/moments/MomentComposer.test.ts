@@ -47,8 +47,8 @@ function renderMomentComposer(): string {
       stationPeerId: 'station-1',
       actorRef: { ptid: 'ptid:alice' },
     },
-    gateway: {
-      createMoment: vi.fn(),
+    intents: {
+      publishPublic: vi.fn(),
     },
     onPublished: vi.fn(),
   }));
@@ -152,7 +152,7 @@ describe('Moment composer media restoration', () => {
       'utf8',
     );
     const persistIndex = source.indexOf('await persistDraftNow(');
-    const publishIndex = source.indexOf('await gateway.createMoment(');
+    const publishIndex = source.indexOf('await intents.publishPublic(');
 
     expect(persistIndex).toBeGreaterThan(-1);
     expect(publishIndex).toBeGreaterThan(persistIndex);

@@ -1,8 +1,8 @@
 # Mobile Prototype
 
 > **Status**: confirmed
-> **Version**: v1.0
-> **Created**: 2026-07-08 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-07-08 | **Updated**: 2026-10-06
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
 
@@ -23,6 +23,37 @@ The prototype covers:
 - Me/profile and selected-only settings details.
 - Evidence scenarios for Station identity mismatch, OAuth expiry, session
   revocation, unknown write outcome, ledger capacity, and restored drafts.
+- The Mobile Social Desktop Parity amendment: Home/Explore, Search/Profile,
+  Circles, full Audience selection, Feed-local comments, temporary media overlays,
+  composer and private trust/recovery states.
+
+## 2026-10-06 Mobile Social Parity Amendment
+
+The previously confirmed Mobile Shell baseline remains historical evidence. The
+material Social amendment was confirmed by the Owner on 2026-10-06 and may now
+serve as the UI/interaction reference for implementation planning.
+
+Design source:
+
+- `../social-parity/README.md`
+- `../social-parity/prototype/README.md`
+
+The amendment adds direct scenarios:
+
+- `social-parity`
+- `social-content-types`
+- `social-private-pending`
+- `social-recovery-required`
+- `social-source-unavailable`
+- `social-revoked`
+
+Portal build and Mobile prototype build pass. L2/L3 captured 35 inspected Social
+states and 6 density/continuity assertions at 390x844 and 1440x1100 with zero geometry,
+overflow, unexpected clipping, continuity or console defects. Evidence lives under
+`../social-parity/prototype/evidence-l2/`. Prototype evidence does not establish
+Native, Station, crypto, lifecycle or cross-platform readiness.
+
+Owner confirmation covers the current Social UI and interaction behavior only.
 
 ## Source Alignment
 

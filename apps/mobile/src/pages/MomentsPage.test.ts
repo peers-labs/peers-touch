@@ -16,7 +16,7 @@ import {
 import {
   MomentsPage,
   retryMomentsRuntime,
-  submitInlineCommentToGateway,
+  submitInlineCommentIntent,
 } from './MomentsPage';
 
 const pageMocks = vi.hoisted(() => ({
@@ -59,20 +59,25 @@ vi.mock('../features/social/useMomentsFeed', () => ({
   }),
 }));
 
-vi.mock('../runtimes/socialProjectionRuntime', () => ({
-  readActiveMomentsRuntime: () => pageMocks.runtimeOverride ?? ({
-    gateway: {},
-    projection: {
-      state: () => ({ availability: pageMocks.projectionAvailability }),
-      subscribe: () => () => undefined,
-    },
-    feed: {
-      state: () => pageMocks.runtimeFeedState,
-      beginReaction: () => null,
-      retry: async () => pageMocks.projectionAvailability.available,
-    },
-    retry: async () => pageMocks.projectionAvailability.available,
-  }),
+vi.mock('../features/social/useSocialExperience', () => ({
+  useSocialExperience: () => {
+    const facade = pageMocks.runtimeOverride ?? {
+      intents: {
+        retry: async () => pageMocks.projectionAvailability.available,
+      },
+      feed: {
+        state: () => pageMocks.runtimeFeedState,
+        subscribe: () => () => undefined,
+      },
+    };
+    return {
+      facade,
+      projection: {
+        home: facade.feed.state(),
+        runtime: { availability: pageMocks.projectionAvailability },
+      },
+    };
+  },
 }));
 
 vi.mock('./moments/MomentFeedItem', async () => {
@@ -93,7 +98,7 @@ function renderMomentsPage(): string {
   }));
 }
 
-describe('Moments page inline comment gateway', () => {
+describe('Moments page inline comment intent', () => {
   it('reads back the paginated target without resetting the feed or selecting another detail', async () => {
     const gateway = {
       fetchFeed: vi.fn()
@@ -141,7 +146,14 @@ describe('Moments page inline comment gateway', () => {
     await store.loadMore();
     pageMocks.feed.posts = [...store.state().posts];
     pageMocks.projectionAvailability = { available: true };
-    pageMocks.runtimeOverride = { gateway, feed: store, projection: {} };
+    const intents = {
+      retry: async () => true,
+      comment: async (postId: string, content: string) => {
+        const created = await gateway.createComment(postId, content);
+        return created.ok && store.refreshPost(postId);
+      },
+    };
+    pageMocks.runtimeOverride = { intents, feed: store };
     try {
       renderMomentsPage();
       await expect(pageMocks.inlineSubmit('older', 'New comment')).resolves.toBe(true);
@@ -167,11 +179,15 @@ describe('Moments page inline comment gateway', () => {
     const refresh = vi.fn(async () => true);
 
     await expect(
-      submitInlineCommentToGateway(
-        gateway,
+      submitInlineCommentIntent(
+        {
+          comment: async (postId, content) => {
+            const result = await gateway.createComment(postId, content);
+            return result.ok && refresh(postId);
+          },
+        },
         'post-1',
         'Authoritative comment',
-        { refreshPost: refresh },
       ),
     ).resolves.toBe(true);
     expect(gateway.createComment).toHaveBeenCalledWith(
@@ -191,11 +207,15 @@ describe('Moments page inline comment gateway', () => {
     const refresh = vi.fn(async () => true);
 
     await expect(
-      submitInlineCommentToGateway(
-        gateway,
+      submitInlineCommentIntent(
+        {
+          comment: async (postId, content) => {
+            const result = await gateway.createComment(postId, content);
+            return result.ok && refresh(postId);
+          },
+        },
         'post-1',
         'Rejected comment',
-        { refreshPost: refresh },
       ),
     ).resolves.toBe(false);
     expect(refresh).not.toHaveBeenCalled();
@@ -211,11 +231,15 @@ describe('Moments page inline comment gateway', () => {
     const refresh = vi.fn(async () => false);
 
     await expect(
-      submitInlineCommentToGateway(
-        gateway,
+      submitInlineCommentIntent(
+        {
+          comment: async (postId, content) => {
+            const result = await gateway.createComment(postId, content);
+            return result.ok && refresh(postId);
+          },
+        },
         'post-1',
         'Unconfirmed comment',
-        { refreshPost: refresh },
       ),
     ).resolves.toBe(false);
     expect(refresh).toHaveBeenCalledExactlyOnceWith('post-1');

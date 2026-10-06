@@ -1570,6 +1570,13 @@
       "tier": "ci-structure",
       "description": "Validate Mobile Acceptance IDs, typed service topology, Auth UI identity, contract wiring, and source-level Moments/Profile projection fencing without claiming native product behavior."
     },
+    "mobile-social-facade-contract": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_facade_contract",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove the generation-scoped Mobile Social facade, one typed intent family, Social-owned Tauri adapter mapping, stale-completion teardown, and retired page/runtime ownership removal without claiming a native user journey."
+    },
     "mobile-identity-contract": {
       "command": "python3 -m tooling.acceptance.gates.mobile.identity_contract",
       "timeout_seconds": 120,

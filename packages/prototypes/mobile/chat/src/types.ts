@@ -79,7 +79,17 @@ export interface Moment {
   avatarGradient: string;
   time: string;
   text: string;
+  source?: string;
+  audience?: string;
+  reason?: string;
+  remote?: boolean;
   images?: string[];
+  contentKind?: 'text' | 'image' | 'video' | 'link' | 'poll' | 'repost' | 'location';
+  videoLabel?: string;
+  link?: { title: string; url: string };
+  poll?: { question: string; options: string[] };
+  repost?: { author: string; text: string };
+  location?: { name: string; address: string };
   likes: number;
   liked?: boolean;
   myReaction?: ReactionKind;

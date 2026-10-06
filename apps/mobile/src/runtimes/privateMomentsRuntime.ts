@@ -70,6 +70,9 @@ export interface PrivateMomentsRuntimeSnapshot {
   readonly reconciling: boolean;
   readonly stationPeerId: string | null;
   readonly actorPtid: string | null;
+  readonly deviceId: string | null;
+  readonly lifecycleGeneration: string;
+  readonly activationGeneration: number;
   readonly projections: readonly PrivateMomentProjection[];
   readonly postsById: Readonly<Record<string, PrivateMomentReadProjection>>;
   readonly commentDrafts: readonly PrivateCommentSubmitResult['draft'][];
@@ -648,6 +651,9 @@ async function synchronizeSession(
       reconciling: false,
       stationPeerId: scope.stationPeerId,
       actorPtid: scope.actorPtid,
+      deviceId: scope.deviceId,
+      lifecycleGeneration: String(scope.lifecycleGeneration),
+      activationGeneration: scope.activationGeneration,
       projections: nativeSnapshot.publishProjections,
       commentDrafts: nativeSnapshot.commentDrafts,
       comments: nativeSnapshot.comments,
@@ -855,6 +861,9 @@ function emptySnapshot(): PrivateMomentsRuntimeSnapshot {
     reconciling: false,
     stationPeerId: null,
     actorPtid: null,
+    deviceId: null,
+    lifecycleGeneration: '',
+    activationGeneration: 0,
     projections: [],
     postsById: {},
     commentDrafts: [],
@@ -866,9 +875,13 @@ function emptySnapshot(): PrivateMomentsRuntimeSnapshot {
   };
 }
 
-function subscribe(listener: () => void): () => void {
+export function subscribePrivateMomentsRuntime(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+function subscribe(listener: () => void): () => void {
+  return subscribePrivateMomentsRuntime(listener);
 }
 
 function setSnapshot(next: PrivateMomentsRuntimeSnapshot): void {

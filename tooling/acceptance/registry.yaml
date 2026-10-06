@@ -1365,6 +1365,26 @@
       ]
     },
     {
+      "id": "mobile-social-facade",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/features/social/mobileSocialFacade.ts",
+          "apps/mobile/src/features/social/socialExperienceProjection.ts",
+          "apps/mobile/src/features/social/socialIntents.ts",
+          "apps/mobile/src/features/social/useSocialExperience.ts",
+          "apps/mobile/src/services/socialNativeAdapter.ts",
+          "apps/mobile/src-tauri/src/social/adapter.rs",
+          "tooling/acceptance/gates/mobile/social_facade_contract.py"
+        ]
+      },
+      "require": [
+        "mobile-social-facade-contract"
+      ]
+    },
+    {
       "id": "mobile-social-runtime",
       "features": [
         "mobile-chat-contacts-groups",
@@ -1380,6 +1400,7 @@
       },
       "require": [
         "mobile-contract-static",
+        "mobile-social-facade-contract",
         "mobile-simulator-social-convergence-e2e"
       ]
     },
@@ -1402,6 +1423,7 @@
         ]
       },
       "require": [
+        "mobile-social-facade-contract",
         "mobile-simulator-social-convergence-e2e",
         "mobile-simulator-chat-contacts-e2e",
         "mobile-simulator-moments-e2e",
@@ -1557,6 +1579,7 @@
       },
       "require": [
         "mobile-contract-static",
+        "mobile-social-facade-contract",
         "mobile-simulator-social-convergence-e2e",
         "mobile-simulator-moments-e2e"
       ]
