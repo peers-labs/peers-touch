@@ -1,6 +1,6 @@
 ---
 name: "pt-execution-plan-guardian"
-description: "Evaluates whether a proposed action may execute under an accepted Peers-Touch snapshot, mount, declaration, architecture, and evidence policy. It is a read-only policy guard, not an executor or scheduler."
+description: "Evaluates whether a proposed action may execute under an accepted Peers-Touch Plan snapshot, mount, declaration, architecture, and evidence policy. It is a read-only policy guard, not an executor or scheduler."
 stage: "EXECUTE"
 requires: ["mounted ExecutionPlanSnapshot", "proposed action", "verified mount and declaration"]
 produces: ["ACTION_ALLOWED", "typed denial or amendment escalation"]
@@ -22,7 +22,7 @@ It does not answer what should run next and it does not run anything.
 
 The Guardian:
 
-- verifies the frozen Plan Version through its immutable
+  - verifies the current stable Plan through its immutable
   ExecutionPlanSnapshot;
 - reads accepted product, architecture, ExecutionPlanSnapshot, current Task, mount,
   declaration, and proposed scheduler action;
@@ -148,6 +148,8 @@ ACTION_DENIED
 PRODUCT_AMENDMENT_REQUIRED
 DESIGN_AMENDMENT_REQUIRED
 PLAN_AMENDMENT_REQUIRED
+NORTH_STAR_APPROVAL_REQUIRED
+OWNER_DECISION_REQUIRED
 ACCEPTANCE_PLAN_DRIFT
 WORKTREE_IDENTITY_UNAVAILABLE
 WORKTREE_IDENTITY_MISMATCH
@@ -169,16 +171,26 @@ Every denial/escalation names:
   `PRODUCT_AMENDMENT_REQUIRED`.
 - Missing architecture ownership/protocol/failure semantics ->
   `DESIGN_AMENDMENT_REQUIRED`.
-- Accepted semantics with stale inventory, dependency, deliverable, or check
-  mapping -> `PLAN_AMENDMENT_REQUIRED`.
-- Required Gate absent from the plan contract -> `ACCEPTANCE_PLAN_DRIFT`.
+- Accepted semantics with stale inventory, dependency, deliverable, write-set,
+  command, Task decomposition/order, or check mapping ->
+  `PLAN_AMENDMENT_REQUIRED`.
+- Required Gate absent from the Plan contract -> `PLAN_AMENDMENT_REQUIRED`.
+- Generated Plan has no explicit North Star approval, or its recorded digest is
+  stale -> `NORTH_STAR_APPROVAL_REQUIRED`.
+- A proposed amendment changes any `northStar` content -> fresh explicit
+  approval first, then `OWNER_DECISION_REQUIRED` for publication.
+- Only `criterionCoverage`, Task, closure, or Gate mapping changes while
+  `northStar` is unchanged -> `PLAN_AMENDMENT_REQUIRED`, with no reapproval.
 
 Return the decision to `pt-dev-workflow`. The workflow invokes the owning
-methodology and `pt-plan-and-document` persists any accepted plan update.
-The Guardian does not perform the amendment, even when it is mechanical.
-Accepted-source repairs and their agent review remain inside the Plan Run.
-Only an amendment that exposes a DWF-D20 semantic, destructive, authorization,
-or external-resource boundary requires user input.
+methodology when semantics are missing and `pt-plan-and-document` persists the
+update. The Guardian does not perform the amendment or write its record.
+Ordinary execution-model
+repairs remain Agent-owned inside the same Plan Run and retain `planId`,
+`mountId`, and `runId`. A newly generated North Star always requires explicit
+user approval. After that, additional user input is required only for a North
+Star change or another DWF-D20 destructive, authorization, or external-resource
+boundary.
 
 ## Functional And Acceptance Policy
 
@@ -236,7 +248,7 @@ Never:
 
 - execute an allowed action;
 - choose the next action or maintain queues;
-- write or self-amend a plan;
+- write or self-amend a Plan;
 - update Task lifecycle, Session, workspace active-work, or Anchor state;
 - infer authorization from mere Plan existence, a declaration, or an unrelated
   prior command;

@@ -25,7 +25,7 @@ def tracked_plan(status: str) -> SimpleNamespace:
     return SimpleNamespace(
         path=MODULE.REPO_ROOT / "plans/fixture/plan.md",
         plan_id="FIXTURE-PLAN",
-        plan_format="version",
+        plan_format="stable",
         branch="fixture-branch",
         workspace_id="0000000000000000",
         current_task_id=None,

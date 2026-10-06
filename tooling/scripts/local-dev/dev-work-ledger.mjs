@@ -854,7 +854,7 @@ function resolvePlanLocator(options, existing, identity) {
     return {
       planPath: null,
       planId: null,
-      planVersionDigest: null,
+      planDigest: null,
       mountId: null,
       runId: null,
       taskId: null,
@@ -901,9 +901,9 @@ function resolvePlanLocator(options, existing, identity) {
     ['mountedPlanId', normalizedPlanId, execution.mount.planId],
     ['mountedPlanPath', normalizedPlanPath, execution.mount.planPath],
     [
-      'planVersionDigest',
-      status.planVersionDigest,
-      execution.mount.planVersionDigest,
+      'planDigest',
+      status.planDigest,
+      execution.snapshot.planDigest,
     ],
     ['mountId', status.mountId, execution.mount.mountId],
     ['runId', status.runId, execution.run.runId],
@@ -920,7 +920,6 @@ function resolvePlanLocator(options, existing, identity) {
   }
   if (existingHasLocator) {
     for (const [field, actual] of [
-      ['planVersionDigest', status.planVersionDigest],
       ['mountId', status.mountId],
       ['runId', status.runId],
     ]) {
@@ -940,7 +939,7 @@ function resolvePlanLocator(options, existing, identity) {
   return {
     planPath: normalizedPlanPath,
     planId: normalizedPlanId,
-    planVersionDigest: status.planVersionDigest,
+    planDigest: status.planDigest,
     mountId: status.mountId,
     runId: status.runId,
     taskId: normalizedTaskId,
@@ -1002,7 +1001,7 @@ function buildDeclaration(options, existing, now) {
     runtimeClaims,
     planPath: null,
     planId: null,
-    planVersionDigest: null,
+    planDigest: null,
     mountId: null,
     runId: null,
     taskId: null,
@@ -1323,7 +1322,7 @@ export function checkDeclaration(options) {
           ...options,
           planPath: declaration.planPath,
           planId: declaration.planId,
-          planVersionDigest: declaration.planVersionDigest,
+          planDigest: declaration.planDigest,
           mountId: declaration.mountId,
           runId: declaration.runId,
           taskId: declaration.taskId,

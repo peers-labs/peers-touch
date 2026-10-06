@@ -150,7 +150,7 @@ test('publishes and validates an explicit closed Plan locator', () => {
       currentTaskId: 'DWF-T1',
       workspaceId: 'unused',
       branch: 'merge-desktop-prototype',
-      planVersionDigest: 'a'.repeat(64),
+      planDigest: 'a'.repeat(64),
       mountId: 'mount-test',
       runId: 'run-test',
       status: 'active',
@@ -161,10 +161,10 @@ test('publishes and validates an explicit closed Plan locator', () => {
       mount: {
         planId: planStatus.planId,
         planPath: 'docs/architecture/example/execution-plans/test/plan.md',
-        planVersionDigest: planStatus.planVersionDigest,
         mountId: planStatus.mountId,
       },
       run: { runId: planStatus.runId },
+      snapshot: { planDigest: planStatus.planDigest },
     };
     const legacy = statusCurrent({
       home: scope.home,
@@ -199,6 +199,25 @@ test('publishes and validates an explicit closed Plan locator', () => {
         taskId: 'DWF-T1',
       },
     );
+    planStatus.planDigest = 'b'.repeat(64);
+    planExecution.snapshot.planDigest = planStatus.planDigest;
+    const amended = startOrUpdateDeclaration(
+      options(scope, {
+        workItemId: 'tracked-task',
+        sessionId: 'tracked-session',
+        sourceClaims: 'exclusive-write:apps/desktop',
+        runtimeClaims: '',
+        planPath: tracked.planPath,
+        planId: tracked.planId,
+        taskId: tracked.taskId,
+        planStatus,
+        planExecution,
+      }),
+      { requireExisting: true },
+    );
+    assert.equal(amended.planDigest, planStatus.planDigest);
+    assert.equal(amended.mountId, tracked.mountId);
+    assert.equal(amended.runId, tracked.runId);
     const delivery = startOrUpdateDeclaration(
       options(scope, {
         workItemId: 'tracked-task',

@@ -111,25 +111,25 @@
       "description": "Validate explicit first-use Profile registration, authoritative workspace update, source-matched idempotent Station and Desktop startup, partial managed Desktop recovery, generated-source preparation, typed remote deployment failures, owner-checked unregister, profile policy, conflict detection, and OS-held runtime lease lifecycle."
     },
     "workspace-plan-mount-self": {
-      "command": "node --test tooling/scripts/plan/plan-mount.test.mjs",
+      "command": "node --test tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/stable-plan-state-migration.test.mjs",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate Project Ledger Plan mounts, immutable Execution Plan snapshots, mutable revisioned Execution Runs, one-live-mount conflicts, release authorization, and tamper rejection."
+      "description": "Validate stable Plan mounts, immutable snapshot history, in-place amendments, North Star escalation, task revalidation, one-live-mount conflicts, idle-state migration, release authorization, and tamper rejection."
     },
     "acceptance-workflow-contract": {
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/workflow-*.test.mjs tooling/scripts/local-dev/worktree-observation-store.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/agent-integration-audit-test.py && tooling/scripts/review/skill-check.sh'",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/plan/stable-plan-state-migration.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/workflow-*.test.mjs tooling/scripts/local-dev/worktree-observation-store.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/agent-integration-audit-test.py && tooling/scripts/review/skill-check.sh'",
       "timeout_seconds": 480,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate immutable workspace Plan resolution across Plan, declaration, Session and Peers Dev consumers, current-closure scheduling, blocked handoff, diff drift rejection, explicit completion/full selection, runner projection refresh, host-neutral Skill rollout, and Skill governance."
+      "description": "Validate stable Plan resolution and amendments across mount, snapshot, run, declaration, Session and workflow consumers, current-closure scheduling, blocked handoff, diff drift rejection, explicit completion/full selection, runner projection refresh, host-neutral Skill rollout, and Skill governance."
     },
     "development-workflow-control-plane": {
-      "command": "node --test tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs && python3 -m unittest tooling.acceptance.tests.test_execution_plan && bash tooling/scripts/review/skill-check.sh",
+      "command": "node --test tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs && python3 -m unittest tooling.acceptance.tests.test_execution_plan && bash tooling/scripts/review/skill-check.sh",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate Plan Package bounds and lifecycle, Development resource declarations, replayable Session transitions, package-aware Acceptance discovery, and workflow Skill contracts without claiming product behavior."
+      "description": "Validate candidate North Star approval, criterion coverage, stable Plan amendments, Development resource declarations, replayable Session transitions, package-aware Acceptance discovery, and workflow Skill contracts without claiming product behavior."
     },
     "acceptance-run-static-gate": {
       "command": "python3 tooling/scripts/acceptance-run-test.py",

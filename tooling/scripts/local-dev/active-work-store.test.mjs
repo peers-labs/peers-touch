@@ -104,7 +104,7 @@ function ownerDependencies(overrides = {}) {
     runtimeClaims: [],
     planPath: 'docs/architecture/example/execution-plans/test/plan.md',
     planId: 'DWF-PLAN',
-    planVersionDigest: 'a'.repeat(64),
+    planDigest: 'a'.repeat(64),
     mountId: 'mount-active-work',
     runId: 'run-active-work',
     taskId: 'DWF-T1',
@@ -119,11 +119,12 @@ function ownerDependencies(overrides = {}) {
         mount: {
           planId: 'DWF-PLAN',
           planPath: declaration.planPath,
-          planVersionDigest: declaration.planVersionDigest,
+          planDigest: declaration.planDigest,
           mountId: declaration.mountId,
         },
         snapshot: {
           recordDigest: 'b'.repeat(64),
+          planDigest: declaration.planDigest,
           executionBinding: {
             workspaceId: WORKSPACE_A,
             branch: declaration.branch,

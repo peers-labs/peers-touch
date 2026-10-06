@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-05
-covered_docs_hash: 9c39335b3c13e2a86824fa332641c9781bb0cc70c730136711577fba60912336
+last_verified_at: 2026-10-07
+covered_docs_hash: f4e2178592bc95ca627d99b929b1a09c311e58d90d86bbe5464172ea860549d2
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,24 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-07 Explicit North Star Approval Review
+
+DWF-D42 now treats generated North Stars as non-executable candidates.
+Review must reject missing or stale digest-bound user approval, incomplete
+criterion-to-Task/closure/Gate coverage, and any attempt to publish a changed
+North Star without the matching owner amendment decision. Plan mount/CLI
+fixtures and the stable-plan invariant cover these boundaries; no generic
+review fixture is required.
+
+## 2026-10-06 Stable Plan Amendment Review
+
+DWF-D42 replaces frozen Plan versions with one stable Plan identity and an
+append-only amendment trail. Review must reject unrecorded Plan mutation,
+rewritten amendment history, stale snapshot execution, silent North Star
+changes, and authorization expansion without an owner decision. The new
+stable-plan invariant and Plan mount/CLI regressions cover these boundaries; no
+generic review fixture is required.
 
 ## 2026-10-05 Architecture Taxonomy Review
 

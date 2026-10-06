@@ -42,6 +42,7 @@ tooling/scripts/plan/
 | `tooling/scripts/local-dev/development-close.mjs` | Workspace-fenced close coordinator and exact deleted-worktree recovery path |
 | `tooling/scripts/local-dev/dev-work-ledger.mjs` | Machine-wide Development intent authority |
 | `tooling/scripts/plan/plan-mount.mjs` | Project Ledger Plan mount, snapshot, run, exact-owner cancel/release, orphan recovery, and conflict owner |
+| `tooling/scripts/plan/stable-plan-state-migration.mjs` | Explicit global-idle migration for retired version-indexed machine ledgers |
 | `tooling/make/local-dev.mk` | Thin `make workflow-snapshot` and runtime entry points |
 
 ## 3. Dependency Direction

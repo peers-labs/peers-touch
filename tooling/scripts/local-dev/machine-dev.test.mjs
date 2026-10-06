@@ -503,7 +503,7 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
       currentTaskId: 'DWF-RESOURCE-T1',
       workspaceId: registered.workspaceId,
       branch: registered.branch,
-      planVersionDigest: 'a'.repeat(64),
+      planDigest: 'a'.repeat(64),
       mountId: 'mount-machine-dev-test',
       runId: 'run-machine-dev-test',
       status: 'active',
@@ -515,8 +515,10 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
       mount: {
         planId: planStatus.planId,
         planPath,
-        planVersionDigest: planStatus.planVersionDigest,
         mountId: planStatus.mountId,
+      },
+      snapshot: {
+        planDigest: planStatus.planDigest,
       },
       run: {
         runId: planStatus.runId,

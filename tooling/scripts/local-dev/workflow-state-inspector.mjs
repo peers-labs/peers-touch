@@ -204,7 +204,7 @@ export async function inspectWorkflowContext(binding, options = {}) {
   if (
     execution.mount.planId !== declaration.planId ||
     execution.mount.planPath !== declaration.planPath ||
-    execution.mount.planVersionDigest !== declaration.planVersionDigest ||
+    execution.snapshot.planDigest !== declaration.planDigest ||
     execution.mount.mountId !== declaration.mountId ||
     execution.run.runId !== declaration.runId ||
     currentTask?.id !== declaration.taskId

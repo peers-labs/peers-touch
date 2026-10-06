@@ -15,6 +15,10 @@ make skills IDE=trae
 make workflow-doctor
 ```
 
+When upgrading from the retired frozen-version contract, first close every live
+Development Run and then run `make plan-state-migrate` once. The migration
+refuses live work and does not install a legacy runtime fallback.
+
 The installer projects repository-owned Skills and supported blockable hooks
 into the current worktree. The Doctor verifies the public promises below. A
 `BLOCKED` result names the owner that must be repaired; it is not permission to
@@ -31,7 +35,7 @@ not require machine-wide workflow quiescence. Explicit `skills-hard-cut` and
 | Promise ID | What must be true | Normal recovery |
 |---|---|---|
 | `dev.integration.installed` | The selected host has the exact current Skill and hook projection, callback proof, and install receipt. | Run `make skills IDE=<host>` at a durable boundary. |
-| `dev.plan.mount` | Tracked work resolves one current Project Ledger mount, immutable Execution Plan snapshot, and mutable Execution Run; explicit standalone work remains unmounted. | Mount the frozen Plan Version for tracked work, resolve a typed identity failure, or preserve the user's explicit no-Plan standalone policy. |
+| `dev.plan.mount` | Tracked work resolves one stable Plan mount, current immutable execution snapshot, and mutable Execution Run; explicit standalone work remains unmounted. | Mount the Plan for tracked work, record source changes with `plan-amend`, resolve a typed identity failure, or preserve the user's explicit no-Plan standalone policy. |
 | `dev.workflow.current` | Plan, current Task, Development Session, declaration, active-work, and reduced Action Receipt state agree. | Repair the typed owner mismatch; never edit machine state directly. |
 | `dev.review.current` | Active work has no failed or stale review; completed work has a current independent `PASS`. | Run a fresh independent Completion Review after source or obligation drift. |
 | `dev.docs.executable` | This guide declares each public Workflow Doctor promise exactly once. | Update the executable contract and this guide in the same change. |
@@ -64,7 +68,7 @@ artifacts and proof, not ownership or cleanup:
 |---|---|---|
 | Small | The change is local, uses accepted contracts, and does not alter product or architecture decisions. | Exact source claim, focused checks, findings-first review, standalone or mounted delivery, and `dev-close`. |
 | Standard | The change crosses modules or changes an existing product/runtime behavior covered by accepted sources. | Affected `ModuleImpact` records, dependency-aware implementation, focused functional proof where product behavior changes, applicable Acceptance, review, and `dev-close`. |
-| Large | The change introduces or replaces product journeys, architecture boundaries, ownership, protocol, persistence, security, or rollout policy. | Accepted product and architecture contracts before implementation; a tracked Plan Version only when the owner explicitly accepts and mounts one; full required Journey and Acceptance evidence. |
+| Large | The change introduces or replaces product journeys, architecture boundaries, ownership, protocol, persistence, security, or rollout policy. | Accepted product and architecture contracts before implementation; a tracked stable Plan only when the owner explicitly accepts and mounts one; full required Journey and Acceptance evidence. |
 
 Work depth never overrides Plan policy. Explicit standalone no-Plan work remains
 standalone at every depth. If a large standalone request lacks an accepted
@@ -115,11 +119,12 @@ make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> \
   ENVIRONMENT_POLICY=unregister [MOUNT=<mount-id>]
 ```
 
-For tracked work, Plan source is frozen independently from execution placement.
-An explicit owner action mounts it to one selected execution worktree:
+For tracked work, the Plan has one stable identity independent from execution
+placement. An explicit owner action mounts it to one selected execution
+worktree:
 
 ```bash
-make plan-mount PLAN=<plan-version.md>
+make plan-mount PLAN=<plan.md>
 make plan-mount-status
 ```
 
@@ -131,11 +136,45 @@ make plan-unmount MOUNT=<mount-id> \
   REASON=<completed|cancelled|owner-unmount>
 ```
 
-The command requires the exact mount owner. Agents cannot amend the frozen
-version, change its execution worktree, or unmount an unfinished run without
-explicit `owner-unmount` authority. Repository discovery never replaces a
-mount. A deleted worktree is recoverable only through exact
+The command requires the exact mount owner. Agents cannot change the execution
+worktree or unmount an unfinished run without explicit `owner-unmount`
+authority. Repository discovery never replaces a mount. A deleted worktree is
+recoverable only through exact
 `workspaceId + mountId + mountedBy` identity.
+
+Plan authoring first produces a non-executable candidate. Review the
+source-backed objective, criteria, and criterion coverage, then record the
+user's explicit decision:
+
+```bash
+make plan-validate PLAN=<plan.md>
+make plan-approve-north-star PLAN=<plan.md> \
+  DECISION_REF=<durable-user-decision-ref>
+make plan-mount PLAN=<plan.md>
+```
+
+`plan-validate` reports `candidate`, `stale`, or `approved`; it never infers
+approval. Mount and execution fail as `NORTH_STAR_APPROVAL_REQUIRED` unless the
+stored approval matches the current `planId + northStar` digest.
+
+Ordinary execution discoveries are amended in place without changing
+`planId`, `mountId`, or `runId`:
+
+```bash
+make plan-amend PLAN=<plan.md> \
+  REASON='<why the current execution model changed>' \
+  CHANGE='<what changed>'
+```
+
+The command appends the audit record, derives affected Task and Gate IDs,
+publishes a new immutable internal snapshot, and atomically revalidates the
+Execution Run. Gate/write-set/dependency/check/task-order/implementation-path
+changes are Agent-owned. Only a change to the accepted `northStar` requires
+a fresh `plan-approve-north-star` record followed by
+`APPROVAL=owner DECISION_REF=<same-ref>` after the user receives the conflict,
+impacted goal, options/tradeoffs, and recommendation. `criterionCoverage`
+changes preserve approval while the North Star digest is unchanged. Expanding
+operation authorization remains a separate explicit authorization boundary.
 
 ### Explicit standalone no-Plan work
 
@@ -144,7 +183,7 @@ Agent to execute the current task without creating a Plan, that instruction is
 the Plan policy for the request:
 
 - do not invoke Plan modeling or persistence;
-- do not create a Plan Version, Task Slice, PlanMount, ExecutionPlanSnapshot,
+- do not create a Plan, Task Slice, PlanMount, ExecutionPlanSnapshot,
   ExecutionRun, Development Session, active-work record, or Context Anchor;
 - do not convert repository size, test requirements, or delivery tooling into
   an implicit reason to create a Plan;
@@ -260,7 +299,7 @@ Workflow Binding, or caller-provided identity.
 Session and current Completion Review pass. `make plan-reopen` reopens the
 earliest completed closure invalidated by source or obligation drift.
 
-`make plan-cancel PLAN=<plan-version.md>` is the exact-owner cancellation path.
+`make plan-cancel PLAN=<plan.md>` is the exact-owner cancellation path.
 After delivery or cancellation, `dev-close` verifies no live lease remains,
 archives the Session, closes active-work, releases the declaration and mount,
 and writes a resumable `DevelopmentCloseReceipt`. New work is not admitted
@@ -327,7 +366,8 @@ and reruns the affected review. Escalate only when the next step requires:
   deletion/reset, environment creation, permission expansion, version/schema
   bump, worktree add/remove/prune, or secret access;
 - a product, architecture, security, privacy, compatibility, or rollout choice
-  that accepted sources cannot determine;
+  that would change, weaken, or abandon the accepted North Star and cannot be
+  resolved from accepted sources;
 - an unavailable external resource or credential; or
 - fixed-point exhaustion with no dependency-ready Task or legal remediation.
 

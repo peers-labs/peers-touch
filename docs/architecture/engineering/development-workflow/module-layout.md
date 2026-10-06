@@ -1,14 +1,14 @@
 # Development Workflow Control Plane - Module Layout
 
 > **Status**: active
-> **Created**: 2026-09-16 | **Updated**: 2026-10-05
+> **Created**: 2026-09-16 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 
 ---
 
 ## 1. Target Directory Tree
 
-This is the accepted DWF-D38 target. PlanMount owns tracked execution placement;
+This is the accepted DWF-D42 target. PlanMount owns tracked execution placement;
 standalone work does not create Plan package or machine-local tracked state.
 The superseded workspace-binding path is deleted, and target paths are not by
 themselves implementation readiness claims.
@@ -34,7 +34,9 @@ tooling/scripts/plan/
 ├── planctl.mjs
 ├── planctl.test.mjs
 ├── plan-mount.mjs
-└── plan-mount.test.mjs
+├── plan-mount.test.mjs
+├── stable-plan-state-migration.mjs
+└── stable-plan-state-migration.test.mjs
 
 tooling/scripts/local-dev/
 ├── dev-work-schema.mjs
@@ -102,7 +104,7 @@ tooling/scripts/
     ├── active-work.lock
     ├── agent-integration.json
     ├── <workItemId>/
-    │   ├── execution-plan-snapshot.json
+    │   ├── execution-plan-snapshots/<snapshotId>.json
     │   ├── execution-run.json
     │   ├── session.json
     │   ├── events.ndjson
@@ -131,17 +133,18 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D41 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D42 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
-| `execution-plans/*/plan.md` | Frozen Plan Version and Acceptance contract |
+| `execution-plans/*/plan.md` | Stable Plan, digest-bound North Star approval, criterion coverage, Amendment Log, and Acceptance contract |
 | `execution-plans/*/tasks/*.md` | One immutable Task Slice specification |
 | `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
 | `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
-| `planctl.mjs` | `validate/current/next/status/activate/advance/reopen/invalidate-source` CLI |
+| `planctl.mjs` | `validate/approve-north-star/amend/current/next/status/activate/advance/reopen/invalidate-source` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
-| `plan-mount.mjs` | Project Ledger mount/unmount owner, immutable snapshot creation, live-worktree exclusion, and direct resolution |
-| `plan-mount.test.mjs` | Authoring/execution separation, idempotence, mount conflict, explicit unmount, snapshot, tamper, and concurrency regressions |
+| `plan-mount.mjs` | Stable Plan mount/unmount owner, immutable snapshot history, amendment transition, live-worktree exclusion, and direct resolution |
+| `plan-mount.test.mjs` | Candidate approval, criterion coverage, idempotence, mount conflict, amendment, North Star invalidation, explicit unmount, snapshot, tamper, and concurrency regressions |
+| `stable-plan-state-migration.mjs` | Explicit global-idle hard cut for machine ledger field/index renames; normal readers contain no legacy fallback |
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
@@ -203,7 +206,7 @@ continues to use its own immutable run layout and latest pointers.
 ```text
 planctl.mjs
   -> plan-package.mjs
-  -> repository frozen Plan Version files
+  -> repository stable Plan files
 
 plan-mount.mjs
   -> plan-package.mjs

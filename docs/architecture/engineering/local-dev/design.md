@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-05
+> **Created**: 2026-09-13 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -42,7 +42,7 @@
 12. **No dashboard runtime**: the projection is an on-demand CLI/library call;
     it starts no server, opens no browser, and reserves no fixed port.
 13. **Explicit Plan occupancy**: Project Ledger PlanMount, not repository
-    discovery or a workspace binding file, selects the frozen Plan Version
+    discovery or a workspace binding file, selects the stable Plan
     executed by a worktree.
 14. **Stable binding, live source**: the registry owns durable root, branch,
     profile, slot, and capability binding only. Current Git HEAD is read from
@@ -175,10 +175,11 @@ Owns durable machine-local declarations:
 - Allowed Station capability mode.
 - Detected conflicts.
 
-It does not own Plan selection. Development Workflow stores the immutable Plan
-binding in the workspace workflow namespace beside, not inside, the mutable
-environment registration. The registry must not contain credentials, JWTs,
-passwords, private keys, user messages, or Acceptance artifacts.
+It does not own Plan selection. Development Workflow stores the stable
+PlanMount and current immutable snapshot in the workspace workflow namespace
+beside, not inside, the mutable environment registration. The registry must
+not contain credentials, JWTs, passwords, private keys, user messages, or
+Acceptance artifacts.
 
 Registration is explicit. Discovery through `git worktree list`, a branch name,
 an existing directory, a project `active_work` row, or a legacy profile pointer

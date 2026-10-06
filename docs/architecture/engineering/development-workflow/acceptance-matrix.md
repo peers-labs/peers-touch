@@ -1,7 +1,7 @@
 # Development Workflow Acceptance Matrix
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-05
+> **Created**: 2026-09-26 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
@@ -27,16 +27,21 @@
 | DEV-A16 | Continuation | DWF-D27 | Evaluate active, terminal, and exhausted runs | Only owner state produces CONTINUE/COMPLETE/HARD_BLOCK | Reducer tests |
 | DEV-A17 | Source reopen | DWF-D24/D28 | Stale a completed Task receipt | Invalidation owner reopens the earliest affected Task closure | Reopen tests |
 | DEV-A18 | Overlay isolation | DWF-D25/D33 | Overlay expands scope/lineage/authorization | Kernel ignores policy influence and denies action | Overlay tests |
-| DEV-A19 | Plan mount | DWF-D38 | Mount a frozen Plan authored in another worktree | Snapshot binds selected workspace without editing Plan source | Plan mount tests |
-| DEV-A20 | Mount conflict | DWF-D38 | Concurrently mount two live Plans to one workspace | Exactly one succeeds; the other gets `PLAN_MOUNT_CONFLICT` | Concurrency tests |
-| DEV-A21 | Explicit unmount | DWF-D38 | Agent tries to change/unmount an unfinished run | No mutation; explicit owner action required | Authorization tests |
+| DEV-A19 | Plan mount and amendment | DWF-D42 | Mount a stable Plan authored in another worktree, then amend execution details | Mount/run identities remain stable while the current snapshot and affected Task states advance | Plan mount tests |
+| DEV-A20 | Mount conflict | DWF-D42 | Concurrently mount two live Plans to one workspace | Exactly one succeeds; the other gets `PLAN_MOUNT_CONFLICT` | Concurrency tests |
+| DEV-A21 | Explicit unmount | DWF-D42 | Agent tries to change/unmount an unfinished run | No mutation; explicit owner action required | Authorization tests |
 | DEV-A22 | Resource aggregation | DWF-D32 | Multiple modules request shared/exclusive resources | One all-or-none fenced PlanResourcePlan selects resources and parks conflicts | Resource-plan tests |
 | DEV-A23 | Native Desktop only | DWF-D39/D-18 | Scan Desktop commands, runtime schemas, Gates, provisioners, and matrices | Native Tauri is the only Desktop runtime/proof path | Native-only source gate |
 | DEV-A24 | Native proof | DWF-D39/D-18 | Execute Desktop product Journey | Real Tauri window/input/screenshot and receiver-visible evidence pass | Native runtime-cell Gate |
 | DEV-A25 | Close resume | DWF-D41 | Interrupt after one owner release and retry exact `dev-close` selector | Same receipt advances without duplicate owner state | Development close tests |
-| DEV-A26 | Exact close ownership | DWF-D38/D41 | Cancel/release with wrong mount owner or orphan selector | Typed denial with no state mutation | Plan mount/run tests |
+| DEV-A26 | Exact close ownership | DWF-D42/D41 | Cancel/release with wrong mount owner or orphan selector | Typed denial with no state mutation | Plan mount/run tests |
 | DEV-A27 | Standalone close | DWF-D40/D41 | Close explicit no-Plan work | Declaration releases; Session/active-work/mount remain not applicable | Development close tests |
 | DEV-A28 | Close readiness | DWF-D41 | Audit before and after coordinated close | Only exact CLOSED receipt with no pending resource passes | Completion audit fixtures |
+| DEV-A29 | Routine amendment | DWF-D42 | Change a Task command, write set, dependency, order, or Gate mapping | The Agent records the reason, preserves Plan/mount/run IDs, advances the snapshot, and continues | Plan amendment tests |
+| DEV-A30 | North Star protection | DWF-D42 | Change any objective, criterion, or source reference after approval | Prior approval becomes stale; execution returns `NORTH_STAR_APPROVAL_REQUIRED`, then publication requires the matching owner decision | Plan amendment tests |
+| DEV-A31 | Amendment integrity | DWF-D42 | Rewrite history, skip the audit record, or execute against a stale snapshot | The operation fails closed before task execution | Plan package and mount tests |
+| DEV-A32 | Explicit North Star approval | DWF-D42 | Generate and validate a new Plan without a user decision | Validation reports `candidate`; mount is denied until `approve-north-star` binds actor, time, decision ref, Plan ID, and digest | Plan mount and CLI tests |
+| DEV-A33 | Criterion coverage | DWF-D42 | Omit a criterion or map it to unknown/mismatched Task, closure, or Gate IDs | `PLAN_CRITERION_COVERAGE_INVALID` rejects the Plan; ordinary valid remapping preserves North Star approval | Plan package and amendment tests |
 
 ## Acceptance Rules
 

@@ -128,11 +128,7 @@ function assertOwnerAgreement({
     ['workspaceId', workspaceId, declaration.workspaceId],
     ['planId', execution.mount.planId, declaration.planId],
     ['planPath', execution.mount.planPath, declaration.planPath],
-    [
-      'planVersionDigest',
-      execution.mount.planVersionDigest,
-      declaration.planVersionDigest,
-    ],
+    ['planDigest', execution.snapshot.planDigest, declaration.planDigest],
     ['mountId', execution.mount.mountId, declaration.mountId],
     ['runId', execution.run.runId, declaration.runId],
     ['taskId', execution.run.currentTaskId, declaration.taskId],

@@ -17,7 +17,11 @@ import {
 } from '../local-dev/workspace-lifecycle-lock.mjs';
 import { assertDevelopmentCloseAdmission } from '../local-dev/development-close-store.mjs';
 import {
+  appendPlanAmendment,
   atomicReplaceFile,
+  digestPlan,
+  digestPlanContent,
+  inspectNorthStarApproval,
   isDirectInvocation,
   loadPlanPackage,
   validateRepositoryPath,
@@ -53,7 +57,7 @@ const LEDGER_KEYS = new Set([
   'kind',
   'revision',
   'liveMountsByWorkspace',
-  'liveMountsByPlanVersion',
+  'liveMountsByPlan',
   'runsByMount',
   'recordDigest',
 ]);
@@ -62,8 +66,6 @@ const MOUNT_KEYS = new Set([
   'mountId',
   'projectId',
   'planId',
-  'planVersionId',
-  'planVersionDigest',
   'planPath',
   'workspaceId',
   'canonicalRoot',
@@ -79,12 +81,14 @@ const SNAPSHOT_KEYS = new Set([
   'snapshotId',
   'capturedAt',
   'planId',
-  'planVersionId',
-  'planVersionDigest',
+  'planDigest',
+  'planContentDigest',
+  'amendmentCount',
   'planPath',
   'plan',
   'tasks',
   'acceptance',
+  'sourceInvalidationPolicy',
   'executionBinding',
   'recordDigest',
 ]);
@@ -303,6 +307,13 @@ function defaultProjectId(workspace) {
   return requiredText(projectId, 'projectId', IDENTIFIER);
 }
 
+function planIndexKey(projectId, planId) {
+  return crypto
+    .createHash('sha256')
+    .update(`${projectId}\0${planId}`)
+    .digest('hex');
+}
+
 export function planMountRootPath(options = {}) {
   return path.join(machineDevRoot(options.home), 'plan-mounts');
 }
@@ -329,9 +340,17 @@ export function executionRunPaths(runId, options = {}) {
   });
   return {
     root,
-    snapshot: path.join(root, 'execution-plan-snapshot.json'),
+    snapshots: path.join(root, 'execution-plan-snapshots'),
     run: path.join(root, 'execution-run.json'),
   };
+}
+
+export function executionSnapshotPath(runId, snapshotId, options = {}) {
+  requiredText(snapshotId, 'snapshotId', IDENTIFIER);
+  return path.join(
+    executionRunPaths(runId, options).snapshots,
+    `${snapshotId}.json`,
+  );
 }
 
 function emptyLedger() {
@@ -339,7 +358,7 @@ function emptyLedger() {
     kind: PLAN_MOUNT_LEDGER_KIND,
     revision: 0,
     liveMountsByWorkspace: {},
-    liveMountsByPlanVersion: {},
+    liveMountsByPlan: {},
     runsByMount: {},
   };
   ledger.recordDigest = digestRecord(ledger);
@@ -357,6 +376,12 @@ function validateStringMap(value, field, valuePattern = IDENTIFIER) {
 }
 
 function validateLedger(value) {
+  if (isObject(value) && Object.hasOwn(value, 'liveMountsByPlanVersion')) {
+    fail(
+      'PLAN_STATE_MIGRATION_REQUIRED',
+      'Plan mount ledger uses the retired version-indexed schema; close live work and run plan-state-migrate',
+    );
+  }
   if (
     !exactKeys(value, LEDGER_KEYS) ||
     value.kind !== PLAN_MOUNT_LEDGER_KIND ||
@@ -382,15 +407,15 @@ function validateLedger(value) {
     }
   }
   validateStringMap(
-    value.liveMountsByPlanVersion,
-    'liveMountsByPlanVersion',
+    value.liveMountsByPlan,
+    'liveMountsByPlan',
     IDENTIFIER,
   );
-  for (const digest of Object.keys(value.liveMountsByPlanVersion)) {
-    if (!SHA256.test(digest)) {
+  for (const planId of Object.keys(value.liveMountsByPlan)) {
+    if (!SHA256.test(planId)) {
       fail(
         'PLAN_MOUNT_LEDGER_INVALID',
-        'live Plan Version index contains an invalid digest',
+        'live Plan index contains an invalid project/plan key',
       );
     }
   }
@@ -405,8 +430,6 @@ function validateMount(record) {
     !IDENTIFIER.test(record.mountId ?? '') ||
     !IDENTIFIER.test(record.projectId ?? '') ||
     !IDENTIFIER.test(record.planId ?? '') ||
-    !IDENTIFIER.test(record.planVersionId ?? '') ||
-    !SHA256.test(record.planVersionDigest ?? '') ||
     !WORKSPACE_ID.test(record.workspaceId ?? '') ||
     !path.isAbsolute(record.canonicalRoot ?? '') ||
     !MOUNT_STATES.has(record.state) ||
@@ -440,8 +463,10 @@ function validateSnapshot(snapshot) {
     snapshot.kind !== EXECUTION_PLAN_SNAPSHOT_KIND ||
     !IDENTIFIER.test(snapshot.snapshotId ?? '') ||
     !IDENTIFIER.test(snapshot.planId ?? '') ||
-    !IDENTIFIER.test(snapshot.planVersionId ?? '') ||
-    !SHA256.test(snapshot.planVersionDigest ?? '') ||
+    !SHA256.test(snapshot.planDigest ?? '') ||
+    !SHA256.test(snapshot.planContentDigest ?? '') ||
+    !Number.isInteger(snapshot.amendmentCount) ||
+    snapshot.amendmentCount < 0 ||
     !Array.isArray(snapshot.tasks) ||
     !exactKeys(snapshot.executionBinding, EXECUTION_BINDING_KEYS) ||
     !IDENTIFIER.test(snapshot.executionBinding.mountId ?? '') ||
@@ -459,6 +484,29 @@ function validateSnapshot(snapshot) {
   canonicalTimestamp(snapshot.capturedAt, 'ExecutionPlanSnapshot.capturedAt');
   requiredText(snapshot.executionBinding.branch, 'executionBinding.branch');
   validateRepositoryPath(snapshot.planPath, 'ExecutionPlanSnapshot.planPath');
+  if (
+    snapshot.plan?.kind !== 'peers-touch-plan' ||
+    snapshot.plan?.planId !== snapshot.planId ||
+    !Array.isArray(snapshot.plan?.amendments) ||
+    snapshot.plan.amendments.length !== snapshot.amendmentCount ||
+    digestPlanContent({
+      plan: snapshot.plan,
+      tasks: snapshot.tasks,
+      acceptance: snapshot.acceptance,
+      sourceInvalidationPolicy: snapshot.sourceInvalidationPolicy ?? null,
+    }) !== snapshot.planContentDigest ||
+    digestPlan({
+      plan: snapshot.plan,
+      tasks: snapshot.tasks,
+      acceptance: snapshot.acceptance,
+      sourceInvalidationPolicy: snapshot.sourceInvalidationPolicy ?? null,
+    }) !== snapshot.planDigest
+  ) {
+    fail(
+      'EXECUTION_PLAN_SNAPSHOT_INVALID',
+      'Execution Plan snapshot content does not match its identity',
+    );
+  }
   return snapshot;
 }
 
@@ -802,12 +850,14 @@ function buildSnapshot(planPackage, workspace, mountId, snapshotId, now) {
     snapshotId,
     capturedAt: now.toISOString(),
     planId: planPackage.plan.planId,
-    planVersionId: planPackage.plan.versionId,
-    planVersionDigest: planPackage.planVersionDigest,
+    planDigest: planPackage.planDigest,
+    planContentDigest: planPackage.planContentDigest,
+    amendmentCount: planPackage.plan.amendments.length,
     planPath: planPackage.planPath,
     plan: planPackage.plan,
     tasks: planPackage.tasks,
     acceptance: planPackage.acceptance,
+    sourceInvalidationPolicy: planPackage.sourceInvalidationPolicy,
     executionBinding: {
       mountId,
       workspaceId: workspace.workspaceId,
@@ -952,12 +1002,6 @@ export function resolvePlanMountByIdentity(options = {}) {
     ['snapshotWorkspaceId', workspaceId, snapshot.value.executionBinding.workspaceId],
     ['runMountId', mountId, run.value.mountId],
     ['planId', mount.planId, snapshot.value.planId],
-    ['planVersionId', mount.planVersionId, snapshot.value.planVersionId],
-    [
-      'planVersionDigest',
-      mount.planVersionDigest,
-      snapshot.value.planVersionDigest,
-    ],
     ['planPath', mount.planPath, snapshot.value.planPath],
   ]) {
     if (expected !== actual) mismatches[field] = { expected, actual };
@@ -975,6 +1019,7 @@ export function resolvePlanMountByIdentity(options = {}) {
     mount,
     snapshot: snapshot.value,
     run: run.value,
+    runRaw: run.raw,
     paths,
   };
 }
@@ -985,18 +1030,28 @@ function readSnapshotAndRun(runId, workspace, options) {
     repoRoot: workspace.canonicalRoot,
     workspaceId: workspace.workspaceId,
   });
+  const runHeader = parseJsonFile(
+    paths.run,
+    'EXECUTION_RUN_INVALID',
+    'Execution Run cannot be read',
+    (value) => value,
+  );
+  requiredText(runHeader.value?.snapshotId, 'ExecutionRun.snapshotId', IDENTIFIER);
+  paths.snapshot = executionSnapshotPath(runId, runHeader.value.snapshotId, {
+    home: options.home,
+    repoRoot: workspace.canonicalRoot,
+    workspaceId: workspace.workspaceId,
+  });
   const snapshot = parseJsonFile(
     paths.snapshot,
     'EXECUTION_PLAN_SNAPSHOT_INVALID',
     'Execution Plan snapshot cannot be read',
     validateSnapshot,
   );
-  const run = parseJsonFile(
-    paths.run,
-    'EXECUTION_RUN_INVALID',
-    'Execution Run cannot be read',
-    (value) => validateRun(value, snapshot.value),
-  );
+  const run = {
+    raw: runHeader.raw,
+    value: validateRun(runHeader.value, snapshot.value),
+  };
   return { paths, snapshot, run };
 }
 
@@ -1019,20 +1074,15 @@ function assertResolvedIdentity({
       ledger.liveMountsByWorkspace[workspace.workspaceId],
     ],
     [
-      'versionIndex',
+      'planIndex',
       mount.mountId,
-      ledger.liveMountsByPlanVersion[mount.planVersionDigest],
+      ledger.liveMountsByPlan[planIndexKey(mount.projectId, mount.planId)],
     ],
     ['runIndex', run.runId, ledger.runsByMount[mount.mountId]],
     ['snapshotMountId', mount.mountId, snapshot.executionBinding.mountId],
     ['runMountId', mount.mountId, run.mountId],
     ['planId', mount.planId, planPackage.plan.planId],
-    ['planVersionId', mount.planVersionId, planPackage.plan.versionId],
-    [
-      'planVersionDigest',
-      mount.planVersionDigest,
-      planPackage.planVersionDigest,
-    ],
+    ['snapshotPlanId', mount.planId, snapshot.planId],
     ['planPath', mount.planPath, planPackage.planPath],
   ];
   for (const [field, expected, actual] of checks) {
@@ -1045,6 +1095,429 @@ function assertResolvedIdentity({
       { mismatches },
     );
   }
+  if (snapshot.planDigest !== planPackage.planDigest) {
+    fail(
+      'PLAN_AMENDMENT_REQUIRED',
+      'mounted Plan source changed and must be recorded as an amendment',
+      {
+        mountedPlanDigest: snapshot.planDigest,
+        sourcePlanDigest: planPackage.planDigest,
+      },
+    );
+  }
+}
+
+function sameValue(left, right) {
+  return (
+    JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right))
+  );
+}
+
+function assertNorthStarApproved(planPackage) {
+  if (planPackage.northStarApproval.status === 'approved') return;
+  fail(
+    'NORTH_STAR_APPROVAL_REQUIRED',
+    'Plan North Star requires explicit user approval before execution',
+    {
+      planId: planPackage.plan.planId,
+      status: planPackage.northStarApproval.status,
+      northStarDigest: planPackage.northStarApproval.northStarDigest,
+      approvedDigest:
+        planPackage.plan.northStarApproval?.northStarDigest ?? null,
+      next:
+        'Record the explicit user decision with planctl approve-north-star.',
+    },
+  );
+}
+
+function assertPlanContentRecorded(planPackage) {
+  const latest = planPackage.plan.amendments.at(-1);
+  if (
+    latest !== undefined &&
+    latest.toContentDigest !== planPackage.planContentDigest
+  ) {
+    fail(
+      'PLAN_AMENDMENT_REQUIRED',
+      'Plan content changed without a matching amendment record',
+      {
+        recordedContentDigest: latest.toContentDigest,
+        currentContentDigest: planPackage.planContentDigest,
+      },
+    );
+  }
+}
+
+function taskContract(snapshot, taskId) {
+  const planTask = snapshot.plan.tasks.find((task) => task.id === taskId);
+  const task = snapshot.tasks.find((candidate) => candidate.taskId === taskId);
+  if (!planTask || !task) return null;
+  return {
+    planTask,
+    task,
+    gates: snapshot.acceptance.closures[task.closureId] ?? null,
+  };
+}
+
+function amendmentImpact(previousSnapshot, planPackage) {
+  const previousTaskIds = previousSnapshot.plan.tasks.map((task) => task.id);
+  const nextTaskIds = planPackage.plan.tasks.map((task) => task.id);
+  let taskIds = [...new Set([...previousTaskIds, ...nextTaskIds])]
+    .filter(
+      (taskId) =>
+        !sameValue(
+          taskContract(previousSnapshot, taskId),
+          taskContract(
+            {
+              plan: planPackage.plan,
+              tasks: planPackage.tasks,
+              acceptance: planPackage.acceptance,
+            },
+            taskId,
+          ),
+        ),
+    )
+    .sort();
+  const planWideContractChanged = !sameValue(
+    {
+      northStar: previousSnapshot.plan.northStar,
+      workClass: previousSnapshot.plan.workClass,
+      architecture: previousSnapshot.plan.architecture,
+      scope: previousSnapshot.plan.scope,
+      sourceInvalidationPolicy: previousSnapshot.sourceInvalidationPolicy,
+    },
+    {
+      northStar: planPackage.plan.northStar,
+      workClass: planPackage.plan.workClass,
+      architecture: planPackage.plan.architecture,
+      scope: planPackage.plan.scope,
+      sourceInvalidationPolicy: planPackage.sourceInvalidationPolicy,
+    },
+  );
+  if (planWideContractChanged) {
+    taskIds = [...new Set([...previousTaskIds, ...nextTaskIds])].sort();
+  }
+  const previousCoverage = new Map(
+    previousSnapshot.plan.criterionCoverage.map((coverage) => [
+      coverage.criterionId,
+      coverage,
+    ]),
+  );
+  const nextCoverage = new Map(
+    planPackage.plan.criterionCoverage.map((coverage) => [
+      coverage.criterionId,
+      coverage,
+    ]),
+  );
+  const changedCoverage = [
+    ...new Set([...previousCoverage.keys(), ...nextCoverage.keys()]),
+  ].filter(
+    (criterionId) =>
+      !sameValue(
+        previousCoverage.get(criterionId) ?? null,
+        nextCoverage.get(criterionId) ?? null,
+      ),
+  );
+  taskIds = [
+    ...new Set([
+      ...taskIds,
+      ...changedCoverage.flatMap(
+        (criterionId) =>
+          previousCoverage.get(criterionId)?.taskIds ?? [],
+      ),
+      ...changedCoverage.flatMap(
+        (criterionId) => nextCoverage.get(criterionId)?.taskIds ?? [],
+      ),
+    ]),
+  ].sort();
+  const previousGates = new Set([
+    ...Object.values(previousSnapshot.acceptance.closures).flat(),
+    ...previousSnapshot.acceptance.completion,
+    ...previousSnapshot.acceptance.full,
+  ]);
+  const nextGates = new Set([
+    ...Object.values(planPackage.acceptance.closures).flat(),
+    ...planPackage.acceptance.completion,
+    ...planPackage.acceptance.full,
+  ]);
+  const changedClosureIds = [
+    ...new Set([
+      ...Object.keys(previousSnapshot.acceptance.closures),
+      ...Object.keys(planPackage.acceptance.closures),
+    ]),
+  ].filter(
+    (closureId) =>
+      !sameValue(
+        previousSnapshot.acceptance.closures[closureId] ?? null,
+        planPackage.acceptance.closures[closureId] ?? null,
+      ),
+  );
+  const gateIds = [
+    ...new Set([
+      ...changedClosureIds.flatMap(
+        (closureId) =>
+          previousSnapshot.acceptance.closures[closureId] ?? [],
+      ),
+      ...changedClosureIds.flatMap(
+        (closureId) => planPackage.acceptance.closures[closureId] ?? [],
+      ),
+      ...[...previousGates, ...nextGates].filter(
+        (gateId) => previousGates.has(gateId) !== nextGates.has(gateId),
+      ),
+      ...changedCoverage.flatMap(
+        (criterionId) =>
+          previousCoverage.get(criterionId)?.gateIds ?? [],
+      ),
+      ...changedCoverage.flatMap(
+        (criterionId) => nextCoverage.get(criterionId)?.gateIds ?? [],
+      ),
+    ]),
+  ].sort();
+  if (
+    !sameValue(
+      {
+        completion: previousSnapshot.acceptance.completion,
+        full: previousSnapshot.acceptance.full,
+      },
+      {
+        completion: planPackage.acceptance.completion,
+        full: planPackage.acceptance.full,
+      },
+    )
+  ) {
+    return {
+      taskIds: [...new Set([...previousTaskIds, ...nextTaskIds])].sort(),
+      gateIds: [...new Set([...previousGates, ...nextGates])].sort(),
+    };
+  }
+  return { taskIds, gateIds };
+}
+
+function authorizationExpanded(previous, next) {
+  if (
+    previous.checkpoint.localCommit === 'denied' &&
+    next.checkpoint.localCommit === 'allowed'
+  ) {
+    return true;
+  }
+  for (const field of ['push', 'pullRequest']) {
+    if (
+      previous.delivery[field] === 'denied' &&
+      next.delivery[field] === 'allowed'
+    ) {
+      return true;
+    }
+  }
+  if (
+    previous.history.rewrite === 'denied' &&
+    next.history.rewrite === 'allowed'
+  ) {
+    return true;
+  }
+  for (const field of ['deployProfiles', 'destructiveResetScopes']) {
+    const prior = new Set(previous.runtime[field]);
+    if (next.runtime[field].some((value) => !prior.has(value))) return true;
+  }
+  return false;
+}
+
+function transitiveDependents(plan, roots) {
+  const affected = new Set(roots);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const task of plan.tasks) {
+      if (
+        !affected.has(task.id) &&
+        task.dependsOn.some((dependency) => affected.has(dependency))
+      ) {
+        affected.add(task.id);
+        changed = true;
+      }
+    }
+  }
+  return affected;
+}
+
+function reconcileRunForAmendment(run, nextSnapshot, impact) {
+  if (run.state === 'cancelled') {
+    fail('PLAN_AMENDMENT_INVALID', 'a cancelled Plan run cannot be amended');
+  }
+  const priorStates = run.taskStates;
+  const invalidated = transitiveDependents(nextSnapshot.plan, impact.taskIds);
+  const taskStates = Object.fromEntries(
+    nextSnapshot.plan.tasks.map((task) => {
+      const previous = priorStates[task.id];
+      if (!previous) {
+        return [task.id, { state: 'pending', blocker: null }];
+      }
+      if (invalidated.has(task.id)) {
+        return [task.id, { state: 'pending', blocker: null }];
+      }
+      return [task.id, structuredClone(previous)];
+    }),
+  );
+  let currentTaskId =
+    run.currentTaskId !== null &&
+    Object.hasOwn(taskStates, run.currentTaskId) &&
+    !invalidated.has(run.currentTaskId)
+      ? run.currentTaskId
+      : null;
+
+  let dependencyReset = true;
+  while (dependencyReset) {
+    dependencyReset = false;
+    for (const task of nextSnapshot.plan.tasks) {
+      const state = taskStates[task.id];
+      if (
+        state.state !== 'pending' &&
+        !task.dependsOn.every(
+          (dependency) => taskStates[dependency]?.state === 'done',
+        )
+      ) {
+        taskStates[task.id] = { state: 'pending', blocker: null };
+        invalidated.add(task.id);
+        if (currentTaskId === task.id) currentTaskId = null;
+        dependencyReset = true;
+      }
+    }
+  }
+
+  const allDone = Object.values(taskStates).every(
+    (task) => task.state === 'done',
+  );
+  let state = 'prepared';
+  let exhaustion = null;
+  if (allDone) {
+    state = 'completed';
+    currentTaskId = null;
+  } else if (currentTaskId !== null) {
+    state = 'active';
+  } else {
+    const blockedTaskIds = Object.entries(taskStates)
+      .filter(([, task]) => task.state === 'blocked')
+      .map(([taskId]) => taskId);
+    const ready = readyTaskIds(nextSnapshot, {
+      ...run,
+      taskStates,
+    });
+    if (
+      ready.length === 0 &&
+      blockedTaskIds.length > 0 &&
+      sameValue(
+        [...blockedTaskIds].sort(),
+        [...(run.exhaustion?.blockedTaskIds ?? [])].sort(),
+      )
+    ) {
+      state = 'blocked';
+      exhaustion = structuredClone(run.exhaustion);
+    } else if (
+      ['active', 'blocked'].includes(run.state) &&
+      ready.length > 0
+    ) {
+      currentTaskId = ready[0];
+      taskStates[currentTaskId] = {
+        state: 'in_progress',
+        blocker: null,
+      };
+      state = 'active';
+    }
+  }
+  return {
+    ...run,
+    snapshotId: nextSnapshot.snapshotId,
+    snapshotDigest: nextSnapshot.recordDigest,
+    state,
+    taskStates,
+    exhaustion,
+    currentTaskId,
+  };
+}
+
+function assertAmendmentApproval(previousPlan, nextPlan, options) {
+  const northStarChanged = !sameValue(
+    previousPlan.northStar,
+    nextPlan.northStar,
+  );
+  if (
+    !northStarChanged &&
+    !sameValue(
+      previousPlan.northStarApproval,
+      nextPlan.northStarApproval,
+    )
+  ) {
+    fail(
+      'NORTH_STAR_APPROVAL_IMMUTABLE',
+      'North Star approval cannot change while the North Star is unchanged',
+    );
+  }
+  const approval = options.approval ?? 'agent';
+  const northStarApproval = inspectNorthStarApproval(nextPlan);
+  if (northStarChanged && northStarApproval.status !== 'approved') {
+    fail(
+      'NORTH_STAR_APPROVAL_REQUIRED',
+      'Changed North Star requires a fresh explicit user approval',
+      {
+        status: northStarApproval.status,
+        northStarDigest: northStarApproval.northStarDigest,
+        approvedDigest: nextPlan.northStarApproval?.northStarDigest ?? null,
+      },
+    );
+  }
+  if (northStarChanged && approval !== 'owner') {
+    fail(
+      'OWNER_DECISION_REQUIRED',
+      'Plan amendment changes the accepted North Star',
+      {
+        conflict: 'The proposed amendment changes the accepted objective or success criteria.',
+        impactedGoal: {
+          current: previousPlan.northStar,
+          proposed: nextPlan.northStar,
+        },
+        options: [
+          'Keep the accepted North Star and revise implementation details only.',
+          'Approve the proposed North Star change with a durable decision reference.',
+          'Create a separate Plan for the different goal.',
+        ],
+        recommendation:
+          'Keep the current North Star unless the product outcome itself has intentionally changed.',
+      },
+    );
+  }
+  if (
+    authorizationExpanded(previousPlan.authorization, nextPlan.authorization) &&
+    approval !== 'owner'
+  ) {
+    fail(
+      'OPERATION_AUTHORIZATION_REQUIRED',
+      'Plan amendment expands the operation authorization envelope',
+      {
+        current: previousPlan.authorization,
+        proposed: nextPlan.authorization,
+      },
+    );
+  }
+  if (approval === 'owner') {
+    requiredText(options.decisionRef, 'decisionRef');
+    if (
+      northStarChanged &&
+      options.decisionRef !== nextPlan.northStarApproval.decisionRef
+    ) {
+      fail(
+        'PLAN_AMENDMENT_APPROVAL_MISMATCH',
+        'North Star amendment decision does not match its explicit approval',
+        {
+          expected: nextPlan.northStarApproval.decisionRef,
+          actual: options.decisionRef,
+        },
+      );
+    }
+  } else if (approval !== 'agent') {
+    fail('PLAN_AMENDMENT_INVALID', 'approval must be agent or owner');
+  }
+  return {
+    kind: approval,
+    decisionRef: approval === 'owner' ? options.decisionRef : null,
+  };
 }
 
 export async function resolvePlanExecution(options = {}) {
@@ -1074,7 +1547,10 @@ export async function resolvePlanExecution(options = {}) {
   );
   const planPackage = await loadPlanPackage(absolutePlan, {
     repoRoot: workspace.canonicalRoot,
+    allowUnrecordedAmendment: true,
   });
+  assertNorthStarApproved(planPackage);
+  assertPlanContentRecorded(planPackage);
   assertResolvedIdentity({
     workspace,
     ledger,
@@ -1089,12 +1565,217 @@ export async function resolvePlanExecution(options = {}) {
     mount,
     snapshot: snapshot.value,
     run: run.value,
+    runRaw: run.raw,
     planPackage,
     paths,
   };
 }
 
-export async function mountPlanVersion(options = {}) {
+export async function amendMountedPlan(options = {}) {
+  const workspace = canonicalWorkspace(options.repoRoot ?? process.cwd());
+  return withWorkspaceLifecycle(workspace, options, async () => {
+    const resolved = resolvePlanMountByIdentity({
+      ...options,
+      workspaceId: workspace.workspaceId,
+    });
+    if (resolved.mount.canonicalRoot !== workspace.canonicalRoot) {
+      fail(
+        'PLAN_MOUNT_IDENTITY_MISMATCH',
+        'Plan mount belongs to a different canonical workspace',
+      );
+    }
+    const absolutePlan = path.join(
+      workspace.canonicalRoot,
+      ...resolved.mount.planPath.split('/'),
+    );
+    if (options.plan !== undefined) {
+      const requestedPlan = path.isAbsolute(options.plan)
+        ? path.resolve(options.plan)
+        : path.resolve(workspace.canonicalRoot, options.plan);
+      if (requestedPlan !== absolutePlan) {
+        fail(
+          'PLAN_TARGET_NOT_CURRENT',
+          'requested Plan is not mounted in this workspace',
+          {
+            requested: requestedPlan,
+            mounted: absolutePlan,
+          },
+        );
+      }
+    }
+    let planPackage = await loadPlanPackage(absolutePlan, {
+      repoRoot: workspace.canonicalRoot,
+      allowUnrecordedAmendment: true,
+    });
+    if (
+      planPackage.plan.planId !== resolved.mount.planId ||
+      planPackage.planPath !== resolved.mount.planPath
+    ) {
+      fail(
+        'PLAN_MOUNT_IDENTITY_MISMATCH',
+        'amended Plan identity does not match the live mount',
+      );
+    }
+    if (planPackage.plan.createdAt !== resolved.snapshot.plan.createdAt) {
+      fail(
+        'PLAN_AMENDMENT_INVALID',
+        'Plan createdAt is immutable for the lifetime of a stable planId',
+      );
+    }
+    assertNorthStarApproved(planPackage);
+    const changes = options.changes ?? [];
+    if (!Array.isArray(changes) || changes.length === 0) {
+      fail('PLAN_AMENDMENT_INVALID', 'at least one amendment change is required');
+    }
+    changes.forEach((change) => requiredText(change, 'change'));
+    const approval = assertAmendmentApproval(
+      resolved.snapshot.plan,
+      planPackage.plan,
+      options,
+    );
+    if (
+      approval.kind === 'owner' &&
+      requiredText(options.actor, 'actor') !== resolved.mount.mountedBy
+    ) {
+      fail(
+        'PLAN_AMENDMENT_OWNER_MISMATCH',
+        'owner-approved amendment must be recorded by the Plan mount owner',
+        {
+          expected: resolved.mount.mountedBy,
+          actual: options.actor,
+        },
+      );
+    }
+    const impact = amendmentImpact(resolved.snapshot, planPackage);
+    const previousAmendments = resolved.snapshot.plan.amendments;
+    const candidateAmendments = planPackage.plan.amendments;
+    if (planPackage.planContentDigest === resolved.snapshot.planContentDigest) {
+      if (planPackage.planDigest !== resolved.snapshot.planDigest) {
+        fail(
+          'PLAN_AMENDMENT_CONFLICT',
+          'Plan amendment history changed without a content change',
+        );
+      }
+      const latest = candidateAmendments.at(-1);
+      if (
+        latest !== undefined &&
+        latest.actor === options.actor &&
+        latest.reason === options.reason &&
+        sameValue(latest.changes, changes) &&
+        sameValue(latest.approval, approval)
+      ) {
+        return {
+          ...resolved,
+          amendment: latest,
+          affectedTaskIds: [],
+          amended: false,
+        };
+      }
+      fail('PLAN_AMENDMENT_INVALID', 'Plan amendment contains no content change');
+    }
+    let amendment;
+    if (sameValue(candidateAmendments, previousAmendments)) {
+      const now = operationDate(options);
+      amendment = {
+        id:
+          options.amendmentId ??
+          randomId('amendment', now),
+        createdAt: now.toISOString(),
+        actor: requiredText(options.actor, 'actor'),
+        reason: requiredText(options.reason, 'reason'),
+        changes,
+        impact: {
+          taskIds: impact.taskIds,
+          gateIds: impact.gateIds,
+        },
+        approval,
+        fromContentDigest: resolved.snapshot.planContentDigest,
+        toContentDigest: planPackage.planContentDigest,
+      };
+      planPackage = await appendPlanAmendment(planPackage, amendment);
+    } else if (
+      candidateAmendments.length === previousAmendments.length + 1 &&
+      sameValue(
+        candidateAmendments.slice(0, -1),
+        previousAmendments,
+      )
+    ) {
+      amendment = candidateAmendments.at(-1);
+      if (
+        amendment.fromContentDigest !== resolved.snapshot.planContentDigest ||
+        amendment.toContentDigest !== planPackage.planContentDigest ||
+        amendment.actor !== options.actor ||
+        amendment.reason !== options.reason ||
+        !sameValue(amendment.changes, changes) ||
+        !sameValue(amendment.impact.taskIds, impact.taskIds) ||
+        !sameValue(amendment.impact.gateIds, impact.gateIds) ||
+        !sameValue(amendment.approval, approval)
+      ) {
+        fail(
+          'PLAN_AMENDMENT_CONFLICT',
+          'existing uncommitted amendment does not match the requested change',
+        );
+      }
+    } else {
+      fail(
+        'PLAN_AMENDMENT_CONFLICT',
+        'Plan amendment log was edited outside the amendment owner',
+      );
+    }
+
+    const now = operationDate(options);
+    const snapshotId = randomId('snapshot', now);
+    const snapshot = buildSnapshot(
+      planPackage,
+      {
+        ...workspace,
+        branch: resolved.snapshot.executionBinding.branch,
+        initialHead: resolved.snapshot.executionBinding.initialHead,
+      },
+      resolved.mount.mountId,
+      snapshotId,
+      now,
+    );
+    const run = reconcileRunForAmendment(
+      structuredClone(resolved.run),
+      snapshot,
+      impact,
+    );
+    run.updatedAt = now.toISOString();
+    run.revision = resolved.run.revision + 1;
+    run.recordDigest = digestExecutionRun(run);
+    validateRun(run, snapshot);
+    const snapshotFile = executionSnapshotPath(run.runId, snapshotId, {
+      home: options.home,
+      repoRoot: workspace.canonicalRoot,
+      workspaceId: workspace.workspaceId,
+    });
+    await publishImmutable(snapshotFile, snapshot);
+    await writeJsonAtomic(
+      resolved.paths.run,
+      run,
+      resolved.runRaw,
+    );
+    return {
+      ...resolved,
+      snapshot,
+      run,
+      planPackage,
+      amendment,
+      affectedTaskIds: [...transitiveDependents(
+        snapshot.plan,
+        impact.taskIds,
+      )].sort(),
+      amended: true,
+      paths: {
+        ...resolved.paths,
+        snapshot: snapshotFile,
+      },
+    };
+  });
+}
+
+export async function mountPlan(options = {}) {
   const workspace = canonicalWorkspace(options.repoRoot ?? process.cwd());
   const owner = requiredText(options.owner, 'owner');
   const requestedPlan = requiredText(options.plan, 'plan');
@@ -1104,7 +1785,10 @@ export async function mountPlanVersion(options = {}) {
     : path.join(workspace.canonicalRoot, ...requestedPlan.split('/'));
   const planPackage = await loadPlanPackage(absolutePlan, {
     repoRoot: workspace.canonicalRoot,
+    allowUnrecordedAmendment: true,
   });
+  assertNorthStarApproved(planPackage);
+  assertPlanContentRecorded(planPackage);
   const projectId =
     options.projectId === undefined
       ? defaultProjectId(workspace)
@@ -1119,9 +1803,9 @@ export async function mountPlanVersion(options = {}) {
       const currentLedger = readLedger(options);
       const workspaceMountId =
         currentLedger.value.liveMountsByWorkspace[workspace.workspaceId];
-      const versionMountId =
-        currentLedger.value.liveMountsByPlanVersion[
-          planPackage.planVersionDigest
+      const planMountId =
+        currentLedger.value.liveMountsByPlan[
+          planIndexKey(projectId, planPackage.plan.planId)
         ];
       if (workspaceMountId) {
         const existingExecution = resolvePlanMountByIdentity({
@@ -1145,25 +1829,22 @@ export async function mountPlanVersion(options = {}) {
           );
         }
       }
-      if (workspaceMountId || versionMountId) {
-        if (workspaceMountId && workspaceMountId === versionMountId) {
+      if (workspaceMountId || planMountId) {
+        if (workspaceMountId && workspaceMountId === planMountId) {
           const resolved = await resolvePlanExecution({
             ...options,
             repoRoot: workspace.canonicalRoot,
           });
-          if (
-            resolved.mount.planVersionDigest ===
-            planPackage.planVersionDigest
-          ) {
+          if (resolved.snapshot.planDigest === planPackage.planDigest) {
             return { ...resolved, created: false };
           }
         }
         fail(
           'PLAN_MOUNT_CONFLICT',
-          'workspace or Plan Version already has a different live mount',
+          'workspace or Plan already has a different live mount',
           {
             workspaceMountId: workspaceMountId ?? null,
-            versionMountId: versionMountId ?? null,
+            planMountId: planMountId ?? null,
           },
         );
       }
@@ -1189,8 +1870,6 @@ export async function mountPlanVersion(options = {}) {
         mountId,
         projectId,
         planId: planPackage.plan.planId,
-        planVersionId: planPackage.plan.versionId,
-        planVersionDigest: planPackage.planVersionDigest,
         planPath: planPackage.planPath,
         workspaceId: workspace.workspaceId,
         canonicalRoot: workspace.canonicalRoot,
@@ -1209,6 +1888,11 @@ export async function mountPlanVersion(options = {}) {
         workspaceId: workspace.workspaceId,
       });
       await publishImmutable(planMountRecordPath(mountId, options), mount);
+      paths.snapshot = executionSnapshotPath(runId, snapshotId, {
+        home: options.home,
+        repoRoot: workspace.canonicalRoot,
+        workspaceId: workspace.workspaceId,
+      });
       await publishImmutable(paths.snapshot, snapshot);
       await publishImmutable(paths.run, run);
 
@@ -1219,9 +1903,9 @@ export async function mountPlanVersion(options = {}) {
           ...currentLedger.value.liveMountsByWorkspace,
           [workspace.workspaceId]: mountId,
         },
-        liveMountsByPlanVersion: {
-          ...currentLedger.value.liveMountsByPlanVersion,
-          [planPackage.planVersionDigest]: mountId,
+        liveMountsByPlan: {
+          ...currentLedger.value.liveMountsByPlan,
+          [planIndexKey(projectId, planPackage.plan.planId)]: mountId,
         },
         runsByMount: {
           ...currentLedger.value.runsByMount,
@@ -1275,7 +1959,7 @@ export async function updateExecutionRun(options = {}, updater) {
     };
     next.recordDigest = digestExecutionRun(next);
     validateRun(next, resolved.snapshot);
-    await writeJsonAtomic(resolved.paths.run, next, fs.readFileSync(resolved.paths.run));
+    await writeJsonAtomic(resolved.paths.run, next, resolved.runRaw);
     return { ...resolved, run: next };
   });
 }
@@ -1331,7 +2015,7 @@ export async function cancelExecutionRun(options = {}) {
     await writeJsonAtomic(
       resolved.paths.run,
       next,
-      fs.readFileSync(resolved.paths.run),
+      resolved.runRaw,
     );
     return { ...resolved, run: next };
   });
@@ -1399,8 +2083,8 @@ export async function releasePlanMount(options = {}) {
         const liveMountsByWorkspace = {
           ...currentLedger.value.liveMountsByWorkspace,
         };
-        const liveMountsByPlanVersion = {
-          ...currentLedger.value.liveMountsByPlanVersion,
+        const liveMountsByPlan = {
+          ...currentLedger.value.liveMountsByPlan,
         };
         let changed = false;
         if (
@@ -1411,10 +2095,14 @@ export async function releasePlanMount(options = {}) {
           changed = true;
         }
         if (
-          liveMountsByPlanVersion[resolved.mount.planVersionDigest] ===
+          liveMountsByPlan[
+            planIndexKey(resolved.mount.projectId, resolved.mount.planId)
+          ] ===
           resolved.mount.mountId
         ) {
-          delete liveMountsByPlanVersion[resolved.mount.planVersionDigest];
+          delete liveMountsByPlan[
+            planIndexKey(resolved.mount.projectId, resolved.mount.planId)
+          ];
           changed = true;
         }
         if (!changed) {
@@ -1428,7 +2116,7 @@ export async function releasePlanMount(options = {}) {
           ...currentLedger.value,
           revision: currentLedger.value.revision + 1,
           liveMountsByWorkspace,
-          liveMountsByPlanVersion,
+          liveMountsByPlan,
         };
         ledger.recordDigest = digestRecord(ledger);
         validateLedger(ledger);
@@ -1478,9 +2166,10 @@ export async function releasePlanMount(options = {}) {
       if (
         currentLedger.value.liveMountsByWorkspace[workspace.workspaceId] !==
           released.mountId ||
-        currentLedger.value.liveMountsByPlanVersion[
-          released.planVersionDigest
-        ] !== released.mountId
+        currentLedger.value.liveMountsByPlan[
+          planIndexKey(released.projectId, released.planId)
+        ] !==
+          released.mountId
       ) {
         fail(
           'PLAN_MOUNT_IDENTITY_MISMATCH',
@@ -1490,16 +2179,18 @@ export async function releasePlanMount(options = {}) {
       const liveMountsByWorkspace = {
         ...currentLedger.value.liveMountsByWorkspace,
       };
-      const liveMountsByPlanVersion = {
-        ...currentLedger.value.liveMountsByPlanVersion,
+      const liveMountsByPlan = {
+        ...currentLedger.value.liveMountsByPlan,
       };
       delete liveMountsByWorkspace[workspace.workspaceId];
-      delete liveMountsByPlanVersion[released.planVersionDigest];
+      delete liveMountsByPlan[
+        planIndexKey(released.projectId, released.planId)
+      ];
       const ledger = {
         ...currentLedger.value,
         revision: currentLedger.value.revision + 1,
         liveMountsByWorkspace,
-        liveMountsByPlanVersion,
+        liveMountsByPlan,
       };
       ledger.recordDigest = digestRecord(ledger);
       validateLedger(ledger);
@@ -1563,7 +2254,7 @@ function output(value) {
 export async function runCli(argv = process.argv.slice(2)) {
   const { action, options } = parseArguments(argv);
   if (action === 'mount') {
-    const result = await mountPlanVersion(options);
+    const result = await mountPlan(options);
     output({
       created: result.created,
       mount: result.mount,

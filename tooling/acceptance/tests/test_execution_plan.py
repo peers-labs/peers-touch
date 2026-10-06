@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -12,7 +13,6 @@ from tooling.acceptance.core.execution_plan import (
     PLAN_BLOCKED,
     PLAN_BINDING_MISMATCH,
     PLAN_BINDING_REQUIRED,
-    PLAN_COMPLETE,
     PLAN_INVALID,
     ExecutionPlanError,
     changed_paths_for_plan,
@@ -23,24 +23,19 @@ from tooling.acceptance.core.execution_plan import (
 )
 
 
-def plan_version_text(
+def stable_plan_text(
     workspace: str,
     *,
     branch: str = "feat/example",
     status: str = "active",
 ) -> str:
-    return f"""# Example Plan Version
+    return f"""# Example Plan
 
-> **Status**: {status}
-> **Branch**: `{branch}`
-> **Workspace ID**: `{workspace}`
-> **Initial HEAD**: `{'a' * 40}`
-
-## Plan Version
+## Plan
 
 ```json
 {{
-  "kind": "peers-touch-plan-version"
+  "kind": "peers-touch-plan"
 }}
 ```
 """
@@ -119,7 +114,7 @@ def plan_text(
 
 
 class ExecutionPlanTest(unittest.TestCase):
-    def test_completion_accepts_plan_version_and_legacy_statuses(self) -> None:
+    def test_completion_accepts_current_and_historical_completion_words(self) -> None:
         self.assertTrue(closure_status_is_complete("done"))
         self.assertTrue(closure_status_is_complete("completed"))
         self.assertTrue(closure_status_is_complete("completed with evidence"))
@@ -145,7 +140,7 @@ class ExecutionPlanTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 2)
         self.assertIn("EXECUTION_PLAN_INPUT_REQUIRED", completed.stderr)
 
-    def test_plan_version_projection_preserves_acceptance_closure(self) -> None:
+    def test_stable_plan_projection_preserves_acceptance_closure(self) -> None:
         repo_root = Path(__file__).resolve().parents[3]
         temporary_root = repo_root / "tmp"
         temporary_root.mkdir(exist_ok=True)
@@ -158,14 +153,28 @@ class ExecutionPlanTest(unittest.TestCase):
             tasks = package / "tasks"
             tasks.mkdir()
             manifest = {
-                "kind": "peers-touch-plan-version",
+                "kind": "peers-touch-plan",
                 "planId": "DWF-PYTHON-INTEGRATION",
-                "status": "active",
-                "binding": {
-                    "branch": "feat/example",
-                    "workspaceId": workspace,
-                    "initialHead": "a" * 40,
+                "createdAt": "2026-10-06T00:00:00.000Z",
+                "northStar": {
+                    "objective": "Prove the Python adapter consumes the stable Plan.",
+                    "successCriteria": [
+                        {
+                            "id": "DWF-PY-NS-01",
+                            "statement": "The current closure remains available.",
+                            "sourceRefs": ["DWF-D13"],
+                        }
+                    ],
                 },
+                "northStarApproval": None,
+                "criterionCoverage": [
+                    {
+                        "criterionId": "DWF-PY-NS-01",
+                        "taskIds": ["DWF-PY-01"],
+                        "closureIds": ["development-workflow-control-plane"],
+                        "gateIds": ["development-workflow-control-plane"],
+                    }
+                ],
                 "workClass": "infrastructure",
                 "architecture": {
                     "sources": [
@@ -192,15 +201,11 @@ class ExecutionPlanTest(unittest.TestCase):
                         "workstreamId": "DWF-B1",
                         "path": "tasks/DWF-PY-01.md",
                         "dependsOn": [],
-                        "status": "in_progress",
-                        "blocker": None,
                     }
                 ],
-                "exhaustion": None,
                 "authorization": {
                     "checkpoint": {
                         "localCommit": "denied",
-                        "amend": "denied",
                     },
                     "delivery": {
                         "push": "denied",
@@ -212,6 +217,24 @@ class ExecutionPlanTest(unittest.TestCase):
                     },
                     "history": {"rewrite": "denied"},
                 },
+                "amendments": [],
+            }
+            north_star_payload = {
+                "kind": "peers-touch-north-star",
+                "planId": manifest["planId"],
+                "northStar": manifest["northStar"],
+            }
+            manifest["northStarApproval"] = {
+                "northStarDigest": hashlib.sha256(
+                    json.dumps(
+                        north_star_payload,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "approvedBy": "test-owner",
+                "approvedAt": "2026-10-07T00:00:00.000Z",
+                "decisionRef": "USER-DECISION-PYTHON-TEST",
             }
             acceptance = {
                 "closures": {
@@ -280,12 +303,10 @@ class ExecutionPlanTest(unittest.TestCase):
                     [
                         "# Integration Plan",
                         "",
-                        "> **Status**: active",
-                        "> **Branch**: feat/example",
-                        f"> **Workspace ID**: {workspace}",
-                        f"> **Initial HEAD**: {'a' * 40}",
+                        f"> **Plan ID**: {manifest['planId']}",
+                        f"> **Created**: {manifest['createdAt']}",
                         "",
-                        "## Plan Version",
+                        "## Plan",
                         "",
                         "```json",
                         json.dumps(manifest, indent=2),
@@ -343,17 +364,17 @@ class ExecutionPlanTest(unittest.TestCase):
             ):
                 plan = load_formal_plan(plan_path)
 
-        self.assertEqual(plan.plan_format, "version")
+        self.assertEqual(plan.plan_format, "stable")
         self.assertEqual(plan.current_task_id, "DWF-PY-01")
         self.assertEqual(
             plan.gate_ids("closure"),
             ["development-workflow-control-plane"],
         )
 
-    def test_loads_plan_version_through_planctl_projection(self) -> None:
+    def test_loads_stable_plan_through_planctl_projection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
-            path.write_text(plan_version_text("1" * 16), encoding="utf-8")
+            path.write_text(stable_plan_text("1" * 16), encoding="utf-8")
 
             with mock.patch(
                 "tooling.acceptance.core.execution_plan._mounted_plan_status",
@@ -361,7 +382,7 @@ class ExecutionPlanTest(unittest.TestCase):
             ):
                 plan = load_formal_plan(path)
 
-        self.assertEqual(plan.plan_format, "version")
+        self.assertEqual(plan.plan_format, "stable")
         self.assertEqual(plan.current_task_id, "T1")
         self.assertEqual(plan.current_task_path, "tasks/T1.md")
         self.assertEqual(
@@ -378,10 +399,10 @@ class ExecutionPlanTest(unittest.TestCase):
             ),
         )
 
-    def test_plan_version_changed_paths_are_limited_to_source_claims(self) -> None:
+    def test_stable_plan_changed_paths_are_limited_to_source_claims(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
-            path.write_text(plan_version_text("1" * 16), encoding="utf-8")
+            path.write_text(stable_plan_text("1" * 16), encoding="utf-8")
             with mock.patch(
                 "tooling.acceptance.core.execution_plan._mounted_plan_status",
                 return_value=mounted_plan_status("1" * 16),
@@ -428,11 +449,11 @@ class ExecutionPlanTest(unittest.TestCase):
             ],
         )
 
-    def test_blocked_plan_version_has_no_runnable_closure(self) -> None:
+    def test_blocked_stable_plan_has_no_runnable_closure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
             path.write_text(
-                plan_version_text("1" * 16, status="blocked"),
+                stable_plan_text("1" * 16, status="blocked"),
                 encoding="utf-8",
             )
 
@@ -452,74 +473,18 @@ class ExecutionPlanTest(unittest.TestCase):
             plan.gate_ids("closure")
         self.assertEqual(raised.exception.code, PLAN_BLOCKED)
 
-    def test_loads_current_closure_and_gate_sets(self) -> None:
+    def test_rejects_legacy_plan_documents(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
             path.write_text(plan_text("1" * 16), encoding="utf-8")
 
-            plan = load_formal_plan(path)
-
-        self.assertEqual(plan.current_closure, "C1")
-        self.assertEqual(plan.gate_ids("closure"), ["cheap-gate"])
-        self.assertEqual(
-            plan.all_declared_gate_ids(),
-            {"cheap-gate", "runtime-gate"},
-        )
-
-    def test_rejects_a_versioned_acceptance_execution_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "plan.md"
-            content = plan_text("1" * 16).replace(
-                '"closures"',
-                '"schemaVersion": 1,\n  "closures"',
-                1,
-            )
-            path.write_text(content, encoding="utf-8")
-
             with self.assertRaisesRegex(
                 ExecutionPlanError,
-                "must not declare a workflow version",
+                "current stable Plan contract",
             ) as raised:
                 load_formal_plan(path)
 
         self.assertEqual(raised.exception.code, PLAN_INVALID)
-
-    def test_rejects_multiple_current_closures(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "plan.md"
-            path.write_text(
-                plan_text(
-                    "1" * 16,
-                    rows="| C1 | in progress | |\n| C2 | in progress | |",
-                ),
-                encoding="utf-8",
-            )
-
-            with self.assertRaisesRegex(
-                ExecutionPlanError,
-                "multiple in-progress closures",
-            ) as raised:
-                load_formal_plan(path)
-
-        self.assertEqual(raised.exception.code, PLAN_INVALID)
-
-    def test_allows_no_current_closure_after_every_closure_completes(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "plan.md"
-            path.write_text(
-                plan_text(
-                    "1" * 16,
-                    rows="| C1 | completed | |\n| C2 | completed | |",
-                ),
-                encoding="utf-8",
-            )
-
-            plan = load_formal_plan(path)
-
-        self.assertIsNone(plan.current_closure)
-        with self.assertRaises(ExecutionPlanError) as raised:
-            plan.gate_ids("closure")
-        self.assertEqual(raised.exception.code, PLAN_COMPLETE)
 
     def test_discovers_only_the_immutable_workspace_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -534,11 +499,11 @@ class ExecutionPlanTest(unittest.TestCase):
             bound.parent.mkdir()
             foreign.parent.mkdir()
             bound.write_text(
-                plan_version_text(expected_workspace),
+                stable_plan_text(expected_workspace),
                 encoding="utf-8",
             )
             foreign.write_text(
-                plan_version_text("2" * 16),
+                stable_plan_text("2" * 16),
                 encoding="utf-8",
             )
 
@@ -583,7 +548,7 @@ class ExecutionPlanTest(unittest.TestCase):
             package_directory.mkdir(parents=True)
             manifest = package_directory / "plan.md"
             manifest.write_text(
-                plan_version_text(expected_workspace),
+                stable_plan_text(expected_workspace),
                 encoding="utf-8",
             )
 
