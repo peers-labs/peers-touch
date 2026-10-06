@@ -1809,6 +1809,53 @@ with EphemeralGateClient.from_environment():
                     ["stdlib", str(site_packages.resolve())],
                 )
 
+    def test_bootstrap_prefers_macos_framework_user_scheme_without_preferred_scheme(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user_base = Path(directory) / "user-base"
+            framework_site = user_base / "lib" / "python" / "site-packages"
+            framework_site.mkdir(parents=True)
+
+            def get_path(name: str, *, scheme: str) -> str:
+                self.assertIn(name, {"purelib", "platlib"})
+                self.assertEqual(scheme, "osx_framework_user")
+                return str(framework_site)
+
+            with (
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_config_var",
+                    return_value=str(user_base),
+                ),
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_preferred_scheme",
+                    side_effect=AttributeError,
+                ),
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_scheme_names",
+                    return_value=(
+                        "nt_user",
+                        "osx_framework_user",
+                        "posix_user",
+                    ),
+                ),
+                patch.object(
+                    gate_bootstrap_module.sysconfig,
+                    "get_path",
+                    side_effect=get_path,
+                ),
+                patch.object(gate_bootstrap_module.sys, "platform", "darwin"),
+                patch.object(sys, "path", ["stdlib"]),
+            ):
+                gate_bootstrap_module._add_invoked_user_site_packages()
+                self.assertEqual(
+                    sys.path,
+                    ["stdlib", str(framework_site.resolve())],
+                )
+
     def test_bootstrap_rejects_user_site_outside_default_user_base(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             user_base = Path(directory) / "user-base"

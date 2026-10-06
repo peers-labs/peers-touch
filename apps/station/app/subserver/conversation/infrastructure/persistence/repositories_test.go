@@ -48,6 +48,32 @@ func TestAggregateCreationContentionClassification(t *testing.T) {
 	}
 }
 
+func TestRetryableTransactionContentionClassification(t *testing.T) {
+	for _, err := range []error{
+		postgresStateError{code: "40001"},
+		errors.Join(
+			errors.New("wrapped persistence failure"),
+			postgresStateError{code: "40P01"},
+		),
+		errors.New("ERROR: deadlock detected (SQLSTATE 40P01)"),
+	} {
+		if !IsRetryableTransactionContention(err) {
+			t.Fatalf("retryable transaction error was not recognized: %v", err)
+		}
+	}
+
+	for _, err := range []error{
+		nil,
+		gorm.ErrDuplicatedKey,
+		postgresStateError{code: "23505"},
+		postgresStateError{code: "22000"},
+	} {
+		if IsRetryableTransactionContention(err) {
+			t.Fatalf("non-retryable transaction error was accepted: %v", err)
+		}
+	}
+}
+
 func TestAggregateCreationContentionMapsToSpecificConflict(t *testing.T) {
 	cause := postgresStateError{code: "23505"}
 	err := aggregateCreationPersistenceError(cause)

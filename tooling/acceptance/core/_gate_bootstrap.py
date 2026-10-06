@@ -173,7 +173,11 @@ def _add_invoked_user_site_packages() -> None:
     try:
         scheme = sysconfig.get_preferred_scheme("user")
     except (AttributeError, KeyError):
-        scheme = "posix_user" if os.name != "nt" else "nt_user"
+        available_schemes = set(sysconfig.get_scheme_names())
+        if sys.platform == "darwin" and "osx_framework_user" in available_schemes:
+            scheme = "osx_framework_user"
+        else:
+            scheme = "posix_user" if os.name != "nt" else "nt_user"
 
     resolved_paths: list[str] = []
     for path_name in ("purelib", "platlib"):

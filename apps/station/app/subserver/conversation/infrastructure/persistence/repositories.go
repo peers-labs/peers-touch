@@ -125,22 +125,42 @@ func isAggregateCreationContention(err error) bool {
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return true
 	}
+	if IsRetryableTransactionContention(err) {
+		return true
+	}
+
+	var sqlState interface {
+		SQLState() string
+	}
+	if errors.As(err, &sqlState) {
+		return sqlState.SQLState() == "23505"
+	}
+
+	message := err.Error()
+	return strings.Contains(message, "SQLSTATE 23505") ||
+		strings.Contains(message, "UNIQUE constraint failed")
+}
+
+// IsRetryableTransactionContention identifies PostgreSQL transaction failures
+// that are safe to retry from a new transaction boundary.
+func IsRetryableTransactionContention(err error) bool {
+	if err == nil {
+		return false
+	}
 
 	var sqlState interface {
 		SQLState() string
 	}
 	if errors.As(err, &sqlState) {
 		switch sqlState.SQLState() {
-		case "23505", "40001", "40P01":
+		case "40001", "40P01":
 			return true
 		}
 	}
 
 	message := err.Error()
-	return strings.Contains(message, "SQLSTATE 23505") ||
-		strings.Contains(message, "SQLSTATE 40001") ||
-		strings.Contains(message, "SQLSTATE 40P01") ||
-		strings.Contains(message, "UNIQUE constraint failed")
+	return strings.Contains(message, "SQLSTATE 40001") ||
+		strings.Contains(message, "SQLSTATE 40P01")
 }
 
 func (r *authorityRepository) LoadForUpdate(
