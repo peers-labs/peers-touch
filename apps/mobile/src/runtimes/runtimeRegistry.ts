@@ -58,6 +58,10 @@ import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { fetchLifecycleGeneration } from './nativeLifecycleBridge';
 import { createMessagingRuntimeDescriptor } from './messagingRuntime';
 import { createChatStorageRuntimeDescriptor } from './chatStorageRuntime';
+import {
+  createPrivateMomentsRuntimeDescriptor,
+  fencePrivateMomentsRuntimeProjection,
+} from './privateMomentsRuntime';
 import { runRuntimeSessionTransition } from './runtimeSessionTransition';
 import {
   createSessionRuntimeDescriptor,
@@ -797,6 +801,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
     createMessagingRuntimeDescriptor(),
     createChatStorageRuntimeDescriptor(),
     createCommandRuntimeDescriptor(),
+    createPrivateMomentsRuntimeDescriptor(),
     createSocialRuntimeDescriptor(),
     createGroupRuntimeDescriptor(),
     createAvatarAssetRuntimeDescriptor(),
@@ -808,6 +813,7 @@ export function fenceMobileRuntimeProjections(): void {
   fenceAuthRuntimeProjection();
   fenceAccessRuntimeProjection();
   fenceSessionRuntimeProjection();
+  fencePrivateMomentsRuntimeProjection();
   resetMobileNavigation();
   useSocialStore.getState().bindSession(null);
   useGroupStore.getState().bindSession(null);
