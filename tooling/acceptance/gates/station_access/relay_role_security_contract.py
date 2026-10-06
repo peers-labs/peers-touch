@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import socket
 import ssl
 import subprocess
@@ -328,7 +329,7 @@ def _probe_tls_with_openssl(host: str, port: int) -> dict[str, str]:
 
     try:
         legacy = subprocess.run(
-            [*base_command, "-tls1_2", "-brief"],
+            [*base_command, "-tls1_2"],
             input="",
             capture_output=True,
             text=True,
@@ -340,9 +341,15 @@ def _probe_tls_with_openssl(host: str, port: int) -> dict[str, str]:
             f"OpenSSL TLS 1.2 rejection probe failed for {target}: {error}"
         ) from error
     legacy_output = f"{legacy.stdout}\n{legacy.stderr}"
-    if "TLSv1.2" in legacy_output:
-        raise GateError("Relay stream accepted forbidden TLS 1.2")
     if not _is_explicit_tls12_protocol_rejection(legacy_output):
+        if (
+            legacy.returncode == 0
+            and re.search(
+                r"(?im)^\s*Protocol(?:\s+version)?\s*:\s*TLSv1\.2\s*$",
+                legacy_output,
+            )
+        ):
+            raise GateError("Relay stream accepted forbidden TLS 1.2")
         detail = legacy_output.strip()[-1000:] or "no OpenSSL diagnostic"
         raise GateError(
             "Relay TLS 1.2 rejection probe was inconclusive "
