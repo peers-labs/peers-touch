@@ -1577,6 +1577,13 @@
       "tier": "local-evidence",
       "description": "Prove the generation-scoped Mobile Social facade, one typed intent family, Social-owned Tauri adapter mapping, stale-completion teardown, and retired page/runtime ownership removal without claiming a native user journey."
     },
+    "mobile-social-feed-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_feed_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove one bounded Mobile Home/Explore projection, canonical Post-ID private composition, Station-owned Explore ranking, scope anchors, seven content kinds, and bounded feed states without claiming native device behavior."
+    },
     "mobile-identity-contract": {
       "command": "python3 -m tooling.acceptance.gates.mobile.identity_contract",
       "timeout_seconds": 120,

@@ -29,6 +29,7 @@ import {
   PostAuthorSchema,
   ReactToPostResponseSchema,
   TimelinePageOutcome,
+  TimelineSort,
   UnreactToPostResponseSchema,
   type FeedObjectExplanation,
   type Post,
@@ -120,8 +121,12 @@ export interface MomentsGateway {
   /** Fetch a cursor-based feed page (home timeline). */
   fetchFeed: (cursor: string, limit: number) => Promise<CommandOutcome<MomentsFeedPage>>;
 
-  /** Fetch the public timeline feed page. */
-  fetchPublicFeed: (cursor: string, limit: number) => Promise<CommandOutcome<MomentsFeedPage>>;
+  /** Fetch the canonical public timeline page with Station-owned ranking. */
+  fetchPublicFeed: (
+    cursor: string,
+    limit: number,
+    sort?: TimelineSort,
+  ) => Promise<CommandOutcome<MomentsFeedPage>>;
 
   /** Get a single post by ID. */
   getPost: (postId: string) => Promise<CommandOutcome<MomentDetailResult>>;
@@ -234,7 +239,7 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
       return validateTimelineOutcome(result, '/api/v1/social/timeline');
     },
 
-    fetchPublicFeed: async (cursor, limit) => {
+    fetchPublicFeed: async (cursor, limit, sort = TimelineSort.RECENT) => {
       const result = await commandProtoJson({
         method: 'GET',
         path: '/api/v1/social/timeline',
@@ -242,6 +247,7 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
           type: 2, // TIMELINE_PUBLIC
           cursor: cursor || undefined,
           limit,
+          sort: sort === TimelineSort.HOT ? TimelineSort.HOT : undefined,
         },
       }, GetTimelineResponseSchema, 'mobile.moments.feed.error');
       return validateTimelineOutcome(result, '/api/v1/social/timeline');

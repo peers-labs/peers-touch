@@ -73,7 +73,11 @@ vi.mock('../features/social/useSocialExperience', () => ({
     return {
       facade,
       projection: {
-        home: facade.feed.state(),
+        home: {
+          ...facade.feed.state(),
+          ...pageMocks.feed,
+          ...pageMocks.runtimeFeedState,
+        },
         runtime: { availability: pageMocks.projectionAvailability },
       },
     };
@@ -326,7 +330,7 @@ describe('Moments page bounded feed', () => {
     expect(initial).toContain('mobile.list.next');
     expect(initial).not.toContain('mobile.moments.feed.loadMore');
 
-    saveListAnchor('moments:feed', 'post-100');
+    saveListAnchor('moments:feed:home', 'post-100');
     const tail = renderMomentsPage();
 
     expect(tail.match(/data-moment-id=/g)).toHaveLength(100);
@@ -336,7 +340,7 @@ describe('Moments page bounded feed', () => {
   });
 
   it('keeps the overlapping identity window reachable when the retained cache slides', () => {
-    saveListAnchor('moments:feed', 'post-100');
+    saveListAnchor('moments:feed:home', 'post-100');
     const beforeSlide = renderMomentsPage();
     expect(beforeSlide).toContain('data-scroll-anchor-id="post-100"');
     expect(beforeSlide).toContain('data-scroll-anchor-id="post-199"');
@@ -354,7 +358,7 @@ describe('Moments page bounded feed', () => {
     expect(afterSlide).toContain('mobile.list.next');
     expect(afterSlide).not.toContain('mobile.moments.feed.loadMore');
 
-    saveListAnchor('moments:feed', 'post-120');
+    saveListAnchor('moments:feed:home', 'post-120');
     const fetchedTail = renderMomentsPage();
     expect(fetchedTail).toContain('data-scroll-anchor-id="post-219"');
     expect(fetchedTail).toContain('mobile.moments.feed.loadMore');

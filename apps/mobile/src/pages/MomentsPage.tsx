@@ -30,9 +30,6 @@ import { useMobileI18n } from '../app/mobileI18n';
 import { BoundedList } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
 import { useAuthStore } from '../features/auth/authStore';
-import {
-  useMomentsFeed,
-} from '../features/social/useMomentsFeed';
 import { useSocialExperience } from '../features/social/useSocialExperience';
 import {
   resolveMomentPolicyState,
@@ -40,6 +37,7 @@ import {
 import type { SocialIntentPort } from '../features/social/socialIntents';
 import {
   TimelinePageOutcome,
+  TimelineSort,
   type Post,
 } from '../gen/proto/domain/social/post_pb';
 
@@ -56,6 +54,7 @@ import {
 
 const { Text } = Typography;
 const MOMENTS_FEED_WINDOW_SIZE = 100;
+type MomentsFeedScope = 'home' | 'explore';
 
 function momentPostKey(post: Post): string {
   return post.id;
@@ -97,10 +96,33 @@ export function MomentsPage({
   const { t } = useMobileI18n();
   const authSession = useAuthStore((state) => state.session);
   const { facade, projection } = useSocialExperience();
+  const [feedScope, setFeedScope] = useState<MomentsFeedScope>('home');
 
   // Feed state from the store
-  const feed = useMomentsFeed(facade?.feed ?? null);
-  const runtimeFeedState = projection?.home;
+  const feedController = facade?.feeds?.[feedScope] ?? facade?.feed ?? null;
+  const projectedFeedState = projection?.[feedScope] ?? projection?.home;
+  const feed = {
+    posts: projectedFeedState?.posts ?? [],
+    loadState: projectedFeedState?.loadState ?? 'idle',
+    hasMore: projectedFeedState?.hasMore ?? true,
+    pageOutcome: projectedFeedState?.pageOutcome ?? TimelinePageOutcome.UNSPECIFIED,
+    errorMessage: projectedFeedState?.errorMessage ?? '',
+    failure: projectedFeedState?.failure ?? null,
+    loadMore: () => void feedController?.loadMore(),
+    refresh: () => void feedController?.refresh(),
+    retryFailure: () => {
+      const failure = projectedFeedState?.failure;
+      if (!feedController || !failure) return;
+      if (failure.kind === 'load-more') {
+        void feedController.loadMore();
+      } else if (failure.kind === 'refresh') {
+        void feedController.refresh();
+      } else {
+        void feedController.loadFeed();
+      }
+    },
+  };
+  const runtimeFeedState = projectedFeedState;
   const isPolicyFilteredEmpty =
     feed.pageOutcome === TimelinePageOutcome.FILTERED_EMPTY;
 
@@ -163,6 +185,11 @@ export function MomentsPage({
   const handleRetry = useCallback(() => {
     if (!facade) return;
     void retryMomentsRuntime(facade.intents);
+  }, [facade]);
+
+  const handleExploreSort = useCallback((sort: TimelineSort) => {
+    if (!facade) return;
+    void facade.feeds.explore.setSort(sort);
   }, [facade]);
 
   // -- Render --
@@ -232,6 +259,50 @@ export function MomentsPage({
         </button>
       </header>
 
+      <div className="moments-scope-bar">
+        <div
+          className="moments-scope-segment"
+          role="tablist"
+          aria-label={t('mobile.moments.scope.label')}
+        >
+          {(['home', 'explore'] as const).map((scope) => (
+            <button
+              key={scope}
+              type="button"
+              role="tab"
+              aria-selected={feedScope === scope}
+              className="moments-scope-control"
+              data-active={feedScope === scope}
+              onClick={() => setFeedScope(scope)}
+            >
+              {t(`mobile.moments.scope.${scope}`)}
+            </button>
+          ))}
+        </div>
+        {feedScope === 'explore' && facade ? (
+          <div
+            className="moments-sort-segment"
+            role="group"
+            aria-label={t('mobile.moments.sort.label')}
+          >
+            {([
+              [TimelineSort.RECENT, 'recent'],
+              [TimelineSort.HOT, 'hot'],
+            ] as const).map(([sort, label]) => (
+              <button
+                key={label}
+                type="button"
+                className="moments-sort-control"
+                data-active={facade.feeds.explore.sort() === sort}
+                onClick={() => handleExploreSort(sort)}
+              >
+                {t(`mobile.moments.sort.${label}`)}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
       {noticeError ? (
         <MobileNotice onClose={() => setNoticeError('')}>{noticeError}</MobileNotice>
       ) : null}
@@ -296,7 +367,7 @@ export function MomentsPage({
       {!isUnavailable && feed.posts.length > 0 && (
         <div role="feed" aria-label={t('mobile.moments.title')}>
           <BoundedList
-            surfaceKey="moments:feed"
+            surfaceKey={`moments:feed:${feedScope}`}
             items={feed.posts}
             itemKey={momentPostKey}
             size={MOMENTS_FEED_WINDOW_SIZE}
