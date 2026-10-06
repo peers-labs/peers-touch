@@ -59,9 +59,20 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
     def test_deploy_rotates_the_previous_service_log(self) -> None:
         script = _remote_runtime_script()
         deploy = script[script.index("def deploy()") :]
+        rotate = script[
+            script.index("def rotate_service_log():")
+            : script.index("def materialize_binary")
+        ]
 
         self.assertIn("def rotate_service_log():", script)
         self.assertIn("log_path.replace(previous_log_path)", script)
+        self.assertIn("deadline = time.monotonic() + 15", rotate)
+        self.assertIn("except PermissionError as error:", rotate)
+        self.assertIn(
+            "timed out waiting for Windows service log release",
+            rotate,
+        )
+        self.assertIn("time.sleep(0.25)", rotate)
         self.assertLess(
             deploy.index("stop_owned()"),
             deploy.index("rotate_service_log()"),
