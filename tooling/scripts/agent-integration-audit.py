@@ -557,7 +557,7 @@ def structured_plan(plan_path: Path) -> dict[str, object]:
         return {}
     content = plan_path.read_text(encoding="utf-8")
     match = re.search(
-        r"## Plan Package\s+```json\s+(\{.*?\})\s+```",
+        r"## Plan\s+```json\s+(\{.*?\})\s+```",
         content,
         flags=re.DOTALL,
     )

@@ -181,10 +181,10 @@
         "DWF-D35",
         "DWF-D36",
         "DWF-D37",
-        "DWF-D38",
         "DWF-D39",
         "DWF-D40",
-        "DWF-D41"
+        "DWF-D41",
+        "DWF-D42"
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",
@@ -239,6 +239,8 @@
         "tooling/scripts/plan/plan-mount.mjs",
         "tooling/scripts/plan/plan-mount.test.mjs",
         "tooling/scripts/plan/planctl.mjs",
+        "tooling/scripts/plan/stable-plan-state-migration.mjs",
+        "tooling/scripts/plan/stable-plan-state-migration.test.mjs",
         "tooling/skills/pt-acceptance-gap-detector",
         "tooling/skills/pt-agent-development",
         "tooling/skills/pt-completion-auditor",

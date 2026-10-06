@@ -3,7 +3,7 @@ import { rmSync } from 'node:fs';
 import test from 'node:test';
 
 import {
-  mountPlanVersion,
+  mountPlan,
   readLivePlanMountId,
   updateExecutionRun,
 } from '../plan/plan-mount.mjs';
@@ -130,7 +130,7 @@ test('Development close resumes after an interrupted owner stage', async (t) => 
 
 test('tracked Development close clears projections and releases mount', async (t) => {
   const fixture = createPlanRepository(t);
-  const mounted = await mountPlanVersion({
+  const mounted = await mountPlan({
     home: fixture.home,
     repoRoot: fixture.repoRoot,
     plan: fixture.plan,
@@ -213,7 +213,7 @@ test('tracked Development close clears projections and releases mount', async (t
 
 test('owner-abandon closes an orphan mount after worktree deletion', async (t) => {
   const fixture = createPlanRepository(t);
-  const mounted = await mountPlanVersion({
+  const mounted = await mountPlan({
     home: fixture.home,
     repoRoot: fixture.repoRoot,
     plan: fixture.plan,

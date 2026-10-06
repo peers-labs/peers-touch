@@ -11,10 +11,12 @@ import {
   PlanPackageError,
   isDirectInvocation,
   loadPlanPackage,
+  recordNorthStarApproval,
   summarizePlanPackage,
 } from './plan-package.mjs';
 import {
   PlanMountError,
+  amendMountedPlan,
   cancelExecutionRun,
   resolvePlanExecution,
   updateExecutionRun,
@@ -25,6 +27,7 @@ const SUCCESSFUL_SESSION_STATES = new Set([
   'DELIVERY_READY',
 ]);
 const REPEATABLE_OPTIONS = new Set([
+  'change',
   'exhaustion-decision-ref',
   'exhaustion-evidence-ref',
 ]);
@@ -106,7 +109,7 @@ function assertRequestedPlan(resolved, options) {
   if (requested && requested !== resolved.planPackage.path) {
     fail(
       'PLAN_TARGET_NOT_CURRENT',
-      'requested Plan Version is not mounted in this workspace',
+      'requested Plan is not mounted in this workspace',
       {
         requested,
         mounted: resolved.planPackage.path,
@@ -249,8 +252,14 @@ export function summarizeExecution(resolved) {
     plan: resolved.planPackage.path,
     planPath: resolved.planPackage.planPath,
     planId: resolved.snapshot.planId,
-    versionId: resolved.snapshot.planVersionId,
-    planVersionDigest: resolved.snapshot.planVersionDigest,
+    planDigest: resolved.snapshot.planDigest,
+    planContentDigest: resolved.snapshot.planContentDigest,
+    northStarDigest: resolved.planPackage.northStarApproval.northStarDigest,
+    northStarApprovalStatus:
+      resolved.planPackage.northStarApproval.status,
+    northStarApproval:
+      resolved.planPackage.northStarApproval.approval,
+    amendmentCount: resolved.snapshot.amendmentCount,
     mountId: resolved.mount.mountId,
     runId: resolved.run.runId,
     snapshotDigest: resolved.snapshot.recordDigest,
@@ -574,7 +583,7 @@ export async function invalidateSourcePlan(_planPath, options) {
   if (policy === null) {
     fail(
       'PLAN_SOURCE_INVALIDATION_UNAVAILABLE',
-      'Plan Version has no Source Invalidation Policy',
+      'Plan has no Source Invalidation Policy',
     );
   }
   const affected = new Set();
@@ -603,10 +612,57 @@ export async function invalidateSourcePlan(_planPath, options) {
   };
 }
 
+export async function amendPlan(_planPath, options) {
+  const result = await amendMountedPlan({
+    ...mountOptions(options),
+    plan: requireOption(options, 'plan'),
+    actor: requireOption(options, 'actor'),
+    reason: requireOption(options, 'reason'),
+    changes: options.change ?? [],
+    approval: options.approval ?? 'agent',
+    decisionRef: options['decision-ref'],
+    amendmentId: options['amendment-id'],
+  });
+  return {
+    ...summarizeExecution(result),
+    amended: result.amended,
+    amendment: result.amendment,
+    affectedTaskIds: result.affectedTaskIds,
+  };
+}
+
+export async function approveNorthStar(_planPath, options) {
+  const planPackage = await loadPlanPackage(
+    explicitPlanPath({
+      ...options,
+      plan: requireOption(options, 'plan'),
+    }),
+    {
+      repoRoot: options['repo-root'],
+      allowUnrecordedAmendment: true,
+    },
+  );
+  const approvedAt = (
+    options.now instanceof Date ? options.now : new Date()
+  ).toISOString();
+  const approved = await recordNorthStarApproval(planPackage, {
+    approvedBy: requireOption(options, 'actor'),
+    approvedAt,
+    decisionRef: requireOption(options, 'decision-ref'),
+  });
+  return {
+    ...summarizePlanPackage(approved),
+    approvalRecorded: approved !== planPackage,
+  };
+}
+
 async function validateCommand(options) {
   assertAllowedOptions(options, READ_OPTIONS);
   const plan = await loadPlanPackage(
-    requireOption(options, 'plan'),
+    explicitPlanPath({
+      ...options,
+      plan: requireOption(options, 'plan'),
+    }),
     { repoRoot: options['repo-root'] },
   );
   return {
@@ -692,6 +748,28 @@ async function invalidateSourceCommand(options) {
   };
 }
 
+async function amendCommand(options) {
+  assertAllowedOptions(options, [
+    ...READ_OPTIONS,
+    'actor',
+    'reason',
+    'change',
+    'approval',
+    'decision-ref',
+    'amendment-id',
+  ]);
+  return amendPlan(options.plan, options);
+}
+
+async function approveNorthStarCommand(options) {
+  assertAllowedOptions(options, [
+    ...READ_OPTIONS,
+    'actor',
+    'decision-ref',
+  ]);
+  return approveNorthStar(options.plan, options);
+}
+
 export async function runPlanctl(argv = process.argv.slice(2)) {
   const { command, options } = parseArguments(argv);
   if (command === 'validate') return validateCommand(options);
@@ -701,6 +779,10 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
   if (command === 'activate') return activateCommand(options);
   if (command === 'advance') return advanceCommand(options);
   if (command === 'cancel') return cancelCommand(options);
+  if (command === 'amend') return amendCommand(options);
+  if (command === 'approve-north-star') {
+    return approveNorthStarCommand(options);
+  }
   if (command === 'reopen') return reopenCommand(options);
   if (command === 'invalidate-source') {
     return invalidateSourceCommand(options);
@@ -715,6 +797,8 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
       'activate',
       'advance',
       'cancel',
+      'amend',
+      'approve-north-star',
       'reopen',
       'invalidate-source',
     ],

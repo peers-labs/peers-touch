@@ -55,7 +55,7 @@ const DECLARATION_KEYS = new Set([
   'declarationDigest',
   'planPath',
   'planId',
-  'planVersionDigest',
+  'planDigest',
   'mountId',
   'runId',
   'taskId',
@@ -360,6 +360,15 @@ function validIsoTimestamp(value) {
 
 export function validateDeclaration(declaration) {
   if (
+    isObject(declaration) &&
+    Object.hasOwn(declaration, 'planVersionDigest')
+  ) {
+    fail(
+      'PLAN_STATE_MIGRATION_REQUIRED',
+      'development declaration uses the retired Plan Version schema; close live work and run plan-state-migrate',
+    );
+  }
+  if (
     !isObject(declaration) ||
     !hasExactKeys(declaration, DECLARATION_KEYS)
   ) {
@@ -401,7 +410,7 @@ export function validateDeclaration(declaration) {
   const locatorFields = [
     'planPath',
     'planId',
-    'planVersionDigest',
+    'planDigest',
     'mountId',
     'runId',
     'taskId',
@@ -438,10 +447,10 @@ export function validateDeclaration(declaration) {
         fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
       }
     }
-    if (!/^[0-9a-f]{64}$/.test(declaration.planVersionDigest)) {
+    if (!/^[0-9a-f]{64}$/.test(declaration.planDigest)) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
-        'planVersionDigest is invalid',
+        'planDigest is invalid',
       );
     }
   }

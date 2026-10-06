@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Design
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-05
+> **Created**: 2026-09-13 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 
 ---
@@ -12,24 +12,25 @@
    Gate 或文档数量决定。
 2. **Functional before formal proof**: 产品源码先在 exact-source 开发运行时通过
    功能验证，再补齐或执行正式 Acceptance。
-3. **One owner per state**: Plan manifest 拥有 Task 生命周期和 current
-   selection；Task、Session、Git、runtime lease 和 Evidence 各自只拥有其余事实。
+3. **One owner per state**: ExecutionRun 拥有 Task 生命周期和 current
+   selection；Plan、Task、Session、Git、runtime lease 和 Evidence 各自只拥有
+   其余事实。
 4. **Declare before mutate**: 首次写入或占用运行资源前，必须发布并确认机器级资源声明。
 5. **First failure first**: 一次运行只保留首个可行动失败；修复后回到同一 Task/Journey。
-6. **Compact current state**: Git 只保存稳定计划、当前 Task 快照和 durable evidence
-   引用；attempt、日志和截图留在机器 Dev root。
+6. **Compact current state**: Git 只保存 stable Plan、Task 规格和 amendment
+   audit；lifecycle、attempt、日志和截图留在机器 Dev root。
 7. **Bounded resume**: 恢复只读取 active pointer、manifest、当前 Task 和当前 Session。
 8. **No dual truth**: 迁移完成后，旧计划只能作为 archive 输入，不能继续承载状态。
 9. **Progress-bearing continuation**: Context Anchor 的续作单位是可关闭一个
    Task 的 Progress Slice，不是单条命令、检查或授权动作。
 10. **No zero-yield handoff**: Dev Workflow 在一个 Slice 内持续执行准备、诊断和
     修复，直到 Task 关闭并产生可计算进度，或到达真实 hard boundary。
-11. **Frozen Plan, explicit mount**: PlanVersion 是不含 worktree 身份的不可变
-    设计输入；Project Ledger 通过 PlanMount 将它显式挂载到一个执行 worktree，
-    直到完成、取消或 Owner 显式 unmount。
-12. **Snapshot-bound execution**: 执行前复制 immutable PlanVersion 和
-    executionBinding 形成 ExecutionPlanSnapshot；当前 Git HEAD、mutation
-    source 与 runtime checkpoint 由执行 Owner 管理。
+11. **Stable Plan, explicit mount**: `planId` 在一个北极星目标生命周期内保持
+    稳定；Project Ledger 通过 PlanMount 将其显式挂载到一个执行 worktree。
+    普通执行修订不取消、不重挂，也不产生新版本号。
+12. **Snapshot-bound execution**: 每次初始挂载或修订都复制当前 Plan 和
+    executionBinding 形成 immutable ExecutionPlanSnapshot；ExecutionRun 以
+    CAS 指向当前快照，历史快照保留审计。
 13. **Continuous Plan Run**: 一次执行授权在 Plan 已接受范围内连续跨越多个
     Task、Goal Slice 和 agent review gate，直到 Plan 完成或命中真实 hard
     boundary。
@@ -93,6 +94,7 @@
 | 当前 binding schema 没有 role、root/parent lineage 或 child lifecycle | `verified_fact` | `workflow-conversation-binding.mjs`; 20 条 unreleased high-chat records | high | none |
 | `resolveActiveConversationBinding()` 将同 worktree 未 release 记录作为 peer owner，并强制全局唯一 | `verified_fact` | `workflow-conversation-binding.mjs`; `completion-review.mjs` | high | none |
 | 20 条冲突记录中多数 RUNNING Action Receipt lease 已过期，并不代表 live owner | `verified_fact` | workspace `95620934d3348d95` machine-store audit | high | none |
+| Mobile execution used successive Plan versions only to add missing write paths/Gates while the accepted goal and every Task state remained unchanged | `verified_fact` | MPS v4/v5 and current mount/run records | high | stable-Plan amendment regression |
 | OWNER 不按通用 TTL 过期；child 由 assignment lease 与 terminal receipt 定义 liveness | `accepted_decision` | DWF-D33 | high | owner/child lifecycle tests |
 | TRAE Hook 是等价事件入口而非 owner authority；参与根共享一个 canonical Kernel | `accepted_decision` | DWF-D35 | high | multi-root projection regression |
 | 非破坏性 projection 不依赖待安装 Hook 的 grant；cleanup 仍需 exact OWNER grant | `accepted_decision` | DWF-D36 | high | ungranted install and cleanup-grant tests |
@@ -115,14 +117,14 @@ accepted product + architecture
               |
               v
 ┌──────────────────────────────────────────────────────────────┐
-│ Frozen Plan Version                                          │
-│ plan.md + tasks: goal / scope / immutable DAG / gates        │
+│ Stable Plan                                                  │
+│ plan.md + tasks: northStar / current scope / DAG / gates     │
 └───────────────┬──────────────────────────────────────────────┘
                 │ explicit PlanMount
                 v
 ┌──────────────────────────────────────────────────────────────┐
 │ ExecutionPlanSnapshot + ExecutionRun                         │
-│ immutable input + executionBinding / mutable Task lifecycle  │
+│ immutable revisions / current snapshot + mutable lifecycle   │
 └───────────────┬──────────────────────────────────────────────┘
                 │ current task
                 v
@@ -154,11 +156,11 @@ accepted product + architecture
 | Product behavior | Product/domain docs | accepted journeys and acceptance IDs | Task references |
 | Architecture | Architecture docs | `docs/architecture/**` | manifest references |
 | Current request Plan policy | Development Workflow intake | explicit user intent plus live PlanMount state | standalone or tracked dispatch |
-| Stable goal, scope, DAG and authorization | Plan Version | frozen `plan.md` plus referenced Task Slices | execution snapshot |
+| Stable goal and current execution model | Plan | mutable `plan.md` plus referenced Task Slices and append-only amendments | current execution snapshot |
 | Plan-to-worktree occupancy | Project Ledger | immutable `PlanMount` plus live mount index | workflow inspection |
-| Exact execution input | Development Workflow | immutable `ExecutionPlanSnapshot` | Context Anchor |
+| Exact execution input and audit history | Development Workflow | immutable `ExecutionPlanSnapshot` chain | Context Anchor |
 | Plan and Task lifecycle | Execution Run | machine-local `execution-run.json` | `planctl status` |
-| One execution closure specification | Task Slice | frozen `tasks/<id>.md` machine block | execution snapshot |
+| One execution closure specification | Task Slice | current `tasks/<id>.md` machine block | immutable execution snapshot |
 | Current execution transition | Development Session | machine event log + `session.json` projection | workspace active-work `devState` |
 | Attempt history and first failure | Development Session | bounded `events.ndjson` and artifacts | compact failure summary |
 | Current physical source identity | Git | commit/tree | declaration and Session verification |
@@ -182,7 +184,7 @@ accepted product + architecture
 
 No owner may copy another owner's complete state. In particular:
 
-- frozen Plan and Task files own no execution lifecycle, evidence, or worktree
+- Plan and Task files own no execution lifecycle, evidence, or worktree
   identity.
 - Execution Run owns Plan/Task lifecycle but cannot alter its snapshot.
 - workspace active-work mirrors the run/session locator; disagreement
@@ -212,7 +214,7 @@ No owner may copy another owner's complete state. In particular:
 | Facade/router | `pt-god-view` | No |
 | Development Run application service | `pt-dev-workflow` | Yes, only through the owning Plan/Task/Session/workspace active-work commands |
 | Vertical dependency modeling | `pt-architecture-execution-methodology` | No |
-| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents and authorized frozen Plan Versions; explicit no-Plan requests forbid Plan persistence |
+| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents and stable Plan candidates; mounting requires explicit North Star approval, ordinary amendments are Agent-owned, and North Star changes require reapproval |
 | Scheduler / WHAT runs next | `pt-goal-orchestrator` | No |
 | Policy / MAY this action run | `pt-execution-plan-guardian` | No |
 | Runtime launch, Journey operation and functional result commit | `pt-dev-runtime-handoff` | Yes, through runtime and Session owner commands |
@@ -363,7 +365,7 @@ requires its own exact OWNER grant and global-idle proof before deleting its
 bounded legacy store. A post-grant failure records `BLOCKED`; no old
 binding/action schema reader, importer, alias, or dual-write path exists.
 
-## 5. Frozen Plan And Execution Contract
+## 5. Stable Plan And Execution Contract
 
 An active formal plan is a directory:
 
@@ -378,18 +380,50 @@ execution-plans/<date>-<slug>/
 
 `plan.md` and referenced Task Slices own:
 
-- immutable Plan identity and version digest;
-- stable goal, scope, non-scope and architecture references;
+- stable Plan identity and machine-readable North Star;
+- an explicit North Star approval bound to `planId + northStarDigest`;
+- criterion-to-Task/closure/Gate coverage derived from the current execution
+  model;
+- current scope, non-scope, architecture references, DAG, and Gate mapping;
+- an append-only Amendment Log with reason, actor, impact, approval class, and
+  before/after content digests;
 - task ID/path/dependency graph without lifecycle state;
 - one machine-readable Acceptance Execution contract;
 - global authorization, completion gates and non-claims.
 
-Project Ledger PlanMount explicitly selects one execution worktree. Before
-execution, Development Workflow copies the frozen version plus
-`mountId/workspaceId/branch/initialHead` into an immutable
-ExecutionPlanSnapshot. ExecutionRun exclusively owns
-`pending | in_progress | blocked | done`, current Task, blockers, and
-exhaustion. Neither owner may rewrite the snapshot.
+Project Ledger PlanMount explicitly selects one execution worktree and remains
+bound to the stable `planId + planPath`. Before execution, Development Workflow
+copies the current Plan plus `mountId/workspaceId/branch/initialHead` into an
+immutable ExecutionPlanSnapshot. ExecutionRun exclusively owns
+`pending | in_progress | blocked | done`, current Task, blockers, exhaustion,
+and the current snapshot pointer. A normal amendment appends its audit record,
+publishes another immutable snapshot, and advances that pointer with one CAS
+update; it does not replace the Plan, mount, or run.
+
+Plan authoring produces a candidate with `northStarApproval=null`.
+`planctl validate` keeps that state visible but does not approve it. After the
+user explicitly accepts the objective and criteria, `planctl
+approve-north-star` atomically records the exact digest, actor, timestamp, and
+decision reference. Mount and execution admission reject a missing or stale
+record with `NORTH_STAR_APPROVAL_REQUIRED`.
+
+The amendment owner compares the prior and candidate snapshots. New or changed
+Tasks and their transitive dependents return to `pending`; unchanged completed
+Tasks remain complete. The full candidate DAG, source containment, Task
+contracts, and Acceptance mapping must validate before the new snapshot can
+become current. A source edit without a matching amendment record fails closed
+as `PLAN_AMENDMENT_REQUIRED`.
+
+The complete `northStar`, including criterion IDs and source references, is the
+only Plan-content boundary that invalidates North Star approval. Such a change
+must first receive a fresh explicit approval, then proceeds as an
+owner-approved amendment; without those records it returns
+`NORTH_STAR_APPROVAL_REQUIRED` or `OWNER_DECISION_REQUIRED`. The denial names
+the conflict, impacted goal, options with tradeoffs, and a recommendation.
+Changes to `criterionCoverage`, Task/Gate mappings, or other execution details
+do not change the North Star digest and remain Agent-owned. Operation-
+authorization expansion remains separately governed and returns
+`OPERATION_AUTHORIZATION_REQUIRED`.
 
 A Plan that permits source reopening declares one strict
 `Source Invalidation Policy` block beside the Package. The policy names one
@@ -410,10 +444,10 @@ Mechanical bounds:
 Archive files are excluded from discovery, status, dependency and resume parsing.
 They preserve history only.
 
-The repository may contain multiple frozen Plan Versions synchronized into one
-PR. Discovery never scans that set to select an owner. The Project Ledger's
-live `PlanMount` names the only Plan Version executable in the current
-workspace; all other versions remain ordinary source files.
+The repository may contain multiple stable Plans synchronized into one PR.
+Discovery never scans that set to select an owner. The Project Ledger's live
+`PlanMount` names the only Plan executable in the current workspace; all other
+Plans remain ordinary source files.
 
 ## 6. Task Slice Contract
 
@@ -444,19 +478,20 @@ Task weights are intentionally forbidden: if one Task is too broad to serve as
 one meaningful progress unit, the plan owner must split it into independently
 closable Task Slices.
 
-Exactly one Task must be `in_progress` in an active package. A `pending` Task is
-ready only when every dependency is `done`. `blocked` parks that branch; it does
-not block independent ready Tasks. One worktree has one current Task; parallel
-subagents are lanes inside that Task, not concurrently current Tasks.
+Exactly one Task must be `in_progress` in an active ExecutionRun. A `pending`
+Task is ready only when every dependency is `done`. `blocked` parks that
+branch; it does not block independent ready Tasks. One worktree has one current
+Task; parallel subagents are lanes inside that Task, not concurrently current
+Tasks.
 
-Task handoff is one atomic manifest update performed by `planctl advance`:
+Task handoff is one atomic ExecutionRun update performed by `planctl advance`:
 
 1. verify the current Session is terminal or absent for `done`, or is
    `BLOCKED` with a first-failure record for `blocked`;
 2. mark the old Task `done` or `blocked`;
 3. select an explicit dependency-ready successor, or no successor when complete;
 4. mark that successor `in_progress`;
-5. atomically replace `plan.md`;
+5. atomically replace `execution-run.json`;
 6. let `pt-dev-workflow` synchronize this workspace's active-work record
    through its owner-derived command.
 
@@ -608,10 +643,11 @@ baseline event with the prior log digest before admitting more transitions.
 Resume is deterministic and bounded:
 
 1. Verify worktree binding from persisted values.
-2. Resolve the workspace's live PlanMount, immutable ExecutionPlanSnapshot, and
-   ExecutionRun. Missing or mismatched ownership fails closed; no branch scan
-   or alternate Plan fallback runs.
-3. Validate the snapshot; tooling may scan bounded machine blocks, but no Task
+2. Resolve the workspace's live PlanMount, current immutable
+   ExecutionPlanSnapshot, and ExecutionRun. Missing or mismatched ownership
+   fails closed; source drift routes to `planctl amend`; no branch scan or
+   alternate Plan fallback runs.
+3. Validate the current snapshot; tooling may scan bounded machine blocks, but no Task
    body or archive content enters agent context.
 4. If run status is `blocked`, validate typed exhaustion and recompute the
    frontier without reading a Task body. Reactivate an explicit ready Task and
@@ -716,8 +752,8 @@ Forbidden:
 
 The architecture is implemented only when:
 
-- all current Plan sources parse as frozen Plan Versions with no executable legacy migration or
-  dual active truth;
+- all current Plan sources parse as stable Plans with append-only amendment
+  history and no runtime legacy fallback or dual active truth;
 - resume exposes only snapshot/run projection, current Task and current Session to agent context;
 - plan/task bounds fail closed mechanically;
 - invalid DAG, duplicate current Task and dependency violations fail;
@@ -737,7 +773,7 @@ The architecture is implemented only when:
   persist source HEAD;
 - unrelated sibling worktree add/remove/prune operations do not invalidate the
   selected worktree's binding;
-- multiple frozen Plans may coexist in one repository/PR while each workspace
+- multiple Plans may coexist in one repository/PR while each workspace
   resolves only its live PlanMount; unfinished replacement and discovery-based
   reassignment fail closed;
 - an authorized checkpoint can advance declaration, Session and workspace

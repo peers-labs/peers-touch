@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-05
+> **Created**: 2026-09-13 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 
 ---
@@ -33,7 +33,7 @@
 | DWF-D21 | Keep orchestration and runtime verification host-neutral | accepted |
 | DWF-D22 | Separate workflow distribution from consuming-worktree runtime state | accepted |
 | DWF-D23 | Keep the internal Development Workflow unversioned | accepted |
-| DWF-D24 | Reopen frozen source through one Plan-declared invalidation owner | accepted |
+| DWF-D24 | Reopen invalidated source through one Plan-declared invalidation owner | accepted |
 | DWF-D25 | Keep user Skill overlays machine-local and interaction-only | accepted |
 | DWF-D26 | Bind workflow enforcement to one immutable conversation execution root | accepted |
 | DWF-D27 | Project workflow status through one read-only Workflow Snapshot | accepted |
@@ -47,10 +47,11 @@
 | DWF-D35 | Project one canonical TRAE hook into every participating workspace root | accepted |
 | DWF-D36 | Bootstrap non-destructive integration projection outside the Hook grant cycle | accepted |
 | DWF-D37 | Make Completion Review a repository-native reviewer handoff | accepted |
-| DWF-D38 | Separate frozen Plan versions from execution worktree mounts | accepted |
+| DWF-D38 | Separate frozen Plan versions from execution worktree mounts | superseded by DWF-D42 |
 | DWF-D39 | Permit only native Desktop runtime and product proof | accepted |
 | DWF-D40 | Preserve explicit user no-Plan intent | accepted |
 | DWF-D41 | Coordinate Development close with one resumable receipt | accepted |
+| DWF-D42 | Keep one stable Plan and record in-place amendments | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1026,7 +1027,7 @@ A single current internal contract avoids compatibility machinery for developmen
 - A future incompatible workflow change replaces the current internal shape
   atomically instead of adding a parallel workflow version.
 
-## DWF-D24: Reopen Frozen Source Through One Plan-Declared Invalidation Owner
+## DWF-D24: Reopen Invalidated Source Through One Plan-Declared Invalidation Owner
 
 **Status**: accepted
 **Date**: 2026-09-21
@@ -1805,7 +1806,7 @@ proves delegated assessment provenance, not reviewer independence.
 
 ## DWF-D38: Separate Frozen Plan Versions From Execution Worktree Mounts
 
-**Status**: accepted
+**Status**: superseded by DWF-D42
 **Date**: 2026-10-04
 **Supersedes**: DWF-D18, DWF-D31
 
@@ -2057,3 +2058,102 @@ removes the review/release cycle without weakening final cleanup proof.
   tooling, but normal workflow closure does not call them independently.
 - Tests cover interruption, exact owner checks, standalone/tracked modes,
   cancellation, and deleted-worktree mount recovery.
+
+## DWF-D42: Keep One Stable Plan And Record In-Place Amendments
+
+**Status**: accepted
+**Date**: 2026-10-07
+**Supersedes**: the frozen-version and remount requirements of DWF-D38
+
+### Context
+
+Execution regularly discovers mechanical omissions after a Plan starts:
+missing write paths, stale command paths, incomplete dependency edges, or
+required Gates that were not listed. The frozen `PlanVersion` model treated
+each correction as a new user-visible version and forced cancellation,
+unmount, remount, and reauthorization even when the accepted outcome did not
+change. Mobile Shell demonstrated this failure directly: sequential versions
+represented one Plan whose only differences were execution metadata repairs.
+
+The version number did not protect the product goal. It exposed an internal
+snapshot identity as project intent and made the user approve routine
+bookkeeping that the Agent could validate deterministically.
+
+### Decision
+
+- A Plan has one stable `planId` for its lifetime. It declares a machine-readable
+  `northStar` containing the objective and stable, source-backed success
+  criteria.
+- Plan authoring produces a candidate with `northStarApproval=null`. It cannot
+  mount or execute until `planctl approve-north-star` records an explicit user
+  decision bound to the canonical `planId + northStar` digest.
+- `criterionCoverage` maps each success criterion to exact Task, closure, and
+  Gate IDs. It is mutable execution detail and does not participate in the
+  North Star digest.
+- Scope, Task decomposition/order, dependencies, paths, commands, and
+  Acceptance Gate mappings are mutable execution details.
+- Every accepted edit appends one `PlanAmendment` with actor, time, reason,
+  human-readable changes, affected Task/Gate IDs, approval class, and the
+  before/after content digests.
+- `planctl amend` is the only amendment owner. It validates the complete
+  candidate package, verifies append-only history, writes the audit entry, then
+  advances the Execution Run to a new immutable internal snapshot using CAS.
+- `PlanMount` binds stable `planId + planPath` to one workspace. Amendments do
+  not cancel, unmount, remount, or create another run.
+- A changed/new Task and its transitive dependents are reset to `pending`.
+  Unchanged Task states remain intact. The updated DAG and Acceptance contract
+  are fully revalidated before execution may resume.
+- An Agent may authorize an amendment when `northStar` is unchanged and the
+  operation authorization envelope is not expanded.
+- Changing any accepted `northStar` content makes its prior approval stale.
+  Mount/execution returns `NORTH_STAR_APPROVAL_REQUIRED` until the user
+  explicitly approves the new digest. Publishing that change also requires an
+  owner-approved amendment with the same decision reference; otherwise it
+  returns `OWNER_DECISION_REQUIRED`.
+- Changing Task/Gate mappings or `criterionCoverage` while the North Star
+  digest is unchanged preserves approval. Expanding operation authority remains
+  `OPERATION_AUTHORIZATION_REQUIRED`.
+- Content and snapshot digests are internal integrity/CAS identities. They are
+  observable diagnostics, never Plan versions and never user approval
+  boundaries.
+- Repository Plan sources are converted in the same hard cut. Existing
+  machine ledgers are converted by `make plan-state-migrate` only after every
+  live declaration and mount is closed. Normal readers have no legacy fallback,
+  alias, or dual-write path.
+
+### Rationale
+
+The stable identity represents user intent; amendments represent how the work
+will reach that intent; snapshots represent exact machine inputs. Keeping those
+three concepts separate preserves reviewability and crash-safe execution
+without turning every correction into a new Plan.
+
+### Alternatives Considered
+
+- Keep immutable versions but auto-approve new versions: rejected because it
+  retains meaningless version churn and unnecessary mount transitions.
+- Mutate Plan files without an amendment log: rejected because the reason and
+  execution impact would be lost.
+- Ask for approval on every amendment: rejected because implementation repair
+  is Agent-owned and only changes to accepted outcomes need product judgment.
+- Treat generated North Star text as implicitly accepted: rejected because
+  Agent-authored distillation is a proposal, not evidence of user consent.
+- Allow normal readers to accept both formats: rejected because it creates two
+  active contracts and hides incomplete rollout.
+
+### Consequences
+
+- Plan authoring must state a source-backed North Star, complete criterion
+  coverage, and an initially empty approval.
+- `planctl validate` may report candidate or stale approval, but PlanMount and
+  execution admission fail closed until the current digest is explicitly
+  approved.
+- `planctl status` exposes the current internal digest and amendment count, not
+  a version ID.
+- The mount ledger indexes live work by stable Plan ID.
+- Snapshot history remains immutable while the Execution Run points at the
+  current snapshot.
+- Tests must cover candidate rejection, digest-bound approval, stale approval,
+  ordinary autonomous amendments, North Star escalation, coverage validation,
+  authorization expansion, Task/Gate invalidation, append-only history,
+  restart after an interrupted amendment, and stable mount/run identity.

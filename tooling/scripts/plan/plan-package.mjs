@@ -353,25 +353,25 @@ function assertMetadata(plan, metadata, sourcePath) {
     'initialhead',
     'expectedhead',
     'worktreesetdigest',
+    'versionid',
   ]) {
     if (metadata.has(obsolete)) {
       fail(
         'PLAN_METADATA_MISMATCH',
-        'execution metadata is forbidden in a frozen Plan Version',
+        'execution and version metadata are forbidden in a Plan',
         { path: sourcePath, key: obsolete },
       );
     }
   }
   const expected = {
     planid: plan.planId,
-    versionid: plan.versionId,
     created: plan.createdAt,
   };
   for (const [key, value] of Object.entries(expected)) {
     if (metadata.get(key) !== value) {
       fail(
         'PLAN_METADATA_MISMATCH',
-        'Markdown metadata does not equal the Plan Version',
+        'Markdown metadata does not equal the Plan',
         {
           path: sourcePath,
           key,
@@ -486,18 +486,13 @@ function validateAuthorization(value, context) {
   );
   assertClosedObject(
     value.checkpoint,
-    ['localCommit', 'amend'],
+    ['localCommit'],
     `${context}.checkpoint`,
   );
   assertEnum(
     value.checkpoint.localCommit,
     new Set(['allowed', 'denied']),
     `${context}.checkpoint.localCommit`,
-  );
-  assertEnum(
-    value.checkpoint.amend,
-    new Set(['allowed', 'denied']),
-    `${context}.checkpoint.amend`,
   );
   assertClosedObject(
     value.delivery,
@@ -587,84 +582,270 @@ function validateRuntimeReuse(value, context) {
   }
 }
 
-function validatePlanVersion(plan) {
+function validateNorthStar(value, context) {
+  assertClosedObject(value, ['objective', 'successCriteria'], context);
+  assertString(value.objective, `${context}.objective`);
+  assertArray(value.successCriteria, `${context}.successCriteria`, {
+    min: 1,
+  });
+  const criterionIds = new Set();
+  value.successCriteria.forEach((criterion, index) => {
+    const criterionContext = `${context}.successCriteria[${index}]`;
+    assertClosedObject(
+      criterion,
+      ['id', 'statement', 'sourceRefs'],
+      criterionContext,
+    );
+    assertString(criterion.id, `${criterionContext}.id`, {
+      pattern: ID_PATTERN,
+    });
+    assertString(criterion.statement, `${criterionContext}.statement`);
+    assertUniqueStrings(
+      criterion.sourceRefs,
+      `${criterionContext}.sourceRefs`,
+      { min: 1 },
+    );
+    if (criterionIds.has(criterion.id)) {
+      fail('PLAN_DUPLICATE', 'North Star criterion ID is duplicated', {
+        criterionId: criterion.id,
+      });
+    }
+    criterionIds.add(criterion.id);
+  });
+}
+
+function validateNorthStarApproval(value, context) {
+  if (value === null) return;
+  assertClosedObject(
+    value,
+    ['northStarDigest', 'approvedBy', 'approvedAt', 'decisionRef'],
+    context,
+  );
+  if (!/^[0-9a-f]{64}$/.test(value.northStarDigest ?? '')) {
+    fail(
+      'PLAN_SCHEMA_INVALID',
+      `${context}.northStarDigest must be a SHA-256 digest`,
+    );
+  }
+  assertString(value.approvedBy, `${context}.approvedBy`);
+  assertString(value.approvedAt, `${context}.approvedAt`);
+  if (
+    Number.isNaN(Date.parse(value.approvedAt)) ||
+    new Date(value.approvedAt).toISOString() !== value.approvedAt
+  ) {
+    fail(
+      'PLAN_SCHEMA_INVALID',
+      `${context}.approvedAt must be a canonical timestamp`,
+    );
+  }
+  assertString(value.decisionRef, `${context}.decisionRef`);
+}
+
+function validateCriterionCoverage(value, context) {
+  assertArray(value, context, { min: 1 });
+  const criterionIds = new Set();
+  value.forEach((coverage, index) => {
+    const coverageContext = `${context}[${index}]`;
+    assertClosedObject(
+      coverage,
+      ['criterionId', 'taskIds', 'closureIds', 'gateIds'],
+      coverageContext,
+    );
+    assertString(coverage.criterionId, `${coverageContext}.criterionId`, {
+      pattern: ID_PATTERN,
+    });
+    assertUniqueStrings(coverage.taskIds, `${coverageContext}.taskIds`, {
+      min: 1,
+      pattern: ID_PATTERN,
+    });
+    assertUniqueStrings(
+      coverage.closureIds,
+      `${coverageContext}.closureIds`,
+      { min: 1, pattern: ID_PATTERN },
+    );
+    assertUniqueStrings(coverage.gateIds, `${coverageContext}.gateIds`, {
+      pattern: ID_PATTERN,
+    });
+    if (criterionIds.has(coverage.criterionId)) {
+      fail('PLAN_DUPLICATE', 'criterion coverage is duplicated', {
+        criterionId: coverage.criterionId,
+      });
+    }
+    criterionIds.add(coverage.criterionId);
+  });
+}
+
+function validateAmendment(value, context) {
+  assertClosedObject(
+    value,
+    [
+      'id',
+      'createdAt',
+      'actor',
+      'reason',
+      'changes',
+      'impact',
+      'approval',
+      'fromContentDigest',
+      'toContentDigest',
+    ],
+    context,
+  );
+  assertString(value.id, `${context}.id`, { pattern: ID_PATTERN });
+  assertString(value.createdAt, `${context}.createdAt`);
+  if (
+    Number.isNaN(Date.parse(value.createdAt)) ||
+    new Date(value.createdAt).toISOString() !== value.createdAt
+  ) {
+    fail(
+      'PLAN_SCHEMA_INVALID',
+      `${context}.createdAt must be a canonical timestamp`,
+    );
+  }
+  assertString(value.actor, `${context}.actor`);
+  assertString(value.reason, `${context}.reason`);
+  assertUniqueStrings(value.changes, `${context}.changes`, { min: 1 });
+  assertClosedObject(
+    value.impact,
+    ['taskIds', 'gateIds'],
+    `${context}.impact`,
+  );
+  assertUniqueStrings(value.impact.taskIds, `${context}.impact.taskIds`, {
+    pattern: ID_PATTERN,
+  });
+  assertUniqueStrings(
+    value.impact.gateIds,
+    `${context}.impact.gateIds`,
+    { pattern: ID_PATTERN },
+  );
+  assertClosedObject(
+    value.approval,
+    ['kind', 'decisionRef'],
+    `${context}.approval`,
+  );
+  assertEnum(
+    value.approval.kind,
+    new Set(['agent', 'owner']),
+    `${context}.approval.kind`,
+  );
+  if (value.approval.kind === 'agent') {
+    if (value.approval.decisionRef !== null) {
+      fail(
+        'PLAN_SCHEMA_INVALID',
+        `${context}.approval.decisionRef must be null for agent amendments`,
+      );
+    }
+  } else {
+    assertString(
+      value.approval.decisionRef,
+      `${context}.approval.decisionRef`,
+    );
+  }
+  for (const field of ['fromContentDigest', 'toContentDigest']) {
+    if (
+      typeof value[field] !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(value[field])
+    ) {
+      fail(
+        'PLAN_SCHEMA_INVALID',
+        `${context}.${field} must be a SHA-256 digest`,
+      );
+    }
+  }
+  if (value.fromContentDigest === value.toContentDigest) {
+    fail('PLAN_AMENDMENT_INVALID', `${context} cannot describe a no-op`);
+  }
+}
+
+function validatePlan(plan) {
   assertClosedObject(
     plan,
     [
       'kind',
       'planId',
-      'versionId',
       'createdAt',
+      'northStar',
+      'northStarApproval',
+      'criterionCoverage',
       'workClass',
       'architecture',
       'scope',
       'tasks',
       'authorization',
+      'amendments',
     ],
-    'Plan Version',
+    'Plan',
   );
-  if (plan.kind !== 'peers-touch-plan-version') {
-    fail('PLAN_SCHEMA_INVALID', 'Plan Version kind is unsupported');
+  if (plan.kind !== 'peers-touch-plan') {
+    fail('PLAN_SCHEMA_INVALID', 'Plan kind is unsupported');
   }
-  assertString(plan.planId, 'Plan Version.planId', { pattern: ID_PATTERN });
-  assertString(plan.versionId, 'Plan Version.versionId', { pattern: ID_PATTERN });
-  assertString(plan.createdAt, 'Plan Version.createdAt');
+  assertString(plan.planId, 'Plan.planId', { pattern: ID_PATTERN });
+  assertString(plan.createdAt, 'Plan.createdAt');
   if (
     Number.isNaN(Date.parse(plan.createdAt)) ||
     new Date(plan.createdAt).toISOString() !== plan.createdAt
   ) {
     fail(
       'PLAN_SCHEMA_INVALID',
-      'Plan Version.createdAt must be a canonical timestamp',
+      'Plan.createdAt must be a canonical timestamp',
     );
   }
-  assertEnum(plan.workClass, WORK_CLASSES, 'Plan Version.workClass');
+  validateNorthStar(plan.northStar, 'Plan.northStar');
+  validateNorthStarApproval(
+    plan.northStarApproval,
+    'Plan.northStarApproval',
+  );
+  validateCriterionCoverage(
+    plan.criterionCoverage,
+    'Plan.criterionCoverage',
+  );
+  assertEnum(plan.workClass, WORK_CLASSES, 'Plan.workClass');
   assertClosedObject(
     plan.architecture,
     ['sources', 'decisions'],
-    'Plan Version.architecture',
+    'Plan.architecture',
   );
   assertUniqueStrings(
     plan.architecture.sources,
-    'Plan Version.architecture.sources',
+    'Plan.architecture.sources',
     { min: 1 },
   );
   plan.architecture.sources.forEach((source, index) =>
     validateRepositoryPath(
       source,
-      `Plan Version.architecture.sources[${index}]`,
+      `Plan.architecture.sources[${index}]`,
     ),
   );
   assertUniqueStrings(
     plan.architecture.decisions,
-    'Plan Version.architecture.decisions',
+    'Plan.architecture.decisions',
   );
 
   assertClosedObject(
     plan.scope,
     ['sourceClaims', 'nonGoals'],
-    'Plan Version.scope',
+    'Plan.scope',
   );
-  assertArray(plan.scope.sourceClaims, 'Plan Version.scope.sourceClaims', {
+  assertArray(plan.scope.sourceClaims, 'Plan.scope.sourceClaims', {
     min: 1,
   });
   const claimPaths = new Set();
   plan.scope.sourceClaims.forEach((claim, index) => {
-    validateSourceClaim(claim, `Plan Version.scope.sourceClaims[${index}]`);
+    validateSourceClaim(claim, `Plan.scope.sourceClaims[${index}]`);
     if (claimPaths.has(claim.pathPrefix)) {
-      fail('PLAN_DUPLICATE', 'Plan Version source claim path is duplicated', {
+      fail('PLAN_DUPLICATE', 'Plan source claim path is duplicated', {
         path: claim.pathPrefix,
       });
     }
     claimPaths.add(claim.pathPrefix);
   });
-  assertUniqueStrings(plan.scope.nonGoals, 'Plan Version.scope.nonGoals');
+  assertUniqueStrings(plan.scope.nonGoals, 'Plan.scope.nonGoals');
 
-  assertArray(plan.tasks, 'Plan Version.tasks', { min: 1 });
+  assertArray(plan.tasks, 'Plan.tasks', { min: 1 });
   const taskIds = new Set();
   const taskPaths = new Set();
   plan.tasks.forEach((task, index) => {
-    const context = `Plan Version.tasks[${index}]`;
+    const context = `Plan.tasks[${index}]`;
     assertClosedObject(
       task,
       ['id', 'workstreamId', 'path', 'dependsOn'],
@@ -685,7 +866,7 @@ function validatePlanVersion(plan) {
       pattern: ID_PATTERN,
     });
     if (taskIds.has(task.id) || taskPaths.has(task.path)) {
-      fail('PLAN_DUPLICATE', 'Plan Version Task identity is duplicated', {
+      fail('PLAN_DUPLICATE', 'Plan Task identity is duplicated', {
         taskId: task.id,
         path: task.path,
       });
@@ -693,7 +874,32 @@ function validatePlanVersion(plan) {
     taskIds.add(task.id);
     taskPaths.add(task.path);
   });
-  validateAuthorization(plan.authorization, 'Plan Version.authorization');
+  validateAuthorization(plan.authorization, 'Plan.authorization');
+  assertArray(plan.amendments, 'Plan.amendments');
+  const amendmentIds = new Set();
+  let previous = null;
+  plan.amendments.forEach((amendment, index) => {
+    const context = `Plan.amendments[${index}]`;
+    validateAmendment(amendment, context);
+    if (amendmentIds.has(amendment.id)) {
+      fail('PLAN_DUPLICATE', 'Plan amendment ID is duplicated', {
+        amendmentId: amendment.id,
+      });
+    }
+    if (
+      previous !== null &&
+      (amendment.fromContentDigest !== previous.toContentDigest ||
+        Date.parse(amendment.createdAt) < Date.parse(previous.createdAt))
+    ) {
+      fail(
+        'PLAN_AMENDMENT_INVALID',
+        'Plan amendment log is not an ordered digest chain',
+        { amendmentId: amendment.id },
+      );
+    }
+    amendmentIds.add(amendment.id);
+    previous = amendment;
+  });
 }
 
 function validateDag(plan) {
@@ -1028,6 +1234,7 @@ function validateTaskScope(task, plan) {
 
 function validateCrosswalk(plan, taskSlices, acceptance) {
   const closureIds = new Set();
+  const taskClosureIds = new Map();
   for (const planTask of plan.tasks) {
     const task = taskSlices.get(planTask.id);
     if (closureIds.has(task.closureId)) {
@@ -1036,6 +1243,7 @@ function validateCrosswalk(plan, taskSlices, acceptance) {
       });
     }
     closureIds.add(task.closureId);
+    taskClosureIds.set(planTask.id, task.closureId);
   }
   const acceptanceClosureIds = Object.keys(acceptance.closures);
   if (
@@ -1085,6 +1293,77 @@ function validateCrosswalk(plan, taskSlices, acceptance) {
       );
     }
   }
+
+  const criterionIds = new Set(
+    plan.northStar.successCriteria.map((criterion) => criterion.id),
+  );
+  const coveredCriterionIds = new Set(
+    plan.criterionCoverage.map((coverage) => coverage.criterionId),
+  );
+  if (
+    criterionIds.size !== coveredCriterionIds.size ||
+    [...criterionIds].some(
+      (criterionId) => !coveredCriterionIds.has(criterionId),
+    ) ||
+    [...coveredCriterionIds].some(
+      (criterionId) => !criterionIds.has(criterionId),
+    )
+  ) {
+    fail(
+      'PLAN_CRITERION_COVERAGE_INVALID',
+      'criterion coverage must contain every North Star criterion exactly once',
+      {
+        expected: [...criterionIds].sort(),
+        actual: [...coveredCriterionIds].sort(),
+      },
+    );
+  }
+
+  for (const coverage of plan.criterionCoverage) {
+    const expectedClosureIds = [
+      ...new Set(
+        coverage.taskIds.map((taskId) => taskClosureIds.get(taskId)),
+      ),
+    ];
+    if (
+      expectedClosureIds.some((closureId) => closureId === undefined) ||
+      !sameStringSet(expectedClosureIds, coverage.closureIds)
+    ) {
+      fail(
+        'PLAN_CRITERION_COVERAGE_INVALID',
+        'criterion coverage closures must equal the closures owned by its Tasks',
+        {
+          criterionId: coverage.criterionId,
+          expected: expectedClosureIds.filter(Boolean).sort(),
+          actual: [...coverage.closureIds].sort(),
+        },
+      );
+    }
+    const expectedGateIds = [
+      ...new Set(
+        coverage.closureIds.flatMap(
+          (closureId) => acceptance.closures[closureId] ?? [],
+        ),
+      ),
+    ];
+    if (!sameStringSet(expectedGateIds, coverage.gateIds)) {
+      fail(
+        'PLAN_CRITERION_COVERAGE_INVALID',
+        'criterion coverage Gates must equal the Gates owned by its closures',
+        {
+          criterionId: coverage.criterionId,
+          expected: expectedGateIds.sort(),
+          actual: [...coverage.gateIds].sort(),
+        },
+      );
+    }
+  }
+}
+
+function sameStringSet(left, right) {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
 }
 
 function canonicalize(value) {
@@ -1097,23 +1376,80 @@ function canonicalize(value) {
   );
 }
 
-export function digestPlanVersionInput({
-  plan,
-  tasks,
-  acceptance,
-  sourceInvalidationPolicy = null,
-}) {
+export function digestNorthStar(plan) {
   return crypto
     .createHash('sha256')
     .update(
       JSON.stringify(
         canonicalize({
-          plan,
+          kind: 'peers-touch-north-star',
+          planId: plan.planId,
+          northStar: plan.northStar,
+        }),
+      ),
+    )
+    .digest('hex');
+}
+
+export function inspectNorthStarApproval(plan) {
+  const northStarDigest = digestNorthStar(plan);
+  const approval = plan.northStarApproval;
+  return {
+    status:
+      approval === null
+        ? 'candidate'
+        : approval.northStarDigest === northStarDigest
+          ? 'approved'
+          : 'stale',
+    northStarDigest,
+    approval,
+  };
+}
+
+export function digestPlanContent({
+  plan,
+  tasks,
+  acceptance,
+  sourceInvalidationPolicy = null,
+}) {
+  const planContent = structuredClone(plan);
+  delete planContent.amendments;
+  return crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify(
+        canonicalize({
+          plan: planContent,
           tasks: [...tasks].sort((left, right) =>
             left.taskId.localeCompare(right.taskId),
           ),
           acceptance,
           sourceInvalidationPolicy,
+        }),
+      ),
+    )
+    .digest('hex');
+}
+
+export function digestPlan({
+  plan,
+  tasks,
+  acceptance,
+  sourceInvalidationPolicy = null,
+}) {
+  const contentDigest = digestPlanContent({
+    plan,
+    tasks,
+    acceptance,
+    sourceInvalidationPolicy,
+  });
+  return crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify(
+        canonicalize({
+          contentDigest,
+          amendments: plan.amendments,
         }),
       ),
     )
@@ -1204,9 +1540,9 @@ export async function loadPlanPackage(planPath, options = {}) {
   assertBounds(markdown, 'manifest', realPlan);
   assertNoForbiddenSections(markdown, realPlan);
 
-  const { value: plan } = parseStructuredBlock(
+  const { value: plan, block: planBlock } = parseStructuredBlock(
     markdown,
-    'Plan Version',
+    'Plan',
     realPlan,
   );
   const { value: acceptance } = parseStructuredBlock(
@@ -1221,7 +1557,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     { optional: true },
   );
   const sourceInvalidationPolicy = invalidationBlock?.value ?? null;
-  validatePlanVersion(plan);
+  validatePlan(plan);
   validateDag(plan);
   validateAcceptance(acceptance);
   validateSourceInvalidationPolicy(sourceInvalidationPolicy, plan);
@@ -1238,7 +1574,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     await assertRepositoryPathContained(
       repoRoot,
       source,
-      `Plan Version.architecture.sources[${index}]`,
+      `Plan.architecture.sources[${index}]`,
     );
   }
   const architectureGovernance = await validateRegisteredArchitecture(
@@ -1249,7 +1585,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     await assertRepositoryPathContained(
       repoRoot,
       claim.pathPrefix,
-      `Plan Version.scope.sourceClaims[${index}].pathPrefix`,
+      `Plan.scope.sourceClaims[${index}].pathPrefix`,
     );
   }
 
@@ -1301,7 +1637,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     ) {
       fail(
         'PLAN_TASK_MISMATCH',
-        'Task Slice metadata does not match its Plan Version entry',
+        'Task Slice metadata does not match its Plan entry',
         { taskPath: planTask.path, taskId: task.taskId },
       );
     }
@@ -1325,7 +1661,29 @@ export async function loadPlanPackage(planPath, options = {}) {
   validateCrosswalk(plan, taskSlices, acceptance);
 
   const tasks = plan.tasks.map((task) => taskSlices.get(task.id));
-  const planVersionDigest = digestPlanVersionInput({
+  const planContentDigest = digestPlanContent({
+    plan,
+    tasks,
+    acceptance,
+    sourceInvalidationPolicy,
+  });
+  const northStarApproval = inspectNorthStarApproval(plan);
+  if (
+    options.allowUnrecordedAmendment !== true &&
+    northStarApproval.status === 'approved' &&
+    plan.amendments.length > 0 &&
+    plan.amendments.at(-1).toContentDigest !== planContentDigest
+  ) {
+    fail(
+      'PLAN_AMENDMENT_REQUIRED',
+      'Plan content changed without a matching amendment record',
+      {
+        recordedContentDigest: plan.amendments.at(-1).toContentDigest,
+        currentContentDigest: planContentDigest,
+      },
+    );
+  }
+  const planDigest = digestPlan({
     plan,
     tasks,
     acceptance,
@@ -1342,11 +1700,120 @@ export async function loadPlanPackage(planPath, options = {}) {
     architectureGovernance,
     taskSlices,
     tasks,
-    planVersionDigest,
+    planContentDigest,
+    planDigest,
+    northStarApproval,
+    markdown,
+    planBlock,
   };
 }
 
-export const loadPlanVersion = loadPlanPackage;
+export async function recordNorthStarApproval(planPackage, approval) {
+  assertClosedObject(
+    approval,
+    ['approvedBy', 'approvedAt', 'decisionRef'],
+    'North Star approval input',
+  );
+  const nextApproval = {
+    northStarDigest: digestNorthStar(planPackage.plan),
+    approvedBy: approval.approvedBy,
+    approvedAt: approval.approvedAt,
+    decisionRef: approval.decisionRef,
+  };
+  validateNorthStarApproval(nextApproval, 'Plan.northStarApproval');
+  if (planPackage.northStarApproval.status === 'approved') {
+    if (
+      planPackage.plan.northStarApproval.approvedBy ===
+        nextApproval.approvedBy &&
+      planPackage.plan.northStarApproval.decisionRef ===
+        nextApproval.decisionRef
+    ) {
+      return planPackage;
+    }
+    fail(
+      'NORTH_STAR_ALREADY_APPROVED',
+      'The current North Star already has a different explicit approval',
+      {
+        northStarDigest: nextApproval.northStarDigest,
+        approval: planPackage.plan.northStarApproval,
+      },
+    );
+  }
+  const nextPlan = {
+    ...planPackage.plan,
+    northStarApproval: nextApproval,
+  };
+  validatePlan(nextPlan);
+  const block = planPackage.planBlock;
+  const nextMarkdown = [
+    planPackage.markdown.slice(0, block.contentStart),
+    `${JSON.stringify(nextPlan)}\n`,
+    planPackage.markdown.slice(block.contentEnd),
+  ].join('');
+  assertBounds(nextMarkdown, 'manifest', planPackage.path);
+  await atomicReplaceFile(planPackage.path, nextMarkdown, {
+    expectedContent: planPackage.markdown,
+  });
+  return loadPlanPackage(planPackage.path, {
+    repoRoot: planPackage.repoRoot,
+    allowUnrecordedAmendment: true,
+  });
+}
+
+export async function appendPlanAmendment(planPackage, amendment) {
+  validateAmendment(amendment, 'Plan amendment');
+  if (amendment.toContentDigest !== planPackage.planContentDigest) {
+    fail(
+      'PLAN_AMENDMENT_INVALID',
+      'amendment target digest does not match current Plan content',
+      {
+        expected: planPackage.planContentDigest,
+        actual: amendment.toContentDigest,
+      },
+    );
+  }
+  const prior = planPackage.plan.amendments.at(-1) ?? null;
+  if (
+    prior !== null &&
+    amendment.fromContentDigest !== prior.toContentDigest
+  ) {
+    fail(
+      'PLAN_AMENDMENT_INVALID',
+      'amendment does not continue the recorded digest chain',
+      {
+        expected: prior.toContentDigest,
+        actual: amendment.fromContentDigest,
+      },
+    );
+  }
+  if (
+    planPackage.plan.amendments.some(
+      (candidate) => candidate.id === amendment.id,
+    )
+  ) {
+    fail('PLAN_DUPLICATE', 'Plan amendment ID is duplicated', {
+      amendmentId: amendment.id,
+    });
+  }
+  const nextPlan = {
+    ...planPackage.plan,
+    amendments: [...planPackage.plan.amendments, amendment],
+  };
+  validatePlan(nextPlan);
+  const block = planPackage.planBlock;
+  const nextMarkdown = [
+    planPackage.markdown.slice(0, block.contentStart),
+    `${JSON.stringify(nextPlan)}\n`,
+    planPackage.markdown.slice(block.contentEnd),
+  ].join('');
+  assertBounds(nextMarkdown, 'manifest', planPackage.path);
+  await atomicReplaceFile(planPackage.path, nextMarkdown, {
+    expectedContent: planPackage.markdown,
+  });
+  return loadPlanPackage(planPackage.path, {
+    repoRoot: planPackage.repoRoot,
+  });
+}
 
 export function allDeclaredGateIds(acceptance) {
   return [
@@ -1364,9 +1831,13 @@ export function summarizePlanPackage(planPackage) {
     plan: planPackage.path,
     planPath: planPackage.planPath,
     planId: planPackage.plan.planId,
-    versionId: planPackage.plan.versionId,
     createdAt: planPackage.plan.createdAt,
-    planVersionDigest: planPackage.planVersionDigest,
+    planDigest: planPackage.planDigest,
+    planContentDigest: planPackage.planContentDigest,
+    northStarDigest: planPackage.northStarApproval.northStarDigest,
+    northStarApprovalStatus: planPackage.northStarApproval.status,
+    northStarApproval: planPackage.northStarApproval.approval,
+    amendmentCount: planPackage.plan.amendments.length,
     workClass: planPackage.plan.workClass,
     sourceClaims: planPackage.plan.scope.sourceClaims.map((claim) => ({
       ...claim,
@@ -1598,7 +2069,7 @@ export async function discoverPlanPackages(root, options = {}) {
         await walk(candidate);
       } else if (entry.isFile() && entry.name === 'plan.md') {
         const text = await fsp.readFile(candidate, 'utf8');
-        if (findStructuredBlocks(text, 'Plan Version').length > 0) {
+        if (findStructuredBlocks(text, 'Plan').length > 0) {
           planPaths.push(candidate);
         }
       }

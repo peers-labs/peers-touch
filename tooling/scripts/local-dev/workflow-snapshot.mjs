@@ -352,6 +352,9 @@ function unavailablePlan(status, locator = {}, errorCode = null) {
     status,
     locatorSource: locator.locatorSource ?? null,
     planId: locator.planId ?? null,
+    planDigest: null,
+    amendmentCount: 0,
+    latestAmendment: null,
     taskId: locator.taskId ?? null,
     planStatus: null,
     currentTaskId: null,
@@ -465,7 +468,7 @@ export async function resolveDeclarationPlan(
     workspaceId: declaration.workspaceId,
     branch: declaration.branch,
     declarationSourceHead: declaration.sourceHead,
-    planVersionDigest: declaration.planVersionDigest,
+    planDigest: declaration.planDigest,
     mountId: declaration.mountId,
     runId: declaration.runId,
     mountedPlanId: locator.planId,
@@ -477,7 +480,7 @@ export async function resolveDeclarationPlan(
     workspaceId: mountedExecution.snapshot.executionBinding.workspaceId,
     branch: mountedExecution.snapshot.executionBinding.branch,
     declarationSourceHead: actualHead.ok ? actualHead.output : null,
-    planVersionDigest: mountedExecution.mount.planVersionDigest,
+    planDigest: mountedExecution.snapshot.planDigest,
     mountId: mountedExecution.mount.mountId,
     runId: mountedExecution.run.runId,
     mountedPlanId: mountedExecution.mount.planId,
@@ -499,6 +502,10 @@ export async function resolveDeclarationPlan(
     status: 'available',
     locatorSource: locator.locatorSource,
     planId: locator.planId,
+    planDigest: mountedExecution.snapshot.planDigest,
+    amendmentCount: mountedExecution.snapshot.amendmentCount,
+    latestAmendment:
+      mountedExecution.snapshot.plan.amendments.at(-1) ?? null,
     taskId: locator.taskId,
     planStatus: mountedExecution.run.state,
     currentTaskId,
@@ -962,12 +969,18 @@ export function workflowProjection({
         plan?.status === 'available'
           ? {
               id: plan.planId,
+              digest: plan.planDigest,
+              amendmentCount: plan.amendmentCount,
+              latestAmendment: plan.latestAmendment,
               status: plan.planStatus,
               progress: plan.progress,
             }
           : activeWork
             ? {
                 id: activeWork.planId,
+                digest: declaration?.planDigest ?? null,
+                amendmentCount: null,
+                latestAmendment: null,
                 status: activeWork.planStatus,
                 progress: null,
               }

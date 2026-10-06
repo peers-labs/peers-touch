@@ -166,11 +166,7 @@ function assertPlanAndDeclaration(
     ['declarationPlanId', plan.plan.planId, declaration.planId],
     ['declarationPlanPath', planPath, declaration.planPath],
     ['declarationTaskId', currentTask.taskId, declaration.taskId],
-    [
-      'planVersionDigest',
-      plan.planVersionDigest,
-      declaration.planVersionDigest,
-    ],
+    ['planDigest', plan.planDigest, declaration.planDigest],
     ['mountId', plan.mount.mountId, declaration.mountId],
     ['runId', plan.run.runId, declaration.runId],
   ]) {
@@ -274,7 +270,7 @@ async function loadBoundContext(options, dependencies = {}) {
     if (requestedAbsolute !== execution.planPackage.path) {
       sessionFail(
         'SESSION_IDENTITY_MISMATCH',
-        'requested Plan Version is not mounted in this workspace',
+        'requested Plan is not mounted in this workspace',
       );
     }
     const currentTaskId = execution.run.currentTaskId;

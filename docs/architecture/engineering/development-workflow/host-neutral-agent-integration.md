@@ -1,7 +1,7 @@
 # Host-Neutral Agent Integration
 
 > **Status**: accepted
-> **Created**: 2026-09-19 | **Updated**: 2026-10-04
+> **Created**: 2026-09-19 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 
 ## Goal
@@ -170,7 +170,7 @@ authority.
    recursive catalog identity, dirty catalog status, callback proof, and every
    projected symlink's exact canonical target before it reports `PASS`. It also
    invokes the canonical
-   Plan mount and Plan Version validators, checks the current Task and source
+   Plan mount and stable Plan validators, checks the current Task and source
    claims, and propagates malformed or blocked Acceptance registry state.
 7. Resume from the persisted Plan, Task, Session, workspace active-work record,
    and Context Anchor under the refreshed host catalog, then publish the new

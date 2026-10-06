@@ -28,7 +28,7 @@ Architecture source:
 | Product Journey and visible states | `pt-product-design-methodology` |
 | Architecture boundaries and contracts | `pt-architecture-design-methodology` |
 | Vertical dependency plan model | `pt-architecture-execution-methodology` |
-| Frozen Plan Version persistence and optional owner-authorized mount | `pt-plan-and-document` |
+| Stable Plan persistence, amendment logging, and optional owner-authorized mount | `pt-plan-and-document` |
 | Ready/Parked selection and concurrency lanes | `pt-goal-orchestrator` |
 | Whether a proposed action may run | `pt-execution-plan-guardian` |
 | ExecutionRun/Task/Session/workspace active-work mutation order | `pt-dev-workflow` through their owning commands |
@@ -91,7 +91,7 @@ Never enter broad Acceptance while a required Journey is not
 
 Explicit user instructions such as `no plan`, `不要 plan`, or equivalent are
 an intake constraint, not a stage suggestion. They forbid PLAN modeling,
-`pt-plan-and-document`, Plan Version or Task Slice creation, PlanMount,
+`pt-plan-and-document`, Plan or Task Slice creation, PlanMount,
 ExecutionPlanSnapshot, ExecutionRun, Development Session, active-work, and
 Context Anchor state for the current request. If execution lacks an accepted
 product or architecture decision, report that precise boundary instead of
@@ -119,7 +119,9 @@ Already-authorized operations execute directly:
 - mere Plan existence, a declaration, or an unrelated prior command is not an
   authorization grant.
 
-Stop and ask the user only when the remaining frontier requires:
+Stop and ask the user for the explicit approval of every newly generated Plan
+North Star. After that approval, ask again only when the remaining frontier
+requires:
 
 - an operation outside or explicitly denied by both the user's exact grant and
   the accepted Plan authorization envelope;
@@ -129,9 +131,9 @@ Stop and ask the user only when the remaining frontier requires:
   rewrite, merge, release, production mutation, data deletion/reset,
   environment creation, permission expansion, version/schema bump, worktree
   add/remove/prune, or secret access, only when its exact grant is absent;
-- a material product, architecture, security, privacy, compatibility, or
-  rollout choice with multiple valid outcomes that accepted sources cannot
-  resolve;
+- a product, architecture, security, privacy, compatibility, or rollout
+  choice that would change, weaken, or abandon the accepted North Star and
+  cannot be resolved from accepted sources;
 - an unavailable external resource or credential; or
 - fixed-point exhaustion after every dependency-ready Task and legal
   remediation has been drained.
@@ -160,10 +162,10 @@ Before mutation:
    and expected HEAD with `tooling/scripts/verify-worktree-binding.py`.
    Unrelated sibling worktree inventory is not execution identity.
 4. Resolve the workspace's current Project Ledger PlanMount when present.
-   Repository or PR contents may contain many Plan Versions; only the mounted
-   `planVersionDigest + planPath` belongs to this workspace. Never scan by
-   branch. Do not amend, rebind, or unmount it; release occurs only after
-   completion/cancellation or explicit owner action.
+   Repository or PR contents may contain many Plans; only the mounted
+   `planId + planPath` and current ExecutionRun snapshot belong to this
+   workspace. Never scan by branch. Do not rebind or unmount it; ordinary Plan
+   amendments retain the same mount and run.
 5. Resolve user intent, authorization envelope, existing accepted sources, and
    `planPolicy=tracked|standalone`. Explicit no-Plan intent fixes
    `planPolicy=standalone` before task-size or stage classification.
@@ -202,7 +204,7 @@ Rules:
 
 - Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
 - A tracked run must publish `PLAN` and `TASK`; the declaration validates the
-  Plan Version digest, current workspace PlanMount and ExecutionRun, expected
+  current Plan digest, workspace PlanMount and ExecutionRun, expected
   HEAD, and single current Task. An unmounted workspace may publish untracked
   pre-Plan or explicit standalone work; standalone declarations omit `PLAN`,
   `TASK`, and Development Session. A mounted workspace cannot publish a
@@ -307,7 +309,7 @@ Invoke the owning Skill and consume its typed output:
 | PRODUCT | accepted Journey/state/acceptance contract |
 | DESIGN | accepted ownership/contracts/failure semantics |
 | PLAN model | accepted vertical dependency model; tracked work only |
-| PLAN persistence | validated frozen Plan Version and optional explicit PlanMount; tracked work only |
+| PLAN persistence | validated stable Plan and optional explicit PlanMount; tracked work only |
 | EXECUTE | scheduler proposal plus Guardian policy decision |
 | ACCEPTANCE | formal evidence for required scope |
 | DELIVER | reviewed commit/PR result |
@@ -341,7 +343,7 @@ execution, return that decision as the blocker without generating a Plan.
 
 ## 5. Tracked Execution Loop
 
-For a mounted Plan Version:
+For a mounted Plan:
 
 1. Validate the immutable ExecutionPlanSnapshot and resolve current Task from
    the ExecutionRun.
@@ -489,10 +491,31 @@ When execution finds drift:
 - accepted semantics but stale inventory/dependency/deliverable mapping ->
   `PLAN_AMENDMENT_REQUIRED`.
 
-Dev Workflow stops at `PLAN_AMENDMENT_REQUIRED`. Only an explicit user/owner
-decision may authorize a new frozen Plan Version and mount transition;
-`pt-plan-and-document` then persists the accepted replacement. The Agent,
-Guardian, and scheduler never self-amend or rebind a mounted Plan.
+Dev Workflow handles `PLAN_AMENDMENT_REQUIRED` inside the current Plan Run:
+
+1. Update the accepted execution model in `plan.md`, Task Slices, and
+   `Acceptance Execution`.
+2. Run `planctl amend` with the concrete reason and change summary.
+3. Let the command append the Amendment record, derive affected Task/Gate IDs,
+   revalidate the complete package, publish a new immutable internal snapshot,
+   and CAS-update the existing ExecutionRun.
+4. Refresh the declaration and dependent projections, then continue.
+
+The Agent performs this flow without asking for routine Gate, write-set,
+dependency, command, Task decomposition/order, or implementation-path changes.
+`criterionCoverage` is part of that Agent-owned execution model and does not
+invalidate approval while `northStar` is unchanged.
+
+A generated Plan starts with `northStarApproval=null` and cannot mount or
+execute. After the user explicitly accepts the proposed objective and
+source-backed criteria, run `planctl approve-north-star` with the durable
+decision reference. Any later `northStar` change makes that approval stale and
+returns `NORTH_STAR_APPROVAL_REQUIRED`; after fresh user approval, publish the
+change with an owner-approved amendment carrying the same decision reference.
+Without that publication authority, return `OWNER_DECISION_REQUIRED`. The
+response must identify the conflict, impacted goal/acceptance, viable options
+and tradeoffs, and a recommendation. Operation authorization expansion remains
+independently gated.
 
 For explicit standalone no-Plan work, `PRODUCT_AMENDMENT_REQUIRED` or
 `DESIGN_AMENDMENT_REQUIRED` is reported as the exact missing decision.
@@ -623,7 +646,8 @@ Never:
 - acquire one resource while waiting for another resource in the same target;
 - retry a parked target while an independent ready target can progress;
 - let God View execute or persist workflow state;
-- let the Agent, scheduler, or Guardian mutate the frozen Plan Version or PlanMount;
+- mutate a Plan without `planctl amend`, rewrite its Amendment Log, or replace
+  its PlanMount for an ordinary execution correction;
 - create or mount a Plan after the user explicitly selected no-Plan standalone
   execution;
 - let Context Anchor repair workspace active-work;

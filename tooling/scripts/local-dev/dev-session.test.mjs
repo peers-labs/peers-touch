@@ -82,7 +82,7 @@ function fixture({
   const sessionId = 'dwf-b1-session';
   const journeyId = 'DWF-AS03';
   const taskId = 'DWF-B1';
-  const planVersionDigest = 'a'.repeat(64);
+  const planDigest = 'a'.repeat(64);
   const mountId = 'mount-fixture';
   const runId = 'run-fixture';
   const task = {
@@ -157,7 +157,7 @@ function fixture({
     taskSlices: new Map([[taskId, task]]),
     currentTask: task,
     readyTasks: [],
-    planVersionDigest,
+    planDigest,
   };
   const executionBinding = {
     mountId,
@@ -171,10 +171,11 @@ function fixture({
       mountId,
       planId: manifest.planId,
       planPath: 'fake-plan.md',
-      planVersionDigest,
+      planDigest,
     },
     snapshot: {
       executionBinding,
+      planDigest,
     },
     run: {
       runId,
@@ -276,7 +277,7 @@ function declarationOptions(scope, overrides = {}) {
       taskStatuses: {
         [scope.task.taskId]: 'in_progress',
       },
-      planVersionDigest: scope.plan.planVersionDigest,
+      planDigest: scope.plan.planDigest,
       mountId: scope.planExecution.mount.mountId,
       runId: scope.planExecution.run.runId,
     },

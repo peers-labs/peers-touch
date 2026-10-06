@@ -110,7 +110,7 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
       sessionId: 'SESSION-1',
       planId: 'PLAN-1',
       planPath: 'docs/plan.md',
-      planVersionDigest: 'a'.repeat(64),
+      planDigest: 'a'.repeat(64),
       mountId: 'mount-1',
       runId: 'run-1',
       taskId: 'TASK-1',
@@ -163,11 +163,12 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
             mount: {
               planId: declaration.planId,
               planPath: declaration.planPath,
-              planVersionDigest: declaration.planVersionDigest,
+              planDigest: declaration.planDigest,
               mountId: declaration.mountId,
             },
             snapshot: {
               recordDigest: activeWork.snapshotDigest,
+              planDigest: declaration.planDigest,
               plan: {
                 tasks: [{ id: declaration.taskId }],
               },
