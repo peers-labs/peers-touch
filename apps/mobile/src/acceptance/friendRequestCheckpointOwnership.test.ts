@@ -25,7 +25,10 @@ import {
 const account = {
   stationPeerId: 'station-a',
   actorPtid: 'ptid:alice',
+  deviceId: 'device-alice',
+  lifecycleGeneration: 1,
 };
+const scopeKey = 'station-a|ptid:alice|device-alice|1';
 const decision = {
   ...account,
   requestId: 'request-1',
@@ -43,12 +46,12 @@ beforeEach(() => {
   invokeMock.mockReset();
   notifyReliabilityCommandChangedMock.mockReset();
   releaseSession = bindMobileSessionMutationAdmission(() => ({
-    scopeKey: 'station-a|ptid:alice',
+    scopeKey,
     open: true,
     reason: 'session_active',
   }));
   releaseMutation = bindMobileMutationAdmission(
-    'station-a|ptid:alice',
+    scopeKey,
     () => ({
       lifecycle: 'active',
       staleness: {

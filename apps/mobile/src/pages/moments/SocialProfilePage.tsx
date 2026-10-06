@@ -136,7 +136,11 @@ export function SocialProfilePage({
   };
 
   return (
-    <div className="page-container mobile-detail-page">
+    <div
+      className="page-container mobile-detail-page"
+      data-acceptance-id="social-profile-page"
+      data-profile-actor-ptid={actorPtid}
+    >
       <header className="page-header">
         <button
           type="button"
@@ -151,7 +155,7 @@ export function SocialProfilePage({
         </h1>
       </header>
 
-      <div className="mobile-detail-body" data-profile-actor-ptid={actorPtid}>
+      <div className="mobile-detail-body">
         <div className="contact-profile-card">
           <Spin spinning={profileLoading}>
             <MobileAvatar src={profile?.avatar} size={72}>
@@ -247,7 +251,10 @@ export function SocialProfilePage({
           ) : null}
         </div>
 
-        <section aria-label={t('mobile.social.profile.authoredPosts')}>
+        <section
+          data-acceptance-id="social-profile-authored-posts"
+          aria-label={t('mobile.social.profile.authoredPosts')}
+        >
           <Text strong>{t('mobile.social.profile.authoredPosts')}</Text>
           {(authoredFeed?.posts ?? []).map((post) => (
             <div key={post.id} data-scroll-anchor-id={post.id}>

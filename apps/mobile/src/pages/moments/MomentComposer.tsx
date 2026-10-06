@@ -620,7 +620,11 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
   };
 
   return (
-    <section className="moments-composer-card">
+    <section
+      className="moments-composer-card"
+      data-acceptance-id="social-composer"
+      data-audience-choice={audienceChoice}
+    >
       {draftRestored && (
         <div className="moments-draft-banner">
           <Save size={14} />
@@ -653,6 +657,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
         <Text className="moments-composer-eyebrow">{t('mobile.moments.audience.label')}</Text>
         <Select
           value={audienceChoice}
+          data-acceptance-id="social-audience-select"
           onChange={(value: SocialAudienceChoice) => {
             setAudienceChoice(value);
             if (value === 'CIRCLE' && !circleId && circles[0]) {
@@ -675,6 +680,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
         {audienceChoice === 'CIRCLE' && (
           <Select
             value={circleId || undefined}
+            data-acceptance-id="social-audience-circle"
             onChange={setCircleId}
             placeholder={t('mobile.moments.audience.selectCircle')}
             disabled={editingDisabled}
@@ -690,6 +696,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
         {audienceChoice === 'GROUP' && (
           <Select
             value={groupConversationId || undefined}
+            data-acceptance-id="social-audience-group"
             onChange={setGroupConversationId}
             placeholder={t('mobile.moments.audience.selectGroup')}
             disabled={editingDisabled}
@@ -707,6 +714,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
           || audienceChoice === 'DIRECT') && (
           <Input
             value={actorPtidsInput}
+            data-acceptance-id="social-audience-actors"
             onChange={(event) => setActorPtidsInput(event.target.value)}
             placeholder={t(
               audienceChoice === 'DIRECT'
@@ -727,6 +735,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
 
       <Input.TextArea
         value={text}
+        data-acceptance-id="social-composer-text"
         onChange={(event) => setText(event.target.value)}
         placeholder={t('mobile.moments.placeholder')}
         autoSize={{ minRows: 4, maxRows: 8 }}
@@ -799,6 +808,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
         <Button
           type="primary"
           icon={<Send size={16} />}
+          data-acceptance-id="social-composer-publish"
           onClick={() => void publish()}
           disabled={!canPublish}
           loading={publishing}

@@ -92,7 +92,11 @@ export function SocialCircleDetailPage({
   };
 
   return (
-    <div className="page-container mobile-detail-page">
+    <div
+      className="page-container mobile-detail-page"
+      data-acceptance-id="social-circle-detail"
+      data-circle-id={circleId}
+    >
       <header className="page-header">
         <button
           type="button"
@@ -113,6 +117,7 @@ export function SocialCircleDetailPage({
             <Text type="secondary">{t('mobile.social.circles.nameLabel')}</Text>
             <Input
               value={name}
+              data-acceptance-id="social-circle-name"
               maxLength={120}
               disabled={pending}
               onChange={(event) => setName(event.target.value)}
@@ -122,6 +127,7 @@ export function SocialCircleDetailPage({
             <Text type="secondary">{t('mobile.social.circles.descriptionLabel')}</Text>
             <Input.TextArea
               value={description}
+              data-acceptance-id="social-circle-description"
               maxLength={500}
               disabled={pending}
               autoSize={{ minRows: 3, maxRows: 6 }}
@@ -131,6 +137,7 @@ export function SocialCircleDetailPage({
           <Button
             type="primary"
             block
+            data-acceptance-id="social-circle-save"
             loading={pending}
             disabled={!name.trim()}
             onClick={() => void save()}
@@ -154,6 +161,7 @@ export function SocialCircleDetailPage({
             <Button
               size="small"
               icon={<UserPlus size={15} />}
+              data-acceptance-id="social-circle-add-members"
               disabled={pending}
               onClick={() => onOpenMembers({
                 routeId: 'detail:social-circle-members',
@@ -168,7 +176,12 @@ export function SocialCircleDetailPage({
               {members.map((member) => {
                 const profile = peerProfiles[member.actorPtid];
                 return (
-                  <div className="circle-member-row" key={member.actorPtid}>
+                  <div
+                    className="circle-member-row"
+                    key={member.actorPtid}
+                    data-acceptance-id="social-circle-member"
+                    data-actor-ptid={member.actorPtid}
+                  >
                     <span className="circle-row-copy">
                       <Text strong ellipsis>
                         {profile?.displayName || member.actorPtid}
@@ -205,6 +218,7 @@ export function SocialCircleDetailPage({
             block
             danger
             icon={<Trash2 size={16} />}
+            data-acceptance-id="social-circle-delete"
             loading={pending}
             onClick={confirmDelete}
           >

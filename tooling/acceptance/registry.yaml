@@ -1405,7 +1405,8 @@
       },
       "require": [
         "mobile-social-facade-contract",
-        "mobile-social-feed-native"
+        "mobile-social-feed-native",
+        "mobile-social-ios-native"
       ]
     },
     {
@@ -1431,7 +1432,8 @@
       },
       "require": [
         "mobile-social-facade-contract",
-        "mobile-social-search-profile-native"
+        "mobile-social-search-profile-native",
+        "mobile-social-ios-native"
       ]
     },
     {
@@ -1458,7 +1460,8 @@
       },
       "require": [
         "mobile-social-facade-contract",
-        "mobile-social-circles-native"
+        "mobile-social-circles-native",
+        "mobile-social-ios-native"
       ]
     },
     {
@@ -1484,7 +1487,8 @@
       },
       "require": [
         "mobile-social-facade-contract",
-        "mobile-social-audience-composer-native"
+        "mobile-social-audience-composer-native",
+        "mobile-social-ios-native"
       ]
     },
     {
@@ -1511,7 +1515,8 @@
       },
       "require": [
         "mobile-social-facade-contract",
-        "mobile-social-thread-media-native"
+        "mobile-social-thread-media-native",
+        "mobile-social-ios-native"
       ]
     },
     {
@@ -1531,7 +1536,8 @@
       "require": [
         "mobile-contract-static",
         "mobile-social-facade-contract",
-        "mobile-simulator-social-convergence-e2e"
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-social-ios-native"
       ]
     },
     {
@@ -1557,7 +1563,8 @@
         "mobile-simulator-social-convergence-e2e",
         "mobile-simulator-chat-contacts-e2e",
         "mobile-simulator-moments-e2e",
-        "mobile-simulator-settings-e2e"
+        "mobile-simulator-settings-e2e",
+        "mobile-social-ios-native"
       ]
     },
     {
@@ -1691,7 +1698,8 @@
         "mobile-simulator-chat-contacts-e2e",
         "mobile-simulator-recovery-e2e",
         "mobile-simulator-recovery-ui-e2e",
-        "mobile-simulator-moments-e2e"
+        "mobile-simulator-moments-e2e",
+        "mobile-social-ios-native"
       ]
     },
     {

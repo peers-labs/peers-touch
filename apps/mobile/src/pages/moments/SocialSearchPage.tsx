@@ -86,7 +86,10 @@ export function SocialSearchPage({
   };
 
   return (
-    <div className="page-container mobile-detail-page">
+    <div
+      className="page-container mobile-detail-page"
+      data-acceptance-id="social-search-page"
+    >
       <header className="page-header">
         <button
           type="button"
@@ -103,6 +106,7 @@ export function SocialSearchPage({
         <button
           type="button"
           className="circle-entry-row"
+          data-acceptance-id="social-circles-open"
           onClick={onOpenCircles}
         >
           <span className="circle-row-icon"><UsersRound size={18} /></span>
@@ -115,6 +119,7 @@ export function SocialSearchPage({
 
         <Input.Search
           value={query}
+          data-acceptance-id="social-search-input"
           data-focus-id="social-search-input"
           placeholder={t('mobile.contacts.findPeoplePlaceholder')}
           enterButton={t('common.action.search')}
@@ -165,6 +170,8 @@ export function SocialSearchPage({
                 key={result.ptid}
                 type="button"
                 className="people-result-card"
+                data-acceptance-id="social-search-result"
+                data-actor-ptid={result.ptid}
                 data-scroll-anchor-id={result.ptid}
                 data-focus-id={`social-result:${result.ptid}`}
                 data-active={activeAnchor === result.ptid}

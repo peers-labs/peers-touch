@@ -62,7 +62,10 @@ export function SocialCirclesPage({
   };
 
   return (
-    <div className="page-container mobile-detail-page">
+    <div
+      className="page-container mobile-detail-page"
+      data-acceptance-id="social-circles-page"
+    >
       <header className="page-header">
         <button
           type="button"
@@ -76,6 +79,7 @@ export function SocialCirclesPage({
         <button
           type="button"
           className="header-action"
+          data-acceptance-id="social-circle-create-open"
           aria-label={t('mobile.social.circles.create')}
           onClick={openCreate}
         >
@@ -93,6 +97,8 @@ export function SocialCirclesPage({
                 type="button"
                 className="circle-row"
                 key={circle.id.toString()}
+                data-acceptance-id="social-circle-row"
+                data-circle-id={circle.id.toString()}
                 onClick={() => onOpenCircle({
                   routeId: 'detail:social-circle',
                   circleId: circle.id.toString(),
@@ -132,7 +138,11 @@ export function SocialCirclesPage({
         title={t('mobile.social.circles.create')}
         okText={t('common.action.create')}
         cancelText={t('common.action.cancel')}
-        okButtonProps={{ loading: creating, disabled: !name.trim() }}
+        okButtonProps={{
+          loading: creating,
+          disabled: !name.trim(),
+          'data-acceptance-id': 'social-circle-create-submit',
+        }}
         onOk={() => void submitCreate()}
         onCancel={() => {
           if (!creating) setCreateOpen(false);
@@ -142,12 +152,14 @@ export function SocialCirclesPage({
           <Input
             autoFocus
             value={name}
+            data-acceptance-id="social-circle-create-name"
             maxLength={120}
             placeholder={t('mobile.social.circles.name')}
             onChange={(event) => setName(event.target.value)}
           />
           <Input.TextArea
             value={description}
+            data-acceptance-id="social-circle-create-description"
             maxLength={500}
             autoSize={{ minRows: 3, maxRows: 6 }}
             placeholder={t('mobile.social.circles.description')}
