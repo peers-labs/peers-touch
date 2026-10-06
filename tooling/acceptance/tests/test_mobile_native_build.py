@@ -21,6 +21,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     ACCEPTANCE_CARGO_FEATURE,
     ACCEPTANCE_VARIANT,
     ANDROID_CARGO_GRADLE_PROJECTS,
+    ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS,
     ANDROID_GRADLE_LOCK_REQUIREMENTS,
     ANDROID_LOCAL_GRADLE_PROJECTS,
     ANDROIDX_GRADLE_PROPERTY,
@@ -1176,6 +1177,15 @@ class MobileNativeBuildTest(unittest.TestCase):
                 lockfile.write_text(
                     "\n".join(
                         [f"{module}=controlled" for module in required_modules]
+                        + [
+                            f"{module}={','.join(configurations)}"
+                            for module, configurations in (
+                                ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS.get(
+                                    relative,
+                                    {},
+                                ).items()
+                            )
+                        ]
                         + ["empty="]
                     )
                     + "\n",
@@ -1220,6 +1230,40 @@ class MobileNativeBuildTest(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
+            app_lock_relative, configuration_requirements = next(
+                iter(ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS.items())
+            )
+            app_lock = root / app_lock_relative
+            app_lock_contents = app_lock.read_text(encoding="utf-8")
+            module, configurations = next(iter(configuration_requirements.items()))
+            app_lock.write_text(
+                app_lock_contents.replace(
+                    f"{module}={','.join(configurations)}",
+                    f"{module}={configurations[0]}",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                MobileNativeBuildError,
+                "lock configuration",
+            ):
+                _require_dependency_manager_locks(root, "android")
+            app_lock.write_text(app_lock_contents, encoding="utf-8")
+            app_lock.write_text(
+                app_lock_contents
+                + (
+                    "androidx.activity:activity-ktx:1.7.0="
+                    "arm64ReleaseCompileClasspath\n"
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                MobileNativeBuildError,
+                "release dependency versions conflict",
+            ):
+                _require_dependency_manager_locks(root, "android")
+            app_lock.write_text(app_lock_contents, encoding="utf-8")
+
             build_src.write_text("plugins { `kotlin-dsl` }\n", encoding="utf-8")
             with self.assertRaisesRegex(
                 MobileNativeBuildError,

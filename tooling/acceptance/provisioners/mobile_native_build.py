@@ -73,6 +73,26 @@ ANDROID_GRADLE_LOCK_REQUIREMENTS = {
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
 }
+ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS = {
+    "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/app.lockfile": {
+        "androidx.activity:activity-ktx:1.8.2": (
+            "arm64DebugRuntimeClasspath",
+            "arm64ReleaseRuntimeClasspath",
+        ),
+        "androidx.lifecycle:lifecycle-runtime-ktx:2.6.1": (
+            "arm64DebugRuntimeClasspath",
+            "arm64ReleaseRuntimeClasspath",
+        ),
+        "androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.1": (
+            "arm64DebugRuntimeClasspath",
+            "arm64ReleaseRuntimeClasspath",
+        ),
+        "androidx.savedstate:savedstate-ktx:1.2.1": (
+            "arm64DebugRuntimeClasspath",
+            "arm64ReleaseRuntimeClasspath",
+        ),
+    },
+}
 CARGO_CACHE_SUBTREES = (
     "registry/index",
     "registry/cache",
@@ -2772,16 +2792,57 @@ def _require_dependency_manager_locks(root: Path, platform: str) -> None:
         for relative, required_modules in ANDROID_GRADLE_LOCK_REQUIREMENTS.items():
             lockfile = _relative_file(root, relative)
             lines = lockfile.read_text(encoding="utf-8").splitlines()
-            locked_modules = {
-                line.split("=", 1)[0]
+            lock_state = {
+                module: {
+                    configuration
+                    for configuration in configurations.split(",")
+                    if configuration
+                }
                 for line in lines
                 if line and not line.startswith("#") and "=" in line
+                for module, configurations in (line.split("=", 1),)
             }
-            if "empty" not in locked_modules or not set(required_modules).issubset(
-                locked_modules
+            if "empty" not in lock_state or not set(required_modules).issubset(
+                lock_state
             ):
                 raise MobileNativeBuildError(
                     f"Android Gradle dependency lock state is incomplete: {relative}"
+                )
+            for module, required_configurations in (
+                ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS.get(
+                    relative,
+                    {},
+                ).items()
+            ):
+                if not set(required_configurations).issubset(
+                    lock_state.get(module, set())
+                ):
+                    raise MobileNativeBuildError(
+                        "Android Gradle dependency lock configuration is incomplete: "
+                        f"{relative} {module}"
+                    )
+            arm64_release_versions: dict[str, set[str]] = {}
+            for module, configurations in lock_state.items():
+                coordinate = module.rsplit(":", 1)
+                if (
+                    len(coordinate) != 2
+                    or not any(
+                        configuration.startswith("arm64Release")
+                        for configuration in configurations
+                    )
+                ):
+                    continue
+                name, version = coordinate
+                arm64_release_versions.setdefault(name, set()).add(version)
+            conflicts = sorted(
+                name
+                for name, versions in arm64_release_versions.items()
+                if len(versions) > 1
+            )
+            if conflicts:
+                raise MobileNativeBuildError(
+                    "Android Gradle arm64 release dependency versions conflict: "
+                    f"{relative} {conflicts}"
                 )
     else:
         raise MobileNativeBuildError(f"unsupported Mobile platform: {platform}")
