@@ -1,7 +1,7 @@
 # Mobile Social Desktop Parity - Architecture Design
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-06 | **Updated**: 2026-10-06
 > **Owner**: Mobile / Social / Client Architecture
 > **Module**: `apps/mobile/`
@@ -27,6 +27,7 @@
 | Mobile mainline is Tauri Web + Rust + native plugins | `verified_fact` | `docs/client/mobile/base.md`, `apps/mobile/` | high | none |
 | Public feed/detail/comment/reaction foundations exist | `verified_fact` | `momentsFeedStore.ts`, `momentsGateway.ts`, Moments pages | high | Native full-Journey evidence |
 | Mobile private publish/read/media/comment/recovery exists | `verified_fact` | `privateMomentsRuntime.ts`, `src-tauri/src/social/` | high | product UI integration |
+| Current Mobile recovery phrase crosses TypeScript, Tauri command JSON and the Web Acceptance registry | `verified_fact` | `mobileCommands.ts`, `privateMomentsRuntime.ts`, `acceptance/actions.ts` | high | native secret-entry cutover |
 | Private Reaction Mobile path is absent | `verified_fact` | Mobile runtime/command inventory | high | implementation |
 | Full Audience/Circles/Moments Search/Profile routes are absent | `verified_fact` | Mobile pages/navigation inventory | high | implementation |
 | Existing Mobile plan proves cross-Station Social | `hypothesis_rejected` | MS-D27 explicitly defers it | high | new required cells |
@@ -78,6 +79,11 @@ Mobile Native App
 │    -> private Social engine / secure-content-core                   │
 │    -> encrypted draft + durable command stores                      │
 │    -> opaque media lifecycle                                        │
+│    -> native secure-input capability                                 │
+├──────────────────── Rust-to-native plugin boundary ─────────────────┤
+│ iOS / Android secure-input plugin                                   │
+│    -> masked, screenshot-safe recovery phrase entry                  │
+│    -> one-shot secret delivery to Rust only                          │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ canonical Proto over Station API
                                ▼
@@ -159,9 +165,22 @@ interface SocialIntentPort {
   recover(postId: string): Promise<void>;
   reconcile(reason: string): Promise<void>;
 }
+
+interface NativeRecoveryIntent {
+  postId: string;
+  recoveryEpoch: number;
+}
+
+interface NativeRecoveryResult {
+  post: SocialMomentProjection;
+  outcome: 'RECOVERED' | 'CANCELLED' | 'INVALID_SECRET' | 'FAILED';
+}
 ```
 
 `Canonical*Intent` is an adapter view over generated Proto, not a new business model.
+`NativeRecoveryIntent` contains no secret. The native plugin returns the phrase only to
+Mobile Rust, which validates, derives, consumes and zeroizes it before returning a
+sanitized result to Web.
 
 ## 8. Data And Control Flow
 
@@ -193,6 +212,17 @@ Mobile intent -> viewer Home Station durable command
 -> result projection -> viewer Home Station -> Mobile reconcile
 ```
 
+### Trusted recovery
+
+```text
+Web recovery intent(post identity, epoch)
+  -> Rust validates current scope/generation and recovery-required state
+  -> native secure-input plugin presents masked platform UI
+  -> phrase returns once to Rust, never to Web or Acceptance JSON
+  -> Rust validates BIP39, stores the wrapped recovery master, recovers and verifies
+  -> sanitized generation-fenced projection returns to Web
+```
+
 ## 9. Operational Semantics
 
 - **Idempotency**: every may-commit write has one canonical command/resource identity.
@@ -205,6 +235,8 @@ Mobile intent -> viewer Home Station durable command
 - **Backpressure**: Mobile command/draft/media bounds fail before admission with typed recovery.
 - **Large payload**: content payload respects Secure Content bounds; media bytes stay out of command/event JSON.
 - **Auth**: Web has no bearer token; Rust binds Station/PTID/device and rotates session material.
+- **Secret entry**: one native recovery prompt may be active; cancel, invalid phrase,
+  stale generation and teardown produce typed terminal outcomes with no retained partial key.
 - **Shutdown**: generation fences callbacks; teardown drains/reconciles admitted work and purges plaintext projection.
 
 ## 10. Allowed And Forbidden Dependencies
@@ -215,6 +247,7 @@ Allowed:
 page -> MobileSocialFacade -> typed Tauri port -> Mobile Rust
 Mobile Rust -> canonical Station owner API
 Mobile Rust -> secure-content-core / encrypted stores
+Mobile Rust -> native secure-input plugin
 Station Social -> shared Federation delivery
 ```
 
@@ -224,6 +257,7 @@ Forbidden:
 page -> authenticated fetch
 page -> private engine
 Mobile Web -> root/recovery/private key
+Mobile Web/Acceptance registry -> recovery phrase or native secret value
 Mobile -> remote Station direct Social API
 Mobile -> Social/Federation database
 public path -> private plaintext fallback
@@ -236,6 +270,10 @@ private runtime -> second outbox or second command store
 - all six Desktop/iOS/Android interop directions.
 - exact-source two-Station outage/retry/restart/revoke.
 - Station/OSS/log/Web-state plaintext and key-material absence.
+- Native recovery prompt masks phrase text; Android prevents capture and iOS secure
+  entry exposes no phrase glyphs. Acceptance binds a process-scoped native
+  secret channel at launch and Appium triggers only its native autofill action;
+  neither phrase nor channel reference enters Web, command logs or evidence.
 - seven canonical content kinds render through one public/private mapping; create controls are capability-gated.
 - tap-to-visible P95 <= 100 ms for scope/profile routes and inline thread/media visibility.
 - feed DOM window <= 100 items; comments default to <= 10 rows per item and expanded windows remain <= 100;

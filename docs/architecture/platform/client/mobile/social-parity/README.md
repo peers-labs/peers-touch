@@ -1,7 +1,7 @@
 # Mobile Social Desktop Parity
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-06 | **Updated**: 2026-10-06
 > **Owner**: Mobile / Social / Client Architecture
 > **Module**: `apps/mobile/`
@@ -70,7 +70,7 @@ Search，以及 Rust private publish/read/media/comment/recovery 基础，但这
 | [integration.md](./integration.md) | Existing-source mapping and target cutover boundary |
 | [module-layout.md](./module-layout.md) | Target Mobile module ownership |
 | [prototype/README.md](./prototype/README.md) | Mobile Shell Social parity prototype amendment |
-| [execution plan](./execution-plans/20261006-mobile-social-desktop-parity-v23/plan.md) | Frozen remaining-closure DAG, authorization, and Acceptance mapping |
+| [execution plan](./execution-plans/20261006-mobile-social-desktop-parity-v24/plan.md) | Frozen remaining-closure DAG, authorization, and Acceptance mapping |
 
 ## 5. Upstream Sources
 

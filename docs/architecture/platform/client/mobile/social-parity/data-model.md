@@ -1,7 +1,7 @@
 # Mobile Social Desktop Parity - Data Model
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-06 | **Updated**: 2026-10-06
 > **Owner**: Mobile / Social / Client Architecture
 > **Module**: `model/domain/social/`, `apps/mobile/`
@@ -184,7 +184,7 @@ EDITING/IDLE -> PENDING -> COMMITTED
 |---|---|---|
 | Social business truth | Station | canonical Social storage |
 | remote delivery | Federation/source Social | durable outbox/inbox |
-| private ciphertext/key refs | Mobile Rust private engine | encrypted local store |
+| private ciphertext/key refs and wrapped recovery master | Mobile Rust private engine | encrypted local store / platform secure storage |
 | may-commit commands | Mobile Rust command ledger | encrypted, bounded, scope-keyed |
 | composer/comment drafts | Mobile Rust draft store | encrypted, revisioned, scope-keyed |
 | verified plaintext projection | Mobile Rust/Web memory + bounded ordinary cache | generation-scoped, purgeable |
@@ -211,10 +211,52 @@ Typed owner errors map to product states:
 | hash/AEAD mismatch | `INTEGRITY_FAILURE` |
 | source unavailable with verified cache | `REMOTE_SOURCE_UNAVAILABLE` |
 | delete/relationship/device revoke | `DELETED_OR_REVOKED` |
+| native recovery input cancelled | `RECOVERY_REQUIRED` with the same Moment identity |
+| invalid recovery phrase | `RECOVERY_REQUIRED` with inline correction and no retained key |
 
 Generic string parsing is forbidden when a canonical error code exists.
 
-## 9. Versioning
+## 9. Native Recovery Input
+
+The Web-to-Rust recovery intent carries no secret:
+
+```ts
+interface PrivateMomentNativeRecoveryInput extends PrivateSocialAccountInput {
+  postId: string;
+  recoveryEpoch: number;
+}
+```
+
+The Rust-to-native plugin request is process-local and not a Tauri Web command:
+
+```text
+NativeSecretInputRequest {
+  request_id
+  purpose = PRIVATE_SOCIAL_RECOVERY
+  lifecycle_generation
+  deadline
+}
+```
+
+The plugin returns exactly one internal result:
+
+```text
+submitted(secret) | cancelled | expired | busy | platform_failure
+```
+
+Only `submitted(secret)` contains secret material, and it is consumed inside the
+originating Rust call. No plugin result, phrase, phrase-derived handle or error
+detail is serialized to Mobile Web, the Acceptance registry, logs, screenshots,
+runtime manifests or evidence. The public result is the recovered
+`PrivateMomentReadProjection` or a typed secret-free failure.
+
+Acceptance builds may resolve `submitted(secret)` from a process-scoped native
+secret channel bound by the runtime owner at launch. The Web action and Appium
+command carry no phrase or channel reference; Appium triggers only a native
+autofill accessibility action. The channel is single-use, process-bound and
+absent from result/evidence serialization.
+
+## 10. Versioning
 
 - generated Proto evolution follows existing compatibility policy;
 - projection schema changes are internal but versioned where persisted;

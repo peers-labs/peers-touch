@@ -736,7 +736,8 @@
         "MPS-D09",
         "MPS-D10",
         "MPS-D11",
-        "MPS-D12"
+        "MPS-D12",
+        "MPS-D13"
       ],
       "governedPaths": [
         "apps/mobile/src/features/social",

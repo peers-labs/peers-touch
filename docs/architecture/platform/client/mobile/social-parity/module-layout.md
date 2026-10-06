@@ -1,7 +1,7 @@
 # Mobile Social Desktop Parity - Module Layout
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-06 | **Updated**: 2026-10-06
 > **Owner**: Mobile / Social / Client Architecture
 
@@ -61,6 +61,14 @@ apps/mobile/src-tauri/src/social/
 ├── transport.rs
 ├── store.rs
 └── worker.rs
+
+apps/mobile/src-tauri/
+├── src/platform/
+│   └── secure_input.rs
+└── plugins/secure-input/
+    ├── src/lib.rs
+    ├── ios/Sources/SecureInputPlugin.swift
+    └── android/src/main/java/SecureInputPlugin.kt
 ```
 
 Names describe target responsibilities. Existing files may be split/moved only through one atomic
@@ -84,6 +92,8 @@ ownership cut; no duplicate live facade or adapter is allowed.
 | Rust `transport.rs` | authenticated canonical Station transport | remote Station direct client |
 | Rust `store.rs` | existing encrypted local ownership | parallel Web outbox |
 | Rust `worker.rs` | bounded reconcile/replay | blind retry |
+| `src/platform/secure_input.rs` | Social recovery purpose/scope validation and Rust-only plugin adaptation | phrase persistence or Web projection |
+| `plugins/secure-input/` | masked native secret entry and one-shot Rust delivery | recovery derivation, business state or Web command |
 
 ## 3. Dependency Direction
 
@@ -94,10 +104,12 @@ pages/moments
       -> momentsFeedStore / socialStore / privateMomentsRuntime
         -> typed mobileCommands
           -> Rust social adapter
-            -> canonical Station APIs / secure-content-core
+            -> canonical Station APIs / secure-content-core / native secure-input
 ```
 
 Reverse imports are forbidden. Rust may emit sanitized projection events; it never imports Web/UI logic.
+The secure-input plugin is invoked only by Rust and has no JavaScript API or
+capability grant.
 
 ## 4. Component Lifetime
 
