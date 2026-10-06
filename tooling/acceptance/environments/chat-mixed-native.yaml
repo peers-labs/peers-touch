@@ -91,6 +91,11 @@
       }
     }
   ],
+  "gate_client_service_bindings": {
+    "chat-lifecycle-mixed-client-multi-device-e2e": {
+      "desktop-alice": "station-secondary"
+    }
+  },
   "harness": {
     "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
     "required_actions": [

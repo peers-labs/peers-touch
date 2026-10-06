@@ -53,15 +53,48 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             clients["desktop-bob"].actor,
             clients["sim-ios"].actor,
         )
-        self.assertIsInstance(
-            get_provisioner(
-                contract,
-                station_profiles={
-                    "station-primary": "four",
-                    "station-secondary": "chat-native-disposable",
-                },
-            ),
-            ChatMixedNativeProvisioner,
+        provisioner = get_provisioner(
+            contract,
+            station_profiles={
+                "station-primary": "four",
+                "station-secondary": "chat-native-disposable",
+            },
+        )
+        self.assertIsInstance(provisioner, ChatMixedNativeProvisioner)
+        overlay = provisioner._load_overlay()
+        multi_device_clients = {
+            client.id: client
+            for client in provisioner._clients_for_gate(
+                "chat-lifecycle-mixed-client-multi-device-e2e",
+                overlay,
+            )
+        }
+        self.assertEqual(
+            multi_device_clients["desktop-alice"]
+            .service_bindings["station"].service_id,
+            "station-secondary",
+        )
+        self.assertEqual(
+            multi_device_clients["desktop-bob"]
+            .service_bindings["station"].service_id,
+            "station-secondary",
+        )
+        self.assertEqual(
+            multi_device_clients["sim-ios"]
+            .service_bindings["station"].service_id,
+            "station-secondary",
+        )
+        same_station_clients = {
+            client.id: client
+            for client in provisioner._clients_for_gate(
+                "chat-lifecycle-mixed-client-same-station-e2e",
+                overlay,
+            )
+        }
+        self.assertEqual(
+            same_station_clients["desktop-alice"]
+            .service_bindings["station"].service_id,
+            "station-primary",
         )
 
     def test_catalog_uses_typed_ephemeral_mobile_capability(self) -> None:

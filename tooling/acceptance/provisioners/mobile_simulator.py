@@ -31,6 +31,7 @@ from tooling.acceptance.core import (
     ClientBindingError,
     ClientRuntimeIdentity,
     ClientRuntime,
+    EnvironmentClient,
     EnvironmentContract,
     EnvironmentProvisioner,
     EphemeralCapabilityBlocked,
@@ -6291,6 +6292,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         base: MobileSimulatorProvisioner | None = None
         try:
             overlay = self._load_overlay()
+            environment_clients = self._clients_for_gate(gate_id, overlay)
             manifest = self._preflighted(
                 self._manifest,
                 profile_name=self.environment_id,
@@ -6373,10 +6375,11 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 gate_id,
                 service_bindings,
                 overlay,
+                clients=environment_clients,
             )
             contract_clients = {
                 client.id: client
-                for client in self.contract.clients
+                for client in environment_clients
                 if client.runtime == "tauri-ios-simulator"
             }
             base_clients = {
@@ -6430,7 +6433,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                         "station"
                     ].service_id,
                 }
-                for client in self.contract.clients
+                for client in environment_clients
             }
             manifest = MobileSimulatorRuntimeManifest(
                 **{
@@ -6509,6 +6512,80 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 resource=f"{self.environment_id}:environment",
             )
         return payload
+
+    def _clients_for_gate(
+        self,
+        gate_id: str,
+        overlay: Mapping[str, Any],
+    ) -> tuple[EnvironmentClient, ...]:
+        raw_variants = overlay.get("gate_client_service_bindings", {})
+        if not isinstance(raw_variants, Mapping):
+            raise BlockedError(
+                reason=(
+                    f"{self.environment_id} Gate client bindings must be "
+                    "an object"
+                ),
+                resource=f"{self.environment_id}:client-bindings",
+            )
+        known_clients = {client.id: client for client in self.contract.clients}
+        for variant_gate_id, raw_bindings in raw_variants.items():
+            if not isinstance(variant_gate_id, str) or not isinstance(
+                raw_bindings,
+                Mapping,
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"{self.environment_id} Gate client binding variant "
+                        "is invalid"
+                    ),
+                    resource=f"{self.environment_id}:client-bindings",
+                )
+            for client_id, service_id in raw_bindings.items():
+                client = (
+                    known_clients.get(client_id)
+                    if isinstance(client_id, str)
+                    else None
+                )
+                service = (
+                    self.contract.services.get(service_id)
+                    if isinstance(service_id, str)
+                    else None
+                )
+                binding = (
+                    client.service_bindings.get("station")
+                    if client is not None
+                    else None
+                )
+                if (
+                    client is None
+                    or binding is None
+                    or service is None
+                    or service.kind != binding.required_kind
+                ):
+                    raise BlockedError(
+                        reason=(
+                            f"{self.environment_id} Gate client binding "
+                            f"{variant_gate_id!r}/{client_id!r} is invalid"
+                        ),
+                        resource=f"{self.environment_id}:client-bindings",
+                    )
+
+        selected = raw_variants.get(gate_id, {})
+        return tuple(
+            dataclasses.replace(
+                client,
+                service_bindings={
+                    **client.service_bindings,
+                    "station": dataclasses.replace(
+                        client.service_bindings["station"],
+                        service_id=str(selected[client.id]),
+                    ),
+                },
+            )
+            if client.id in selected
+            else client
+            for client in self.contract.clients
+        )
 
     def _required_station_profiles(self) -> dict[str, str]:
         if not self._station_profiles:
@@ -6719,7 +6796,10 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         gate_id: str,
         service_bindings: Mapping[str, MobileServiceBinding],
         overlay: Mapping[str, Any],
+        *,
+        clients: Sequence[EnvironmentClient] | None = None,
     ) -> dict[str, Any]:
+        environment_clients = tuple(clients or self.contract.clients)
         if (
             self.requires_actor_reset
             and os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1"
@@ -6732,7 +6812,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
             )
         fixture_roles = tuple(
-            sorted({client.actor for client in self.contract.clients})
+            sorted({client.actor for client in environment_clients})
         )
         station_service_ids = tuple(
             service_id
@@ -6797,7 +6877,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         if self.prepare_cross_station_friendships:
             role_targets: dict[str, tuple[str, str]] = {}
             selected_actors: dict[str, Any] = {}
-            for client in self.contract.clients:
+            for client in environment_clients:
                 role = client.actor
                 service_id = client.service_bindings["station"].service_id
                 binding = service_bindings[service_id]
@@ -6828,7 +6908,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 ]["actors"]
                 if actor["role"] == client.actor
             )
-            for client in self.contract.clients
+            for client in environment_clients
         )
         if self.derives_fixture_federation_id:
             federation_id = fixture_federation_id_from_station_ids(
@@ -6852,7 +6932,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                         "station"
                     ].service_id,
                 }
-                for client in self.contract.clients
+                for client in environment_clients
             ],
             "reset": {
                 "authorized": self.requires_actor_reset,
@@ -7023,7 +7103,11 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
                         resource=f"source-identity:{service_id}",
                     )
             overlay = self._load_overlay()
-            desktop_clients = self._desktop_clients(manifest.run_id)
+            environment_clients = self._clients_for_gate(gate_id, overlay)
+            desktop_clients = self._desktop_clients(
+                manifest.run_id,
+                clients=environment_clients,
+            )
             mobile_clients = tuple(
                 client
                 for client in manifest.clients
@@ -7132,10 +7216,15 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             self._appium_cleanup_registered = True
         return context
 
-    def _desktop_clients(self, run_id: str) -> tuple[ClientRuntime, ...]:
+    def _desktop_clients(
+        self,
+        run_id: str,
+        *,
+        clients: Sequence[EnvironmentClient] | None = None,
+    ) -> tuple[ClientRuntime, ...]:
         declared = tuple(
             client
-            for client in self.contract.clients
+            for client in (clients or self.contract.clients)
             if client.runtime == "native-tauri"
         )
         if {client.id for client in declared} != {
