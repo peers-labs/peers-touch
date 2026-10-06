@@ -13,8 +13,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Popconfirm, Select, message, Typography } from 'antd';
 import { AlertTriangle, ImagePlus, RotateCcw, Save, Send, Trash2 } from 'lucide-react';
-import { create } from '@bufbuild/protobuf';
-
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileAuthSession } from '../../features/auth/authSession';
 import type { SocialIntentPort } from '../../features/social/socialIntents';
@@ -26,12 +24,21 @@ import {
 } from '../../services/mobileCommands';
 import { useMomentsDraft, type MomentDraftPayload } from '../../features/social/useMomentsDraft';
 import {
-  Audience_Kind,
-  AudienceSchema,
+  type Audience,
   type ImageAttachment,
   type Post,
 } from '../../gen/proto/domain/social/post_pb';
 import { readableErrorMessage } from '../../utils/errorMessage';
+import {
+  SOCIAL_AUDIENCE_CHOICES,
+  buildSocialAudience,
+  isPublicSocialAudience,
+  socialAudienceChoiceFromAudience,
+  socialAudienceTargetFromAudience,
+  type SocialAudienceChoice,
+} from '../../features/social/socialAudience';
+import { useSocialCirclesStore } from '../../features/social/socialCircles';
+import { useGroupStore } from '../../features/group/groupStore';
 
 const { Text } = Typography;
 const MAX_IMAGES_PER_POST = 9;
@@ -87,13 +94,25 @@ function createMomentMediaRequestId(): string {
 export function createRestoredMomentImages(
   mediaRefs: readonly string[],
 ): PendingMomentImage[] {
-  return mediaRefs.map((persistedRef) => ({
-    localId: nextPendingImageId(),
-    previewUrl: persistedRef,
-    status: 'done',
-    source: 'restored-reference',
-    persistedRef,
-  }));
+  return mediaRefs.map((persistedRef) => {
+    const staged = decodeStagedMediaRef(persistedRef);
+    return {
+      localId: nextPendingImageId(),
+      previewUrl: persistedRef,
+      status: 'done',
+      source: 'restored-reference',
+      persistedRef,
+      ...(staged ? {
+        stagedHandle: {
+          handle: staged.handle,
+          mediaKind: 'image' as const,
+          mimeType: staged.mimeType,
+          byteLength: 0,
+          sha256Base64: '',
+        },
+      } : {}),
+    };
+  });
 }
 
 export function canPublishMoment(
@@ -132,15 +151,37 @@ export function hasAuthoritativeImageReadback(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Audience options
-// ---------------------------------------------------------------------------
+interface StagedMediaReference {
+  readonly handle: string;
+  readonly attachmentId: string;
+  readonly mimeType: string;
+}
 
-const AUDIENCE_OPTIONS: Array<{ value: number; labelKey: string }> = [
-  { value: Audience_Kind.PUBLIC, labelKey: 'mobile.moments.audience.public' },
-  { value: Audience_Kind.FOLLOWERS, labelKey: 'mobile.moments.audience.followers' },
-  { value: Audience_Kind.SELF, labelKey: 'mobile.moments.audience.self' },
-];
+const STAGED_MEDIA_PREFIX = 'native-moment-v1:';
+
+function encodeStagedMediaRef(
+  stagedHandle: NativeStagedMediaHandle,
+  attachmentId: string,
+): string {
+  return `${STAGED_MEDIA_PREFIX}${encodeURIComponent(stagedHandle.handle)}:${encodeURIComponent(
+    attachmentId,
+  )}:${encodeURIComponent(stagedHandle.mimeType)}`;
+}
+
+function decodeStagedMediaRef(reference: string): StagedMediaReference | null {
+  if (!reference.startsWith(STAGED_MEDIA_PREFIX)) return null;
+  const fields = reference.slice(STAGED_MEDIA_PREFIX.length).split(':');
+  if (fields.length !== 3 || fields.some((field) => !field)) return null;
+  return {
+    handle: decodeURIComponent(fields[0]),
+    attachmentId: decodeURIComponent(fields[1]),
+    mimeType: decodeURIComponent(fields[2]),
+  };
+}
+
+function actorPtidsFromInput(value: string): string[] {
+  return value.split(/[\s,]+/).filter(Boolean);
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -148,24 +189,42 @@ const AUDIENCE_OPTIONS: Array<{ value: number; labelKey: string }> = [
 
 interface MomentComposerProps {
   readonly session: MobileAuthSession;
-  readonly intents: Pick<SocialIntentPort, 'publishPublic'>;
-  readonly onPublished: (post: Post) => void;
+  readonly intents: Pick<SocialIntentPort, 'publishMoment'>;
+  readonly onPublished: () => void;
 }
 
 type PendingDraftRemoval =
   | { readonly kind: 'discard' }
-  | { readonly kind: 'publish'; readonly post: Post };
+  | { readonly kind: 'publish' };
 
 export function MomentComposer({ session, intents, onPublished }: MomentComposerProps) {
   const { t } = useMobileI18n();
 
   const [text, setText] = useState('');
-  const [audienceKind, setAudienceKind] = useState<number>(Audience_Kind.PUBLIC);
+  const [audienceChoice, setAudienceChoice] =
+    useState<SocialAudienceChoice>('PUBLIC');
+  const [circleId, setCircleId] = useState('');
+  const [groupConversationId, setGroupConversationId] = useState('');
+  const [actorPtidsInput, setActorPtidsInput] = useState('');
   const [pendingImages, setPendingImages] = useState<PendingMomentImage[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [pendingDraftRemoval, setPendingDraftRemoval] =
     useState<PendingDraftRemoval | null>(null);
   const pendingImagesRef = useRef<PendingMomentImage[]>([]);
+  const draftIdRef = useRef(globalThis.crypto.randomUUID());
+  const circles = useSocialCirclesStore((state) => state.circles);
+  const groups = useGroupStore((state) => state.groups);
+  const audience = useMemo<Audience | null>(() => {
+    try {
+      return buildSocialAudience(audienceChoice, {
+        circleId,
+        groupConversationId,
+        actorPtids: actorPtidsFromInput(actorPtidsInput),
+      });
+    } catch {
+      return null;
+    }
+  }, [actorPtidsInput, audienceChoice, circleId, groupConversationId]);
 
   // Draft management
   const {
@@ -181,7 +240,12 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
   } = useMomentsDraft(
     useCallback((payload: MomentDraftPayload) => {
       setText(payload.text);
-      setAudienceKind(payload.audienceKind);
+      const restoredChoice = socialAudienceChoiceFromAudience(payload.audience);
+      const restoredTarget = socialAudienceTargetFromAudience(payload.audience);
+      setAudienceChoice(restoredChoice);
+      setCircleId(restoredTarget.circleId ?? '');
+      setGroupConversationId(restoredTarget.groupConversationId ?? '');
+      setActorPtidsInput((restoredTarget.actorPtids ?? []).join(', '));
       setPendingImages((current) => {
         current.forEach((item) => revokePreviewUrl(item.previewUrl));
         return createRestoredMomentImages(payload.mediaRefs);
@@ -238,17 +302,17 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
     uploadingCount,
     errorCount,
     publishing,
-  ) && !saving && !discarding && !pendingDraftRemoval;
+  ) && Boolean(audience) && !saving && !discarding && !pendingDraftRemoval;
   const hasComposerDraft = hasDraft || Boolean(text.trim()) || pendingImages.length > 0;
   const editingDisabled = publishing || Boolean(pendingDraftRemoval);
 
   // Auto-save text, audience, and generated-contract media references.
   useEffect(() => {
-    if (!pendingDraftRemoval) {
-      saveDraft(text, audienceKind, successfulMediaRefs);
+    if (!pendingDraftRemoval && audience) {
+      saveDraft(text, audience, successfulMediaRefs);
     }
   }, [
-    audienceKind,
+    audience,
     pendingDraftRemoval,
     saveDraft,
     successfulMediaRefs,
@@ -271,7 +335,11 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
     });
     setPendingImages([]);
     setText('');
-    setAudienceKind(Audience_Kind.PUBLIC);
+    setAudienceChoice('PUBLIC');
+    setCircleId('');
+    setGroupConversationId('');
+    setActorPtidsInput('');
+    draftIdRef.current = globalThis.crypto.randomUUID();
     setPendingDraftRemoval(null);
   }, [
     session.actorRef.ptid,
@@ -281,10 +349,10 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
     session.stationPeerId,
   ]);
 
-  const completePublishedMoment = useCallback((post: Post) => {
+  const completePublishedMoment = useCallback(() => {
     message.success(t('mobile.moments.published'));
     resetComposer();
-    onPublished(post);
+    onPublished();
   }, [onPublished, resetComposer, t]);
 
   const handleDiscardDraft = useCallback(async () => {
@@ -298,7 +366,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
     if (!await retryPersistence()) return;
 
     if (pendingDraftRemoval?.kind === 'publish') {
-      completePublishedMoment(pendingDraftRemoval.post);
+      completePublishedMoment();
     } else if (pendingDraftRemoval?.kind === 'discard') {
       resetComposer();
     }
@@ -311,8 +379,10 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
 
   // -- Image upload --
 
-  const uploadOne = async (item: PendingMomentImage) => {
-    if (!item.stagedHandle) return;
+  const uploadPublicImage = async (
+    item: PendingMomentImage,
+  ): Promise<PendingMomentImage> => {
+    if (!item.stagedHandle) return item;
     try {
       const image = await uploadNativeMomentMedia({
         stationPeerId: session.stationPeerId,
@@ -323,17 +393,20 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
         handle: item.stagedHandle.handle,
       });
       const persistedRef = image.id || image.url;
+      const uploaded = {
+        ...item,
+        status: 'done' as const,
+        persistedRef,
+        image,
+        stagedHandle: undefined,
+        error: undefined,
+      };
       setPendingImages((current) => current.map((candidate) => (
         candidate.localId === item.localId
-          ? {
-            ...candidate,
-            status: 'done',
-            persistedRef,
-            image,
-            error: undefined,
-          }
+          ? uploaded
           : candidate
       )));
+      return uploaded;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       setPendingImages((current) => current.map((candidate) => (
@@ -341,6 +414,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
           ? { ...candidate, status: 'error', error: errorMsg }
           : candidate
       )));
+      throw error;
     }
   };
 
@@ -377,17 +451,19 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
       message.error(selection.errorCode || `moment_media_${selection.outcome}`);
       return;
     }
-    const drafts = selection.items.slice(0, slotsLeft).map((stagedHandle) => ({
-      localId: nextPendingImageId(),
-      stagedHandle,
-      previewUrl: '',
-      status: 'uploading' as const,
-      source: 'local-upload' as const,
-    }));
+    const drafts = selection.items.slice(0, slotsLeft).map((stagedHandle) => {
+      const localId = nextPendingImageId();
+      const attachmentId = globalThis.crypto.randomUUID();
+      return {
+        localId,
+        stagedHandle,
+        previewUrl: '',
+        status: 'done' as const,
+        source: 'local-upload' as const,
+        persistedRef: encodeStagedMediaRef(stagedHandle, attachmentId),
+      };
+    });
     setPendingImages((current) => [...current, ...drafts]);
-    for (const item of drafts) {
-      await uploadOne(item);
-    }
   };
 
   const removeImage = (localId: string) => {
@@ -416,16 +492,15 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
     const target = pendingImages.find((item) => item.localId === localId);
     if (!target?.stagedHandle) return;
     setPendingImages((current) => current.map((item) => (
-      item.localId === localId ? { ...item, status: 'uploading', error: undefined } : item
+      item.localId === localId ? { ...item, status: 'done', error: undefined } : item
     )));
-    void uploadOne({ ...target, status: 'uploading', error: undefined });
   };
 
   // -- Publish --
 
   const publish = async () => {
     const trimmed = text.trim();
-    const completedImages = pendingImages.filter(
+    let completedImages = pendingImages.filter(
       (item) => item.status === 'done' && item.persistedRef,
     );
     if (!trimmed && completedImages.length === 0) {
@@ -440,56 +515,107 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
       message.warning(t('mobile.moments.imageHasErrors'));
       return;
     }
-    if (!await persistDraftNow(text, audienceKind, successfulMediaRefs)) {
+    if (!audience) {
+      message.error(t('mobile.moments.audience.targetRequired'));
+      return;
+    }
+    if (!await persistDraftNow(text, audience, successfulMediaRefs)) {
       return;
     }
 
+    setPublishing(true);
+    if (isPublicSocialAudience(audience)) {
+      try {
+        completedImages = await Promise.all(
+          completedImages.map((item) => uploadPublicImage(item)),
+        );
+      } catch (error) {
+        setPublishing(false);
+        message.error(readableErrorMessage(error, 'moment_media_upload_failed'));
+        return;
+      }
+      const uploadedRefs = completedImages
+        .map((item) => item.persistedRef)
+        .filter((reference): reference is string => Boolean(reference));
+      if (!await persistDraftNow(text, audience, uploadedRefs)) {
+        setPublishing(false);
+        return;
+      }
+    }
+
     const images = completedImages
-      .filter((item) => item.source === 'local-upload' && item.image)
+      .filter((item) => item.image)
       .map((item) => item.image as ImageAttachment);
     const imageIds = completedImages.map((item) => item.persistedRef as string);
-    const hasRestoredReferences = completedImages.some(
-      (item) => item.source === 'restored-reference',
-    );
-    const audience = create(AudienceSchema, { kind: audienceKind as Audience_Kind });
+    const privateFiles = completedImages.map((item) => {
+      const reference = item.persistedRef
+        ? decodeStagedMediaRef(item.persistedRef)
+        : null;
+      return reference
+        ? { handle: reference.handle, attachmentId: reference.attachmentId }
+        : null;
+    });
+    if (
+      !isPublicSocialAudience(audience)
+      && privateFiles.some((file) => file === null)
+    ) {
+      setPublishing(false);
+      message.error(t('mobile.moments.audience.privateMediaUnavailable'));
+      return;
+    }
 
-    setPublishing(true);
-    let result: Awaited<ReturnType<SocialIntentPort['publishPublic']>>;
+    let result: Awaited<ReturnType<SocialIntentPort['publishMoment']>>;
     try {
-      result = await intents.publishPublic(
-        images.length > 0
-          || imageIds.length > 0
+      result = await intents.publishMoment({
+        draftId: draftIdRef.current,
+        draftRevision: 1,
+        draft: completedImages.length > 0
           ? {
             kind: 'image',
             text: trimmed,
             audience,
             imageIds,
-            ...(hasRestoredReferences ? {} : { images }),
+            ...(images.length === completedImages.length ? { images } : {}),
           }
           : { kind: 'text', text: trimmed, audience },
-      );
+        ...(privateFiles.length > 0
+          ? { privateFiles: privateFiles.filter((file) => file !== null) }
+          : {}),
+      });
     } catch (error) {
       setPublishing(false);
       message.error(readableErrorMessage(error, 'moment_publish_failed'));
       return;
     }
 
-    if (
-      result.ok
-      && result.data.post
-      && hasAuthoritativeImageReadback(result.data.post, completedImages)
-    ) {
-      const publishedPost = result.data.post;
-      setPendingDraftRemoval({ kind: 'publish', post: publishedPost });
+    const published = result.route === 'PUBLIC'
+      ? result.outcome.ok
+        && Boolean(result.outcome.data.post)
+        && hasAuthoritativeImageReadback(
+          result.outcome.data.post as Post,
+          completedImages,
+        )
+      : result.projection.state === 'PUBLISHED'
+        && Boolean(result.projection.postId);
+
+    if (published) {
+      setPendingDraftRemoval({ kind: 'publish' });
       const removed = await discardDraft();
       setPublishing(false);
-      if (removed) completePublishedMoment(publishedPost);
-    } else if (result.ok) {
+      if (removed) completePublishedMoment();
+    } else if (result.route === 'PUBLIC' && result.outcome.ok) {
       setPublishing(false);
       message.error(t('mobile.moments.imageReadbackFailed'));
-    } else if (!result.ok) {
+    } else if (result.route === 'PUBLIC' && !result.outcome.ok) {
       setPublishing(false);
-      message.error(result.error.message);
+      message.error(result.outcome.error.message);
+    } else if (result.route === 'PRIVATE') {
+      setPublishing(false);
+      message.error(
+        result.projection.state === 'UNKNOWN_OUTCOME'
+          ? t('mobile.moments.publishUnknown')
+          : t('mobile.moments.publishPrivateFailed'),
+      );
     }
   };
 
@@ -526,19 +652,78 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
       <div className="moments-composer-audience">
         <Text className="moments-composer-eyebrow">{t('mobile.moments.audience.label')}</Text>
         <Select
-          value={audienceKind}
-          onChange={(value: number) => setAudienceKind(value)}
+          value={audienceChoice}
+          onChange={(value: SocialAudienceChoice) => {
+            setAudienceChoice(value);
+            if (value === 'CIRCLE' && !circleId && circles[0]) {
+              setCircleId(circles[0].id.toString());
+            }
+            if (value === 'GROUP' && !groupConversationId && groups[0]) {
+              setGroupConversationId(groups[0].ulid);
+            }
+          }}
           size="small"
-          style={{ minWidth: 120 }}
+          style={{ minWidth: 180 }}
           disabled={editingDisabled}
         >
-          {AUDIENCE_OPTIONS.map((opt) => (
-            <Select.Option key={opt.value} value={opt.value}>
-              {t(opt.labelKey)}
+          {SOCIAL_AUDIENCE_CHOICES.map((option) => (
+            <Select.Option key={option.id} value={option.id}>
+              {t(option.labelKey)}
             </Select.Option>
           ))}
         </Select>
+        {audienceChoice === 'CIRCLE' && (
+          <Select
+            value={circleId || undefined}
+            onChange={setCircleId}
+            placeholder={t('mobile.moments.audience.selectCircle')}
+            disabled={editingDisabled}
+            style={{ minWidth: 180 }}
+          >
+            {circles.map((circle) => (
+              <Select.Option key={circle.id.toString()} value={circle.id.toString()}>
+                {circle.name}
+              </Select.Option>
+            ))}
+          </Select>
+        )}
+        {audienceChoice === 'GROUP' && (
+          <Select
+            value={groupConversationId || undefined}
+            onChange={setGroupConversationId}
+            placeholder={t('mobile.moments.audience.selectGroup')}
+            disabled={editingDisabled}
+            style={{ minWidth: 180 }}
+          >
+            {groups.map((group) => (
+              <Select.Option key={group.ulid} value={group.ulid}>
+                {group.name || group.ulid}
+              </Select.Option>
+            ))}
+          </Select>
+        )}
+        {(audienceChoice === 'CUSTOM_ALLOW'
+          || audienceChoice === 'CUSTOM_DENY'
+          || audienceChoice === 'DIRECT') && (
+          <Input
+            value={actorPtidsInput}
+            onChange={(event) => setActorPtidsInput(event.target.value)}
+            placeholder={t(
+              audienceChoice === 'DIRECT'
+                ? 'mobile.moments.audience.directPlaceholder'
+                : 'mobile.moments.audience.recipientsPlaceholder',
+            )}
+            disabled={editingDisabled}
+            status={audience ? undefined : 'error'}
+          />
+        )}
       </div>
+
+      {!audience && (
+        <Text type="danger" role="alert">
+          {t('mobile.moments.audience.targetRequired')}
+        </Text>
+      )}
 
       <Input.TextArea
         value={text}

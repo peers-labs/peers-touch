@@ -1185,13 +1185,20 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     if (audienceKind !== Audience_Kind.PUBLIC) {
       throw new Error('acceptance.mobile.privateMomentRequiresNativeAction');
     }
-    const result = await runtime.intents.publishPublic({
+    const result = await runtime.intents.publishMoment({
+      draftId: globalThis.crypto.randomUUID(),
+      draftRevision: 1,
+      draft: {
         kind: 'text',
         text,
         audience: create(AudienceSchema, { kind: audienceKind }),
-      });
+      },
+    });
+    if (result.route !== 'PUBLIC') {
+      throw new Error('acceptance.mobile.momentsPublishRouteMismatch');
+    }
     const created = requireAcceptanceOutcome(
-      result,
+      result.outcome,
       'acceptance.mobile.momentsPublishFailed',
     );
     if (!created.post) {

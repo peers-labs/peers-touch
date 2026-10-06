@@ -48,7 +48,7 @@ function renderMomentComposer(): string {
       actorRef: { ptid: 'ptid:alice' },
     },
     intents: {
-      publishPublic: vi.fn(),
+      publishMoment: vi.fn(),
     },
     onPublished: vi.fn(),
   }));
@@ -152,11 +152,11 @@ describe('Moment composer media restoration', () => {
       'utf8',
     );
     const persistIndex = source.indexOf('await persistDraftNow(');
-    const publishIndex = source.indexOf('await intents.publishPublic(');
+    const publishIndex = source.indexOf('await intents.publishMoment(');
 
     expect(persistIndex).toBeGreaterThan(-1);
     expect(publishIndex).toBeGreaterThan(persistIndex);
-    expect(source).toContain('if (removed) completePublishedMoment(publishedPost)');
+    expect(source).toContain('if (removed) completePublishedMoment()');
   });
 
   it('keeps Moments authoring on the opaque native media path', () => {
@@ -168,9 +168,27 @@ describe('Moment composer media restoration', () => {
     expect(source).toContain('pickNativeMedia({');
     expect(source).toContain('uploadNativeMomentMedia({');
     expect(source).toContain('discardNativeMomentMedia({');
+    expect(source.indexOf('uploadNativeMomentMedia({'))
+      .toBeLessThan(source.indexOf('await intents.publishMoment('));
     expect(source).not.toContain('type="file"');
     expect(source).not.toContain('URL.createObjectURL');
     expect(source).not.toContain('uploadMobileMomentImage');
     expect(source).not.toContain('body_bytes');
+  });
+
+  it('uses the complete generated Audience and one canonical publish intent', () => {
+    const source = readFileSync(
+      new URL('./MomentComposer.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain('SOCIAL_AUDIENCE_CHOICES.map');
+    expect(source).toContain("audienceChoice === 'CIRCLE'");
+    expect(source).toContain("audienceChoice === 'GROUP'");
+    expect(source).toContain("audienceChoice === 'DIRECT'");
+    expect(source).toContain('persistDraftNow(text, audience,');
+    expect(source).toContain('privateFiles: privateFiles.filter');
+    expect(source).not.toContain('AUDIENCE_OPTIONS');
+    expect(source).not.toContain('publishPublic');
   });
 });

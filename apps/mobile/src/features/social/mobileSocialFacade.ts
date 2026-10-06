@@ -11,6 +11,10 @@ import type {
 import { createDeepImmutableSocialProjection } from './socialExperienceProjection';
 import type { SocialIntentPort } from './socialIntents';
 import {
+  isPublicSocialAudience,
+  toPrivateSocialAudience,
+} from './socialAudience';
+import {
   createMomentsGateway,
 } from '../../services/gateways/momentsGateway';
 import {
@@ -212,13 +216,34 @@ export function createMobileSocialFacade(
       refreshPublicFeed: (feedScope = 'home') => completeCurrent(
         () => (feedScope === 'explore' ? exploreFeed : homeFeed).refresh(),
       ),
-      publishPublic: async (draft) => {
-        const result = await completeCurrent(() => trackPublicMomentPublish(
-          () => gateway.createMoment(draft),
-          (outcome) => outcome.ok && Boolean(outcome.data.post),
-        ));
-        if (result.ok && result.data.post) homeFeed.prependPost(result.data.post);
-        return result;
+      publishMoment: async (intent) => {
+        const audience = intent.draft.audience;
+        if (isPublicSocialAudience(audience)) {
+          const outcome = await completeCurrent(() => trackPublicMomentPublish(
+            () => gateway.createMoment(intent.draft),
+            (result) => result.ok && Boolean(result.data.post),
+          ));
+          if (outcome.ok && outcome.data.post) {
+            homeFeed.prependPost(outcome.data.post);
+          }
+          return { route: 'PUBLIC', outcome };
+        }
+
+        const privateAudience = toPrivateSocialAudience(audience);
+        const base = {
+          draftId: intent.draftId,
+          draftRevision: intent.draftRevision,
+          text: intent.draft.text,
+          audience: privateAudience,
+        };
+        const projection = intent.draft.kind === 'image'
+          ? await completeCurrent(() => publishPrivateMoment({
+            ...base,
+            momentKind: 'IMAGE',
+            files: [...(intent.privateFiles ?? [])],
+          }))
+          : await completeCurrent(() => publishPrivateTextMoment(base));
+        return { route: 'PRIVATE', projection };
       },
       setPublicReaction: async (postId, reactionKind, active) => {
         const result = await completeCurrent(() => (
@@ -273,12 +298,6 @@ export function createMobileSocialFacade(
         return result.ok && await feedForPost(postId).reloadMoment(postId);
       },
       retry: () => completeCurrent(dependencies.retry),
-      publishPrivateText: (intent) => completeCurrent(
-        () => publishPrivateTextMoment(intent),
-      ),
-      publishPrivate: (intent) => completeCurrent(
-        () => publishPrivateMoment(intent),
-      ),
       readPrivate: (postId) => completeCurrent(
         () => readPrivateMoment(postId),
       ),

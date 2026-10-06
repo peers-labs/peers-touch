@@ -174,10 +174,14 @@ describe('Mobile Social facade', () => {
       },
     });
 
-    await facade.intents.publishPublic({
-      kind: 'text',
-      text: 'public original',
-      audience: { kind: 1 },
+    await facade.intents.publishMoment({
+      draftId: 'draft-public-original',
+      draftRevision: 1,
+      draft: {
+        kind: 'text',
+        text: 'public original',
+        audience: { kind: 1 },
+      },
     });
     const projection = facade.state();
 
@@ -213,11 +217,18 @@ describe('Mobile Social facade', () => {
       data: { post: { id: 'post-1', reactions: [] } },
     });
 
-    await expect(facade.intents.publishPublic({
-      kind: 'text',
-      text: 'hello',
-      audience: { kind: 1 },
-    })).resolves.toMatchObject({ ok: true });
+    await expect(facade.intents.publishMoment({
+      draftId: 'draft-public',
+      draftRevision: 1,
+      draft: {
+        kind: 'text',
+        text: 'hello',
+        audience: { kind: 1 },
+      },
+    })).resolves.toMatchObject({
+      route: 'PUBLIC',
+      outcome: { ok: true },
+    });
     await expect(facade.intents.react('post-1', 2)).resolves.toBe(true);
     await expect(facade.intents.comment('post-1', 'reply')).resolves.toBe(true);
 
@@ -228,6 +239,38 @@ describe('Mobile Social facade', () => {
     expect(gateway.getPost).toHaveBeenCalledWith('post-1');
   });
 
+  it('routes every non-public Audience through the private Native owner', async () => {
+    privateRuntime.publishPrivateText.mockResolvedValue({
+      draftId: 'draft-private',
+      draftRevision: 1,
+      state: 'PUBLISHED',
+      postId: 'private-1',
+    });
+    facade = createMobileSocialFacade(session, { retry: vi.fn(async () => true) });
+    facade.activate();
+
+    await expect(facade.intents.publishMoment({
+      draftId: 'draft-private',
+      draftRevision: 1,
+      draft: {
+        kind: 'text',
+        text: 'friends only',
+        audience: { kind: 8 },
+      },
+    })).resolves.toMatchObject({
+      route: 'PRIVATE',
+      projection: { state: 'PUBLISHED', postId: 'private-1' },
+    });
+
+    expect(privateRuntime.publishPrivateText).toHaveBeenCalledWith({
+      draftId: 'draft-private',
+      draftRevision: 1,
+      text: 'friends only',
+      audience: { kind: 'FRIENDS' },
+    });
+    expect(gateway.createMoment).not.toHaveBeenCalled();
+  });
+
   it('fences an in-flight completion after teardown', async () => {
     let resolvePublish: (value: unknown) => void = () => undefined;
     gateway.createMoment.mockReturnValue(new Promise((resolve) => {
@@ -236,10 +279,14 @@ describe('Mobile Social facade', () => {
     facade = createMobileSocialFacade(session, { retry: vi.fn(async () => true) });
     facade.activate();
 
-    const completion = facade.intents.publishPublic({
-      kind: 'text',
-      text: 'stale',
-      audience: { kind: 1 },
+    const completion = facade.intents.publishMoment({
+      draftId: 'draft-stale',
+      draftRevision: 1,
+      draft: {
+        kind: 'text',
+        text: 'stale',
+        audience: { kind: 1 },
+      },
     });
     facade.teardown();
     resolvePublish({ ok: true, data: { post: { id: 'stale-post' } } });

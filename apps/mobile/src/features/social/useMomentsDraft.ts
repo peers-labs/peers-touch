@@ -31,10 +31,12 @@ import {
 import {
   Audience_Kind,
   AudienceSchema,
+  type Audience,
 } from '../../gen/proto/domain/social/post_pb';
 import { readableErrorMessage } from '../../utils/errorMessage';
 import { isAccessGranted } from '../auth/authSession';
 import { useAuthStore } from '../auth/authStore';
+import { normalizeSocialAudience } from './socialAudience';
 
 // ---------------------------------------------------------------------------
 // Draft payload shape
@@ -42,7 +44,7 @@ import { useAuthStore } from '../auth/authStore';
 
 export interface MomentDraftPayload {
   readonly text: string;
-  readonly audienceKind: number;
+  readonly audience: Audience;
   readonly mediaRefs: readonly string[];
   readonly savedAtMs: number;
 }
@@ -59,13 +61,13 @@ export interface UseMomentsDraftResult {
   /** Save current state as draft */
   readonly saveDraft: (
     text: string,
-    audienceKind: number,
+    audience: Audience,
     mediaRefs: readonly string[],
   ) => void;
   /** Persist the complete current composer state before a fallible write */
   readonly persistDraftNow: (
     text: string,
-    audienceKind: number,
+    audience: Audience,
     mediaRefs: readonly string[],
   ) => Promise<boolean>;
   /** Explicitly discard the exact Station and actor scoped draft */
@@ -99,7 +101,7 @@ export interface MomentDraftPersistenceFailure {
 
 export interface PendingMomentDraft {
   readonly text: string;
-  readonly audienceKind: number;
+  readonly audience: Audience;
   readonly mediaRefs: readonly string[];
 }
 
@@ -125,9 +127,7 @@ export function buildMomentDraftEnvelope(
       case: 'moment',
       value: create(MomentDraftPayloadSchema, {
         text: draft.text,
-        audience: create(AudienceSchema, {
-          kind: draft.audienceKind as Audience_Kind,
-        }),
+        audience: normalizeSocialAudience(draft.audience),
         mediaRefs: normalizeMediaRefs(draft.mediaRefs).map((blobId) => (
           create(EncryptedBlobReferenceSchema, { blobId })
         )),
@@ -143,7 +143,10 @@ export function readMomentDraftEnvelope(
 
   return {
     text: envelope.payload.value.text,
-    audienceKind: envelope.payload.value.audience?.kind ?? Audience_Kind.PUBLIC,
+    audience: normalizeSocialAudience(
+      envelope.payload.value.audience
+        ?? buildDefaultAudience(),
+    ),
     mediaRefs: envelope.payload.value.mediaRefs.map((reference) => reference.blobId),
     savedAtMs: envelope.updatedAt ? timestampMs(envelope.updatedAt) : 0,
   };
@@ -292,12 +295,12 @@ export function useMomentsDraft(
 
   const stageDraft = useCallback((
     text: string,
-    audienceKind: number,
+    audience: Audience,
     mediaRefs: readonly string[],
   ): { draft: PendingMomentDraft; revision: number } | null => {
     const draft: PendingMomentDraft = {
       text,
-      audienceKind,
+      audience: normalizeSocialAudience(audience),
       mediaRefs: normalizeMediaRefs(mediaRefs),
     };
     if (!draft.text.trim() && draft.mediaRefs.length === 0 && !latestDraftRef.current) {
@@ -325,7 +328,7 @@ export function useMomentsDraft(
     });
     latestDraftRef.current = {
       text: payload.text,
-      audienceKind: payload.audienceKind,
+      audience: payload.audience,
       mediaRefs: payload.mediaRefs,
     };
     draftRevisionRef.current += 1;
@@ -453,28 +456,28 @@ export function useMomentsDraft(
 
   const persistDraftNow = useCallback((
     text: string,
-    audienceKind: number,
+    audience: Audience,
     mediaRefs: readonly string[],
   ): Promise<boolean> => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-    const staged = stageDraft(text, audienceKind, mediaRefs);
+    const staged = stageDraft(text, audience, mediaRefs);
     if (!staged) return Promise.resolve(true);
     return persistDraft(staged.draft, staged.revision, true);
   }, [persistDraft, stageDraft]);
 
   const saveDraft = useCallback((
     text: string,
-    audienceKind: number,
+    audience: Audience,
     mediaRefs: readonly string[],
   ) => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-    const staged = stageDraft(text, audienceKind, mediaRefs);
+    const staged = stageDraft(text, audience, mediaRefs);
     if (!staged) return;
     autoSaveTimerRef.current = setTimeout(() => {
       autoSaveTimerRef.current = null;
@@ -505,4 +508,8 @@ export function useMomentsDraft(
     discarding,
     persistenceFailure,
   };
+}
+
+function buildDefaultAudience(): Audience {
+  return create(AudienceSchema, { kind: Audience_Kind.PUBLIC });
 }
