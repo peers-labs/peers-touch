@@ -24,7 +24,7 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(primaryTabDescriptors.every((descriptor) => (
       descriptor.layout === 'primary' && descriptor.keepAlive === false
     ))).toBe(true);
-    expect(detailDescriptors).toHaveLength(5);
+    expect(detailDescriptors).toHaveLength(7);
     expect(detailDescriptors.every((descriptor) => (
       descriptor.layout === 'detail' && descriptor.keepAlive === false
     ))).toBe(true);
@@ -105,6 +105,27 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(activeMobileDetailRoute(useMobileNavigationStore.getState())).toEqual({
       routeId: 'detail:setting',
       settingId: 'privacy-security',
+    });
+  });
+
+  it('owns Social search and canonical profile route state', () => {
+    const navigation = useMobileNavigationStore.getState();
+    navigation.pushDetail({ routeId: 'detail:social-search' });
+    navigation.pushDetail({
+      routeId: 'detail:social-profile',
+      actorPtid: 'ptid:bob',
+      federationId: 'federation-1',
+    });
+
+    expect(navigationLocationKey(activeMobileDetailRoute(
+      useMobileNavigationStore.getState(),
+    )!)).toBe(
+      'detail:social-profile:ptid:bob:federation-1',
+    );
+
+    navigation.popDetail();
+    expect(activeMobileDetailRoute(useMobileNavigationStore.getState())).toEqual({
+      routeId: 'detail:social-search',
     });
   });
 

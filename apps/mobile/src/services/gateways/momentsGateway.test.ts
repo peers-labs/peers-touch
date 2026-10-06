@@ -104,6 +104,36 @@ describe('Moments Station protobuf JSON decoding', () => {
     });
   });
 
+  it('requests authored posts by canonical Actor PTID', async () => {
+    commandMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        posts: [],
+        next_cursor: '',
+        has_more: false,
+        outcome: 'TIMELINE_PAGE_OUTCOME_EMPTY',
+        policy_summary: { scanned_count: 0, filtered_count: 0 },
+      },
+    });
+
+    await createMomentsGateway(session).fetchUserFeed(
+      'ptid:bob',
+      'profile-cursor',
+      30,
+    );
+
+    expect(commandMock).toHaveBeenCalledWith({
+      method: 'GET',
+      path: '/api/v1/social/timeline',
+      query: {
+        type: 1,
+        actor_ptid: 'ptid:bob',
+        cursor: 'profile-cursor',
+        limit: 30,
+      },
+    });
+  });
+
   it('decodes snake-case timeline, post, reaction, and comment responses', async () => {
     commandMock
       .mockResolvedValueOnce({

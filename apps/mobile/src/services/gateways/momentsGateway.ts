@@ -128,6 +128,13 @@ export interface MomentsGateway {
     sort?: TimelineSort,
   ) => Promise<CommandOutcome<MomentsFeedPage>>;
 
+  /** Fetch posts authored by one canonical Actor PTID. */
+  fetchUserFeed: (
+    actorPtid: string,
+    cursor: string,
+    limit: number,
+  ) => Promise<CommandOutcome<MomentsFeedPage>>;
+
   /** Get a single post by ID. */
   getPost: (postId: string) => Promise<CommandOutcome<MomentDetailResult>>;
 
@@ -248,6 +255,20 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
           cursor: cursor || undefined,
           limit,
           sort: sort === TimelineSort.HOT ? TimelineSort.HOT : undefined,
+        },
+      }, GetTimelineResponseSchema, 'mobile.moments.feed.error');
+      return validateTimelineOutcome(result, '/api/v1/social/timeline');
+    },
+
+    fetchUserFeed: async (actorPtid, cursor, limit) => {
+      const result = await commandProtoJson({
+        method: 'GET',
+        path: '/api/v1/social/timeline',
+        query: {
+          type: 1, // TIMELINE_USER
+          actor_ptid: actorPtid,
+          cursor: cursor || undefined,
+          limit,
         },
       }, GetTimelineResponseSchema, 'mobile.moments.feed.error');
       return validateTimelineOutcome(result, '/api/v1/social/timeline');

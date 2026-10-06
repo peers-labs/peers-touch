@@ -12,8 +12,10 @@ import type { JsonValue } from '@bufbuild/protobuf';
 
 import type { MobileAuthSession } from '../../features/auth/authSession';
 import {
+  FollowResponseSchema,
   GetSocialRelationshipStatusResponseSchema,
   ListBlockedActorsResponseSchema,
+  UnfollowResponseSchema,
   type SocialRelationshipProjection,
 } from '../../gen/proto/domain/social/relationship_pb';
 import { normalizeFriendRequest } from '../../features/social/socialNormalizers';
@@ -106,6 +108,8 @@ export interface SocialGateway {
   updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<CommandOutcome<FriendConversationSettings>>;
 
   // Block
+  followUser: (targetPtid: string) => Promise<CommandOutcome<boolean>>;
+  unfollowUser: (targetPtid: string) => Promise<CommandOutcome<boolean>>;
   blockUser: (targetPtid: string, targetHomeStationPeerId: string, observedRevision: number) => Promise<CommandOutcome<RelationshipMutationResult>>;
   unblockUser: (targetPtid: string, targetHomeStationPeerId: string, observedRevision: number) => Promise<CommandOutcome<RelationshipMutationResult>>;
   listBlockedUsers: (limit?: number, cursor?: string) => Promise<CommandOutcome<FriendshipStatus[]>>;
@@ -219,6 +223,48 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
       });
       if (!result.ok) return result;
       return getConversationSettings(conversationId);
+    },
+
+    followUser: async (targetPtid) => {
+      const path = '/api/v1/social/relationships/follow';
+      const result = decodeProtoJsonOutcome(
+        await command<JsonValue>({
+          method: 'POST',
+          path,
+          body: { target_actor_ptid: targetPtid },
+        }),
+        FollowResponseSchema,
+        {
+          code: 'INVALID_FOLLOW_RESPONSE',
+          message: 'mobile.social.followFailed',
+          method: 'POST',
+          path,
+        },
+      );
+      return result.ok
+        ? { ok: true, data: result.data.success }
+        : result;
+    },
+
+    unfollowUser: async (targetPtid) => {
+      const path = '/api/v1/social/relationships/unfollow';
+      const result = decodeProtoJsonOutcome(
+        await command<JsonValue>({
+          method: 'POST',
+          path,
+          body: { target_actor_ptid: targetPtid },
+        }),
+        UnfollowResponseSchema,
+        {
+          code: 'INVALID_UNFOLLOW_RESPONSE',
+          message: 'mobile.social.unfollowFailed',
+          method: 'POST',
+          path,
+        },
+      );
+      return result.ok
+        ? { ok: true, data: result.data.success }
+        : result;
     },
 
     // --- Block ---

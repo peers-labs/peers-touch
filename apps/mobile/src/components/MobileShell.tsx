@@ -20,6 +20,8 @@ import {
 import { ChatPage } from '../pages/ChatPage';
 import { ContactsPage } from '../pages/ContactsPage';
 import { MomentsPage } from '../pages/MomentsPage';
+import { SocialProfilePage } from '../pages/moments/SocialProfilePage';
+import { SocialSearchPage } from '../pages/moments/SocialSearchPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { useAuthStore } from '../features/auth/authStore';
 import type { MobileAuthSession } from '../features/auth/authSession';
@@ -59,6 +61,8 @@ function detailRouteToTabId(route: MobileDetailRoute | null): TabId | null {
     case 'detail:contact-profile':
       return 'contacts';
     case 'detail:moment':
+    case 'detail:social-search':
+    case 'detail:social-profile':
       return 'moments';
     case 'detail:setting':
       return 'settings';
@@ -93,12 +97,37 @@ function renderPage(
         />
       );
     case 'moments':
+      if (activeDetail?.routeId === 'detail:social-search') {
+        return (
+          <SocialSearchPage
+            onBack={onBack}
+            onOpenProfile={onOpenDetail}
+          />
+        );
+      }
+      if (activeDetail?.routeId === 'detail:social-profile') {
+        return (
+          <SocialProfilePage
+            actorPtid={activeDetail.actorPtid}
+            federationId={activeDetail.federationId}
+            onBack={onBack}
+            onOpenChat={onOpenDetail}
+            onOpenMoment={(postId) => onOpenDetail({
+              routeId: 'detail:moment',
+              postId,
+            })}
+          />
+        );
+      }
       return (
         <MomentsPage
           activePostId={activeDetail?.routeId === 'detail:moment' ? activeDetail.postId : null}
           onOpenMoment={(postId) => onOpenDetail({
             routeId: 'detail:moment',
             postId,
+          })}
+          onOpenSearch={() => onOpenDetail({
+            routeId: 'detail:social-search',
           })}
           onBack={onBack}
         />

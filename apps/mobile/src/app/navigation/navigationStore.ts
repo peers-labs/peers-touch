@@ -42,6 +42,14 @@ export type MobileDetailRoute =
       readonly postId: string;
     }
   | {
+      readonly routeId: 'detail:social-search';
+    }
+  | {
+      readonly routeId: 'detail:social-profile';
+      readonly actorPtid: string;
+      readonly federationId: string;
+    }
+  | {
       readonly routeId: 'detail:setting';
       readonly settingId: MobileSettingDetailId;
     };
@@ -177,6 +185,10 @@ export function navigationLocationKey(
       return `${route.routeId}:${route.actorPtid}`;
     case 'detail:moment':
       return `${route.routeId}:${route.postId}`;
+    case 'detail:social-search':
+      return route.routeId;
+    case 'detail:social-profile':
+      return `${route.routeId}:${route.actorPtid}:${route.federationId}`;
     case 'detail:setting':
       return `${route.routeId}:${route.settingId}`;
     case 'overlay:add-friend':

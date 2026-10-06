@@ -24,7 +24,7 @@
 
 import { useCallback, useState } from 'react';
 import { Button, Typography } from 'antd';
-import { ArrowLeft, ImagePlus, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ImagePlus, RefreshCw, Search } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { BoundedList } from '../components/BoundedList';
@@ -67,6 +67,7 @@ function momentPostKey(post: Post): string {
 interface MomentsPageProps {
   readonly activePostId: string | null;
   readonly onOpenMoment: (postId: string) => void;
+  readonly onOpenSearch: () => void;
   readonly onBack: () => void;
 }
 
@@ -91,6 +92,7 @@ export async function retryMomentsRuntime(
 export function MomentsPage({
   activePostId,
   onOpenMoment,
+  onOpenSearch,
   onBack,
 }: MomentsPageProps) {
   const { t } = useMobileI18n();
@@ -239,6 +241,14 @@ export function MomentsPage({
       {/* Header: title + ImagePlus new-post toggle (prototype) */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.moments.title')}</h1>
+        <button
+          type="button"
+          className="header-action"
+          aria-label={t('mobile.social.search.title')}
+          onClick={onOpenSearch}
+        >
+          <Search size={20} />
+        </button>
         <button
           type="button"
           className="header-action"

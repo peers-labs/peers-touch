@@ -100,6 +100,20 @@ export const detailDescriptors: readonly NavigationDescriptor[] = [
     keepAlive: false,
   },
   {
+    routeId: 'detail:social-search',
+    labelKey: 'mobile.nav.socialSearch',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
+    routeId: 'detail:social-profile',
+    labelKey: 'mobile.nav.socialProfile',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
     routeId: 'detail:setting',
     labelKey: 'mobile.nav.settingDetail',
     layout: 'detail',
