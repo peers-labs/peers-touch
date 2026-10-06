@@ -2851,7 +2851,7 @@ def resolve_toolchain_identity(
     names.extend(
         ["xcodebuild", "swiftc", "xcode-select", "xcrun", "codesign", "security"]
         if platform == "ios"
-        else ["java", "adb", "apkanalyzer", "apksigner"]
+        else ["java", "keytool", "adb", "apkanalyzer", "apksigner"]
     )
     executable_paths = {name: _resolved_executable(name, search_path) for name in names}
     for rust_tool in ("rustc", "cargo"):
@@ -2955,7 +2955,7 @@ def resolve_toolchain_identity(
     probes.extend(
         [("xcodebuild", "-version"), ("swiftc", "--version")]
         if platform == "ios"
-        else [("java", "-version"), ("adb", "version")]
+        else [("java", "-version"), ("keytool", "-J-version"), ("adb", "version")]
     )
     for probe in probes:
         executable = executable_paths[probe[0]]
@@ -3915,6 +3915,125 @@ def _remove_stale_ios_external_outputs(root: Path) -> None:
         shutil.rmtree(external_root)
 
 
+def _sign_android_acceptance_output(
+    *,
+    root: Path,
+    run_root: Path,
+    runner: CommandRunner,
+    environment: Mapping[str, str],
+    executables: Mapping[str, str],
+) -> dict[str, Any]:
+    candidates = [
+        candidate
+        for candidate in sorted(
+            _android_apk_output_root(root).glob("**/debug/*.apk")
+        )
+        if candidate.is_file() and not candidate.is_symlink()
+    ]
+    if len(candidates) != 1:
+        raise MobileNativeBuildError(
+            "controlled Android debug build has no unique APK to sign"
+        )
+    unsigned_apk = candidates[0]
+    signing_root = run_root / "signing"
+    signing_root.mkdir(parents=True, exist_ok=False)
+    keystore = signing_root / "acceptance-debug.keystore"
+    signed_apk = signing_root / "mobile-v2-v3.apk"
+    keytool_command = [
+        executables["keytool"],
+        "-genkeypair",
+        "-noprompt",
+        "-keystore",
+        str(keystore),
+        "-storepass",
+        "android",
+        "-keypass",
+        "android",
+        "-alias",
+        "androiddebugkey",
+        "-dname",
+        "CN=Android Debug,O=Android,C=US",
+        "-keyalg",
+        "RSA",
+        "-keysize",
+        "2048",
+        "-validity",
+        "10950",
+    ]
+    generated = runner.run(
+        keytool_command,
+        cwd=root,
+        env=environment,
+    )
+    if (
+        generated.returncode != 0
+        or keystore.is_symlink()
+        or not keystore.is_file()
+    ):
+        raise MobileNativeBuildError(
+            "controlled Android Acceptance keystore generation failed"
+        )
+    keystore_sha256 = _sha256_file(keystore)
+    sign_command = [
+        executables.get("apksigner", "apksigner"),
+        "sign",
+        "--ks",
+        str(keystore),
+        "--ks-key-alias",
+        "androiddebugkey",
+        "--ks-pass",
+        "pass:android",
+        "--key-pass",
+        "pass:android",
+        "--v1-signing-enabled",
+        "false",
+        "--v2-signing-enabled",
+        "true",
+        "--v3-signing-enabled",
+        "true",
+        "--v4-signing-enabled",
+        "false",
+        "--out",
+        str(signed_apk),
+        "--in",
+        str(unsigned_apk),
+    ]
+    try:
+        signed = runner.run(
+            sign_command,
+            cwd=root,
+            env=environment,
+        )
+    finally:
+        keystore.unlink(missing_ok=True)
+    if (
+        signed.returncode != 0
+        or signed_apk.is_symlink()
+        or not signed_apk.is_file()
+        or not zipfile.is_zipfile(signed_apk)
+    ):
+        raise MobileNativeBuildError(
+            "controlled Android Acceptance APK signing failed"
+        )
+    signed_sha256 = _sha256_file(signed_apk)
+    os.replace(signed_apk, unsigned_apk)
+    return {
+        "variant": ACCEPTANCE_VARIANT,
+        "phase": "signing",
+        "commandDigest": canonical_value_digest(
+            {
+                "keytool": keytool_command,
+                "apksigner": sign_command,
+            }
+        ),
+        "environmentDigest": allowlisted_environment_digest(environment),
+        "keystoreSha256": keystore_sha256,
+        "signedArtifactSha256": signed_sha256,
+        "enabledSigningSchemes": ["v2", "v3"],
+        "keystoreRetained": False,
+    }
+
+
 def _single_controlled_output(
     root: Path,
     run_root: Path,
@@ -4135,7 +4254,18 @@ def orchestrate_source_bound_build(
         pnpm_shim=pnpm_shim,
         runner=command_runner,
     )
-    if platform == "ios":
+    if platform == "android":
+        acceptance_provenance = (
+            *acceptance_provenance,
+            _sign_android_acceptance_output(
+                root=root,
+                run_root=acceptance_root,
+                runner=command_runner,
+                environment=environment,
+                executables=toolchain.executable_paths,
+            ),
+        )
+    else:
         _package_ios_archive(acceptance_root)
         _remove_stale_ios_external_outputs(root)
     artifact = _single_controlled_output(

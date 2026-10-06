@@ -397,7 +397,14 @@ def fake_toolchain(root: Path) -> ToolchainIdentity:
     bin_root = root / "tools"
     bin_root.mkdir(parents=True)
     executables: dict[str, str] = {}
-    for name in ("node", "cargo", "gradle", "protoc", "rustc"):
+    for name in (
+        "node",
+        "keytool",
+        "cargo",
+        "gradle",
+        "protoc",
+        "rustc",
+    ):
         path = bin_root / name
         path.write_text(name, encoding="utf-8")
         path.chmod(0o700)
@@ -566,6 +573,14 @@ def android_build_effect(
     release_bytes = release_payload or (lambda: b"release-package-native-content")
 
     def effect(command: tuple[str, ...], environment: Mapping[str, str]) -> None:
+        if command and Path(command[0]).name == "keytool":
+            keystore = Path(command[command.index("-keystore") + 1])
+            keystore.parent.mkdir(parents=True, exist_ok=True)
+            keystore.write_bytes(b"run-scoped-acceptance-keystore")
+        if len(command) > 1 and Path(command[0]).name == "apksigner" and command[1] == "sign":
+            signed_apk = Path(command[command.index("--out") + 1])
+            unsigned_apk = Path(command[command.index("--in") + 1])
+            shutil.copyfile(unsigned_apk, signed_apk)
         if len(command) >= 2 and command[-2:] == ("run", "build"):
             dist = root / "apps/mobile/dist"
             dist.mkdir(parents=True, exist_ok=True)
@@ -2235,6 +2250,31 @@ time.sleep(60)
                     and "build" in command
                     and "--debug" not in command
                 )
+                keytool_index = next(
+                    index
+                    for index, command in enumerate(runner.commands)
+                    if command and Path(command[0]).name == "keytool"
+                )
+                signing_index = next(
+                    index
+                    for index, command in enumerate(runner.commands)
+                    if len(command) > 1
+                    and Path(command[0]).name == "apksigner"
+                    and command[1] == "sign"
+                )
+                signing_command = runner.commands[signing_index]
+                self.assertIn("--v2-signing-enabled", signing_command)
+                self.assertIn("--v3-signing-enabled", signing_command)
+                self.assertFalse(
+                    (
+                        run_root
+                        / ACCEPTANCE_VARIANT
+                        / "signing/acceptance-debug.keystore"
+                    ).exists()
+                )
+                self.assertLess(debug_index, keytool_index)
+                self.assertLess(keytool_index, signing_index)
+                self.assertLess(signing_index, release_index)
                 self.assertLess(
                     next(
                         index
