@@ -787,6 +787,53 @@ test('archive preserves a terminal Session and clears the work-item slot', async
   }
 });
 
+test('archive preserves a prior Session when the same sessionId is reused', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const first = archiveDevelopmentSession(scope.baseOptions);
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const second = archiveDevelopmentSession(scope.baseOptions);
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    const historyDirectory = path.join(
+      paths.directory,
+      'archive-history',
+      scope.sessionId,
+      first.eventDigest,
+    );
+
+    assert.notEqual(first.eventDigest, second.eventDigest);
+    assert.equal(
+      existsSync(path.join(historyDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(historyDirectory, 'events.ndjson')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(second.archiveDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(second.archiveDirectory, 'events.ndjson')),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('task result admission revalidates a frozen runtime source projection', () => {
   const planPath = path.join(
     REPO_ROOT,
