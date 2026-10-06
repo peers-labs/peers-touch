@@ -3,14 +3,19 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from tooling.acceptance.core import DriverError
+from tooling.acceptance.core import DriverError, SuiteRuntimeAction
 from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     ENVIRONMENT_ID,
+    IOS_SOCIAL_PARITY_SCENARIOS,
+    IOS_SOCIAL_RUNTIME_REUSE,
     SCENARIO_GATES,
     SimulatorSocialGate,
 )
 from tooling.acceptance.gates.mobile.simulator_e2e import SimulatorGateBlocked
 from tooling.acceptance.gates.mobile.messaging_journey import MessagingActor
+from tooling.acceptance.provisioners.mobile_simulator import (
+    MobileDirectSimulatorProvisioner,
+)
 
 
 class Artifacts:
@@ -45,6 +50,19 @@ class Artifacts:
 
 
 class SimulatorSocialGateTests(unittest.TestCase):
+    @staticmethod
+    def _actor(client_id: str, role: str) -> MessagingActor:
+        return MessagingActor(
+            client_id=client_id,
+            role=role,
+            station_url="https://station.example.test",
+            station_peer_id="station-peer",
+            ptid=f"ptid:{role}",
+            account_ref=f"station-account:{role}",
+            federated_handle=f"@{role}@station.example.test",
+            federation_id="federation-1",
+        )
+
     def test_canonical_simulator_gate_claims_declared_proof(self) -> None:
         artifacts = Artifacts()
         gate = SimulatorSocialGate("social-convergence")
@@ -146,6 +164,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(
             SCENARIO_GATES,
             {
+                "ios-social-parity": "mobile-social-ios-native",
                 "social-convergence": (
                     "mobile-simulator-social-convergence-e2e"
                 ),
@@ -167,6 +186,100 @@ class SimulatorSocialGateTests(unittest.TestCase):
             SimulatorSocialGate("social-convergence").gate_id,
             SimulatorSocialGate("chat-contacts").gate_id,
         )
+
+    def test_ios_social_parity_declares_one_reusable_runtime(self) -> None:
+        self.assertEqual(
+            IOS_SOCIAL_RUNTIME_REUSE.scenario_ids,
+            IOS_SOCIAL_PARITY_SCENARIOS,
+        )
+        self.assertEqual(
+            IOS_SOCIAL_RUNTIME_REUSE.max_provisioning_runs,
+            1,
+        )
+        self.assertEqual(
+            IOS_SOCIAL_RUNTIME_REUSE.max_client_launches,
+            2,
+        )
+        self.assertGreaterEqual(
+            IOS_SOCIAL_RUNTIME_REUSE.min_warm_reuse_rate,
+            0.8,
+        )
+        self.assertEqual(
+            MobileDirectSimulatorProvisioner
+            .additional_fixture_roles_by_gate["mobile-social-ios-native"],
+            ("eve",),
+        )
+
+    def test_ios_social_parity_records_each_scenario_once(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        result = {
+            "uiAction": "ui",
+            "receiverAssertion": "receiver",
+            "supportingObservation": "supporting",
+        }
+        with (
+            patch.object(
+                gate,
+                "_run_ios_home_explore",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_search_profile",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_circles_publish",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_thread_reaction",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_recovery_lifecycle",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_native_quality",
+                return_value=result,
+            ),
+        ):
+            suite = gate._run_ios_social_parity_suite(
+                manifest={"runId": "fixture-epoch"},
+                source_identity={"commit": "a" * 40},
+                sessions={
+                    "sim-ios": object(),
+                    "sim-ios-peer": object(),
+                },
+                actors={
+                    "sim-ios": self._actor("sim-ios", "alice"),
+                    "sim-ios-peer": self._actor(
+                        "sim-ios-peer",
+                        "bob",
+                    ),
+                    "fixture-eve": self._actor("sim-ios", "eve"),
+                },
+                journey=object(),  # type: ignore[arg-type]
+                journey_id="journey",
+            )
+
+        self.assertEqual(
+            [entry["scenarioId"] for entry in suite["scenarios"]],
+            list(IOS_SOCIAL_PARITY_SCENARIOS),
+        )
+        self.assertIsNotNone(gate.suite_runtime_ledger)
+        gate.suite_runtime_ledger.record(
+            SuiteRuntimeAction.CLEANUP_COMPLETE,
+        )
+        report = gate.suite_runtime_ledger.require_valid()
+        self.assertEqual(report["metrics"]["provisioningRuns"], 1)
+        self.assertEqual(report["metrics"]["clientLaunches"], 2)
+        self.assertEqual(report["metrics"]["completedScenarios"], 6)
 
     def test_missing_runtime_manifest_blocks_before_journey(self) -> None:
         artifacts = Artifacts()

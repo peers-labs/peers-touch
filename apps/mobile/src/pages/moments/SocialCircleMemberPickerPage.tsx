@@ -62,11 +62,16 @@ export function SocialCircleMemberPickerPage({
   };
 
   return (
-    <div className="page-container mobile-detail-page circle-member-picker">
+    <div
+      className="page-container mobile-detail-page circle-member-picker"
+      data-acceptance-id="social-circle-member-picker"
+      data-circle-id={circleId}
+    >
       <header className="page-header">
         <button
           type="button"
           className="header-action"
+          data-acceptance-id="social-circle-members-submit"
           aria-label={t('common.action.back')}
           onClick={onBack}
         >
@@ -98,6 +103,7 @@ export function SocialCircleMemberPickerPage({
         />
         <Input.Search
           value={query}
+          data-acceptance-id="social-circle-member-search"
           enterButton={<Search size={16} />}
           loading={loading}
           placeholder={t('mobile.social.circles.search')}
@@ -123,6 +129,8 @@ export function SocialCircleMemberPickerPage({
                   type="button"
                   className="circle-picker-row"
                   key={actor.ptid}
+                  data-acceptance-id="social-circle-member-candidate"
+                  data-actor-ptid={actor.ptid}
                   disabled={disabled}
                   onClick={() => {
                     setSelected((current) => {
@@ -159,6 +167,7 @@ export function SocialCircleMemberPickerPage({
         <Button
           block
           type="primary"
+          data-acceptance-id="social-circle-members-add"
           loading={pending}
           disabled={selected.size === 0}
           onClick={() => void submit()}

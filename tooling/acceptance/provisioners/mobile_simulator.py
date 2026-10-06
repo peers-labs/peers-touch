@@ -6246,6 +6246,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     derives_fixture_federation_id = True
     actor_manifest_kind = ""
     actor_manifest_path = ""
+    additional_fixture_roles_by_gate: Mapping[str, tuple[str, ...]] = {}
 
     def __init__(
         self,
@@ -6758,9 +6759,10 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 ),
                 resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
             )
-        fixture_roles = tuple(
-            sorted({client.actor for client in self.contract.clients})
-        )
+        fixture_roles = tuple(sorted({
+            *(client.actor for client in self.contract.clients),
+            *self.additional_fixture_roles_by_gate.get(gate_id, ()),
+        }))
         station_service_ids = tuple(
             service_id
             for service_id, binding in service_bindings.items()
@@ -6926,6 +6928,9 @@ class MobileDirectSimulatorProvisioner(
     station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
     actor_manifest_kind = "mobile-direct-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-direct-simulator-actors.json"
+    additional_fixture_roles_by_gate = {
+        "mobile-social-ios-native": ("eve",),
+    }
 
 
 class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):

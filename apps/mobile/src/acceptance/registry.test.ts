@@ -806,6 +806,38 @@ describe('Mobile Acceptance Harness', () => {
       detailKeys: ['detail:contact-profile:ptid:contact-1'],
       overlayRouteId: null,
     });
+    await expect(harness['navigation.apply']({
+      kind: 'detail.push',
+      route: { routeId: 'detail:social-search' },
+    })).resolves.toMatchObject({
+      detailKeys: [
+        'detail:contact-profile:ptid:contact-1',
+        'detail:social-search',
+      ],
+    });
+    await expect(harness['navigation.apply']({
+      kind: 'detail.push',
+      route: {
+        routeId: 'detail:social-profile',
+        actorPtid: 'ptid:contact-1',
+        federationId: 'federation-1',
+      },
+    })).resolves.toMatchObject({
+      detailKeys: [
+        'detail:contact-profile:ptid:contact-1',
+        'detail:social-search',
+        'detail:social-profile:ptid:contact-1:federation-1',
+      ],
+    });
+    await expect(harness['navigation.apply']({
+      kind: 'detail.push',
+      route: {
+        routeId: 'detail:social-circle',
+        circleId: '42',
+      },
+    })).resolves.toMatchObject({
+      detailKeys: expect.arrayContaining(['detail:social-circle:42']),
+    });
 
     const source = readFileSync(
       new URL('./actions.ts', import.meta.url),

@@ -2229,6 +2229,30 @@ function requireDetailRoute(value: unknown): MobileDetailRoute {
           'navigation.detail.postId',
         ),
       };
+    case 'detail:social-search':
+    case 'detail:social-circles':
+      return { routeId: route.routeId };
+    case 'detail:social-profile':
+      return {
+        routeId: route.routeId,
+        actorPtid: requirePtid(
+          route.actorPtid,
+          'navigation.detail.actorPtid',
+        ),
+        federationId: requireString(
+          route.federationId,
+          'navigation.detail.federationId',
+        ),
+      };
+    case 'detail:social-circle':
+    case 'detail:social-circle-members':
+      return {
+        routeId: route.routeId,
+        circleId: requireString(
+          route.circleId,
+          'navigation.detail.circleId',
+        ),
+      };
     case 'detail:setting':
       return {
         routeId: route.routeId,

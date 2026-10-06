@@ -20,6 +20,9 @@ from tooling.acceptance.core import (
     GateError,
     ProvisioningError,
     REPO_ROOT,
+    RuntimeReuseContract,
+    SuiteRuntimeAction,
+    SuiteRuntimeLedger,
     load_runtime_manifest,
     require_runtime_service,
 )
@@ -40,6 +43,7 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
 
 ENVIRONMENT_ID = "mobile-direct-simulator"
 SCENARIO_GATES = {
+    "ios-social-parity": "mobile-social-ios-native",
     "social-convergence": "mobile-simulator-social-convergence-e2e",
     "chat-contacts": "mobile-simulator-chat-contacts-e2e",
     "recovery": "mobile-simulator-recovery-e2e",
@@ -50,11 +54,50 @@ SCENARIO_GATES = {
     "storage-conversation-clear": "chat-storage-delete-reclaim-e2e",
     "storage-retention": "chat-storage-retention-e2e",
 }
+IOS_SOCIAL_PARITY_SCENARIOS = (
+    "rc01-home-explore",
+    "rc01-search-profile",
+    "rc01-circles-publish",
+    "rc01-thread-reaction",
+    "rc01-recovery-lifecycle",
+    "rc01-native-quality",
+)
+IOS_SOCIAL_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "mps-ios-functional",
+        "scenarioIds": list(IOS_SOCIAL_PARITY_SCENARIOS),
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 2,
+        "minWarmReuseRate": 0.8,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
 CLIENT_ASSIGNMENTS = {
     "sim-ios": ("station", "alice"),
     "sim-ios-peer": ("station", "bob"),
 }
 SCENARIO_METADATA = {
+    "ios-social-parity": {
+        "phase": "MPS-09 iOS Social Parity",
+        "bom": ["MPS-09", "MPS-RC01"],
+        "spec": [
+            "MPS-PA01",
+            "MPS-PA02",
+            "MPS-PA03",
+            "MPS-PA04",
+            "MPS-PA05",
+            "MPS-PA07",
+            "MPS-PA08",
+            "MPS-PA09",
+            "MPS-PA14",
+            "MPS-PA15",
+            "MPS-PA18",
+            "MPS-PA19",
+        ],
+    },
     "social-convergence": {
         "phase": "W5 Simulator Social Convergence",
         "bom": ["W5", "W5-OWNER"],
@@ -121,6 +164,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         self.gate_id = SCENARIO_GATES[scenario]
         super().__init__(**kwargs)
         self.scenario = scenario
+        self.suite_runtime_ledger: SuiteRuntimeLedger | None = None
 
     def execute(self) -> int:
         with ArtifactSession(
@@ -161,7 +205,35 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             finally:
                 self._cleanup_sessions(artifacts)
 
-            if any(item["status"] == "failed" for item in self.cleanup):
+            cleanup_failed = any(
+                item["status"] == "failed" for item in self.cleanup
+            )
+            if self.suite_runtime_ledger is not None and not cleanup_failed:
+                self.suite_runtime_ledger.record(
+                    SuiteRuntimeAction.CLEANUP_COMPLETE,
+                )
+            if self.suite_runtime_ledger is not None:
+                suite_report = self.suite_runtime_ledger.report()
+                suite_report_ref = artifacts.write_json(
+                    "mobile-simulator-social/ios-social-parity/"
+                    "suite-runtime.json",
+                    suite_report,
+                    role="mobile-social-ios-suite-runtime",
+                )
+                result["suiteRuntime"] = {
+                    "report": (
+                        suite_report_ref.to_dict()
+                        if isinstance(suite_report_ref, ArtifactRef)
+                        else None
+                    ),
+                    "result": suite_report["result"],
+                    "proofState": suite_report["proofState"],
+                    "reportDigest": suite_report["reportDigest"],
+                }
+                if suite_report["result"] != "PASS":
+                    cleanup_failed = True
+
+            if cleanup_failed:
                 journey_succeeded = exit_code == 0
                 status = "FAIL"
                 completion_status = "PARTIAL"
@@ -282,10 +354,20 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 password=ACTOR_PASSWORD,
             )
             for client_id, actor in actors.items()
+            if client_id in sessions
         }
         sender = actors["sim-ios"]
         receiver = actors["sim-ios-peer"]
-        if self.scenario == "social-convergence":
+        if self.scenario == "ios-social-parity":
+            journey_result = self._run_ios_social_parity_suite(
+                manifest=manifest,
+                source_identity=source_identity,
+                sessions=sessions,
+                actors=actors,
+                journey=journey,
+                journey_id=artifacts.run_id[-12:],
+            )
+        elif self.scenario == "social-convergence":
             journey_result = journey.run_social_convergence(
                 sender_session=sessions["sim-ios"],
                 receiver_session=sessions["sim-ios-peer"],
@@ -473,7 +555,1062 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     f"Mobile social actor {role}",
                 ),
             )
+        if self.scenario == "ios-social-parity":
+            service = require_runtime_service(manifest, "station", "station")
+            station = self._required_object(
+                stations,
+                "station",
+                "Mobile Social parity actor manifest station",
+            )
+            entries = station.get("actors")
+            eve = next(
+                (
+                    item
+                    for item in entries
+                    if isinstance(item, Mapping)
+                    and item.get("role") == "eve"
+                ),
+                None,
+            ) if isinstance(entries, list) else None
+            if not isinstance(eve, Mapping):
+                raise SimulatorGateBlocked(
+                    "Mobile Social parity actor manifest has no eve",
+                    f"{ENVIRONMENT_ID}:actor-manifest",
+                )
+            actors["fixture-eve"] = MessagingActor(
+                client_id="sim-ios",
+                role="eve",
+                station_url=self._required_text(
+                    service,
+                    "endpoint",
+                    "Mobile Social parity service station",
+                ),
+                station_peer_id=self._required_text(
+                    service,
+                    "runtimeIdentity",
+                    "Mobile Social parity service station",
+                ),
+                ptid=self._required_text(
+                    eve,
+                    "ptid",
+                    "Mobile Social parity actor eve",
+                ),
+                account_ref=self._required_text(
+                    eve,
+                    "accountRef",
+                    "Mobile Social parity actor eve",
+                ),
+                federated_handle=self._required_text(
+                    eve,
+                    "federatedHandle",
+                    "Mobile Social parity actor eve",
+                ),
+                federation_id=self._required_text(
+                    eve,
+                    "federationId",
+                    "Mobile Social parity actor eve",
+                ),
+            )
         return actors
+
+    def _run_ios_social_parity_suite(
+        self,
+        *,
+        manifest: Mapping[str, Any],
+        source_identity: Mapping[str, str],
+        sessions: Mapping[str, Any],
+        actors: Mapping[str, MessagingActor],
+        journey: MobileMessagingJourney,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        sender_session = sessions["sim-ios"]
+        receiver_session = sessions["sim-ios-peer"]
+        sender = actors["sim-ios"]
+        receiver = actors["sim-ios-peer"]
+        eve = actors["fixture-eve"]
+        fixture_epoch = self._required_text(
+            manifest,
+            "runId",
+            "Mobile Social parity RuntimeManifest",
+        )
+        ledger = SuiteRuntimeLedger(
+            IOS_SOCIAL_RUNTIME_REUSE,
+            suite_runtime_id=f"mps-09-{journey_id}",
+            source_digest=source_identity["commit"],
+            fixture_epoch=fixture_epoch,
+        )
+        self.suite_runtime_ledger = ledger
+        ledger.record(
+            SuiteRuntimeAction.PROVISION,
+            resource_id=f"{ENVIRONMENT_ID}:{fixture_epoch}",
+        )
+        ledger.record(
+            SuiteRuntimeAction.ACCOUNT_PROVISION,
+            resource_id="actors:alice,bob,eve",
+        )
+        for client_id in ("sim-ios", "sim-ios-peer"):
+            ledger.record(
+                SuiteRuntimeAction.CLIENT_LAUNCH,
+                resource_id=f"client:{client_id}",
+            )
+            ledger.record(
+                SuiteRuntimeAction.LOGIN,
+                resource_id=f"login:{client_id}",
+            )
+
+        state: dict[str, Any] = {}
+        scenario_runners = (
+            (
+                "rc01-home-explore",
+                lambda: self._run_ios_home_explore(
+                    sender_session,
+                    receiver_session,
+                    sender,
+                    journey_id,
+                    state,
+                ),
+            ),
+            (
+                "rc01-search-profile",
+                lambda: self._run_ios_search_profile(
+                    sender_session,
+                    receiver,
+                ),
+            ),
+            (
+                "rc01-circles-publish",
+                lambda: self._run_ios_circles_publish(
+                    sender_session,
+                    receiver_session,
+                    sender,
+                    receiver,
+                    journey,
+                    journey_id,
+                    state,
+                ),
+            ),
+            (
+                "rc01-thread-reaction",
+                lambda: self._run_ios_thread_reaction(
+                    receiver_session,
+                    journey_id,
+                    state,
+                ),
+            ),
+            (
+                "rc01-recovery-lifecycle",
+                lambda: self._run_ios_recovery_lifecycle(
+                    sender_session,
+                    eve,
+                    journey,
+                    journey_id,
+                    state,
+                ),
+            ),
+            (
+                "rc01-native-quality",
+                lambda: self._run_ios_native_quality(
+                    receiver_session,
+                ),
+            ),
+        )
+        results: list[dict[str, Any]] = []
+        for scenario_id, run_scenario in scenario_runners:
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id=scenario_id,
+            )
+            started_at = time.monotonic()
+            scenario_result = run_scenario()
+            duration_seconds = time.monotonic() - started_at
+            ledger.record(
+                SuiteRuntimeAction.UI_ACTION,
+                scenario_id=scenario_id,
+                resource_id=scenario_result["uiAction"],
+                duration_seconds=duration_seconds,
+            )
+            ledger.record(
+                SuiteRuntimeAction.RECEIVER_ASSERTION,
+                scenario_id=scenario_id,
+                resource_id=scenario_result["receiverAssertion"],
+            )
+            ledger.record(
+                SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                scenario_id=scenario_id,
+                resource_id=scenario_result["supportingObservation"],
+            )
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_END,
+                scenario_id=scenario_id,
+            )
+            results.append({
+                "scenarioId": scenario_id,
+                **scenario_result,
+            })
+        return {
+            "scenario": "ios-social-parity",
+            "runtimeCell": "MPS-RC01",
+            "actors": {
+                "alice": sender.ptid,
+                "bob": receiver.ptid,
+                "eve": eve.ptid,
+            },
+            "scenarios": results,
+            "unprovenScope": [
+                "Android",
+                "cross-Station delivery",
+                "Desktop interoperability",
+                "full SOCIAL_MOBILE_DESKTOP_PARITY_PROVEN",
+            ],
+        }
+
+    def _run_ios_home_explore(
+        self,
+        sender_session: Any,
+        receiver_session: Any,
+        sender: MessagingActor,
+        journey_id: str,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        text = f"mps09-public-{journey_id}"
+        published = self._mapping(
+            sender_session.call_action(
+                "moments.publish",
+                {"text": text, "audienceKind": 1},
+            ),
+            "MPS-09 public seed Moment",
+        )
+        post_id = self._text(
+            published.get("postId"),
+            "MPS-09 public seed post ID",
+        )
+        state["publicPostId"] = post_id
+        state["publicPostText"] = text
+
+        receiver_session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_ui(
+            receiver_session,
+            '[data-acceptance-id="social-moments-page"]',
+            "Moments page",
+        )
+        self._click_ui(
+            receiver_session,
+            '[data-acceptance-id="social-feed-scope-explore"]',
+            "Explore tab",
+        )
+        self._wait_ui_attribute(
+            receiver_session,
+            '[data-acceptance-id="social-moments-page"]',
+            "data-feed-scope",
+            "explore",
+            "Explore scope",
+        )
+        self._click_ui(
+            receiver_session,
+            '[data-acceptance-id="social-explore-sort-hot"]',
+            "Explore hot sort",
+        )
+        self._click_ui(
+            receiver_session,
+            '[data-acceptance-id="social-feed-scope-home"]',
+            "Home tab",
+        )
+        self._wait_ui_attribute(
+            receiver_session,
+            '[data-acceptance-id="social-moments-page"]',
+            "data-feed-scope",
+            "home",
+            "Home scope",
+        )
+        receiver_post = self._wait_for_moment(
+            receiver_session,
+            post_id,
+            text,
+        )
+        self._wait_post_visible(receiver_session, post_id, text)
+        return {
+            "uiAction": "moments:home-explore-switch",
+            "receiverAssertion": f"receiver-post:{post_id}",
+            "supportingObservation": f"timeline-author:{sender.ptid}",
+            "post": receiver_post,
+        }
+
+    def _run_ios_search_profile(
+        self,
+        session: Any,
+        receiver: MessagingActor,
+    ) -> dict[str, Any]:
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_ui(
+            session,
+            '[data-acceptance-id="social-moments-page"]',
+            "Moments page before Search",
+        )
+        self._click_ui(
+            session,
+            '[data-acceptance-id="social-search-open"]',
+            "Social Search",
+        )
+        self._wait_ui(
+            session,
+            '[data-acceptance-id="social-search-page"]',
+            "Social Search page",
+        )
+        self._set_ui_value(
+            session,
+            '[data-acceptance-id="social-search-input"] input',
+            receiver.federated_handle,
+            "Social Search query",
+        )
+        self._click_ui(
+            session,
+            '[data-acceptance-id="social-search-input"] '
+            ".ant-input-search-button",
+            "Social Search submit",
+        )
+        result_selector = (
+            '[data-acceptance-id="social-search-result"]'
+            f'[data-actor-ptid="{receiver.ptid}"]'
+        )
+        self._wait_ui(session, result_selector, "Social Search result")
+        self._click_ui(session, result_selector, "Social Search result")
+        profile_selector = (
+            '[data-acceptance-id="social-profile-page"]'
+            f'[data-profile-actor-ptid="{receiver.ptid}"]'
+        )
+        self._wait_ui(session, profile_selector, "Social Profile page")
+        self._wait_ui(
+            session,
+            '[data-acceptance-id="social-profile-authored-posts"]',
+            "Social Profile authored posts",
+        )
+        return {
+            "uiAction": f"search-open-profile:{receiver.ptid}",
+            "receiverAssertion": f"profile-visible:{receiver.ptid}",
+            "supportingObservation": (
+                f"federation:{receiver.federation_id}"
+            ),
+        }
+
+    def _run_ios_circles_publish(
+        self,
+        sender_session: Any,
+        receiver_session: Any,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+        journey: MobileMessagingJourney,
+        journey_id: str,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        conversation_id = journey._create_direct(
+            sender_session,
+            receiver_session,
+            sender,
+            receiver,
+        )
+        group_id = f"mps09-group-{journey_id}"
+        sender_session.call_action(
+            "messaging.createGroup",
+            {
+                "conversationId": group_id,
+                "name": f"MPS09 {journey_id}",
+                "memberPtids": [sender.ptid, receiver.ptid],
+                "federationId": sender.federation_id,
+            },
+        )
+
+        sender_session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_ui(
+            sender_session,
+            '[data-acceptance-id="social-moments-page"]',
+            "Moments page before Circles",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-search-open"]',
+            "Social Search",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circles-open"]',
+            "Social Circles",
+        )
+        self._wait_ui(
+            sender_session,
+            '[data-acceptance-id="social-circles-page"]',
+            "Social Circles page",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-create-open"]',
+            "Create Circle",
+        )
+        circle_name = f"MPS09 {journey_id}"
+        renamed_circle = f"{circle_name} renamed"
+        self._set_ui_value(
+            sender_session,
+            '[data-acceptance-id="social-circle-create-name"]',
+            circle_name,
+            "Circle name",
+        )
+        self._set_ui_value(
+            sender_session,
+            '[data-acceptance-id="social-circle-create-description"]',
+            "MPS-09 iOS same-Station audience",
+            "Circle description",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-create-submit"]',
+            "Create Circle submit",
+        )
+        circle_id = self._wait_ui_attribute_value(
+            sender_session,
+            '[data-acceptance-id="social-circle-detail"]',
+            "data-circle-id",
+            "Circle detail",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-add-members"]',
+            "Add Circle members",
+        )
+        self._wait_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-picker"]',
+            "Circle member picker",
+        )
+        self._set_ui_value(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-search"] input',
+            receiver.federated_handle,
+            "Circle member search",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-search"] '
+            ".ant-input-search-button",
+            "Circle member search submit",
+        )
+        candidate_selector = (
+            '[data-acceptance-id="social-circle-member-candidate"]'
+            f'[data-actor-ptid="{receiver.ptid}"]'
+        )
+        self._wait_ui(
+            sender_session,
+            candidate_selector,
+            "Circle member candidate",
+        )
+        self._click_ui(
+            sender_session,
+            candidate_selector,
+            "Circle member candidate",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-members-submit"]',
+            "Circle member submit",
+        )
+        member_selector = (
+            '[data-acceptance-id="social-circle-member"]'
+            f'[data-actor-ptid="{receiver.ptid}"]'
+        )
+        self._wait_ui(sender_session, member_selector, "Circle member")
+        self._set_ui_value(
+            sender_session,
+            '[data-acceptance-id="social-circle-name"]',
+            renamed_circle,
+            "Renamed Circle",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-save"]',
+            "Save Circle",
+        )
+        self._wait_ui_text(
+            sender_session,
+            '[data-acceptance-id="social-circle-detail"] .header-title',
+            renamed_circle,
+            "Renamed Circle heading",
+        )
+
+        before = self._mapping(
+            sender_session.call_action("moments.private.snapshot"),
+            "Private Moment snapshot before publish",
+        )
+        before_ids = {
+            item.get("postId")
+            for item in before.get("publish", [])
+            if isinstance(item, Mapping) and item.get("postId")
+        }
+        sender_session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-composer-open"]',
+            "Open Moment composer",
+        )
+        self._select_antd_option(
+            sender_session,
+            '[data-acceptance-id="social-audience-select"]',
+            3,
+            "Circle audience",
+        )
+        self._wait_ui_attribute(
+            sender_session,
+            '[data-acceptance-id="social-composer"]',
+            "data-audience-choice",
+            "CIRCLE",
+            "Circle audience selection",
+        )
+        private_text = f"mps09-circle-{journey_id}"
+        self._set_ui_value(
+            sender_session,
+            '[data-acceptance-id="social-composer-text"]',
+            private_text,
+            "Private Moment text",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-composer-publish"]',
+            "Publish private Moment",
+        )
+        private_post = self._wait_new_private_post(
+            sender_session,
+            before_ids,
+        )
+        private_post_id = self._text(
+            private_post.get("postId"),
+            "Private Moment post ID",
+        )
+        state.update({
+            "privatePostId": private_post_id,
+            "privatePostText": private_text,
+            "circleId": circle_id,
+            "groupId": group_id,
+            "conversationId": conversation_id,
+        })
+        receiver_session.call_action("moments.private.reconcile")
+        receiver_read = self._mapping(
+            receiver_session.call_action(
+                "moments.private.read",
+                {"postId": private_post_id},
+            ),
+            "Receiver private Moment readback",
+        )
+        if receiver_read.get("state") != "CONTENT_READY":
+            raise GateError(
+                "Receiver private Moment did not reach CONTENT_READY"
+            )
+        receiver_session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_post_visible(
+            receiver_session,
+            private_post_id,
+            "",
+        )
+        return {
+            "uiAction": f"circle-create-publish:{circle_id}",
+            "receiverAssertion": f"private-post:{private_post_id}",
+            "supportingObservation": (
+                f"circle-member:{receiver.ptid};group:{group_id}"
+            ),
+            "circleId": circle_id,
+            "privatePostId": private_post_id,
+            "receiverState": receiver_read["state"],
+        }
+
+    def _run_ios_thread_reaction(
+        self,
+        session: Any,
+        journey_id: str,
+        state: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        post_id = self._text(
+            state.get("privatePostId"),
+            "MPS-09 private post state",
+        )
+        for index in range(11):
+            session.call_action(
+                "moments.private.comment.submit",
+                {
+                    "draftId": f"mps09-{journey_id}-comment-{index}",
+                    "draftRevision": 1,
+                    "postId": post_id,
+                    "text": f"MPS09 comment {index}",
+                    "mentions": [],
+                },
+            )
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_post_visible(session, post_id, "")
+        self._click_ui_for_post(
+            session,
+            post_id,
+            "social-thread-open",
+            "Moment thread",
+        )
+        thread_selector = (
+            '[data-acceptance-id="social-moment-thread"]'
+            f'[data-post-id="{post_id}"]'
+        )
+        self._wait_ui(session, thread_selector, "Moment thread")
+        self._wait_ui_attribute(
+            session,
+            f"{thread_selector} [data-comment-total]",
+            "data-comment-visible",
+            "10",
+            "Default ten comments",
+        )
+        self._set_ui_value(
+            session,
+            f'{thread_selector} [data-acceptance-id="social-comment-input"]',
+            f"MPS09 UI comment {journey_id}",
+            "Inline comment",
+        )
+        self._click_ui(
+            session,
+            f'{thread_selector} [data-acceptance-id="social-comment-send"]',
+            "Inline comment submit",
+        )
+        self._wait_ui_text(
+            session,
+            thread_selector,
+            f"MPS09 UI comment {journey_id}",
+            "Inline comment readback",
+        )
+        for reaction_kind in range(1, 6):
+            self._click_ui_for_post(
+                session,
+                post_id,
+                "social-reaction-open",
+                "Reaction picker",
+            )
+            self._click_ui(
+                session,
+                (
+                    '[data-acceptance-id="social-reaction-choice"]'
+                    f'[data-reaction-kind="{reaction_kind}"]'
+                ),
+                f"Reaction kind {reaction_kind}",
+            )
+        return {
+            "uiAction": f"thread-comment-reactions:{post_id}",
+            "receiverAssertion": f"inline-comment-visible:{post_id}",
+            "supportingObservation": "comments-default-visible:10",
+            "postId": post_id,
+            "reactionKinds": [1, 2, 3, 4, 5],
+        }
+
+    def _run_ios_recovery_lifecycle(
+        self,
+        session: Any,
+        eve: MessagingActor,
+        journey: MobileMessagingJourney,
+        journey_id: str,
+        state: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._click_ui(
+            session,
+            '[data-acceptance-id="social-composer-open"]',
+            "Open composer for recovery",
+        )
+        draft_text = f"MPS09 recovery draft {journey_id}"
+        self._set_ui_value(
+            session,
+            '[data-acceptance-id="social-composer-text"]',
+            draft_text,
+            "Recovery draft",
+        )
+        time.sleep(0.5)
+        restart = self._mapping(
+            session.call_action("lifecycle.restart"),
+            "MPS-09 lifecycle restart",
+        )
+        if restart != {"requested": True, "scope": "webview"}:
+            raise GateError("MPS-09 lifecycle restart was not acknowledged")
+        self._wait_ui_text(
+            session,
+            '[data-acceptance-id="social-composer"]',
+            draft_text,
+            "Restored Moment draft",
+        )
+        session.call_action(
+            "session.logout",
+            {"draftDisposition": "discard"},
+        )
+        journey.authenticate(
+            session,
+            eve,
+            password=ACTOR_PASSWORD,
+        )
+        scope = self._mapping(
+            session.call_action("lifecycle.scope.read"),
+            "Eve lifecycle scope",
+        )
+        if scope.get("activeActorPtid") != eve.ptid:
+            raise GateError("Account switch did not activate Eve")
+        old_post_id = self._text(
+            state.get("privatePostId"),
+            "MPS-09 private post state",
+        )
+        private_snapshot = self._mapping(
+            session.call_action("moments.private.snapshot"),
+            "Eve private Moment snapshot",
+        )
+        snapshot_text = json.dumps(private_snapshot, sort_keys=True)
+        if old_post_id in snapshot_text or draft_text in snapshot_text:
+            raise GateError(
+                "Account switch exposed old-scope Social state"
+            )
+        return {
+            "uiAction": "composer-draft-restart-account-switch",
+            "receiverAssertion": f"new-scope:{eve.ptid}",
+            "supportingObservation": "old-scope-plaintext-absent",
+            "activeActorPtid": eve.ptid,
+            "draftRestored": True,
+        }
+
+    def _run_ios_native_quality(
+        self,
+        session: Any,
+    ) -> dict[str, Any]:
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
+        self._wait_ui(
+            session,
+            '[data-acceptance-id="social-moments-page"]',
+            "Moments page for native quality",
+        )
+        metrics = session.execute_script(
+            """
+const page = document.querySelector(
+  '[data-acceptance-id="social-moments-page"]'
+);
+const tablist = page?.querySelector('[role="tablist"]');
+const cards = page?.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+) || [];
+return {
+  viewportWidth: window.visualViewport?.width || window.innerWidth,
+  viewportHeight: window.visualViewport?.height || window.innerHeight,
+  tabCount: tablist?.querySelectorAll('[role="tab"]').length || 0,
+  cardCount: cards.length,
+  searchLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-search-open"][aria-label]')
+  ),
+  composerLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-composer-open"][aria-label]')
+  ),
+};
+"""
+        )
+        if (
+            not isinstance(metrics, Mapping)
+            or int(metrics.get("viewportWidth", 0)) < 320
+            or int(metrics.get("viewportHeight", 0)) < 480
+            or metrics.get("tabCount") != 2
+            or int(metrics.get("cardCount", 101)) > 100
+            or metrics.get("searchLabelled") is not True
+            or metrics.get("composerLabelled") is not True
+        ):
+            raise GateError("MPS-09 native quality metrics are invalid")
+        session.switch_to_native()
+        native_source = session.get_page_source()
+        screenshot = session.screenshot_bytes()
+        if not native_source.strip() or len(screenshot) < 1024:
+            raise GateError("MPS-09 native accessibility evidence is empty")
+        session.switch_to_app_webview()
+        return {
+            "uiAction": "native-moments-layout-observation",
+            "receiverAssertion": "native-ax-and-screenshot-nonempty",
+            "supportingObservation": "bounded-feed-card-count",
+            "metrics": dict(metrics),
+            "nativeAxBytes": len(native_source.encode("utf-8")),
+            "screenshotBytes": len(screenshot),
+        }
+
+    @staticmethod
+    def _wait_ui(
+        session: Any,
+        selector: str,
+        label: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            value = session.execute_script(
+                """
+const node = document.querySelector(arguments[0]);
+if (!node) return null;
+return {
+  text: node.textContent || '',
+  acceptanceId: node.getAttribute('data-acceptance-id') || '',
+};
+""",
+                selector,
+            )
+            return dict(value) if isinstance(value, Mapping) else None
+
+        return SimulatorSocialGate._wait_for_value(read, label)
+
+    @staticmethod
+    def _click_ui(
+        session: Any,
+        selector: str,
+        label: str,
+    ) -> None:
+        def click() -> bool | None:
+            value = session.execute_script(
+                """
+const node = document.querySelector(arguments[0]);
+if (!node || node.disabled) return null;
+node.scrollIntoView({block: 'center', inline: 'nearest'});
+node.click();
+return true;
+""",
+                selector,
+            )
+            return True if value is True else None
+
+        SimulatorSocialGate._wait_for_value(click, label)
+
+    @staticmethod
+    def _click_ui_for_post(
+        session: Any,
+        post_id: str,
+        acceptance_id: str,
+        label: str,
+    ) -> None:
+        def click() -> bool | None:
+            value = session.execute_script(
+                """
+const postId = arguments[0];
+const acceptanceId = arguments[1];
+const card = Array.from(document.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+)).find((node) => node.getAttribute('data-post-id') === postId);
+const target = card?.querySelector(
+  `[data-acceptance-id="${acceptanceId}"]`
+);
+if (!target || target.disabled) return null;
+target.scrollIntoView({block: 'center', inline: 'nearest'});
+target.click();
+return true;
+""",
+                post_id,
+                acceptance_id,
+            )
+            return True if value is True else None
+
+        SimulatorSocialGate._wait_for_value(click, label)
+
+    @staticmethod
+    def _set_ui_value(
+        session: Any,
+        selector: str,
+        value: str,
+        label: str,
+    ) -> None:
+        def set_value() -> bool | None:
+            changed = session.execute_script(
+                """
+const node = document.querySelector(arguments[0]);
+if (!node) return null;
+const value = arguments[1];
+const prototype = node.tagName === 'TEXTAREA'
+  ? HTMLTextAreaElement.prototype
+  : HTMLInputElement.prototype;
+const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+if (!setter) return null;
+setter.call(node, value);
+node.dispatchEvent(new Event('input', {bubbles: true}));
+node.dispatchEvent(new Event('change', {bubbles: true}));
+return node.value === value;
+""",
+                selector,
+                value,
+            )
+            return True if changed is True else None
+
+        SimulatorSocialGate._wait_for_value(set_value, label)
+
+    @staticmethod
+    def _select_antd_option(
+        session: Any,
+        selector: str,
+        option_index: int,
+        label: str,
+    ) -> None:
+        SimulatorSocialGate._click_ui(
+            session,
+            f"{selector} .ant-select-selector",
+            f"{label} selector",
+        )
+
+        def select() -> bool | None:
+            selected = session.execute_script(
+                """
+const index = arguments[0];
+const dropdowns = Array.from(document.querySelectorAll(
+  '.ant-select-dropdown:not(.ant-select-dropdown-hidden)'
+));
+const dropdown = dropdowns.at(-1);
+const options = dropdown
+  ? Array.from(dropdown.querySelectorAll('.ant-select-item-option'))
+  : [];
+const option = options[index];
+if (!option) return null;
+option.click();
+return true;
+""",
+                option_index,
+            )
+            return True if selected is True else None
+
+        SimulatorSocialGate._wait_for_value(select, label)
+
+    @staticmethod
+    def _wait_ui_attribute(
+        session: Any,
+        selector: str,
+        attribute: str,
+        expected: str,
+        label: str,
+    ) -> None:
+        SimulatorSocialGate._wait_for_value(
+            lambda: True
+            if session.execute_script(
+                """
+const node = document.querySelector(arguments[0]);
+return node?.getAttribute(arguments[1]) || null;
+""",
+                selector,
+                attribute,
+            ) == expected
+            else None,
+            label,
+        )
+
+    @staticmethod
+    def _wait_ui_attribute_value(
+        session: Any,
+        selector: str,
+        attribute: str,
+        label: str,
+    ) -> str:
+        return str(SimulatorSocialGate._wait_for_value(
+            lambda: session.execute_script(
+                """
+const node = document.querySelector(arguments[0]);
+return node?.getAttribute(arguments[1]) || null;
+""",
+                selector,
+                attribute,
+            ),
+            label,
+        ))
+
+    @staticmethod
+    def _wait_ui_text(
+        session: Any,
+        selector: str,
+        expected: str,
+        label: str,
+    ) -> None:
+        SimulatorSocialGate._wait_for_value(
+            lambda: True
+            if expected in str(session.execute_script(
+                """
+const node = document.querySelector(arguments[0]);
+return node?.textContent || null;
+""",
+                selector,
+            ) or "")
+            else None,
+            label,
+        )
+
+    @staticmethod
+    def _wait_post_visible(
+        session: Any,
+        post_id: str,
+        expected_text: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            value = session.execute_script(
+                """
+const postId = arguments[0];
+const expectedText = arguments[1];
+const card = Array.from(document.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+)).find((node) => node.getAttribute('data-post-id') === postId);
+if (!card) return null;
+const text = card.textContent || '';
+if (expectedText && !text.includes(expectedText)) return null;
+return {
+  postId,
+  textVisible: !expectedText || text.includes(expectedText),
+  contentKind: card.getAttribute('data-moment-content-kind') || '',
+};
+""",
+                post_id,
+                expected_text,
+            )
+            return dict(value) if isinstance(value, Mapping) else None
+
+        return SimulatorSocialGate._wait_for_value(
+            read,
+            f"receiver-visible Moment {post_id}",
+        )
+
+    @staticmethod
+    def _wait_new_private_post(
+        session: Any,
+        before_ids: set[Any],
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            snapshot = session.call_action("moments.private.snapshot")
+            if not isinstance(snapshot, Mapping):
+                return None
+            publish = snapshot.get("publish")
+            if not isinstance(publish, list):
+                return None
+            return next(
+                (
+                    dict(item)
+                    for item in publish
+                    if isinstance(item, Mapping)
+                    and item.get("state") == "PUBLISHED"
+                    and item.get("postId")
+                    and item.get("postId") not in before_ids
+                ),
+                None,
+            )
+
+        return SimulatorSocialGate._wait_for_value(
+            read,
+            "published private Moment",
+        )
 
     def _run_storage_cache_cleanup_journey(
         self,

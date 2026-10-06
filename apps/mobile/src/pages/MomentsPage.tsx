@@ -419,13 +419,18 @@ export function MomentsPage({
   }
 
   return (
-    <div className="page-container moments-page">
+    <div
+      className="page-container moments-page"
+      data-acceptance-id="social-moments-page"
+      data-feed-scope={feedScope}
+    >
       {/* Header: title + ImagePlus new-post toggle (prototype) */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.moments.title')}</h1>
         <button
           type="button"
           className="header-action"
+          data-acceptance-id="social-search-open"
           aria-label={t('mobile.social.search.title')}
           onClick={onOpenSearch}
         >
@@ -434,6 +439,7 @@ export function MomentsPage({
         <button
           type="button"
           className="header-action"
+          data-acceptance-id="social-feed-refresh"
           aria-label={t('mobile.moments.feed.refresh')}
           aria-busy={feed.loadState === 'refreshing'}
           disabled={isUnavailable || feed.loadState === 'refreshing'}
@@ -444,6 +450,7 @@ export function MomentsPage({
         <button
           type="button"
           className="header-action"
+          data-acceptance-id="social-composer-open"
           aria-label={t('mobile.moments.newPost')}
           onClick={() => setShowNewPost(!showNewPost)}
         >
@@ -462,6 +469,7 @@ export function MomentsPage({
               key={scope}
               type="button"
               role="tab"
+              data-acceptance-id={`social-feed-scope-${scope}`}
               aria-selected={feedScope === scope}
               className="moments-scope-control"
               data-active={feedScope === scope}
@@ -485,6 +493,7 @@ export function MomentsPage({
                 key={label}
                 type="button"
                 className="moments-sort-control"
+                data-acceptance-id={`social-explore-sort-${label}`}
                 data-active={facade.feeds.explore.sort() === sort}
                 onClick={() => handleExploreSort(sort)}
               >

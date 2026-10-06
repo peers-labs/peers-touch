@@ -234,6 +234,8 @@ export function MomentFeedItem({
         <button
           type="button"
           className="moments-image-single moments-media-trigger"
+          data-acceptance-id="social-media-open"
+          data-post-id={post.id}
           onClick={(event) => onOpenMedia?.(
             post.id,
             images[0].id,
@@ -257,6 +259,8 @@ export function MomentFeedItem({
             type="button"
             className="moments-grid-image moments-media-trigger"
             key={img.id || idx}
+            data-acceptance-id="social-media-open"
+            data-post-id={post.id}
             onClick={(event) => onOpenMedia?.(
               post.id,
               img.id,
@@ -283,6 +287,8 @@ export function MomentFeedItem({
           <button
             type="button"
             className="moments-content-detail moments-content-video moments-media-trigger"
+            data-acceptance-id="social-media-open"
+            data-post-id={post.id}
             onClick={(event) => video && onOpenMedia?.(
               post.id,
               video.id,
@@ -357,12 +363,15 @@ export function MomentFeedItem({
     <Card
       className="moments-card"
       variant="borderless"
+      data-acceptance-id="social-moment-card"
+      data-post-id={post.id}
       data-moment-content-kind={contentKind}
     >
       {/* Author header — Avatar 42px + name + time */}
       <button
         type="button"
         className="moments-card-header moments-author-trigger"
+        data-acceptance-id="social-moment-author"
         onClick={() => onOpenAuthor?.(
           post.authorPtid || post.author?.id || '',
           post.author?.homeStationDomain || '',
@@ -417,6 +426,7 @@ export function MomentFeedItem({
               reactionCounts.viewerReactionKind ? 'reacted' : '',
               reactionMutation?.status ?? '',
             ].filter(Boolean).join(' ')}
+            data-acceptance-id="social-reaction-open"
             onClick={toggleReactionPicker}
             disabled={reactionBusy}
             aria-busy={reactionBusy}
@@ -427,6 +437,8 @@ export function MomentFeedItem({
           <button
             type="button"
             className="moments-action"
+            data-acceptance-id="social-thread-open"
+            data-post-id={post.id}
             onClick={() => onOpenComments(post.id)}
           >
             <MessageCircle size={18} />
@@ -462,6 +474,8 @@ export function MomentFeedItem({
                 key={kind}
                 type="button"
                 className={`moments-reaction-picker-btn ${reactionCounts.viewerReactionKind === kind ? 'active' : ''}`}
+                data-acceptance-id="social-reaction-choice"
+                data-reaction-kind={kind}
                 onClick={() => handlePickReaction(kind)}
                 disabled={reactionBusy}
               >

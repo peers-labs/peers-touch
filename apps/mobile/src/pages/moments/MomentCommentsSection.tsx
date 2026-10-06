@@ -221,6 +221,8 @@ export function MomentCommentsSection({
   return (
     <section
       className={`moments-comments-section moments-comments-section--${mode}`}
+      data-acceptance-id="social-moment-thread"
+      data-post-id={postId}
       aria-label={t('mobile.moments.comment.title')}
     >
       {mode === 'detail' && (
@@ -383,6 +385,7 @@ export function MomentCommentsSection({
         <div className="moments-comments-input">
           <Input
             value={commentText}
+            data-acceptance-id="social-comment-input"
             onChange={(event) => setCommentText(event.target.value)}
             placeholder={replyTarget
               ? t('mobile.moments.reply.placeholder', { name: replyAuthorName })
@@ -393,6 +396,7 @@ export function MomentCommentsSection({
           <Button
             type="primary"
             icon={<Send size={14} />}
+            data-acceptance-id="social-comment-send"
             onClick={() => void handleSendComment()}
             disabled={!commentText.trim() || sending}
             loading={sending}

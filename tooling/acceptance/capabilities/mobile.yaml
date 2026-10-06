@@ -112,7 +112,7 @@
       "domain": "mobile",
       "direction": "acceptance_validates_product",
       "features": ["mobile-chat-contacts-groups", "mobile-moments-participation", "mobile-profile-settings"],
-      "required_gates": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e"],
+      "required_gates": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e", "mobile-social-ios-native"],
       "synthetic_paths": [
         "apps/mobile/src/features/social/socialRuntime.ts",
         "apps/mobile/src/features/group/groupRuntime.ts",
@@ -127,9 +127,9 @@
       "evidence": {
         "truth_sources": ["Station conversation and social domains", "Station actor preferences", "Mobile runtime projections"],
         "surfaces": ["Chat", "Contacts", "Moments", "Me and Settings"],
-        "proven_by": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e"],
-        "proven_scope": ["Source-level runtime ownership and generation fencing", "Receiver-visible social journeys for two actors on the required two-simulator/same-Station cell"],
-        "unproven_scope": ["Cross-Station or Relay-backed Social delivery", "Optional physical-radio and hardware-specific behavior"]
+        "proven_by": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e", "mobile-social-ios-native"],
+        "proven_scope": ["Source-level runtime ownership and generation fencing", "Receiver-visible social journeys for two actors on the required two-simulator/same-Station cell", "MPS-RC01 iOS same-Station Social parity only when mobile-social-ios-native passes"],
+        "unproven_scope": ["Cross-Station or Relay-backed Social delivery", "Android and Desktop-Mobile interoperability until their required Gates pass", "Optional physical-radio and hardware-specific behavior"]
       }
     },
     {

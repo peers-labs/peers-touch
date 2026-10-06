@@ -136,6 +136,8 @@ export function MomentMediaOverlay({
   return (
     <div
       className="moments-media-overlay"
+      data-acceptance-id="social-media-overlay"
+      data-post-id={selection.postId}
       role="dialog"
       aria-modal="true"
       aria-label={t('mobile.moments.media.preview')}
