@@ -7,6 +7,7 @@ from unittest.mock import patch
 from tooling.acceptance.gates.station_access.relay_endpoint_discovery_contract import (
     CAPABILITY_ID,
     RUN_OPERATION,
+    RelayEndpointDiscoveryCapabilityHandler,
     RelayEndpointDiscoveryGate,
     validate_discovery_source_contract,
 )
@@ -15,6 +16,18 @@ from tooling.acceptance.gates.station_access.relay_endpoint_discovery_contract i
 class RelayEndpointDiscoveryContractTest(unittest.TestCase):
     def test_current_repository_satisfies_source_contract(self) -> None:
         validate_discovery_source_contract()
+
+    def test_capability_handler_redacts_forwarded_endpoints(self) -> None:
+        handler = RelayEndpointDiscoveryCapabilityHandler.__new__(
+            RelayEndpointDiscoveryCapabilityHandler
+        )
+        handler._station_url = "http://127.0.0.1:41001"
+        handler._relay_url = "http://127.0.0.1:41002"
+
+        self.assertEqual(
+            handler.sensitive_values,
+            ("http://127.0.0.1:41001", "http://127.0.0.1:41002"),
+        )
 
     def test_gate_requires_signed_roles_and_challenges(self) -> None:
         runtime_reference = {
