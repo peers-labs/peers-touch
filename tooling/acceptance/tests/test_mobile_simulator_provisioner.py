@@ -947,6 +947,65 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 with self.assertRaises(BlockedError):
                     provisioner._required_service_profiles()
 
+    def test_reviewed_profile_resolver_uses_env_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_directory:
+            env_repo = Path(temp_directory)
+            profile_path = (
+                env_repo
+                / "peers-touch"
+                / "chat-native-disposable"
+                / "profile.env.example"
+            )
+            profile_path.parent.mkdir(parents=True)
+            profile_path.write_text(
+                "\n".join(
+                    (
+                        "PT_DEV_PROFILE=chat-native-disposable",
+                        "PT_STATION_MODE=remote",
+                        "PT_STATION_URL=https://station.example",
+                        "PT_STATION_DEPLOY_ENV=station-disposable",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            git_results = (
+                SimpleNamespace(returncode=0, stdout="true\n", stderr=""),
+                SimpleNamespace(
+                    returncode=0,
+                    stdout=(
+                        "peers-touch/chat-native-disposable/"
+                        "profile.env.example\n"
+                    ),
+                    stderr="",
+                ),
+                SimpleNamespace(returncode=0, stdout="", stderr=""),
+            )
+            with (
+                patch.dict(
+                    mobile_simulator_module.os.environ,
+                    {"PT_ENV_REPO": str(env_repo)},
+                ),
+                patch.object(
+                    mobile_simulator_module.subprocess,
+                    "run",
+                    side_effect=git_results,
+                ) as run,
+            ):
+                resolved_path, values = (
+                    mobile_simulator_module
+                    .resolve_reviewed_profile_environment(
+                        "chat-native-disposable"
+                    )
+                )
+
+        self.assertEqual(resolved_path, profile_path.resolve())
+        self.assertEqual(
+            values["PT_STATION_DEPLOY_ENV"],
+            "station-disposable",
+        )
+        self.assertEqual(run.call_count, 3)
+        self.assertNotIn(".local/dev/profiles", str(resolved_path))
+
     def test_social_simulator_injects_station_profiles_in_memory(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
         contract = EnvironmentContract.from_yaml(path)
@@ -963,13 +1022,13 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "PT_RELAY_DEPLOY_ENV": "relay",
         }
         station_profiles = {
-            "four.env": {
+            "four": {
                 "PT_DEV_PROFILE": "four",
                 "PT_STATION_MODE": "remote",
                 "PT_STATION_URL": "https://four.example",
                 "PT_STATION_DEPLOY_ENV": "station-four",
             },
-            "fiveArm.env": {
+            "fiveArm": {
                 "PT_DEV_PROFILE": "fiveArm",
                 "PT_STATION_MODE": "remote",
                 "PT_STATION_URL": "https://five.example",
@@ -978,13 +1037,16 @@ class MobileSimulatorContractTests(unittest.TestCase):
         }
 
         with (
-            patch.object(Path, "is_file", return_value=True),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
-                "load_env_file",
-                side_effect=lambda profile_path: station_profiles[
-                    profile_path.name
-                ],
+                "resolve_reviewed_profile_environment",
+                side_effect=lambda profile_name: (
+                    Path(
+                        f"/canonical/{profile_name}/"
+                        "profile.env.example"
+                    ),
+                    station_profiles[profile_name],
+                ),
             ),
         ):
             merged = provisioner._inject_station_profile_bindings(active)
@@ -1014,19 +1076,21 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "PT_RELAY_DEPLOY_ENV": "relay",
         }
         with (
-            patch.object(Path, "is_file", return_value=True),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
-                "load_env_file",
-                return_value={
-                    "PT_DEV_PROFILE": "one",
-                    "PT_RELAY_MODE": "remote",
-                    "PT_RELAY_URL": "https://relay.example",
-                    "PT_RELAY_HEALTH_URL": (
-                        "https://relay.example/healthz"
-                    ),
-                    "PT_RELAY_DEPLOY_ENV": "relay-1",
-                },
+                "resolve_reviewed_profile_environment",
+                return_value=(
+                    Path("/canonical/one/profile.env.example"),
+                    {
+                        "PT_DEV_PROFILE": "one",
+                        "PT_RELAY_MODE": "remote",
+                        "PT_RELAY_URL": "https://relay.example",
+                        "PT_RELAY_HEALTH_URL": (
+                            "https://relay.example/healthz"
+                        ),
+                        "PT_RELAY_DEPLOY_ENV": "relay-1",
+                    },
+                ),
             ),
         ):
             merged = provisioner._inject_service_profile_bindings(active)

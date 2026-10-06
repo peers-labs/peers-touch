@@ -196,6 +196,113 @@ SELECTED_BUILD_ENVIRONMENT_KEYS = frozenset(
 )
 
 
+def resolve_reviewed_profile_environment(
+    profile_name: str,
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> tuple[Path, dict[str, str]]:
+    if not PROFILE_NAME_PATTERN.fullmatch(profile_name):
+        raise BlockedError(
+            reason=f"Invalid reviewed profile name: {profile_name!r}",
+            resource="service-profile-bindings",
+        )
+    configured_env_repo = os.environ.get("PT_ENV_REPO", "").strip()
+    env_repo = (
+        Path(configured_env_repo).expanduser().resolve()
+        if configured_env_repo
+        else repo_root.resolve().parent / "env"
+    )
+    relative_directory = Path("peers-touch") / profile_name
+    relative_profile = relative_directory / "profile.env.example"
+    resource = f"service-profile:{profile_name}"
+    try:
+        worktree = subprocess.run(
+            ["git", "-C", str(env_repo), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        tracked = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(env_repo),
+                "ls-files",
+                "--error-unmatch",
+                relative_profile.as_posix(),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        source_state = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(env_repo),
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+                "--",
+                relative_directory.as_posix(),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise BlockedError(
+            reason=(
+                f"Reviewed profile {profile_name!r} authority is unavailable: "
+                f"{error}"
+            ),
+            resource=resource,
+        ) from error
+    if (
+        worktree.returncode != 0
+        or worktree.stdout.strip() != "true"
+        or tracked.returncode != 0
+        or source_state.returncode != 0
+    ):
+        raise BlockedError(
+            reason=(
+                f"Reviewed profile {profile_name!r} is not a tracked "
+                "environment-repository definition"
+            ),
+            resource=resource,
+        )
+    if source_state.stdout.strip():
+        raise BlockedError(
+            reason=(
+                f"Reviewed profile {profile_name!r} has dirty or untracked "
+                "environment definitions"
+            ),
+            resource=resource,
+        )
+    try:
+        profile_path = (env_repo / relative_profile).resolve(strict=True)
+        profile_path.relative_to(env_repo.resolve(strict=True))
+    except (OSError, RuntimeError, ValueError) as error:
+        raise BlockedError(
+            reason=f"Reviewed profile {profile_name!r} path is unavailable",
+            resource=resource,
+        ) from error
+    values = load_env_file(profile_path)
+    declared_profile = values.get("PT_DEV_PROFILE", "").strip()
+    if declared_profile != profile_name:
+        raise BlockedError(
+            reason=(
+                f"Reviewed profile {profile_name!r} declares "
+                f"PT_DEV_PROFILE={declared_profile!r}"
+            ),
+            resource=resource,
+        )
+    return profile_path, values
+
+
 IOS_LAYOUT_CLIENTS = {
     "sim-ios-current": (
         "iPhone 17",
@@ -6574,31 +6681,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     ) -> dict[str, str]:
         merged = dict(profile_env)
         for service_id, profile_name in self._required_station_profiles().items():
-            profile_path = (
-                REPO_ROOT
-                / ".local"
-                / "dev"
-                / "profiles"
-                / f"{profile_name}.env"
-            )
-            if not profile_path.is_file():
-                raise BlockedError(
-                    reason=(
-                        f"{self.environment_id} service {service_id!r} "
-                        f"requires runtime profile {profile_name!r}"
-                    ),
-                    resource=f"service-profile:{service_id}",
-                )
-            station_env = load_env_file(profile_path)
-            declared_profile = station_env.get("PT_DEV_PROFILE", "").strip()
-            if declared_profile != profile_name:
-                raise BlockedError(
-                    reason=(
-                        f"Station profile {profile_name!r} declares "
-                        f"PT_DEV_PROFILE={declared_profile!r}"
-                    ),
-                    resource=f"service-profile:{service_id}",
-                )
+            _, station_env = resolve_reviewed_profile_environment(profile_name)
             if station_env.get("PT_STATION_MODE", "").strip() != "remote":
                 raise BlockedError(
                     reason=(
@@ -6633,31 +6716,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     ) -> dict[str, str]:
         merged = dict(profile_env)
         for service_id, profile_name in self._required_service_profiles().items():
-            profile_path = (
-                REPO_ROOT
-                / ".local"
-                / "dev"
-                / "profiles"
-                / f"{profile_name}.env"
-            )
-            if not profile_path.is_file():
-                raise BlockedError(
-                    reason=(
-                        f"Mobile social service {service_id!r} requires runtime "
-                        f"profile {profile_name!r}"
-                    ),
-                    resource=f"service-profile:{service_id}",
-                )
-            service_env = load_env_file(profile_path)
-            declared_profile = service_env.get("PT_DEV_PROFILE", "").strip()
-            if declared_profile != profile_name:
-                raise BlockedError(
-                    reason=(
-                        f"Service profile {profile_name!r} declares "
-                        f"PT_DEV_PROFILE={declared_profile!r}"
-                    ),
-                    resource=f"service-profile:{service_id}",
-                )
+            _, service_env = resolve_reviewed_profile_environment(profile_name)
             if service_env.get("PT_RELAY_MODE", "").strip() != "remote":
                 raise BlockedError(
                     reason=(
