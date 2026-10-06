@@ -1,7 +1,7 @@
 # Mobile Social Desktop Parity - Decisions
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-06 | **Updated**: 2026-10-06
 > **Owner**: Mobile / Social / Client Architecture
 
@@ -23,6 +23,7 @@
 | MPS-D10 | Existing Mobile Shell prototype is amended instead of creating a second shell | accepted |
 | MPS-D11 | Verified plaintext may reach Web; private key material may not | accepted |
 | MPS-D12 | All canonical content kinds render; authoring is capability-gated | accepted |
+| MPS-D13 | Recovery secrets enter through a Native-only secure-input capability | accepted |
 
 ## MPS-D01: Semantic Parity
 
@@ -340,3 +341,55 @@ because both hide capability gaps and can lose content semantics.
 ### Consequences
 
 Unknown kinds fail closed. Acceptance separately proves seven-kind rendering and capability-gated creation.
+
+## MPS-D13: Native-Only Recovery Secret Entry
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+The current Mobile private Social recovery command accepts the 24-word phrase from
+TypeScript and exposes the same field through the Web Acceptance registry. This
+violates MSP-J06 and MPS-D11 even though Rust zeroizes the value after IPC.
+
+### Decision
+
+Mobile Web submits only the current scope, recovery epoch and Post identity. A
+dedicated iOS/Android secure-input plugin presents a masked native control and
+returns the phrase once to Mobile Rust. Rust validates the current
+Station/PTID/device/generation and recovery-required state before prompting,
+validates BIP39, derives and stores the wrapped recovery master, performs the
+recovery read, zeroizes the phrase, and returns only a sanitized projection.
+
+The Web Acceptance registry may initiate the operation but cannot accept,
+return, serialize or log a phrase or secret handle. An Acceptance build may
+bind one process-scoped native secret-channel reference at launch. Appium
+invokes a native accessibility action that fills the masked control from that
+channel; neither the phrase nor the reference crosses Web or an Appium
+send-keys payload, and neither enters evidence. One prompt is active at a time;
+cancel, invalid input, stale generation and teardown are typed terminal
+outcomes that retain no partial key reference or plaintext.
+
+### Rationale
+
+This keeps the product UI in the existing Web mainline while preserving the
+Native secret boundary required by MPS-D04 and MPS-D11.
+
+### Alternatives Considered
+
+- Web password fields, React state and Web secure storage were rejected because
+  the phrase still enters JavaScript memory and IPC JSON.
+- A raw phrase or opaque phrase handle in the Acceptance action was rejected
+  because the Harness would become a secret transport.
+- A complete independent native Social recovery screen was rejected because it
+  duplicates product UI and violates the one-Web-mainline decision.
+- Reusing the permissions or secure-storage plugin was rejected because secret
+  entry is neither permission policy nor persistence ownership.
+
+### Consequences
+
+Mobile gains one narrow reusable native secure-input plugin and a Rust-only
+plugin handle. The old phrase-bearing TypeScript, Tauri and Acceptance
+contracts are deleted atomically. iOS and Android source plus native runtime
+evidence are required before recovery parity is proven.

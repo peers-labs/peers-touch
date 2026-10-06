@@ -1,7 +1,7 @@
 # Mobile Social Desktop Parity - Integration
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-06 | **Updated**: 2026-10-06
 > **Owner**: Mobile / Social / Client Architecture
 
@@ -21,6 +21,7 @@
 | `MomentCommentsSection.tsx` | comment projection/composer | one selected inline Feed thread; exception Detail reuses the same section |
 | `features/social/socialStore.ts` | profiles, relationships, people search | Profile/Search/Circle identity support |
 | `src-tauri/src/social/` | private Social engine | extends typed public/private/interaction adapter; no second engine |
+| phrase-bearing Web/Tauri/Acceptance recovery action | deleted | Web starts recovery without a secret; native plugin returns the phrase only to Rust |
 | Desktop Moments pages/components | product semantics only | parity ledger and acceptance reference |
 
 ## 2. New Integration Boundaries
@@ -43,6 +44,16 @@ One adapter:
 - calls existing private Social engine for private work;
 - returns sanitized projections and typed state/error;
 - owns purge and exact-scope readback.
+
+### Native secure input
+
+One narrow plugin:
+
+- presents platform-native masked recovery input;
+- prevents concurrent prompts and bounds the prompt lifetime;
+- returns the submitted phrase only through its Rust plugin handle;
+- clears native input state after submit, cancel, expiry or teardown;
+- owns no recovery derivation, persistence, business state or Web command.
 
 ### Navigation
 
@@ -71,9 +82,11 @@ No row gains a second semantic or persistence owner.
 3. Feed and exception Detail move from public-only page state to one composed projection; ordinary
    comment/media interaction remains Feed-local.
 4. Private comments/reactions/media/recovery become facade actions; public fallback is deleted.
-5. Profile/Search/Circles and exception Detail route identity moves to descriptor navigation. Expanded
+5. The phrase-bearing `storeRecoveryPhrase` Web/Tauri/Acceptance path is deleted
+   in the same cut that activates native secure input.
+6. Profile/Search/Circles and exception Detail route identity moves to descriptor navigation. Expanded
    Feed thread and media overlay remain bounded presentation state, never business truth.
-6. Cross-Station Mobile Acceptance becomes a separate required package; the existing Mobile Shell plan remains
+7. Cross-Station Mobile Acceptance becomes a separate required package; the existing Mobile Shell plan remains
    historical same-Station evidence and is not retroactively rewritten.
 
 Each cutover requires zero-reference gates for the old production path.
@@ -89,6 +102,8 @@ Expected implementation areas:
 - `apps/mobile/src/runtimes/`
 - `apps/mobile/src/services/mobileCommands.ts`
 - `apps/mobile/src-tauri/src/social/`
+- `apps/mobile/src-tauri/src/platform/secure_input.rs`
+- `apps/mobile/src-tauri/plugins/secure-input/`
 - Mobile i18n catalogs
 - `model/domain/social/` only when a genuine canonical contract gap is proven
 - Mobile business Acceptance scenarios/environments/gates
@@ -123,6 +138,10 @@ The future Acceptance package must:
   Android Emulator substitution;
 - reuse the existing two-Station Social environment and shared Federation services;
 - drive only production UI/typed Harness actions;
+- enter recovery material only through the native masked control; the runtime
+  owner may bind a single-use process-scoped native secret channel and Appium
+  may trigger its native autofill action, while Web Harness inputs/outputs and
+  Appium payloads recursively reject phrases and channel references;
 - capture receiver perspective, Station readback, OSS/key absence and cleanup;
 - keep functional Journey proof before broad Acceptance.
 
