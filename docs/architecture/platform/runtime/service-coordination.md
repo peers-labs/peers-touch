@@ -296,8 +296,8 @@ Then recreate the Station container (`docker compose up -d station`).
 
 ## 9. Cross-references
 
-- Federation architecture: `docs/architecture/shared/federation/README.md`
-- Federation execution plan: `docs/architecture/shared/federation/execution-plans/phase-1-federation-ledger.md`
+- Federation architecture: `docs/architecture/domains/federation/README.md`
+- Federation execution plan: `docs/architecture/domains/federation/execution-plans/phase-1-federation-ledger.md`
 - Group call architecture: `docs/architecture/domains/chat/calling/group-calls.md`
 - Local dev environment: `docs/global/local-dev-environment.md`
 - Profile system: `tooling/scripts/local-dev/profile.sh`
