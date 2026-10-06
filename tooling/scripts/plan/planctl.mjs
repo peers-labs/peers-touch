@@ -7,6 +7,7 @@ import {
   loadSessionStoreFromPath,
   sessionStorePaths,
 } from '../local-dev/dev-session-store.mjs';
+import { canonicalize } from '../local-dev/dev-work-schema.mjs';
 import {
   PlanPackageError,
   isDirectInvocation,
@@ -37,7 +38,7 @@ function fail(code, message, details) {
 function digest(value) {
   return crypto
     .createHash('sha256')
-    .update(JSON.stringify(value))
+    .update(JSON.stringify(canonicalize(value)))
     .digest('hex');
 }
 

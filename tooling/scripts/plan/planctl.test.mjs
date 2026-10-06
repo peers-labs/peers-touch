@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { digestCompletionCandidate } from '../local-dev/completion-review.mjs';
 import { mountPlanVersion, resolvePlanExecution } from './plan-mount.mjs';
 import { createPlanRepository } from './plan-test-fixture.mjs';
 import {
@@ -158,10 +158,7 @@ test('completion candidate digest uses the delegated review envelope', () => {
       exhaustion: null,
     },
   };
-  const expected = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(envelope))
-    .digest('hex');
+  const expected = digestCompletionCandidate(envelope);
 
   assert.equal(digestRunCompletionCandidate(resolved, candidate), expected);
 });
