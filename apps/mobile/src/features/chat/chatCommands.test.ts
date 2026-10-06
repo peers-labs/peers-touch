@@ -24,6 +24,9 @@ const stores = vi.hoisted(() => ({
 const native = vi.hoisted(() => ({
   forwardMessage: vi.fn(),
 }));
+const socialRuntime = vi.hoisted(() => ({
+  blockUser: vi.fn(),
+}));
 
 vi.mock('../social/socialStore', () => ({
   useSocialStore: {
@@ -37,12 +40,17 @@ vi.mock('../group/groupStore', () => ({
   },
 }));
 
+vi.mock('../social/socialRuntime', () => ({
+  blockSocialUser: socialRuntime.blockUser,
+}));
+
 vi.mock('../../services/mobileCommands', async (original) => ({
   ...await original<typeof import('../../services/mobileCommands')>(),
   messagingForwardMessage: native.forwardMessage,
 }));
 
 import {
+  dispatchBlockUser,
   dispatchEditMessage,
   dispatchForwardMessage,
   dispatchGroupEditMessage,
@@ -95,6 +103,14 @@ describe('Chat command dispatch', () => {
       [],
       context,
     );
+  });
+
+  it('routes block through the Social runtime revocation owner', async () => {
+    socialRuntime.blockUser.mockResolvedValue(undefined);
+
+    await dispatchBlockUser('ptid:bob');
+
+    expect(socialRuntime.blockUser).toHaveBeenCalledWith('ptid:bob');
   });
 
   it('routes reaction add/remove through the matching conversation store', async () => {

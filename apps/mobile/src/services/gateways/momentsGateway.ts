@@ -23,6 +23,7 @@ import { mobileAuthScopeKey } from '../../features/auth/mobileAuthIdentity';
 import {
   CreatePostRequestSchema,
   CreatePostResponseSchema,
+  DeletePostResponseSchema,
   GetPostResponseSchema,
   GetTimelineResponseSchema,
   PostDetailOutcome,
@@ -137,6 +138,9 @@ export interface MomentsGateway {
 
   /** Get a single post by ID. */
   getPost: (postId: string) => Promise<CommandOutcome<MomentDetailResult>>;
+
+  /** Delete one Moment owned by the authenticated author. */
+  deletePost: (postId: string) => Promise<CommandOutcome<{ success: boolean }>>;
 
   /** React to a post. */
   reactToPost: (postId: string, reactionKind: number) => Promise<CommandOutcome<ReactionToggleResult>>;
@@ -282,6 +286,12 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
       }, GetPostResponseSchema, 'mobile.moments.feed.error');
       return validateDetailOutcome(result, path);
     },
+
+    deletePost: (postId) =>
+      commandProtoJson({
+        method: 'DELETE',
+        path: `/api/v1/social/moments/${encodeURIComponent(postId)}`,
+      }, DeletePostResponseSchema, 'mobile.moments.delete.error'),
 
     reactToPost: (postId, reactionKind) =>
       commandProtoJson({

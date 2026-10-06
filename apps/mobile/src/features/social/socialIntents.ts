@@ -59,6 +59,7 @@ export interface SocialIntentPort {
     content: string,
     replyToCommentId?: string,
   ): Promise<boolean>;
+  deleteMoment(postId: string): Promise<boolean>;
   deleteComment(postId: string, commentId: string): Promise<boolean>;
   retry(): Promise<boolean>;
 

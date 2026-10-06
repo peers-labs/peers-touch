@@ -14,6 +14,7 @@ import {
 } from '../../runtimes/commandRuntime';
 import {
   createSocialProjectionRuntime,
+  invalidateCurrentMomentAuthor,
   readActiveSocialIngressState,
   type ProjectionDomain,
   type SocialProjectionRuntimeController,
@@ -63,6 +64,7 @@ interface ActiveSocialRuntime {
   requestCurrentUserProfile: (force?: boolean) => Promise<void>;
   requestPeerProfiles: (peerPtids: readonly string[], force?: boolean) => Promise<void>;
   requestFriendshipStatus: (targetPtid: string) => Promise<void>;
+  blockUser: (targetPtid: string) => Promise<void>;
   unblockUser: (targetPtid: string) => Promise<void>;
 }
 
@@ -293,6 +295,11 @@ export async function unblockSocialUser(targetPtid: string): Promise<void> {
   await runtime.unblockUser(targetPtid);
 }
 
+export async function blockSocialUser(targetPtid: string): Promise<void> {
+  const runtime = requireActiveSocialRuntime();
+  await runtime.blockUser(targetPtid);
+}
+
 export async function applySocialFriendRequestProjectionCheckpoints(
   stationPeerId: string,
   actorPtid: string,
@@ -394,6 +401,16 @@ export async function startSocialRuntime(
       projectionRuntime.requestPeerProfiles(peerPtids, force),
     requestFriendshipStatus: (targetPtid) =>
       projectionRuntime.requestFriendshipStatus(targetPtid),
+    blockUser: (targetPtid) => track(async () => {
+      await getSocialStore().blockUser(targetPtid);
+      const revision =
+        getSocialStore().friendshipStatus[targetPtid]?.revision ?? 0;
+      await invalidateCurrentMomentAuthor(
+        targetPtid,
+        'RECIPIENT_BLOCKED',
+        `relationship-revision:${revision}`,
+      );
+    }),
     unblockUser: (targetPtid) => track(async () => {
       await getSocialStore().unblockUser(targetPtid);
       await getSocialStore().refreshBlockedUsers();

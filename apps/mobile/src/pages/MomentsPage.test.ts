@@ -48,7 +48,10 @@ vi.mock('../app/mobileI18n', () => ({
 
 vi.mock('../features/auth/authStore', () => ({
   useAuthStore: (selector: (state: object) => unknown) => selector({
-    session: { stationPeerId: 'station-a', actorPtid: 'ptid:alice' },
+    session: {
+      stationPeerId: 'station-a',
+      actorRef: { ptid: 'ptid:alice' },
+    },
   }),
 }));
 

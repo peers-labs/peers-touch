@@ -885,6 +885,33 @@ export interface PrivateSocialWorkerReport {
   submissionsTerminal: number;
 }
 
+export type PrivateSocialInvalidationReason =
+  | 'RESOURCE_DELETED'
+  | 'RELATIONSHIP_REVOKED'
+  | 'RECIPIENT_BLOCKED'
+  | 'DEVICE_REVOKED';
+
+export type PrivateSocialInvalidation =
+  | {
+      reason: 'RESOURCE_DELETED';
+      sourceCursor: string;
+      postId: string;
+    }
+  | {
+      reason: 'RELATIONSHIP_REVOKED' | 'RECIPIENT_BLOCKED';
+      sourceCursor: string;
+      authorPtid: string;
+    }
+  | {
+      reason: 'DEVICE_REVOKED';
+      sourceCursor: string;
+      entireScope: true;
+    };
+
+export interface PrivateSocialReconcileResult extends PrivateSocialWorkerReport {
+  invalidatedReadProjections: PrivateMomentReadProjection[];
+}
+
 export async function privateSocialActivate(
   input: PrivateSocialActivationInput,
 ): Promise<PrivateSocialRuntimeStatus> {
@@ -978,9 +1005,11 @@ export async function privateSocialReactionRetry(
 }
 
 export async function privateSocialReconcile(
-  input: PrivateSocialAccountInput,
-): Promise<PrivateSocialWorkerReport> {
-  return invoke<PrivateSocialWorkerReport>('social_private_reconcile', { input });
+  input: PrivateSocialAccountInput & {
+    invalidations?: readonly PrivateSocialInvalidation[];
+  },
+): Promise<PrivateSocialReconcileResult> {
+  return invoke<PrivateSocialReconcileResult>('social_private_reconcile', { input });
 }
 
 export async function privateSocialSnapshot(

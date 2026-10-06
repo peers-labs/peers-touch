@@ -17,7 +17,7 @@ describe('Moment feed item', () => {
     expect(source).not.toContain('src={img.thumbnailUrl || img.url}');
   });
 
-  it('delegates comments, author navigation, and media preview without mounting a composer', () => {
+  it('delegates comments, author delete, navigation, and media without mounting a composer', () => {
     const source = readFileSync(
       new URL('./MomentFeedItem.tsx', import.meta.url),
       'utf8',
@@ -26,6 +26,8 @@ describe('Moment feed item', () => {
     expect(source).toContain('onOpenComments(post.id)');
     expect(source).toContain('onOpenAuthor?.(');
     expect(source).toContain('onOpenMedia?.(');
+    expect(source).toContain('onDelete(post.id)');
+    expect(source).toContain('<Trash2');
     expect(source).not.toContain('moments-comment-input-row');
     expect(source).not.toContain('onOpenDetail');
   });

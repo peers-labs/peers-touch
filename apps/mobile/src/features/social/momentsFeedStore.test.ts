@@ -475,6 +475,7 @@ describe('moments feed runtime projection', () => {
 
   it('projects realtime deletion into retained selected detail', async () => {
     const gateway = {
+      fetchFeed: vi.fn(async () => feedPage(['post-detail'])),
       getPost: vi.fn(async () => ({
         ok: true,
         data: {
@@ -491,6 +492,7 @@ describe('moments feed runtime projection', () => {
 
     await store.ensureMoment('post-detail');
     store.removePost('post-detail');
+    await expect(store.reconcile()).resolves.toBe(true);
 
     expect(store.state().selectedDetail).toEqual({
       postId: 'post-detail',
@@ -499,6 +501,37 @@ describe('moments feed runtime projection', () => {
         post: { ...post('post-detail'), isDeleted: true },
       },
     });
+    expect(store.state().posts).toEqual([]);
+    expect(gateway.getPost).toHaveBeenCalledOnce();
+    expect(gateway.fetchComments).toHaveBeenCalledOnce();
+  });
+
+  it('lets authoritative readback restore a relationship-hidden public post', async () => {
+    const gateway = {
+      fetchFeed: vi.fn(async () => feedPage(['post-policy'])),
+      getPost: vi.fn(async () => ({
+        ok: true,
+        data: {
+          post: post('post-policy'),
+          outcome: PostDetailOutcome.AVAILABLE,
+        },
+      })),
+      fetchComments: vi.fn(async () => ({
+        ok: true,
+        data: { comments: [], nextCursor: '', hasMore: false },
+      })),
+    };
+    const store = createMomentsFeedStore(gateway);
+    await store.loadFeed();
+    await store.ensureMoment('post-policy');
+
+    store.hidePost('post-policy');
+    expect(store.state().posts).toEqual([]);
+    expect(store.state().selectedDetail?.readback.kind).toBe('blocked');
+
+    await expect(store.reconcile()).resolves.toBe(true);
+    expect(store.state().posts.map(({ id }) => id)).toEqual(['post-policy']);
+    expect(store.state().selectedDetail?.readback.kind).toBe('available');
   });
 
   it('reconciles retained selected detail and comments with the feed', async () => {

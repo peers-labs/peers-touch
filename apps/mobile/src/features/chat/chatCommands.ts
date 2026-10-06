@@ -20,6 +20,7 @@ import {
   messagingSearchMessages,
 } from '../../services/mobileCommands';
 import type { MobileAuthSession } from '../auth/authSession';
+import { blockSocialUser } from '../social/socialRuntime';
 import { friendMessageFromMessaging, groupMessageFromMessaging } from './messagingProjectionAdapters';
 import type { ChatActionState } from './chatActionState';
 
@@ -159,7 +160,7 @@ export async function dispatchModerateMessage(
 }
 
 export async function dispatchBlockUser(targetPtid: string): Promise<void> {
-  await useSocialStore.getState().blockUser(targetPtid);
+  await blockSocialUser(targetPtid);
 }
 
 export async function dispatchUnblockUser(targetPtid: string): Promise<void> {

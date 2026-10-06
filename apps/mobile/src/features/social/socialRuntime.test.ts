@@ -23,6 +23,7 @@ const runtimeMocks = vi.hoisted(() => {
   return {
     projectionRuntime,
     createSocialProjectionRuntime: vi.fn(() => projectionRuntime),
+    invalidateCurrentMomentAuthor: vi.fn(async () => undefined),
     startRealtimeStream: vi.fn(
       async (_session, signal, handlers) => new Promise<void>((resolve) => {
         handlers.onConnected?.('cursor-1');
@@ -42,6 +43,7 @@ const callMocks = vi.hoisted(() => ({
 
 vi.mock('../../runtimes/socialProjectionRuntime', () => ({
   createSocialProjectionRuntime: runtimeMocks.createSocialProjectionRuntime,
+  invalidateCurrentMomentAuthor: runtimeMocks.invalidateCurrentMomentAuthor,
 }));
 
 vi.mock('./socialRealtime', () => ({
@@ -62,6 +64,7 @@ vi.mock('../call/callState', () => ({
 }));
 
 import {
+  blockSocialUser,
   requestSocialBlockedUsers,
   requestSocialCurrentUserProfile,
   requestSocialFriendshipStatus,
@@ -105,8 +108,12 @@ describe('social runtime supervisor', () => {
 
     const socialStore = {
       sessionKey: 'station-primary|ptid:alice',
+      friendshipStatus: {
+        'ptid:bob': { revision: 9 },
+      },
       refreshBlockedUsers: vi.fn(async () => undefined),
       sweepTypingPeers: vi.fn(),
+      blockUser: vi.fn(async () => undefined),
       unblockUser: vi.fn(async () => undefined),
     };
     const groupStore = {};
@@ -123,6 +130,7 @@ describe('social runtime supervisor', () => {
     await requestSocialPeerProfiles(['ptid:bob', 'ptid:carol']);
     await requestSocialFriendshipStatus('ptid:bob');
     await requestSocialBlockedUsers();
+    await blockSocialUser('ptid:bob');
     await unblockSocialUser('ptid:bob');
     expect(runtimeMocks.projectionRuntime.requestCurrentUserProfile)
       .toHaveBeenCalledWith(true);
@@ -132,6 +140,11 @@ describe('social runtime supervisor', () => {
       .toHaveBeenCalledWith('ptid:bob');
     expect(socialStore.unblockUser).toHaveBeenCalledWith('ptid:bob');
     expect(socialStore.refreshBlockedUsers).toHaveBeenCalledTimes(2);
+    expect(runtimeMocks.invalidateCurrentMomentAuthor).toHaveBeenCalledWith(
+      'ptid:bob',
+      'RECIPIENT_BLOCKED',
+      'relationship-revision:9',
+    );
 
     await controller.suspend();
 

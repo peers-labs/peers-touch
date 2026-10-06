@@ -26,6 +26,7 @@ import {
   Repeat2,
   Share2,
   ShieldAlert,
+  Trash2,
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -98,6 +99,8 @@ interface MomentFeedItemProps {
   readonly post: Post;
   readonly onReact: (postId: string, reactionKind: number) => void;
   readonly onOpenComments: (postId: string) => void;
+  readonly onDelete?: (postId: string) => void;
+  readonly deleteBusy?: boolean;
   readonly onOpenAuthor?: (actorPtid: string, federationId: string) => void;
   readonly onOpenMedia?: (
     postId: string,
@@ -113,6 +116,8 @@ export function MomentFeedItem({
   post,
   onReact,
   onOpenComments,
+  onDelete,
+  deleteBusy = false,
   onOpenAuthor,
   onOpenMedia,
   reactionMutation,
@@ -435,6 +440,18 @@ export function MomentFeedItem({
           >
             <Share2 size={18} />
           </button>
+          {onDelete ? (
+            <button
+              type="button"
+              className="moments-action moments-action--delete"
+              disabled={deleteBusy}
+              aria-busy={deleteBusy}
+              aria-label={t('mobile.moments.delete.action')}
+              onClick={() => onDelete(post.id)}
+            >
+              <Trash2 size={18} />
+            </button>
+          ) : null}
         </div>
 
         {/* Reaction picker — 5 emoji buttons */}

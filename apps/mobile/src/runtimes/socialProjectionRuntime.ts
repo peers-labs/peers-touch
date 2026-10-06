@@ -7,6 +7,7 @@ import type { MobileAuthSession } from '../features/auth/authSession';
 import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 import type { GroupState } from '../features/group/groupStore';
 import type { SocialState } from '../features/social/socialStore';
+import { invalidatePrivateMoments } from './privateMomentsRuntime';
 import {
   createMobileSocialFacade,
   type MobileSocialFacadeController,
@@ -117,6 +118,21 @@ export function readActiveMomentsRuntime(
 
 export function readCurrentActiveMomentsRuntime(): ActiveMomentsRuntime | null {
   return activeRuntime?.moments ?? null;
+}
+
+export async function invalidateCurrentMomentAuthor(
+  authorPtid: string,
+  reason: 'RELATIONSHIP_REVOKED' | 'RECIPIENT_BLOCKED',
+  sourceCursor: string,
+): Promise<void> {
+  const moments = activeRuntime?.moments;
+  if (!moments) return;
+  removeMomentAuthorFromFeeds(moments, authorPtid);
+  await invalidatePrivateMoments([{
+    reason,
+    sourceCursor,
+    authorPtid,
+  }]);
 }
 
 export function readActiveProfileRuntime(
@@ -296,6 +312,11 @@ export function createSocialProjectionRuntime(
         momentsProjection.ingestEvent(event);
         if (event.kind === 'post-deleted' && event.postId) {
           momentsFeed.removePost(event.postId);
+          await invalidatePrivateMoments([{
+            reason: 'RESOURCE_DELETED',
+            sourceCursor: event.cursor,
+            postId: event.postId,
+          }]);
         }
         await scheduleReconcile(['moments'], event.kind, event.cursor);
         return;
@@ -352,15 +373,32 @@ export function createSocialProjectionRuntime(
       case 'relationship-changed': {
         const actorPtid = optionalString(event.payload.actorPtid);
         const targetPtid = optionalString(event.payload.targetPtid);
+        const graphKind = optionalString(event.payload.graphKind);
         const currentPtid = socialStore.currentUserPtid;
         const peerPtid = actorPtid === currentPtid ? targetPtid : actorPtid;
+        const revocationReason = graphKind === 'relationship-blocked'
+          ? 'RECIPIENT_BLOCKED'
+          : graphKind === 'unfriended'
+            ? 'RELATIONSHIP_REVOKED'
+            : null;
+        if (peerPtid && revocationReason) {
+          await invalidateCurrentMomentAuthor(
+            peerPtid,
+            revocationReason,
+            event.cursor,
+          );
+        }
         await Promise.all([
           socialStore.refreshBlockedUsers(),
           socialStore.refreshFriendRequests(),
           socialStore.refreshSessions(),
           peerPtid
+            ? socialStore.loadAuthoredPosts(peerPtid)
+            : Promise.resolve(),
+          peerPtid
             ? socialStore.loadFriendshipStatus(peerPtid)
             : Promise.resolve(),
+          scheduleReconcile(['moments'], graphKind, event.cursor),
         ]);
         return;
       }
@@ -683,7 +721,8 @@ function toIngressEvents(event: RealtimeWireEvent): SocialIngressEvent[] {
     }
     case 'social-graph': {
       const relationshipChanged =
-        event.graphKind === 'relationship-blocked'
+        event.graphKind === 'unfriended'
+        || event.graphKind === 'relationship-blocked'
         || event.graphKind === 'relationship-unblocked';
       const socialEvent: SocialDataEvent = {
         ...base,
@@ -729,6 +768,17 @@ function toIngressEvents(event: RealtimeWireEvent): SocialIngressEvent[] {
     case 'call-signal':
       return [];
   }
+}
+
+function removeMomentAuthorFromFeeds(
+  moments: ActiveMomentsRuntime,
+  authorPtid: string,
+): void {
+  const postIds = new Set([
+    ...moments.feeds.home.state().posts,
+    ...moments.feeds.explore.state().posts,
+  ].filter((post) => post.authorPtid === authorPtid).map((post) => post.id));
+  postIds.forEach((postId) => moments.feed.hidePost(postId));
 }
 
 function requireString(

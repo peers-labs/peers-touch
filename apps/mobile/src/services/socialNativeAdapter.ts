@@ -15,6 +15,7 @@ type SocialOperationId =
   | 'social_circle_members_remove'
   | 'moments_timeline'
   | 'moments_post_get'
+  | 'moments_delete'
   | 'moments_react'
   | 'moments_unreact'
   | 'moments_comments_list'

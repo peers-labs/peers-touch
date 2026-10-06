@@ -209,6 +209,9 @@ enum StationOperation {
     MomentsPostGet {
         post_id: String,
     },
+    MomentsDelete {
+        post_id: String,
+    },
     MomentsReact {
         post_id: String,
         reaction_kind: i32,
@@ -289,6 +292,7 @@ impl StationOperation {
             Self::SocialCircleMembersRemove { .. } => "social_circle_members_remove",
             Self::MomentsTimeline { .. } => "moments_timeline",
             Self::MomentsPostGet { .. } => "moments_post_get",
+            Self::MomentsDelete { .. } => "moments_delete",
             Self::MomentsReact { .. } => "moments_react",
             Self::MomentsUnreact { .. } => "moments_unreact",
             Self::MomentsCommentsList { .. } => "moments_comments_list",
@@ -1033,6 +1037,16 @@ fn build_request(
                 &[clean_id(post_id, "post_id")?],
             )?,
         ),
+        StationOperation::MomentsDelete { post_id } => authenticated_request(
+            client,
+            session,
+            Method::DELETE,
+            url_with_segments(
+                session,
+                &["api", "v1", "social", "moments"],
+                &[clean_id(post_id, "post_id")?],
+            )?,
+        ),
         StationOperation::MomentsReact {
             post_id,
             reaction_kind,
@@ -1599,6 +1613,21 @@ mod tests {
         assert_eq!(operation.id(), "oss_download");
         assert!(!operation.id().contains('/'));
         assert!(!operation.id().contains("http"));
+    }
+
+    #[test]
+    fn moment_delete_is_a_typed_post_scoped_operation() {
+        let operation = serde_json::from_value::<StationOperation>(json!({
+            "operationId": "moments_delete",
+            "post_id": "post-1"
+        }))
+        .unwrap();
+
+        assert_eq!(operation.id(), "moments_delete");
+        assert!(matches!(
+            operation,
+            StationOperation::MomentsDelete { post_id } if post_id == "post-1"
+        ));
     }
 
     #[test]

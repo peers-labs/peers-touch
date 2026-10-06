@@ -7,6 +7,7 @@ const gateway = vi.hoisted(() => ({
   fetchFeed: vi.fn(),
   fetchPublicFeed: vi.fn(),
   getPost: vi.fn(),
+  deletePost: vi.fn(),
   reactToPost: vi.fn(),
   unreactToPost: vi.fn(),
   fetchComments: vi.fn(),
@@ -45,6 +46,7 @@ const privateRuntime = vi.hoisted(() => {
     readPrivateComments: vi.fn(),
     reconcilePrivate: vi.fn(),
     setPrivateReaction: vi.fn(),
+    invalidatePrivate: vi.fn(),
     trackPublicMomentPublish: vi.fn(async (operation, isPublished) => {
       const result = await operation();
       isPublished(result);
@@ -72,6 +74,7 @@ vi.mock('../../runtimes/privateMomentsRuntime', () => ({
   readPrivateComments: privateRuntime.readPrivateComments,
   reconcilePrivateMoments: privateRuntime.reconcilePrivate,
   setPrivateMomentReaction: privateRuntime.setPrivateReaction,
+  invalidatePrivateMoments: privateRuntime.invalidatePrivate,
   trackPublicMomentPublish: privateRuntime.trackPublicMomentPublish,
 }));
 
@@ -122,6 +125,11 @@ beforeEach(() => {
     ok: true,
     data: { success: true, reactions: [{ kind: 2, count: 1n, reactedByMe: true }] },
   });
+  gateway.deletePost.mockResolvedValue({
+    ok: true,
+    data: { success: true },
+  });
+  privateRuntime.invalidatePrivate.mockResolvedValue([]);
   privateRuntime.snapshot.projections = [];
   privateRuntime.snapshot.postsById = {};
 });
@@ -270,6 +278,36 @@ describe('Mobile Social facade', () => {
       audience: { kind: 'FRIENDS' },
     });
     expect(gateway.createMoment).not.toHaveBeenCalled();
+  });
+
+  it('deletes through Station before converging the local revocation path', async () => {
+    gateway.createMoment.mockResolvedValue({
+      ok: true,
+      data: { post: { id: 'post-owned', reactions: [] } },
+    });
+    facade = createMobileSocialFacade(session, { retry: vi.fn(async () => true) });
+    facade.activate();
+    await facade.intents.publishMoment({
+      draftId: 'draft-owned',
+      draftRevision: 1,
+      draft: {
+        kind: 'text',
+        text: 'owned',
+        audience: { kind: 1 },
+      },
+    });
+
+    await expect(facade.intents.deleteMoment('post-owned')).resolves.toBe(true);
+
+    expect(gateway.deletePost).toHaveBeenCalledWith('post-owned');
+    expect(facade.state().home.posts).toEqual([]);
+    expect(privateRuntime.invalidatePrivate).toHaveBeenCalledWith([{
+      reason: 'RESOURCE_DELETED',
+      sourceCursor: 'author-delete:post-owned',
+      postId: 'post-owned',
+    }]);
+    expect(gateway.deletePost.mock.invocationCallOrder[0])
+      .toBeLessThan(privateRuntime.invalidatePrivate.mock.invocationCallOrder[0]);
   });
 
   it('routes a private Moment reaction through the Native owner', async () => {

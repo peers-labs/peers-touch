@@ -54,4 +54,28 @@ describe('PrivateMomentRecoveryState', () => {
     expect(markup).toContain('mobile.moments.private.integrity.retry');
     expect(markup).not.toContain('mobile.moments.private.recovery.action');
   });
+
+  it('renders revocation as terminal without a hidden retry path', () => {
+    const markup = renderToStaticMarkup(
+      <PrivateMomentRecoveryState
+        projection={{
+          ...baseProjection,
+          state: 'DELETED_OR_REVOKED',
+          errorCode: 'RECIPIENT_BLOCKED',
+        }}
+        busy={false}
+        error={false}
+        onBack={vi.fn()}
+        onRecover={vi.fn()}
+        onRetryVerification={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain(
+      'mobile.moments.private.revocation.RECIPIENT_BLOCKED.title',
+    );
+    expect(markup).toContain('mobile.moments.private.revocation.copyBoundary');
+    expect(markup).not.toContain('mobile.moments.private.recovery.action');
+    expect(markup).not.toContain('mobile.moments.private.integrity.retry');
+  });
 });

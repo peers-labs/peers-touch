@@ -110,6 +110,7 @@ export type StationTransportOperation =
     limit: number;
   }
   | { operationId: 'moments_post_get'; post_id: string }
+  | { operationId: 'moments_delete'; post_id: string }
   | { operationId: 'moments_react'; post_id: string; reaction_kind: number }
   | { operationId: 'moments_unreact'; post_id: string; reaction_kind: number }
   | {
@@ -366,6 +367,7 @@ function operationAdmission(
     case 'moments_unreact':
     case 'moments_comment_create':
     case 'moments_comment_delete':
+    case 'moments_delete':
     case 'moments_create':
     case 'presence_heartbeat':
     case 'presence_offline':

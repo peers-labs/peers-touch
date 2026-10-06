@@ -1,5 +1,5 @@
 import { Button, Space, Typography } from 'antd';
-import { ArrowLeft, KeyRound, RotateCcw, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, KeyRound, RotateCcw, ShieldAlert, ShieldX } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { PrivateMomentReadProjection } from '../../services/mobileCommands';
@@ -10,8 +10,14 @@ const { Text, Title } = Typography;
 
 type BlockingPrivateMomentState = Extract<
   PrivateMomentReadProjection['state'],
-  'RECOVERY_REQUIRED' | 'INTEGRITY_FAILURE'
+  'RECOVERY_REQUIRED' | 'INTEGRITY_FAILURE' | 'DELETED_OR_REVOKED'
 >;
+
+const REVOCATION_REASONS = new Set([
+  'RESOURCE_DELETED',
+  'RELATIONSHIP_REVOKED',
+  'RECIPIENT_BLOCKED',
+]);
 
 interface PrivateMomentRecoveryStateProps {
   readonly projection: PrivateMomentReadProjection & {
@@ -34,7 +40,15 @@ export function PrivateMomentRecoveryState({
 }: PrivateMomentRecoveryStateProps) {
   const { t } = useMobileI18n();
   const recoveryRequired = projection.state === 'RECOVERY_REQUIRED';
-  const Icon = recoveryRequired ? KeyRound : ShieldAlert;
+  const revoked = projection.state === 'DELETED_OR_REVOKED';
+  const revocationReason = revoked && projection.errorCode
+    && REVOCATION_REASONS.has(projection.errorCode)
+    ? projection.errorCode
+    : null;
+  const stateKey = revocationReason
+    ? `mobile.moments.private.revocation.${revocationReason}`
+    : `mobile.moments.private.state.${projection.state}`;
+  const Icon = recoveryRequired ? KeyRound : revoked ? ShieldX : ShieldAlert;
 
   return (
     <section
@@ -46,11 +60,16 @@ export function PrivateMomentRecoveryState({
     >
       <Icon size={36} strokeWidth={1.5} aria-hidden="true" />
       <Title level={5}>
-        {t(`mobile.moments.private.state.${projection.state}.title`)}
+        {t(`${stateKey}.title`)}
       </Title>
       <Text type="secondary">
-        {t(`mobile.moments.private.state.${projection.state}.description`)}
+        {t(`${stateKey}.description`)}
       </Text>
+      {revoked ? (
+        <Text type="secondary">
+          {t('mobile.moments.private.revocation.copyBoundary')}
+        </Text>
+      ) : null}
       <Text className="private-moment-recovery__identity" code title={projection.postId}>
         {projection.postId}
       </Text>
@@ -61,7 +80,7 @@ export function PrivateMomentRecoveryState({
         <Button icon={<ArrowLeft size={14} />} disabled={busy} onClick={onBack}>
           {t('common.action.back')}
         </Button>
-        {recoveryRequired ? (
+        {revoked ? null : recoveryRequired ? (
           <Button
             type="primary"
             icon={<KeyRound size={14} />}

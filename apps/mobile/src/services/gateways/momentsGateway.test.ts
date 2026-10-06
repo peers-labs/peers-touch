@@ -46,6 +46,15 @@ beforeEach(() => {
 });
 
 describe('Moments reaction routes', () => {
+  it('uses the canonical Station author-delete route', async () => {
+    await createMomentsGateway(session).deletePost('post/1');
+
+    expect(commandMock).toHaveBeenCalledWith({
+      method: 'DELETE',
+      path: '/api/v1/social/moments/post%2F1',
+    });
+  });
+
   it('uses the canonical Station post-scoped react command', async () => {
     await createMomentsGateway(session).reactToPost('post/1', 2);
 

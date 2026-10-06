@@ -22,6 +22,7 @@ export type MomentMediaSelection =
   | {
       readonly route: 'PUBLIC';
       readonly kind: 'image' | 'video';
+      readonly postId: string;
       readonly attachment: ImageAttachment | VideoAttachment;
       readonly returnFocus: HTMLElement | null;
     }
