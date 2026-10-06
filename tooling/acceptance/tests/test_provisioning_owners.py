@@ -217,6 +217,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
     def test_remote_attestation_uses_windows_transport_without_bash(self) -> None:
         from tooling.acceptance.provisioners.remote_source_identity import (
+            _windows_source_identity_script,
             resolve_remote_source_identity,
         )
 
@@ -261,6 +262,9 @@ class StationAttestationOwnerTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertIn("powershell.exe -NoProfile -NonInteractive", command[-1])
         self.assertNotIn("bash -lc", command[-1])
+        identity_script = _windows_source_identity_script()
+        self.assertIn("['git','show','HEAD:'", identity_script)
+        self.assertNotIn("x.read_bytes()", identity_script)
 
     def test_remote_attestation_uses_strict_openssh_default_known_hosts(self) -> None:
         from tooling.acceptance.provisioners.remote_source_identity import (
