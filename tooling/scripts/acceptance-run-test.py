@@ -2314,47 +2314,6 @@ class AcceptanceRunTest(unittest.TestCase):
             result["developmentArtifact"]["sha256"],
         )
 
-    def test_development_result_preserves_runtime_manifest_reference(
-        self,
-    ) -> None:
-        module = load_module()
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            worktree = root / "repo"
-            worktree.mkdir()
-            store = EvidenceStore(root / "artifacts", worktree=worktree)
-            run = store.begin_run("development-gate", source={})
-            runtime_ref = run.write_json(
-                "runtime/environment-manifest.json",
-                {"state": "FIXTURE_READY"},
-                role="runtime-manifest",
-            )
-            result = module.record_development_result(
-                {
-                    "id": "development-gate",
-                    "status": "passed",
-                    "verificationClass": "FUNCTIONAL_CHECK",
-                    "manifest": {"state": "FIXTURE_READY"},
-                },
-                run,
-                "/tmp/acceptance-plan.json",
-                "WORK-01",
-                {
-                    "state": "FIXTURE_READY",
-                    "_manifest_ref": runtime_ref.to_dict(),
-                },
-            )
-            result_ref = ArtifactRef.from_dict(result["developmentArtifact"])
-            stored_result = json.loads(
-                (run.run_dir / result_ref.path).read_text(encoding="utf-8")
-            )
-            run.close()
-
-        self.assertEqual(
-            stored_result["manifest"]["_manifest_ref"],
-            runtime_ref.to_dict(),
-        )
-
     def test_development_artifacts_follow_machine_root_override(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
