@@ -745,6 +745,8 @@
         "apps/mobile/src/pages/moments",
         "apps/mobile/src/runtimes/momentsProjectionDescriptor.ts",
         "apps/mobile/src/runtimes/privateMomentsRuntime.ts",
+        "apps/mobile/src-tauri/plugins/secure-input",
+        "apps/mobile/src-tauri/src/platform/secure_input.rs",
         "apps/mobile/src-tauri/src/social",
         "docs/architecture/platform/client/mobile/social-parity"
       ],
@@ -761,6 +763,8 @@
             "apps/mobile/src/pages/moments",
             "apps/mobile/src/runtimes/momentsProjectionDescriptor.ts",
             "apps/mobile/src/runtimes/privateMomentsRuntime.ts",
+            "apps/mobile/src-tauri/plugins/secure-input",
+            "apps/mobile/src-tauri/src/platform/secure_input.rs",
             "apps/mobile/src-tauri/src/social"
           ],
           "allowedDependencies": [

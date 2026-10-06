@@ -27,7 +27,6 @@ import {
   reconcilePrivateMoments,
   recoverPrivateMoment,
   setPrivateMomentReaction,
-  storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
   subscribePrivateMomentsRuntime,
   trackPublicMomentPublish,
@@ -318,17 +317,14 @@ export function createMobileSocialFacade(
       openPrivateMedia: (postId, objectId) => completeCurrent(
         () => openPrivateMomentMedia(postId, objectId),
       ),
-      recoverPrivate: (postId) => completeCurrent(
-        () => recoverPrivateMoment(postId),
+      recoverPrivate: (postId, recoveryEpoch) => completeCurrent(
+        () => recoverPrivateMoment(postId, recoveryEpoch),
       ),
       submitPrivateComment: (intent) => completeCurrent(
         () => submitPrivateComment(intent),
       ),
       readPrivateComments: (postId, cursor, limit) => completeCurrent(
         () => readPrivateComments(postId, cursor, limit),
-      ),
-      storeRecoveryPhrase: (recoveryPhrase, recoveryEpoch) => completeCurrent(
-        () => storePrivateSocialRecoveryPhrase(recoveryPhrase, recoveryEpoch),
       ),
       reconcilePrivate: () => completeCurrent(reconcilePrivateMoments),
     };

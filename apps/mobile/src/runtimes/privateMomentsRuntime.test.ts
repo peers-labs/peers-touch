@@ -24,14 +24,12 @@ const commandMocks = vi.hoisted(() => ({
   readText: vi.fn(),
   readMoment: vi.fn(),
   openMedia: vi.fn(),
-  recoverText: vi.fn(),
-  recoverMoment: vi.fn(),
+  recoverWithNativeInput: vi.fn(),
   react: vi.fn(),
   unreact: vi.fn(),
   reactionRetry: vi.fn(),
   commentSubmit: vi.fn(),
   comments: vi.fn(),
-  storeRecoveryPhrase: vi.fn(),
   reconcile: vi.fn(),
   snapshot: vi.fn(),
   teardown: vi.fn(),
@@ -51,9 +49,7 @@ vi.mock('../services/mobileCommands', async (importOriginal) => {
     privateSocialReadText: commandMocks.readText,
     privateSocialReact: commandMocks.react,
     privateSocialReactionRetry: commandMocks.reactionRetry,
-    privateSocialRecover: commandMocks.recoverMoment,
-    privateSocialRecoverText: commandMocks.recoverText,
-    privateSocialStoreRecoveryPhrase: commandMocks.storeRecoveryPhrase,
+    privateSocialRecoverWithNativeInput: commandMocks.recoverWithNativeInput,
     privateSocialReconcile: commandMocks.reconcile,
     privateSocialSnapshot: commandMocks.snapshot,
     privateSocialSubmitText: commandMocks.submitText,
@@ -74,10 +70,8 @@ import {
   readPrivateMomentsSnapshot,
   readPrivateTextMoment,
   recoverPrivateMoment,
-  recoverPrivateTextMoment,
   reconcilePrivateMoments,
   setPrivateMomentReaction,
-  storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
   trackPublicMomentPublish,
 } from './privateMomentsRuntime';
@@ -391,11 +385,13 @@ describe('privateMomentsRuntime projection', () => {
     ]);
   });
 
-  it('projects private publish and recovery states without exposing the phrase', async () => {
+  it('projects native-only recovery without accepting secret material', async () => {
     commandMocks.activate.mockResolvedValue(activeStatus(7));
     commandMocks.submitText.mockResolvedValue(projection('draft-a', 1, 'PUBLISHED'));
-    commandMocks.storeRecoveryPhrase.mockResolvedValue(undefined);
-    commandMocks.recoverText.mockResolvedValue(
+    commandMocks.readText.mockResolvedValue(
+      readProjection('post-a', '1', 'RECOVERY_REQUIRED'),
+    );
+    commandMocks.recoverWithNativeInput.mockResolvedValue(
       readProjection('post-a', '2', 'CONTENT_READY'),
     );
     useAuthStore.setState({
@@ -415,18 +411,20 @@ describe('privateMomentsRuntime projection', () => {
       text: 'private',
       audience: { kind: 'FRIENDS' },
     });
-    await storePrivateSocialRecoveryPhrase('abandon '.repeat(23) + 'art', 7);
-    await recoverPrivateTextMoment('post-a');
+    await readPrivateTextMoment('post-a');
+    await recoverPrivateMoment('post-a', 7);
 
-    expect(commandMocks.storeRecoveryPhrase).toHaveBeenCalledWith({
+    expect(commandMocks.recoverWithNativeInput).toHaveBeenCalledWith({
       stationPeerId: 'station-1',
       actorPtid: 'ptid:alice',
       deviceId: 'device-1',
       lifecycleGeneration: 1,
       activationGeneration: 7,
-      recoveryPhrase: 'abandon '.repeat(23) + 'art',
+      postId: 'post-a',
       recoveryEpoch: 7,
     });
+    expect(JSON.stringify(commandMocks.recoverWithNativeInput.mock.calls))
+      .not.toMatch(/phrase|secret|handle/i);
     expect(readPrivateMomentsSnapshot().publishStateHistory).toEqual([
       'AUDIENCE_REQUIRED',
       'CHECKING_PRIVATE_READINESS',
@@ -435,6 +433,9 @@ describe('privateMomentsRuntime projection', () => {
       'PUBLISHED',
     ]);
     expect(readPrivateMomentsSnapshot().readStateHistoryByPostId['post-a']).toEqual([
+      'LOADING_AUTHORIZED_RESOURCE',
+      'WAITING_FOR_PRIVATE_KEY',
+      'RECOVERY_REQUIRED',
       'WAITING_FOR_PRIVATE_KEY',
       'CONTENT_READY',
     ]);
@@ -943,7 +944,7 @@ describe('privateMomentsRuntime projection', () => {
     };
     commandMocks.readMoment.mockResolvedValue(placeholder);
     commandMocks.openMedia.mockResolvedValue(ready);
-    commandMocks.recoverMoment.mockResolvedValue(ready);
+    commandMocks.recoverWithNativeInput.mockResolvedValue(ready);
     commandMocks.commentSubmit.mockResolvedValue({
       draft: {
         draftId: 'comment-draft-1',
@@ -1021,7 +1022,9 @@ describe('privateMomentsRuntime projection', () => {
     expect(commandMocks.publishMoment).toHaveBeenCalledWith(scope);
     expect(commandMocks.readMoment).toHaveBeenCalledWith(scope);
     expect(commandMocks.openMedia).toHaveBeenCalledWith(scope);
-    expect(commandMocks.recoverMoment).toHaveBeenCalledWith(scope);
+    expect(commandMocks.recoverWithNativeInput).toHaveBeenCalledWith(
+      expect.objectContaining({ recoveryEpoch: 1 }),
+    );
     expect(commandMocks.commentSubmit).toHaveBeenCalledWith(scope);
     expect(commandMocks.comments).toHaveBeenCalledWith(scope);
     expect(readPrivateMomentsSnapshot()).toMatchObject({

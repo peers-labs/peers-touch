@@ -364,18 +364,8 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
-    'moments.private.storeRecoveryPhrase',
-    mobileAcceptanceActions['moments.private.storeRecoveryPhrase'],
-    registry,
-  );
-  registerMobileAcceptanceAction(
     'moments.private.recover',
     mobileAcceptanceActions['moments.private.recover'],
-    registry,
-  );
-  registerMobileAcceptanceAction(
-    'moments.private.recoverText',
-    mobileAcceptanceActions['moments.private.recoverText'],
     registry,
   );
   registerMobileAcceptanceAction(

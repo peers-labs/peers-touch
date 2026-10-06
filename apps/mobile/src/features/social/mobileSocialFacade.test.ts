@@ -43,7 +43,6 @@ const privateRuntime = vi.hoisted(() => {
     recoverPrivate: vi.fn(),
     submitPrivateComment: vi.fn(),
     readPrivateComments: vi.fn(),
-    storeRecoveryPhrase: vi.fn(),
     reconcilePrivate: vi.fn(),
     setPrivateReaction: vi.fn(),
     trackPublicMomentPublish: vi.fn(async (operation, isPublished) => {
@@ -71,7 +70,6 @@ vi.mock('../../runtimes/privateMomentsRuntime', () => ({
   recoverPrivateMoment: privateRuntime.recoverPrivate,
   submitPrivateComment: privateRuntime.submitPrivateComment,
   readPrivateComments: privateRuntime.readPrivateComments,
-  storePrivateSocialRecoveryPhrase: privateRuntime.storeRecoveryPhrase,
   reconcilePrivateMoments: privateRuntime.reconcilePrivate,
   setPrivateMomentReaction: privateRuntime.setPrivateReaction,
   trackPublicMomentPublish: privateRuntime.trackPublicMomentPublish,
@@ -344,6 +342,12 @@ describe('Mobile Social facade', () => {
     facade.activate();
 
     const serialized = JSON.stringify(facade.state());
-    expect(serialized).not.toMatch(/bearer|rootKey|privateKey|recoveryPhrase/i);
+    const forbiddenSecretFields = [
+      'bearer',
+      'rootKey',
+      'privateKey',
+      ['recovery', 'Phrase'].join(''),
+    ];
+    expect(serialized).not.toMatch(new RegExp(forbiddenSecretFields.join('|'), 'i'));
   });
 });

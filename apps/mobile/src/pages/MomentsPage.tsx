@@ -22,7 +22,7 @@
  * Header uses ImagePlus toggle; feed uses Card-based layout.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Button, Typography } from 'antd';
 import { ArrowLeft, ImagePlus, RefreshCw, Search } from 'lucide-react';
 
@@ -41,6 +41,7 @@ import {
   TimelineSort,
   type Post,
 } from '../gen/proto/domain/social/post_pb';
+import type { PrivateMomentReadProjection } from '../services/mobileCommands';
 
 import { MomentComposer } from './moments/MomentComposer';
 import { MomentFeedItem } from './moments/MomentFeedItem';
@@ -49,6 +50,7 @@ import {
   MomentMediaOverlay,
   type MomentMediaSelection,
 } from './moments/MomentMediaOverlay';
+import { PrivateMomentRecoveryState } from './moments/PrivateMomentRecoveryState';
 import {
   MomentsFeedEmpty,
   MomentsFeedError,
@@ -63,6 +65,32 @@ type MomentsFeedScope = 'home' | 'explore';
 
 function momentPostKey(post: Post): string {
   return post.id;
+}
+
+type BlockingPrivateMomentProjection = PrivateMomentReadProjection & {
+  readonly state: 'RECOVERY_REQUIRED' | 'INTEGRITY_FAILURE';
+};
+
+function isBlockingPrivateMoment(
+  projection: PrivateMomentReadProjection,
+): projection is BlockingPrivateMomentProjection {
+  return projection.state === 'RECOVERY_REQUIRED'
+    || projection.state === 'INTEGRITY_FAILURE';
+}
+
+function withValue(values: ReadonlySet<string>, value: string): ReadonlySet<string> {
+  return new Set([...values, value]);
+}
+
+function withoutValue(values: ReadonlySet<string>, value: string): ReadonlySet<string> {
+  const next = new Set(values);
+  next.delete(value);
+  return next;
+}
+
+function nativeErrorCode(error: unknown): string {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return '';
+  return typeof error.code === 'string' ? error.code : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +166,36 @@ export function MomentsPage({
   const [showNewPost, setShowNewPost] = useState(false);
   const [selectedThreadPostId, setSelectedThreadPostId] = useState<string | null>(null);
   const [mediaSelection, setMediaSelection] = useState<MomentMediaSelection | null>(null);
+  const [dismissedPrivateStates, setDismissedPrivateStates] =
+    useState<ReadonlySet<string>>(() => new Set());
+  const [privateActionKey, setPrivateActionKey] = useState<string | null>(null);
+  const [privateActionErrors, setPrivateActionErrors] =
+    useState<ReadonlySet<string>>(() => new Set());
+  const privateStateScopeKey = [
+    projection?.scope?.stationPeerId ?? '',
+    projection?.scope?.actorPtid ?? '',
+    projection?.scope?.lifecycleGeneration ?? '',
+  ].join('\u0000');
+  const privateStateKey = useCallback(
+    (postId: string) => `${privateStateScopeKey}\u0000${postId}`,
+    [privateStateScopeKey],
+  );
+  const blockingPrivateStates = useMemo(() => (
+    Object.values(projection?.runtime.privateSocial?.postsById ?? {})
+      .filter(isBlockingPrivateMoment)
+  ), [projection?.runtime.privateSocial?.postsById]);
+  const blockingPrivateByPostId = useMemo(() => new Map(
+    blockingPrivateStates
+      .filter((privateProjection) => (
+        !dismissedPrivateStates.has(privateStateKey(privateProjection.postId))
+      ))
+      .map((privateProjection) => [privateProjection.postId, privateProjection]),
+  ), [blockingPrivateStates, dismissedPrivateStates, privateStateKey]);
+  const orphanBlockingPrivateStates = useMemo(() => {
+    const visiblePostIds = new Set(feed.posts.map((post) => post.id));
+    return [...blockingPrivateByPostId.values()]
+      .filter((privateProjection) => !visiblePostIds.has(privateProjection.postId));
+  }, [blockingPrivateByPostId, feed.posts]);
 
   // -- Projection availability check --
   const availability = projection?.runtime.availability;
@@ -178,6 +236,36 @@ export function MomentsPage({
     if (!facade) return;
     void facade.feeds.explore.setSort(sort);
   }, [facade]);
+
+  const handlePrivateRecovery = useCallback(async (postId: string) => {
+    if (!facade || privateActionKey) return;
+    const actionKey = privateStateKey(postId);
+    setPrivateActionKey(actionKey);
+    setPrivateActionErrors((current) => withoutValue(current, actionKey));
+    try {
+      await facade.intents.recoverPrivate(postId);
+    } catch (error) {
+      if (nativeErrorCode(error) !== 'MOBILE_SECURE_INPUT_CANCELLED') {
+        setPrivateActionErrors((current) => withValue(current, actionKey));
+      }
+    } finally {
+      setPrivateActionKey(null);
+    }
+  }, [facade, privateActionKey, privateStateKey]);
+
+  const handlePrivateVerificationRetry = useCallback(async (postId: string) => {
+    if (!facade || privateActionKey) return;
+    const actionKey = privateStateKey(postId);
+    setPrivateActionKey(actionKey);
+    setPrivateActionErrors((current) => withoutValue(current, actionKey));
+    try {
+      await facade.intents.readPrivate(postId);
+    } catch {
+      setPrivateActionErrors((current) => withValue(current, actionKey));
+    } finally {
+      setPrivateActionKey(null);
+    }
+  }, [facade, privateActionKey, privateStateKey]);
 
   const handleOpenMedia = useCallback((
     postId: string,
@@ -222,14 +310,39 @@ export function MomentsPage({
     });
   }, [feed.posts, projection?.runtime.privateSocial?.postsById, t]);
 
+  const renderPrivateBlockingState = (
+    privateProjection: BlockingPrivateMomentProjection,
+    onBackAction = () => {
+      setDismissedPrivateStates((current) => (
+        withValue(current, privateStateKey(privateProjection.postId))
+      ));
+    },
+  ) => (
+    <PrivateMomentRecoveryState
+      projection={privateProjection}
+      busy={privateActionKey === privateStateKey(privateProjection.postId)}
+      error={privateActionErrors.has(privateStateKey(privateProjection.postId))}
+      onBack={onBackAction}
+      onRecover={() => void handlePrivateRecovery(privateProjection.postId)}
+      onRetryVerification={() => (
+        void handlePrivateVerificationRetry(privateProjection.postId)
+      )}
+    />
+  );
+
   // -- Render --
 
   const routeDetailPostId = activePostId ?? undefined;
   if (routeDetailPostId !== undefined) {
     const activePost = feed.posts.find((post) => post.id === routeDetailPostId);
+    const privateBlockingState = blockingPrivateStates.find(
+      (privateProjection) => privateProjection.postId === routeDetailPostId,
+    );
     return (
       <div className="page-container moments-page moments-route-detail">
-        {facade && !isUnavailable ? (
+        {facade && !isUnavailable && privateBlockingState
+          ? renderPrivateBlockingState(privateBlockingState, onBack)
+          : facade && !isUnavailable ? (
           <MomentCommentsSection
             postId={routeDetailPostId}
             post={activePost}
@@ -373,6 +486,7 @@ export function MomentsPage({
       {!isUnavailable
         && feed.loadState === 'idle'
         && feed.posts.length === 0
+        && blockingPrivateByPostId.size === 0
         && !isPolicyFilteredEmpty && (
         <MomentsFeedEmpty />
       )}
@@ -380,6 +494,7 @@ export function MomentsPage({
       {!isUnavailable
         && feed.loadState === 'idle'
         && feed.posts.length === 0
+        && blockingPrivateByPostId.size === 0
         && isPolicyFilteredEmpty && (
         <MomentsPolicyViolation />
       )}
@@ -403,6 +518,14 @@ export function MomentsPage({
         </div>
       )}
 
+      {!isUnavailable && feedScope === 'home' && orphanBlockingPrivateStates.map(
+        (privateProjection) => (
+          <div key={privateProjection.postId} data-scroll-anchor-id={privateProjection.postId}>
+            {renderPrivateBlockingState(privateProjection)}
+          </div>
+        ),
+      )}
+
       {/* Feed list — prototype card layout */}
       {!isUnavailable && feed.posts.length > 0 && (
         <div role="feed" aria-label={t('mobile.moments.title')}>
@@ -421,18 +544,24 @@ export function MomentsPage({
                 <div className="moments-feed">
                   {windowedPosts.map((post) => (
                     <div key={post.id} data-scroll-anchor-id={post.id}>
-                      <MomentFeedItem
-                        post={post}
-                        onReact={(postId, kind) => void handleReact(postId, kind)}
-                        onOpenComments={handleOpenComments}
-                        onOpenAuthor={onOpenProfile}
-                        onOpenMedia={handleOpenMedia}
-                        reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}
-                        policyState={resolveMomentPolicyState(
-                          runtimeFeedState?.feedExplanations.get(post.id),
+                      {feedScope === 'home' && blockingPrivateByPostId.has(post.id)
+                        ? renderPrivateBlockingState(blockingPrivateByPostId.get(post.id)!)
+                        : (
+                          <MomentFeedItem
+                            post={post}
+                            onReact={(postId, kind) => void handleReact(postId, kind)}
+                            onOpenComments={handleOpenComments}
+                            onOpenAuthor={onOpenProfile}
+                            onOpenMedia={handleOpenMedia}
+                            reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}
+                            policyState={resolveMomentPolicyState(
+                              runtimeFeedState?.feedExplanations.get(post.id),
+                            )}
+                          />
                         )}
-                      />
-                      {selectedThreadPostId === post.id && facade && (
+                      {selectedThreadPostId === post.id
+                        && !blockingPrivateByPostId.has(post.id)
+                        && facade && (
                         <MomentCommentsSection
                           postId={post.id}
                           post={post}

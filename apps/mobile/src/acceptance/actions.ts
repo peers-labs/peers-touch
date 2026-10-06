@@ -76,9 +76,7 @@ import {
   readPrivateMomentsSnapshot,
   readPrivateTextMoment,
   recoverPrivateMoment,
-  recoverPrivateTextMoment,
   reconcilePrivateMoments,
-  storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
 } from '../runtimes/privateMomentsRuntime';
 import {
@@ -1126,34 +1124,18 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     ),
   ),
 
-  'moments.private.storeRecoveryPhrase': async (input) => {
+  'moments.private.recover': async (input) => {
     const recoveryEpoch = input?.recoveryEpoch === undefined
       ? 1
       : requirePositiveInteger(
         input.recoveryEpoch,
-        'moments.private.storeRecoveryPhrase.recoveryEpoch',
+        'moments.private.recover.recoveryEpoch',
       );
-    await storePrivateSocialRecoveryPhrase(
-      requireString(
-        input?.recoveryPhrase,
-        'moments.private.storeRecoveryPhrase.recoveryPhrase',
-      ),
-      recoveryEpoch,
-    );
-    return { stored: true as const, recoveryEpoch };
-  },
-
-  'moments.private.recover': async (input) => sanitizePrivateMomentRead(
-    await recoverPrivateMoment(
+    return sanitizePrivateMomentRead(await recoverPrivateMoment(
       requireString(input?.postId, 'moments.private.recover.postId'),
-    ),
-  ),
-
-  'moments.private.recoverText': async (input) => sanitizePrivateMomentRead(
-    await recoverPrivateTextMoment(
-      requireString(input?.postId, 'moments.private.recoverText.postId'),
-    ),
-  ),
+      recoveryEpoch,
+    ));
+  },
 
   'moments.private.reconcile': async () => {
     await reconcilePrivateMoments();

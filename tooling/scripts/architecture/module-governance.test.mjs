@@ -161,6 +161,7 @@ test('current repository satisfies the module registry', () => {
     'cross-station-social',
     'development-workflow',
     'local-dev-control-plane',
+    'mobile-social-parity',
     'oauth-login-broker',
     'secure-content',
     'station-access-lifecycle',
@@ -170,6 +171,7 @@ test('current repository satisfies the module registry', () => {
     'agent.mcp.dual-runtime',
     'architecture.module.validate',
     'chat.storage.device-governance',
+    'mobile.social.native-parity',
     'oauth.login.broker',
   ]);
 });

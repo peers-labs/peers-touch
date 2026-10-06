@@ -1,0 +1,36 @@
+.private-moment-recovery {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: calc(100% - 24px);
+  margin: 10px 12px;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid var(--brand-border);
+  border-radius: 8px;
+  background: var(--brand-surface);
+  color: inherit;
+}
+
+.private-moment-recovery[data-private-moment-state='INTEGRITY_FAILURE'] {
+  border-color: rgba(185, 28, 28, 0.24);
+  background: var(--brand-surface);
+}
+
+.private-moment-recovery .ant-typography {
+  max-width: 100%;
+  margin: 0;
+}
+
+.private-moment-recovery__identity {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.private-moment-recovery__actions {
+  min-height: 32px;
+}

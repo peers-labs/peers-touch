@@ -1,0 +1,6 @@
+"recovery_title" = "Recover private posts";
+"recovery_message" = "Enter your 24-word recovery phrase. It stays on this device.";
+"recovery_placeholder" = "Recovery phrase";
+"recover" = "Recover";
+"cancel" = "Cancel";
+"acceptance_autofill" = "Fill recovery phrase";
