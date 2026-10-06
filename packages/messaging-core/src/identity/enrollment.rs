@@ -244,6 +244,21 @@ pub fn generate_fresh_device_identity(
     generate_fresh_device_identity_from_seed(ptid, &actor_identity_seed, actor_profile_version)
 }
 
+pub fn generate_fresh_device_identity_for_device(
+    ptid: &str,
+    device_id: &str,
+    actor_identity_seed: [u8; 32],
+    actor_profile_version: u64,
+) -> Result<FreshDeviceIdentityState, String> {
+    let actor_identity_seed = Zeroizing::new(actor_identity_seed);
+    generate_fresh_device_identity_for_device_from_seed(
+        ptid,
+        device_id,
+        &actor_identity_seed,
+        actor_profile_version,
+    )
+}
+
 pub fn generate_fresh_device_identity_from_seed(
     ptid: &str,
     actor_identity_seed: &[u8; 32],
@@ -414,6 +429,24 @@ mod tests {
         let seed = [42u8; 32];
         let state = generate_fresh_device_identity("alice@p.t", seed, 1).unwrap();
         assert!(std::mem::needs_drop::<FreshDeviceIdentityState>());
+        validate_enrollment_actor(&state.enrollment, "alice@p.t", seed, 1).unwrap();
+    }
+
+    #[test]
+    fn fresh_enrollment_uses_explicit_session_device_id() {
+        let seed = [42u8; 32];
+        let state =
+            generate_fresh_device_identity_for_device("alice@p.t", "session-device", seed, 1)
+                .unwrap();
+        assert_eq!(
+            state
+                .enrollment
+                .certificate
+                .device
+                .as_ref()
+                .map(|device| device.device_id.as_str()),
+            Some("session-device")
+        );
         validate_enrollment_actor(&state.enrollment, "alice@p.t", seed, 1).unwrap();
     }
 

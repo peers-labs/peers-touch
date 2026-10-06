@@ -22,6 +22,11 @@ W12D_TASK = (
     / "docs/architecture/shared/security/secure-content/execution-plans/"
     "20260913-secure-content-hard-cut/tasks/W12D.md"
 )
+CROSS_STATION_MANIFEST = (
+    REPO_ROOT
+    / "docs/architecture/domains/social/cross-station/execution-plans/"
+    "20261003-native-private-social/work-items.yaml"
+)
 
 
 def _load_task_slice(path: Path) -> dict[str, object]:
@@ -58,6 +63,68 @@ class WorkItemProjectionTest(unittest.TestCase):
             ),
         )
         self.assertEqual((), projection.runtime_claim_arguments)
+
+    def test_cross_station_schema_workstreams_use_exact_plan_and_scopes(
+        self,
+    ) -> None:
+        source = work_item.load_projection(
+            CROSS_STATION_MANIFEST,
+            workstream="CSS-SCHEMA-SOURCE",
+            journey="SOC-SEC-SCHEMA-ACTIVATION",
+            repo_root=REPO_ROOT,
+        )
+        self.assertEqual(
+            "cross-station-social-source-freeze",
+            source.work_item_id,
+        )
+        self.assertEqual("CSS-08A-schema-activation", source.task_id)
+        self.assertEqual((), source.runtime_claim_arguments)
+
+        cases = (
+            (
+                "CSS-SCHEMA-FOUR",
+                "cross-station-social-schema-four",
+                "four",
+                "station-four",
+                "station-four-social-private",
+            ),
+            (
+                "CSS-SCHEMA-FIVEARM",
+                "cross-station-social-schema-five-arm",
+                "fiveArm",
+                "station-five-arm",
+                "station-five-arm-social-private",
+            ),
+        )
+        for workstream, item_id, profile, deployment, reset_scope in cases:
+            with self.subTest(workstream=workstream):
+                projection = work_item.load_projection(
+                    CROSS_STATION_MANIFEST,
+                    workstream=workstream,
+                    journey="SOC-SEC-SCHEMA-ACTIVATION",
+                    repo_root=REPO_ROOT,
+                )
+                self.assertEqual(item_id, projection.work_item_id)
+                self.assertEqual(
+                    "CSS-08A-schema-activation",
+                    projection.task_id,
+                )
+                self.assertIn(
+                    f"shared:profile:{profile}",
+                    projection.runtime_claim_arguments,
+                )
+                self.assertIn(
+                    f"exclusive:station.deploy:{deployment}",
+                    projection.runtime_claim_arguments,
+                )
+                self.assertIn(
+                    f"exclusive:station.reset:{reset_scope}",
+                    projection.runtime_claim_arguments,
+                )
+                self.assertIn(
+                    "exclusive:local.slot:13",
+                    projection.runtime_claim_arguments,
+                )
 
     def test_w12a_projections_bind_explicit_parent_task(self) -> None:
         cases = (

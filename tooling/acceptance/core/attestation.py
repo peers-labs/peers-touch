@@ -5,10 +5,9 @@ import json
 import subprocess
 import urllib.error
 import urllib.request
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Tuple
 
 from ._paths import REPO_ROOT
 from .errors import BlockedError, ProvisioningError
@@ -27,7 +26,7 @@ PROTOCOL_SOURCE_PATHS = (
     ":(glob)apps/desktop/src/gen/proto/**/*.ts",
     ":(glob)apps/station/**/*.pb.go",
 )
-RemoteSourceIdentityProvider = Callable[[str], tuple[str, str, str]]
+RemoteSourceIdentityProvider = Callable[[str], Tuple[str, str, str]]
 
 
 def commits_match(actual: str, expected: str) -> bool:

@@ -47,37 +47,46 @@ const (
 	KeyExchangeMLSFetchRoute = "/federation/key-exchange/mls/key-package/fetch"
 	// KeyExchangeMLSClaimRoute irreversibly claims a prepared MLS KeyPackage.
 	KeyExchangeMLSClaimRoute = "/federation/key-exchange/mls-key-package/claim"
+	// KeyExchangeContentPreKeyClaimRoute irreversibly claims Content PreKeys.
+	KeyExchangeContentPreKeyClaimRoute = "/federation/key-exchange/content-prekeys/claim"
+	// KeyExchangeContentPreKeyValidateRoute validates exact claimed Content PreKeys.
+	KeyExchangeContentPreKeyValidateRoute = "/federation/key-exchange/content-prekeys/validate"
 	// RealtimeSignalRoute forwards a realtime call signal to a recipient's Home Station.
 	RealtimeSignalRoute = "/federation/realtime/signal"
 	// RealtimeCallResolutionRoute reads call truth from the callee Home Station.
 	RealtimeCallResolutionRoute = "/federation/realtime/call-resolution"
 	// GroupCallAuthorityJoinRoute requests a LiveKit grant from Conversation Authority.
 	GroupCallAuthorityJoinRoute = "/federation/realtime/group-call/join"
+	// SocialPrivateObjectReadRoute streams one bounded Social ciphertext range.
+	SocialPrivateObjectReadRoute = "/federation/social/private/objects/:object_id/read"
 )
 
 // PeerRoute identifies one Federation-owned peer HTTP capability.
 type PeerRoute string
 
 const (
-	PeerRouteActorEndpointManifest          PeerRoute = "actor-endpoint-manifest"
-	PeerRoutePresenceQuery                  PeerRoute = "presence-query"
-	PeerRouteConversationCommandPrepare     PeerRoute = "conversation-command-prepare"
-	PeerRouteConversationLeaveIntentSubmit  PeerRoute = "conversation-leave-intent-submit"
-	PeerRouteConversationLeaveIntentList    PeerRoute = "conversation-leave-intent-list"
-	PeerRouteConversationFollowerEvents     PeerRoute = "conversation-follower-events"
-	PeerRouteConversationEventSync          PeerRoute = "conversation-event-sync"
-	PeerRouteConversationAttachmentObject   PeerRoute = "conversation-attachment-object"
-	PeerRouteConversationAttachmentStatus   PeerRoute = "conversation-attachment-status"
-	PeerRouteConversationAttachmentBegin    PeerRoute = "conversation-attachment-begin"
-	PeerRouteConversationAttachmentChunk    PeerRoute = "conversation-attachment-chunk"
-	PeerRouteConversationAttachmentComplete PeerRoute = "conversation-attachment-complete"
-	PeerRouteConversationAttachmentCancel   PeerRoute = "conversation-attachment-cancel"
-	PeerRouteKeyExchangeDirectFetch         PeerRoute = "key-exchange-direct-fetch"
-	PeerRouteKeyExchangeMLSFetch            PeerRoute = "key-exchange-mls-fetch"
-	PeerRouteKeyExchangeMLSClaim            PeerRoute = "key-exchange-mls-claim"
-	PeerRouteRealtimeSignal                 PeerRoute = "realtime-signal"
-	PeerRouteRealtimeCallResolution         PeerRoute = "realtime-call-resolution"
-	PeerRouteGroupCallAuthorityJoin         PeerRoute = "group-call-authority-join"
+	PeerRouteActorEndpointManifest            PeerRoute = "actor-endpoint-manifest"
+	PeerRoutePresenceQuery                    PeerRoute = "presence-query"
+	PeerRouteConversationCommandPrepare       PeerRoute = "conversation-command-prepare"
+	PeerRouteConversationLeaveIntentSubmit    PeerRoute = "conversation-leave-intent-submit"
+	PeerRouteConversationLeaveIntentList      PeerRoute = "conversation-leave-intent-list"
+	PeerRouteConversationFollowerEvents       PeerRoute = "conversation-follower-events"
+	PeerRouteConversationEventSync            PeerRoute = "conversation-event-sync"
+	PeerRouteConversationAttachmentObject     PeerRoute = "conversation-attachment-object"
+	PeerRouteConversationAttachmentStatus     PeerRoute = "conversation-attachment-status"
+	PeerRouteConversationAttachmentBegin      PeerRoute = "conversation-attachment-begin"
+	PeerRouteConversationAttachmentChunk      PeerRoute = "conversation-attachment-chunk"
+	PeerRouteConversationAttachmentComplete   PeerRoute = "conversation-attachment-complete"
+	PeerRouteConversationAttachmentCancel     PeerRoute = "conversation-attachment-cancel"
+	PeerRouteKeyExchangeDirectFetch           PeerRoute = "key-exchange-direct-fetch"
+	PeerRouteKeyExchangeMLSFetch              PeerRoute = "key-exchange-mls-fetch"
+	PeerRouteKeyExchangeMLSClaim              PeerRoute = "key-exchange-mls-claim"
+	PeerRouteKeyExchangeContentPreKeyClaim    PeerRoute = "key-exchange-content-prekey-claim"
+	PeerRouteKeyExchangeContentPreKeyValidate PeerRoute = "key-exchange-content-prekey-validate"
+	PeerRouteRealtimeCallResolution           PeerRoute = "realtime-call-resolution"
+	PeerRouteRealtimeSignal                   PeerRoute = "realtime-signal"
+	PeerRouteGroupCallAuthorityJoin           PeerRoute = "group-call-authority-join"
+	PeerRouteSocialPrivateObjectRead           PeerRoute = "social-private-object-read"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request
@@ -126,9 +135,12 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteKeyExchangeDirectFetch, "federation-key-exchange-direct-fetch", KeyExchangeDirectFetchRoute, server.POST, KeyExchangeDirectFetchScope},
 	{PeerRouteKeyExchangeMLSFetch, "federation-key-exchange-mls-fetch", KeyExchangeMLSFetchRoute, server.POST, KeyExchangeMLSFetchScope},
 	{PeerRouteKeyExchangeMLSClaim, "federation-key-exchange-mls-claim", KeyExchangeMLSClaimRoute, server.POST, KeyExchangeMLSClaimScope},
+	{PeerRouteKeyExchangeContentPreKeyClaim, "federation-key-exchange-content-prekey-claim", KeyExchangeContentPreKeyClaimRoute, server.POST, KeyExchangeContentPreKeyClaimScope},
+	{PeerRouteKeyExchangeContentPreKeyValidate, "federation-key-exchange-content-prekey-validate", KeyExchangeContentPreKeyValidateRoute, server.POST, KeyExchangeContentPreKeyValidateScope},
 	{PeerRouteRealtimeSignal, "federation-realtime-signal", RealtimeSignalRoute, server.POST, RealtimeSignalScope},
 	{PeerRouteRealtimeCallResolution, "federation-realtime-call-resolution", RealtimeCallResolutionRoute, server.POST, RealtimeCallResolutionScope},
 	{PeerRouteGroupCallAuthorityJoin, "federation-group-call-authority-join", GroupCallAuthorityJoinRoute, server.POST, GroupCallAuthorityJoinScope},
+	{PeerRouteSocialPrivateObjectRead, "federation-social-private-object-read", SocialPrivateObjectReadRoute, server.POST, SocialPrivateObjectReadScope},
 }
 
 // NewPeerRouteFactory validates and creates the Federation route owner.
@@ -298,6 +310,20 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			f.wrappers[PeerRouteKeyExchangeMLSClaim],
 		),
 		server.NewSimpleHandler(
+			"federation-key-exchange-content-prekey-claim",
+			KeyExchangeContentPreKeyClaimRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteKeyExchangeContentPreKeyClaim),
+			f.wrappers[PeerRouteKeyExchangeContentPreKeyClaim],
+		),
+		server.NewSimpleHandler(
+			"federation-key-exchange-content-prekey-validate",
+			KeyExchangeContentPreKeyValidateRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteKeyExchangeContentPreKeyValidate),
+			f.wrappers[PeerRouteKeyExchangeContentPreKeyValidate],
+		),
+		server.NewSimpleHandler(
 			"federation-realtime-signal",
 			RealtimeSignalRoute,
 			server.POST,
@@ -317,6 +343,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteGroupCallAuthorityJoin),
 			f.wrappers[PeerRouteGroupCallAuthorityJoin],
+		),
+		server.NewSimpleHandler(
+			"federation-social-private-object-read",
+			SocialPrivateObjectReadRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteSocialPrivateObjectRead),
+			f.wrappers[PeerRouteSocialPrivateObjectRead],
 		),
 	}
 }

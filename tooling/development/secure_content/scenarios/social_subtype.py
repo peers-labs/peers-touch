@@ -162,6 +162,40 @@ def _base_payload(kind: str, text: str) -> dict[str, Any]:
     }
 
 
+def _await_reaction_transition(
+    client: AttachedProductClient,
+    *,
+    method: str,
+    post_id: str,
+    present: bool,
+) -> Mapping[str, Any]:
+    latest: Mapping[str, Any] = {}
+    for attempt in range(20):
+        latest = _mapping(
+            client.call(method, {"postId": post_id, "kind": "LOVE"}),
+            "Reaction transition",
+        )
+        reactions = latest.get("reactions")
+        converged = (
+            isinstance(reactions, list)
+            and (
+                (
+                    present
+                    and len(reactions) == 1
+                    and isinstance(reactions[0], Mapping)
+                    and reactions[0].get("count") == 1
+                    and reactions[0].get("reactedByViewer") is True
+                )
+                or (not present and reactions == [])
+            )
+        )
+        if converged:
+            return latest
+        if attempt < 19:
+            time.sleep(min(0.25, client.context.remaining_seconds()))
+    return latest
+
+
 def _execute(context: ScenarioContext) -> Mapping[str, Any]:
     _require_runtime_binding(context)
     image_path = context.write_artifact_bytes(
@@ -372,12 +406,11 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             "social-subtype REPOST source differs",
         )
 
-        reacted = _mapping(
-            bob.call(
-                "reactToPrivateMoment",
-                {"postId": post_ids["TEXT"], "kind": "LOVE"},
-            ),
-            "Reaction add",
+        reacted = _await_reaction_transition(
+            bob,
+            method="reactToPrivateMoment",
+            post_id=post_ids["TEXT"],
+            present=True,
         )
         reactions = reacted.get("reactions")
         _require(
@@ -388,12 +421,11 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             and reactions[0].get("reactedByViewer") is True,
             "social-subtype private Reaction add differs",
         )
-        unreacted = _mapping(
-            bob.call(
-                "unreactToPrivateMoment",
-                {"postId": post_ids["TEXT"], "kind": "LOVE"},
-            ),
-            "Reaction remove",
+        unreacted = _await_reaction_transition(
+            bob,
+            method="unreactToPrivateMoment",
+            post_id=post_ids["TEXT"],
+            present=False,
         )
         _require(
             unreacted.get("reactions") == [],

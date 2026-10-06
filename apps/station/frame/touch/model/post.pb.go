@@ -4972,11 +4972,14 @@ func (x *Mention) GetDisplay() string {
 }
 
 type ReactToPostRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PostId        string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
-	Kind          ReactionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.social.v1.ReactionKind" json:"kind,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	PostId               string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	Kind                 ReactionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.social.v1.ReactionKind" json:"kind,omitempty"`
+	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	ActorSigningKeyId    string                 `protobuf:"bytes,4,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
+	ActorDeviceSignature []byte                 `protobuf:"bytes,5,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ReactToPostRequest) Reset() {
@@ -5023,14 +5026,38 @@ func (x *ReactToPostRequest) GetKind() ReactionKind {
 	return ReactionKind_REACTION_UNSPECIFIED
 }
 
+func (x *ReactToPostRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ReactToPostRequest) GetActorSigningKeyId() string {
+	if x != nil {
+		return x.ActorSigningKeyId
+	}
+	return ""
+}
+
+func (x *ReactToPostRequest) GetActorDeviceSignature() []byte {
+	if x != nil {
+		return x.ActorDeviceSignature
+	}
+	return nil
+}
+
 type ReactToPostResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Success bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	// Updated summary reflecting the viewer's new reaction. May contain
 	// counts for all kinds, not just the one just added.
-	Reactions     []*ReactionSummary `protobuf:"bytes,2,rep,name=reactions,proto3" json:"reactions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Reactions          []*ReactionSummary `protobuf:"bytes,2,rep,name=reactions,proto3" json:"reactions,omitempty"`
+	CommandId          string             `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	ExactReplay        bool               `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	ProjectionRevision uint64             `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ReactToPostResponse) Reset() {
@@ -5077,12 +5104,36 @@ func (x *ReactToPostResponse) GetReactions() []*ReactionSummary {
 	return nil
 }
 
+func (x *ReactToPostResponse) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ReactToPostResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
+func (x *ReactToPostResponse) GetProjectionRevision() uint64 {
+	if x != nil {
+		return x.ProjectionRevision
+	}
+	return 0
+}
+
 type UnreactToPostRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PostId        string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
-	Kind          ReactionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.social.v1.ReactionKind" json:"kind,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	PostId               string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	Kind                 ReactionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.social.v1.ReactionKind" json:"kind,omitempty"`
+	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	ActorSigningKeyId    string                 `protobuf:"bytes,4,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
+	ActorDeviceSignature []byte                 `protobuf:"bytes,5,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *UnreactToPostRequest) Reset() {
@@ -5129,12 +5180,36 @@ func (x *UnreactToPostRequest) GetKind() ReactionKind {
 	return ReactionKind_REACTION_UNSPECIFIED
 }
 
+func (x *UnreactToPostRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *UnreactToPostRequest) GetActorSigningKeyId() string {
+	if x != nil {
+		return x.ActorSigningKeyId
+	}
+	return ""
+}
+
+func (x *UnreactToPostRequest) GetActorDeviceSignature() []byte {
+	if x != nil {
+		return x.ActorDeviceSignature
+	}
+	return nil
+}
+
 type UnreactToPostResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	Reactions     []*ReactionSummary     `protobuf:"bytes,2,rep,name=reactions,proto3" json:"reactions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Success            bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Reactions          []*ReactionSummary     `protobuf:"bytes,2,rep,name=reactions,proto3" json:"reactions,omitempty"`
+	CommandId          string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	ExactReplay        bool                   `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	ProjectionRevision uint64                 `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *UnreactToPostResponse) Reset() {
@@ -5179,6 +5254,27 @@ func (x *UnreactToPostResponse) GetReactions() []*ReactionSummary {
 		return x.Reactions
 	}
 	return nil
+}
+
+func (x *UnreactToPostResponse) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *UnreactToPostResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
+func (x *UnreactToPostResponse) GetProjectionRevision() uint64 {
+	if x != nil {
+		return x.ProjectionRevision
+	}
+	return 0
 }
 
 type ListReactionsRequest struct {
@@ -5755,19 +5851,35 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12\x16\n" +
 	"\x06length\x18\x03 \x01(\x05R\x06length\x12\x18\n" +
-	"\adisplay\x18\x04 \x01(\tR\adisplay\"l\n" +
+	"\adisplay\x18\x04 \x01(\tR\adisplay\"\xf2\x01\n" +
 	"\x12ReactToPostRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
-	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\"{\n" +
+	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12/\n" +
+	"\x14actor_signing_key_id\x18\x04 \x01(\tR\x11actorSigningKeyId\x124\n" +
+	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\"\xee\x01\n" +
 	"\x13ReactToPostResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12J\n" +
-	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\"n\n" +
+	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12!\n" +
+	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay\x12/\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\"\xf4\x01\n" +
 	"\x14UnreactToPostRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
-	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\"}\n" +
+	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12/\n" +
+	"\x14actor_signing_key_id\x18\x04 \x01(\tR\x11actorSigningKeyId\x124\n" +
+	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\"\xf0\x01\n" +
 	"\x15UnreactToPostResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12J\n" +
-	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\"\x9c\x01\n" +
+	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12!\n" +
+	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay\x12/\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\"\x9c\x01\n" +
 	"\x14ListReactionsRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x16\n" +

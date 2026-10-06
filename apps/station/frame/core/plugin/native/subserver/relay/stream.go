@@ -34,6 +34,9 @@ import (
 var (
 	ErrStreamClosed       = errors.New("stream closed")
 	ErrStreamDisconnected = errors.New("stream disconnected while waiting for response")
+	ErrRequestCancelled   = errors.New("request cancelled by target station")
+	ErrRequestIDExhausted = errors.New("request ID sequence exhausted")
+	ErrTooManyConcurrent  = errors.New("too many concurrent requests")
 )
 
 // StatusCallback is invoked when a stream goes online/offline.
@@ -53,9 +56,26 @@ type StatusCallback func(ctx context.Context, peerID string, online bool)
 // rate-limiting in the codec layer.
 type BroadcastCallback func(ctx context.Context, originPeerID, topic string, body []byte)
 
-// pendingRequest is a slot in the response dispatch table.
+type pendingState uint8
+
+const (
+	pendingActive pendingState = iota
+	pendingDraining
+)
+
+type pendingResult struct {
+	response *protocol.ResponseFrame
+	err      error
+}
+
+// pendingRequest is a slot in the response dispatch table. Draining requests
+// remain registered and retain semaphore admission until a terminal frame.
 type pendingRequest struct {
-	ch chan *protocol.ResponseFrame
+	ch                   chan pendingResult
+	responsePayloadLimit uint32
+	privateObjectLog     protocol.RouteLogContext
+	state                pendingState
+	drainTimer           *time.Timer
 }
 
 // streamEntry represents a live TCP connection to a station.
@@ -71,6 +91,15 @@ type streamEntry struct {
 	// pending maps reqID → response channel. Protected by pendingMu.
 	pendingMu sync.Mutex
 	pending   map[uint32]*pendingRequest
+	// lastPrivateObjectLog is a bounded stream-lifetime privacy marker. It
+	// keeps disconnect and late-terminal logs redacted after the pending slot
+	// has been removed.
+	lastPrivateObjectLog protocol.RouteLogContext
+
+	// Request IDs are a nonzero monotonic sequence scoped to this TCP stream.
+	// retiring stops admission once the sequence reaches its final value.
+	nextRequestID uint32
+	retiring      bool
 
 	// semaphore limits per-station concurrent forwards (Block 7).
 	semaphore chan struct{}
@@ -121,29 +150,91 @@ func (e *streamEntry) readLoop() {
 	defer e.failAllPending()
 
 	for {
-		frame, err := protocol.ReadFrame(e.conn)
+		envelope, err := protocol.ReadEnvelope(e.conn)
 		if err != nil {
 			if !e.closed.Load() {
-				logger.Warnf(e.ctx, "[stream] readLoop error for %s: %v", e.peerID, err)
+				e.logPrivacyAware(
+					protocol.RouteLogContext{},
+					protocol.RouteLogOutcomeInterrupted,
+					"[stream] readLoop error for %s: %v",
+					e.peerID,
+					err,
+				)
+			}
+			return
+		}
+
+		if envelope.Type == protocol.TypeResponse {
+			pending, ok := e.pendingForResponse(envelope.RequestID)
+			if !ok {
+				if err := protocol.DiscardPayload(e.conn, envelope.PayloadLen); err != nil {
+					logger.Warnf(e.ctx, "[stream] discard orphan response failed")
+					return
+				}
+				logger.Warnf(e.ctx, "[stream] orphan response frame discarded")
+				continue
+			}
+			frame, err := protocol.ReadFramePayload(
+				e.conn,
+				envelope,
+				pending.responsePayloadLimit,
+			)
+			if err != nil {
+				e.logPrivacyAware(
+					pending.privateObjectLog,
+					protocol.RouteLogOutcomeRejected,
+					"[stream] bounded response read error for %s: %v",
+					e.peerID,
+					err,
+				)
+				return
+			}
+			e.dispatchResponse(
+				frame.(*protocol.ResponseFrame),
+				pending.privateObjectLog,
+			)
+			continue
+		}
+
+		var pendingLog protocol.RouteLogContext
+		if envelope.Type == protocol.TypeCancelled {
+			pendingLog = e.pendingLogContext(envelope.RequestID)
+		}
+		frame, err := protocol.ReadFramePayload(e.conn, envelope, protocol.MaxPayloadLen)
+		if err != nil {
+			if !e.closed.Load() {
+				e.logPrivacyAware(
+					pendingLog,
+					protocol.RouteLogOutcomeRejected,
+					"[stream] readLoop payload error for %s: %v",
+					e.peerID,
+					err,
+				)
 			}
 			return
 		}
 
 		switch f := frame.(type) {
-		case *protocol.ResponseFrame:
-			e.dispatchResponse(f)
-
 		case *protocol.PingFrame:
 			e.writeMu.Lock()
 			writeErr := protocol.WritePong(e.conn, f.RequestID)
 			e.writeMu.Unlock()
 			if writeErr != nil {
-				logger.Warnf(e.ctx, "[stream] pong write error for %s: %v", e.peerID, writeErr)
+				e.logPrivacyAware(
+					protocol.RouteLogContext{},
+					protocol.RouteLogOutcomeInterrupted,
+					"[stream] pong write error for %s: %v",
+					e.peerID,
+					writeErr,
+				)
 				return
 			}
 
 		case *protocol.PongFrame:
 			e.lastPong.Store(time.Now())
+
+		case *protocol.CancelledFrame:
+			e.dispatchCancelled(f, pendingLog)
 
 		case *protocol.BroadcastFrame:
 			// Tier C1: fan-out is delegated to the StreamManager via
@@ -156,102 +247,322 @@ func (e *streamEntry) readLoop() {
 			if e.onBroadcast != nil {
 				go e.onBroadcast(e.ctx, e.peerID, f.Topic, f.Body)
 			} else {
-				logger.Warnf(e.ctx, "[stream] broadcast from %s topic=%s but no fan-out hook installed", e.peerID, f.Topic)
+				e.logPrivacyAware(
+					protocol.RouteLogContext{},
+					protocol.RouteLogOutcomeRejected,
+					"[stream] broadcast dropped: no fan-out hook installed",
+				)
 			}
 
 		default:
-			logger.Warnf(e.ctx, "[stream] unexpected frame type for %s: %T", e.peerID, f)
+			e.logPrivacyAware(
+				protocol.RouteLogContext{},
+				protocol.RouteLogOutcomeRejected,
+				"[stream] unexpected frame type: %T",
+				f,
+			)
 		}
 	}
 }
 
-// dispatchResponse routes a ResponseFrame to the corresponding pending
-// request channel. If no waiter exists (timeout/cancelled), the frame is dropped.
-func (e *streamEntry) dispatchResponse(f *protocol.ResponseFrame) {
+func (e *streamEntry) pendingForResponse(reqID uint32) (*pendingRequest, bool) {
 	e.pendingMu.Lock()
-	pr, ok := e.pending[f.RequestID]
-	if ok {
-		delete(e.pending, f.RequestID)
-	}
-	e.pendingMu.Unlock()
+	defer e.pendingMu.Unlock()
+	pr, ok := e.pending[reqID]
+	return pr, ok
+}
 
-	if ok {
-		// Non-blocking send — if the waiter already left (ctx cancelled),
-		// the channel has a buffer of 1 so this won't block.
+func (e *streamEntry) pendingLogContext(reqID uint32) protocol.RouteLogContext {
+	e.pendingMu.Lock()
+	defer e.pendingMu.Unlock()
+	pr, ok := e.pending[reqID]
+	if !ok {
+		return protocol.RouteLogContext{}
+	}
+	return pr.privateObjectLog
+}
+
+func (e *streamEntry) privateObjectLogContext() (
+	protocol.RouteLogContext,
+	bool,
+) {
+	e.pendingMu.Lock()
+	defer e.pendingMu.Unlock()
+	for _, pending := range e.pending {
+		if pending.privateObjectLog.Category != "" {
+			return pending.privateObjectLog, true
+		}
+	}
+	if e.lastPrivateObjectLog.Category != "" {
+		return e.lastPrivateObjectLog, true
+	}
+
+	return protocol.RouteLogContext{}, false
+}
+
+// dispatchResponse routes an active response or discards a raced response for
+// a draining slot. In both cases the response is terminal and releases admission.
+func (e *streamEntry) dispatchResponse(
+	f *protocol.ResponseFrame,
+	pendingLog protocol.RouteLogContext,
+) {
+	pr, state, retire, ok := e.takePending(f.RequestID)
+	if !ok {
+		if pendingLog.Category != "" {
+			logPrivateObjectStream(
+				e.ctx,
+				pendingLog,
+				protocol.RouteLogOutcomeRejected,
+			)
+		} else {
+			logger.Warnf(e.ctx, "[stream] orphan response frame discarded")
+		}
+		return
+	}
+	if state == pendingActive {
 		select {
-		case pr.ch <- f:
+		case pr.ch <- pendingResult{response: f}:
 		default:
 		}
-	} else {
-		logger.Warnf(e.ctx, "[stream] orphan response frame req_id=%d for %s", f.RequestID, e.peerID)
 	}
+	if retire {
+		go e.Close()
+	}
+}
+
+func (e *streamEntry) dispatchCancelled(
+	f *protocol.CancelledFrame,
+	pendingLog protocol.RouteLogContext,
+) {
+	pr, state, retire, ok := e.takePending(f.RequestID)
+	if !ok {
+		if pendingLog.Category != "" {
+			logPrivateObjectStream(
+				e.ctx,
+				pendingLog,
+				protocol.RouteLogOutcomeRejected,
+			)
+		} else {
+			logger.Warnf(e.ctx, "[stream] orphan cancelled frame discarded")
+		}
+		return
+	}
+	if state == pendingActive {
+		select {
+		case pr.ch <- pendingResult{err: ErrRequestCancelled}:
+		default:
+		}
+	}
+	if retire {
+		go e.Close()
+	}
+}
+
+func (e *streamEntry) takePending(reqID uint32) (*pendingRequest, pendingState, bool, bool) {
+	e.pendingMu.Lock()
+	pr, ok := e.pending[reqID]
+	if !ok {
+		e.pendingMu.Unlock()
+		return nil, pendingActive, false, false
+	}
+	delete(e.pending, reqID)
+	if pr.drainTimer != nil {
+		pr.drainTimer.Stop()
+	}
+	retire := e.retiring && len(e.pending) == 0
+	state := pr.state
+	e.pendingMu.Unlock()
+
+	e.ReleaseSemaphore()
+	return pr, state, retire, true
 }
 
 // failAllPending wakes all waiting SendRequest callers with nil (they'll
 // see an error because the channel is closed without a value, or ctx is done).
 func (e *streamEntry) failAllPending() {
 	e.pendingMu.Lock()
+	pending := make([]*pendingRequest, 0, len(e.pending))
 	for id, pr := range e.pending {
-		close(pr.ch)
+		if pr.drainTimer != nil {
+			pr.drainTimer.Stop()
+		}
+		pending = append(pending, pr)
 		delete(e.pending, id)
 	}
 	e.pendingMu.Unlock()
+
+	for _, pr := range pending {
+		e.ReleaseSemaphore()
+		close(pr.ch)
+	}
 }
 
-// SendRequest sends a request frame and waits for the corresponding response.
-// This is the ONLY way Forward should interact with the stream.
-//
-// The method:
-//  1. Registers a pending slot for reqID
-//  2. Writes the request frame under writeMu
-//  3. Waits on the response channel with ctx cancellation
-//
-// Thread-safe: multiple goroutines can call SendRequest concurrently —
-// each gets its own reqID and response channel.
+// SendRequest sends a request frame and waits for its terminal response. On
+// caller cancellation the slot transitions to draining, sends Cancel, and
+// retains both its response cap and semaphore admission until Response,
+// Cancelled, stream failure, or the additional drain timeout.
 func (e *streamEntry) SendRequest(
 	ctx context.Context,
-	reqID uint32,
 	method, path string,
 	headers map[string]string,
 	body []byte,
-) (*protocol.ResponseFrame, error) {
+	responsePayloadLimit uint32,
+	drainTimeout time.Duration,
+) (*protocol.ResponseFrame, uint32, error) {
 	if e.closed.Load() {
-		return nil, ErrStreamClosed
+		return nil, 0, ErrStreamClosed
+	}
+	if !e.AcquireSemaphore() {
+		return nil, 0, ErrTooManyConcurrent
+	}
+	if responsePayloadLimit == 0 || responsePayloadLimit > protocol.MaxPayloadLen {
+		responsePayloadLimit = protocol.MaxPayloadLen
+	}
+	if drainTimeout <= 0 {
+		drainTimeout = time.Second
 	}
 
-	// 1. Register pending slot (buffered channel so readLoop never blocks).
-	pr := &pendingRequest{ch: make(chan *protocol.ResponseFrame, 1)}
+	privateObjectLog, _ := protocol.PrivateObjectRouteLogContext(
+		method,
+		path,
+		headers,
+	)
+	pr := &pendingRequest{
+		ch:                   make(chan pendingResult, 1),
+		responsePayloadLimit: responsePayloadLimit,
+		privateObjectLog:     privateObjectLog,
+		state:                pendingActive,
+	}
 	e.pendingMu.Lock()
+	if e.closed.Load() {
+		e.pendingMu.Unlock()
+		e.ReleaseSemaphore()
+		return nil, 0, ErrStreamClosed
+	}
+	if e.retiring {
+		e.pendingMu.Unlock()
+		e.ReleaseSemaphore()
+		return nil, 0, ErrRequestIDExhausted
+	}
+	reqID := e.nextRequestID + 1
+	if reqID == 0 {
+		e.retiring = true
+		e.pendingMu.Unlock()
+		e.ReleaseSemaphore()
+		return nil, 0, ErrRequestIDExhausted
+	}
+	e.nextRequestID = reqID
+	if reqID == ^uint32(0) {
+		e.retiring = true
+	}
+	if privateObjectLog.Category != "" {
+		e.lastPrivateObjectLog = privateObjectLog
+	}
 	e.pending[reqID] = pr
 	e.pendingMu.Unlock()
 
-	// Ensure cleanup on all exit paths.
-	defer func() {
-		e.pendingMu.Lock()
-		delete(e.pending, reqID)
-		e.pendingMu.Unlock()
-	}()
-
-	// 2. Write request frame.
 	e.writeMu.Lock()
 	writeErr := protocol.WriteRequestFrame(e.conn, reqID, method, path, headers, body)
 	e.writeMu.Unlock()
 	if writeErr != nil {
-		return nil, fmt.Errorf("write request: %w", writeErr)
+		_, _, retire, _ := e.takePending(reqID)
+		if retire {
+			go e.Close()
+		}
+		return nil, reqID, fmt.Errorf("write request: %w", writeErr)
 	}
 
-	// 3. Wait for response or cancellation.
 	select {
-	case resp, ok := <-pr.ch:
-		if !ok || resp == nil {
-			return nil, ErrStreamDisconnected
+	case result, ok := <-pr.ch:
+		if !ok {
+			return nil, reqID, ErrStreamDisconnected
 		}
-		return resp, nil
+		if result.err != nil {
+			return nil, reqID, result.err
+		}
+		return result.response, reqID, nil
 	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-e.done:
-		return nil, ErrStreamClosed
+		e.beginDrain(reqID, pr, drainTimeout)
+		return nil, reqID, ctx.Err()
 	}
+}
+
+func (e *streamEntry) beginDrain(reqID uint32, expected *pendingRequest, drainTimeout time.Duration) {
+	e.pendingMu.Lock()
+	pr, ok := e.pending[reqID]
+	if !ok || pr != expected || pr.state != pendingActive {
+		e.pendingMu.Unlock()
+		return
+	}
+	pr.state = pendingDraining
+	pr.drainTimer = time.AfterFunc(drainTimeout, func() {
+		e.pendingMu.Lock()
+		current, stillDraining := e.pending[reqID]
+		stillDraining = stillDraining &&
+			current == expected &&
+			current.state == pendingDraining
+		e.pendingMu.Unlock()
+		if stillDraining {
+			e.logPrivacyAware(
+				expected.privateObjectLog,
+				protocol.RouteLogOutcomeInterrupted,
+				"[stream] cancellation drain timeout req_id=%d for %s",
+				reqID,
+				e.peerID,
+			)
+			e.Close()
+		}
+	})
+	e.pendingMu.Unlock()
+
+	go func() {
+		e.writeMu.Lock()
+		err := protocol.WriteCancel(e.conn, reqID)
+		e.writeMu.Unlock()
+		if err != nil {
+			e.logPrivacyAware(
+				expected.privateObjectLog,
+				protocol.RouteLogOutcomeInterrupted,
+				"[stream] cancel write error req_id=%d for %s: %v",
+				reqID,
+				e.peerID,
+				err,
+			)
+			e.Close()
+		}
+	}()
+}
+
+func logPrivateObjectStream(
+	ctx context.Context,
+	logContext protocol.RouteLogContext,
+	outcome string,
+) {
+	logger.Warnf(
+		ctx,
+		"[stream] route=%s method=%s outcome=%s request_id=%s",
+		logContext.Category,
+		logContext.Method,
+		outcome,
+		logContext.RequestID,
+	)
+}
+
+func (e *streamEntry) logPrivacyAware(
+	preferred protocol.RouteLogContext,
+	outcome string,
+	legacyFormat string,
+	legacyArgs ...interface{},
+) {
+	if preferred.Category == "" {
+		preferred, _ = e.privateObjectLogContext()
+	}
+	if preferred.Category != "" {
+		logPrivateObjectStream(e.ctx, preferred, outcome)
+
+		return
+	}
+	logger.Warnf(e.ctx, legacyFormat, legacyArgs...)
 }
 
 // WritePing sends a Ping frame through the write lock.
@@ -318,7 +629,6 @@ type StreamManager struct {
 	mu       sync.RWMutex
 	streams  map[string]*streamEntry
 	inflight atomic.Int64
-	reqID    atomic.Uint32
 
 	maxConcurrentPerStation int
 	callback                StatusCallback
@@ -393,7 +703,7 @@ func (sm *StreamManager) Add(ctx context.Context, peerID string, conn net.Conn) 
 	if sm.callback != nil {
 		sm.callback(ctx, peerID, true)
 	}
-	logger.Infof(ctx, "[stream] added stream for %s", peerID)
+	logger.Infof(ctx, "[stream] added stream")
 }
 
 // handleInboundBroadcast is the readLoop callback for Broadcast
@@ -411,7 +721,7 @@ func (sm *StreamManager) handleInboundBroadcast(ctx context.Context, originPeerI
 		// any unknown topic is a config bug we want to surface rather
 		// than aggregate away.
 		metBroadcastReceived.Inc(topic, broadcastResultDroppedDisallowed)
-		logger.Warnf(ctx, "[stream] dropping broadcast from %s on disallowed topic %q", originPeerID, topic)
+		logger.Warnf(ctx, "[stream] dropping disallowed broadcast")
 		return
 	}
 
@@ -447,16 +757,15 @@ func (sm *StreamManager) handleInboundBroadcast(ctx context.Context, originPeerI
 		go func(target *streamEntry) {
 			if err := target.WriteBroadcast(topic, originPeerID, body); err != nil {
 				metBroadcastForwarded.Inc(topic, broadcastResultError)
-				logger.Warnf(ctx, "[stream] broadcast write to %s failed (topic=%s origin=%s): %v",
-					target.peerID, topic, originPeerID, err)
+				logger.Warnf(ctx, "[stream] broadcast write failed")
 				return
 			}
 			metBroadcastForwarded.Inc(topic, broadcastResultOK)
 		}(e)
 	}
 
-	logger.Debugf(ctx, "[stream] broadcast topic=%s origin=%s fanout_count=%d body_len=%d",
-		topic, originPeerID, len(peers), len(body))
+	logger.Debugf(ctx, "[stream] broadcast fanout_count=%d body_len=%d",
+		len(peers), len(body))
 }
 
 // Remove closes and deletes the stream for peerID.
@@ -519,11 +828,6 @@ func (sm *StreamManager) UntrackInflight() {
 	sm.inflight.Add(-1)
 }
 
-// NextRequestID returns a monotonically increasing ID for framing.
-func (sm *StreamManager) NextRequestID() uint32 {
-	return sm.reqID.Add(1)
-}
-
 // Inflight returns the current number of in-flight forwards.
 func (sm *StreamManager) Inflight() int64 {
 	return sm.inflight.Load()
@@ -569,15 +873,26 @@ func (sm *StreamManager) PingAll(ctx context.Context, interval, timeout time.Dur
 
 		// Check if last pong is too old (station not responding).
 		if e.LastPong().Before(cutoff) {
-			logger.Warnf(ctx, "[stream] no pong from %s within %v, removing", e.peerID, interval+timeout)
+			e.logPrivacyAware(
+				protocol.RouteLogContext{},
+				protocol.RouteLogOutcomeInterrupted,
+				"[stream] no pong from %s within %v, removing",
+				e.peerID,
+				interval+timeout,
+			)
 			failed = append(failed, e.peerID)
 			continue
 		}
 
 		// Send a new ping for the next round's liveness check.
-		pingID := sm.reqID.Add(1)
-		if err := e.WritePing(pingID); err != nil {
-			logger.Warnf(ctx, "[stream] ping write failed for %s: %v", e.peerID, err)
+		if err := e.WritePing(0); err != nil {
+			e.logPrivacyAware(
+				protocol.RouteLogContext{},
+				protocol.RouteLogOutcomeInterrupted,
+				"[stream] ping write failed for %s: %v",
+				e.peerID,
+				err,
+			)
 			failed = append(failed, e.peerID)
 		}
 	}
@@ -607,7 +922,12 @@ func (sm *StreamManager) CleanupStale(ctx context.Context, cutoff time.Time) int
 		if sm.callback != nil {
 			sm.callback(ctx, e.peerID, false)
 		}
-		logger.Infof(ctx, "[stream] cleaned stale stream for %s", e.peerID)
+		e.logPrivacyAware(
+			protocol.RouteLogContext{},
+			protocol.RouteLogOutcomeInterrupted,
+			"[stream] cleaned stale stream for %s",
+			e.peerID,
+		)
 	}
 	return len(stale)
 }

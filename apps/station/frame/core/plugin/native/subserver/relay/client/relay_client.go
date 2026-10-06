@@ -25,6 +25,7 @@ import (
 var (
 	ErrHandshakeRejected = errors.New("handshake rejected by relay")
 	ErrDialFailed        = errors.New("failed to dial relay")
+	ErrResponseLimit     = errors.New("relay-client: response exceeds route limits")
 	// ErrNotConnected is returned by Publish when there is no active
 	// stream to the relay. Callers (e.g. the locator hook) should treat
 	// this as a soft failure: the next periodic republish will re-emit
@@ -86,6 +87,75 @@ type Client struct {
 
 	cfg  Config
 	done chan struct{}
+}
+
+type inboundRequest struct {
+	mu              sync.Mutex
+	cancel          context.CancelFunc
+	cancelRequested bool
+	terminal        bool
+}
+
+type inboundRequests struct {
+	mu       sync.Mutex
+	requests map[uint32]*inboundRequest
+}
+
+func newInboundRequests() *inboundRequests {
+	return &inboundRequests{requests: make(map[uint32]*inboundRequest)}
+}
+
+func (r *inboundRequests) add(
+	parent context.Context,
+	requestID uint32,
+) (context.Context, *inboundRequest) {
+	ctx, cancel := context.WithCancel(parent)
+	request := &inboundRequest{cancel: cancel}
+	r.mu.Lock()
+	r.requests[requestID] = request
+	r.mu.Unlock()
+	return ctx, request
+}
+
+func (r *inboundRequests) cancel(requestID uint32) {
+	r.mu.Lock()
+	request := r.requests[requestID]
+	r.mu.Unlock()
+	if request == nil {
+		return
+	}
+	request.mu.Lock()
+	if !request.terminal {
+		request.cancelRequested = true
+		request.cancel()
+	}
+	request.mu.Unlock()
+}
+
+func (r *inboundRequests) remove(requestID uint32, expected *inboundRequest) {
+	r.mu.Lock()
+	if r.requests[requestID] == expected {
+		delete(r.requests, requestID)
+	}
+	r.mu.Unlock()
+}
+
+func (r *inboundRequests) cancelAll() {
+	r.mu.Lock()
+	requests := make([]*inboundRequest, 0, len(r.requests))
+	for requestID, request := range r.requests {
+		requests = append(requests, request)
+		delete(r.requests, requestID)
+	}
+	r.mu.Unlock()
+	for _, request := range requests {
+		request.mu.Lock()
+		if !request.terminal {
+			request.cancelRequested = true
+			request.cancel()
+		}
+		request.mu.Unlock()
+	}
 }
 
 func New(cfg Config) *Client {
@@ -285,6 +355,12 @@ func (c *Client) dialAndHandshake(ctx context.Context) (net.Conn, *bufio.Reader,
 }
 
 func (c *Client) readLoop(ctx context.Context, br *bufio.Reader, conn net.Conn) {
+	connectionCtx, cancelConnection := context.WithCancel(ctx)
+	requests := newInboundRequests()
+	defer cancelConnection()
+	defer requests.cancelAll()
+
+	var lastRequestID uint32
 	for {
 		select {
 		case <-c.done:
@@ -300,7 +376,33 @@ func (c *Client) readLoop(ctx context.Context, br *bufio.Reader, conn net.Conn) 
 
 		switch f := frame.(type) {
 		case *protocol.RequestFrame:
-			go c.handleRequest(ctx, conn, f)
+			if f.RequestID <= lastRequestID {
+				if logContext, ok := protocol.PrivateObjectRouteLogContext(
+					f.Method,
+					f.Path,
+					f.Headers,
+				); ok {
+					logPrivateObjectClientStream(
+						ctx,
+						logContext,
+						protocol.RouteLogOutcomeRejected,
+					)
+				} else {
+					logger.Warnf(
+						ctx,
+						"[relay-client] non-monotonic request ID: got=%d last=%d",
+						f.RequestID,
+						lastRequestID,
+					)
+				}
+				return
+			}
+			lastRequestID = f.RequestID
+			requestCtx, request := requests.add(connectionCtx, f.RequestID)
+			go c.handleRequest(requestCtx, conn, f, request, requests)
+
+		case *protocol.CancelFrame:
+			requests.cancel(f.RequestID)
 
 		case *protocol.PingFrame:
 			// Block 2: write pong through writeMu.
@@ -334,33 +436,129 @@ func (c *Client) readLoop(ctx context.Context, br *bufio.Reader, conn net.Conn) 
 	}
 }
 
-func (c *Client) handleRequest(ctx context.Context, conn net.Conn, req *protocol.RequestFrame) {
+func (c *Client) handleRequest(
+	ctx context.Context,
+	conn net.Conn,
+	req *protocol.RequestFrame,
+	request *inboundRequest,
+	requests *inboundRequests,
+) {
 	var statusCode uint32
 	var headers map[string]string
 	var body []byte
+	var dispatchErr error
+	privateObjectLog, isPrivateObject := protocol.PrivateObjectRouteLogContext(
+		req.Method,
+		req.Path,
+		req.Headers,
+	)
 
 	if c.cfg.Dispatcher == nil {
 		statusCode = 501
 		headers = map[string]string{"Content-Type": "text/plain"}
 		body = []byte("no dispatcher")
 	} else {
-		var err error
-		statusCode, headers, body, err = c.cfg.Dispatcher(ctx, req)
-		if err != nil {
-			logger.Errorf(ctx, "[relay-client] dispatch error (req_id=%d): %v", req.RequestID, err)
-			statusCode = 502
-			headers = map[string]string{"Content-Type": "text/plain"}
-			body = []byte(fmt.Sprintf("dispatch error: %v", err))
+		statusCode, headers, body, dispatchErr = c.cfg.Dispatcher(ctx, req)
+	}
+
+	request.mu.Lock()
+	defer request.mu.Unlock()
+	defer requests.remove(req.RequestID, request)
+	request.terminal = true
+	wasCancelled := request.cancelRequested || ctx.Err() != nil
+	request.cancel()
+
+	if wasCancelled {
+		c.writeMu.Lock()
+		writeErr := protocol.WriteCancelled(conn, req.RequestID)
+		c.writeMu.Unlock()
+		if writeErr != nil {
+			if isPrivateObject {
+				logPrivateObjectClientStream(
+					ctx,
+					privateObjectLog,
+					protocol.RouteLogOutcomeInterrupted,
+				)
+			} else {
+				logger.Errorf(ctx, "[relay-client] cancelled write error (req_id=%d): %v", req.RequestID, writeErr)
+			}
+			_ = conn.Close()
+		}
+		return
+	}
+
+	if dispatchErr != nil {
+		if errors.Is(dispatchErr, ErrResponseLimit) {
+			if isPrivateObject {
+				logPrivateObjectClientStream(
+					ctx,
+					privateObjectLog,
+					protocol.RouteLogOutcomeRejected,
+				)
+			} else {
+				logger.Errorf(ctx, "[relay-client] bounded response rejected (req_id=%d): %v", req.RequestID, dispatchErr)
+			}
+			_ = conn.Close()
+			return
+		}
+		if isPrivateObject {
+			logPrivateObjectClientStream(
+				ctx,
+				privateObjectLog,
+				protocol.RouteLogOutcomeRetryable,
+			)
+		} else {
+			logger.Errorf(ctx, "[relay-client] dispatch error (req_id=%d): %v", req.RequestID, dispatchErr)
+		}
+		statusCode = 502
+		headers = map[string]string{"Content-Type": "text/plain"}
+		body = []byte(fmt.Sprintf("dispatch error: %v", dispatchErr))
+	}
+
+	if policy, ok := protocol.RoutePolicyForPath(req.Path); ok {
+		if err := policy.ValidateResponse(statusCode, headers, body); err != nil {
+			logPrivateObjectClientStream(
+				ctx,
+				privateObjectLog,
+				protocol.RouteLogOutcomeRejected,
+			)
+			_ = conn.Close()
+			return
 		}
 	}
 
-	// Block 2: all writes through writeMu.
+	// The per-request lock serializes the terminal choice with Cancel handling:
+	// once Response is selected, no Cancelled frame can follow it.
 	c.writeMu.Lock()
 	writeErr := protocol.WriteResponseFrame(conn, req.RequestID, statusCode, headers, body)
 	c.writeMu.Unlock()
 	if writeErr != nil {
-		logger.Errorf(ctx, "[relay-client] response write error (req_id=%d): %v", req.RequestID, writeErr)
+		if isPrivateObject {
+			logPrivateObjectClientStream(
+				ctx,
+				privateObjectLog,
+				protocol.RouteLogOutcomeInterrupted,
+			)
+		} else {
+			logger.Errorf(ctx, "[relay-client] response write error (req_id=%d): %v", req.RequestID, writeErr)
+		}
+		_ = conn.Close()
 	}
+}
+
+func logPrivateObjectClientStream(
+	ctx context.Context,
+	logContext protocol.RouteLogContext,
+	outcome string,
+) {
+	logger.Errorf(
+		ctx,
+		"[relay-client] route=%s method=%s outcome=%s request_id=%s",
+		logContext.Category,
+		logContext.Method,
+		outcome,
+		logContext.RequestID,
+	)
 }
 
 func (c *Client) pingLoop(ctx context.Context, conn net.Conn, done <-chan struct{}) {

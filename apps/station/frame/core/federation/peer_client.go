@@ -50,6 +50,22 @@ type PeerStreamResponse struct {
 	Body       io.ReadCloser
 }
 
+// PeerResponseError preserves one bounded non-success response so the domain
+// owner can decode its canonical error contract without Federation learning
+// business error semantics.
+type PeerResponseError struct {
+	StatusCode int
+	Headers    http.Header
+	Body       []byte
+}
+
+func (e *PeerResponseError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("Federation peer returned HTTP %d", e.StatusCode)
+}
+
 type peerClient struct {
 	client             *http.Client
 	keys               *authfed.KeyCache
@@ -257,37 +273,38 @@ func (c *peerClient) Open(
 	}
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
-		// #region debug-point K:federated-attachment-error-body
-		var diagnosticBody []byte
-		if call.Route == PeerRouteConversationAttachmentObject {
-			diagnosticBody, _ = io.ReadAll(io.LimitReader(response.Body, 1024))
-		}
-		// #endregion
-		_, _ = io.Copy(
-			io.Discard,
-			io.LimitReader(
-				response.Body,
-				int64(peerResponseLimit)-int64(len(diagnosticBody)),
-			),
+		responseBody, readErr := io.ReadAll(
+			io.LimitReader(response.Body, peerResponseLimit+1),
 		)
 		_ = response.Body.Close()
-
-		detail := fmt.Errorf("peer returned HTTP %d", response.StatusCode)
-		// #region debug-point K:federated-attachment-error-body
-		if call.Route == PeerRouteConversationAttachmentObject {
-			detail = fmt.Errorf(
-				"peer returned HTTP %d code=%q details=%q body=%s",
-				response.StatusCode,
-				response.Header.Get("X-Peers-Error-Code"),
-				response.Header.Get("X-Peers-Error-Details"),
-				strings.TrimSpace(string(diagnosticBody)),
+		if readErr != nil {
+			return nil, delivery.NewError(
+				delivery.FailureTransportUnavailable,
+				"read Federation peer error response",
+				readErr,
 			)
 		}
-		// #endregion
+		if len(responseBody) > peerResponseLimit {
+			return nil, delivery.NewError(
+				delivery.FailureInvalidResult,
+				"read Federation peer error response",
+				errors.New("peer error response exceeds the configured limit"),
+			)
+		}
+		failureCode := delivery.FailureTransportUnavailable
+		if response.StatusCode >= http.StatusBadRequest &&
+			response.StatusCode < http.StatusInternalServerError &&
+			response.StatusCode != http.StatusTooManyRequests {
+			failureCode = delivery.FailureDomainRejected
+		}
 		return nil, delivery.NewError(
-			delivery.FailureTransportUnavailable,
+			failureCode,
 			"call Federation peer",
-			detail,
+			&PeerResponseError{
+				StatusCode: response.StatusCode,
+				Headers:    response.Header.Clone(),
+				Body:       responseBody,
+			},
 		)
 	}
 

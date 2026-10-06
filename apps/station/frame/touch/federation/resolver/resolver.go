@@ -23,6 +23,7 @@ import (
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -369,14 +370,23 @@ func cachedToProtos(c *fedcache.Cached, canon string) (*profilepb.ActorProfileEn
 	}
 
 	profile := &modelpb.ActorProfile{
-		Username:     localPart,
-		Acct:         localPart,
-		DisplayName:  a.Name,
-		Note:         a.Summary,
-		Avatar:       a.Icon,
-		Header:       a.Image,
-		Url:          a.Url,
-		ServerDomain: a.HomeStationDomain,
+		Username:          localPart,
+		Acct:              localPart,
+		DisplayName:       a.Name,
+		Note:              a.Summary,
+		Avatar:            a.Icon,
+		Header:            a.Image,
+		Url:               a.Url,
+		ServerDomain:      a.HomeStationDomain,
+		FederatedHandle:   canon,
+		HomeStationPeerId: a.HomeStationPeerID,
+		HomeStationDomain: a.HomeStationDomain,
+		Discoverability:   modelpb.ActorVisibility(a.Visibility),
+		Ref: &modelpb.ActorRef{
+			Ptid: a.PTID,
+			Acct: canon,
+			Kind: modeldb.ActorKindFromShorthand(a.Kind),
+		},
 	}
 	if a.PTID != "" {
 		profile.PeersTouch = &modelpb.PeersTouchInfo{NetworkId: a.PTID}

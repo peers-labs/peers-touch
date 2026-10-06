@@ -2236,10 +2236,13 @@ mod tests {
                             mention_routing: None,
                             subtype_authority: None,
                             station_signing_key_attestation: Some(attestation),
+                            receiver_verified_sender_signing_key: None,
                         }),
                     },
                 )),
             }),
+            reaction_projection_revision: 0,
+            remote_delivery: None,
         }
     }
 
