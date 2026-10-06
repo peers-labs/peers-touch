@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -9,6 +10,7 @@ import { createPlanRepository } from './plan-test-fixture.mjs';
 import {
   activatePlan,
   cancelPlan,
+  digestRunCompletionCandidate,
   runPlanctl,
   summarizeExecution,
 } from './planctl.mjs';
@@ -132,4 +134,34 @@ test('completion review precedes the single guarded Run update', () => {
   assert.match(advance, /run\.revision !== resolved\.run\.revision/u);
   assert.match(advance, /run\.recordDigest !== resolved\.run\.recordDigest/u);
   assert.doesNotMatch(advance, /Restore the exact previous run|rollback/u);
+});
+
+test('completion candidate digest uses the delegated review envelope', () => {
+  const resolved = {
+    mount: { planVersionDigest: 'plan-digest' },
+    snapshot: { recordDigest: 'snapshot-digest' },
+    run: { runId: 'run-id', revision: 7 },
+  };
+  const candidate = {
+    currentTaskId: 'TASK-02',
+    exhaustion: null,
+  };
+  const envelope = {
+    kind: 'peers-touch-execution-run-completion-candidate',
+    planVersionDigest: 'plan-digest',
+    snapshotDigest: 'snapshot-digest',
+    runId: 'run-id',
+    runRevision: 7,
+    transition: {
+      to: 'done',
+      nextTaskId: 'TASK-02',
+      exhaustion: null,
+    },
+  };
+  const expected = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(envelope))
+    .digest('hex');
+
+  assert.equal(digestRunCompletionCandidate(resolved, candidate), expected);
 });

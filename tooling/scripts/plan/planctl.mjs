@@ -34,11 +34,26 @@ function fail(code, message, details) {
   throw new PlanPackageError(code, message, details);
 }
 
-function digestCompletionCandidate(value) {
+function digest(value) {
   return crypto
     .createHash('sha256')
     .update(JSON.stringify(value))
     .digest('hex');
+}
+
+export function digestRunCompletionCandidate(resolved, candidate) {
+  return digest({
+    kind: 'peers-touch-execution-run-completion-candidate',
+    planVersionDigest: resolved.mount.planVersionDigest,
+    snapshotDigest: resolved.snapshot.recordDigest,
+    runId: resolved.run.runId,
+    runRevision: resolved.run.revision,
+    transition: {
+      to: 'done',
+      nextTaskId: candidate.currentTaskId,
+      exhaustion: candidate.exhaustion,
+    },
+  });
 }
 
 function parseArguments(argv) {
@@ -488,7 +503,7 @@ export async function advancePlan(_planPath, options) {
         planPackage: resolved.planPackage,
         session,
         workItemId: session.state.workItemId,
-        candidatePlanDigest: digestCompletionCandidate(candidate),
+        candidatePlanDigest: digestRunCompletionCandidate(resolved, candidate),
       },
       options.completionReviewDependencies,
     );
