@@ -562,6 +562,7 @@ def _remote_runtime_script() -> str:
             }
             lines = [
                 "$ErrorActionPreference = 'Stop'",
+                "$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'",
                 "$env:PEERS_AUTH_SECRET = "
                 + "(Get-Content -Raw -LiteralPath "
                 + ps_literal(secret_root / "auth-secret")
@@ -583,6 +584,13 @@ def _remote_runtime_script() -> str:
                 ]
             )
             runner_path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+        def rotate_service_log():
+            if not log_path.is_file():
+                return
+            previous_log_path = log_path.with_suffix(".previous.log")
+            previous_log_path.unlink(missing_ok=True)
+            log_path.replace(previous_log_path)
 
         def configure_firewall():
             ports = [cfg["httpPort"]]
@@ -645,16 +653,27 @@ def _remote_runtime_script() -> str:
             apply_secret_acl()
             prepare_config()
             stop_owned()
+            rotate_service_log()
             build_env = os.environ.copy()
             build_env.update(
                 {
                     "CGO_ENABLED": "1",
                     "GOMODCACHE": str(runtime / "cache" / "go-mod"),
                     "GOCACHE": str(runtime / "cache" / "go-build"),
+                    "GOMAXPROCS": "2",
                 }
             )
             run(
-                ["go", "build", "-trimpath", "-o", str(binary), "."],
+                [
+                    "go",
+                    "build",
+                    "-p=1",
+                    "-trimpath",
+                    "-ldflags=-s -w",
+                    "-o",
+                    str(binary),
+                    ".",
+                ],
                 cwd=source / "apps" / "station" / "app",
                 env=build_env,
             )
