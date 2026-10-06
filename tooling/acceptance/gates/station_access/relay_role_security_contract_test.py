@@ -130,7 +130,10 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
             subprocess.CompletedProcess(
                 args=[],
                 returncode=1,
-                stdout="",
+                stdout=(
+                    "New, (NONE), Cipher is (NONE)\n"
+                    "Protocol  : TLSv1.2\n"
+                ),
                 stderr="tlsv1 alert protocol version",
             ),
         ]
@@ -140,6 +143,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         self.assertEqual(evidence["protocol"], "TLSv1.3")
         self.assertEqual(evidence["tls12"], "rejected")
         self.assertEqual(len(evidence["certificateSha256"]), 64)
+        self.assertNotIn("-brief", run.call_args_list[1].args[0])
 
     @patch(
         "tooling.acceptance.gates.station_access."
