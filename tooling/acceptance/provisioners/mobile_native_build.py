@@ -1290,7 +1290,11 @@ def construct_build_environment(
             ) from error
         gradle_user_home = run_root / "gradle-home"
         gradle_user_home.mkdir(parents=True, exist_ok=True)
-        environment["GRADLE_OPTS"] = "-Dorg.gradle.offline=true"
+        environment["GRADLE_OPTS"] = (
+            "-Dorg.gradle.offline=true "
+            "-Dorg.gradle.daemon=false "
+            "-Dkotlin.compiler.execution.strategy=in-process"
+        )
         environment["GRADLE_USER_HOME"] = str(gradle_user_home.resolve())
         environment["NDK_HOME"] = str(ndk_roots[0].resolve())
         environment["TARGET_RANLIB"] = str(ranlib.absolute())
