@@ -53,6 +53,7 @@ WORKFLOW_KERNEL_FILES = (
     "tooling/scripts/local-dev/workflow-binding.mjs",
     "tooling/scripts/local-dev/workflow-host-adapters.mjs",
     "tooling/scripts/local-dev/workflow-kernel.mjs",
+    "tooling/scripts/local-dev/workflow-owner-reference.mjs",
     "tooling/scripts/local-dev/workflow-state-inspector.mjs",
     "tooling/scripts/local-dev/workflow-tool-intent.mjs",
 )

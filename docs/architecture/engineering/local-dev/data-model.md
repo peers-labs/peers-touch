@@ -77,6 +77,7 @@ interface WorkspaceRecord {
   allowedCapabilities: StationCapability[];
   purpose: string;
   owner: string;
+  createdBy?: WorkflowOwnerReference;
   registeredAt: string;
   updatedAt: string;
   updatedBy: string;
@@ -89,6 +90,11 @@ ID, and registered branch before every resolved command. Current Git HEAD is
 captured from the worktree at operation time and is never persisted in the
 registration. A root or branch mismatch makes the registration `stale`;
 ordinary commits, merges, rebases, and pulls do not.
+
+`owner` remains the Git/user actor label. `createdBy`, when present, is the
+verified main-session reference captured by the Workflow Kernel during
+worktree creation or first registration. It must not be inferred from `owner`,
+branch names, or process-global environment variables.
 
 Schema v1 authoritative registrations exclude `WorkspaceRecord.head`. This is
 a development-stage hard correction, not a version migration. Runtime has no
@@ -321,6 +327,8 @@ interface DevelopmentWorkflowSnapshot {
   worktrees: Array<{
     workspaceId: string;
     name: string | null;
+    createdBy: WorkflowOwnerReference | null;
+    workflowOwner: WorkflowOwnerReference | null;
     branches: string[];
     workState:
       | 'in-progress'
@@ -335,6 +343,7 @@ interface DevelopmentWorkflowSnapshot {
       workItemId: string;
       journeyId: string | null;
       purpose: string;
+      workflowOwner: WorkflowOwnerReference | null;
       state: 'DECLARED' | 'ACTIVE' | 'RELEASING' | 'STALE';
       plan: null | {
         mountId: string;

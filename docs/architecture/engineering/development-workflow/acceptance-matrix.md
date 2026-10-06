@@ -42,6 +42,7 @@
 | DEV-A31 | Amendment integrity | DWF-D42 | Rewrite history, skip the audit record, or execute against a stale snapshot | The operation fails closed before task execution | Plan package and mount tests |
 | DEV-A32 | Explicit North Star approval | DWF-D42 | Generate and validate a new Plan without a user decision | Validation reports `candidate`; mount is denied until `approve-north-star` binds actor, time, decision ref, Plan ID, and digest | Plan mount and CLI tests |
 | DEV-A33 | Criterion coverage | DWF-D42 | Omit a criterion or map it to unknown/mismatched Task, closure, or Gate IDs | `PLAN_CRITERION_COVERAGE_INVALID` rejects the Plan; ordinary valid remapping preserves North Star approval | Plan package and amendment tests |
+| DEV-A34 | Worktree main-session provenance | DWF-D43 | Create an authorized Agent worktree and start Development from it | Creation, registration, declaration, Session, active-work, and Snapshot expose the verified root-chat OWNER; missing or conflicting current ownership fails closed | Worktree creation, binding, declaration, Session, active-work, and Snapshot tests |
 
 ## Acceptance Rules
 
@@ -54,5 +55,6 @@
   only.
 - Declaration release alone is not close evidence; `close-ready` consumes the
   exact `DevelopmentCloseReceipt`.
-- Output must not expose credentials, raw conversation identifiers, canonical
-  roots, or user-home paths.
+- Output must not expose credentials, canonical roots, or user-home paths.
+  It may expose the opaque host root-chat ID needed for local cross-Agent
+  attribution; that ID is not copied into Git, logs, or Acceptance evidence.

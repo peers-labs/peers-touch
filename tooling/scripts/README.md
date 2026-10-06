@@ -47,6 +47,7 @@ export VITE_PORT=3000
 | `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId` 与 expected HEAD；必须从被绑定 root 运行，且不受无关 sibling worktree 变更影响 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、sibling worktree churn、持久 schema，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义 |
+| `local-dev/worktree-create.mjs` | 推荐 | 创建经用户授权的 Agent worktree 并持久化主会话来源 | `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]`；禁止 Agent 直接运行 `git worktree add` |
 | `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
 | `local-dev/dev-resource-plan.mjs` | 内部 owner | 聚合标准 `ModuleImpact`、解析 target 依赖、计算峰值容量并把 ready target 的具体资源 claims 原子写入现有 Development declaration | 由 `make dev-resources-prepare/status` 与 `make dev-resource-record` 调用；不启动或清理物理资源，业务 Gate 只 attach 到 Runtime Owner manifest |
 | `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |

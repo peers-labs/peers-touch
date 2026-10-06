@@ -1,7 +1,7 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
+.PHONY: worktree-create worktree-creation-status env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release dev-close dev-close-status \
         dev-resources-prepare dev-resources-status dev-resource-record \
@@ -19,6 +19,7 @@
 DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
 MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
+WORKTREE_CREATE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/worktree-create.mjs
 WORKFLOW_SNAPSHOT_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-snapshot.mjs
 WORKFLOW_DOCTOR_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-doctor.mjs
 PLANCTL_SCRIPT := tooling/scripts/plan/planctl.mjs
@@ -51,6 +52,21 @@ DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
 ACTIVE_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/active-work.mjs
 WORKTREE_OBSERVE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/worktree-observe.mjs
 COMPLETION_REVIEW_SCRIPT := $(LOCAL_DEV_SCRIPTS)/completion-review.mjs
+
+worktree-create:
+	@if [ -z "$(WORKTREE)" ] || [ -z "$(BRANCH)" ] || [ -z "$(PURPOSE)" ]; then \
+		echo "Usage: make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]"; \
+		exit 1; \
+	fi
+	@node $(WORKTREE_CREATE_SCRIPT) create \
+		--source-root "$(CURDIR)" \
+		--path "$(WORKTREE)" \
+		--branch "$(BRANCH)" \
+		--start "$(or $(START),HEAD)" \
+		--purpose "$(PURPOSE)"
+
+worktree-creation-status:
+	@node $(WORKTREE_CREATE_SCRIPT) status --workspace-root "$(CURDIR)"
 
 env-register:
 	@if [ -z "$(PROFILE)" ] || [ -z "$(SLOT)" ] || [ -z "$(ENV_CAPABILITIES_ARG)" ] || [ -z "$(ENV_PURPOSE_ARG)" ]; then \

@@ -21,6 +21,10 @@ import {
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
 import {
+  hashWorkflowRootChatIdentity,
+  workflowOwnerReferenceFromBinding,
+} from './workflow-owner-reference.mjs';
+import {
   projectWorkflowBinding,
 } from './workflow-binding-projection.mjs';
 import {
@@ -35,7 +39,7 @@ const CHILD_ROLES = new Set(['WORKER', 'REVIEWER']);
 const TERMINAL_RESULTS = new Set(['PASS', 'FAIL', 'BLOCKED', 'CANCELLED']);
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
-const OWNER_KEYS = new Set([
+const LEGACY_OWNER_KEYS = new Set([
   'bindingEvent',
   'boundAt',
   'digest',
@@ -46,6 +50,7 @@ const OWNER_KEYS = new Set([
   'rootChatHash',
   'workspaceId',
 ]);
+const OWNER_KEYS = new Set([...LEGACY_OWNER_KEYS, 'rootChatId']);
 const ASSIGNMENT_KEYS = new Set([
   'assignmentId',
   'digest',
@@ -164,7 +169,7 @@ function hostIdentityHash(host, kind, value) {
 }
 
 export function rootChatHash(host, rootChatId) {
-  return hostIdentityHash(host, 'root', rootChatId);
+  return hashWorkflowRootChatIdentity(host, rootChatId);
 }
 
 export function executionSessionHash(host, executionSessionId) {
@@ -409,16 +414,34 @@ function validateDigestRecord(value, keys, kind, code) {
 }
 
 export function validateWorkflowOwnerBinding(value, expected = {}) {
-  validateDigestRecord(
-    value,
-    OWNER_KEYS,
-    'peers-touch-workflow-owner-binding',
-    'WORKFLOW_OWNER_BINDING_INVALID',
-  );
+  const legacy = hasExactKeys(value, LEGACY_OWNER_KEYS);
+  if (!legacy && !hasExactKeys(value, OWNER_KEYS)) {
+    fail(
+      'WORKFLOW_OWNER_BINDING_INVALID',
+      'peers-touch-workflow-owner-binding has an invalid shape',
+    );
+  }
+  if (value.kind !== 'peers-touch-workflow-owner-binding') {
+    fail(
+      'WORKFLOW_OWNER_BINDING_INVALID',
+      'peers-touch-workflow-owner-binding has an invalid shape',
+    );
+  }
+  const unsigned = { ...value };
+  delete unsigned.digest;
+  delete unsigned.rootChatId;
+  if (!SHA256.test(value.digest) || digest(unsigned) !== value.digest) {
+    fail(
+      'WORKFLOW_OWNER_BINDING_INVALID',
+      'peers-touch-workflow-owner-binding digest does not match',
+    );
+  }
   const canonicalRoot = realpathSync(value.executionRoot);
   if (
     !HOSTS.has(value.host) ||
     !SHA256.test(value.rootChatHash) ||
+    (!legacy &&
+      rootChatHash(value.host, value.rootChatId) !== value.rootChatHash) ||
     value.role !== 'OWNER' ||
     value.bindingEvent !== 'PRE_TOOL_USE' ||
     !timestamp(value.boundAt) ||
@@ -620,13 +643,16 @@ export function bindWorkflowOwner(host, rootChatId, executionRoot, options = {})
     kind: 'peers-touch-workflow-owner-binding',
     host,
     rootChatHash: rootChatHash(host, rootChatId),
+    rootChatId,
     role: 'OWNER',
     executionRoot: canonicalRoot,
     workspaceId: workspaceIdForRoot(canonicalRoot),
     boundAt: operationDate(options.now).toISOString(),
     bindingEvent: 'PRE_TOOL_USE',
   };
-  const binding = { ...unsigned, digest: digest(unsigned) };
+  const digestInput = { ...unsigned };
+  delete digestInput.rootChatId;
+  const binding = { ...unsigned, digest: digest(digestInput) };
   validateWorkflowOwnerBinding(binding, {
     host,
     rootChatHash: unsigned.rootChatHash,
@@ -648,7 +674,64 @@ export function bindWorkflowOwner(host, rootChatId, executionRoot, options = {})
       existing.workspaceId === candidate.workspaceId &&
       existing.bindingEvent === candidate.bindingEvent,
   );
-  return { binding: result.value, created: result.created };
+  if (typeof result.value.rootChatId !== 'string') {
+    const migrated = { ...result.value, rootChatId };
+    validateWorkflowOwnerBinding(migrated, {
+      host,
+      rootChatHash: unsigned.rootChatHash,
+    });
+    replaceCurrent(file, migrated);
+    return { binding: migrated, created: false, migrated: true };
+  }
+  return { binding: result.value, created: result.created, migrated: false };
+}
+
+export function readWorkflowOwnerReferences(options = {}) {
+  const records = [];
+  const errors = [];
+  for (const entry of ownerDirectories(options)) {
+    try {
+      const owner = validateWorkflowOwnerBinding(
+        readOwnedJson(
+          path.join(entry.directory, 'owner-binding.json'),
+          'WORKFLOW_OWNER_BINDING_INVALID',
+          true,
+        ),
+        {
+          host: entry.host,
+          rootChatHash: entry.rootChatHash,
+        },
+      );
+      records.push({
+        workspaceId: owner.workspaceId,
+        boundAt: owner.boundAt,
+        released: workflowOwnerIsReleased(owner, options),
+        workflowOwner:
+          typeof owner.rootChatId !== 'string'
+            ? null
+            : workflowOwnerReferenceFromBinding(owner),
+        rootBindingDigest: owner.digest,
+      });
+    } catch (error) {
+      errors.push({
+        host: entry.host,
+        rootChatHash: entry.rootChatHash,
+        code: error?.code ?? 'WORKFLOW_OWNER_BINDING_INVALID',
+        message: error?.message ?? String(error),
+      });
+    }
+  }
+  records.sort(
+    (left, right) =>
+      left.boundAt.localeCompare(right.boundAt) ||
+      left.rootBindingDigest.localeCompare(right.rootBindingDigest),
+  );
+  errors.sort(
+    (left, right) =>
+      left.host.localeCompare(right.host) ||
+      left.rootChatHash.localeCompare(right.rootChatHash),
+  );
+  return { records, errors };
 }
 
 function ownerDirectories(options = {}) {
@@ -1577,7 +1660,7 @@ export function resolveEventWorkflowBinding(event, executionRoot, options = {}) 
     identity.rootChatId,
     options,
   );
-  if (owner === null) {
+  if (owner === null || typeof owner.rootChatId !== 'string') {
     if (event.event !== 'PRE_TOOL_USE') {
       return { mode: 'PREWARM', projection: null };
     }

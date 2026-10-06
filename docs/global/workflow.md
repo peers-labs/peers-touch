@@ -90,6 +90,11 @@ and `session_id` only for execution-session identity. No host-field alias,
 legacy conversation record, process-global identity, or worktree-wide binding
 enumeration may select authority.
 
+The OWNER root ID is retained only in owner-controlled machine-local state.
+Registrations, Development declarations, Sessions, active-work, and Workflow
+Snapshot expose the same verified owner reference; Git author/email is never a
+conversation identity.
+
 Default rule:
 - All edits, generated files, staging, commits, and PR operations must stay
   inside the active worktree.
@@ -107,7 +112,23 @@ PR review, but write scope remains bound to the active worktree.
 
 Agents must not create a worktree merely to bypass Plan mount, lifecycle, or
 resource conflicts. A worktree is created only when the user explicitly
-chooses isolation or concurrency.
+chooses isolation or concurrency. After that explicit choice, use the
+owner-aware command rather than raw `git worktree add`:
+
+```bash
+make worktree-create \
+  WORKTREE=<absolute-path> \
+  BRANCH=<new-branch> \
+  PURPOSE='<why this worktree exists>' \
+  [START=<ref>]
+```
+
+The command writes
+`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/worktree-creation.json`
+with the creating main-session ID, its verified OWNER binding digest, the
+source workspace, initial branch/HEAD, purpose, and the creation Action
+Receipt. The receipt is execution provenance, not a substitute for the user's
+explicit authorization. `make worktree-creation-status` reads that record.
 
 Before an explicitly authorized worktree removal, stop its runtime resources
 and run the coordinated close with `ENVIRONMENT_POLICY=unregister`. Never

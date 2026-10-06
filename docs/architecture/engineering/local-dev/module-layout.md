@@ -36,6 +36,7 @@ tooling/scripts/plan/
 |---|---|
 | `tooling/scripts/local-dev/workflow-snapshot-core.mjs` | Read-only redacted join over mounts, runs, topology, registrations, declarations, Sessions, active-work, and leases |
 | `tooling/scripts/local-dev/workflow-snapshot.mjs` | One-shot JSON CLI over Workflow Snapshot core |
+| `tooling/scripts/local-dev/worktree-create.mjs` | Explicit Agent worktree creation and immutable main-session provenance |
 | `tooling/scripts/local-dev/machine-dev-registry.mjs` | Machine registry, profile validation, live lease projection, and committed resource-plan admission authority |
 | `tooling/scripts/local-dev/dev-resource-plan.mjs` | DWF-owned ModuleImpact aggregation and planner-claim provenance consumed by Local Dev admission |
 | `tooling/scripts/local-dev/development-close-store.mjs` | Digest-protected per-work-item close receipt and new-work admission guard |

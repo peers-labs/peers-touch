@@ -26,6 +26,8 @@ help:
 	@echo "==========="
 	@echo ""
 	@echo "Local Dev (worktree-isolated):"
+	@echo "  make worktree-create ...       Create a worktree with durable main-session provenance"
+	@echo "  make worktree-creation-status  Show this worktree's creation provenance"
 	@echo "  make env-register ...          Register this workspace, profile, slot, and capabilities"
 	@echo "  make env-update ...            Update this workspace's authoritative binding"
 	@echo "  make env-unregister            Remove this idle workspace registration"

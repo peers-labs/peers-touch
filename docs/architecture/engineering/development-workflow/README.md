@@ -123,7 +123,7 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 |---|---|
 | [design.md](./design.md) | 控制面边界、stable Plan、amendment、mount、snapshot、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D42 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D43 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
 | [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33 的 Kernel、宿主投影和 rollout 流程 |
@@ -139,7 +139,7 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 
 ## 5. Current Status
 
-DWF-D01..DWF-D42 已接受。仓库与 PR 可包含多个 stable Plan；Project Ledger
+DWF-D01..DWF-D43 已接受。仓库与 PR 可包含多个 stable Plan；Project Ledger
 的显式 PlanMount 是执行 worktree 唯一 Plan 占用真源。执行时以 immutable
 ExecutionPlanSnapshot 固定每次读取的内容；普通修订追加原因与影响记录，并让
 同一个 ExecutionRun 以 CAS 指向新快照，无需取消或重挂。只有修改或削弱

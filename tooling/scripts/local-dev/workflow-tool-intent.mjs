@@ -16,11 +16,14 @@ const WRITE_TOOL_NAMES =
   /(applypatch|edit|strreplace|write|delete|move|rename)/;
 const SHELL_TOOL_NAMES = /(bash|command|exec|run|shell|terminal)/;
 const OWNER_TARGETS = new Set([
+  'worktree-create',
+  'worktree-creation-status',
   'env-register',
   'env-update',
   'env-unregister',
   'env-check',
   'env-status-all',
+  'profile',
   'dev-start',
   'dev-update',
   'dev-check',
@@ -28,6 +31,7 @@ const OWNER_TARGETS = new Set([
   'dev-release',
   'dev-session-start',
   'dev-session-status',
+  'dev-session-archive',
   'dev-transition',
   'dev-functional-result',
   'active-work-sync',

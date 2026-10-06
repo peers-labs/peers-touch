@@ -4,6 +4,9 @@ import {
   canonicalize,
   isObject,
 } from './dev-work-schema.mjs';
+import {
+  validateWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 export const SESSION_SCHEMA_VERSION = 1;
 export const SESSION_KIND = 'peers-touch-development-session';
@@ -120,7 +123,7 @@ const STATE_REQUIRED_KEYS = new Set([
   'startedAt',
   'updatedAt',
 ]);
-const STATE_OPTIONAL_KEYS = new Set(['hostRequests']);
+const STATE_OPTIONAL_KEYS = new Set(['hostRequests', 'workflowOwner']);
 const SOURCE_KEYS = new Set([
   'commit',
   'tree',
@@ -555,6 +558,13 @@ export function validateSessionState(state) {
   if (state.runtimeBindingRef !== null) {
     requiredText(state.runtimeBindingRef, 'runtimeBindingRef', 2048);
   }
+  if (Object.hasOwn(state, 'workflowOwner')) {
+    try {
+      validateWorkflowOwnerReference(state.workflowOwner, { nullable: true });
+    } catch {
+      sessionFail('SESSION_SCHEMA_INVALID', 'workflowOwner is invalid');
+    }
+  }
   if (state.currentFailure !== null) validateFailure(state.currentFailure);
   if (state.hostRequests !== undefined) {
     if (!Array.isArray(state.hostRequests) || state.hostRequests.length > 128) {
@@ -709,6 +719,14 @@ export function createInitialSessionState(input, at) {
     lastVerification: null,
     startedAt: at,
     updatedAt: at,
+    ...(input.workflowOwner === undefined
+      ? {}
+      : {
+          workflowOwner: validateWorkflowOwnerReference(
+            input.workflowOwner,
+            { nullable: true },
+          ),
+        }),
   };
   return validateSessionState(state);
 }

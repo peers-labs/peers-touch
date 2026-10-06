@@ -300,7 +300,10 @@ The first blockable `PreToolUse` atomically creates one OWNER binding from the
 host's root-chat identity. TRAE uses only `chat_session_id` for that identity;
 its `session_id` identifies an execution session and never creates another
 owner. Cursor and Codex each use their one documented root-chat field. Generic
-alias probing and process-global environment fallbacks are forbidden.
+alias probing and process-global environment fallbacks are forbidden. The
+opaque root-chat ID is retained only in owner-controlled machine-local state
+and is copied into verified workflow-owner references so status consumers can
+identify the originating main session.
 
 A WORKER or REVIEWER exists only after the OWNER creates a bounded assignment.
 The child first atomically publishes one assignment-keyed claim for its

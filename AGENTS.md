@@ -664,7 +664,10 @@ edits, status claims, and completion claims.
    blockable `PreToolUse`. TRAE uses only `chat_session_id` for owner identity;
    its `session_id` is execution-session identity and never creates another
    owner. Cursor uses only `conversation_id`; Codex uses only `session_id`.
-   Host-field aliases and process-global identity fallbacks are forbidden.
+   The canonical root ID is persisted only in owner-controlled machine-local
+   state together with its hash and binding digest so another Agent can identify
+   the originating main session. Host-field aliases and process-global identity
+   fallbacks are forbidden.
 2. `WORKER` and `REVIEWER` are create-once assigned children. Every child
    preserves `rootBindingDigest`, direct `parentBindingDigest`, assignment,
    Development Session, role, and bounded lease. Expired or terminal children
@@ -711,11 +714,12 @@ edits, status claims, and completion claims.
    Resume and context compaction verify the persisted values; they MUST NOT
    recapture current Git state as a replacement baseline. Unrelated sibling
    worktree inventory is machine topology and never part of this binding.
-11. Do not run `git switch`, `git checkout`, `git worktree add`,
+11. Do not run `git switch`, `git checkout`, raw `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
-    A Plan mount or lifecycle conflict is never implicit permission to create
-    another worktree.
+   Authorized Agent creation must use `make worktree-create` so the target
+   workspace receives immutable main-session provenance. A Plan mount or
+   lifecycle conflict is never implicit permission to create another worktree.
 12. A repository or PR may contain multiple stable Plans. A Plan contains no
     execution worktree identity; branch scans, directory order, lifecycle state
     and synchronized foreign Plans never select execution ownership.
@@ -820,10 +824,12 @@ arbitrary replacement JSON.
 - **Next Plan created** → mount it only after the prior mount is released by
   completion, cancellation, or explicit owner unmount. Never create a worktree
   as an Agent workaround.
-- **Worktree binding created** → record the verified `workspace_id`,
-  `initial_head`, and `expected_head`; initially both HEAD fields are
-  identical. Never derive identity from a skill path or copy it from another
-  worktree.
+- **Worktree created** → record the verified `workspace_id`, branch, initial
+  HEAD, purpose, creation Action Receipt, and the creating OWNER's host,
+  `rootChatId`, `rootChatHash`, and `rootBindingDigest`.
+- **Worktree binding created** → record `initial_head` and `expected_head`;
+  initially both are identical. Never derive either identity from a skill path,
+  Git actor, or another worktree.
 - **Task/Session transition** → Dev Workflow updates manifest/Task/Session
   owners first, then invokes active-work sync with revision/CAS.
 - **Task done with ready successor** → Dev Workflow advances the manifest,
@@ -855,7 +861,7 @@ Context Anchor rules:
   after that exact projection is observable in the assistant response or host
   transcript.
 - The chat projection records `<worktree-name> (<repo-root>)`, verified branch,
-  `workspaceId`, initial HEAD, and expected/verified HEAD.
+  `workspaceId`, main-session ID, initial HEAD, and expected/verified HEAD.
   It never persists a developer or CI user-home absolute path or an ambiguous
   bare `<repo-root>`.
 - The chat projection also records completed delta, dependency-ready queue,

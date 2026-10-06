@@ -20,6 +20,7 @@ import {
   createWorkflowBindingAssignment,
   inspectWorkflowBindingLiveness,
   recordWorkflowPreCompact,
+  readWorkflowOwnerBinding,
   readWorkflowProjectionByActor,
   releaseWorkflowOwner,
   resolveEventWorkflowBinding,
@@ -130,7 +131,7 @@ function actor(projection) {
   };
 }
 
-test('creates one immutable OWNER without persisting the raw root chat', () => {
+test('creates one immutable OWNER with durable root chat attribution', () => {
   const scope = fixture();
   try {
     const first = bindWorkflowOwner('trae', 'visible-secret', scope.root, {
@@ -150,10 +151,63 @@ test('creates one immutable OWNER without persisting the raw root chat', () => {
       { machineRoot: scope.machineRoot },
     );
     assert.equal(file.includes('visible-secret'), false);
-    assert.equal(readFileSync(file, 'utf8').includes('visible-secret'), false);
+    assert.equal(first.binding.rootChatId, 'visible-secret');
+    assert.equal(readFileSync(file, 'utf8').includes('visible-secret'), true);
     if (process.platform !== 'win32') {
       assert.equal(lstatSync(file).mode & 0o777, 0o600);
     }
+  } finally {
+    scope.close();
+  }
+});
+
+test('lazily adds the root chat ID to a legacy OWNER without changing lineage', () => {
+  const scope = fixture();
+  try {
+    const first = bindWorkflowOwner('trae', 'legacy-chat', scope.root, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:00.000Z'),
+    });
+    const file = workflowOwnerBindingPath('trae', 'legacy-chat', {
+      machineRoot: scope.machineRoot,
+    });
+    const legacy = { ...first.binding };
+    delete legacy.rootChatId;
+    writeFileSync(file, `${JSON.stringify(legacy)}\n`, { mode: 0o600 });
+
+    const migrated = bindWorkflowOwner('trae', 'legacy-chat', scope.root, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:01.000Z'),
+    });
+    assert.equal(migrated.created, false);
+    assert.equal(migrated.migrated, true);
+    assert.equal(migrated.binding.rootChatId, 'legacy-chat');
+    assert.equal(migrated.binding.digest, first.binding.digest);
+  } finally {
+    scope.close();
+  }
+});
+
+test('rejects a persisted root chat ID that does not match its owner hash', () => {
+  const scope = fixture();
+  try {
+    bindWorkflowOwner('trae', 'main-chat', scope.root, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:00.000Z'),
+    });
+    const file = workflowOwnerBindingPath('trae', 'main-chat', {
+      machineRoot: scope.machineRoot,
+    });
+    const stored = JSON.parse(readFileSync(file, 'utf8'));
+    stored.rootChatId = 'other-chat';
+    writeFileSync(file, `${JSON.stringify(stored)}\n`, { mode: 0o600 });
+    assert.throws(
+      () =>
+        readWorkflowOwnerBinding('trae', 'main-chat', {
+          machineRoot: scope.machineRoot,
+        }),
+      (error) => error.code === 'WORKFLOW_OWNER_BINDING_INVALID',
+    );
   } finally {
     scope.close();
   }

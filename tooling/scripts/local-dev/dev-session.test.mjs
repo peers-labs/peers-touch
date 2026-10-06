@@ -27,6 +27,7 @@ import { processStartIdentity } from './dev-work-ledger.mjs';
 import {
   archiveDevelopmentSession,
   commitFunctionalResult,
+  createInitialSessionState,
   createTransitionEvent,
   DevSessionError,
   readSessionJournal,
@@ -44,6 +45,10 @@ import {
   inspectSessionJournal,
   summarizeSessionJournal,
 } from './dev-session-store.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -63,6 +68,17 @@ const INITIAL_HEAD =
   EXPECTED_HEAD === '0'.repeat(40) ? '1'.repeat(40) : '0'.repeat(40);
 const WORKSPACE_ID = workspaceIdForRoot(REPO_ROOT);
 const START_TIME = Date.parse('2026-09-16T12:00:00.000Z');
+
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
+}
 
 function fixture({
   workClass = 'refactor',
@@ -729,6 +745,26 @@ function expectCode(code, operation) {
     return true;
   });
 }
+
+test('initial Session state carries the verified main-session owner', () => {
+  const owner = workflowOwner();
+  const state = createInitialSessionState(
+    {
+      sessionId: 'session-owner',
+      workItemId: 'WORK-OWNER',
+      planId: 'PLAN-OWNER',
+      taskId: 'TASK-OWNER',
+      workspaceId: WORKSPACE_ID,
+      branch: BRANCH,
+      journeyId: 'JOURNEY-OWNER',
+      executionMode: 'build',
+      workflowOwner: owner,
+    },
+    '2026-10-07T00:00:00.000Z',
+  );
+  assert.deepEqual(state.workflowOwner, owner);
+  assert.equal(validateSessionState(state), state);
+});
 
 test('legacy Session state without host request history remains readable', () => {
   const scope = fixture();

@@ -35,10 +35,25 @@ import {
   repoRoot,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const WORKSPACE_A = workspaceIdForRoot(repoRoot);
 const WORKSPACE_B = 'fedcba9876543210';
 const NOW = '2026-09-19T08:00:00.000Z';
+
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
+}
 
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'pt-active-work-'));
@@ -174,7 +189,10 @@ function ownerDependencies(overrides = {}) {
 test('writes one owner-only record per workspace with revision and digest', () => {
   const scope = fixture();
   try {
-    const record = updateActiveWorkRecord(input(), {
+    const owner = workflowOwner();
+    const record = updateActiveWorkRecord(input(WORKSPACE_A, {
+      workflowOwner: owner,
+    }), {
       home: scope.home,
       now: new Date(NOW),
       expectedRevision: 0,
@@ -184,6 +202,7 @@ test('writes one owner-only record per workspace with revision and digest', () =
       workspaceId: WORKSPACE_A,
     });
     assert.equal(record.revision, 1);
+    assert.deepEqual(record.workflowOwner, owner);
     assert.equal(record.recordDigest, digestActiveWork(record));
     assert.equal(statSync(paths.record).mode & 0o777, 0o600);
     assert.equal(statSync(path.dirname(paths.record)).mode & 0o777, 0o700);
@@ -192,7 +211,9 @@ test('writes one owner-only record per workspace with revision and digest', () =
       workspaceId: WORKSPACE_A,
     }), record);
 
-    const idempotent = updateActiveWorkRecord(input(), {
+    const idempotent = updateActiveWorkRecord(input(WORKSPACE_A, {
+      workflowOwner: owner,
+    }), {
       home: scope.home,
       now: new Date('2026-09-19T08:01:00.000Z'),
       expectedRevision: 1,

@@ -54,8 +54,9 @@ Historical receipts remain audit data and cannot authorize completion.
 3. Every public operational promise maps to a machine check and typed result.
 4. Any required false promise produces non-zero exit.
 
-Doctor never exposes credentials, raw conversation identifiers, canonical
-roots, or raw command logs.
+Doctor never exposes credentials, child execution-session identifiers,
+canonical roots, or raw command logs. It may expose the verified main-session
+root ID required for worktree attribution.
 
 ## DEV-J05: Mount And Amend A Stable Plan
 

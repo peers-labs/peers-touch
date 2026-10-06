@@ -304,6 +304,8 @@ registered and its binding must resolve.
 | `make profile <name>` | Explicitly select a reviewed Profile; on first use, register with the lowest free slot and minimum operational capabilities without reset |
 | `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
 | `make env-update ...` | Update requested binding fields and current registered branch while no lease is held |
+| `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]` | Create an explicitly authorized Agent worktree and persist its originating main-session provenance |
+| `make worktree-creation-status` | Read the current worktree's immutable creation provenance |
 | `make env-unregister [WORKSPACE_ID=<id>]` | Remove an idle registration after coordinated Development close; rejects live declaration, active-work, PlanMount, or lease |
 | `make env-check ...` | Verify stable workspace binding, current Git source, tracked-clean topology, slot, capabilities, target match, and budget |
 | `make env-status-all` | Report all registrations and observed OS-held leases |
