@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -827,6 +828,67 @@ test('archive preserves a prior Session when the same sessionId is reused', asyn
     );
     assert.equal(
       existsSync(path.join(second.archiveDirectory, 'events.ndjson')),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('archive tolerates an identical displaced Session already in history', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    archiveDevelopmentSession(scope.baseOptions);
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const second = archiveDevelopmentSession(scope.baseOptions);
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    const duplicateHistory = path.join(
+      paths.directory,
+      'archive-history',
+      scope.sessionId,
+      second.eventDigest,
+    );
+    mkdirSync(duplicateHistory, { recursive: true });
+    copyFileSync(
+      path.join(second.archiveDirectory, 'session.json'),
+      path.join(duplicateHistory, 'session.json'),
+    );
+    copyFileSync(
+      path.join(second.archiveDirectory, 'events.ndjson'),
+      path.join(duplicateHistory, 'events.ndjson'),
+    );
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const third = archiveDevelopmentSession(scope.baseOptions);
+
+    assert.notEqual(second.eventDigest, third.eventDigest);
+    assert.equal(
+      existsSync(path.join(duplicateHistory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(duplicateHistory, 'events.ndjson')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(third.archiveDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(third.archiveDirectory, 'events.ndjson')),
       true,
     );
   } finally {

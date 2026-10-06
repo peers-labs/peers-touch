@@ -9,6 +9,7 @@ import {
   openSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -809,16 +810,54 @@ export function archiveSessionStore(options) {
       );
       const historyDirectory = path.join(historyParent, session.eventDigest);
       if (existsSync(historyDirectory)) {
-        sessionFail(
-          'SESSION_ARCHIVE_CONFLICT',
-          'Development Session history already contains the displaced archive',
-          { archiveDirectory, historyDirectory },
-        );
+        const historySessionPath = path.join(historyDirectory, 'session.json');
+        const historyEventsPath = path.join(historyDirectory, 'events.ndjson');
+        if (
+          !existsSync(historySessionPath) ||
+          !existsSync(historyEventsPath)
+        ) {
+          sessionFail(
+            'SESSION_ARCHIVE_CONFLICT',
+            'Development Session history conflicts with the displaced archive',
+            { archiveDirectory, historyDirectory },
+          );
+        }
+        const historyEvents = parseEvents(historyEventsPath);
+        const historySession = parseSnapshot(historySessionPath);
+        const historyProjected = materialize(historyEvents);
+        if (
+          historySession === null ||
+          historySession.eventCount !== historyProjected.eventCount ||
+          historySession.eventDigest !== historyProjected.eventDigest ||
+          !stateEquals(historySession.state, historyProjected.state)
+        ) {
+          sessionFail(
+            'SESSION_JOURNAL_INVALID',
+            'Historical Session snapshot and journal disagree',
+          );
+        }
+        assertIdentity(historySession, options.expected);
+        if (
+          historySession.eventCount !== session.eventCount ||
+          historySession.eventDigest !== session.eventDigest ||
+          !stateEquals(historySession.state, session.state)
+        ) {
+          sessionFail(
+            'SESSION_ARCHIVE_CONFLICT',
+            'Development Session history conflicts with the displaced archive',
+            { archiveDirectory, historyDirectory },
+          );
+        }
+        unlinkSync(archivedEvents);
+        unlinkSync(archivedSession);
+        rmdirSync(archiveDirectory);
+        syncDirectory(path.dirname(archiveDirectory));
+      } else {
+        ensurePrivateDirectory(historyParent);
+        renameSync(archiveDirectory, historyDirectory);
+        syncDirectory(historyParent);
+        syncDirectory(path.dirname(archiveDirectory));
       }
-      ensurePrivateDirectory(historyParent);
-      renameSync(archiveDirectory, historyDirectory);
-      syncDirectory(historyParent);
-      syncDirectory(path.dirname(archiveDirectory));
       hasArchivedSession = false;
       hasArchivedEvents = false;
     }
