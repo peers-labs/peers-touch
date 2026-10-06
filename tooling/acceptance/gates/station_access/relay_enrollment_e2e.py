@@ -425,7 +425,7 @@ sys.stdout.write((unsigned + b"." + signature).decode())
                 bearer=str(first_credential["relay_token"]),
             )
             first_client_token = self._remember_secret(
-                str(first_client_credential["relay_token"])
+                str(first_client_credential["client_token"])
             )
             listed = self._request_json(
                 self._relay_url + "/api/v1/relay/invites",
