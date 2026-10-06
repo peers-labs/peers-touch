@@ -810,8 +810,15 @@ function completionCandidateManifest(
   return manifest;
 }
 
-export function digestCompletionCandidate(candidateDocument) {
-  return digest(candidateDocument);
+export function digestCompletionCandidate(planPackage, transition) {
+  return digest({
+    kind: 'peers-touch-execution-run-completion-candidate',
+    planVersionDigest: planPackage.planVersionDigest,
+    snapshotDigest: planPackage.execution.snapshot.recordDigest,
+    runId: planPackage.execution.run.runId,
+    runRevision: planPackage.execution.run.revision,
+    transition,
+  });
 }
 
 function describeCompletionCandidate(manifest) {
@@ -833,16 +840,10 @@ async function completionCandidate(
     requestedNextTaskId,
     recordedAt,
   );
+  const transition = describeCompletionCandidate(manifest);
   return {
-    digest: digestCompletionCandidate({
-      kind: 'peers-touch-execution-run-completion-candidate',
-      planVersionDigest: planPackage.planVersionDigest,
-      snapshotDigest: planPackage.execution.snapshot.recordDigest,
-      runId: planPackage.execution.run.runId,
-      runRevision: planPackage.execution.run.revision,
-      transition: describeCompletionCandidate(manifest),
-    }),
-    transition: describeCompletionCandidate(manifest),
+    digest: digestCompletionCandidate(planPackage, transition),
+    transition,
   };
 }
 

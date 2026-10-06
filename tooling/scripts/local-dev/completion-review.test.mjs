@@ -10,6 +10,7 @@ import {
   CompletionReviewError,
   completionReviewPaths,
   completionReviewState,
+  digestCompletionCandidate,
   inspectForbiddenPathInventory,
   prepareCompletionReview,
   readCompletionReview,
@@ -367,6 +368,13 @@ test('reviews a fixed-point blocked handoff without inventing a successor', asyn
       evidenceRefs: ['evidence://task-b'],
     },
   });
+  assert.equal(
+    prepared.request.candidatePlanDigest,
+    digestCompletionCandidate(
+      fixture.planPackage,
+      prepared.candidateTransition,
+    ),
+  );
 
   fixture.useReviewer();
   const submitted = await submitCompletionReview(

@@ -131,5 +131,12 @@ test('completion review precedes the single guarded Run update', () => {
   );
   assert.match(advance, /run\.revision !== resolved\.run\.revision/u);
   assert.match(advance, /run\.recordDigest !== resolved\.run\.recordDigest/u);
+  assert.match(
+    advance,
+    /reviewOwner\.digestCompletionCandidate\(\s*resolved\.planPackage,/u,
+  );
+  assert.match(advance, /nextTaskId: candidate\.currentTaskId/u);
+  assert.match(advance, /exhaustion: candidate\.exhaustion/u);
+  assert.doesNotMatch(source, /function digestCompletionCandidate\(/u);
   assert.doesNotMatch(advance, /Restore the exact previous run|rollback/u);
 });
