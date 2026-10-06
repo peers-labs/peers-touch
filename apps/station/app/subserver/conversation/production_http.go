@@ -2705,7 +2705,7 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 	default:
 		var stageError *productionStageError
 		if errors.As(err, &stageError) {
-			return productionStageHandlerError(stageError)
+			return productionStageHandlerError(ctx, stageError)
 		}
 		logger.Errorf(ctx, "Conversation operation failed: %v", err)
 
@@ -2713,7 +2713,17 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 	}
 }
 
-func productionStageHandlerError(stageError *productionStageError) *server.HandlerError {
+func productionStageHandlerError(
+	ctx context.Context,
+	stageError *productionStageError,
+) *server.HandlerError {
+	logger.Errorf(
+		ctx,
+		"Conversation operation failed at %s/%s: %v",
+		stageError.operation,
+		stageError.stage,
+		stageError.cause,
+	)
 	handlerError := server.NewHandlerErrorWithCause(
 		http.StatusInternalServerError,
 		"Conversation operation failed",

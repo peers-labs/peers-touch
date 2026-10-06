@@ -42,7 +42,31 @@ func (e *persistenceFailureStageError) Unwrap() error {
 }
 
 func (e *persistenceFailureStageError) PersistenceFailureStage() string {
-	return e.stage
+	sqlState := safeSQLState(e.cause)
+	if sqlState == "" {
+		return e.stage
+	}
+	return e.stage + "_sqlstate_" + strings.ToLower(sqlState)
+}
+
+func safeSQLState(err error) string {
+	var sqlState interface {
+		SQLState() string
+	}
+	if !errors.As(err, &sqlState) {
+		return ""
+	}
+	code := sqlState.SQLState()
+	if len(code) != 5 {
+		return ""
+	}
+	for _, char := range code {
+		if (char < '0' || char > '9') &&
+			(char < 'A' || char > 'Z') {
+			return ""
+		}
+	}
+	return code
 }
 
 func newAuthorityRepository(

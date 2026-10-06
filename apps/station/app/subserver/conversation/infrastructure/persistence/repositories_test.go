@@ -103,6 +103,22 @@ func TestAggregateCreationStepPreservesSafeStage(t *testing.T) {
 		t.Fatal("staged error did not preserve its cause")
 	}
 
+	sqlStateStage := aggregateCreationStepError(
+		"insert_aggregate",
+		"create aggregate",
+		postgresStateError{code: "23502"},
+	)
+	if !errors.As(sqlStateStage, &staged) {
+		t.Fatalf("SQLSTATE staged error type = %T", sqlStateStage)
+	}
+	if staged.PersistenceFailureStage() !=
+		"insert_aggregate_sqlstate_23502" {
+		t.Fatalf(
+			"SQLSTATE persistence stage = %q",
+			staged.PersistenceFailureStage(),
+		)
+	}
+
 	contention := aggregateCreationChildrenError(
 		aggregateCreationStepError(
 			"insert_devices",
