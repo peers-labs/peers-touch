@@ -134,6 +134,8 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 self.assertNotIn("awaiting-runtime", source)
                 self.assertNotIn("runtime verification deferred", source)
                 self.assertIn("MixedNativeRuntime", source)
+                if path.startswith("lifecycle_mixed_client_"):
+                    self.assertIn("REPORT_PATH = None", source)
 
     def test_chat_child_actions_are_environment_declared(self) -> None:
         payload = json.loads(
