@@ -7,8 +7,8 @@ package relay
 //   - JSON utility functions shared by all handlers
 //
 // Handler implementations live in handler_admin.go and handler_station.go.
-// Auth is constructed once in SubServer.Init() and stored as jwtWrapper field,
-// following the same pattern as friend_chat/subserver.go.
+// Operator and network credentials use separate wrappers constructed during
+// SubServer.Init.
 
 import (
 	"encoding/json"
@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/metrics"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -36,24 +37,30 @@ func newRelayHandler(sub *SubServer) *relayHandler {
 // ---- Route table ----
 
 func (h *relayHandler) handlers() []server.Handler {
-	jwt := h.sub.jwtWrapper
+	networkJWT := h.sub.networkJWTWrapper
+	operatorJWT := h.sub.operatorJWTWrapper
 	logID := serverwrapper.LogID()
 
 	return []server.Handler{
+		// Public readiness surface.
+		server.NewHTTPHandler("relay-healthz", "/healthz", server.GET,
+			server.HTTPHandlerFunc(h.handleHealthz), logID),
 
-		// Admin endpoints — deny relay-access / relay-client tokens
+		// Operator endpoints use a dedicated key, issuer, audience, and scope.
+		server.NewHTTPHandler("relay-metrics", "/metrics", server.GET,
+			h.requireAdmin(h.handleMetrics), logID, operatorJWT),
 		server.NewHTTPHandler("relay-invite-create", "/api/v1/relay/invite", server.POST,
-			h.requireAdmin(h.handleCreateInvite), logID, jwt),
+			h.requireAdmin(h.handleCreateInvite), logID, operatorJWT),
 		server.NewHTTPHandler("relay-invite-list", "/api/v1/relay/invites", server.GET,
-			h.requireAdmin(h.handleListInvites), logID, jwt),
+			h.requireAdmin(h.handleListInvites), logID, operatorJWT),
 		server.NewHTTPHandler("relay-invite-revoke", "/api/v1/relay/invite/revoke", server.POST,
-			h.requireAdmin(h.handleRevokeInvite), logID, jwt),
+			h.requireAdmin(h.handleRevokeInvite), logID, operatorJWT),
 		server.NewHTTPHandler("relay-mount-list", "/api/v1/relay/mounts", server.GET,
-			h.requireAdmin(h.handleListMounts), logID, jwt),
+			h.requireAdmin(h.handleListMounts), logID, operatorJWT),
 		server.NewHTTPHandler("relay-mount-delete", "/api/v1/relay/mount", server.DELETE,
-			h.requireAdmin(h.handleDeleteMount), logID, jwt),
+			h.requireAdmin(h.handleDeleteMount), logID, operatorJWT),
 		server.NewHTTPHandler("relay-stats", "/api/v1/relay/stats", server.GET,
-			h.requireAdmin(h.handleStats), logID, jwt),
+			h.requireAdmin(h.handleStats), logID, operatorJWT),
 
 		// Public — no auth
 		server.NewHTTPHandler("relay-register", "/api/v1/relay/register", server.POST,
@@ -61,22 +68,36 @@ func (h *relayHandler) handlers() []server.Handler {
 
 		// Station only — requires relay-access token
 		server.NewHTTPHandler("relay-heartbeat", "/api/v1/relay/heartbeat", server.POST,
-			h.requireStation(h.handleHeartbeat), logID, jwt),
+			h.requireStation(h.handleHeartbeat), logID, networkJWT),
 		server.NewHTTPHandler("relay-token-refresh", "/api/v1/relay/token/refresh", server.POST,
-			h.requireStation(h.handleTokenRefresh), logID, jwt),
+			h.requireStation(h.handleTokenRefresh), logID, networkJWT),
 		server.NewHTTPHandler("relay-client-token", "/api/v1/relay/client-token", server.POST,
-			h.requireStation(h.handleMintClientToken), logID, jwt),
+			h.requireStation(h.handleMintClientToken), logID, networkJWT),
 
 		// Network access — relay-access OR relay-client token
 		server.NewHTTPHandler("relay-forward", relayForwardPrefix+"*path", server.ANY,
-			h.requireNetwork(h.handleForward), logID, jwt),
+			h.requireNetwork(h.handleForward), logID, networkJWT),
 	}
+}
+
+func (h *relayHandler) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	status := http.StatusOK
+	body := map[string]string{"role": "relay", "status": "ready"}
+	if h.sub.status != server.StatusRunning {
+		status = http.StatusServiceUnavailable
+		body["status"] = "not_ready"
+	}
+	writeJSON(w, status, body)
+}
+
+func (h *relayHandler) handleMetrics(w http.ResponseWriter, request *http.Request) {
+	metrics.Get().Handler().ServeHTTP(w, request)
 }
 
 // ---- Subject guards ----
 //
-// These wrap http.HandlerFunc and check subject prefix AFTER jwtWrapper has
-// already injected the subject into the request context via httpadapter.
+// These wrap http.HandlerFunc and check the subject after the route-specific
+// credential wrapper has injected it into the request context.
 func (h *relayHandler) requireAdmin(next http.HandlerFunc) server.EndpointHandler {
 	return server.HTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		subj := coreauth.GetSubject(r.Context())
@@ -85,9 +106,9 @@ func (h *relayHandler) requireAdmin(next http.HandlerFunc) server.EndpointHandle
 			return
 		}
 
-		if strings.HasPrefix(subj.ID, domain.SubjectRelayAccess) ||
-			strings.HasPrefix(subj.ID, domain.SubjectRelayClient) {
-			writeJSON(w, http.StatusForbidden, errorBody("relay tokens cannot call admin endpoints"))
+		if subj.Attributes["audience"] != h.sub.opts.OperatorAudience ||
+			subj.Attributes["scope"] != h.sub.opts.OperatorScope {
+			writeJSON(w, http.StatusForbidden, errorBody("relay operator policy rejected credential"))
 			return
 		}
 

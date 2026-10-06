@@ -531,6 +531,7 @@
         "apps/mobile/src-tauri/src/runtime/station_transport",
         "apps/station/app/main.go",
         "apps/station/frame/core/plugin/native/node",
+        "apps/station/frame/core/runtime/role",
         "apps/station/frame/peers.go",
         "apps/station/frame/touch",
         "docs/architecture/platform/station/access",

@@ -80,6 +80,21 @@ PEERS_NODE_ROLE=relay
 entrypoint 只生成 role 允许的 overlay。生产 `relay` role 必须注入 TLS certificate、
 Relay signing key、operator trust policy 和 quota；缺失即启动失败。
 
+当前安全基线使用以下运行时配置：
+
+- `RELAY_TLS_CERT_FILE` 与 `RELAY_TLS_KEY_FILE`：公网 Relay 必填，监听器最低
+  TLS 1.3；
+- `RELAY_SIGNING_KEY_FILE`：Relay identity/attestation 专用 key，不能与 TLS 或
+  operator key 共用；
+- `RELAY_OPERATOR_KEY_FILE`、`RELAY_OPERATOR_ISSUER`、
+  `RELAY_OPERATOR_AUDIENCE`、`RELAY_OPERATOR_SCOPE`：独立 operator JWT policy；
+- `RELAY_ALLOW_INSECURE_LOOPBACK=true`：唯一明文例外，仅接受显式 loopback
+  listener，不能用于正式证据。
+
+Relay readiness 使用 `/healthz`；`/metrics` 与 admin routes 共同要求 operator
+credential。Station role 不装配 Relay subserver，Relay role 不装配 Touch、app
+business subserver 或其他 native plugins。
+
 ## 6. Credential 集成
 
 - Station host key：证明 Station identity，签 route attestation/enrollment proof。
