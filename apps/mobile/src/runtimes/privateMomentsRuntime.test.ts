@@ -26,6 +26,9 @@ const commandMocks = vi.hoisted(() => ({
   openMedia: vi.fn(),
   recoverText: vi.fn(),
   recoverMoment: vi.fn(),
+  react: vi.fn(),
+  unreact: vi.fn(),
+  reactionRetry: vi.fn(),
   commentSubmit: vi.fn(),
   comments: vi.fn(),
   storeRecoveryPhrase: vi.fn(),
@@ -46,6 +49,8 @@ vi.mock('../services/mobileCommands', async (importOriginal) => {
     privateSocialPublish: commandMocks.publishMoment,
     privateSocialRead: commandMocks.readMoment,
     privateSocialReadText: commandMocks.readText,
+    privateSocialReact: commandMocks.react,
+    privateSocialReactionRetry: commandMocks.reactionRetry,
     privateSocialRecover: commandMocks.recoverMoment,
     privateSocialRecoverText: commandMocks.recoverText,
     privateSocialStoreRecoveryPhrase: commandMocks.storeRecoveryPhrase,
@@ -53,6 +58,7 @@ vi.mock('../services/mobileCommands', async (importOriginal) => {
     privateSocialSnapshot: commandMocks.snapshot,
     privateSocialSubmitText: commandMocks.submitText,
     privateSocialTeardown: commandMocks.teardown,
+    privateSocialUnreact: commandMocks.unreact,
   };
 });
 
@@ -70,6 +76,7 @@ import {
   recoverPrivateMoment,
   recoverPrivateTextMoment,
   reconcilePrivateMoments,
+  setPrivateMomentReaction,
   storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
   trackPublicMomentPublish,
@@ -94,6 +101,7 @@ beforeEach(() => {
     readProjections: [],
     commentDrafts: [],
     comments: [],
+    reactionCommands: [],
   });
   commandMocks.reconcile.mockResolvedValue({
     endpointPrekeysAvailable: 8,
@@ -330,6 +338,57 @@ describe('privateMomentsRuntime projection', () => {
     });
     expect(commandMocks.reconcile).toHaveBeenCalledWith(exactScope);
     expect(commandMocks.teardown).toHaveBeenCalledWith(exactScope);
+  });
+
+  it('projects an unknown Native reaction command without optimistic final state', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    commandMocks.readMoment.mockResolvedValue(readProjection('post-a', '1', 'CONTENT_READY'));
+    commandMocks.react.mockResolvedValue({
+      command: {
+        commandId: 'reaction-1',
+        postId: 'post-a',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_UNKNOWN_OUTCOME',
+        attemptCount: 1,
+        projectionRevision: '1',
+        errorCode: 'REACTION_RESULT_UNKNOWN',
+      },
+      reactions: [{ kind: 2, count: '1', reactedByViewer: true }],
+      projectionRevision: '2',
+      exactReplay: false,
+    });
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    await readPrivateMoment('post-a');
+
+    const result = await setPrivateMomentReaction('post-a', 2, true);
+
+    expect(commandMocks.react).toHaveBeenCalledWith({
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
+      activationGeneration: 7,
+      postId: 'post-a',
+      kind: 2,
+    });
+    expect(result.command.state).toBe('REACTION_UNKNOWN_OUTCOME');
+    expect(readPrivateMomentsSnapshot().postsById['post-a']?.reactions).toBeUndefined();
+    expect(readPrivateMomentsSnapshot().reactionCommands).toEqual([
+      expect.objectContaining({
+        commandId: 'reaction-1',
+        state: 'REACTION_UNKNOWN_OUTCOME',
+      }),
+    ]);
   });
 
   it('projects private publish and recovery states without exposing the phrase', async () => {

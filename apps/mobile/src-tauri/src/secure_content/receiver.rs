@@ -134,6 +134,14 @@ pub struct PrivateMentionProjection {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct PrivateReactionSummaryProjection {
+    pub kind: i32,
+    pub count: String,
+    pub reacted_by_viewer: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct PrivateMomentReadProjection {
     pub post_id: String,
     pub content_id: String,
@@ -143,6 +151,12 @@ pub struct PrivateMomentReadProjection {
     pub state: PrivateReadState,
     #[serde(default)]
     pub mentions: Vec<PrivateMentionProjection>,
+    #[serde(default)]
+    pub reactions: Vec<PrivateReactionSummaryProjection>,
+    #[serde(default = "zero_revision")]
+    pub reaction_revision: String,
+    #[serde(default)]
+    pub reactions_hydrated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<PrivateReadContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -163,6 +177,62 @@ impl PrivateMomentReadProjection {
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
         serde_json::from_slice(bytes).map_err(|error| error.to_string())
     }
+}
+
+pub(crate) fn canonical_reaction_summaries(
+    reactions: &[social::ReactionSummary],
+) -> Result<Vec<PrivateReactionSummaryProjection>, String> {
+    if reactions.len() > 5 {
+        return Err("private Reaction summary exceeds the supported kind count".to_string());
+    }
+    let mut seen = [false; 6];
+    let mut projected = Vec::with_capacity(reactions.len());
+    for reaction in reactions {
+        let kind = social::ReactionKind::try_from(reaction.kind)
+            .map_err(|_| "private Reaction summary kind is invalid".to_string())?;
+        let index = kind as usize;
+        if kind == social::ReactionKind::ReactionUnspecified
+            || reaction.count < 0
+            || index >= seen.len()
+            || seen[index]
+        {
+            return Err("private Reaction summary is invalid".to_string());
+        }
+        seen[index] = true;
+        projected.push(PrivateReactionSummaryProjection {
+            kind: reaction.kind,
+            count: reaction.count.to_string(),
+            reacted_by_viewer: reaction.reacted_by_viewer,
+        });
+    }
+    projected.sort_by_key(|reaction| reaction.kind);
+    Ok(projected)
+}
+
+pub(crate) fn source_reaction_summaries(
+    response: &social::GetMomentResourceResponse,
+    expected_post_id: &str,
+) -> Result<(Vec<PrivateReactionSummaryProjection>, String, bool), String> {
+    let Some(post) = response.post.as_ref() else {
+        if response.reaction_projection_revision != 0 {
+            return Err("private Reaction readback revision has no post projection".to_string());
+        }
+        return Ok((Vec::new(), zero_revision(), false));
+    };
+    if post.id != expected_post_id || response.reaction_projection_revision == 0 {
+        return Err("private Reaction readback identity or revision is invalid".to_string());
+    }
+    canonical_reaction_summaries(&post.reactions).map(|reactions| {
+        (
+            reactions,
+            response.reaction_projection_revision.to_string(),
+            true,
+        )
+    })
+}
+
+fn zero_revision() -> String {
+    "0".to_string()
 }
 
 pub struct DecryptedPrivateMoment {
@@ -602,6 +672,8 @@ fn decrypt_text_with_content_key(
     }
     let mentions = verified_private_mentions(&decoded, parts.private)?;
     let content = project_plaintext(&decoded, parts.private, kind)?;
+    let (reactions, reaction_revision, reactions_hydrated) =
+        source_reaction_summaries(response, &metadata.post_id).map_err(PrivateReadError::from)?;
 
     Ok(DecryptedPrivateMoment {
         projection: PrivateMomentReadProjection {
@@ -616,6 +688,9 @@ fn decrypt_text_with_content_key(
             audience_kind: private_audience_kind(metadata.audience_kind)?.to_string(),
             state: PrivateReadState::ContentReady,
             mentions,
+            reactions,
+            reaction_revision,
+            reactions_hydrated,
             content: Some(content),
             error_code: None,
             retry_after_seconds: None,
@@ -1286,6 +1361,9 @@ fn terminal_projection(
         audience_kind: "UNKNOWN".to_string(),
         state,
         mentions: Vec::new(),
+        reactions: Vec::new(),
+        reaction_revision: zero_revision(),
+        reactions_hydrated: false,
         content: None,
         error_code: Some(error_code.to_string()),
         retry_after_seconds,

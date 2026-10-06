@@ -19,11 +19,13 @@ import {
   PostSchema,
   PostType,
   RepostPostSchema,
+  ReactionSummarySchema,
   TextPostSchema,
   TimelinePageOutcome,
   VideoAttachmentSchema,
   VideoPostSchema,
   type Post,
+  type ReactionKind,
 } from '../../gen/proto/domain/social/post_pb';
 import type { PrivateMomentReadProjection } from '../../services/mobileCommands';
 import type { PrivateMomentsRuntimeSnapshot } from '../../runtimes/privateMomentsRuntime';
@@ -195,6 +197,13 @@ export function privateMomentFeedPost(
       kind: AUDIENCE_KIND[projection.audienceKind],
     }),
     content: postContent,
+    reactions: (projection.reactions ?? []).map((reaction) => (
+      create(ReactionSummarySchema, {
+        kind: reaction.kind as ReactionKind,
+        count: BigInt(reaction.count),
+        reactedByViewer: reaction.reactedByViewer,
+      })
+    )),
   });
 }
 
@@ -212,9 +221,54 @@ export function composeHomeFeedState(
   const posts = [...postsById.values()]
     .sort((left, right) => postTime(right) - postTime(left))
     .slice(0, MAX_COMPOSED_POSTS);
+  const reactionMutations = new Map(publicHome.reactionMutations);
+  for (const command of privateSocial.reactionCommands ?? []) {
+    if (!postsById.has(command.postId)) continue;
+    switch (command.state) {
+      case 'REACTION_PENDING':
+        reactionMutations.set(command.postId, {
+          requestId: command.attemptCount,
+          reactionKind: command.kind,
+          status: 'pending',
+          errorMessage: '',
+        });
+        break;
+      case 'REACTION_RETRYING':
+        reactionMutations.set(command.postId, {
+          requestId: command.attemptCount,
+          reactionKind: command.kind,
+          status: 'retrying',
+          errorMessage: command.errorCode ?? '',
+        });
+        break;
+      case 'REACTION_UNKNOWN_OUTCOME':
+        reactionMutations.set(command.postId, {
+          requestId: command.attemptCount,
+          reactionKind: command.kind,
+          status: 'unknown-outcome',
+          errorMessage: command.errorCode ?? '',
+        });
+        break;
+      case 'REACTION_REJECTED':
+        reactionMutations.set(command.postId, {
+          requestId: command.attemptCount,
+          reactionKind: command.kind,
+          status: 'rejected',
+          errorMessage: command.errorCode ?? '',
+        });
+        break;
+      case 'REACTION_COMMITTED':
+        reactionMutations.delete(command.postId);
+        break;
+    }
+  }
   if (
     posts.length === publicHome.posts.length
     && posts.every((post, index) => post === publicHome.posts[index])
+    && reactionMutations.size === publicHome.reactionMutations.size
+    && [...reactionMutations].every(([postId, mutation]) => (
+      publicHome.reactionMutations.get(postId) === mutation
+    ))
   ) {
     return publicHome;
   }
@@ -223,6 +277,7 @@ export function composeHomeFeedState(
     ...publicHome,
     posts,
     postIndex: new Map(posts.map((post, index) => [post.id, index])),
+    reactionMutations,
     pageOutcome: posts.length > 0
       ? TimelinePageOutcome.ITEMS
       : publicHome.pageOutcome,

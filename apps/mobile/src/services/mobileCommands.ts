@@ -761,11 +761,47 @@ export interface PrivateMomentReadProjection {
   audienceKind: PrivateSocialReceiverAudience | 'UNKNOWN';
   state: PrivateSocialReadState;
   mentions?: PrivateMomentMention[];
+  reactions?: PrivateReactionSummaryProjection[];
+  reactionRevision?: string;
+  reactionsHydrated?: boolean;
   content?: PrivateMomentReadContent;
   errorCode?: string;
   retryAfterSeconds?: number;
   createdAtMillis?: number;
   updatedAtMillis?: number;
+}
+
+export interface PrivateReactionSummaryProjection {
+  kind: number;
+  count: string;
+  reactedByViewer: boolean;
+}
+
+export type PrivateReactionCommandState =
+  | 'REACTION_PENDING'
+  | 'REACTION_RETRYING'
+  | 'REACTION_UNKNOWN_OUTCOME'
+  | 'REACTION_COMMITTED'
+  | 'REACTION_REJECTED';
+
+export interface PrivateReactionCommandProjection {
+  commandId: string;
+  postId: string;
+  kind: number;
+  operation: 'REACT' | 'UNREACT';
+  state: PrivateReactionCommandState;
+  attemptCount: number;
+  projectionRevision: string;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+  retryNotBeforeUnixMs?: number;
+}
+
+export interface PrivateReactionMutationResult {
+  command: PrivateReactionCommandProjection;
+  reactions: PrivateReactionSummaryProjection[];
+  projectionRevision: string;
+  exactReplay: boolean;
 }
 
 export type PrivateCommentState =
@@ -828,6 +864,7 @@ export interface PrivateSocialNativeSnapshot {
   readProjections: PrivateMomentReadProjection[];
   commentDrafts: PrivateCommentDraftProjection[];
   comments: PrivateCommentProjection[];
+  reactionCommands: PrivateReactionCommandProjection[];
 }
 
 export interface PrivateSocialRuntimeStatus {
@@ -929,6 +966,24 @@ export async function privateSocialComments(
   },
 ): Promise<PrivateCommentPage> {
   return invoke<PrivateCommentPage>('social_private_comments', { input });
+}
+
+export async function privateSocialReact(
+  input: PrivateSocialAccountInput & { postId: string; kind: number },
+): Promise<PrivateReactionMutationResult> {
+  return invoke<PrivateReactionMutationResult>('social_private_react', { input });
+}
+
+export async function privateSocialUnreact(
+  input: PrivateSocialAccountInput & { postId: string; kind: number },
+): Promise<PrivateReactionMutationResult> {
+  return invoke<PrivateReactionMutationResult>('social_private_unreact', { input });
+}
+
+export async function privateSocialReactionRetry(
+  input: PrivateSocialAccountInput & { commandId: string },
+): Promise<PrivateReactionMutationResult> {
+  return invoke<PrivateReactionMutationResult>('social_private_reaction_retry', { input });
 }
 
 export async function privateSocialReconcile(

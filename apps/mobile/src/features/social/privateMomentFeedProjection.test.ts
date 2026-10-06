@@ -66,6 +66,29 @@ describe('private Moment feed projection', () => {
     expect(post?.content.case).toBe(expected);
   });
 
+  it('projects authoritative private reaction summaries into the canonical Post', () => {
+    const post = privateMomentFeedPost({
+      ...baseProjection,
+      postId: 'post-reactions',
+      content: { kind: 'TEXT', text: 'private' },
+      reactions: [{
+        kind: 2,
+        count: '3',
+        reactedByViewer: true,
+      }],
+      reactionRevision: '7',
+      reactionsHydrated: true,
+    });
+
+    expect(post?.reactions).toEqual([
+      expect.objectContaining({
+        kind: 2,
+        count: 3n,
+        reactedByViewer: true,
+      }),
+    ]);
+  });
+
   it('deduplicates public and private rows by canonical Post ID', () => {
     const publicPost = create(PostSchema, {
       id: 'post-shared',
@@ -101,5 +124,49 @@ describe('private Moment feed projection', () => {
     expect(composed.posts).toHaveLength(1);
     expect(composed.posts[0].content.value.text).toBe('decrypted content');
     expect(composed.cursor).toBe('home-cursor');
+  });
+
+  it('projects an unknown private command without optimistic final state', () => {
+    const home = {
+      posts: [],
+      postIndex: new Map(),
+      feedExplanations: new Map(),
+      reactionMutations: new Map(),
+      selectedDetail: null,
+      commentsByPost: new Map(),
+      cursor: '',
+      hasMore: false,
+      pageOutcome: TimelinePageOutcome.EMPTY,
+      loadState: 'idle',
+      errorMessage: '',
+      failure: null,
+    };
+    const composed = composeHomeFeedState(home, {
+      postsById: {
+        'private-1': {
+          ...baseProjection,
+          postId: 'private-1',
+          content: { kind: 'TEXT', text: 'private' },
+          reactions: [],
+        },
+      },
+      reactionCommands: [{
+        commandId: 'reaction-1',
+        postId: 'private-1',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_UNKNOWN_OUTCOME',
+        attemptCount: 1,
+        projectionRevision: '0',
+        errorCode: 'REACTION_RESULT_UNKNOWN',
+      }],
+    });
+
+    expect(composed.reactionMutations.get('private-1')).toMatchObject({
+      reactionKind: 2,
+      status: 'unknown-outcome',
+      errorMessage: 'REACTION_RESULT_UNKNOWN',
+    });
+    expect(composed.posts[0].reactions).toEqual([]);
   });
 });

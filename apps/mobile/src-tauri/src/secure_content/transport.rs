@@ -312,6 +312,50 @@ impl NativeSocialTransport {
         )
     }
 
+    pub fn submit_private_reaction(
+        &self,
+        post_id: &str,
+        request_bytes: &[u8],
+    ) -> Result<social::ReactToPostResponse, TransportError> {
+        let request =
+            social::ReactToPostRequest::decode(request_bytes).map_err(|_| local_error(20002))?;
+        if request.encode_to_vec() != request_bytes
+            || request.post_id != post_id
+            || request.command_id.trim().is_empty()
+            || request.actor_signing_key_id.trim().is_empty()
+            || request.actor_device_signature.len() != 64
+        {
+            return Err(local_error(20002));
+        }
+        self.post_proto_bytes(
+            &format!("/api/v1/social/moments/{post_id}/react"),
+            request_bytes,
+            CommitSemantics::MayCommit,
+        )
+    }
+
+    pub fn submit_private_unreaction(
+        &self,
+        post_id: &str,
+        request_bytes: &[u8],
+    ) -> Result<social::UnreactToPostResponse, TransportError> {
+        let request =
+            social::UnreactToPostRequest::decode(request_bytes).map_err(|_| local_error(20002))?;
+        if request.encode_to_vec() != request_bytes
+            || request.post_id != post_id
+            || request.command_id.trim().is_empty()
+            || request.actor_signing_key_id.trim().is_empty()
+            || request.actor_device_signature.len() != 64
+        {
+            return Err(local_error(20002));
+        }
+        self.post_proto_bytes(
+            &format!("/api/v1/social/moments/{post_id}/unreact"),
+            request_bytes,
+            CommitSemantics::MayCommit,
+        )
+    }
+
     pub fn list_moment_comments(
         &self,
         post_id: &str,

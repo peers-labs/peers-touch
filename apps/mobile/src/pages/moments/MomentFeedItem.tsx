@@ -53,6 +53,23 @@ const REACTION_EMOJI: Record<number, string> = {
 
 const REACTION_KINDS: number[] = [1, 2, 3, 4, 5];
 
+function reactionStatusKey(
+  status: ReactionMutationState['status'],
+): string {
+  switch (status) {
+    case 'pending':
+      return 'mobile.moments.reaction.pending';
+    case 'retrying':
+      return 'mobile.moments.reaction.retrying';
+    case 'unknown-outcome':
+      return 'mobile.moments.reaction.unknownOutcome';
+    case 'rejected':
+      return 'mobile.moments.reaction.rejected';
+    case 'rolled-back':
+      return 'mobile.moments.reaction.rolledBack';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Time formatting
 // ---------------------------------------------------------------------------
@@ -153,6 +170,9 @@ export function MomentFeedItem({
     () => Object.values(reactionCounts.counts).reduce((sum, n) => sum + n, 0),
     [reactionCounts.counts],
   );
+  const reactionBusy = reactionMutation?.status === 'pending'
+    || reactionMutation?.status === 'retrying'
+    || reactionMutation?.status === 'unknown-outcome';
 
   const commentCount = Number(post.stats?.commentsCount ?? 0);
 
@@ -393,8 +413,8 @@ export function MomentFeedItem({
               reactionMutation?.status ?? '',
             ].filter(Boolean).join(' ')}
             onClick={toggleReactionPicker}
-            disabled={reactionMutation?.status === 'pending'}
-            aria-busy={reactionMutation?.status === 'pending'}
+            disabled={reactionBusy}
+            aria-busy={reactionBusy}
             aria-label={t('mobile.moments.reaction.reacted')}
           >
             <Heart size={18} fill={reactionCounts.viewerReactionKind ? 'currentColor' : 'none'} />
@@ -426,7 +446,7 @@ export function MomentFeedItem({
                 type="button"
                 className={`moments-reaction-picker-btn ${reactionCounts.viewerReactionKind === kind ? 'active' : ''}`}
                 onClick={() => handlePickReaction(kind)}
-                disabled={reactionMutation?.status === 'pending'}
+                disabled={reactionBusy}
               >
                 {REACTION_EMOJI[kind]}
               </button>
@@ -438,14 +458,16 @@ export function MomentFeedItem({
       {reactionMutation && (
         <Text
           className={`moments-reaction-status moments-reaction-status--${reactionMutation.status}`}
-          type={reactionMutation.status === 'rolled-back' ? 'danger' : 'secondary'}
+          type={
+            reactionMutation.status === 'rolled-back'
+            || reactionMutation.status === 'rejected'
+              ? 'danger'
+              : 'secondary'
+          }
           role="status"
           aria-live="polite"
         >
-          {reactionMutation.status === 'pending'
-            ? t('mobile.moments.reaction.pending')
-            : t('mobile.moments.reaction.rolledBack')
-          }
+          {t(reactionStatusKey(reactionMutation.status))}
         </Text>
       )}
     </Card>

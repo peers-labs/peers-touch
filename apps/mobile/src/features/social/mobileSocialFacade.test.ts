@@ -30,6 +30,7 @@ const privateRuntime = vi.hoisted(() => {
       postsById: {},
       commentDrafts: [],
       comments: [],
+      reactionCommands: [],
       publishStateHistory: ['AUDIENCE_REQUIRED'],
       readStateHistoryByPostId: {},
       lastReport: null,
@@ -44,6 +45,7 @@ const privateRuntime = vi.hoisted(() => {
     readPrivateComments: vi.fn(),
     storeRecoveryPhrase: vi.fn(),
     reconcilePrivate: vi.fn(),
+    setPrivateReaction: vi.fn(),
     trackPublicMomentPublish: vi.fn(async (operation, isPublished) => {
       const result = await operation();
       isPublished(result);
@@ -71,6 +73,7 @@ vi.mock('../../runtimes/privateMomentsRuntime', () => ({
   readPrivateComments: privateRuntime.readPrivateComments,
   storePrivateSocialRecoveryPhrase: privateRuntime.storeRecoveryPhrase,
   reconcilePrivateMoments: privateRuntime.reconcilePrivate,
+  setPrivateMomentReaction: privateRuntime.setPrivateReaction,
   trackPublicMomentPublish: privateRuntime.trackPublicMomentPublish,
 }));
 
@@ -269,6 +272,47 @@ describe('Mobile Social facade', () => {
       audience: { kind: 'FRIENDS' },
     });
     expect(gateway.createMoment).not.toHaveBeenCalled();
+  });
+
+  it('routes a private Moment reaction through the Native owner', async () => {
+    privateRuntime.snapshot.postsById = {
+      'private-1': {
+        postId: 'private-1',
+        contentId: 'private-1',
+        generation: '1',
+        authorPtid: 'ptid:bob',
+        audienceKind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        content: { kind: 'TEXT', text: 'private' },
+        reactions: [],
+      },
+    };
+    privateRuntime.setPrivateReaction.mockResolvedValue({
+      command: {
+        commandId: 'reaction-1',
+        postId: 'private-1',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_COMMITTED',
+        attemptCount: 1,
+        projectionRevision: '2',
+      },
+      reactions: [{ kind: 2, count: '1', reactedByViewer: true }],
+      projectionRevision: '2',
+      exactReplay: false,
+    });
+    facade = createMobileSocialFacade(session, { retry: vi.fn(async () => true) });
+    facade.activate();
+
+    await expect(facade.intents.react('private-1', 2)).resolves.toBe(true);
+
+    expect(privateRuntime.setPrivateReaction).toHaveBeenCalledWith(
+      'private-1',
+      2,
+      true,
+    );
+    expect(gateway.reactToPost).not.toHaveBeenCalled();
+    expect(gateway.unreactToPost).not.toHaveBeenCalled();
   });
 
   it('fences an in-flight completion after teardown', async () => {

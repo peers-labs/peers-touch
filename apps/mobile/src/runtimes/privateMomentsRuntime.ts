@@ -19,6 +19,8 @@ import {
   privateSocialPublish,
   privateSocialRead,
   privateSocialReadText,
+  privateSocialReact,
+  privateSocialReactionRetry,
   privateSocialRecover,
   privateSocialRecoverText,
   privateSocialStoreRecoveryPhrase,
@@ -26,11 +28,14 @@ import {
   privateSocialSnapshot,
   privateSocialSubmitText,
   privateSocialTeardown,
+  privateSocialUnreact,
   type PrivateCommentIntent,
   type PrivateCommentPage,
   type PrivateCommentSubmitResult,
   type PrivateMomentProjection,
   type PrivateMomentReadProjection,
+  type PrivateReactionCommandProjection,
+  type PrivateReactionMutationResult,
   type PrivateSocialActivationInput,
   type PrivateSocialAccountInput,
   type PrivateSocialMomentIntent,
@@ -86,6 +91,7 @@ export interface PrivateMomentsRuntimeSnapshot {
   readonly postsById: Readonly<Record<string, PrivateMomentReadProjection>>;
   readonly commentDrafts: readonly PrivateCommentSubmitResult['draft'][];
   readonly comments: readonly NonNullable<PrivateCommentSubmitResult['comment']>[];
+  readonly reactionCommands: readonly PrivateReactionCommandProjection[];
   readonly commentThreadsByPostId: Readonly<Record<string, PrivateCommentThreadProjection>>;
   readonly publishStateHistory: readonly PrivateSocialVisiblePublishState[];
   readonly readStateHistoryByPostId: Readonly<Record<string, readonly PrivateSocialVisibleReadState[]>>;
@@ -533,6 +539,43 @@ export async function readPrivateComments(
   }
 }
 
+export async function setPrivateMomentReaction(
+  postId: string,
+  kind: number,
+  active: boolean,
+): Promise<PrivateReactionMutationResult> {
+  const scope = requireActiveScope();
+  const stablePostId = postId.trim();
+  if (!stablePostId || stablePostId !== postId || !Number.isInteger(kind) || kind <= 0) {
+    throw new Error('mobile.privateSocial.invalidReaction');
+  }
+  const result = await (active ? privateSocialReact : privateSocialUnreact)({
+    ...operationScope(scope),
+    postId: stablePostId,
+    kind,
+  });
+  if (!isCurrentScope(scope)) {
+    throw new Error('mobile.privateSocial.staleReactionCompletion');
+  }
+  applyPrivateReactionResult(result);
+  return result;
+}
+
+export async function retryPrivateMomentReaction(
+  commandId: string,
+): Promise<PrivateReactionMutationResult> {
+  const scope = requireActiveScope();
+  const result = await privateSocialReactionRetry({
+    ...operationScope(scope),
+    commandId,
+  });
+  if (!isCurrentScope(scope)) {
+    throw new Error('mobile.privateSocial.staleReactionCompletion');
+  }
+  applyPrivateReactionResult(result);
+  return result;
+}
+
 export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerReport | null> {
   const scope = activeScope;
   if (!scope) return null;
@@ -556,6 +599,7 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerRepo
       ),
       commentDrafts: nativeSnapshot.commentDrafts,
       comments: nativeSnapshot.comments,
+      reactionCommands: nativeSnapshot.reactionCommands,
       lastReport: report,
       errorMessage: null,
     });
@@ -641,6 +685,43 @@ function mergeCommentLists(
     }
   }
   return [...byComment.values()];
+}
+
+function applyPrivateReactionResult(result: PrivateReactionMutationResult): void {
+  const current = snapshot.postsById[result.command.postId];
+  if (!current || current.state !== 'CONTENT_READY') {
+    throw new Error('mobile.privateSocial.reactionProjectionUnavailable');
+  }
+  const postsById = result.command.state === 'REACTION_COMMITTED'
+    ? mergeReadProjectionMap(snapshot.postsById, [{
+      ...current,
+      reactions: result.reactions,
+      reactionRevision: result.projectionRevision,
+      reactionsHydrated: true,
+    }])
+    : snapshot.postsById;
+  setSnapshot({
+    ...snapshot,
+    postsById,
+    reactionCommands: mergeReactionCommands(
+      snapshot.reactionCommands,
+      [result.command],
+    ),
+    errorMessage: null,
+  });
+}
+
+function mergeReactionCommands(
+  current: readonly PrivateReactionCommandProjection[],
+  incoming: readonly PrivateReactionCommandProjection[],
+): readonly PrivateReactionCommandProjection[] {
+  const byPost = new Map(
+    current.map((command) => [command.postId, command] as const),
+  );
+  for (const command of incoming) {
+    byPost.set(command.postId, command);
+  }
+  return [...byPost.values()];
 }
 
 function updatePrivateCommentThread(
@@ -750,6 +831,7 @@ async function synchronizeSession(
       projections: nativeSnapshot.publishProjections,
       commentDrafts: nativeSnapshot.commentDrafts,
       comments: nativeSnapshot.comments,
+      reactionCommands: nativeSnapshot.reactionCommands,
       commentThreadsByPostId: {},
       postsById: mergeReadProjectionMap({}, nativeSnapshot.readProjections),
       publishStateHistory: ['AUDIENCE_REQUIRED'],
@@ -962,6 +1044,7 @@ function emptySnapshot(): PrivateMomentsRuntimeSnapshot {
     postsById: {},
     commentDrafts: [],
     comments: [],
+    reactionCommands: [],
     commentThreadsByPostId: {},
     publishStateHistory: ['AUDIENCE_REQUIRED'],
     readStateHistoryByPostId: {},

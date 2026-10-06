@@ -70,7 +70,12 @@ export type MomentPolicyState = 'visible' | 'hidden' | 'blocked';
 export interface ReactionMutationState {
   readonly requestId: number;
   readonly reactionKind: number;
-  readonly status: 'pending' | 'rolled-back';
+  readonly status:
+    | 'pending'
+    | 'retrying'
+    | 'unknown-outcome'
+    | 'rejected'
+    | 'rolled-back';
   readonly errorMessage: string;
 }
 
@@ -80,6 +85,14 @@ export interface ReactionMutationToken {
   readonly reactionKind: number;
   readonly operation: 'react' | 'unreact';
   readonly previousReactions: readonly ReactionSummary[];
+}
+
+function isReactionMutationActive(
+  status: ReactionMutationState['status'] | undefined,
+): boolean {
+  return status === 'pending'
+    || status === 'retrying'
+    || status === 'unknown-outcome';
 }
 
 export type MomentDetailReadback =
@@ -355,7 +368,8 @@ export function createMomentsFeedStore(
     if (selectedPostId) retainedIds.add(selectedPostId);
     return new Map(
       [...feedState.reactionMutations].filter(
-        ([postId, mutation]) => mutation.status === 'pending' || retainedIds.has(postId),
+        ([postId, mutation]) => isReactionMutationActive(mutation.status)
+          || retainedIds.has(postId),
       ),
     );
   }
@@ -414,7 +428,8 @@ export function createMomentsFeedStore(
         const existingPost = existingIndex === undefined
           ? undefined
           : feedState.posts[existingIndex];
-        return existingPost && feedState.reactionMutations.get(post.id)?.status === 'pending'
+        return existingPost
+          && isReactionMutationActive(feedState.reactionMutations.get(post.id)?.status)
           ? { ...post, reactions: existingPost.reactions }
           : post;
       });
@@ -642,7 +657,9 @@ export function createMomentsFeedStore(
       const index = feedState.postIndex.get(postId);
       if (index === undefined) return false;
       const posts = [...feedState.posts];
-      posts[index] = feedState.reactionMutations.get(postId)?.status === 'pending'
+      posts[index] = isReactionMutationActive(
+        feedState.reactionMutations.get(postId)?.status,
+      )
         ? { ...readback.post, reactions: posts[index].reactions }
         : readback.post;
       feedState = { ...feedState, posts };
@@ -770,7 +787,7 @@ export function createMomentsFeedStore(
     reactionKind: number,
   ): ReactionMutationToken | null {
     if (torn) return null;
-    if (feedState.reactionMutations.get(postId)?.status === 'pending') return null;
+    if (isReactionMutationActive(feedState.reactionMutations.get(postId)?.status)) return null;
 
     const post = reactionPost(postId);
     if (!post || post.id !== postId || post.isDeleted) return null;
