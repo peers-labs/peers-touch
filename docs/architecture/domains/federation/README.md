@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v0.3
-> **Created**: 2026-05-31 | **Updated**: 2026-10-05
+> **Created**: 2026-05-31 | **Updated**: 2026-10-06
 > **Owner**: Architecture Team
 
 ---
@@ -11,6 +11,7 @@
 
 本文档集定义：
 
+- Federation 作为独立业务域的 Source of Truth 与 ownership 边界。
 - Federation 作为 Peers-Touch 持久虚拟网络实体的架构边界。
 - Actor、Station、Federation、Federation Ledger 的关系。
 - Station 加入多个 Federation 的治理模型。
@@ -73,8 +74,8 @@
 
 ## 5. 相关文档
 
-- [identity/federation-catalog.md](../../domains/identity/federation-catalog.md) — 跨站 actor 目录与发现能力。
-- [identity/unified-actor-system.md](../../domains/identity/unified-actor-system.md) — actor identity 模型。
+- [identity/federation-catalog.md](../identity/federation-catalog.md) — 跨站 actor 目录与发现能力。
+- [identity/unified-actor-system.md](../identity/unified-actor-system.md) — actor identity 模型。
 - [boundaries/station-desktop-scope-boundary.md](../../platform/station-desktop-boundary.md) — Station 与 Desktop 边界。
 - [global/architecture.md](../../../global/architecture.md) — 项目整体架构。
 - [station/base.md](../../../station/base.md) — Station app/frame 分层与 subserver 边界。

@@ -24,7 +24,7 @@
 | `model/domain/social/comment.proto` | 评论与回复 | Comment thread 真源 |
 | `model/domain/social/circle.proto` | 发布者私有圈子 | Circle audience 和 circle feed |
 | `docs/architecture/domains/social/core/` | Moments 基础架构 | 下游能力实现约束 |
-| `docs/architecture/shared/federation/` | Federation / Station scope | source station、federated public feed 语境 |
+| `docs/architecture/domains/federation/` | Federation / Station scope | source station、federated public feed 语境 |
 | `apps/desktop/src/runtimes/momentsRuntime.ts` | Moments 投影 owner | 当前阶段继续作为 Human feed runtime |
 | `apps/desktop/src/store/moments.ts` | Feed / post / comments / reactions store | 增加 source/reason/audience explanation 投影 |
 | `apps/desktop/src/pages/moments/` | Moments UI | 升级为 Human federated social UI |

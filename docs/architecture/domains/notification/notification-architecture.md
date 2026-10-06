@@ -72,9 +72,20 @@ Build a notification system that:
 
 ### 3.1 Position in the Three-Tier Architecture
 
-In the Peers-Touch three-tier architecture (Client → Model → Station), Notification is the only subsystem that **spans all three tiers while owning business truth in none of them**.
+In the Peers-Touch three-tier architecture (Client → Model → Station),
+Notification is a derived business domain that spans all three tiers. It owns
+notification entities and their lifecycle, but never owns the source-domain
+action that triggered a notification.
 
-**Station tier**: Notification is an infrastructure service, not a business domain. Social interactions, chat messages, task states, and follow relationships are owned by their respective domain SubServers (social, friend_chat, group_chat). Notification observes these domains through a single-function integration point (`Produce()`) and generates derived records. This observer relationship establishes a hard architectural constraint: the notification subsystem must be **failure-transparent** to all business domains. If the notification SubServer is unavailable, all business operations — posting, chatting, following, task management — must continue unimpaired.
+**Station tier**: Notification is a derived business domain, not an authority
+for Social, Chat, Task, or System actions. Social interactions, chat messages,
+task states, and follow relationships are owned by their respective domain
+SubServers. Notification observes these domains through a single-function
+integration point (`Produce()`) and generates its own derived records. This
+observer relationship establishes a hard architectural constraint: the
+notification subsystem must be **failure-transparent** to all source domains.
+If the Notification SubServer is unavailable, posting, chatting, following,
+and task management must continue unimpaired.
 
 **Client tier**: Notification is the **cross-domain attention aggregation surface**. It is the only subsystem that legitimately combines signals from Social, Chat, Task, and System domains into a single user-facing stream. This cross-domain aggregation right is what makes Notification architecturally distinct from any single business domain's UI. The delivery channels — SSE, push notifications, sound alerts — are extensions of this aggregation surface across different physical endpoints and connectivity states.
 
@@ -1906,7 +1917,7 @@ Scalability notes:
 
 ## 12. Continue Reading
 
-- Execution plans: `architecture/shared/notification/execution-plans/`
+- Execution plans: `architecture/domains/notification/execution-plans/`
   - Phase 1: Proto + domain model
   - Phase 2: Storage + SubServer
   - Phase 3: Delivery + real-time
