@@ -580,8 +580,8 @@ export interface PrivateSocialAccountInput extends MessagingMutationScopeInput {
   activationGeneration: number;
 }
 
-export interface PrivateSocialRecoveryPhraseInput extends PrivateSocialAccountInput {
-  recoveryPhrase: string;
+export interface PrivateSocialNativeRecoveryInput extends PrivateSocialAccountInput {
+  postId: string;
   recoveryEpoch?: number;
 }
 
@@ -934,22 +934,13 @@ export async function privateSocialOpenMedia(
   return invoke<PrivateMomentReadProjection>('social_private_open_media', { input });
 }
 
-export async function privateSocialStoreRecoveryPhrase(
-  input: PrivateSocialRecoveryPhraseInput,
-): Promise<void> {
-  return invoke<void>('social_private_store_recovery_phrase', { input });
-}
-
-export async function privateSocialRecoverText(
-  input: PrivateSocialAccountInput & { postId: string },
+export async function privateSocialRecoverWithNativeInput(
+  input: PrivateSocialNativeRecoveryInput,
 ): Promise<PrivateMomentReadProjection> {
-  return invoke<PrivateMomentReadProjection>('social_private_recover_text', { input });
-}
-
-export async function privateSocialRecover(
-  input: PrivateSocialAccountInput & { postId: string },
-): Promise<PrivateMomentReadProjection> {
-  return invoke<PrivateMomentReadProjection>('social_private_recover', { input });
+  return invoke<PrivateMomentReadProjection>(
+    'social_private_recover_with_native_input',
+    { input },
+  );
 }
 
 export async function privateSocialCommentSubmit(

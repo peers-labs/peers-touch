@@ -1,0 +1,6 @@
+"recovery_title" = "恢复私密动态";
+"recovery_message" = "请输入 24 个单词的恢复短语。短语只会在此设备上处理。";
+"recovery_placeholder" = "恢复短语";
+"recover" = "恢复";
+"cancel" = "取消";
+"acceptance_autofill" = "填充恢复短语";

@@ -3898,6 +3898,7 @@ dependencies = [
  "tauri-plugin-deep-link",
  "tauri-plugin-opener",
  "tauri-plugin-peers-platform-permissions",
+ "tauri-plugin-peers-secure-input",
  "tauri-plugin-peers-secure-storage",
  "ulid",
  "x25519-dalek",
@@ -5895,6 +5896,16 @@ dependencies = [
  "serde",
  "tauri",
  "tauri-plugin",
+]
+
+[[package]]
+name = "tauri-plugin-peers-secure-input"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "zeroize",
 ]
 
 [[package]]

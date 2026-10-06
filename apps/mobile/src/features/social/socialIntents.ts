@@ -67,7 +67,7 @@ export interface SocialIntentPort {
     postId: string,
     objectId: string,
   ): Promise<PrivateMomentReadProjection>;
-  recoverPrivate(postId: string): Promise<PrivateMomentReadProjection>;
+  recoverPrivate(postId: string, recoveryEpoch?: number): Promise<PrivateMomentReadProjection>;
   submitPrivateComment(
     intent: PrivateCommentIntent,
   ): Promise<PrivateCommentSubmitResult>;
@@ -76,6 +76,5 @@ export interface SocialIntentPort {
     cursor?: string,
     limit?: number,
   ): Promise<PrivateCommentPage>;
-  storeRecoveryPhrase(recoveryPhrase: string, recoveryEpoch?: number): Promise<void>;
   reconcilePrivate(): Promise<PrivateSocialWorkerReport | null>;
 }

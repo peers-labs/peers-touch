@@ -21,9 +21,7 @@ import {
   privateSocialReadText,
   privateSocialReact,
   privateSocialReactionRetry,
-  privateSocialRecover,
-  privateSocialRecoverText,
-  privateSocialStoreRecoveryPhrase,
+  privateSocialRecoverWithNativeInput,
   privateSocialReconcile,
   privateSocialSnapshot,
   privateSocialSubmitText,
@@ -381,56 +379,25 @@ export async function openPrivateMomentMedia(
   return projection;
 }
 
-export async function storePrivateSocialRecoveryPhrase(
-  recoveryPhrase: string,
-  recoveryEpoch = 1,
-): Promise<void> {
-  const scope = requireActiveScope();
-  await privateSocialStoreRecoveryPhrase({
-    ...operationScope(scope),
-    recoveryPhrase,
-    recoveryEpoch,
-  });
-  if (!isCurrentScope(scope)) {
-    throw new Error('mobile.privateSocial.staleRecoveryPhraseCompletion');
-  }
-}
-
-export async function recoverPrivateTextMoment(
+export async function recoverPrivateMoment(
   postId: string,
+  recoveryEpoch = 1,
 ): Promise<PrivateMomentReadProjection> {
   const scope = requireActiveScope();
   const stablePostId = postId.trim();
-  if (!stablePostId || stablePostId !== postId) {
+  if (
+    !stablePostId
+    || stablePostId !== postId
+    || !Number.isSafeInteger(recoveryEpoch)
+    || recoveryEpoch <= 0
+  ) {
     throw new Error('mobile.privateSocial.invalidPostId');
   }
   appendReadStates(stablePostId, 'WAITING_FOR_PRIVATE_KEY');
-  const projection = await privateSocialRecoverText({
+  const projection = await privateSocialRecoverWithNativeInput({
     ...operationScope(scope),
     postId: stablePostId,
-  });
-  if (!isCurrentScope(scope)) {
-    throw new Error('mobile.privateSocial.staleRecoveryCompletion');
-  }
-  setSnapshot({
-    ...snapshot,
-    postsById: mergeReadProjectionMap(snapshot.postsById, [projection]),
-    errorMessage: null,
-  });
-  appendReadStates(postId, projection.state);
-  return projection;
-}
-
-export async function recoverPrivateMoment(postId: string): Promise<PrivateMomentReadProjection> {
-  const scope = requireActiveScope();
-  const stablePostId = postId.trim();
-  if (!stablePostId || stablePostId !== postId) {
-    throw new Error('mobile.privateSocial.invalidPostId');
-  }
-  appendReadStates(stablePostId, 'WAITING_FOR_PRIVATE_KEY');
-  const projection = await privateSocialRecover({
-    ...operationScope(scope),
-    postId: stablePostId,
+    recoveryEpoch,
   });
   if (!isCurrentScope(scope)) {
     throw new Error('mobile.privateSocial.staleRecoveryCompletion');

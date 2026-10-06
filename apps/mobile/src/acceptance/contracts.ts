@@ -97,9 +97,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'moments.private.media.open',
   'moments.private.comment.submit',
   'moments.private.comments.read',
-  'moments.private.storeRecoveryPhrase',
   'moments.private.recover',
-  'moments.private.recoverText',
   'moments.private.reconcile',
   'moments.private.snapshot',
   'moments.feed.read',
@@ -987,8 +985,7 @@ export interface PrivateCommentPageActionOutput {
   hasMore: boolean;
 }
 
-export interface PrivateMomentRecoveryPhraseActionInput {
-  recoveryPhrase: string;
+export interface PrivateMomentRecoveryActionInput extends PrivateMomentReadActionInput {
   recoveryEpoch?: number;
 }
 
@@ -1398,16 +1395,8 @@ export interface MobileAcceptanceActionContract {
     input: PrivateCommentReadActionInput;
     output: PrivateCommentPageActionOutput;
   };
-  'moments.private.storeRecoveryPhrase': {
-    input: PrivateMomentRecoveryPhraseActionInput;
-    output: { stored: true; recoveryEpoch: number };
-  };
   'moments.private.recover': {
-    input: PrivateMomentReadActionInput;
-    output: PrivateMomentReadActionOutput;
-  };
-  'moments.private.recoverText': {
-    input: PrivateMomentReadActionInput;
+    input: PrivateMomentRecoveryActionInput;
     output: PrivateMomentReadActionOutput;
   };
   'moments.private.reconcile': {
