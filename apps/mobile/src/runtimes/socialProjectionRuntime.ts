@@ -8,24 +8,16 @@ import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 import type { GroupState } from '../features/group/groupStore';
 import type { SocialState } from '../features/social/socialStore';
 import {
-  createMomentsFeedStore,
-  type MomentsFeedStoreController,
-} from '../features/social/momentsFeedStore';
+  createMobileSocialFacade,
+  type MobileSocialFacadeController,
+} from '../features/social/mobileSocialFacade';
 import type { RealtimeWireEvent } from '../features/social/socialWire';
-import {
-  createMomentsGateway,
-  type MomentsGateway,
-} from '../services/gateways/momentsGateway';
 import {
   createNotificationPreferenceGateway,
   createProfileGateway,
   type NotificationPreferenceGateway,
   type ProfileGateway,
 } from '../services/gateways/profileGateway';
-import {
-  createMomentsProjection,
-  type MomentsProjectionController,
-} from './momentsProjectionDescriptor';
 import {
   createNotificationPreferenceProjection,
   createProfileProjection,
@@ -65,12 +57,7 @@ const BOOTSTRAP_DOMAINS: readonly ProjectionDomain[] = [
   'profile',
 ];
 
-export interface ActiveMomentsRuntime {
-  readonly gateway: MomentsGateway;
-  readonly feed: MomentsFeedStoreController;
-  readonly projection: MomentsProjectionController;
-  readonly retry: () => Promise<boolean>;
-}
+export type ActiveMomentsRuntime = MobileSocialFacadeController;
 
 export interface ActiveProfileRuntime {
   readonly gateway: ProfileGateway;
@@ -154,9 +141,6 @@ export function createSocialProjectionRuntime(
   dependencies: SocialProjectionRuntimeDependencies,
 ): SocialProjectionRuntimeController {
   const sessionKey = mobileAuthScopeKey(session);
-  const momentsGateway = createMomentsGateway(session);
-  const momentsProjection = createMomentsProjection();
-  const momentsFeed = createMomentsFeedStore(momentsGateway);
   const profileGateway = createProfileGateway(session);
   const profileProjection = createProfileProjection(profileGateway);
   const notificationPreferenceGateway = createNotificationPreferenceGateway(session);
@@ -168,19 +152,18 @@ export function createSocialProjectionRuntime(
   let releaseMutationAdmission: (() => void) | null = null;
   let reconcileTail: Promise<void> = Promise.resolve();
 
-  const moments: ActiveMomentsRuntime = {
-    gateway: momentsGateway,
-    feed: momentsFeed,
-    projection: momentsProjection,
+  const moments = createMobileSocialFacade(session, {
     retry: async () => {
       await scheduleReconcile(
         ['moments'],
         'user-retry',
         ingress.state().streamCursor,
       );
-      return momentsProjection.state().availability.available;
+      return moments.owner.momentsProjection.state().availability.available;
     },
-  };
+  });
+  const momentsProjection = moments.owner.momentsProjection;
+  const momentsFeed = moments.feed;
   const profile: ActiveProfileRuntime = {
     gateway: profileGateway,
     projection: profileProjection,
@@ -506,6 +489,7 @@ export function createSocialProjectionRuntime(
         () => ingress.state(),
       );
       activeRuntime = publicRuntime;
+      moments.activate();
       await scheduleReconcile(BOOTSTRAP_DOMAINS, 'bootstrap', '');
     },
     async requestCurrentUserProfile(force = false): Promise<void> {
@@ -558,8 +542,7 @@ export function createSocialProjectionRuntime(
       await ingress.drain();
       await reconcileTail;
       await getSocialStore().drainProfileCacheWrites();
-      momentsFeed.teardown();
-      momentsProjection.teardown();
+      moments.teardown();
       notificationPreferenceProjection.teardown();
       profileProjection.teardown();
       if (activeRuntime === publicRuntime) activeRuntime = null;

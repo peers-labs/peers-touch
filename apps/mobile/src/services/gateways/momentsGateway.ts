@@ -53,10 +53,13 @@ import {
   requireMobileMutationAdmission,
 } from '../../runtimes/mutationAdmission';
 import {
-  executeStationOperation,
   responseBytes,
   responseJson,
 } from '../stationTransport';
+import {
+  executeSocialNativeOperation,
+  type SocialNativeOperation,
+} from '../socialNativeAdapter';
 import {
   createGatewayTransport,
   decodeProtoJsonOutcome,
@@ -144,7 +147,15 @@ export interface MomentsGateway {
 // ---------------------------------------------------------------------------
 
 export function createMomentsGateway(session: MobileAuthSession): MomentsGateway {
-  const { command } = createGatewayTransport(session, 'moments');
+  const { command } = createGatewayTransport(
+    session,
+    'moments',
+    (activeSession, operation, signal) => executeSocialNativeOperation(
+      activeSession,
+      operation as SocialNativeOperation,
+      signal,
+    ),
+  );
   const scopeKey = mobileAuthScopeKey(session);
   const commandProtoJson = async <Desc extends DescMessage>(
     options: GatewayRequestOptions,
@@ -167,7 +178,7 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
 
       try {
         requireMobileMutationAdmission(scopeKey, 'moments');
-        const response = await executeStationOperation(session, {
+        const response = await executeSocialNativeOperation(session, {
           operationId: 'moments_create',
           body_bytes: Array.from(toBinary(CreatePostRequestSchema, req)),
         });

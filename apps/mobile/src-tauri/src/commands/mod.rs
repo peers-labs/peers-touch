@@ -63,7 +63,8 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::messaging::commands::social_relationship_block,
         crate::messaging::commands::social_relationship_reconcile,
         crate::messaging::commands::social_relationship_unblock,
-        // Private Social
+        // Social
+        crate::social::adapter::social_adapter_execute,
         crate::social::social_private_activate,
         crate::social::social_private_comment_submit,
         crate::social::social_private_comments,
@@ -209,7 +210,8 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::messaging::commands::social_relationship_block,
         crate::messaging::commands::social_relationship_reconcile,
         crate::messaging::commands::social_relationship_unblock,
-        // Private Social
+        // Social
+        crate::social::adapter::social_adapter_execute,
         crate::social::social_private_activate,
         crate::social::social_private_comment_submit,
         crate::social::social_private_comments,

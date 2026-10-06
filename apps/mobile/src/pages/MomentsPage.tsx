@@ -12,8 +12,7 @@
  * - MomentCommentsSection: comment panel with reply support
  * - MomentsFeedStates: empty/loading/error/unavailable/policy states
  *
- * Mutations remain online-only through MomentsGateway until their generated
- * command/result contracts are eligible for W4 durable admission.
+ * Mutations dispatch through the generation-scoped Social intent port.
  *
  * W6B: Refactored from monolithic page to pure-renderer pattern
  * with runtime-owned projection, cursor pagination, draft recovery,
@@ -33,21 +32,16 @@ import { MobileNotice } from '../components/MobileNotice';
 import { useAuthStore } from '../features/auth/authStore';
 import {
   useMomentsFeed,
-  useMomentsProjectionState,
 } from '../features/social/useMomentsFeed';
+import { useSocialExperience } from '../features/social/useSocialExperience';
 import {
   resolveMomentPolicyState,
-  type MomentsFeedStoreController,
 } from '../features/social/momentsFeedStore';
-import {
-  readActiveMomentsRuntime,
-  type ActiveMomentsRuntime,
-} from '../runtimes/socialProjectionRuntime';
+import type { SocialIntentPort } from '../features/social/socialIntents';
 import {
   TimelinePageOutcome,
   type Post,
 } from '../gen/proto/domain/social/post_pb';
-import type { MomentsGateway } from '../services/gateways/momentsGateway';
 
 import { MomentComposer } from './moments/MomentComposer';
 import { MomentFeedItem } from './moments/MomentFeedItem';
@@ -77,22 +71,19 @@ interface MomentsPageProps {
   readonly onBack: () => void;
 }
 
-export async function submitInlineCommentToGateway(
-  gateway: Pick<MomentsGateway, 'createComment'>,
+export async function submitInlineCommentIntent(
+  intents: Pick<SocialIntentPort, 'comment'>,
   postId: string,
   content: string,
-  refreshAuthoritativePost: Pick<MomentsFeedStoreController, 'refreshPost'>,
 ): Promise<boolean> {
-  const result = await gateway.createComment(postId, content);
-  if (!result.ok) return false;
-  return refreshAuthoritativePost.refreshPost(postId);
+  return intents.comment(postId, content);
 }
 
 export async function retryMomentsRuntime(
-  runtime: Pick<ActiveMomentsRuntime, 'retry'>,
+  intents: Pick<SocialIntentPort, 'retry'>,
 ): Promise<boolean> {
   try {
-    return await runtime.retry();
+    return await intents.retry();
   } catch {
     return false;
   }
@@ -105,13 +96,11 @@ export function MomentsPage({
 }: MomentsPageProps) {
   const { t } = useMobileI18n();
   const authSession = useAuthStore((state) => state.session);
-  const momentsRuntime = readActiveMomentsRuntime(authSession);
-  const gateway = momentsRuntime?.gateway ?? null;
-  const projection = momentsRuntime?.projection ?? null;
+  const { facade, projection } = useSocialExperience();
 
   // Feed state from the store
-  const feed = useMomentsFeed(momentsRuntime?.feed ?? null);
-  const runtimeFeedState = momentsRuntime?.feed.state();
+  const feed = useMomentsFeed(facade?.feed ?? null);
+  const runtimeFeedState = projection?.home;
   const isPolicyFilteredEmpty =
     feed.pageOutcome === TimelinePageOutcome.FILTERED_EMPTY;
 
@@ -120,40 +109,29 @@ export function MomentsPage({
   const [showNewPost, setShowNewPost] = useState(false);
 
   // -- Projection availability check --
-  const projectionState = useMomentsProjectionState(projection);
-  const isUnavailable = !projectionState?.availability.available;
-  const unavailableReason = projectionState && !projectionState.availability.available
-    ? projectionState.availability.reason
+  const availability = projection?.runtime.availability;
+  const isUnavailable = !availability?.available;
+  const unavailableReason = availability && !availability.available
+    ? availability.reason
     : t('mobile.moments.unavailable.description');
 
   // -- Handlers --
 
   const handlePublished = useCallback(
-    (post: Post) => {
-      feed.prependPost(post);
+    (_post: Post) => {
       setShowNewPost(false);
     },
-    [feed],
+    [],
   );
 
   const handleReact = useCallback(
     async (postId: string, reactionKind: number) => {
-      if (!gateway || !momentsRuntime) return;
-      const transaction = momentsRuntime.feed.beginReaction(postId, reactionKind);
-      if (!transaction) return;
-
-      const result = transaction.operation === 'unreact'
-        ? await gateway.unreactToPost(postId, reactionKind)
-        : await gateway.reactToPost(postId, reactionKind);
-
-      if (result.ok) {
-        momentsRuntime.feed.commitReaction(transaction, result.data.reactions);
-      } else {
-        momentsRuntime.feed.rollbackReaction(transaction, result.error.message);
+      if (!facade) return;
+      if (!await facade.intents.react(postId, reactionKind)) {
         setNoticeError(t('mobile.moments.reaction.error'));
       }
     },
-    [gateway, momentsRuntime, t],
+    [facade, t],
   );
 
   const handleOpenComments = useCallback((postId: string) => {
@@ -166,13 +144,12 @@ export function MomentsPage({
 
   const handleSubmitInlineComment = useCallback(
     async (postId: string, content: string): Promise<boolean> => {
-      if (!gateway || !momentsRuntime) return false;
+      if (!facade) return false;
 
-      if (await submitInlineCommentToGateway(
-        gateway,
+      if (await submitInlineCommentIntent(
+        facade.intents,
         postId,
         content,
-        momentsRuntime.feed,
       )) {
         return true;
       }
@@ -180,13 +157,13 @@ export function MomentsPage({
       setNoticeError(t('mobile.moments.comment.sendError'));
       return false;
     },
-    [gateway, momentsRuntime, t],
+    [facade, t],
   );
 
   const handleRetry = useCallback(() => {
-    if (!momentsRuntime) return;
-    void retryMomentsRuntime(momentsRuntime);
-  }, [momentsRuntime]);
+    if (!facade) return;
+    void retryMomentsRuntime(facade.intents);
+  }, [facade]);
 
   // -- Render --
 
@@ -195,11 +172,11 @@ export function MomentsPage({
     const activePost = feed.posts.find((post) => post.id === activePostId);
     return (
       <div className="page-container moments-page mobile-detail-page">
-        {gateway && !isUnavailable ? (
+        {facade && !isUnavailable ? (
           <MomentCommentsSection
             postId={activePostId}
             post={activePost}
-            gateway={gateway}
+            intents={facade.intents}
             onReact={(postId, kind) => void handleReact(postId, kind)}
             reactionMutation={runtimeFeedState?.reactionMutations.get(activePostId)}
             policyState={resolveMomentPolicyState(
@@ -265,10 +242,10 @@ export function MomentsPage({
       )}
 
       {/* Composer: toggled by the header ImagePlus button */}
-      {showNewPost && !isUnavailable && authSession && gateway && (
+      {showNewPost && !isUnavailable && authSession && facade && (
         <MomentComposer
           session={authSession}
-          gateway={gateway}
+          intents={facade.intents}
           onPublished={handlePublished}
         />
       )}

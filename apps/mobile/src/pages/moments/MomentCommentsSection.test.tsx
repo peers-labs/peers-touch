@@ -24,12 +24,8 @@ vi.mock('../../app/mobileI18n', () => ({
   }),
 }));
 
-vi.mock('../../features/auth/authStore', () => ({
-  useAuthStore: (selector: (state: unknown) => unknown) => selector({ session: {} }),
-}));
-
-vi.mock('../../runtimes/socialProjectionRuntime', () => ({
-  readActiveMomentsRuntime: () => ({ feed: {} }),
+vi.mock('../../features/social/useSocialExperience', () => ({
+  useSocialExperience: () => ({ facade: { feed: {} } }),
 }));
 
 vi.mock('../../features/social/useMomentsFeed', () => ({
@@ -61,7 +57,7 @@ describe('Moment detail', () => {
       <MomentCommentsSection
         postId="post-1"
         post={feedPost}
-        gateway={{}}
+        intents={{}}
         onReact={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -121,7 +117,7 @@ describe('Moment detail', () => {
       <MomentCommentsSection
         postId="post-1"
         post={feedPost}
-        gateway={{}}
+        intents={{}}
         onReact={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -135,7 +131,6 @@ describe('Moment detail', () => {
   });
 
   it('reloads runtime-owned detail and comments after successful mutations', async () => {
-    const reloadMoment = vi.fn(async () => true);
     const createComment = vi.fn(async () => ({
       ok: true,
       data: { comment: { id: 'comment-created' } },
@@ -144,18 +139,27 @@ describe('Moment detail', () => {
       ok: true,
       data: { success: true },
     }));
+    const intents = {
+      comment: async (postId, content, replyToCommentId) => {
+        const result = await createComment(postId, content, replyToCommentId);
+        return result.ok;
+      },
+      deleteComment: async (_postId, commentId) => {
+        const result = await deleteComment(commentId);
+        return result.ok;
+      },
+    };
 
     await expect(createMomentCommentAndReload(
-      { createComment },
+      intents,
       'post-1',
       'Authoritative comment',
       undefined,
-      reloadMoment,
     )).resolves.toBe(true);
     await expect(deleteMomentCommentAndReload(
-      { deleteComment },
+      intents,
+      'post-1',
       'comment-created',
-      reloadMoment,
     )).resolves.toBe(true);
 
     expect(createComment).toHaveBeenCalledWith(
@@ -164,25 +168,25 @@ describe('Moment detail', () => {
       undefined,
     );
     expect(deleteComment).toHaveBeenCalledWith('comment-created');
-    expect(reloadMoment).toHaveBeenCalledTimes(2);
   });
 
   it('does not reload runtime state after a rejected mutation', async () => {
-    const reloadMoment = vi.fn(async () => true);
     const createComment = vi.fn(async () => ({
       ok: false,
       error: { message: 'rejected' },
     }));
 
     await expect(createMomentCommentAndReload(
-      { createComment },
+      {
+        comment: async (postId, content, replyToCommentId) => {
+          const result = await createComment(postId, content, replyToCommentId);
+          return result.ok;
+        },
+      },
       'post-1',
       'Rejected comment',
       undefined,
-      reloadMoment,
     )).resolves.toBe(false);
-
-    expect(reloadMoment).not.toHaveBeenCalled();
   });
 
   it('does not report mutation success when authoritative readback fails', async () => {
@@ -193,11 +197,15 @@ describe('Moment detail', () => {
     }));
 
     await expect(createMomentCommentAndReload(
-      { createComment },
+      {
+        comment: async (postId, content, replyToCommentId) => {
+          const result = await createComment(postId, content, replyToCommentId);
+          return result.ok && reloadMoment();
+        },
+      },
       'post-1',
       'Unconfirmed comment',
       undefined,
-      reloadMoment,
     )).resolves.toBe(false);
     expect(reloadMoment).toHaveBeenCalledOnce();
   });

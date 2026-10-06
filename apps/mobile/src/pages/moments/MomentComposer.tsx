@@ -17,7 +17,7 @@ import { create } from '@bufbuild/protobuf';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileAuthSession } from '../../features/auth/authSession';
-import type { MomentsGateway } from '../../services/gateways/momentsGateway';
+import type { SocialIntentPort } from '../../features/social/socialIntents';
 import {
   discardNativeMomentMedia,
   pickNativeMedia,
@@ -148,7 +148,7 @@ const AUDIENCE_OPTIONS: Array<{ value: number; labelKey: string }> = [
 
 interface MomentComposerProps {
   readonly session: MobileAuthSession;
-  readonly gateway: MomentsGateway;
+  readonly intents: Pick<SocialIntentPort, 'publishPublic'>;
   readonly onPublished: (post: Post) => void;
 }
 
@@ -156,7 +156,7 @@ type PendingDraftRemoval =
   | { readonly kind: 'discard' }
   | { readonly kind: 'publish'; readonly post: Post };
 
-export function MomentComposer({ session, gateway, onPublished }: MomentComposerProps) {
+export function MomentComposer({ session, intents, onPublished }: MomentComposerProps) {
   const { t } = useMobileI18n();
 
   const [text, setText] = useState('');
@@ -454,9 +454,9 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
     const audience = create(AudienceSchema, { kind: audienceKind as Audience_Kind });
 
     setPublishing(true);
-    let result: Awaited<ReturnType<MomentsGateway['createMoment']>>;
+    let result: Awaited<ReturnType<SocialIntentPort['publishPublic']>>;
     try {
-      result = await gateway.createMoment(
+      result = await intents.publishPublic(
         images.length > 0
           || imageIds.length > 0
           ? {

@@ -417,8 +417,8 @@ describe('social projection runtime', () => {
       ok: false,
       error: { message: 'detail offline' },
     });
-    await expect(runtime.moments.retry()).resolves.toBe(false);
-    expect(runtime.moments.projection.state().availability).toEqual({
+    await expect(runtime.moments.intents.retry()).resolves.toBe(false);
+    expect(runtime.moments.owner.momentsProjection.state().availability).toEqual({
       available: false,
       reason: 'mobile.moments.unavailable',
     });
@@ -431,8 +431,8 @@ describe('social projection runtime', () => {
         explanation: { objectId: 'post-1' },
       },
     });
-    await expect(runtime.moments.retry()).resolves.toBe(true);
-    expect(runtime.moments.projection.state().availability).toEqual({
+    await expect(runtime.moments.intents.retry()).resolves.toBe(true);
+    expect(runtime.moments.owner.momentsProjection.state().availability).toEqual({
       available: true,
     });
 
@@ -463,16 +463,16 @@ describe('social projection runtime', () => {
       vi.spyOn(runtime.moments.feed, 'reconcile').mockResolvedValue(null);
 
       await runtime.reconcile('navigation', ['moments']);
-      expect(runtime.moments.projection.state().availability).toEqual({ available: true });
+      expect(runtime.moments.owner.momentsProjection.state().availability).toEqual({ available: true });
       expect(repairCursor).not.toHaveBeenCalled();
       expect(reopenAdmission).not.toHaveBeenCalled();
       expect(() => requireMobileMutationAdmission(mobileAuthScopeKey(session), 'moments'))
         .not.toThrow();
 
       runtime.ingress.markStale('moments', 'lost-event', 'cursor-1', false);
-      runtime.moments.projection.markUnavailable('offline');
-      await expect(runtime.moments.retry()).resolves.toBe(false);
-      expect(runtime.moments.projection.state().availability).toEqual({
+      runtime.moments.owner.momentsProjection.markUnavailable('offline');
+      await expect(runtime.moments.intents.retry()).resolves.toBe(false);
+      expect(runtime.moments.owner.momentsProjection.state().availability).toEqual({
         available: false, reason: 'offline',
       });
       expect(runtime.ingress.state().staleness.moments.stale).toBe(true);

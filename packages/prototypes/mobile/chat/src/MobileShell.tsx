@@ -13,7 +13,7 @@ import type { SocialDemoAction, SocialDemoState, SocialEvidenceScenario } from '
 import type { SearchDemoControl } from './searchDemo';
 import { ChatPage } from './pages/ChatPage';
 import { ChatThread } from './pages/ChatThread';
-import { MomentsPage } from './pages/MomentsPage';
+import { MomentsPage, type MomentsEvidenceScenario } from './pages/MomentsPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ContactDetailView } from './components/ContactDetailView';
@@ -34,6 +34,7 @@ export function MobileShell({
   recoveryScenario,
   onRecoveryClose,
   socialScenario,
+  momentsScenario,
   socialDemo,
   dispatchSocialDemo,
   longLists = false,
@@ -44,6 +45,7 @@ export function MobileShell({
   recoveryScenario?: ShellEvidenceScenario;
   onRecoveryClose?: () => void;
   socialScenario?: SocialEvidenceScenario;
+  momentsScenario?: MomentsEvidenceScenario;
   socialDemo: SocialDemoState;
   dispatchSocialDemo: Dispatch<SocialDemoAction>;
   longLists?: boolean;
@@ -51,7 +53,11 @@ export function MobileShell({
 }) {
   const [listMemory] = useState(() => new PrototypeListMemory());
   const [activeTab, setActiveTab] = useState<TabId>(
-    socialScenario && socialScenario !== 'social-unavailable' ? 'contacts' : 'chat',
+    momentsScenario
+      ? 'moments'
+      : socialScenario && socialScenario !== 'social-unavailable'
+        ? 'contacts'
+        : 'chat',
   );
   const [findPeopleOpen, setFindPeopleOpen] = useState(
     socialScenario === 'find-people-member' || socialScenario === 'find-people-no-membership'
@@ -63,6 +69,7 @@ export function MobileShell({
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
+  const [momentsImmersiveOpen, setMomentsImmersiveOpen] = useState(false);
 
   useEffect(() => {
     if (shellToast) {
@@ -170,7 +177,10 @@ export function MobileShell({
     switch (activeTab) {
       case 'chat': return <ChatPage conversations={longLists ? longListConversations : socialDemo.conversations}
         listMemory={listMemory} onConversationClick={handleConversationClick} />;
-      case 'moments': return <MomentsPage />;
+      case 'moments': return <MomentsPage
+        scenario={momentsScenario}
+        onImmersiveVisibilityChange={setMomentsImmersiveOpen}
+      />;
       case 'contacts': return <ContactsPage contacts={longLists ? longListContacts : socialDemo.contacts}
         groups={longLists ? longListGroups : undefined} requests={longLists ? longListRequests : undefined}
         listMemory={listMemory} request={socialDemo.request}
@@ -181,7 +191,8 @@ export function MobileShell({
 
   const showTabBar = !(activeTab === 'chat' && selectedConversation)
     && !(activeTab === 'contacts' && (selectedContact || selectedGroup))
-    && !(activeTab === 'profile' && selectedSetting);
+    && !(activeTab === 'profile' && selectedSetting)
+    && !(activeTab === 'moments' && momentsImmersiveOpen);
 
   return (
     <div className="mp-shell">
