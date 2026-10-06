@@ -77,6 +77,16 @@ class RelayEnrollmentGateTest(unittest.TestCase):
         self.assertEqual(claims["generation"], 2)
 
     def test_gate_requires_complete_lifecycle_result(self) -> None:
+        runtime_reference = {
+            "artifactKind": "acceptance-artifact-ref",
+            "workspaceId": "workspace-id",
+            "gateId": "relay-station-enrollment-e2e",
+            "runId": "20261006T120000000000Z-" + ("a" * 32),
+            "path": "runtime/environment-manifest.json",
+            "sha256": "b" * 64,
+            "mediaType": "application/json",
+        }
+
         class FakeCapabilityClient:
             def invoke(
                 self,
@@ -132,11 +142,20 @@ class RelayEnrollmentGateTest(unittest.TestCase):
                 "relay_enrollment_e2e.load_runtime_manifest",
                 return_value={"source": {"commit": "a" * 40}},
             ),
+            patch(
+                "tooling.acceptance.gates.station_access."
+                "relay_enrollment_e2e.current_artifact_ref"
+            ) as artifact_ref,
         ):
+            artifact_ref.return_value.to_dict.return_value = runtime_reference
             gate = RelayEnrollmentGate(FakeCapabilityClient())
             result = gate.run()
 
         self.assertEqual(result["runtimeCell"], "sixwin-station-relay")
+        self.assertEqual(
+            gate.manifest["_manifest_ref"],
+            runtime_reference,
+        )
         self.assertTrue(all(result["assertions"].values()))
 
 

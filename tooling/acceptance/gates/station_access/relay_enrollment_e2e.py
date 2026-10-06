@@ -26,6 +26,7 @@ from tooling.acceptance.core import (
     EphemeralHandlerCleanup,
     GateError,
     REPO_ROOT,
+    current_artifact_ref,
     load_runtime_manifest,
 )
 from tooling.acceptance.transports.ssh import SshTransport, SshTunnel
@@ -805,7 +806,13 @@ class RelayEnrollmentGate(AcceptanceGate):
         manifest_path = Path(
             _required_environment("PT_ACCEPTANCE_RUNTIME_MANIFEST")
         )
-        self.manifest = load_runtime_manifest(manifest_path, self.gate_id)
+        self.manifest = dict(
+            load_runtime_manifest(manifest_path, self.gate_id)
+        )
+        self.manifest["_manifest_ref"] = current_artifact_ref(
+            "runtime/environment-manifest.json",
+            repo_root=REPO_ROOT,
+        ).to_dict()
         self.report.manifest = self.manifest
 
     def run(self) -> dict[str, Any]:
