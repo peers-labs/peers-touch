@@ -9,6 +9,16 @@
     "workspace_digest_required": true
   },
   "services": {
+    "station-a": {
+      "kind": "station",
+      "required": false,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_PRIMARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
     "station-primary": {
       "kind": "station",
       "required": true,
