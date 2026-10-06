@@ -292,16 +292,16 @@ class RelayEndpointDiscoveryGate(AcceptanceGate):
         assertions = {
             "canonical_contract_tests_pass": contract.returncode == 0,
             "station_role_is_signed_and_challenge_bound": (
-                result.get("stationRoleBound") is True
+                result.get("station_role_bound") is True
             ),
             "relay_role_is_signed_and_challenge_bound": (
-                result.get("relayRoleBound") is True
+                result.get("relay_role_bound") is True
             ),
             "independent_challenges_are_bound": (
-                result.get("challengesBound") is True
+                result.get("challenges_bound") is True
             ),
             "relay_has_typed_empty_directory": (
-                result.get("relayNoCandidates") is True
+                result.get("relay_no_candidates") is True
             ),
         }
         for name, passed in assertions.items():

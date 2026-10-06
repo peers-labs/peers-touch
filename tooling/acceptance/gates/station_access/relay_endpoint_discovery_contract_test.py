@@ -64,10 +64,10 @@ class RelayEndpointDiscoveryContractTest(unittest.TestCase):
                 ):
                     raise AssertionError(self_call)
                 return {
-                    "stationRoleBound": True,
-                    "relayRoleBound": True,
-                    "challengesBound": True,
-                    "relayNoCandidates": True,
+                    "station_role_bound": True,
+                    "relay_role_bound": True,
+                    "challenges_bound": True,
+                    "relay_no_candidates": True,
                 }
 
         with (
