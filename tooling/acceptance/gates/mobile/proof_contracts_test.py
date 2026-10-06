@@ -395,7 +395,11 @@ def browser_session_lease(
     }
 
 
-def physical_device_lease(client_id: str = "alice-ios") -> dict[str, Any]:
+def physical_device_lease(
+    client_id: str = "alice-ios",
+    *,
+    gate_id: str = GATE_ID,
+) -> dict[str, Any]:
     platform = proof_contracts.CLIENT_PLATFORM[client_id]
     return {
         "artifactKind": "physical-device-lease",
@@ -404,7 +408,7 @@ def physical_device_lease(client_id: str = "alice-ios") -> dict[str, Any]:
         "holderRunId": RUN_ID,
         "fenceToken": 9,
         "runId": RUN_ID,
-        "gateId": GATE_ID,
+        "gateId": gate_id,
         "clientId": client_id,
         "platform": platform,
         "physicalDeviceRef": f"device-ref/{client_id}",
@@ -582,13 +586,17 @@ def lease_outcome(
     outcome: dict[str, Any] = {
         "artifactKind": "mobile-lease-outcome",
         "runId": RUN_ID,
-        "gateId": GATE_ID,
+        "gateId": lease["gateId"],
         "leaseId": lease_id,
         "leaseKind": lease_kind,
         "resourceKey": lease["resourceKey"],
         "holderRunId": lease["holderRunId"],
         "fenceToken": lease["fenceToken"],
-        "acquisition": artifact_ref(acquisition_path, payload=lease),
+        "acquisition": artifact_ref(
+            acquisition_path,
+            gate_id=lease["gateId"],
+            payload=lease,
+        ),
         "finalState": "RELEASED",
         "cleanupCompleted": True,
         "baselineRestored": True,
@@ -646,6 +654,33 @@ class ProofPayloadContractTests(unittest.TestCase):
                 )
                 self.assertEqual(validated, payload)
                 self.assertIsNot(validated, payload)
+
+    def test_android_social_gate_accepts_device_lease_lifecycle(self) -> None:
+        gate_id = "mobile-social-android-native"
+        lease = physical_device_lease(
+            "alice-android",
+            gate_id=gate_id,
+        )
+        outcome = lease_outcome(
+            lease,
+            "physical-device",
+            "runtime/mobile/leases/devices/alice-android.json",
+        )
+
+        for kind, payload in (
+            ("physical-device-lease", lease),
+            ("mobile-lease-outcome", outcome),
+        ):
+            with self.subTest(kind=kind):
+                self.assertEqual(
+                    validate_contract_payload(
+                        payload,
+                        expected_kind=kind,
+                        expected_run_id=RUN_ID,
+                        expected_gate_id=gate_id,
+                    ),
+                    payload,
+                )
 
     def test_required_nested_fields_fail_closed(self) -> None:
         required_paths = {
