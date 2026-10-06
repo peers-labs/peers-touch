@@ -80,7 +80,6 @@ import {
   reconcilePrivateMoments,
   storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
-  trackPublicMomentPublish,
 } from '../runtimes/privateMomentsRuntime';
 import {
   acceptSocialFriendRequest,
@@ -1167,10 +1166,10 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.feed.read': async () => {
     const runtime = requireMomentsRuntime();
-    if (!await runtime.feed.refresh()) {
+    if (!await runtime.intents.refreshPublicFeed()) {
       throw new Error('acceptance.mobile.momentsFeedUnavailable');
     }
-    const snapshot = runtime.feed.state();
+    const snapshot = runtime.state().home;
     return {
       outcome: snapshot.pageOutcome,
       hasMore: snapshot.hasMore,
@@ -1186,14 +1185,11 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     if (audienceKind !== Audience_Kind.PUBLIC) {
       throw new Error('acceptance.mobile.privateMomentRequiresNativeAction');
     }
-    const result = await trackPublicMomentPublish(
-      () => runtime.gateway.createMoment({
+    const result = await runtime.intents.publishPublic({
         kind: 'text',
         text,
         audience: create(AudienceSchema, { kind: audienceKind }),
-      }),
-      (outcome) => outcome.ok && Boolean(outcome.data.post),
-    );
+      });
     const created = requireAcceptanceOutcome(
       result,
       'acceptance.mobile.momentsPublishFailed',
@@ -1201,7 +1197,6 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     if (!created.post) {
       throw new Error('acceptance.mobile.momentsPublishMissingPost');
     }
-    await runtime.feed.refresh();
     return publicMoment(created.post);
   },
 
@@ -1209,14 +1204,15 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const runtime = requireMomentsRuntime();
     const postId = requireString(input?.postId, 'moments.react.postId');
     const reactionKind = requireReactionKind(input?.reactionKind);
-    const result = input?.active
-      ? await runtime.gateway.reactToPost(postId, reactionKind)
-      : await runtime.gateway.unreactToPost(postId, reactionKind);
+    const result = await runtime.intents.setPublicReaction(
+      postId,
+      reactionKind,
+      Boolean(input?.active),
+    );
     const updated = requireAcceptanceOutcome(
       result,
       'acceptance.mobile.momentsReactionFailed',
     );
-    runtime.feed.updateReaction(postId, updated.reactions);
     return updated.reactions.map((reaction) => ({
       kind: reaction.kind,
       count: reaction.count.toString(),
@@ -1226,7 +1222,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.comment': async (input) => {
     const runtime = requireMomentsRuntime();
-    const result = await runtime.gateway.createComment(
+    const result = await runtime.intents.createPublicComment(
       requireString(input?.postId, 'moments.comment.postId'),
       requireString(input?.content, 'moments.comment.content'),
       input?.replyToCommentId?.trim() || undefined,
@@ -1243,7 +1239,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.comments.read': async (input) => {
     const runtime = requireMomentsRuntime();
-    const result = await runtime.gateway.fetchComments(
+    const result = await runtime.intents.readPublicComments(
       requireString(input?.postId, 'moments.comments.read.postId'),
       '',
       50,
