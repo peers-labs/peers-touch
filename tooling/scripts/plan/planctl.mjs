@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from 'node:crypto';
 import path from 'node:path';
 
 import {
@@ -31,6 +32,13 @@ const READ_OPTIONS = new Set(['plan', 'repo-root', 'home']);
 
 function fail(code, message, details) {
   throw new PlanPackageError(code, message, details);
+}
+
+function digestCompletionCandidate(value) {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify(value))
+    .digest('hex');
 }
 
 function parseArguments(argv) {
@@ -480,14 +488,7 @@ export async function advancePlan(_planPath, options) {
         planPackage: resolved.planPackage,
         session,
         workItemId: session.state.workItemId,
-        candidatePlanDigest: reviewOwner.digestCompletionCandidate(
-          resolved.planPackage,
-          {
-            to: 'done',
-            nextTaskId: candidate.currentTaskId,
-            exhaustion: candidate.exhaustion,
-          },
-        ),
+        candidatePlanDigest: digestCompletionCandidate(candidate),
       },
       options.completionReviewDependencies,
     );
