@@ -34,6 +34,7 @@ import { useSocialExperience } from '../features/social/useSocialExperience';
 import {
   resolveMomentPolicyState,
 } from '../features/social/momentsFeedStore';
+import { isPublicSocialAudience } from '../features/social/socialAudience';
 import type { SocialIntentPort } from '../features/social/socialIntents';
 import {
   TimelinePageOutcome,
@@ -44,6 +45,10 @@ import {
 import { MomentComposer } from './moments/MomentComposer';
 import { MomentFeedItem } from './moments/MomentFeedItem';
 import { MomentCommentsSection } from './moments/MomentCommentsSection';
+import {
+  MomentMediaOverlay,
+  type MomentMediaSelection,
+} from './moments/MomentMediaOverlay';
 import {
   MomentsFeedEmpty,
   MomentsFeedError,
@@ -66,7 +71,7 @@ function momentPostKey(post: Post): string {
 
 interface MomentsPageProps {
   readonly activePostId: string | null;
-  readonly onOpenMoment: (postId: string) => void;
+  readonly onOpenProfile: (actorPtid: string, federationId: string) => void;
   readonly onOpenSearch: () => void;
   readonly onBack: () => void;
 }
@@ -91,7 +96,7 @@ export async function retryMomentsRuntime(
 
 export function MomentsPage({
   activePostId,
-  onOpenMoment,
+  onOpenProfile,
   onOpenSearch,
   onBack,
 }: MomentsPageProps) {
@@ -131,6 +136,8 @@ export function MomentsPage({
   // Local UI state
   const [noticeError, setNoticeError] = useState('');
   const [showNewPost, setShowNewPost] = useState(false);
+  const [selectedThreadPostId, setSelectedThreadPostId] = useState<string | null>(null);
+  const [mediaSelection, setMediaSelection] = useState<MomentMediaSelection | null>(null);
 
   // -- Projection availability check --
   const availability = projection?.runtime.availability;
@@ -159,30 +166,8 @@ export function MomentsPage({
   );
 
   const handleOpenComments = useCallback((postId: string) => {
-    onOpenMoment(postId);
-  }, [onOpenMoment]);
-
-  const handleOpenDetail = useCallback((postId: string) => {
-    onOpenMoment(postId);
-  }, [onOpenMoment]);
-
-  const handleSubmitInlineComment = useCallback(
-    async (postId: string, content: string): Promise<boolean> => {
-      if (!facade) return false;
-
-      if (await submitInlineCommentIntent(
-        facade.intents,
-        postId,
-        content,
-      )) {
-        return true;
-      }
-
-      setNoticeError(t('mobile.moments.comment.sendError'));
-      return false;
-    },
-    [facade, t],
-  );
+    setSelectedThreadPostId((current) => current === postId ? null : postId);
+  }, []);
 
   const handleRetry = useCallback(() => {
     if (!facade) return;
@@ -194,22 +179,67 @@ export function MomentsPage({
     void facade.feeds.explore.setSort(sort);
   }, [facade]);
 
+  const handleOpenMedia = useCallback((
+    postId: string,
+    attachmentId: string,
+    kind: 'image' | 'video',
+    trigger: HTMLButtonElement,
+  ) => {
+    const post = feed.posts.find((candidate) => candidate.id === postId);
+    if (!post) return;
+    if (post.audience && !isPublicSocialAudience(post.audience)) {
+      const readProjection = projection?.runtime.privateSocial?.postsById[postId];
+      const media = readProjection?.content && 'media' in readProjection.content
+        ? readProjection.content.media.find((item) => (
+            item.attachmentId === attachmentId || item.objectId === attachmentId
+          ))
+        : undefined;
+      if (!media) {
+        setNoticeError(t('mobile.moments.media.previewFailed'));
+        return;
+      }
+      setMediaSelection({
+        route: 'PRIVATE',
+        kind,
+        postId,
+        objectId: media.objectId,
+        returnFocus: trigger,
+      });
+      return;
+    }
+
+    const attachment = post.content.case === 'imagePost'
+      ? post.content.value.images.find((item) => item.id === attachmentId)
+      : post.content.case === 'videoPost'
+        ? post.content.value.video
+        : undefined;
+    if (!attachment) return;
+    setMediaSelection({
+      route: 'PUBLIC',
+      kind,
+      attachment,
+      returnFocus: trigger,
+    });
+  }, [feed.posts, projection?.runtime.privateSocial?.postsById, t]);
+
   // -- Render --
 
-  // If comments panel is open, show it full-screen
-  if (activePostId) {
-    const activePost = feed.posts.find((post) => post.id === activePostId);
+  const routeDetailPostId = activePostId ?? undefined;
+  if (routeDetailPostId !== undefined) {
+    const activePost = feed.posts.find((post) => post.id === routeDetailPostId);
     return (
-      <div className="page-container moments-page mobile-detail-page">
+      <div className="page-container moments-page moments-route-detail">
         {facade && !isUnavailable ? (
           <MomentCommentsSection
-            postId={activePostId}
+            postId={routeDetailPostId}
             post={activePost}
+            mode="detail"
             intents={facade.intents}
             onReact={(postId, kind) => void handleReact(postId, kind)}
-            reactionMutation={runtimeFeedState?.reactionMutations.get(activePostId)}
+            onOpenAuthor={onOpenProfile}
+            reactionMutation={runtimeFeedState?.reactionMutations.get(routeDetailPostId)}
             policyState={resolveMomentPolicyState(
-              runtimeFeedState?.feedExplanations.get(activePostId),
+              runtimeFeedState?.feedExplanations.get(routeDetailPostId),
             )}
             onClose={onBack}
           />
@@ -395,13 +425,27 @@ export function MomentsPage({
                         post={post}
                         onReact={(postId, kind) => void handleReact(postId, kind)}
                         onOpenComments={handleOpenComments}
-                        onOpenDetail={handleOpenDetail}
-                        onSubmitComment={handleSubmitInlineComment}
+                        onOpenAuthor={onOpenProfile}
+                        onOpenMedia={handleOpenMedia}
                         reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}
                         policyState={resolveMomentPolicyState(
                           runtimeFeedState?.feedExplanations.get(post.id),
                         )}
                       />
+                      {selectedThreadPostId === post.id && facade && (
+                        <MomentCommentsSection
+                          postId={post.id}
+                          post={post}
+                          mode="inline"
+                          intents={facade.intents}
+                          onReact={(postId, kind) => void handleReact(postId, kind)}
+                          onOpenAuthor={onOpenProfile}
+                          reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}
+                          policyState={resolveMomentPolicyState(
+                            runtimeFeedState?.feedExplanations.get(post.id),
+                          )}
+                        />
+                      )}
                     </div>
                   ))}
 
@@ -429,6 +473,13 @@ export function MomentsPage({
             }}
           </BoundedList>
         </div>
+      )}
+      {mediaSelection && facade && (
+        <MomentMediaOverlay
+          selection={mediaSelection}
+          intents={facade.intents}
+          onClose={() => setMediaSelection(null)}
+        />
       )}
     </div>
   );

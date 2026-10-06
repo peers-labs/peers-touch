@@ -255,10 +255,6 @@ export function SocialProfilePage({
                 post={post}
                 onReact={(postId, kind) => void facade?.intents.react(postId, kind)}
                 onOpenComments={onOpenMoment}
-                onOpenDetail={onOpenMoment}
-                onSubmitComment={facade
-                  ? (postId, content) => facade.intents.comment(postId, content)
-                  : undefined}
               />
             </div>
           ))}

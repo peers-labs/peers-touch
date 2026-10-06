@@ -179,7 +179,7 @@ class MobileSocialFacadeContractGate(AcceptanceGate):
         self._require_markers(
             acceptance_actions,
             (
-                "runtime.intents.publishPublic",
+                "runtime.intents.publishMoment",
                 "runtime.intents.setPublicReaction",
                 "runtime.intents.createPublicComment",
                 "runtime.intents.readPublicComments",

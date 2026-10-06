@@ -912,9 +912,21 @@ describe('privateMomentsRuntime projection', () => {
     });
     commandMocks.comments.mockResolvedValue({
       postId: 'post-image',
-      comments: [],
-      nextCursor: '',
-      hasMore: false,
+      comments: [{
+        commentId: 'comment-1',
+        contentId: 'comment-1',
+        generation: '1',
+        postId: 'post-image',
+        replyToCommentId: '',
+        authorPtid: 'ptid:alice',
+        state: 'COMMENT_POSTED',
+        text: 'private reply',
+        mentions: [],
+        reactionsCount: 0,
+        repliesCount: 0,
+      }],
+      nextCursor: 'comment-cursor-2',
+      hasMore: true,
     });
     useAuthStore.setState({
       session: authSession('session-1'),
@@ -967,6 +979,21 @@ describe('privateMomentsRuntime projection', () => {
           text: 'private reply',
         }),
       ],
+      commentThreadsByPostId: {
+        'post-image': {
+          comments: [
+            expect.objectContaining({
+              commentId: 'comment-1',
+              text: 'private reply',
+            }),
+          ],
+          nextCursor: 'comment-cursor-2',
+          hasMore: true,
+          loading: false,
+          initialized: true,
+          errorMessage: null,
+        },
+      },
     });
   });
 });

@@ -156,9 +156,10 @@ function renderPage(
       return (
         <MomentsPage
           activePostId={activeDetail?.routeId === 'detail:moment' ? activeDetail.postId : null}
-          onOpenMoment={(postId) => onOpenDetail({
-            routeId: 'detail:moment',
-            postId,
+          onOpenProfile={(actorPtid, federationId) => onOpenDetail({
+            routeId: 'detail:social-profile',
+            actorPtid,
+            federationId,
           })}
           onOpenSearch={() => onOpenDetail({
             routeId: 'detail:social-search',

@@ -123,9 +123,12 @@ describe('Mobile Acceptance social actions', () => {
     };
     const intents = {
       refreshPublicFeed: vi.fn(async () => true),
-      publishPublic: vi.fn(async () => ({
-        ok: true,
-        data: { post },
+      publishMoment: vi.fn(async () => ({
+        route: 'PUBLIC',
+        outcome: {
+          ok: true,
+          data: { post },
+        },
       })),
       setPublicReaction: vi.fn(async () => ({
         ok: true,
@@ -198,16 +201,16 @@ describe('Mobile Acceptance social actions', () => {
     })).resolves.toEqual([]);
 
     expect(intents.refreshPublicFeed).toHaveBeenCalledOnce();
-    expect(intents.publishPublic).toHaveBeenCalledOnce();
+    expect(intents.publishMoment).toHaveBeenCalledOnce();
     expect(intents.setPublicReaction).toHaveBeenCalledWith('post-1', 1, true);
     expect(intents.createPublicComment).toHaveBeenCalledOnce();
     expect(intents.readPublicComments).toHaveBeenCalledWith('post-1', '', 50);
   });
 
-  it('does not route a private audience through the legacy public publish action', async () => {
-    const publishPublic = vi.fn();
+  it('does not route a private audience through the unified publish action', async () => {
+    const publishMoment = vi.fn();
     projectionMocks.readCurrentActiveMomentsRuntime.mockReturnValue({
-      intents: { publishPublic },
+      intents: { publishMoment },
       state: vi.fn(),
     });
 
@@ -216,7 +219,7 @@ describe('Mobile Acceptance social actions', () => {
       audienceKind: 2,
     })).rejects.toThrow('acceptance.mobile.privateMomentRequiresNativeAction');
 
-    expect(publishPublic).not.toHaveBeenCalled();
+    expect(publishMoment).not.toHaveBeenCalled();
   });
 
   it('routes Settings writes through independent owner runtimes', async () => {

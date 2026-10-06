@@ -1,29 +1,20 @@
-/**
- * MomentCommentsSection.tsx — Comments panel for a moment post
- *
- * Renders a cursor-paginated comment list with reply support.
- * Comment creation and reply remain online-only until their generated
- * command/result contracts are eligible for W4 durable admission.
- *
- * W6B: Initial implementation with comment, reply, and delete flows.
- */
-
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Input, Typography, message } from 'antd';
 import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
-import { BoundedList } from '../../components/BoundedList';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import {
   type MomentPolicyState,
   type ReactionMutationState,
 } from '../../features/social/momentsFeedStore';
+import { isPublicSocialAudience } from '../../features/social/socialAudience';
 import { useMomentDetail } from '../../features/social/useMomentsFeed';
 import { useSocialExperience } from '../../features/social/useSocialExperience';
 import type { SocialIntentPort } from '../../features/social/socialIntents';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import type { Post } from '../../gen/proto/domain/social/post_pb';
+import type { PrivateCommentProjection } from '../../services/mobileCommands';
 import { MomentFeedItem } from './MomentFeedItem';
 import {
   MomentsFeedLoading,
@@ -35,10 +26,29 @@ export { readAuthoritativeMomentDetail } from '../../features/social/momentsFeed
 export type { MomentDetailReadback } from '../../features/social/momentsFeedStore';
 
 const { Text, Paragraph } = Typography;
-const MOMENT_COMMENTS_WINDOW_SIZE = 100;
+const INITIAL_COMMENT_COUNT = 10;
 
-function momentCommentKey(comment: Comment): string {
-  return comment.id;
+type CommentView =
+  | { readonly route: 'PUBLIC'; readonly comment: Comment }
+  | { readonly route: 'PRIVATE'; readonly comment: PrivateCommentProjection };
+
+interface MomentCommentsSectionProps {
+  readonly postId: string;
+  readonly post?: Post;
+  readonly mode?: 'inline' | 'detail';
+  readonly intents: Pick<
+    SocialIntentPort,
+    | 'comment'
+    | 'deleteComment'
+    | 'retry'
+    | 'submitPrivateComment'
+    | 'readPrivateComments'
+  >;
+  readonly onReact: (postId: string, reactionKind: number) => void;
+  readonly onOpenAuthor?: (actorPtid: string, federationId: string) => void;
+  readonly reactionMutation?: ReactionMutationState;
+  readonly policyState?: MomentPolicyState;
+  readonly onClose?: () => void;
 }
 
 export async function retryMomentDetailRuntime(
@@ -50,24 +60,6 @@ export async function retryMomentDetailRuntime(
   } catch {
     return false;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-interface MomentCommentsSectionProps {
-  readonly postId: string;
-  /** Feed snapshot retained only for caller compatibility; detail never renders from it. */
-  readonly post?: Post;
-  readonly intents: Pick<
-    SocialIntentPort,
-    'comment' | 'deleteComment' | 'retry'
-  >;
-  readonly onReact: (postId: string, reactionKind: number) => void;
-  readonly reactionMutation?: ReactionMutationState;
-  readonly policyState?: MomentPolicyState;
-  readonly onClose: () => void;
 }
 
 export async function createMomentCommentAndReload(
@@ -89,128 +81,191 @@ export async function deleteMomentCommentAndReload(
 
 export function MomentCommentsSection({
   postId,
+  post,
+  mode = 'inline',
   intents,
   onReact,
+  onOpenAuthor,
   reactionMutation,
   onClose,
 }: MomentCommentsSectionProps) {
   const { t } = useMobileI18n();
-  const { facade } = useSocialExperience();
-  const {
-    detail,
-    comments,
-    loading,
-    hasMore,
-    errorMessage,
-    loadMore,
-  } = useMomentDetail(
-    facade?.feed ?? null,
+  const { facade, projection } = useSocialExperience();
+  const privateRoute = Boolean(post?.audience && !isPublicSocialAudience(post.audience));
+  const publicDetail = useMomentDetail(
+    privateRoute ? null : facade?.feed ?? null,
     postId,
   );
-  const detailPost = detail.kind === 'available' ? detail.post : undefined;
+  const privateThread = projection?.runtime.privateSocial
+    ?.commentThreadsByPostId[postId];
+  const comments = useMemo<CommentView[]>(() => (
+    privateRoute
+      ? (privateThread?.comments ?? []).map((comment) => ({
+          route: 'PRIVATE' as const,
+          comment,
+        }))
+      : publicDetail.comments.map((comment) => ({
+          route: 'PUBLIC' as const,
+          comment,
+        }))
+  ), [privateRoute, privateThread?.comments, publicDetail.comments]);
+  const loading = privateRoute
+    ? privateThread?.loading ?? false
+    : publicDetail.loading;
+  const initialized = privateRoute
+    ? privateThread?.initialized ?? false
+    : publicDetail.detail.kind !== 'loading';
+  const hasMore = privateRoute
+    ? privateThread?.hasMore ?? true
+    : publicDetail.hasMore;
+  const errorMessage = privateRoute
+    ? privateThread?.errorMessage ?? ''
+    : publicDetail.errorMessage;
+  const detailPost = privateRoute
+    ? post
+    : publicDetail.detail.kind === 'available'
+      ? publicDetail.detail.post
+      : undefined;
 
   const [commentText, setCommentText] = useState('');
-  const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
+  const [replyTarget, setReplyTarget] = useState<CommentView | null>(null);
   const [sending, setSending] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    setExpanded(false);
+    setReplyTarget(null);
+    setCommentText('');
+  }, [postId]);
+
+  useEffect(() => {
+    if (!privateRoute || privateThread?.initialized || privateThread?.loading) return;
+    void intents.readPrivateComments(postId, '', INITIAL_COMMENT_COUNT)
+      .catch(() => undefined);
+  }, [
+    intents,
+    postId,
+    privateRoute,
+    privateThread?.initialized,
+    privateThread?.loading,
+  ]);
 
   const handleSendComment = useCallback(async () => {
     const trimmed = commentText.trim();
     if (!trimmed || sending) return;
-
     setSending(true);
-
-    const accepted = await createMomentCommentAndReload(
-      intents,
-      postId,
-      trimmed,
-      replyTarget?.id,
-    );
-
-    setSending(false);
-
-    if (accepted) {
-      setCommentText('');
-      setReplyTarget(null);
-    } else {
+    try {
+      const replyToCommentId = replyTarget
+        ? commentViewId(replyTarget)
+        : undefined;
+      const accepted = privateRoute
+        ? Boolean((await intents.submitPrivateComment({
+            draftId: crypto.randomUUID(),
+            draftRevision: 1,
+            postId,
+            replyToCommentId,
+            text: trimmed,
+          })).comment)
+        : await createMomentCommentAndReload(
+            intents,
+            postId,
+            trimmed,
+            replyToCommentId,
+          );
+      if (accepted) {
+        setCommentText('');
+        setReplyTarget(null);
+      } else {
+        message.error(t('mobile.moments.comment.sendError'));
+      }
+    } catch {
       message.error(t('mobile.moments.comment.sendError'));
+    } finally {
+      setSending(false);
     }
-  }, [commentText, sending, postId, replyTarget, intents, t]);
+  }, [commentText, sending, replyTarget, privateRoute, intents, postId, t]);
 
-  const handleReply = useCallback((comment: Comment) => {
-    setReplyTarget(comment);
-  }, []);
-
-  const handleCancelReply = useCallback(() => {
-    setReplyTarget(null);
-  }, []);
+  const handleLoadMore = useCallback(() => {
+    if (privateRoute) {
+      void intents.readPrivateComments(
+        postId,
+        privateThread?.nextCursor ?? '',
+        INITIAL_COMMENT_COUNT,
+      ).catch(() => undefined);
+      return;
+    }
+    publicDetail.loadMore();
+  }, [
+    intents,
+    postId,
+    privateRoute,
+    privateThread?.nextCursor,
+    publicDetail,
+  ]);
 
   const handleDelete = useCallback(async (commentId: string) => {
+    if (privateRoute) return;
     if (await deleteMomentCommentAndReload(intents, postId, commentId)) {
       message.success(t('mobile.moments.comment.deleted'));
     }
-  }, [intents, postId, t]);
+  }, [intents, postId, privateRoute, t]);
 
-  // -- Render --
-
-  const replyAuthorName = replyTarget?.author?.displayName
-    || replyTarget?.author?.username
-    || '';
+  const visibleComments = expanded
+    ? comments
+    : comments.slice(0, INITIAL_COMMENT_COUNT);
+  const replyAuthorName = replyTarget ? commentViewAuthor(replyTarget) : '';
+  const canRenderThread = privateRoute
+    ? Boolean(post)
+    : publicDetail.detail.kind === 'available';
 
   return (
-    <div className="moments-comments-section">
-      {/* Header */}
-      <div className="moments-comments-header">
-        <Button
-          type="text"
-          icon={<ArrowLeft size={18} />}
-          onClick={onClose}
-          aria-label={t('mobile.moments.detail.back')}
-        />
-        <Text strong>{t('mobile.moments.detail.title')}</Text>
-        <div style={{ width: 32 }} /> {/* Spacer for centering */}
-      </div>
+    <section
+      className={`moments-comments-section moments-comments-section--${mode}`}
+      aria-label={t('mobile.moments.comment.title')}
+    >
+      {mode === 'detail' && (
+        <div className="moments-comments-header">
+          <Button
+            type="text"
+            icon={<ArrowLeft size={18} />}
+            onClick={onClose}
+            aria-label={t('mobile.moments.detail.back')}
+          />
+          <Text strong>{t('mobile.moments.detail.title')}</Text>
+          <div className="moments-comments-header-spacer" />
+        </div>
+      )}
 
-      {/* Selected post and its comment thread share one continuous detail rail. */}
       <div className="moments-comments-list">
-        {detail.kind === 'loading' && <MomentsFeedLoading />}
-
-        {detail.kind === 'unavailable' && (
+        {!privateRoute && publicDetail.detail.kind === 'loading' && (
+          <MomentsFeedLoading />
+        )}
+        {!privateRoute && publicDetail.detail.kind === 'unavailable' && (
           <MomentsUnavailable
-            reason={detail.reason}
+            reason={publicDetail.detail.reason}
             onRetry={() => void retryMomentDetailRuntime(intents)}
           />
         )}
-
-        {(detail.kind === 'hidden' || detail.kind === 'blocked') && (
-          <MomentsPolicyViolation blocked={detail.kind === 'blocked'} />
+        {!privateRoute && (
+          publicDetail.detail.kind === 'hidden'
+          || publicDetail.detail.kind === 'blocked'
+        ) && (
+          <MomentsPolicyViolation blocked={publicDetail.detail.kind === 'blocked'} />
         )}
-
-        {detail.kind === 'deleted' && detail.post && (
-          <MomentFeedItem
-            post={detail.post}
-            onReact={onReact}
-            onOpenComments={() => undefined}
-            onOpenDetail={() => undefined}
-            reactionMutation={reactionMutation}
-            showInlineComment={false}
-          />
-        )}
-
-        {detail.kind === 'deleted' && !detail.post && (
+        {!privateRoute && publicDetail.detail.kind === 'deleted' && !publicDetail.detail.post && (
           <div className="moments-comments-empty" role="status">
             <Text type="secondary">{t('mobile.moments.detail.deleted')}</Text>
           </div>
         )}
 
-        {detailPost && (
+        {mode === 'detail' && detailPost && (
           <>
             <MomentFeedItem
               post={detailPost}
               onReact={onReact}
               onOpenComments={() => undefined}
-              onOpenDetail={() => undefined}
+              onOpenAuthor={onOpenAuthor}
               reactionMutation={reactionMutation}
-              showInlineComment={false}
             />
             <div className="moments-detail-comments-title">
               <Text strong>{t('mobile.moments.comment.title')}</Text>
@@ -218,75 +273,105 @@ export function MomentCommentsSection({
           </>
         )}
 
-        {detailPost && loading && comments.length === 0 && (
+        {canRenderThread && loading && comments.length === 0 && (
           <div className="moments-comments-empty">
             <Text type="secondary">{t('mobile.moments.comment.loading')}</Text>
           </div>
         )}
-
-        {detailPost && !loading && comments.length === 0 && !errorMessage && (
+        {canRenderThread && initialized && !loading && comments.length === 0 && !errorMessage && (
           <div className="moments-comments-empty">
-            <MessageCircle size={32} />
+            <MessageCircle size={28} />
             <Text type="secondary">{t('mobile.moments.comment.empty')}</Text>
-            <Text type="secondary">{t('mobile.moments.comment.emptyHint')}</Text>
           </div>
         )}
-
-        {detailPost && errorMessage && (
+        {canRenderThread && errorMessage && (
           <div className="moments-comments-error">
             <Text type="danger">{t('mobile.moments.comment.error')}</Text>
             <Button
               size="small"
-              onClick={() => void retryMomentDetailRuntime(intents)}
+              onClick={() => {
+                if (privateRoute) {
+                  void intents.readPrivateComments(postId, '', INITIAL_COMMENT_COUNT)
+                    .catch(() => undefined);
+                } else {
+                  void retryMomentDetailRuntime(intents);
+                }
+              }}
             >
               {t('mobile.moments.feed.retry')}
             </Button>
           </div>
         )}
 
-        {detailPost && comments.length > 0 && (
-          <BoundedList
-            surfaceKey={`moments:comments:${postId}`}
-            items={comments}
-            itemKey={momentCommentKey}
-            size={MOMENT_COMMENTS_WINDOW_SIZE}
+        {canRenderThread && visibleComments.length > 0 && (
+          <div
+            className="moments-comments-items"
+            data-comment-total={comments.length}
+            data-comment-visible={visibleComments.length}
           >
-            {(windowedComments) => windowedComments.map((comment) => (
-              <div key={comment.id} data-scroll-anchor-id={comment.id}>
+            {visibleComments.map((comment) => (
+              <div
+                key={commentViewId(comment)}
+                data-scroll-anchor-id={commentViewId(comment)}
+              >
                 <CommentItem
                   comment={comment}
-                  onReply={handleReply}
-                  onDelete={handleDelete}
+                  onReply={setReplyTarget}
+                  onDelete={comment.route === 'PUBLIC' ? handleDelete : undefined}
                 />
               </div>
             ))}
-          </BoundedList>
+          </div>
         )}
 
-        {detailPost && hasMore && !loading && (
+        {canRenderThread && !expanded && (
+          comments.length > INITIAL_COMMENT_COUNT || hasMore
+        ) && (
+          <Button
+            type="text"
+            size="small"
+            className="moments-comments-expand"
+            onClick={() => {
+              setExpanded(true);
+              if (comments.length <= INITIAL_COMMENT_COUNT && hasMore) {
+                handleLoadMore();
+              }
+            }}
+          >
+            {comments.length > INITIAL_COMMENT_COUNT
+              ? t('mobile.moments.comment.showMore', {
+                  count: comments.length - INITIAL_COMMENT_COUNT,
+                })
+              : t('mobile.moments.comment.loadMore')}
+          </Button>
+        )}
+        {canRenderThread && expanded && comments.length > INITIAL_COMMENT_COUNT && (
+          <Button
+            type="text"
+            size="small"
+            className="moments-comments-expand"
+            onClick={() => setExpanded(false)}
+          >
+            {t('mobile.moments.comment.collapse')}
+          </Button>
+        )}
+        {canRenderThread && expanded && hasMore && !loading && (
           <div className="moments-comments-load-more">
-            <Button type="text" size="small" onClick={loadMore}>
+            <Button type="text" size="small" onClick={handleLoadMore}>
               {t('mobile.moments.comment.loadMore')}
             </Button>
           </div>
         )}
-
-        {detailPost && loading && comments.length > 0 && (
-          <div className="moments-comments-loading-more">
-            <Text type="secondary">{t('mobile.moments.feed.loadingMore')}</Text>
-          </div>
-        )}
       </div>
 
-      {/* Reply indicator */}
-      {detailPost && replyTarget && (
+      {canRenderThread && replyTarget && (
         <div className="moments-comments-reply-indicator">
           <Text type="secondary">
             {t('mobile.moments.reply.placeholder', { name: replyAuthorName })}
           </Text>
           <button
             type="button"
-            onClick={handleCancelReply}
+            onClick={() => setReplyTarget(null)}
             aria-label={t('mobile.moments.reply.cancel')}
           >
             <X size={14} />
@@ -294,55 +379,43 @@ export function MomentCommentsSection({
         </div>
       )}
 
-      {/* Input */}
-      {detailPost && <div className="moments-comments-input">
-        <Input
-          value={commentText}
-          onChange={(e) => setCommentText(e.target.value)}
-          placeholder={
-            replyTarget
+      {canRenderThread && (
+        <div className="moments-comments-input">
+          <Input
+            value={commentText}
+            onChange={(event) => setCommentText(event.target.value)}
+            placeholder={replyTarget
               ? t('mobile.moments.reply.placeholder', { name: replyAuthorName })
-              : t('mobile.moments.comment.placeholder')
-          }
-          onPressEnter={() => void handleSendComment()}
-          disabled={sending}
-        />
-        <Button
-          type="primary"
-          icon={<Send size={14} />}
-          onClick={() => void handleSendComment()}
-          disabled={!commentText.trim() || sending}
-          loading={sending}
-          size="small"
-        >
-          {replyTarget
-            ? t('mobile.moments.reply.send')
-            : t('mobile.moments.comment.send')
-          }
-        </Button>
-      </div>}
-    </div>
+              : t('mobile.moments.comment.placeholder')}
+            onPressEnter={() => void handleSendComment()}
+            disabled={sending}
+          />
+          <Button
+            type="primary"
+            icon={<Send size={14} />}
+            onClick={() => void handleSendComment()}
+            disabled={!commentText.trim() || sending}
+            loading={sending}
+            size="small"
+            aria-label={t('mobile.moments.comment.send')}
+          />
+        </div>
+      )}
+    </section>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Single comment item
-// ---------------------------------------------------------------------------
-
 interface CommentItemProps {
-  readonly comment: Comment;
-  readonly onReply: (comment: Comment) => void;
-  readonly onDelete: (commentId: string) => void;
+  readonly comment: CommentView;
+  readonly onReply: (comment: CommentView) => void;
+  readonly onDelete?: (commentId: string) => void;
 }
 
 function CommentItem({ comment, onReply, onDelete }: CommentItemProps) {
   const { t } = useMobileI18n();
-
-  const authorName = comment.author?.displayName
-    || comment.author?.username
-    || t('mobile.moments.time.justNow');
-
-  if (comment.isDeleted) {
+  const publicComment = comment.route === 'PUBLIC' ? comment.comment : null;
+  const deleted = publicComment?.isDeleted ?? false;
+  if (deleted) {
     return (
       <div className="moments-comment-item moments-comment-item--deleted">
         <Text type="secondary">{t('mobile.moments.comment.deleted')}</Text>
@@ -353,26 +426,54 @@ function CommentItem({ comment, onReply, onDelete }: CommentItemProps) {
   return (
     <div className="moments-comment-item">
       <MobileAvatar
-        src={comment.author?.avatarUrl}
+        src={publicComment?.author?.avatarUrl}
         size={28}
       />
       <div className="moments-comment-item__body">
-        <Text strong className="moments-comment-item__author">{authorName}</Text>
-        {comment.replyToCommentId && (
+        <Text strong className="moments-comment-item__author">
+          {commentViewAuthor(comment)}
+        </Text>
+        {commentViewReplyTo(comment) && (
           <Text type="secondary" className="moments-comment-item__reply-badge">
             {t('moments.comment.reply')}
           </Text>
         )}
-        <Paragraph className="moments-comment-item__content">{comment.content}</Paragraph>
+        <Paragraph className="moments-comment-item__content">
+          {comment.route === 'PUBLIC'
+            ? comment.comment.content
+            : comment.comment.text}
+        </Paragraph>
         <div className="moments-comment-item__actions">
           <button type="button" onClick={() => onReply(comment)}>
             {t('moments.comment.reply')}
           </button>
-          <button type="button" onClick={() => onDelete(comment.id)}>
-            {t('moments.comment.delete')}
-          </button>
+          {onDelete && (
+            <button type="button" onClick={() => onDelete(commentViewId(comment))}>
+              {t('moments.comment.delete')}
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+function commentViewId(comment: CommentView): string {
+  return comment.route === 'PUBLIC'
+    ? comment.comment.id
+    : comment.comment.commentId;
+}
+
+function commentViewReplyTo(comment: CommentView): string {
+  return comment.route === 'PUBLIC'
+    ? comment.comment.replyToCommentId
+    : comment.comment.replyToCommentId;
+}
+
+function commentViewAuthor(comment: CommentView): string {
+  return comment.route === 'PUBLIC'
+    ? comment.comment.author?.displayName
+      || comment.comment.author?.username
+      || ''
+    : comment.comment.authorPtid;
 }

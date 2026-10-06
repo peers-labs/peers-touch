@@ -1,6 +1,7 @@
 // @ts-nocheck -- Vitest is supplied by the repository test runner.
 
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -39,7 +40,6 @@ const pageMocks = vi.hoisted(() => ({
   },
   projectionAvailability: { available: true },
   runtimeOverride: null,
-  inlineSubmit: null,
 }));
 
 vi.mock('../app/mobileI18n', () => ({
@@ -87,17 +87,38 @@ vi.mock('../features/social/useSocialExperience', () => ({
 vi.mock('./moments/MomentFeedItem', async () => {
   const { createElement } = await import('react');
   return {
-    MomentFeedItem: ({ post, onSubmitComment }) => {
-      pageMocks.inlineSubmit = onSubmitComment;
-      return createElement('article', { 'data-moment-id': post.id });
-    },
+    MomentFeedItem: ({ post }) => (
+      createElement('article', { 'data-moment-id': post.id })
+    ),
   };
+});
+
+describe('Moments feed-first interaction source contract', () => {
+  const source = readFileSync(
+    new URL('./MomentsPage.tsx', import.meta.url),
+    'utf8',
+  );
+
+  it('keeps one selected inline thread without ordinary Detail navigation', () => {
+    expect(source).toContain('selectedThreadPostId');
+    expect(source).toContain('current === postId ? null : postId');
+    expect(source).toContain('selectedThreadPostId === post.id');
+    expect(source).not.toContain('if (activePostId)');
+    expect(source).not.toContain('mobile-detail-page');
+    expect(source).not.toContain('onOpenMoment(postId)');
+  });
+
+  it('owns one temporary media selection outside virtualized feed cards', () => {
+    expect(source).toContain('const [mediaSelection, setMediaSelection]');
+    expect(source).toContain('<MomentMediaOverlay');
+    expect(source).toContain('onClose={() => setMediaSelection(null)}');
+  });
 });
 
 function renderMomentsPage(): string {
   return renderToStaticMarkup(React.createElement(MomentsPage, {
     activePostId: null,
-    onOpenMoment: () => undefined,
+    onOpenProfile: () => undefined,
     onOpenSearch: () => undefined,
     onBack: () => undefined,
   }));
@@ -160,8 +181,11 @@ describe('Moments page inline comment intent', () => {
     };
     pageMocks.runtimeOverride = { intents, feed: store };
     try {
-      renderMomentsPage();
-      await expect(pageMocks.inlineSubmit('older', 'New comment')).resolves.toBe(true);
+      await expect(submitInlineCommentIntent(
+        intents,
+        'older',
+        'New comment',
+      )).resolves.toBe(true);
       expect(gateway.getPost).toHaveBeenCalledWith('older');
       expect(gateway.fetchComments).toHaveBeenCalledWith('older', '', 15);
       expect(gateway.fetchFeed).toHaveBeenCalledTimes(2);
