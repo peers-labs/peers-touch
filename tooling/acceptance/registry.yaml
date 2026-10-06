@@ -282,6 +282,29 @@
       ]
     },
     {
+      "id": "station-access-endpoint-discovery",
+      "features": [
+        "station-access-endpoint-discovery"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/peer/access_endpoint.proto",
+          "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+          "apps/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint/**",
+          "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/domain/discovery.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go",
+          "tooling/acceptance/features/station-access-endpoint-discovery.yaml",
+          "tooling/acceptance/gates/station_access/relay_endpoint_discovery_contract.py"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "station-api-ownership",
+        "relay-endpoint-discovery-contract"
+      ]
+    },
+    {
       "id": "station-access-acceptance",
       "features": [
         "station-access-wire-contract",
@@ -290,6 +313,7 @@
         "station-access-federation-boundary",
         "station-access-relay-role-security",
         "station-access-relay-enrollment",
+        "station-access-endpoint-discovery",
         "station-access-interface-contract"
       ],
       "when": {
