@@ -31,6 +31,7 @@ from tooling.acceptance.drivers.native.macos import (
 from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 from tooling.acceptance.provisioners.native_desktop_macos import (
     NativeDesktopMacOSProvisioner,
+    _WINDOW_BOUNDS_PROBE,
 )
 
 
@@ -123,6 +124,14 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
 
         self.assertEqual(result, bounds)
         self.assertEqual(probe.call_count, 2)
+
+    def test_window_bounds_probe_accepts_acceptance_window_level(
+        self,
+    ) -> None:
+        self.assertIn("kCGWindowListOptionOnScreenOnly", _WINDOW_BOUNDS_PROBE)
+        self.assertIn("kCGWindowOwnerPID", _WINDOW_BOUNDS_PROBE)
+        self.assertIn("kCGWindowAlpha", _WINDOW_BOUNDS_PROBE)
+        self.assertNotIn("kCGWindowLayer", _WINDOW_BOUNDS_PROBE)
 
     def test_window_bounds_wait_fails_closed_after_timeout(self) -> None:
         transient = BlockedError(

@@ -64,8 +64,6 @@ candidates = []
 for window in windows:
     if int(window.get(Quartz.kCGWindowOwnerPID, -1)) != process_id:
         continue
-    if int(window.get(Quartz.kCGWindowLayer, -1)) != 0:
-        continue
     if float(window.get(Quartz.kCGWindowAlpha, 0)) <= 0:
         continue
     bounds = window.get(Quartz.kCGWindowBounds) or {}
