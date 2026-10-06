@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.redaction import redact_artifact_bytes
 from tooling.acceptance.gates.station_access.relay_role_security_contract import (
     FORBIDDEN_EGRESS,
     _find_forbidden_egress,
+    _probe_tls_with_openssl,
     _validate_runtime_evidence,
     validate_relay_role_source_contract,
 )
@@ -73,6 +76,71 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         self.assertTrue(
             evidence["relayStorageSecurity"]["requiredProtectedFiles"]
         )
+
+    @patch(
+        "tooling.acceptance.gates.station_access."
+        "relay_role_security_contract.subprocess.run"
+    )
+    def test_openssl_fallback_proves_tls13_and_rejects_tls12(
+        self,
+        run: MagicMock,
+    ) -> None:
+        certificate = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "YWJj\n"
+            "-----END CERTIFICATE-----"
+        )
+        run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=f"{certificate}\nProtocol  : TLSv1.3\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout="",
+                stderr="tlsv1 alert protocol version",
+            ),
+        ]
+
+        evidence = _probe_tls_with_openssl("relay.example", 4501)
+
+        self.assertEqual(evidence["protocol"], "TLSv1.3")
+        self.assertEqual(evidence["tls12"], "rejected")
+        self.assertEqual(len(evidence["certificateSha256"]), 64)
+
+    @patch(
+        "tooling.acceptance.gates.station_access."
+        "relay_role_security_contract.subprocess.run"
+    )
+    def test_openssl_fallback_rejects_tls12_acceptance(
+        self,
+        run: MagicMock,
+    ) -> None:
+        certificate = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "YWJj\n"
+            "-----END CERTIFICATE-----"
+        )
+        run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=f"{certificate}\nProtocol  : TLSv1.3\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="Protocol  : TLSv1.2\n",
+                stderr="",
+            ),
+        ]
+
+        with self.assertRaisesRegex(GateError, "accepted forbidden TLS 1.2"):
+            _probe_tls_with_openssl("relay.example", 4501)
 
     @staticmethod
     def _runtime_evidence() -> tuple[dict[str, object], dict[str, object]]:
