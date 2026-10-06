@@ -27,4 +27,15 @@ func TestDirectCreationFailureStagePreservesCause(t *testing.T) {
 	if stage, ok := DirectCreationFailureStage(cause); ok || stage != "" {
 		t.Fatalf("unstaged error returned stage = %q, ok = %v", stage, ok)
 	}
+
+	persisted := directPersistTransitionStage(
+		transitionPersistenceStage("enqueue_device_inbox", cause),
+	)
+	stage, ok = DirectCreationFailureStage(persisted)
+	if !ok || stage != "persist_transition_enqueue_device_inbox" {
+		t.Fatalf("persistence stage = %q, ok = %v", stage, ok)
+	}
+	if !errors.Is(persisted, cause) {
+		t.Fatal("persistence stage did not retain its cause")
+	}
 }

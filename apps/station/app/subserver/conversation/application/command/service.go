@@ -34,6 +34,11 @@ type directCreationStageError struct {
 	cause error
 }
 
+type transitionPersistenceStageError struct {
+	stage string
+	cause error
+}
+
 func (e *directCreationStageError) Error() string {
 	return fmt.Sprintf("application.create_direct: %s: %v", e.stage, e.cause)
 }
@@ -42,11 +47,34 @@ func (e *directCreationStageError) Unwrap() error {
 	return e.cause
 }
 
+func (e *transitionPersistenceStageError) Error() string {
+	return fmt.Sprintf("application.persist_transition: %s: %v", e.stage, e.cause)
+}
+
+func (e *transitionPersistenceStageError) Unwrap() error {
+	return e.cause
+}
+
 func directCreationStage(stage string, err error) error {
 	if err == nil {
 		return nil
 	}
 	return &directCreationStageError{stage: stage, cause: err}
+}
+
+func transitionPersistenceStage(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &transitionPersistenceStageError{stage: stage, cause: err}
+}
+
+func directPersistTransitionStage(err error) error {
+	var staged *transitionPersistenceStageError
+	if errors.As(err, &staged) {
+		return directCreationStage("persist_transition_"+staged.stage, err)
+	}
+	return directCreationStage("persist_transition", err)
 }
 
 // DirectCreationFailureStage returns a non-sensitive transaction stage while
@@ -606,7 +634,7 @@ func (s *Service) createDirect(
 				commandHash,
 				s.localStation,
 			); persistErr != nil {
-				return directCreationStage("persist_transition", persistErr)
+				return directPersistTransitionStage(persistErr)
 			}
 			notifications = committedDeliveries(transition, s.localStation)
 			result = Result{Conversation: created.Snapshot(), Event: transition.Event}
@@ -2043,13 +2071,13 @@ func (s *Service) persistTransition(
 ) error {
 	if transition.Event.Sequence == 1 {
 		if err := transaction.Repositories.Authority.Create(ctx, conversation.Snapshot()); err != nil {
-			return err
+			return transitionPersistenceStage("create_authority", err)
 		}
 	} else if err := transaction.Repositories.Authority.Save(ctx, conversation.Snapshot()); err != nil {
-		return err
+		return transitionPersistenceStage("save_authority", err)
 	}
 	if err := transaction.Repositories.Events.Append(ctx, transition.Event); err != nil {
-		return err
+		return transitionPersistenceStage("append_event", err)
 	}
 	eventBytes := transition.Event.Bytes()
 	if err := transaction.Repositories.Receipts.Create(ctx, repository.CommandReceipt{
@@ -2061,7 +2089,7 @@ func (s *Service) persistTransition(
 		EventBytes:     eventBytes,
 		CreatedAt:      transition.Event.CommittedAt,
 	}); err != nil {
-		return err
+		return transitionPersistenceStage("create_receipt", err)
 	}
 	commitments, err := domainservice.BuildDeliveryCommitments(
 		conversation.ID(),
@@ -2069,7 +2097,7 @@ func (s *Service) persistTransition(
 		transition.Deliveries,
 	)
 	if err != nil {
-		return err
+		return transitionPersistenceStage("build_commitments", err)
 	}
 	if len(commitments) != len(transition.Event.DeliveryCommitments) {
 		return conversationdomain.NewError(
@@ -2094,7 +2122,7 @@ func (s *Service) persistTransition(
 		transition.Event.Actor.Actor,
 	)
 	if err != nil {
-		return err
+		return transitionPersistenceStage("load_actor_identity", err)
 	}
 	commitmentByEndpoint := make(map[string]valueobject.Hash, len(commitments))
 	for _, commitment := range commitments {
@@ -2122,7 +2150,7 @@ func (s *Service) persistTransition(
 			senderActorIdentityKey,
 		)
 		if err != nil {
-			return err
+			return transitionPersistenceStage("encode_delivery", err)
 		}
 		idempotencyKey := valueobject.HashBytes(valueobject.CanonicalTuple(
 			[]byte("peers-touch/conversation-delivery"),
@@ -2162,7 +2190,7 @@ func (s *Service) persistTransition(
 		ctx,
 		authorityCommitments,
 	); err != nil {
-		return err
+		return transitionPersistenceStage("record_commitments", err)
 	}
 	for _, encoded := range encodedDeliveries {
 		delivery := encoded.delivery
@@ -2180,7 +2208,7 @@ func (s *Service) persistTransition(
 				Commitment:     encoded.commitment,
 				CreatedAt:      transition.Event.CommittedAt,
 			}); err != nil {
-				return err
+				return transitionPersistenceStage("enqueue_device_inbox", err)
 			}
 			continue
 		}
@@ -2197,7 +2225,7 @@ func (s *Service) persistTransition(
 			PayloadHash:    encoded.queuePayloadHash,
 			CreatedAt:      transition.Event.CommittedAt,
 		}); err != nil {
-			return err
+			return transitionPersistenceStage("enqueue_federation_outbox", err)
 		}
 	}
 	if len(transition.ObjectIDs) > 0 {
@@ -2210,7 +2238,7 @@ func (s *Service) persistTransition(
 			Recipients:     append([]valueobject.PTID(nil), transition.RecipientActors...),
 			GrantedAt:      transition.Event.CommittedAt,
 		}); err != nil {
-			return err
+			return transitionPersistenceStage("grant_objects", err)
 		}
 	}
 	return nil
