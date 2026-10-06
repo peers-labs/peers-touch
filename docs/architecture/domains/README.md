@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-10-05 | **Updated**: 2026-10-05
+> **Created**: 2026-10-05 | **Updated**: 2026-10-06
 > **Owner**: Architecture Team
 
 ---
@@ -24,6 +24,8 @@ development governance do not belong here.
 | Chat | [chat/](./chat/README.md) | Conversation, events, messaging core, Chat clients |
 | Social | [social/](./social/README.md) | Social authority and Social client projections |
 | Identity | [identity/](./identity/README.md) | Actor identity, presence, OAuth identity |
+| Federation | [federation/](./federation/README.md) | Federation lifecycle, membership, policy, governance ledger |
+| Notification | [notification/](./notification/README.md) | Notification lifecycle, persistence, preferences, aggregation |
 | Applets | [applets/](./applets/README.md) | Product applets built on the Applet platform |
 
 ## 3. Coverage Rule

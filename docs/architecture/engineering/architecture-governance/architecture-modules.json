@@ -38,9 +38,9 @@
     "docs/architecture/platform/applet-runtime",
     "docs/architecture/platform/client/frontend-runtime",
     "docs/architecture/platform/client/mobile",
-    "docs/architecture/shared/federation",
+    "docs/architecture/domains/federation",
     "docs/architecture/shared/i18n",
-    "docs/architecture/shared/notification",
+    "docs/architecture/domains/notification",
     "docs/architecture/shared/security/secure-content"
   ],
   "modules": [
