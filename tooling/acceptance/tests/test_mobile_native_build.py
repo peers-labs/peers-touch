@@ -835,7 +835,10 @@ class MobileNativeBuildTest(unittest.TestCase):
                 "llvm-ranlib"
             )
             ranlib.parent.mkdir(parents=True)
-            ranlib.write_text("ranlib", encoding="utf-8")
+            llvm_ar = ranlib.with_name("llvm-ar")
+            llvm_ar.write_text("ar", encoding="utf-8")
+            ranlib.symlink_to(llvm_ar.name)
+            resolved_llvm_ar = str(llvm_ar.resolve(strict=True))
             executable = tools / "tool"
             executable.write_text("tool", encoding="utf-8")
             rustc = tools / "rustc"
@@ -876,6 +879,15 @@ class MobileNativeBuildTest(unittest.TestCase):
                 "TMPDIR",
                 "VITE_ACCEPTANCE_HARNESS",
             },
+        )
+        self.assertEqual(Path(environment["TARGET_RANLIB"]).name, "llvm-ranlib")
+        self.assertEqual(
+            str(Path(environment["TARGET_RANLIB"]).with_name("llvm-ar")),
+            resolved_llvm_ar,
+        )
+        self.assertNotEqual(
+            environment["TARGET_RANLIB"],
+            resolved_llvm_ar,
         )
         self.assertRegex(allowlisted_environment_digest(environment), r"^sha256:[0-9a-f]{64}$")
 

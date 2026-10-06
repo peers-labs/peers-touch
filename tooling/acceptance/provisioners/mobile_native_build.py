@@ -1263,7 +1263,7 @@ def construct_build_environment(
             )
         ranlib = prebuilt_roots[0] / "bin" / "llvm-ranlib"
         try:
-            resolved_ranlib = ranlib.resolve(strict=True)
+            ranlib.resolve(strict=True)
         except OSError as error:
             raise MobileNativeBuildError(
                 "Android NDK ranlib is unavailable"
@@ -1273,7 +1273,7 @@ def construct_build_environment(
         environment["GRADLE_OPTS"] = "-Dorg.gradle.offline=true"
         environment["GRADLE_USER_HOME"] = str(gradle_user_home.resolve())
         environment["NDK_HOME"] = str(ndk_roots[0].resolve())
-        environment["TARGET_RANLIB"] = str(resolved_ranlib)
+        environment["TARGET_RANLIB"] = str(ranlib.absolute())
     if identity_json is not None:
         identity = (
             parse_build_identity(identity_json)
