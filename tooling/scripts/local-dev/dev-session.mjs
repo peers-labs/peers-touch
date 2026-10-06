@@ -961,7 +961,6 @@ function normalizeStandardizedResult(
     );
   }
   const isStaticResult =
-    result.traceability?.status === 'not-required' &&
     result.cleanupStatus === 'not-required' &&
     result.cleanupArtifact === undefined;
   if (isStaticResult) {
@@ -970,6 +969,15 @@ function normalizeStandardizedResult(
       result.sourceArtifactKind !== undefined ||
       result.evidenceGateId !== undefined ||
       result.evidenceStatus !== undefined;
+    if (
+      result.traceability?.status !== 'not-required' &&
+      !(result.traceability?.status === 'complete' && declaresEvidenceReport)
+    ) {
+      sessionFail(
+        'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+        'static Development Gate traceability is incomplete',
+      );
+    }
     if (
       declaresEvidenceReport
     ) {
