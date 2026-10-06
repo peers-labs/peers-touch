@@ -24,7 +24,7 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(primaryTabDescriptors.every((descriptor) => (
       descriptor.layout === 'primary' && descriptor.keepAlive === false
     ))).toBe(true);
-    expect(detailDescriptors).toHaveLength(7);
+    expect(detailDescriptors).toHaveLength(10);
     expect(detailDescriptors.every((descriptor) => (
       descriptor.layout === 'detail' && descriptor.keepAlive === false
     ))).toBe(true);
@@ -127,6 +127,25 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(activeMobileDetailRoute(useMobileNavigationStore.getState())).toEqual({
       routeId: 'detail:social-search',
     });
+  });
+
+  it('owns Circle list, editor, and member picker route identity', () => {
+    const navigation = useMobileNavigationStore.getState();
+    navigation.pushDetail({ routeId: 'detail:social-circles' });
+    navigation.pushDetail({
+      routeId: 'detail:social-circle',
+      circleId: '42',
+    });
+    navigation.pushDetail({
+      routeId: 'detail:social-circle-members',
+      circleId: '42',
+    });
+
+    expect(useMobileNavigationStore.getState().detailStack.map(navigationLocationKey)).toEqual([
+      'detail:social-circles',
+      'detail:social-circle:42',
+      'detail:social-circle-members:42',
+    ]);
   });
 
   it('owns one selected-only overlay and clears it before detail navigation', () => {

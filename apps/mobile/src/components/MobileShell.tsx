@@ -20,6 +20,9 @@ import {
 import { ChatPage } from '../pages/ChatPage';
 import { ContactsPage } from '../pages/ContactsPage';
 import { MomentsPage } from '../pages/MomentsPage';
+import { SocialCircleDetailPage } from '../pages/moments/SocialCircleDetailPage';
+import { SocialCircleMemberPickerPage } from '../pages/moments/SocialCircleMemberPickerPage';
+import { SocialCirclesPage } from '../pages/moments/SocialCirclesPage';
 import { SocialProfilePage } from '../pages/moments/SocialProfilePage';
 import { SocialSearchPage } from '../pages/moments/SocialSearchPage';
 import { SettingsPage } from '../pages/SettingsPage';
@@ -63,6 +66,9 @@ function detailRouteToTabId(route: MobileDetailRoute | null): TabId | null {
     case 'detail:moment':
     case 'detail:social-search':
     case 'detail:social-profile':
+    case 'detail:social-circles':
+    case 'detail:social-circle':
+    case 'detail:social-circle-members':
       return 'moments';
     case 'detail:setting':
       return 'settings';
@@ -102,6 +108,34 @@ function renderPage(
           <SocialSearchPage
             onBack={onBack}
             onOpenProfile={onOpenDetail}
+            onOpenCircles={() => onOpenDetail({
+              routeId: 'detail:social-circles',
+            })}
+          />
+        );
+      }
+      if (activeDetail?.routeId === 'detail:social-circles') {
+        return (
+          <SocialCirclesPage
+            onBack={onBack}
+            onOpenCircle={onOpenDetail}
+          />
+        );
+      }
+      if (activeDetail?.routeId === 'detail:social-circle') {
+        return (
+          <SocialCircleDetailPage
+            circleId={activeDetail.circleId}
+            onBack={onBack}
+            onOpenMembers={onOpenDetail}
+          />
+        );
+      }
+      if (activeDetail?.routeId === 'detail:social-circle-members') {
+        return (
+          <SocialCircleMemberPickerPage
+            circleId={activeDetail.circleId}
+            onBack={onBack}
           />
         );
       }

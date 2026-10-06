@@ -1591,6 +1591,13 @@
       "tier": "local-evidence",
       "description": "Prove descriptor-owned Mobile Social Search/Profile, canonical PTID and Federation identity, authored timeline, authoritative relationship readback, Direct handoff, restoration metadata, and projection invalidation without claiming native device behavior."
     },
+    "mobile-social-circles-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_circles_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove Station-owned Mobile Circle lifecycle, canonical protobuf identity, session-fenced pagination, authoritative member readback convergence, remote lookup failure preservation, and descriptor-owned Circle routes without claiming native device behavior."
+    },
     "mobile-identity-contract": {
       "command": "python3 -m tooling.acceptance.gates.mobile.identity_contract",
       "timeout_seconds": 120,

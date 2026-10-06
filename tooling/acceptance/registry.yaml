@@ -1435,6 +1435,33 @@
       ]
     },
     {
+      "id": "mobile-social-circles",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/app/navigation/**",
+          "apps/mobile/src/components/MobileShell.tsx",
+          "apps/mobile/src/features/social/socialCircles.ts",
+          "apps/mobile/src/pages/moments/SocialCircleDetailPage.tsx",
+          "apps/mobile/src/pages/moments/SocialCircleMemberPickerPage.tsx",
+          "apps/mobile/src/pages/moments/SocialCirclesPage.tsx",
+          "apps/mobile/src/services/socialNativeAdapter.ts",
+          "apps/mobile/src/services/stationTransport.ts",
+          "apps/mobile/src-tauri/src/runtime/station_transport/**",
+          "apps/mobile/src-tauri/src/social/**",
+          "apps/mobile/src/styles.css",
+          "packages/locales/**",
+          "tooling/acceptance/gates/mobile/social_circles_native.py"
+        ]
+      },
+      "require": [
+        "mobile-social-facade-contract",
+        "mobile-social-circles-native"
+      ]
+    },
+    {
       "id": "mobile-social-runtime",
       "features": [
         "mobile-chat-contacts-groups",

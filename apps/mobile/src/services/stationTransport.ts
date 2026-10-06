@@ -73,6 +73,36 @@ export type StationTransportOperation =
   }
   | { operationId: 'social_blocked_list'; limit: number; cursor?: string }
   | { operationId: 'social_friendship_status'; target_ptid: string }
+  | { operationId: 'social_circles_list'; limit: number; cursor?: string }
+  | {
+    operationId: 'social_circle_create';
+    name: string;
+    description?: string;
+    member_ptids: string[];
+  }
+  | {
+    operationId: 'social_circle_update';
+    circle_id: string;
+    name: string;
+    description?: string;
+  }
+  | { operationId: 'social_circle_delete'; circle_id: string }
+  | {
+    operationId: 'social_circle_members_list';
+    circle_id: string;
+    limit: number;
+    cursor?: string;
+  }
+  | {
+    operationId: 'social_circle_members_add';
+    circle_id: string;
+    member_ptids: string[];
+  }
+  | {
+    operationId: 'social_circle_members_remove';
+    circle_id: string;
+    member_ptids: string[];
+  }
   | {
     operationId: 'moments_timeline';
     timeline_type: number;
@@ -312,6 +342,8 @@ function operationAdmission(
     case 'social_friend_requests_list':
     case 'social_blocked_list':
     case 'social_friendship_status':
+    case 'social_circles_list':
+    case 'social_circle_members_list':
     case 'moments_timeline':
     case 'moments_post_get':
     case 'moments_comments_list':
@@ -325,6 +357,11 @@ function operationAdmission(
     case 'notification_delete':
     case 'notification_preferences_update':
     case 'conversation_member_settings_update':
+    case 'social_circle_create':
+    case 'social_circle_update':
+    case 'social_circle_delete':
+    case 'social_circle_members_add':
+    case 'social_circle_members_remove':
     case 'moments_react':
     case 'moments_unreact':
     case 'moments_comment_create':

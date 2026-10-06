@@ -49,7 +49,14 @@ fn require_social_operation(operation: &Value) -> MobileResult<()> {
         .ok_or_else(|| MobileError::social("Social adapter operationId is required"))?;
     if matches!(
         operation_id,
-        "moments_timeline"
+        "social_circles_list"
+            | "social_circle_create"
+            | "social_circle_update"
+            | "social_circle_delete"
+            | "social_circle_members_list"
+            | "social_circle_members_add"
+            | "social_circle_members_remove"
+            | "moments_timeline"
             | "moments_post_get"
             | "moments_react"
             | "moments_unreact"
@@ -73,6 +80,10 @@ mod tests {
     fn social_adapter_accepts_only_social_operations() {
         assert!(require_social_operation(&json!({
             "operationId": "moments_timeline"
+        }))
+        .is_ok());
+        assert!(require_social_operation(&json!({
+            "operationId": "social_circle_members_add"
         }))
         .is_ok());
         assert!(require_social_operation(&json!({
