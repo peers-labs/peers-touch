@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-05
-covered_docs_hash: 9c39335b3c13e2a86824fa332641c9781bb0cc70c730136711577fba60912336
+last_verified_at: 2026-10-06
+covered_docs_hash: 2c6f3ef223ee392bf5d054ca3eda5feeb3b20b0a9c82b7216f74d053c29d241b
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,14 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-06 Knowledge Index Review
+
+The Knowledge index now links the Conversation production schema migration
+single-source pitfall. The entry documents Station migration ownership and does
+not change GitHub Review behavior, severity, or evidence contracts. Existing
+review rules already reject split ownership and duplicate authority, so no
+`SKILL.md` update or review fixture is required.
 
 ## 2026-10-05 Architecture Taxonomy Review
 
