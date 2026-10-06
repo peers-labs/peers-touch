@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from tooling.acceptance.core import GateError
+from tooling.acceptance.core.redaction import redact_artifact_bytes
 from tooling.acceptance.gates.station_access.relay_role_security_contract import (
     FORBIDDEN_EGRESS,
     _find_forbidden_egress,
@@ -49,12 +51,28 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
 
     def test_runtime_evidence_rejects_unexpected_secret_principal(self) -> None:
         manifest, attestation = self._runtime_evidence()
-        attestation["runtimeSecurity"]["relaySecrets"][
+        attestation["runtimeSecurity"]["relayStorageSecurity"][
             "unexpectedPrincipals"
         ] = ["BUILTIN\\Users"]
 
         with self.assertRaisesRegex(GateError, "security is incomplete"):
             _validate_runtime_evidence(manifest, attestation)
+
+    def test_runtime_evidence_survives_canonical_redaction(self) -> None:
+        manifest, attestation = self._runtime_evidence()
+        encoded = json.dumps(attestation).encode("utf-8")
+
+        redacted, _changed = redact_artifact_bytes(encoded)
+        persisted_attestation = json.loads(redacted)
+        evidence = _validate_runtime_evidence(
+            manifest,
+            persisted_attestation,
+        )
+
+        self.assertIsInstance(evidence["relayStorageSecurity"], dict)
+        self.assertTrue(
+            evidence["relayStorageSecurity"]["requiredProtectedFiles"]
+        )
 
     @staticmethod
     def _runtime_evidence() -> tuple[dict[str, object], dict[str, object]]:
@@ -110,7 +128,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
                     "runtimePath": "relay-runtime",
                     "processIds": [202],
                 },
-                "relaySecrets": {
+                "relayStorageSecurity": {
                     "rootAclProtected": True,
                     "unexpectedPrincipals": [],
                     "processBinaryMatches": True,
@@ -118,7 +136,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
                     "stationDatabaseExists": True,
                     "relayDatabasePath": "relay/data/relay.db",
                     "relayDatabaseExists": True,
-                    "requiredSecretFiles": {
+                    "requiredProtectedFiles": {
                         "auth-secret": True,
                         "relay-operator.key": True,
                         "relay-signing.key": True,

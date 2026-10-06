@@ -306,7 +306,7 @@ def _relay_runtime_security(
         "rootAclProtected": True,
         "principals": list(payload.get("principals") or ()),
         "unexpectedPrincipals": [],
-        "requiredSecretFiles": dict(files),
+        "requiredProtectedFiles": dict(files),
         "binarySha256": binary_sha256,
         "processBinaryMatches": True,
         "stationDatabasePath": str(payload["stationDatabasePath"]),
@@ -354,7 +354,7 @@ def _persist_relay_attestation(
         "attachmentMode": "existing-owner-managed",
         "stationRuntime": dict(station_runtime),
         "relayRuntime": dict(relay_runtime),
-        "relaySecrets": dict(runtime_security),
+        "relayStorageSecurity": dict(runtime_security),
         "streamEndpoint": (
             f"tls://{config_host(relay_url)}:{relay_runtime['streamPort']}"
         ),

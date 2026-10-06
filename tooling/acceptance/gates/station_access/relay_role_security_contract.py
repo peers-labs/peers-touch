@@ -390,15 +390,15 @@ def _validate_runtime_evidence(
         "relayRuntime",
         "Relay runtime security",
     )
-    secrets = _required_object(
-        security.get("relaySecrets"),
-        "relaySecrets",
+    storage_security = _required_object(
+        security.get("relayStorageSecurity"),
+        "relayStorageSecurity",
         "Relay runtime security",
     )
     required_files = _required_object(
-        secrets.get("requiredSecretFiles"),
-        "requiredSecretFiles",
-        "Relay secrets",
+        storage_security.get("requiredProtectedFiles"),
+        "requiredProtectedFiles",
+        "Relay storage security",
     )
     if (
         security.get("attachmentMode") != "existing-owner-managed"
@@ -408,13 +408,13 @@ def _validate_runtime_evidence(
         or station_runtime.get("runtimePath") == relay_runtime.get("runtimePath")
         or set(station_runtime.get("processIds") or ())
         & set(relay_runtime.get("processIds") or ())
-        or secrets.get("rootAclProtected") is not True
-        or secrets.get("unexpectedPrincipals") != []
-        or secrets.get("processBinaryMatches") is not True
-        or secrets.get("stationDatabaseExists") is not True
-        or secrets.get("relayDatabaseExists") is not True
-        or secrets.get("stationDatabasePath")
-        == secrets.get("relayDatabasePath")
+        or storage_security.get("rootAclProtected") is not True
+        or storage_security.get("unexpectedPrincipals") != []
+        or storage_security.get("processBinaryMatches") is not True
+        or storage_security.get("stationDatabaseExists") is not True
+        or storage_security.get("relayDatabaseExists") is not True
+        or storage_security.get("stationDatabasePath")
+        == storage_security.get("relayDatabasePath")
         or not required_files
         or not all(value is True for value in required_files.values())
     ):
@@ -428,7 +428,7 @@ def _validate_runtime_evidence(
         "relay": relay,
         "stationRuntime": station_runtime,
         "relayRuntime": relay_runtime,
-        "relaySecrets": secrets,
+        "relayStorageSecurity": storage_security,
         "streamEndpoint": stream_endpoint,
     }
 
@@ -482,7 +482,7 @@ def validate_relay_role_runtime_contract() -> dict[str, Any]:
         "sourceCommit": evidence["sourceCommit"],
         "stationRuntime": evidence["stationRuntime"],
         "relayRuntime": evidence["relayRuntime"],
-        "relaySecrets": evidence["relaySecrets"],
+        "relayStorageSecurity": evidence["relayStorageSecurity"],
         "http": {
             "stationVersion": station_version_status,
             "relayHealth": relay_health_status,
