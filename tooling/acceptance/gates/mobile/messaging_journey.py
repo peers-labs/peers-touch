@@ -353,6 +353,10 @@ class MobileMessagingJourney:
             ),
             f"{sender.client_id} accepted relationship",
         )
+        self._await_write_admission(
+            sender_session,
+            f"{sender.client_id} contact Direct write admission",
+        )
         conversation = self._mapping(
             sender_session.call_action(
                 "social.contact.open",
@@ -395,6 +399,34 @@ class MobileMessagingJourney:
             and value.get("status") == FRIEND_REQUEST_STATUS_ACCEPTED
             for value in requests
         )
+
+    def _await_write_admission(
+        self,
+        session: MessagingJourneySession,
+        label: str,
+    ) -> None:
+        last_reason = "unavailable"
+
+        def admission_open() -> bool:
+            nonlocal last_reason
+            snapshot = self._mapping(
+                session.call_action("recovery.snapshot"),
+                f"{label} recovery snapshot",
+            )
+            admission = self._mapping(
+                snapshot.get("writeAdmission"),
+                f"{label} write admission",
+            )
+            if admission.get("open") is True:
+                return True
+            reason = admission.get("reason")
+            last_reason = reason if isinstance(reason, str) and reason else "closed"
+            return False
+
+        try:
+            self._await_condition(admission_open, label)
+        except GateError as error:
+            raise GateError(f"{error}; last reason: {last_reason}") from error
 
     def _run_attachment_and_interaction_path(
         self,

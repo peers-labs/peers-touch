@@ -65,6 +65,8 @@ class FakeMessagingSession:
         self.lifecycle_scope_phases: list[str] = []
         self.messaging_projection_reads_while_bootstrapping = 0
         self.contact_open_inputs: list[dict[str, Any]] = []
+        self.write_admission_reads = 0
+        self.write_admission_sequence: list[dict[str, Any]] = []
         self.network.actors[actor.ptid] = actor
 
     def call_action(
@@ -179,6 +181,20 @@ class FakeMessagingSession:
                 ],
             )
             return {"conversationId": conversation_id}
+        if action == "recovery.snapshot":
+            self.write_admission_reads += 1
+            admission = (
+                self.write_admission_sequence.pop(0)
+                if self.write_admission_sequence
+                else {"open": True, "reason": None}
+            )
+            return {
+                "hasActiveRecovery": not admission["open"],
+                "isWriteBlocked": not admission["open"],
+                "writeAdmission": admission,
+                "updatedAtMs": self.write_admission_reads,
+                "states": [],
+            }
         if action == "social.reconcile":
             return self._social_projection()
         if action == "messaging.createGroup":
@@ -498,6 +514,51 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         )
         message = self.network.messages[result["conversationId"]][0]
         self.assertIn("ptid:bob", message["readByPtids"])
+
+    def test_contact_direct_waits_for_effective_write_admission(self) -> None:
+        self.journey.authenticate(self.sender_session, self.sender, password="1")
+        self.journey.authenticate(
+            self.receiver_session,
+            self.receiver,
+            password="1",
+        )
+        self.sender_session.write_admission_sequence = [
+            {"open": False, "reason": "recovery_projection_blocked"},
+            {"open": False, "reason": "runtime_reconciling"},
+            {"open": True, "reason": None},
+        ]
+
+        result = self.journey.run_social_convergence(
+            sender_session=self.sender_session,
+            receiver_session=self.receiver_session,
+            sender=self.sender,
+            receiver=self.receiver,
+            journey_id="admission",
+        )
+
+        self.assertEqual(self.sender_session.write_admission_reads, 3)
+        self.assertEqual(
+            self.sender_session.contact_open_inputs,
+            [{"peerPtid": "ptid:bob", "federationId": "federation-1"}],
+        )
+        self.assertEqual(result["conversationId"], "ptid:alice-ptid:bob")
+
+    def test_contact_direct_admission_timeout_retains_last_public_reason(
+        self,
+    ) -> None:
+        self.sender_session.write_admission_sequence = [
+            {"open": False, "reason": "runtime_reconciling"},
+        ] * 200
+
+        with self.assertRaisesRegex(
+            GateError,
+            "last reason: runtime_reconciling",
+        ):
+            self.journey._await_write_admission(
+                self.sender_session,
+                "sender contact Direct write admission",
+            )
+        self.assertEqual(self.sender_session.contact_open_inputs, [])
 
     def test_authentication_resolves_canonical_station_account_reference(
         self,
