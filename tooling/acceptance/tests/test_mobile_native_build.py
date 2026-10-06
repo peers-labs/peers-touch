@@ -906,6 +906,12 @@ class MobileNativeBuildTest(unittest.TestCase):
             environment["TARGET_RANLIB"],
             resolved_llvm_ar,
         )
+        self.assertEqual(
+            environment["GRADLE_OPTS"],
+            "-Dorg.gradle.offline=true "
+            "-Dorg.gradle.daemon=false "
+            "-Dkotlin.compiler.execution.strategy=in-process",
+        )
         self.assertRegex(allowlisted_environment_digest(environment), r"^sha256:[0-9a-f]{64}$")
 
     def test_protoc_must_be_resolved_attested_and_present_on_sanitized_path(self) -> None:
