@@ -1,8 +1,8 @@
 # Unified Relay or Station Access
 
 > **Plan ID**: SAL-RELAY-20261006
-> **Version ID**: SAL-RELAY-20261006-v6
-> **Created**: 2026-10-06T06:20:25.000Z
+> **Version ID**: SAL-RELAY-20261006-v1
+> **Created**: 2026-10-06T06:36:41.000Z
 
 ## Plan Version
 
@@ -10,8 +10,8 @@
 {
   "kind": "peers-touch-plan-version",
   "planId": "SAL-RELAY-20261006",
-  "versionId": "SAL-RELAY-20261006-v6",
-  "createdAt": "2026-10-06T06:20:25.000Z",
+  "versionId": "SAL-RELAY-20261006-v1",
+  "createdAt": "2026-10-06T06:36:41.000Z",
   "workClass": "product-behavior",
   "architecture": {
     "sources": [
@@ -58,7 +58,15 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/station/app/main.go",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/station/app/subserver/events/bus.go",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "apps/station/frame/peers.go",
         "mode": "exclusive-write"
       },
       {
@@ -74,6 +82,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/station/frame/core/plugin/native/node",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/station/frame/core/plugin/native/subserver/bootstrap",
         "mode": "exclusive-write"
       },
@@ -83,6 +95,10 @@
       },
       {
         "pathPrefix": "apps/station/frame/core/plugin/native/subserver/relay-client",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "apps/station/frame/core/runtime/role",
         "mode": "exclusive-write"
       },
       {

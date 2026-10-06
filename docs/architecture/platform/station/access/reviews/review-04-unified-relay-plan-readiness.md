@@ -9,7 +9,7 @@
 
 | 严重度 | Finding | 处理 |
 |---|---|---|
-| P1 | 初版可能把“自动识别”扩张为 Relay 到 direct 的静默隐私降级 | v3 起跨 DIRECT/RELAY 切换必须显式确认 |
+| P1 | 初版可能把“自动识别”扩张为 Relay 到 direct 的静默隐私降级 | V1 评审中固定为跨 DIRECT/RELAY 切换必须显式确认 |
 | P1 | 客户端接入若早于 Relay 安全收口，会把现有透明代理暴露为产品面 | DAG 固定 role/security → enrollment → discovery → tunnel → clients |
 | P1 | Station 与 Relay 身份、Access 与 transport 可能形成第二 authority | Task 按 owner 分层，Station binding 保持唯一客户端 owner |
 | P2 | 私有连接材料缺少编码与泄漏约束 | 固定 `ptc1:`/fragment、digest 预登记、日志/analytics 脱敏 |
@@ -17,7 +17,8 @@
 | P2 | 初版 Desktop Cargo 命令包含多个 positional filter | 拆成三个可执行 `cargo test` 命令 |
 | P2 | Shared Federation 只是 document collection，无法执行 module governance | 补齐 `module-layout.md` 并登记 `shared-federation` active module |
 | P2 | 现有 profile 为 HTTP，不能直接产生生产 TLS proof | 写入 Execution Preconditions；外部 env 修改需 Owner 单独授权 |
-| P2 | `sixwin` 只有 Windows host inventory，不是 Station/Relay deploy profile | v6 将其限定为 Windows Desktop runtime，后端继续使用 `one/two/three` |
+| P2 | `sixwin` 只有 Windows host inventory，不是 Station/Relay deploy profile | V1 将其限定为 Windows Desktop runtime，后端继续使用 `one/two/three` |
+| P2 | Relay 最小角色的 composition roots 未进入初版 scope | V1 纳入 app main、frame peer、native node 与唯一 role owner |
 
 复审后 Plan 内无未解决 P0-P2。外部环境授权仍是进入 runtime 阶段前的硬条件。
 
@@ -28,8 +29,8 @@
 ## Mechanical Review
 
 - Plan ID：`SAL-RELAY-20261006`
-- Version ID：`SAL-RELAY-20261006-v6`
-- Digest：`05d368720fe67a4bfa6a42888c1c6d0a93233b6cfb28747688de23b963cae373`
+- Version ID：`SAL-RELAY-20261006-v1`
+- Digest：`85c08ac80ca202fdab85641d84f3bc1a4c818f51aad98c6b08f2b6875269b0a9`
 - `make plan-validate`：PASS
 - Architecture module governance：PASS
 - `git diff --check`：PASS
