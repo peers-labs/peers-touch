@@ -13,9 +13,9 @@ peers:
           relay-url: ""
           relay-stream-addr: ""
 
-          # Single-use admin invite. Issued via tooling/scripts/pt-relay-issue-invites.sh
-          # and consumed by the FIRST /api/v1/relay/register call. After that
-          # the relay_token at token-store-path is the source of truth.
+          # Single-use opaque invite issued by the Relay operator API and
+          # consumed by challenge-bound enrollment. After that the structured
+          # mount credential at token-store-path is the source of truth.
           invite-token: ""
 
           # Human-readable label echoed in /api/v1/relay/mounts. Defaults to

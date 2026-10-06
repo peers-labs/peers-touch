@@ -10,9 +10,8 @@
 //     Subserver Start order is non-deterministic and the local Hertz HTTP
 //     server may not yet be listening when Start is invoked.
 //  2. Acquire a relay_token. We prefer a cached value at TokenStorePath; on
-//     cache miss we POST /api/v1/relay/register with the InviteToken (which
-//     the operator pre-distributed via tooling/scripts/pt-relay-issue-invites.sh)
-//     and persist the resulting token.
+//     cache miss we complete challenge-bound enrollment with the operator's
+//     one-time InviteToken and persist the resulting structured credential.
 //  3. Hand off to relay/client.Client which keeps the TCP stream alive,
 //     reconnects on disconnect, and forwards request frames to a dispatcher
 //     we provide. Our dispatcher loops every incoming HTTP request back into

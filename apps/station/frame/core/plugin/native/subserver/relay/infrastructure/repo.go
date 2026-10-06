@@ -435,7 +435,10 @@ func (r *GormRepo) RotateMountCredential(
 			current.JTI,
 			domain.MountStatusRevoked,
 		).
-		Update("credential_jti", nextCredentialJTI)
+		Updates(map[string]interface{}{
+			"generation":     current.Generation + 1,
+			"credential_jti": nextCredentialJTI,
+		})
 	if result.Error != nil {
 		return nil, result.Error
 	}

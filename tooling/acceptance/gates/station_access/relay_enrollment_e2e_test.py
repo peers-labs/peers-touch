@@ -102,7 +102,7 @@ class RelayEnrollmentGateTest(unittest.TestCase):
                     payload,
                     timeout_seconds,
                 )
-                if self_call != (CAPABILITY_ID, RUN_OPERATION, {}, 120):
+                if self_call != (CAPABILITY_ID, RUN_OPERATION, {}, 240):
                     raise AssertionError(self_call)
                 return {
                     "stationPeerIdSha256": "a" * 64,
@@ -118,11 +118,12 @@ class RelayEnrollmentGateTest(unittest.TestCase):
                     ],
                     "credentialHasJti": True,
                     "firstGeneration": 1,
-                    "rotationGeneration": 1,
+                    "rotationGeneration": 2,
                     "rotationChangedJti": True,
                     "streamClosedAfterRotate": True,
                     "oldCredentialAfterRotateStatus": 401,
                     "newCredentialAfterRotateStatus": 200,
+                    "oldClientCredentialAfterRotateStatus": 401,
                     "revokeStatus": "revoked",
                     "streamClosedAfterRevoke": True,
                     "reconnectRejectedAfterRevoke": True,
@@ -130,6 +131,8 @@ class RelayEnrollmentGateTest(unittest.TestCase):
                     "recoveryGeneration": 3,
                     "recoverySucceeded": True,
                     "concurrentConsumeStatuses": [200, 403],
+                    "relayClientInitialReady": True,
+                    "relayClientRecoveredReady": True,
                 }
 
         with (
