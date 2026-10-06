@@ -925,6 +925,7 @@ export async function privateSocialStatus(): Promise<PrivateSocialRuntimeStatus>
 export async function privateSocialPrepareText(
   input: PrivateSocialAccountInput & PrivateSocialTextIntent,
 ): Promise<PrivateMomentProjection> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateMomentProjection>('social_private_prepare_text', { input });
 }
 
@@ -934,12 +935,14 @@ export async function privateSocialSubmitText(
     draftRevision: number;
   },
 ): Promise<PrivateMomentProjection> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateMomentProjection>('social_private_submit_text', { input });
 }
 
 export async function privateSocialPublish(
   input: PrivateSocialAccountInput & PrivateSocialMomentIntent,
 ): Promise<PrivateMomentProjection> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateMomentProjection>('social_private_publish', { input });
 }
 
@@ -973,6 +976,7 @@ export async function privateSocialRecoverWithNativeInput(
 export async function privateSocialCommentSubmit(
   input: PrivateSocialAccountInput & PrivateCommentIntent,
 ): Promise<PrivateCommentSubmitResult> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateCommentSubmitResult>('social_private_comment_submit', { input });
 }
 
@@ -989,18 +993,21 @@ export async function privateSocialComments(
 export async function privateSocialReact(
   input: PrivateSocialAccountInput & { postId: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateReactionMutationResult>('social_private_react', { input });
 }
 
 export async function privateSocialUnreact(
   input: PrivateSocialAccountInput & { postId: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateReactionMutationResult>('social_private_unreact', { input });
 }
 
 export async function privateSocialReactionRetry(
   input: PrivateSocialAccountInput & { commandId: string },
 ): Promise<PrivateReactionMutationResult> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateReactionMutationResult>('social_private_reaction_retry', { input });
 }
 
@@ -1420,6 +1427,10 @@ function requireMessagingMutation(
     ),
     domain,
   );
+}
+
+function requirePrivateSocialMutation(input: PrivateSocialAccountInput): void {
+  requireMessagingMutation(input, 'social');
 }
 
 export async function messagingCommandStatus(
