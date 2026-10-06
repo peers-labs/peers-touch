@@ -32,6 +32,11 @@ import { resolvePlanExecution } from '../plan/plan-mount.mjs';
 import { summarizeExecutionProgress } from '../plan/planctl.mjs';
 import { readAllWorktreeObservations } from './worktree-observation-store.mjs';
 import { discoverGitWorktrees } from './worktree-discovery.mjs';
+import { readWorkflowOwnerReferences } from './workflow-binding-store.mjs';
+import { readAllWorktreeCreations } from './worktree-create.mjs';
+import {
+  sameWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 const PROFILE_FIELDS = new Set([
   'PT_DEV_PROFILE',
@@ -199,6 +204,7 @@ function safeSession(session) {
     state: session.state.state ?? null,
     updatedAt: session.state.updatedAt ?? null,
     eventDigest: session.eventDigest ?? null,
+    workflowOwner: session.state.workflowOwner ?? null,
     lastVerification: session.state.lastVerification
       ? {
           verificationClass:
@@ -608,6 +614,7 @@ function safeRegistration(registration) {
     resetPolicy: registration.resetPolicy ?? null,
     profileState: registration.profileState ?? 'blocked',
     profileError: registration.profileError ?? null,
+    createdBy: registration.createdBy ?? null,
   };
 }
 
@@ -627,6 +634,7 @@ function safeDeclaration(declaration) {
     heartbeatAt: declaration.heartbeatAt ?? null,
     expiresAt: declaration.expiresAt,
     runtimeClaims: declaration.runtimeClaims,
+    workflowOwner: declaration.workflowOwner ?? null,
   };
 }
 
@@ -648,6 +656,7 @@ function safeActiveWork(record) {
     expectedHead: record.expectedHead,
     revision: record.revision,
     updatedAt: record.updatedAt,
+    workflowOwner: record.workflowOwner ?? null,
   };
 }
 
@@ -843,6 +852,7 @@ export function workflowProjection({
   freshness,
   activeWork,
   workspaceId,
+  workflowOwner = null,
   options,
 }) {
   const primary =
@@ -987,6 +997,7 @@ export function workflowProjection({
             : null,
       task: plan?.task ?? fallbackTask(activeWork, review),
       session,
+      owner: workflowOwner,
       review,
       action: agentActivity,
       findings,
@@ -1007,6 +1018,9 @@ export function deriveWorktrees(
   checkedAt = new Date().toISOString(),
   discoveryAvailable = true,
   projectionOptions = {},
+  ownerBindings = [],
+  worktreeCreations = [],
+  worktreeCreationErrors = [],
 ) {
   const profileByName = new Map(
     profiles.map((profile) => [profile.name, profile]),
@@ -1024,6 +1038,18 @@ export function deriveWorktrees(
   );
   const observationErrorByWorkspace = new Map(
     observationErrors.map((error) => [error.workspaceId, error]),
+  );
+  const ownerBindingsByWorkspace = new Map();
+  for (const record of ownerBindings) {
+    const current = ownerBindingsByWorkspace.get(record.workspaceId) ?? [];
+    current.push(record);
+    ownerBindingsByWorkspace.set(record.workspaceId, current);
+  }
+  const creationByWorkspace = new Map(
+    worktreeCreations.map((record) => [record.workspaceId, record]),
+  );
+  const creationErrorByWorkspace = new Map(
+    worktreeCreationErrors.map((error) => [error.workspaceId, error]),
   );
   const visibleDeclarations = declarations.filter((declaration) =>
     VISIBLE_DECLARATION_STATES.has(declaration.state),
@@ -1047,7 +1073,6 @@ export function deriveWorktrees(
   for (const error of observationErrors) {
     workspaceIds.add(error.workspaceId);
   }
-
   const slotOwners = new Map();
   for (const registration of registrations) {
     if (!Number.isInteger(registration.slot)) continue;
@@ -1063,6 +1088,10 @@ export function deriveWorktrees(
       const observation = observationByWorkspace.get(workspaceId) ?? null;
       const observationError =
         observationErrorByWorkspace.get(workspaceId) ?? null;
+      const creation = creationByWorkspace.get(workspaceId) ?? null;
+      const creationError = creationErrorByWorkspace.get(workspaceId) ?? null;
+      const workspaceOwnerBindings =
+        ownerBindingsByWorkspace.get(workspaceId) ?? [];
       const work = visibleDeclarations.filter(
         (declaration) => declaration.workspaceId === workspaceId,
       );
@@ -1101,6 +1130,44 @@ export function deriveWorktrees(
         (slotOwners.get(registration.slot)?.length ?? 0) > 1
       ) {
         issues.push('LOCAL_SLOT_CONFLICT');
+      }
+      if (creationError) {
+        issues.push(creationError.code);
+      }
+      if (
+        creation?.createdBy &&
+        registration?.createdBy &&
+        !sameWorkflowOwnerReference(
+          creation.createdBy,
+          registration.createdBy,
+        )
+      ) {
+        issues.push('WORKTREE_CREATION_OWNER_MISMATCH');
+      }
+      const stateOwnerCandidates = [
+        ...liveWork.map((declaration) => declaration.workflowOwner),
+        activeWork?.workflowOwner,
+      ].filter(Boolean);
+      const hasCurrentWork = liveWork.length > 0 || activeWork !== null;
+      const ownerCandidates =
+        hasCurrentWork
+          ? stateOwnerCandidates
+          : workspaceOwnerBindings
+              .filter((record) => !record.released)
+              .map((record) => record.workflowOwner)
+              .filter(Boolean);
+      const ownerByDigest = new Map(
+        ownerCandidates.map((owner) => [owner.rootBindingDigest, owner]),
+      );
+      const workflowOwner =
+        ownerByDigest.size === 1 ? [...ownerByDigest.values()][0] : null;
+      if (ownerByDigest.size > 1) {
+        issues.push('WORKFLOW_OWNER_MISMATCH');
+      } else if (
+        workflowOwner === null &&
+        hasCurrentWork
+      ) {
+        issues.push('WORKFLOW_OWNER_SESSION_MISSING');
       }
 
       const environmentState =
@@ -1162,6 +1229,7 @@ export function deriveWorktrees(
         freshness,
         activeWork,
         workspaceId,
+        workflowOwner,
         options: {
           ...projectionOptions,
           now: projectionOptions.now ?? new Date(checkedAt),
@@ -1171,6 +1239,9 @@ export function deriveWorktrees(
       return {
         workspaceId,
         name: discovery?.name ?? observation?.name ?? registration?.name ?? null,
+        creation,
+        createdBy: creation?.createdBy ?? registration?.createdBy ?? null,
+        workflowOwner,
         activeWork: activeWork ? safeActiveWork(activeWork) : null,
         git: discovery
           ? {
@@ -1213,6 +1284,7 @@ export function deriveWorktrees(
           state: declaration.state,
           expiresAt: declaration.expiresAt,
           plan: declaration.plan,
+          workflowOwner: declaration.workflowOwner ?? null,
         })),
         environment: {
           profile: profileName,
@@ -1311,6 +1383,17 @@ export async function buildDevSnapshot(options = {}) {
     readAllActiveWorkRecords({
       home: options.home,
     });
+  const ownerBindings =
+    options.ownerBindings ??
+    readWorkflowOwnerReferences({
+      home: options.home,
+      machineRoot: options.machineRoot,
+    });
+  const worktreeCreations =
+    options.worktreeCreations ??
+    readAllWorktreeCreations({
+      home: options.home,
+    });
   const rawRegistrations = machine.registrations ?? [];
   const registrations = rawRegistrations.map(safeRegistration);
   const rawRegistrationByWorkspace = new Map(
@@ -1360,6 +1443,9 @@ export async function buildDevSnapshot(options = {}) {
       now,
       readActions: options.readActions,
     },
+    ownerBindings.records,
+    worktreeCreations.records,
+    worktreeCreations.errors,
   );
   const occupancy = deriveOccupancy(
     profiles,
@@ -1412,6 +1498,8 @@ export async function buildDevSnapshot(options = {}) {
       records: activeWork.records.map(safeActiveWork),
       errors: activeWork.errors,
     },
+    workflowOwners: ownerBindings,
+    worktreeCreations,
     activeLeases,
     staleLeaseCount: (machine.staleLeaseMetadata ?? []).length,
     unregisteredObservationCount: machine.unregisteredObservations ? 1 : 0,

@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-07
-covered_docs_hash: f4e2178592bc95ca627d99b929b1a09c311e58d90d86bbe5464172ea860549d2
+covered_docs_hash: 888cc2f3ce7eabaa50e3ba968d726cf3486e66787279266e4e7e8dcfcddf6cc5
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,17 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-07 Main-Session Worktree Provenance Review
+
+DWF-D43 requires explicitly authorized Agent-created worktrees to persist the
+creating main-session reference independently from current Development Run
+ownership. Review now rejects raw Git creation presented as a supported Agent
+path, Git actor substitution, Action Receipt substitution for user
+authorization, guessed legacy provenance, owner mutation across declaration,
+Session, or active-work, and active ownerless legacy state. The review Skill,
+workflow invariant, installation fixture, and focused owner/worktree tests
+cover these boundaries; no generic review fixture is required.
 
 ## 2026-10-07 Explicit North Star Approval Review
 

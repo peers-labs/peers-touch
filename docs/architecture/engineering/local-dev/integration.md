@@ -73,6 +73,8 @@ Target command behavior:
 
 | Command | Control-plane action |
 |---------|----------------------|
+| `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]` | Create an explicitly authorized Git worktree and persist immutable creating main-session provenance |
+| `make worktree-creation-status` | Read the current worktree creation provenance |
 | `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
 | `make env-unregister [WORKSPACE_ID=<id>]` | Remove the exact idle registration after coordinated close; reject live declaration, active-work, PlanMount, or lease |
 | `make profile <name>` | Explicitly select a reviewed Profile; register with the lowest free slot and minimum operational capabilities, excluding reset, on first use; otherwise update the existing binding |

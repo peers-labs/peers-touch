@@ -47,6 +47,10 @@ import {
 } from './workspace-lifecycle-lock.mjs';
 import { assertDevelopmentCloseAdmission } from './development-close-store.mjs';
 import { readActiveWorkRecord } from './active-work-store.mjs';
+import {
+  sameWorkflowOwnerReference,
+  validateWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
 const WORKSPACE_ID = /^[0-9a-f]{16}$/;
@@ -981,6 +985,30 @@ function buildDeclaration(options, existing, now) {
     branch,
     sourceHead,
   });
+  const suppliedWorkflowOwner =
+    options.workflowOwner === undefined ||
+    options.workflowOwner === null
+      ? null
+      : validateWorkflowOwnerReference(options.workflowOwner);
+  const existingWorkflowOwner = existing?.workflowOwner ?? null;
+  if (
+    existingWorkflowOwner !== null &&
+    suppliedWorkflowOwner !== null &&
+    !sameWorkflowOwnerReference(
+      existingWorkflowOwner,
+      suppliedWorkflowOwner,
+    )
+  ) {
+    fail(
+      'WORK_DECLARATION_OWNER_MISMATCH',
+      'workflow OWNER does not own declaration',
+      {
+        expected: existingWorkflowOwner.rootBindingDigest,
+        actual: suppliedWorkflowOwner.rootBindingDigest,
+      },
+    );
+  }
+  const workflowOwner = existingWorkflowOwner ?? suppliedWorkflowOwner;
   const declaration = {
     declarationId: declarationId(workItemId, workspaceId),
     workItemId,
@@ -1005,6 +1033,7 @@ function buildDeclaration(options, existing, now) {
     mountId: null,
     runId: null,
     taskId: null,
+    ...(workflowOwner === null ? {} : { workflowOwner }),
   };
   if (planLocator !== null) Object.assign(declaration, planLocator);
   declaration.declarationDigest = digestDeclaration(declaration);
@@ -1218,6 +1247,25 @@ function ownedDeclaration(options, ledger) {
       expected: declaration.owner,
       actual: options.owner,
     });
+  }
+  if (
+    declaration.workflowOwner !== undefined &&
+    options.workflowOwner !== undefined &&
+    options.workflowOwner !== null &&
+    !sameWorkflowOwnerReference(
+      declaration.workflowOwner,
+      validateWorkflowOwnerReference(options.workflowOwner),
+    )
+  ) {
+    fail(
+      'WORK_DECLARATION_OWNER_MISMATCH',
+      'workflow OWNER does not own declaration',
+      {
+        declarationId: id,
+        expected: declaration.workflowOwner.rootBindingDigest,
+        actual: options.workflowOwner.rootBindingDigest,
+      },
+    );
   }
   return declaration;
 }

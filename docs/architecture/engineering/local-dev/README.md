@@ -97,6 +97,11 @@ Git worktree discovery does not create a registration. The initial registered
 cohort is owner-declared; until that list is provided, the machine registry may
 record observations but must keep `registrations` empty.
 
+An Agent may create a worktree only after explicit user authorization and only
+through `make worktree-create`. That command records the creating main-session
+OWNER, source workspace, purpose, branch, and initial HEAD in machine-local
+target-workspace state before the worktree is used by another Agent.
+
 Normal `make config`, `make station`, Desktop, and Mobile resolution requires
 the authoritative binding. `make profile` creates that binding on first
 selection and updates it thereafter. OS-held leases under `leases/` are the

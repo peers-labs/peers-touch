@@ -47,6 +47,10 @@ import {
 } from './dev-resource-plan.mjs';
 import { inspectGitWorkspace } from './git-workspace.mjs';
 import { acquireWorkspaceLifecycleLockSync } from './workspace-lifecycle-lock.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const cli = fileURLToPath(new URL('./machine-dev.mjs', import.meta.url));
 const leaseCli = fileURLToPath(new URL('./machine-dev-lease.py', import.meta.url));
@@ -183,6 +187,17 @@ function registrationOptions(scope, overrides = {}) {
     purpose: 'isolated machine control-plane test',
     owner: 'machine-dev-test@example.invalid',
     ...overrides,
+  };
+}
+
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
   };
 }
 
@@ -361,6 +376,34 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(status.registrations[0].activity, 'idle');
     assert.equal(status.registrations[0].profileState, 'available');
     assert.equal(status.registrations[0].resetPolicy, 'agent-resettable');
+  } finally {
+    scope.close();
+  }
+});
+
+test('registration preserves the worktree main-session owner', () => {
+  const scope = fixture();
+  try {
+    const owner = workflowOwner();
+    const registered = registerWorkspace(
+      registrationOptions(scope, { createdBy: owner }),
+    );
+    assert.deepEqual(registered.createdBy, owner);
+    const updated = updateWorkspace(
+      registrationOptions(scope, {
+        purpose: 'updated without changing provenance',
+        createdBy: {
+          ...owner,
+          rootBindingDigest: 'b'.repeat(64),
+        },
+      }),
+    );
+    assert.deepEqual(updated.createdBy, owner);
+    assert.deepEqual(
+      statusAll({ home: scope.home, envRepo: scope.envRepo })
+        .registrations[0].createdBy,
+      owner,
+    );
   } finally {
     scope.close();
   }

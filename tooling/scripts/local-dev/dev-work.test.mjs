@@ -34,6 +34,10 @@ import {
   parseRuntimeClaims,
   RUNTIME_KINDS,
 } from './dev-work-schema.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
 const CANONICAL_RUNTIME_KINDS = [
@@ -106,6 +110,17 @@ function expectCode(code, operation) {
   });
 }
 
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
+}
+
 test('resolves a stable process-start identity for the current platform', () => {
   const identity = processStartIdentity();
   assert.equal(typeof identity, 'string');
@@ -136,6 +151,38 @@ test('publishes a closed declaration with owner-only storage', () => {
         clock: clock(),
       }).declarations.length,
       0,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('persists the verified main-session owner on a declaration', () => {
+  const scope = fixture();
+  try {
+    const owner = workflowOwner();
+    const declaration = startOrUpdateDeclaration(
+      options(scope, { workflowOwner: owner }),
+    );
+    assert.deepEqual(declaration.workflowOwner, owner);
+    assert.deepEqual(
+      statusCurrent({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        clock: clock(),
+      }).declarations[0].workflowOwner,
+      owner,
+    );
+    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
+      startOrUpdateDeclaration(
+        options(scope, {
+          workflowOwner: {
+            ...owner,
+            rootBindingDigest: 'b'.repeat(64),
+          },
+        }),
+        { requireExisting: true },
+      ),
     );
   } finally {
     scope.close();

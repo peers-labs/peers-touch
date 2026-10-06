@@ -185,6 +185,12 @@ Registration is explicit. Discovery through `git worktree list`, a branch name,
 an existing directory, a project `active_work` row, or a legacy profile pointer
 must not register a worktree automatically.
 
+Agent-created worktrees use `make worktree-create` after explicit user
+authorization. The command associates the new `workspaceId` with the creating
+main-session OWNER and the creation Action Receipt in
+`worktree-creation.json`. Raw `git worktree add` remains outside the supported
+Agent lifecycle because Git metadata has no conversation provenance.
+
 Registration is reusable machine allocation and remains after normal task
 completion. It is removed only for an explicitly authorized worktree removal.
 Unregister requires the exact registration owner and no live declaration,

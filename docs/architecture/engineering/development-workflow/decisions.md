@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-06
+> **Created**: 2026-09-13 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 
 ---
@@ -52,6 +52,7 @@
 | DWF-D40 | Preserve explicit user no-Plan intent | accepted |
 | DWF-D41 | Coordinate Development close with one resumable receipt | accepted |
 | DWF-D42 | Keep one stable Plan and record in-place amendments | accepted |
+| DWF-D43 | Persist main-session provenance for Agent-created worktrees | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1192,8 +1193,9 @@ Conversation-bound execution authority prevents command working directories from
   agents or worktrees.
 - The old `workflow-guard.mjs` and cwd-derived authority path are deleted with
   no compatibility wrapper.
-- Machine-local conversation records contain the hashed host conversation key,
-  never the raw conversation ID.
+- This decision originally kept only the hashed host conversation key;
+  DWF-D43 supersedes that privacy detail for owner-controlled main-session
+  provenance while preserving the hash as authority.
 - Core owner commands remain the final state-transition authority; the Kernel
   is an earlier admission and handoff-completeness boundary.
 
@@ -2157,3 +2159,66 @@ without turning every correction into a new Plan.
   ordinary autonomous amendments, North Star escalation, coverage validation,
   authorization expansion, Task/Gate invalidation, append-only history,
   restart after an interrupted amendment, and stable mount/run identity.
+
+## DWF-D43: Persist Main-Session Provenance For Agent-Created Worktrees
+
+**Status**: accepted
+**Date**: 2026-10-07
+
+### Context
+
+Git worktree metadata records only path, branch, and HEAD. The machine registry
+and Development declaration also used a Git actor label as `owner`, while the
+Workflow Kernel stored only a hash of the host root-chat identity. Another
+Agent could therefore discover a worktree and its Plan/Task but could not
+identify the main session that created or currently owned the work.
+
+### Decision
+
+- The host-native root identity remains canonical: TRAE `chat_session_id`,
+  Cursor `conversation_id`, and Codex `session_id`.
+- OWNER bindings persist that opaque root ID in owner-controlled machine-local
+  storage. The existing hash remains the locator and authority input; adding
+  the raw ID does not change the binding digest or child lineage.
+- An explicitly authorized Agent creates a worktree only through
+  `make worktree-create`. The command consumes the current live OWNER Action
+  Receipt as execution provenance and writes immutable
+  `worktree-creation.json` in the target workspace state. The receipt does not
+  replace the user's explicit authorization.
+- New machine registrations and Development declarations copy a verified
+  `WorkflowOwnerReference`. Development Session and active-work projections
+  carry the same reference.
+- Workflow Snapshot joins creation provenance, current workflow ownership, and
+  Plan/Task state. Git author/email remains an actor label and never substitutes
+  for a main-session identity.
+- Legacy hash-only OWNER bindings are upgraded in place only when the same host
+  supplies the matching raw root ID. Their binding digest is preserved.
+  Legacy worktree/declaration records without recoverable provenance remain
+  readable but report `WORKFLOW_OWNER_SESSION_MISSING`; tooling does not guess
+  from branch, path, Git identity, or process-global variables.
+
+### Rationale
+
+Git identity answers who authored source, not which user conversation owns the
+work. Persisting a verified machine-local session reference makes creation and
+current execution independently discoverable without weakening the existing
+hash-based authority chain.
+
+### Alternatives Considered
+
+- Keep only `rootChatHash`: rejected because another Agent cannot recover the
+  originating session ID from a one-way hash.
+- Use Git author/email: rejected because it identifies a source actor, not a
+  conversation.
+- Infer from the newest declaration or branch name: rejected because both are
+  mutable and can outlive or be reused across sessions.
+
+### Consequences
+
+- Other Agents can identify both who created a worktree and which main session
+  owns its current Development Run.
+- Raw host IDs remain local to mode-`0600` workflow state and are excluded from
+  Git, telemetry, runtime logs, and Acceptance evidence.
+- Tests cover immutable creation provenance, legacy OWNER upgrade without
+  lineage change, declaration/Session/active-work propagation, and snapshot
+  visibility.

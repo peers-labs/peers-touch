@@ -39,6 +39,9 @@ import {
   transitionSessionStore,
   writeDurableFileAtomic,
 } from './dev-session-store.mjs';
+import {
+  resolveCurrentWorkflowOwnerContext,
+} from './workflow-owner-context.mjs';
 
 export {
   DevSessionError,
@@ -253,6 +256,7 @@ async function loadBoundContext(options, dependencies = {}) {
       workspaceRoot,
       workItemId: options.workItemId,
       sessionId: options.sessionId,
+      workflowOwner: options.workflowOwner,
       clock: options.clock,
       now: options.now,
       lockTimeoutMs: options.lockTimeoutMs,
@@ -344,6 +348,7 @@ export async function startDevelopmentSession(options, dependencies = {}) {
       branch: plan.executionBinding.branch,
       journeyId: plan.currentTask.journeyId,
       executionMode: plan.currentTask.executionMode,
+      workflowOwner: declaration.workflowOwner,
     },
     at,
   );
@@ -2023,6 +2028,22 @@ function output(value, stream = process.stdout) {
 export async function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
   const write = io.output ?? output;
+  const ownerOperationLabels = {
+    start: 'dev-session-start',
+    archive: 'dev-session-archive',
+    transition: 'dev-transition',
+    'functional-result': 'dev-functional-result',
+  };
+  if (ownerOperationLabels[action]) {
+    options.workflowOwner = (
+      io.dependencies?.resolveCurrentWorkflowOwnerContext ??
+      resolveCurrentWorkflowOwnerContext
+    )({
+      home: options.home,
+      workspaceRoot: options.workspaceRoot ?? process.cwd(),
+      operationLabel: ownerOperationLabels[action],
+    }).workflowOwner;
+  }
   let session;
   switch (action) {
     case 'start':

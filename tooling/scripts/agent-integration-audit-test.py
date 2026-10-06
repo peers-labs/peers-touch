@@ -78,6 +78,7 @@ class AgentIntegrationTests(unittest.TestCase):
             "workflow-binding.mjs",
             "workflow-host-adapters.mjs",
             "workflow-kernel.mjs",
+            "workflow-owner-reference.mjs",
             "workflow-state-inspector.mjs",
             "workflow-tool-intent.mjs",
             "workspace-lifecycle-lock.mjs",

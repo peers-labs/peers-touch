@@ -27,6 +27,13 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLock,
 } from './workspace-lifecycle-lock.mjs';
+import {
+  resolveCurrentWorkflowOwnerContext,
+} from './workflow-owner-context.mjs';
+import {
+  sameWorkflowOwnerReference,
+  validateWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 const LIVE_DECLARATION_STATES = new Set(['DECLARED', 'ACTIVE', 'RELEASING']);
 const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
@@ -122,6 +129,7 @@ function assertOwnerAgreement({
   task,
   taskSlice,
   workspaceId,
+  workflowOwner,
 }) {
   const mismatches = {};
   for (const [field, expected, actual] of [
@@ -148,6 +156,24 @@ function assertOwnerAgreement({
       'ACTIVE_WORK_OWNER_MISMATCH',
       'Plan, declaration, Task, Session or Git owners disagree',
       { mismatches },
+    );
+  }
+  if (
+    declaration.workflowOwner !== undefined &&
+    workflowOwner !== undefined &&
+    workflowOwner !== null &&
+    !sameWorkflowOwnerReference(
+      declaration.workflowOwner,
+      validateWorkflowOwnerReference(workflowOwner),
+    )
+  ) {
+    fail(
+      'ACTIVE_WORK_OWNER_MISMATCH',
+      'current workflow OWNER does not own the declaration',
+      {
+        expected: declaration.workflowOwner.rootBindingDigest,
+        actual: workflowOwner.rootBindingDigest,
+      },
     );
   }
 }
@@ -210,6 +236,7 @@ export async function deriveActiveWorkInput(options, dependencies = {}) {
     task,
     taskSlice,
     workspaceId,
+    workflowOwner: options.workflowOwner,
   });
 
   const currentTaskPath = path.posix.join(
@@ -240,6 +267,9 @@ export async function deriveActiveWorkInput(options, dependencies = {}) {
     branch: declaration.branch,
     initialHead: execution.snapshot.executionBinding.initialHead,
     expectedHead: declaration.sourceHead,
+    ...(declaration.workflowOwner === undefined
+      ? {}
+      : { workflowOwner: declaration.workflowOwner }),
   };
 }
 
@@ -357,6 +387,21 @@ function output(value, stream = process.stdout) {
 export async function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
   const write = io.output ?? output;
+  const ownerOperationLabels = {
+    sync: 'active-work-sync',
+    repair: 'active-work-repair',
+    close: 'active-work-close',
+  };
+  if (ownerOperationLabels[action]) {
+    options.workflowOwner = (
+      io.dependencies?.resolveCurrentWorkflowOwnerContext ??
+      resolveCurrentWorkflowOwnerContext
+    )({
+      home: options.home,
+      workspaceRoot: options.workspaceRoot ?? process.cwd(),
+      operationLabel: ownerOperationLabels[action],
+    }).workflowOwner;
+  }
   let result;
   switch (action) {
     case 'sync':

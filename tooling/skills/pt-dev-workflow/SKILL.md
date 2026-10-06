@@ -156,6 +156,8 @@ Before mutation:
    TRAE owner identity comes only from `chat_session_id`; internal
    `session_id` values do not create peer owners. WORKER/REVIEWER authority
    requires an assigned, live child projection with exact root/parent lineage.
+   The verified root ID is machine-local provenance and must appear in current
+   worktree/declaration status; never substitute the Git actor.
 2. In `OBSERVE_ONLY`, bind one explicitly selected worktree. Never infer it
    from a Skill path, branch name, Plan path, or nearby repository.
 3. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
@@ -181,7 +183,19 @@ Before mutation:
 8. Preserve unrelated dirty files. Never switch branches or worktrees
    implicitly. Never create a worktree to bypass a Plan mount, lifecycle
    state, or resource conflict; only an explicit user-selected isolation or
-   concurrency operation authorizes worktree creation.
+   concurrency operation authorizes worktree creation. For that authorized
+   operation, use:
+
+   ```bash
+   make worktree-create \
+     WORKTREE=<absolute-path> \
+     BRANCH=<new-branch> \
+     PURPOSE='<why this worktree exists>' \
+     [START=<ref>]
+   ```
+
+   Raw `git worktree add` is not an Agent creation path because it cannot write
+   the target workspace's immutable main-session provenance.
 
 Missing identity returns `WORKTREE_IDENTITY_UNAVAILABLE`; drift returns
 `WORKTREE_IDENTITY_MISMATCH`.
@@ -224,6 +238,9 @@ Rules:
   `RESOURCE_DECLARATION_CONFLICT`.
 - A declaration is public intent, not a runtime lease or operation
   authorization.
+- New declarations copy the current verified `WorkflowOwnerReference`;
+  Session and active-work preserve it, and Workflow Snapshot reports both the
+  current owner and the worktree creator.
 - `dev-start` and `plan-mount` reject an unfinished
   `DevelopmentCloseReceipt`; resume its exact close before starting new work.
 - `peers-dev-workflow` is the canonical source and rollout owner only. Every

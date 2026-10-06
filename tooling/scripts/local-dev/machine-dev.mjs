@@ -18,6 +18,10 @@ import {
   validateLeaseRequest,
   verifyHeldLease,
 } from './machine-dev-registry.mjs';
+import {
+  resolveCurrentWorkflowOwnerContext,
+} from './workflow-owner-context.mjs';
+import { readWorktreeCreation } from './worktree-create.mjs';
 
 const OPTION_NAMES = new Map([
   ['workspace-root', 'workspaceRoot'],
@@ -174,6 +178,23 @@ const SIGNAL_EXIT_CODES = {
 export async function runCli(argv) {
   const { action, options } = parseArguments(argv);
   options.envRepo ??= process.env.PT_ENV_REPO;
+  if (['register', 'select', 'update'].includes(action)) {
+    const workspaceRoot = options.workspaceRoot ?? process.cwd();
+    const creation = readWorktreeCreation({
+      home: options.home,
+      workspaceRoot,
+    });
+    options.createdBy = creation?.createdBy ?? resolveCurrentWorkflowOwnerContext({
+      home: options.home,
+      workspaceRoot,
+      operationLabel:
+        action === 'register'
+          ? 'env-register'
+          : action === 'select'
+            ? 'profile'
+            : 'env-update',
+    }).workflowOwner;
+  }
   switch (action) {
     case 'register':
       for (const key of [

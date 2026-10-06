@@ -559,6 +559,7 @@ interface WorkspaceActiveWork {
   branch: string;
   initialHead: string;
   expectedHead: string;
+  workflowOwner?: WorkflowOwnerReference;
   updatedAt: string;
   recordDigest: string;
 }
@@ -662,8 +663,8 @@ Rules:
 
 ## 6.2 Workflow Binding Projection
 
-Raw host identities are never persisted. Each host adapter extracts exactly
-the fields defined for that host and hashes them independently:
+Each host adapter extracts exactly the fields defined for that host and hashes
+them independently:
 
 | Host | OWNER identity key | Assigned-child identity key |
 |---|---|---|
@@ -675,18 +676,50 @@ An absent required root-chat field produces `OBSERVE_ONLY`. Adapters do not
 probe aliases from another host and do not read process-global identity
 fallbacks.
 
+The canonical root ID is also retained in owner-controlled machine-local state
+so another Agent can identify the originating main session. It is not written
+to Git, telemetry, runtime logs, or Acceptance evidence.
+
 The create-once OWNER binding is:
 
 ```ts
 interface WorkflowOwnerBinding {
   kind: 'peers-touch-workflow-owner-binding';
   host: 'trae' | 'cursor' | 'codex';
+  rootChatId: string;
   rootChatHash: string;
   role: 'OWNER';
   executionRoot: string;
   workspaceId: string;
   boundAt: string;
   bindingEvent: 'PRE_TOOL_USE';
+  digest: string;
+}
+```
+
+The portable reference copied into worktree and Development state is:
+
+```ts
+interface WorkflowOwnerReference {
+  kind: 'peers-touch-workflow-owner-reference';
+  host: 'trae' | 'cursor' | 'codex';
+  rootChatId: string;
+  rootChatHash: string;
+  rootBindingDigest: string;
+}
+
+interface WorktreeCreation {
+  schemaVersion: 1;
+  kind: 'peers-touch-worktree-creation';
+  workspaceId: string;
+  name: string;
+  branch: string;
+  head: string;
+  sourceWorkspaceId: string;
+  purpose: string;
+  createdBy: WorkflowOwnerReference;
+  creationActionReceiptDigest: string;
+  createdAt: string;
   digest: string;
 }
 ```
@@ -949,6 +982,7 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
   mountId: string | null;
   runId: string | null;
   taskId: string | null;
+  workflowOwner?: WorkflowOwnerReference;
   workspaceId: string;
   branch: string;
   sourceHead: string;
@@ -1406,6 +1440,7 @@ type DevelopmentState =
 
 interface DevelopmentSessionState {
   sessionId: string;
+  workflowOwner?: WorkflowOwnerReference;
   workItemId: string;
   planId: string;
   taskId: string;
@@ -1662,6 +1697,8 @@ Unknown, skipped or work-class-incompatible edges are invalid.
 
 ```text
 ~/.peers-touch/dev/workspaces/<workspaceId>/workflow/
+├── worktree-creation.json
+├── active-work.json
 ├── <workItemId>/
 │   ├── session.json
 │   ├── events.ndjson
@@ -1694,7 +1731,9 @@ Constraints:
 - logically append-only bounded events with replay repair;
 - injected clock for deterministic tests;
 - no credential or private key;
-- no raw host conversation identifier;
+- no raw child execution-session identifier; the main-session root ID is
+  retained only in owner-controlled provenance;
 - no legacy conversation/action store compatibility;
-- no repository writer;
+- machine-state persistence never writes tracked source; `worktree-create`
+  delegates only the explicitly authorized Git topology operation;
 - no fallback to Acceptance Evidence Store.

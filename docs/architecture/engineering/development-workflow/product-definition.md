@@ -54,6 +54,7 @@ Conversation 不得静默改变执行根。Task 或 Plan 不得因聊天文本�
 | DWF-D40 | Explicit no-Plan standalone | 用户拒绝 Plan 时不制造 tracked owner state | accepted |
 | DWF-D41 | Coordinated Development close | 一个可恢复收据编排独立 owner 的关闭顺序 | accepted |
 | DWF-D42 | Stable Plan amendments | North Star 必须显式批准；普通执行调整原地记录并继续，只有 North Star 变化需要重新批准与 owner 决策 | accepted |
+| DWF-D43 | Worktree main-session provenance | Agent 创建 worktree 时持久化创建会话，当前 Development 状态传播已验证 OWNER 引用 | accepted |
 
 Accepted 决策定义目标合同，不等于实现或验收已经通过。在当前源码完成验证前，
 消费者仍须把尚未证明的能力投影为 `UNPROVEN`。
