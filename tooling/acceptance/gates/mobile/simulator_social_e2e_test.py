@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from tooling.acceptance.core import DriverError
+from tooling.acceptance.core import DriverError, GateError
 from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     ENVIRONMENT_ID,
     SCENARIO_GATES,
@@ -45,6 +45,30 @@ class Artifacts:
 
 
 class SimulatorSocialGateTests(unittest.TestCase):
+    def test_capture_rejects_chat_render_error_after_preserving_evidence(self) -> None:
+        artifacts = Mock()
+        artifact_ref = Mock()
+        artifact_ref.to_dict.return_value = {"path": "captured"}
+        artifacts.write_bytes.return_value = artifact_ref
+        session = Mock()
+        session.screenshot_bytes.return_value = b"png"
+        session.get_page_source.return_value = (
+            '<section data-testid="chat-render-error">'
+            "Chat could not be displayed.</section>"
+        )
+
+        with self.assertRaisesRegex(
+            GateError,
+            "sim-ios rendered the Mobile Chat error boundary",
+        ):
+            SimulatorSocialGate("chat-contacts")._capture_client(
+                artifacts,
+                session,
+                "sim-ios",
+            )
+
+        self.assertEqual(artifacts.write_bytes.call_count, 2)
+
     def test_canonical_simulator_gate_claims_declared_proof(self) -> None:
         artifacts = Artifacts()
         gate = SimulatorSocialGate("social-convergence")

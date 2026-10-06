@@ -229,6 +229,10 @@ class ChatMountGuard extends Component<{
   state = { hasError: false, retryCount: 0 };
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(error: Error) {
+    console.error('[mobile-chat] render failed', {
+      name: error.name,
+      message: error.message,
+    });
   }
   retry = () => this.setState((s) => ({ hasError: false, retryCount: s.retryCount + 1 }));
   render() {

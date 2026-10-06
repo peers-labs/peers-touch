@@ -1066,11 +1066,24 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   clearError: () => set({ error: null }),
 }));
 
+let projectedGroups: GroupState['groups'] | null = null;
+let projectedUnreadCounts: GroupState['unreadCounts'] | null = null;
+let projectedGroupConversations: GroupConversation[] = [];
+
 export function selectGroupConversations(state: GroupState): GroupConversation[] {
-  return projectGroupConversations({
+  if (
+    state.groups === projectedGroups
+    && state.unreadCounts === projectedUnreadCounts
+  ) {
+    return projectedGroupConversations;
+  }
+  projectedGroups = state.groups;
+  projectedUnreadCounts = state.unreadCounts;
+  projectedGroupConversations = projectGroupConversations({
     groups: state.groups,
     unreadCounts: state.unreadCounts,
   });
+  return projectedGroupConversations;
 }
 
 function emptyGroupState() {

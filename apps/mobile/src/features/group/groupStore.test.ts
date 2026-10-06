@@ -47,7 +47,7 @@ vi.mock('../../services/gateways', () => ({
 }));
 
 import type { MobileAuthSession } from '../auth/authSession';
-import { useGroupStore } from './groupStore';
+import { selectGroupConversations, useGroupStore } from './groupStore';
 
 const session = {
   stationPeerId: 'station-peer',
@@ -114,6 +114,20 @@ beforeEach(() => {
 });
 
 describe('Group store canonical Conversation mutation readback', () => {
+  it('keeps the conversation projection stable until its inputs change', () => {
+    const initialState = useGroupStore.getState();
+    const initial = selectGroupConversations(initialState);
+
+    expect(selectGroupConversations(initialState)).toBe(initial);
+    useGroupStore.setState({ loading: !initialState.loading });
+    expect(selectGroupConversations(useGroupStore.getState())).toBe(initial);
+
+    useGroupStore.setState({
+      unreadCounts: { ...useGroupStore.getState().unreadCounts },
+    });
+    expect(selectGroupConversations(useGroupStore.getState())).not.toBe(initial);
+  });
+
   it('does not synthesize an active group while create remains pending', async () => {
     let conversationId = '';
     createGroupMock.mockImplementation(async (input) => {

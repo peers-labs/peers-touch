@@ -37,6 +37,7 @@ describe('Chat typing snapshots', () => {
     expect(boundary).not.toContain('setTimeout');
     expect(boundary).not.toContain('return null');
     expect(boundary).toContain('this.props.fallback(this.retry)');
+    expect(boundary).toContain("console.error('[mobile-chat] render failed'");
     expect(source).toContain('data-testid="chat-render-error" role="alert"');
     expect(source).toContain('onClick={retry}');
   });
