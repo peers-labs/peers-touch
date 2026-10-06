@@ -810,8 +810,21 @@ function completionCandidateManifest(
   return manifest;
 }
 
-export function digestCompletionCandidate(candidateDocument) {
-  return digest(candidateDocument);
+export function digestCompletionCandidate({
+  planVersionDigest,
+  snapshotDigest,
+  runId,
+  runRevision,
+  transition,
+}) {
+  return digest({
+    kind: 'peers-touch-execution-run-completion-candidate',
+    planVersionDigest,
+    snapshotDigest,
+    runId,
+    runRevision,
+    transition,
+  });
 }
 
 function describeCompletionCandidate(manifest) {
@@ -835,7 +848,6 @@ async function completionCandidate(
   );
   return {
     digest: digestCompletionCandidate({
-      kind: 'peers-touch-execution-run-completion-candidate',
       planVersionDigest: planPackage.planVersionDigest,
       snapshotDigest: planPackage.execution.snapshot.recordDigest,
       runId: planPackage.execution.run.runId,
