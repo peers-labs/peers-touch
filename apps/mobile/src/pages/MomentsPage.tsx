@@ -24,7 +24,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Modal, Typography } from 'antd';
-import { ArrowLeft, ImagePlus, RefreshCw, Search } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  ImagePlus,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  UsersRound,
+  X,
+} from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { BoundedList } from '../components/BoundedList';
@@ -102,6 +111,7 @@ interface MomentsPageProps {
   readonly activePostId: string | null;
   readonly onOpenProfile: (actorPtid: string, federationId: string) => void;
   readonly onOpenSearch: () => void;
+  readonly onOpenCircles: () => void;
   readonly onBack: () => void;
 }
 
@@ -127,6 +137,7 @@ export function MomentsPage({
   activePostId,
   onOpenProfile,
   onOpenSearch,
+  onOpenCircles,
   onBack,
 }: MomentsPageProps) {
   const { t } = useMobileI18n();
@@ -165,6 +176,7 @@ export function MomentsPage({
   // Local UI state
   const [noticeError, setNoticeError] = useState('');
   const [showNewPost, setShowNewPost] = useState(false);
+  const [showSort, setShowSort] = useState(false);
   const [selectedThreadPostId, setSelectedThreadPostId] = useState<string | null>(null);
   const [mediaSelection, setMediaSelection] = useState<MomentMediaSelection | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
@@ -424,7 +436,7 @@ export function MomentsPage({
       data-acceptance-id="social-moments-page"
       data-feed-scope={feedScope}
     >
-      {/* Header: title + ImagePlus new-post toggle (prototype) */}
+      {/* Header: the confirmed prototype keeps Search, Circles and Compose together. */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.moments.title')}</h1>
         <button
@@ -439,13 +451,11 @@ export function MomentsPage({
         <button
           type="button"
           className="header-action"
-          data-acceptance-id="social-feed-refresh"
-          aria-label={t('mobile.moments.feed.refresh')}
-          aria-busy={feed.loadState === 'refreshing'}
-          disabled={isUnavailable || feed.loadState === 'refreshing'}
-          onClick={feed.refresh}
+          data-acceptance-id="social-circles-open"
+          aria-label={t('mobile.social.circles.title')}
+          onClick={onOpenCircles}
         >
-          <RefreshCw size={20} />
+          <UsersRound size={20} />
         </button>
         <button
           type="button"
@@ -458,50 +468,56 @@ export function MomentsPage({
         </button>
       </header>
 
-      <div className="moments-scope-bar">
-        <div
-          className="moments-scope-segment"
-          role="tablist"
-          aria-label={t('mobile.moments.scope.label')}
-        >
-          {(['home', 'explore'] as const).map((scope) => (
-            <button
-              key={scope}
-              type="button"
-              role="tab"
-              data-acceptance-id={`social-feed-scope-${scope}`}
-              aria-selected={feedScope === scope}
-              className="moments-scope-control"
-              data-active={feedScope === scope}
-              onClick={() => setFeedScope(scope)}
-            >
-              {t(`mobile.moments.scope.${scope}`)}
-            </button>
-          ))}
-        </div>
-        {feedScope === 'explore' && facade ? (
-          <div
-            className="moments-sort-segment"
-            role="group"
-            aria-label={t('mobile.moments.sort.label')}
+      <div
+        className="moments-scope-segment"
+        role="tablist"
+        aria-label={t('mobile.moments.scope.label')}
+      >
+        {(['home', 'explore'] as const).map((scope) => (
+          <button
+            key={scope}
+            type="button"
+            role="tab"
+            data-acceptance-id={`social-feed-scope-${scope}`}
+            aria-selected={feedScope === scope}
+            className="moments-scope-control"
+            data-active={feedScope === scope}
+            onClick={() => setFeedScope(scope)}
           >
-            {([
-              [TimelineSort.RECENT, 'recent'],
-              [TimelineSort.HOT, 'hot'],
-            ] as const).map(([sort, label]) => (
-              <button
-                key={label}
-                type="button"
-                className="moments-sort-control"
-                data-acceptance-id={`social-explore-sort-${label}`}
-                data-active={facade.feeds.explore.sort() === sort}
-                onClick={() => handleExploreSort(sort)}
-              >
-                {t(`mobile.moments.sort.${label}`)}
-              </button>
-            ))}
-          </div>
-        ) : null}
+            {t(`mobile.moments.scope.${scope}`)}
+          </button>
+        ))}
+      </div>
+      <div className="moments-context-row">
+        <span>
+          {t(feedScope === 'home'
+            ? 'mobile.moments.scope.homeDescription'
+            : 'mobile.moments.scope.exploreDescription')}
+        </span>
+        {feedScope === 'explore' && facade ? (
+          <button
+            type="button"
+            data-acceptance-id="social-explore-sort-open"
+            onClick={() => setShowSort(true)}
+          >
+            <SlidersHorizontal size={13} />
+            {t(`mobile.moments.sort.${
+              facade.feeds.explore.sort() === TimelineSort.HOT ? 'hot' : 'recent'
+            }`)}
+          </button>
+        ) : (
+          <button
+            type="button"
+            data-acceptance-id="social-feed-refresh"
+            aria-label={t('mobile.moments.feed.refresh')}
+            aria-busy={feed.loadState === 'refreshing'}
+            disabled={isUnavailable || feed.loadState === 'refreshing'}
+            onClick={feed.refresh}
+          >
+            <RefreshCw size={13} />
+            {t('mobile.moments.sort.recent')}
+          </button>
+        )}
       </div>
 
       {noticeError ? (
@@ -519,6 +535,7 @@ export function MomentsPage({
           session={authSession}
           intents={facade.intents}
           onPublished={handlePublished}
+          onClose={() => setShowNewPost(false)}
         />
       )}
 
@@ -663,6 +680,49 @@ export function MomentsPage({
           intents={facade.intents}
           onClose={() => setMediaSelection(null)}
         />
+      )}
+      {showSort && facade && (
+        <div className="moments-sheet-backdrop moments-sort-backdrop" role="presentation">
+          <section
+            className="moments-bottom-sheet moments-sort-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('mobile.moments.sort.label')}
+          >
+            <div className="moments-sheet-handle" />
+            <header className="moments-sheet-header">
+              <button
+                type="button"
+                aria-label={t('common.action.close')}
+                onClick={() => setShowSort(false)}
+              >
+                <X size={20} />
+              </button>
+              <h2>{t('mobile.moments.sort.label')}</h2>
+              <span />
+            </header>
+            {([
+              [TimelineSort.RECENT, 'recent'],
+              [TimelineSort.HOT, 'hot'],
+            ] as const).map(([sort, label]) => (
+              <button
+                key={label}
+                type="button"
+                className="moments-choice-row"
+                data-acceptance-id={`social-explore-sort-${label}`}
+                onClick={() => {
+                  handleExploreSort(sort);
+                  setShowSort(false);
+                }}
+              >
+                <span>
+                  <strong>{t(`mobile.moments.sort.${label}`)}</strong>
+                </span>
+                {facade.feeds.explore.sort() === sort ? <Check size={18} /> : null}
+              </button>
+            ))}
+          </section>
+        </div>
       )}
     </div>
   );

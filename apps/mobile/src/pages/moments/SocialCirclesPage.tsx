@@ -63,7 +63,7 @@ export function SocialCirclesPage({
 
   return (
     <div
-      className="page-container mobile-detail-page"
+      className="page-container mobile-detail-page social-detail-page"
       data-acceptance-id="social-circles-page"
     >
       <header className="page-header">
@@ -135,6 +135,7 @@ export function SocialCirclesPage({
       </div>
       <Modal
         open={createOpen}
+        rootClassName="social-circle-editor-modal"
         title={t('mobile.social.circles.create')}
         okText={t('common.action.create')}
         cancelText={t('common.action.cancel')}

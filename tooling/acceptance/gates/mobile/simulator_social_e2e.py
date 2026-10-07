@@ -943,11 +943,6 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._click_ui(
             sender_session,
-            '[data-acceptance-id="social-search-open"]',
-            "Social Search",
-        )
-        self._click_ui(
-            sender_session,
             '[data-acceptance-id="social-circles-open"]',
             "Social Circles",
         )
@@ -1068,11 +1063,20 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-composer-open"]',
             "Open Moment composer",
         )
-        self._select_antd_option(
+        self._click_ui(
             sender_session,
             '[data-acceptance-id="social-audience-select"]',
-            3,
+            "Audience sheet",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-audience-option="CIRCLE"]',
             "Circle audience",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-audience-target-done"]',
+            "Circle target",
         )
         self._wait_ui_attribute(
             sender_session,
@@ -1319,6 +1323,9 @@ const tablist = page?.querySelector('[role="tablist"]');
 const cards = page?.querySelectorAll(
   '[data-acceptance-id="social-moment-card"]'
 ) || [];
+const pageRect = page?.getBoundingClientRect();
+const scopeRect = page?.querySelector('[role="tablist"]')?.getBoundingClientRect();
+const firstCardStyle = cards[0] ? getComputedStyle(cards[0]) : null;
 return {
   viewportWidth: window.visualViewport?.width || window.innerWidth,
   viewportHeight: window.visualViewport?.height || window.innerHeight,
@@ -1327,8 +1334,17 @@ return {
   searchLabelled: Boolean(
     page?.querySelector('[data-acceptance-id="social-search-open"][aria-label]')
   ),
+  circlesLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-circles-open"][aria-label]')
+  ),
   composerLabelled: Boolean(
     page?.querySelector('[data-acceptance-id="social-composer-open"][aria-label]')
+  ),
+  scopeWidth: Number(scopeRect?.width || 0),
+  pageWidth: Number(pageRect?.width || 0),
+  flatFeed: !firstCardStyle || (
+    Number.parseFloat(firstCardStyle.borderTopLeftRadius || '0') <= 1
+    && firstCardStyle.boxShadow === 'none'
   ),
 };
 """
@@ -1340,7 +1356,11 @@ return {
             or metrics.get("tabCount") != 2
             or int(metrics.get("cardCount", 101)) > 100
             or metrics.get("searchLabelled") is not True
+            or metrics.get("circlesLabelled") is not True
             or metrics.get("composerLabelled") is not True
+            or float(metrics.get("scopeWidth", 0))
+            < float(metrics.get("pageWidth", 0)) - 40
+            or metrics.get("flatFeed") is not True
         ):
             raise GateError("MPS-09 native quality metrics are invalid")
         session.switch_to_native()

@@ -3638,6 +3638,442 @@ select,
   padding: 8px 0;
 }
 
+/* Confirmed Mobile Social prototype replica. */
+.moments-page {
+  background: #fff;
+}
+
+.moments-page .page-header {
+  height: 52px;
+  min-height: 52px;
+  padding: 0 16px;
+  gap: 2px;
+  border-bottom: 0.5px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.moments-page .header-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.moments-page .header-action {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.moments-page .header-action:active {
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.social-detail-page {
+  background: #fff;
+}
+
+.social-detail-page .page-header {
+  height: 52px;
+  min-height: 52px;
+  padding: 0 8px;
+  gap: 4px;
+  border-bottom: 0.5px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.social-detail-page .header-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.social-detail-page .header-action {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.social-detail-page .mobile-detail-body {
+  gap: 12px;
+  padding: 14px 16px calc(var(--safe-area-bottom) + 24px);
+}
+
+.moments-scope-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: auto;
+  height: 36px;
+  margin: 8px 16px 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.moments-scope-control {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border-radius: 7px;
+  color: rgba(51, 56, 69, 0.68);
+}
+
+.moments-scope-control[data-active='true'] {
+  color: rgba(31, 35, 48, 0.92);
+  box-shadow: 0 1px 4px rgba(31, 35, 48, 0.08);
+}
+
+.moments-context-row {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px 6px;
+  color: rgba(107, 112, 128, 0.82);
+  font-size: 12px;
+}
+
+.moments-context-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--brand-primary);
+  font: inherit;
+  font-weight: 600;
+}
+
+.moments-feed {
+  gap: 0;
+  padding: 0 0 20px;
+}
+
+.moments-card {
+  border: 0 !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06) !important;
+  border-radius: 0 !important;
+  box-shadow: none;
+}
+
+.moments-card > .ant-card-body {
+  padding: 14px 16px !important;
+}
+
+.moments-card-header {
+  justify-content: space-between;
+}
+
+.moments-author-trigger {
+  flex: 1;
+  min-width: 0;
+}
+
+.moments-card-more {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(107, 112, 128, 0.82);
+}
+
+.moments-card-more:active {
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.moments-post-action-sheet {
+  min-height: auto;
+}
+
+.moments-card-actions {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.moments-comments-section--inline {
+  margin-top: 0;
+  padding: 6px 16px 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  background: #fff;
+}
+
+.moments-comments-list,
+.moments-comments-items {
+  gap: 0;
+}
+
+.moments-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(19, 22, 32, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.moments-bottom-sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: calc(100dvh - max(12px, var(--safe-area-top)));
+  padding-bottom: max(10px, var(--safe-area-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.moments-sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 4px;
+  border-radius: 999px;
+  background: rgba(107, 112, 128, 0.32);
+}
+
+.moments-sheet-header {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 72px;
+  min-height: 48px;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.moments-sheet-header h2 {
+  margin: 0;
+  font-size: 16px;
+  text-align: center;
+}
+
+.moments-sheet-header > button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(51, 56, 69, 0.82);
+  font: inherit;
+}
+
+.moments-sheet-header > button:first-child {
+  width: 38px;
+  justify-self: start;
+}
+
+.moments-sheet-header > button.primary {
+  justify-self: end;
+  padding: 0 12px;
+  background: var(--brand-primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.moments-sheet-header > button:disabled {
+  opacity: 0.45;
+}
+
+.moments-composer-card {
+  min-height: min(610px, 90dvh);
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.moments-composer-card > .ant-input-textarea {
+  margin: 0;
+  padding: 14px 16px 10px;
+}
+
+.moments-composer-card > .ant-input-textarea textarea {
+  min-height: 132px !important;
+  padding: 0;
+  border: 0;
+  box-shadow: none !important;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.moments-composer-audience {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  min-height: 58px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  background: #fff;
+  color: rgba(51, 56, 69, 0.88);
+  text-align: left;
+}
+
+.moments-composer-audience > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.moments-composer-eyebrow {
+  color: rgba(107, 112, 128, 0.72) !important;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.moments-composer-actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  padding: 12px 16px;
+}
+
+.moments-composer-actions .ant-btn {
+  flex: 0 1 auto;
+}
+
+.moments-audience-backdrop {
+  z-index: 1300;
+}
+
+.moments-audience-sheet {
+  min-height: min(650px, 94dvh);
+}
+
+.moments-audience-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.moments-choice-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  min-height: 58px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  background: #fff;
+  color: rgba(51, 56, 69, 0.88);
+  text-align: left;
+}
+
+.moments-audience-sheet > .ant-select {
+  width: calc(100% - 32px);
+  margin: 12px 16px;
+}
+
+.moments-audience-target {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.moments-audience-target .ant-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.moments-audience-target .ant-select {
+  min-width: 0;
+  flex: 1;
+}
+
+.moments-sort-backdrop {
+  z-index: 1250;
+}
+
+.moments-sort-sheet {
+  min-height: 180px;
+}
+
+.social-profile-action-sheet,
+.social-profile-confirm-sheet {
+  min-height: auto;
+}
+
+.moments-choice-row.danger {
+  color: #cf1322;
+}
+
+.social-profile-confirm-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 18px 12px;
+}
+
+.social-profile-confirm-copy > svg {
+  flex: 0 0 auto;
+  color: #cf1322;
+}
+
+.social-profile-confirm-copy strong {
+  font-size: 15px;
+}
+
+.social-profile-confirm-copy p {
+  margin: 5px 0 0;
+  color: rgba(107, 112, 128, 0.88);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.social-profile-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 16px 10px;
+}
+
+.social-circle-editor-modal .ant-modal-wrap {
+  display: flex;
+  align-items: flex-end;
+}
+
+.social-circle-editor-modal .ant-modal {
+  top: auto;
+  width: 100% !important;
+  max-width: 100%;
+  margin: 0;
+  padding-bottom: 0;
+}
+
+.social-circle-editor-modal .ant-modal-content {
+  padding-bottom: max(16px, var(--safe-area-bottom));
+  border-radius: 18px 18px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moments-bottom-sheet,
+  .moments-reaction-picker {
+    animation: none;
+  }
+}
+
 /* ============================================================
    Settings / Profile — prototype-matching layout
    ============================================================ */

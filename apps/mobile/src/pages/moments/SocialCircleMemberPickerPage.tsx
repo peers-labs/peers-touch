@@ -63,7 +63,7 @@ export function SocialCircleMemberPickerPage({
 
   return (
     <div
-      className="page-container mobile-detail-page circle-member-picker"
+      className="page-container mobile-detail-page social-detail-page circle-member-picker"
       data-acceptance-id="social-circle-member-picker"
       data-circle-id={circleId}
     >
@@ -71,7 +71,6 @@ export function SocialCircleMemberPickerPage({
         <button
           type="button"
           className="header-action"
-          data-acceptance-id="social-circle-members-submit"
           aria-label={t('common.action.back')}
           onClick={onBack}
         >
@@ -81,6 +80,7 @@ export function SocialCircleMemberPickerPage({
         <button
           type="button"
           className="header-action"
+          data-acceptance-id="social-circle-members-submit"
           aria-label={t('common.action.done')}
           disabled={selected.size === 0 || pending}
           onClick={() => void submit()}

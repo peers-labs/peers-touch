@@ -93,7 +93,7 @@ export function SocialCircleDetailPage({
 
   return (
     <div
-      className="page-container mobile-detail-page"
+      className="page-container mobile-detail-page social-detail-page"
       data-acceptance-id="social-circle-detail"
       data-circle-id={circleId}
     >

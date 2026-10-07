@@ -22,11 +22,12 @@ import {
   Link as LinkIcon,
   MapPin,
   MessageCircle,
+  MoreHorizontal,
   Play,
   Repeat2,
-  Share2,
   ShieldAlert,
   Trash2,
+  X,
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -126,6 +127,7 @@ export function MomentFeedItem({
   const { t } = useMobileI18n();
 
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   const createdAtMs = useMemo(() => {
     if (!post.createdAt) return 0;
@@ -368,26 +370,38 @@ export function MomentFeedItem({
       data-moment-content-kind={contentKind}
     >
       {/* Author header — Avatar 42px + name + time */}
-      <button
-        type="button"
-        className="moments-card-header moments-author-trigger"
-        data-acceptance-id="social-moment-author"
-        onClick={() => onOpenAuthor?.(
-          post.authorPtid || post.author?.id || '',
-          post.author?.homeStationDomain || '',
-        )}
-        disabled={!onOpenAuthor}
-      >
-        <MobileAvatar
-          src={post.author?.avatarUrl}
-          size={42}
-          style={{ borderRadius: 14 }}
-        />
-        <div className="moments-card-author">
-          <Text strong className="moments-card-name">{authorName}</Text>
-          <Text type="secondary" className="moments-card-time">{timeLabel}</Text>
-        </div>
-      </button>
+      <div className="moments-card-header">
+        <button
+          type="button"
+          className="moments-author-trigger"
+          data-acceptance-id="social-moment-author"
+          onClick={() => onOpenAuthor?.(
+            post.authorPtid || post.author?.id || '',
+            post.author?.homeStationDomain || '',
+          )}
+          disabled={!onOpenAuthor}
+        >
+          <MobileAvatar
+            src={post.author?.avatarUrl}
+            size={42}
+            style={{ borderRadius: 14 }}
+          />
+          <div className="moments-card-author">
+            <Text strong className="moments-card-name">{authorName}</Text>
+            <Text type="secondary" className="moments-card-time">{timeLabel}</Text>
+          </div>
+        </button>
+        {onDelete ? (
+          <button
+            type="button"
+            className="moments-card-more"
+            aria-label={t('mobile.moments.actions')}
+            onClick={() => setShowActions(true)}
+          >
+            <MoreHorizontal size={18} />
+          </button>
+        ) : null}
+      </div>
 
       {/* Text content */}
       {textContent && (
@@ -416,7 +430,7 @@ export function MomentFeedItem({
         </div>
       )}
 
-      {/* Action row — Heart + MessageCircle + Share2 disabled */}
+      {/* Action row — repeated feed actions stay visible and compact. */}
       <div className="moments-card-actions" onClick={(e) => e.stopPropagation()}>
         <div className="moments-action-group">
           <button
@@ -444,26 +458,6 @@ export function MomentFeedItem({
             <MessageCircle size={18} />
             {commentCount > 0 && <span>{commentCount}</span>}
           </button>
-          <button
-            type="button"
-            className="moments-action moments-action--share"
-            disabled
-            title={t('mobile.moments.reaction.celebrate')}
-          >
-            <Share2 size={18} />
-          </button>
-          {onDelete ? (
-            <button
-              type="button"
-              className="moments-action moments-action--delete"
-              disabled={deleteBusy}
-              aria-busy={deleteBusy}
-              aria-label={t('mobile.moments.delete.action')}
-              onClick={() => onDelete(post.id)}
-            >
-              <Trash2 size={18} />
-            </button>
-          ) : null}
         </div>
 
         {/* Reaction picker — 5 emoji buttons */}
@@ -501,6 +495,39 @@ export function MomentFeedItem({
           {t(reactionStatusKey(reactionMutation.status))}
         </Text>
       )}
+      {showActions && onDelete ? (
+        <div className="moments-sheet-backdrop" role="presentation">
+          <section
+            className="moments-bottom-sheet moments-post-action-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('mobile.moments.actions')}
+          >
+            <div className="moments-sheet-handle" />
+            <button
+              type="button"
+              className="moments-choice-row danger"
+              disabled={deleteBusy}
+              aria-busy={deleteBusy}
+              onClick={() => {
+                setShowActions(false);
+                onDelete(post.id);
+              }}
+            >
+              <span><strong>{t('mobile.moments.delete.action')}</strong></span>
+              <Trash2 size={18} />
+            </button>
+            <button
+              type="button"
+              className="moments-choice-row"
+              onClick={() => setShowActions(false)}
+            >
+              <span><strong>{t('common.action.cancel')}</strong></span>
+              <X size={18} />
+            </button>
+          </section>
+        </div>
+      ) : null}
     </Card>
   );
 }

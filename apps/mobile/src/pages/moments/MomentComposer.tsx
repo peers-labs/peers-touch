@@ -12,7 +12,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Popconfirm, Select, message, Typography } from 'antd';
-import { AlertTriangle, ImagePlus, RotateCcw, Save, Send, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  ChevronRight,
+  ImagePlus,
+  RotateCcw,
+  Save,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileAuthSession } from '../../features/auth/authSession';
 import type { SocialIntentPort } from '../../features/social/socialIntents';
@@ -42,6 +52,9 @@ import { useGroupStore } from '../../features/group/groupStore';
 
 const { Text } = Typography;
 const MAX_IMAGES_PER_POST = 9;
+const VISIBLE_SOCIAL_AUDIENCE_CHOICES = SOCIAL_AUDIENCE_CHOICES.filter(
+  (choice) => choice.id !== 'DIRECT',
+);
 
 // ---------------------------------------------------------------------------
 // Pending image type (local state only)
@@ -191,13 +204,19 @@ interface MomentComposerProps {
   readonly session: MobileAuthSession;
   readonly intents: Pick<SocialIntentPort, 'publishMoment'>;
   readonly onPublished: () => void;
+  readonly onClose: () => void;
 }
 
 type PendingDraftRemoval =
   | { readonly kind: 'discard' }
   | { readonly kind: 'publish' };
 
-export function MomentComposer({ session, intents, onPublished }: MomentComposerProps) {
+export function MomentComposer({
+  session,
+  intents,
+  onPublished,
+  onClose,
+}: MomentComposerProps) {
   const { t } = useMobileI18n();
 
   const [text, setText] = useState('');
@@ -207,6 +226,7 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
   const [groupConversationId, setGroupConversationId] = useState('');
   const [actorPtidsInput, setActorPtidsInput] = useState('');
   const [pendingImages, setPendingImages] = useState<PendingMomentImage[]>([]);
+  const [audienceOpen, setAudienceOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [pendingDraftRemoval, setPendingDraftRemoval] =
     useState<PendingDraftRemoval | null>(null);
@@ -305,6 +325,10 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
   ) && Boolean(audience) && !saving && !discarding && !pendingDraftRemoval;
   const hasComposerDraft = hasDraft || Boolean(text.trim()) || pendingImages.length > 0;
   const editingDisabled = publishing || Boolean(pendingDraftRemoval);
+  const audienceLabel = t(
+    SOCIAL_AUDIENCE_CHOICES.find((choice) => choice.id === audienceChoice)?.labelKey
+      ?? 'mobile.moments.audience.public',
+  );
 
   // Auto-save text, audience, and generated-contract media references.
   useEffect(() => {
@@ -620,11 +644,37 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
   };
 
   return (
-    <section
-      className="moments-composer-card"
-      data-acceptance-id="social-composer"
-      data-audience-choice={audienceChoice}
-    >
+    <div className="moments-sheet-backdrop" role="presentation">
+      <section
+        className="moments-bottom-sheet moments-composer-card"
+        data-acceptance-id="social-composer"
+        data-audience-choice={audienceChoice}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('mobile.moments.newPost')}
+      >
+        <div className="moments-sheet-handle" />
+        <header className="moments-sheet-header">
+          <button
+            type="button"
+            aria-label={t('common.action.close')}
+            disabled={editingDisabled}
+            onClick={onClose}
+          >
+            <X size={20} />
+          </button>
+          <h2>{t('mobile.moments.newPost')}</h2>
+          <button
+            type="button"
+            className="primary"
+            data-acceptance-id="social-composer-publish"
+            disabled={!canPublish}
+            aria-busy={publishing}
+            onClick={() => void publish()}
+          >
+            {t('mobile.moments.publish')}
+          </button>
+        </header>
       {draftRestored && (
         <div className="moments-draft-banner">
           <Save size={14} />
@@ -653,79 +703,21 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
         </div>
       )}
 
-      <div className="moments-composer-audience">
-        <Text className="moments-composer-eyebrow">{t('mobile.moments.audience.label')}</Text>
-        <Select
-          value={audienceChoice}
+        <button
+          type="button"
+          className="moments-composer-audience"
           data-acceptance-id="social-audience-select"
-          onChange={(value: SocialAudienceChoice) => {
-            setAudienceChoice(value);
-            if (value === 'CIRCLE' && !circleId && circles[0]) {
-              setCircleId(circles[0].id.toString());
-            }
-            if (value === 'GROUP' && !groupConversationId && groups[0]) {
-              setGroupConversationId(groups[0].ulid);
-            }
-          }}
-          size="small"
-          style={{ minWidth: 180 }}
           disabled={editingDisabled}
+          onClick={() => setAudienceOpen(true)}
         >
-          {SOCIAL_AUDIENCE_CHOICES.map((option) => (
-            <Select.Option key={option.id} value={option.id}>
-              {t(option.labelKey)}
-            </Select.Option>
-          ))}
-        </Select>
-        {audienceChoice === 'CIRCLE' && (
-          <Select
-            value={circleId || undefined}
-            data-acceptance-id="social-audience-circle"
-            onChange={setCircleId}
-            placeholder={t('mobile.moments.audience.selectCircle')}
-            disabled={editingDisabled}
-            style={{ minWidth: 180 }}
-          >
-            {circles.map((circle) => (
-              <Select.Option key={circle.id.toString()} value={circle.id.toString()}>
-                {circle.name}
-              </Select.Option>
-            ))}
-          </Select>
-        )}
-        {audienceChoice === 'GROUP' && (
-          <Select
-            value={groupConversationId || undefined}
-            data-acceptance-id="social-audience-group"
-            onChange={setGroupConversationId}
-            placeholder={t('mobile.moments.audience.selectGroup')}
-            disabled={editingDisabled}
-            style={{ minWidth: 180 }}
-          >
-            {groups.map((group) => (
-              <Select.Option key={group.ulid} value={group.ulid}>
-                {group.name || group.ulid}
-              </Select.Option>
-            ))}
-          </Select>
-        )}
-        {(audienceChoice === 'CUSTOM_ALLOW'
-          || audienceChoice === 'CUSTOM_DENY'
-          || audienceChoice === 'DIRECT') && (
-          <Input
-            value={actorPtidsInput}
-            data-acceptance-id="social-audience-actors"
-            onChange={(event) => setActorPtidsInput(event.target.value)}
-            placeholder={t(
-              audienceChoice === 'DIRECT'
-                ? 'mobile.moments.audience.directPlaceholder'
-                : 'mobile.moments.audience.recipientsPlaceholder',
-            )}
-            disabled={editingDisabled}
-            status={audience ? undefined : 'error'}
-          />
-        )}
-      </div>
+          <span>
+            <Text className="moments-composer-eyebrow">
+              {t('mobile.moments.audience.label')}
+            </Text>
+            <strong>{audienceLabel}</strong>
+          </span>
+          <ChevronRight size={18} />
+        </button>
 
       {!audience && (
         <Text type="danger" role="alert">
@@ -805,17 +797,128 @@ export function MomentComposer({ session, intents, onPublished }: MomentComposer
         >
           {t('mobile.moments.attachImage', { count: pendingImages.length, max: MAX_IMAGES_PER_POST })}
         </Button>
-        <Button
-          type="primary"
-          icon={<Send size={16} />}
-          data-acceptance-id="social-composer-publish"
-          onClick={() => void publish()}
-          disabled={!canPublish}
-          loading={publishing}
-        >
-          {t('mobile.moments.publish')}
-        </Button>
       </div>
-    </section>
+      </section>
+
+      {audienceOpen && (
+        <div className="moments-sheet-backdrop moments-audience-backdrop" role="presentation">
+          <section
+            className="moments-bottom-sheet moments-audience-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('mobile.moments.audience.label')}
+          >
+            <div className="moments-sheet-handle" />
+            <header className="moments-sheet-header">
+              <button
+                type="button"
+                aria-label={t('common.action.back')}
+                onClick={() => setAudienceOpen(false)}
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <h2>{t('mobile.moments.audience.label')}</h2>
+              <span />
+            </header>
+            <div className="moments-audience-list">
+              {VISIBLE_SOCIAL_AUDIENCE_CHOICES.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="moments-choice-row"
+                  data-audience-option={option.id}
+                  onClick={() => {
+                    setAudienceChoice(option.id);
+                    if (option.id === 'CIRCLE' && !circleId && circles[0]) {
+                      setCircleId(circles[0].id.toString());
+                    }
+                    if (option.id === 'GROUP' && !groupConversationId && groups[0]) {
+                      setGroupConversationId(groups[0].ulid);
+                    }
+                    if (!['CIRCLE', 'GROUP', 'CUSTOM_ALLOW', 'CUSTOM_DENY', 'DIRECT'].includes(option.id)) {
+                      setAudienceOpen(false);
+                    }
+                  }}
+                >
+                  <span><strong>{t(option.labelKey)}</strong></span>
+                  {audienceChoice === option.id ? <Check size={17} /> : <ChevronRight size={17} />}
+                </button>
+              ))}
+            </div>
+            {audienceChoice === 'CIRCLE' && (
+              <div className="moments-audience-target">
+                <Select
+                  value={circleId || undefined}
+                  data-acceptance-id="social-audience-circle"
+                  onChange={setCircleId}
+                  placeholder={t('mobile.moments.audience.selectCircle')}
+                  disabled={editingDisabled}
+                  options={circles.map((circle) => ({
+                    label: circle.name,
+                    value: circle.id.toString(),
+                  }))}
+                />
+                <Button
+                  type="primary"
+                  data-acceptance-id="social-audience-target-done"
+                  disabled={!audience}
+                  onClick={() => setAudienceOpen(false)}
+                >
+                  {t('common.action.done')}
+                </Button>
+              </div>
+            )}
+            {audienceChoice === 'GROUP' && (
+              <div className="moments-audience-target">
+                <Select
+                  value={groupConversationId || undefined}
+                  data-acceptance-id="social-audience-group"
+                  onChange={setGroupConversationId}
+                  placeholder={t('mobile.moments.audience.selectGroup')}
+                  disabled={editingDisabled}
+                  options={groups.map((group) => ({
+                    label: group.name || group.ulid,
+                    value: group.ulid,
+                  }))}
+                />
+                <Button
+                  type="primary"
+                  data-acceptance-id="social-audience-target-done"
+                  disabled={!audience}
+                  onClick={() => setAudienceOpen(false)}
+                >
+                  {t('common.action.done')}
+                </Button>
+              </div>
+            )}
+            {(audienceChoice === 'CUSTOM_ALLOW'
+              || audienceChoice === 'CUSTOM_DENY'
+              || audienceChoice === 'DIRECT') && (
+              <div className="moments-audience-target">
+                <Input
+                  value={actorPtidsInput}
+                  data-acceptance-id="social-audience-actors"
+                  onChange={(event) => setActorPtidsInput(event.target.value)}
+                  placeholder={t(
+                    audienceChoice === 'DIRECT'
+                      ? 'mobile.moments.audience.directPlaceholder'
+                      : 'mobile.moments.audience.recipientsPlaceholder',
+                  )}
+                  disabled={editingDisabled}
+                  status={audience ? undefined : 'error'}
+                />
+                <Button
+                  type="primary"
+                  disabled={!audience}
+                  onClick={() => setAudienceOpen(false)}
+                >
+                  {t('common.action.done')}
+                </Button>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+    </div>
   );
 }
