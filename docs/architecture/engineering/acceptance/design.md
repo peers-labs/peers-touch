@@ -128,7 +128,7 @@
          │                                ▼
          │                 ┌────────────────────────────┐
          │                 │       Gate Execution        │
-         │                 │ local / fedp5 / desktop     │
+         │                 │ local / managed runtime     │
          │                 └──────────────┬─────────────┘
          │                                │ evidence
          ▼                                ▼
@@ -273,19 +273,18 @@ Core只拥有channel、framing、binding、timeout、cancel和cleanup语义。
 
 ```json
 {
-  "id": "federation-operational-observability",
+  "id": "federation-ledger-convergence",
   "domain": "federation",
   "direction": "acceptance_validates_product",
-  "features": ["federation-operational-observability"],
-  "required_gates": ["station-dashboard-unit", "federation-dashboard-operational-drilldown"],
+  "features": ["federation-ledger"],
+  "required_gates": ["proto-build", "station-federation-unit"],
   "synthetic_paths": [
-    "apps/station/app/subserver/dashboard/application/federation_service.go"
+    "apps/station/app/subserver/federation/application/ledger_service.go"
   ],
   "evidence": {
-    "truth_sources": ["federation_operational_events"],
-    "surfaces": ["/dashboard/#/federation"],
-    "proven_by": ["federation-dashboard-operational-drilldown"],
-    "unproven": ["dashboard-wide alert center"]
+    "truth_sources": ["federation_ledger_events"],
+    "proven_by": ["proto-build", "station-federation-unit"],
+    "unproven": ["multi-Station ledger convergence"]
   }
 }
 ```
@@ -305,9 +304,9 @@ Capability Contract 的职责：
   "capabilities": [
     "acceptance-framework-self-consistency",
     "federation-ledger-convergence",
-    "federation-validates-acceptance-framework"
+    "desktop-federation-context-surface"
   ],
-  "validation_gate_id": "federation-mutual-validation"
+  "validation_gate_id": "federation-domain-validation"
 }
 ```
 
@@ -344,9 +343,9 @@ Domain Index 的职责：
 {
   "id": "federation-ledger",
   "truth_sources": ["federation_ledger_events"],
-  "required_gates": ["proto-build", "station-federation-unit", "federation-three-node-e2e"],
+  "required_gates": ["proto-build", "station-federation-unit"],
   "acceptance": {
-    "service": ["three-node testnet converges to one head"]
+    "service": ["ledger append and replay preserve one valid local head"]
   },
   "negative": ["proposals must not advance ledger head"]
 }
@@ -363,10 +362,10 @@ Feature Contract 的职责：
 
 ```json
 {
-  "command": "python3 tooling/acceptance/gates/dashboard/federation_operational_drilldown.py",
+  "command": "pnpm --dir apps/station/app/subserver/dashboard/web run check",
   "timeout_seconds": 600,
-  "environment": "fedp5",
-  "description": "Validate Federation operations drilldown API and Dashboard visible-surface sections."
+  "environment": "local",
+  "description": "Type-check Dashboard routes, API clients, and Federation page contracts."
 }
 ```
 
@@ -1454,23 +1453,23 @@ Acceptance Framework 支持两类产品域：
 
 | 类型 | 含义 | 当前实例 |
 |------|------|----------|
-| `project_validation_domain` | 既被 acceptance 验证，也反向证明 acceptance 能表达复杂产品域 | Federation |
-| `managed_domain` | 被 acceptance 统筹管理，但不承担框架自证职责 | Station Dashboard, Chat |
+| `project_validation_domain` | 既被 acceptance 验证，也反向证明 acceptance 能表达复杂产品域 | 当前无 |
+| `managed_domain` | 被 acceptance 统筹管理，但不承担框架自证职责 | Federation, Station Dashboard, Chat |
 
 两类 domain 都必须拥有 domain profile、capability file、feature contracts、registry rules、gate catalog entries 和 report；区别在于 `project_validation_domain` 可以有产品域反向证明 capability，而 `managed_domain` 只能证明自身产品能力。
 
-Station Dashboard 是第一个 managed domain。它验证普通产品域能按同一 onboarding 标准接入项目级 acceptance，而不复制 Federation ledger、testnet、Desktop gateway 等特殊语义。Chat 是第三个 active domain，也是第二个 managed domain，用来验证 acceptance 能覆盖更接近用户主路径的消息能力。
+Station Dashboard 是第一个 managed domain。它验证普通产品域能按同一 onboarding 标准接入项目级 acceptance，而不复制 Federation ledger、远端运行环境、Desktop gateway 等特殊语义。Chat 是第三个 active domain，也是第二个 managed domain，用来验证 acceptance 能覆盖更接近用户主路径的消息能力。
 
-### 4.3 Federation 双边互验证
+### 4.3 Federation managed domain
 
-Federation 是 Acceptance Framework 的首个复杂验证域：
+Federation 保留产品域验证，不再承担 Acceptance Framework 反向自证：
 
 | 方向 | 含义 | 证明方式 |
 |------|------|----------|
-| Acceptance → Federation | 框架证明 Federation 主能力未退化 | registry 选 gate，fedp5 gates 运行，通过 reports 输出 |
-| Federation → Acceptance | Federation 作为 validation domain 证明框架足够表达复杂产品域 | `tooling/acceptance/domains/federation.yaml` 选择 capability graph 中的 Federation 能力，通用 validator 检查闭环 |
+| Acceptance → Federation | 框架证明当前本地接线的 Federation 能力未退化 | registry 选择 Station、Desktop 与 Station Access Gate，通过 reports 输出；多 Station 收敛和远端浏览器可见面保持 `UNPROVEN` |
 
-互验证不是一个单独脚本完成，而是由 capability graph、feature contracts、registry、gates、run results、reports 共同形成。
+原 Federation → Acceptance 反向能力随失主远端环境硬删除。未来若恢复，
+必须先建立新的 owner、Environment Contract、Provisioner 与可重复 runtime proof。
 
 ### 4.4 Station Dashboard managed domain
 
@@ -1785,8 +1784,7 @@ make acceptance-validate DOMAIN=station-dashboard
 make acceptance-coverage-report
 make acceptance-chat-domain-validation
 make acceptance-station-dashboard-domain-validation
-make acceptance-federation-report
-make acceptance-federation-mutual-validation
+make acceptance-federation-domain-validation
 ```
 
 其中 `acceptance-infra-validate` 只验证
@@ -1813,7 +1811,7 @@ domain 的业务接入缺口，也不提供 bypass 参数。
 
 `make acceptance PLAN=<plan-path>` 是显式 gate bundle 的稳定入口。环境由调用前已激活的 profile / runtime 决定；plan 只声明要运行哪些 gates，gate 脚本只执行自身检查，不承载环境选择。Phase 型验收应新增或更新 plan 文件，而不是新增 phase-specific Make target。
 
-`acceptance-federation-mutual-validation` 只是 Federation domain 的兼容 alias，不是 acceptance core。
+`acceptance-federation-domain-validation` 验证 Federation managed-domain 闭包，不是 acceptance core。
 
 `acceptance-chat-domain-validation` 运行 Chat managed-domain gates，然后要求该 domain 的 latest evidence 通过；它验证 chat service、Station runtime API message flow、Station live realtime stream delivery、realtime typed contract、Desktop typed surface，以及在显式 app-runtime 环境下的 Desktop DOM synced-message visibility；它不宣称 live realtime DOM event consumption、双 Desktop client 或完整消息 UI E2E。
 

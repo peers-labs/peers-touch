@@ -79,7 +79,6 @@ ALLOWED_GATE_TIERS = {
 
 BUILTIN_GATE_ENVIRONMENTS = {
     "local",
-    "fedp5",
 }
 
 

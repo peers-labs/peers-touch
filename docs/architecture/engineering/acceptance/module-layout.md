@@ -107,14 +107,8 @@ tooling/acceptance/
 │   │   ├── private_pressure_security.py
 │   │   ├── group_admin_e2e.py
 │   │   └── ...
-│   ├── dashboard/
-│   │   ├── federation_visible_surface.py       # 重构使用 ChromeDriver
-│   │   └── federation_operational_drilldown.py
 │   ├── desktop/
 │   │   └── primary_navigation_e2e.py           # Native Tauri navigation Gate
-│   ├── federation/
-│   │   ├── mutual_validation.py
-│   │   └── surface_smoke.py
 │   └── applet/                       # [NEW Phase 3] Applet MJS wrapper gates
 │       ├── __init__.py
 │       ├── lifecycle_smoothness.py

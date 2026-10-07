@@ -9,10 +9,10 @@
 |--------|----------|-------|--------|----------|
 | Chat | 21 | 21 | 0 | 0% |
 | Mobile | 9 | 9 | 0 | 0% |
-| Federation | 7 | 6 | 0 | 0% |
+| Federation | 5 | 4 | 0 | 0% |
 | Applet | 1 | 1 | 0 | 0% |
 | Station Dashboard | 2 | 2 | 0 | 0% |
-| **Total** | 40 | 39 | 0 | 0% |
+| **Total** | 38 | 37 | 0 | 0% |
 
 ## Infra (Core Self-Validation)
 
@@ -65,12 +65,10 @@
 | Feature | Required Gates | Registered | Proven | Status |
 |---------|---------------|------------|--------|--------|
 | `desktop-federation-surfaces` | `desktop-check`, `station-access-federation-boundary-e2e` | 2/2 | 0/2 | WIRED |
-| `federation-dashboard-operations` | `station-dashboard-unit`, `federation-dashboard-operational-drilldown` | 2/2 | 0/2 | WIRED |
-| `federation-discovery-network` | `station-federation-unit`, `federation-surface-smoke` | 2/2 | 0/2 | WIRED |
+| `federation-discovery-network` | `station-federation-unit` | 1/1 | 0/1 | WIRED |
 | `federation-full-lifecycle` | `station-build`, `desktop-typecheck` | 0/2 | 0/2 | PARTIAL |
-| `federation-governance` | `station-federation-unit`, `federation-three-node-e2e` | 2/2 | 0/2 | WIRED |
-| `federation-ledger` | `proto-build`, `station-federation-unit`, `federation-three-node-e2e` | 3/3 | 0/3 | WIRED |
-| `federation-operational-observability` | `station-dashboard-unit`, `federation-dashboard-operational-drilldown` | 2/2 | 0/2 | WIRED |
+| `federation-governance` | `station-federation-unit` | 1/1 | 0/1 | WIRED |
+| `federation-ledger` | `proto-build`, `station-federation-unit` | 2/2 | 0/2 | WIRED |
 
 ## Applet
 

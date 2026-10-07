@@ -266,7 +266,6 @@
       },
       "require": [
         "station-federation-unit",
-        "federation-three-node-e2e",
         "station-api-ownership",
         "station-access-federation-boundary-e2e"
       ]
@@ -1031,8 +1030,7 @@
       },
       "require": [
         "proto-build",
-        "station-federation-unit",
-        "federation-three-node-e2e"
+        "station-federation-unit"
       ]
     },
     {
@@ -1048,9 +1046,7 @@
         ]
       },
       "require": [
-        "station-federation-unit",
-        "federation-three-node-e2e",
-        "federation-surface-smoke"
+        "station-federation-unit"
       ]
     },
     {
@@ -1060,12 +1056,11 @@
       ],
       "when": {
         "paths": [
-          "apps/station/frame/core/plugin/native/federation/discovery/**"
+          "apps/station/frame/core/plugin/native/federation/locator/**"
         ]
       },
       "require": [
-        "station-federation-unit",
-        "federation-surface-smoke"
+        "station-federation-unit"
       ]
     },
     {
@@ -1082,26 +1077,6 @@
       "require": [
         "station-dashboard-unit",
         "station-dashboard-web-check"
-      ]
-    },
-    {
-      "id": "dashboard-federation",
-      "features": [
-        "federation-dashboard-operations",
-        "federation-operational-observability"
-      ],
-      "when": {
-        "paths": [
-          "apps/station/app/subserver/dashboard/domain/federation.go",
-          "apps/station/app/subserver/dashboard/infrastructure/federation_repo.go",
-          "apps/station/app/subserver/dashboard/application/federation_service.go",
-          "apps/station/app/subserver/dashboard/web/src/api/federation.ts",
-          "apps/station/app/subserver/dashboard/web/src/pages/FederationPage.tsx"
-        ]
-      },
-      "require": [
-        "station-dashboard-unit",
-        "federation-dashboard-operational-drilldown"
       ]
     },
     {

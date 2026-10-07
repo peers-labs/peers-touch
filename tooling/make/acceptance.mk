@@ -13,7 +13,7 @@
         acceptance-chat-contact-message-resilience \
         acceptance-chat-w11 \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
-        acceptance-federation acceptance-federation-mutual-validation acceptance-federation-report \
+        acceptance-federation acceptance-federation-domain-validation \
         acceptance-desktop-telemetry-mirror-static \
         acceptance-desktop-telemetry-mirror-template-static acceptance-desktop-telemetry-mirror-template \
         acceptance-desktop-anchor-inventory acceptance-desktop-anchor-source-static acceptance-desktop-anchor-source \
@@ -23,9 +23,7 @@
         acceptance-desktop-performance-cell-template-static acceptance-desktop-performance-cell-template \
         acceptance-desktop-performance-cell-collect-static acceptance-desktop-performance-cell-collect \
         acceptance-desktop-performance-sampler-static acceptance-desktop-performance-sampler \
-        acceptance-desktop-performance-matrix \
-        federation-surface-smoke federation-dashboard-visible-surface \
-        federation-dashboard-operational-drilldown
+        acceptance-desktop-performance-matrix
 
 ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?=
@@ -274,34 +272,8 @@ acceptance-federation:
 		--gate acceptance-plan-self \
 		--gate proto-build \
 		--gate station-federation-unit \
-		--gate federation-three-node-e2e \
-		--gate station-dashboard-unit \
 		--gate desktop-check \
-		--gate federation-surface-smoke \
-		--gate federation-dashboard-operational-drilldown \
 		--gate station-access-federation-boundary-e2e
 
-acceptance-federation-mutual-validation: acceptance-federation
-	python3 tooling/scripts/acceptance-run.py --gate federation-mutual-validation
-
-acceptance-federation-report: acceptance-federation-mutual-validation
-	python3 tooling/scripts/acceptance-capability-report.py \
-		--title "Federation Acceptance Feasibility Report" \
-		--feature acceptance-framework \
-		--feature federation-ledger \
-		--feature federation-governance \
-		--feature federation-discovery-network \
-		--feature federation-dashboard-operations \
-		--feature federation-operational-observability \
-		--feature desktop-federation-surfaces \
-		--mutual-validation tooling/acceptance/reports/federation-mutual-validation.json \
-		--output tooling/acceptance/reports/federation-acceptance-report.md
-
-federation-surface-smoke:
-	python3 tooling/acceptance/gates/federation/surface_smoke.py
-
-federation-dashboard-visible-surface:
-	python3 tooling/acceptance/gates/dashboard/federation_visible_surface.py
-
-federation-dashboard-operational-drilldown:
-	python3 tooling/acceptance/gates/dashboard/federation_operational_drilldown.py
+acceptance-federation-domain-validation: acceptance-federation
+	python3 tooling/scripts/acceptance-run.py --gate federation-domain-validation

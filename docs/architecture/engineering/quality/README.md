@@ -140,7 +140,7 @@ Acceptance gates should not all run in PR CI. Each gate should be classified by 
 | `ci-structure` | schema, registry, feature, capability, and gate consistency |
 | `ci-cheap` | local unit, proto, typecheck, and low-cost product gates |
 | `local-evidence` | developer or agent-run evidence that is useful but not universal |
-| `env-evidence` | gates requiring fedp5, Desktop gateway, browser, or simulator |
+| `env-evidence` | gates requiring a registered remote runtime, Desktop gateway, browser, or simulator |
 | `nightly` | heavier multi-node and long-running product confidence |
 | `release` | full release acceptance before shipping |
 

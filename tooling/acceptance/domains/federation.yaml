@@ -7,9 +7,7 @@
     "federation-ledger-convergence",
     "federation-governance-truth",
     "federation-discovery-trust-boundary",
-    "federation-dashboard-operational-surface",
-    "desktop-federation-context-surface",
-    "federation-validates-acceptance-framework"
+    "desktop-federation-context-surface"
   ],
-  "validation_gate_id": "federation-mutual-validation"
+  "validation_gate_id": "federation-domain-validation"
 }

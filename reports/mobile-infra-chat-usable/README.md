@@ -68,12 +68,13 @@ was introduced.
 | Acceptance coverage report generation | `PASS` |
 | Standalone Acceptance plan self-check | `PASS` |
 | Hard rules | `PASS` |
-| Skill checks | `PASS` |
+| Skill checks | `FAIL` - upstream review-rules hash drift (`e51c...` expected, `702d...` current) |
 | `git diff --check` | `PASS` |
 
-The repository-wide Acceptance validation remains blocked by an unrelated
-Federation `fedp5` environment/provisioner declaration. It was not weakened or
-patched as part of this change.
+The stale global Federation `fedp5` Acceptance injection has been removed after
+its owning worktree was deleted. Repository-wide structural Acceptance
+validation now passes; multi-Station Federation runtime behavior remains
+explicitly `UNPROVEN`.
 
 The normal Acceptance plan command reports `PLAN_MOUNT_REQUIRED`, which is
 expected for this standalone declaration. The standalone plan self-check
