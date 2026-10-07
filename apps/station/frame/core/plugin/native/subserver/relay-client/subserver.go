@@ -223,13 +223,6 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	if err := validateRelayClientOptions(s.opts); err != nil {
 		return fmt.Errorf("[relay-client] %w", err)
 	}
-	if s.stationSigner == nil {
-		signer, err := resolveStationConnectionSigner()
-		if err != nil {
-			return fmt.Errorf("[relay-client] %w", err)
-		}
-		s.stationSigner = signer
-	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
