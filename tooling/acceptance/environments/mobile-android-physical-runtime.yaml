@@ -69,7 +69,8 @@
         "physical-device-leases",
         "correlation-channel",
         "profile-leases",
-        "deployment-leases"
+        "deployment-leases",
+        "usb-station-transports"
       ]
     }
   },

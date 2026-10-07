@@ -10,6 +10,7 @@ import os
 import platform
 import re
 import secrets
+import select
 import shutil
 import socket
 import subprocess
@@ -388,6 +389,10 @@ MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES = (
     "profile-leases",
     "deployment-leases",
 )
+MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES = (
+    *MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
+    "usb-station-transports",
+)
 MOBILE_NATIVE_ANDROID_SOCIAL_CLIENT = "alice-android"
 MOBILE_NATIVE_ANDROID_SOCIAL_FIXTURE = "mobile-social-existing-actors"
 MOBILE_NATIVE_ANDROID_SOCIAL_PROFILE_KEY = "station-a"
@@ -475,6 +480,288 @@ class SubprocessExecutor:
             returncode=completed.returncode,
             stdout=completed.stdout,
             stderr=completed.stderr,
+        )
+
+
+class _LoopbackTcpRelay:
+    """Run-scoped loopback relay for a remote HTTP Station endpoint."""
+
+    def __init__(self, upstream_host: str, upstream_port: int) -> None:
+        self._upstream_host = upstream_host
+        self._upstream_port = upstream_port
+        self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._listener.bind(("127.0.0.1", 0))
+        self._listener.listen()
+        self._listener.settimeout(0.25)
+        self._stop = threading.Event()
+        self._connections: set[socket.socket] = set()
+        self._connection_lock = threading.Lock()
+        self._workers: list[threading.Thread] = []
+        self._started = False
+        self._server = threading.Thread(
+            target=self._serve,
+            name="mobile-usb-station-relay",
+            daemon=True,
+        )
+
+    @property
+    def local_port(self) -> int:
+        return int(self._listener.getsockname()[1])
+
+    def start(self) -> None:
+        if self._started:
+            raise RuntimeError("loopback relay is already started")
+        self._started = True
+        self._server.start()
+
+    def close(self) -> None:
+        self._stop.set()
+        try:
+            self._listener.close()
+        except OSError:
+            pass
+        with self._connection_lock:
+            connections = tuple(self._connections)
+        for connection in connections:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            connection.close()
+        if self._started:
+            self._server.join(timeout=2)
+        for worker in tuple(self._workers):
+            worker.join(timeout=2)
+
+    def _serve(self) -> None:
+        while not self._stop.is_set():
+            try:
+                client, _address = self._listener.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            worker = threading.Thread(
+                target=self._bridge,
+                args=(client,),
+                name="mobile-usb-station-connection",
+                daemon=True,
+            )
+            self._workers.append(worker)
+            worker.start()
+
+    def _bridge(self, client: socket.socket) -> None:
+        upstream: socket.socket | None = None
+        try:
+            upstream = socket.create_connection(
+                (self._upstream_host, self._upstream_port),
+                timeout=5,
+            )
+            client.setblocking(False)
+            upstream.setblocking(False)
+            with self._connection_lock:
+                self._connections.update((client, upstream))
+            peers = {client: upstream, upstream: client}
+            while not self._stop.is_set():
+                readable, _, _ = select.select(
+                    tuple(peers),
+                    (),
+                    (),
+                    0.25,
+                )
+                for source in readable:
+                    try:
+                        chunk = source.recv(64 * 1024)
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        return
+                    peers[source].sendall(chunk)
+        except OSError:
+            return
+        finally:
+            with self._connection_lock:
+                self._connections.discard(client)
+                if upstream is not None:
+                    self._connections.discard(upstream)
+            client.close()
+            if upstream is not None:
+                upstream.close()
+
+
+class _AndroidUsbStationTransport:
+    """Own one device-local Station route and its complete ADB lifecycle."""
+
+    def __init__(
+        self,
+        upstream_url: str,
+        *,
+        executor: CommandExecutor | None = None,
+        relay_factory: Callable[[str, int], _LoopbackTcpRelay] = (
+            _LoopbackTcpRelay
+        ),
+    ) -> None:
+        parsed = urllib.parse.urlsplit(upstream_url)
+        if (
+            parsed.scheme != "http"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise BlockedError(
+                reason=(
+                    "Android USB Station transport requires one plain HTTP "
+                    "origin without credentials or a path"
+                ),
+                resource="mobile-runtime:usb-station-transport",
+            )
+        upstream_port = parsed.port or 80
+        self.upstream_url = upstream_url.rstrip("/")
+        self.executor = executor or SubprocessExecutor()
+        self.relay = relay_factory(parsed.hostname, upstream_port)
+        self.device_port = self.relay.local_port
+        self.device_url = f"http://127.0.0.1:{self.device_port}"
+        self._started = False
+
+    def start(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> str:
+        self.relay.start()
+        try:
+            target = f"tcp:{self.device_port}"
+            result = self._adb(
+                device_identifier,
+                "reverse",
+                target,
+                target,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            if result.returncode != 0:
+                raise ProvisioningError(
+                    "Android USB Station reverse setup failed"
+                )
+            self._started = True
+            if not self._reverse_is_present(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ):
+                raise ProvisioningError(
+                    "Android USB Station reverse setup was not observable"
+                )
+            return self.device_url
+        except BaseException:
+            try:
+                self.close(
+                    device_identifier,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            except BaseException:
+                pass
+            raise
+
+    def close(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        failure: BaseException | None = None
+        try:
+            if self._started:
+                result = self._adb(
+                    device_identifier,
+                    "reverse",
+                    "--remove",
+                    f"tcp:{self.device_port}",
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if result.returncode != 0:
+                    failure = ProvisioningError(
+                        "Android USB Station reverse cleanup failed"
+                    )
+                elif self._reverse_is_present(
+                    device_identifier,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ):
+                    failure = ProvisioningError(
+                        "Android USB Station reverse remained after cleanup"
+                    )
+        finally:
+            self._started = False
+            self.relay.close()
+        if failure is not None:
+            raise failure
+
+    def rewrite_station_url(self, requested_url: str) -> str:
+        if requested_url.rstrip("/") != self.upstream_url:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station route does not match its USB transport",
+                resource="mobile.native.appium-session:station-route",
+            )
+        return self.device_url
+
+    def _reverse_is_present(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        result = self._adb(
+            device_identifier,
+            "reverse",
+            "--list",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if result.returncode != 0:
+            raise ProvisioningError(
+                "Android USB Station reverse inventory failed"
+            )
+        expected = f"tcp:{self.device_port}"
+        return any(
+            line.split()[-2:] == [expected, expected]
+            for line in result.stdout.splitlines()
+            if len(line.split()) >= 2
+        )
+
+    def _adb(
+        self,
+        device_identifier: str,
+        *arguments: str,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> CommandResult:
+        if cancellation is not None and cancellation.is_set():
+            raise ProvisioningError(
+                "Android USB Station transport was cancelled"
+            )
+        timeout = 30.0
+        if deadline_monotonic is not None:
+            timeout = min(timeout, deadline_monotonic - time.monotonic())
+            if timeout <= 0:
+                raise ProvisioningError(
+                    "Android USB Station transport exceeded its deadline"
+                )
+        return self.executor.run(
+            ("adb", "-s", device_identifier, *arguments),
+            cwd=REPO_ROOT,
+            env=os.environ,
+            timeout=timeout,
         )
 
 
@@ -1552,7 +1839,7 @@ def _load_mobile_native_scenario(
         != MOBILE_NATIVE_ANDROID_SOCIAL_APPIUM_OPERATIONS
         or not scenario.require_exact_device_count
         or scenario.cleanup_resources
-        != MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES
+        != MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES
     ):
         raise BlockedError(
             reason=(
@@ -6327,6 +6614,10 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         harness_actions: Sequence[str] = (),
         parent_harness_actions: Sequence[str] = (),
         sensitive_values: Sequence[str] = (),
+        station_transports: Mapping[
+            str,
+            _AndroidUsbStationTransport,
+        ] | None = None,
     ) -> None:
         if installation_trace_field not in {
             "freshInstallTrace",
@@ -6348,6 +6639,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         self._sensitive_values = tuple(
             value for value in sensitive_values if value
         )
+        self._station_transports = dict(station_transports or {})
         self._sessions: dict[str, _ParentAppiumSession] = {}
         self._cleanup_sessions: list[_ParentAppiumSession] = []
         self._session_refs: dict[str, str] = {}
@@ -6551,11 +6843,26 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "Mobile Acceptance Harness action is not allowlisted",
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
-            action_payload = _capability_mapping(
-                payload,
-                "actionPayload",
-                resource=f"mobile.native.appium-session:{client_id}",
+            action_payload = dict(
+                _capability_mapping(
+                    payload,
+                    "actionPayload",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
             )
+            if action in {"station.add", "station.replace"}:
+                transport = self._station_transports.get(client_id)
+                if transport is not None:
+                    action_payload["url"] = transport.rewrite_station_url(
+                        _capability_text(
+                            action_payload,
+                            "url",
+                            resource=(
+                                "mobile.native.appium-session:"
+                                f"{client_id}:station-route"
+                            ),
+                        )
+                    )
             value = session.call_action(
                 action,
                 action_payload,
@@ -7713,6 +8020,10 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self._credential_values_by_provider: dict[str, str] = {}
         self._provider_subjects: dict[str, str] = {}
         self._appium_handler: MobileNativeAppiumCapabilityHandler | None = None
+        self._usb_station_transports: dict[
+            str,
+            _AndroidUsbStationTransport,
+        ] = {}
         self._port_reservations: list[_PortReservation] = []
         self._storage_roots: list[Path] = []
         self._cleanup_registered = False
@@ -7854,6 +8165,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                     )
                 )
             ),
+            station_transports=self._usb_station_transports,
         )
         context = EphemeralGateLaunchContext(
             required_capabilities=required_capabilities,
@@ -8405,6 +8717,69 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self.register_cleanup("mobile-native-parent-authorities", self._cleanup_parent)
         self._cleanup_registered = True
 
+    def _prepare_android_usb_station_transports(
+        self,
+        station_url: str,
+    ) -> None:
+        if self._lease_broker is None or self._native_spec is None:
+            raise BlockedError(
+                reason="Android USB Station transport has no device authority",
+                resource="mobile-runtime:usb-station-transport",
+            )
+        for client in self._native_spec.clients:
+            if client.platform != "android":
+                continue
+            transport = _AndroidUsbStationTransport(station_url)
+            self._usb_station_transports[client.id] = transport
+            lease = self._device_leases[client.id]
+            self._lease_broker.with_physical_device(
+                lease,
+                lambda handle, transport=transport: transport.start(
+                    handle.identifier
+                ),
+            )
+
+    def _cleanup_android_usb_station_transports(
+        self,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> list[str]:
+        failures: list[str] = []
+        broker = self._lease_broker
+        for client_id, transport in reversed(
+            tuple(self._usb_station_transports.items())
+        ):
+            lease = self._device_leases.get(client_id)
+            if broker is None or lease is None:
+                try:
+                    transport.relay.close()
+                except BaseException as error:
+                    failures.append(
+                        f"{client_id}: relay {type(error).__name__}"
+                    )
+                continue
+            try:
+                _require_cleanup_budget(
+                    deadline_monotonic,
+                    cancellation,
+                )
+                broker.with_physical_device(
+                    lease,
+                    lambda handle, transport=transport: transport.close(
+                        handle.identifier,
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    ),
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            except BaseException as error:
+                failures.append(f"{client_id}: {type(error).__name__}")
+            else:
+                self._usb_station_transports.pop(client_id, None)
+        return failures
+
     def _zeroize_pending_lease_authentication_key(self) -> bool:
         key = self._native_inputs.pop("leaseAuthenticationKey", None)
         if key is None:
@@ -8454,6 +8829,12 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                     failures.append("appium sessions")
             except BaseException as error:
                 failures.append(f"appium sessions: {type(error).__name__}")
+        failures.extend(
+            self._cleanup_android_usb_station_transports(
+                deadline_monotonic=deadline,
+                cancellation=cancellation,
+            )
+        )
         if broker is not None:
             failures.extend(
                 self._quarantine_leases(
@@ -8596,6 +8977,12 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                     failures.append("appium sessions")
             except BaseException as error:
                 failures.append(f"appium sessions: {type(error).__name__}")
+        failures.extend(
+            self._cleanup_android_usb_station_transports(
+                deadline_monotonic=deadline,
+                cancellation=cancellation,
+            )
+        )
         broker = self._lease_broker
         if broker is not None:
             if heartbeat_failed:
@@ -8940,6 +9327,10 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             gate_id=gate_id,
             runtime_root=runtime_root,
         )
+        if native_spec.scenario.id == "android-social":
+            self._prepare_android_usb_station_transports(
+                service_bindings["station-primary"].endpoint
+            )
         actor_manifest_ref = (
             self._prepare_android_social_actor_manifest()
             if native_spec.scenario.id == "android-social"

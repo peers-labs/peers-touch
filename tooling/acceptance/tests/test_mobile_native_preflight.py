@@ -48,6 +48,7 @@ from tooling.acceptance.provisioners.mobile_native import (
     MOBILE_NATIVE_CAPABILITIES,
     MOBILE_OAUTH_PROOF_GATE_ID,
     MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS,
+    MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES,
     MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
     MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS,
     MOBILE_NATIVE_PRODUCT_SCENARIOS,
@@ -60,6 +61,8 @@ from tooling.acceptance.provisioners.mobile_native import (
     MobileNativeSourceArtifactRefs,
     MobileNativeSourceProjection,
     MobileNativeStationFixtureCapabilityHandler,
+    _AndroidUsbStationTransport,
+    _LoopbackTcpRelay,
     _ParentAndroidInstallationAdapter,
     _ParentAppiumSession,
     _ParentAppiumTransport,
@@ -920,6 +923,247 @@ class FakeCommandExecutor:
         if command[-1:] == ("--version",):
             return CommandResult(0, f"ChromeDriver {self.chromedriver_version}\n")
         return CommandResult(1, stderr="unexpected command")
+
+
+class AndroidUsbStationTransportTests(unittest.TestCase):
+    class Relay:
+        def __init__(self, _host: str, _port: int) -> None:
+            self.local_port = 49181
+            self.started = False
+            self.closed = False
+
+        def start(self) -> None:
+            self.started = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    class Executor:
+        def __init__(self) -> None:
+            self.reverse_present = False
+            self.commands: list[tuple[str, ...]] = []
+
+        def run(
+            self,
+            command: tuple[str, ...] | list[str],
+            *,
+            cwd: Path,
+            env: Mapping[str, str],
+            timeout: float,
+        ) -> CommandResult:
+            del cwd, env, timeout
+            observed = tuple(command)
+            self.commands.append(observed)
+            if observed[-3:] == (
+                "reverse",
+                "tcp:49181",
+                "tcp:49181",
+            ):
+                self.reverse_present = True
+                return CommandResult(0, "49181\n")
+            if observed[-3:] == (
+                "reverse",
+                "--remove",
+                "tcp:49181",
+            ):
+                self.reverse_present = False
+                return CommandResult(0)
+            if observed[-2:] == ("reverse", "--list"):
+                output = (
+                    "UsbFfs tcp:49181 tcp:49181\n"
+                    if self.reverse_present
+                    else ""
+                )
+                return CommandResult(0, output)
+            return CommandResult(1, stderr="unexpected command")
+
+    def test_transport_owns_reverse_mapping_and_verified_cleanup(self) -> None:
+        executor = self.Executor()
+        relay = self.Relay("", 0)
+        transport = _AndroidUsbStationTransport(
+            "http://10.37.221.38:18080",
+            executor=executor,
+            relay_factory=lambda _host, _port: relay,
+        )
+
+        device_url = transport.start("opaque-device")
+
+        self.assertEqual(device_url, "http://127.0.0.1:49181")
+        self.assertTrue(relay.started)
+        self.assertTrue(executor.reverse_present)
+        self.assertEqual(
+            transport.rewrite_station_url(
+                "http://10.37.221.38:18080/"
+            ),
+            device_url,
+        )
+        with self.assertRaisesRegex(
+            BlockedError,
+            "does not match its USB transport",
+        ):
+            transport.rewrite_station_url("http://station.invalid:18080")
+
+        transport.close("opaque-device")
+
+        self.assertFalse(executor.reverse_present)
+        self.assertTrue(relay.closed)
+        self.assertEqual(
+            executor.commands[-2:],
+            [
+                (
+                    "adb",
+                    "-s",
+                    "opaque-device",
+                    "reverse",
+                    "--remove",
+                    "tcp:49181",
+                ),
+                (
+                    "adb",
+                    "-s",
+                    "opaque-device",
+                    "reverse",
+                    "--list",
+                ),
+            ],
+        )
+
+    def test_transport_rejects_non_http_or_path_bearing_station(self) -> None:
+        for value in (
+            "https://station.example",
+            "http://station.example/path",
+            "http://user@station.example",
+        ):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                BlockedError,
+                "plain HTTP origin",
+            ):
+                _AndroidUsbStationTransport(value)
+
+    def test_loopback_relay_forwards_bidirectional_http(self) -> None:
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                body = b'{"service":"station"}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args: object) -> None:
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server_thread = threading.Thread(
+            target=server.serve_forever,
+            daemon=True,
+        )
+        server_thread.start()
+        relay = _LoopbackTcpRelay("127.0.0.1", server.server_port)
+        relay.start()
+        try:
+            with socket.create_connection(
+                ("127.0.0.1", relay.local_port),
+                timeout=2,
+            ) as connection:
+                connection.sendall(
+                    b"GET /app-meta/version HTTP/1.1\r\n"
+                    b"Host: 127.0.0.1\r\n"
+                    b"Connection: close\r\n\r\n"
+                )
+                response = bytearray()
+                while True:
+                    chunk = connection.recv(4096)
+                    if not chunk:
+                        break
+                    response.extend(chunk)
+            self.assertIn(b"HTTP/1.0 200 OK", response)
+            self.assertIn(b'{"service":"station"}', response)
+        finally:
+            relay.close()
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
+
+    def test_loopback_relay_cleanup_is_valid_before_start(self) -> None:
+        relay = _LoopbackTcpRelay("127.0.0.1", 9)
+        relay.close()
+
+    def test_handler_rewrites_only_station_action_inside_parent(self) -> None:
+        calls: list[tuple[str, Mapping[str, Any]]] = []
+
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                payload: Mapping[str, Any],
+                **_kwargs: object,
+            ) -> Mapping[str, Any]:
+                calls.append((action, dict(payload)))
+                return {
+                    "activeStationPeerId": "peer-five-arm",
+                    "verifiedStationPeerId": "peer-five-arm",
+                    "canonicalOrigin": "http://127.0.0.1:49181",
+                    "entries": [],
+                }
+
+        transport = SimpleNamespace(
+            rewrite_station_url=lambda value: (
+                "http://127.0.0.1:49181"
+                if value == "http://10.37.221.38:18080"
+                else value
+            )
+        )
+        handler = MobileNativeAppiumCapabilityHandler(
+            session_factory=lambda _client_id: Session(),
+            artifact_writer=object(),
+            broker=object(),
+            device_leases={},
+            allowed_client_ids=("alice-android",),
+            allowed_operations=("harness_action",),
+            harness_actions=("station.add",),
+            station_transports={"alice-android": transport},
+        )
+        handler._sessions["alice-android"] = Session()
+        handler._session_refs["alice-android"] = "session-ref"
+
+        handler.invoke(
+            "harness_action",
+            {
+                "clientId": "alice-android",
+                "sessionRef": "session-ref",
+                "action": "station.add",
+                "actionPayload": {
+                    "url": "http://10.37.221.38:18080",
+                },
+            },
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+        )
+
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "station.add",
+                    {"url": "http://127.0.0.1:49181"},
+                )
+            ],
+        )
+
+    def test_android_social_contract_declares_usb_cleanup_owner(self) -> None:
+        spec = load_mobile_native_preflight_spec(
+            ENVIRONMENTS_DIR / "mobile-android-physical-runtime.yaml",
+            gate_id="mobile-social-android-native",
+        )
+
+        self.assertEqual(
+            spec.scenario.cleanup_resources,
+            MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES,
+        )
+        self.assertNotEqual(
+            spec.scenario.cleanup_resources,
+            MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
+        )
 
 
 class ParentAndroidInstallationAdapterTests(unittest.TestCase):

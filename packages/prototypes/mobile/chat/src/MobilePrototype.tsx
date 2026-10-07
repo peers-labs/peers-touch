@@ -35,6 +35,7 @@ const { Text } = Typography;
 type EvidenceScenario =
   | 'journey'
   | 'station-removal'
+  | 'station-offline'
   | 'session-revoked'
   | 'long-lists'
   | 'search-controlled'
@@ -46,6 +47,7 @@ type EvidenceScenario =
 const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }> = [
   { label: 'Default journey', value: 'journey' },
   { label: 'Station removal confirmation', value: 'station-removal' },
+  { label: 'Station selection / offline', value: 'station-offline' },
   { label: 'Station identity mismatch', value: 'station-identity-mismatch' },
   { label: 'OAuth expired', value: 'oauth-expired' },
   { label: 'Session revoked', value: 'session-revoked' },
@@ -144,6 +146,10 @@ export function MobilePrototype() {
     setEvidenceScenario(scenario);
     dispatchSocialDemo({ type: 'reset', scenario });
     dispatchSearch({ type: 'reset' });
+    if (scenario === 'station-removal' || scenario === 'station-offline') {
+      setLaunchState('station-selection');
+      setScenes(['Launch']);
+    }
   }
 
   function handleSelectStation(url: string) {
@@ -241,6 +247,7 @@ export function MobilePrototype() {
           onAddStation={handleAddStation}
           onContinue={handleContinue}
           showRemovalConfirmation={evidenceScenario === 'station-removal'}
+          offline={evidenceScenario === 'station-offline'}
         />
       );
     }

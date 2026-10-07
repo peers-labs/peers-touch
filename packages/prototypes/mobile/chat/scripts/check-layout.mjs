@@ -58,6 +58,13 @@ try {
         const authCardRect = authCard?.getBoundingClientRect();
         const authBrandRect = authBrand?.getBoundingClientRect();
         const authLogoStyle = authLogo ? getComputedStyle(authLogo) : null;
+        const launchScreen = element.querySelector('.mp-launch-screen');
+        const launchLogo = launchScreen?.querySelector('.mp-launch-brand-logo');
+        const launchPanel = launchScreen?.querySelector('.mp-launch-panel');
+        const launchOffline = launchScreen?.querySelector('.mp-launch-offline');
+        const launchLogoRect = rect(launchLogo);
+        const launchPanelRect = rect(launchPanel);
+        const launchOfflineRect = rect(launchOffline);
         const composer = element.querySelector('.mp-social-composer-sheet');
         const composerRect = rect(composer);
         const composerInputRect = rect(composer?.querySelector(':scope > textarea'));
@@ -108,6 +115,20 @@ try {
                   > authScreen.clientHeight + 1,
               }
             : null,
+          launch: launchScreen && launchLogoRect && launchPanelRect
+            ? {
+                cardCount: launchScreen.querySelectorAll('.ant-card').length,
+                logoWidth: launchLogoRect.width,
+                logoHeight: launchLogoRect.height,
+                panelWidth: launchPanelRect.width,
+                panelBottom: launchPanelRect.bottom,
+                screenBottom: rect(launchScreen).bottom,
+                offlineHeight: launchOfflineRect?.height ?? 0,
+                offlineGap: launchOfflineRect
+                  ? launchOfflineRect.top - launchPanelRect.bottom
+                  : null,
+              }
+            : null,
           composer: composerRect
             && composerInputRect
             && composerAudienceRect
@@ -130,6 +151,8 @@ try {
 
     await open('journey');
     await capture('default');
+    await open('station-offline');
+    await capture('station-offline');
     await open('session-revoked');
     await capture('auth-session-revoked');
     await open('social-unavailable');
@@ -234,6 +257,15 @@ try {
     || geometry.scenarioOverlaps
     || geometry.scrollWidth > geometry.clientWidth
     || geometry.sections.some((section) => section.scrollHeight > section.clientHeight + 1)
+    || (geometry.launch && (
+      geometry.launch.cardCount !== 0
+      || geometry.launch.logoWidth !== 52
+      || geometry.launch.logoHeight !== 52
+      || geometry.launch.panelWidth < 240
+      || geometry.launch.panelBottom > geometry.launch.screenBottom + 1
+      || geometry.launch.offlineHeight > 112
+      || (geometry.launch.offlineGap !== null && geometry.launch.offlineGap < 8)
+    ))
     || (geometry.auth && (
       geometry.auth.cardCount !== 1
       || !geometry.auth.brandInsideCard

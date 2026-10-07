@@ -1,6 +1,13 @@
 import { useState } from 'react';
-import { Button, Modal, Tag, Typography } from 'antd';
-import { Check, Plus, Server, X } from 'lucide-react';
+import { Button, Modal, Typography } from 'antd';
+import {
+  Check,
+  ChevronDown,
+  Plus,
+  Server,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { StationEntry } from '../types';
 
 const { Text } = Typography;
@@ -45,16 +52,25 @@ export function StationSelector({
   return (
     <section className="mp-station-selector">
       <div className="mp-station-selector-header">
-        <Text strong>Your Station</Text>
-        <Tag color={activeUrl ? 'green' : 'default'}>{activeUrl ? 'Selected' : 'Required'}</Tag>
+        <div>
+          <Text strong>Your Station</Text>
+          <Text className="mp-station-helper">
+            Tap a recent Station to change the target
+          </Text>
+        </div>
+        <span className={`mp-station-selection-state ${activeUrl ? 'selected' : ''}`}>
+          {activeUrl ? 'Selected' : 'Required'}
+        </span>
       </div>
 
       {showStationInput && (
         <div className="mp-station-input-row">
           <div className="mp-station-url-control">
             <button type="button" className="mp-station-protocol" onClick={() => setProtocol(protocol === 'https' ? 'http' : 'https')}>
-              {protocol.toUpperCase()}
+              <span>{protocol.toUpperCase()}</span>
+              <ChevronDown size={13} aria-hidden="true" />
             </button>
+            <span className="mp-station-url-divider" aria-hidden="true" />
             <input
               className="mp-station-address"
               value={address}
@@ -71,10 +87,24 @@ export function StationSelector({
                 <X size={16} />
               </button>
             )}
+            <button
+              type="button"
+              className="mp-station-add-inline"
+              aria-label="Add Station"
+              disabled={!address.trim()}
+              onClick={handleAdd}
+            >
+              <Plus size={18} aria-hidden="true" />
+            </button>
           </div>
-          <Button type="primary" icon={<Plus size={16} />} onClick={handleAdd} />
           {hasEntries && (
-            <Button type="text" className="mp-station-cancel-btn" onClick={closeStationInput}>Cancel</Button>
+            <Button
+              type="text"
+              className="mp-station-cancel-btn"
+              aria-label="Cancel adding Station"
+              icon={<X size={16} />}
+              onClick={closeStationInput}
+            />
           )}
         </div>
       )}
@@ -110,7 +140,7 @@ export function StationSelector({
                   type="text"
                   className="mp-station-remove"
                   aria-label={`Remove ${entry.label}`}
-                  icon={<X size={16} />}
+                  icon={<Trash2 size={15} />}
                   onClick={() => setPendingRemoval(entry)}
                 />
               </div>
