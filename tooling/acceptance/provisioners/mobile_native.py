@@ -3403,6 +3403,23 @@ class _ParentAndroidInstallationAdapter:
         device_identifier: str,
         application_id: str,
     ) -> AndroidInstalledArtifact:
+        inventory_result = self._run_adb(
+            device_identifier,
+            "shell",
+            "cmd",
+            "package",
+            "list",
+            "packages",
+            application_id,
+        )
+        if inventory_result.returncode != 0:
+            raise DriverError("Android installed package lookup failed")
+        exact_package = f"package:{application_id}"
+        if exact_package not in {
+            line.strip() for line in inventory_result.stdout.splitlines()
+        }:
+            return AndroidInstalledArtifact(present=False, sha256=None)
+
         package_result = self._run_adb(
             device_identifier,
             "shell",
