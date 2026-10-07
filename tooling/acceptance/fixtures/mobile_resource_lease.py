@@ -28,6 +28,7 @@ from tooling.acceptance.gates.mobile.proof_contracts import (
     ARTIFACT_ROLES,
     GATE_ID,
     validate_contract_payload,
+    validate_historical_lease_acquisition_payload,
 )
 
 
@@ -2122,7 +2123,7 @@ class MobileResourceLeaseBroker:
                         f"resource {ledger_key!r} immutable acquisition is not "
                         "an object"
                     )
-                canonical_payload = validate_contract_payload(
+                canonical_payload = validate_historical_lease_acquisition_payload(
                     payload,
                     expected_run_id=reference.run_id,
                     expected_gate_id=reference.gate_id,
