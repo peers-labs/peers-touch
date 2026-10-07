@@ -29,6 +29,8 @@
     "tooling/acceptance/provisioners/mobile_simulator.py",
     "tooling/acceptance/registry.yaml",
     "tooling/acceptance/tests/test_mobile_simulator_provisioner.py",
+    "tooling/scripts/local-dev/dev-session.mjs",
+    "tooling/scripts/local-dev/dev-session.test.mjs",
     "tooling/scripts/acceptance-pipeline-audit-test.py",
     "tooling/scripts/acceptance-pipeline-audit.py",
     "tooling/scripts/acceptance-plan-test.py",

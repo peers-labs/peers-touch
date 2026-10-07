@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  closeSync,
   copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   statSync,
@@ -673,7 +675,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
     },
     {
       ...scope.dependencies,
-      spawnDevelopmentRunner(_command, arguments_) {
+      spawnDevelopmentRunner(_command, arguments_, spawnOptions) {
         assert.equal(_command, 'python3');
         assert.notEqual(arguments_.indexOf('--execution-plan'), -1);
         assert.equal(arguments_.includes('--gate'), false);
@@ -684,7 +686,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
           arguments_[outputIndex + 1],
           `${JSON.stringify(aggregateManifestRef)}\n`,
         );
-        overrides.beforeRunnerReturn?.(arguments_);
+        overrides.beforeRunnerReturn?.(arguments_, spawnOptions);
         return { status: 0, stdout: '', stderr: '' };
       },
       ...(overrides.dependencies ?? {}),
@@ -1677,6 +1679,51 @@ test('functional result forwards authorized and claimed Station profiles', async
     });
     assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
   } finally {
+    scope.close();
+  }
+});
+
+test('functional result forwards a live machine lease descriptor', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-desktop',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  const leaseFd = openSync('/dev/null', 'r');
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    const committed = await commitStandardizedFunctionalPass(scope, {
+      dependencies: {
+        environment: {
+          ...process.env,
+          PT_MACHINE_LEASE_FD: String(leaseFd),
+          PT_MACHINE_LEASE_ID: 'lease-1',
+          PT_MACHINE_LEASE_KIND: 'station.reset',
+          PT_MACHINE_LEASE_RESOURCE_ID: 'fixture-1',
+          PT_MACHINE_LEASE_RESET_SCOPE: 'fixture-1',
+        },
+      },
+      beforeRunnerReturn(_arguments, spawnOptions) {
+        assert.equal(
+          spawnOptions.env.PT_MACHINE_LEASE_FD,
+          String(leaseFd),
+        );
+        assert.equal(spawnOptions.stdio[0], 'ignore');
+        assert.equal(spawnOptions.stdio[1], 'pipe');
+        assert.equal(spawnOptions.stdio[2], 'pipe');
+        assert.equal(spawnOptions.stdio[leaseFd], leaseFd);
+      },
+    });
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+  } finally {
+    closeSync(leaseFd);
     scope.close();
   }
 });
