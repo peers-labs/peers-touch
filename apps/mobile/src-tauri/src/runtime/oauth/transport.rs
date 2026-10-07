@@ -332,24 +332,71 @@ async fn access_gate_rejection(mut response: reqwest::Response) -> MobileError {
 
 fn access_gate_rejection_category(message: &str) -> Option<&'static str> {
     let message = message.trim();
-    match message {
-        "access gate requires application/protobuf request and response" => {
-            Some("protobuf-media-type")
-        }
-        "access attempt expired or not found" => Some("attempt-not-found"),
-        "access gate submission Station identity mismatch" => Some("station-identity-mismatch"),
-        "access gate submission device mismatch" => Some("device-mismatch"),
-        "access gate submission lifecycle generation mismatch" => Some("lifecycle-mismatch"),
-        "access gate submission descriptor is stale or mismatched" => Some("descriptor-mismatch"),
+    let exact = match message {
+        "access gate requires application/protobuf request and response" => "protobuf-media-type",
+        "access attempt request is required" => "attempt-request-missing",
+        "access attempt client is required" => "attempt-client-missing",
+        "access attempt device id is required" => "attempt-device-missing",
+        "access attempt lifecycle generation is required" => "attempt-generation-missing",
+        "local Station peer identity is unavailable" => "station-identity-unavailable",
+        "Station peer identity mismatch" => "station-identity-mismatch",
+        "access attempt expired or not found" => "attempt-not-found",
+        "access gate submission is required" => "submission-missing",
+        "access gate submission id is required" => "submission-id-missing",
+        "access gate submission id was reused with different input" => "submission-reused",
+        "access gate submission is already processing" => "submission-processing",
+        "access attempt id is required" => "attempt-id-missing",
+        "access gate id is required" => "gate-id-missing",
+        "access gate submission Station identity mismatch" => "station-identity-mismatch",
+        "access gate submission device mismatch" => "device-mismatch",
+        "access gate submission lifecycle generation mismatch" => "lifecycle-mismatch",
         "access gate submission attempt does not match the current decision" => {
-            Some("attempt-decision-mismatch")
+            "attempt-decision-mismatch"
         }
-        "access gate submission does not match the current gate" => Some("current-gate-mismatch"),
-        "access gate is not actionable" => Some("gate-not-actionable"),
-        "current access gate descriptor is unavailable" => Some("descriptor-unavailable"),
-        "login gate requires typed credentials" => Some("typed-credentials-required"),
-        _ => None,
+        "access attempt does not have an actionable current gate" => "gate-not-actionable",
+        "access gate submission does not match the current gate" => "current-gate-mismatch",
+        "access gate submission type does not match the current gate" => "gate-type-mismatch",
+        "access gate is not actionable" => "gate-not-actionable",
+        "access gate submission descriptor is stale or mismatched" => "descriptor-mismatch",
+        "current access gate descriptor is unavailable" => "descriptor-unavailable",
+        "login gate requires credentials" | "login gate requires typed credentials" => {
+            "typed-credentials-required"
+        }
+        "access gate attempt is not ready for session finalization" => {
+            "session-finalization-not-ready"
+        }
+        "finalized Access Gate session binding mismatch" => "session-binding-mismatch",
+        "cannot replace Access Gate session without device id" => "session-device-missing",
+        "Access Gate session finalization lost its attempt fence" => {
+            "session-finalization-fence-lost"
+        }
+        _ => "",
+    };
+    if !exact.is_empty() {
+        return Some(exact);
     }
+    if message.starts_with("unsupported access gate type:") {
+        return Some("gate-type-unsupported");
+    }
+    if message.starts_with("unsupported schema-bound access gate type:") {
+        return Some("gate-type-unsupported");
+    }
+    if message.starts_with("unsupported Access Gate client platform ") {
+        return Some("client-platform-unsupported");
+    }
+    if message.starts_with("claim access gate submission:") {
+        return Some("submission-claim-failed");
+    }
+    if message.starts_with("load Access Gate actor:") {
+        return Some("session-actor-load-failed");
+    }
+    if message.starts_with("load finalized Access Gate session:") {
+        return Some("session-load-failed");
+    }
+    if message.starts_with("persist Access Gate session:") {
+        return Some("session-persist-failed");
+    }
+    None
 }
 
 pub(crate) fn validate_station_origin(value: &str) -> MobileResult<String> {
