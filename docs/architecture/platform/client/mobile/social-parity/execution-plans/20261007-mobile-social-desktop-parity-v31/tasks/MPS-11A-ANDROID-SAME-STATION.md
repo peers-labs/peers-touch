@@ -22,6 +22,8 @@
     "packages/prototypes/mobile/chat",
     "docs/architecture/platform/client/mobile/social-parity/prototype",
     "tooling/acceptance",
+    "tooling/scripts/local-dev/dev-session.mjs",
+    "tooling/scripts/local-dev/dev-session.test.mjs",
     "tooling/scripts/generate-mobile-brand-assets.py"
   ],
   "readSet": [
