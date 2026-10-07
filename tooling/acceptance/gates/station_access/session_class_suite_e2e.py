@@ -644,8 +644,8 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
             if 'data-acceptance-id="mobile-route-unavailable"' in dom_text:
                 lifecycle = self.runtime.call_action(
                     receiver_id,
-                    "lifecycle.waitReady",
-                    {"includeDiagnostics": True},
+                    "recovery.snapshot",
+                    {},
                 )
                 raise GateError(
                     f"{receiver_id} Mobile receiver route is unavailable: "

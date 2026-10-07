@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from tooling.acceptance.core import ActorRuntime
+from tooling.acceptance.core import ActorRuntime, GateError
 from tooling.acceptance.gates.station_access.session_class_suite_e2e import (
     GATE_ID,
     SCENARIO_IDS,
@@ -256,6 +258,78 @@ class _TestGate(StationAccessSessionClassSuiteGate):
 
 
 class StationAccessSessionClassSuiteGateTest(unittest.TestCase):
+    def test_mobile_route_failure_uses_child_callable_recovery_snapshot(
+        self,
+    ) -> None:
+        class Runtime(_FakeRuntime):
+            def __init__(self) -> None:
+                super().__init__()
+                self.actions: list[tuple[str, str, dict[str, object]]] = []
+                self.mobile_binding = SimpleNamespace(
+                    capture_web_dom=lambda *_: object(),
+                )
+
+            def call_action(
+                self,
+                client_id: str,
+                action: str,
+                payload: dict[str, object] | None = None,
+                **_: Any,
+            ) -> dict[str, object]:
+                action_payload = dict(payload or {})
+                self.actions.append((client_id, action, action_payload))
+                if action == "navigation.apply":
+                    return {}
+                if action == "navigation.snapshot":
+                    return {
+                        "detailKeys": (
+                            "detail:chat-conversation:direct-1",
+                        ),
+                    }
+                if action == "recovery.snapshot":
+                    return {
+                        "phase": "FAILED",
+                        "reason": "route-unavailable",
+                    }
+                return super().call_action(
+                    client_id,
+                    action,
+                    action_payload,
+                )
+
+        runtime = Runtime()
+        gate = StationAccessSessionClassSuiteGate(runtime=runtime)
+        with tempfile.TemporaryDirectory() as temporary:
+            dom = Path(temporary) / "mobile-dom.html"
+            dom.write_text(
+                '<main data-acceptance-id="mobile-route-unavailable"></main>',
+                encoding="utf-8",
+            )
+            gate.evidence_store = SimpleNamespace(resolve=lambda _: dom)
+
+            with self.assertRaisesRegex(
+                GateError,
+                "route is unavailable.*route-unavailable",
+            ):
+                gate._assert_mobile_receiver(
+                    "sim-ios",
+                    "direct-1",
+                    "message-1",
+                    "visible-message",
+                    "route-diagnostic",
+                )
+
+        self.assertIn(
+            ("sim-ios", "recovery.snapshot", {}),
+            runtime.actions,
+        )
+        self.assertFalse(
+            any(
+                action == "lifecycle.waitReady"
+                for _, action, _ in runtime.actions
+            )
+        )
+
     def test_one_runtime_closes_all_session_class_scenarios(self) -> None:
         runtime = _FakeRuntime()
         gate = _TestGate(runtime=runtime)

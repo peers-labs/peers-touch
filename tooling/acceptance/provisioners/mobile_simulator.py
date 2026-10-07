@@ -6321,7 +6321,8 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                     appium,
                     "serverUrl",
                     f"{SIMULATOR_APPIUM_CAPABILITY_ID}:server",
-                )
+                ),
+                timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
             ),
             client_id=client_id,
             platform=platform_name,
