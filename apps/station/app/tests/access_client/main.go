@@ -83,7 +83,7 @@ func login(station, email, password string) (*loginOutput, error) {
 			StationUrl:    origin,
 			StationPeerId: stationPeerID,
 			Client: &accesspb.AccessGateClientInfo{
-				Platform:            "testnet-federation-e2e",
+				Platform:            "mobile",
 				AppVersion:          "1",
 				DeviceId:            deviceID,
 				Locale:              "en",
@@ -111,7 +111,7 @@ func login(station, email, password string) (*loginOutput, error) {
 			AttemptId:           decision.GetAttemptId(),
 			GateId:              gate.GetGateId(),
 			Type:                accesspb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
-			ActionInput:         &accesspb.SubmitAccessGateRequest_Login{Login: &authpb.LoginRequest{Email: email, Password: password, DeviceType: "testnet-federation"}},
+			ActionInput:         &accesspb.SubmitAccessGateRequest_Login{Login: &authpb.LoginRequest{Email: email, Password: password, DeviceType: "mobile"}},
 			ActionId:            gate.GetActionId(),
 			StationPeerId:       stationPeerID,
 			DeviceId:            deviceID,
