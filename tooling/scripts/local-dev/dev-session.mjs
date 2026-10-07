@@ -1309,6 +1309,8 @@ function runDevelopmentClosure(
     }
     const arguments_ = [
       'tooling/scripts/acceptance-run.py',
+      '--execution-plan',
+      plan.path,
       '--execution-policy',
       'development',
       '--work-item',

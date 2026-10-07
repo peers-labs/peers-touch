@@ -677,7 +677,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
       ...scope.dependencies,
       spawnDevelopmentRunner(_command, arguments_) {
         assert.equal(_command, 'python3');
-        assert.equal(arguments_.includes('--execution-plan'), false);
+        assert.notEqual(arguments_.indexOf('--execution-plan'), -1);
         assert.equal(arguments_.includes('--gate'), false);
         assert.equal(arguments_.includes('--result-file'), false);
         const outputIndex = arguments_.indexOf('--development-manifest-out');
