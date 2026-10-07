@@ -1,6 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Button, Input, Modal, Tag, Typography } from 'antd';
-import { AlertTriangle, Check, Plus, Server, Trash2, X } from 'lucide-react';
+import { Button, Input, Modal, Typography } from 'antd';
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Plus,
+  Server,
+  Trash2,
+  X,
+} from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import {
@@ -77,9 +85,9 @@ export function StationSelector({
             <span>{isHttp ? t('mobile.launch.helperHttpWarning') : t('mobile.launch.changeTarget')}</span>
           </Text>
         </div>
-        <Tag color={activeStationPeerId ? 'green' : 'default'}>
+        <span className={`station-selection-state ${activeStationPeerId ? 'selected' : ''}`}>
           {activeStationPeerId ? t('mobile.launch.selected') : t('mobile.launch.required')}
-        </Tag>
+        </span>
       </div>
 
       {showStationInput ? (
@@ -88,10 +96,13 @@ export function StationSelector({
             <button
               type="button"
               className="station-protocol-select"
+              aria-label={t('mobile.launch.protocol')}
               onClick={() => setProtocol(protocol === 'https' ? 'http' : 'https')}
             >
-              {protocol.toUpperCase()}
+              <span>{protocol.toUpperCase()}</span>
+              <ChevronDown size={13} aria-hidden="true" />
             </button>
+            <span className="station-url-divider" aria-hidden="true" />
             <Input
               className="station-address-input"
               value={address}
@@ -105,10 +116,23 @@ export function StationSelector({
               onChange={(event) => updateAddress(event.target.value)}
               onPressEnter={submit}
             />
+            <button
+              type="button"
+              className="station-add-inline"
+              aria-label={t('mobile.launch.addStation')}
+              disabled={!canAdd || checking}
+              onClick={() => void submit()}
+            >
+              <Plus size={18} aria-hidden="true" />
+            </button>
           </div>
-          <Button icon={<Plus size={16} />} aria-label={t('mobile.launch.addStation')} loading={checking} disabled={!canAdd || checking} onClick={submit} />
           {hasEntries ? (
-            <Button className="station-input-cancel" icon={<X size={16} />} onClick={closeStationInput} />
+            <Button
+              className="station-input-cancel"
+              icon={<X size={16} />}
+              aria-label={t('common.action.cancel')}
+              onClick={closeStationInput}
+            />
           ) : null}
         </div>
       ) : null}
@@ -128,43 +152,36 @@ export function StationSelector({
             return (
               <div
                 key={entry.stationPeerId}
-                role="button"
-                tabIndex={0}
                 className={`station-entry ${isActive ? 'active' : ''}`}
-                onClick={() => onSelect(entry.stationPeerId)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  onSelect(entry.stationPeerId);
-                }}
               >
-                <Server size={18} />
-                <span className="station-entry-copy">
-                  <Text strong={isActive} className="mobile-truncate">{entry.label}</Text>
-                  <Text type="secondary" className="mobile-truncate">{entry.url}</Text>
-                </span>
-                <span className={`station-entry-status ${status.className}`}>
-                  {status.label}
-                </span>
-                {isActive ? <Check size={16} /> : null}
-                <span
+                <button
+                  type="button"
+                  className="station-entry-main"
+                  onClick={() => onSelect(entry.stationPeerId)}
+                >
+                  <Server size={18} aria-hidden="true" />
+                  <span className="station-entry-copy">
+                    <Text strong={isActive} className="mobile-truncate">{entry.label}</Text>
+                    <Text type="secondary" className="mobile-truncate">{entry.url}</Text>
+                  </span>
+                  <span className={`station-entry-status ${status.className}`}>
+                    {status.label}
+                  </span>
+                  <span className="station-entry-check">
+                    {isActive ? <Check size={16} aria-hidden="true" /> : null}
+                  </span>
+                </button>
+                <button
+                  type="button"
                   className="station-remove"
-                  role="button"
-                  tabIndex={0}
                   aria-label={t('common.action.delete')}
                   onClick={(event) => {
                     event.stopPropagation();
                     setPendingRemoval(entry);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setPendingRemoval(entry);
-                  }}
                 >
-                  <Trash2 size={15} />
-                </span>
+                  <Trash2 size={15} aria-hidden="true" />
+                </button>
               </div>
             );
           })

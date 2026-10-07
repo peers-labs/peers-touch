@@ -1,8 +1,8 @@
 # Mobile Prototype
 
 > **Status**: confirmed
-> **Version**: v1.1
-> **Created**: 2026-07-08 | **Updated**: 2026-10-06
+> **Version**: v1.2
+> **Created**: 2026-07-08 | **Updated**: 2026-10-08
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
 
@@ -26,6 +26,45 @@ The prototype covers:
 - The Mobile Social Desktop Parity amendment: Home/Explore, Search/Profile,
   Circles, full Audience selection, Feed-local comments, temporary media overlays,
   composer and private trust/recovery states.
+
+## 2026-10-08 Station Entry Amendment
+
+The Owner rejected the oversized logo, framed Station card, detached add
+button, and dominant offline recovery card on the physical Android entry
+surface. The confirmed Station entry contract is now:
+
+```yaml
+surface: mobile.station.entry
+scenario: compact-station-selection
+given:
+  - the app is in station-selection
+  - Station history may be empty
+  - device connectivity may be offline
+when:
+  - the user enters or selects one Station
+then:
+  - one composite address field owns protocol, host and add
+  - one primary action opens the selected Station
+  - offline recovery remains actionable without becoming a second page
+visual_invariants:
+  - brand mark is 52px and does not create a hero region
+  - no outer Station card frames the task
+  - address field and primary action share one content rail
+  - offline recovery is at most 112px tall and does not overlap the task
+forbidden:
+  - oversized centered logo
+  - nested card treatment
+  - independently bordered protocol control
+  - detached square add button
+  - recovery surface occupying the lower third of the viewport
+evidence:
+  - prototype layout captures
+  - physical Android screenshot
+```
+
+`?scenario=station-offline` exposes the compact recovery state. Production and
+prototype keep the pre-shell tree `on-visit + none`; no page lifetime or
+runtime owner changes.
 
 ## 2026-10-06 Mobile Social Parity Amendment
 

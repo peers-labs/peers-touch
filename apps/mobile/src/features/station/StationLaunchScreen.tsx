@@ -1,4 +1,4 @@
-import { Button, Card } from 'antd';
+import { Button } from 'antd';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
@@ -34,12 +34,17 @@ export function StationLaunchScreen({
         <LanguageSwitcher />
       </div>
 
-      <div className="launch-hero">
-        <img src={logo} alt="Peers Touch" className="launch-hero-logo" />
-      </div>
+      <section className="launch-content" aria-labelledby="launch-title">
+        <header className="launch-brand">
+          <img src={logo} alt="Peers Touch" className="launch-brand-logo" />
+          <div className="launch-brand-copy">
+            <span>{t('mobile.launch.brand')}</span>
+            <h1 id="launch-title">{t('mobile.launch.title')}</h1>
+            <p>{t('mobile.launch.subtitle')}</p>
+          </div>
+        </header>
 
-      <div className="launch-body">
-        <Card className="launch-card" bordered={false}>
+        <div className="launch-panel">
           <StationSelector
             activeStationPeerId={registry.activeStationPeerId}
             entries={registry.entries}
@@ -52,11 +57,15 @@ export function StationLaunchScreen({
           />
           <div className="launch-actions">
             <Button block size="large" type="primary" loading={checking} disabled={!activeStation} onClick={onContinue}>
-              {t('mobile.launch.continue')}
+              {activeStation
+                ? t('mobile.launch.enterStationWithName', {
+                    station: activeStation.label,
+                  })
+                : t('mobile.launch.continue')}
             </Button>
           </div>
-        </Card>
-      </div>
+        </div>
+      </section>
     </main>
   );
 }

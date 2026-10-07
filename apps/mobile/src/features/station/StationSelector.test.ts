@@ -5,6 +5,10 @@ const source = readFileSync(
   new URL('./StationSelector.tsx', import.meta.url),
   'utf8',
 );
+const launchSource = readFileSync(
+  new URL('./StationLaunchScreen.tsx', import.meta.url),
+  'utf8',
+);
 
 describe('StationSelector removal contract', () => {
   it('requires an explicit destructive confirmation before removing a Station', () => {
@@ -28,5 +32,28 @@ describe('StationSelector reachability states', () => {
     expect(source).toContain('if (entry.online === undefined) {');
     expect(source).toContain("className: 'unknown'");
     expect(source).toContain("t('mobile.launch.unknown')");
+  });
+});
+
+describe('Station launch visual contract', () => {
+  it('keeps the entry task compact and unframed', () => {
+    expect(launchSource).toContain('className="launch-content"');
+    expect(launchSource).toContain('className="launch-brand-logo"');
+    expect(launchSource).toContain('className="launch-panel"');
+    expect(launchSource).not.toContain('<Card');
+    expect(launchSource).not.toContain('launch-hero');
+  });
+
+  it('uses one contextual primary action', () => {
+    expect(launchSource).toContain("t('mobile.launch.enterStationWithName'");
+    expect(launchSource).toContain('disabled={!activeStation}');
+  });
+
+  it('renders Station address as one parent field frame', () => {
+    expect(source).toContain('className="station-url-divider"');
+    expect(source).toContain('className="station-add-inline"');
+    expect(source).toContain('className="station-protocol-select"');
+    expect(source).toContain('<ChevronDown');
+    expect(source).not.toContain('<Tag');
   });
 });
