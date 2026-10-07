@@ -1427,6 +1427,86 @@ class MobileSimulatorContractTests(unittest.TestCase):
             ("alice", "bob"),
         )
 
+    def test_session_class_public_resources_preserve_identity_sources(
+        self,
+    ) -> None:
+        overlay = json.loads(
+            (
+                ENVIRONMENTS_DIR / "chat-mixed-native.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        assignments = {
+            "desktop-bob": {
+                "actor": "bob",
+                "serviceId": "station-primary",
+            },
+            "sim-ios": {
+                "actor": "bob",
+                "serviceId": "station-primary",
+                "identitySourceClientId": "desktop-bob",
+            },
+            "sim-ios-peer": {
+                "actor": "bob",
+                "serviceId": "station-primary",
+                "identitySourceClientId": "desktop-bob",
+            },
+        }
+        resources = {
+            "appium": {
+                "serverVersion": "2.19.0",
+                "expectedServerVersion": "2.19.0",
+                "drivers": {
+                    "ios": {
+                        "identity": "appium-xcuitest-driver",
+                        "automationName": "XCUITest",
+                        "version": "9.10.5",
+                        "expectedVersion": "9.10.5",
+                    },
+                },
+            },
+            "applications": {
+                "ios": {
+                    "id": "com.peers.touch.mobile",
+                    "sha256": "a" * 64,
+                    "callbackScheme": "peers-touch",
+                },
+            },
+            "clients": {
+                "sim-ios": {
+                    "platform": "ios",
+                    "role": "primary-simulator",
+                    "runtime": "tauri-ios-simulator",
+                    "deviceRole": "primary-simulator",
+                    "profile": "sim-ios",
+                },
+                "sim-ios-peer": {
+                    "platform": "ios",
+                    "role": "peer-simulator",
+                    "runtime": "tauri-ios-simulator",
+                    "deviceRole": "peer-simulator",
+                    "profile": "sim-ios-peer",
+                },
+            },
+            "clientAssignments": assignments,
+        }
+
+        projected = (
+            MobileStationLifecycleSimulatorProvisioner
+            ._public_simulator_resources(
+                resources,
+                overlay,
+                environment_id="chat-mixed-native",
+            )
+        )
+
+        self.assertEqual(
+            projected["clientAssignments"],
+            {
+                "sim-ios": assignments["sim-ios"],
+                "sim-ios-peer": assignments["sim-ios-peer"],
+            },
+        )
+
     def test_direct_actor_fixture_resolves_both_roles_on_same_station(
         self,
     ) -> None:

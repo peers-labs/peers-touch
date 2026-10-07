@@ -6103,7 +6103,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             "clients",
             f"{environment_id}:base-clients",
         )
-        return {
+        projected = {
             "appium": {
                 "serverVersion": appium.get("serverVersion"),
                 "expectedServerVersion": appium.get(
@@ -6174,6 +6174,34 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             },
             "proofScope": projected_proof_scope,
         }
+        raw_assignments = resources.get("clientAssignments")
+        if raw_assignments is not None:
+            assignments = _required_object(
+                resources,
+                "clientAssignments",
+                f"{environment_id}:client-assignments",
+            )
+            projected["clientAssignments"] = {
+                client_id: {
+                    key: value
+                    for key, value in _required_object(
+                        assignments,
+                        client_id,
+                        (
+                            f"{environment_id}:"
+                            f"client-assignment:{client_id}"
+                        ),
+                    ).items()
+                    if key
+                    in {
+                        "actor",
+                        "serviceId",
+                        "identitySourceClientId",
+                    }
+                }
+                for client_id in client_ids
+            }
+        return projected
 
     def _raw_authority_values(self) -> tuple[str, ...]:
         if self._base_manifest is None:
@@ -7404,7 +7432,7 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             public_resources = (
                 MobileStationLifecycleSimulatorProvisioner
                 ._public_simulator_resources(
-                    self._base_manifest.simulator_resources,
+                    manifest.simulator_resources,
                     overlay,
                     client_ids=("sim-ios", "sim-ios-peer"),
                     environment_id=self.environment_id,
