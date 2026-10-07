@@ -162,6 +162,7 @@ Pick one based on intent:
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
 - [`invariants/direct-receipt-endpoint-truth.md`](invariants/direct-receipt-endpoint-truth.md) — Direct receipt aggregation uses immutable event commitments, not Group/MLS device rows.
 - [`invariants/dev-resource-declaration-before-write.md`](invariants/dev-resource-declaration-before-write.md) — non-trivial work publishes machine-visible source/runtime intent before mutation and releases it after cleanup.
+- [`invariants/machine-ledger-workspace-isolation.md`](invariants/machine-ledger-workspace-isolation.md) — machine ledgers provide one conflict view while schema and lifecycle mutation remain scoped to the selected workspace.
 - [`invariants/stable-plan-amendments.md`](invariants/stable-plan-amendments.md) — one stable Plan absorbs ordinary execution corrections through audited amendments without remounting.
 - [`invariants/bound-plan-acceptance-impact-is-scoped.md`](invariants/bound-plan-acceptance-impact-is-scoped.md) — a bound Plan computes Acceptance impact only from its exclusive-write source closure.
 - [`invariants/workspace-active-work-is-local.md`](invariants/workspace-active-work-is-local.md) — workflow code is distributed, while each consuming worktree exclusively owns its own machine-local active-work record.

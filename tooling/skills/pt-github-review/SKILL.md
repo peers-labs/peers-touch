@@ -168,6 +168,14 @@ verify:
 - stable Plan changes preserve one `planId`, append exactly one auditable
   amendment, fence the complete manifest/Task byte set before switching the
   ExecutionRun, and invalidate affected Task closures without remounting;
+- machine-wide work and Plan-mount ledgers remain coordination projections:
+  schema/lifecycle mutation is scoped to the selected workspace, unrelated
+  workspace liveness never becomes a migration gate, foreign legacy records
+  remain validated conflict inputs, mixed Plan indexes remain disjoint with
+  one workspace-occupancy union and a mechanical removal trigger, legacy
+  mounts accept only explicitly authorized exact-owner `owner-unmount` rather
+  than executable or terminal-trust compatibility paths, and stale writers
+  fail schema/CAS fences instead of overwriting newer state;
 - CI validates explicit Plan source without consulting machine-local mounts and
   accepts completion only from an immutable repository
   `completions/<planDigest>.json` attestation;

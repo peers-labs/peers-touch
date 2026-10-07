@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-07
-covered_docs_hash: 857f93829dc273d8744c92c7080b38badbca3c2ca922dac7a733ef7cca45ae79
+covered_docs_hash: c8c583157d9438396b6a0ff33c3b5bb4c2d213c03579374ade77921d343a34cc
 
 covered_docs:
   - AGENTS.md
@@ -61,6 +61,21 @@ OWNER receipts, and recoverable worktree creation transactions. Review rejects
 machine-state-dependent CI checks, child-session OWNER substitution,
 ownerless lifecycle mutation, unvalidated legacy migration input, and
 non-transactional provenance publication.
+
+## 2026-10-07 Workspace-Isolated Ledger Adoption Review
+
+DWF-D44 makes machine work and Plan-mount ledgers global coordination
+projections without making them global lifecycle owners. Review now rejects
+all-machine idle requirements for workspace schema adoption, foreign-record
+rewrites, ignored legacy conflict claims, overlapping legacy/stable Plan
+indexes, executable legacy snapshot fallbacks, missing exact-owner close and
+mixed-envelope removal paths, terminal-state trust without stable snapshot
+validation, and stale writers that can overwrite a newer revision.
+
+The GitHub Review Skill now checks these ownership and convergence boundaries.
+The machine-ledger workspace-isolation invariant plus focused Development work,
+Plan mount, and migration regressions provide executable coverage; no generic
+text-pattern fixture is required.
 
 ## 2026-10-07 Main-Session Worktree Provenance Review
 

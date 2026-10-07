@@ -431,13 +431,18 @@ Rules:
   current immutable snapshot;
 - repository/branch scans, active-work, Session, and declaration recency never
   select or replace a mount;
-- there is no workspace-binding, generation-advance, dual-read, or migration
-  fallback path.
+- there is no workspace-binding or generation-advance path;
+- during the bounded DWF-D44 adoption window, stable and legacy Plan indexes
+  are disjoint members of one digest-protected ledger envelope. Their mount-ID
+  union must equal the workspace index, so there is still one occupancy truth.
 
-The hard cut from the retired version-indexed machine schema runs only through
-`make plan-state-migrate` while every declaration and mount is non-live. It
-renames ledger keys and recomputes integrity digests once; normal readers reject
-the retired shape with `PLAN_STATE_MIGRATION_REQUIRED`.
+`make plan-state-migrate` derives one workspace from the canonical root. It
+migrates only that workspace's declaration records without changing their
+lifecycle state and preserves foreign indexes. A selected legacy mount remains
+close-only: stable execution cannot consume its retired snapshot, while the
+exact owner may perform only explicitly authorized `owner-unmount`. The mixed
+envelope is removed automatically when
+`liveMountsByPlanVersion` becomes empty.
 
 ## 5.2 Execution Plan Snapshot And Run
 
@@ -1044,10 +1049,12 @@ is repository-relative, resolves inside the declared worktree, and must match
 the live `mountId`, current snapshot `planDigest`, `runId`, `planId`, and the
 ExecutionRun's current `taskId`. Once a workspace is mounted, locator-less
 declarations are rejected with `WORKSPACE_PLAN_DECLARATION_REQUIRED`. There is
-no legacy-format fallback.
+no inferred locator fallback.
 
-Publication uses lock, closed-schema validation, atomic replace and digest
-readback. Declaration intent never substitutes for a live runtime lease.
+Publication uses lock, exact per-record schema validation, atomic replace and
+digest readback. The coordination reader accepts a legacy record only as a
+foreign migration-window claim; owner mutation requires the current stable
+shape. Declaration intent never substitutes for a live runtime lease.
 Relay and database claims provide machine-wide planning visibility only; they
 do not create deployment, mutation or lease authority.
 
