@@ -7146,19 +7146,21 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             federation_id = fixture_federation_id_from_station_ids(
                 actor["homeStationPeerId"] for actor in selected_actor_routes
             )
-            federation_targets = {
-                service_id: (
+            federation_targets = {}
+            for service_id in station_service_ids:
+                roles = tuple(sorted({
+                    client.actor
+                    for client in environment_clients
+                    if client.service_bindings["station"].service_id
+                    == service_id
+                }))
+                if not roles:
+                    continue
+                federation_targets[service_id] = (
                     service_bindings[service_id].endpoint,
                     service_bindings[service_id].deployment_environment,
-                    tuple(sorted({
-                        client.actor
-                        for client in environment_clients
-                        if client.service_bindings["station"].service_id
-                        == service_id
-                    })),
+                    roles,
                 )
-                for service_id in station_service_ids
-            }
             prepared_federation_id = prepare_federation_contexts(
                 federation_targets
             )

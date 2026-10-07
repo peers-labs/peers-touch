@@ -33,6 +33,7 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
     SimulatorDeviceTarget,
 )
 from tooling.acceptance.provisioners import (
+    ChatMixedNativeProvisioner,
     MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
     MobileSimulatorProvisioner,
@@ -1336,6 +1337,95 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.assertTrue(actors[0]["federationId"])
         prepare_federation.assert_called_once()
+
+    def test_session_class_fixture_omits_unbound_federation_target(
+        self,
+    ) -> None:
+        path = ENVIRONMENTS_DIR / "chat-mixed-native.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = ChatMixedNativeProvisioner(
+            contract,
+            overlay_path=path,
+        )
+        evidence = FakeEvidenceRun()
+        provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
+        bindings = resolve_mobile_service_bindings(
+            contract,
+            path,
+            environment={
+                "PT_MOBILE_STATION_PRIMARY_URL": (
+                    "https://station-primary.example"
+                ),
+                "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "deploy-primary",
+                "PT_MOBILE_STATION_SECONDARY_URL": (
+                    "https://station-secondary.example"
+                ),
+                "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
+            },
+        )
+        overlay = provisioner._load_overlay()
+        clients = provisioner._clients_for_gate(
+            "station-access-session-class-suite-e2e",
+            overlay,
+        )
+        expected_federation_id = (
+            "fed_chat_"
+            + hashlib.sha256(b"station-primary").hexdigest()[:20]
+        )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "verify_reset_target",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "reset_fixture",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_actor_identity",
+                side_effect=lambda endpoint, _deployment, role: SimpleNamespace(
+                    role=role,
+                    account_ref=f"station-account:{role}@p.t",
+                    ptid=f"ptid:{endpoint}:{role}",
+                    device_policy="single-active-session",
+                    federated_handle=f"@{role}@station.example",
+                    home_station_peer_id=(
+                        "station-primary"
+                        if "primary" in endpoint
+                        else "station-secondary"
+                    ),
+                ),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_bound_friendships",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_federation_contexts",
+                return_value=expected_federation_id,
+            ) as prepare_federation,
+        ):
+            provisioner._prepare_actor_fixture(
+                "station-access-session-class-suite-e2e",
+                bindings,
+                overlay,
+                clients=clients,
+            )
+
+        targets = prepare_federation.call_args.args[0]
+        self.assertEqual(set(targets), {"station-primary"})
+        self.assertEqual(
+            targets["station-primary"][2],
+            ("alice", "bob"),
+        )
 
     def test_direct_actor_fixture_resolves_both_roles_on_same_station(
         self,
