@@ -164,7 +164,7 @@ Feature / Gate closure，并 fail closed：
   helper 属于 Acceptance Infra。
 - Unproven scope 必须显式列出，不能用 smoke 代替完整 E2E。
 - Federation 只是第一个 validation domain，不是其它 domain 的模板代码来源。
-- Station Dashboard 是第一个 managed domain 示例；其它普通产品域应复用 onboarding 标准，而不是复制 Federation 的双边互验证语义。
+- Station Dashboard 是第一个 managed domain 示例；其它普通产品域应复用 onboarding 标准，不得把产品证明包装成框架自证。
 - Chat 是第一个用户主路径 managed domain 示例；它必须区分 persistence truth、realtime delivery 和 Desktop typed surface，不能把 typed check 说成完整用户体验 E2E。
 
 ---
@@ -185,7 +185,7 @@ Feature / Gate closure，并 fail closed：
 
 | Domain | Status | Coverage | 说明 |
 |--------|--------|----------|------|
-| `federation` | `active` | `project_validation_domain` | 首个复杂验证域，用于双边互验证 |
+| `federation` | `active` | `managed_domain` | 本地 Station、Native Desktop 与 Station Access 闭包；跨站 runtime 仍未证明 |
 | `station-dashboard` | `active` | `managed_domain` | 首个普通产品域，验证 onboarding 标准可泛化 |
 | `chat` | `active` | `managed_domain` | 首个用户主路径 domain，覆盖 persistence / Station runtime message flow / live realtime delivery / realtime typed contract / Desktop typed surface |
 | `mobile` | `active` | `managed_domain` | 结构接入完成；iOS Simulator/Android Emulator product proof 在对应 required Gates 通过前保持 `UNPROVEN`，真机仅为可选诊断 |

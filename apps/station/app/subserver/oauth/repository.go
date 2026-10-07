@@ -699,19 +699,36 @@ func (r *gormOAuthRepository) Acknowledge(
 			return nil
 		}
 
-		if err := tx.Model(&session.SessionRecord{}).
-			Where("user_id = ? AND session_id <> ? AND revoked = ?", candidate.ActorID, candidate.SessionID, false).
-			Updates(map[string]any{
-				"revoked":        true,
-				"revoked_at":     now,
-				"revoked_reason": "kicked",
-			}).Error; err != nil {
+		var pendingSession session.SessionRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(
+				"session_id = ? AND oauth_candidate_id = ?",
+				candidate.SessionID,
+				candidate.ID,
+			).
+			First(&pendingSession).Error; err != nil {
+			return translateNotFound(err, errOAuthEnvelopeUnavailable)
+		}
+		if pendingSession.UserID != candidate.ActorID ||
+			!pendingSession.Revoked ||
+			pendingSession.RevokedReason != "credential_delivery_pending" {
+			return errOAuthEnvelopeUnavailable
+		}
+		if _, err := session.RevokeReplacedClientClassSessions(
+			tx,
+			pendingSession.UserID,
+			pendingSession.DeviceType,
+			pendingSession.SessionID,
+			now,
+		); err != nil {
 			return err
 		}
 		sessionUpdate := tx.Model(&session.SessionRecord{}).
 			Where(
-				"session_id = ? AND oauth_candidate_id = ? AND revoked = ? AND revoked_reason = ?",
+				"session_id = ? AND user_id = ? AND device_type = ? AND oauth_candidate_id = ? AND revoked = ? AND revoked_reason = ?",
 				candidate.SessionID,
+				pendingSession.UserID,
+				pendingSession.DeviceType,
 				candidate.ID,
 				true,
 				"credential_delivery_pending",

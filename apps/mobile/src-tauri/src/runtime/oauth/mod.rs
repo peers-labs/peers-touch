@@ -1966,7 +1966,7 @@ mod tests {
         assert_eq!(decoded.action_type, AccessGateType::AuthOauth as i32);
         assert_eq!(decoded.attempt_secret_hash.len(), 32);
         assert_eq!(decoded.credential_delivery_public_key.len(), 32);
-        assert_eq!(PROTOBUF_CONTENT_TYPE, "application/x-protobuf");
+        assert_eq!(PROTOBUF_CONTENT_TYPE, "application/protobuf");
     }
 
     #[test]

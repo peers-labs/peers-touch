@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -26,6 +27,52 @@ type authorityRepository struct {
 	sealer domainevent.Sealer
 }
 
+type persistenceFailureStageError struct {
+	stage     string
+	operation string
+	cause     error
+}
+
+func (e *persistenceFailureStageError) Error() string {
+	return fmt.Sprintf("conversation persistence: %s: %v", e.operation, e.cause)
+}
+
+func (e *persistenceFailureStageError) Unwrap() error {
+	return e.cause
+}
+
+func (e *persistenceFailureStageError) PersistenceFailureStage() string {
+	sqlState := safeSQLState(e.cause)
+	if sqlState == "" {
+		return e.stage
+	}
+	return e.stage + "_sqlstate_" + strings.ToLower(sqlState)
+}
+
+func (e *persistenceFailureStageError) RetryablePersistence() bool {
+	return IsRetryableTransactionContention(e.cause)
+}
+
+func safeSQLState(err error) string {
+	var sqlState interface {
+		SQLState() string
+	}
+	if !errors.As(err, &sqlState) {
+		return ""
+	}
+	code := sqlState.SQLState()
+	if len(code) != 5 {
+		return ""
+	}
+	for _, char := range code {
+		if (char < '0' || char > '9') &&
+			(char < 'A' || char > 'Z') {
+			return ""
+		}
+	}
+	return code
+}
+
 func newAuthorityRepository(
 	db *gorm.DB,
 	sealer domainevent.Sealer,
@@ -39,9 +86,82 @@ func (r *authorityRepository) Create(
 ) error {
 	model := conversationModelFromSnapshot(snapshot)
 	if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
-		return fmt.Errorf("conversation persistence: create aggregate: %w", err)
+		return aggregateCreationPersistenceError(err)
 	}
-	return r.replaceChildren(ctx, snapshot)
+	if err := r.replaceChildren(ctx, snapshot); err != nil {
+		return aggregateCreationChildrenError(err)
+	}
+	return nil
+}
+
+func aggregateCreationPersistenceError(err error) error {
+	if isAggregateCreationConflict(err) {
+		return &conversationdomain.Error{
+			Code:      conversationdomain.ErrorCodeCommandConflict,
+			Operation: "persistence.create_aggregate",
+			Field:     "aggregate",
+			Message:   "aggregate already exists",
+			Cause:     err,
+		}
+	}
+	return aggregateCreationStepError("insert_aggregate", "create aggregate", err)
+}
+
+func aggregateCreationStepError(stage string, operation string, err error) error {
+	return &persistenceFailureStageError{
+		stage:     stage,
+		operation: operation,
+		cause:     err,
+	}
+}
+
+func aggregateCreationChildrenError(err error) error {
+	if isAggregateCreationConflict(err) {
+		return aggregateCreationPersistenceError(err)
+	}
+	return err
+}
+
+func isAggregateCreationConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+
+	var sqlState interface {
+		SQLState() string
+	}
+	if errors.As(err, &sqlState) {
+		return sqlState.SQLState() == "23505"
+	}
+
+	message := err.Error()
+	return strings.Contains(message, "SQLSTATE 23505") ||
+		strings.Contains(message, "UNIQUE constraint failed")
+}
+
+// IsRetryableTransactionContention identifies PostgreSQL transaction failures
+// that are safe to retry from a new transaction boundary.
+func IsRetryableTransactionContention(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var sqlState interface {
+		SQLState() string
+	}
+	if errors.As(err, &sqlState) {
+		switch sqlState.SQLState() {
+		case "40001", "40P01":
+			return true
+		}
+	}
+
+	message := err.Error()
+	return strings.Contains(message, "SQLSTATE 40001") ||
+		strings.Contains(message, "SQLSTATE 40P01")
 }
 
 func (r *authorityRepository) LoadForUpdate(
@@ -143,12 +263,20 @@ func (r *authorityRepository) replaceChildren(
 	if err := r.db.WithContext(ctx).
 		Where("conversation_id = ?", string(snapshot.ID)).
 		Delete(&ConversationMemberModel{}).Error; err != nil {
-		return fmt.Errorf("conversation persistence: replace members: %w", err)
+		return aggregateCreationStepError(
+			"delete_members",
+			"replace members",
+			err,
+		)
 	}
 	if err := r.db.WithContext(ctx).
 		Where("conversation_id = ?", string(snapshot.ID)).
 		Delete(&ConversationMemberDeviceModel{}).Error; err != nil {
-		return fmt.Errorf("conversation persistence: replace devices: %w", err)
+		return aggregateCreationStepError(
+			"delete_devices",
+			"replace devices",
+			err,
+		)
 	}
 	members := make([]ConversationMemberModel, 0, len(snapshot.Members))
 	for _, member := range snapshot.Members {
@@ -166,7 +294,11 @@ func (r *authorityRepository) replaceChildren(
 	}
 	if len(members) > 0 {
 		if err := r.db.WithContext(ctx).Create(&members).Error; err != nil {
-			return fmt.Errorf("conversation persistence: insert members: %w", err)
+			return aggregateCreationStepError(
+				"insert_members",
+				"insert members",
+				err,
+			)
 		}
 	}
 	devices := make([]ConversationMemberDeviceModel, 0, len(snapshot.Devices))
@@ -183,7 +315,11 @@ func (r *authorityRepository) replaceChildren(
 	}
 	if len(devices) > 0 {
 		if err := r.db.WithContext(ctx).Create(&devices).Error; err != nil {
-			return fmt.Errorf("conversation persistence: insert devices: %w", err)
+			return aggregateCreationStepError(
+				"insert_devices",
+				"insert devices",
+				err,
+			)
 		}
 	}
 	return nil

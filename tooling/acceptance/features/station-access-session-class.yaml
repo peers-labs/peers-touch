@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "station-access-session-class",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/frame/core/facility/session/**",
+    "apps/desktop/src-tauri/src/application/auth/**",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/mobile/src-tauri/src/runtime/oauth/**",
+    "apps/mobile/src-tauri/src/messaging/**",
+    "tooling/acceptance/gates/station_access/session_class_e2e.py"
+  ],
+  "truth_sources": [
+    "Station canonical client-class Session slots",
+    "Desktop and Mobile installation-scoped device identities",
+    "current-source native receiver proof"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "authenticated-shell"},
+    {"type": "native-mobile", "route": "shell"}
+  ],
+  "required_gates": [
+    "chat-native-multi-device-e2e",
+    "chat-lifecycle-mixed-client-multi-device-e2e",
+    "mobile-simulator-station-lifecycle-e2e",
+    "station-access-session-class-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "one Desktop and one Mobile Session for the same actor remain valid together",
+      "a newer Desktop Session revokes only the previous Desktop Session",
+      "a newer Mobile Session revokes only the previous Mobile Session",
+      "each installation retains its own device and storage identity while sharing Station and actor truth"
+    ],
+    "surface": [
+      "the unaffected cross-class client remains authenticated and can read and mutate Station state after same-class takeover",
+      "the replaced same-class client converges to the typed kicked or session-revoked state"
+    ]
+  },
+  "negative": [
+    "device_id, window labels, runtime labels, and OS models must not create additional Session class slots",
+    "one simulator or one storage root must not represent two same-class Mobile installations",
+    "aggregate evidence must not replace any native receiver proof",
+    "stale or dirty-source proof must not satisfy SAL-G05"
+  ]
+}

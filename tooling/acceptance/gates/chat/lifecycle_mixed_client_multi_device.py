@@ -12,7 +12,6 @@ from typing import Any
 from tooling.acceptance.core import (
     AcceptanceGate,
     GateError,
-    REPO_ROOT,
 )
 from tooling.acceptance.gates.chat.mixed_native_runtime import (
     MixedNativeRuntime,
@@ -23,7 +22,7 @@ from tooling.acceptance.gates.chat.native_support import (
 )
 
 GATE_ID = "chat-lifecycle-mixed-client-multi-device-e2e"
-REPORT_PATH = REPO_ROOT / "tooling" / "acceptance" / "reports" / f"{GATE_ID}.json"
+REPORT_PATH = None
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 
 REQUIRED_ASSERTIONS = frozenset({
@@ -43,7 +42,7 @@ class MixedClientMultiDeviceGate(AcceptanceGate):
     bom = ("CCU-G06",)
     spec = ("chat-lifecycle-mixed-client",)
     report_path = REPORT_PATH
-    evidence_dir = REPORT_PATH.parent / f"{GATE_ID}-evidence"
+    evidence_dir = None
 
     def __init__(
         self,

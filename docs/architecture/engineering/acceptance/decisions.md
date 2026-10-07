@@ -14,7 +14,7 @@
 |----|------|------|
 | D-01 | Capability Graph 是验收架构的一等模型 | accepted |
 | D-02 | Registry 只做路径影响映射，不承载业务语义 | accepted |
-| D-03 | Federation 作为首个双边互验证域 | accepted |
+| D-03 | Federation 作为首个双边互验证域 | superseded |
 | D-04 | Agent 智能必须受 stable gates 和 reports 约束 | accepted |
 | D-05 | Station Dashboard 作为首个 managed domain | accepted |
 | D-06 | Chat 作为首个用户主路径 managed domain | accepted |
@@ -94,8 +94,9 @@ Registry 保持单一职责：`paths -> features -> gates`。业务语义由 fea
 
 ## D-03: Federation 作为首个双边互验证域
 
-**Status**: accepted
+**Status**: superseded
 **Date**: 2026-06-03
+**Amended**: 2026-10-07
 
 ### Context
 
@@ -103,7 +104,7 @@ Acceptance Framework 需要一个真实复杂产品域验证自己是否有用�
 
 ### Decision
 
-选择 Federation 作为首个 validation domain。Federation 跨 Station、Dashboard、Desktop gateway、testnet、ledger、discovery、operational events，能有效暴露框架缺口；但 Federation 只能作为 domain profile 接入，不能持有 acceptance core。
+选择 Federation 作为首个 validation domain。Federation 跨 Station、Dashboard、Desktop gateway、Station Access、ledger、discovery、operational events，能有效暴露框架缺口；但 Federation 只能作为 domain profile 接入，不能持有 acceptance core。
 
 ### Rationale
 
@@ -113,8 +114,13 @@ Federation 已具备：
 - Station governance truth。
 - Dashboard read-only projection。
 - Desktop surface / gateway。
-- isolated `fedp5` 三节点环境。
-- acceptance gates 和 capability report 初始闭环。
+- Station、Dashboard、Desktop 与 Station Access 的本地 Gate 闭环。
+- capability report 和通用 domain validator 初始闭环。
+
+原三节点环境随其 owning worktree 清理后，不再属于全局 Acceptance。
+依赖该环境的 Gate、脚本、反向框架证明和 proven scope 已硬删除；Federation
+现按 managed domain 维护。多 Station 收敛和远端浏览器可见面在新 owner、
+Environment Contract 与 Provisioner 落地前保持 `UNPROVEN`。
 
 ### Alternatives Considered
 
@@ -124,7 +130,7 @@ Federation 已具备：
 
 ### Consequences
 
-- Federation gates 必须保持高质量，因为它们同时验证产品和框架有效性。
+- Federation gates 只证明其声明的产品范围，不再承担框架有效性的反向证明。
 - Acceptance core 必须保持 domain-neutral；新增 Chat / Mobile / Applet profile 时不得复制 Federation 专用逻辑。
 - 未证明范围必须严格标注，不能因为 Federation 是样板域就夸大覆盖。
 
@@ -282,7 +288,8 @@ Runtime Manifest作为durable runtime truth的地位，也不允许Gate自行准
 ### Review / Reversal Trigger
 
 若实现证明 Environment Provisioner 无法在不持有产品断言的前提下统一
-`native-tauri-embedded-webdriver`、`home-station` 和 `fedp5`，应重新评审 contract 粒度；
+`native-tauri-embedded-webdriver`、`home-station` 和未来远端 Federation 环境，
+应重新评审 contract 粒度；
 不得退回 Agent 手工拼接。
 
 ---

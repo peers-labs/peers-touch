@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 模块目录结构
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-27 | **Updated**: 2026-09-27
+> **Version**: v1.1
+> **Created**: 2026-09-27 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
 ---
@@ -15,6 +15,7 @@ model/domain/
 └── peer/station_identity.proto  # signed Station identity
 
 apps/station/
+├── frame/core/facility/session/ # canonical client-class Session slots
 ├── frame/touch/accessgate/      # access policy and attempt owner
 ├── frame/touch/actor/           # actor and device session owner
 └── app/subserver/federation/    # Federation context and operator API
@@ -38,6 +39,7 @@ docs/architecture/engineering/architecture-governance/
 | 路径 | 职责 | 不得承担 |
 |---|---|---|
 | `model/domain/access_gate/` | 跨端 Access Gate wire contract | 平台 UI 或持久化策略 |
+| `frame/core/facility/session/` | Session class slot、撤销与持久化 | 客户端运行时标签或 UI policy |
 | `frame/touch/accessgate/` | gate policy、attempt、decision | 客户端 projection |
 | `frame/touch/actor/` | Actor/Device session truth | Federation topology |
 | `app/subserver/federation/` | Federation context 与 operator 能力 | 普通客户端 UI |

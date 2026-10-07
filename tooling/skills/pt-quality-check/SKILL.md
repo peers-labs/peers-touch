@@ -103,8 +103,9 @@ For Acceptance Infra changes, classify capability evidence by direction:
   incomplete. CI reports a missing semantic decision as reviewer work because
   CI does not impersonate an agent reviewer.
 - `acceptance-validate` without `--require-proven` proves structure only.
-- Environment-dependent gates (`fedp5`, Desktop gateway, browser, simulator)
-  are evidence requests unless the environment is actually available.
+- Environment-dependent gates (registered remote runtime, Desktop gateway,
+  browser, simulator) are evidence requests unless the environment is actually
+  available.
 - Business `FAILED/BLOCKED/UNPROVEN` is not an Acceptance Infra failure.
 
 ## Output

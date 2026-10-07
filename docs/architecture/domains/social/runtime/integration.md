@@ -31,12 +31,12 @@
 | 文件 / 模块 | 当前职责 | 对齐方向 |
 | --- | --- | --- |
 | `apps/mobile/src/features/social/socialApi.ts` | Station social/chat/notification/profile API gateway | 与 Desktop API contract 对齐 |
-| `apps/mobile/src/features/social/socialWire.ts` | SSE frame + generated proto adaptation | 保持 generated proto；后续扩展普通 DTO proto 化 |
+| `apps/mobile/src/features/social/socialWire.ts` | Social SSE frame decoding and Messaging wake hints | 仅消费 `StreamEvent`; durable Chat payload stays in the native Messaging Engine |
 | `apps/mobile/src/features/social/socialNormalizers.ts` | Station shape/enum/timestamp/uint64/profile normalizer | 可作为 Desktop normalizer 边界参考 |
 | `apps/mobile/src/features/social/socialProjection.ts` | friend requests、conversations、notifications、messages、receipts、mutations、typing reducer | 可作为双端 reducer 语义参考 |
-| `apps/mobile/src/features/social/socialStore.ts` | social projection state + user commands | 保持 store owner，补 group/offline/E2EE domain |
+| `apps/mobile/src/features/social/socialStore.ts` | Social state plus unified Direct/Group Messaging projection | 保持唯一 Web projection store owner |
 | `apps/mobile/src/features/social/socialRuntime.ts` | reconcile、SSE、presence、typing sweep、external event dispatch | 与 Desktop supervisor 契约对齐 |
-| `apps/mobile/src/features/group/groupRuntime.ts` | Group projection、E2EE readiness、reconcile | 保持独立 descriptor；复用 social event ingress/host adapter，不建立第二 supervisor |
+| `apps/mobile/src/runtimes/messagingRuntime.ts` | Direct/Group command lifecycle, encrypted projection, reconcile | 作为唯一 Chat runtime，不建立 Group-specific supervisor |
 | `apps/mobile/src/features/social/useSocialRuntime.ts` | Auth session 到 runtime lifecycle 的 hook adapter | 保持 thin adapter |
 | `apps/mobile/src/runtimes/mobileNativeEventBridge.ts` | Mobile host events -> `SocialHostEvent` | 使用共享 event helper 归一化 push/deep-link/resume/notification tap，后续补 native plugin emit 闭环 |
 | `apps/mobile/src/pages/ChatPage.tsx`, `ContactsPage.tsx` | UI renderer + command dispatch | 保持不拥有 freshness |

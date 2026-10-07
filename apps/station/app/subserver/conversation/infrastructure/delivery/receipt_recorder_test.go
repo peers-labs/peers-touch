@@ -902,6 +902,34 @@ func TestReceiptRecorderPersistsConsumedTransitionAndAllowsDelayedAck(t *testing
 	}
 }
 
+func TestReceiptRecorderLocksEventBeforeEndpointCommitment(t *testing.T) {
+	fixture := newReceiptPersistenceFixture(t)
+	const callbackName = "receipt-lock-order"
+	var queriedTables []string
+	if err := fixture.db.Callback().Query().
+		Before("gorm:query").
+		Register(callbackName, func(tx *gorm.DB) {
+			switch tx.Statement.Table {
+			case "conversation_events", "conversation_delivery_commitments":
+				queriedTables = append(queriedTables, tx.Statement.Table)
+			}
+		}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+	defer fixture.db.Callback().Query().Remove(callbackName)
+
+	if _, err := fixture.recorder.Record(context.Background(), fixture.receipt); err != nil {
+		t.Fatalf("record receipt: %v", err)
+	}
+	if len(queriedTables) < 2 {
+		t.Fatalf("receipt lock queries = %v", queriedTables)
+	}
+	if queriedTables[0] != "conversation_events" ||
+		queriedTables[1] != "conversation_delivery_commitments" {
+		t.Fatalf("receipt lock order = %v", queriedTables[:2])
+	}
+}
+
 func TestReceiptRecorderExactReplayAndConflict(t *testing.T) {
 	fixture := newReceiptPersistenceFixture(t)
 

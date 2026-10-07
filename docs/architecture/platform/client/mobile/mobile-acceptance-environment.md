@@ -100,8 +100,11 @@ session, lifecycle, and proof projections.
 This tier proves the simulator portions of valid-session restore,
 same-device-type takeover and revocation recovery, Station switching, logout,
 generation fencing, and old-scope absence. Destructive actor reset still
-requires `MOBILE_ACCEPTANCE_RESET=1` after both targets pass disposable-target
-verification.
+requires the exact inherited `station.reset:mobile-station-lifecycle-alice`
+OS-held lease after both targets pass disposable-target verification. The
+Provisioner revalidates that lease through the Local Dev control plane
+immediately before setup and cleanup; no environment flag grants reset
+authority.
 
 ### 3.4 Direct Simulator Tier
 

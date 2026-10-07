@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -130,6 +131,10 @@ func (r *Repository) BuildLocalEndpointManifestSnapshot(
 			Find(&devices).Error; err != nil {
 			return err
 		}
+		// SQL collation is locale-dependent; manifests require byte-stable IDs.
+		sort.Slice(devices, func(left, right int) bool {
+			return devices[left].DeviceID < devices[right].DeviceID
+		})
 		if len(devices) == 0 {
 			return domain.NewError(
 				domain.ErrorCodeDeviceNotFound,

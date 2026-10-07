@@ -182,40 +182,6 @@ export type {
 export type {
   Friend,
 } from '../gen/proto/domain/chat/chat_pb';
-export type {
-  FriendChatSession,
-  FriendChatMessage,
-} from '../gen/proto/domain/chat/friend_chat_pb';
-export type {
-  Group,
-  GroupMessage,
-  ListGroupsResponse,
-  GetGroupMessagesResponse,
-  GetUnreadCountResponse,
-  MarkGroupReadResponse,
-  GroupMember,
-  GroupInvitation,
-  CreateGroupResponse,
-  GetGroupResponse,
-  UpdateGroupResponse,
-  InviteToGroupResponse,
-  JoinGroupResponse,
-  LeaveGroupResponse,
-  TransferGroupOwnershipResponse,
-  DissolveGroupResponse,
-  GetGroupMembersResponse,
-  RemoveMemberResponse,
-  UpdateMemberResponse,
-  RecallGroupMessageResponse,
-  DeleteGroupMessageResponse,
-  SearchGroupMessagesResponse,
-  UpdateMyNicknameResponse,
-  GetGroupSettingsResponse,
-  UpdateGroupSettingsResponse,
-  GetOfflineMessagesResponse,
-  AckOfflineMessagesResponse,
-  GetGroupStatsResponse,
-} from '../gen/proto/domain/chat/group_chat_pb';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 

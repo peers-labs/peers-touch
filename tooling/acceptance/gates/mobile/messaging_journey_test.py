@@ -64,6 +64,9 @@ class FakeMessagingSession:
         self.runtime_phase = "ACTIVE"
         self.lifecycle_scope_phases: list[str] = []
         self.messaging_projection_reads_while_bootstrapping = 0
+        self.contact_open_inputs: list[dict[str, Any]] = []
+        self.write_admission_reads = 0
+        self.write_admission_sequence: list[dict[str, Any]] = []
         self.network.actors[actor.ptid] = actor
 
     def call_action(
@@ -97,21 +100,6 @@ class FakeMessagingSession:
                     "stationPeerId": self.actor.station_peer_id,
                     "actorPtid": self.actor.ptid,
                 },
-            }
-        if action == "messaging.createDirect":
-            peer_ptid = str(body["peerPtid"])
-            conversation_id = "-".join(
-                sorted((self.actor.ptid, peer_ptid))
-            )
-            self.network.add_conversation(
-                conversation_id,
-                kind=1,
-                owner_ptid=self.actor.ptid,
-                member_ptids=[self.actor.ptid, peer_ptid],
-            )
-            return {
-                "conversationId": conversation_id,
-                "state": "projected",
             }
         if action == "social.people.search":
             if set(body) != {"query", "federationId"}:
@@ -161,19 +149,52 @@ class FakeMessagingSession:
                 if request["requestId"] == body["requestId"]
             )
             request["status"] = 2
+            return self._social_projection()
+        if action == "social.contact.open":
+            self.contact_open_inputs.append(body)
+            peer_ptid = str(body["peerPtid"])
+            federation_id = str(body["federationId"])
+            accepted = any(
+                request["status"] == 2
+                and request["federationId"] == federation_id
+                and {
+                    request["senderPtid"],
+                    request["receiverPtid"],
+                }
+                == {self.actor.ptid, peer_ptid}
+                for request in self.network.friend_requests
+            )
+            if not accepted:
+                raise AssertionError(
+                    "Contact Direct creation requires an accepted Federation"
+                )
             conversation_id = "-".join(
-                sorted((request["senderPtid"], request["receiverPtid"]))
+                sorted((self.actor.ptid, peer_ptid))
             )
             self.network.add_conversation(
                 conversation_id,
                 kind=1,
-                owner_ptid=request["senderPtid"],
+                owner_ptid=self.actor.ptid,
                 member_ptids=[
-                    request["senderPtid"],
-                    request["receiverPtid"],
+                    self.actor.ptid,
+                    peer_ptid,
                 ],
             )
-            return self._social_projection()
+            return {"conversationId": conversation_id}
+        if action == "recovery.snapshot":
+            self.write_admission_reads += 1
+            admission = (
+                self.write_admission_sequence.pop(0)
+                if self.write_admission_sequence
+                else {"open": True, "reason": None}
+            )
+            return {
+                "hasActiveRecovery": not admission["open"],
+                "isWriteBlocked": not admission["open"],
+                "writeAdmission": admission,
+                "updatedAtMs": self.write_admission_reads,
+                "states": [],
+            }
         if action == "social.reconcile":
             return self._social_projection()
         if action == "messaging.createGroup":
@@ -482,8 +503,62 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.assertEqual(result["senderPtid"], "ptid:alice")
         self.assertEqual(result["receiverPtid"], "ptid:bob")
         self.assertGreaterEqual(result["deliveryElapsedMs"], 0)
+        self.assertEqual(
+            self.sender_session.contact_open_inputs,
+            [
+                {
+                    "peerPtid": "ptid:bob",
+                    "federationId": "federation-1",
+                }
+            ],
+        )
         message = self.network.messages[result["conversationId"]][0]
         self.assertIn("ptid:bob", message["readByPtids"])
+
+    def test_contact_direct_waits_for_effective_write_admission(self) -> None:
+        self.journey.authenticate(self.sender_session, self.sender, password="1")
+        self.journey.authenticate(
+            self.receiver_session,
+            self.receiver,
+            password="1",
+        )
+        self.sender_session.write_admission_sequence = [
+            {"open": False, "reason": "recovery_projection_blocked"},
+            {"open": False, "reason": "runtime_reconciling"},
+            {"open": True, "reason": None},
+        ]
+
+        result = self.journey.run_social_convergence(
+            sender_session=self.sender_session,
+            receiver_session=self.receiver_session,
+            sender=self.sender,
+            receiver=self.receiver,
+            journey_id="admission",
+        )
+
+        self.assertEqual(self.sender_session.write_admission_reads, 3)
+        self.assertEqual(
+            self.sender_session.contact_open_inputs,
+            [{"peerPtid": "ptid:bob", "federationId": "federation-1"}],
+        )
+        self.assertEqual(result["conversationId"], "ptid:alice-ptid:bob")
+
+    def test_contact_direct_admission_timeout_retains_last_public_reason(
+        self,
+    ) -> None:
+        self.sender_session.write_admission_sequence = [
+            {"open": False, "reason": "runtime_reconciling"},
+        ] * 200
+
+        with self.assertRaisesRegex(
+            GateError,
+            "last reason: runtime_reconciling",
+        ):
+            self.journey._await_write_admission(
+                self.sender_session,
+                "sender contact Direct write admission",
+            )
+        self.assertEqual(self.sender_session.contact_open_inputs, [])
 
     def test_authentication_resolves_canonical_station_account_reference(
         self,

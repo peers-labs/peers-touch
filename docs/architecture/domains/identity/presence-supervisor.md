@@ -77,15 +77,11 @@ caller never blocks the UI:
 1. `POST /presence/heartbeat` — renews the actor/session presence lease;
    failure
    short-circuits the rest (kept Offline).
-2. `GET /friend-chat/pending` — drains the in-memory queue station kept
-   for us while we were offline.
-3. For each unique `session_ulid` in the pending payload, run
-   `friend_chat_sync_from_station` (page-limit 50, 1 page) to bring those
-   sessions' local cursor up to date.
-4. `POST /friend-chat/message/ack` with the union of pulled ulids.
-   Failure is logged but does not roll back state — the next `/pending`
-   re-serves the same messages, which is fine because step 3 is
-   idempotent (cursor-aware).
+2. Wake the authenticated Messaging runtime for the current device scope.
+3. The Messaging Engine claims the durable device inbox and applies ordered
+   Conversation event lanes into its encrypted projection store.
+4. Each inbox item is acknowledged only after its projection commit succeeds;
+   failed items remain retryable under the same consumer epoch.
 5. Emit `presence.transition` Tauri event with `reconciled_count` and
    `affected_sessions`.
 
@@ -178,8 +174,8 @@ loading path handles them when the user clicks in.
 | Old mechanism                                        | After PR-presence-1                            |
 |------------------------------------------------------|------------------------------------------------|
 | Page-owned presence polling                         | Deleted; runtime reconciliation owns freshness. |
-| Per-component `friend_chat_sync` calls on focus      | Funnels into a single supervisor entry point. |
-| Hand-rolled `/pending` calls in two unrelated places | One reconcile pipeline; sole owner of `/online`/`/pending`/`/ack`. |
+| Per-component Chat synchronization on focus          | Messaging runtime owns one scoped reconcile entry point. |
+| Hand-rolled pending-message drains                    | Durable device inbox claim/commit/ack is owned by the Messaging Engine. |
 | "Did the user just unlock?" inferred from N stores   | Single `identity_restored` trigger.            |
 | Window blur interpreted as offline                   | Deleted; focus is not reachability.            |
 | Local-only remote actor query                        | Routed to the verified Actor Home Station.     |

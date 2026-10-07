@@ -92,7 +92,8 @@ IdentityAuthenticatedEdge
   -> fresh login / OAuth / PIN transitions validate that binding without
      issuing a second takeover session
   -> cold-launch / renderer-reload restoration may perform persisted-session
-     takeover before binding the window
+     takeover in the canonical `desktop` client-class slot before binding the
+     window; it must not create a `desktop-native` business class
   -> for fresh password/OAuth login, enter authenticatedPendingCompletion
      until the login page finishes set/relink/skip PIN
   -> PROFILE_SYNC_STARTED

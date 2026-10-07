@@ -3,7 +3,7 @@
   "status": "active",
   "product_area": "federation",
   "owners": [
-    "apps/desktop/src/pages/FederationGovernancePage.tsx",
+    "apps/desktop/src/components/settings/FederationTab.tsx",
     "apps/desktop/src/components/common/StationPicker.tsx",
     "apps/desktop/src/components/chat/FindPeopleModal.tsx",
     "apps/desktop/src/store/stationRegistry.ts",
@@ -17,7 +17,7 @@
   ],
   "visible_surfaces": [
     {"type": "desktop", "route": "onboarding station picker"},
-    {"type": "desktop", "route": "federation governance page"},
+    {"type": "desktop", "route": "settings federation tab"},
     {"type": "desktop", "route": "find people modal"}
   ],
   "required_gates": [

@@ -64,8 +64,6 @@ candidates = []
 for window in windows:
     if int(window.get(Quartz.kCGWindowOwnerPID, -1)) != process_id:
         continue
-    if int(window.get(Quartz.kCGWindowLayer, -1)) != 0:
-        continue
     if float(window.get(Quartz.kCGWindowAlpha, 0)) <= 0:
         continue
     bounds = window.get(Quartz.kCGWindowBounds) or {}
@@ -369,6 +367,10 @@ class NativeDesktopMacOSProvisioner:
             app_binary=find_app_binary(),
             port=webdriver_port,
             profile=f"{self.contract.cell_id}-probe",
+            environment={
+                "PT_ACCEPTANCE_WINDOW_SLOT": "0",
+                "PT_ACCEPTANCE_WINDOW_COUNT": "1",
+            },
         )
         session = TauriSession(launcher)
         screenshot_root = Path(
@@ -386,11 +388,7 @@ class NativeDesktopMacOSProvisioner:
                     "macOS runtime-cell probe process identity is unavailable"
                 )
             adapter = MacOSNativeDesktopAdapter()
-            bounds = self._json_probe(
-                _WINDOW_BOUNDS_PROBE,
-                "window bounds",
-                str(process_id),
-            )
+            bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(
                     adapter,
@@ -566,6 +564,38 @@ class NativeDesktopMacOSProvisioner:
                 )
             if last_control.error and interval_seconds > 0:
                 time.sleep(interval_seconds)
+
+    @classmethod
+    def _await_window_bounds(
+        cls,
+        process_id: int,
+        *,
+        timeout_seconds: float = 5.0,
+        interval_seconds: float = 0.1,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while True:
+            try:
+                return cls._json_probe(
+                    _WINDOW_BOUNDS_PROBE,
+                    "window bounds",
+                    str(process_id),
+                )
+            except BlockedError as error:
+                if not error.reason.endswith(
+                    ": no visible process-owned window"
+                ):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise BlockedError(
+                        reason=(
+                            "macOS runtime-cell process-owned window did not "
+                            f"become visible within {timeout_seconds:.1f}s"
+                        ),
+                        resource="runtime-cell-window-bounds",
+                    ) from error
+                if interval_seconds > 0:
+                    time.sleep(interval_seconds)
 
     def _git(self, *args: str) -> str:
         completed = subprocess.run(

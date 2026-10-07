@@ -1227,18 +1227,20 @@ from tooling.acceptance.core import EphemeralGateClient
 with EphemeralGateClient.from_environment():
     pass
 """
-        context.activate()
-        completed = GateProcessLauncher(
-            cwd=REPO_ROOT,
-            environment=controlled_child_environment(),
-        ).run(
-            GateLaunchSpec(
-                argv=(sys.executable, "-c", script),
-                timeout_seconds=5,
-                required_capabilities=("synthetic.echo",),
-            ),
-            binding,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
+            context.activate()
+            completed = GateProcessLauncher(
+                cwd=REPO_ROOT,
+                environment=controlled_child_environment(),
+            ).run(
+                GateLaunchSpec(
+                    argv=(str(venv_python), "-c", script),
+                    timeout_seconds=5,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIsNone(context.channel_error)
@@ -1264,18 +1266,20 @@ try:
 except EphemeralCapabilityBlocked:
     raise SystemExit(7)
 """
-        context.activate()
-        completed = GateProcessLauncher(
-            cwd=REPO_ROOT,
-            environment=controlled_child_environment(),
-        ).run(
-            GateLaunchSpec(
-                argv=(sys.executable, "-c", script),
-                timeout_seconds=5,
-                required_capabilities=("synthetic.echo",),
-            ),
-            binding,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
+            context.activate()
+            completed = GateProcessLauncher(
+                cwd=REPO_ROOT,
+                environment=controlled_child_environment(),
+            ).run(
+                GateLaunchSpec(
+                    argv=(str(venv_python), "-c", script),
+                    timeout_seconds=5,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
 
         self.assertEqual(completed.returncode, 7, completed.stderr)
         blocked_error = context.blocked_error
@@ -1341,18 +1345,20 @@ print(json.dumps({
     "unrelatedOpen": unrelated_open,
 }))
 """
-        context.activate()
-        completed = GateProcessLauncher(
-            cwd=REPO_ROOT,
-            environment=child_environment,
-        ).run(
-            GateLaunchSpec(
-                argv=(sys.executable, "-c", script),
-                timeout_seconds=5,
-                required_capabilities=("synthetic.echo",),
-            ),
-            binding,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
+            context.activate()
+            completed = GateProcessLauncher(
+                cwd=REPO_ROOT,
+                environment=child_environment,
+            ).run(
+                GateLaunchSpec(
+                    argv=(str(venv_python), "-c", script),
+                    timeout_seconds=5,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
         os.close(unrelated_read)
         os.close(unrelated_write)
 
@@ -1559,25 +1565,27 @@ with EphemeralGateClient.from_environment():
         "redactionValuesPresent": "PT_ACCEPTANCE_REDACTION_VALUES" in os.environ,
     }))
 """
-        context.activate()
-        with patch.dict(
-            os.environ,
-            {
-                "PT_PROVIDER_CREDENTIAL": credential_canary,
-                "PT_ACCEPTANCE_REDACTION_VALUES": redaction_canary,
-            },
-        ):
-            completed = GateProcessLauncher(
-                cwd=REPO_ROOT,
-                environment=controlled_child_environment(),
-            ).run(
-                GateLaunchSpec(
-                    argv=(sys.executable, "-c", script),
-                    timeout_seconds=5,
-                    required_capabilities=("synthetic.echo",),
-                ),
-                binding,
-            )
+        with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
+            context.activate()
+            with patch.dict(
+                os.environ,
+                {
+                    "PT_PROVIDER_CREDENTIAL": credential_canary,
+                    "PT_ACCEPTANCE_REDACTION_VALUES": redaction_canary,
+                },
+            ):
+                completed = GateProcessLauncher(
+                    cwd=REPO_ROOT,
+                    environment=controlled_child_environment(),
+                ).run(
+                    GateLaunchSpec(
+                        argv=(str(venv_python), "-c", script),
+                        timeout_seconds=5,
+                        required_capabilities=("synthetic.echo",),
+                    ),
+                    binding,
+                )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(
@@ -1781,6 +1789,7 @@ with EphemeralGateClient.from_environment():
         cases = (
             ("site-packages-symlink-escape", "package path is unsafe"),
             ("wrong-pyvenv-version", "config is invalid"),
+            ("system-site-enabled", "config is invalid"),
             ("site-packages-file", "package path is invalid"),
         )
         for case, expected_error in cases:
@@ -1803,6 +1812,15 @@ with EphemeralGateClient.from_environment():
                         ),
                         encoding="utf-8",
                     )
+                elif case == "system-site-enabled":
+                    config = venv_root / "pyvenv.cfg"
+                    config.write_text(
+                        config.read_text(encoding="utf-8").replace(
+                            "include-system-site-packages = false",
+                            "include-system-site-packages = true",
+                        ),
+                        encoding="utf-8",
+                    )
                 else:
                     shutil.rmtree(site_packages)
                     site_packages.write_text("not a directory", encoding="utf-8")
@@ -1811,6 +1829,17 @@ with EphemeralGateClient.from_environment():
 
                 self.assertNotEqual(completed.returncode, 0)
                 self.assertIn(expected_error, completed.stderr)
+
+    def test_bootstrap_requires_an_explicit_virtual_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            gate_bootstrap_module.sys,
+            "executable",
+            str(Path(directory) / "bin" / "python3"),
+        ), self.assertRaisesRegex(
+            RuntimeError,
+            "virtual environment is required",
+        ):
+            gate_bootstrap_module._add_invoked_venv_site_packages()
 
     def test_context_launcher_rejects_non_python_argv_before_spawn(self) -> None:
         context = new_context(SyntheticHandler())
@@ -1841,6 +1870,7 @@ with EphemeralGateClient.from_environment():
         binding = context.bind_child()
         context.activate()
         with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
             script_path = Path(directory) / "synthetic_gate.py"
             script_path.write_text(
                 "from tooling.acceptance.core import EphemeralGateClient\n"
@@ -1853,7 +1883,7 @@ with EphemeralGateClient.from_environment():
                 environment=controlled_child_environment(),
             ).run(
                 GateLaunchSpec(
-                    argv=(sys.executable, str(script_path)),
+                    argv=(str(venv_python), str(script_path)),
                     timeout_seconds=10,
                     required_capabilities=("synthetic.echo",),
                 ),

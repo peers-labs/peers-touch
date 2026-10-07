@@ -417,7 +417,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     root
                     / "docs"
                     / "architecture"
-                    / "acceptance-framework"
+                    / "engineering"
+                    / "acceptance"
                     / "coverage-report.md"
                 )
                 report.parent.mkdir(parents=True)
