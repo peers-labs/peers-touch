@@ -152,10 +152,18 @@ fn verify_discovery_response(
         response.endpoint_statement_bytes.as_slice(),
     )
     .map_err(|_| invalid_discovery("Endpoint statement cannot be decoded"))?;
+    let endpoint_role = AccessEndpointRole::try_from(statement.endpoint_role).ok();
+    let canonical_origin = normalize_origin(&statement.canonical_origin)?;
+    let origin_is_valid = match endpoint_role {
+        Some(AccessEndpointRole::DirectStation) => {
+            canonical_origin == requested_origin.trim_end_matches('/')
+        }
+        Some(AccessEndpointRole::Relay) => canonical_origin.starts_with("https://"),
+        _ => false,
+    };
     if statement.encode_to_vec() != response.endpoint_statement_bytes
         || statement.challenge != challenge
-        || statement.canonical_origin.trim_end_matches('/')
-            != requested_origin.trim_end_matches('/')
+        || !origin_is_valid
         || !statement
             .protocol_versions
             .contains(&ACCESS_PROTOCOL_VERSION)
@@ -173,7 +181,7 @@ fn verify_discovery_response(
         &statement.endpoint_peer_id,
     )?;
 
-    match AccessEndpointRole::try_from(statement.endpoint_role).ok() {
+    match endpoint_role {
         Some(AccessEndpointRole::DirectStation) => {
             if response.outcome != AccessEndpointOutcome::Ready as i32
                 || !response.station_routes.is_empty()
@@ -187,14 +195,14 @@ fn verify_discovery_response(
             Ok(VerifiedEndpoint {
                 role: VerifiedEndpointRole::DirectStation,
                 endpoint_peer_id: statement.endpoint_peer_id.clone(),
-                canonical_origin: statement.canonical_origin.clone(),
+                canonical_origin: canonical_origin.clone(),
                 endpoint_public_key: endpoint_public_key.clone(),
                 routes: vec![VerifiedStationRoute {
                     station_peer_id: statement.endpoint_peer_id,
                     station_host_public_key: endpoint_public_key,
                     route_id,
                     route_generation: 1,
-                    endpoint_origin: statement.canonical_origin,
+                    endpoint_origin: canonical_origin,
                     relay_peer_id: None,
                     inner_tls_spki_sha256: None,
                     attestation_bytes: None,
@@ -210,7 +218,7 @@ fn verify_discovery_response(
                 routes.push(verify_route_attestation(
                     attestation,
                     &statement.endpoint_peer_id,
-                    &statement.canonical_origin,
+                    &canonical_origin,
                     connection_grant.clone(),
                     now_unix_ms,
                 )?);
@@ -218,7 +226,7 @@ fn verify_discovery_response(
             Ok(VerifiedEndpoint {
                 role: VerifiedEndpointRole::Relay,
                 endpoint_peer_id: statement.endpoint_peer_id,
-                canonical_origin: statement.canonical_origin,
+                canonical_origin,
                 endpoint_public_key,
                 routes,
             })
@@ -541,10 +549,16 @@ mod tests {
             station_routes: vec![route],
         };
 
-        let verified =
-            verify_discovery_response("https://relay.example", None, &challenge, response, now)
-                .unwrap();
+        let verified = verify_discovery_response(
+            "http://relay-discovery.internal:18081",
+            None,
+            &challenge,
+            response,
+            now,
+        )
+        .unwrap();
         assert_eq!(verified.role, VerifiedEndpointRole::Relay);
+        assert_eq!(verified.routes[0].endpoint_origin, "https://relay.example");
         assert_eq!(
             verified.routes[0].station_peer_id,
             station.public().to_peer_id().to_string()
