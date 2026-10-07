@@ -267,6 +267,9 @@ MAX_MOBILE_PAGE_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES = 64 * 1024 * 1024
 MOBILE_RESOURCE_LEASE_AUTH_KEY_BYTES = 32
 MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS = 30.0
+MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS = 240.0
+MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS = 240.0
+MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS = 180_000
 MOBILE_CAPTURE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
 MOBILE_CHANNEL_FORBIDDEN_FIELDS = frozenset(
     {
@@ -3392,6 +3395,10 @@ class _ParentAppiumSession:
                     "appium:chromedriverPort": self._required_port("webview"),
                     "appium:ensureWebviewsHavePages": True,
                     "appium:chromedriverExecutable": self.chromedriver_executable,
+                    "appium:androidInstallTimeout": (
+                        MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS
+                    ),
+                    "appium:installOptions": ["--no-streaming"],
                     "appium:ignoreHiddenApiPolicyError": True,
                 }
             )
@@ -7428,7 +7435,10 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             ),
         )
         context = EphemeralGateLaunchContext(
-            required_capabilities=required_capabilities
+            required_capabilities=required_capabilities,
+            request_timeout_seconds=(
+                MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS
+            ),
         )
         context.register_capability(
             "mobile.native.appium-session",
@@ -7472,7 +7482,10 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         )
         resources = self._client_resources[client_id]
         return _ParentAppiumSession(
-            _ParentAppiumTransport(str(self._native_inputs["appiumUrl"])),
+            _ParentAppiumTransport(
+                str(self._native_inputs["appiumUrl"]),
+                timeout_seconds=MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS,
+            ),
             client_id=client_id,
             platform_name=client.platform,
             automation_name=self._native_spec.drivers[
