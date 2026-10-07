@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.0
-> **Created**: 2026-10-05 | **Updated**: 2026-10-05
+> **Created**: 2026-10-05 | **Updated**: 2026-10-06
 > **Owner**: Architecture Team
 
 ---
@@ -63,9 +63,9 @@ docs/architecture/
 
 | 分类 | 入口 | 与代码架构的关系 |
 |---|---|---|
-| 业务域 | [domains/](./domains/README.md) | 对应 `apps/station/app/subserver/*`、`model/domain/*` 与客户端业务投影 |
+| 业务域 | [domains/](./domains/README.md) | 对应 Federation、Notification 等 `apps/station/app/subserver/*` 业务真源、`model/domain/*` 契约与客户端投影 |
 | 平台 | [platform/](./platform/README.md) | 对应 Client、Station Frame、共享 contracts 与 runtime foundations |
-| 共享能力 | [shared/](./shared/README.md) | Federation、通信、安全、对象存储、i18n、通知等窄 owner |
+| 共享能力 | [shared/](./shared/README.md) | 通信、安全、i18n 等不拥有业务状态的窄能力 |
 | 工程控制面 | [engineering/](./engineering/README.md) | Workflow、Local Dev、Acceptance、Quality、治理与工具链 |
 
 进入机器治理的 active 模块以

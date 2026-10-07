@@ -25,8 +25,10 @@ from tooling.acceptance.core.provisioning import (
 from tooling.acceptance.fixtures.chat_native_reset import (
     FixtureActorRecord,
     acceptance_station_environment,
+    fixture_federation_id,
     read_fixture_actor,
     seed_bound_contact,
+    seed_federation_context,
     verify_disposable_station_runtime,
 )
 
@@ -350,6 +352,52 @@ def prepare_bound_friendships(
                 records[peer_role],
                 federation_members,
             )
+
+
+def prepare_federation_contexts(
+    targets: Mapping[str, tuple[str, str, tuple[str, ...]]],
+) -> str:
+    records_by_target: dict[str, tuple[FixtureActorRecord, ...]] = {}
+    for service_id, (station_url, environment, roles) in targets.items():
+        records_by_target[service_id] = tuple(
+            read_fixture_actor(
+                station_url,
+                environment,
+                ACTOR_ACCOUNTS[role],
+            )
+            for role in roles
+        )
+    members = tuple({
+        record.ptid: record
+        for records in records_by_target.values()
+        for record in records
+    }.values())
+    expected_federation_id = fixture_federation_id(members)
+    for service_id, (station_url, environment, _) in targets.items():
+        local_records = records_by_target[service_id]
+        local_station_ids = {
+            record.home_station_peer_id for record in local_records
+        }
+        if len(local_station_ids) != 1:
+            raise BlockedError(
+                reason=(
+                    "Fixture Federation target does not resolve to one "
+                    f"Home Station: {service_id}"
+                ),
+                resource=f"fixture-federation:{service_id}",
+            )
+        actual_federation_id = seed_federation_context(
+            station_url,
+            environment,
+            local_station_ids.pop(),
+            members,
+        )
+        if actual_federation_id != expected_federation_id:
+            raise BlockedError(
+                reason="Fixture Federation identity drifted during setup",
+                resource=f"fixture-federation:{service_id}",
+            )
+    return expected_federation_id
 
 
 def produce_actor_manifest(

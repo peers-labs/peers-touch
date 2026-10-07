@@ -1,7 +1,7 @@
 # Development Workflow 产品状态模型
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-01
+> **Created**: 2026-09-26 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/workflow-snapshot.mjs`
 
@@ -12,6 +12,10 @@
 - Worktree lifecycle 由现有 owner state 决定。
 - Source invalidation 和受影响 closure 的重开只由 DWF-D24 定义的 Plan owner
   执行。
+- 普通执行模型修订由 DWF-D42 的 `planctl amend` 追加记录并重校验 Task；
+  新建 Plan 在 `northStarApproval=null` 时为 candidate，不能 mount/execute。
+  North Star 变化先进入 `NORTH_STAR_APPROVAL_REQUIRED`，显式批准后仍需
+  owner-approved amendment；coverage/Task/Gate 调整保留批准。
 - DWF-D25 Overlay 不得改变任何状态或转换。
 - Execution root 由 DWF-D33 OWNER-rooted BindingProjection 约束。
 - Workflow Snapshot、Completion Review 和 Action Receipt 分别由

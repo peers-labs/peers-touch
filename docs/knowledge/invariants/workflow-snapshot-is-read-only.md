@@ -17,9 +17,10 @@ detected: 2026-09-20
 
 ## What must hold
 
-Plan, Session, declaration, Git, workspace active-work, runtime, and rollout
-remain independent owners. `workflow-snapshot.mjs` is the only component that
-joins them into one consistency result:
+Plan, Session, declaration, Git, workspace active-work, worktree creation
+provenance, Workflow OWNER references, runtime, and rollout remain independent
+owners. `workflow-snapshot.mjs` is the only component that joins them into one
+consistency result:
 `HEALTHY | BLOCKED | DRIFT | SUSPENDED`.
 The same read derives the Plan Run decision:
 `CONTINUE | HARD_BLOCK | COMPLETE`.

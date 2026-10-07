@@ -16,17 +16,28 @@ import type {
 import {
   messagingConversationSummary,
   messagingCreateDirect,
+  messagingCreateGroup,
+  messagingDissolveConversation,
   messagingListConversations,
   messagingListMessages,
   messagingListThreadMessages,
+  messagingMembershipTransition,
   messagingCommandStatus,
   messagingSendMessage,
   messagingSubmitEdit,
+  messagingSubmitLeaveIntent,
   messagingSubmitMetadataInteraction,
   messagingSubmitReadCursor,
   messagingSubmitTyping,
+  messagingTransferOwnership,
+  messagingUpdateConversation,
+  messagingUpdateMemberAuthority,
   type MessagingAttachmentStageProjection,
+  type MessagingCreateGroupResult,
+  type MessagingLeaveIntentSubmissionResult,
+  type MessagingMemberAuthorityResult,
   type MessagingPendingCommandResult,
+  type MessagingPendingConversationCommandResult,
   type MessagingSubmitCommandResult,
 } from '../../services/mobileCommands';
 import {
@@ -69,25 +80,31 @@ import {
   projectUnreadNotifications,
   pruneTypingPeers,
 } from './socialProjection';
+import type { MessagingConversationProjection } from '../../services/mobileCommands';
 import {
-  friendMessageFromMessaging,
-  friendSessionFromMessaging,
-} from '../chat/messagingProjectionAdapters';
+  groupCommandOutcomeKey,
+  refreshGroupCommandOutcomes,
+  trackGroupCommand,
+  type GroupCommandKind,
+  type GroupCommandOutcomes,
+} from '../chat/groupCommandState';
 import {
   refreshChatMessageCommandOutcomes,
   trackChatMessageCommand,
   type ChatMessageCommandOutcomes,
 } from '../chat/messageCommandState';
+import { projectMessagingMessage } from '../chat/messageProjection';
 import {
   SocialApiError,
   readableErrorMessage,
-  type FriendChatMessage,
+  type SocialMessage,
   type FriendChatSession,
   type FriendRequest,
   type FriendshipStatus,
   type PeerProfile,
   type SocialConversation,
   type SocialNotification,
+  type SocialTimestamp,
   type TypingEntry,
   type UnreadCounts,
   type ActorSearchResult,
@@ -111,10 +128,16 @@ export interface SocialState {
   profileGateway: ProfileGateway | null;
   storage: MobileClientStorageRuntime | null;
   sessions: FriendChatSession[];
+  messagingConversations: MessagingConversationProjection[];
+  conversationSummaries: Record<string, {
+    lastMessage?: SocialMessage;
+    unreadCount: number;
+  }>;
   friendRequests: FriendRequest[];
-  messages: Record<string, FriendChatMessage[]>;
-  threadMessages: Record<string, FriendChatMessage[]>;
+  messages: Record<string, SocialMessage[]>;
+  threadMessages: Record<string, SocialMessage[]>;
   messageCommandOutcomes: ChatMessageCommandOutcomes;
+  groupCommandOutcomes: GroupCommandOutcomes;
   conversationSettings: Record<string, FriendConversationSettings>;
   notifications: SocialNotification[];
   notificationNextCursor: string;
@@ -139,7 +162,6 @@ export interface SocialState {
   lastReconcileAt: number | null;
   bindSession: (session: MobileAuthSession | null) => void;
   reconcile: () => Promise<void>;
-  reconcileActiveSessionMessages: () => Promise<void>;
   refreshFriendRequests: () => Promise<void>;
   refreshSessions: () => Promise<void>;
   refreshBlockedUsers: () => Promise<void>;
@@ -164,10 +186,50 @@ export interface SocialState {
     message?: string,
   ) => Promise<FriendRequestMutationResult['command']>;
   openDirectConversation: (peerPtid: string, federationId: string) => Promise<string>;
+  createGroup: (input: {
+    conversationId: string;
+    name: string;
+    description?: string;
+    memberPtids: string[];
+    federationId: string;
+  }) => Promise<MessagingCreateGroupResult>;
+  updateGroupConversation: (
+    conversationId: string,
+    input: { name?: string; description?: string },
+  ) => Promise<MessagingPendingConversationCommandResult>;
+  addGroupMember: (
+    conversationId: string,
+    targetPtid: string,
+  ) => Promise<MessagingPendingConversationCommandResult>;
+  removeGroupMember: (
+    conversationId: string,
+    targetPtid: string,
+  ) => Promise<MessagingPendingConversationCommandResult>;
+  updateGroupMemberAuthority: (
+    conversationId: string,
+    targetPtid: string,
+    input: { role?: 'member' | 'admin'; muted?: boolean },
+  ) => Promise<MessagingMemberAuthorityResult>;
+  transferGroupOwnership: (
+    conversationId: string,
+    nextOwnerPtid: string,
+  ) => Promise<MessagingMemberAuthorityResult>;
+  leaveGroup: (
+    conversationId: string,
+  ) => Promise<MessagingLeaveIntentSubmissionResult>;
+  dissolveGroup: (
+    conversationId: string,
+  ) => Promise<MessagingPendingConversationCommandResult>;
   selectSession: (sessionUlid: string | null) => Promise<void>;
   loadMessages: (sessionUlid: string) => Promise<void>;
   loadThreadMessages: (sessionUlid: string, threadRootMessageUlid: string) => Promise<void>;
   refreshMessageCommandOutcomes: () => Promise<void>;
+  refreshGroupCommandOutcomes: () => Promise<void>;
+  clearGroupCommandOutcome: (
+    conversationId: string,
+    kind: GroupCommandKind,
+    targetPtid?: string,
+  ) => void;
   drainProfileCacheWrites: () => Promise<void>;
   loadCurrentUserProfile: (force?: boolean) => Promise<void>;
   updateCurrentUserProfile: (input: EditableProfileInput) => Promise<ProfileUpdateResult>;
@@ -193,6 +255,11 @@ export interface SocialState {
   hideMessageForActor: (
     sessionUlid: string,
     messageUlid: string,
+  ) => Promise<MessagingPendingCommandResult>;
+  moderateMessage: (
+    sessionUlid: string,
+    messageUlid: string,
+    reasonCode: string,
   ) => Promise<MessagingPendingCommandResult>;
   setMessageReaction: (
     sessionUlid: string,
@@ -242,10 +309,13 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   profileGateway: null,
   storage: null,
   sessions: [],
+  messagingConversations: [],
+  conversationSummaries: {},
   friendRequests: [],
   messages: {},
   threadMessages: {},
   messageCommandOutcomes: {},
+  groupCommandOutcomes: {},
   conversationSettings: {},
   notifications: [],
   notificationNextCursor: '',
@@ -287,10 +357,13 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         profileGateway: null,
         storage: null,
         sessions: [],
+        messagingConversations: [],
+        conversationSummaries: {},
         friendRequests: [],
         messages: {},
         threadMessages: {},
         messageCommandOutcomes: {},
+        groupCommandOutcomes: {},
         conversationSettings: {},
         notifications: [],
         notificationNextCursor: '',
@@ -329,10 +402,13 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       profileGateway: createProfileGateway(session),
       storage: createMobileClientStorageRuntime(session),
       sessions: [],
+      messagingConversations: [],
+      conversationSummaries: {},
       friendRequests: [],
       messages: {},
       threadMessages: {},
       messageCommandOutcomes: {},
+      groupCommandOutcomes: {},
       conversationSettings: {},
       notifications: [],
       notificationNextCursor: '',
@@ -372,27 +448,28 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     const request = {};
     socialReconcile = request;
     const isCurrent = () => socialReconcile === request && get().authSession === scope;
-    const { refreshFriendRequests, refreshSessions, refreshBlockedUsers, refreshConversationSettings, refreshNotifications, refreshFederationContexts } = get();
-    const coldStart = get().sessions.length === 0 && get().friendRequests.length === 0 && get().notifications.length === 0;
+    const {
+      refreshFriendRequests,
+      refreshBlockedUsers,
+      refreshNotifications,
+      refreshFederationContexts,
+    } = get();
+    const coldStart = get().friendRequests.length === 0
+      && get().notifications.length === 0;
     set({ loading: coldStart, error: null });
     try {
-      await Promise.all([refreshFriendRequests(), refreshSessions(), refreshBlockedUsers(), refreshNotifications(), refreshFederationContexts()]);
-      if (!isCurrent()) return;
-      await refreshConversationSettings();
-      if (!isCurrent()) return;
-      await get().reconcileActiveSessionMessages();
+      await Promise.all([
+        refreshFriendRequests(),
+        refreshBlockedUsers(),
+        refreshNotifications(),
+        refreshFederationContexts(),
+      ]);
       if (!isCurrent()) return;
       set({ lastReconcileAt: Date.now(), loading: false });
     } catch (error) {
       if (!isCurrent()) return;
       set({ error: normalizeError(error), loading: false });
     }
-  },
-
-  reconcileActiveSessionMessages: async () => {
-    const sessionUlid = get().activeSessionUlid;
-    if (!sessionUlid) return;
-    await get().loadMessages(sessionUlid);
   },
 
   refreshFriendRequests: async () => {
@@ -459,7 +536,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
     try {
       const conversations = (await messagingListConversations(account))
-        .filter((conversation) => conversation.active && conversation.kind === 1);
+        .filter((conversation) => conversation.active);
       if (!isCurrent()) return;
       const entries = await Promise.all(conversations.map(async (conversation) => {
         const request = {};
@@ -478,23 +555,48 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       }
       set((current) => {
         const existing = new Map(current.sessions.map((session) => [session.ulid, session]));
+        const conversationSummaries = Object.fromEntries(entries.map(({
+          conversation,
+          summary,
+          request,
+          readCursor,
+        }) => {
+          const previous = current.conversationSummaries[conversation.conversationId];
+          if (summaryReads.get(conversation.conversationId) !== request) {
+            return [conversation.conversationId, previous ?? {
+              unreadCount: 0,
+            }];
+          }
+          return [conversation.conversationId, {
+            lastMessage: summary.lastMessage
+              ? projectMessagingMessage(conversation.conversationId, summary.lastMessage)
+              : undefined,
+            unreadCount: current.activeSessionUlid === conversation.conversationId
+              ? 0
+              : readCursors.get(conversation.conversationId) === readCursor
+                ? summary.unreadCount
+                : previous?.unreadCount ?? 0,
+          }];
+        }));
         return {
-          sessions: entries.map(({ conversation, summary, request, readCursor }) => {
-            const session = friendSessionFromMessaging(
+          messagingConversations: conversations,
+          conversationSummaries,
+          sessions: entries
+            .filter(({ conversation }) => conversation.kind === 1)
+            .map(({ conversation, request }) => {
+            const session = sessionFromMessaging(
               conversation, currentUserPtid, existing.get(conversation.conversationId),
             );
             // A later history read owns its preview even if this list finishes last.
             if (summaryReads.get(session.ulid) !== request) return session;
-            const lastMessage = summary.lastMessage
-              ? friendMessageFromMessaging(session.ulid, summary.lastMessage)
-              : undefined;
+            const summary = conversationSummaries[session.ulid];
+            const lastMessage = summary?.lastMessage;
             return {
               ...session,
               lastMessage,
               lastMessageUlid: lastMessage?.ulid ?? '',
               lastMessageAt: lastMessage?.sentAt ?? session.lastMessageAt,
-              unreadCountA: current.activeSessionUlid === session.ulid ? 0
-                : readCursors.get(session.ulid) === readCursor ? summary.unreadCount : session.unreadCountA,
+              unreadCountA: summary?.unreadCount ?? session.unreadCountA,
             };
           }),
         };
@@ -573,7 +675,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       }
       await Promise.allSettled([
         get().loadFriendshipStatus(ptid),
-        get().refreshSessions(),
         get().refreshFriendRequests(),
         get().refreshBlockedUsers(),
       ]);
@@ -612,7 +713,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       }
       await Promise.allSettled([
         get().loadFriendshipStatus(ptid),
-        get().refreshSessions(),
         get().refreshFriendRequests(),
         get().refreshBlockedUsers(),
       ]);
@@ -625,10 +725,12 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   refreshConversationSettings: async () => {
     const scope = get().authSession;
     const gw = requireSocialGateway(get());
-    const sessions = get().sessions;
-    const entries = await Promise.allSettled(sessions.map(async (session) => {
-      const settings = unwrapOutcome(await gw.getConversationSettings(session.ulid));
-      return [session.ulid, settings] as const;
+    const conversations = get().messagingConversations;
+    const entries = await Promise.allSettled(conversations.map(async (conversation) => {
+      const settings = unwrapOutcome(await gw.getConversationSettings(
+        conversation.conversationId,
+      ));
+      return [conversation.conversationId, settings] as const;
     }));
     if (get().authSession !== scope) return;
     set((state) => {
@@ -678,6 +780,15 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     readCursors.set(sessionUlid, {});
     set((state) => ({
       sessions: clearSessionUnreadForActor(state.sessions, sessionUlid, currentUserPtid),
+      conversationSummaries: state.conversationSummaries[sessionUlid]
+        ? {
+            ...state.conversationSummaries,
+            [sessionUlid]: {
+              ...state.conversationSummaries[sessionUlid],
+              unreadCount: 0,
+            },
+          }
+        : state.conversationSummaries,
     }));
 
     const messages = state.messages[sessionUlid] ?? [];
@@ -687,7 +798,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     if (!target?.eventSequence || target.eventSequence <= 0) return;
     await messagingSubmitReadCursor({
       ...messagingAccount(state),
-      admissionDomain: 'social',
+      admissionDomain: mutationDomainForConversation(state, sessionUlid),
       conversationId: sessionUlid,
       lastReadSequence: target.eventSequence,
     });
@@ -936,14 +1047,232 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     if (!result.conversationId.trim()) {
       throw new Error('mobile.contacts.openChatFailed');
     }
-    await get().refreshSessions();
+    return result.conversationId;
+  },
+
+  createGroup: async (input) => {
+    const state = get();
+    const result = await messagingCreateGroup({
+      ...messagingAccount(state),
+      conversationId: input.conversationId,
+      name: input.name,
+      memberPtids: input.memberPtids,
+      federationId: input.federationId,
+    });
     if (get().authSession !== state.authSession) {
       throw new Error('mobile.social.notAuthenticated');
     }
-    if (!get().sessions.some((entry) => entry.ulid === result.conversationId)) {
-      throw new Error('mobile.contacts.conversationPreparing');
+    if (result.state === 'failed') {
+      throw new Error('mobile.group.operationCreateFailed');
     }
-    return result.conversationId;
+    if (result.state === 'pending') {
+      set((current) => ({
+        groupCommandOutcomes: trackGroupCommand(
+          current.groupCommandOutcomes,
+          {
+            commandId: result.commandId,
+            conversationId: result.conversationId,
+            kind: 'create',
+          },
+        ),
+      }));
+    }
+    return result;
+  },
+
+  updateGroupConversation: async (conversationId, input) => {
+    const state = get();
+    const result = await messagingUpdateConversation({
+      ...messagingAccount(state),
+      conversationId,
+      ...input,
+    });
+    if (get().authSession !== state.authSession) return result;
+    set((current) => ({
+      groupCommandOutcomes: trackGroupCommand(
+        current.groupCommandOutcomes,
+        {
+          commandId: result.commandId,
+          conversationId,
+          kind: 'update',
+          expectedName: input.name,
+          expectedDescription: input.description,
+        },
+      ),
+    }));
+    return result;
+  },
+
+  addGroupMember: async (conversationId, targetPtid) => {
+    const state = get();
+    const result = await messagingMembershipTransition({
+      ...messagingAccount(state),
+      conversationId,
+      action: 'add_actor',
+      targetPtid,
+      role: 'member',
+    });
+    if (get().authSession !== state.authSession) return result;
+    set((current) => ({
+      groupCommandOutcomes: trackGroupCommand(
+        current.groupCommandOutcomes,
+        {
+          commandId: result.commandId,
+          conversationId,
+          kind: 'add-member',
+          targetPtid,
+          expectedRole: 'member',
+        },
+      ),
+    }));
+    return result;
+  },
+
+  removeGroupMember: async (conversationId, targetPtid) => {
+    const state = get();
+    const result = await messagingMembershipTransition({
+      ...messagingAccount(state),
+      conversationId,
+      action: 'remove_actor',
+      targetPtid,
+    });
+    if (get().authSession !== state.authSession) return result;
+    set((current) => ({
+      groupCommandOutcomes: trackGroupCommand(
+        current.groupCommandOutcomes,
+        {
+          commandId: result.commandId,
+          conversationId,
+          kind: 'remove-member',
+          targetPtid,
+        },
+      ),
+    }));
+    return result;
+  },
+
+  updateGroupMemberAuthority: async (conversationId, targetPtid, input) => {
+    const state = get();
+    const result = await messagingUpdateMemberAuthority({
+      ...messagingAccount(state),
+      conversationId,
+      targetPtid,
+      ...input,
+    });
+    if (get().authSession !== state.authSession) return result;
+    if (result.members) {
+      set((current) => ({
+        messagingConversations: current.messagingConversations.map(
+          (conversation) => conversation.conversationId === conversationId
+            ? {
+                ...conversation,
+                ownerPtid: result.ownerPtid ?? conversation.ownerPtid,
+                memberPtids: result.members!.map((member) => member.ptid),
+                members: result.members!,
+                membershipEpoch: result.membershipEpoch ?? conversation.membershipEpoch,
+                mlsEpoch: result.mlsEpoch ?? conversation.mlsEpoch,
+              }
+            : conversation,
+        ),
+      }));
+    }
+    if (result.state === 'pending') {
+      set((current) => ({
+        groupCommandOutcomes: trackGroupCommand(
+          current.groupCommandOutcomes,
+          {
+            commandId: result.commandId,
+            conversationId,
+            kind: 'update-member',
+            targetPtid,
+            expectedRole: input.role,
+            expectedMuted: input.muted,
+          },
+        ),
+      }));
+    }
+    return result;
+  },
+
+  transferGroupOwnership: async (conversationId, nextOwnerPtid) => {
+    const state = get();
+    const result = await messagingTransferOwnership({
+      ...messagingAccount(state),
+      conversationId,
+      nextOwnerPtid,
+    });
+    if (get().authSession !== state.authSession) return result;
+    if (result.members) {
+      set((current) => ({
+        messagingConversations: current.messagingConversations.map(
+          (conversation) => conversation.conversationId === conversationId
+            ? {
+                ...conversation,
+                ownerPtid: result.ownerPtid ?? nextOwnerPtid,
+                memberPtids: result.members!.map((member) => member.ptid),
+                members: result.members!,
+                membershipEpoch: result.membershipEpoch ?? conversation.membershipEpoch,
+                mlsEpoch: result.mlsEpoch ?? conversation.mlsEpoch,
+              }
+            : conversation,
+        ),
+      }));
+    }
+    if (result.state === 'pending') {
+      set((current) => ({
+        groupCommandOutcomes: trackGroupCommand(
+          current.groupCommandOutcomes,
+          {
+            commandId: result.commandId,
+            conversationId,
+            kind: 'transfer-ownership',
+            targetPtid: nextOwnerPtid,
+          },
+        ),
+      }));
+    }
+    return result;
+  },
+
+  leaveGroup: async (conversationId) => {
+    const state = get();
+    const result = await messagingSubmitLeaveIntent({
+      ...messagingAccount(state),
+      conversationId,
+    });
+    if (get().authSession !== state.authSession) return result;
+    set((current) => ({
+      groupCommandOutcomes: trackGroupCommand(
+        current.groupCommandOutcomes,
+        {
+          commandId: result.intentId,
+          conversationId,
+          kind: 'leave',
+          statusReadable: false,
+        },
+      ),
+    }));
+    return result;
+  },
+
+  dissolveGroup: async (conversationId) => {
+    const state = get();
+    const result = await messagingDissolveConversation({
+      ...messagingAccount(state),
+      conversationId,
+    });
+    if (get().authSession !== state.authSession) return result;
+    set((current) => ({
+      groupCommandOutcomes: trackGroupCommand(
+        current.groupCommandOutcomes,
+        {
+          commandId: result.commandId,
+          conversationId,
+          kind: 'dissolve',
+        },
+      ),
+    }));
+    return result;
   },
 
   selectSession: async (sessionUlid) => {
@@ -972,7 +1301,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         conversationId: sessionUlid,
       });
       if (!isCurrent()) return;
-      const messages = projections.map((message) => friendMessageFromMessaging(sessionUlid, message));
+      const messages = projections.map((message) => projectMessagingMessage(sessionUlid, message));
       const messageCommandOutcomes = await refreshChatMessageCommandOutcomes(
         get().messageCommandOutcomes,
         messages,
@@ -992,6 +1321,19 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       set((state) => ({
         messages: { ...state.messages, [sessionUlid]: messages },
         messageCommandOutcomes,
+        conversationSummaries: summaryReads.get(sessionUlid) === request
+          ? {
+              ...state.conversationSummaries,
+              [sessionUlid]: {
+                lastMessage,
+                unreadCount: state.activeSessionUlid === sessionUlid
+                  ? 0
+                  : readCursors.get(sessionUlid) === readCursor
+                    ? unread
+                    : state.conversationSummaries[sessionUlid]?.unreadCount ?? 0,
+              },
+            }
+          : state.conversationSummaries,
         sessions: summaryReads.get(sessionUlid) === request
           ? state.sessions.map((session) => session.ulid === sessionUlid ? {
             ...session,
@@ -1026,7 +1368,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
           conversationId: sessionUlid,
           threadRootMessageId: threadRootMessageUlid,
         })
-      ).map((message) => friendMessageFromMessaging(sessionUlid, message));
+      ).map((message) => projectMessagingMessage(sessionUlid, message));
       const messageCommandOutcomes = await refreshChatMessageCommandOutcomes(
         get().messageCommandOutcomes,
         [
@@ -1069,6 +1411,32 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     );
     if (get().authSession !== scope) return;
     set({ messageCommandOutcomes });
+  },
+
+  refreshGroupCommandOutcomes: async () => {
+    const state = get();
+    const scope = state.authSession;
+    const groupCommandOutcomes = await refreshGroupCommandOutcomes(
+      state.groupCommandOutcomes,
+      state.messagingConversations,
+      state.currentUserPtid ?? '',
+      (commandId) => messagingCommandStatus({
+        ...messagingAccount(state),
+        commandId,
+      }),
+    );
+    if (get().authSession !== scope) return;
+    set({ groupCommandOutcomes });
+  },
+
+  clearGroupCommandOutcome: (conversationId, kind, targetPtid) => {
+    const key = groupCommandOutcomeKey(conversationId, kind, targetPtid);
+    set((state) => {
+      if (!(key in state.groupCommandOutcomes)) return state;
+      const groupCommandOutcomes = { ...state.groupCommandOutcomes };
+      delete groupCommandOutcomes[key];
+      return { groupCommandOutcomes };
+    });
   },
 
   drainProfileCacheWrites: async () => {
@@ -1225,7 +1593,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     try {
       const outcome = await messagingSendMessage({
         ...messagingAccount(state),
-        admissionDomain: 'social',
+        admissionDomain: mutationDomainForConversation(state, sessionUlid),
         conversationId: sessionUlid,
         plaintext: trimmed,
         replyToMessageId: context?.replyToMessageId,
@@ -1253,7 +1621,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     try {
       const submission = await messagingSubmitEdit({
         ...messagingAccount(state),
-        admissionDomain: 'social',
+        admissionDomain: mutationDomainForConversation(state, sessionUlid),
         conversationId: sessionUlid,
         messageId: messageUlid,
         plaintext: trimmed,
@@ -1283,7 +1651,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     try {
       const submission = await messagingSubmitMetadataInteraction({
         ...messagingAccount(state),
-        admissionDomain: 'social',
+        admissionDomain: mutationDomainForConversation(state, sessionUlid),
         conversationId: sessionUlid,
         messageId: messageUlid,
         interaction: { kind: 'retract' },
@@ -1312,7 +1680,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     try {
       const submission = await messagingSubmitMetadataInteraction({
         ...messagingAccount(state),
-        admissionDomain: 'social',
+        admissionDomain: mutationDomainForConversation(state, sessionUlid),
         conversationId: sessionUlid,
         messageId: messageUlid,
         interaction: { kind: 'hideForActor' },
@@ -1336,6 +1704,38 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
+  moderateMessage: async (sessionUlid, messageUlid, reasonCode) => {
+    const state = get();
+    if (!reasonCode.trim()) {
+      throw new Error('mobile.messaging.moderationReasonRequired');
+    }
+    try {
+      const submission = await messagingSubmitMetadataInteraction({
+        ...messagingAccount(state),
+        admissionDomain: mutationDomainForConversation(state, sessionUlid),
+        conversationId: sessionUlid,
+        messageId: messageUlid,
+        interaction: { kind: 'moderate', reasonCode },
+      });
+      set((current) => ({
+        messageCommandOutcomes: trackChatMessageCommand(
+          current.messageCommandOutcomes,
+          {
+            conversationId: sessionUlid,
+            messageId: messageUlid,
+            kind: 'moderate',
+            submission,
+          },
+        ),
+      }));
+      await Promise.allSettled([get().loadMessages(sessionUlid)]);
+      return submission;
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
   setMessageReaction: async (
     sessionUlid,
     messageUlid,
@@ -1347,7 +1747,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     try {
       const submission = await messagingSubmitMetadataInteraction({
         ...messagingAccount(state),
-        admissionDomain: 'social',
+        admissionDomain: mutationDomainForConversation(state, sessionUlid),
         conversationId: sessionUlid,
         messageId: messageUlid,
         interaction: { kind: 'reaction', reaction, remove },
@@ -1389,7 +1789,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     try {
       const submission = await messagingSubmitMetadataInteraction({
         ...messagingAccount(state),
-        admissionDomain: 'social',
+        admissionDomain: mutationDomainForConversation(state, sessionUlid),
         conversationId: sessionUlid,
         messageId: messageUlid,
         interaction: { kind: 'pin', remove },
@@ -1445,7 +1845,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     if (!sessionUlid) return;
     await messagingSubmitTyping({
       ...messagingAccount(state),
-      admissionDomain: 'social',
+      admissionDomain: mutationDomainForConversation(state, sessionUlid),
       conversationId: sessionUlid,
       isTyping: typing,
     });
@@ -1693,6 +2093,27 @@ function messagingAccount(state: SocialState) {
   };
 }
 
+function conversationKind(
+  state: SocialState,
+  conversationId: string,
+): 'friend' | 'group' {
+  const kind = state.messagingConversations.find(
+    (conversation) => conversation.conversationId === conversationId,
+  )?.kind;
+  if (kind === 2) return 'group';
+  if (kind === 1 || state.sessions.some((session) => session.ulid === conversationId)) {
+    return 'friend';
+  }
+  throw new Error('mobile.chat.conversationUnavailable');
+}
+
+function mutationDomainForConversation(
+  state: SocialState,
+  conversationId: string,
+): 'social' | 'group' {
+  return conversationKind(state, conversationId) === 'group' ? 'group' : 'social';
+}
+
 function relationshipTargetHomeStationPeerId(
   state: SocialState,
   targetPtid: string,
@@ -1761,4 +2182,69 @@ function clearSessionUnreadForActor(
   currentUserPtid: string,
 ): FriendChatSession[] {
   return clearChatUnreadForParticipant(sessions, sessionUlid, currentUserPtid);
+}
+
+function sessionFromMessaging(
+  conversation: MessagingConversationProjection,
+  currentActorPtid: string,
+  previous?: FriendChatSession,
+): FriendChatSession {
+  const peerPtid = conversation.memberPtids.find((ptid) => ptid !== currentActorPtid) ?? '';
+  const timestamp = socialTimestampFromUnixMs(conversation.updatedAtUnixMs);
+  return {
+    ulid: conversation.conversationId,
+    participantAPtid: currentActorPtid,
+    participantBPtid: peerPtid,
+    lastMessageUlid: previous?.lastMessageUlid ?? '',
+    lastMessageAt: previous?.lastMessageAt ?? timestamp,
+    unreadCountA: previous?.unreadCountA ?? 0,
+    unreadCountB: 0,
+    createdAt: previous?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+    participantADisplayName: participantDisplayName(previous, currentActorPtid),
+    participantAAvatar: participantAvatar(previous, currentActorPtid),
+    participantBDisplayName:
+      participantDisplayName(previous, peerPtid) || peerPtid,
+    participantBAvatar: participantAvatar(previous, peerPtid),
+    participantAOnline: participantOnline(previous, currentActorPtid),
+    participantBOnline: participantOnline(previous, peerPtid),
+    lastMessage: previous?.lastMessage,
+  };
+}
+
+function socialTimestampFromUnixMs(unixMs: number): SocialTimestamp {
+  return {
+    seconds: Math.floor(unixMs / 1000),
+    nanos: (unixMs % 1000) * 1_000_000,
+  };
+}
+
+function participantDisplayName(
+  session: FriendChatSession | undefined,
+  ptid: string,
+): string {
+  if (!session || !ptid) return '';
+  if (session.participantAPtid === ptid) return session.participantADisplayName;
+  if (session.participantBPtid === ptid) return session.participantBDisplayName;
+  return '';
+}
+
+function participantAvatar(
+  session: FriendChatSession | undefined,
+  ptid: string,
+): string {
+  if (!session || !ptid) return '';
+  if (session.participantAPtid === ptid) return session.participantAAvatar;
+  if (session.participantBPtid === ptid) return session.participantBAvatar;
+  return '';
+}
+
+function participantOnline(
+  session: FriendChatSession | undefined,
+  ptid: string,
+): boolean {
+  if (!session || !ptid) return false;
+  if (session.participantAPtid === ptid) return session.participantAOnline;
+  if (session.participantBPtid === ptid) return session.participantBOnline;
+  return false;
 }

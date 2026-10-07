@@ -7,7 +7,9 @@ import { getRecoveryProjection } from './recoveryProjection';
 export const WRITE_ADMISSION_ERROR_KEY =
   'mobile.recovery.writeRevocation.body';
 
-export type MobileMutationDomain = Exclude<SocialIngressDomain, 'control'>;
+export type MobileMutationDomain =
+  | Exclude<SocialIngressDomain, 'control'>
+  | 'group';
 
 type MutationAdmissionState = Pick<
   IngressState,
@@ -102,9 +104,14 @@ export function requireMobileMutationAdmission(
   if (!state.writeAdmission.open) {
     throw new MobileMutationAdmissionError(state.writeAdmission.reason);
   }
-  if (domain && state.staleness[domain].stale) {
+  const staleness = domain === 'group'
+    ? undefined
+    : domain
+      ? state.staleness[domain]
+      : undefined;
+  if (staleness?.stale) {
     throw new MobileMutationAdmissionError(
-      `${domain}:${state.staleness[domain].reason}`,
+      `${domain}:${staleness.reason}`,
     );
   }
   if (getRecoveryProjection().getSnapshot().isWriteBlocked) {

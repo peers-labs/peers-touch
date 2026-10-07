@@ -70,8 +70,7 @@ def _validate_pyvenv_config(config: Path) -> None:
     ]
     if (
         not values.get("home")
-        or values.get("include-system-site-packages", "").lower()
-        not in {"true", "false"}
+        or values.get("include-system-site-packages", "").lower() != "false"
         or version_parts[:2] != expected_version
     ):
         raise RuntimeError("isolated Gate virtual environment config is invalid")
@@ -87,7 +86,9 @@ def _add_invoked_venv_site_packages() -> None:
     try:
         config_status = config.lstat()
     except FileNotFoundError:
-        return
+        raise RuntimeError(
+            "isolated Gate virtual environment is required"
+        ) from None
     except OSError as error:
         raise RuntimeError("isolated Gate virtual environment is invalid") from error
 

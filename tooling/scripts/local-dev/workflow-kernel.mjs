@@ -158,6 +158,7 @@ function contextText(binding, inspection, enforcementMode) {
     `bindingRole=${binding?.role ?? 'pending'}`,
     `rootBindingDigest=${binding?.rootBindingDigest ?? 'pending'}`,
     `bindingDigest=${binding?.bindingDigest ?? 'pending'}`,
+    `rootChatId=${inspection?.declaration?.workflowOwner?.rootChatId ?? 'unavailable'}`,
     binding
       ? `entrySkill=${path.join(binding.executionRoot, 'tooling', 'skills', 'pt-ew', 'SKILL.md')}`
       : 'entrySkill=pending-first-pre-tool-use',

@@ -595,7 +595,7 @@
     {
       "id": "mobile-native-actors",
       "authorization_required": true,
-      "authorization_ref": "env:MOBILE_ACCEPTANCE_RESET",
+      "authorization_ref": "station.reset:mobile-native-actors",
       "target_assertion": "station-primary and station-secondary are approved disposable targets",
       "initial_assertion": "alice and bob have isolated PTID and device identities on both Stations",
       "setup_action": "python3 -m tooling.acceptance.fixtures.mobile_native_reset --prepare",

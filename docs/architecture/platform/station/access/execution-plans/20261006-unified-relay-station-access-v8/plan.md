@@ -24,11 +24,11 @@
       "docs/architecture/platform/station/access/data-model.md",
       "docs/architecture/platform/station/access/module-layout.md",
       "docs/architecture/platform/station/access/integration.md",
-      "docs/architecture/shared/federation/design.md",
-      "docs/architecture/shared/federation/decisions.md",
-      "docs/architecture/shared/federation/data-model.md",
-      "docs/architecture/shared/federation/module-layout.md",
-      "docs/architecture/shared/federation/integration.md"
+      "docs/architecture/domains/federation/design.md",
+      "docs/architecture/domains/federation/decisions.md",
+      "docs/architecture/domains/federation/data-model.md",
+      "docs/architecture/domains/federation/module-layout.md",
+      "docs/architecture/domains/federation/integration.md"
     ],
     "decisions": [
       "SAL-D07",
@@ -117,7 +117,7 @@
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "docs/architecture/shared/federation",
+        "pathPrefix": "docs/architecture/domains/federation",
         "mode": "exclusive-write"
       },
       {

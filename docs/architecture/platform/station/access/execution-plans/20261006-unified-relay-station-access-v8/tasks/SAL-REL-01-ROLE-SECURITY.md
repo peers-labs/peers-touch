@@ -27,7 +27,7 @@
     "apps/station/frame/core/runtime/role",
     "docs/architecture/engineering/architecture-governance/architecture-modules.json",
     "docs/architecture/engineering/api-governance",
-    "docs/architecture/shared/federation",
+    "docs/architecture/domains/federation",
     "docs/knowledge",
     "tooling/acceptance",
     "tooling/docker",

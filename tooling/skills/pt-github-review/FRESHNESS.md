@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-05
-covered_docs_hash: 9c39335b3c13e2a86824fa332641c9781bb0cc70c730136711577fba60912336
+last_verified_at: 2026-10-07
+covered_docs_hash: 857f93829dc273d8744c92c7080b38badbca3c2ca922dac7a733ef7cca45ae79
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,74 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-07 Integrated Ownership Review
+
+The stable-Plan and main-session ownership hardening from `master`, the
+canonical Chat ownership hard cut, and the Federation managed-domain cleanup
+were reviewed together. The merged contracts retain the new Plan and worktree
+ownership rules while keeping retired Chat and `fedp5` paths deleted.
+
+## 2026-10-07 Canonical Chat Ownership Review
+
+Desktop and Station coding guides now reflect the completed Chat hard cut:
+`messagingRuntime` and the Device Messaging Engine own Chat lifecycle and
+projection freshness, `socialRealtime` is limited to Social projections, and
+Conversation-owned persistence replaces the retired Friend/Group store
+families. The governing runtime-projection Skill was updated with the same
+boundary.
+
+Existing GitHub Review rules already require one business truth, proto-first
+contracts, generated-output integrity, runtime-owned freshness, and complete
+consumer migration. The nine-dimensional Chat zero-reference Gate provides the
+specific old-path regression coverage. No `pt-github-review/SKILL.md`, generic
+review fixture, or new knowledge entry is required.
+
+## 2026-10-07 Plan And Ownership Hardening Review
+
+DWF-D42 and DWF-D43 now require source-only CI Plan validation, immutable
+digest-bound completion attestations, full-source amendment fences, exact root
+OWNER receipts, and recoverable worktree creation transactions. Review rejects
+machine-state-dependent CI checks, child-session OWNER substitution,
+ownerless lifecycle mutation, unvalidated legacy migration input, and
+non-transactional provenance publication.
+
+## 2026-10-07 Main-Session Worktree Provenance Review
+
+DWF-D43 requires explicitly authorized Agent-created worktrees to persist the
+creating main-session reference independently from current Development Run
+ownership. Review now rejects raw Git creation presented as a supported Agent
+path, Git actor substitution, Action Receipt substitution for user
+authorization, guessed legacy provenance, owner mutation across declaration,
+Session, or active-work, and active ownerless legacy state. The review Skill,
+workflow invariant, installation fixture, and focused owner/worktree tests
+cover these boundaries; no generic review fixture is required.
+
+## 2026-10-07 Explicit North Star Approval Review
+
+DWF-D42 now treats generated North Stars as non-executable candidates.
+Review must reject missing or stale digest-bound user approval, incomplete
+criterion-to-Task/closure/Gate coverage, and any attempt to publish a changed
+North Star without the matching owner amendment decision. Plan mount/CLI
+fixtures and the stable-plan invariant cover these boundaries; no generic
+review fixture is required.
+
+## 2026-10-06 Stable Plan Amendment Review
+
+DWF-D42 replaces frozen Plan versions with one stable Plan identity and an
+append-only amendment trail. Review must reject unrecorded Plan mutation,
+rewritten amendment history, stale snapshot execution, silent North Star
+changes, and authorization expansion without an owner decision. The new
+stable-plan invariant and Plan mount/CLI regressions cover these boundaries; no
+generic review fixture is required.
+
+## 2026-10-06 Knowledge Index Review
+
+The Knowledge index now links the Conversation production schema migration
+single-source pitfall. The entry documents Station migration ownership and does
+not change GitHub Review behavior, severity, or evidence contracts. Existing
+review rules already reject split ownership and duplicate authority, so no
+`SKILL.md` update or review fixture is required.
 
 ## 2026-10-05 Architecture Taxonomy Review
 

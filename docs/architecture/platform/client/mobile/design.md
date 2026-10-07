@@ -1,8 +1,8 @@
 # Mobile Shell — 架构设计
 
 > **Status**: active; iOS simulator-canonical Acceptance amendment accepted
-> **Version**: v1.3
-> **Created**: 2026-08-27 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-08-27 | **Updated**: 2026-10-07
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -24,7 +24,7 @@
 |---|---|---|---|---|
 | Tauri v2 Mobile is the mainline | verified_fact | `docs/client/mobile/base.md`, `apps/mobile/src-tauri/` | high | none |
 | Station selection/access gates and signed peer-ID handshake are implemented | verified_fact | `features/auth/`, `features/station/`, `station.rs`, W1 evidence | high | canonical simulator runtime proof |
-| Friend/group projection runtimes exist | verified_fact | `features/social/`, `features/group/` | high | lifecycle/performance evidence |
+| Unified Direct/Group projection runtime exists | verified_fact | `features/social/`, `runtimes/messagingRuntime.ts` | high | lifecycle/performance evidence |
 | Runtime registry is executable and lifecycle-owned | verified_fact | `app/lifecycle/MobileLifecycleKernel.ts`, `runtimes/runtimeRegistry.ts`, `mobile-simulator-runtime-lifecycle-e2e` | high | Station-bound simulator lifecycle proof |
 | Navigation route identity is descriptor-owned | verified_fact | `app/navigation/navigationStore.ts`, `components/MobileShell.tsx`, focused navigation and Harness tests | high | visible native focus/no-leak proof |
 | Moments feed, publish, reaction, comment, and reply sources exist | verified_fact | `MomentsPage.tsx`, `features/social/momentsFeedStore.ts`, `pages/moments/` | high | two-actor simulator convergence and receiver proof |
@@ -38,7 +38,7 @@
 | Generated scope-keyed v2 reliability persistence replaces the retired skeleton | accepted_decision | MS-D15, `data-model.md` §4-§5; Owner approval on 2026-09-11 | accepted | source complete; simulator recovery evidence pending |
 | Prototype defines the confirmed target experience | verified_fact | confirmed core journey plus reviewed recovery/destructive-state screenshots and L3 audit | high | production acceptance is separate |
 | Mobile hard-cut has zero executable legacy Group/Social callers | verified_fact | production scan over Mobile TypeScript and Rust; current hard-cut gate | high | keep zero-reference checks green |
-| Conversation member update and owner transfer have one accepted authority contract | accepted_decision | AO-D10, `conversation_api.proto`, `command.proto` | accepted | Mobile consumer cutover and runtime proof |
+| Conversation member update and owner transfer have one accepted authority contract and one Mobile consumer | verified_fact | AO-D10, `conversation_api.proto`, `command.proto`, `features/chat/groupCommandState.ts`, `runtimes/messagingRuntime.ts` | high | simulator runtime proof |
 | Social directional block has canonical generated mutation/list/status/result/event contracts and Mobile durable-command cutover | verified_fact | Social relationship authority, shared Federation delivery, `relationship.proto`, Mobile relationship resolver | high | same-Station simulator proof required now; cross-Station/Relay proof deferred |
 | Generic Access Gate descriptors exist but generic schema-bound submission does not | verified_fact | `access_gate.proto`: `input_schema_json` versus fixed login/invite/session submit fields | high | Access Gate owner contract |
 | Mobile Web business gateways currently receive and attach bearer credentials | verified_fact | `services/gateways/gatewayTypes.ts`, `momentsGateway.ts`, `momentMediaGateway.ts` | high | Rust-owned authenticated transport cutover |
@@ -61,11 +61,10 @@ Tauri Mobile App
   |     accessRuntime
   |     sessionRuntime
   |     commandRuntime
+  |     messagingRuntime
+  |     chatStorageRuntime
   |     socialRuntime
-  |     groupRuntime
-  |     momentsRuntime
-  |     notificationRuntime
-  |     profileRuntime
+  |     privateMomentsRuntime
   |     deviceSettingsRuntime
   |
   +-- Projection Stores
@@ -90,8 +89,8 @@ Tauri Mobile App
 | Session credentials | Station-issued/revoked, device-held | Station; `sessionRuntime` requests rotation only | secure storage port |
 | Durable pending commands | device-local reliability state | `commandRuntime` | Rust encrypted command store |
 | Shell route and overlays | device local | navigation host | navigation store |
-| Conversations/messages/groups | Station | Station APIs | social/group runtimes |
-| Conversation member role/mute/owner | Conversation authority | canonical Conversation member commands | group runtime through Device Messaging Engine |
+| Conversations/messages/groups/settings | Station + Device Messaging Engine projection | canonical Conversation commands | `messagingRuntime` |
+| Conversation member role/mute/owner | Conversation authority | canonical Conversation member commands | `messagingRuntime` plus `groupCommandState` outcome projection |
 | Directional actor block and relationship status | Social authority at actor Home Stations | Social relationship commands and federation | social runtime |
 | Moments/posts/comments/reactions | Station | Station APIs | moments runtime |
 | Profile and privacy fields | Actor Profile | Actor Profile API | profile runtime |
@@ -153,13 +152,18 @@ Requirements:
 entry policy, owned state, and timeout budgets.
 
 The session-scoped `social` descriptor owns one Station realtime supervisor and
-one bounded ingress for Social, Group, Moments, notification, and profile
+one bounded ingress for Social, Moments, notification, and profile
 projections. It preserves opaque Station cursors, resumes with
-`Last-Event-ID`, routes Group as a subordinate projection, and owns targeted
-reconciliation after overflow, reconnect, host wakeup, or resume. Data loss
-marks only affected projections stale; control loss closes write admission and
-requires session revalidation. Moments feed, Profile, and Notification
-freshness remain alive with the runtime when their pages unmount.
+`Last-Event-ID`, and owns targeted reconciliation after overflow, reconnect,
+host wakeup, or resume. Chat envelopes, receipts, mutations, membership
+changes, Conversation settings, and relationship changes that affect
+conversation eligibility become `messaging-wake` control intents.
+`messagingRuntime` alone reconciles Direct/Group conversations, settings,
+materialized messages, and group-command outcomes. Social handlers do not call
+Conversation refresh functions. Data loss marks only affected Social-owned
+projections stale; control loss closes write admission and requires session
+revalidation. Moments feed, Profile, and Notification freshness remain alive
+with the runtime when their pages unmount.
 
 `stationRuntime`, `authRuntime`, and `accessRuntime` run before admission.
 `accessRuntime` requests credentials through typed `authRuntime` intents; it
@@ -496,8 +500,8 @@ Forbidden:
 - Prototype `types.ts` -> production domain model.
 - Local storage -> plaintext token or cross-device business truth.
 - Mobile boundary/store/route -> numeric `actor_id` or invented actor aliases.
-- Shell -> broad subscription to complete social/group stores.
-- Group/Moments/notification/profile runtime -> second long-lived Station event stream beside the shared social ingress.
+- Shell -> broad subscription to the complete Social projection store.
+- Messaging/private-Moments runtime -> second long-lived Station event stream beside the shared ingress/Device Engine owners.
 - Non-idempotent write -> silent retry after unknown outcome.
 - Web/page -> persistence key material, string command kind, or opaque durable payload.
 - Best-effort ledger failure -> direct dispatch of a write represented as durable.
@@ -623,7 +627,7 @@ Owner transfer is one aggregate commit: the prior owner becomes admin, the new
 owner becomes unmuted owner, the membership epoch advances once, and one event,
 receipt, delivery set, Federation outbox, and follower snapshot commit
 atomically. Mobile success requires matching command readback plus the resulting
-member/owner projection. No `/group-chat/*` fallback, two-call transfer, or
+member/owner projection. No retired Group endpoint fallback, two-call transfer, or
 client-side owner patch is permitted.
 
 ### 12.5 Chat Forward, Retract, Hide, And Moderation
@@ -820,7 +824,7 @@ Allowed temporary compatibility:
 
 Forbidden target paths:
 
-- executable `/friend-chat/*` or `/group-chat/*` business calls;
+- executable retired feature-specific Chat route families;
 - alias endpoints, fallback retries, or dual writes to retired owners;
 - direct Web credential attachment;
 - manual public DTOs duplicating generated domain contracts;
@@ -829,9 +833,10 @@ Forbidden target paths:
 
 The hard cut is atomic per owner contract: canonical producer, consumer,
 projection, readback, focused checks, and rollback boundary are ready before
-the retired caller is deleted in the same change. The current production
-inventory is exactly two Group callers and four Social callers; closure requires
-zero executable production references.
+the retired caller is deleted in the same change. The production inventory for
+retired Group and Chat-owned Social callers is zero. Friend/Group-specific
+Proto, gateways, stores, runtimes, routes, tests, fixtures, and generated
+bindings are absent from executable production paths.
 
 A repository-wide semantic audit classifies every remaining textual reference
 as generated compatibility commentary, test/fixture input, historical

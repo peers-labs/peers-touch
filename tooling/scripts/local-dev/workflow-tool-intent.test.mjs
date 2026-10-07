@@ -58,10 +58,23 @@ test('read-only input and dev-null redirections remain read-only', () => {
 
 test('recognizes only one structurally exact workflow owner command', () => {
   for (const target of [
+    'worktree-create',
+    'worktree-creation-status',
     'env-unregister',
+    'profile',
     'dev-start',
+    'dev-close',
+    'dev-resources-prepare',
+    'dev-resource-record',
+    'dev-session-archive',
+    'active-work-repair',
     'plan-mount',
     'plan-unmount',
+    'plan-state-migrate',
+    'plan-approve-north-star',
+    'plan-amend',
+    'plan-seal-completion',
+    'plan-cancel',
     'plan-activate',
     'plan-reopen',
     'completion-review-prepare',

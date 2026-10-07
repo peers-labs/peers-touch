@@ -159,6 +159,18 @@ verify:
 - OWNER publication uses atomic create-once semantics, and `PreCompact` /
   `PostCompact` persist and verify one receipt per complete binding lineage so
   concurrent OWNER/WORKER/REVIEWER compactions cannot overwrite each other;
+- Agent-created worktrees use the explicitly authorized owner-aware creation
+  path, resolve the requested start point to an exact commit, and persist both
+  a recoverable creation transaction and immutable `createdBy` main-session
+  provenance; reject raw Git creation presented as supported, Git actor
+  substitution, Action Receipt substitution for user authorization, path
+  reuse, or guessed legacy provenance;
+- stable Plan changes preserve one `planId`, append exactly one auditable
+  amendment, fence the complete manifest/Task byte set before switching the
+  ExecutionRun, and invalidate affected Task closures without remounting;
+- CI validates explicit Plan source without consulting machine-local mounts and
+  accepts completion only from an immutable repository
+  `completions/<planDigest>.json` attestation;
 - TRAE multi-root integration projects equivalent ingress into the selected
   source root, descriptor bootstrap root, and existing TRAE-participating
   roots, never treats Hook location or folder order as execution authority,
@@ -441,7 +453,11 @@ command-specific HEAD reconciliation, or another mutable source cache in the
 binding. The registration owns canonical root, workspace ID, registered branch,
 Profile, slot, capabilities, and Owner metadata. Current HEAD comes from Git;
 Development declaration/Session identity and runtime build readback fence
-source-sensitive mutation.
+source-sensitive mutation. Creation provenance and current workflow ownership
+are separate facts: preserve the original `createdBy`, propagate the verified
+`workflowOwner` through declaration, Session, active-work, Snapshot, and
+Context Anchor, and fail closed when an active legacy record has no owner or
+the current binding disagrees.
 
 For Development close changes, preserve independent state owners. The
 coordinator may sequence lease inspection, Session archive, active-work close,

@@ -123,5 +123,27 @@ Federation context 与 Relay route 正交。Relay route 变化不得创建或猜
 - 被撤销 generation 仍有 active stream 或可刷新 credential。
 - Relay 持有可解密的 Station session credential 或业务 payload。
 - Session 与 Messaging 使用不同 `device_id`。
+- 同一 actor 在同一 Station 同时存在两个未撤销的同类别 Session。
+- 运行时标签（如 `desktop-native`）被持久化为新的 Session 类别。
 - Federation action 没有明确 `federation_id`。
 - Relay topology 成为普通客户端可编辑状态。
+
+## 7. 客户端类别会话
+
+```text
+empty(class)
+  -> active(class, session_a)
+  -> replacing(class, session_b)
+  -> active(class, session_b)
+
+active(desktop) + active(mobile) -> allowed
+active(class, session_a) + active(class, session_b) -> forbidden
+```
+
+- canonical 类别为 `desktop`、`mobile` 和明确声明的 `web`。
+- 新同类别 Session 激活与旧同类别 Session 的 `kicked` 撤销属于一个 Station
+  authority 事务；不同类别 Session 不参与该撤销。
+- `device_id` 仍绑定具体安装实例、Messaging identity 和 credential scope，但
+  不创建额外并发槽。
+- 被接管端进入 `revoked(kicked)`，停止旧 generation 的写入与长生命周期
+  runtime，并返回 Access Gate。

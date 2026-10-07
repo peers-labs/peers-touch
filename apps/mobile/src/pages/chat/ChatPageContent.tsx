@@ -144,7 +144,7 @@ export function ChatConversationListPageContent({
                         }}
                         data-conversation-id={conversation.kind === 'friend'
                           ? conversation.conversation.session.ulid
-                          : conversation.conversation.group.ulid}
+                          : conversation.conversation.projection.conversationId}
                         data-conversation-kind={conversation.kind}
                         onClick={() => onOpenConversation(conversation)}
                       >

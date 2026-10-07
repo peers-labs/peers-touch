@@ -24,10 +24,6 @@ import {
 } from '../services/socialRealtime';
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import { installDesktopSocialHostAdapter } from './desktopSocialHostAdapter';
-import {
-  installMessagingProjectionBridge,
-  teardownMessagingProjectionBridge,
-} from '../services/messagingProjection';
 
 let teardownHostAdapter: (() => void) | null = null;
 
@@ -39,13 +35,11 @@ export const socialRuntime: RuntimeDescriptor = {
   scope: 'app',
   install(): void {
     installSocialRealtimeBridge();
-    void installMessagingProjectionBridge();
     if (!teardownHostAdapter) {
       teardownHostAdapter = installDesktopSocialHostAdapter(dispatchSocialRuntimeHostEvent);
     }
   },
   teardown(): void {
-    teardownMessagingProjectionBridge();
     teardownHostAdapter?.();
     teardownHostAdapter = null;
     teardownSocialRealtimeBridge();

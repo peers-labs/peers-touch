@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Plan mounts bind frozen versions to execution worktrees
-status: active
+status: superseded-by:docs/knowledge/invariants/stable-plan-amendments.md
 owns:
   - AGENTS.md
   - tooling/acceptance/core/execution_plan.py
@@ -18,6 +18,10 @@ detected: 2026-10-04
 ---
 
 # Plan mounts bind frozen versions to execution worktrees
+
+This invariant is retained as historical context. Its frozen-version rule is
+superseded by `stable-plan-amendments.md`; the explicit worktree occupancy and
+owner-controlled release rules remain in force there.
 
 ## What must hold
 

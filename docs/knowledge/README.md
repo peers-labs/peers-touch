@@ -163,7 +163,7 @@ Pick one based on intent:
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
 - [`invariants/direct-receipt-endpoint-truth.md`](invariants/direct-receipt-endpoint-truth.md) — Direct receipt aggregation uses immutable event commitments, not Group/MLS device rows.
 - [`invariants/dev-resource-declaration-before-write.md`](invariants/dev-resource-declaration-before-write.md) — non-trivial work publishes machine-visible source/runtime intent before mutation and releases it after cleanup.
-- [`invariants/plan-mount-is-run-bound.md`](invariants/plan-mount-is-run-bound.md) — an explicit mount binds one frozen Plan Version to one execution worktree for the full run.
+- [`invariants/stable-plan-amendments.md`](invariants/stable-plan-amendments.md) — one stable Plan absorbs ordinary execution corrections through audited amendments without remounting.
 - [`invariants/bound-plan-acceptance-impact-is-scoped.md`](invariants/bound-plan-acceptance-impact-is-scoped.md) — a bound Plan computes Acceptance impact only from its exclusive-write source closure.
 - [`invariants/workspace-active-work-is-local.md`](invariants/workspace-active-work-is-local.md) — workflow code is distributed, while each consuming worktree exclusively owns its own machine-local active-work record.
 - [`invariants/continuous-plan-run.md`](invariants/continuous-plan-run.md) — one authorized Plan Run continues across Task, Goal, review, Anchor, and context boundaries until completion or a true hard stop.
@@ -186,6 +186,7 @@ Pick one based on intent:
 - [`pitfalls/acceptance-mutable-artifact-rewrite.md`](pitfalls/acceptance-mutable-artifact-rewrite.md) — mutable runtime logs must be written once, after the producing client stops, when the Evidence Store path is immutable.
 - [`pitfalls/acceptance-shared-validator-variant-assumptions.md`](pitfalls/acceptance-shared-validator-variant-assumptions.md) — shared Gate validators must derive journey and topology semantics from the active Gate variant.
 - [`pitfalls/native-chat-gates-require-federation-context.md`](pitfalls/native-chat-gates-require-federation-context.md) — Native Direct and Group creation must pass a Federation shared by every participating client.
+- [`pitfalls/conversation-production-schema-migration-single-source.md`](pitfalls/conversation-production-schema-migration-single-source.md) — Conversation production migration must delegate to the persistence-owned canonical schema instead of copying its model list.
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
 
 ### Playbooks

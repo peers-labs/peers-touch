@@ -9,8 +9,14 @@
 
 ## 1. 当前实现证据
 
-本次审计基于 `origin/master`
-`6ea32acca351a2102635f0452f85f8bece0534cf`。
+| Concern | Station owner | Desktop consumer | Mobile consumer |
+|---|---|---|---|
+| Station identity | bootstrap identity | identity kernel | station connection runtime |
+| Access attempt | Access Gate | session store + Rust adapter | auth session + Host adapter |
+| Session scope | Actor session | runtime coordinator | mobile runtime coordinator |
+| Session class slot | Actor session | canonical `desktop` | canonical `mobile` |
+| Federation context | Federation | context store | social runtime |
+| Relay diagnosis | Station operations | read-only status | read-only status |
 
 | 事实 | 当前源码 | 判断 |
 |---|---|---|
@@ -149,3 +155,12 @@ iOS Simulator、攻击客户端和可审计 Relay observer。环境必须：
 - URL-keyed Desktop Station identity owner；
 - 仅检查非空缓存 token 的恢复路径；
 - 两处硬编码 debug HTTP egress。
+
+同时保留以下当前接口验证：
+
+- Station route、Proto 和 owner 由 `station-api-ownership` 验证。
+- 双端 capability consumer 由 Station Access current-interface contract 验证。
+- 首次接入、恢复、切换和 Federation context 由原生 Acceptance 验证。
+- Session unit/integration tests 证明 password、OAuth 和 takeover 使用同一个
+  client-class slot；Native Desktop/Mobile 矩阵证明跨类别共存与同类别接管。
+- active 文档与模块声明由 architecture module governance 验证。
