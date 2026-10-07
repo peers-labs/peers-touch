@@ -20,7 +20,8 @@
     "apps/mobile/src/styles.css",
     "apps/mobile/src/app/mobileI18n.tsx",
     "packages/locales",
-    "packages/prototypes/mobile/chat"
+    "packages/prototypes/mobile/chat",
+    "tooling/acceptance/gates/mobile"
   ],
   "readSet": [
     "apps/mobile/src/app",

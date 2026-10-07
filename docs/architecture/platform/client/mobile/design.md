@@ -517,7 +517,8 @@ workloads, thresholds, attribution metrics, and evidence paths. Execution
 planning must register the concrete Acceptance plan; missing native evidence
 remains `UNPROVEN`.
 
-MS-AG12 is a release-level composition Gate. It derives its inventory from
+MS-AG12 is the release-level
+`mobile-simulator-whole-product-usability-e2e` composition Gate. It derives its inventory from
 pre-shell lifecycle states, navigation descriptors, registered overlays, and
 product-owned recovery projections. It must operate the visible iOS Simulator,
 capture every inventory row, and fail when technical identifiers, untranslated

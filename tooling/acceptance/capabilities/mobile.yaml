@@ -137,8 +137,10 @@
       "domain": "mobile",
       "direction": "acceptance_validates_product",
       "features": ["mobile-native-accessibility-performance"],
-      "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
+      "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-whole-product-usability-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
       "synthetic_paths": [
+        "tooling/acceptance/gates/mobile/whole_product_surface_inventory.json",
+        "apps/mobile/scripts/review-mobile-surfaces.mjs",
         "apps/mobile/src/runtimes/nativeLifecycleBridge.ts",
         "apps/mobile/src-tauri/src/platform/native_events.rs",
         "apps/mobile/src-tauri/src/platform/secure_storage/ios_keychain.rs",
@@ -146,9 +148,9 @@
       ],
       "evidence": {
         "truth_sources": ["Mobile native lifecycle and secure-storage ports", "Mobile rendered accessibility tree", "Mobile runtime telemetry"],
-        "surfaces": ["iOS and Android native Mobile Shell"],
-        "proven_by": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
-        "proven_scope": ["iOS Simulator launch-surface layout and accessibility", "Required iOS Simulator platform, timing, cleanup, and hard-cut assertions"],
+        "surfaces": ["Complete foreground iOS Mobile surface inventory"],
+        "proven_by": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-whole-product-usability-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
+        "proven_scope": ["Complete foreground iOS Simulator route/state layout, accessibility, human-readable content, and interaction coverage", "Required iOS Simulator platform, timing, cleanup, and hard-cut assertions"],
         "unproven_scope": ["Optional Android and physical-device accessibility and pinned-hardware performance"]
       }
     }

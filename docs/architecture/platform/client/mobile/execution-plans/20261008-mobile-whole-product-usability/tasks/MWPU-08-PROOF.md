@@ -43,7 +43,7 @@
     },
     {
       "id": "mobile-whole-product-formal",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-ios-simulator-layout-accessibility-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-whole-product-usability-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     },
     {
