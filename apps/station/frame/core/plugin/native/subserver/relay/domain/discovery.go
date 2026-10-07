@@ -40,6 +40,7 @@ type GrantRecord struct {
 	RouteGeneration uint64
 	MaxUses         uint32
 	RemainingUses   uint32
+	ReservedUses    uint32
 	ExpiresAt       time.Time
 }
 

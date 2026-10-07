@@ -45,6 +45,11 @@ from tooling.acceptance.gates.station_access.relay_endpoint_discovery_contract i
     GATE_ID as DISCOVERY_GATE_ID,
     RelayEndpointDiscoveryCapabilityHandler,
 )
+from tooling.acceptance.gates.station_access.relay_opaque_tunnel_e2e import (
+    CAPABILITY_ID as OPAQUE_TUNNEL_CAPABILITY_ID,
+    GATE_ID as OPAQUE_TUNNEL_GATE_ID,
+    RelayOpaqueTunnelCapabilityHandler,
+)
 from tooling.scripts.deploy.windows_runtime import (
     WindowsRuntimeConfig,
     execute as execute_windows_runtime,
@@ -478,6 +483,29 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
         if not required_capabilities:
             return None
         if (
+            gate_id == OPAQUE_TUNNEL_GATE_ID
+            and required_capabilities == (OPAQUE_TUNNEL_CAPABILITY_ID,)
+            and self._manifest is not None
+            and self._manifest.is_ready()
+            and evidence_run_id != provisioning_run_id
+            and evidence_run_id == self.evidence_run.run_id
+            and provisioning_run_id == self._manifest.run_id
+            and self._station_config is not None
+            and self._relay_config is not None
+        ):
+            context = EphemeralGateLaunchContext(
+                required_capabilities=required_capabilities
+            )
+            context.register_capability(
+                OPAQUE_TUNNEL_CAPABILITY_ID,
+                RelayOpaqueTunnelCapabilityHandler(
+                    _windows_transport(self._relay_config),
+                    self._station_config,
+                    self._relay_config,
+                ),
+            )
+            return context
+        if (
             gate_id == DISCOVERY_GATE_ID
             and required_capabilities == (DISCOVERY_CAPABILITY_ID,)
             and self._manifest is not None
@@ -535,6 +563,7 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 ROLE_SECURITY_GATE_ID,
                 ENROLLMENT_GATE_ID,
                 DISCOVERY_GATE_ID,
+                OPAQUE_TUNNEL_GATE_ID,
             }:
                 raise BlockedError(
                     reason=f"{self.environment_id} does not support {gate_id}",

@@ -60,7 +60,7 @@ type Resolved struct {
 
 	// IsLocal indicates the handle resolved to this station's own
 	// PeerID — the resolver bypassed both the federation cache and the
-	// /relay/forward leg.
+	// opaque Relay tunnel leg.
 	IsLocal bool
 
 	// FromCache is true when the resolver served the envelope from the
@@ -80,7 +80,6 @@ type ActiveMembershipReader interface {
 // Resolver carries cross-call state. The struct is goroutine-safe; one
 // per process is fine.
 type Resolver struct {
-	httpClient    *http.Client
 	now           func() time.Time
 	lookupTimeout time.Duration
 	remoteTimeout time.Duration
@@ -91,7 +90,6 @@ type Resolver struct {
 // Config tunes the resolver. Zero value gives sensible production
 // defaults.
 type Config struct {
-	HTTPClient    *http.Client
 	Now           func() time.Time
 	LookupTimeout time.Duration
 	RemoteTimeout time.Duration
@@ -112,15 +110,11 @@ type Config struct {
 // New constructs a resolver. The zero Config is fine.
 func New(cfg Config) *Resolver {
 	r := &Resolver{
-		httpClient:    cfg.HTTPClient,
 		now:           cfg.Now,
 		lookupTimeout: cfg.LookupTimeout,
 		remoteTimeout: cfg.RemoteTimeout,
 		skipCache:     cfg.SkipCache,
 		peerKeys:      cfg.PeerKeys,
-	}
-	if r.httpClient == nil {
-		r.httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 	if r.now == nil {
 		r.now = time.Now
@@ -509,25 +503,20 @@ func relayMountMatches(mounts []string, localBase string) bool {
 	return false
 }
 
-// resolveRemote forwards GET /actor/federation/profile?handle=<canon>
-// through the local relay-client. The resolver does not dial the home
-// station directly: locator.proto's contract is that all federation
-// traffic flows through a relay so NAT-bound stations remain reachable.
+// resolveRemote sends GET /actor/federation/profile?handle=<canon> through
+// the local relay-client's scoped opaque tunnel. The Relay sees only bounded
+// ciphertext and the target Station identity.
 func (r *Resolver) resolveRemote(
 	ctx context.Context,
 	canon string,
 	rec *locatorpb.ActorLocatorRecord,
 ) (*Resolved, error) {
 	rc := fednode.RelayClient()
-	if rc == nil {
+	if rc == nil || !rc.Available() {
 		return nil, ErrRelayUnavailable
 	}
-	base := strings.TrimRight(rc.BaseURL(), "/")
+	base := strings.TrimRight(strings.TrimSpace(rc.RelayOrigin()), "/")
 	if base == "" {
-		return nil, ErrRelayUnavailable
-	}
-	token := rc.Token()
-	if token == "" {
 		return nil, ErrRelayUnavailable
 	}
 
@@ -538,7 +527,7 @@ func (r *Resolver) resolveRemote(
 	// implemented) and most likely will fail with 404 at the relay's
 	// mount table.
 	//
-	// We attempt the forward anyway — the proto explicitly marks
+	// We attempt the tunnel anyway — the proto explicitly marks
 	// inbox_relay_mounts as a hint, and the relay's live mount table
 	// is the authoritative answer. A misconfigured but recoverable
 	// hint must not turn into a hard outage. Log loudly so an
@@ -546,15 +535,16 @@ func (r *Resolver) resolveRemote(
 	if mounts := rec.GetInboxRelayMounts(); len(mounts) > 0 && !relayMountMatches(mounts, base) {
 		logger.Warnf(ctx,
 			"[resolver] handle=%s home_relays=%v local_relay=%s no overlap; "+
-				"attempting forward via local relay, expect 404 if relays do not federate",
+				"attempting tunnel via local relay, expect unavailable if relays do not federate",
 			canon, mounts, base)
 	}
 
-	target := fmt.Sprintf("%s/relay/forward/%s/actor/federation/profile?handle=%s",
-		base,
-		url.PathEscape(rec.GetHomeStationPeerId()),
-		url.QueryEscape(canon),
-	)
+	target := (&url.URL{
+		Scheme:   "https",
+		Host:     "station.invalid",
+		Path:     "/actor/federation/profile",
+		RawQuery: url.Values{"handle": []string{canon}}.Encode(),
+	}).String()
 
 	reqCtx, cancel := context.WithTimeout(ctx, r.remoteTimeout)
 	defer cancel()
@@ -563,17 +553,19 @@ func (r *Resolver) resolveRemote(
 	if err != nil {
 		return nil, fmt.Errorf("resolver: build forward request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/protobuf")
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := rc.RoundTrip(reqCtx, rec.GetHomeStationPeerId(), req)
 	if err != nil {
-		return nil, fmt.Errorf("resolver: forward GET: %w", err)
+		return nil, fmt.Errorf("resolver: tunnel GET: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 	if err != nil {
-		return nil, fmt.Errorf("resolver: read forward body: %w", err)
+		return nil, fmt.Errorf("resolver: read tunnel body: %w", err)
+	}
+	if len(body) > 1<<20 {
+		return nil, fmt.Errorf("resolver: profile response exceeds byte limit")
 	}
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("resolver: home station returned 404 for %s", canon)

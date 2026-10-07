@@ -293,49 +293,6 @@ func mountAuthenticationWrapper(
 	)
 }
 
-func networkAuthenticationWrapper(service *application.Service) server.Wrapper {
-	return server.HTTPWrapperAdapter(
-		func(ctx context.Context, next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-				token, ok := bearerToken(request.Header.Get("Authorization"))
-				if !ok {
-					writeJSON(
-						w,
-						http.StatusUnauthorized,
-						errorBody("valid Relay network credential required"),
-					)
-					return
-				}
-				identity, err := service.AuthenticateNetworkCredential(
-					request.Context(),
-					token,
-				)
-				if err != nil {
-					writeJSON(
-						w,
-						http.StatusUnauthorized,
-						errorBody("valid Relay network credential required"),
-					)
-					return
-				}
-				subject := &coreauth.Subject{
-					ID: domain.SubjectRelayClient + identity.StationPeerID,
-					Attributes: map[string]string{
-						"station_peer_id": identity.StationPeerID,
-						"mount_id":        strconv.FormatUint(identity.MountID, 10),
-						"generation":      strconv.FormatUint(identity.Generation, 10),
-						"jti":             identity.JTI,
-					},
-				}
-				next.ServeHTTP(
-					w,
-					request.WithContext(coreauth.WithSubject(request.Context(), subject)),
-				)
-			})
-		},
-	)
-}
-
 func bearerToken(authorization string) (string, bool) {
 	const prefix = "Bearer "
 	if !strings.HasPrefix(authorization, prefix) {

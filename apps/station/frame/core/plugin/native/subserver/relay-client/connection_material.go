@@ -99,14 +99,6 @@ func (s *SubServer) IssueConnectionMaterial(
 	if err != nil || !credentialExpiresAt.After(now) {
 		return nil, ErrConnectionMaterialUnavailable
 	}
-	if len(request.InnerTLSSPKISHA256) != sha256.Size ||
-		len(request.CapabilitiesDigest) != sha256.Size {
-		return nil, fmt.Errorf(
-			"%w: Station route digests must contain exactly %d bytes",
-			ErrInvalidConnectionMaterialRequest,
-			sha256.Size,
-		)
-	}
 	routeLifetime := request.RouteLifetime
 	if routeLifetime == 0 {
 		routeLifetime = defaultRouteLifetime
@@ -147,34 +139,17 @@ func (s *SubServer) IssueConnectionMaterial(
 		return nil, err
 	}
 
-	routeStatement := &peerpb.StationRouteStatement{
-		StationPeerId:      credential.StationPeerID,
-		RelayPeerId:        credential.RelayPeerID,
-		RouteId:            routeID,
-		RouteGeneration:    credential.Generation,
-		InnerTlsSpkiSha256: append([]byte(nil), request.InnerTLSSPKISHA256...),
-		CapabilitiesDigest: append([]byte(nil), request.CapabilitiesDigest...),
-		Visibility:         peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_GRANT_ONLY,
-		IssuedAtUnixMs:     now.UnixMilli(),
-		ExpiresAtUnixMs:    now.Add(routeLifetime).UnixMilli(),
-	}
-	attestation, err := signer.SignStationRouteAttestation(routeStatement)
-	if err != nil {
-		return nil, fmt.Errorf("sign Station route attestation: %w", err)
-	}
-	published := &peerpb.PublishStationRouteResponse{}
-	if err := s.postProto(
+	// Route security material is owned by the Station process. Caller-supplied
+	// digest fields are retained in the request wire for compatibility but are
+	// never trusted as route truth.
+	attestation, err := s.publishRoute(
 		ctx,
-		"/api/v1/relay/routes",
-		credential.Token,
-		&peerpb.PublishStationRouteRequest{RouteAttestation: attestation},
-		published,
-	); err != nil {
-		return nil, fmt.Errorf("publish Station route: %w", err)
-	}
-	if published.GetRouteId() != routeID ||
-		published.GetRouteGeneration() != credential.Generation {
-		return nil, fmt.Errorf("Relay published a different Station route")
+		routeID,
+		peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_GRANT_ONLY,
+		routeLifetime,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	grantID, err := randomConnectionMaterialID()

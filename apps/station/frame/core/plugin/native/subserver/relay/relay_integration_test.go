@@ -12,12 +12,9 @@ package relay_test
 //   7. Graceful shutdown
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net"
 	"strings"
 	"sync"
@@ -31,6 +28,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	federationmodel "github.com/peers-labs/peers-touch/station/frame/core/federation/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/infrastructure"
@@ -159,12 +157,15 @@ func TestInviteAndRegister(t *testing.T) {
 		station.peerID,
 		"test-station",
 		10,
+		2048,
 		24*time.Hour,
 	)
 	require.NoError(t, err)
 	assert.NotEmpty(t, secret)
 	assert.Equal(t, domain.InviteStatusActive, invite.Status)
 	assert.Equal(t, station.peerID, invite.IntendedStationPeerID)
+	assert.Equal(t, int32(10), invite.MaxClients)
+	assert.Equal(t, int64(2048), invite.BandwidthLimit)
 	assert.NotEqual(t, secret, invite.SecretDigest)
 
 	result := enrollStation(t, env, secret, "my-label", station, 100)
@@ -185,6 +186,8 @@ func TestInviteAndRegister(t *testing.T) {
 	assert.Equal(t, domain.MountStatusOffline, mount.Status)
 	assert.Equal(t, result.Credential.JTI, mount.CredentialJTI)
 	assert.NotEmpty(t, mount.HostPublicKey)
+	assert.Equal(t, int32(10), mount.MaxClients)
+	assert.Equal(t, int64(2048), mount.BandwidthLimit)
 
 	identity, err := env.svc.AuthenticateMountCredential(
 		ctx,
@@ -218,6 +221,7 @@ func TestRegisterErrorCases(t *testing.T) {
 			station.peerID,
 			"exp",
 			10,
+			0,
 			time.Millisecond,
 		)
 		require.NoError(t, err)
@@ -233,6 +237,7 @@ func TestRegisterErrorCases(t *testing.T) {
 			station.peerID,
 			"cons",
 			10,
+			0,
 			24*time.Hour,
 		)
 		require.NoError(t, err)
@@ -284,6 +289,7 @@ func TestRegisterErrorCases(t *testing.T) {
 			other.peerID,
 			"cap",
 			10,
+			0,
 			24*time.Hour,
 		)
 		require.NoError(t, err)
@@ -299,57 +305,56 @@ func TestRegisterErrorCases(t *testing.T) {
 	})
 }
 
-// ---- Test 3: Protocol frame symmetry ----
+// ---- Test 3: Opaque tunnel frame symmetry ----
 
-func TestProtocolFrameRoundTrip(t *testing.T) {
+func TestProtocolTunnelFrameRoundTrip(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
 	defer clientConn.Close()
 
 	done := make(chan struct{})
 
-	// Server writes a request frame.
 	go func() {
 		defer close(done)
-		err := protocol.WriteRequestFrame(serverConn, 42, "POST", "/api/test",
-			map[string]string{"Content-Type": "application/json"},
-			[]byte(`{"hello":"world"}`))
+		err := protocol.WriteTunnelOpen(serverConn, &protocol.TunnelOpenFrame{
+			TunnelID:            42,
+			RouteID:             "route-1",
+			RouteGeneration:     7,
+			CallerStationPeerID: "station-source",
+			Purpose:             federationmodel.RelayTunnelPurpose_RELAY_TUNNEL_PURPOSE_FEDERATION_PEER,
+		})
 		assert.NoError(t, err)
 	}()
 
-	// Client reads and parses.
 	frame, err := protocol.ReadFrame(clientConn)
 	require.NoError(t, err)
 
-	req, ok := frame.(*protocol.RequestFrame)
-	require.True(t, ok, "expected RequestFrame, got %T", frame)
-	assert.Equal(t, uint32(42), req.RequestID)
-	assert.Equal(t, "POST", req.Method)
-	assert.Equal(t, "/api/test", req.Path)
-	assert.Equal(t, "application/json", req.Headers["Content-Type"])
-	assert.Equal(t, `{"hello":"world"}`, string(req.Body))
+	open, ok := frame.(*protocol.TunnelOpenFrame)
+	require.True(t, ok, "expected TunnelOpenFrame, got %T", frame)
+	assert.Equal(t, uint32(42), open.TunnelID)
+	assert.Equal(t, "route-1", open.RouteID)
+	assert.Equal(t, uint64(7), open.RouteGeneration)
+	assert.Equal(t, "station-source", open.CallerStationPeerID)
+	assert.Equal(
+		t,
+		federationmodel.RelayTunnelPurpose_RELAY_TUNNEL_PURPOSE_FEDERATION_PEER,
+		open.Purpose,
+	)
 
 	<-done
 
-	// Now test response frame in the other direction.
 	done2 := make(chan struct{})
 	go func() {
 		defer close(done2)
-		err := protocol.WriteResponseFrame(clientConn, 42, 200,
-			map[string]string{"X-Custom": "header"},
-			[]byte(`{"status":"ok"}`))
-		assert.NoError(t, err)
+		assert.NoError(t, protocol.WriteTunnelOpened(clientConn, 42))
 	}()
 
 	frame2, err := protocol.ReadFrame(serverConn)
 	require.NoError(t, err)
 
-	resp, ok := frame2.(*protocol.ResponseFrame)
-	require.True(t, ok, "expected ResponseFrame, got %T", frame2)
-	assert.Equal(t, uint32(42), resp.RequestID)
-	assert.Equal(t, uint32(200), resp.StatusCode)
-	assert.Equal(t, "header", resp.Headers["X-Custom"])
-	assert.Equal(t, `{"status":"ok"}`, string(resp.Body))
+	opened, ok := frame2.(*protocol.TunnelOpenedFrame)
+	require.True(t, ok, "expected TunnelOpenedFrame, got %T", frame2)
+	assert.Equal(t, uint32(42), opened.TunnelID)
 
 	<-done2
 }
@@ -395,6 +400,7 @@ func TestMountCredentialRotationAndRevoke(t *testing.T) {
 		station.peerID,
 		"rotate",
 		10,
+		0,
 		time.Hour,
 	)
 	require.NoError(t, err)
@@ -406,13 +412,6 @@ func TestMountCredentialRotationAndRevoke(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NoError(t, env.svc.ActivateMount(ctx, enrolledIdentity))
-	clientCredential, err := env.svc.MintClientToken(
-		ctx,
-		enrolled.Credential.Token,
-		time.Hour,
-	)
-	require.NoError(t, err)
-
 	challenge, err := env.svc.BeginRotationChallenge(
 		ctx,
 		enrolled.Credential.Token,
@@ -439,12 +438,6 @@ func TestMountCredentialRotationAndRevoke(t *testing.T) {
 		domain.ScopeMountConnect,
 	)
 	require.NoError(t, err)
-	_, err = env.svc.AuthenticateNetworkCredential(
-		ctx,
-		clientCredential.Token,
-	)
-	assert.ErrorIs(t, err, application.ErrCredentialInvalid)
-
 	revoked, err := env.svc.RevokeMount(ctx, station.peerID)
 	require.NoError(t, err)
 	assert.Equal(t, rotated.Generation+1, revoked.Generation)
@@ -457,60 +450,76 @@ func TestMountCredentialRotationAndRevoke(t *testing.T) {
 	assert.ErrorIs(t, err, application.ErrCredentialInvalid)
 }
 
-// ---- Test 6: Full Forward chain (simulated) ----
-// Simulates: relay server side → station client side, using net.Pipe.
+// ---- Test 6: Full opaque tunnel chain (simulated) ----
 
-func TestForwardChainWithNetPipe(t *testing.T) {
-	// Create a pipe simulating the TCP connection between relay and station.
+func TestOpaqueTunnelChainWithNetPipe(t *testing.T) {
 	relayConn, stationConn := net.Pipe()
 	defer relayConn.Close()
 	defer stationConn.Close()
 
 	stationDone := make(chan struct{})
 
-	// Station side: read request, write response.
 	go func() {
 		defer close(stationDone)
-		br := bufio.NewReader(stationConn)
-
-		frame, err := protocol.ReadFrame(br)
+		frame, err := protocol.ReadFrame(stationConn)
 		if err != nil {
 			t.Errorf("station ReadFrame: %v", err)
 			return
 		}
-
-		req, ok := frame.(*protocol.RequestFrame)
+		open, ok := frame.(*protocol.TunnelOpenFrame)
 		if !ok {
-			t.Errorf("station expected RequestFrame, got %T", frame)
+			t.Errorf("station expected TunnelOpenFrame, got %T", frame)
 			return
 		}
-
-		// Echo back with 200.
-		respBody := fmt.Sprintf("echo: %s", string(req.Body))
-		err = protocol.WriteResponseFrame(stationConn, req.RequestID, 200,
-			map[string]string{"X-Echo": "true"},
-			[]byte(respBody))
+		if err := protocol.WriteTunnelOpened(stationConn, open.TunnelID); err != nil {
+			t.Errorf("station WriteTunnelOpened: %v", err)
+			return
+		}
+		frame, err = protocol.ReadFrame(stationConn)
 		if err != nil {
-			t.Errorf("station WriteResponseFrame: %v", err)
+			t.Errorf("station read tunnel data: %v", err)
+			return
+		}
+		data, ok := frame.(*protocol.TunnelDataFrame)
+		if !ok {
+			t.Errorf("station expected TunnelDataFrame, got %T", frame)
+			return
+		}
+		if err := protocol.WriteTunnelData(
+			stationConn,
+			data.TunnelID,
+			1,
+			append([]byte("echo: "), data.Data...),
+		); err != nil {
+			t.Errorf("station WriteTunnelData: %v", err)
 		}
 	}()
 
-	// Relay side: write request, read response.
-	reqID := uint32(7)
-	err := protocol.WriteRequestFrame(relayConn, reqID, "GET", "/api/hello",
-		map[string]string{"Accept": "text/plain"},
-		[]byte("ping"))
-	require.NoError(t, err)
+	tunnelID := uint32(7)
+	require.NoError(t, protocol.WriteTunnelOpen(
+		relayConn,
+		&protocol.TunnelOpenFrame{
+			TunnelID:        tunnelID,
+			RouteID:         "route-1",
+			RouteGeneration: 1,
+			Purpose:         federationmodel.RelayTunnelPurpose_RELAY_TUNNEL_PURPOSE_CLIENT_ACCESS,
+		},
+	))
 
 	frame, err := protocol.ReadFrame(relayConn)
 	require.NoError(t, err)
-
-	resp, ok := frame.(*protocol.ResponseFrame)
+	opened, ok := frame.(*protocol.TunnelOpenedFrame)
 	require.True(t, ok)
-	assert.Equal(t, reqID, resp.RequestID)
-	assert.Equal(t, uint32(200), resp.StatusCode)
-	assert.Equal(t, "true", resp.Headers["X-Echo"])
-	assert.Equal(t, "echo: ping", string(resp.Body))
+	assert.Equal(t, tunnelID, opened.TunnelID)
+
+	require.NoError(t, protocol.WriteTunnelData(relayConn, tunnelID, 1, []byte("ping")))
+	frame, err = protocol.ReadFrame(relayConn)
+	require.NoError(t, err)
+	data, ok := frame.(*protocol.TunnelDataFrame)
+	require.True(t, ok)
+	assert.Equal(t, tunnelID, data.TunnelID)
+	assert.Equal(t, uint64(1), data.Sequence)
+	assert.Equal(t, "echo: ping", string(data.Data))
 
 	<-stationDone
 }
@@ -591,6 +600,7 @@ func TestRegisterRejectsMismatchedHostKey(t *testing.T) {
 		intended.peerID,
 		"http-test",
 		5,
+		0,
 		24*time.Hour,
 	)
 	require.NoError(t, err)
@@ -620,7 +630,7 @@ func TestProtocolOOMProtection(t *testing.T) {
 	go func() {
 		hdr := make([]byte, protocol.HeaderLen)
 		hdr[0] = protocol.FrameVersion
-		hdr[1] = protocol.TypeRequest
+		hdr[1] = protocol.TypeTunnelData
 		// reqID = 1
 		hdr[2], hdr[3], hdr[4], hdr[5] = 0, 0, 0, 1
 		// payloadLen = MaxPayloadLen + 1 (too large)
@@ -636,6 +646,3 @@ func TestProtocolOOMProtection(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "payload too large")
 }
-
-// Suppress unused import warnings.
-var _ = io.EOF

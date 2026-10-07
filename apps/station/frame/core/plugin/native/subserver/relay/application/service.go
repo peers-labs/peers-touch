@@ -71,6 +71,7 @@ func (s *Service) CreateInvite(
 	stationPeerID string,
 	label string,
 	maxClients int32,
+	bandwidthLimit int64,
 	expiresIn time.Duration,
 ) (*domain.Invite, string, error) {
 	stationPeerID = strings.TrimSpace(stationPeerID)
@@ -80,7 +81,7 @@ func (s *Service) CreateInvite(
 			return nil, "", ErrInvalidRequest
 		}
 	}
-	if len(label) > 255 || maxClients < 0 {
+	if len(label) > 255 || maxClients < 0 || bandwidthLimit < 0 {
 		return nil, "", ErrInvalidRequest
 	}
 	secret, err := randomIdentifier(32)
@@ -95,6 +96,7 @@ func (s *Service) CreateInvite(
 		IntendedStationPeerID: stationPeerID,
 		Label:                 label,
 		MaxClients:            maxClients,
+		BandwidthLimit:        bandwidthLimit,
 		Status:                domain.InviteStatusActive,
 		ExpiresAt:             s.now().Add(expiresIn),
 	}
@@ -407,54 +409,6 @@ func (s *Service) authenticateMountIdentity(
 		return nil, ErrCredentialInvalid
 	}
 	return mount, nil
-}
-
-func (s *Service) AuthenticateNetworkCredential(
-	ctx context.Context,
-	token string,
-) (domain.MountIdentity, error) {
-	if identity, err := s.AuthenticateMountCredential(
-		ctx,
-		token,
-		domain.ScopeMountConnect,
-	); err == nil {
-		return identity, nil
-	}
-	identity, err := s.authority.ValidateCredential(
-		token,
-		domain.ClientCredentialAudience,
-		domain.ScopeClientForward,
-	)
-	if err != nil {
-		return domain.MountIdentity{}, ErrCredentialInvalid
-	}
-	mount, err := s.repo.GetMountByStationPeerID(ctx, identity.StationPeerID)
-	if err != nil || mount.Status != domain.MountStatusOnline ||
-		mount.ID != identity.MountID ||
-		mount.Generation != identity.Generation {
-		return domain.MountIdentity{}, ErrCredentialInvalid
-	}
-	return identity, nil
-}
-
-func (s *Service) MintClientToken(
-	ctx context.Context,
-	currentToken string,
-	ttl time.Duration,
-) (*domain.MountCredential, error) {
-	_, mount, err := s.authenticateMountCredential(
-		ctx,
-		currentToken,
-		domain.ScopeMountConnect,
-	)
-	if err != nil || mount.Status != domain.MountStatusOnline {
-		return nil, ErrMountNotFound
-	}
-	jti, err := randomIdentifier(18)
-	if err != nil {
-		return nil, fmt.Errorf("generate client credential id: %w", err)
-	}
-	return s.authority.IssueClientCredential(mount, jti, ttl)
 }
 
 // ---- Mount operations ----

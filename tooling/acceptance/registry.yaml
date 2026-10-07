@@ -309,6 +309,29 @@
       ]
     },
     {
+      "id": "station-access-relay-opaque-tunnel",
+      "features": [
+        "station-access-relay-opaque-tunnel"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/federation/relay_transport.proto",
+          "apps/station/app/subserver/actor_identity/**",
+          "apps/station/app/subserver/key_exchange/**",
+          "apps/station/frame/core/federation/**",
+          "apps/station/frame/core/plugin/native/federation/relay_client.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/**",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/**",
+          "apps/station/frame/touch/federation/resolver/**",
+          "tooling/acceptance/features/station-access-relay-opaque-tunnel.yaml",
+          "tooling/acceptance/gates/station_access/relay_opaque_tunnel_e2e.py"
+        ]
+      },
+      "require": [
+        "relay-opaque-tunnel-e2e"
+      ]
+    },
+    {
       "id": "station-access-acceptance",
       "features": [
         "station-access-wire-contract",
@@ -318,6 +341,7 @@
         "station-access-relay-role-security",
         "station-access-relay-enrollment",
         "station-access-endpoint-discovery",
+        "station-access-relay-opaque-tunnel",
         "station-access-interface-contract"
       ],
       "when": {
@@ -344,6 +368,7 @@
         "station-access-federation-boundary-e2e",
         "relay-role-security-contract",
         "relay-station-enrollment-e2e",
+        "relay-opaque-tunnel-e2e",
         "desktop-release-build",
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",

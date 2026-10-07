@@ -13,7 +13,6 @@ import (
 
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -209,7 +208,7 @@ func (c *peerClient) Open(
 			err,
 		)
 	}
-	endpoint, relayToken, viaRelay, err := c.resolveEndpoint(
+	endpoint, viaRelay, err := c.resolveEndpoint(
 		ctx,
 		call.TargetStationPeerID,
 		routePath,
@@ -231,8 +230,7 @@ func (c *peerClient) Open(
 		)
 	}
 	for name, value := range call.Headers {
-		if strings.EqualFold(name, "Authorization") ||
-			strings.EqualFold(name, nativefed.ForwardAuthorizationHeader) {
+		if strings.EqualFold(name, "Authorization") {
 			return nil, delivery.NewError(
 				delivery.FailureInvalidArgument,
 				"build Federation peer request",
@@ -241,13 +239,17 @@ func (c *peerClient) Open(
 		}
 		request.Header.Set(name, value)
 	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	var response *http.Response
 	if viaRelay {
-		request.Header.Set("Authorization", "Bearer "+relayToken)
-		request.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
+		response, err = c.relay.RoundTrip(
+			ctx,
+			call.TargetStationPeerID,
+			request,
+		)
 	} else {
-		request.Header.Set("Authorization", "Bearer "+token)
+		response, err = c.client.Do(request)
 	}
-	response, err := c.client.Do(request)
 	if err != nil {
 		return nil, delivery.NewError(
 			delivery.FailureTransportUnavailable,
@@ -337,21 +339,13 @@ func (c *peerClient) resolveEndpoint(
 	ctx context.Context,
 	targetStationPeerID string,
 	routePath string,
-) (endpoint string, relayToken string, viaRelay bool, err error) {
-	if c.relay != nil {
-		baseURL := strings.TrimRight(strings.TrimSpace(c.relay.BaseURL()), "/")
-		token := strings.TrimSpace(c.relay.Token())
-		if baseURL != "" && token != "" {
-			return fmt.Sprintf(
-				"%s/relay/forward/%s%s",
-				baseURL,
-				url.PathEscape(targetStationPeerID),
-				routePath,
-			), token, true, nil
-		}
+) (endpoint string, viaRelay bool, err error) {
+	if c.relay != nil && c.relay.Available() {
+		return "https://" + targetStationPeerID + ".station.invalid" +
+			routePath, true, nil
 	}
 	if c.stationURLResolver == nil {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation peer route",
 			errors.New("no direct or relay route is available"),
@@ -362,7 +356,7 @@ func (c *peerClient) resolveEndpoint(
 		targetStationPeerID,
 	)
 	if err != nil {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation peer route",
 			err,
@@ -370,14 +364,14 @@ func (c *peerClient) resolveEndpoint(
 	}
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation peer route",
 			errors.New("resolved Station URL is empty"),
 		)
 	}
 
-	return baseURL + routePath, "", false, nil
+	return baseURL + routePath, false, nil
 }
 
 func peerRouteSpecFor(route PeerRoute) (peerRouteSpec, bool) {

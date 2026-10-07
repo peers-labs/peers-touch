@@ -111,10 +111,10 @@ operator credential。
 1. 先删除硬编码 debug egress，建立 Relay role、TLS 和 auth 基线。
 2. 引入 PoP enrollment、hash-only invite、mount generation 与 revoke/rotate。
 3. 发布 endpoint/route Proto 与 signed discovery。
-4. 落地 bounded opaque tunnel 和 typed Federation transport。
+4. 原子落地 bounded opaque tunnel 和 typed Federation transport，并删除
+   transparent forward、relay-client-token 和 header passthrough。
 5. Desktop/Mobile 迁移到 station-keyed route binding。
-6. 完成 exact-source native Acceptance 后，删除 transparent forward、
-   relay-client-token 和 header passthrough。
+6. 完成 exact-source native Acceptance。
 
 不得双写旧/新 mount credential，不得保留旧 forward 作为 fallback。
 

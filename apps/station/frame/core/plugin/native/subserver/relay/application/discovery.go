@@ -19,9 +19,10 @@ import (
 )
 
 var (
-	ErrRouteAttestationInvalid = errors.New("Station route attestation is invalid")
+	ErrRouteAttestationInvalid = domain.ErrRouteAttestationInvalid
 	ErrRouteNotFound           = errors.New("Station route is not found")
 	ErrGrantInvalid            = errors.New("Station connection grant is invalid")
+	ErrTunnelUnauthorized      = errors.New("Relay tunnel is not authorized")
 )
 
 const (
@@ -39,7 +40,7 @@ func (s *Service) PublishStationRoute(
 	identity domain.MountIdentity,
 	attestation *peerpb.StationRouteAttestation,
 ) (*peerpb.StationRouteStatement, error) {
-	statement, err := verifyStationRouteAttestation(
+	statement, err := domain.VerifyStationRouteAttestation(
 		attestation,
 		s.authority.RelayPeerID(),
 		s.now(),
@@ -301,12 +302,154 @@ func (s *Service) consumeConnectionGrant(
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
 	}
 	record.RemainingUses--
+	record.ReservedUses++
 	s.grants[digest] = record
 	attestation := &peerpb.StationRouteAttestation{}
 	if err := proto.Unmarshal(route.AttestationBytes, attestation); err != nil {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
 	}
 	return attestation, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_READY
+}
+
+// AuthorizeClientTunnel atomically redeems a discovery reservation. Discovery
+// consumes the public grant use; tunnel establishment consumes the matching
+// reservation, so replayed discovery remains rejected without reviving a
+// reusable bearer credential.
+func (s *Service) AuthorizeClientTunnel(
+	ctx context.Context,
+	rawGrant []byte,
+	routeID string,
+	routeGeneration uint64,
+) (domain.RouteRecord, error) {
+	grant := &peerpb.StationConnectionGrant{}
+	if err := proto.Unmarshal(rawGrant, grant); err != nil {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(grant)
+	if err != nil || !bytes.Equal(canonical, rawGrant) {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	statement := &peerpb.StationConnectionGrantStatement{}
+	if err := proto.Unmarshal(grant.GetStatementBytes(), statement); err != nil {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	now := s.now()
+	if statement.GetRelayPeerId() != s.authority.RelayPeerID() ||
+		statement.GetRouteId() != routeID ||
+		statement.GetRouteGeneration() != routeGeneration ||
+		!time.UnixMilli(statement.GetExpiresAtUnixMs()).After(now) {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	if err := verifyStationSignature(
+		grant.GetStatementBytes(),
+		grant.GetHostPublicKey(),
+		grant.GetSignature(),
+		domain.ConnectionGrantDomain,
+		statement.GetStationPeerId(),
+	); err != nil {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	digest, err := domain.DigestGrant(grant)
+	if err != nil {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+
+	s.discoveryMu.Lock()
+	defer s.discoveryMu.Unlock()
+	s.removeExpiredDiscoveryStateLocked(now)
+	record, ok := s.grants[digest]
+	if !ok || record.ReservedUses == 0 ||
+		record.GrantID != statement.GetGrantId() ||
+		record.StationPeerID != statement.GetStationPeerId() ||
+		record.RouteID != routeID ||
+		record.RouteGeneration != routeGeneration {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	route, ok := s.routes[routeID]
+	if !ok || !s.routeIsCurrent(ctx, route) {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	record.ReservedUses--
+	s.grants[digest] = record
+	return route, nil
+}
+
+// AuthorizePeerTunnel binds a caller's mount credential to a current target
+// route. Relay sees Station identities and route metadata, never the typed
+// capability or its inner HTTP request.
+func (s *Service) AuthorizePeerTunnel(
+	ctx context.Context,
+	caller domain.MountIdentity,
+	targetStationPeerID string,
+	routeID string,
+	routeGeneration uint64,
+) (domain.RouteRecord, error) {
+	if strings.TrimSpace(targetStationPeerID) == "" ||
+		targetStationPeerID == caller.StationPeerID {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	if _, err := s.authenticateMountIdentity(ctx, caller); err != nil ||
+		!containsScope(caller.Scopes, domain.ScopePeerTunnel) {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+
+	s.discoveryMu.Lock()
+	defer s.discoveryMu.Unlock()
+	s.removeExpiredDiscoveryStateLocked(s.now())
+	candidates := make([]domain.RouteRecord, 0, 1)
+	for _, route := range s.routes {
+		if route.StationPeerID != targetStationPeerID {
+			continue
+		}
+		if routeID != "" && route.RouteID != routeID {
+			continue
+		}
+		if routeGeneration != 0 &&
+			route.RouteGeneration != routeGeneration {
+			continue
+		}
+		if s.routeIsCurrent(ctx, route) {
+			candidates = append(candidates, route)
+		}
+	}
+	if len(candidates) != 1 {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	return candidates[0], nil
+}
+
+func (s *Service) AuthorizePublicTunnel(
+	ctx context.Context,
+	routeID string,
+	routeGeneration uint64,
+) (domain.RouteRecord, error) {
+	s.discoveryMu.Lock()
+	defer s.discoveryMu.Unlock()
+	s.removeExpiredDiscoveryStateLocked(s.now())
+	route, ok := s.routes[routeID]
+	if !ok ||
+		route.RouteGeneration != routeGeneration ||
+		route.Visibility !=
+			peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_PUBLIC ||
+		!s.routeIsCurrent(ctx, route) {
+		return domain.RouteRecord{}, ErrTunnelUnauthorized
+	}
+	return route, nil
+}
+
+func (s *Service) InvalidateStationRoutes(stationPeerID string) {
+	s.discoveryMu.Lock()
+	defer s.discoveryMu.Unlock()
+	for routeID, route := range s.routes {
+		if route.StationPeerID == stationPeerID {
+			delete(s.routes, routeID)
+		}
+	}
+	for digest, grant := range s.grants {
+		if grant.StationPeerID == stationPeerID {
+			delete(s.grants, digest)
+		}
+	}
 }
 
 func (s *Service) routeIsCurrent(
@@ -331,51 +474,6 @@ func (s *Service) removeExpiredDiscoveryStateLocked(now time.Time) {
 			delete(s.grants, digest)
 		}
 	}
-}
-
-func verifyStationRouteAttestation(
-	attestation *peerpb.StationRouteAttestation,
-	relayPeerID string,
-	now time.Time,
-) (*peerpb.StationRouteStatement, error) {
-	if attestation == nil {
-		return nil, ErrRouteAttestationInvalid
-	}
-	statement := &peerpb.StationRouteStatement{}
-	if err := proto.Unmarshal(attestation.GetStatementBytes(), statement); err != nil {
-		return nil, ErrRouteAttestationInvalid
-	}
-	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(statement)
-	if err != nil || !bytes.Equal(canonical, attestation.GetStatementBytes()) {
-		return nil, ErrRouteAttestationInvalid
-	}
-	issuedAt := time.UnixMilli(statement.GetIssuedAtUnixMs()).UTC()
-	expiresAt := time.UnixMilli(statement.GetExpiresAtUnixMs()).UTC()
-	if strings.TrimSpace(statement.GetRouteId()) == "" ||
-		statement.GetRouteGeneration() == 0 ||
-		len(statement.GetInnerTlsSpkiSha256()) != sha256.Size ||
-		len(statement.GetCapabilitiesDigest()) != sha256.Size ||
-		statement.GetRelayPeerId() != relayPeerID ||
-		(statement.GetVisibility() !=
-			peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_PUBLIC &&
-			statement.GetVisibility() !=
-				peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_GRANT_ONLY) ||
-		issuedAt.After(now.Add(time.Minute)) ||
-		!expiresAt.After(now) ||
-		expiresAt.Sub(issuedAt) <= 0 ||
-		expiresAt.Sub(issuedAt) > domain.MaxRouteAttestationLifetime {
-		return nil, ErrRouteAttestationInvalid
-	}
-	if err := verifyStationSignature(
-		attestation.GetStatementBytes(),
-		attestation.GetHostPublicKey(),
-		attestation.GetSignature(),
-		domain.StationRouteDomain,
-		statement.GetStationPeerId(),
-	); err != nil {
-		return nil, ErrRouteAttestationInvalid
-	}
-	return statement, nil
 }
 
 func verifyStationSignature(

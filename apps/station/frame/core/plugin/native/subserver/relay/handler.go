@@ -24,8 +24,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
-const relayForwardPrefix = "/relay/forward/"
-
 // ---- Handler ----
 
 type relayHandler struct {
@@ -39,7 +37,6 @@ func newRelayHandler(sub *SubServer) *relayHandler {
 // ---- Route table ----
 
 func (h *relayHandler) handlers() []server.Handler {
-	networkJWT := h.sub.networkJWTWrapper
 	mountJWT := h.sub.mountJWTWrapper
 	mountRotateJWT := h.sub.mountRotateJWTWrapper
 	routePublishJWT := h.sub.routePublishJWTWrapper
@@ -92,8 +89,6 @@ func (h *relayHandler) handlers() []server.Handler {
 		),
 		server.NewHTTPHandler("relay-token-refresh", "/api/v1/relay/token/refresh", server.POST,
 			h.requireStation(h.handleTokenRefresh), logID, mountRotateJWT),
-		server.NewHTTPHandler("relay-client-token", "/api/v1/relay/client-token", server.POST,
-			h.requireStation(h.handleMintClientToken), logID, mountJWT),
 		server.NewStrictTypedHandler(
 			"relay-route-publish",
 			"/api/v1/relay/routes",
@@ -111,9 +106,14 @@ func (h *relayHandler) handlers() []server.Handler {
 			routePublishJWT,
 		),
 
-		// Network access — relay-access OR relay-client token
-		server.NewHTTPHandler("relay-forward", relayForwardPrefix+"*path", server.ANY,
-			h.requireNetwork(h.handleForward), logID, networkJWT),
+		// Opaque network access. Authentication is completed by TunnelOpen:
+		// client grant reservation or Station mount peer-tunnel scope.
+		server.NewHertzHandler(
+			"relay-opaque-tunnel",
+			"/.well-known/peers-touch/tunnel",
+			server.GET,
+			h.handleTunnel,
+		),
 	}
 }
 
@@ -158,22 +158,6 @@ func (h *relayHandler) requireStation(next http.HandlerFunc) server.EndpointHand
 		subj := coreauth.GetSubject(r.Context())
 		if subj == nil || !strings.HasPrefix(subj.ID, domain.SubjectRelayAccess) {
 			writeJSON(w, http.StatusForbidden, errorBody("valid relay access token required"))
-			return
-		}
-		next(w, r)
-	})
-}
-
-func (h *relayHandler) requireNetwork(next http.HandlerFunc) server.EndpointHandler {
-	return server.HTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		subj := coreauth.GetSubject(r.Context())
-		if subj == nil {
-			writeJSON(w, http.StatusForbidden, errorBody("valid relay network token required"))
-			return
-		}
-		if !strings.HasPrefix(subj.ID, domain.SubjectRelayAccess) &&
-			!strings.HasPrefix(subj.ID, domain.SubjectRelayClient) {
-			writeJSON(w, http.StatusForbidden, errorBody("valid relay network token required"))
 			return
 		}
 		next(w, r)

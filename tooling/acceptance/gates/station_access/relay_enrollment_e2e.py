@@ -419,14 +419,6 @@ sys.stdout.write((unsigned + b"." + signature).decode())
             station_peer_id,
         )
         try:
-            first_client_credential = self._request_json(
-                self._relay_url + "/api/v1/relay/client-token",
-                payload={"ttl": "5m"},
-                bearer=str(first_credential["relay_token"]),
-            )
-            first_client_token = self._remember_secret(
-                str(first_client_credential["client_token"])
-            )
             listed = self._request_json(
                 self._relay_url + "/api/v1/relay/invites",
                 method="GET",
@@ -463,12 +455,6 @@ sys.stdout.write((unsigned + b"." + signature).decode())
                 self._relay_url + "/api/v1/relay/heartbeat",
                 payload={},
                 bearer=str(rotated["relay_token"]),
-            )
-            old_client_after_rotate = self._request_status(
-                self._relay_url
-                + f"/relay/forward/{station_peer_id}/sub-oss/healthz",
-                payload={},
-                bearer=first_client_token,
             )
             stream_closed_after_rotate = self._wait_for_stream_close(stream)
             stream.close()
@@ -604,9 +590,6 @@ sys.stdout.write((unsigned + b"." + signature).decode())
             "streamClosedAfterRotate": stream_closed_after_rotate,
             "oldCredentialAfterRotateStatus": old_after_rotate,
             "newCredentialAfterRotateStatus": new_after_rotate,
-            "oldClientCredentialAfterRotateStatus": (
-                old_client_after_rotate
-            ),
             "revokeStatus": revoke.get("status"),
             "streamClosedAfterRevoke": stream_closed,
             "reconnectRejectedAfterRevoke": reconnect_rejected,
@@ -712,6 +695,7 @@ sys.stdout.write((unsigned + b"." + signature).decode())
                 "station_peer_id": station_peer_id,
                 "label": "acceptance",
                 "max_clients": 2,
+                "bandwidth_limit": 1048576,
                 "expires_in": "5m",
             },
             bearer=operator_token,
@@ -1014,10 +998,6 @@ class RelayEnrollmentGate(AcceptanceGate):
                 "newCredentialAfterRotateStatus"
             )
             == 200,
-            "old_client_credential_rejected": result.get(
-                "oldClientCredentialAfterRotateStatus"
-            )
-            == 401,
             "revoke_closes_stream": result.get("streamClosedAfterRevoke")
             is True,
             "revoke_rejects_reconnect": result.get(
