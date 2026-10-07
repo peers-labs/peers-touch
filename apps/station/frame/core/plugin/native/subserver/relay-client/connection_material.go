@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,15 @@ const (
 	defaultGrantLifetime = 10 * time.Minute
 	connectionCodePrefix = "ptc1:"
 	connectionDeepLink   = "peers-touch://connect#"
+)
+
+var (
+	ErrConnectionMaterialUnavailable = errors.New(
+		"Relay connection material is unavailable",
+	)
+	ErrInvalidConnectionMaterialRequest = errors.New(
+		"Relay connection material request is invalid",
+	)
 )
 
 type stationConnectionSigner interface {
@@ -74,21 +84,28 @@ func (s *SubServer) IssueConnectionMaterial(
 	ctx context.Context,
 	request ConnectionMaterialRequest,
 ) (*ConnectionMaterial, error) {
+	if !s.connectionMaterialReady() {
+		return nil, ErrConnectionMaterialUnavailable
+	}
 	credential, ok := s.getCredential()
 	if !ok || credential.Token == "" ||
 		credential.StationPeerID == "" ||
 		credential.RelayPeerID == "" ||
 		credential.Generation == 0 {
-		return nil, fmt.Errorf("Relay mount credential is unavailable")
+		return nil, ErrConnectionMaterialUnavailable
 	}
 	now := time.Now().UTC()
 	credentialExpiresAt, err := time.Parse(time.RFC3339, credential.ExpiresAt)
 	if err != nil || !credentialExpiresAt.After(now) {
-		return nil, fmt.Errorf("Relay mount credential is expired")
+		return nil, ErrConnectionMaterialUnavailable
 	}
 	if len(request.InnerTLSSPKISHA256) != sha256.Size ||
 		len(request.CapabilitiesDigest) != sha256.Size {
-		return nil, fmt.Errorf("Station route digests must contain exactly %d bytes", sha256.Size)
+		return nil, fmt.Errorf(
+			"%w: Station route digests must contain exactly %d bytes",
+			ErrInvalidConnectionMaterialRequest,
+			sha256.Size,
+		)
 	}
 	routeLifetime := request.RouteLifetime
 	if routeLifetime == 0 {
@@ -103,14 +120,20 @@ func (s *SubServer) IssueConnectionMaterial(
 		grantLifetime <= 0 ||
 		grantLifetime > domain.MaxConnectionGrantLifetime ||
 		grantLifetime > routeLifetime {
-		return nil, fmt.Errorf("Station connection material lifetime is invalid")
+		return nil, fmt.Errorf(
+			"%w: Station connection material lifetime is invalid",
+			ErrInvalidConnectionMaterialRequest,
+		)
 	}
 	maxUses := request.MaxUses
 	if maxUses == 0 {
 		maxUses = 1
 	}
 	if maxUses > domain.MaxConnectionGrantUses {
-		return nil, fmt.Errorf("Station connection grant max uses is invalid")
+		return nil, fmt.Errorf(
+			"%w: Station connection grant max uses is invalid",
+			ErrInvalidConnectionMaterialRequest,
+		)
 	}
 	routeID := strings.TrimSpace(request.RouteID)
 	if routeID == "" {
@@ -219,6 +242,13 @@ func (s *SubServer) IssueConnectionMaterial(
 		DeepLink:  connectionDeepLink + payload,
 		ExpiresAt: grantExpiresAt,
 	}, nil
+}
+
+func (s *SubServer) connectionMaterialReady() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status == server.StatusRunning &&
+		s.enrollmentState == "mounted"
 }
 
 func (s *SubServer) ensureStationConnectionSigner() (stationConnectionSigner, error) {

@@ -739,6 +739,150 @@ func (x *StationConnectionEnvelope) GetConnectionGrant() *StationConnectionGrant
 	return nil
 }
 
+type IssueStationConnectionMaterialRequest struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	RouteId              string                 `protobuf:"bytes,1,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
+	InnerTlsSpkiSha256   []byte                 `protobuf:"bytes,2,opt,name=inner_tls_spki_sha256,json=innerTlsSpkiSha256,proto3" json:"inner_tls_spki_sha256,omitempty"`
+	CapabilitiesDigest   []byte                 `protobuf:"bytes,3,opt,name=capabilities_digest,json=capabilitiesDigest,proto3" json:"capabilities_digest,omitempty"`
+	RouteLifetimeSeconds uint32                 `protobuf:"varint,4,opt,name=route_lifetime_seconds,json=routeLifetimeSeconds,proto3" json:"route_lifetime_seconds,omitempty"`
+	GrantLifetimeSeconds uint32                 `protobuf:"varint,5,opt,name=grant_lifetime_seconds,json=grantLifetimeSeconds,proto3" json:"grant_lifetime_seconds,omitempty"`
+	MaxUses              uint32                 `protobuf:"varint,6,opt,name=max_uses,json=maxUses,proto3" json:"max_uses,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *IssueStationConnectionMaterialRequest) Reset() {
+	*x = IssueStationConnectionMaterialRequest{}
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueStationConnectionMaterialRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueStationConnectionMaterialRequest) ProtoMessage() {}
+
+func (x *IssueStationConnectionMaterialRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueStationConnectionMaterialRequest.ProtoReflect.Descriptor instead.
+func (*IssueStationConnectionMaterialRequest) Descriptor() ([]byte, []int) {
+	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *IssueStationConnectionMaterialRequest) GetRouteId() string {
+	if x != nil {
+		return x.RouteId
+	}
+	return ""
+}
+
+func (x *IssueStationConnectionMaterialRequest) GetInnerTlsSpkiSha256() []byte {
+	if x != nil {
+		return x.InnerTlsSpkiSha256
+	}
+	return nil
+}
+
+func (x *IssueStationConnectionMaterialRequest) GetCapabilitiesDigest() []byte {
+	if x != nil {
+		return x.CapabilitiesDigest
+	}
+	return nil
+}
+
+func (x *IssueStationConnectionMaterialRequest) GetRouteLifetimeSeconds() uint32 {
+	if x != nil {
+		return x.RouteLifetimeSeconds
+	}
+	return 0
+}
+
+func (x *IssueStationConnectionMaterialRequest) GetGrantLifetimeSeconds() uint32 {
+	if x != nil {
+		return x.GrantLifetimeSeconds
+	}
+	return 0
+}
+
+func (x *IssueStationConnectionMaterialRequest) GetMaxUses() uint32 {
+	if x != nil {
+		return x.MaxUses
+	}
+	return 0
+}
+
+type IssueStationConnectionMaterialResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Code            string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	DeepLink        string                 `protobuf:"bytes,2,opt,name=deep_link,json=deepLink,proto3" json:"deep_link,omitempty"`
+	ExpiresAtUnixMs int64                  `protobuf:"varint,3,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *IssueStationConnectionMaterialResponse) Reset() {
+	*x = IssueStationConnectionMaterialResponse{}
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueStationConnectionMaterialResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueStationConnectionMaterialResponse) ProtoMessage() {}
+
+func (x *IssueStationConnectionMaterialResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueStationConnectionMaterialResponse.ProtoReflect.Descriptor instead.
+func (*IssueStationConnectionMaterialResponse) Descriptor() ([]byte, []int) {
+	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *IssueStationConnectionMaterialResponse) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *IssueStationConnectionMaterialResponse) GetDeepLink() string {
+	if x != nil {
+		return x.DeepLink
+	}
+	return ""
+}
+
+func (x *IssueStationConnectionMaterialResponse) GetExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
 type AccessEndpointResponse struct {
 	state                  protoimpl.MessageState     `protogen:"open.v1"`
 	Outcome                AccessEndpointOutcome      `protobuf:"varint,1,opt,name=outcome,proto3,enum=peers_touch.model.peer.v1.AccessEndpointOutcome" json:"outcome,omitempty"`
@@ -752,7 +896,7 @@ type AccessEndpointResponse struct {
 
 func (x *AccessEndpointResponse) Reset() {
 	*x = AccessEndpointResponse{}
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[7]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -764,7 +908,7 @@ func (x *AccessEndpointResponse) String() string {
 func (*AccessEndpointResponse) ProtoMessage() {}
 
 func (x *AccessEndpointResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[7]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -777,7 +921,7 @@ func (x *AccessEndpointResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccessEndpointResponse.ProtoReflect.Descriptor instead.
 func (*AccessEndpointResponse) Descriptor() ([]byte, []int) {
-	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{7}
+	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AccessEndpointResponse) GetOutcome() AccessEndpointOutcome {
@@ -824,7 +968,7 @@ type PublishStationRouteRequest struct {
 
 func (x *PublishStationRouteRequest) Reset() {
 	*x = PublishStationRouteRequest{}
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[8]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -836,7 +980,7 @@ func (x *PublishStationRouteRequest) String() string {
 func (*PublishStationRouteRequest) ProtoMessage() {}
 
 func (x *PublishStationRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[8]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -849,7 +993,7 @@ func (x *PublishStationRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishStationRouteRequest.ProtoReflect.Descriptor instead.
 func (*PublishStationRouteRequest) Descriptor() ([]byte, []int) {
-	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{8}
+	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PublishStationRouteRequest) GetRouteAttestation() *StationRouteAttestation {
@@ -869,7 +1013,7 @@ type PublishStationRouteResponse struct {
 
 func (x *PublishStationRouteResponse) Reset() {
 	*x = PublishStationRouteResponse{}
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[9]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -881,7 +1025,7 @@ func (x *PublishStationRouteResponse) String() string {
 func (*PublishStationRouteResponse) ProtoMessage() {}
 
 func (x *PublishStationRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[9]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -894,7 +1038,7 @@ func (x *PublishStationRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishStationRouteResponse.ProtoReflect.Descriptor instead.
 func (*PublishStationRouteResponse) Descriptor() ([]byte, []int) {
-	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{9}
+	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PublishStationRouteResponse) GetRouteId() string {
@@ -925,7 +1069,7 @@ type RegisterStationConnectionGrantRequest struct {
 
 func (x *RegisterStationConnectionGrantRequest) Reset() {
 	*x = RegisterStationConnectionGrantRequest{}
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[10]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -937,7 +1081,7 @@ func (x *RegisterStationConnectionGrantRequest) String() string {
 func (*RegisterStationConnectionGrantRequest) ProtoMessage() {}
 
 func (x *RegisterStationConnectionGrantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[10]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -950,7 +1094,7 @@ func (x *RegisterStationConnectionGrantRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use RegisterStationConnectionGrantRequest.ProtoReflect.Descriptor instead.
 func (*RegisterStationConnectionGrantRequest) Descriptor() ([]byte, []int) {
-	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{10}
+	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RegisterStationConnectionGrantRequest) GetGrantDigest() []byte {
@@ -1005,7 +1149,7 @@ type RegisterStationConnectionGrantResponse struct {
 
 func (x *RegisterStationConnectionGrantResponse) Reset() {
 	*x = RegisterStationConnectionGrantResponse{}
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[11]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1017,7 +1161,7 @@ func (x *RegisterStationConnectionGrantResponse) String() string {
 func (*RegisterStationConnectionGrantResponse) ProtoMessage() {}
 
 func (x *RegisterStationConnectionGrantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_peer_access_endpoint_proto_msgTypes[11]
+	mi := &file_domain_peer_access_endpoint_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1030,7 +1174,7 @@ func (x *RegisterStationConnectionGrantResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use RegisterStationConnectionGrantResponse.ProtoReflect.Descriptor instead.
 func (*RegisterStationConnectionGrantResponse) Descriptor() ([]byte, []int) {
-	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{11}
+	return file_domain_peer_access_endpoint_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RegisterStationConnectionGrantResponse) GetGrantId() string {
@@ -1098,7 +1242,18 @@ const file_domain_peer_access_endpoint_proto_rawDesc = "" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12!\n" +
 	"\frelay_origin\x18\x02 \x01(\tR\vrelayOrigin\x12_\n" +
 	"\x11route_attestation\x18\x03 \x01(\v22.peers_touch.model.peer.v1.StationRouteAttestationR\x10routeAttestation\x12\\\n" +
-	"\x10connection_grant\x18\x04 \x01(\v21.peers_touch.model.peer.v1.StationConnectionGrantR\x0fconnectionGrant\"\xd8\x02\n" +
+	"\x10connection_grant\x18\x04 \x01(\v21.peers_touch.model.peer.v1.StationConnectionGrantR\x0fconnectionGrant\"\xad\x02\n" +
+	"%IssueStationConnectionMaterialRequest\x12\x19\n" +
+	"\broute_id\x18\x01 \x01(\tR\arouteId\x121\n" +
+	"\x15inner_tls_spki_sha256\x18\x02 \x01(\fR\x12innerTlsSpkiSha256\x12/\n" +
+	"\x13capabilities_digest\x18\x03 \x01(\fR\x12capabilitiesDigest\x124\n" +
+	"\x16route_lifetime_seconds\x18\x04 \x01(\rR\x14routeLifetimeSeconds\x124\n" +
+	"\x16grant_lifetime_seconds\x18\x05 \x01(\rR\x14grantLifetimeSeconds\x12\x19\n" +
+	"\bmax_uses\x18\x06 \x01(\rR\amaxUses\"\x86\x01\n" +
+	"&IssueStationConnectionMaterialResponse\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x1b\n" +
+	"\tdeep_link\x18\x02 \x01(\tR\bdeepLink\x12+\n" +
+	"\x12expires_at_unix_ms\x18\x03 \x01(\x03R\x0fexpiresAtUnixMs\"\xd8\x02\n" +
 	"\x16AccessEndpointResponse\x12J\n" +
 	"\aoutcome\x18\x01 \x01(\x0e20.peers_touch.model.peer.v1.AccessEndpointOutcomeR\aoutcome\x128\n" +
 	"\x18endpoint_statement_bytes\x18\x02 \x01(\fR\x16endpointStatementBytes\x12.\n" +
@@ -1151,7 +1306,7 @@ func file_domain_peer_access_endpoint_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_peer_access_endpoint_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_domain_peer_access_endpoint_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_domain_peer_access_endpoint_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_domain_peer_access_endpoint_proto_goTypes = []any{
 	(AccessEndpointRole)(0),                        // 0: peers_touch.model.peer.v1.AccessEndpointRole
 	(AccessEndpointOutcome)(0),                     // 1: peers_touch.model.peer.v1.AccessEndpointOutcome
@@ -1163,11 +1318,13 @@ var file_domain_peer_access_endpoint_proto_goTypes = []any{
 	(*StationConnectionGrantStatement)(nil),        // 7: peers_touch.model.peer.v1.StationConnectionGrantStatement
 	(*StationConnectionGrant)(nil),                 // 8: peers_touch.model.peer.v1.StationConnectionGrant
 	(*StationConnectionEnvelope)(nil),              // 9: peers_touch.model.peer.v1.StationConnectionEnvelope
-	(*AccessEndpointResponse)(nil),                 // 10: peers_touch.model.peer.v1.AccessEndpointResponse
-	(*PublishStationRouteRequest)(nil),             // 11: peers_touch.model.peer.v1.PublishStationRouteRequest
-	(*PublishStationRouteResponse)(nil),            // 12: peers_touch.model.peer.v1.PublishStationRouteResponse
-	(*RegisterStationConnectionGrantRequest)(nil),  // 13: peers_touch.model.peer.v1.RegisterStationConnectionGrantRequest
-	(*RegisterStationConnectionGrantResponse)(nil), // 14: peers_touch.model.peer.v1.RegisterStationConnectionGrantResponse
+	(*IssueStationConnectionMaterialRequest)(nil),  // 10: peers_touch.model.peer.v1.IssueStationConnectionMaterialRequest
+	(*IssueStationConnectionMaterialResponse)(nil), // 11: peers_touch.model.peer.v1.IssueStationConnectionMaterialResponse
+	(*AccessEndpointResponse)(nil),                 // 12: peers_touch.model.peer.v1.AccessEndpointResponse
+	(*PublishStationRouteRequest)(nil),             // 13: peers_touch.model.peer.v1.PublishStationRouteRequest
+	(*PublishStationRouteResponse)(nil),            // 14: peers_touch.model.peer.v1.PublishStationRouteResponse
+	(*RegisterStationConnectionGrantRequest)(nil),  // 15: peers_touch.model.peer.v1.RegisterStationConnectionGrantRequest
+	(*RegisterStationConnectionGrantResponse)(nil), // 16: peers_touch.model.peer.v1.RegisterStationConnectionGrantResponse
 }
 var file_domain_peer_access_endpoint_proto_depIdxs = []int32{
 	0, // 0: peers_touch.model.peer.v1.AccessEndpointStatement.endpoint_role:type_name -> peers_touch.model.peer.v1.AccessEndpointRole
@@ -1195,7 +1352,7 @@ func file_domain_peer_access_endpoint_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_peer_access_endpoint_proto_rawDesc), len(file_domain_peer_access_endpoint_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

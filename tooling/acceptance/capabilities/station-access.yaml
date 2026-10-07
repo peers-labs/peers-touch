@@ -267,8 +267,11 @@
       ],
       "synthetic_paths": [
         "model/domain/peer/access_endpoint.proto",
+        "apps/station/app/subserver/dashboard/handler.go",
+        "apps/station/app/subserver/dashboard/subserver.go",
         "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
         "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
+        "apps/station/frame/core/plugin/native/subserver/relay-client/connection_material.go",
         "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go"
       ],
       "evidence": {
@@ -280,7 +283,8 @@
         ],
         "surfaces": [
           "POST /.well-known/peers-touch/access",
-          "Relay route publication and private grant registration"
+          "Relay route publication and private grant registration",
+          "Authenticated POST /dashboard/api/relay/connection-material"
         ],
         "proven_by": [
           "relay-endpoint-discovery-contract"
@@ -289,6 +293,7 @@
           "Station and Relay roles use one challenge-bound protobuf discovery contract",
           "Relay lists only current public routes without a grant",
           "private grants are Station-signed, Relay-bound, expiring, and replay-limited",
+          "Dashboard connection material issuance is authenticated, strict, non-cacheable, and unavailable while the Relay mount is disconnected",
           "forged Station routes and wrong-Relay grants fail closed"
         ],
         "unproven_scope": [

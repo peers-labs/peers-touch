@@ -9,6 +9,9 @@
     "apps/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint/**",
     "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
     "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go",
+    "apps/station/frame/core/plugin/native/subserver/relay-client/connection_material.go",
+    "apps/station/app/subserver/dashboard/handler.go",
+    "apps/station/app/subserver/dashboard/subserver.go",
     "tooling/acceptance/gates/station_access/relay_endpoint_discovery_contract.py"
   ],
   "truth_sources": [
@@ -29,6 +32,10 @@
     {
       "type": "peer",
       "route": "POST /api/v1/relay/grants"
+    },
+    {
+      "type": "operator",
+      "route": "POST /dashboard/api/relay/connection-material"
     }
   ],
   "required_gates": [
@@ -41,6 +48,7 @@
       "Station and Relay return challenge-bound signed endpoint roles through one protobuf contract",
       "Relay exposes only unexpired public routes whose mount generation is current",
       "private connection grants are registered before use and consumed atomically",
+      "authenticated Dashboard operators invoke the relay-client issuer through a strict protobuf contract with no-store and no-referrer response policy",
       "generated Go, Desktop TypeScript, and Mobile TypeScript bindings derive from one proto"
     ],
     "surface": [

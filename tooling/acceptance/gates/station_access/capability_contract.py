@@ -20,7 +20,8 @@ OWNERSHIP_REGISTRY = (
     REPO_ROOT
     / "docs"
     / "architecture"
-    / "api-ownership"
+    / "engineering"
+    / "api-governance"
     / "station-api-capabilities.yaml"
 )
 ACCESS_PROTO = REPO_ROOT / "model" / "domain" / "access_gate" / "access_gate.proto"

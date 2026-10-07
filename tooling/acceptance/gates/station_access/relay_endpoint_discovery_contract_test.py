@@ -68,6 +68,8 @@ class RelayEndpointDiscoveryContractTest(unittest.TestCase):
                     "relay_role_bound": True,
                     "challenges_bound": True,
                     "relay_no_candidates": True,
+                    "dashboard_auth_required": True,
+                    "dashboard_sensitive_headers": True,
                 }
 
         with (
