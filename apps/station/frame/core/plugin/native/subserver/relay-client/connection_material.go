@@ -285,7 +285,7 @@ func (s *SubServer) postProto(
 	request.Header.Set("Accept", "application/protobuf")
 	request.Header.Set("Authorization", "Bearer "+bearer)
 	request.Header.Set("Content-Type", "application/protobuf")
-	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+	response, err := s.relayHTTPClient(30 * time.Second).Do(request)
 	if err != nil {
 		return err
 	}

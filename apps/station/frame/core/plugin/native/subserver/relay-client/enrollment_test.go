@@ -22,6 +22,48 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestRelayHTTPClientHonorsTLSVerificationOption(t *testing.T) {
+	relay := httptest.NewTLSServer(http.HandlerFunc(
+		func(response http.ResponseWriter, request *http.Request) {
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"accepted":true}`))
+		},
+	))
+	defer relay.Close()
+
+	type relayResponse struct {
+		Accepted bool `json:"accepted"`
+	}
+	verified := &SubServer{opts: &Options{RelayURL: relay.URL}}
+	if err := verified.postJSON(
+		context.Background(),
+		"/api/v1/relay/test",
+		map[string]string{"request": "verified"},
+		"",
+		&relayResponse{},
+	); err == nil {
+		t.Fatal("self-signed Relay certificate was accepted by default")
+	}
+
+	insecure := &SubServer{opts: &Options{
+		RelayURL:              relay.URL,
+		TLSInsecureSkipVerify: true,
+	}}
+	var response relayResponse
+	if err := insecure.postJSON(
+		context.Background(),
+		"/api/v1/relay/test",
+		map[string]string{"request": "development"},
+		"",
+		&response,
+	); err != nil {
+		t.Fatalf("self-signed Relay request with explicit skip verify: %v", err)
+	}
+	if !response.Accepted {
+		t.Fatal("Relay response was not decoded")
+	}
+}
+
 func TestCachedMountCredentialRejectsLegacyAndExpiredValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "relay-credential")
 	if err := os.WriteFile(path, []byte("legacy-raw-token"), 0o600); err != nil {

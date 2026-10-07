@@ -109,6 +109,9 @@ type SubServer struct {
 	stationSigner   stationConnectionSigner
 	innerTLS        *innerTLSIngress
 
+	relayHTTPTransportOnce sync.Once
+	relayHTTPTransport     *http.Transport
+
 	routeMu         sync.RWMutex
 	publishedRoutes map[string]uint64
 
@@ -348,7 +351,7 @@ func (s *SubServer) runHeartbeat(ctx context.Context) {
 		interval = 30 * time.Second
 	}
 	url := strings.TrimRight(s.opts.RelayURL, "/") + "/api/v1/relay/heartbeat"
-	cl := &http.Client{Timeout: 10 * time.Second}
+	cl := s.relayHTTPClient(10 * time.Second)
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
