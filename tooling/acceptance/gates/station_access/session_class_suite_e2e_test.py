@@ -10,6 +10,7 @@ from tooling.acceptance.core import ActorRuntime, GateError
 from tooling.acceptance.gates.station_access.session_class_suite_e2e import (
     GATE_ID,
     SCENARIO_IDS,
+    STEP_TIMEOUT,
     StationAccessSessionClassSuiteGate,
 )
 
@@ -328,6 +329,115 @@ class StationAccessSessionClassSuiteGateTest(unittest.TestCase):
                 action == "lifecycle.waitReady"
                 for _, action, _ in runtime.actions
             )
+        )
+
+    def test_mobile_receiver_recovers_deferred_runtime_once(self) -> None:
+        class Runtime(_FakeRuntime):
+            def __init__(self) -> None:
+                super().__init__()
+                self.actions: list[tuple[str, str, dict[str, object]]] = []
+                self.restarts: list[tuple[str, float]] = []
+                self.captures = iter(
+                    (
+                        SimpleNamespace(
+                            name="unavailable",
+                            to_dict=lambda: {"path": "unavailable"},
+                        ),
+                        SimpleNamespace(
+                            name="visible",
+                            to_dict=lambda: {"path": "visible"},
+                        ),
+                    )
+                )
+                self.mobile_binding = SimpleNamespace(
+                    capture_web_dom=lambda *_: next(self.captures),
+                    capture_screenshot=lambda *_: SimpleNamespace(
+                        to_dict=lambda: {"path": "screenshot"},
+                    ),
+                )
+
+            def call_action(
+                self,
+                client_id: str,
+                action: str,
+                payload: dict[str, object] | None = None,
+                **_: Any,
+            ) -> dict[str, object]:
+                action_payload = dict(payload or {})
+                self.actions.append((client_id, action, action_payload))
+                if action == "navigation.apply":
+                    return {}
+                if action == "navigation.snapshot":
+                    return {
+                        "detailKeys": (
+                            "detail:chat-conversation:direct-1",
+                        ),
+                    }
+                if action == "recovery.snapshot":
+                    return {
+                        "hasActiveRecovery": True,
+                        "isWriteBlocked": False,
+                        "writeAdmission": {
+                            "open": True,
+                            "reason": None,
+                        },
+                        "states": [{"kind": "deferred-capability"}],
+                    }
+                return super().call_action(
+                    client_id,
+                    action,
+                    action_payload,
+                )
+
+            def restart_client(
+                self,
+                client_id: str,
+                *,
+                timeout_seconds: float,
+            ) -> None:
+                self.restarts.append((client_id, timeout_seconds))
+
+        runtime = Runtime()
+        gate = StationAccessSessionClassSuiteGate(runtime=runtime)
+        with tempfile.TemporaryDirectory() as temporary:
+            unavailable = Path(temporary) / "unavailable.html"
+            unavailable.write_text(
+                '<main data-acceptance-id="mobile-route-unavailable" '
+                'data-runtime-status="failed"></main>',
+                encoding="utf-8",
+            )
+            visible = Path(temporary) / "visible.html"
+            visible.write_text(
+                "<main>visible-message</main>",
+                encoding="utf-8",
+            )
+            gate.evidence_store = SimpleNamespace(
+                resolve=lambda ref: (
+                    unavailable if ref.name == "unavailable" else visible
+                ),
+            )
+
+            resource = gate._assert_mobile_receiver(
+                "sim-ios",
+                "direct-1",
+                "message-1",
+                "visible-message",
+                "route-recovery",
+            )
+
+        self.assertEqual(
+            runtime.restarts,
+            [("sim-ios", STEP_TIMEOUT)],
+        )
+        self.assertTrue(
+            resource.startswith("artifact-set:route-recovery-mobile-receiver:")
+        )
+        self.assertEqual(
+            sum(
+                action == "recovery.snapshot"
+                for _, action, _ in runtime.actions
+            ),
+            1,
         )
 
     def test_one_runtime_closes_all_session_class_scenarios(self) -> None:
