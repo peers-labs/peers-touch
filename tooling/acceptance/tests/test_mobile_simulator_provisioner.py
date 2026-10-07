@@ -525,6 +525,7 @@ class FakeParentSimulatorSession:
                 "generation": self.generation,
                 "activeStationPeerId": self.active_station_peer_id,
                 "activeActorPtid": self.actor_ptid,
+                "deviceId": "device-one" if active else None,
                 "runtimeStationPeerId": (
                     self.active_station_peer_id if active else None
                 ),
@@ -536,14 +537,6 @@ class FakeParentSimulatorSession:
                     "actorPtid": self.actor_ptid,
                     "sessionCount": 1 if active else 0,
                     "requestCount": 0,
-                    "messageThreadCount": 0,
-                },
-                "group": {
-                    "stationPeerId": (
-                        self.active_station_peer_id if active else None
-                    ),
-                    "actorPtid": self.actor_ptid,
-                    "groupCount": 0,
                     "messageThreadCount": 0,
                 },
                 "navigation": {

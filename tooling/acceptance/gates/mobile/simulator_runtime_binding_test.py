@@ -43,12 +43,6 @@ def scope(
             "requestCount": 0,
             "messageThreadCount": 0,
         },
-        "group": {
-            "stationPeerId": station_peer_id if active else None,
-            "actorPtid": actor_ptid,
-            "groupCount": 0,
-            "messageThreadCount": 0,
-        },
         "navigation": {
             "primaryRouteId": "tab:chat",
             "detailKeys": [],

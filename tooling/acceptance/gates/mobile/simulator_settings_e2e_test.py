@@ -56,12 +56,6 @@ def _activation(
                 "requestCount": 0,
                 "messageThreadCount": 0,
             },
-            "group": {
-                "stationPeerId": None,
-                "actorPtid": None,
-                "groupCount": 0,
-                "messageThreadCount": 0,
-            },
             "navigation": {
                 "primaryRouteId": "tab:chat",
                 "detailKeys": [],

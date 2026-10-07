@@ -133,7 +133,6 @@ MOBILE_LIFECYCLE_SCOPE_FIELDS = frozenset(
         "runtimeStationPeerId",
         "deviceId",
         "social",
-        "group",
         "navigation",
     }
 )
@@ -4441,13 +4440,13 @@ def _sanitize_lifecycle_scope(value: object) -> dict[str, Any]:
             resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:scope",
         )
 
+    _optional_scope_text(
+        scope.get("deviceId"),
+        label="Mobile device ID",
+    )
     social = _json_safe_mapping(
         scope.get("social"),
         label="Mobile social scope",
-    )
-    group = _json_safe_mapping(
-        scope.get("group"),
-        label="Mobile group scope",
     )
     navigation = _json_safe_mapping(
         scope.get("navigation"),
@@ -4484,10 +4483,6 @@ def _sanitize_lifecycle_scope(value: object) -> dict[str, Any]:
             scope.get("runtimeStationPeerId"),
             label="Mobile runtime Station peer ID",
         ),
-        "deviceId": _optional_scope_text(
-            scope.get("deviceId"),
-            label="Mobile device ID",
-        ),
         "social": {
             "stationPeerId": _optional_scope_text(
                 social.get("stationPeerId"),
@@ -4508,24 +4503,6 @@ def _sanitize_lifecycle_scope(value: object) -> dict[str, Any]:
             "messageThreadCount": _scope_count(
                 social.get("messageThreadCount"),
                 label="Mobile social message-thread count",
-            ),
-        },
-        "group": {
-            "stationPeerId": _optional_scope_text(
-                group.get("stationPeerId"),
-                label="Mobile group Station peer ID",
-            ),
-            "actorPtid": _optional_scope_text(
-                group.get("actorPtid"),
-                label="Mobile group actor PTID",
-            ),
-            "groupCount": _scope_count(
-                group.get("groupCount"),
-                label="Mobile group count",
-            ),
-            "messageThreadCount": _scope_count(
-                group.get("messageThreadCount"),
-                label="Mobile group message-thread count",
             ),
         },
         "navigation": {
