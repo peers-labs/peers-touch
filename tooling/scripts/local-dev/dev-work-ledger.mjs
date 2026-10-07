@@ -48,9 +48,9 @@ import {
 import { assertDevelopmentCloseAdmission } from './development-close-store.mjs';
 import { readActiveWorkRecord } from './active-work-store.mjs';
 import {
-  sameWorkflowOwnerReference,
-  validateWorkflowOwnerReference,
-} from './workflow-owner-reference.mjs';
+  assertMatchingWorkflowOwner as assertPolicyOwnerMatch,
+  requireWorkflowOwnerReference as requirePolicyOwner,
+} from './workflow-owner-command-policy.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
 const WORKSPACE_ID = /^[0-9a-f]{16}$/;
@@ -116,6 +116,30 @@ const ATOMIC_RENAME_SCRIPT = [
 function exactKeys(value, keys) {
   const actual = Object.keys(value);
   return actual.length === keys.size && actual.every((key) => keys.has(key));
+}
+
+function requireWorkflowOwner(value, detail = {}) {
+  try {
+    return requirePolicyOwner(value, detail);
+  } catch (error) {
+    fail(
+      'WORK_DECLARATION_OWNER_REQUIRED',
+      'development declaration requires a workflow OWNER',
+      error.detail,
+    );
+  }
+}
+
+function assertWorkflowOwnerMatch(expected, actual, detail = {}) {
+  try {
+    return assertPolicyOwnerMatch(expected, actual, detail);
+  } catch (error) {
+    fail(
+      'WORK_DECLARATION_OWNER_MISMATCH',
+      'workflow OWNER does not own declaration',
+      error.detail,
+    );
+  }
 }
 
 function toOperationDate(options = {}) {
@@ -601,6 +625,17 @@ function acquireLock(
   }
 }
 
+export function acquireDevelopmentWorkLedgerLock(options = {}) {
+  const home = options.home ?? homedir();
+  const lockFile = options.lockPath ?? developmentWorkLockPath(home);
+  ensurePrivateDirectory(path.dirname(lockFile));
+  return acquireLock(
+    lockFile,
+    options.lockTimeoutMs,
+    toOperationDate(options),
+  );
+}
+
 function writeLedgerAtomic(file, ledger) {
   const directory = path.dirname(file);
   ensurePrivateDirectory(directory);
@@ -985,30 +1020,18 @@ function buildDeclaration(options, existing, now) {
     branch,
     sourceHead,
   });
-  const suppliedWorkflowOwner =
-    options.workflowOwner === undefined ||
-    options.workflowOwner === null
-      ? null
-      : validateWorkflowOwnerReference(options.workflowOwner);
-  const existingWorkflowOwner = existing?.workflowOwner ?? null;
-  if (
-    existingWorkflowOwner !== null &&
-    suppliedWorkflowOwner !== null &&
-    !sameWorkflowOwnerReference(
-      existingWorkflowOwner,
-      suppliedWorkflowOwner,
-    )
-  ) {
-    fail(
-      'WORK_DECLARATION_OWNER_MISMATCH',
-      'workflow OWNER does not own declaration',
-      {
-        expected: existingWorkflowOwner.rootBindingDigest,
-        actual: suppliedWorkflowOwner.rootBindingDigest,
-      },
-    );
-  }
-  const workflowOwner = existingWorkflowOwner ?? suppliedWorkflowOwner;
+  const suppliedWorkflowOwner = requireWorkflowOwner(
+    options.workflowOwner,
+    { record: 'development declaration' },
+  );
+  const workflowOwner =
+    existing === null || existing === undefined
+      ? suppliedWorkflowOwner
+      : assertWorkflowOwnerMatch(
+          existing.workflowOwner,
+          suppliedWorkflowOwner,
+          { record: 'development declaration' },
+        );
   const declaration = {
     declarationId: declarationId(workItemId, workspaceId),
     workItemId,
@@ -1033,7 +1056,7 @@ function buildDeclaration(options, existing, now) {
     mountId: null,
     runId: null,
     taskId: null,
-    ...(workflowOwner === null ? {} : { workflowOwner }),
+    workflowOwner,
   };
   if (planLocator !== null) Object.assign(declaration, planLocator);
   declaration.declarationDigest = digestDeclaration(declaration);
@@ -1048,7 +1071,12 @@ function mutateLedgerUnderFence(options, mutation) {
   const now = toOperationDate(options);
   ensurePrivateDirectory(path.dirname(file));
   ensurePrivateDirectory(path.dirname(lockFile));
-  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
+  const release = acquireDevelopmentWorkLedgerLock({
+    ...options,
+    home,
+    lockPath: lockFile,
+    now,
+  });
   try {
     const ledger = readLedger(file, now);
     reconcileExpired(ledger, now);
@@ -1112,7 +1140,12 @@ function inspectLedger(options, inspection) {
   const now = toOperationDate(options);
   ensurePrivateDirectory(path.dirname(file));
   ensurePrivateDirectory(path.dirname(lockFile));
-  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
+  const release = acquireDevelopmentWorkLedgerLock({
+    ...options,
+    home,
+    lockPath: lockFile,
+    now,
+  });
   try {
     const ledger = readLedger(file, now);
     reconcileExpired(ledger, now);
@@ -1248,25 +1281,11 @@ function ownedDeclaration(options, ledger) {
       actual: options.owner,
     });
   }
-  if (
-    declaration.workflowOwner !== undefined &&
-    options.workflowOwner !== undefined &&
-    options.workflowOwner !== null &&
-    !sameWorkflowOwnerReference(
-      declaration.workflowOwner,
-      validateWorkflowOwnerReference(options.workflowOwner),
-    )
-  ) {
-    fail(
-      'WORK_DECLARATION_OWNER_MISMATCH',
-      'workflow OWNER does not own declaration',
-      {
-        declarationId: id,
-        expected: declaration.workflowOwner.rootBindingDigest,
-        actual: options.workflowOwner.rootBindingDigest,
-      },
-    );
-  }
+  assertWorkflowOwnerMatch(
+    declaration.workflowOwner,
+    options.workflowOwner,
+    { declarationId: id },
+  );
   return declaration;
 }
 

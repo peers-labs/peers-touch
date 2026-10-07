@@ -57,9 +57,16 @@ Mutable Plan source without append-only history has the opposite failure: the
 reason and prior execution input disappear. Stable identity plus immutable
 snapshots preserves both autonomy and auditability.
 
+Machine-local execution state is never a CI dependency. After a run reaches
+`completed`, `make plan-seal-completion PLAN=<path>` publishes an immutable
+repository `completions/<planDigest>.json` attestation. Explicit-plan CI reads
+the validated Plan source plus that exact digest-bound record; a missing or
+stale completion record fails closed.
+
 ## How to verify
 
 - `node --test tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/planctl.test.mjs`
+  and `node --test tooling/scripts/plan/plan-completion.test.mjs`
   passes candidate rejection, explicit approval, stale digest, criterion
   coverage, amendment, task invalidation, and snapshot-history cases.
 - `rg -n 'peers-touch-plan-version|versionId[": ]|\.planVersionDigest|planVersionDigest"\s*:|mountPlanVersion\(|\.liveMountsByPlanVersion|liveMountsByPlanVersion\s*:' tooling AGENTS.md docs/global docs/architecture/engineering --glob '!**/execution-plans/**' | rg -v "stable-plan-state-migration|plan-mount-is-run-bound|development-workflow/decisions.md"`

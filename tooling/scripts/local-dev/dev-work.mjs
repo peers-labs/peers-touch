@@ -21,7 +21,7 @@ import {
   statusDevelopmentResources,
 } from './dev-resource-plan.mjs';
 import {
-  resolveCurrentWorkflowOwnerContext,
+  resolveWorkflowOwnerCommandContext,
 } from './workflow-owner-context.mjs';
 
 export { DevWorkError, digestDeclaration };
@@ -91,24 +91,18 @@ function output(value, stream = process.stdout) {
 export function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
   const write = io.output ?? output;
-  const ownerOperationLabels = {
-    start: 'dev-start',
-    update: 'dev-update',
-    check: 'dev-check',
-    heartbeat: 'dev-heartbeat',
-    release: 'dev-release',
-    'prepare-resources': 'dev-resources-prepare',
-    'record-resource': 'dev-resource-record',
-  };
-  if (ownerOperationLabels[action]) {
-    options.workflowOwner = (
-      io.dependencies?.resolveCurrentWorkflowOwnerContext ??
-      resolveCurrentWorkflowOwnerContext
-    )({
+  const ownerContext = resolveWorkflowOwnerCommandContext(
+    'dev-work',
+    action,
+    {
       home: options.home,
       workspaceRoot: options.workspaceRoot ?? process.cwd(),
-      operationLabel: ownerOperationLabels[action],
-    }).workflowOwner;
+      resolveCurrentWorkflowOwnerContext:
+        io.dependencies?.resolveCurrentWorkflowOwnerContext,
+    },
+  );
+  if (ownerContext !== null) {
+    options.workflowOwner = ownerContext.workflowOwner;
   }
   let result;
   switch (action) {

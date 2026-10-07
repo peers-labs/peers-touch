@@ -40,7 +40,7 @@ import {
   writeDurableFileAtomic,
 } from './dev-session-store.mjs';
 import {
-  resolveCurrentWorkflowOwnerContext,
+  resolveWorkflowOwnerCommandContext,
 } from './workflow-owner-context.mjs';
 
 export {
@@ -386,6 +386,7 @@ export function archiveDevelopmentSession(options) {
       workItemId: options.workItemId,
       workspaceId,
       sessionId: options.sessionId,
+      workflowOwner: options.workflowOwner,
     },
   });
 }
@@ -413,6 +414,7 @@ export async function transitionDevelopmentSession(options, dependencies = {}) {
       taskId: plan.currentTask.taskId,
       workspaceId: plan.executionBinding.workspaceId,
       branch: plan.executionBinding.branch,
+      workflowOwner: declaration.workflowOwner,
     },
     to: options.to,
     reason: options.reason,
@@ -1862,6 +1864,7 @@ export async function commitFunctionalResult(options, dependencies = {}) {
       taskId: plan.currentTask.taskId,
       workspaceId: plan.executionBinding.workspaceId,
       branch: plan.executionBinding.branch,
+      workflowOwner: declaration.workflowOwner,
     },
     reason: options.reason,
     context: {
@@ -1873,7 +1876,12 @@ export async function commitFunctionalResult(options, dependencies = {}) {
   const preflightSession = loadSessionStore(store);
   const expectedIdentity = store.expected;
   for (const field of Object.keys(expectedIdentity)) {
-    if (preflightSession.state[field] !== expectedIdentity[field]) {
+    const matches =
+      field === 'workflowOwner'
+        ? JSON.stringify(canonicalize(preflightSession.state[field])) ===
+          JSON.stringify(canonicalize(expectedIdentity[field]))
+        : preflightSession.state[field] === expectedIdentity[field];
+    if (!matches) {
       sessionFail(
         'SESSION_IDENTITY_MISMATCH',
         'Session identity does not match before Development execution',
@@ -2028,21 +2036,18 @@ function output(value, stream = process.stdout) {
 export async function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
   const write = io.output ?? output;
-  const ownerOperationLabels = {
-    start: 'dev-session-start',
-    archive: 'dev-session-archive',
-    transition: 'dev-transition',
-    'functional-result': 'dev-functional-result',
-  };
-  if (ownerOperationLabels[action]) {
-    options.workflowOwner = (
-      io.dependencies?.resolveCurrentWorkflowOwnerContext ??
-      resolveCurrentWorkflowOwnerContext
-    )({
+  const ownerContext = resolveWorkflowOwnerCommandContext(
+    'dev-session',
+    action,
+    {
       home: options.home,
       workspaceRoot: options.workspaceRoot ?? process.cwd(),
-      operationLabel: ownerOperationLabels[action],
-    }).workflowOwner;
+      resolveCurrentWorkflowOwnerContext:
+        io.dependencies?.resolveCurrentWorkflowOwnerContext,
+    },
+  );
+  if (ownerContext !== null) {
+    options.workflowOwner = ownerContext.workflowOwner;
   }
   let session;
   switch (action) {

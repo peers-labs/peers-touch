@@ -24,12 +24,16 @@ docs/architecture/engineering/development-workflow/
 └── execution-plans/
     └── <date>-<slug>/
         ├── plan.md
+        ├── completions/
+        │   └── <planDigest>.json
         ├── tasks/
         │   └── <task-id>.md
         └── archive/
             └── <historical-input>.md
 
 tooling/scripts/plan/
+├── plan-completion.mjs
+├── plan-completion.test.mjs
 ├── plan-package.mjs
 ├── planctl.mjs
 ├── planctl.test.mjs
@@ -65,6 +69,7 @@ tooling/scripts/local-dev/
 ├── workflow-doctor.mjs
 ├── workflow-host-adapters.mjs
 ├── workflow-kernel.mjs
+├── workflow-owner-command-policy.mjs
 ├── workflow-snapshot-core.mjs
 ├── workflow-snapshot.mjs
 ├── workflow-state-inspector.mjs
@@ -101,6 +106,7 @@ tooling/scripts/
 │       └── SKILL.md
 └── workspaces/<workspaceId>/workflow/
     ├── worktree-creation.json
+    ├── worktree-creation-transactions/<targetHash>.json
     ├── active-work.json
     ├── active-work.lock
     ├── agent-integration.json
@@ -139,9 +145,11 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan, digest-bound North Star approval, criterion coverage, Amendment Log, and Acceptance contract |
 | `execution-plans/*/tasks/*.md` | One immutable Task Slice specification |
+| `execution-plans/*/completions/*.json` | Immutable final-run attestation bound to one exact Plan digest for CI |
 | `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
+| `plan-completion.mjs` | Repository completion attestation schema, validation, and create-once publication |
 | `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
-| `planctl.mjs` | `validate/approve-north-star/amend/current/next/status/activate/advance/reopen/invalidate-source` CLI |
+| `planctl.mjs` | `validate/source-status/approve-north-star/amend/seal-completion/current/next/status/activate/advance/reopen/invalidate-source` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
 | `plan-mount.mjs` | Stable Plan mount/unmount owner, immutable snapshot history, amendment transition, live-worktree exclusion, and direct resolution |
 | `plan-mount.test.mjs` | Candidate approval, criterion coverage, idempotence, mount conflict, amendment, North Star invalidation, explicit unmount, snapshot, tamper, and concurrency regressions |
@@ -162,6 +170,7 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `dev-session.test.mjs` | State, identity, guard, clock and symlink regressions |
 | `completion-review.mjs` | Repository-native current-source review request, reviewer capability, assessment proof, receipt, and freshness owner |
 | `workflow-action-store.mjs` | Bounded redacted Action Receipt chain and activity reduction |
+| `workflow-owner-command-policy.mjs` | Canonical OWNER command registry, receipt identity, and persisted-owner admission guards |
 | `workflow-owner-reference.mjs` | Validated host-neutral main-session reference and root identity hash |
 | `workflow-owner-context.mjs` | Resolve the current main-session OWNER from the live Hook Action Receipt |
 | `workflow-host-adapters.mjs` | TRAE/Cursor/Codex event normalization and native response rendering; no cross-host identity aliases |

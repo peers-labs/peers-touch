@@ -43,6 +43,13 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLock,
 } from './workspace-lifecycle-lock.mjs';
+import {
+  assertMatchingWorkflowOwner,
+  requireWorkflowOwnerReference,
+} from './workflow-owner-command-policy.mjs';
+import {
+  resolveWorkflowOwnerCommandContext,
+} from './workflow-owner-context.mjs';
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WORKSPACE_ID = /^[0-9a-f]{16}$/;
@@ -356,6 +363,10 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
     'environmentPolicy',
   );
   const owner = requiredText(options.owner, 'owner');
+  const workflowOwner = requireWorkflowOwnerReference(
+    options.workflowOwner,
+    { record: 'Development close' },
+  );
   if (!MODES.has(mode)) {
     fail('DEVELOPMENT_CLOSE_INVALID', 'mode must be tracked or standalone');
   }
@@ -486,6 +497,20 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
             home: options.home,
             workspaceId: identity.workspaceId,
           });
+          if (declaration !== null) {
+            assertMatchingWorkflowOwner(
+              declaration.workflowOwner,
+              workflowOwner,
+              { record: 'development declaration' },
+            );
+          }
+          if (activeWork !== null) {
+            assertMatchingWorkflowOwner(
+              activeWork.workflowOwner,
+              workflowOwner,
+              { record: 'active-work' },
+            );
+          }
           const context = sessionContext(
             options,
             identity,
@@ -533,6 +558,7 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
                 workspaceId: identity.workspaceId,
                 workItemId: identity.workItemId,
                 sessionId: context.sessionId,
+                workflowOwner,
               },
               allowNonTerminal: closeReason === 'owner-abandon',
             });
@@ -570,6 +596,7 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
               workspaceId: identity.workspaceId,
               workItemId: identity.workItemId,
               expectedRevision: activeWork.revision,
+              workflowOwner,
               lifecycleLease,
             });
             persist('active-work', { activeWork: 'CLOSED' });
@@ -585,6 +612,7 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
               workspaceId: identity.workspaceId,
               workItemId: identity.workItemId,
               owner,
+              workflowOwner,
               lifecycleLease,
               now: options.now,
             });
@@ -717,6 +745,16 @@ export async function runCli(argv = process.argv.slice(2), io = {}) {
   const { action, options } = parseArguments(argv);
   let result;
   if (action === 'close') {
+    options.workflowOwner = resolveWorkflowOwnerCommandContext(
+      'development-close',
+      'close',
+      {
+        home: options.home,
+        workspaceRoot: options.repoRoot ?? process.cwd(),
+        resolveCurrentWorkflowOwnerContext:
+          io.dependencies?.resolveCurrentWorkflowOwnerContext,
+      },
+    ).workflowOwner;
     result = await closeDevelopment(options, io.dependencies);
   } else if (action === 'status') {
     result = statusDevelopmentClose(options);

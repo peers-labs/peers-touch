@@ -21,6 +21,21 @@ import {
   startOrUpdateDeclaration,
   statusAll,
 } from './dev-work-ledger.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
+
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
+}
 
 function declarationOptions(fixture, overrides = {}) {
   return {
@@ -31,6 +46,7 @@ function declarationOptions(fixture, overrides = {}) {
     purpose: 'test Development close',
     sourceClaims: `exclusive-write:${fixture.plan}`,
     runtimeClaims: '',
+    workflowOwner: workflowOwner(),
     expiresMinutes: 60,
     now: new Date('2026-10-05T00:00:00.000Z'),
     ...overrides,
@@ -45,6 +61,7 @@ function activeDeclaration(fixture, overrides = {}) {
     workspaceRoot: fixture.repoRoot,
     workItemId: declaration.workItemId,
     sessionId: declaration.sessionId,
+    workflowOwner: declaration.workflowOwner,
     now: new Date('2026-10-05T00:01:00.000Z'),
     ...(overrides.planExecution === undefined
       ? {}
@@ -68,6 +85,7 @@ test('standalone Development close releases declaration and persists receipt', a
     closeReason: 'completed',
     environmentPolicy: 'retain',
     owner: declaration.owner,
+    workflowOwner: declaration.workflowOwner,
     now: new Date('2026-10-05T00:02:00.000Z'),
   });
 
@@ -101,6 +119,7 @@ test('Development close resumes after an interrupted owner stage', async (t) => 
       closeReason: 'completed',
       environmentPolicy: 'retain',
       owner: declaration.owner,
+      workflowOwner: declaration.workflowOwner,
       now: new Date('2026-10-05T00:02:00.000Z'),
       stageHook(stage) {
         if (stage === 'declaration' && !interrupted) {
@@ -122,6 +141,7 @@ test('Development close resumes after an interrupted owner stage', async (t) => 
     closeReason: 'completed',
     environmentPolicy: 'retain',
     owner: declaration.owner,
+    workflowOwner: declaration.workflowOwner,
     now: new Date('2026-10-05T00:03:00.000Z'),
   });
   assert.equal(receipt.state, 'CLOSED');
@@ -182,6 +202,7 @@ test('tracked Development close clears projections and releases mount', async (t
       branch: execution.snapshot.executionBinding.branch,
       initialHead: execution.snapshot.executionBinding.initialHead,
       expectedHead: declaration.sourceHead,
+      workflowOwner: declaration.workflowOwner,
     },
     {
       home: fixture.home,
@@ -198,6 +219,7 @@ test('tracked Development close clears projections and releases mount', async (t
     closeReason: 'completed',
     environmentPolicy: 'retain',
     owner: declaration.owner,
+    workflowOwner: declaration.workflowOwner,
     mountId: execution.mount.mountId,
     now: new Date('2026-10-05T00:02:00.000Z'),
   });
@@ -232,6 +254,7 @@ test('owner-abandon closes an orphan mount after worktree deletion', async (t) =
     closeReason: 'owner-abandon',
     environmentPolicy: 'retain',
     owner: mounted.mount.mountedBy,
+    workflowOwner: workflowOwner(),
     now: new Date('2026-10-05T00:01:00.000Z'),
   });
 

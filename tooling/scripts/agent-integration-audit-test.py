@@ -78,6 +78,7 @@ class AgentIntegrationTests(unittest.TestCase):
             "workflow-binding.mjs",
             "workflow-host-adapters.mjs",
             "workflow-kernel.mjs",
+            "workflow-owner-command-policy.mjs",
             "workflow-owner-reference.mjs",
             "workflow-state-inspector.mjs",
             "workflow-tool-intent.mjs",
@@ -397,6 +398,8 @@ export function processStartIdentity() { return 'fixture'; }
             "const binding = await import(pathToFileURL(bindingPath));"
             "const projection = await import(pathToFileURL(projectionPath));"
             "const action = await import(pathToFileURL(actionPath));"
+            "const ownerReferenceModule = await import(pathToFileURL("
+            "repoRoot + '/tooling/scripts/local-dev/workflow-owner-reference.mjs'));"
             "const sessionSchema = await import(pathToFileURL("
             "repoRoot + '/tooling/scripts/local-dev/dev-session-schema.mjs'));"
             "const sessionStore = await import(pathToFileURL("
@@ -410,6 +413,8 @@ export function processStartIdentity() { return 'fixture'; }
             "const ownerProjection = projection.projectWorkflowBinding({"
             "binding: owner, now"
             "});"
+            "const ownerReference = "
+            "ownerReferenceModule.workflowOwnerReferenceFromBinding(owner);"
             "if (mode === 'assignment') {"
             "const sessionId = 'SESSION-1';"
             "const workItemId = 'WORK-1';"
@@ -421,7 +426,8 @@ export function processStartIdentity() { return 'fixture'; }
             "workspaceId: owner.workspaceId,"
             "branch: 'test',"
             "journeyId: 'JOURNEY-1',"
-            "executionMode: 'build'"
+            "executionMode: 'build',"
+            "workflowOwner: ownerReference"
             "}, now.toISOString());"
             "sessionStore.createSessionStore(state, {"
             "workspaceId: owner.workspaceId, workItemId, now"
@@ -444,7 +450,8 @@ export function processStartIdentity() { return 'fixture'; }
             "devState: 'BOUND',"
             "branch: 'test',"
             "initialHead: '1'.repeat(40),"
-            "expectedHead: '2'.repeat(40)"
+            "expectedHead: '2'.repeat(40),"
+            "workflowOwner: ownerReference"
             "}, { workspaceId: owner.workspaceId, now });"
             "binding.createWorkflowBindingAssignment(ownerProjection, {"
             "assignmentId: 'reviewer-1',"

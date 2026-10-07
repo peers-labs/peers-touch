@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
@@ -93,6 +94,18 @@ test('creates a worktree with durable main-session provenance', () => {
       records: [record],
       errors: [],
     });
+    const replayed = createWorktree({
+      home: scope.home,
+      sourceRoot: scope.sourceRoot,
+      targetRoot: scope.targetRoot,
+      branch: 'feat/owned-worktree',
+      startPoint: 'HEAD',
+      purpose: 'test cross-agent worktree attribution',
+      workflowOwner: scope.owner,
+      creationActionReceiptDigest: 'b'.repeat(64),
+      now: new Date('2026-10-07T00:01:00.000Z'),
+    });
+    assert.deepEqual(replayed, record);
     if (process.platform !== 'win32') {
       const file = path.join(
         scope.home,
@@ -105,6 +118,89 @@ test('creates a worktree with durable main-session provenance', () => {
       );
       assert.equal(statSync(file).mode & 0o777, 0o600);
     }
+  } finally {
+    scope.close();
+  }
+});
+
+test('resolves START as a commit before invoking git worktree add', () => {
+  const scope = fixture();
+  try {
+    assert.throws(
+      () =>
+        createWorktree({
+          home: scope.home,
+          sourceRoot: scope.sourceRoot,
+          targetRoot: scope.targetRoot,
+          branch: 'feat/reject-option-like-start',
+          startPoint: '--no-checkout',
+          purpose: 'reject option injection',
+          workflowOwner: scope.owner,
+          creationActionReceiptDigest: 'a'.repeat(64),
+        }),
+      (error) =>
+        error instanceof WorktreeCreationError &&
+        error.code === 'WORKTREE_CREATION_FAILED',
+    );
+    assert.equal(existsSync(scope.targetRoot), false);
+    assert.throws(() =>
+      git(
+        scope.sourceRoot,
+        'show-ref',
+        '--verify',
+        '--quiet',
+        'refs/heads/feat/reject-option-like-start',
+      ),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('recovers provenance publication after Git creation is interrupted', () => {
+  const scope = fixture();
+  const base = {
+    home: scope.home,
+    sourceRoot: scope.sourceRoot,
+    targetRoot: scope.targetRoot,
+    branch: 'feat/recover-worktree',
+    startPoint: 'HEAD',
+    purpose: 'recover durable attribution',
+    workflowOwner: scope.owner,
+    creationActionReceiptDigest: 'a'.repeat(64),
+    now: new Date('2026-10-07T00:00:01.000Z'),
+  };
+  try {
+    assert.throws(
+      () =>
+        createWorktree({
+          ...base,
+          creationFailpoint(stage) {
+            if (stage === 'after-git-create') {
+              throw new Error('simulated interruption');
+            }
+          },
+        }),
+      (error) =>
+        error instanceof WorktreeCreationError &&
+        error.code === 'WORKTREE_CREATION_FAILED',
+    );
+    assert.equal(existsSync(scope.targetRoot), true);
+    assert.equal(
+      readWorktreeCreation({
+        home: scope.home,
+        workspaceRoot: scope.targetRoot,
+      }),
+      null,
+    );
+
+    const recovered = createWorktree({
+      ...base,
+      creationActionReceiptDigest: 'b'.repeat(64),
+      now: new Date('2026-10-07T00:01:00.000Z'),
+    });
+    assert.equal(recovered.creationActionReceiptDigest, 'a'.repeat(64));
+    assert.equal(recovered.createdAt, '2026-10-07T00:00:01.000Z');
   } finally {
     scope.close();
   }

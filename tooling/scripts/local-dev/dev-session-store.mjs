@@ -18,6 +18,9 @@ import { workspaceWorkflowPath } from '../lib/machine-dev-paths.mjs';
 import { processStartIdentity } from './dev-work-ledger.mjs';
 import { canonicalize, isObject } from './dev-work-schema.mjs';
 import {
+  assertMatchingWorkflowOwner as assertPolicyOwnerMatch,
+} from './workflow-owner-command-policy.mjs';
+import {
   DevSessionError,
   SESSION_KIND,
   SESSION_SCHEMA_VERSION,
@@ -62,6 +65,18 @@ const TIMING_EVIDENCE_CLASSES = [
   'FUNCTIONAL_CHECK',
   'ACCEPTANCE_PROOF',
 ];
+
+function assertSessionOwner(expected, actual) {
+  try {
+    return assertPolicyOwnerMatch(expected, actual, {
+      record: 'Development Session',
+    });
+  } catch (error) {
+    sessionFail('SESSION_IDENTITY_MISMATCH', error.message, {
+      workflowOwner: error.detail,
+    });
+  }
+}
 
 function exactKeys(value, keys) {
   const actual = Object.keys(value);
@@ -646,6 +661,12 @@ function assertIdentity(session, expected = {}) {
     sessionFail('SESSION_IDENTITY_MISMATCH', 'Session identity does not match', {
       mismatches,
     });
+  }
+  if (Object.hasOwn(expected, 'workflowOwner')) {
+    assertSessionOwner(
+      session.state.workflowOwner,
+      expected.workflowOwner,
+    );
   }
 }
 

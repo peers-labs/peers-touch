@@ -493,6 +493,32 @@ interface ExecutionRun {
 }
 ```
 
+Completed tracked work may be exported for CI as an immutable repository
+attestation at
+`<plan-package>/completions/<planDigest>.json`. The record binds the stable
+`planId`, exact Plan/content/snapshot digests, run ID, source binding, and
+complete Task/closure maps. It is the only source-controlled completion
+authority; CI must not consult `~/.peers-touch` or infer completion from prose.
+
+```ts
+interface PlanCompletion {
+  schemaVersion: 1;
+  kind: 'peers-touch-plan-completion';
+  planId: string;
+  planDigest: string;
+  planContentDigest: string;
+  runId: string;
+  snapshotDigest: string;
+  workspaceId: string;
+  branch: string;
+  initialHead: string;
+  taskStates: Record<string, 'done'>;
+  closureStatuses: Record<string, 'done'>;
+  completedAt: string;
+  digest: string;
+}
+```
+
 Each snapshot is written once and never updated. The mutable run points to the
 current snapshot and owns Plan/Task lifecycle. An amendment publishes a new
 snapshot and changes that pointer with the same CAS update that revalidates Task
@@ -559,7 +585,7 @@ interface WorkspaceActiveWork {
   branch: string;
   initialHead: string;
   expectedHead: string;
-  workflowOwner?: WorkflowOwnerReference;
+  workflowOwner: WorkflowOwnerReference;
   updatedAt: string;
   recordDigest: string;
 }
@@ -716,6 +742,21 @@ interface WorktreeCreation {
   branch: string;
   head: string;
   sourceWorkspaceId: string;
+  purpose: string;
+  createdBy: WorkflowOwnerReference;
+  creationActionReceiptDigest: string;
+  createdAt: string;
+  digest: string;
+}
+
+interface WorktreeCreationTransaction {
+  schemaVersion: 1;
+  kind: 'peers-touch-worktree-creation-transaction';
+  sourceWorkspaceId: string;
+  sourceRoot: string;
+  targetRoot: string;
+  branch: string;
+  head: string;
   purpose: string;
   createdBy: WorkflowOwnerReference;
   creationActionReceiptDigest: string;
@@ -982,7 +1023,7 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
   mountId: string | null;
   runId: string | null;
   taskId: string | null;
-  workflowOwner?: WorkflowOwnerReference;
+  workflowOwner: WorkflowOwnerReference;
   workspaceId: string;
   branch: string;
   sourceHead: string;
@@ -1440,7 +1481,7 @@ type DevelopmentState =
 
 interface DevelopmentSessionState {
   sessionId: string;
-  workflowOwner?: WorkflowOwnerReference;
+  workflowOwner: WorkflowOwnerReference;
   workItemId: string;
   planId: string;
   taskId: string;

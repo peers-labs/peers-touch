@@ -35,6 +35,10 @@ import {
   withWorkspaceLifecycleLockSync,
 } from './workspace-lifecycle-lock.mjs';
 import {
+  assertMatchingWorkflowOwner as assertPolicyOwnerMatch,
+  requireWorkflowOwnerReference as requirePolicyOwner,
+} from './workflow-owner-command-policy.mjs';
+import {
   validateWorkflowOwnerReference,
 } from './workflow-owner-reference.mjs';
 
@@ -94,6 +98,22 @@ export class ActiveWorkError extends Error {
 
 function fail(code, message, detail = {}) {
   throw new ActiveWorkError(code, message, detail);
+}
+
+function assertActiveWorkOwner(expected, actual, detail = {}) {
+  try {
+    return assertPolicyOwnerMatch(expected, actual, detail);
+  } catch (error) {
+    fail('ACTIVE_WORK_OWNER_MISMATCH', error.message, error.detail);
+  }
+}
+
+function requireActiveWorkOwner(value, detail = {}) {
+  try {
+    return requirePolicyOwner(value, detail);
+  } catch (error) {
+    fail('ACTIVE_WORK_OWNER_MISMATCH', error.message, error.detail);
+  }
 }
 
 function exactKeys(value, keys) {
@@ -574,6 +594,9 @@ function updateActiveWorkRecordUnderFence(input, options) {
 
 export function updateActiveWorkRecord(input, options = {}) {
   validateInput(input);
+  requireActiveWorkOwner(input.workflowOwner, {
+    record: 'active-work',
+  });
   const paths = activeWorkStorePaths({
     ...options,
     workspaceId: input.workspaceId,
@@ -709,6 +732,9 @@ function repairActiveWorkRecordUnderFence(input, options) {
 
 export function repairActiveWorkRecord(input, options = {}) {
   validateInput(input);
+  requireActiveWorkOwner(input.workflowOwner, {
+    record: 'active-work',
+  });
   const paths = activeWorkStorePaths({
     ...options,
     workspaceId: input.workspaceId,
@@ -755,6 +781,11 @@ function clearActiveWorkRecordUnderFence(options) {
         actual: existing.workItemId,
       });
     }
+    assertActiveWorkOwner(
+      existing.workflowOwner,
+      options.workflowOwner,
+      { record: 'active-work', workspaceId: paths.workspaceId },
+    );
     unlinkSync(paths.record);
     syncDirectory(path.dirname(paths.record));
     return existing;

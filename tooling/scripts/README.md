@@ -47,7 +47,7 @@ export VITE_PORT=3000
 | `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId` 与 expected HEAD；必须从被绑定 root 运行，且不受无关 sibling worktree 变更影响 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、sibling worktree churn、持久 schema，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义 |
-| `local-dev/worktree-create.mjs` | 推荐 | 创建经用户授权的 Agent worktree 并持久化主会话来源 | `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]`；禁止 Agent 直接运行 `git worktree add` |
+| `local-dev/worktree-create.mjs` | 推荐 | 以可恢复事务创建经用户授权的 Agent worktree，并持久化主会话来源 | `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]`；`START` 先解析为 commit，Git 创建与 provenance 发布可重试；禁止 Agent 直接运行 `git worktree add` |
 | `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
 | `local-dev/dev-resource-plan.mjs` | 内部 owner | 聚合标准 `ModuleImpact`、解析 target 依赖、计算峰值容量并把 ready target 的具体资源 claims 原子写入现有 Development declaration | 由 `make dev-resources-prepare/status` 与 `make dev-resource-record` 调用；不启动或清理物理资源，业务 Gate 只 attach 到 Runtime Owner manifest |
 | `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
@@ -63,7 +63,7 @@ export VITE_PORT=3000
 | `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
 | `agent-integration-control.py` | 推荐 | 通过 `make skills IDE=<host>` 安装 worktree-local Agent 集成 | 投影 canonical Skills、Codex `pt-ew-plugin` 或 host workspace hooks；拒绝 active declaration 和路径逃逸，不存在独立 ACK 流程 |
 | `agent-integration-audit.py` | 推荐 | 审计单 worktree 或 fleet Agent 集成 | 校验 Skill/plugin/hook 精确投影、receipt、Plan binding、声明与 Acceptance matcher |
-| `local-dev/workflow-{kernel,state-inspector,host-adapters,conversation-binding,tool-intent,anchor}.mjs` | 内部依赖 | conversation-bound IDE 工具准入与 Stop/Anchor 协议 | 首次可阻断工具调用绑定 `executionRoot`；独立解析 `subjectRoot`、owner state 和 source scope |
+| `local-dev/workflow-{kernel,state-inspector,host-adapters,conversation-binding,owner-command-policy,tool-intent,anchor}.mjs` | 内部依赖 | conversation-bound IDE 工具准入与 Stop/Anchor 协议 | OWNER 命令注册、receipt 身份和持久化 owner 匹配由共享策略定义；首次可阻断工具调用绑定 `executionRoot` |
 | `local-dev/workflow-snapshot.mjs` | 推荐 | 生成统一只读 workflow owner projection | `make workflow-snapshot`；CLI、Context Anchor、Doctor 与 Peers Dev 共享语义 |
 | `local-dev/workflow-action-store.mjs` | 内部依赖 | 写入并归约有界、脱敏的 Action Receipt | activity 不替代 Plan Task closure progress |
 | `local-dev/completion-review.mjs` | 推荐 | 创建、提交并验证独立 current-source Completion Review | 通过 `make completion-review-{prepare,submit,status}` 调用 |
@@ -74,7 +74,8 @@ export VITE_PORT=3000
 | `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
 | `acceptance-plan.py` | 推荐 | 根据 git diff 生成 Gate 影响投影，并与正式 Plan 校验 | `make acceptance-plan` 只投影当前 closure |
 | `acceptance-run.py` | 推荐 | 执行正式 Plan 当前 closure 的 Gate 并记录日志 | completion/full 必须显式请求 |
-| `execution-plan.py` | 推荐 | 解析当前 workspace 的 mounted Plan 与 Execution Run；CI 需显式输入 | tracked PR 用 `--require-complete`；本地 `--allow-untracked` 仅把 `PLAN_MOUNT_REQUIRED` 分类为 standalone |
+| `execution-plan.py` | 推荐 | 本地解析 mounted Plan/ExecutionRun，CI 解析仓库 Plan/completion contract | tracked PR 用 `--require-complete`；CI 不读取 machine-local mount；本地 `--allow-untracked` 仅把 `PLAN_MOUNT_REQUIRED` 分类为 standalone |
+| `plan/plan-completion.mjs` | 内部 owner | 发布并校验绑定最终 Plan digest 的不可变仓库 completion attestation | `make plan-seal-completion PLAN=<path>` 仅接受全部 Task 为 `done` 的当前 ExecutionRun |
 | `plan/plan-mount.mjs` | 推荐 | 管理显式批准后的 stable PlanMount、immutable snapshot history、in-place amendment 与 mutable ExecutionRun | `make plan-approve-north-star ...` 记录用户决定，`make plan-mount PLAN=<path>` 挂载，`make plan-amend ...` 修订，终态后用 `make plan-unmount` 释放 |
 | `plan/stable-plan-state-migration.mjs` | 一次性迁移 | 在全局无 live declaration/mount 时把 machine ledger 从 Plan Version 字段硬切到 stable Plan 字段 | `make plan-state-migrate`；不提供正常运行时兼容读取 |
 | `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表或 `- None` standalone 标记 | CI 只对显式 Plan 路径执行 `execution-plan.py --plan`，不扫描 branch |
