@@ -6,12 +6,40 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/protocol"
 )
+
+func TestStartDoesNotRequireConnectionMaterialSigner(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sub := &SubServer{
+		opts: &Options{
+			Enabled:                      true,
+			RelayURL:                     "https://relay.example",
+			RelayStreamAddr:              "127.0.0.1:4501",
+			BootstrapInfoURL:             "http://127.0.0.1:1/sub-bootstrap/info",
+			BootstrapIdentityURL:         "http://127.0.0.1:1/sub-bootstrap/station-identity",
+			TokenStorePath:               filepath.Join(t.TempDir(), "credential.json"),
+			UseTLS:                       true,
+			TLSInsecureSkipVerify:        true,
+			HeartbeatIntervalSec:         1,
+			CredentialRefreshIntervalSec: 300,
+		},
+	}
+	if err := sub.Start(ctx); err != nil {
+		t.Fatalf("start enrollment-only Relay client: %v", err)
+	}
+	cancel()
+	if err := sub.Stop(context.Background()); err != nil {
+		t.Fatalf("stop Relay client: %v", err)
+	}
+}
 
 func TestStopClearsMountCredential(t *testing.T) {
 	sub := &SubServer{}

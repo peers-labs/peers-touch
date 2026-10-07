@@ -119,9 +119,9 @@ func (s *SubServer) IssueConnectionMaterial(
 			return nil, fmt.Errorf("generate Station route ID: %w", err)
 		}
 	}
-	signer := s.getStationConnectionSigner()
-	if signer == nil {
-		return nil, fmt.Errorf("Station route signer is unavailable")
+	signer, err := s.ensureStationConnectionSigner()
+	if err != nil {
+		return nil, err
 	}
 
 	routeStatement := &peerpb.StationRouteStatement{
@@ -221,10 +221,18 @@ func (s *SubServer) IssueConnectionMaterial(
 	}, nil
 }
 
-func (s *SubServer) getStationConnectionSigner() stationConnectionSigner {
+func (s *SubServer) ensureStationConnectionSigner() (stationConnectionSigner, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.stationSigner
+	if s.stationSigner != nil {
+		return s.stationSigner, nil
+	}
+	signer, err := resolveStationConnectionSigner()
+	if err != nil {
+		return nil, err
+	}
+	s.stationSigner = signer
+	return signer, nil
 }
 
 func resolveStationConnectionSigner() (_ stationConnectionSigner, err error) {
