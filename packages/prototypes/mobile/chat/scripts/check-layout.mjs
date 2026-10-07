@@ -38,6 +38,19 @@ try {
       const filename = `${viewport.width}-${state}.png`;
       await device.screenshot({ path: resolve(output, filename), animations: 'disabled' });
       const geometry = await device.evaluate((element) => {
+        const rect = (target) => {
+          const bounds = target?.getBoundingClientRect();
+          return bounds
+            ? {
+                top: bounds.top,
+                right: bounds.right,
+                bottom: bounds.bottom,
+                left: bounds.left,
+                width: bounds.width,
+                height: bounds.height,
+              }
+            : null;
+        };
         const authScreen = element.querySelector('.mp-auth-screen');
         const authCard = authScreen?.querySelector('.mp-auth-card');
         const authBrand = authScreen?.querySelector('.mp-auth-brand');
@@ -45,9 +58,23 @@ try {
         const authCardRect = authCard?.getBoundingClientRect();
         const authBrandRect = authBrand?.getBoundingClientRect();
         const authLogoStyle = authLogo ? getComputedStyle(authLogo) : null;
+        const composer = element.querySelector('.mp-social-composer-sheet');
+        const composerRect = rect(composer);
+        const composerInputRect = rect(composer?.querySelector(':scope > textarea'));
+        const composerAudienceRect = rect(
+          composer?.querySelector(':scope > .mp-social-audience-row'),
+        );
+        const composerHeaderRect = rect(
+          composer?.querySelector(':scope > .mp-social-sheet-header'),
+        );
+        const composerPublishRect = rect(
+          composer?.querySelector('.mp-social-sheet-header > .primary'),
+        );
+        const tabbarRect = rect(element.querySelector('.mp-tabbar'));
+        const deviceRect = rect(element);
         return {
-          width: element.getBoundingClientRect().width,
-          height: element.getBoundingClientRect().height,
+          width: deviceRect.width,
+          height: deviceRect.height,
           scrollWidth: element.scrollWidth,
           clientWidth: element.clientWidth,
           pageOverflow: document.documentElement.scrollWidth > window.innerWidth,
@@ -79,6 +106,21 @@ try {
                 scrollHeight: authScreen.scrollHeight,
                 verticallyScrollable: authScreen.scrollHeight
                   > authScreen.clientHeight + 1,
+              }
+            : null,
+          composer: composerRect
+            && composerInputRect
+            && composerAudienceRect
+            && composerHeaderRect
+            && composerPublishRect
+            && tabbarRect
+            ? {
+                inputHeight: composerInputRect.height,
+                audienceHeight: composerAudienceRect.height,
+                headerHeight: composerHeaderRect.height,
+                publishHeight: composerPublishRect.height,
+                bottomClearance: deviceRect.bottom - composerRect.bottom,
+                tabbarGap: tabbarRect.top - composerRect.bottom,
               }
             : null,
         };
@@ -154,6 +196,36 @@ try {
     await page.getByRole('button', { name: 'Direct ready', exact: true }).click();
     await device.getByText('No messages yet', { exact: true }).waitFor();
     await capture('direct-empty');
+
+    await open('social-parity');
+    await device.getByRole('button', { name: 'Moments', exact: true }).click();
+    await device.getByRole('button', { name: 'New post', exact: true }).click();
+    await device.getByRole('dialog', { name: 'New Moment', exact: true }).waitFor();
+    await capture('social-composer');
+    const composer = captures.at(-1).geometry.composer;
+    assert(composer, 'Social composer geometry');
+    assert(composer.inputHeight >= 220, JSON.stringify(composer));
+    assert(
+      composer.inputHeight >= composer.audienceHeight * 4,
+      JSON.stringify(composer),
+    );
+    assert(
+      composer.audienceHeight >= 40 && composer.audienceHeight <= 44,
+      JSON.stringify(composer),
+    );
+    assert(
+      composer.headerHeight >= 42 && composer.headerHeight <= 46,
+      JSON.stringify(composer),
+    );
+    assert(
+      composer.publishHeight >= 30 && composer.publishHeight <= 34,
+      JSON.stringify(composer),
+    );
+    assert(Math.abs(composer.tabbarGap) <= 2, JSON.stringify(composer));
+    assert(
+      composer.bottomClearance >= 50 && composer.bottomClearance <= 72,
+      JSON.stringify(composer),
+    );
     assert.deepEqual(errors, []);
     await page.close();
   }
@@ -172,6 +244,19 @@ try {
       || geometry.auth.hasMobileKicker
       || geometry.auth.hasRawStationAddress
       || geometry.auth.verticallyScrollable
+    ))
+    || (geometry.composer && (
+      geometry.composer.inputHeight < 220
+      || geometry.composer.inputHeight < geometry.composer.audienceHeight * 4
+      || geometry.composer.audienceHeight < 40
+      || geometry.composer.audienceHeight > 44
+      || geometry.composer.headerHeight < 42
+      || geometry.composer.headerHeight > 46
+      || geometry.composer.publishHeight < 30
+      || geometry.composer.publishHeight > 34
+      || Math.abs(geometry.composer.tabbarGap) > 2
+      || geometry.composer.bottomClearance < 50
+      || geometry.composer.bottomClearance > 72
     )));
   await writeFile(resolve(output, 'captures.json'), JSON.stringify({
     evidenceType: 'prototype-only',

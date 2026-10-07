@@ -2,7 +2,7 @@
 
 > **Status**: confirmed
 > **Version**: v1.0
-> **Created**: 2026-10-06 | **Updated**: 2026-10-06
+> **Created**: 2026-10-06 | **Updated**: 2026-10-07
 > **Owner**: Mobile Product / Social Product
 > **Module**: `packages/prototypes/mobile/chat/`
 
@@ -95,6 +95,26 @@ opened and visually inspected. Recovery-required and revoked states expose no pr
 source-unavailable retains verified content but disables new interaction. Playwright proves comments,
 image/video preview, publish readback and private recovery states retain one Feed page tree and the Bottom
 Tab, while true full-screen routes remain selected-only.
+
+## 2026-10-07 Composer Amendment Evidence
+
+The Portal ran at `http://localhost:3200/` from branch
+`feat/mobile-social-parity-implementation`.
+
+| Layer | State | Viewport | Evidence |
+|---|---|---|---|
+| L2 | bottom-anchored dominant composer | 390x844, 1440x1100 | `evidence-l2/{390,1440}-composer.png` |
+| L2 | compact Audience and publish controls | 390x844, 1440x1100 | `evidence-l2/{390,1440}-composer.png` |
+| L3 | geometry and surrounding-flow regression | 390x844, 554x954, 1440x1100 | `packages/prototypes/mobile/chat/scripts/check-layout.mjs`, `check-residual-parity.mjs`, `check-long-lists.mjs` |
+
+The updated composer uses a 310-322px text input, 42px Audience row, 44px
+header, 32px publish action, and a 62px bottom-navigation clearance with zero
+gap between the sheet and tabbar. `check-layout.mjs` produced 54 captures with
+zero defects; residual parity passed 40 assertions and long-list checks passed
+at all three viewports. The 390px and 1440px screenshots were opened and
+visually inspected. This is prototype evidence only; the matching production
+geometry is enforced by the Android RC02 Native Gate and remains unproven until
+the exact-source OPPO run completes.
 
 ## Known Differences
 

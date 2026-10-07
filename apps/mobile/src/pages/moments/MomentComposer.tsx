@@ -652,7 +652,10 @@ export function MomentComposer({
   };
 
   return (
-    <div className="moments-sheet-backdrop" role="presentation">
+    <div
+      className="moments-sheet-backdrop moments-composer-backdrop"
+      role="presentation"
+    >
       <section
         className="moments-bottom-sheet moments-composer-card"
         data-acceptance-id="social-composer"
@@ -711,34 +714,12 @@ export function MomentComposer({
         </div>
       )}
 
-        <button
-          type="button"
-          className="moments-composer-audience"
-          data-acceptance-id="social-audience-select"
-          disabled={editingDisabled}
-          onClick={() => setAudienceOpen(true)}
-        >
-          <span>
-            <Text className="moments-composer-eyebrow">
-              {t('mobile.moments.audience.label')}
-            </Text>
-            <strong>{audienceLabel}</strong>
-          </span>
-          <ChevronRight size={18} />
-        </button>
-
-      {!audience && (
-        <Text type="danger" role="alert">
-          {t('mobile.moments.audience.targetRequired')}
-        </Text>
-      )}
-
       <Input.TextArea
         value={text}
         data-acceptance-id="social-composer-text"
         onChange={(event) => setText(event.target.value)}
         placeholder={t('mobile.moments.placeholder')}
-        autoSize={{ minRows: 4, maxRows: 8 }}
+        autoSize={{ minRows: 9, maxRows: 16 }}
         maxLength={5000}
         showCount
         disabled={editingDisabled}
@@ -777,6 +758,28 @@ export function MomentComposer({
             </div>
           ))}
         </div>
+      )}
+
+      <button
+        type="button"
+        className="moments-composer-audience"
+        data-acceptance-id="social-audience-select"
+        disabled={editingDisabled}
+        onClick={() => setAudienceOpen(true)}
+      >
+        <span>
+          <Text className="moments-composer-eyebrow">
+            {t('mobile.moments.audience.label')}
+          </Text>
+          <strong>{audienceLabel}</strong>
+        </span>
+        <ChevronRight size={16} />
+      </button>
+
+      {!audience && (
+        <Text className="moments-composer-validation" type="danger" role="alert">
+          {t('mobile.moments.audience.targetRequired')}
+        </Text>
       )}
 
       <div className="moments-composer-actions">

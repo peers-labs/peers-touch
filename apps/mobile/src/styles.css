@@ -3836,18 +3836,23 @@ select,
   box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.14);
 }
 
+.moments-composer-backdrop,
+.moments-composer-backdrop .moments-audience-backdrop {
+  bottom: calc(var(--tabbar-height) + var(--safe-area-bottom));
+}
+
 .moments-sheet-handle {
   width: 36px;
   height: 4px;
-  margin: 8px auto 4px;
+  margin: 6px auto 2px;
   border-radius: 999px;
   background: rgba(107, 112, 128, 0.32);
 }
 
 .moments-sheet-header {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 72px;
-  min-height: 48px;
+  grid-template-columns: 64px minmax(0, 1fr) 64px;
+  min-height: 44px;
   align-items: center;
   padding: 0 12px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
@@ -3855,13 +3860,13 @@ select,
 
 .moments-sheet-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   text-align: center;
 }
 
 .moments-sheet-header > button {
   display: inline-flex;
-  min-height: 38px;
+  min-height: 32px;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -3872,13 +3877,13 @@ select,
 }
 
 .moments-sheet-header > button:first-child {
-  width: 38px;
+  width: 32px;
   justify-self: start;
 }
 
 .moments-sheet-header > button.primary {
   justify-self: end;
-  padding: 0 12px;
+  padding: 0 10px;
   background: var(--brand-primary);
   color: #fff;
   font-weight: 700;
@@ -3889,7 +3894,20 @@ select,
 }
 
 .moments-composer-card {
-  min-height: min(610px, 90dvh);
+  display: flex;
+  flex-direction: column;
+  height: min(
+    610px,
+    calc(
+      100dvh - max(12px, var(--safe-area-top)) - var(--tabbar-height) -
+        var(--safe-area-bottom)
+    )
+  );
+  min-height: min(520px, calc(76dvh - var(--tabbar-height)));
+  max-height: calc(
+    100dvh - max(12px, var(--safe-area-top)) - var(--tabbar-height) -
+      var(--safe-area-bottom)
+  );
   margin: 0;
   padding: 0;
   gap: 0;
@@ -3899,12 +3917,15 @@ select,
 }
 
 .moments-composer-card > .ant-input-textarea {
+  flex: 1 1 220px;
+  min-height: 220px;
   margin: 0;
-  padding: 14px 16px 10px;
+  padding: 12px 16px 8px;
 }
 
 .moments-composer-card > .ant-input-textarea textarea {
-  min-height: 132px !important;
+  height: 100% !important;
+  min-height: 220px !important;
   padding: 0;
   border: 0;
   box-shadow: none !important;
@@ -3915,11 +3936,11 @@ select,
 .moments-composer-audience {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 24px;
-  min-height: 58px;
+  min-height: 42px;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 10px 16px;
+  padding: 5px 16px;
   border: 0;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
@@ -3931,26 +3952,44 @@ select,
 .moments-composer-audience > span {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 3px;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .moments-composer-eyebrow {
   color: rgba(107, 112, 128, 0.72) !important;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
 }
 
+.moments-composer-audience strong {
+  overflow: hidden;
+  color: rgba(51, 56, 69, 0.88);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moments-composer-validation {
+  padding: 0 16px;
+  font-size: 11px;
+}
+
 .moments-composer-actions {
   flex-wrap: wrap;
   justify-content: flex-start;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 8px 16px 10px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .moments-composer-actions .ant-btn {
   flex: 0 1 auto;
+  height: 32px;
+  padding-inline: 10px;
+  font-size: 12px;
 }
 
 .moments-audience-backdrop {

@@ -197,10 +197,57 @@ describe('Moment composer media restoration', () => {
   it('renders authoring and Audience as selected-only bottom sheets', () => {
     const markup = renderMomentComposer();
 
-    expect(markup).toContain('class="moments-sheet-backdrop"');
+    expect(markup).toContain(
+      'class="moments-sheet-backdrop moments-composer-backdrop"',
+    );
     expect(markup).toContain('moments-bottom-sheet moments-composer-card');
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain('data-acceptance-id="social-audience-select"');
     expect(markup).not.toContain('data-audience-option="DIRECT"');
+  });
+
+  it('keeps the text input dominant before compact Audience controls', () => {
+    const source = readFileSync(
+      new URL('./MomentComposer.tsx', import.meta.url),
+      'utf8',
+    );
+    const styles = readFileSync(
+      new URL('../../styles.css', import.meta.url),
+      'utf8',
+    );
+    const inputIndex = source.indexOf('<Input.TextArea');
+    const audienceIndex = source.indexOf(
+      'data-acceptance-id="social-audience-select"',
+    );
+    const actionsIndex = source.indexOf(
+      '<div className="moments-composer-actions">',
+    );
+
+    expect(inputIndex).toBeGreaterThan(-1);
+    expect(audienceIndex).toBeGreaterThan(inputIndex);
+    expect(actionsIndex).toBeGreaterThan(audienceIndex);
+    expect(source).toContain('autoSize={{ minRows: 9, maxRows: 16 }}');
+    expect(styles).toContain('.moments-composer-backdrop,\n');
+    expect(styles).toContain(
+      'bottom: calc(var(--tabbar-height) + var(--safe-area-bottom));',
+    );
+    expect(styles).toContain(
+      '.moments-composer-card {\n  display: flex;\n  flex-direction: column;',
+    );
+    expect(styles).toContain(
+      '.moments-composer-card > .ant-input-textarea {\n' +
+        '  flex: 1 1 220px;\n' +
+        '  min-height: 220px;',
+    );
+    expect(styles).toContain(
+      '.moments-composer-audience {\n  display: grid;\n' +
+        '  grid-template-columns: minmax(0, 1fr) 24px;\n' +
+        '  min-height: 42px;',
+    );
+    expect(styles).toContain(
+      '.moments-composer-actions .ant-btn {\n' +
+        '  flex: 0 1 auto;\n' +
+        '  height: 32px;',
+    );
   });
 });
