@@ -328,7 +328,7 @@ class DesktopRelayNativeGate(AcceptanceGate):
                 ),
             )
 
-            first.stop()
+            first.stop(preserve_state=True)
             restored = self.runtime_binding.create_bound_session(
                 CLIENT_ID,
                 NativeLaunchOptions(restore_session=True),

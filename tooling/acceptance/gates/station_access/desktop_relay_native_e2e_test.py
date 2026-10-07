@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 from tooling.acceptance.core import GateError
@@ -16,6 +17,16 @@ from tooling.acceptance.gates.station_access.desktop_relay_native_e2e import (
 
 
 class DesktopRelayNativeGateTest(unittest.TestCase):
+    def test_restart_preserves_station_registry_storage(self) -> None:
+        source = Path(
+            "tooling/acceptance/gates/station_access/"
+            "desktop_relay_native_e2e.py"
+        ).read_text(encoding="utf-8")
+        stop = source.index("first.stop(preserve_state=True)")
+        restore = source.index("NativeLaunchOptions(restore_session=True)")
+
+        self.assertLess(stop, restore)
+
     def test_relay_transport_is_distinct_from_discovery_locator(self) -> None:
         self.assertTrue(
             is_relay_transport(
