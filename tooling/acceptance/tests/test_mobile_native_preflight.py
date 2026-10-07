@@ -600,6 +600,106 @@ class ParentAppiumTransportTests(unittest.TestCase):
 
         self.assertIsInstance(observed.exception, DriverError)
 
+    def test_build_identity_uses_webview_then_restores_native_context(
+        self,
+    ) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.source_gate_id = "mobile-social-android-native"
+        session.client_id = "alice-android"
+        session.platform = "android"
+        session.device_descriptor = object()
+        session.build_attestation_ref = parent_artifact_ref(
+            "runtime/mobile/builds/android.json"
+        )
+        installation_ref = parent_artifact_ref(
+            "evidence/mobile/runtime/alice-android/install.json"
+        )
+        installation_trace = {
+            "artifactKind": "mobile-native-scenario-installation-trace"
+        }
+        identity = {
+            "applicationId": "com.peers.touch.mobile",
+            "buildId": "acceptance-build",
+        }
+        digest = "sha256:" + ("a" * 64)
+        session._build_attestation = {
+            "runId": SOURCE_RUN_ID,
+            "buildIdentity": identity,
+            "embeddedIdentitySha256": digest,
+        }
+        session._installation_trace = installation_trace
+        session.artifact_reader = SimpleNamespace(
+            read_json=lambda observed: (
+                installation_trace
+                if observed == installation_ref
+                else self.fail("unexpected installation reference")
+            )
+        )
+        events: list[str] = []
+        session.switch_to_app_webview = lambda **_kwargs: events.append(
+            "webview"
+        )
+        session.call_action = lambda action, **_kwargs: (
+            events.append(f"action:{action}")
+            or {
+                "identity": identity,
+                "embeddedIdentitySha256": digest,
+            }
+        )
+        session.switch_to_native = lambda **_kwargs: events.append("native")
+        session._active_application_id = lambda **_kwargs: (
+            events.append("active-application")
+            or "com.peers.touch.mobile"
+        )
+
+        payload = session.verify_installed_build_identity(installation_ref)
+
+        self.assertEqual(
+            events,
+            [
+                "webview",
+                "action:build.identity",
+                "native",
+                "active-application",
+            ],
+        )
+        self.assertTrue(payload["allIdentitiesMatch"])
+
+    def test_build_identity_restores_native_context_after_harness_failure(
+        self,
+    ) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.source_gate_id = "mobile-social-android-native"
+        session.client_id = "alice-android"
+        session.device_descriptor = object()
+        session._build_attestation = {
+            "buildIdentity": {
+                "applicationId": "com.peers.touch.mobile",
+            }
+        }
+        session._installation_trace = {}
+        session.artifact_reader = SimpleNamespace(read_json=lambda _ref: {})
+        events: list[str] = []
+        session.switch_to_app_webview = lambda **_kwargs: events.append(
+            "webview"
+        )
+
+        def reject_action(_action: str, **_kwargs: Any) -> None:
+            events.append("action")
+            raise DriverError("synthetic harness failure")
+
+        session.call_action = reject_action
+        session.switch_to_native = lambda **_kwargs: events.append("native")
+
+        with self.assertRaisesRegex(DriverError, "synthetic harness failure"):
+            session.verify_installed_build_identity(
+                parent_artifact_ref(
+                    "evidence/mobile/runtime/alice-android/install.json"
+                )
+            )
+
+        self.assertEqual(events, ["webview", "action", "native"])
+
     def test_physical_lease_wait_propagates_cancellation_and_deadline(
         self,
     ) -> None:

@@ -4119,11 +4119,21 @@ class _ParentAppiumSession:
                 raise DriverError(
                     "Appium scenario installation trace is unavailable"
                 ) from error
-        runtime = self.call_action(
-            "build.identity",
+        self.switch_to_app_webview(
             deadline_monotonic=deadline_monotonic,
             cancellation=cancellation,
         )
+        try:
+            runtime = self.call_action(
+                "build.identity",
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        finally:
+            self.switch_to_native(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
         expected = self._build_attestation["buildIdentity"]
         digest = self._build_attestation["embeddedIdentitySha256"]
         if (
