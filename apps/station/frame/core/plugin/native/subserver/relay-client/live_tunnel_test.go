@@ -161,7 +161,7 @@ func liveLoginThroughAccessGate(
 			StationUrl:    "https://station.invalid",
 			StationPeerId: stationPeerID,
 			Client: &accesspb.AccessGateClientInfo{
-				Platform:            "opaque-tunnel-e2e",
+				Platform:            "desktop",
 				AppVersion:          "1",
 				DeviceId:            deviceID,
 				Locale:              "en",
@@ -192,7 +192,7 @@ func liveLoginThroughAccessGate(
 				Login: &authpb.LoginRequest{
 					Email:      liveEnv("PT_LIVE_TUNNEL_ACCOUNT", "alice@p.t"),
 					Password:   liveEnv("PT_LIVE_TUNNEL_PASSWORD", "1"),
-					DeviceType: "opaque-tunnel-e2e",
+					DeviceType: "desktop",
 				},
 			},
 			ActionId:            gate.GetActionId(),
