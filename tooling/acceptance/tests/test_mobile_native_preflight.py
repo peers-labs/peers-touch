@@ -773,6 +773,17 @@ class ParentAndroidInstallationAdapterTests(unittest.TestCase):
             ) -> CommandResult:
                 del cwd, env, timeout
                 commands.append(command)
+                if command[-6:-1] == (
+                    "shell",
+                    "cmd",
+                    "package",
+                    "list",
+                    "packages",
+                ):
+                    return CommandResult(
+                        0,
+                        "package:com.peers.touch.mobile\n",
+                    )
                 if command[-4:-1] == ("shell", "pm", "path"):
                     return CommandResult(
                         0,
@@ -806,7 +817,8 @@ class ParentAndroidInstallationAdapterTests(unittest.TestCase):
         self.assertTrue(observed.present)
         self.assertEqual(observed.sha256, "a" * 64)
         self.assertEqual(commands[0][-1], "com.peers.touch.mobile")
-        self.assertEqual(commands[1][-1], "/data/app/opaque/base.apk")
+        self.assertEqual(commands[1][-1], "com.peers.touch.mobile")
+        self.assertEqual(commands[2][-1], "/data/app/opaque/base.apk")
 
     def test_adapter_reports_absent_package_without_hash_command(self) -> None:
         commands: list[tuple[str, ...]] = []
@@ -822,7 +834,15 @@ class ParentAndroidInstallationAdapterTests(unittest.TestCase):
             ) -> CommandResult:
                 del cwd, env, timeout
                 commands.append(command)
-                return CommandResult(0, "")
+                if command[-6:-1] == (
+                    "shell",
+                    "cmd",
+                    "package",
+                    "list",
+                    "packages",
+                ):
+                    return CommandResult(0, "")
+                return CommandResult(1, stderr="unexpected command")
 
         class Session:
             _device_lease = {"opaque": True}
@@ -845,6 +865,43 @@ class ParentAndroidInstallationAdapterTests(unittest.TestCase):
         self.assertFalse(observed.present)
         self.assertIsNone(observed.sha256)
         self.assertEqual(len(commands), 1)
+
+    def test_adapter_rejects_failed_package_inventory(self) -> None:
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                del command, cwd, env, timeout
+                return CommandResult(1, stderr="package service unavailable")
+
+        class Session:
+            _device_lease = {"opaque": True}
+
+            @staticmethod
+            def _with_physical_device(
+                _lease: Mapping[str, object],
+                operation,
+                **_kwargs: object,
+            ):
+                return operation(SimpleNamespace(identifier="process-local"))
+
+        adapter = _ParentAndroidInstallationAdapter(
+            Session(),  # type: ignore[arg-type]
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+            executor=Executor(),
+        )
+
+        with self.assertRaisesRegex(
+            DriverError,
+            "installed package lookup failed",
+        ):
+            adapter.inspect("com.peers.touch.mobile")
 
 
 class MobileNativeSourceProjectionTests(unittest.TestCase):
