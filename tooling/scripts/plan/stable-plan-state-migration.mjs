@@ -16,8 +16,19 @@ import {
   acquireDevelopmentWorkLedgerLock,
 } from '../local-dev/dev-work-ledger.mjs';
 import {
+  adoptActiveWorkOwner,
+  readActiveWorkRecord,
+} from '../local-dev/active-work-store.mjs';
+import {
+  adoptSessionWorkflowOwner,
+} from '../local-dev/dev-session-store.mjs';
+import {
   resolveWorkflowOwnerCommandContext,
 } from '../local-dev/workflow-owner-context.mjs';
+import {
+  sameWorkflowOwnerReference,
+  validateWorkflowOwnerReference,
+} from '../local-dev/workflow-owner-reference.mjs';
 import {
   LEDGER_KIND as DEVELOPMENT_LEDGER_KIND,
   SCHEMA_VERSION as DEVELOPMENT_SCHEMA_VERSION,
@@ -223,16 +234,50 @@ function validateWorkLedger(ledger) {
   return ledger;
 }
 
-function migrateDeclaration(declaration) {
-  if (!Object.hasOwn(declaration, 'planVersionDigest')) return declaration;
-  const migrated = { ...declaration, planDigest: declaration.planVersionDigest };
-  delete migrated.planVersionDigest;
+function migrateDeclaration(declaration, workflowOwner = null) {
+  const legacy = Object.hasOwn(declaration, 'planVersionDigest');
+  const adoptOwner =
+    workflowOwner !== null && declaration.workflowOwner === undefined;
+  if (!legacy && !adoptOwner) {
+    if (
+      workflowOwner !== null &&
+      !sameWorkflowOwnerReference(declaration.workflowOwner, workflowOwner)
+    ) {
+      fail(
+        'WORKFLOW_OWNER_CONTEXT_MISMATCH',
+        'selected declaration belongs to another workflow OWNER',
+        { declarationId: declaration.declarationId },
+      );
+    }
+    return declaration;
+  }
+  if (
+    workflowOwner !== null &&
+    declaration.workflowOwner !== undefined &&
+    !sameWorkflowOwnerReference(declaration.workflowOwner, workflowOwner)
+  ) {
+    fail(
+      'WORKFLOW_OWNER_CONTEXT_MISMATCH',
+      'selected declaration belongs to another workflow OWNER',
+      { declarationId: declaration.declarationId },
+    );
+  }
+  const migrated = {
+    ...declaration,
+    ...(adoptOwner ? { workflowOwner } : {}),
+    ...(legacy ? { planDigest: declaration.planVersionDigest } : {}),
+  };
+  if (legacy) delete migrated.planVersionDigest;
   migrated.declarationDigest = digestDeclaration(migrated);
   return migrated;
 }
 
 export async function migrateStablePlanState(options = {}) {
   const home = options.home ?? homedir();
+  const workflowOwner =
+    options.workflowOwner === undefined
+      ? null
+      : validateWorkflowOwnerReference(options.workflowOwner);
   const workspaceId =
     options.workspaceId ??
     workspaceIdForRoot(path.resolve(options.repoRoot ?? process.cwd()));
@@ -247,6 +292,7 @@ export async function migrateStablePlanState(options = {}) {
   const mountFile = path.join(machineDevRoot(home), 'plan-mounts', 'ledger.json');
   let releaseWork = null;
   let planLease = null;
+  let migrationResult = null;
   const replaceFile = options.atomicReplaceFile ?? atomicReplaceFile;
   try {
     releaseWork = acquireDevelopmentWorkLedgerLock({
@@ -275,15 +321,24 @@ export async function migrateStablePlanState(options = {}) {
     }
 
     let migratedDeclarations = 0;
+    let adoptedWorkflowOwners = 0;
     if (work !== null) {
       const declarations = Object.fromEntries(
         Object.entries(work.value.declarations ?? {}).map(
           ([id, declaration]) => {
             const migrated =
               declaration.workspaceId === workspaceId
-                ? migrateDeclaration(declaration)
+                ? migrateDeclaration(declaration, workflowOwner)
                 : declaration;
-            if (migrated !== declaration) migratedDeclarations += 1;
+            if (migrated !== declaration) {
+              migratedDeclarations += 1;
+              if (
+                declaration.workflowOwner === undefined &&
+                migrated.workflowOwner !== undefined
+              ) {
+                adoptedWorkflowOwners += 1;
+              }
+            }
             return [id, migrated];
           },
         ),
@@ -334,10 +389,11 @@ export async function migrateStablePlanState(options = {}) {
       }
     }
 
-    return {
+    migrationResult = {
       ok: true,
       workspaceId,
       migratedDeclarations,
+      adoptedWorkflowOwners,
       migratedMountLedger,
       mountLedgerMode,
     };
@@ -345,6 +401,43 @@ export async function migrateStablePlanState(options = {}) {
     if (planLease !== null) await releasePlanMountLedgerLock(planLease);
     if (releaseWork !== null) releaseWork();
   }
+  let adoptedActiveWorkOwner = false;
+  let sessionOwnerPresent = false;
+  if (workflowOwner !== null) {
+    const existingActiveWork = readActiveWorkRecord({
+      home,
+      workspaceId,
+    });
+    if (existingActiveWork !== null) {
+      adoptedActiveWorkOwner =
+        existingActiveWork.workflowOwner === undefined;
+      const activeWork = adoptActiveWorkOwner({
+        home,
+        workspaceId,
+        workflowOwner,
+      });
+      adoptSessionWorkflowOwner({
+        home,
+        workspaceId,
+        workItemId: activeWork.workItemId,
+        workflowOwner,
+        expected: {
+          sessionId: activeWork.sessionId,
+          workItemId: activeWork.workItemId,
+          planId: activeWork.planId,
+          taskId: activeWork.currentTaskId,
+          workspaceId,
+          branch: activeWork.branch,
+        },
+      });
+      sessionOwnerPresent = true;
+    }
+  }
+  return {
+    ...migrationResult,
+    adoptedActiveWorkOwner,
+    sessionOwnerPresent,
+  };
 }
 
 function parseArguments(argv) {
@@ -368,13 +461,20 @@ function parseArguments(argv) {
 if (isDirectInvocation(import.meta.url)) {
   try {
     const options = parseArguments(process.argv.slice(2));
-    resolveWorkflowOwnerCommandContext('migration', 'migrate', {
-      home: options.home,
-      workspaceRoot: options.repoRoot ?? process.cwd(),
-    });
+    const ownerContext = resolveWorkflowOwnerCommandContext(
+      'migration',
+      'migrate',
+      {
+        home: options.home,
+        workspaceRoot: options.repoRoot ?? process.cwd(),
+      },
+    );
     process.stdout.write(
       `${JSON.stringify(
-        await migrateStablePlanState(options),
+        await migrateStablePlanState({
+          ...options,
+          workflowOwner: ownerContext.workflowOwner,
+        }),
         null,
         2,
       )}\n`,

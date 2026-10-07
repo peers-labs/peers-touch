@@ -43,6 +43,8 @@ import {
   writeDurableFileAtomic,
 } from './dev-session.mjs';
 import {
+  adoptSessionWorkflowOwner,
+  createSessionStore,
   inspectSessionJournal,
   summarizeSessionJournal,
 } from './dev-session-store.mjs';
@@ -790,6 +792,62 @@ test('legacy Session state without host request history remains readable', () =>
       updatedAt: '2026-09-16T12:00:00.000Z',
     };
     assert.equal(validateSessionState(state), state);
+  } finally {
+    scope.close();
+  }
+});
+
+test('adopts a missing legacy Session owner with one journal event', () => {
+  const scope = fixture();
+  try {
+    const owner = workflowOwner();
+    const state = createInitialSessionState(
+      {
+        sessionId: scope.sessionId,
+        workItemId: scope.workItemId,
+        planId: scope.plan.manifest.planId,
+        taskId: scope.task.taskId,
+        workspaceId: WORKSPACE_ID,
+        branch: BRANCH,
+        journeyId: scope.task.journeyId,
+        executionMode: scope.task.executionMode,
+      },
+      '2026-09-16T12:00:00.000Z',
+    );
+    createSessionStore(state, {
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+      reason: 'Legacy Session fixture',
+    });
+
+    const options = {
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+      workflowOwner: owner,
+      expected: {
+        sessionId: scope.sessionId,
+        workItemId: scope.workItemId,
+        planId: scope.plan.manifest.planId,
+        taskId: scope.task.taskId,
+        workspaceId: WORKSPACE_ID,
+        branch: BRANCH,
+      },
+      now: new Date('2026-09-16T12:01:00.000Z'),
+    };
+    const adopted = adoptSessionWorkflowOwner(options);
+    assert.equal(adopted.eventCount, 2);
+    assert.deepEqual(adopted.state.workflowOwner, owner);
+
+    const idempotent = adoptSessionWorkflowOwner({
+      ...options,
+      now: new Date('2026-09-16T12:02:00.000Z'),
+    });
+    assert.equal(idempotent.eventCount, 2);
+    assert.deepEqual(idempotent, adopted);
   } finally {
     scope.close();
   }

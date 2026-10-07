@@ -30,8 +30,12 @@ import {
   sessionFail,
   transitionSessionState,
   validateSession,
+  validateSessionState,
   validateTransitionEvent,
 } from './dev-session-schema.mjs';
+import {
+  validateWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 export const MAX_SESSION_EVENTS = 256;
 export const MAX_SESSION_EVENT_BYTES = 1024 * 1024;
@@ -1041,6 +1045,42 @@ export function transitionSessionStore(options) {
       sessionId: nextState.sessionId,
       at: nextState.updatedAt,
       reason: options.reason,
+      previousDigest: latest.eventDigest,
+      compactedThrough: null,
+      snapshot: nextState,
+    });
+    const bounded = boundedEvents(events, event, options);
+    return writeSessionFiles(paths, bounded, {
+      beforeCommit: options.beforeCommit,
+    });
+  });
+}
+
+export function adoptSessionWorkflowOwner(options) {
+  const workflowOwner = validateWorkflowOwnerReference(
+    options.workflowOwner,
+  );
+  return withSessionLock(options, (paths, now) => {
+    const { events, session } = readAndRepair(paths);
+    assertIdentity(session, options.expected);
+    if (session.state.workflowOwner !== undefined) {
+      assertSessionOwner(session.state.workflowOwner, workflowOwner);
+      return session;
+    }
+    const nextState = validateSessionState({
+      ...session.state,
+      workflowOwner,
+      updatedAt: now.toISOString(),
+    });
+    const latest = events.at(-1);
+    const event = createTransitionEvent({
+      kind: 'TRANSITIONED',
+      sequence: latest.sequence + 1,
+      sessionId: nextState.sessionId,
+      at: nextState.updatedAt,
+      reason:
+        options.reason ??
+        'Adopted live workflow OWNER during workspace schema migration',
       previousDigest: latest.eventDigest,
       compactedThrough: null,
       snapshot: nextState,

@@ -438,10 +438,13 @@ Rules:
 
 `make plan-state-migrate` derives one workspace from the canonical root. It
 migrates only that workspace's declaration records without changing their
-lifecycle state and preserves foreign indexes. A selected legacy mount remains
-close-only: stable execution cannot consume its retired snapshot, while the
-exact owner may perform only explicitly authorized `owner-unmount`. The mixed
-envelope is removed automatically when
+lifecycle state and preserves foreign indexes. For a selected historical
+declaration created before workflow-owner provenance, the same migration may
+attach only the live OWNER reference from its exact admitting Hook action;
+existing or foreign ownership is never replaced. A selected legacy mount
+remains close-only: stable execution cannot consume its retired snapshot,
+while the exact owner may perform only explicitly authorized `owner-unmount`.
+The mixed envelope is removed automatically when
 `liveMountsByPlanVersion` becomes empty.
 
 ## 5.2 Execution Plan Snapshot And Run

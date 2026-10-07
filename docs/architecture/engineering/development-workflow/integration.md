@@ -492,7 +492,10 @@ preserves a live declaration's lifecycle state, and leaves foreign records in
 the single mixed ledger envelope as conflict inputs. A selected legacy mount is
 close-only under stable tooling: only explicitly authorized exact-owner
 `owner-unmount` removes its legacy indexes without reviving or trusting the old
-snapshot. The final legacy Plan index is deleted mechanically when empty.
+snapshot. A selected declaration that predates OWNER provenance may adopt only
+the current live Hook OWNER during this migration; existing or foreign owners
+cannot be replaced. The final legacy Plan index is deleted mechanically when
+empty.
 
 The diff-based planner may report candidate Gates but may not mutate the package
 or current closure.

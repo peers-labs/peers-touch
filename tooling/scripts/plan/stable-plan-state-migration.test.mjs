@@ -53,6 +53,23 @@ function canonicalize(value) {
   );
 }
 
+function workflowOwner(rootChatId = 'current-owner') {
+  const host = 'trae';
+  return {
+    host,
+    kind: 'peers-touch-workflow-owner-reference',
+    rootBindingDigest: crypto
+      .createHash('sha256')
+      .update(`binding\0${rootChatId}`)
+      .digest('hex'),
+    rootChatHash: crypto
+      .createHash('sha256')
+      .update(`${host}\0root\0${rootChatId}`)
+      .digest('hex'),
+    rootChatId,
+  };
+}
+
 function legacyDeclaration(
   state = 'RELEASED',
   workspaceId = '0123456789abcdef',
@@ -215,6 +232,65 @@ test('migrates a selected live declaration without changing its lifecycle', asyn
   assert.equal(
     Object.hasOwn(migrated, 'planVersionDigest'),
     false,
+  );
+});
+
+test('adopts the live OWNER only for selected declarations missing provenance', async (t) => {
+  const fixture = scope(t);
+  const owner = workflowOwner();
+  const own = legacyDeclaration('ACTIVE');
+  own.planDigest = own.planVersionDigest;
+  delete own.planVersionDigest;
+  own.declarationDigest = digestDeclaration(own);
+  const foreign = legacyDeclaration(
+    'ACTIVE',
+    fixture.foreignWorkspaceId,
+    'foreign-task',
+  );
+  writeJson(fixture.workFile, {
+    schemaVersion: 1,
+    kind: 'peers-touch-development-work-ledger',
+    updatedAt: '2026-10-06T00:00:00.000Z',
+    declarations: {
+      [own.declarationId]: own,
+      [foreign.declarationId]: foreign,
+    },
+  });
+
+  const result = await migrateStablePlanState({
+    home: fixture.home,
+    workspaceId: fixture.workspaceId,
+    workflowOwner: owner,
+  });
+  const declarations = readLedger(fixture.workFile).declarations;
+
+  assert.equal(result.migratedDeclarations, 1);
+  assert.equal(result.adoptedWorkflowOwners, 1);
+  assert.deepEqual(declarations[own.declarationId].workflowOwner, owner);
+  assert.deepEqual(declarations[foreign.declarationId], foreign);
+});
+
+test('rejects selected declaration ownership drift', async (t) => {
+  const fixture = scope(t);
+  const declaration = legacyDeclaration('ACTIVE');
+  declaration.workflowOwner = workflowOwner('persisted-owner');
+  declaration.declarationDigest = digestDeclaration(declaration);
+  writeJson(fixture.workFile, {
+    schemaVersion: 1,
+    kind: 'peers-touch-development-work-ledger',
+    updatedAt: '2026-10-06T00:00:00.000Z',
+    declarations: { [declaration.declarationId]: declaration },
+  });
+
+  await assert.rejects(
+    migrateStablePlanState({
+      home: fixture.home,
+      workspaceId: fixture.workspaceId,
+      workflowOwner: workflowOwner('different-owner'),
+    }),
+    (error) =>
+      error instanceof StablePlanMigrationError &&
+      error.code === 'WORKFLOW_OWNER_CONTEXT_MISMATCH',
   );
 });
 
