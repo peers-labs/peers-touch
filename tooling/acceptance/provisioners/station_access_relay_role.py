@@ -466,7 +466,8 @@ def _persist_relay_attestation(
 def _persist_station_route_attestation(
     *,
     environment_id: str,
-    route_endpoint: str,
+    relay_locator: str,
+    relay_transport_endpoint: str,
     station_attestation: ServiceAttestation,
     relay_attestation: ServiceAttestation,
 ) -> ServiceAttestation:
@@ -475,7 +476,7 @@ def _persist_station_route_attestation(
         service_kind="station",
         environment_id=environment_id,
         deployment_environment=station_attestation.deployment_environment,
-        endpoint=route_endpoint,
+        endpoint=relay_locator,
         live_commit=station_attestation.live_commit,
         workspace_digest=station_attestation.workspace_digest,
         protocol_digest=station_attestation.protocol_digest,
@@ -492,6 +493,7 @@ def _persist_station_route_attestation(
         "stationAttestationRef": dict(station_attestation.artifact_ref),
         "relayServiceId": relay_attestation.service_id,
         "relayAttestationRef": dict(relay_attestation.artifact_ref),
+        "transportEndpoint": relay_transport_endpoint,
     }
     relative_path = "runtime/services/station-via-relay/attestation.json"
     write_current_artifact(
@@ -798,7 +800,8 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
             )
             station_route_attestation = _persist_station_route_attestation(
                 environment_id=self.environment_id,
-                route_endpoint=_relay_route_endpoint(
+                relay_locator=relay_url,
+                relay_transport_endpoint=_relay_route_endpoint(
                     relay_url,
                     relay_runtime,
                 ),

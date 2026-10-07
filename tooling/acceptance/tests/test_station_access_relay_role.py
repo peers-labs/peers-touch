@@ -287,7 +287,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "_persist_station_route_attestation",
                 return_value=_attestation("station-via-relay", "station"),
-            ),
+            ) as persist_station_route,
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "_available_ports",
@@ -305,6 +305,17 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self.assertEqual(
             client.service_bindings["station"].service_id,
             "station-via-relay",
+        )
+        persist_station_route.assert_called_once()
+        self.assertEqual(
+            persist_station_route.call_args.kwargs["relay_locator"],
+            "http://relay.example",
+        )
+        self.assertEqual(
+            persist_station_route.call_args.kwargs[
+                "relay_transport_endpoint"
+            ],
+            "https://relay.example:4501",
         )
         self.assertEqual(
             (client.gateway_port, client.renderer_port, client.webdriver_port),
