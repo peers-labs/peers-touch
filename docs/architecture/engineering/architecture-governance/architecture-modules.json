@@ -185,7 +185,8 @@
         "DWF-D40",
         "DWF-D41",
         "DWF-D42",
-        "DWF-D43"
+        "DWF-D43",
+        "DWF-D44"
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",

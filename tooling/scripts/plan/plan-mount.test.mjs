@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -7,10 +8,15 @@ import {
   PlanMountError,
   amendMountedPlan,
   cancelExecutionRun,
+  executionRunPaths,
   mountPlan,
+  planMountLedgerPath,
+  planMountRecordPath,
   releasePlanMount,
+  resolvePlanMountByIdentity,
   resolvePlanExecution,
   updateExecutionRun,
+  validatePlanMountLedger,
 } from './plan-mount.mjs';
 import {
   appendPlanAmendment,
@@ -37,6 +43,96 @@ function scope(t) {
     owner: 'test-owner',
     now: new Date('2026-10-04T00:00:00.000Z'),
   };
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalize(value[key])]),
+  );
+}
+
+function digestRecord(value) {
+  const unsigned = { ...value };
+  delete unsigned.recordDigest;
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify(canonicalize(unsigned)))
+    .digest('hex');
+}
+
+function seedForeignLegacyMount(options, overrides = {}) {
+  const mount = {
+    kind: 'peers-touch-plan-mount',
+    mountId: 'mount-legacy-foreign',
+    projectId: 'foreign-project',
+    planId: 'foreign-plan',
+    planVersionId: 'foreign-plan-v1',
+    planVersionDigest: 'a'.repeat(64),
+    planPath: 'plans/foreign/plan.md',
+    workspaceId: 'fedcba9876543210',
+    canonicalRoot: path.join(options.home, 'foreign-workspace'),
+    state: 'mounted',
+    mountedAt: '2026-10-03T00:00:00.000Z',
+    mountedBy: 'foreign-owner',
+    releasedAt: null,
+    releaseReason: null,
+    ...overrides,
+  };
+  mount.recordDigest = digestRecord(mount);
+  const recordFile = planMountRecordPath(mount.mountId, options);
+  fs.mkdirSync(path.dirname(recordFile), { recursive: true });
+  fs.writeFileSync(recordFile, `${JSON.stringify(mount, null, 2)}\n`);
+
+  const run = {
+    kind: 'peers-touch-execution-run',
+    runId: 'run-legacy-foreign',
+    snapshotId: 'snapshot-legacy-foreign',
+    snapshotDigest: 'b'.repeat(64),
+    mountId: mount.mountId,
+    state: 'active',
+    taskStates: {
+      'legacy-task': {
+        state: 'in_progress',
+        blocker: null,
+      },
+    },
+    exhaustion: null,
+    currentTaskId: 'legacy-task',
+    updatedAt: '2026-10-03T00:00:00.000Z',
+    revision: 1,
+  };
+  run.recordDigest = digestRecord(run);
+  const runFile = executionRunPaths(run.runId, {
+    ...options,
+    repoRoot: mount.canonicalRoot,
+    workspaceId: mount.workspaceId,
+  }).run;
+  fs.mkdirSync(path.dirname(runFile), { recursive: true });
+  fs.writeFileSync(runFile, `${JSON.stringify(run, null, 2)}\n`);
+
+  const ledger = {
+    kind: 'peers-touch-plan-mount-ledger',
+    revision: 1,
+    liveMountsByWorkspace: {
+      [mount.workspaceId]: mount.mountId,
+    },
+    liveMountsByPlanVersion: {
+      [mount.planVersionDigest]: mount.mountId,
+    },
+    liveMountsByPlan: {},
+    runsByMount: {
+      [mount.mountId]: 'run-legacy-foreign',
+    },
+  };
+  ledger.recordDigest = digestRecord(ledger);
+  const ledgerFile = planMountLedgerPath(options);
+  fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });
+  fs.writeFileSync(ledgerFile, `${JSON.stringify(ledger, null, 2)}\n`);
+  return { ledger, mount, run };
 }
 
 function updateStructuredBlock(filePath, label, update) {
@@ -97,6 +193,141 @@ test('mount publishes the initial immutable snapshot and mutable Execution Run',
   assert.equal(
     Object.hasOwn(resolved.planPackage.plan, 'binding'),
     false,
+  );
+});
+
+test('mount preserves foreign legacy indexes in the mixed ledger envelope', async (t) => {
+  const options = scope(t);
+  const foreign = seedForeignLegacyMount(options);
+
+  const mounted = await mountPlan(options);
+  const ledger = JSON.parse(
+    fs.readFileSync(planMountLedgerPath(options), 'utf8'),
+  );
+
+  assert.equal(validatePlanMountLedger(ledger), ledger);
+  assert.deepEqual(ledger.liveMountsByPlanVersion, {
+    [foreign.mount.planVersionDigest]: foreign.mount.mountId,
+  });
+  assert.equal(
+    ledger.liveMountsByWorkspace[foreign.mount.workspaceId],
+    foreign.mount.mountId,
+  );
+  assert.equal(
+    ledger.liveMountsByWorkspace[mounted.mount.workspaceId],
+    mounted.mount.mountId,
+  );
+  assert.equal(
+    Object.values(ledger.liveMountsByPlan).includes(mounted.mount.mountId),
+    true,
+  );
+
+  await releasePlanMount({
+    ...options,
+    reason: 'owner-unmount',
+    allowUnfinished: true,
+  });
+  const releasedLedger = JSON.parse(
+    fs.readFileSync(planMountLedgerPath(options), 'utf8'),
+  );
+  assert.deepEqual(releasedLedger.liveMountsByPlanVersion, {
+    [foreign.mount.planVersionDigest]: foreign.mount.mountId,
+  });
+  assert.deepEqual(releasedLedger.liveMountsByPlan, {});
+  assert.deepEqual(releasedLedger.liveMountsByWorkspace, {
+    [foreign.mount.workspaceId]: foreign.mount.mountId,
+  });
+});
+
+test('mixed ledger rejects overlapping legacy and stable Plan indexes', (t) => {
+  const options = scope(t);
+  const foreign = seedForeignLegacyMount(options);
+  const ledger = structuredClone(foreign.ledger);
+  ledger.liveMountsByPlan['b'.repeat(64)] = foreign.mount.mountId;
+  ledger.recordDigest = digestRecord(ledger);
+
+  assert.throws(
+    () => validatePlanMountLedger(ledger),
+    (error) =>
+      error instanceof PlanMountError &&
+      error.code === 'PLAN_MOUNT_LEDGER_INVALID',
+  );
+});
+
+test('current owner can close a legacy mount without reviving legacy execution', async (t) => {
+  const options = scope(t);
+  const foreign = seedForeignLegacyMount(options);
+
+  assert.throws(
+    () =>
+      resolvePlanMountByIdentity({
+        home: options.home,
+        workspaceId: foreign.mount.workspaceId,
+        mountId: foreign.mount.mountId,
+      }),
+    (error) =>
+      error instanceof PlanMountError &&
+      error.code === 'PLAN_STATE_MIGRATION_REQUIRED',
+  );
+  await assert.rejects(
+    releasePlanMount({
+      home: options.home,
+      workspaceId: foreign.mount.workspaceId,
+      mountId: foreign.mount.mountId,
+      owner: foreign.mount.mountedBy,
+      reason: 'completed',
+    }),
+    (error) =>
+      error instanceof PlanMountError &&
+      error.code === 'PLAN_MOUNT_RELEASE_DENIED',
+  );
+
+  const released = await releasePlanMount({
+    home: options.home,
+    workspaceId: foreign.mount.workspaceId,
+    mountId: foreign.mount.mountId,
+    owner: foreign.mount.mountedBy,
+    reason: 'owner-unmount',
+    allowUnfinished: true,
+  });
+  const ledger = JSON.parse(
+    fs.readFileSync(planMountLedgerPath(options), 'utf8'),
+  );
+
+  assert.equal(released.mount.state, 'released');
+  assert.equal(released.mount.releaseReason, 'owner-unmount');
+  assert.equal(released.run.recordDigest, foreign.run.recordDigest);
+  assert.deepEqual(ledger.liveMountsByWorkspace, {});
+  assert.deepEqual(ledger.liveMountsByPlan, {});
+  assert.equal(Object.hasOwn(ledger, 'liveMountsByPlanVersion'), false);
+
+  const retried = await releasePlanMount({
+    home: options.home,
+    workspaceId: foreign.mount.workspaceId,
+    mountId: foreign.mount.mountId,
+    owner: foreign.mount.mountedBy,
+    reason: 'owner-unmount',
+    allowUnfinished: true,
+  });
+  assert.equal(retried.mount.recordDigest, released.mount.recordDigest);
+});
+
+test('stable mount conflicts with the same Plan held by a foreign legacy mount', async (t) => {
+  const options = scope(t);
+  const planPackage = await loadPlanPackage(
+    path.join(options.repoRoot, options.plan),
+    { repoRoot: options.repoRoot },
+  );
+  seedForeignLegacyMount(options, {
+    projectId: options.projectId,
+    planId: planPackage.plan.planId,
+  });
+
+  await assert.rejects(
+    mountPlan(options),
+    (error) =>
+      error instanceof PlanMountError &&
+      error.code === 'PLAN_MOUNT_CONFLICT',
   );
 });
 

@@ -73,6 +73,10 @@
     lifecycle fence 下按 owner 顺序关闭资源并写可恢复
     `DevelopmentCloseReceipt`；它不接管 Session、declaration、PlanMount、
     lease 或 environment 的真源。
+27. **Global visibility, workspace mutation**: machine work/mount ledgers
+    提供跨 worktree 冲突视图，但 workspace liveness 只约束自身记录。Schema
+    adoption 由当前 workspace 执行，外部 legacy 记录通过受控 mixed envelope
+    保留，短锁和 CAS 只负责原子性。
 
 ## 2. Evidence Ledger
 
@@ -83,6 +87,7 @@
 | branch-wide Plan discovery cannot distinguish synchronized worktree ownership | `verified_fact` | pre-DWF-D18 `tooling/acceptance/core/execution_plan.py`; Group Chat reproduction | high | immutable binding regression |
 | Mobile Shell 计划超过 4,000 行并包含大量 dated progress | `verified_fact` | `20260827-mobile-shell-implementation.md` | high | none |
 | `DevelopmentSession` 已由 bounded event journal、snapshot replay 与 guarded transitions 实现 | `verified_fact` | `tooling/scripts/local-dev/dev-session-{schema,store}.mjs`; `dev-session.test.mjs` | high | none |
+| stable Plan 迁移把任意 foreign live declaration/mount 当作全机阻塞 | `verified_fact` | pre-DWF-D44 `stable-plan-state-migration.mjs`; two-workspace machine reproduction | high | workspace-isolation regression |
 | compact package 会降低恢复输入且保持证明可追踪 | `proposal` | DWF-D13 | medium | pilot metrics and adversarial simulation |
 | Context Anchor 的 `Next action` 是无结构自由文本 | `verified_fact` | `tooling/skills/pt-context-anchor/SKILL.md` | high | none |
 | `planctl status` 未输出 Task closure 进度和下一关闭效果 | `verified_fact` | `tooling/scripts/plan/plan-package.mjs` | high | none |
@@ -203,6 +208,9 @@ No owner may copy another owner's complete state. In particular:
 - `PlanResourcePlan` does not replace a physical lease or runtime manifest.
 - Business Gates do not build, provision, log in, clean up, or release
   resources.
+- A machine ledger writer may read foreign coordination claims but may mutate
+  declaration/mount lifecycle only for its selected workspace; unrelated
+  liveness is never a migration or admission lock.
 - Declaration release, Session archive, active-work removal, PlanMount release,
   and environment unregister remain separate owner mutations. Only a
   `CLOSED` close receipt proves their coordinated completion.

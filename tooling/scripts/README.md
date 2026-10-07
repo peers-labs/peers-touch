@@ -77,7 +77,7 @@ export VITE_PORT=3000
 | `execution-plan.py` | 推荐 | 本地解析 mounted Plan/ExecutionRun，CI 解析仓库 Plan/completion contract | tracked PR 用 `--require-complete`；CI 不读取 machine-local mount；本地 `--allow-untracked` 仅把 `PLAN_MOUNT_REQUIRED` 分类为 standalone |
 | `plan/plan-completion.mjs` | 内部 owner | 发布并校验绑定最终 Plan digest 的不可变仓库 completion attestation | `make plan-seal-completion PLAN=<path>` 仅接受全部 Task 为 `done` 的当前 ExecutionRun |
 | `plan/plan-mount.mjs` | 推荐 | 管理显式批准后的 stable PlanMount、immutable snapshot history、in-place amendment 与 mutable ExecutionRun | `make plan-approve-north-star ...` 记录用户决定，`make plan-mount PLAN=<path>` 挂载，`make plan-amend ...` 修订，终态后用 `make plan-unmount` 释放 |
-| `plan/stable-plan-state-migration.mjs` | 一次性迁移 | 在全局无 live declaration/mount 时把 machine ledger 从 Plan Version 字段硬切到 stable Plan 字段 | `make plan-state-migrate`；不提供正常运行时兼容读取 |
+| `plan/stable-plan-state-migration.mjs` | workspace 迁移 | 在短 machine lock/CAS 下只迁移当前 workspace 的 Plan Version declaration 且保持 lifecycle；保留 foreign live 记录，legacy mount 只允许显式授权的 exact-owner `owner-unmount`，并在最后一个 legacy mount 释放后收敛 mixed index | `make plan-state-migrate`；不会执行或信任 retired snapshot |
 | `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表或 `- None` standalone 标记 | CI 只对显式 Plan 路径执行 `execution-plan.py --plan`，不扫描 branch |
 | `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |
