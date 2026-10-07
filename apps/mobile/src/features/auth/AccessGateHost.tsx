@@ -260,7 +260,9 @@ export function AccessGateHost({
           : t('mobile.auth.signInTitle');
   const pageSubtitle = expiredSession && showLogin
     ? t('mobile.auth.expiredSubtitle')
-    : currentGate?.description || t('mobile.auth.subtitle');
+    : showLogin
+      ? t('mobile.auth.subtitle')
+      : currentGate?.description || t('mobile.auth.subtitle');
   const hasPrimaryAction = showInviteCode
     || (showEmailLogin && activeLoginTab === 'email');
   const visibleStationLabel = authStationLabel(
@@ -281,12 +283,14 @@ export function AccessGateHost({
       <Card className="auth-gate-card" variant="borderless">
         <section className="auth-gate-brand">
           <img src={logo} alt="Peers" className="auth-gate-logo" />
-          <Title level={1} className="auth-gate-title">
-            {pageTitle}
-          </Title>
-          <Text type="secondary" className="auth-gate-subtitle">
-            {pageSubtitle}
-          </Text>
+          <div className="auth-gate-brand-copy">
+            <Title level={1} className="auth-gate-title">
+              {pageTitle}
+            </Title>
+            <Text type="secondary" className="auth-gate-subtitle">
+              {pageSubtitle}
+            </Text>
+          </div>
         </section>
 
         {expiredSession && showLogin ? (

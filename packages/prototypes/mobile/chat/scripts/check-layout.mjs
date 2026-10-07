@@ -99,6 +99,7 @@ try {
             ? {
                 cardCount: authScreen.querySelectorAll('.mp-auth-card').length,
                 brandInsideCard: authCard.contains(authBrand),
+                cardHeight: authCardRect.height,
                 logoWidth: Number.parseFloat(authLogoStyle.width),
                 logoHeight: Number.parseFloat(authLogoStyle.height),
                 blankGap: Math.max(0, authCardRect.top - authBrandRect.bottom),
@@ -269,8 +270,9 @@ try {
     || (geometry.auth && (
       geometry.auth.cardCount !== 1
       || !geometry.auth.brandInsideCard
-      || geometry.auth.logoWidth !== 72
-      || geometry.auth.logoHeight !== 72
+      || geometry.auth.cardHeight > geometry.auth.clientHeight * 0.76
+      || geometry.auth.logoWidth !== 44
+      || geometry.auth.logoHeight !== 44
       || geometry.auth.blankGap !== 0
       || geometry.auth.recoveryCount !== 0
       || geometry.auth.hasMobileKicker

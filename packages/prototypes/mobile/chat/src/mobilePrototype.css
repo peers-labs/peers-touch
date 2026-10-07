@@ -510,32 +510,35 @@
   /* ── Auth gate ── */
   .mp-auth-screen {
     position: relative; display: flex; align-items: center; justify-content: center;
-    height: 100%; width: 100%; padding: 74px 20px 20px;
+    height: 100%; width: 100%; padding: 64px 18px 18px;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
-    background: radial-gradient(circle at 28% 24%, rgba(102,126,234,0.08), transparent 46%),
-      linear-gradient(150deg, #fbfcff, #f5f7fd 60%, #eef1fb);
+    background: #f6f7fb;
   }
 
   .mp-auth-toolbar { position: absolute; top: 16px; right: 16px; z-index: 2; }
 
   .mp-auth-brand {
-    display: flex; flex-direction: column; align-items: center;
-    width: 100%; text-align: center;
+    display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center;
+    gap: 12px; width: 100%; text-align: left;
   }
 
   .mp-auth-logo {
-    display: block; width: 72px; height: 72px; margin-bottom: 14px;
-    border-radius: 18px; object-fit: cover;
+    display: block; width: 44px; height: 44px;
+    border-radius: 8px; object-fit: cover;
+  }
+
+  .mp-auth-brand-copy {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
   }
 
   .mp-auth-title {
-    margin: 0 0 4px !important; font-size: 22px !important; font-weight: 700 !important;
+    margin: 0 !important; font-size: 20px !important; font-weight: 700 !important;
     line-height: 1.2 !important; letter-spacing: 0 !important; color: var(--mp-gray-900) !important;
   }
 
   .mp-auth-subtitle {
-    display: block; min-height: 20px; color: var(--mp-gray-500) !important;
-    font-size: 13px !important; line-height: 1.5; text-align: center;
+    display: block; color: var(--mp-gray-500) !important;
+    font-size: 13px !important; line-height: 1.4; text-align: left;
   }
 
   .mp-recovery-screen {
@@ -597,16 +600,16 @@
   .mp-direct-state { margin: 0 16px; border-radius: var(--mp-r-md); }
 
   .mp-auth-card {
-    display: flex; flex: 0 0 auto; width: min(100%, 400px); min-height: 356px;
-    border-radius: 24px !important; border: 1px solid var(--mp-gray-200) !important;
-    box-shadow: 0 16px 48px rgba(27,31,59,0.10);
+    display: flex; flex: 0 0 auto; width: min(100%, 400px);
+    border-radius: 8px !important; border: 1px solid var(--mp-gray-200) !important;
+    box-shadow: 0 10px 30px rgba(27,31,59,0.08);
     > .ant-card-body {
-      display: flex; flex-direction: column; gap: 14px;
-      width: 100%; padding: 28px 24px !important;
+      display: flex; flex-direction: column; gap: 12px;
+      width: 100%; padding: 20px !important;
     }
   }
   .mp-auth-screen[data-session-expired='true'] .mp-auth-card > .ant-card-body {
-    gap: 12px; padding: 24px !important;
+    gap: 12px; padding: 20px !important;
   }
 
   .mp-auth-session-notice {
@@ -626,13 +629,14 @@
   }
 
   .mp-auth-station-summary {
-    display: grid; grid-template-columns: 36px minmax(0,1fr); align-items: center;
-    gap: 10px; min-height: 44px; padding: 2px 0;
+    display: grid; grid-template-columns: 32px minmax(0,1fr); align-items: center;
+    gap: 10px; min-height: 48px; padding: 7px 10px;
+    border-radius: 8px; background: rgba(99,102,241,0.06);
   }
 
   .mp-auth-station-icon {
-    display: grid; place-items: center; width: 36px; height: 36px;
-    border-radius: 10px; background: var(--mp-primary-light); color: var(--mp-primary);
+    display: grid; place-items: center; width: 32px; height: 32px;
+    border-radius: 7px; background: var(--mp-primary-light); color: var(--mp-primary);
   }
 
   .mp-auth-station-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -668,14 +672,20 @@
 
   .mp-auth-actions {
     display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px;
-    .ant-btn { height: 44px; border-radius: 12px; }
-    &.single { grid-template-columns: 1fr; }
+    .ant-btn { height: 44px; border-radius: 8px; }
+    &.single {
+      display: flex; justify-content: center;
+      .ant-btn {
+        width: auto; height: 36px; padding-inline: 10px;
+        border-color: transparent; background: transparent; box-shadow: none;
+      }
+    }
   }
 
   /* ── Tab content grid overlay — locks height across tabs ── */
   .mp-auth-tab-content {
     display: grid;
-    min-height: 160px;
+    min-height: 0;
     > * {
       grid-area: 1 / 1;
       visibility: hidden;
@@ -687,8 +697,6 @@
       }
     }
   }
-  .mp-auth-screen[data-session-expired='true'] .mp-auth-tab-content { min-height: 108px; }
-
   /* ── OAuth buttons ── */
   .mp-auth-oauth { display: flex; flex-direction: column; gap: 8px; }
   .mp-oauth-btn {
@@ -751,10 +759,7 @@
 
   @media (max-height: 700px) {
     .mp-auth-screen { justify-content: flex-start; }
-    .mp-auth-card > .ant-card-body { padding: 22px 20px !important; }
-    .mp-auth-logo {
-      width: 60px; height: 60px; margin-bottom: 10px; border-radius: 15px;
-    }
+    .mp-auth-card > .ant-card-body { padding: 18px !important; }
   }
 
   /* ── Shell ── */

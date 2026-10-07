@@ -618,11 +618,9 @@ select,
   justify-content: center;
   min-height: 100dvh;
   width: 100%;
-  padding: calc(var(--safe-area-top) + 58px) 20px
-    calc(var(--safe-area-bottom) + 20px);
-  background:
-    radial-gradient(circle at 28% 24%, rgba(102, 126, 234, 0.08), transparent 46%),
-    linear-gradient(150deg, #fbfcff, #f5f7fd 60%, #eef1fb);
+  padding: calc(var(--safe-area-top) + 64px) 18px
+    calc(var(--safe-area-bottom) + 18px);
+  background: #f6f7fb;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -635,25 +633,32 @@ select,
 }
 
 .auth-gate-brand {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
+  gap: 12px;
   width: 100%;
-  text-align: center;
+  text-align: left;
 }
 
 .auth-gate-logo {
   display: block;
-  width: 72px;
-  height: 72px;
-  margin-bottom: 14px;
-  border-radius: 18px;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
   object-fit: cover;
 }
 
+.auth-gate-brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .auth-gate-title {
-  margin: 0 0 4px !important;
-  font-size: 22px !important;
+  margin: 0 !important;
+  font-size: 20px !important;
   font-weight: 700 !important;
   line-height: 1.2 !important;
   letter-spacing: 0 !important;
@@ -661,33 +666,31 @@ select,
 
 .auth-gate-subtitle {
   display: block;
-  min-height: 20px;
   font-size: 13px;
-  line-height: 1.5;
-  text-align: center;
+  line-height: 1.4;
+  text-align: left;
 }
 
 .auth-gate-card {
   display: flex;
   flex: 0 0 auto;
   width: min(100%, 400px);
-  min-height: 356px;
   border: 1px solid rgba(15, 23, 42, 0.08) !important;
-  border-radius: 24px !important;
-  box-shadow: 0 16px 48px rgba(27, 31, 59, 0.1);
+  border-radius: 8px !important;
+  box-shadow: 0 10px 30px rgba(27, 31, 59, 0.08);
 }
 
 .auth-gate-card > .ant-card-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   width: 100%;
-  padding: 28px 24px !important;
+  padding: 20px !important;
 }
 
 .auth-gate-screen[data-session-expired='true'] .auth-gate-card > .ant-card-body {
   gap: 12px;
-  padding: 24px !important;
+  padding: 20px !important;
 }
 
 .auth-session-notice {
@@ -724,20 +727,22 @@ select,
 
 .auth-station-summary {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  min-height: 44px;
-  padding: 2px 0;
+  min-height: 48px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(102, 126, 234, 0.06);
 }
 
 .auth-station-icon {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: rgba(102, 126, 234, 0.08);
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: rgba(102, 126, 234, 0.1);
   color: var(--brand-primary);
 }
 
@@ -800,11 +805,7 @@ select,
 .auth-tab-content {
   display: grid;
   grid-template-rows: 1fr;
-  min-height: 108px;
-}
-
-.auth-gate-screen:not([data-session-expired='true']) .auth-tab-content {
-  min-height: 162px;
+  min-height: 0;
 }
 
 .auth-tab-panel {
@@ -912,12 +913,22 @@ select,
 }
 
 .auth-actions.single {
-  grid-template-columns: 1fr;
+  display: flex;
+  justify-content: center;
 }
 
 .auth-actions .ant-btn {
   height: 44px;
-  border-radius: 12px;
+  border-radius: 8px;
+}
+
+.auth-actions.single .ant-btn {
+  width: auto;
+  height: 36px;
+  padding-inline: 10px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 @media (max-height: 700px) {
@@ -926,14 +937,7 @@ select,
   }
 
   .auth-gate-card > .ant-card-body {
-    padding: 22px 20px !important;
-  }
-
-  .auth-gate-logo {
-    width: 60px;
-    height: 60px;
-    margin-bottom: 10px;
-    border-radius: 15px;
+    padding: 18px !important;
   }
 }
 
