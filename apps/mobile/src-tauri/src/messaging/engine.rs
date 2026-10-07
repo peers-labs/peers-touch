@@ -26,8 +26,9 @@ use messaging_core::identity::{
 };
 use messaging_core::inbox::{
     AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor,
-    ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor, DrainProgress,
-    MessagingItemConsumer, MlsItemConsumer, PublicEventProcessor, QueueDrain,
+    ConsumerEpochObserver, ConversationStateProcessor, DeliveryReceiptProcessor,
+    DirectMessageProcessor, DrainProgress, MessagingItemConsumer, MlsItemConsumer,
+    PublicEventProcessor, QueueDrain,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -417,7 +418,7 @@ pub struct MobileMessagingEngine {
     mls_manager: Arc<MlsGroupManager>,
     consumer: Arc<CoreItemConsumer>,
     consumer_id: String,
-    consumer_epoch: AtomicU64,
+    consumer_epoch: Arc<AtomicU64>,
     drain_lock: Mutex<()>,
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
@@ -555,7 +556,7 @@ impl MobileMessagingEngine {
             mls_manager,
             consumer,
             consumer_id,
-            consumer_epoch: AtomicU64::new(0),
+            consumer_epoch: Arc::new(AtomicU64::new(0)),
             drain_lock: Mutex::new(()),
             dispatch_lock: Mutex::new(()),
             send_intent_lock: Mutex::new(()),
@@ -566,6 +567,13 @@ impl MobileMessagingEngine {
 
     pub fn profile_id(&self) -> &str {
         &self.profile_id
+    }
+
+    fn consumer_epoch_observer(&self) -> ConsumerEpochObserver {
+        let consumer_epoch = self.consumer_epoch.clone();
+        Arc::new(move |epoch| {
+            consumer_epoch.store(epoch, Ordering::Release);
+        })
     }
 
     pub fn chat_storage_snapshot(
@@ -3039,12 +3047,11 @@ impl MobileMessagingEngine {
             self.consumer_id.clone(),
             DRAIN_BATCH_LIMIT,
         )?;
+        drain = drain.with_consumer_epoch_observer(self.consumer_epoch_observer());
         if let Some(observer) = observer {
             drain = drain.with_acknowledged_item_observer(observer);
         }
         let progress = drain.drain_once(cursor, expected_epoch)?;
-        self.consumer_epoch
-            .store(progress.consumer_epoch, Ordering::Release);
         if let Err(error) = self.resume_redaction_file_cleanup() {
             log::warn!("mobile messaging redaction file cleanup remains pending: {error}");
         }
@@ -4417,7 +4424,7 @@ fn map_friend_request_transport_error(
         StationTransportError::Decode | StationTransportError::Invalid => {
             FriendRequestTransportFailure::ResponseDecode
         }
-        StationTransportError::Network | StationTransportError::HttpStatus(_) => {
+        StationTransportError::Network | StationTransportError::HttpStatus { .. } => {
             FriendRequestTransportFailure::Transport
         }
     }
@@ -4429,7 +4436,7 @@ fn map_relationship_transport_error(error: StationTransportError) -> Relationshi
         StationTransportError::Decode | StationTransportError::Invalid => {
             RelationshipTransportFailure::ResponseDecode
         }
-        StationTransportError::Network | StationTransportError::HttpStatus(_) => {
+        StationTransportError::Network | StationTransportError::HttpStatus { .. } => {
             RelationshipTransportFailure::Transport
         }
     }
@@ -4571,6 +4578,16 @@ fn timestamp(unix_ms: i64) -> prost_types::Timestamp {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signature, Verifier};
+
+    #[test]
+    fn consumer_epoch_observer_updates_runtime_epoch() {
+        let (engine, root) = test_engine("consumer-epoch-observer");
+
+        engine.consumer_epoch_observer()(7);
+
+        assert_eq!(engine.consumer_epoch.load(Ordering::Acquire), 7);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn group_mutation_plan() -> PrepareConversationCommandResponse {
         PrepareConversationCommandResponse {

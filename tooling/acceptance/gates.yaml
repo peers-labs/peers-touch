@@ -407,6 +407,13 @@
       "tier": "env-evidence",
       "description": "Prove native macOS Desktop and iOS Simulator restart, logout, actor/device separation, lifecycle fencing, and old-scope absence on one source-attested Station."
     },
+    "station-access-session-class-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.session_class_e2e",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require current-source native receiver proof for Desktop-Mobile coexistence and independent Desktop and Mobile same-class takeover."
+    },
     "station-access-federation-boundary-e2e": {
       "argv": [
         "python3",
@@ -726,34 +733,6 @@
       "tier": "local-evidence",
       "description": "Validate the Social managed domain against its current exact-source Native Desktop proof."
     },
-    "federation-three-node-e2e": {
-      "command": "make testnet-p5-federation-e2e",
-      "timeout_seconds": 1200,
-      "environment": "fedp5",
-      "tier": "nightly",
-      "description": "Create and converge one federation across the isolated three-node testnet."
-    },
-    "federation-surface-smoke": {
-      "command": "python3 tooling/acceptance/gates/federation/surface_smoke.py",
-      "timeout_seconds": 300,
-      "environment": "fedp5",
-      "tier": "env-evidence",
-      "description": "Validate the isolated Federation Station health endpoints and Dashboard bundle."
-    },
-    "federation-dashboard-visible-surface": {
-      "command": "python3 tooling/acceptance/gates/dashboard/federation_visible_surface.py",
-      "timeout_seconds": 600,
-      "environment": "fedp5",
-      "tier": "env-evidence",
-      "description": "Open the Dashboard Federation page and assert visible Federation operations state."
-    },
-    "federation-dashboard-operational-drilldown": {
-      "command": "python3 tooling/acceptance/gates/dashboard/federation_operational_drilldown.py",
-      "timeout_seconds": 600,
-      "environment": "fedp5",
-      "tier": "env-evidence",
-      "description": "Validate Federation operations drilldown API and Dashboard visible-surface sections."
-    },
     "desktop-performance-matrix-gate": {
       "command": "python3 tooling/scripts/desktop-performance-matrix-gate.py",
       "timeout_seconds": 120,
@@ -908,12 +887,12 @@
       "tier": "local-evidence",
       "description": "Validate Phase 0 aggregate issue/result evidence preserves source artifact, Phase, BOM, Spec, Gate, and fail-closed traceability."
     },
-    "federation-mutual-validation": {
+    "federation-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain federation --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Validate the Federation domain profile against the project-wide acceptance capability graph, registry, gate catalog, latest run results, and evidence report."
+      "description": "Validate the Federation managed-domain profile against its capability graph, registry, gate catalog, and latest run results."
     },
     "station-dashboard-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain station-dashboard --require-proven",

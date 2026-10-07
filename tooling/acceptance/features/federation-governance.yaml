@@ -4,10 +4,10 @@
   "product_area": "federation",
   "owners": [
     "apps/station/app/subserver/federation/**",
-    "apps/desktop/src/pages/FederationGovernancePage.tsx"
+    "apps/desktop/src/components/settings/FederationTab.tsx"
   ],
   "truth_sources": ["federation_ledger_proposals", "federation_ledger_events"],
-  "required_gates": ["station-federation-unit", "federation-three-node-e2e"],
+  "required_gates": ["station-federation-unit"],
   "acceptance": {
     "service": [
       "join proposals can be accepted or rejected",

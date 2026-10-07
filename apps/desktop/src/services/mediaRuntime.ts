@@ -10,10 +10,7 @@
 
 import { create } from 'zustand';
 import { log } from '../utils/logger';
-import type { FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
-
-type SocialMessage = FriendChatMessage | GroupMessage;
+import type { SocialMessage } from '../store/socialProjection';
 
 interface MediaRuntimeState {
   /** Set of session ULIDs that have already been prewarmed. */
@@ -39,8 +36,12 @@ function extractMediaUrls(messages: SocialMessage[]): string[] {
     for (const attachment of message.attachments) {
       // Prefer thumbnail for prewarming (smaller payload); fall back to
       // the main CID-based reference when no thumbnail exists.
-      const cid = attachment.thumbnailCid || attachment.cid;
-      if (cid) urls.push(cid);
+      const thumbnailCid = typeof attachment.thumbnailCid === 'string'
+        ? attachment.thumbnailCid
+        : '';
+      const cid = typeof attachment.cid === 'string' ? attachment.cid : '';
+      const source = thumbnailCid || cid;
+      if (source) urls.push(source);
     }
   }
   return urls;

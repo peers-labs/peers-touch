@@ -21,7 +21,6 @@
 | `tooling/acceptance/gates/chat/desktop_dom_message_visible.py` (L40-L41) `GateError` | `tooling/acceptance/core/errors.py` | GateError 统一到 core，各 Gate 导入使用 |
 | `tooling/acceptance/gates/chat/desktop_dom_message_visible.py` (L93-L114) `async_harness` | `tooling/acceptance/core/harness.py` | 抽取通用 JS harness 桥接，支持命名空间 |
 | `tooling/acceptance/gates/chat/desktop_dom_message_visible.py` (L193-L204) `copy_app_log/save_dom` | `tooling/acceptance/core/gate.py` AcceptanceGate 基类方法 | 证据保存统一到基类 |
-| `tooling/acceptance/gates/dashboard/federation_visible_surface.py` (L51-L154) `CDPSession` | `tooling/acceptance/drivers/chrome.py` | WS5 将 Dashboard 消费者迁移到 Selenium ChromeDriver；完成前保留为未完成项，不声称已抽取 |
 | Native Desktop Station binding | `tooling/acceptance/drivers/tauri.py` | 通过 embedded WebView 的 Tauri IPC 调用 `station_*` commands，不经过 localhost HTTP gateway |
 | `apps/desktop/src/acceptance/chatAcceptanceHarness.ts` | `apps/desktop/src/acceptance/chat/harness.ts` | Chat Harness 改为注册模式，迁移到子目录 |
 | `apps/desktop/src/main.tsx` (L44-L48) 硬编码导入 | `apps/desktop/src/acceptance/registry.ts` 自动注册 | 通用 Harness 注册机制 |
@@ -336,7 +335,7 @@ Ephemeral launch context迁移禁止：
 ### Phase 2: ChromeDriver + Native Tauri Driver + Dashboard/Native Desktop Gates
 1. ChromeDriver 实现 Dashboard DomDriver；Native Desktop 通过 Tauri IPC 和 WebDriver 组合驱动
 2. 抽取 StationAPIDriver，实现 HTTP 调用封装
-3. 重构 Dashboard federation_visible_surface，并将 Desktop surface proof 迁移到 Native Tauri Driver
+3. 新增 Dashboard browser Gate 前先建立 owned Environment Contract 与 Provisioner；Desktop surface proof 迁移到 Native Tauri Driver
 4. 运行所有 Dashboard/Federation Gates 验证 PASS：
    - `make acceptance-station-dashboard-domain-validation`
 

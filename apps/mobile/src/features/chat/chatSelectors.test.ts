@@ -1,7 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
-import { GroupSchema } from '../../gen/proto/domain/chat/group_chat_pb';
 import {
   conversationPreferenceState,
   conversationTitle,
@@ -37,6 +35,7 @@ describe('Chat typing snapshots', () => {
     expect(boundary).not.toContain('setTimeout');
     expect(boundary).not.toContain('return null');
     expect(boundary).toContain('this.props.fallback(this.retry)');
+    expect(boundary).toContain("console.error('[mobile-chat] render failed'");
     expect(source).toContain('data-testid="chat-render-error" role="alert"');
     expect(source).toContain('onClick={retry}');
   });
@@ -46,15 +45,21 @@ describe('Chat typing snapshots', () => {
       kind: 'group',
       key: 'group:group-1',
       conversation: {
-        group: create(GroupSchema, {
-          ulid: 'group-1',
+        projection: {
+          conversationId: 'group-1',
+          kind: 2,
+          authorityStationId: 'station-1',
+          federationId: 'federation-1',
           name: 'Design',
           description: '',
           ownerPtid: 'ptid:alice',
-          memberCount: 2,
-          membershipEpoch: 2n,
-          updatedAt: { seconds: 0n, nanos: 42_000_000 },
-        }),
+          memberPtids: ['ptid:alice', 'ptid:bob'],
+          members: [],
+          active: true,
+          membershipEpoch: 2,
+          mlsEpoch: 2,
+          updatedAtUnixMs: 42,
+        },
         unread: 4,
       },
     };

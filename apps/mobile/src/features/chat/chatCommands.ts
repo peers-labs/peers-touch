@@ -1,14 +1,4 @@
-/**
- * chatCommands.ts — Typed command dispatchers for chat interactions.
- *
- * Pages dispatch commands through these functions instead of calling
- * store actions directly. Messaging commands delegate to the native
- * Messaging Engine, which owns durable command/outbox state. Social block
- * writes remain online-only until their generated command/result owner lands.
- */
-
 import { useSocialStore } from '../social/socialStore';
-import { useGroupStore } from '../group/groupStore';
 import type { UpdateFriendConversationSettingsInput } from '../social/socialApiTypes';
 import type {
   MessagingAttachmentStageProjection,
@@ -20,8 +10,9 @@ import {
   messagingSearchMessages,
 } from '../../services/mobileCommands';
 import type { MobileAuthSession } from '../auth/authSession';
-import { friendMessageFromMessaging, groupMessageFromMessaging } from './messagingProjectionAdapters';
+import { wakeActiveMessagingSession } from '../../runtimes/messagingRuntime';
 import type { ChatActionState } from './chatActionState';
+import { projectMessagingMessage } from './messageProjection';
 
 export type ChatConversationKind = 'friend' | 'group';
 
@@ -37,7 +28,7 @@ export interface ChatSearchCursor {
 
 export async function dispatchSearchMessages(
   session: MobileAuthSession,
-  kind: ChatConversationKind,
+  _kind: ChatConversationKind,
   conversationId: string,
   query: string,
   cursor?: ChatSearchCursor,
@@ -65,19 +56,16 @@ export async function dispatchSearchMessages(
     throw new Error('mobile.chat.searchFailed');
   }
   return {
-    messages: rows.map((row) => kind === 'group'
-      ? groupMessageFromMessaging(conversationId, row)
-      : friendMessageFromMessaging(conversationId, row)),
+    messages: rows.map((message) => projectMessagingMessage(conversationId, message)),
     nextCursor,
   };
 }
 
 export async function dispatchLoadConversationHistory(
-  kind: ChatConversationKind,
+  _kind: ChatConversationKind,
   conversationId: string,
 ): Promise<void> {
-  if (kind === 'group') await useGroupStore.getState().loadMessages(conversationId);
-  else await useSocialStore.getState().loadMessages(conversationId);
+  await useSocialStore.getState().loadMessages(conversationId);
 }
 
 // ---------------------------------------------------------------------------
@@ -137,13 +125,11 @@ export async function dispatchForwardMessage(
 }
 
 export async function dispatchHideMessageForMe(
-  kind: ChatConversationKind,
+  _kind: ChatConversationKind,
   conversationId: string,
   messageId: string,
 ): Promise<MessagingPendingCommandResult> {
-  return kind === 'group'
-    ? useGroupStore.getState().hideMessageForActor(conversationId, messageId)
-    : useSocialStore.getState().hideMessageForActor(conversationId, messageId);
+  return useSocialStore.getState().hideMessageForActor(conversationId, messageId);
 }
 
 export async function dispatchModerateMessage(
@@ -151,7 +137,7 @@ export async function dispatchModerateMessage(
   messageId: string,
   reasonCode: string,
 ): Promise<MessagingPendingCommandResult> {
-  return useGroupStore.getState().moderateMessage(
+  return useSocialStore.getState().moderateMessage(
     conversationId,
     messageId,
     reasonCode,
@@ -160,70 +146,26 @@ export async function dispatchModerateMessage(
 
 export async function dispatchBlockUser(targetPtid: string): Promise<void> {
   await useSocialStore.getState().blockUser(targetPtid);
+  await wakeActiveMessagingSession();
 }
 
 export async function dispatchUnblockUser(targetPtid: string): Promise<void> {
   await useSocialStore.getState().unblockUser(targetPtid);
+  await wakeActiveMessagingSession();
 }
 
 // ---------------------------------------------------------------------------
-// Group chat commands
-// ---------------------------------------------------------------------------
-
-export async function dispatchGroupSendMessage(
-  groupUlid: string,
-  plaintext: string,
-  attachments: MessagingAttachmentStageProjection[],
-  context?: ChatMessageSendContext,
-): Promise<MessagingSubmitCommandResult> {
-  return useGroupStore.getState().sendMessage(
-    groupUlid,
-    plaintext,
-    attachments,
-    context,
-  );
-}
-
-export async function dispatchGroupEditMessage(
-  groupUlid: string,
-  messageUlid: string,
-  plaintext: string,
-): Promise<MessagingPendingCommandResult> {
-  return useGroupStore.getState().editMessage(
-    groupUlid,
-    messageUlid,
-    plaintext,
-  );
-}
-
-export async function dispatchGroupRecallMessage(
-  groupUlid: string,
-  messageUlid: string,
-): Promise<MessagingPendingCommandResult> {
-  return useGroupStore.getState().recallMessage(groupUlid, messageUlid);
-}
-
-// ---------------------------------------------------------------------------
-// Shared friend/group message metadata commands
+// Shared message metadata commands
 // ---------------------------------------------------------------------------
 
 export async function dispatchMessageReaction(
-  kind: ChatConversationKind,
+  _kind: ChatConversationKind,
   conversationId: string,
   messageId: string,
   reaction: string,
   remove: boolean,
   threadRootMessageId?: string,
 ): Promise<MessagingPendingCommandResult> {
-  if (kind === 'group') {
-    return useGroupStore.getState().setMessageReaction(
-      conversationId,
-      messageId,
-      reaction,
-      remove,
-      threadRootMessageId,
-    );
-  }
   return useSocialStore.getState().setMessageReaction(
     conversationId,
     messageId,
@@ -234,20 +176,12 @@ export async function dispatchMessageReaction(
 }
 
 export async function dispatchMessagePin(
-  kind: ChatConversationKind,
+  _kind: ChatConversationKind,
   conversationId: string,
   messageId: string,
   remove: boolean,
   threadRootMessageId?: string,
 ): Promise<MessagingPendingCommandResult> {
-  if (kind === 'group') {
-    return useGroupStore.getState().setMessagePinned(
-      conversationId,
-      messageId,
-      remove,
-      threadRootMessageId,
-    );
-  }
   return useSocialStore.getState().setMessagePinned(
     conversationId,
     messageId,
@@ -256,48 +190,82 @@ export async function dispatchMessagePin(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Group conversation commands
+// ---------------------------------------------------------------------------
+
 export async function dispatchGroupUpdate(
-  groupUlid: string,
-  input: { name?: string; description?: string; muted?: boolean },
-): Promise<void> {
-  await useGroupStore.getState().updateGroup(groupUlid, input);
+  conversationId: string,
+  input: { name?: string; description?: string },
+) {
+  const result = await useSocialStore.getState().updateGroupConversation(
+    conversationId,
+    input,
+  );
+  await wakeActiveMessagingSession();
+  return result;
 }
 
-export async function dispatchGroupInviteMembers(
-  groupUlid: string,
-  inviteePtids: string[],
-): Promise<void> {
-  await useGroupStore.getState().inviteMembers(groupUlid, inviteePtids);
-}
-
-export async function dispatchGroupLeave(groupUlid: string): Promise<void> {
-  await useGroupStore.getState().leaveGroup(groupUlid);
+export async function dispatchGroupInviteMember(
+  conversationId: string,
+  targetPtid: string,
+) {
+  const result = await useSocialStore.getState().addGroupMember(
+    conversationId,
+    targetPtid,
+  );
+  await wakeActiveMessagingSession();
+  return result;
 }
 
 export async function dispatchGroupRemoveMember(
-  groupUlid: string,
-  actorPtid: string,
-): Promise<void> {
-  await useGroupStore.getState().removeMember(groupUlid, actorPtid);
+  conversationId: string,
+  targetPtid: string,
+) {
+  const result = await useSocialStore.getState().removeGroupMember(
+    conversationId,
+    targetPtid,
+  );
+  await wakeActiveMessagingSession();
+  return result;
 }
 
 export async function dispatchGroupUpdateMember(
-  groupUlid: string,
-  actorPtid: string,
-  input: { role?: number; muted?: boolean },
-): Promise<void> {
-  await useGroupStore.getState().updateMember(groupUlid, actorPtid, input);
+  conversationId: string,
+  targetPtid: string,
+  input: { role?: 'member' | 'admin'; muted?: boolean },
+) {
+  const result = await useSocialStore.getState().updateGroupMemberAuthority(
+    conversationId,
+    targetPtid,
+    input,
+  );
+  await wakeActiveMessagingSession();
+  return result;
 }
 
 export async function dispatchGroupTransferOwnership(
-  groupUlid: string,
+  conversationId: string,
   nextOwnerPtid: string,
-): Promise<void> {
-  await useGroupStore.getState().transferOwnership(groupUlid, nextOwnerPtid);
+) {
+  const result = await useSocialStore.getState().transferGroupOwnership(
+    conversationId,
+    nextOwnerPtid,
+  );
+  await wakeActiveMessagingSession();
+  return result;
 }
 
-export async function dispatchGroupDissolve(groupUlid: string): Promise<void> {
-  await useGroupStore.getState().dissolveGroup(groupUlid);
+export async function dispatchGroupLeave(conversationId: string) {
+  const result = await useSocialStore.getState().leaveGroup(conversationId);
+  await wakeActiveMessagingSession();
+  return result;
+}
+
+export async function dispatchGroupDissolve(conversationId: string) {
+  const result = await useSocialStore.getState().dissolveGroup(conversationId);
+  await wakeActiveMessagingSession();
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,15 +273,6 @@ export async function dispatchGroupDissolve(groupUlid: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function friendPatchFromActionPatch(patch: Partial<ChatActionState>): UpdateFriendConversationSettingsInput {
-  return {
-    ...(patch.muted !== undefined ? { isMuted: patch.muted } : {}),
-    ...(patch.sticky !== undefined ? { isPinned: patch.sticky } : {}),
-    ...(patch.alertEnabled !== undefined ? { alertEnabled: patch.alertEnabled } : {}),
-    ...(patch.background !== undefined ? { background: patch.background } : {}),
-  };
-}
-
-export function groupPatchFromActionPatch(patch: Partial<ChatActionState>) {
   return {
     ...(patch.muted !== undefined ? { isMuted: patch.muted } : {}),
     ...(patch.sticky !== undefined ? { isPinned: patch.sticky } : {}),

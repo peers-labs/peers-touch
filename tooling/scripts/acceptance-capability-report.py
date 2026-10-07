@@ -136,7 +136,7 @@ def main() -> int:
     )
     if all_passed and mutual_passed:
         bullet(lines, "Acceptance is executable for the selected product capability because every selected gate completed successfully.")
-        bullet(lines, "Federation is suitable as the first validation domain because it spans Station, Dashboard, Desktop gateway, projections, and testnet services.")
+        bullet(lines, "Federation is suitable as the first validation domain because it spans Station, Dashboard, Native Desktop, Station Access, and projections.")
         bullet(lines, "The acceptance framework is useful when capability graph, feature contracts, registry rules, gates, and reports are updated together.")
     else:
         bullet(lines, "Acceptance feasibility is not proven because one or more selected gates or mutual-validation capabilities did not pass.")

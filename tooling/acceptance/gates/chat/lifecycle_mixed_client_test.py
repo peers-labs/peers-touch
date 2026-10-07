@@ -53,15 +53,48 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             clients["desktop-bob"].actor,
             clients["sim-ios"].actor,
         )
-        self.assertIsInstance(
-            get_provisioner(
-                contract,
-                station_profiles={
-                    "station-primary": "four",
-                    "station-secondary": "chat-native-disposable",
-                },
-            ),
-            ChatMixedNativeProvisioner,
+        provisioner = get_provisioner(
+            contract,
+            station_profiles={
+                "station-primary": "four",
+                "station-secondary": "chat-native-disposable",
+            },
+        )
+        self.assertIsInstance(provisioner, ChatMixedNativeProvisioner)
+        overlay = provisioner._load_overlay()
+        multi_device_clients = {
+            client.id: client
+            for client in provisioner._clients_for_gate(
+                "chat-lifecycle-mixed-client-multi-device-e2e",
+                overlay,
+            )
+        }
+        self.assertEqual(
+            multi_device_clients["desktop-alice"]
+            .service_bindings["station"].service_id,
+            "station-secondary",
+        )
+        self.assertEqual(
+            multi_device_clients["desktop-bob"]
+            .service_bindings["station"].service_id,
+            "station-secondary",
+        )
+        self.assertEqual(
+            multi_device_clients["sim-ios"]
+            .service_bindings["station"].service_id,
+            "station-secondary",
+        )
+        same_station_clients = {
+            client.id: client
+            for client in provisioner._clients_for_gate(
+                "chat-lifecycle-mixed-client-same-station-e2e",
+                overlay,
+            )
+        }
+        self.assertEqual(
+            same_station_clients["desktop-alice"]
+            .service_bindings["station"].service_id,
+            "station-primary",
         )
 
     def test_catalog_uses_typed_ephemeral_mobile_capability(self) -> None:
@@ -101,6 +134,8 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 self.assertNotIn("awaiting-runtime", source)
                 self.assertNotIn("runtime verification deferred", source)
                 self.assertIn("MixedNativeRuntime", source)
+                if path.startswith("lifecycle_mixed_client_"):
+                    self.assertIn("REPORT_PATH = None", source)
 
     def test_chat_child_actions_are_environment_declared(self) -> None:
         payload = json.loads(
@@ -146,7 +181,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "lifecycle.scope.read",
                 {"activeActorPtid": None, "deviceId": ""},
             ),
-            {"activeActorPtid": None, "deviceIdentityDigest": None},
+            {"activeActorPtid": None, "deviceId": ""},
         )
         self.assertEqual(
             ChatMixedNativeProvisioner._project_chat_harness_result(
@@ -568,12 +603,18 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "activeStationPeerId": "station-peer",
                 "activeActorPtid": None,
                 "runtimeStationPeerId": None,
-                "deviceIdentityDigest": None,
+                "deviceId": "mobile-device",
                 "social": {
                     "stationPeerId": None,
                     "actorPtid": None,
                     "sessionCount": 0,
                     "requestCount": 0,
+                    "messageThreadCount": 0,
+                },
+                "group": {
+                    "stationPeerId": None,
+                    "actorPtid": None,
+                    "groupCount": 0,
                     "messageThreadCount": 0,
                 },
                 "navigation": {
@@ -587,6 +628,11 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         result = runtime.scope_snapshot("sim-ios")
 
         self.assertEqual(result["social"]["sessionCount"], 0)
+        self.assertEqual(result["group"]["groupCount"], 0)
+        self.assertEqual(
+            result["deviceIdentityDigest"],
+            runtime._identity_digest("mobile-device"),
+        )
         self.assertEqual(result["navigation"]["detailKeys"], [])
 
     @patch(
@@ -889,10 +935,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         )
         gate.accept_call.assert_called_once_with("desktop-bob", "call-1")
 
-    @patch(
-        "tooling.acceptance.gates.chat.mixed_native_runtime."
-        "wait_for_peer_key_bundle"
-    )
+    @patch.object(MixedNativeRuntime, "_wait_for_peer_key_bundles")
     def test_desktop_direct_waits_for_peer_key_bundle(
         self,
         wait_for_bundle: MagicMock,
@@ -910,6 +953,17 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 federation_id="fed-1",
                 device_id="alice-device",
             ),
+            "desktop-bob": MixedClientIdentity(
+                client_id="desktop-bob",
+                actor="bob",
+                runtime="desktop-macos-native",
+                station_service_id="station-secondary",
+                station_peer_id="peer-secondary",
+                ptid="ptid:bob",
+                account_ref="station-account:bob",
+                federation_id="fed-1",
+                device_id="bob-desktop-device",
+            ),
             "sim-ios": MixedClientIdentity(
                 client_id="sim-ios",
                 actor="bob",
@@ -926,6 +980,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         runtime.desktop_sessions = {"desktop-alice": desktop_session}
         runtime.client_specs = {
             "desktop-alice": {"runtime": "native-tauri"},
+            "desktop-bob": {"runtime": "native-tauri"},
             "sim-ios": {"runtime": "tauri-ios-simulator"},
         }
         runtime.call_action = MagicMock(
@@ -945,8 +1000,52 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             desktop_session,
             "ptid:bob",
             "peer-secondary",
+            (
+                "bob-desktop-device",
+                "bob-mobile-device",
+            ),
             timeout=12.0,
         )
+
+    def test_mixed_peer_readiness_waits_for_every_expected_device(
+        self,
+    ) -> None:
+        first_device = "bob-desktop-device"
+        second_device = "bob-mobile-device"
+        expected_devices = tuple(
+            sorted(
+                hashlib.sha256(device.encode("utf-8")).hexdigest()
+                for device in (first_device, second_device)
+            )
+        )
+        runtime = object.__new__(MixedNativeRuntime)
+        with patch(
+            "tooling.acceptance.gates.chat.mixed_native_runtime.async_harness",
+            side_effect=(
+                {
+                    "peerPtid": "ptid:bob",
+                    "bundleCount": 1,
+                    "deviceIds": [first_device],
+                },
+                {
+                    "peerPtid": "ptid:bob",
+                    "bundleCount": 2,
+                    "deviceIds": [first_device, second_device],
+                },
+            ),
+        ) as harness, patch(
+            "tooling.acceptance.gates.chat.mixed_native_runtime.time.sleep",
+        ):
+            result = runtime._wait_for_peer_key_bundles(
+                object(),  # type: ignore[arg-type]
+                "ptid:bob",
+                "peer-secondary",
+                expected_devices,
+                timeout=1,
+            )
+
+        self.assertEqual(result["bundleCount"], 2)
+        self.assertEqual(harness.call_count, 2)
 
 
 if __name__ == "__main__":

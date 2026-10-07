@@ -205,6 +205,21 @@ class StationAccessCapabilityContractTest(unittest.TestCase):
             },
         )
 
+    def test_client_command_inventory_ignores_non_command_access_method(
+        self,
+    ) -> None:
+        sources = self._valid_client_command_sources()
+        sources[
+            "apps/mobile/src-tauri/src/messaging/engine.rs"
+        ] = "impl Engine { pub fn access_token(&self) -> String { todo!() } }"
+
+        inventories = _validate_client_command_inventory(sources)
+
+        self.assertNotIn(
+            "access_token",
+            inventories["Mobile production discovery"],
+        )
+
     def test_client_command_inventory_rejects_direct_frontend_invoke(
         self,
     ) -> None:

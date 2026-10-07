@@ -209,12 +209,16 @@ Current Mobile code now implements the local owner layer of this lifecycle:
   mismatch/replacement evidence remains pending.
 - Pre-session auth/OAuth restoration and runtime graph ownership are
   implemented. The Station-bound simulator path now covers restore,
-  same-device takeover, revocation, Station switching, logout, and old-scope
+  same-client-class takeover across distinct Mobile installations, revocation,
+  Station switching, logout, and old-scope
   isolation through parent-owned Runtime Binding and Fixture operations;
   destructive current-source proof still requires explicit reset
   authorization.
 - The session-scoped Social descriptor owns one realtime supervisor and bounded
-  ingress for Social, Group, Moments, notification, and profile projections.
+  ingress for Social, Moments, notification, and profile projections. Chat
+  frames become Messaging wake intents. The session-scoped Messaging descriptor
+  alone owns Direct/Group conversations, settings, materialized messages,
+  command outcomes, and E2EE freshness; Chat Storage depends on that owner.
   Suspend stops foreground producers and closes write admission; resume
   revalidates and reconciles stale projections before reopening writes;
   teardown drains accepted work and releases page-independent projections.

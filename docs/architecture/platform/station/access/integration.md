@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 集成
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-27
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
 ---
@@ -14,6 +14,7 @@
 | Station identity | bootstrap identity | identity kernel | station connection runtime |
 | Access attempt | Access Gate | session store + Rust adapter | auth session + Host adapter |
 | Session scope | Actor session | runtime coordinator | mobile runtime coordinator |
+| Session class slot | Actor session | canonical `desktop` | canonical `mobile` |
 | Federation context | Federation | context store | social runtime |
 | Relay diagnosis | Station operations | read-only status | read-only status |
 
@@ -80,4 +81,6 @@ station_peer_id + actor_ptid + device_id + lifecycle_generation
 - Station route、Proto 和 owner 由 `station-api-ownership` 验证。
 - 双端 capability consumer 由 Station Access current-interface contract 验证。
 - 首次接入、恢复、切换和 Federation context 由原生 Acceptance 验证。
+- Session unit/integration tests 证明 password、OAuth 和 takeover 使用同一个
+  client-class slot；Native Desktop/Mobile 矩阵证明跨类别共存与同类别接管。
 - active 文档与模块声明由 architecture module governance 验证。

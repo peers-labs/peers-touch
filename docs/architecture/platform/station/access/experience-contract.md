@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 体验契约
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-27
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
 ---
@@ -16,6 +16,7 @@
 | SAL-J03 | 切换账号或 Station | SAL-C01-C04 |
 | SAL-J04 | 选择 Federation context 并找人 | SAL-C04 |
 | SAL-J05 | 接入失败与恢复 | SAL-C01-C06 |
+| SAL-J06 | 跨类别共存与同类别接管 | SAL-C03, SAL-C07 |
 
 ## 2. SAL-J01：首次接入
 
@@ -65,7 +66,22 @@
 | Scope 切换中断 | 前一 projection 不得重新进入新 scope |
 | Relay 不可用 | 显示连接诊断，不暴露 Relay 管理 |
 
-## 7. 禁止体验
+## 7. SAL-J06：跨类别共存与同类别接管
+
+1. 同一账号先在 Desktop 登录，再在 Mobile 登录。
+2. 两端 Session、Messaging 与 Actor Device 使用各自安装实例的 `device_id`，
+   并共享同一 Station/Actor 业务事实。
+3. Desktop 与 Mobile 均保持登录，可发送、接收和读取同一 Conversation。
+4. 同一账号在第二个 Desktop 登录；旧 Desktop 收到 typed `kicked`，停止
+   runtime 并回到登录态，Mobile 不受影响。
+5. 同一账号在第二个 Mobile 登录；旧 Mobile 在下一次鉴权、事件恢复或显式
+   resume 时收敛到 typed `kicked`，清除旧 projection 并回到登录态，Desktop
+   不受影响。
+
+密码、OAuth、冷启动恢复和 session takeover 必须使用同一个客户端类别槽。
+运行时标签、窗口 label、设备型号和不同 `device_id` 不得绕过同类别接管。
+
+## 8. 禁止体验
 
 - probe 成功即视为可信 Station。
 - Desktop 和 Mobile 对同一 gate 产生不同终态。

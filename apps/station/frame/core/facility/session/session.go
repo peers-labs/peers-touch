@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
@@ -116,6 +117,7 @@ func (m *MemoryStore) startCleanup() {
 type KickableStore interface {
 	Store
 	CreateWithKick(ctx context.Context, sess *Session, deviceType DeviceType) (*Session, int64, error)
+	Takeover(ctx context.Context, previousSessionID string, sess *Session, deviceType DeviceType) (*Session, int64, error)
 	CheckSessionValid(ctx context.Context, sessionID string) (bool, string)
 }
 
@@ -131,24 +133,6 @@ func NewManager(store Store, ttl time.Duration) *Manager {
 	return &Manager{store: store, ttl: ttl}
 }
 
-func (m *Manager) Create(ctx context.Context, userID uint64, email, sessionID, ip, ua string) (*Session, error) {
-	s := &Session{
-		ID:        sessionID,
-		UserID:    userID,
-		Email:     email,
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(m.ttl),
-		LastSeen:  time.Now(),
-		IPAddress: ip,
-		UserAgent: ua,
-		Data:      map[string]interface{}{},
-	}
-	if err := m.store.Set(ctx, sessionID, s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
 func (m *Manager) CreateWithKick(ctx context.Context, sess *Session, deviceType DeviceType) (*Session, int64, error) {
 	if ks, ok := m.store.(KickableStore); ok {
 		return ks.CreateWithKick(ctx, sess, deviceType)
@@ -157,6 +141,21 @@ func (m *Manager) CreateWithKick(ctx context.Context, sess *Session, deviceType 
 		return nil, 0, err
 	}
 	return sess, 0, nil
+}
+
+// Takeover atomically rotates one active session while preserving its
+// Station-owned authorization and device bindings.
+func (m *Manager) Takeover(
+	ctx context.Context,
+	previousSessionID string,
+	sess *Session,
+	deviceType DeviceType,
+) (*Session, int64, error) {
+	ks, ok := m.store.(KickableStore)
+	if !ok {
+		return nil, 0, errors.New("session takeover requires an atomic store")
+	}
+	return ks.Takeover(ctx, previousSessionID, sess, deviceType)
 }
 
 func (m *Manager) Get(ctx context.Context, sessionID string) (*Session, error) {

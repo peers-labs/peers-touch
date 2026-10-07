@@ -85,15 +85,16 @@ and response-body acquisition.
 
 ## Federation Bootstrap Loop
 
-Federation is the first validation domain for this framework because it crosses
-Station, Dashboard, Native Desktop, projections, and isolated testnet services.
-This creates a two-way proof:
+Federation is a managed domain spanning Station, Native Desktop, Station
+Access, and read-only projections:
 
-- Acceptance proves Federation capability by running stable gates against the live `fedp5` environment.
-- Federation proves Acceptance feasibility because the gates exercise real product surfaces instead of mocks.
-- `make acceptance-federation-report` runs the Federation gates and writes `tooling/acceptance/reports/federation-acceptance-report.md`.
+- Acceptance proves the locally wired Federation scope with Station, Native
+  Desktop, and Station Access gates.
+- Multi-Station convergence and browser-visible remote operations remain
+  explicitly unproven until a new owned environment contract is added.
 - `make acceptance-validate DOMAIN=federation` checks the Federation domain profile against the project-wide capability graph, feature contracts, registry planning, gate definitions, run results, and reports.
-- `make acceptance-federation-mutual-validation` remains a Federation alias, not the acceptance core entry.
+- `make acceptance-federation-domain-validation` runs its local product gates
+  and requires current evidence without claiming framework self-validation.
 
 ## Project Coverage
 
@@ -351,4 +352,4 @@ new phase-specific Make target.
 
 Acceptance is not a replacement for unit tests inside `apps/*`. Language-native
 tests stay close to their code. Acceptance gates prove product behavior across
-Station, Desktop, Dashboard, testnet, and projections.
+Station, Desktop, Dashboard, registered runtime cells, and projections.

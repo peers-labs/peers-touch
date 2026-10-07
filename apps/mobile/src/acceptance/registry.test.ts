@@ -744,6 +744,9 @@ describe('Mobile Acceptance Harness', () => {
       /lifecycle\.scope\.read[\s\S]*readMobileRuntimeScopeProjection\(\)/,
     );
     expect(source).toMatch(
+      /lifecycle\.scope\.read[\s\S]*deviceId:\s*runtime\.deviceId[\s\S]*group:\s*runtime\.group/,
+    );
+    expect(source).toMatch(
       /session\.logout[\s\S]*transitionScope\(\s*'logout'[\s\S]*logoutSessionRuntime/,
     );
     expect(source).toMatch(

@@ -200,12 +200,12 @@ func PrepareOAuthSession(
 	if _, err := actoridentity.Parse(ptid); err != nil {
 		return nil, nil, fmt.Errorf("cannot prepare OAuth session for actor without valid PTID: %w", err)
 	}
+	if err := binding.DeviceType.Validate(); err != nil {
+		return nil, nil, errors.New("OAuth session binding has a non-canonical client class")
+	}
 	if strings.TrimSpace(binding.CandidateID) == "" ||
 		strings.TrimSpace(binding.AccessAttemptID) == "" ||
 		strings.TrimSpace(binding.StationPeerID) == "" ||
-		(binding.DeviceType != session.DeviceTypeDesktop &&
-			binding.DeviceType != session.DeviceTypeMobile &&
-			binding.DeviceType != session.DeviceTypeWeb) ||
 		strings.TrimSpace(binding.DeviceID) == "" ||
 		binding.LifecycleGeneration == 0 ||
 		binding.AccessDecisionRevision == 0 {
@@ -289,8 +289,8 @@ func AuthenticatePassword(ctx context.Context, credentials *Credentials) (*db.Ac
 	return &user, nil
 }
 
-// PrepareAccessGateSession creates one active device-scoped session record and its
-// credential response without persisting either. The Access Gate finalizer
+// PrepareAccessGateSession creates one active client-class session record and
+// its credential response without persisting either. The Access Gate finalizer
 // persists both the session and the attempt binding in one transaction.
 func PrepareAccessGateSession(
 	ctx context.Context,
@@ -306,11 +306,11 @@ func PrepareAccessGateSession(
 	if _, err := actoridentity.Parse(ptid); err != nil {
 		return nil, nil, fmt.Errorf("cannot prepare Access Gate session for actor without valid PTID: %w", err)
 	}
+	if err := binding.DeviceType.Validate(); err != nil {
+		return nil, nil, errors.New("Access Gate session binding has a non-canonical client class")
+	}
 	if strings.TrimSpace(binding.AccessAttemptID) == "" ||
 		strings.TrimSpace(binding.StationPeerID) == "" ||
-		(binding.DeviceType != session.DeviceTypeDesktop &&
-			binding.DeviceType != session.DeviceTypeMobile &&
-			binding.DeviceType != session.DeviceTypeWeb) ||
 		strings.TrimSpace(binding.DeviceID) == "" ||
 		binding.LifecycleGeneration == 0 ||
 		binding.AccessDecisionRevision == 0 {
@@ -394,55 +394,89 @@ func issueSessionCredential(
 // IssueTokenAndSession creates a JWT token + session for an already-authenticated Actor.
 // extraData is merged into session.Data (e.g. {"auth_method": "oauth_bridge"}).
 func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAgent, deviceType string, extraData map[string]interface{}) (*SessionLoginResult, error) {
-	if actor == nil {
-		return nil, errors.New("cannot issue session without actor")
-	}
-	ptid := strings.TrimSpace(actor.PTID)
-	if _, err := actoridentity.Parse(ptid); err != nil {
-		return nil, fmt.Errorf("cannot issue session for actor without valid PTID: %w", err)
-	}
-
-	sessionID, err := generateSessionID()
+	clientClass, err := session.ParseDeviceType(deviceType)
 	if err != nil {
 		return nil, err
 	}
 
-	if deviceType == "" {
-		deviceType = "desktop"
+	data := map[string]interface{}{"device_type": string(clientClass)}
+	for k, v := range extraData {
+		data[k] = v
+	}
+	sess, token, err := prepareSessionCredential(
+		ctx,
+		actor,
+		clientIP,
+		userAgent,
+		data,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	_, kickedCount, err := SessionManager().CreateWithKick(ctx, sess, clientClass)
+	if err != nil {
+		return nil, err
+	}
+
+	return sessionLoginResult(actor, sess.ID, token, kickedCount), nil
+}
+
+func prepareSessionCredential(
+	ctx context.Context,
+	actor *db.Actor,
+	clientIP string,
+	userAgent string,
+	data map[string]interface{},
+) (*session.Session, *coreauth.Token, error) {
+	if actor == nil {
+		return nil, nil, errors.New("cannot issue session without actor")
+	}
+	ptid := strings.TrimSpace(actor.PTID)
+	if _, err := actoridentity.Parse(ptid); err != nil {
+		return nil, nil, fmt.Errorf(
+			"cannot issue session for actor without valid PTID: %w",
+			err,
+		)
+	}
+
+	sessionID, err := generateSessionID()
+	if err != nil {
+		return nil, nil, err
+	}
+	provider := coreauth.NewJWTProvider(
+		coreauth.Get().Secret,
+		coreauth.Get().AccessTTL,
+	)
 	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
 		SubjectID:  ptid,
 		SessionID:  sessionID,
 		Attributes: map[string]string{"email": actor.Email},
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	data := map[string]interface{}{"device_type": deviceType}
-	for k, v := range extraData {
-		data[k] = v
-	}
-
-	sess := &session.Session{
+	now := time.Now()
+	return &session.Session{
 		ID:        sessionID,
 		UserID:    uint64(actor.ID),
 		Email:     actor.Email,
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(DefaultSessionDuration),
-		LastSeen:  time.Now(),
+		CreatedAt: now,
+		ExpiresAt: now.Add(DefaultSessionDuration),
+		LastSeen:  now,
 		IPAddress: clientIP,
 		UserAgent: userAgent,
 		Data:      data,
-	}
+	}, token, nil
+}
 
-	_, kickedCount, err := SessionManager().CreateWithKick(ctx, sess, session.DeviceType(deviceType))
-	if err != nil {
-		return nil, err
-	}
-
+func sessionLoginResult(
+	actor *db.Actor,
+	sessionID string,
+	token *coreauth.Token,
+	kickedCount int64,
+) *SessionLoginResult {
 	return &SessionLoginResult{
 		AccessToken:   token.Value,
 		RefreshToken:  "",
@@ -451,7 +485,44 @@ func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAg
 		SessionID:     sessionID,
 		Actor:         actor,
 		KickedSession: kickedCount > 0,
-	}, nil
+	}
+}
+
+// IssueTakeoverTokenAndSession rotates one existing Session without changing
+// its canonical client class or installation identity.
+func IssueTakeoverTokenAndSession(
+	ctx context.Context,
+	actor *db.Actor,
+	previousSessionID string,
+	clientIP, userAgent, requestedClass string,
+) (*SessionLoginResult, error) {
+	if actor == nil {
+		return nil, errors.New("cannot take over session without actor")
+	}
+	clientClass, err := session.ParseDeviceType(requestedClass)
+	if err != nil {
+		return nil, err
+	}
+	sess, token, err := prepareSessionCredential(
+		ctx,
+		actor,
+		clientIP,
+		userAgent,
+		map[string]interface{}{"auth_method": "session_takeover"},
+	)
+	if err != nil {
+		return nil, err
+	}
+	_, kickedCount, err := SessionManager().Takeover(
+		ctx,
+		previousSessionID,
+		sess,
+		clientClass,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return sessionLoginResult(actor, sess.ID, token, kickedCount), nil
 }
 
 func ValidateSession(ctx context.Context, sessionID string) (bool, string) {

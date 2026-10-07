@@ -26,6 +26,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     restart_acceptance_station,
     reset_station_chat_state,
     seed_bound_contact,
+    seed_federation_context,
     verify_disposable_station_runtime,
 )
 
@@ -78,6 +79,42 @@ class FixtureFederationIdentityTest(unittest.TestCase):
         actor = self.actor("ptid:alice", "")
         with self.assertRaisesRegex(RuntimeError, "requires a Home Station"):
             fixture_federation_id((actor,))
+
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset._remote_psql"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset."
+        "verify_disposable_station_runtime"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset."
+        "acceptance_station_environment",
+        return_value=DISPOSABLE_ENVIRONMENT,
+    )
+    def test_federation_context_does_not_precreate_social_relationships(
+        self,
+        _environment,
+        _runtime,
+        remote_psql,
+    ) -> None:
+        alice = self.actor("ptid:alice", "station-four")
+        bob = self.actor("ptid:bob", "station-four")
+
+        federation_id = seed_federation_context(
+            "http://10.37.94.156:18132",
+            "chat-native-acceptance",
+            "station-four",
+            (alice, bob),
+        )
+
+        self.assertEqual(federation_id, fixture_federation_id((alice, bob)))
+        sql = remote_psql.call_args.args[1]
+        self.assertIn("INSERT INTO federation (", sql)
+        self.assertIn("INSERT INTO federation_station_membership", sql)
+        self.assertNotIn("INSERT INTO follows", sql)
+        self.assertNotIn("INSERT INTO social_friend_requests", sql)
+        self.assertNotIn("INSERT INTO social_relationship_projections", sql)
 
 
 class DisposableAcceptanceTargetTest(unittest.TestCase):

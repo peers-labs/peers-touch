@@ -20,7 +20,8 @@ OWNERSHIP_REGISTRY = (
     REPO_ROOT
     / "docs"
     / "architecture"
-    / "api-ownership"
+    / "engineering"
+    / "api-governance"
     / "station-api-capabilities.yaml"
 )
 ACCESS_PROTO = REPO_ROOT / "model" / "domain" / "access_gate" / "access_gate.proto"
@@ -170,7 +171,8 @@ CLIENT_ACCESS_DISCOVERY_PATTERNS = (
     ),
     re.compile(r"^\s*['\"`](access_[a-z0-9_]+)['\"`]\s*=>", re.MULTILINE),
     re.compile(
-        r"^\s*pub(?:\s+async)?\s+fn\s+(access_[a-z0-9_]+)\s*\(",
+        r"^\s*#\[tauri::command\]\s*"
+        r"pub(?:\s+async)?\s+fn\s+(access_[a-z0-9_]+)\s*\(",
         re.MULTILINE,
     ),
     re.compile(r"\b(?:auth|oauth)::(access_[a-z0-9_]+)\b"),

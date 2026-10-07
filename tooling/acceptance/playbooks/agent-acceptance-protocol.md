@@ -31,13 +31,15 @@ which gates ran, where artifacts are, and which risks require human review.
 
 ## Federation Bootstrap
 
-Federation is the first domain profile, not the acceptance core:
+Federation is a managed domain profile, not the acceptance core:
 
-- It proves Federation through service, Dashboard, Desktop gateway, and `fedp5` gates.
-- It proves Acceptance by checking the project-wide capability graph, the Federation domain profile, registry planning, gate definitions, feature contracts, latest run results, and reports as one system.
-- It must keep Desktop DOM-level assertions listed as unproven until Tauri/WebDriver or browser MIME constraints are resolved.
+- It proves the locally wired Federation scope through Station, Desktop, and
+  Station Access gates.
+- It must keep multi-Station convergence and browser-visible remote operations
+  listed as unproven until a new owned environment contract exists.
 
-Use `make acceptance-validate DOMAIN=federation` for the generic validator. `make acceptance-federation-mutual-validation` remains a compatibility alias, and `make acceptance-federation-report` renders the human review report.
+Use `make acceptance-validate DOMAIN=federation` for structural validation and
+`make acceptance-federation-domain-validation` for current-evidence validation.
 
 ## Domain Onboarding
 
@@ -51,6 +53,6 @@ Run `make acceptance-coverage-report` after onboarding changes. The report must 
 
 Current active domains:
 
-- `federation`: `project_validation_domain`, used for two-way proof.
+- `federation`: `managed_domain`, with multi-Station runtime proof unproven.
 - `station-dashboard`: `managed_domain`, used to prove ordinary product-domain onboarding.
 - `chat`: `managed_domain`, used to prove user-path onboarding across persistence, Station runtime message flow, realtime contracts, and Desktop typed surfaces.

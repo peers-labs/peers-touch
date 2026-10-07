@@ -831,6 +831,169 @@ def fixture_federation_id(actors: Iterable[FixtureActorRecord]) -> str:
     )
 
 
+def seed_federation_context(
+    station_url: str,
+    environment_name: str,
+    local_station_peer_id: str,
+    federation_members: Iterable[FixtureActorRecord],
+) -> str:
+    environment = acceptance_station_environment(station_url, environment_name)
+    verify_disposable_station_runtime(environment)
+    members = tuple(federation_members)
+    if not members:
+        raise RuntimeError("Chat fixture Federation requires actors")
+    local_station_peer_id = local_station_peer_id.strip()
+    if local_station_peer_id not in {
+        member.home_station_peer_id for member in members
+    }:
+        raise RuntimeError("Chat fixture local Station is outside the Federation")
+    federation_id = fixture_federation_id(members)
+    federation_owner = min(members, key=lambda member: member.ptid)
+    members_by_station = {
+        member.home_station_peer_id: member
+        for member in members
+    }
+    local_scheme = urllib.parse.urlparse(station_url).scheme
+    station_urls = {
+        station_peer_id: (
+            station_url.rstrip("/")
+            if station_peer_id == local_station_peer_id
+            else f"{local_scheme}://{member.home_station_domain}"
+        )
+        for station_peer_id, member in members_by_station.items()
+    }
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") != LOCAL_SOURCE_RUNTIME:
+        memberships = ",\n".join(
+            f"""(
+    {_sql_literal(federation_id)},
+    {_sql_literal(member.home_station_peer_id)},
+    {_sql_literal(member.home_station_domain)},
+    {_sql_literal(station_urls[member.home_station_peer_id])},
+    {_sql_literal(
+        "founder"
+        if member.home_station_peer_id
+        == federation_owner.home_station_peer_id
+        else "member_station"
+    )},
+    'active',
+    to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+    ''
+  )"""
+            for member in members_by_station.values()
+        )
+        sql = f"""
+BEGIN;
+INSERT INTO federation (
+  federation_id, name, description, status, policy_type,
+  sequencer_station_peer_id, genesis_hash, head_hash, head_seq,
+  created_by_actor_ptid, created_by_station_peer_id, created_at, updated_at
+) VALUES (
+  {_sql_literal(federation_id)},
+  'chat-native-acceptance',
+  '',
+  'active',
+  'single_admin',
+  {_sql_literal(federation_owner.home_station_peer_id)},
+  {_sql_bytes(bytes(32))},
+  {_sql_bytes(bytes(32))},
+  0,
+  {_sql_literal(federation_owner.ptid)},
+  {_sql_literal(federation_owner.home_station_peer_id)},
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX})
+)
+ON CONFLICT (federation_id) DO UPDATE SET
+  status = EXCLUDED.status,
+  sequencer_station_peer_id = EXCLUDED.sequencer_station_peer_id,
+  created_by_actor_ptid = EXCLUDED.created_by_actor_ptid,
+  created_by_station_peer_id = EXCLUDED.created_by_station_peer_id,
+  updated_at = EXCLUDED.updated_at;
+INSERT INTO federation_station_membership (
+  federation_id, station_peer_id, station_name, station_url, role,
+  status, joined_at, approved_by_event_id
+) VALUES
+  {memberships}
+ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
+  station_name = EXCLUDED.station_name,
+  station_url = EXCLUDED.station_url,
+  role = EXCLUDED.role,
+  status = EXCLUDED.status;
+COMMIT;
+"""
+        _remote_psql(environment, sql)
+        return federation_id
+
+    created_at = time.strftime(
+        "%Y-%m-%d %H:%M:%S+00:00",
+        time.gmtime(FIXTURE_FRIENDSHIP_CREATED_AT_UNIX),
+    )
+    database = environment["PT_ACCEPTANCE_LOCAL_DATABASE"]
+    with closing(sqlite3.connect(database, timeout=10)) as connection:
+        connection.execute("PRAGMA busy_timeout = 10000")
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                """
+INSERT INTO federation (
+  federation_id, name, description, status, policy_type,
+  sequencer_station_peer_id, genesis_hash, head_hash, head_seq,
+  created_by_actor_ptid, created_by_station_peer_id, created_at, updated_at
+) VALUES (?, ?, '', 'active', 'single_admin', ?, ?, ?, 0, ?, ?, ?, ?)
+ON CONFLICT (federation_id) DO UPDATE SET
+  status = excluded.status,
+  sequencer_station_peer_id = excluded.sequencer_station_peer_id,
+  created_by_actor_ptid = excluded.created_by_actor_ptid,
+  created_by_station_peer_id = excluded.created_by_station_peer_id,
+  updated_at = excluded.updated_at
+""",
+                (
+                    federation_id,
+                    "chat-native-acceptance",
+                    federation_owner.home_station_peer_id,
+                    bytes(32),
+                    bytes(32),
+                    federation_owner.ptid,
+                    federation_owner.home_station_peer_id,
+                    created_at,
+                    created_at,
+                ),
+            )
+            connection.executemany(
+                """
+INSERT INTO federation_station_membership (
+  federation_id, station_peer_id, station_name, station_url, role,
+  status, joined_at, approved_by_event_id
+) VALUES (?, ?, ?, ?, ?, 'active', ?, '')
+ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
+  station_name = excluded.station_name,
+  station_url = excluded.station_url,
+  role = excluded.role,
+  status = excluded.status
+""",
+                [
+                    (
+                        federation_id,
+                        member.home_station_peer_id,
+                        member.home_station_domain,
+                        station_urls[member.home_station_peer_id],
+                        (
+                            "founder"
+                            if member.home_station_peer_id
+                            == federation_owner.home_station_peer_id
+                            else "member_station"
+                        ),
+                        created_at,
+                    )
+                    for member in members_by_station.values()
+                ],
+            )
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+    return federation_id
+
+
 def _accepted_friendship(
     actor: FixtureActorRecord,
     peer: FixtureActorRecord,

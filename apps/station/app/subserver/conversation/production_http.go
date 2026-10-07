@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
@@ -40,7 +41,33 @@ const (
 	defaultAuthorityPlanTTL           = 5 * time.Minute
 	defaultConversationQueryLimit     = 50
 	maximumConversationQueryLimit     = 500
+	productionInternalErrorCode       = "CONVERSATION_INTERNAL_ERROR"
 )
+
+type productionStageError struct {
+	operation string
+	stage     string
+	cause     error
+}
+
+func (e *productionStageError) Error() string {
+	return fmt.Sprintf("%s: %s: %v", e.operation, e.stage, e.cause)
+}
+
+func (e *productionStageError) Unwrap() error {
+	return e.cause
+}
+
+func productionStage(operation string, stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &productionStageError{
+		operation: operation,
+		stage:     stage,
+		cause:     err,
+	}
+}
 
 func validateProductionCommandKind(kind chatmodel.ConversationCommandKind) error {
 	switch kind {
@@ -87,6 +114,8 @@ func (s *subServer) handleCreateDirectConversation(
 	ctx context.Context,
 	request *chatmodel.CreateDirectConversationRequest,
 ) (*chatmodel.CreateDirectConversationResponse, error) {
+	const operation = "production_http.create_direct"
+
 	authenticated, endpoint, err := authenticatedConversationActor(ctx)
 	if err != nil {
 		return nil, err
@@ -149,15 +178,24 @@ func (s *subServer) handleCreateDirectConversation(
 	case conversationdomain.IsCode(getErr, conversationdomain.ErrorCodeNotFound):
 		requiresVerifiedRoutes = true
 		if gateErr := s.evaluateCreateDirect(ctx, request.GetPeerPtid()); gateErr != nil {
-			return nil, mapProductionConversationError(ctx, gateErr)
+			return nil, mapProductionConversationError(
+				ctx,
+				productionStage(operation, "social_gate", gateErr),
+			)
 		}
 	default:
-		return nil, mapProductionConversationError(ctx, getErr)
+		return nil, mapProductionConversationError(
+			ctx,
+			productionStage(operation, "query_existing", getErr),
+		)
 	}
 
 	exactBytes, err := deterministicProductionProto(request)
 	if err != nil {
-		return nil, err
+		return nil, mapProductionConversationError(
+			ctx,
+			productionStage(operation, "encode_command", err),
+		)
 	}
 	var verifiedRoutes []ports.EndpointRoute
 	if requiresVerifiedRoutes {
@@ -166,7 +204,10 @@ func (s *subServer) handleCreateDirectConversation(
 			[]valueobject.PTID{endpoint.Actor, peer},
 		)
 		if err != nil {
-			return nil, mapProductionConversationError(ctx, err)
+			return nil, mapProductionConversationError(
+				ctx,
+				productionStage(operation, "resolve_endpoint_routes", err),
+			)
 		}
 	}
 	result, err := s.composition.CommandService.CreateDirect(
@@ -182,23 +223,33 @@ func (s *subServer) handleCreateDirectConversation(
 		},
 	)
 	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
+		stage := "commit_direct"
+		if commandStage, ok := command.DirectCreationFailureStage(err); ok {
+			stage = "commit_" + commandStage
+		}
+		return nil, mapProductionConversationError(
+			ctx,
+			productionStage(operation, stage, err),
+		)
 	}
 	if result.PostCommitError != nil {
 		return nil, mapProductionConversationError(
 			ctx,
-			fmt.Errorf(
+			productionStage(operation, "publish_direct", fmt.Errorf(
 				"publish committed Direct Conversation %s: %w",
 				result.Conversation.ID,
 				result.PostCommitError,
-			),
+			)),
 		)
 	}
 	var event *chatmodel.ConversationEvent
 	if result.Event.ID != "" {
 		event, err = conversationhttp.MapEvent(result.Event)
 		if err != nil {
-			return nil, mapProductionConversationError(ctx, err)
+			return nil, mapProductionConversationError(
+				ctx,
+				productionStage(operation, "map_event", err),
+			)
 		}
 	}
 
@@ -2451,6 +2502,50 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.Forbidden("Conversation policy rejected the request")
 	}
+	actorIdentityCode := actoridentitydomain.CodeOf(err)
+	switch actorIdentityCode {
+	case actoridentitydomain.ErrorCodeInvalidArgument:
+		return productionActorIdentityHandlerError(
+			http.StatusBadRequest,
+			"invalid Actor Identity request",
+			actorIdentityCode,
+			err,
+		)
+	case actoridentitydomain.ErrorCodeUnauthorized,
+		actoridentitydomain.ErrorCodeInvalidProof:
+		return productionActorIdentityHandlerError(
+			http.StatusForbidden,
+			"Actor Identity operation is not authorized",
+			actorIdentityCode,
+			err,
+		)
+	case actoridentitydomain.ErrorCodeDeviceNotFound:
+		return productionActorIdentityHandlerError(
+			http.StatusNotFound,
+			"Actor Identity device was not found",
+			actorIdentityCode,
+			err,
+		)
+	case actoridentitydomain.ErrorCodeIdentityConflict,
+		actoridentitydomain.ErrorCodeDeviceConflict,
+		actoridentitydomain.ErrorCodeStaleProfileVersion,
+		actoridentitydomain.ErrorCodeFutureProfileVersion,
+		actoridentitydomain.ErrorCodeDeviceRevoked:
+		return productionActorIdentityHandlerError(
+			http.StatusConflict,
+			"Actor Identity state conflicts with the request",
+			actorIdentityCode,
+			err,
+		)
+	case actoridentitydomain.ErrorCodeIdentityUnavailable,
+		actoridentitydomain.ErrorCodePersistence:
+		return productionActorIdentityHandlerError(
+			http.StatusServiceUnavailable,
+			"Actor Identity dependency is unavailable",
+			actorIdentityCode,
+			err,
+		)
+	}
 	deliveryCode := deliveryapp.CodeOf(err)
 	switch deliveryCode {
 	case deliveryapp.ErrorCodeInvalidArgument:
@@ -2608,10 +2703,68 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 			err,
 		)
 	default:
+		var stageError *productionStageError
+		if errors.As(err, &stageError) {
+			return productionStageHandlerError(ctx, stageError)
+		}
 		logger.Errorf(ctx, "Conversation operation failed: %v", err)
 
 		return server.InternalErrorWithCause("Conversation operation failed", err)
 	}
+}
+
+func productionStageHandlerError(
+	ctx context.Context,
+	stageError *productionStageError,
+) *server.HandlerError {
+	logger.Errorf(
+		ctx,
+		"Conversation operation failed at %s/%s: %v",
+		stageError.operation,
+		stageError.stage,
+		stageError.cause,
+	)
+	handlerError := server.NewHandlerErrorWithCause(
+		http.StatusInternalServerError,
+		"Conversation operation failed",
+		stageError,
+	)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": productionInternalErrorCode,
+	}
+	details, err := json.Marshal(map[string]string{
+		"operation": stageError.operation,
+		"field":     "stage",
+		"reason":    stageError.stage,
+	})
+	if err == nil && len(details) <= 4096 {
+		handlerError.Headers["X-Peers-Error-Details"] = string(details)
+	}
+	return handlerError
+}
+
+func productionActorIdentityHandlerError(
+	status int,
+	message string,
+	code actoridentitydomain.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *actoridentitydomain.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
 }
 
 func productionDeviceInboxHandlerError(

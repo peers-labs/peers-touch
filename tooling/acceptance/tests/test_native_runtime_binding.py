@@ -242,6 +242,36 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             ],
         }
 
+    def test_station_configuration_uses_tauri_input_envelope(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        session = Mock(spec=TauriSession)
+
+        binding._configure_session_station(
+            session,
+            "http://station.example",
+        )
+
+        self.assertEqual(
+            session.invoke_app_result.call_args_list,
+            [
+                call(
+                    "station_add",
+                    {"input": {"url": "http://station.example"}},
+                ),
+                call(
+                    "station_set_active",
+                    {"input": {"url": "http://station.example"}},
+                ),
+            ],
+        )
+
     def test_windows_binding_delegates_to_platform_neutral_lifecycle(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
             r"C:\acceptance\actors\alice\fixture.png"

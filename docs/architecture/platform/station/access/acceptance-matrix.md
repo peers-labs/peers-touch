@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 验收矩阵
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-27
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
 ---
@@ -24,6 +24,7 @@
 | SAL-C04 Federation context | SAL-J04 | 已完成 | SAL-G03 |
 | SAL-C05 基础设施收口 | SAL-J04/J05 | 已完成 | SAL-G03 |
 | SAL-C06 能力完整性治理 | 全部 | 已完成 | SAL-G00/SAL-G04 |
+| SAL-C07 客户端类别会话 | SAL-J06 | 待当前项目证明 | SAL-G05 |
 
 ## 3. Gates
 
@@ -67,17 +68,32 @@ Stable Gate：`station-access-scope-isolation-e2e`，环境
 - route、Proto request/response、owner root 和 consumer 均能从当前树解析。
 - 受治理前缀下发现的接口必须全部存在于正向 registry。
 
+### SAL-G05：客户端类别会话矩阵
+
+- 同一测试账号在一个 Desktop 与一个 Mobile 上同时登录后，两端 Session 均有效。
+- 两端使用不同 `device_id`，但共享相同 actor PTID，并能从同一 Station 读取、
+  发送和接收 Conversation。
+- 第二个 Desktop 使用不同安装/存储身份登录后，旧 Desktop 收到
+  `session_revoked/kicked`，Mobile Session 保持有效。
+- 第二个 Mobile 使用不同模拟器、安装和存储身份登录后，旧 Mobile 收敛到
+  `session_revoked/kicked`，Desktop Session 保持有效。
+- 密码 Access Gate、OAuth credential acknowledgement 和
+  `/actor/session/takeover` 使用同一 canonical client-class slot。
+- 两个同类别登录并发时，Station 最终最多保留一个未撤销 Session；不得通过
+  `desktop-native`、窗口 label、设备型号或新 `device_id` 创建第二个类别槽。
+
 ## 4. 必需运行单元
 
 | Cell | 证明 |
 |---|---|
 | Desktop native | 首次接入、恢复、切换、失败关闭 |
 | Mobile native | 首次接入、恢复、切换、失败关闭 |
-| Mixed same-Station | 同一 actor/context 与 scope 一致 |
+| Mixed same-Station | 不同账号 Desktop↔Mobile Chat；同一账号 Desktop+Mobile 并存 |
+| Same-class takeover | 双 Desktop 和双 Mobile 分别证明新 Session 接管旧同类端 |
 | Mixed cross-Station | 显式 Federation context 与 Relay 隔离 |
 | Fresh install/reset | 仅依赖当前 scoped key、route 与 schema |
 
 ## 5. 完成条件
 
-`STATION_ACCESS_LIFECYCLE_ACCEPTED` 仅在 SAL-G00..SAL-G04 全部通过、所有 Task
+`STATION_ACCESS_LIFECYCLE_ACCEPTED` 仅在 SAL-G00..SAL-G05 全部通过、所有 Task
 为 `done`、`CCU-20260922` 保持 completed 且最终工作树干净时成立。

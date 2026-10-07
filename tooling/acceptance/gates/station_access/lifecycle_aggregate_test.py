@@ -89,6 +89,7 @@ class StationAccessLifecycleAggregateTest(unittest.TestCase):
                 "mobile-simulator-platform-e2e",
                 "desktop-release-build",
                 "mobile-native-build",
+                "station-access-session-class-e2e",
             ],
         )
 

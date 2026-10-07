@@ -14,7 +14,11 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
-from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.core.provisioner import (
+    load_env_file,
+    resolve_deployment_environment_path,
+    resolve_reviewed_profile_environment,
+)
 from tooling.acceptance.core.provisioning import (
     ClientRuntime,
     EnvironmentContract,
@@ -144,31 +148,10 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
         services: dict[str, ServiceAttestation] = {}
         local_proto_digest = source_proto_digest(REPO_ROOT)
         for service_id, profile_name in self._required_station_profiles().items():
-            profile_path = (
-                REPO_ROOT
-                / ".local"
-                / "dev"
-                / "profiles"
-                / f"{profile_name}.env"
+            profile_path, profile_env = resolve_reviewed_profile_environment(
+                profile_name,
+                repo_root=REPO_ROOT,
             )
-            if not profile_path.is_file():
-                raise BlockedError(
-                    reason=(
-                        f"Native Chat service {service_id!r} requires runtime "
-                        f"profile {profile_name!r}"
-                    ),
-                    resource=f"service-profile:{service_id}",
-                )
-            profile_env = load_env_file(profile_path)
-            declared_profile = profile_env.get("PT_DEV_PROFILE", "").strip()
-            if declared_profile != profile_name:
-                raise BlockedError(
-                    reason=(
-                        f"Station profile {profile_name!r} declares "
-                        f"PT_DEV_PROFILE={declared_profile!r}"
-                    ),
-                    resource=f"service-profile:{service_id}",
-                )
             mode = (
                 profile_env.get("PT_STATION_MODE", "local").strip() or "local"
             )
@@ -178,22 +161,10 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             ).strip() or profile_name
             deployment_env: dict[str, str] = {}
             if mode == "remote":
-                deployment_path = (
-                    REPO_ROOT
-                    / ".local"
-                    / "deploy"
-                    / "envs"
-                    / f"{deployment_environment}.env"
+                deployment_path = resolve_deployment_environment_path(
+                    deployment_environment,
+                    repo_root=REPO_ROOT,
                 )
-                if not deployment_path.is_file():
-                    raise BlockedError(
-                        reason=(
-                            f"Station profile {profile_name!r} references "
-                            f"missing deployment environment "
-                            f"{deployment_environment!r}"
-                        ),
-                        resource=f"service-profile:{service_id}",
-                    )
                 deployment_env = load_env_file(deployment_path)
             station_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
             health_url = (

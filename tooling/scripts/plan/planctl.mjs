@@ -7,6 +7,7 @@ import {
   loadSessionStoreFromPath,
   sessionStorePaths,
 } from '../local-dev/dev-session-store.mjs';
+import { canonicalize } from '../local-dev/dev-work-schema.mjs';
 import {
   resolveWorkflowOwnerCommandContext,
 } from '../local-dev/workflow-owner-context.mjs';
@@ -45,11 +46,26 @@ function fail(code, message, details) {
   throw new PlanPackageError(code, message, details);
 }
 
-function digestCompletionCandidate(value) {
+function digest(value) {
   return crypto
     .createHash('sha256')
-    .update(JSON.stringify(value))
+    .update(JSON.stringify(canonicalize(value)))
     .digest('hex');
+}
+
+export function digestRunCompletionCandidate(resolved, candidate) {
+  return digest({
+    kind: 'peers-touch-execution-run-completion-candidate',
+    planDigest: resolved.snapshot.planDigest,
+    snapshotDigest: resolved.snapshot.recordDigest,
+    runId: resolved.run.runId,
+    runRevision: resolved.run.revision,
+    transition: {
+      to: 'done',
+      nextTaskId: candidate.currentTaskId,
+      exhaustion: candidate.exhaustion,
+    },
+  });
 }
 
 function parseArguments(argv) {
@@ -505,7 +521,7 @@ export async function advancePlan(_planPath, options) {
         planPackage: resolved.planPackage,
         session,
         workItemId: session.state.workItemId,
-        candidatePlanDigest: digestCompletionCandidate(candidate),
+        candidatePlanDigest: digestRunCompletionCandidate(resolved, candidate),
       },
       options.completionReviewDependencies,
     );

@@ -1,8 +1,8 @@
 # Mobile Shell — 设计决策
 
 > **Status**: active; iOS simulator-canonical Acceptance amendment accepted
-> **Version**: v1.3
-> **Created**: 2026-08-27 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-08-27 | **Updated**: 2026-10-07
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -119,7 +119,8 @@ checks consistently.
 ### Consequences
 
 - Positive: runtime state is observable and module degradation is explicit.
-- Negative: existing social/group controllers require descriptor adapters.
+- Negative: existing feature controllers required descriptor adapters during
+  migration; the current registry contains no Group descriptor.
 
 ### Reversal Trigger
 
@@ -938,18 +939,18 @@ explicit allowlist.
 
 ### Context
 
-AO-D10 has accepted canonical target-member role/mute and atomic ownership
-transfer semantics, while Mobile still has two executable `/group-chat/*`
-callers.
+AO-D10 defines canonical target-member role/mute and atomic ownership transfer
+semantics. Mobile now has zero executable `/group-chat/*` callers.
 
 ### Decision
 
 Mobile consumes `ConversationMemberAuthorityCommand` through
 `POST /conversation/member/update` and
 `POST /conversation/ownership/transfer`. Device Messaging Engine prepares the
-exact deterministic command. Group runtime reconciles command result, ordered
-authority event, member snapshot, owner, authority head, membership epoch, and
-mute deadline before reporting completion.
+exact deterministic command. `messagingRuntime` reconciles command result,
+ordered authority event, member snapshot, owner, authority head, membership
+epoch, mute deadline, and user-visible pending/failure state before reporting
+completion.
 
 Owner transfer remains one aggregate transition. Actor-local member settings
 remain separate and cannot change another member's authority.
@@ -962,8 +963,8 @@ remain separate and cannot change another member's authority.
 
 ### Consequences
 
-- The two legacy Group callers can be deleted once the canonical consumer path
-  and proof exist.
+- The two legacy Group callers and their route/proto/store/runtime tree are
+  deleted; zero-reference checks guard the hard cut.
 - Stale head/epoch responses require reconcile-before-retry.
 - Mobile does not redefine AO-D10.
 

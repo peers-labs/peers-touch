@@ -22,7 +22,7 @@ export interface RealtimeMessageReceivedPayload {
   /** Recipient DID (always the local actor's stream target). */
   recipientActorPtid: string;
   /** Raw envelope ciphertext bytes; today this is the marshaled
-   *  FriendChatMessage protobuf, tomorrow the sealed-sender ciphertext. */
+   *  canonical ChatMessage protobuf, tomorrow the sealed-sender ciphertext. */
   ciphertext: Uint8Array;
   /** Sender's claim of when the message was sent. UI display only. */
   sentTsUnixMs: number;

@@ -60,7 +60,9 @@ use messaging_core::proto::social::{
 use messaging_core::proto::{actor_device_ptid, actor_device_ref, actor_ref};
 use prost::Message;
 use reqwest::blocking::{Client, Response};
-use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, IF_MATCH, RANGE, RETRY_AFTER};
+use reqwest::header::{
+    HeaderMap, ACCEPT, AUTHORIZATION, CONTENT_TYPE, IF_MATCH, RANGE, RETRY_AFTER,
+};
 use secure_content_core::object::{
     EncryptedObjectChunk as EncryptedAttachmentChunk, OBJECT_TAG_SIZE as ATTACHMENT_TAG_SIZE,
 };
@@ -89,11 +91,16 @@ impl std::fmt::Display for MemberAuthorityTransportError {
 
 impl std::error::Error for MemberAuthorityTransportError {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StationTransportError {
     Deadline,
     Network,
-    HttpStatus(u16),
+    HttpStatus {
+        status: u16,
+        code: Option<String>,
+        details: Option<String>,
+        body: Option<String>,
+    },
     Decode,
     Invalid,
 }
@@ -105,12 +112,59 @@ impl std::fmt::Display for StationTransportError {
                 formatter.write_str("mobile messaging Station request exceeded its deadline")
             }
             Self::Network => formatter.write_str("mobile messaging Station network request failed"),
-            Self::HttpStatus(status) => {
-                write!(formatter, "mobile messaging Station returned HTTP {status}")
+            Self::HttpStatus {
+                status,
+                code,
+                details,
+                body,
+            } => {
+                write!(formatter, "mobile messaging Station returned HTTP {status}")?;
+                if let Some(code) = code {
+                    write!(formatter, " [{code}]")?;
+                }
+                if let Some(details) = details {
+                    write!(formatter, ": {details}")?;
+                } else if let Some(body) = body {
+                    write!(formatter, ": {body}")?;
+                }
+                Ok(())
             }
             Self::Decode => formatter.write_str("mobile messaging Station response is invalid"),
             Self::Invalid => formatter.write_str("mobile messaging Station request is invalid"),
         }
+    }
+}
+
+impl StationTransportError {
+    #[cfg(test)]
+    fn http_status(status: u16) -> Self {
+        Self::HttpStatus {
+            status,
+            code: None,
+            details: None,
+            body: None,
+        }
+    }
+}
+
+fn station_http_error(status: u16, headers: &HeaderMap, body: &[u8]) -> StationTransportError {
+    const MAX_ERROR_CONTEXT_CHARS: usize = 2048;
+
+    let header = |name: &'static str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.chars().take(MAX_ERROR_CONTEXT_CHARS).collect())
+    };
+    let body = String::from_utf8_lossy(body);
+    let body = body.trim();
+    StationTransportError::HttpStatus {
+        status,
+        code: header("X-Peers-Error-Code"),
+        details: header("X-Peers-Error-Details"),
+        body: (!body.is_empty()).then(|| body.chars().take(MAX_ERROR_CONTEXT_CHARS).collect()),
     }
 }
 
@@ -2056,9 +2110,10 @@ where
         .send()
         .map_err(classify_request_error)?;
     let status = response.status();
+    let headers = response.headers().clone();
     let bytes = response.bytes().map_err(classify_response_error)?;
     if !status.is_success() {
-        return Err(StationTransportError::HttpStatus(status.as_u16()));
+        return Err(station_http_error(status.as_u16(), &headers, &bytes));
     }
     Response::decode(bytes.as_ref()).map_err(|_| StationTransportError::Decode)
 }
@@ -2088,9 +2143,10 @@ where
         .send()
         .map_err(classify_request_error)?;
     let status = response.status();
+    let headers = response.headers().clone();
     let bytes = response.bytes().map_err(classify_response_error)?;
     if !status.is_success() {
-        return Err(StationTransportError::HttpStatus(status.as_u16()));
+        return Err(station_http_error(status.as_u16(), &headers, &bytes));
     }
     Response::decode(bytes.as_ref()).map_err(|_| StationTransportError::Decode)
 }
@@ -2176,14 +2232,14 @@ fn classify_command_error(error: StationTransportError) -> CommandSubmitFailure 
         StationTransportError::Network => CommandSubmitFailure::Retryable {
             code: "network".to_string(),
         },
-        StationTransportError::HttpStatus(status)
+        StationTransportError::HttpStatus { status, .. }
             if status == 408 || status == 429 || status >= 500 =>
         {
             CommandSubmitFailure::Retryable {
                 code: format!("http_{status}"),
             }
         }
-        StationTransportError::HttpStatus(status) => CommandSubmitFailure::Terminal {
+        StationTransportError::HttpStatus { status, .. } => CommandSubmitFailure::Terminal {
             code: format!("http_{status}"),
         },
         StationTransportError::Decode => CommandSubmitFailure::Terminal {
@@ -2717,12 +2773,44 @@ mod tests {
             CommandSubmitFailure::Retryable { .. }
         ));
         assert!(matches!(
-            classify_command_error(StationTransportError::HttpStatus(503)),
+            classify_command_error(StationTransportError::http_status(503)),
             CommandSubmitFailure::Retryable { .. }
         ));
         assert!(matches!(
-            classify_command_error(StationTransportError::HttpStatus(403)),
+            classify_command_error(StationTransportError::http_status(403)),
             CommandSubmitFailure::Terminal { .. }
+        ));
+    }
+
+    #[test]
+    fn station_http_error_preserves_public_error_context() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Peers-Error-Code",
+            reqwest::header::HeaderValue::from_static("CONVERSATION_CONFLICT"),
+        );
+        headers.insert(
+            "X-Peers-Error-Details",
+            reqwest::header::HeaderValue::from_static(
+                r#"{"operation":"create_direct","reason":"conflict"}"#,
+            ),
+        );
+
+        let error = station_http_error(409, &headers, b"fallback body");
+
+        assert_eq!(
+            error.to_string(),
+            "mobile messaging Station returned HTTP 409 [CONVERSATION_CONFLICT]: \
+             {\"operation\":\"create_direct\",\"reason\":\"conflict\"}"
+        );
+        assert!(matches!(
+            error,
+            StationTransportError::HttpStatus {
+                status: 409,
+                code: Some(_),
+                details: Some(_),
+                body: Some(_),
+            }
         ));
     }
 }

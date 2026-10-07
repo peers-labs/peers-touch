@@ -2524,7 +2524,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             if input.device_type.is_none() {
-                input.device_type = Some("desktop-native".to_string());
+                input.device_type = Some(app_auth::DESKTOP_SESSION_CLASS.to_string());
             }
             bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))
         }
@@ -2535,7 +2535,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "auth_restore_session" => bind_gateway_auth_result(
             state,
-            app_auth::auth_restore_session_for_device(state, "desktop-native"),
+            app_auth::auth_restore_session_for_device(state, app_auth::DESKTOP_SESSION_CLASS),
         ),
         "auth_validate_token" => {
             let input = match parse_args::<AuthValidateTokenInput>(args) {

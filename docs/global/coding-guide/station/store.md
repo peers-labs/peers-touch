@@ -260,17 +260,17 @@ func init() {
 每个子服务在自己的 model 包中注册:
 
 ```go
-// app/subserver/friend_chat_old/db/model/init.go
+// app/subserver/conversation/infrastructure/persistence/schema.go
 func init() {
     store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
         err := rds.AutoMigrate(
-            &FriendChatSession{},
-            &FriendChatMessage{},
-            &FriendMessageAttachment{},
-            &OfflineMessage{},
+            &ConversationModel{},
+            &ConversationMemberModel{},
+            &ConversationEventModel{},
+            &ConversationReadCursorModel{},
         )
         if err != nil {
-            panic(fmt.Errorf("friend chat auto migrate failed: %v", err))
+            panic(fmt.Errorf("conversation auto migrate failed: %v", err))
         }
     })
 }
@@ -436,23 +436,24 @@ func (s *service) TransferFunds(ctx context.Context, from, to string, amount int
 ### 10.3 TableName Convention
 
 - Frame-level models (under `frame/`): prefix `touch_`, e.g., `touch_message`, `touch_peer`.
-- Subserver models (under `app/subserver/<name>/`): prefix `<subserver>_`, e.g., `friend_chat_sessions`, `group_chat_messages`.
-- This eliminates cross-subserver table-name collisions (e.g., both `friend_chat` and `group_chat` having `outbox` or `message` models).
+- Subserver models use the stable resource owner name, e.g.
+  `conversations`, `conversation_members`, and `conversation_events`.
+- This eliminates cross-subserver collisions without encoding retired
+  implementation module names into table contracts.
 
 ### 10.4 Standard Model Example
 
 ```go
-// GroupMember represents a member within a group chat.
-type GroupMember struct {
-    GroupULID string    `gorm:"column:group_ulid;primaryKey"`
-    ActorDID  string    `gorm:"column:actor_did;primaryKey"`
-    Role      int       `gorm:"column:role"`
-    InvitedBy string    `gorm:"column:invited_by"`
-    CreatedAt time.Time `gorm:"column:created_at"`
-    UpdatedAt time.Time `gorm:"column:updated_at"`
+// ConversationMemberModel represents a member within a Conversation.
+type ConversationMemberModel struct {
+    ConversationID string    `gorm:"column:conversation_id;primaryKey"`
+    PTID           string    `gorm:"column:ptid;primaryKey"`
+    Role           string `gorm:"column:role;size:32;not null"`
+    Muted          bool   `gorm:"column:muted;not null;default:false"`
+    JoinedSequence uint64 `gorm:"column:joined_sequence;not null"`
 }
 
-func (*GroupMember) TableName() string { return "group_chat_members" }
+func (*ConversationMemberModel) TableName() string { return "conversation_members" }
 
 // SessionRecord represents a user login session.
 type SessionRecord struct {

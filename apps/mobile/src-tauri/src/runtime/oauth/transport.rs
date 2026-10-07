@@ -8,10 +8,8 @@ use super::proto::common::v1::PeersResponse;
 use crate::error::{MobileError, MobileResult};
 use crate::station_origin::{normalize_station_origin, StationOriginError, StationOriginPolicy};
 
-pub(crate) const PROTOBUF_CONTENT_TYPE: &str = "application/x-protobuf";
+pub(crate) const PROTOBUF_CONTENT_TYPE: &str = "application/protobuf";
 const JSON_CONTENT_TYPE: &str = "application/json";
-const STATION_RESPONSE_CONTENT_TYPES: [&str; 2] =
-    ["application/x-protobuf", "application/protobuf"];
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const SESSION_REVOCATION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -74,7 +72,7 @@ impl StationOAuthTransport {
             .and_then(|value| value.split(';').next())
             .map(str::trim)
             .unwrap_or_default();
-        if !STATION_RESPONSE_CONTENT_TYPES.contains(&content_type) {
+        if content_type != PROTOBUF_CONTENT_TYPE {
             return Err(MobileError::oauth(
                 "mobile.auth.oauthInvalidResponseContentType",
             ));
@@ -265,7 +263,7 @@ fn validate_protobuf_response(response: &reqwest::Response) -> MobileResult<()> 
         .and_then(|value| value.split(';').next())
         .map(str::trim)
         .unwrap_or_default();
-    if !STATION_RESPONSE_CONTENT_TYPES.contains(&content_type) {
+    if content_type != PROTOBUF_CONTENT_TYPE {
         return Err(MobileError::oauth(
             "mobile.auth.oauthInvalidResponseContentType",
         ));
@@ -309,13 +307,19 @@ mod tests {
     use std::net::TcpListener;
     use std::thread;
 
+    use super::super::proto::access_gate::v1::{
+        StartAccessAttemptRequest, StartAccessAttemptResponse,
+    };
     use super::super::proto::actor::v1::ActorRef;
     use super::super::proto::auth::v1::AuthTokens;
     use prost_types::Any;
 
     use super::*;
 
-    fn spawn_protobuf_response(response: PeersResponse) -> (String, thread::JoinHandle<String>) {
+    fn spawn_response(
+        response: PeersResponse,
+        content_type: &'static str,
+    ) -> (String, thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test Station");
         let origin = format!(
             "http://{}",
@@ -330,7 +334,7 @@ mod tests {
             let body = response.encode_to_vec();
             write!(
                 stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: {PROTOBUF_CONTENT_TYPE}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
             )
             .expect("write response headers");
@@ -338,6 +342,10 @@ mod tests {
             String::from_utf8(request).expect("request is HTTP text")
         });
         (origin, handle)
+    }
+
+    fn spawn_protobuf_response(response: PeersResponse) -> (String, thread::JoinHandle<String>) {
+        spawn_response(response, PROTOBUF_CONTENT_TYPE)
     }
 
     fn spawn_status_response(status: &str) -> (String, thread::JoinHandle<String>) {
@@ -369,6 +377,69 @@ mod tests {
         assert_eq!(url.as_str(), "https://station.example/oauth/mobile/start");
 
         assert!(endpoint_url("https://station.example/redirect", "/oauth/mobile/start").is_err());
+    }
+
+    #[test]
+    fn access_gate_transport_uses_canonical_protobuf_media_type() {
+        const RESPONSE_TYPE: &str = "peers_touch.model.access_gate.v1.StartAccessAttemptResponse";
+        let response = StartAccessAttemptResponse::default();
+        let (origin, server) = spawn_protobuf_response(PeersResponse {
+            code: "200".to_string(),
+            msg: "started".to_string(),
+            data: Some(Any {
+                type_url: format!("type.googleapis.com/{RESPONSE_TYPE}"),
+                value: response.encode_to_vec(),
+            }),
+        });
+        let transport = StationOAuthTransport::new().expect("transport");
+
+        let _: StartAccessAttemptResponse =
+            tauri::async_runtime::block_on(transport.post_enveloped(
+                &origin,
+                "/actor/access/start",
+                &StartAccessAttemptRequest::default(),
+                RESPONSE_TYPE,
+            ))
+            .expect("access start");
+
+        let request = server.join().expect("access server");
+        let headers = request.to_ascii_lowercase();
+        assert!(headers.contains("content-type: application/protobuf"));
+        assert!(headers.contains("accept: application/protobuf"));
+        assert!(!headers.contains("application/x-protobuf"));
+    }
+
+    #[test]
+    fn station_transport_rejects_legacy_protobuf_media_type() {
+        const RESPONSE_TYPE: &str = "peers_touch.model.access_gate.v1.StartAccessAttemptResponse";
+        let response = StartAccessAttemptResponse::default();
+        let (origin, server) = spawn_response(
+            PeersResponse {
+                code: "200".to_string(),
+                msg: "started".to_string(),
+                data: Some(Any {
+                    type_url: format!("type.googleapis.com/{RESPONSE_TYPE}"),
+                    value: response.encode_to_vec(),
+                }),
+            },
+            "application/x-protobuf",
+        );
+        let transport = StationOAuthTransport::new().expect("transport");
+
+        let error = tauri::async_runtime::block_on(
+            transport.post_enveloped::<_, StartAccessAttemptResponse>(
+                &origin,
+                "/actor/access/start",
+                &StartAccessAttemptRequest::default(),
+                RESPONSE_TYPE,
+            ),
+        )
+        .expect_err("legacy protobuf media type must be rejected");
+        server.join().expect("access server");
+
+        assert!(error
+            .to_string()
+            .contains("mobile.auth.oauthInvalidResponseContentType"));
     }
 
     #[test]

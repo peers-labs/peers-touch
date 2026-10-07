@@ -59,7 +59,11 @@ from tooling.acceptance.core.provisioning import (
     utc_now,
 )
 from tooling.acceptance.core.redaction import redact_value
+from tooling.acceptance.core.reset_authority import (
+    require_station_reset_authority,
+)
 from tooling.acceptance.fixtures.mobile_native_reset import (
+    RESET_SCOPE,
     ROLES,
     _write_fixture_outcomes,
     reset_fixture,
@@ -7233,14 +7237,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         return projection
 
     def _prepare_actor_manifest(self) -> dict[str, Any]:
-        if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
-            raise BlockedError(
-                reason=(
-                    "Mobile native actor reset requires "
-                    "MOBILE_ACCEPTANCE_RESET=1"
-                ),
-                resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
-            )
+        require_station_reset_authority(RESET_SCOPE)
         if (
             self._artifact_session is None
             or self._native_spec is None
@@ -7630,6 +7627,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                                 f"station fixture {service_id}: not quarantined"
                             )
                 else:
+                    require_station_reset_authority(RESET_SCOPE)
                     for service_id in reversed(tuple(self._service_bindings)):
                         _require_cleanup_budget(deadline, cancellation)
                         station_url, deployment_environment = (

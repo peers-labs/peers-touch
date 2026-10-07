@@ -16,6 +16,7 @@ from tooling.acceptance.core import DriverError, GateError
 
 ATTACHMENT_BYTES = b"peers-touch mobile acceptance attachment\n"
 STATION_ACCOUNT_REF_PREFIX = "station-account:"
+FRIEND_REQUEST_STATUS_ACCEPTED = 2
 TERMINAL_FAILURE_STATES = frozenset({"failed", "terminal", "superseded"})
 
 
@@ -342,60 +343,90 @@ class MobileMessagingJourney:
             "social.request.accept",
             {"requestId": request_id},
         )
-        conversation: dict[str, Any] = {}
-
-        def direct_visible() -> bool:
-            nonlocal conversation
-            projection = self._projection(sender_session)
-            candidates = projection.get("conversations")
-            if not isinstance(candidates, list):
-                return False
-            expected_members = {sender.ptid, receiver.ptid}
-            for value in candidates:
-                if not isinstance(value, Mapping):
-                    continue
-                member_ptids = value.get("memberPtids")
-                if (
-                    value.get("kind") == 1
-                    and value.get("active") is True
-                    and isinstance(member_ptids, list)
-                    and set(member_ptids) == expected_members
-                ):
-                    conversation = dict(value)
-                    return True
-            return False
-
         self._await_condition(
-            direct_visible,
-            f"{sender.client_id} Direct conversation",
+            lambda: self._accepted_relationship_visible(
+                sender_session,
+                request_id=request_id,
+                sender_ptid=sender.ptid,
+                receiver_ptid=receiver.ptid,
+                federation_id=federation_id,
+            ),
+            f"{sender.client_id} accepted relationship",
+        )
+        self._await_write_admission(
+            sender_session,
+            f"{sender.client_id} contact Direct write admission",
+        )
+        conversation = self._mapping(
+            sender_session.call_action(
+                "social.contact.open",
+                {
+                    "peerPtid": receiver.ptid,
+                    "federationId": federation_id,
+                },
+            ),
+            "Contact Direct creation",
         )
         conversation_id = self._text(
             conversation.get("conversationId"),
             "Direct conversation ID",
         )
-        self._await_conversation(receiver_session, conversation_id, kind=1)
-        return conversation_id
-
-    def create_direct_explicitly(
-        self,
-        sender_session: MessagingJourneySession,
-        receiver_session: MessagingJourneySession,
-        receiver: MessagingActor,
-    ) -> str:
-        created = self._mapping(
-            sender_session.call_action(
-                "messaging.createDirect",
-                {"peerPtid": receiver.ptid},
-            ),
-            "Direct creation",
-        )
-        conversation_id = self._text(
-            created.get("conversationId"),
-            "Direct conversation ID",
-        )
         self._await_conversation(sender_session, conversation_id, kind=1)
         self._await_conversation(receiver_session, conversation_id, kind=1)
         return conversation_id
+
+    def _accepted_relationship_visible(
+        self,
+        session: MessagingJourneySession,
+        *,
+        request_id: str,
+        sender_ptid: str,
+        receiver_ptid: str,
+        federation_id: str,
+    ) -> bool:
+        session.call_action("social.reconcile")
+        projection = self._mapping(
+            session.call_action("social.projection.read"),
+            "Accepted relationship projection",
+        )
+        requests = projection.get("friendRequests")
+        return isinstance(requests, list) and any(
+            isinstance(value, Mapping)
+            and value.get("requestId") == request_id
+            and value.get("senderPtid") == sender_ptid
+            and value.get("receiverPtid") == receiver_ptid
+            and value.get("federationId") == federation_id
+            and value.get("status") == FRIEND_REQUEST_STATUS_ACCEPTED
+            for value in requests
+        )
+
+    def _await_write_admission(
+        self,
+        session: MessagingJourneySession,
+        label: str,
+    ) -> None:
+        last_reason = "unavailable"
+
+        def admission_open() -> bool:
+            nonlocal last_reason
+            snapshot = self._mapping(
+                session.call_action("recovery.snapshot"),
+                f"{label} recovery snapshot",
+            )
+            admission = self._mapping(
+                snapshot.get("writeAdmission"),
+                f"{label} write admission",
+            )
+            if admission.get("open") is True:
+                return True
+            reason = admission.get("reason")
+            last_reason = reason if isinstance(reason, str) and reason else "closed"
+            return False
+
+        try:
+            self._await_condition(admission_open, label)
+        except GateError as error:
+            raise GateError(f"{error}; last reason: {last_reason}") from error
 
     def _run_attachment_and_interaction_path(
         self,

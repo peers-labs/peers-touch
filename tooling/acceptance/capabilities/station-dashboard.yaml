@@ -63,7 +63,7 @@
         ],
         "unproven_scope": [
           "Dashboard-wide browser visible-surface gate for all management pages",
-          "Remote fedp5 authenticated smoke outside Federation page"
+          "Remote authenticated Dashboard smoke"
         ]
       }
     }

@@ -362,9 +362,6 @@ func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
 		DeviceType string `json:"device_type"`
 	}
 	_ = ctx.Bind(&req)
-	if req.DeviceType == "" {
-		req.DeviceType = "desktop"
-	}
 
 	actorRef := actor.ProtoActorRef(user)
 	if allowed, reason := gate.CheckActorAllowed(c, actorRef, user.PreferredUsername, user.Email); !allowed {
@@ -373,9 +370,14 @@ func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	result, err := auth.IssueTokenAndSession(c, user, ctx.ClientIP(), string(ctx.GetHeader("User-Agent")), req.DeviceType, map[string]interface{}{
-		"auth_method": "session_takeover",
-	})
+	result, err := auth.IssueTakeoverTokenAndSession(
+		c,
+		user,
+		subject.SessionID,
+		ctx.ClientIP(),
+		string(ctx.GetHeader("User-Agent")),
+		req.DeviceType,
+	)
 	if err != nil {
 		log.Warnf(c, "Session takeover failed: %v", err)
 		FailedResponse(c, ctx, err)

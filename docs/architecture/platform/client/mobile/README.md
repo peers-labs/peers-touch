@@ -60,6 +60,7 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 | [prototype/README.md](./prototype/README.md) | Confirmed prototype reference |
 | [execution-plans/20260827-mobile-shell-implementation/plan.md](./execution-plans/20260827-mobile-shell-implementation/plan.md) | Dependency-ordered implementation and Acceptance plan |
 | [execution-plans/20260829-mobile-native-oauth-proof.md](./execution-plans/20260829-mobile-native-oauth-proof.md) | Historical focused W2-E2 physical-diagnostics plan |
+| [execution-plans/20261006-infra-chat-usability/plan.md](./execution-plans/20261006-infra-chat-usability/plan.md) | Focused Infra/Chat usability, mixed-client parity, and Session class takeover plan |
 
 ## 5. Upstream Sources
 
@@ -111,8 +112,9 @@ Mobile Shell work as one review unit. It covers:
   ownership, with no additional account-preference owner in this release;
 - Rust-owned authenticated business transport and native push, scheduled
   wakeup, and media-picker lifecycles;
-- atomic deletion of the six remaining Mobile legacy callers and a
-  repository-wide semantic reference audit.
+- completed atomic deletion of the six Mobile legacy callers, their retired
+  Group/Chat-owned Social trees, and a repository-wide semantic reference
+  audit.
 
 The amendment preserves the accepted product scope `MS-C01..MS-C10` plus
 degraded `MS-C14`. `MS-C11` WeChat OAuth, `MS-C12` voice/video calls, and

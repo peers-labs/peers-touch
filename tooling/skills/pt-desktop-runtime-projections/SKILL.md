@@ -24,7 +24,8 @@ Applies to changes under:
 
 Runtime-backed state must be owned by the runtime/store, not by incidental page lifecycle:
 
-- `socialRealtime` (wrapped by `runtimes/socialRuntime.ts`) owns chat/contact/social projection freshness.
+- `messagingRuntime` owns Chat command lifecycle, projection events, scoped reset, and reconciliation.
+- `socialRealtime` (wrapped by `runtimes/socialRuntime.ts`) owns friendship, contact, profile, presence, and Social notification freshness.
 - `runtimes/searchRuntime.ts` owns the search source list (app-scope).
 - `runtimes/settingsRuntime.ts` owns the active-account snapshot and agents list.
 - `notification` store owns notification list and counters.

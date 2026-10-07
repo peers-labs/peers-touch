@@ -8,7 +8,7 @@
     "apps/station/app/subserver/federation/**"
   ],
   "truth_sources": ["signed discovery hint", "federation manifest", "ledger membership replay"],
-  "required_gates": ["station-federation-unit", "federation-surface-smoke"],
+  "required_gates": ["station-federation-unit"],
   "acceptance": {
     "service": [
       "signed hint can be published and looked up",

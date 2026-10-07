@@ -407,8 +407,9 @@ class NativeDesktopRuntimeBinding(ABC):
     ) -> None:
         if not station_url:
             raise DriverError("Runtime Binding Station endpoint is empty")
-        session.invoke_app_result("station_add", {"url": station_url})
-        session.invoke_app_result("station_set_active", {"url": station_url})
+        station_input = {"input": {"url": station_url}}
+        session.invoke_app_result("station_add", station_input)
+        session.invoke_app_result("station_set_active", station_input)
 
     def _observe_live_service_identity(
         self,

@@ -22,10 +22,12 @@ use crate::state::AppState;
 use serde_json::json;
 use zeroize::Zeroizing;
 
+pub(crate) const DESKTOP_SESSION_CLASS: &str = "desktop";
+
 pub(crate) fn takeover_station_session_token(
     token: &str,
 ) -> Result<String, station_client::StationClientError> {
-    takeover_station_session_token_for_device(token, "desktop-native")
+    takeover_station_session_token_for_device(token, DESKTOP_SESSION_CLASS)
 }
 
 pub(crate) fn takeover_station_session_token_for_device(
@@ -423,7 +425,10 @@ pub fn access_submit_login(
     if let Err(error) = validate_login_input(&input.account, &input.password) {
         return map_domain_error(error);
     }
-    let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
+    let device_type = input
+        .device_type
+        .as_deref()
+        .unwrap_or(DESKTOP_SESSION_CLASS);
     let response = match submit_request::<AuthSessionPayload>(
         input.attempt_id,
         input.gate_id,
@@ -967,7 +972,7 @@ pub(crate) fn persist_prepared_account_switch_session(
 }
 
 pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
-    auth_restore_session_for_device(state, "desktop-native")
+    auth_restore_session_for_device(state, DESKTOP_SESSION_CLASS)
 }
 
 pub(crate) fn auth_restore_session_for_device(
@@ -1420,13 +1425,18 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
 mod tests {
     use super::{
         run_required_logout_cleanup, should_resume_access_binding,
-        station_verification_rejects_session,
+        station_verification_rejects_session, DESKTOP_SESSION_CLASS,
     };
     use crate::application::station_binding::StationBindingPhase;
     use crate::contracts::AuthSessionPayload;
     use crate::error::ErrorCode;
     use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
     use std::cell::Cell;
+
+    #[test]
+    fn desktop_uses_the_canonical_session_class() {
+        assert_eq!(DESKTOP_SESSION_CLASS, "desktop");
+    }
 
     #[test]
     fn logout_cleanup_succeeds_only_after_all_required_operations() {

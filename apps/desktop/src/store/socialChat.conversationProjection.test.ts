@@ -9,10 +9,7 @@ import {
   MemberRole,
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
-import {
-  FriendChatMessageSchema,
-  FriendMessageType,
-} from '../gen/proto/domain/chat/friend_chat_pb';
+import { MessageType } from '../gen/proto/domain/chat/chat_pb';
 import { resolveMessageSearchTargets, useSocialChatStore } from './socialChat';
 import type { SocialMessage } from './socialProjection';
 
@@ -117,20 +114,20 @@ describe('social chat conversation projection', () => {
   });
 
   it('removes a durably hidden message from the cached projection', () => {
-    const visible = create(FriendChatMessageSchema, {
+    const visible = {
       ulid: 'message-visible',
       senderPtid: 'ptid:peer:bob',
       content: 'visible',
-      type: FriendMessageType.TEXT,
+      type: MessageType.TEXT,
       attachments: [],
-    }) satisfies SocialMessage;
-    const hidden = create(FriendChatMessageSchema, {
+    } satisfies SocialMessage;
+    const hidden = {
       ulid: 'message-hidden',
       senderPtid: 'ptid:peer:bob',
       content: 'hidden',
-      type: FriendMessageType.TEXT,
+      type: MessageType.TEXT,
       attachments: [],
-    }) satisfies SocialMessage;
+    } satisfies SocialMessage;
     useSocialChatStore.setState({
       messages: {
         'direct-conversation': [visible, hidden],

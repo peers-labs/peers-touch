@@ -211,29 +211,36 @@ python3 tooling/scripts/acceptance-run.py \
 python3 tooling/scripts/acceptance-run.py \
   --gate mobile-simulator-runtime-lifecycle-e2e
 
-# Run the W3 Station/session lifecycle cell after explicit disposable reset approval
-MOBILE_ACCEPTANCE_RESET=1 \
-python3 tooling/scripts/acceptance-run.py \
-  --gate mobile-simulator-station-lifecycle-e2e
+# Run the W3 Station/session lifecycle cell under its exact live reset lease
+node tooling/scripts/local-dev/machine-dev.mjs lease \
+  --resource-kind station.reset \
+  --resource-id mobile-station-lifecycle-alice \
+  --reset-scope mobile-station-lifecycle-alice \
+  --budget-seconds 3000 \
+  -- python3 tooling/scripts/acceptance-run.py \
+    --gate mobile-simulator-station-lifecycle-e2e
 
 # Run required two-actor same-Station product evidence
-MOBILE_ACCEPTANCE_RESET=1 \
-python3 tooling/scripts/acceptance-run.py \
-  --station-profile station=chat-native-disposable \
-  --gate mobile-simulator-social-convergence-e2e
-MOBILE_ACCEPTANCE_RESET=1 \
-python3 tooling/scripts/acceptance-run.py \
-  --station-profile station=chat-native-disposable \
-  --gate mobile-simulator-chat-contacts-e2e
-MOBILE_ACCEPTANCE_RESET=1 \
-python3 tooling/scripts/acceptance-run.py \
-  --station-profile station=chat-native-disposable \
-  --gate mobile-simulator-recovery-e2e \
-  --gate mobile-simulator-recovery-ui-e2e \
-  --gate mobile-simulator-moments-e2e
-MOBILE_ACCEPTANCE_RESET=1 \
-python3 tooling/scripts/acceptance-run.py \
-  --gate mobile-simulator-settings-e2e
+node tooling/scripts/local-dev/machine-dev.mjs lease \
+  --resource-kind station.reset \
+  --resource-id mobile-social-simulator-actors \
+  --reset-scope mobile-social-simulator-actors \
+  --budget-seconds 7200 \
+  -- python3 tooling/scripts/acceptance-run.py \
+    --station-profile station=chat-native-disposable \
+    --gate mobile-simulator-social-convergence-e2e \
+    --gate mobile-simulator-chat-contacts-e2e \
+    --gate mobile-simulator-recovery-e2e \
+    --gate mobile-simulator-recovery-ui-e2e \
+    --gate mobile-simulator-moments-e2e
+
+node tooling/scripts/local-dev/machine-dev.mjs lease \
+  --resource-kind station.reset \
+  --resource-id mobile-station-lifecycle-alice \
+  --reset-scope mobile-station-lifecycle-alice \
+  --budget-seconds 3000 \
+  -- python3 tooling/scripts/acceptance-run.py \
+    --gate mobile-simulator-settings-e2e
 
 # Run required iOS Simulator permission/network/accessibility evidence
 python3 tooling/scripts/acceptance-run.py \
@@ -243,6 +250,10 @@ python3 tooling/scripts/acceptance-run.py \
 The runner reads `tooling/acceptance/environments/mobile-simulator.yaml`,
 provisions Appium, builds and installs the app, runs the gate scenarios from
 `tooling/acceptance/gates/mobile/simulator_e2e.py`, and collects evidence.
+Every destructive Fixture command must already have an active Development
+declaration for the exact `station.reset` scope. The inherited OS-held lease is
+verified immediately before setup and cleanup; an environment variable is not
+reset authority.
 The W9-B Gate reads
 `tooling/acceptance/environments/mobile-ios-layout-simulator.yaml`, reuses the
 base iOS build/Appium contract, and records source-bound screenshots, native

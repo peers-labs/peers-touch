@@ -1,7 +1,7 @@
 /**
  * socialEventIngress.ts — W5 shared typed event ingress
  *
- * Routes Social / Group / Moments / Notification / Profile events through a
+ * Routes Social / Moments / Notification / Profile events through a
  * single typed discriminated-union ingress with control/data capacity,
  * cursor tracking, and session revalidation on control-event loss.
  *
@@ -15,34 +15,15 @@
 // Domain event discriminated union
 // ---------------------------------------------------------------------------
 
-/** Social domain: friend chat, contacts, presence, typing */
+/** Social domain: contacts, presence, typing, and relationship state */
 export interface SocialDataEvent {
   readonly domain: 'social';
   readonly kind:
-    | 'friend-message'
-    | 'friend-receipt'
-    | 'friend-mutation'
     | 'friend-typing'
     | 'friend-presence'
     | 'friend-request'
-    | 'relationship-changed'
-    | 'session-update'
-    | 'friend-settings-changed';
+    | 'relationship-changed';
   readonly sessionUlid?: string;
-  readonly payload: Readonly<Record<string, unknown>>;
-  readonly cursor: string;
-  readonly timestampMs: number;
-}
-
-/** Group domain: group messages, membership, settings */
-export interface GroupDataEvent {
-  readonly domain: 'group';
-  readonly kind:
-    | 'group-message'
-    | 'group-membership'
-    | 'group-mutation'
-    | 'group-settings-changed';
-  readonly groupUlid?: string;
   readonly payload: Readonly<Record<string, unknown>>;
   readonly cursor: string;
   readonly timestampMs: number;
@@ -99,6 +80,7 @@ export interface ControlEvent {
     | 'host-wakeup'
     | 'stream-connected'
     | 'stream-disconnected'
+    | 'messaging-wake'
     | 'resync-required'
     | 'cursor-repair';
   readonly payload: Readonly<Record<string, unknown>>;
@@ -108,7 +90,6 @@ export interface ControlEvent {
 
 export type SocialIngressEvent =
   | SocialDataEvent
-  | GroupDataEvent
   | MomentsDataEvent
   | NotificationDataEvent
   | ProfileDataEvent
@@ -232,7 +213,6 @@ export interface SocialEventIngressController {
 
 const ALL_DOMAINS: readonly SocialIngressDomain[] = [
   'social',
-  'group',
   'moments',
   'notification',
   'profile',

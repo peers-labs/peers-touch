@@ -41,6 +41,45 @@ func TestPrepareOAuthSessionIncludesCanonicalActorRef(t *testing.T) {
 	assertCredentialActorRef(t, response.GetActorRef())
 }
 
+func TestPrepareOAuthSessionRejectsRuntimeClientClassAlias(t *testing.T) {
+	coreauth.Init(coreauth.Config{
+		Secret:    "oauth-session-test-secret",
+		AccessTTL: time.Hour,
+	})
+
+	_, _, err := PrepareOAuthSession(
+		context.Background(),
+		credentialTestActor(),
+		OAuthSessionBinding{
+			CandidateID:            "candidate-1",
+			AccessAttemptID:        "attempt-1",
+			StationPeerID:          "station-1",
+			AccessDecisionRevision: 1,
+			DeviceType:             session.DeviceType("desktop-native"),
+			DeviceID:               "device-1",
+			LifecycleGeneration:    1,
+		},
+		time.Unix(1_700_000_000, 0),
+	)
+	if err == nil {
+		t.Fatal("PrepareOAuthSession() accepted a runtime client-class alias")
+	}
+}
+
+func TestIssueTokenAndSessionRejectsNonCanonicalClientClassBeforeIssuance(t *testing.T) {
+	_, err := IssueTokenAndSession(
+		context.Background(),
+		credentialTestActor(),
+		"127.0.0.1",
+		"session-class-test",
+		"desktop-native",
+		nil,
+	)
+	if err == nil {
+		t.Fatal("IssueTokenAndSession() accepted a runtime client-class alias")
+	}
+}
+
 func TestIssueSessionCredentialIncludesCanonicalActorRef(t *testing.T) {
 	coreauth.Init(coreauth.Config{
 		Secret:    "access-gate-session-test-secret",

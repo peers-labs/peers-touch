@@ -1,8 +1,8 @@
 # Mobile Shell — 数据与 Proto 映射
 
 > **Status**: active; owner-contract closure amendment accepted
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-09-19
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-07
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -36,7 +36,7 @@ Actor identity is a stricter boundary:
 | pinned message | `PinEvent` / `PinMessageCommand` | active pinned panel |
 | thread | `thread_root_*` and message query | open thread route |
 | `Contact` | `ActorProfile`, friendship/session projection, presence | grouping/search text |
-| `GroupItem` | `Group`, `GroupMember` | list preview |
+| `GroupItem` | canonical Conversation projection and member-authority snapshot | list preview and Messaging command feedback |
 | `Moment` | `social.Post`, `PostAuthor`, `ReactionSummary` | expansion state |
 | `MomentComment` | `social.Comment` | reply composer state |
 | profile | `ActorProfile` | current detail route |
@@ -51,9 +51,9 @@ Actor identity is a stricter boundary:
   thread list/count, member authority, and durable command results:
   `chat/command.proto`, `chat/conversation.proto`,
   `chat/conversation_api.proto`, and `chat/event.proto`.
-- `chat/friend_chat.proto` and `chat/group_chat.proto` are compatibility inputs
-  only where an explicitly bounded read adapter still exists. They are not
-  canonical target owners and cannot receive new Mobile calls.
+- Retired Friend/Group-specific Chat contracts are deleted; Mobile consumes
+  only the canonical Conversation command, event, projection, and receipt
+  families.
 - Moments feed, audience, media and reactions: `social/post.proto`.
 - Comments and replies: `social/comment.proto`.
 - Profile and relationship: `actor/actor.proto`, `social/relationship.proto`.
@@ -77,7 +77,7 @@ not prove that Station and Mobile currently expose the full product operation.
 | MS-P07 | Station identity/capability handshake | Model + Station core | implemented | Libp2p-host-key-signed statement and Mobile Rust verification bind peer ID, origin, capabilities, challenge and expiry |
 | MS-P08 | Device-local draft envelope | Model + Mobile storage | source complete; simulator proof pending | Generated v2 Chat/Moment envelopes use exact Station/PTID scope, wrapped scope keys, lifecycle write fencing, and explicit retain/discard recovery |
 | MS-P09 | Generic Access Gate action submission | Access Gate Model + Station | accepted target; implementation pending | Descriptor schema exists; submission needs action/schema binding, stable identity, typed built-ins, generic scalar values, result state, and finalizer isolation |
-| MS-P10 | Conversation member authority | Conversation | implemented owner contract; Mobile cutover pending | AO-D10 and generated member-update/owner-transfer commands exist; two Mobile legacy callers remain |
+| MS-P10 | Conversation member authority | Conversation | implemented | AO-D10 generated member-update/owner-transfer commands are consumed only through Device Messaging Engine; Mobile projects pending/uncertain/failed state until authoritative member/owner readback converges |
 | MS-P11 | Directional block/list/status | Social | source implemented; runtime proof pending | Generated public mutations, cursor-bounded list, privacy-safe relationship projection, result lookup, ordered event, Federation propagation, and Mobile durable-command cutover are implemented |
 | MS-P12 | Forward/actor-hide/moderation | Conversation + Device Messaging Engine | accepted target; implementation pending | Retract exists; user forward, actor-scoped hide, and moderation tombstone contracts are absent |
 | MS-P13 | Moments visibility outcome and native media staging | Social + Secure Content + Mobile Rust | source implemented; simulator proof pending | Generated feed/detail outcomes and Rust picker staging, encryption, upload, promotion, and cleanup are implemented; required multi-actor proof uses simulators and physical picker behavior is optional diagnostics |
@@ -1016,18 +1016,19 @@ failure.
 
 ## 8. Semantic Hard-Cut Inventory
 
-The verified production baseline is:
+The verified production hard-cut result is:
 
 | Owner | Legacy operation | Current caller count | Canonical target |
 |---|---|---:|---|
-| Conversation | member role/mute update | 1 | `/conversation/member/update` |
-| Conversation | ownership transfer | 1 | `/conversation/ownership/transfer` |
-| Social | block | 1 | generated Social relationship command |
-| Social | unblock | 1 | generated Social relationship command |
-| Social | blocked list | 1 | generated Social paginated projection |
-| Social | relationship status | 1 | generated Social relationship projection |
+| Conversation | member role/mute update | 0 | `/conversation/member/update` through Device Messaging Engine |
+| Conversation | ownership transfer | 0 | `/conversation/ownership/transfer` through Device Messaging Engine |
+| Social | Chat-owned block | 0 | generated Social relationship command |
+| Social | Chat-owned unblock | 0 | generated Social relationship command |
+| Social | Chat-owned blocked list | 0 | generated Social paginated projection |
+| Social | Chat-owned relationship status | 0 | generated Social relationship projection |
 
-Closure requires zero executable production calls to `/group-chat/*` and
-`/friend-chat/*` for these operations. Generated comments, tests, fixtures, and
-historical documents are classified separately and cannot be used as fallback
-runtime paths.
+Closure requires all listed operations to use the canonical Conversation and
+Social owners. Friend/Group-specific Chat Proto, generated bindings, routes,
+gateways, stores, runtimes, tests, and Acceptance resources are deleted.
+Generated comments and historical documents cannot be imported or used as
+fallback runtime paths.

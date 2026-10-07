@@ -60,11 +60,11 @@ func (r *ReceiptRecorder) Record(
 
 	var recorded interaction.DeliveryRecordResult
 	err = r.transaction(ctx, func(tx *gorm.DB) error {
-		expected, err := lockAuthorityDeliveryCommitment(tx, receipt)
+		event, err := loadReceiptEvent(tx, receipt.EventID)
 		if err != nil {
 			return err
 		}
-		event, err := loadReceiptEvent(tx, receipt.EventID)
+		expected, err := lockAuthorityDeliveryCommitment(tx, receipt)
 		if err != nil {
 			return err
 		}
@@ -203,6 +203,7 @@ func (r *ReceiptRecorder) RecordFollowerConsumption(
 }
 
 const persistenceTimestampPrecision = 1000
+const receiptTransactionMaxAttempts = 3
 
 func (r *ReceiptRecorder) transaction(
 	ctx context.Context,
@@ -212,7 +213,9 @@ func (r *ReceiptRecorder) transaction(
 		r.sqliteMutex.Lock()
 		defer r.sqliteMutex.Unlock()
 	}
-	err := r.db.WithContext(ctx).Transaction(fn)
+	err := executeReceiptTransaction(ctx, func() error {
+		return r.db.WithContext(ctx).Transaction(fn)
+	})
 	if err == nil || interaction.CodeOf(err) != "" {
 		return err
 	}
@@ -222,6 +225,26 @@ func (r *ReceiptRecorder) transaction(
 		"delivery_receipt_recorder.record",
 		err,
 	)
+}
+
+func executeReceiptTransaction(
+	ctx context.Context,
+	execute func() error,
+) error {
+	var err error
+	for range receiptTransactionMaxAttempts {
+		err = execute()
+		if err == nil ||
+			interaction.CodeOf(err) != "" ||
+			!persistence.IsRetryableTransactionContention(err) {
+			return err
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+	}
+
+	return err
 }
 
 func validateReceipt(receipt interaction.DeliveryReceipt) (string, error) {

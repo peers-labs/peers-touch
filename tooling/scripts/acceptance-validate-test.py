@@ -530,7 +530,7 @@ class DomainContractClosureTests(unittest.TestCase):
             {"acceptance_core_self_validation"},
         )
         self.assertNotIn(
-            "federation-validates-acceptance-framework",
+            "business-domain-reverse-validation",
             {result["id"] for result in results},
         )
 
@@ -657,8 +657,8 @@ class DomainContractClosureTests(unittest.TestCase):
             acceptance_root = Path(temp_dir)
             environments = acceptance_root / "environments"
             environments.mkdir()
-            (environments / "fedp5.yaml").write_text(
-                '{"id": "fedp5"}\n',
+            (environments / "remote-testnet.yaml").write_text(
+                '{"id": "remote-testnet"}\n',
                 encoding="utf-8",
             )
 
@@ -684,8 +684,8 @@ class DomainContractClosureTests(unittest.TestCase):
                     ],
                     {
                         "federation-gate": {
-                            "environment": "fedp5",
-                            "provisioner": "fedp5",
+                            "environment": "remote-testnet",
+                            "provisioner": "remote-testnet",
                         }
                     },
                     "",

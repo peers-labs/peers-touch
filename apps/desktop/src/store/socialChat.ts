@@ -1,43 +1,26 @@
 import { createDesktopStore } from './createDesktopStore';
-import { create as createProto, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
 import {
-  CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
+  type Timestamp,
+  timestampDate,
+  timestampFromDate,
+} from '@bufbuild/protobuf/wkt';
+import {
   chatUnreadForParticipant,
-  encryptedChatTransportMessageType,
 } from '@peers-touch/client-chat-core';
 
 import {
   api,
   isUnauthorizedError,
   type AccountProfile,
-  type ChatAttachmentInput,
   type ChatThreadCount,
 } from '../services/desktop_api';
-import {
-  EncryptedMessageSchema,
-  FriendMessageStatus,
-  type FriendChatSession,
-  type FriendChatMessage,
-} from '../gen/proto/domain/chat/friend_chat_pb';
-import {
-  ChatEncryptedMessagePayloadSchema,
-  GroupMemberSchema,
-  GroupRole,
-  GroupMessageAttachmentSchema,
-  type ChatEncryptedMessagePayload,
-  type Group,
-  type GroupMessage,
-  type GroupMember,
-} from '../gen/proto/domain/chat/group_chat_pb';
-import { EncryptedMediaDescriptorSchema } from '../gen/proto/domain/common/common_pb';
+import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
 import type {
   Conversation,
   ConversationMember,
 } from '../gen/proto/domain/chat/conversation_pb';
 import {
   ConversationStatus,
-  MemberRole,
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
 import { imServiceV1 } from '../services/im-service';
@@ -76,6 +59,9 @@ import {
   type DesktopIMConversationProjection,
   type DesktopIMMessageProjection,
   type DesktopIMSenderProfileProjection,
+  type FriendChatSession,
+  type Group,
+  type GroupMember,
   type GroupSecurityState,
   type MessagePreview,
   type SocialMessage,
@@ -207,133 +193,31 @@ function projectMessagingProjection(
   };
   if (kind === 'friend') {
     const status = projection.state === 'failed'
-      ? FriendMessageStatus.FAILED
+      ? MessageStatus.FAILED
       : projection.state === 'read'
-        ? FriendMessageStatus.READ
+        ? MessageStatus.READ
         : projection.state === 'delivered'
-          ? FriendMessageStatus.DELIVERED
+          ? MessageStatus.DELIVERED
           : projection.eventId
-            ? FriendMessageStatus.SENT
-            : FriendMessageStatus.SENDING;
+            ? MessageStatus.SENT
+            : MessageStatus.SENDING;
     return {
       ...common,
-      $typeName: 'peers_touch.model.chat.v1.FriendChatMessage',
+      $typeName: 'peers_touch.model.chat.v1.ChatMessage',
       sessionUlid: conversationId,
       receiverPtid: '',
       status,
       deliveredAt: undefined,
       readAt: undefined,
-    } as unknown as FriendChatMessage;
+    };
   }
   return {
     ...common,
-    $typeName: 'peers_touch.model.chat.v1.GroupMessage',
+    $typeName: 'peers_touch.model.chat.v1.ChatMessage',
     groupUlid: conversationId,
     mentionedPtids: [],
     mentionAll: false,
-  } as unknown as GroupMessage;
-}
-
-function bytesToB64(bytes: Uint8Array): string {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
-}
-
-interface FriendEncryptedEnvelope {
-  version: 1;
-  ciphertext: string;
-  counter: number;
-  ratchetPub?: string;
-  prevCounter?: number;
-  nonce?: string;
-}
-
-export function decodeFriendEncryptedEnvelope(bytes: Uint8Array): FriendEncryptedEnvelope | null {
-  try {
-    const wire = fromBinary(EncryptedMessageSchema, bytes);
-    if (
-      wire.version !== 1
-      || !wire.ciphertext.byteLength
-      || wire.ratchetPub.byteLength !== 32
-      || wire.nonce.byteLength !== 12
-    ) {
-      return null;
-    }
-    return {
-      version: 1,
-      ciphertext: bytesToB64(wire.ciphertext),
-      counter: wire.counter,
-      ratchetPub: bytesToB64(wire.ratchetPub),
-      prevCounter: wire.prevCounter,
-      nonce: bytesToB64(wire.nonce),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function encryptedMediaDescriptorFromInput(attachment: ChatAttachmentInput) {
-  if (!attachment.encryption_suite || !attachment.encryption_key_b64 || !attachment.encryption_nonce_b64) return undefined;
-  return createProto(EncryptedMediaDescriptorSchema, {
-    encrypted: true,
-    version: attachment.encryption_suite === 'AES-256-GCM-CHUNKED' ? 2 : CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
-    suite: attachment.encryption_suite,
-    keyB64: attachment.encryption_key_b64,
-    nonceB64: attachment.encryption_nonce_b64,
-    plaintextSha256B64: attachment.plaintext_sha256_b64 ?? '',
-    ciphertextSha256B64: attachment.ciphertext_sha256_b64 ?? '',
-    plaintextSize: BigInt(attachment.plaintext_size ?? attachment.size),
-    ciphertextSize: BigInt(attachment.ciphertext_size ?? attachment.size),
-    chunking: attachment.chunking ?? '',
-    chunkSize: attachment.chunk_size ?? 0,
-    chunkCount: attachment.chunk_count ?? 0,
-    tagSize: attachment.tag_size ?? 0,
-    nonceStrategy: attachment.nonce_strategy ?? '',
-  });
-}
-
-function groupAttachmentFromInput(attachment: ChatAttachmentInput) {
-  const mediaEncryption = encryptedMediaDescriptorFromInput(attachment);
-  return createProto(GroupMessageAttachmentSchema, {
-    cid: attachment.cid,
-    filename: attachment.filename,
-    mimeType: attachment.mime_type,
-    size: BigInt(attachment.size),
-    thumbnailCid: attachment.thumbnail_cid ?? '',
-    visibility: attachment.visibility ?? '',
-    mediaEncryption,
-    encryptionSuite: '',
-    encryptionKeyB64: '',
-    encryptionNonceB64: '',
-    plaintextSha256B64: attachment.plaintext_sha256_b64 ?? '',
-    ciphertextSha256B64: attachment.ciphertext_sha256_b64 ?? '',
-    plaintextSize: BigInt(attachment.plaintext_size ?? attachment.size),
-    ciphertextSize: BigInt(attachment.ciphertext_size ?? attachment.size),
-  });
-}
-
-export function createEncryptedChatPayloadBytes(
-  text: string,
-  attachments: readonly ChatAttachmentInput[] = [],
-  messageType?: number,
-): Uint8Array {
-  return toBinary(ChatEncryptedMessagePayloadSchema, createProto(ChatEncryptedMessagePayloadSchema, {
-    version: CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
-    text,
-    attachments: attachments.map(groupAttachmentFromInput),
-    messageType: messageType ?? encryptedChatTransportMessageType(),
-  }));
-}
-
-export function decodeEncryptedChatPayloadBytes(bytes: Uint8Array): ChatEncryptedMessagePayload | null {
-  try {
-    const payload = fromBinary(ChatEncryptedMessagePayloadSchema, bytes);
-    if (payload.version === CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION) return payload;
-  } catch {
-    return null;
-  }
-  return null;
+  };
 }
 
 export interface UnifiedConversation {
@@ -610,7 +494,7 @@ interface SocialChatState {
   deleteMessage: (ulid: string, messageUlid: string, kind?: 'friend' | 'group') => Promise<void>;
   /**
    * Recall a previously-sent friend chat message. Hits the
-   * `/friend-chat/message/recall` endpoint; on success the server
+   * canonical Conversation retract command; on success the authority
    * fans out a `MessageMutation` event over SSE which this store's
    * `applyMessageMutation` handler folds into the local cache —
    * we deliberately do NOT mutate optimistically so all clients
@@ -684,7 +568,7 @@ interface SocialChatState {
    * Apply a realtime MessageReceipt to the local message store.
    *
    * Idempotent: status flips are forward-only (SENT < DELIVERED < READ
-   * in FriendMessageStatus enum) so a stale DELIVERED receipt arriving
+   * in MessageStatus enum) so a stale DELIVERED receipt arriving
    * after a READ will not downgrade the UI tick. Called from the
    * SocialChatPage SSE subscription, which already filters out
    * self-emitted receipts (multi-device READ echoes are *kept* — the
@@ -737,12 +621,12 @@ interface SocialChatState {
 
 function activityFromSession(s: FriendChatSession): Date {
   const ts = s.lastMessageAt ?? s.updatedAt ?? s.createdAt;
-  return ts ? timestampDate(ts) : new Date(0);
+  return ts ? timestampDate(ts as Timestamp) : new Date(0);
 }
 
 function activityFromGroup(g: Group): Date {
   const ts = g.updatedAt ?? g.createdAt;
-  return ts ? timestampDate(ts) : new Date(0);
+  return ts ? timestampDate(ts as Timestamp) : new Date(0);
 }
 
 function friendUnreadForViewer(s: FriendChatSession, viewerDid: string | null): number {
@@ -833,24 +717,11 @@ export function groupAvatarRemoteUrl(group?: Pick<Group, 'avatarCid'> | null): s
   return '';
 }
 
-function projectGroupRole(role: MemberRole): GroupRole {
-  switch (role) {
-    case MemberRole.OWNER:
-      return GroupRole.OWNER;
-    case MemberRole.ADMIN:
-      return GroupRole.ADMIN;
-    case MemberRole.MEMBER:
-      return GroupRole.MEMBER;
-    default:
-      return GroupRole.UNSPECIFIED;
-  }
-}
-
 function projectConversationGroupMember(member: ConversationMember): GroupMember {
-  return createProto(GroupMemberSchema, {
+  return {
     groupUlid: member.conversationId,
     ptid: member.ptid,
-    role: projectGroupRole(member.role),
+    role: member.role,
     nickname: member.nickname,
     muted: member.muted,
     mutedUntil: member.mutedUntil,
@@ -858,7 +729,7 @@ function projectConversationGroupMember(member: ConversationMember): GroupMember
     invitedBy: member.invitedByPtid,
     actorHomeStationPeerId: member.actorHomeStationPeerId,
     actorHomeStationDomain: member.actorHomeStationDomain,
-  });
+  };
 }
 
 function activeConversationMembers(

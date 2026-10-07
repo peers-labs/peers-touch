@@ -35,7 +35,7 @@
     {
       "id": "mobile-station-lifecycle-alice",
       "authorization_required": true,
-      "authorization_ref": "env:MOBILE_ACCEPTANCE_RESET",
+      "authorization_ref": "station.reset:mobile-station-lifecycle-alice",
       "target_assertion": "both Stations are approved disposable targets",
       "initial_assertion": "Alice exists on both Stations and no other actor is reset"
     }

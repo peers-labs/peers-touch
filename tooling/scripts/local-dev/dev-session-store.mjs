@@ -9,6 +9,7 @@ import {
   openSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -798,10 +799,89 @@ export function archiveSessionStore(options) {
     );
     const archivedSession = path.join(archiveDirectory, 'session.json');
     const archivedEvents = path.join(archiveDirectory, 'events.ndjson');
-    const hasArchivedSession = existsSync(archivedSession);
-    const hasArchivedEvents = existsSync(archivedEvents);
+    let hasArchivedSession = existsSync(archivedSession);
+    let hasArchivedEvents = existsSync(archivedEvents);
     const hasLiveSession = existsSync(paths.session);
     const hasLiveEvents = existsSync(paths.events);
+    if (
+      hasLiveSession &&
+      hasLiveEvents &&
+      hasArchivedSession &&
+      hasArchivedEvents
+    ) {
+      const events = parseEvents(archivedEvents);
+      const session = parseSnapshot(archivedSession);
+      const projected = materialize(events);
+      if (
+        session === null ||
+        session.eventCount !== projected.eventCount ||
+        session.eventDigest !== projected.eventDigest ||
+        !stateEquals(session.state, projected.state)
+      ) {
+        sessionFail(
+          'SESSION_JOURNAL_INVALID',
+          'Archived Session snapshot and journal disagree',
+        );
+      }
+      assertIdentity(session, options.expected);
+      const historyParent = path.join(
+        paths.directory,
+        'archive-history',
+        expectedSessionId,
+      );
+      const historyDirectory = path.join(historyParent, session.eventDigest);
+      if (existsSync(historyDirectory)) {
+        const historySessionPath = path.join(historyDirectory, 'session.json');
+        const historyEventsPath = path.join(historyDirectory, 'events.ndjson');
+        if (
+          !existsSync(historySessionPath) ||
+          !existsSync(historyEventsPath)
+        ) {
+          sessionFail(
+            'SESSION_ARCHIVE_CONFLICT',
+            'Development Session history conflicts with the displaced archive',
+            { archiveDirectory, historyDirectory },
+          );
+        }
+        const historyEvents = parseEvents(historyEventsPath);
+        const historySession = parseSnapshot(historySessionPath);
+        const historyProjected = materialize(historyEvents);
+        if (
+          historySession === null ||
+          historySession.eventCount !== historyProjected.eventCount ||
+          historySession.eventDigest !== historyProjected.eventDigest ||
+          !stateEquals(historySession.state, historyProjected.state)
+        ) {
+          sessionFail(
+            'SESSION_JOURNAL_INVALID',
+            'Historical Session snapshot and journal disagree',
+          );
+        }
+        assertIdentity(historySession, options.expected);
+        if (
+          historySession.eventCount !== session.eventCount ||
+          historySession.eventDigest !== session.eventDigest ||
+          !stateEquals(historySession.state, session.state)
+        ) {
+          sessionFail(
+            'SESSION_ARCHIVE_CONFLICT',
+            'Development Session history conflicts with the displaced archive',
+            { archiveDirectory, historyDirectory },
+          );
+        }
+        unlinkSync(archivedEvents);
+        unlinkSync(archivedSession);
+        rmdirSync(archiveDirectory);
+        syncDirectory(path.dirname(archiveDirectory));
+      } else {
+        ensurePrivateDirectory(historyParent);
+        renameSync(archiveDirectory, historyDirectory);
+        syncDirectory(historyParent);
+        syncDirectory(path.dirname(archiveDirectory));
+      }
+      hasArchivedSession = false;
+      hasArchivedEvents = false;
+    }
     if (
       !hasLiveSession &&
       !hasLiveEvents &&

@@ -1034,7 +1034,7 @@ where
     decode_peers_envelope(bytes.as_ref())
 }
 
-// JSON-based request for chat APIs (group_chat, social, etc.).
+// JSON-based request for non-canonical Station APIs.
 // Sends/receives JSON with Content-Type: application/json.
 pub(crate) fn request_json(
     method: Method,

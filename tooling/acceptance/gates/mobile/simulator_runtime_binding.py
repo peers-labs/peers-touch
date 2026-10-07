@@ -11,28 +11,16 @@ from tooling.acceptance.core import (
     EphemeralGateClient,
     EvidenceError,
 )
+from tooling.acceptance.gates.mobile.simulator_harness_contract import (
+    STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS,
+    child_callable_harness_actions,
+)
 
 
 CAPABILITY_ID = "mobile.simulator.appium-session"
 DEFAULT_GATE_ID = "mobile-simulator-station-lifecycle-e2e"
 DEFAULT_TIMEOUT_SECONDS = 60.0
-CALLABLE_HARNESS_ACTIONS = frozenset(
-    {
-        "cleanup",
-        "lifecycle.restart",
-        "lifecycle.resume",
-        "lifecycle.scope.read",
-        "lifecycle.snapshot",
-        "lifecycle.suspend",
-        "session.logout",
-        "settings.device.read",
-        "settings.device.update",
-        "settings.notifications.read",
-        "settings.notifications.update",
-        "settings.profile.read",
-        "settings.profile.update",
-    }
-)
+CALLABLE_HARNESS_ACTIONS = STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS
 
 
 @dataclass(frozen=True)
@@ -80,6 +68,7 @@ class MobileSimulatorRuntimeBinding:
         self._require_identifier(gate_id, "Gate")
         self._client = client
         self._gate_id = gate_id
+        self._callable_harness_actions = child_callable_harness_actions(gate_id)
         self._active_clients: list[str] = []
 
     @classmethod
@@ -256,7 +245,7 @@ class MobileSimulatorRuntimeBinding:
         action: str,
         payload: Mapping[str, Any] | None = None,
     ) -> Any:
-        if action not in CALLABLE_HARNESS_ACTIONS:
+        if action not in self._callable_harness_actions:
             raise DriverError(
                 f"Mobile simulator Harness action is not callable: {action!r}"
             )
@@ -404,7 +393,9 @@ class MobileSimulatorRuntimeBinding:
 
 def validate_scope_projection(value: object) -> dict[str, Any]:
     scope = _mapping(value, "lifecycle scope")
-    _assert_no_raw_authority(scope)
+    projected_scope = dict(scope)
+    projected_scope.pop("deviceId", None)
+    _assert_no_raw_authority(projected_scope)
     if set(scope) != {
         "generation",
         "phase",
@@ -412,6 +403,7 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "activeStationPeerId",
         "activeActorPtid",
         "runtimeStationPeerId",
+        "deviceId",
         "social",
         "group",
         "navigation",
@@ -430,7 +422,7 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
             raise DriverError(
                 f"Mobile lifecycle scope {field} is invalid"
             )
-    for field in ("activeActorPtid", "runtimeStationPeerId"):
+    for field in ("activeActorPtid", "runtimeStationPeerId", "deviceId"):
         _optional_text(scope.get(field), field)
 
     social = _mapping(scope.get("social"), "social scope")

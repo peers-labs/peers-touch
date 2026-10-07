@@ -38,6 +38,7 @@ PRECEDING_GATES: tuple[GateSpec, ...] = (
     GateSpec("SAL-G04", "mobile-simulator-platform-e2e"),
     GateSpec("SAL-G04", "desktop-release-build"),
     GateSpec("SAL-G04", "mobile-native-build"),
+    GateSpec("SAL-G05", "station-access-session-class-e2e"),
 )
 
 
@@ -162,7 +163,14 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
         "completionStatus": "DONE" if aggregate.passed else "PARTIAL",
         "proofStatus": "PROVEN" if aggregate.passed else "UNPROVEN",
         "phase": "SAL-03",
-        "bom": ["SAL-G00", "SAL-G01", "SAL-G02", "SAL-G03", "SAL-G04"],
+        "bom": [
+            "SAL-G00",
+            "SAL-G01",
+            "SAL-G02",
+            "SAL-G03",
+            "SAL-G04",
+            "SAL-G05",
+        ],
         "spec": [
             "docs/architecture/platform/station/access/acceptance-matrix.md",
         ],
@@ -191,7 +199,14 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
 class StationAccessLifecycleAggregateGate(AcceptanceGate):
     gate_id = GATE_ID
     phase = "SAL-03"
-    bom = ("SAL-G00", "SAL-G01", "SAL-G02", "SAL-G03", "SAL-G04")
+    bom = (
+        "SAL-G00",
+        "SAL-G01",
+        "SAL-G02",
+        "SAL-G03",
+        "SAL-G04",
+        "SAL-G05",
+    )
     report_path = (
         REPO_ROOT / "tooling" / "acceptance" / "reports" / f"{GATE_ID}.json"
     )
