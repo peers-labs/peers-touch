@@ -1,14 +1,14 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
+.PHONY: worktree-create worktree-creation-status env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release dev-close dev-close-status \
         dev-resources-prepare dev-resources-status dev-resource-record \
         dev-session-start dev-session-status dev-session-archive dev-transition dev-functional-result \
-        active-work-sync active-work-status active-work-status-all active-work-close \
+        active-work-sync active-work-repair active-work-status active-work-status-all active-work-close \
         completion-review-prepare completion-review-submit completion-review-status \
-        plan-mount plan-mount-status plan-unmount plan-validate plan-status plan-current plan-next \
+        plan-mount plan-mount-status plan-unmount plan-state-migrate plan-validate plan-approve-north-star plan-amend plan-seal-completion plan-status plan-current plan-next \
         plan-activate plan-advance plan-cancel plan-reopen \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
@@ -19,10 +19,12 @@
 DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
 MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
+WORKTREE_CREATE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/worktree-create.mjs
 WORKFLOW_SNAPSHOT_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-snapshot.mjs
 WORKFLOW_DOCTOR_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-doctor.mjs
 PLANCTL_SCRIPT := tooling/scripts/plan/planctl.mjs
 PLAN_MOUNT_SCRIPT := tooling/scripts/plan/plan-mount.mjs
+PLAN_STATE_MIGRATION_SCRIPT := tooling/scripts/plan/stable-plan-state-migration.mjs
 ENV_REPO_ARG := $(or $(ENV_REPO),$(abspath ../env))
 PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
 SLOT_ARG := $(or $(SLOT),0)
@@ -50,6 +52,21 @@ DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
 ACTIVE_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/active-work.mjs
 WORKTREE_OBSERVE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/worktree-observe.mjs
 COMPLETION_REVIEW_SCRIPT := $(LOCAL_DEV_SCRIPTS)/completion-review.mjs
+
+worktree-create:
+	@if [ -z "$(WORKTREE)" ] || [ -z "$(BRANCH)" ] || [ -z "$(PURPOSE)" ]; then \
+		echo "Usage: make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]"; \
+		exit 1; \
+	fi
+	@node $(WORKTREE_CREATE_SCRIPT) create \
+		--source-root "$(CURDIR)" \
+		--path "$(WORKTREE)" \
+		--branch "$(BRANCH)" \
+		--start "$(or $(START),HEAD)" \
+		--purpose "$(PURPOSE)"
+
+worktree-creation-status:
+	@node $(WORKTREE_CREATE_SCRIPT) status --workspace-root "$(CURDIR)"
 
 env-register:
 	@if [ -z "$(PROFILE)" ] || [ -z "$(SLOT)" ] || [ -z "$(ENV_CAPABILITIES_ARG)" ] || [ -z "$(ENV_PURPOSE_ARG)" ]; then \
@@ -115,9 +132,35 @@ plan-unmount:
 		--allow-unfinished "$(or $(ALLOW_UNFINISHED),false)" \
 		--owner "$(DEV_OWNER_ARG)"
 
+plan-state-migrate:
+	@node $(PLAN_STATE_MIGRATION_SCRIPT)
+
 plan-validate:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-validate PLAN=<package-plan.md>"; exit 1; fi
 	@node $(PLANCTL_SCRIPT) validate --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-approve-north-star:
+	@if [ -z "$(PLAN)" ] || [ -z "$(DECISION_REF)" ]; then echo "Usage: make plan-approve-north-star PLAN=<package-plan.md> DECISION_REF=<ref> [ACTOR=<id>]"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) approve-north-star \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--actor "$(or $(ACTOR),$(DEV_OWNER_ARG))" \
+		--decision-ref "$(DECISION_REF)"
+
+plan-amend:
+	@if [ -z "$(PLAN)" ] || [ -z "$(REASON)" ] || [ -z "$(CHANGE)" ]; then echo "Usage: make plan-amend PLAN=<package-plan.md> REASON='<why>' CHANGE='<what changed>' [ACTOR=<id>] [APPROVAL=agent|owner] [DECISION_REF=<ref>]"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) amend \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--actor "$(or $(ACTOR),$(DEV_OWNER_ARG))" \
+		--reason "$(REASON)" \
+		--change "$(CHANGE)" \
+		--approval "$(or $(APPROVAL),agent)" \
+		$(if $(DECISION_REF),--decision-ref "$(DECISION_REF)",)
+
+plan-seal-completion:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-seal-completion PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) seal-completion --plan "$(PLAN)" --repo-root "$(CURDIR)"
 
 plan-status:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-status PLAN=<package-plan.md>"; exit 1; fi
@@ -336,6 +379,16 @@ active-work-sync:
 	@node $(ACTIVE_WORK_SCRIPT) sync \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		$(if $(EXPECTED_REVISION),--expected-revision "$(EXPECTED_REVISION)",)
+
+active-work-repair:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(EXPECTED_REVISION)" ] || [ -z "$(EXPECTED_RECORD_SHA256)" ]; then \
+		echo "Usage: make active-work-repair WORK_ITEM=<id> EXPECTED_REVISION=<n> EXPECTED_RECORD_SHA256=<sha256>"; \
+		exit 1; \
+	fi
+	@node $(ACTIVE_WORK_SCRIPT) repair \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--expected-revision "$(EXPECTED_REVISION)" \
+		--expected-record-sha256 "$(EXPECTED_RECORD_SHA256)"
 
 active-work-status:
 	@node $(ACTIVE_WORK_SCRIPT) status

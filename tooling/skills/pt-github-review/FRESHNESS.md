@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-05
-covered_docs_hash: 9c39335b3c13e2a86824fa332641c9781bb0cc70c730136711577fba60912336
+last_verified_at: 2026-10-07
+covered_docs_hash: e777ff8d0e2a0df0ec78d571d078a9aede483941fa1e9b31e9799fea2a3f5d1b
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,44 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-07 Plan And Ownership Hardening Review
+
+DWF-D42 and DWF-D43 now require source-only CI Plan validation, immutable
+digest-bound completion attestations, full-source amendment fences, exact root
+OWNER receipts, and recoverable worktree creation transactions. Review rejects
+machine-state-dependent CI checks, child-session OWNER substitution,
+ownerless lifecycle mutation, unvalidated legacy migration input, and
+non-transactional provenance publication.
+
+## 2026-10-07 Main-Session Worktree Provenance Review
+
+DWF-D43 requires explicitly authorized Agent-created worktrees to persist the
+creating main-session reference independently from current Development Run
+ownership. Review now rejects raw Git creation presented as a supported Agent
+path, Git actor substitution, Action Receipt substitution for user
+authorization, guessed legacy provenance, owner mutation across declaration,
+Session, or active-work, and active ownerless legacy state. The review Skill,
+workflow invariant, installation fixture, and focused owner/worktree tests
+cover these boundaries; no generic review fixture is required.
+
+## 2026-10-07 Explicit North Star Approval Review
+
+DWF-D42 now treats generated North Stars as non-executable candidates.
+Review must reject missing or stale digest-bound user approval, incomplete
+criterion-to-Task/closure/Gate coverage, and any attempt to publish a changed
+North Star without the matching owner amendment decision. Plan mount/CLI
+fixtures and the stable-plan invariant cover these boundaries; no generic
+review fixture is required.
+
+## 2026-10-06 Stable Plan Amendment Review
+
+DWF-D42 replaces frozen Plan versions with one stable Plan identity and an
+append-only amendment trail. Review must reject unrecorded Plan mutation,
+rewritten amendment history, stale snapshot execution, silent North Star
+changes, and authorization expansion without an owner decision. The new
+stable-plan invariant and Plan mount/CLI regressions cover these boundaries; no
+generic review fixture is required.
 
 ## 2026-10-05 Architecture Taxonomy Review
 

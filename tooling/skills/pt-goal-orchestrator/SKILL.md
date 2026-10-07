@@ -37,7 +37,7 @@ absence does not make the schedule unavailable.
 | Stage and workflow route | `pt-god-view` / `pt-dev-workflow` |
 | Product and architecture semantics | owning methodology Skills |
 | Vertical dependency graph | `pt-architecture-execution-methodology` |
-| Frozen Plan Version and durable ExecutionRun lifecycle | plan owners via `pt-dev-workflow` |
+| Stable Plan snapshot and durable ExecutionRun lifecycle | plan owners via `pt-dev-workflow` |
 | Schedule, Ready/Parked frontier, lane allocation | this Skill |
 | Host capability projection | this Skill |
 | Host adapter invocation | `pt-dev-workflow` after Guardian admission |
@@ -94,7 +94,8 @@ boundary or a host-specific Goal object.
 
 Discovery of unmodeled required work returns `PLAN_AMENDMENT_REQUIRED`. If the
 current Task cannot close within one bounded Slice, return the same typed
-result; do not schedule a knowingly zero-delta continuation.
+result; Dev Workflow records the amendment and continues unless it changes the
+North Star. Do not schedule a knowingly zero-delta continuation.
 
 ## Host Capability Projection
 

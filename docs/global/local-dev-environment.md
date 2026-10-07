@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-07-23 | **Updated**: 2026-10-05
+> **Created**: 2026-07-23 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 
 ---
@@ -86,10 +86,12 @@ and mutable intent:
 ~/.peers-touch/dev/plan-mounts/
 ```
 
-`make plan-mount PLAN=<path>` binds one frozen Plan Version to the selected
+`make plan-mount PLAN=<path>` binds one stable Plan to the selected
 execution worktree for the complete run. A second live Plan is rejected until
 completion, cancellation, or explicit owner unmount. Repository/PR
-synchronization never changes the mount.
+synchronization never changes the mount. `make plan-amend` records ordinary
+execution-model changes and advances the current immutable snapshot while
+retaining the same Plan, mount, and run identities.
 
 ---
 
@@ -302,6 +304,8 @@ registered and its binding must resolve.
 | `make profile <name>` | Explicitly select a reviewed Profile; on first use, register with the lowest free slot and minimum operational capabilities without reset |
 | `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
 | `make env-update ...` | Update requested binding fields and current registered branch while no lease is held |
+| `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]` | Create an explicitly authorized Agent worktree and persist its originating main-session provenance |
+| `make worktree-creation-status` | Read the current worktree's immutable creation provenance |
 | `make env-unregister [WORKSPACE_ID=<id>]` | Remove an idle registration after coordinated Development close; rejects live declaration, active-work, PlanMount, or lease |
 | `make env-check ...` | Verify stable workspace binding, current Git source, tracked-clean topology, slot, capabilities, target match, and budget |
 | `make env-status-all` | Report all registrations and observed OS-held leases |
@@ -313,8 +317,10 @@ registered and its binding must resolve.
 | `make dev-heartbeat WORK_ITEM=<id>` | Extend the current declaration expiry |
 | `make dev-release WORK_ITEM=<id>` | Low-level declaration release owner; normal workflow close uses `make dev-close` |
 | `make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> CLOSE_REASON=<completed|cancelled|owner-abandon> ...` | Resume-safe cross-owner cleanup and close receipt |
-| `make plan-mount PLAN=<path>` | Mount one frozen Plan Version to this workspace |
+| `make plan-mount PLAN=<path>` | Mount one stable Plan to this workspace |
 | `make plan-mount-status` | Resolve and validate the workspace's mount and run |
+| `make plan-amend PLAN=<path> REASON='<why>' CHANGE='<what>'` | Append an in-place Plan amendment and advance the current snapshot |
+| `make plan-state-migrate` | One-time hard cut of idle machine ledgers; refuses live declarations or mounts |
 | `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
 | `make desktop` | Start Desktop Tauri app |
 | `make desktop-install` | Build the current source and atomically install `~/Applications/Peers Dev.app` |

@@ -317,7 +317,10 @@
       "when": {
         "paths": [
           "tooling/scripts/plan/plan-mount*.mjs",
+          "tooling/scripts/plan/plan-completion*.mjs",
+          "tooling/scripts/plan/stable-plan-state-migration*.mjs",
           "docs/knowledge/invariants/plan-mount-is-run-bound.md",
+          "docs/knowledge/invariants/stable-plan-amendments.md",
           "tooling/skills/pt-plan-and-document/**"
         ]
       },
