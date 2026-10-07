@@ -53,6 +53,7 @@ from tooling.acceptance.provisioners.mobile_native import (
     MOBILE_NATIVE_PRODUCT_SCENARIOS,
     MOBILE_NATIVE_SCENARIO_GATES,
     CommandResult,
+    MobileAndroidPhysicalProvisioner,
     MobileNativeAppiumCapabilityHandler,
     MobileNativeProvisioner,
     MobileNativeProviderAuthorizationHandler,
@@ -3493,6 +3494,44 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
         )
         self.assertNotIn("artifact.close", self.events)
 
+    def test_device_restore_reverifies_without_nested_device_operation(
+        self,
+    ) -> None:
+        calls: list[tuple[dict[str, Any], float, threading.Event]] = []
+        cancellation = threading.Event()
+        lease = {"resourceKey": "physical-device/alice-android"}
+
+        class Broker:
+            @staticmethod
+            def physical_device_baseline_matches(
+                observed_lease: dict[str, Any],
+                *,
+                deadline_monotonic: float,
+                cancellation: threading.Event,
+            ) -> bool:
+                calls.append(
+                    (
+                        observed_lease,
+                        deadline_monotonic,
+                        cancellation,
+                    )
+                )
+                return True
+
+        self.provisioner._lease_broker = Broker()  # type: ignore[assignment]
+
+        result = self.provisioner._restore_device(
+            lease,
+            deadline_monotonic=123.0,
+            cancellation=cancellation,
+        )
+
+        self.assertEqual(calls, [(lease, 123.0, cancellation)])
+        self.assertEqual(
+            result,
+            BaselineRestoreResult(True, True, True),
+        )
+
     def test_cleanup_closes_broker_after_cleanup_deadline_expires(self) -> None:
         self._prepare_with_fakes()
         self.events.clear()
@@ -3815,6 +3854,87 @@ class MobileNativeContractTests(unittest.TestCase):
                 "github-disposable-account",
                 "google-disposable-account",
             ),
+        )
+
+    def test_android_social_manifest_resolves_existing_actors_read_only(
+        self,
+    ) -> None:
+        gate_id = "mobile-social-android-native"
+        run_id = SOURCE_RUN_ID
+        writes: list[tuple[str, dict[str, Any], str | None]] = []
+
+        class ArtifactSession:
+            def __init__(self) -> None:
+                self.gate_id = gate_id
+                self.run_id = run_id
+
+            def write_json(
+                self,
+                path: str,
+                payload: Mapping[str, Any],
+                *,
+                role: str | None = None,
+            ) -> ArtifactRef:
+                writes.append((path, dict(payload), role))
+                return ArtifactRef(
+                    workspace_id="a" * 16,
+                    gate_id=self.gate_id,
+                    run_id=self.run_id,
+                    path=path,
+                    sha256="b" * 64,
+                    media_type="application/json",
+                )
+
+        artifact_session = ArtifactSession()
+        provisioner = MobileAndroidPhysicalProvisioner(
+            EnvironmentContract(id="mobile-android-physical")
+        )
+        provisioner.bind_evidence_run(artifact_session)  # type: ignore[arg-type]
+        provisioner._artifact_session = artifact_session  # type: ignore[assignment]
+        provisioner._native_spec = SimpleNamespace()
+        provisioner._manifest = SimpleNamespace(
+            services={
+                "station-primary": SimpleNamespace(
+                    service_kind="station",
+                    endpoint="https://station.example",
+                    deployment_environment="station-three",
+                )
+            }
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "resolve_existing_actor_identity",
+            side_effect=lambda _endpoint, role: SimpleNamespace(
+                role=role,
+                account_ref=f"station-account:{role}@p.t",
+                ptid=f"ptid:{role}",
+                device_policy="single-active-session",
+                federated_handle=f"@{role}@station.example",
+                home_station_peer_id="station-peer",
+            ),
+        ) as resolve_actor:
+            reference = provisioner._prepare_android_social_actor_manifest()
+
+        self.assertEqual(
+            [entry.args for entry in resolve_actor.call_args_list],
+            [
+                ("https://station.example", "alice"),
+                ("https://station.example", "bob"),
+                ("https://station.example", "eve"),
+            ],
+        )
+        self.assertEqual(
+            reference["path"],
+            "runtime/mobile-social-android-actors.json",
+        )
+        self.assertEqual(len(writes), 1)
+        payload = writes[0][1]
+        self.assertFalse(payload["reset"]["authorized"])
+        self.assertTrue(
+            payload["stations"]["station-primary"][
+                "existingActorsVerified"
+            ]
         )
 
     def test_service_bindings_resolve_only_from_runtime_environment(

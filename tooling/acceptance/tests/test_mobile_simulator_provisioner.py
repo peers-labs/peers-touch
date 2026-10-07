@@ -877,6 +877,77 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.assertFalse(provisioner.requires_actor_reset)
 
+    def test_mobile_social_ios_fixture_resolves_existing_actors_read_only(
+        self,
+    ) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-ios-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialIOSSimulatorProvisioner(
+            contract,
+            overlay_path=path,
+        )
+        evidence = FakeEvidenceRun()
+        provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
+        bindings = resolve_mobile_service_bindings(
+            contract,
+            path,
+            environment={
+                "PT_MOBILE_DIRECT_STATION_URL": (
+                    "https://station.example"
+                ),
+                "PT_MOBILE_DIRECT_STATION_DEPLOY_ENV": "station-four",
+            },
+        )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "verify_reset_target",
+            ) as verify_reset,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "reset_fixture",
+            ) as reset,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_actor_identity",
+            ) as destructive_resolver,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_existing_actor_identity",
+                side_effect=lambda _endpoint, role: SimpleNamespace(
+                    role=role,
+                    account_ref=f"station-account:{role}@p.t",
+                    ptid=f"ptid:{role}",
+                    device_policy="single-active-session",
+                    federated_handle=f"@{role}@station.example",
+                    home_station_peer_id="station-peer",
+                ),
+            ) as existing_resolver,
+        ):
+            provisioner._prepare_actor_fixture(
+                "mobile-social-ios-native",
+                bindings,
+                provisioner._load_overlay(),
+            )
+
+        verify_reset.assert_not_called()
+        reset.assert_not_called()
+        destructive_resolver.assert_not_called()
+        self.assertEqual(
+            [entry.args for entry in existing_resolver.call_args_list],
+            [
+                ("https://station.example", "alice"),
+                ("https://station.example", "bob"),
+                ("https://station.example", "eve"),
+            ],
+        )
+        payload = evidence.writes[-1][1]
+        self.assertFalse(payload["reset"]["authorized"])
+        station = payload["stations"]["station"]
+        self.assertFalse(station["targetVerified"])
+        self.assertTrue(station["existingActorsVerified"])
+
     def test_social_simulator_accepts_explicit_station_profiles(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
         contract = EnvironmentContract.from_yaml(path)

@@ -2971,6 +2971,55 @@ class MobileResourceLeaseBroker:
                 raise
             return result
 
+    def physical_device_baseline_matches(
+        self,
+        lease: Mapping[str, Any],
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> bool:
+        """Reverify cleanup identity without opening a nested operation."""
+        resource_key = str(lease["resourceKey"])
+        operation_lock = self.ledger.operation_lock(
+            resource_key,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        lock_context = (
+            operation_lock
+            if deadline_monotonic is None and cancellation is None
+            else operation_lock.bounded(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        )
+        with lock_context:
+            ledger_lock = (
+                self.ledger.lock
+                if deadline_monotonic is None and cancellation is None
+                else self.ledger.lock.bounded(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            )
+            with ledger_lock:
+                record = self._validate_operation(lease, _utc(self._now()))
+                if record.kind != "physical-device":
+                    raise MobileResourceLeaseError(
+                        "physical baseline verification requires a "
+                        "physical-device lease"
+                    )
+                client_id = str(record.acquisition["clientId"])
+                try:
+                    handle = self._resolve_physical_device(client_id)
+                    self._validate_physical_device_facts(client_id, handle)
+                except _PhysicalDeviceFactMismatch:
+                    return False
+                return hmac.compare_digest(
+                    record.physical_identity_hmac,
+                    self._physical_identity_hmac(handle),
+                )
+
     def operate_browser_session(
         self,
         lease: Mapping[str, Any],

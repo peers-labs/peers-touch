@@ -65,6 +65,9 @@ from tooling.acceptance.core.redaction import redact_value
 from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_federation_id_from_station_ids,
 )
+from tooling.acceptance.fixtures.chat_native_actors import (
+    resolve_existing_actor_identity,
+)
 from tooling.acceptance.fixtures.mobile_native_reset import (
     ROLES,
     _write_fixture_outcomes,
@@ -8126,11 +8129,8 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         cancellation: threading.Event,
     ) -> BaselineRestoreResult:
         assert self._lease_broker is not None
-        verified = self._lease_broker.with_physical_device(
+        verified = self._lease_broker.physical_device_baseline_matches(
             lease,
-            lambda handle: (
-                handle.connected and handle.physical and not handle.simulator
-            ),
             deadline_monotonic=deadline_monotonic,
             cancellation=cancellation,
         )
@@ -8555,9 +8555,8 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 resource="fixture-service:station-primary",
             )
         actors = [
-            resolve_actor_identity(
+            resolve_existing_actor_identity(
                 service.endpoint,
-                service.deployment_environment,
                 role,
             )
             for role in MOBILE_NATIVE_ANDROID_SOCIAL_ROLES

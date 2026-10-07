@@ -65,6 +65,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     prepare_bound_friendships,
     reset_fixture,
     resolve_actor_identity,
+    resolve_existing_actor_identity,
     verify_reset_target,
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
@@ -6798,10 +6799,17 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     ),
                 )
             actors = [
-                resolve_actor_identity(
-                    binding.endpoint,
-                    binding.deployment_environment,
-                    role,
+                (
+                    resolve_actor_identity(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        role,
+                    )
+                    if self.requires_actor_reset
+                    else resolve_existing_actor_identity(
+                        binding.endpoint,
+                        role,
+                    )
                 )
                 for role in fixture_roles
             ]
