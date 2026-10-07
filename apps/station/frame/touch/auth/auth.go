@@ -394,29 +394,7 @@ func issueSessionCredential(
 // IssueTokenAndSession creates a JWT token + session for an already-authenticated Actor.
 // extraData is merged into session.Data (e.g. {"auth_method": "oauth_bridge"}).
 func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAgent, deviceType string, extraData map[string]interface{}) (*SessionLoginResult, error) {
-	if actor == nil {
-		return nil, errors.New("cannot issue session without actor")
-	}
 	clientClass, err := session.ParseDeviceType(deviceType)
-	if err != nil {
-		return nil, err
-	}
-	ptid := strings.TrimSpace(actor.PTID)
-	if _, err := actoridentity.Parse(ptid); err != nil {
-		return nil, fmt.Errorf("cannot issue session for actor without valid PTID: %w", err)
-	}
-
-	sessionID, err := generateSessionID()
-	if err != nil {
-		return nil, err
-	}
-
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
-		SubjectID:  ptid,
-		SessionID:  sessionID,
-		Attributes: map[string]string{"email": actor.Email},
-	})
 	if err != nil {
 		return nil, err
 	}
@@ -425,17 +403,15 @@ func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAg
 	for k, v := range extraData {
 		data[k] = v
 	}
-
-	sess := &session.Session{
-		ID:        sessionID,
-		UserID:    uint64(actor.ID),
-		Email:     actor.Email,
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(DefaultSessionDuration),
-		LastSeen:  time.Now(),
-		IPAddress: clientIP,
-		UserAgent: userAgent,
-		Data:      data,
+	sess, token, err := prepareSessionCredential(
+		ctx,
+		actor,
+		clientIP,
+		userAgent,
+		data,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	_, kickedCount, err := SessionManager().CreateWithKick(ctx, sess, clientClass)
@@ -443,6 +419,64 @@ func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAg
 		return nil, err
 	}
 
+	return sessionLoginResult(actor, sess.ID, token, kickedCount), nil
+}
+
+func prepareSessionCredential(
+	ctx context.Context,
+	actor *db.Actor,
+	clientIP string,
+	userAgent string,
+	data map[string]interface{},
+) (*session.Session, *coreauth.Token, error) {
+	if actor == nil {
+		return nil, nil, errors.New("cannot issue session without actor")
+	}
+	ptid := strings.TrimSpace(actor.PTID)
+	if _, err := actoridentity.Parse(ptid); err != nil {
+		return nil, nil, fmt.Errorf(
+			"cannot issue session for actor without valid PTID: %w",
+			err,
+		)
+	}
+
+	sessionID, err := generateSessionID()
+	if err != nil {
+		return nil, nil, err
+	}
+	provider := coreauth.NewJWTProvider(
+		coreauth.Get().Secret,
+		coreauth.Get().AccessTTL,
+	)
+	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
+		SubjectID:  ptid,
+		SessionID:  sessionID,
+		Attributes: map[string]string{"email": actor.Email},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	now := time.Now()
+	return &session.Session{
+		ID:        sessionID,
+		UserID:    uint64(actor.ID),
+		Email:     actor.Email,
+		CreatedAt: now,
+		ExpiresAt: now.Add(DefaultSessionDuration),
+		LastSeen:  now,
+		IPAddress: clientIP,
+		UserAgent: userAgent,
+		Data:      data,
+	}, token, nil
+}
+
+func sessionLoginResult(
+	actor *db.Actor,
+	sessionID string,
+	token *coreauth.Token,
+	kickedCount int64,
+) *SessionLoginResult {
 	return &SessionLoginResult{
 		AccessToken:   token.Value,
 		RefreshToken:  "",
@@ -451,7 +485,7 @@ func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAg
 		SessionID:     sessionID,
 		Actor:         actor,
 		KickedSession: kickedCount > 0,
-	}, nil
+	}
 }
 
 // IssueTakeoverTokenAndSession rotates one existing Session without changing
@@ -465,99 +499,30 @@ func IssueTakeoverTokenAndSession(
 	if actor == nil {
 		return nil, errors.New("cannot take over session without actor")
 	}
-	previous, err := SessionManager().Get(ctx, previousSessionID)
-	if err != nil {
-		return nil, fmt.Errorf("load previous session for takeover: %w", err)
-	}
-	if previous.UserID != actor.ID {
-		return nil, errors.New("session takeover actor binding mismatch")
-	}
-	clientClass, takeoverData, err := takeoverSessionBinding(previous, requestedClass)
+	clientClass, err := session.ParseDeviceType(requestedClass)
 	if err != nil {
 		return nil, err
 	}
-	return IssueTokenAndSession(
+	sess, token, err := prepareSessionCredential(
 		ctx,
 		actor,
 		clientIP,
 		userAgent,
-		string(clientClass),
-		takeoverData,
+		map[string]interface{}{"auth_method": "session_takeover"},
 	)
-}
-
-func takeoverSessionBinding(
-	previous *session.Session,
-	requestedClass string,
-) (session.DeviceType, map[string]interface{}, error) {
-	if previous == nil || previous.Data == nil {
-		return "", nil, errors.New("session takeover requires a previous session binding")
-	}
-	storedClassValue, ok := previous.Data["device_type"].(string)
-	if !ok {
-		return "", nil, errors.New("previous session has no client class")
-	}
-	storedClass, err := session.ParseDeviceType(storedClassValue)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	requested, err := session.ParseDeviceType(requestedClass)
+	_, kickedCount, err := SessionManager().Takeover(
+		ctx,
+		previousSessionID,
+		sess,
+		clientClass,
+	)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	if requested != storedClass {
-		return "", nil, errors.New("session takeover cannot change client class")
-	}
-
-	deviceID, _ := previous.Data["device_id"].(string)
-	deviceID = strings.TrimSpace(deviceID)
-	if deviceID == "" {
-		return "", nil, errors.New("previous session has no device identity")
-	}
-	lifecycleGeneration := sessionDataUint64(previous.Data["lifecycle_generation"])
-	if lifecycleGeneration == 0 {
-		return "", nil, errors.New("previous session has no lifecycle generation")
-	}
-	stationPeerID, _ := previous.Data["station_peer_id"].(string)
-	stationPeerID = strings.TrimSpace(stationPeerID)
-	if stationPeerID == "" {
-		return "", nil, errors.New("previous session has no Station identity")
-	}
-
-	return storedClass, map[string]interface{}{
-		"auth_method":          "session_takeover",
-		"device_id":            deviceID,
-		"lifecycle_generation": lifecycleGeneration,
-		"station_peer_id":      stationPeerID,
-	}, nil
-}
-
-func sessionDataUint64(value interface{}) uint64 {
-	switch typed := value.(type) {
-	case uint64:
-		return typed
-	case uint:
-		return uint64(typed)
-	case uint32:
-		return uint64(typed)
-	case int:
-		if typed >= 0 {
-			return uint64(typed)
-		}
-	case int64:
-		if typed >= 0 {
-			return uint64(typed)
-		}
-	case int32:
-		if typed >= 0 {
-			return uint64(typed)
-		}
-	case float64:
-		if typed >= 0 && typed == float64(uint64(typed)) {
-			return uint64(typed)
-		}
-	}
-	return 0
+	return sessionLoginResult(actor, sess.ID, token, kickedCount), nil
 }
 
 func ValidateSession(ctx context.Context, sessionID string) (bool, string) {

@@ -130,6 +130,71 @@ func TestDBStoreCreateWithKickReplacesSameClassAndPreservesOtherClasses(t *testi
 	require.Empty(t, reason)
 }
 
+func TestDBStoreTakeoverTransfersBindingAndRejectsStaleSource(t *testing.T) {
+	store, db := newSQLiteDBStore(t)
+	ctx := context.Background()
+
+	source := newPersistentTestSession("mobile-source", 41)
+	source.Data = map[string]interface{}{
+		"oauth_candidate_id":       "candidate-source",
+		"access_attempt_id":        "attempt-source",
+		"station_peer_id":          "station-source",
+		"access_decision_revision": uint64(17),
+		"device_id":                "mobile-installation",
+		"lifecycle_generation":     uint64(9),
+		"auth_method":              "oauth",
+	}
+	_, _, err := store.CreateWithKick(ctx, source, DeviceTypeMobile)
+	require.NoError(t, err)
+
+	winner := newPersistentTestSession("mobile-winner", source.UserID)
+	_, kicked, err := store.Takeover(
+		ctx,
+		source.ID,
+		winner,
+		DeviceTypeMobile,
+	)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), kicked)
+	require.Equal(t, map[string]interface{}{
+		"device_type":              string(DeviceTypeMobile),
+		"oauth_candidate_id":       "candidate-source",
+		"access_attempt_id":        "attempt-source",
+		"station_peer_id":          "station-source",
+		"access_decision_revision": uint64(17),
+		"device_id":                "mobile-installation",
+		"lifecycle_generation":     uint64(9),
+		"auth_method":              "session_takeover",
+	}, winner.Data)
+
+	persisted, err := store.Get(ctx, winner.ID)
+	require.NoError(t, err)
+	requireAuthorizationMetadata(t, persisted.Data, winner.Data)
+
+	var oldSource SessionRecord
+	require.NoError(t, db.Where("session_id = ?", source.ID).
+		First(&oldSource).Error)
+	require.True(t, oldSource.Revoked)
+	require.Empty(t, oldSource.OAuthCandidateID)
+	require.Empty(t, oldSource.AccessAttemptID)
+
+	staleReplacement := newPersistentTestSession(
+		"mobile-stale-replacement",
+		source.UserID,
+	)
+	_, _, err = store.Takeover(
+		ctx,
+		source.ID,
+		staleReplacement,
+		DeviceTypeMobile,
+	)
+	require.ErrorIs(t, err, ErrSessionRevoked)
+
+	valid, reason := store.CheckSessionValid(ctx, winner.ID)
+	require.True(t, valid)
+	require.Empty(t, reason)
+}
+
 func TestDBStoreRejectsNonCanonicalClientClass(t *testing.T) {
 	store, _ := newSQLiteDBStore(t)
 	sess := newPersistentTestSession("invalid-class", 41)

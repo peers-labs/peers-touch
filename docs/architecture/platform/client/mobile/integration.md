@@ -1,8 +1,8 @@
 # Mobile Shell — 集成与 Gap 分析
 
 > **Status**: active; owner-contract closure amendment accepted
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-09-19
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-07
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -19,17 +19,17 @@
 | OAuth | MS-P02/MS-P03, MS-D12 and MS-D13 are implemented; deterministic simulator proof is pending and physical provider proof is optional | GitHub/Google redirect/callback | run the simulator Gate; retain `native-oauth-proof/` only for optional diagnostics |
 | Shell tabs | Descriptor-owned Chat/Moments/Contacts/Me active-only switch, all planned detail routes, and selected-only Contacts overlays | Chats/Moments/Contacts/Me plus details | retain; collect visible native focus/no-leak evidence |
 | Friend chat | Real list/thread, E2EE, receipts, typing, attachments, search, edit/recall/delete/settings | Rich thread | retain and split oversized page into boundaries |
-| Group chat | Real group projection, E2EE, membership/admin/settings; two admin callers still target retired Group routes | Rich group thread | cut member update and ownership transfer to AO-D10 without an adapter |
+| Group chat | Canonical Conversation projection, E2EE, membership/admin/settings, AO-D10 member authority, and Messaging-owned pending/failure convergence | Rich group thread | retain; complete simulator runtime proof |
 | Reactions/pins/forward/thread | Retract/reaction/pin/thread foundations exist; user forward and actor-hide/moderation semantics are incomplete | Fully interactive | keep unsupported actions unavailable until distinct Conversation contracts and readback exist |
 | Contacts | Real requests, search, federated resolve, profiles, and canonical Social block/list/status callers | Grouped contacts/details | retain Social authority; complete same/cross-Station runtime proof |
 | Moments | Runtime-backed feed, publish, reactions, comments, replies, typed feed/detail outcomes, Rust-owned native media staging, and descriptor detail route | Feed, reactions, comments, replies | retain Social/Secure Content authority; complete simulator picker and multi-actor proof |
 | Me/Profile | Actor-profile privacy, Notification preferences, device settings, Station, language, and canonical Social blocked-user surfaces | Profile stats and grouped settings | preserve split ownership; remove the placeholder account-preference section and hard-cut shared Profile/Notification CAS |
 | Notifications | Real runtime/store and notification center | Badge behavior | retain; make descriptor/runtime ownership explicit |
-| Shared Social ingress | One session-scoped supervisor routes Social, Group, Moments, notification, and profile invalidation with bounded queues, cursor repair, and write admission | One runtime-owned freshness path | retain; execute authorized two-Station simulator convergence Gates |
+| Shared Social ingress | One session-scoped supervisor routes Social, Moments, notification, and profile invalidation; Chat frames become Messaging wake intents | One runtime-owned freshness path per domain | retain; execute authorized two-Station simulator convergence Gates |
 | Runtime registry | Executable descriptors with topological bootstrap and reverse suspend/teardown | Lifecycle-aware shell | retain; complete remaining environment evidence |
 | Auth/session runtime | Station-scoped credential acquisition and admitted session lifecycle have separate owners | Pre-session auth plus post-grant session ownership | retain; complete required simulator access proof |
 | Unknown writes | Per-domain idempotency exists unevenly; no uniform persistent result convergence | Restart-safe exact-scope resolution | add durable command ledger and Station result/readback adapters |
-| Teardown | Kernel generation fencing and Social/Group reverse teardown are implemented; reset-authorized simulator proof remains incomplete | Externally atomic Station/actor transition | retain owners; complete required simulator evidence |
+| Teardown | Kernel generation fencing and Messaging/Social reverse teardown are implemented; reset-authorized simulator proof remains incomplete | Externally atomic Station/actor transition | retain owners; complete required simulator evidence |
 | Native capabilities | Secure storage, permission, lifecycle, network, PTID/device-bound push registration, scheduled completion, and Rust-owned picker staging are source-complete | OAuth/push/deep-link/resume/media | retain generation-fenced native contracts; independent iOS/Android runtime proof remains |
 | Authenticated business transport | Messaging Rust transport exists; ordinary Web gateways attach bearer tokens | No user-visible difference | move all authenticated operations behind a typed Rust allowlist and remove Web credential access |
 | i18n/UI identity | Production mostly uses locale keys; prototype is reference | Full localized UI | retain contracts; never copy prototype literals |
@@ -40,7 +40,8 @@
 - `MobileShell.tsx`: descriptor-driven primary/detail/overlay navigation with
   badge selectors; broad badge aggregation remains a follow-up selector audit.
 - `runtimeRegistry.ts`: executable lifecycle registry; the Social descriptor
-  owns the shared ingress and the Group descriptor remains subordinate.
+  owns the shared ingress, Messaging owns Direct/Group freshness, and Chat
+  Storage is subordinate to Messaging.
 - Auth/session helpers: split credential acquisition into `authRuntime`; activate
   `sessionRuntime` only after the access chain returns a PTID-bearing session.
 - Add `commandRuntime` over one Rust-owned encrypted command ledger; domain
@@ -56,8 +57,8 @@
 - `SettingsPage.tsx`: Me shell uses selected-only detail surfaces and saves
   only the selected Profile, Notification, Social, or device owner.
 - `socialProjectionRuntime.ts`: session-scoped composition owner for Social,
-  Group, Moments, notification, and profile projection freshness; pages only
-  subscribe to active runtime projections.
+  Moments, notification, and profile freshness. It maps Chat events to
+  Messaging wake intents and never refreshes Conversation state itself.
 
 ## 3. Cross-Layer Work
 
@@ -116,7 +117,8 @@ Native/Rust work:
 
 Retain:
 
-- Existing generated proto path, social/group stores and runtimes.
+- Canonical Conversation Proto, the Messaging runtime, the Social projection
+  facade, and Messaging-owned group command outcome state.
 - Station registry semantics, access gate renderer, encrypted media/E2EE paths.
 - Active-only primary tab policy until evidence changes it.
 
@@ -131,7 +133,7 @@ Delete after cutover:
 - Per-domain JSON compatibility adapters after Proto parity is proven.
 - Direct authenticated Web `fetch`, `MobileAuthSession.accessToken`, and
   caller-selected credential-bearing URLs.
-- Any `/group-chat/*` or `/friend-chat/*` business caller.
+- Any retired feature-specific Chat business caller.
 - Any alias, fallback, or dual-write path that preserves those retired owners.
 
 Deletion is part of the same domain cutover that proves parity. A second
@@ -147,7 +149,7 @@ target state.
 | Access/OAuth chain | `architecture/platform/station/access/station-access-gate-architecture.md` | Native browser/deep-link adapter and secure attempt material |
 | Runtime graph | `architecture/platform/client/frontend-runtime/` | hard `dependsOn`, degradable `uses`, suspend/resume |
 | Work admission | Frontend Runtime `InteractionAdmission` | `commandRuntime` and Rust encrypted ledger |
-| Social/group projection | `architecture/domains/social/runtime/` | `groupRuntime` as subordinate descriptor under shared event ingress |
+| Social and Chat projection | `architecture/domains/social/runtime/` + Conversation lifecycle | Social owns relationship/presence/profile/notification invalidation; Messaging owns Direct/Group conversation, messages, settings, E2EE, and command outcomes |
 | Offline/reconcile semantics | `client/mobile/sync-protocol.md` | Mobile lifecycle and native wakeup |
 | Surface lifetime | UI Identity component-tree registry | active-only tabs and descriptor detail routes |
 | Member authority | AO-D10 Conversation member authority | Mobile Group action availability and readback |
@@ -283,8 +285,8 @@ private keys or enrollment state.
 | Boundary | Retain | Required replacement | Delete at the same cutover | Completion evidence |
 |---|---|---|---|---|
 | Access Gate | Station decision chain, typed built-ins, Rust OAuth coordinator | schema-bound generic action envelope and Station validation/finalization | client-selected submit routes and unknown-gate fallback | descriptor/submission hash match, stale-schema rejection, final decision readback |
-| Group member authority | AO-D10 commands, Conversation event/snapshot | Mobile Group consumer and generated error mapping | one member-update and one ownership-transfer `/group-chat/*` caller | exact command replay, stale epoch recovery, owner uniqueness, Mobile projection |
-| Social block | Canonical generated block/unblock/list/status, result lookup, durable Mobile resolver, ordered event, and Federation deny projection | retain the same owner contract | retired `/friend-chat/*` callers and any compatibility alias are absent | source complete; same-Station runtime proof remains in the current Plan, while cross-Station/Relay proof is deferred and unproven |
+| Group member authority | AO-D10 commands, Conversation event/snapshot | Mobile Group consumer and generated error mapping | retired member-update and ownership-transfer callers | exact command replay, stale epoch recovery, owner uniqueness, Mobile projection |
+| Social block | Canonical generated block/unblock/list/status, result lookup, durable Mobile resolver, ordered event, and Federation deny projection | retain the same owner contract | retired Chat-owned Social callers and any compatibility alias are absent | source complete; same-Station runtime proof remains in the current Plan, while cross-Station/Relay proof is deferred and unproven |
 | Chat actions | Conversation command resolver, Engine encryption/object plane | actor-hide, moderation remove, and user-forward intents | legacy delete/forward semantics and optimistic shared completion | exact command/event readback, restart, recipient visibility, role denial |
 | Moments | Social audience/block policy, Secure Content encryption/grants | page/detail policy outcomes and Rust media staging | client-derived visibility and Web/native path transfer | filtered-empty versus empty, hidden/deleted, cancel/restart/limited-photo |
 | Settings | Station policy as read-only, device-local Station registry, Actor Profile privacy, Notification preferences, Social blocked users, device settings | dedicated Profile revision; aggregate atomic Notification revision; selected-owner save | generic account owner/placeholder, unrevisioned Profile mutation, single-category Notification mutation, false empty blocked-list projection | typed applied/unchanged/conflict snapshots, lost-response reconcile, restart, second-device behavior |

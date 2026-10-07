@@ -434,7 +434,7 @@ MobileShell (NavigationShell)
     ChatPage | MomentsPage | ContactsPage | SettingsPage
       OverlayHost (action sheet, modals)
   mobile-tabbar (NavigationShell)
-  RuntimeProjection: Mobile runtime registry + social/group stores
+  RuntimeProjection: Mobile runtime registry + Messaging/Social projections
 ```
 
 Layer mapping:
@@ -443,7 +443,7 @@ Layer mapping:
   descriptor from `MobileNavigationStore`.
 - There is **no `PageHost` keep-alive layer**. `renderPage` returns only the active tab; inactive tabs are unmounted.
 - Conversation, Contact, Group, Moment, and selected Settings details are
-  descriptor-owned routes. Social/Group/Settings selections may guide
+  descriptor-owned routes. Messaging/Social/Settings selections may guide
   projection readback, but they do not decide whether a detail tree is visible.
 - `RuntimeProjection` is owned by the Mobile runtime registry and feature
   stores, so projection truth stays fresh even while a tab tree is unmounted.

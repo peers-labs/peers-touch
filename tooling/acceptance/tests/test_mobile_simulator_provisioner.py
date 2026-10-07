@@ -1220,10 +1220,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
 
         with (
-            patch.dict(
-                "os.environ",
-                {"MOBILE_ACCEPTANCE_RESET": "1"},
-                clear=False,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
             ),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
@@ -1336,10 +1336,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
 
         with (
-            patch.dict(
-                "os.environ",
-                {"MOBILE_ACCEPTANCE_RESET": "1"},
-                clear=False,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
             ),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
@@ -1573,7 +1573,6 @@ class MobileSimulatorContractTests(unittest.TestCase):
             patch.dict(
                 "os.environ",
                 {
-                    "MOBILE_ACCEPTANCE_RESET": "1",
                     "PT_MOBILE_STATION_PRIMARY_URL": (
                         "https://station-primary.example"
                     ),
@@ -1593,6 +1592,11 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     ),
                 },
                 clear=False,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
             ),
             patch.object(
                 provisioner,
@@ -2048,10 +2052,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         with (
             patch.dict(
                 "os.environ",
-                {
-                    **self._service_environment(),
-                    "MOBILE_ACCEPTANCE_RESET": "",
-                },
+                self._service_environment(),
                 clear=False,
             ),
             patch.object(
@@ -2095,7 +2096,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
         self.assertEqual(
             manifest.blocked_resource,
-            "fixture-authorization:MOBILE_ACCEPTANCE_RESET",
+            "station.reset:mobile-station-lifecycle-alice",
         )
         blocked_payload = manifest.to_dict()
         self.assertEqual(
@@ -2205,11 +2206,13 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         with (
             patch.dict(
                 "os.environ",
-                {
-                    **self._service_environment(),
-                    "MOBILE_ACCEPTANCE_RESET": "1",
-                },
+                self._service_environment(),
                 clear=False,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
             ),
             patch.object(
                 provisioner,

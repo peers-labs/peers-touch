@@ -25,7 +25,7 @@ const i18nSource = readFileSync(
 describe('Settings functional surface contract', () => {
   it('uses canonical Group and Moments counts without treating friendship cache as a total', () => {
     expect(pageSource).toContain(
-      'useGroupStore((state) => state.groups.length)',
+      'useSocialStore((state) => state.messagingConversations.reduce',
     );
     expect(pageSource).toContain(
       'const momentsCount = visibleProfile?.statusesCount ?? unavailableLabel',

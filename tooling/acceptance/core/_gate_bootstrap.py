@@ -6,7 +6,6 @@ import os
 import runpy
 import stat
 import sys
-import sysconfig
 from pathlib import Path
 
 
@@ -71,14 +70,13 @@ def _validate_pyvenv_config(config: Path) -> None:
     ]
     if (
         not values.get("home")
-        or values.get("include-system-site-packages", "").lower()
-        not in {"true", "false"}
+        or values.get("include-system-site-packages", "").lower() != "false"
         or version_parts[:2] != expected_version
     ):
         raise RuntimeError("isolated Gate virtual environment config is invalid")
 
 
-def _add_invoked_venv_site_packages() -> bool:
+def _add_invoked_venv_site_packages() -> None:
     executable = Path(sys.executable)
     if not executable.is_absolute():
         raise RuntimeError("isolated Gate Python executable is invalid")
@@ -88,7 +86,9 @@ def _add_invoked_venv_site_packages() -> bool:
     try:
         config_status = config.lstat()
     except FileNotFoundError:
-        return False
+        raise RuntimeError(
+            "isolated Gate virtual environment is required"
+        ) from None
     except OSError as error:
         raise RuntimeError("isolated Gate virtual environment is invalid") from error
 
@@ -150,118 +150,6 @@ def _add_invoked_venv_site_packages() -> bool:
             "isolated Gate virtual environment package path is unavailable"
         )
     sys.path.extend(resolved_paths)
-    return True
-
-
-def _add_invoked_user_site_packages() -> None:
-    user_base_value = sysconfig.get_config_var("userbase")
-    if not isinstance(user_base_value, str) or not user_base_value:
-        return
-
-    user_base = Path(user_base_value)
-    try:
-        resolved_base = user_base.resolve(strict=True)
-    except FileNotFoundError:
-        return
-    except OSError as error:
-        raise RuntimeError(
-            "isolated Gate user package root is invalid"
-        ) from error
-    if not resolved_base.is_dir():
-        raise RuntimeError("isolated Gate user package root is invalid")
-
-    try:
-        scheme = sysconfig.get_preferred_scheme("user")
-    except (AttributeError, KeyError):
-        available_schemes = set(sysconfig.get_scheme_names())
-        if sys.platform == "darwin" and "osx_framework_user" in available_schemes:
-            scheme = "osx_framework_user"
-        else:
-            scheme = "posix_user" if os.name != "nt" else "nt_user"
-
-    resolved_paths: list[str] = []
-    for path_name in ("purelib", "platlib"):
-        candidate_value = sysconfig.get_path(path_name, scheme=scheme)
-        if not isinstance(candidate_value, str) or not candidate_value:
-            continue
-        candidate = Path(candidate_value)
-        try:
-            candidate.lstat()
-        except FileNotFoundError:
-            continue
-        except OSError as error:
-            raise RuntimeError(
-                "isolated Gate user package path is invalid"
-            ) from error
-        try:
-            resolved_candidate = candidate.resolve(strict=True)
-            resolved_candidate.relative_to(resolved_base)
-        except (OSError, ValueError) as error:
-            raise RuntimeError(
-                "isolated Gate user package path is unsafe"
-            ) from error
-        if not resolved_candidate.is_dir():
-            raise RuntimeError(
-                "isolated Gate user package path is invalid"
-            )
-        resolved_path = str(resolved_candidate)
-        if resolved_path not in resolved_paths:
-            resolved_paths.append(resolved_path)
-
-    sys.path.extend(resolved_paths)
-
-
-def _add_invoked_system_site_packages() -> None:
-    candidates: list[Path] = []
-    for path_name in ("purelib", "platlib"):
-        candidate_value = sysconfig.get_path(path_name)
-        if not isinstance(candidate_value, str) or not candidate_value:
-            continue
-        candidate = Path(candidate_value)
-        try:
-            candidate.lstat()
-        except FileNotFoundError:
-            continue
-        except OSError as error:
-            raise RuntimeError(
-                "isolated Gate system package path is invalid"
-            ) from error
-        candidates.append(candidate)
-
-    if not candidates:
-        return
-
-    data_path_value = sysconfig.get_path("data")
-    if not isinstance(data_path_value, str) or not data_path_value:
-        raise RuntimeError("isolated Gate system package root is unavailable")
-
-    try:
-        resolved_root = Path(data_path_value).resolve(strict=True)
-    except OSError as error:
-        raise RuntimeError(
-            "isolated Gate system package root is invalid"
-        ) from error
-    if not resolved_root.is_dir():
-        raise RuntimeError("isolated Gate system package root is invalid")
-
-    resolved_paths: list[str] = []
-    for candidate in candidates:
-        try:
-            resolved_candidate = candidate.resolve(strict=True)
-            resolved_candidate.relative_to(resolved_root)
-        except (OSError, ValueError) as error:
-            raise RuntimeError(
-                "isolated Gate system package path is unsafe"
-            ) from error
-        if not resolved_candidate.is_dir():
-            raise RuntimeError(
-                "isolated Gate system package path is invalid"
-            )
-        resolved_path = str(resolved_candidate)
-        if resolved_path not in resolved_paths:
-            resolved_paths.append(resolved_path)
-
-    sys.path.extend(resolved_paths)
 
 
 def _run_target(argv: list[str]) -> None:
@@ -297,9 +185,7 @@ def _run_target(argv: list[str]) -> None:
 
 def main() -> None:
     _context_descriptor()
-    if not _add_invoked_venv_site_packages():
-        _add_invoked_system_site_packages()
-        _add_invoked_user_site_packages()
+    _add_invoked_venv_site_packages()
     _run_target(sys.argv[1:])
 
 

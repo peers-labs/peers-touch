@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-06
-covered_docs_hash: 2c6f3ef223ee392bf5d054ca3eda5feeb3b20b0a9c82b7216f74d053c29d241b
+last_verified_at: 2026-10-07
+covered_docs_hash: e51c02623dca9183a07be69bf0e494d540430310977fec2d48a3e7655f94c1f3
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,21 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-07 Canonical Chat Ownership Review
+
+Desktop and Station coding guides now reflect the completed Chat hard cut:
+`messagingRuntime` and the Device Messaging Engine own Chat lifecycle and
+projection freshness, `socialRealtime` is limited to Social projections, and
+Conversation-owned persistence replaces the retired Friend/Group store
+families. The governing runtime-projection Skill was updated with the same
+boundary.
+
+Existing GitHub Review rules already require one business truth, proto-first
+contracts, generated-output integrity, runtime-owned freshness, and complete
+consumer migration. The nine-dimensional Chat zero-reference Gate provides the
+specific old-path regression coverage. No `pt-github-review/SKILL.md`, generic
+review fixture, or new knowledge entry is required.
 
 ## 2026-10-06 Knowledge Index Review
 

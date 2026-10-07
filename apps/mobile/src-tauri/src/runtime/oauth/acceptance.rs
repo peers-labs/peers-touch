@@ -834,7 +834,7 @@ mod tests {
             .encode_to_vec();
             write!(
                 stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
             )
             .expect("write OAuth response headers");

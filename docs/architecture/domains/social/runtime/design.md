@@ -1,8 +1,8 @@
 # Social Runtime Alignment — 架构设计
 
 > **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-27
+> **Version**: v0.2
+> **Created**: 2026-06-03 | **Updated**: 2026-10-07
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -56,11 +56,11 @@
                              |
                              v
                  Social Projection Reducer
-      conversations, requests, notifications, receipts, mutations
+      relationships, requests, notifications, presence, profiles
                              |
                              v
                   Social Projection Store
-       long-lived state, derived command status, projection updates
+       long-lived Social state and narrow projection updates
                              |
                              v
                  Social Runtime Supervisor
@@ -85,8 +85,10 @@
 - 上图从上到下是依赖方向；下层不得绕过上层直接读写 Station truth。
 - Desktop/Mobile 不一定共享同一个 TypeScript 文件，但必须共享同一语义接口。
 - Host Adapter 只翻译宿主事件，不定义社交业务规则。
-- `groupRuntime` may be a separate Mobile descriptor, but it remains a
-  subordinate group projection owner under the shared social event supervisor.
+- Group and Direct are canonical Conversation projections owned by the Device
+  Messaging Engine and `messagingRuntime`. Social ingress carries Chat frames
+  only as typed Messaging wake intents; it does not own Group projection,
+  settings, membership, or message freshness.
 - Offline command reducers project the platform command ledger; they do not
   persist or replay a second outbox.
 

@@ -1,8 +1,8 @@
 # Social Runtime Alignment — 设计决策
 
 > **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-27
+> **Version**: v0.2
+> **Created**: 2026-06-03 | **Updated**: 2026-10-07
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -175,26 +175,32 @@ Desktop/Mobile 的 protobuf 解码只能使用 generated code。禁止手写 `Pr
 
 ---
 
-## D-06: Group chat 独立 projection domain
+## D-06: Group chat 独立 Conversation projection domain
 
-**Status**: accepted
-**Date**: 2026-06-03
+**Status**: amended
+**Date**: 2026-06-03; amended 2026-10-07
 
 ### Context
 
-Desktop 已有 group chat、group membership、sender keys 等能力。Mobile 还未完成 group chat。若用 friend chat 字段兼容 group，会污染两个模型。
+Group chat has membership, member authority, MLS state, and group metadata that
+must not be represented as special Friend fields.
 
 ### Decision
 
-Group chat 必须作为独立 projection domain 接入 social runtime，与 friend
-chat 共享 event ingress/supervisor。Mobile 可以把它注册为独立
-`groupRuntime` descriptor，但该 descriptor 是 supervisor 下的 projection
-owner，不得建立第二条 event stream 或第二套 host adapter。
+Group and Direct remain distinct kinds inside the canonical Conversation
+projection. On Mobile, Device Messaging Engine and `messagingRuntime` are the
+single lifecycle and freshness owner for both kinds. The Social realtime
+supervisor may decode Chat-bearing frames only into `messaging-wake` control
+intents; Social has no Group projection domain, Group descriptor, settings
+refresh, or membership reducer.
 
 ### Rationale
 
-- Group 有成员关系、群未读、sender key、membership change、群 profile 等独立语义。
-- Friend session 与 group conversation 只能在 UI conversation projection 层统一展示。
+- Group has independent membership, unread, MLS, authority, and metadata
+  semantics within Conversation.
+- Direct and Group unify only at the UI conversation projection layer.
+- One Messaging owner prevents Social and Messaging from racing to refresh the
+  same Conversation state.
 
 ### Alternatives Considered
 
@@ -202,7 +208,10 @@ owner，不得建立第二条 event stream 或第二套 host adapter。
 
 ### Consequences
 
-- Mobile group chat 后续必须新增 group projection，不允许在 friend chat 中硬扩。
+- Mobile keeps one Messaging-owned Conversation projection and one
+  Messaging-owned group-command outcome projection.
+- Retired Friend/Group-specific Proto, gateway, store, runtime, route, and test
+  trees stay deleted.
 
 ---
 

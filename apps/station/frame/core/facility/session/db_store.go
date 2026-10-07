@@ -413,6 +413,119 @@ func (s *DBStore) CreateWithKick(ctx context.Context, sess *Session, deviceType 
 	return sess, kicked, nil
 }
 
+// Takeover rotates one active session under the actor activation lock. The
+// previous session must still be active when the transaction acquires the
+// lock, so a stale takeover source cannot revoke a newer winner.
+func (s *DBStore) Takeover(
+	ctx context.Context,
+	previousSessionID string,
+	sess *Session,
+	deviceType DeviceType,
+) (*Session, int64, error) {
+	if sess == nil {
+		return nil, 0, errors.New("session takeover requires a replacement session")
+	}
+	if err := deviceType.Validate(); err != nil {
+		return nil, 0, err
+	}
+	previousSessionID = strings.TrimSpace(previousSessionID)
+	if previousSessionID == "" {
+		return nil, 0, errors.New("session takeover requires a previous session id")
+	}
+	if sess.UserID == 0 {
+		return nil, 0, errors.New("session takeover requires an actor id")
+	}
+	if strings.TrimSpace(sess.ID) == "" || sess.ID == previousSessionID {
+		return nil, 0, errors.New("session takeover requires a distinct replacement session id")
+	}
+
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	now := time.Now().UTC()
+	var kicked int64
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockActorForSessionActivation(tx, sess.UserID); err != nil {
+			return err
+		}
+
+		var previous SessionRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("session_id = ?", previousSessionID).
+			Take(&previous).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSessionNotFound
+			}
+			return err
+		}
+		if previous.UserID != sess.UserID {
+			return errors.New("session takeover actor binding mismatch")
+		}
+		if previous.Revoked {
+			return ErrSessionRevoked
+		}
+		if !previous.ExpiresAt.After(now) {
+			return ErrSessionExpired
+		}
+		if previous.DeviceType != deviceType {
+			return errors.New("session takeover cannot change client class")
+		}
+		if strings.TrimSpace(previous.DeviceID) == "" {
+			return errors.New("previous session has no device identity")
+		}
+		if previous.LifecycleGeneration == 0 {
+			return errors.New("previous session has no lifecycle generation")
+		}
+		if strings.TrimSpace(previous.StationPeerID) == "" {
+			return errors.New("previous session has no Station identity")
+		}
+
+		sess.Data = map[string]interface{}{
+			"device_type":              string(previous.DeviceType),
+			"oauth_candidate_id":       previous.OAuthCandidateID,
+			"access_attempt_id":        previous.AccessAttemptID,
+			"station_peer_id":          previous.StationPeerID,
+			"access_decision_revision": previous.AccessDecisionRevision,
+			"device_id":                previous.DeviceID,
+			"lifecycle_generation":     previous.LifecycleGeneration,
+			"auth_method":              "session_takeover",
+		}
+		record, err := newSessionRecord(sess.ID, sess)
+		if err != nil {
+			return err
+		}
+
+		if previous.OAuthCandidateID != "" || previous.AccessAttemptID != "" {
+			if err := tx.Model(&SessionRecord{}).
+				Where("id = ?", previous.ID).
+				Updates(map[string]interface{}{
+					"oauth_candidate_id": "",
+					"access_attempt_id":  "",
+				}).Error; err != nil {
+				return err
+			}
+		}
+		kicked, err = revokeReplacedClientClassSessionsLocked(
+			tx,
+			sess.UserID,
+			deviceType,
+			sess.ID,
+			now,
+		)
+		if err != nil {
+			return err
+		}
+		return tx.Create(record).Error
+	})
+	if err != nil {
+		return nil, kicked, err
+	}
+
+	return sess, kicked, nil
+}
+
 // RevokeReplacedClientClassSessions serializes one actor's session activation
 // and revokes only older active sessions in the same canonical client class.
 func RevokeReplacedClientClassSessions(
@@ -436,6 +549,19 @@ func RevokeReplacedClientClassSessions(
 		return 0, errors.New("session activation requires a session id")
 	}
 
+	if err := lockActorForSessionActivation(tx, userID); err != nil {
+		return 0, err
+	}
+	return revokeReplacedClientClassSessionsLocked(
+		tx,
+		userID,
+		deviceType,
+		currentSessionID,
+		now,
+	)
+}
+
+func lockActorForSessionActivation(tx *gorm.DB, userID uint64) error {
 	var actor struct {
 		ID uint64
 	}
@@ -444,9 +570,18 @@ func RevokeReplacedClientClassSessions(
 		Select("id").
 		Where("id = ?", userID).
 		Take(&actor).Error; err != nil {
-		return 0, fmt.Errorf("lock actor %d for session activation: %w", userID, err)
+		return fmt.Errorf("lock actor %d for session activation: %w", userID, err)
 	}
+	return nil
+}
 
+func revokeReplacedClientClassSessionsLocked(
+	tx *gorm.DB,
+	userID uint64,
+	deviceType DeviceType,
+	currentSessionID string,
+	now time.Time,
+) (int64, error) {
 	result := tx.Model(&SessionRecord{}).
 		Where(
 			"user_id = ? AND device_type = ? AND session_id <> ? AND revoked = ?",

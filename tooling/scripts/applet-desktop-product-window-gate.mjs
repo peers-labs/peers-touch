@@ -290,20 +290,11 @@ function startControlledUpstream(manifest) {
       writeProto(res, protoString(1, 'online'));
       return;
     }
-    if (parsed.pathname === '/friend-chat/sessions') {
+    if (
+      parsed.pathname === '/conversation/list'
+      || parsed.pathname === '/api/v1/social/friend-requests'
+    ) {
       writeProto(res);
-      return;
-    }
-    if (parsed.pathname === '/friend-chat/friend-requests') {
-      writeProto(res);
-      return;
-    }
-    if (parsed.pathname === '/friend-chat/pending') {
-      writeProto(res);
-      return;
-    }
-    if (parsed.pathname === '/group-chat/list') {
-      writeJson(res, 200, { groups: [], total: 0 });
       return;
     }
     if (

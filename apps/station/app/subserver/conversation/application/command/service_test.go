@@ -20,6 +20,10 @@ type testPersistenceStageError struct {
 	cause error
 }
 
+type testRetryablePersistenceError struct {
+	cause error
+}
+
 func (e *testPersistenceStageError) Error() string {
 	return e.cause.Error()
 }
@@ -30,6 +34,18 @@ func (e *testPersistenceStageError) Unwrap() error {
 
 func (e *testPersistenceStageError) PersistenceFailureStage() string {
 	return e.stage
+}
+
+func (e *testRetryablePersistenceError) Error() string {
+	return e.cause.Error()
+}
+
+func (e *testRetryablePersistenceError) Unwrap() error {
+	return e.cause
+}
+
+func (e *testRetryablePersistenceError) RetryablePersistence() bool {
+	return true
 }
 
 func (u *scriptedUnitOfWork) Execute(
@@ -134,6 +150,30 @@ func TestExecuteDirectGenesisTransactionRetriesSpecificContentionOnce(t *testing
 	}
 }
 
+func TestExecuteDirectGenesisTransactionRetriesTransientPersistenceOnce(t *testing.T) {
+	transient := directCreationStage(
+		"persist_transition_create_authority_insert_members",
+		&testRetryablePersistenceError{
+			cause: errors.New("serialization failure"),
+		},
+	)
+	unitOfWork := &scriptedUnitOfWork{outcomes: []error{transient, nil}}
+	err := executeDirectGenesisTransaction(
+		context.Background(),
+		unitOfWork,
+		"direct-conversation",
+		func(ports.Transaction) error {
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("retry returned error: %v", err)
+	}
+	if unitOfWork.attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", unitOfWork.attempts)
+	}
+}
+
 func TestExecuteDirectGenesisTransactionBoundsAndScopesRetry(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -148,6 +188,13 @@ func TestExecuteDirectGenesisTransactionBoundsAndScopesRetry(t *testing.T) {
 				"aggregate",
 				"creation contended with a concurrent transaction",
 			),
+			attempts: 2,
+		},
+		{
+			name: "persistent transient persistence failure",
+			err: &testRetryablePersistenceError{
+				cause: errors.New("deadlock"),
+			},
 			attempts: 2,
 		},
 		{
@@ -198,6 +245,13 @@ func TestExecuteDirectGenesisTransactionBoundsAndScopesRetry(t *testing.T) {
 					"attempts = %d, want %d",
 					unitOfWork.attempts,
 					test.attempts,
+				)
+			}
+			if test.name == "persistent transient persistence failure" &&
+				conversationdomain.CodeOf(err) != "" {
+				t.Fatalf(
+					"transient exhaustion mapped to domain code %q",
+					conversationdomain.CodeOf(err),
 				)
 			}
 		})

@@ -197,6 +197,11 @@
       "docs/global/coding-guide/desktop/tauri-command.md"
     ]
   },
+  "activeAcceptanceRoots": [
+    "tooling/acceptance/features",
+    "tooling/acceptance/gates.yaml",
+    "tooling/acceptance/registry.yaml"
+  ],
   "negativeAssertionPaths": [
     "apps/mobile/scripts/check_mobile_shell_contracts_test.py",
     "docs/architecture/engineering/api-governance/station-api-capabilities.yaml",

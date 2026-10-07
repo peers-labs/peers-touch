@@ -35,7 +35,7 @@
     {
       "id": "chat-mixed-native-actors",
       "authorization_required": true,
-      "authorization_ref": "env:MOBILE_ACCEPTANCE_RESET",
+      "authorization_ref": "station.reset:chat-mixed-native-actors",
       "target_assertion": "both Stations are approved disposable targets",
       "initial_assertion": "Alice, Bob, and Carol have canonical identities on their assigned Stations"
     }

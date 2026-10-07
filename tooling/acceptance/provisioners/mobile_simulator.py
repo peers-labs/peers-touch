@@ -61,6 +61,10 @@ from tooling.acceptance.core.redaction import (
     redact_text,
     redact_value,
 )
+from tooling.acceptance.core.reset_authority import (
+    require_station_reset_authority,
+    station_reset_authorization_ref,
+)
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     ACTOR_PASSWORD,
@@ -1728,7 +1732,9 @@ def load_mobile_station_lifecycle_simulator_spec(
         or contract.fixtures[0].id != "mobile-station-lifecycle-alice"
         or not contract.fixtures[0].authorization_required
         or contract.fixtures[0].authorization_ref
-        != "env:MOBILE_ACCEPTANCE_RESET"
+        != station_reset_authorization_ref(
+            "mobile-station-lifecycle-alice"
+        )
     ):
         raise BlockedError(
             reason=(
@@ -5592,14 +5598,9 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             )
             self._manifest = manifest
 
-            if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
-                raise BlockedError(
-                    reason=(
-                        "Mobile Station lifecycle Alice reset requires "
-                        "MOBILE_ACCEPTANCE_RESET=1"
-                    ),
-                    resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
-                )
+            require_station_reset_authority(
+                "mobile-station-lifecycle-alice"
+            )
 
             base_contract = EnvironmentContract.from_yaml(
                 self.base_contract_path
@@ -5844,6 +5845,8 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         service_bindings: Mapping[str, MobileServiceBinding],
         overlay: MobileStationLifecycleSimulatorSpec,
     ) -> dict[str, Any]:
+        reset_scope = "mobile-station-lifecycle-alice"
+        require_station_reset_authority(reset_scope)
         stations: dict[str, Any] = {}
         for service_id in STATION_LIFECYCLE_SERVICES:
             binding = service_bindings[service_id]
@@ -5862,6 +5865,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                     self._reset_actor_fixture_target,
                     binding.endpoint,
                     binding.deployment_environment,
+                    reset_scope,
                 ),
             )
             actor = resolve_actor_identity(
@@ -5899,6 +5903,9 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             ],
             "reset": {
                 "authorized": True,
+                "authorizationRef": station_reset_authorization_ref(
+                    reset_scope
+                ),
                 "targetVerified": True,
                 "actors": ["alice"],
             },
@@ -5916,7 +5923,9 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
     def _reset_actor_fixture_target(
         station_url: str,
         deployment_environment: str,
+        reset_scope: str,
     ) -> None:
+        require_station_reset_authority(reset_scope)
         verify_reset_target(station_url, deployment_environment)
         reset_fixture(
             deployment_environment,
@@ -6299,19 +6308,8 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 profile_name=self.environment_id,
                 slot=0,
             )
-            if (
-                self.requires_actor_reset
-                and os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1"
-            ):
-                raise BlockedError(
-                    reason=(
-                        f"{self.environment_id} actor reset requires "
-                        "MOBILE_ACCEPTANCE_RESET=1"
-                    ),
-                    resource=(
-                        "fixture-authorization:MOBILE_ACCEPTANCE_RESET"
-                    ),
-                )
+            if self.requires_actor_reset:
+                require_station_reset_authority(self._reset_scope())
             runtime_environment = self._inject_station_profile_bindings(
                 os.environ
             )
@@ -6801,17 +6799,9 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         clients: Sequence[EnvironmentClient] | None = None,
     ) -> dict[str, Any]:
         environment_clients = tuple(clients or self.contract.clients)
-        if (
-            self.requires_actor_reset
-            and os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1"
-        ):
-            raise BlockedError(
-                reason=(
-                    f"{self.environment_id} actor reset requires "
-                    "MOBILE_ACCEPTANCE_RESET=1"
-                ),
-                resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
-            )
+        reset_scope = self._reset_scope()
+        if self.requires_actor_reset:
+            require_station_reset_authority(reset_scope)
         fixture_roles = tuple(
             sorted({client.actor for client in environment_clients})
         )
@@ -6846,6 +6836,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                             binding.endpoint,
                             binding.deployment_environment,
                             roles,
+                            reset_scope,
                         )
                     ),
                 )
@@ -6961,6 +6952,11 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             ],
             "reset": {
                 "authorized": self.requires_actor_reset,
+                "authorizationRef": (
+                    station_reset_authorization_ref(reset_scope)
+                    if self.requires_actor_reset
+                    else None
+                ),
                 "targetVerified": self.requires_actor_reset,
             },
             "proofScope": dict(overlay["proof_scope"]),
@@ -6975,13 +6971,38 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         station_url: str,
         deployment_environment: str,
         roles: tuple[str, ...],
+        reset_scope: str,
     ) -> None:
+        require_station_reset_authority(reset_scope)
         verify_reset_target(station_url, deployment_environment)
         reset_fixture(
             deployment_environment,
             roles,
             reset_authorized=True,
         )
+
+    def _reset_scope(self) -> str:
+        if len(self.contract.fixtures) != 1:
+            raise BlockedError(
+                reason=(
+                    f"{self.environment_id} requires exactly one reset Fixture"
+                ),
+                resource=f"{self.environment_id}:fixture",
+            )
+        fixture = self.contract.fixtures[0]
+        expected_ref = station_reset_authorization_ref(fixture.id)
+        if (
+            not fixture.authorization_required
+            or fixture.authorization_ref != expected_ref
+        ):
+            raise BlockedError(
+                reason=(
+                    f"{self.environment_id} reset Fixture must bind "
+                    f"{expected_ref}"
+                ),
+                resource=f"{self.environment_id}:fixture",
+            )
+        return fixture.id
 
 
 class MobileSocialSimulatorProvisioner(

@@ -228,7 +228,7 @@ pub fn dkx_send(
 }
 
 // =============================================================================
-// Unified Message Queries (P2 — replaces friend_chat_* + group_chat_* commands)
+// Unified Conversation message queries.
 // =============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

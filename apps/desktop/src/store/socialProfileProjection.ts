@@ -1,5 +1,4 @@
-import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
+import type { FriendChatSession, GroupMember } from './socialProjection';
 import type { FederationResolveView } from '../gen/proto/domain/federation/federation_resolve_pb';
 import { ActorVisibility } from '../gen/proto/domain/actor/actor_pb';
 import type { AccountProfile } from '../services/desktop_api';

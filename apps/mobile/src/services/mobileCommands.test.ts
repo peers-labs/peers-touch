@@ -79,26 +79,26 @@ afterEach(() => {
 });
 
 describe('Mobile command mutation admission', () => {
-  it('blocks a stale fixed domain before invoking the Device Messaging Engine', async () => {
-    admission.staleness.group = {
+  it('does not model Group freshness as Social ingress staleness', async () => {
+    admission.staleness.social = {
       stale: true,
       reason: 'data_capacity_overflow',
       since: 10,
     };
 
+    await expect(messagingCreateDirect({
+      ...account,
+      peerPtid: 'ptid:bob',
+      federationId: 'federation-1',
+    })).rejects.toMatchObject({
+      code: 'MOBILE_WRITE_ADMISSION_CLOSED',
+      reason: 'social:data_capacity_overflow',
+    });
     await expect(messagingCreateGroup({
       ...account,
       conversationId: 'conversation-1',
       name: 'Group',
       memberPtids: ['ptid:bob'],
-      federationId: 'federation-1',
-    })).rejects.toMatchObject({
-      code: 'MOBILE_WRITE_ADMISSION_CLOSED',
-      reason: 'group:data_capacity_overflow',
-    });
-    await expect(messagingCreateDirect({
-      ...account,
-      peerPtid: 'ptid:bob',
       federationId: 'federation-1',
     })).resolves.toEqual({});
     expect(invokeMock).toHaveBeenCalledOnce();
@@ -246,7 +246,6 @@ function activeAdmission(): MutableAdmissionState {
     writeAdmission: { open: true },
     staleness: {
       social: { stale: false },
-      group: { stale: false },
       moments: { stale: false },
       notification: { stale: false },
       profile: { stale: false },

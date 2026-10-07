@@ -204,8 +204,8 @@ Conversation-list freshness uses the native Device Engine's
 `messaging_conversation_summary` read: the last logical message and actor unread
 count are computed from the same visible pending/committed rows as full history.
 Summary queries decode at most one message and enrich only its pins,
-attachments, reactions, and readers. Social and Group list refreshes publish
-these summaries independently of loaded history. Native events refresh full
+attachments, reactions, and readers. The Messaging runtime publishes Direct
+and Group summaries independently of loaded history. Native events refresh full
 history only for active or already-materialized conversations, so an unopened
 conversation does not become an unbounded Web history merely to show a preview
 or unread badge. Scope and refresh-revision fencing preserve valid snapshots

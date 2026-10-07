@@ -670,20 +670,25 @@ func executeDirectGenesisTransaction(
 	var err error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err = unitOfWork.ExecuteSerialized(ctx, key, transaction)
-		if err == nil || !isDirectGenesisContention(err) {
+		if err == nil || !isDirectGenesisRetryable(err) {
 			return err
 		}
 	}
 	return err
 }
 
-func isDirectGenesisContention(err error) bool {
+func isDirectGenesisRetryable(err error) bool {
 	var typed *conversationdomain.Error
-	if !errors.As(err, &typed) {
-		return false
+	if errors.As(err, &typed) &&
+		typed.Code == conversationdomain.ErrorCodeCommandConflict &&
+		typed.Operation == "persistence.create_aggregate" {
+		return true
 	}
-	return typed.Code == conversationdomain.ErrorCodeCommandConflict &&
-		typed.Operation == "persistence.create_aggregate"
+
+	var retryable interface {
+		RetryablePersistence() bool
+	}
+	return errors.As(err, &retryable) && retryable.RetryablePersistence()
 }
 
 func validateExistingDirect(

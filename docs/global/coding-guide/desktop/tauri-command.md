@@ -245,21 +245,13 @@ pub fn my_command(
 ```rust
 #[tauri::command]
 pub async fn sync_messages(
-    state: tauri::State<'_, AppState>,
+    messaging: tauri::State<'_, MessagingEngine>,
     input: SyncMessagesInput,
 ) -> Result<AppResult<SyncMessagesOutput>, ()> {
-    let client = infrastructure::station_client::get_client(&state);
-
-    match client.sync_messages(input.since).await {
-        Ok(messages) => {
-            let store = infrastructure::local_chat_store::get_store(&state);
-            for msg in &messages {
-                store.save_message(msg).ok();
-            }
-            Ok(AppResult::success(SyncMessagesOutput {
-                synced_count: messages.len() as i32,
-            }))
-        }
+    match messaging.reconcile(input.since).await {
+        Ok(result) => Ok(AppResult::success(SyncMessagesOutput {
+            synced_count: result.committed_count,
+        })),
         Err(e) => Ok(AppResult::fail(
             ErrorCode::Unavailable,
             &format!("同步失败: {}", e),
@@ -472,15 +464,16 @@ pub fn validate_mark_as_read(
 // application/chat/mod.rs
 
 pub fn mark_as_read(
-    state: &AppState,
+    messaging: &MessagingEngine,
     conversation_id: &str,
     last_read_message_id: &str,
 ) -> Result<MarkAsReadOutput, ServiceError> {
     domain::chat::validate_mark_as_read(conversation_id, last_read_message_id)?;
 
-    let store = infrastructure::local_chat_store::get_store(state);
-    store.update_last_read(conversation_id, last_read_message_id)?;
-    let unread_count = store.count_unread(conversation_id)?;
+    let unread_count = messaging.submit_read_cursor(
+        conversation_id,
+        last_read_message_id,
+    )?;
 
     Ok(MarkAsReadOutput { unread_count })
 }

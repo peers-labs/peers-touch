@@ -20,30 +20,27 @@ func (e postgresStateError) SQLState() string {
 	return e.code
 }
 
-func TestAggregateCreationContentionClassification(t *testing.T) {
+func TestAggregateCreationConflictClassification(t *testing.T) {
 	for _, err := range []error{
 		gorm.ErrDuplicatedKey,
 		postgresStateError{code: "23505"},
-		errors.Join(
-			errors.New("wrapped persistence failure"),
-			postgresStateError{code: "40001"},
-		),
-		postgresStateError{code: "40P01"},
 		errors.New("ERROR: duplicate key (SQLSTATE 23505)"),
 		errors.New("UNIQUE constraint failed: conversations.conversation_id"),
 	} {
-		if !isAggregateCreationContention(err) {
-			t.Fatalf("contention error was not recognized: %v", err)
+		if !isAggregateCreationConflict(err) {
+			t.Fatalf("unique conflict was not recognized: %v", err)
 		}
 	}
 
 	for _, err := range []error{
 		nil,
 		errors.New("generic persistence failure"),
+		postgresStateError{code: "40001"},
+		postgresStateError{code: "40P01"},
 		postgresStateError{code: "22000"},
 	} {
-		if isAggregateCreationContention(err) {
-			t.Fatalf("non-contention error was accepted: %v", err)
+		if isAggregateCreationConflict(err) {
+			t.Fatalf("non-unique error was accepted: %v", err)
 		}
 	}
 }
@@ -145,17 +142,23 @@ func TestAggregateCreationStepPreservesSafeStage(t *testing.T) {
 		)
 	}
 
-	contention := aggregateCreationChildrenError(
+	retryable := aggregateCreationChildrenError(
 		aggregateCreationStepError(
 			"insert_devices",
 			"insert devices",
 			postgresStateError{code: "40001"},
 		),
 	)
-	if !conversationdomain.IsCode(
-		contention,
-		conversationdomain.ErrorCodeCommandConflict,
-	) {
-		t.Fatalf("child contention was not mapped: %v", contention)
+	if conversationdomain.CodeOf(retryable) != "" {
+		t.Fatalf(
+			"retryable transaction error was mapped to domain code %q",
+			conversationdomain.CodeOf(retryable),
+		)
+	}
+	var marker interface {
+		RetryablePersistence() bool
+	}
+	if !errors.As(retryable, &marker) || !marker.RetryablePersistence() {
+		t.Fatalf("retryable transaction marker was lost: %v", retryable)
 	}
 }

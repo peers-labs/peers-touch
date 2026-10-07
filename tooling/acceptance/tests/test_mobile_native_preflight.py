@@ -1399,6 +1399,13 @@ class MobileNativeSourceProjectionTests(unittest.TestCase):
 
 class MobileNativeParentIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
+        reset_authority = patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "require_station_reset_authority",
+            return_value={"validation": "current"},
+        )
+        reset_authority.start()
+        self.addCleanup(reset_authority.stop)
         self.events: list[str] = []
         self.provisioner = MobileNativeProvisioner(
             EnvironmentContract(id="mobile-native")

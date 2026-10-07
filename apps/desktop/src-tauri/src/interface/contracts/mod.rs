@@ -699,29 +699,6 @@ pub struct EnsureStationSessionInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatListInput {
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatListMessagesInput {
-    pub session_ulid: String,
-    pub limit: Option<u32>,
-    pub before_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AttachmentInput {
-    pub cid: String,
-    pub filename: String,
-    pub mime_type: String,
-    pub size: i64,
-    pub thumbnail_cid: Option<String>,
-    pub visibility: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExchangeUploadInput {
     pub ik_pub: String,
     pub spk_id: i32,
@@ -736,70 +713,6 @@ pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
     pub home_station_peer_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatCreateSessionInput {
-    pub participant_ptid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatSyncInput {
-    pub session_ulid: String,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListInput {
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListMessagesInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub before_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatUnreadInput {
-    pub group_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatMarkReadInput {
-    pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatSyncInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatKeyRotateInput {
-    pub next_version: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatLocalSearchInput {
-    pub query: String,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatScopeCursorGetInput {
-    pub scope: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatScopeCursorSetInput {
-    pub scope: String,
-    pub cursor: String,
 }
 
 // ============================================================================

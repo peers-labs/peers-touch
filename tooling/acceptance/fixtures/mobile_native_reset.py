@@ -17,6 +17,10 @@ from tooling.acceptance.core.evidence_store import (
 )
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioning import utc_now
+from tooling.acceptance.core.reset_authority import (
+    require_station_reset_authority,
+    station_reset_authorization_ref,
+)
 from tooling.acceptance.fixtures.chat_native_actors import (
     reset_fixture,
     resolve_actor_identity,
@@ -28,6 +32,7 @@ from tooling.acceptance.gates.mobile.proof_contracts import (
 )
 
 ROLES = ("alice", "bob")
+RESET_SCOPE = "mobile-native-actors"
 EXPECTED_CLIENTS = {
     "alice-ios": ("ios", "alice"),
     "bob-ios": ("ios", "bob"),
@@ -140,13 +145,7 @@ def prepare_fixture(
     run_id: str,
     client_specs: Iterable[Any] = (),
 ) -> dict:
-    if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
-        raise BlockedError(
-            reason=(
-                "Mobile native actor reset requires MOBILE_ACCEPTANCE_RESET=1"
-            ),
-            resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
-        )
+    require_station_reset_authority(RESET_SCOPE)
 
     clients = _fixture_clients(client_specs)
     stations: dict[str, dict] = {}
@@ -183,6 +182,7 @@ def prepare_fixture(
         "clients": clients,
         "reset": {
             "authorized": True,
+            "authorizationRef": station_reset_authorization_ref(RESET_SCOPE),
             "targetVerified": True,
         },
         "cleanup": {
@@ -206,14 +206,7 @@ def prepare_fixture(
 def cleanup_fixture(
     station_fixture: StationFixtureCleanup | None = None,
 ) -> MobileNativeCleanupResult:
-    if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
-        raise BlockedError(
-            reason=(
-                "Mobile native Fixture cleanup requires "
-                "MOBILE_ACCEPTANCE_RESET=1"
-            ),
-            resource="fixture-authorization:MOBILE_ACCEPTANCE_RESET",
-        )
+    require_station_reset_authority(RESET_SCOPE)
     failures: list[str] = []
 
     for service_id in reversed(tuple(SERVICE_CONFIG)):

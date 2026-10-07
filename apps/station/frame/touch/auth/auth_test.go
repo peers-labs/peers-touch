@@ -80,50 +80,6 @@ func TestIssueTokenAndSessionRejectsNonCanonicalClientClassBeforeIssuance(t *tes
 	}
 }
 
-func TestTakeoverSessionBindingPreservesClassAndDeviceIdentity(t *testing.T) {
-	previous := &session.Session{
-		Data: map[string]interface{}{
-			"device_type":          string(session.DeviceTypeMobile),
-			"device_id":            "mobile-installation-1",
-			"lifecycle_generation": uint64(7),
-			"station_peer_id":      "station-peer-1",
-		},
-	}
-
-	clientClass, data, err := takeoverSessionBinding(previous, "mobile")
-	if err != nil {
-		t.Fatalf("takeoverSessionBinding() error = %v", err)
-	}
-	if clientClass != session.DeviceTypeMobile {
-		t.Fatalf("client class = %q", clientClass)
-	}
-	if data["device_id"] != "mobile-installation-1" ||
-		data["lifecycle_generation"] != uint64(7) ||
-		data["station_peer_id"] != "station-peer-1" ||
-		data["auth_method"] != "session_takeover" {
-		t.Fatalf("takeover binding did not preserve scope: %#v", data)
-	}
-}
-
-func TestTakeoverSessionBindingRejectsClassChangeAndMissingDeviceIdentity(t *testing.T) {
-	previous := &session.Session{
-		Data: map[string]interface{}{
-			"device_type":          string(session.DeviceTypeMobile),
-			"device_id":            "mobile-installation-1",
-			"lifecycle_generation": uint64(7),
-			"station_peer_id":      "station-peer-1",
-		},
-	}
-	if _, _, err := takeoverSessionBinding(previous, "desktop"); err == nil {
-		t.Fatal("takeoverSessionBinding() allowed a client-class change")
-	}
-
-	previous.Data["device_id"] = ""
-	if _, _, err := takeoverSessionBinding(previous, "mobile"); err == nil {
-		t.Fatal("takeoverSessionBinding() accepted a missing device identity")
-	}
-}
-
 func TestIssueSessionCredentialIncludesCanonicalActorRef(t *testing.T) {
 	coreauth.Init(coreauth.Config{
 		Secret:    "access-gate-session-test-secret",

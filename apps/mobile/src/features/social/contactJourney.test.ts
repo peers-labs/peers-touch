@@ -15,7 +15,7 @@ import {
 } from '../../runtimes/commandRuntime';
 import { messagingCreateDirect } from '../../services/mobileCommands';
 import { createSocialGateway } from '../../services/gateways/socialGateway';
-import { normalizeFriendRequest, normalizeSession } from './socialNormalizers';
+import { normalizeFriendRequest } from './socialNormalizers';
 import {
   projectAcceptedContacts,
   projectOutgoingRequests,
@@ -115,16 +115,7 @@ describe('Contacts relationship and Direct journey', () => {
     expect(projectAcceptedContacts([accepted], null, {})).toEqual([]);
   });
 
-  it('opens Direct through the native owner with the accepted Federation', async () => {
-    useSocialStore.setState({
-      refreshSessions: vi.fn().mockImplementation(async () => {
-        useSocialStore.setState({ sessions: [normalizeSession({
-          ulid: 'conversation-authoritative',
-          participantAPtid: 'ptid:alice',
-          participantBPtid: 'ptid:bob',
-        })] });
-      }),
-    });
+  it('submits Direct through the native owner without consuming Messaging freshness', async () => {
     await expect(useSocialStore.getState().openDirectConversation('ptid:bob', 'fed-a'))
       .resolves.toBe('conversation-authoritative');
     expect(messagingCreateDirect).toHaveBeenCalledWith({
@@ -135,12 +126,12 @@ describe('Contacts relationship and Direct journey', () => {
       peerPtid: 'ptid:bob',
       federationId: 'fed-a',
     });
-    expect(useSocialStore.getState().refreshSessions).toHaveBeenCalledOnce();
+    expect(useSocialStore.getState().refreshSessions).not.toHaveBeenCalled();
   });
 
-  it('does not navigate before the native conversation projection is ready', async () => {
+  it('does not fabricate a Direct projection from the submission result', async () => {
     await expect(useSocialStore.getState().openDirectConversation('ptid:bob', 'fed-a'))
-      .rejects.toThrow('mobile.contacts.conversationPreparing');
+      .resolves.toBe('conversation-authoritative');
     expect(useSocialStore.getState().sessions).toEqual([]);
   });
 

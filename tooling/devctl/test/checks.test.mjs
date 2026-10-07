@@ -41,12 +41,17 @@ function fixtureRoot(t) {
   write(
     root,
     'apps/desktop/src/services/socialRealtime.ts',
-    'import { fromBinary } from "proto";\nFriendChatMessageSchema;\nGroupMessageSchema;\n',
+    'export function refreshSocialProjection() {}\n',
+  );
+  write(
+    root,
+    'apps/desktop/src/services/messagingRealtime.ts',
+    'import { fromBinary } from "proto";\nChatMessageSchema;\n',
   );
   write(
     root,
     'apps/mobile/src/features/social/socialWire.ts',
-    'StreamEventSchema;\nFriendChatMessageSchema;\nGroupMessageSchema;\n',
+    'StreamEventSchema;\n',
   );
   return root;
 }

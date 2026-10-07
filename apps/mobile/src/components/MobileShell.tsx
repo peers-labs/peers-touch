@@ -29,9 +29,8 @@ import type { StoredStationRegistry } from '../features/station/stationRegistry'
 import {
   visibleChatUnread,
 } from '../features/chat/chatActionState';
-import { projectGroupConversations } from '../features/group/groupProjection';
-import { useGroupStore } from '../features/group/groupStore';
 import { MobileRouteBoundary } from './MobileRouteBoundary';
+import { MobileCallSurface } from './call/MobileCallSurface';
 
 type TabId = 'chat' | 'moments' | 'contacts' | 'settings';
 
@@ -179,16 +178,11 @@ export function MobileShell(props: MobileShellProps) {
   const peerOnline = useSocialStore((state) => state.peerOnline);
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
-  const groups = useGroupStore((state) => state.groups);
-  const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
-  const groupSettings = useGroupStore((state) => state.settings);
+  const messagingConversations = useSocialStore((state) => state.messagingConversations);
+  const conversationSummaries = useSocialStore((state) => state.conversationSummaries);
   const conversations = useMemo(
     () => projectConversations({ sessions, currentUserPtid, peerOnline }),
     [currentUserPtid, peerOnline, sessions],
-  );
-  const groupConversations = useMemo(
-    () => projectGroupConversations({ groups, unreadCounts: groupUnreadCounts }),
-    [groupUnreadCounts, groups],
   );
   const inboundRequests = useMemo(
     () => projectPendingInboundRequests(friendRequests, currentUserPtid),
@@ -201,12 +195,16 @@ export function MobileShell(props: MobileShellProps) {
         alertEnabled: friendConversationSettings[conversation.session.ulid]?.alertEnabled !== false,
       }),
     0,
-  ) + groupConversations.reduce(
-    (total, conversation) =>
-      total + visibleChatUnread(conversation.unread, {
-        muted: Boolean(groupSettings[conversation.group.ulid]?.isMuted),
-        alertEnabled: groupSettings[conversation.group.ulid]?.alertEnabled !== false,
-      }),
+  ) + messagingConversations.reduce(
+    (total, conversation) => conversation.kind === 2 && conversation.active
+      ? total + visibleChatUnread(
+          conversationSummaries[conversation.conversationId]?.unreadCount ?? 0,
+          {
+            muted: Boolean(friendConversationSettings[conversation.conversationId]?.isMuted),
+            alertEnabled: friendConversationSettings[conversation.conversationId]?.alertEnabled !== false,
+          },
+        )
+      : total,
     0,
   );
   const contactBadge = inboundRequests.length;
@@ -303,6 +301,7 @@ export function MobileShell(props: MobileShellProps) {
           );
         })}
       </nav> : null}
+      <MobileCallSurface />
     </div>
   );
 }

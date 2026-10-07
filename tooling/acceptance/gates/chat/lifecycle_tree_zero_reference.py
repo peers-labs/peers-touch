@@ -20,7 +20,13 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 GATE_ID = "chat-lifecycle-tree-zero-reference-e2e"
 REPORT_PATH = REPO_ROOT / "tooling" / "acceptance" / "reports" / f"{GATE_ID}.json"
 INVENTORY_PATH = (
-    REPO_ROOT / "docs" / "architecture" / "chat-lifecycle" / "legacy-inventory.json"
+    REPO_ROOT
+    / "docs"
+    / "architecture"
+    / "domains"
+    / "chat"
+    / "lifecycle"
+    / "legacy-inventory.json"
 )
 
 EXPECTED_DIMENSIONS: tuple[str, ...] = (
@@ -215,6 +221,24 @@ def _inventory_contract_violations(
             )
         )
         return
+    active_acceptance_roots = inventory.get("activeAcceptanceRoots")
+    if (
+        not isinstance(active_acceptance_roots, list)
+        or not active_acceptance_roots
+        or not all(
+            isinstance(root, str) and root
+            for root in active_acceptance_roots
+        )
+    ):
+        dimensions["test-fixture-script"].violations.append(
+            Violation(
+                dimension="test-fixture-script",
+                file=INVENTORY_PATH.relative_to(REPO_ROOT).as_posix(),
+                line=0,
+                pattern_label="active Acceptance roots missing",
+                snippet="activeAcceptanceRoots must be a non-empty list",
+            )
+        )
     for dimension in EXPECTED_DIMENSIONS:
         value = roots.get(dimension)
         if not isinstance(value, list) or not value or not all(
@@ -277,13 +301,15 @@ def _dimension_paths(
     dimension: str,
     tracked_paths: Iterable[str],
     roots: Iterable[str],
+    *,
+    active_acceptance_roots: Iterable[str] = (),
 ) -> Iterable[str]:
     for relative_path in tracked_paths:
         if not _under_roots(relative_path, roots):
             continue
         if dimension == "test-fixture-script" and not _is_test_fixture_or_script(
             relative_path
-        ):
+        ) and not _under_roots(relative_path, active_acceptance_roots):
             continue
         yield relative_path
 
@@ -315,8 +341,18 @@ def scan_repository(
     )
     dimensions_by_path: dict[str, list[str]] = {}
     for dimension in EXPECTED_DIMENSIONS:
-        roots = roots_by_dimension.get(dimension, [])
-        for relative_path in _dimension_paths(dimension, tracked_paths, roots):
+        roots = list(roots_by_dimension.get(dimension, []))
+        if dimension == "test-fixture-script":
+            roots.extend(inventory.get("activeAcceptanceRoots", []))
+        for relative_path in _dimension_paths(
+            dimension,
+            tracked_paths,
+            roots,
+            active_acceptance_roots=inventory.get(
+                "activeAcceptanceRoots",
+                [],
+            ),
+        ):
             if relative_path in exempt_paths:
                 continue
             path = repo_root / relative_path

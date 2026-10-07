@@ -76,20 +76,29 @@ export function checkSocialWire(root) {
 
   const eventStream = path.join(desktopSource, 'services', 'eventStream.ts');
   const socialRealtime = path.join(desktopSource, 'services', 'socialRealtime.ts');
+  const messagingRealtime = path.join(desktopSource, 'services', 'messagingRealtime.ts');
   requireText(eventStream, 'StreamEventSchema', violations, 'event-stream-schema');
   requireText(eventStream, 'fromBinary', violations, 'event-stream-generated-decoder');
   requireText(
-    socialRealtime,
-    'FriendChatMessageSchema',
+    messagingRealtime,
+    'ChatMessageSchema',
     violations,
-    'friend-chat-schema',
+    'canonical-chat-message-schema',
   );
-  requireText(socialRealtime, 'GroupMessageSchema', violations, 'group-message-schema');
   requireText(
-    socialRealtime,
+    messagingRealtime,
     'fromBinary',
     violations,
-    'social-realtime-generated-decoder',
+    'messaging-realtime-generated-decoder',
+  );
+  violations.push(
+    ...sourceMatches(
+      socialRealtime,
+      /FriendChatMessageSchema|GroupMessageSchema|ChatMessageSchema|\bfromBinary\b/u,
+    ).map((match) => ({
+      rule: 'social-realtime-must-not-own-chat-wire',
+      ...match,
+    })),
   );
   return violations;
 }
@@ -157,13 +166,15 @@ export function checkMobileSocialWire(root) {
 
   const socialWire = path.join(socialRoot, 'socialWire.ts');
   requireText(socialWire, 'StreamEventSchema', violations, 'mobile-event-stream-schema');
-  requireText(
-    socialWire,
-    'FriendChatMessageSchema',
-    violations,
-    'mobile-friend-chat-schema',
+  violations.push(
+    ...sourceMatches(
+      socialWire,
+      /ChatMessageSchema|FriendChatMessageSchema|GroupMessageSchema/u,
+    ).map((match) => ({
+      rule: 'mobile-social-wire-must-not-own-chat-payloads',
+      ...match,
+    })),
   );
-  requireText(socialWire, 'GroupMessageSchema', violations, 'mobile-group-message-schema');
 
   const legacyOwnership =
     /groupE2ee|GROUP_SKDM|SENDER_KEY_DISTRIBUTION|crypto\.sender-key-ledger|signaling_envelope_(open|seal)|messaging_send_text/u;

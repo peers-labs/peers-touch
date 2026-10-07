@@ -49,6 +49,10 @@ func (e *persistenceFailureStageError) PersistenceFailureStage() string {
 	return e.stage + "_sqlstate_" + strings.ToLower(sqlState)
 }
 
+func (e *persistenceFailureStageError) RetryablePersistence() bool {
+	return IsRetryableTransactionContention(e.cause)
+}
+
 func safeSQLState(err error) string {
 	var sqlState interface {
 		SQLState() string
@@ -91,12 +95,12 @@ func (r *authorityRepository) Create(
 }
 
 func aggregateCreationPersistenceError(err error) error {
-	if isAggregateCreationContention(err) {
+	if isAggregateCreationConflict(err) {
 		return &conversationdomain.Error{
 			Code:      conversationdomain.ErrorCodeCommandConflict,
 			Operation: "persistence.create_aggregate",
 			Field:     "aggregate",
-			Message:   "creation contended with a concurrent transaction",
+			Message:   "aggregate already exists",
 			Cause:     err,
 		}
 	}
@@ -112,20 +116,17 @@ func aggregateCreationStepError(stage string, operation string, err error) error
 }
 
 func aggregateCreationChildrenError(err error) error {
-	if isAggregateCreationContention(err) {
+	if isAggregateCreationConflict(err) {
 		return aggregateCreationPersistenceError(err)
 	}
 	return err
 }
 
-func isAggregateCreationContention(err error) bool {
+func isAggregateCreationConflict(err error) bool {
 	if err == nil {
 		return false
 	}
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return true
-	}
-	if IsRetryableTransactionContention(err) {
 		return true
 	}
 

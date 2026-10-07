@@ -58,24 +58,6 @@ REPORT_PATH = None
 CLIENT_PORTS = {"alice": 4451, "bob": 4452, "charlie": 4453}
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 ACTORS = ("alice", "bob", "charlie")
-LEGACY_GROUP_MUTATION_SYMBOLS = (
-    "group_chat_create_group",
-    "group_chat_mark_read",
-    "group_chat_invite_to_group",
-    "group_chat_add_federated_member",
-    "group_chat_join_group",
-    "group_chat_leave_group",
-    "group_chat_remove_member",
-    "group_chat_update_member",
-    "group_chat_transfer_ownership",
-    "group_chat_dissolve_group",
-    "group_chat_recall_message",
-    "group_chat_edit_message",
-    "group_chat_delete_message",
-    "group_chat_update_nickname",
-    "group_chat_update_settings",
-    "group_chat_ack_offline_messages",
-)
 REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
@@ -112,7 +94,6 @@ REQUIRED_ASSERTIONS = {
     "group_leave_convergence",
     "group_dissolve_terminal",
     "group_terminal_restart_history",
-    "group_legacy_mutation_hard_cut",
     "revoked_device_denied",
     "pending_interaction_timeout_retry",
     "station_restart_convergence",
@@ -760,25 +741,6 @@ class NativeInteractionsGate(AcceptanceGate):
             self.message_ids["group.base"],
         )
         self.assert_condition("group_terminal_restart_history", True)
-        active_sources = "\n".join(
-            (REPO_ROOT / path).read_text(encoding="utf-8")
-            for path in (
-                "apps/desktop/src/services/desktop_api.ts",
-                "apps/desktop/src/services/im-service.ts",
-                "apps/desktop/src-tauri/src/main.rs",
-                "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
-            )
-        )
-        legacy_references = sorted(
-            symbol
-            for symbol in LEGACY_GROUP_MUTATION_SYMBOLS
-            if symbol in active_sources
-        )
-        self.assert_condition(
-            "group_legacy_mutation_hard_cut",
-            not legacy_references,
-            json.dumps({"legacyReferences": legacy_references}),
-        )
         return {
             "before": before,
             "rename": rename,

@@ -66,6 +66,10 @@ describe('Mobile mutation admission', () => {
       'station-a|ptid:alice',
       'social',
     )).not.toThrow();
+    expect(() => requireMobileMutationAdmission(
+      'station-a|ptid:alice',
+      'group',
+    )).not.toThrow();
 
     state.writeAdmission = {
       open: false,
@@ -191,7 +195,6 @@ function admissionState(): MutableAdmissionState {
     writeAdmission: { open: true },
     staleness: {
       social: { stale: false },
-      group: { stale: false },
       moments: { stale: false },
       notification: { stale: false },
       profile: { stale: false },

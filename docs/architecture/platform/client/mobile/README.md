@@ -112,8 +112,9 @@ Mobile Shell work as one review unit. It covers:
   ownership, with no additional account-preference owner in this release;
 - Rust-owned authenticated business transport and native push, scheduled
   wakeup, and media-picker lifecycles;
-- atomic deletion of the six remaining Mobile legacy callers and a
-  repository-wide semantic reference audit.
+- completed atomic deletion of the six Mobile legacy callers, their retired
+  Group/Chat-owned Social trees, and a repository-wide semantic reference
+  audit.
 
 The amendment preserves the accepted product scope `MS-C01..MS-C10` plus
 degraded `MS-C14`. `MS-C11` WeChat OAuth, `MS-C12` voice/video calls, and

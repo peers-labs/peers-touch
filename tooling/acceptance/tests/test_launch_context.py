@@ -1227,18 +1227,20 @@ from tooling.acceptance.core import EphemeralGateClient
 with EphemeralGateClient.from_environment():
     pass
 """
-        context.activate()
-        completed = GateProcessLauncher(
-            cwd=REPO_ROOT,
-            environment=controlled_child_environment(),
-        ).run(
-            GateLaunchSpec(
-                argv=(sys.executable, "-c", script),
-                timeout_seconds=5,
-                required_capabilities=("synthetic.echo",),
-            ),
-            binding,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
+            context.activate()
+            completed = GateProcessLauncher(
+                cwd=REPO_ROOT,
+                environment=controlled_child_environment(),
+            ).run(
+                GateLaunchSpec(
+                    argv=(str(venv_python), "-c", script),
+                    timeout_seconds=5,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIsNone(context.channel_error)
@@ -1264,18 +1266,20 @@ try:
 except EphemeralCapabilityBlocked:
     raise SystemExit(7)
 """
-        context.activate()
-        completed = GateProcessLauncher(
-            cwd=REPO_ROOT,
-            environment=controlled_child_environment(),
-        ).run(
-            GateLaunchSpec(
-                argv=(sys.executable, "-c", script),
-                timeout_seconds=5,
-                required_capabilities=("synthetic.echo",),
-            ),
-            binding,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
+            context.activate()
+            completed = GateProcessLauncher(
+                cwd=REPO_ROOT,
+                environment=controlled_child_environment(),
+            ).run(
+                GateLaunchSpec(
+                    argv=(str(venv_python), "-c", script),
+                    timeout_seconds=5,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
 
         self.assertEqual(completed.returncode, 7, completed.stderr)
         blocked_error = context.blocked_error
@@ -1341,18 +1345,20 @@ print(json.dumps({
     "unrelatedOpen": unrelated_open,
 }))
 """
-        context.activate()
-        completed = GateProcessLauncher(
-            cwd=REPO_ROOT,
-            environment=child_environment,
-        ).run(
-            GateLaunchSpec(
-                argv=(sys.executable, "-c", script),
-                timeout_seconds=5,
-                required_capabilities=("synthetic.echo",),
-            ),
-            binding,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
+            context.activate()
+            completed = GateProcessLauncher(
+                cwd=REPO_ROOT,
+                environment=child_environment,
+            ).run(
+                GateLaunchSpec(
+                    argv=(str(venv_python), "-c", script),
+                    timeout_seconds=5,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
         os.close(unrelated_read)
         os.close(unrelated_write)
 
@@ -1559,25 +1565,27 @@ with EphemeralGateClient.from_environment():
         "redactionValuesPresent": "PT_ACCEPTANCE_REDACTION_VALUES" in os.environ,
     }))
 """
-        context.activate()
-        with patch.dict(
-            os.environ,
-            {
-                "PT_PROVIDER_CREDENTIAL": credential_canary,
-                "PT_ACCEPTANCE_REDACTION_VALUES": redaction_canary,
-            },
-        ):
-            completed = GateProcessLauncher(
-                cwd=REPO_ROOT,
-                environment=controlled_child_environment(),
-            ).run(
-                GateLaunchSpec(
-                    argv=(sys.executable, "-c", script),
-                    timeout_seconds=5,
-                    required_capabilities=("synthetic.echo",),
-                ),
-                binding,
-            )
+        with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
+            context.activate()
+            with patch.dict(
+                os.environ,
+                {
+                    "PT_PROVIDER_CREDENTIAL": credential_canary,
+                    "PT_ACCEPTANCE_REDACTION_VALUES": redaction_canary,
+                },
+            ):
+                completed = GateProcessLauncher(
+                    cwd=REPO_ROOT,
+                    environment=controlled_child_environment(),
+                ).run(
+                    GateLaunchSpec(
+                        argv=(str(venv_python), "-c", script),
+                        timeout_seconds=5,
+                        required_capabilities=("synthetic.echo",),
+                    ),
+                    binding,
+                )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(
@@ -1777,198 +1785,11 @@ with EphemeralGateClient.from_environment():
             ):
                 self.assertFalse(marker.exists(), marker)
 
-    def test_bootstrap_loads_default_user_site_without_site_initialization(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            user_base = Path(directory) / "user-base"
-            site_packages = user_base / "lib" / "python" / "site-packages"
-            site_packages.mkdir(parents=True)
-
-            with (
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_config_var",
-                    return_value=str(user_base),
-                ),
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_preferred_scheme",
-                    return_value="synthetic_user",
-                ),
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_path",
-                    return_value=str(site_packages),
-                ),
-                patch.object(sys, "path", ["stdlib"]),
-            ):
-                gate_bootstrap_module._add_invoked_user_site_packages()
-                self.assertEqual(
-                    sys.path,
-                    ["stdlib", str(site_packages.resolve())],
-                )
-
-    def test_bootstrap_prefers_macos_framework_user_scheme_without_preferred_scheme(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            user_base = Path(directory) / "user-base"
-            framework_site = user_base / "lib" / "python" / "site-packages"
-            framework_site.mkdir(parents=True)
-
-            def get_path(name: str, *, scheme: str) -> str:
-                self.assertIn(name, {"purelib", "platlib"})
-                self.assertEqual(scheme, "osx_framework_user")
-                return str(framework_site)
-
-            with (
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_config_var",
-                    return_value=str(user_base),
-                ),
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_preferred_scheme",
-                    side_effect=AttributeError,
-                ),
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_scheme_names",
-                    return_value=(
-                        "nt_user",
-                        "osx_framework_user",
-                        "posix_user",
-                    ),
-                ),
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_path",
-                    side_effect=get_path,
-                ),
-                patch.object(gate_bootstrap_module.sys, "platform", "darwin"),
-                patch.object(sys, "path", ["stdlib"]),
-            ):
-                gate_bootstrap_module._add_invoked_user_site_packages()
-                self.assertEqual(
-                    sys.path,
-                    ["stdlib", str(framework_site.resolve())],
-                )
-
-    def test_bootstrap_rejects_user_site_outside_default_user_base(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            user_base = Path(directory) / "user-base"
-            user_base.mkdir()
-            outside = Path(directory) / "outside-site-packages"
-            outside.mkdir()
-
-            with (
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_config_var",
-                    return_value=str(user_base),
-                ),
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_preferred_scheme",
-                    return_value="synthetic_user",
-                ),
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_path",
-                    return_value=str(outside),
-                ),
-                self.assertRaisesRegex(
-                    RuntimeError,
-                    "user package path is unsafe",
-                ),
-            ):
-                gate_bootstrap_module._add_invoked_user_site_packages()
-
-    def test_bootstrap_ignores_absent_system_root_without_package_paths(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            absent_root = Path(directory) / "interpreter-data"
-            absent_site = absent_root / "lib" / "python" / "site-packages"
-
-            def get_path(name: str) -> str:
-                if name == "data":
-                    return str(absent_root)
-                return str(absent_site)
-
-            with (
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_path",
-                    side_effect=get_path,
-                ) as get_path_mock,
-                patch.object(sys, "path", ["stdlib"]),
-            ):
-                gate_bootstrap_module._add_invoked_system_site_packages()
-                self.assertEqual(sys.path, ["stdlib"])
-                self.assertEqual(
-                    get_path_mock.call_args_list,
-                    [call("purelib"), call("platlib")],
-                )
-
-    def test_bootstrap_loads_system_site_inside_interpreter_data_root(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            data_root = Path(directory) / "interpreter-data"
-            site_packages = data_root / "lib" / "python" / "site-packages"
-            site_packages.mkdir(parents=True)
-
-            def get_path(name: str) -> str:
-                if name == "data":
-                    return str(data_root)
-                return str(site_packages)
-
-            with (
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_path",
-                    side_effect=get_path,
-                ),
-                patch.object(sys, "path", ["stdlib"]),
-            ):
-                gate_bootstrap_module._add_invoked_system_site_packages()
-                self.assertEqual(
-                    sys.path,
-                    ["stdlib", str(site_packages.resolve())],
-                )
-
-    def test_bootstrap_rejects_system_site_outside_interpreter_data_root(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            data_root = Path(directory) / "interpreter-data"
-            data_root.mkdir()
-            outside = Path(directory) / "outside-site-packages"
-            outside.mkdir()
-
-            def get_path(name: str) -> str:
-                if name == "data":
-                    return str(data_root)
-                return str(outside)
-
-            with (
-                patch.object(
-                    gate_bootstrap_module.sysconfig,
-                    "get_path",
-                    side_effect=get_path,
-                ),
-                self.assertRaisesRegex(
-                    RuntimeError,
-                    "system package path is unsafe",
-                ),
-            ):
-                gate_bootstrap_module._add_invoked_system_site_packages()
-
     def test_context_launcher_rejects_unsafe_venv_layouts(self) -> None:
         cases = (
             ("site-packages-symlink-escape", "package path is unsafe"),
             ("wrong-pyvenv-version", "config is invalid"),
+            ("system-site-enabled", "config is invalid"),
             ("site-packages-file", "package path is invalid"),
         )
         for case, expected_error in cases:
@@ -1991,6 +1812,15 @@ with EphemeralGateClient.from_environment():
                         ),
                         encoding="utf-8",
                     )
+                elif case == "system-site-enabled":
+                    config = venv_root / "pyvenv.cfg"
+                    config.write_text(
+                        config.read_text(encoding="utf-8").replace(
+                            "include-system-site-packages = false",
+                            "include-system-site-packages = true",
+                        ),
+                        encoding="utf-8",
+                    )
                 else:
                     shutil.rmtree(site_packages)
                     site_packages.write_text("not a directory", encoding="utf-8")
@@ -1999,6 +1829,17 @@ with EphemeralGateClient.from_environment():
 
                 self.assertNotEqual(completed.returncode, 0)
                 self.assertIn(expected_error, completed.stderr)
+
+    def test_bootstrap_requires_an_explicit_virtual_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            gate_bootstrap_module.sys,
+            "executable",
+            str(Path(directory) / "bin" / "python3"),
+        ), self.assertRaisesRegex(
+            RuntimeError,
+            "virtual environment is required",
+        ):
+            gate_bootstrap_module._add_invoked_venv_site_packages()
 
     def test_context_launcher_rejects_non_python_argv_before_spawn(self) -> None:
         context = new_context(SyntheticHandler())
@@ -2029,6 +1870,7 @@ with EphemeralGateClient.from_environment():
         binding = context.bind_child()
         context.activate()
         with tempfile.TemporaryDirectory() as directory:
+            _, venv_python, _ = self._create_synthetic_venv(directory)
             script_path = Path(directory) / "synthetic_gate.py"
             script_path.write_text(
                 "from tooling.acceptance.core import EphemeralGateClient\n"
@@ -2041,7 +1883,7 @@ with EphemeralGateClient.from_environment():
                 environment=controlled_child_environment(),
             ).run(
                 GateLaunchSpec(
-                    argv=(sys.executable, str(script_path)),
+                    argv=(str(venv_python), str(script_path)),
                     timeout_seconds=10,
                     required_capabilities=("synthetic.echo",),
                 ),
