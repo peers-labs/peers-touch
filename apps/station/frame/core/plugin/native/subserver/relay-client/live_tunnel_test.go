@@ -21,6 +21,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	federationmodel "github.com/peers-labs/peers-touch/station/frame/core/federation/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
+	"github.com/peers-labs/peers-touch/station/frame/core/types"
+	authpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	accesspb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 	"google.golang.org/protobuf/proto"
 )
@@ -109,45 +112,14 @@ func TestLiveOpaqueTunnelProbe(t *testing.T) {
 	if err := innerTLS.HandshakeContext(ctx); err != nil {
 		t.Fatalf("inner TLS handshake: %v", err)
 	}
-
-	loginBody, err := json.Marshal(map[string]string{
-		"email":       liveEnv("PT_LIVE_TUNNEL_ACCOUNT", "alice@p.t"),
-		"password":    liveEnv("PT_LIVE_TUNNEL_PASSWORD", "1"),
-		"device_type": "desktop",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request, err := http.NewRequestWithContext(
+	liveLoginThroughAccessGate(
+		t,
 		ctx,
-		http.MethodPost,
-		"https://station.invalid/actor/login",
-		bytes.NewReader(loginBody),
+		innerTLS,
+		statement.GetStationPeerId(),
+		marker,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Peers-Opaque-Probe", marker)
-	if err := request.Write(innerTLS); err != nil {
-		t.Fatalf("write inner HTTP request: %v", err)
-	}
-	response, err := http.ReadResponse(bufio.NewReader(innerTLS), request)
-	if err != nil {
-		t.Fatalf("read inner HTTP response: %v", err)
-	}
-	body := liveReadBounded(t, response.Body)
-	_ = response.Body.Close()
 	_ = innerTLS.Close()
-	if response.StatusCode != http.StatusOK ||
-		!bytes.Contains(body, []byte("access_token")) {
-		t.Fatalf(
-			"inner login status=%d body=%s",
-			response.StatusCode,
-			strings.TrimSpace(string(body)),
-		)
-	}
 
 	result, err := json.Marshal(map[string]bool{
 		"binaryTunnel":       true,
@@ -161,6 +133,161 @@ func TestLiveOpaqueTunnelProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Printf("PT_OPAQUE_TUNNEL_PROBE=%s\n", result)
+}
+
+func liveLoginThroughAccessGate(
+	t *testing.T,
+	ctx context.Context,
+	connection io.ReadWriter,
+	stationPeerID string,
+	marker string,
+) {
+	t.Helper()
+	deviceNonce := make([]byte, 12)
+	if _, err := rand.Read(deviceNonce); err != nil {
+		t.Fatal(err)
+	}
+	deviceID := "opaque-tunnel-" + base64.RawURLEncoding.EncodeToString(deviceNonce)
+	reader := bufio.NewReader(connection)
+
+	start := &accesspb.StartAccessAttemptResponse{}
+	livePostPeersProtoThroughTunnel(
+		t,
+		ctx,
+		connection,
+		reader,
+		"/actor/access/start",
+		&accesspb.StartAccessAttemptRequest{
+			StationUrl:    "https://station.invalid",
+			StationPeerId: stationPeerID,
+			Client: &accesspb.AccessGateClientInfo{
+				Platform:            "opaque-tunnel-e2e",
+				AppVersion:          "1",
+				DeviceId:            deviceID,
+				Locale:              "en",
+				LifecycleGeneration: 1,
+			},
+		},
+		start,
+		marker,
+	)
+	decision := start.GetDecision()
+	gate := liveCurrentLoginGate(decision)
+	if decision == nil || decision.GetAttemptId() == "" || gate == nil {
+		t.Fatal("inner access start returned no password gate")
+	}
+
+	submit := &accesspb.SubmitAccessGateResponse{}
+	livePostPeersProtoThroughTunnel(
+		t,
+		ctx,
+		connection,
+		reader,
+		"/actor/access/submit",
+		&accesspb.SubmitAccessGateRequest{
+			AttemptId: decision.GetAttemptId(),
+			GateId:    gate.GetGateId(),
+			Type:      accesspb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
+			ActionInput: &accesspb.SubmitAccessGateRequest_Login{
+				Login: &authpb.LoginRequest{
+					Email:      liveEnv("PT_LIVE_TUNNEL_ACCOUNT", "alice@p.t"),
+					Password:   liveEnv("PT_LIVE_TUNNEL_PASSWORD", "1"),
+					DeviceType: "opaque-tunnel-e2e",
+				},
+			},
+			ActionId:            gate.GetActionId(),
+			StationPeerId:       stationPeerID,
+			DeviceId:            deviceID,
+			LifecycleGeneration: 1,
+			SchemaRevision:      gate.GetSchemaRevision(),
+			SchemaDigest:        gate.GetSchemaDigest(),
+			SubmissionId:        deviceID,
+		},
+		submit,
+		marker,
+	)
+	if submit.GetDecision().GetState() !=
+		accesspb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED ||
+		submit.GetLoginResponse().GetTokens().GetAccessToken() == "" {
+		t.Fatal("inner access submit did not return a granted session")
+	}
+}
+
+func liveCurrentLoginGate(
+	decision *accesspb.AccessDecision,
+) *accesspb.AccessGate {
+	if decision == nil {
+		return nil
+	}
+	for _, gate := range decision.GetGates() {
+		if gate.GetGateId() == decision.GetCurrentGateId() &&
+			gate.GetType() ==
+				accesspb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN {
+			return gate
+		}
+	}
+	return nil
+}
+
+func livePostPeersProtoThroughTunnel(
+	t *testing.T,
+	ctx context.Context,
+	connection io.Writer,
+	reader *bufio.Reader,
+	path string,
+	requestMessage proto.Message,
+	responseMessage proto.Message,
+	marker string,
+) {
+	t.Helper()
+	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(requestMessage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		"https://station.invalid"+path,
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Accept", "application/protobuf")
+	request.Header.Set("Content-Type", "application/protobuf")
+	request.Header.Set("X-Peers-Opaque-Probe", marker)
+	if err := request.Write(connection); err != nil {
+		t.Fatalf("write inner HTTP request %s: %v", path, err)
+	}
+	response, err := http.ReadResponse(reader, request)
+	if err != nil {
+		t.Fatalf("read inner HTTP response %s: %v", path, err)
+	}
+	raw := liveReadBounded(t, response.Body)
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"inner request %s status=%d body=%s",
+			path,
+			response.StatusCode,
+			strings.TrimSpace(string(raw)),
+		)
+	}
+	envelope := &types.PeersResponse{}
+	if err := proto.Unmarshal(raw, envelope); err != nil {
+		t.Fatalf("decode inner Peers response %s: %v", path, err)
+	}
+	if envelope.GetData() == nil {
+		t.Fatalf(
+			"inner Peers response %s has no data: code=%s msg=%s",
+			path,
+			envelope.GetCode(),
+			envelope.GetMsg(),
+		)
+	}
+	if err := envelope.GetData().UnmarshalTo(responseMessage); err != nil {
+		t.Fatalf("decode inner response data %s: %v", path, err)
+	}
 }
 
 func liveDashboardLogin(
