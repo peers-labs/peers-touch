@@ -51,6 +51,7 @@ function renderMomentComposer(): string {
       publishMoment: vi.fn(),
     },
     onPublished: vi.fn(),
+    onClose: vi.fn(),
   }));
 }
 
@@ -182,7 +183,8 @@ describe('Moment composer media restoration', () => {
       'utf8',
     );
 
-    expect(source).toContain('SOCIAL_AUDIENCE_CHOICES.map');
+    expect(source).toContain('VISIBLE_SOCIAL_AUDIENCE_CHOICES.map');
+    expect(source).toContain("choice.id !== 'DIRECT'");
     expect(source).toContain("audienceChoice === 'CIRCLE'");
     expect(source).toContain("audienceChoice === 'GROUP'");
     expect(source).toContain("audienceChoice === 'DIRECT'");
@@ -190,5 +192,15 @@ describe('Moment composer media restoration', () => {
     expect(source).toContain('privateFiles: privateFiles.filter');
     expect(source).not.toContain('AUDIENCE_OPTIONS');
     expect(source).not.toContain('publishPublic');
+  });
+
+  it('renders authoring and Audience as selected-only bottom sheets', () => {
+    const markup = renderMomentComposer();
+
+    expect(markup).toContain('class="moments-sheet-backdrop"');
+    expect(markup).toContain('moments-bottom-sheet moments-composer-card');
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('data-acceptance-id="social-audience-select"');
+    expect(markup).not.toContain('data-audience-option="DIRECT"');
   });
 });

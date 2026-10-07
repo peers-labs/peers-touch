@@ -28,6 +28,9 @@ describe('Moment feed item', () => {
     expect(source).toContain('onOpenMedia?.(');
     expect(source).toContain('onDelete(post.id)');
     expect(source).toContain('<Trash2');
+    expect(source).toContain('moments-post-action-sheet');
+    expect(source).toContain('setShowActions(true)');
+    expect(source).not.toContain('Share2');
     expect(source).not.toContain('moments-comment-input-row');
     expect(source).not.toContain('onOpenDetail');
   });

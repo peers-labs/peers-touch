@@ -116,6 +116,14 @@ describe('Moments feed-first interaction source contract', () => {
     expect(source).toContain('<MomentMediaOverlay');
     expect(source).toContain('onClose={() => setMediaSelection(null)}');
   });
+
+  it('matches the confirmed header, scope, and bottom-sheet interaction model', () => {
+    expect(source).toContain('data-acceptance-id="social-circles-open"');
+    expect(source).toContain('className="moments-context-row"');
+    expect(source).toContain('className="moments-sheet-backdrop moments-sort-backdrop"');
+    expect(source).toContain('className="moments-bottom-sheet moments-sort-sheet"');
+    expect(source).toContain('onClose={() => setShowNewPost(false)}');
+  });
 });
 
 function renderMomentsPage(): string {
@@ -123,6 +131,7 @@ function renderMomentsPage(): string {
     activePostId: null,
     onOpenProfile: () => undefined,
     onOpenSearch: () => undefined,
+    onOpenCircles: () => undefined,
     onBack: () => undefined,
   }));
 }
@@ -326,6 +335,7 @@ describe('Moments page bounded feed', () => {
       activePostId: 'post-1',
       onOpenMoment: () => undefined,
       onOpenSearch: () => undefined,
+      onOpenCircles: () => undefined,
       onBack: () => undefined,
     }));
 

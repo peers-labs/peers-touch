@@ -7175,6 +7175,15 @@ const tablist = page?.querySelector('[role="tablist"]');
 const cards = page?.querySelectorAll(
   '[data-acceptance-id="social-moment-card"]'
 ) || [];
+const pageRect = page?.getBoundingClientRect();
+const scopeRect = page?.querySelector('[role="tablist"]')?.getBoundingClientRect();
+const firstCardStyle = cards[0] ? getComputedStyle(cards[0]) : null;
+const composer = document.querySelector('[data-acceptance-id="social-composer"]');
+const composerStyle = composer ? getComputedStyle(composer) : null;
+const composerBackdrop = composer?.closest('.moments-sheet-backdrop');
+const composerBackdropStyle = composerBackdrop
+  ? getComputedStyle(composerBackdrop)
+  : null;
 const viewport = window.visualViewport;
 return {
   viewportWidth: Number(viewport?.width || window.innerWidth || 0),
@@ -7185,8 +7194,21 @@ return {
   searchLabelled: Boolean(
     page?.querySelector('[data-acceptance-id="social-search-open"][aria-label]')
   ),
+  circlesLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-circles-open"][aria-label]')
+  ),
   composerLabelled: Boolean(
     page?.querySelector('[data-acceptance-id="social-composer-open"][aria-label]')
+  ),
+  scopeWidth: Number(scopeRect?.width || 0),
+  pageWidth: Number(pageRect?.width || 0),
+  flatFeed: !firstCardStyle || (
+    Number.parseFloat(firstCardStyle.borderTopLeftRadius || '0') <= 1
+    && firstCardStyle.boxShadow === 'none'
+  ),
+  composerBottomSheet: !composer || (
+    composerBackdropStyle?.position === 'fixed'
+    && Number.parseFloat(composerStyle?.borderTopLeftRadius || '0') >= 16
   ),
   activeElementAcceptanceId:
     document.activeElement?.getAttribute?.('data-acceptance-id') || '',

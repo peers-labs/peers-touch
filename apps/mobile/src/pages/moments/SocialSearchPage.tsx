@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Empty, Input, Radio, Spin, Tag, Typography } from 'antd';
-import { ArrowLeft, ChevronRight, ShieldCheck, UsersRound } from 'lucide-react';
+import { ArrowLeft, ChevronRight, ShieldCheck } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileDetailRoute } from '../../app/navigation';
@@ -25,13 +25,11 @@ interface SocialSearchPageProps {
     MobileDetailRoute,
     { readonly routeId: 'detail:social-profile' }
   >) => void;
-  readonly onOpenCircles: () => void;
 }
 
 export function SocialSearchPage({
   onBack,
   onOpenProfile,
-  onOpenCircles,
 }: SocialSearchPageProps) {
   const { t } = useMobileI18n();
   const [query, setQuery] = useState(() => readRouteQuery(SEARCH_ROUTE_KEY));
@@ -87,7 +85,7 @@ export function SocialSearchPage({
 
   return (
     <div
-      className="page-container mobile-detail-page"
+      className="page-container mobile-detail-page social-detail-page"
       data-acceptance-id="social-search-page"
     >
       <header className="page-header">
@@ -103,20 +101,6 @@ export function SocialSearchPage({
       </header>
 
       <div className="mobile-detail-body">
-        <button
-          type="button"
-          className="circle-entry-row"
-          data-acceptance-id="social-circles-open"
-          onClick={onOpenCircles}
-        >
-          <span className="circle-row-icon"><UsersRound size={18} /></span>
-          <span className="circle-row-copy">
-            <Text strong>{t('mobile.social.circles.title')}</Text>
-            <Text type="secondary">{t('mobile.social.circles.privateHint')}</Text>
-          </span>
-          <ChevronRight size={18} />
-        </button>
-
         <Input.Search
           value={query}
           data-acceptance-id="social-search-input"

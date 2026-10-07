@@ -855,11 +855,6 @@ class AndroidSocialGate(AcceptanceGate):
         )
         self._click_ui(
             sender_session,
-            '[data-acceptance-id="social-search-open"]',
-            "Android Social Search before Circles",
-        )
-        self._click_ui(
-            sender_session,
             '[data-acceptance-id="social-circles-open"]',
             "Android Social Circles",
         )
@@ -963,11 +958,20 @@ class AndroidSocialGate(AcceptanceGate):
             '[data-acceptance-id="social-composer-open"]',
             "Android Moment composer",
         )
-        self._select_antd_option(
+        self._click_ui(
             sender_session,
             '[data-acceptance-id="social-audience-select"]',
-            3,
+            "Android Audience sheet",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-audience-option="CIRCLE"]',
             "Android Circle audience",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-audience-target-done"]',
+            "Android Circle target",
         )
         private_text = f"mps11a-circle-{journey_id}"
         self._set_ui_value(
@@ -1200,6 +1204,7 @@ class AndroidSocialGate(AcceptanceGate):
             "keyboard probe",
             "Android keyboard probe",
         )
+        composer_metrics = bob.social_ui("metrics")
         keyboard = bob.social_ui("keyboard-state")
         back = bob.social_ui("system-back")
         bob.background_app(1.0)
@@ -1227,7 +1232,12 @@ class AndroidSocialGate(AcceptanceGate):
             or metrics.get("tabCount") != 2
             or int(metrics.get("cardCount", 101)) > 100
             or metrics.get("searchLabelled") is not True
+            or metrics.get("circlesLabelled") is not True
             or metrics.get("composerLabelled") is not True
+            or float(metrics.get("scopeWidth", 0))
+            < float(metrics.get("pageWidth", 0)) - 40
+            or metrics.get("flatFeed") is not True
+            or composer_metrics.get("composerBottomSheet") is not True
             or back != {"pressed": True}
         ):
             raise GateError("Android native quality metrics are invalid")
@@ -1241,6 +1251,7 @@ class AndroidSocialGate(AcceptanceGate):
             "supportingObservation": "android-safe-area-bounded-feed",
             "keyboardObserved": keyboard.get("shown") is True,
             "metrics": metrics,
+            "composerMetrics": composer_metrics,
             "accessibility": accessibility.to_dict(),
             "screenshot": screenshot.to_dict(),
         }

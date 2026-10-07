@@ -108,9 +108,6 @@ function renderPage(
           <SocialSearchPage
             onBack={onBack}
             onOpenProfile={onOpenDetail}
-            onOpenCircles={() => onOpenDetail({
-              routeId: 'detail:social-circles',
-            })}
           />
         );
       }
@@ -163,6 +160,9 @@ function renderPage(
           })}
           onOpenSearch={() => onOpenDetail({
             routeId: 'detail:social-search',
+          })}
+          onOpenCircles={() => onOpenDetail({
+            routeId: 'detail:social-circles',
           })}
           onBack={onBack}
         />

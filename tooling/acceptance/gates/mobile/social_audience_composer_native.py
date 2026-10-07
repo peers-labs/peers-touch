@@ -130,7 +130,8 @@ class MobileSocialAudienceComposerNativeGate(AcceptanceGate):
         self._require_markers(
             composer,
             (
-                "SOCIAL_AUDIENCE_CHOICES.map",
+                "VISIBLE_SOCIAL_AUDIENCE_CHOICES.map",
+                "choice.id !== 'DIRECT'",
                 "persistDraftNow(text, audience,",
                 "uploadPublicImage(item)",
                 "privateFiles: privateFiles.filter",

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Empty, Modal, Spin, Tag, Typography } from 'antd';
-import { ArrowLeft, Ban, MessageCircle, RotateCcw, UserMinus, UserPlus } from 'lucide-react';
+import { Button, Empty, Spin, Tag, Typography } from 'antd';
+import {
+  ArrowLeft,
+  Ban,
+  MessageCircle,
+  MoreHorizontal,
+  UserMinus,
+  UserPlus,
+  X,
+} from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileChatDetailRoute } from '../../app/navigation';
@@ -57,6 +65,8 @@ export function SocialProfilePage({
 
   const [action, setAction] = useState('');
   const [actionError, setActionError] = useState('');
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
+  const [confirmBlockOpen, setConfirmBlockOpen] = useState(false);
   const profile = actorPtid === currentUserPtid
     ? currentUserProfile
     : peerProfiles[actorPtid];
@@ -124,20 +134,9 @@ export function SocialProfilePage({
     }
   };
 
-  const confirmBlock = () => {
-    Modal.confirm({
-      title: t('mobile.contacts.blockConfirmTitle'),
-      content: t('mobile.contacts.blockConfirmBody'),
-      okText: t('mobile.contacts.block'),
-      cancelText: t('common.action.cancel'),
-      okButtonProps: { danger: true },
-      onOk: () => runRelationshipAction('block', () => dispatchBlockUser(actorPtid)),
-    });
-  };
-
   return (
     <div
-      className="page-container mobile-detail-page"
+      className="page-container mobile-detail-page social-detail-page"
       data-acceptance-id="social-profile-page"
       data-profile-actor-ptid={actorPtid}
     >
@@ -151,8 +150,18 @@ export function SocialProfilePage({
           <ArrowLeft size={20} />
         </button>
         <h1 className="header-title compact">
-          {profile?.displayName || t('mobile.social.profile.title')}
+          {t('mobile.social.profile.title')}
         </h1>
+        {!isSelf ? (
+          <button
+            type="button"
+            className="header-action"
+            aria-label={t('mobile.social.profile.actions')}
+            onClick={() => setActionSheetOpen(true)}
+          >
+            <MoreHorizontal size={20} />
+          </button>
+        ) : null}
       </header>
 
       <div className="mobile-detail-body">
@@ -223,30 +232,6 @@ export function SocialProfilePage({
                   {t('mobile.contacts.openChat')}
                 </Button>
               ) : null}
-              {relationship?.blocked ? (
-                <Button
-                  block
-                  icon={<RotateCcw size={15} />}
-                  loading={action === 'unblock'}
-                  disabled={Boolean(action)}
-                  onClick={() => void runRelationshipAction(
-                    'unblock',
-                    () => dispatchUnblockUser(actorPtid),
-                  )}
-                >
-                  {t('mobile.contacts.unblock')}
-                </Button>
-              ) : (
-                <Button
-                  block
-                  danger
-                  icon={<Ban size={15} />}
-                  disabled={Boolean(action)}
-                  onClick={confirmBlock}
-                >
-                  {t('mobile.contacts.block')}
-                </Button>
-              )}
             </>
           ) : null}
         </div>
@@ -289,6 +274,90 @@ export function SocialProfilePage({
           ) : null}
         </section>
       </div>
+
+      {actionSheetOpen ? (
+        <div className="moments-sheet-backdrop" role="presentation">
+          <section
+            className="moments-bottom-sheet social-profile-action-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('mobile.social.profile.actions')}
+          >
+            <div className="moments-sheet-handle" />
+            <button
+              type="button"
+              className={relationship?.blocked ? 'moments-choice-row' : 'moments-choice-row danger'}
+              onClick={() => {
+                setActionSheetOpen(false);
+                if (relationship?.blocked) {
+                  void runRelationshipAction(
+                    'unblock',
+                    () => dispatchUnblockUser(actorPtid),
+                  );
+                } else {
+                  setConfirmBlockOpen(true);
+                }
+              }}
+            >
+              <span>
+                <strong>
+                  {t(relationship?.blocked
+                    ? 'mobile.contacts.unblock'
+                    : 'mobile.contacts.block')}
+                </strong>
+              </span>
+              <Ban size={18} />
+            </button>
+            <button
+              type="button"
+              className="moments-choice-row"
+              onClick={() => setActionSheetOpen(false)}
+            >
+              <span><strong>{t('common.action.cancel')}</strong></span>
+              <X size={18} />
+            </button>
+          </section>
+        </div>
+      ) : null}
+
+      {confirmBlockOpen ? (
+        <div className="moments-sheet-backdrop" role="presentation">
+          <section
+            className="moments-bottom-sheet social-profile-confirm-sheet"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={t('mobile.contacts.blockConfirmTitle')}
+          >
+            <div className="moments-sheet-handle" />
+            <div className="social-profile-confirm-copy">
+              <Ban size={22} />
+              <div>
+                <strong>{t('mobile.contacts.blockConfirmTitle')}</strong>
+                <p>{t('mobile.contacts.blockConfirmBody')}</p>
+              </div>
+            </div>
+            <div className="social-profile-confirm-actions">
+              <Button onClick={() => setConfirmBlockOpen(false)}>
+                {t('common.action.cancel')}
+              </Button>
+              <Button
+                danger
+                type="primary"
+                loading={action === 'block'}
+                onClick={() => void runRelationshipAction(
+                  'block',
+                  async () => {
+                    await dispatchBlockUser(actorPtid);
+                    setConfirmBlockOpen(false);
+                  },
+                )}
+              >
+                {t('mobile.contacts.block')}
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
