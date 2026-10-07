@@ -354,6 +354,10 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn("$env:OPENSSL_SRC_PERL = $PerlPath", source)
         self.assertIn("$env:PROTOC = $ProtocPath", source)
         self.assertIn("$env:CARGO_TARGET_DIR = $CargoTargetRoot", source)
+        self.assertIn(
+            '$env:CARGO_HOME = Join-Path $CargoTargetRoot "cargo-home"',
+            source,
+        )
         self.assertIn("Split-Path -Parent $ProtocPath", source)
         self.assertIn("protoc-gen-es.CMD", source)
         self.assertIn('Get-ChildItem (', source)
