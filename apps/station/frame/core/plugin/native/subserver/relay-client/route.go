@@ -34,7 +34,7 @@ func (s *SubServer) publishDefaultRoute(ctx context.Context) {
 	_, err := s.publishRoute(
 		ctx,
 		routeID,
-		peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_GRANT_ONLY,
+		peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_PUBLIC,
 		defaultRouteLifetime,
 	)
 	if err != nil {
