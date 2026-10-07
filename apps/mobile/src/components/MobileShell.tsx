@@ -259,7 +259,10 @@ export function MobileShell(props: MobileShellProps) {
   const hideTabbar = activeDetail !== null;
 
   return (
-    <div className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}>
+    <div
+      className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}
+      data-product-surface={`shell.${activeTab}-tab`}
+    >
       <div className="mobile-content" ref={contentRef}>
         <MobileRouteBoundary
           routeId={activeDetail?.routeId ?? primaryRouteId}
@@ -290,6 +293,7 @@ export function MobileShell(props: MobileShellProps) {
             <button
               key={tabId}
               className={`tabbar-item ${isActive ? 'active' : ''}`}
+              data-route-id={descriptor.routeId}
               onClick={() => switchTab(tabId)}
               type="button"
             >

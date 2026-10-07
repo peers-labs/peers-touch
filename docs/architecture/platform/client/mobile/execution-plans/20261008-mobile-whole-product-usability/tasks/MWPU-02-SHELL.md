@@ -16,6 +16,7 @@
   "journeyId": "MS-J08",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "apps/mobile/scripts",
     "apps/mobile/src/components",
     "apps/mobile/src/styles.css",
     "apps/mobile/src/app/mobileI18n.tsx",

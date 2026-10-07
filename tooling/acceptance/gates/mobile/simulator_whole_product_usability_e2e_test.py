@@ -8,6 +8,7 @@ import unittest
 import zlib
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from tooling.acceptance.core import (
     EvidenceManifestInvalid,
@@ -19,7 +20,9 @@ from tooling.acceptance.core import (
 from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e import (
     CONTRACT_ID,
     GATE_ID,
+    TEXT_SIZE_SCRIPT,
     VISUAL_REVIEW_GATE_ID,
+    SimulatorWholeProductUsabilityGate,
     audit_visible_text,
     expected_result,
     load_surface_inventory,
@@ -122,6 +125,64 @@ REQUIRED_SURFACE_IDS = {
         """.split()
     ),
 }
+
+
+class _ShellDriverSession:
+    client_id = "sim-ios"
+
+    def __init__(self) -> None:
+        self.orientation = "PORTRAIT"
+        self.route_id = "tab:chat"
+        self.clicked: list[str] = []
+
+    def switch_to_native(self) -> None:
+        return None
+
+    def switch_to_app_webview(self) -> str:
+        return "WEBVIEW_com.peers.touch.mobile"
+
+    def set_orientation(self, orientation: str) -> None:
+        self.orientation = orientation
+
+    def execute_script(self, script: str, *args: Any) -> Any:
+        if script == TEXT_SIZE_SCRIPT:
+            width, height = (
+                (852, 393)
+                if self.orientation == "LANDSCAPE"
+                else (393, 852)
+            )
+            return {
+                "textSize": args[0],
+                "width": width,
+                "height": height,
+            }
+        return True
+
+    def find_element(self, using: str, value: str) -> str:
+        if using != "css selector":
+            raise AssertionError(using)
+        return value
+
+    def click_element(self, element_ref: str) -> None:
+        self.clicked.append(element_ref)
+        route_match = re.search(r'data-route-id="([^"]+)"', element_ref)
+        if route_match:
+            self.route_id = route_match.group(1)
+
+    def call_action(self, action: str) -> Any:
+        if action == "navigation.snapshot":
+            return {"primaryRouteId": self.route_id}
+        if action == "lifecycle.snapshot":
+            return {
+                "runtimes": [
+                    {
+                        "id": "notifications",
+                        "status": "failed",
+                        "errorKey": "mobile.lifecycle.runtimeFailed",
+                    }
+                ]
+            }
+        raise AssertionError(action)
 
 
 def png_bytes(width: int, height: int) -> bytes:
@@ -294,6 +355,87 @@ def valid_surface_evidence(
 
 
 class WholeProductSurfaceContractTests(unittest.TestCase):
+    def test_shell_driver_configures_each_required_viewport_cell(self) -> None:
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+
+        with patch(
+            "tooling.acceptance.gates.mobile."
+            "simulator_whole_product_usability_e2e.time.sleep"
+        ):
+            self.assertEqual(
+                gate._configure_cell(session, "portrait-normal"),
+                {
+                    "width": 393,
+                    "height": 852,
+                    "orientation": "portrait",
+                    "textSize": "normal",
+                },
+            )
+            self.assertEqual(
+                gate._configure_cell(session, "portrait-maximum-text"),
+                {
+                    "width": 393,
+                    "height": 852,
+                    "orientation": "portrait",
+                    "textSize": "maximum",
+                },
+            )
+            self.assertEqual(
+                gate._configure_cell(session, "landscape-normal"),
+                {
+                    "width": 852,
+                    "height": 393,
+                    "orientation": "landscape",
+                    "textSize": "normal",
+                },
+            )
+
+    def test_shell_driver_uses_real_navigation_and_degraded_state(self) -> None:
+        inventory = load_surface_inventory()
+        entries = {
+            entry["id"]: entry
+            for entry in selected_surface_entries(inventory, "shell")
+        }
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+
+        action = gate._enter_surface(session, entries["shell.contacts-tab"])
+        self.assertEqual(action["kind"], "native-touch")
+        self.assertEqual(session.route_id, "tab:contacts")
+        self.assertEqual(
+            session.clicked,
+            ['[data-route-id="tab:contacts"]'],
+        )
+        degraded = gate._enter_surface(
+            session,
+            entries["shell.degraded-module-notice"],
+        )
+        self.assertEqual(degraded["kind"], "system")
+
+    def test_shell_product_selectors_are_present_in_production(self) -> None:
+        shell = (
+            REPO_ROOT / "apps/mobile/src/components/MobileShell.tsx"
+        ).read_text(encoding="utf-8")
+        notice = (
+            REPO_ROOT
+            / "apps/mobile/src/components/recovery/DeferredCapabilityNotice.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "data-product-surface={`shell.${activeTab}-tab`}",
+            shell,
+        )
+        self.assertIn("data-route-id={descriptor.routeId}", shell)
+        self.assertIn(
+            'data-product-surface="shell.degraded-module-notice"',
+            notice,
+        )
+
     def test_inventory_covers_every_surface_set_and_contract_cell(self) -> None:
         inventory = load_surface_inventory()
 
