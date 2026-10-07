@@ -141,7 +141,7 @@ select,
   color: rgba(15, 23, 42, 0.94);
   font-size: 32px;
   line-height: 1.05;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .root-error-card p {
@@ -1425,7 +1425,7 @@ select,
   flex: 1;
   font-size: 24px;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .header-title.compact {
@@ -1445,8 +1445,8 @@ select,
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: var(--brand-surface);
   border-radius: 12px;
@@ -1462,7 +1462,7 @@ select,
 
 .contacts-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px 40px;
+  grid-template-columns: minmax(0, 1fr) 44px 44px;
   align-items: center;
   gap: 8px;
   padding: 0 18px 12px;
@@ -1470,7 +1470,7 @@ select,
 
 .contacts-search-input .ant-input-affix-wrapper,
 .contacts-search-input.ant-input-affix-wrapper {
-  height: 38px;
+  height: 44px;
   border-radius: 10px;
 }
 
@@ -1478,8 +1478,8 @@ select,
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 10px;
   color: rgba(0, 0, 0, 0.68);
@@ -1493,7 +1493,7 @@ select,
 }
 
 .chat-search-bar .ant-input-affix-wrapper {
-  height: 38px;
+  height: 44px;
   border-radius: 10px;
 }
 
@@ -1585,8 +1585,8 @@ select,
 
 .mobile-notice-close {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 0;
   border-radius: 10px;
@@ -1634,6 +1634,12 @@ select,
 .conversation-item .ant-list-item-meta,
 .contact-item .ant-list-item-meta {
   align-items: center !important;
+}
+
+.friend-request-item .ant-list-item-action .ant-btn {
+  min-width: 44px;
+  height: 44px;
+  padding-inline: 12px;
 }
 
 .conversation-item .ant-avatar,
@@ -2138,7 +2144,7 @@ select,
 }
 
 .chat-header-search.ant-input-search .ant-input-affix-wrapper {
-  height: 38px;
+  height: 44px;
   border-radius: 12px 0 0 12px !important;
   background: rgba(255, 255, 255, 0.92);
 }
@@ -2147,8 +2153,8 @@ select,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 38px;
-  min-width: 42px;
+  height: 44px;
+  min-width: 44px;
   border-radius: 0 12px 12px 0 !important;
   box-shadow: none;
 }
@@ -4005,6 +4011,72 @@ select,
   margin-top: 8px;
 }
 
+.recovery-overlay-host[data-launch-state='shell'] .recovery-deferred-capability {
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.recovery-overlay-host[data-launch-state='shell']
+  .recovery-deferred-capability
+  .recovery-notice__icon {
+  width: 24px;
+  height: 24px;
+}
+
+.recovery-overlay-host[data-launch-state='shell']
+  .recovery-deferred-capability
+  .recovery-notice__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+}
+
+.recovery-overlay-host[data-launch-state='shell']
+  .recovery-deferred-capability
+  .recovery-notice__title,
+.recovery-overlay-host[data-launch-state='shell']
+  .recovery-deferred-capability
+  .recovery-notice__text {
+  grid-column: 1;
+}
+
+.recovery-overlay-host[data-launch-state='shell']
+  .recovery-deferred-capability
+  .recovery-notice__actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  margin-top: 0;
+}
+
+.recovery-overlay-host[data-launch-state='shell']
+  .recovery-deferred-capability
+  .recovery-btn--compact {
+  min-height: 44px;
+  padding-inline: 12px;
+}
+
+@media (max-width: 360px) {
+  .recovery-overlay-host[data-launch-state='shell']
+    .recovery-deferred-capability
+    .recovery-notice__content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recovery-overlay-host[data-launch-state='shell']
+    .recovery-deferred-capability
+    .recovery-notice__actions {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 6px;
+  }
+}
+
 .recovery-command__items {
   display: flex;
   flex-direction: column;
@@ -4038,7 +4110,7 @@ select,
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 42px;
+  min-height: 44px;
   padding: 0 14px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -4051,7 +4123,7 @@ select,
 }
 
 .recovery-btn--compact {
-  min-height: 36px;
+  min-height: 44px;
   padding-inline: 10px;
   font-size: 12px;
 }

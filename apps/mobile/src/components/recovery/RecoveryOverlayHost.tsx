@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   getMobileLifecycleKernel,
   useLifecycleKernel,
+  type LifecycleKernelState,
   type MobileLaunchState,
 } from '../../app/lifecycle';
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -66,6 +67,16 @@ export function visibleRecoveryStates(
   ));
 }
 
+export function bindDeferredCapabilityProjection(
+  getState: () => LifecycleKernelState,
+  subscribe: (listener: () => void) => () => void,
+  report: (state: LifecycleKernelState) => void,
+): () => void {
+  const sync = () => report(getState());
+  sync();
+  return subscribe(sync);
+}
+
 export function RecoveryOverlayHost({
   onReAuthenticate,
   onSwitchStation,
@@ -80,15 +91,20 @@ export function RecoveryOverlayHost({
   );
 
   useEffect(() => {
+    const kernel = getMobileLifecycleKernel();
     const projection = getRecoveryProjection();
-    const unsubscribe = projection.subscribe(setSnapshot);
+    const unsubscribeProjection = projection.subscribe(setSnapshot);
     setSnapshot(projection.getSnapshot());
-    return unsubscribe;
+    const unsubscribeLifecycle = bindDeferredCapabilityProjection(
+      () => kernel.getState(),
+      (listener) => kernel.subscribe(listener),
+      (state) => projection.reportDeferredCapabilities(state),
+    );
+    return () => {
+      unsubscribeLifecycle();
+      unsubscribeProjection();
+    };
   }, [lifecycle.generation, recoveryRuntimeStatus]);
-
-  useEffect(() => {
-    getRecoveryProjection().reportDeferredCapabilities(lifecycle);
-  }, [lifecycle]);
 
   const handleLegacyReliabilityAction = useCallback(
     async (action: LegacyReliabilityRecoveryAction) => {

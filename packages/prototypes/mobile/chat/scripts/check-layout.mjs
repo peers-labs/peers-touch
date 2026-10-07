@@ -42,9 +42,13 @@ try {
         const authCard = authScreen?.querySelector('.mp-auth-card');
         const authBrand = authScreen?.querySelector('.mp-auth-brand');
         const authLogo = authScreen?.querySelector('.mp-auth-logo');
+        const runtimeNotice = element.querySelector('.mp-runtime-notice');
+        const tabbar = element.querySelector('.mp-tabbar');
         const authCardRect = authCard?.getBoundingClientRect();
         const authBrandRect = authBrand?.getBoundingClientRect();
         const authLogoStyle = authLogo ? getComputedStyle(authLogo) : null;
+        const runtimeNoticeRect = runtimeNotice?.getBoundingClientRect();
+        const tabbarRect = tabbar?.getBoundingClientRect();
         return {
           width: element.getBoundingClientRect().width,
           height: element.getBoundingClientRect().height,
@@ -61,6 +65,24 @@ try {
             clientHeight: section.clientHeight,
             scrollHeight: section.scrollHeight,
           })),
+          touchTargets: [...element.querySelectorAll(
+            '.mp-header-action, .mp-search-bar .ant-input-affix-wrapper, '
+              + '.mp-thread-back, .mp-thread-action, .mp-runtime-notice .ant-btn',
+          )].map((target) => {
+            const style = getComputedStyle(target);
+            return {
+              className: target.className,
+              width: Number.parseFloat(style.width),
+              height: Number.parseFloat(style.height),
+            };
+          }),
+          runtimeNotice: runtimeNotice && runtimeNoticeRect
+            ? {
+                blocksUnrelatedContent:
+                  runtimeNotice.getAttribute('data-blocks-unrelated-content') !== 'false',
+                overlapsTabbar: Boolean(tabbarRect && runtimeNoticeRect.bottom > tabbarRect.top + 1),
+              }
+            : null,
           auth: authScreen && authCard && authBrand && authLogoStyle
             ? {
                 cardCount: authScreen.querySelectorAll('.mp-auth-card').length,
@@ -161,6 +183,11 @@ try {
     || geometry.pageOverflow
     || geometry.scenarioOverlaps
     || geometry.scrollWidth > geometry.clientWidth
+    || geometry.touchTargets.some((target) => target.width < 44 || target.height < 44)
+    || (geometry.runtimeNotice && (
+      geometry.runtimeNotice.blocksUnrelatedContent
+      || geometry.runtimeNotice.overlapsTabbar
+    ))
     || geometry.sections.some((section) => section.scrollHeight > section.clientHeight + 1)
     || (geometry.auth && (
       geometry.auth.cardCount !== 1
