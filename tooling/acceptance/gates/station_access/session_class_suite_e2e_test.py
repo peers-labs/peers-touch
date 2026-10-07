@@ -220,6 +220,10 @@ class _FakeRuntime:
 
 
 class _TestGate(StationAccessSessionClassSuiteGate):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.mobile_receiver_scenarios: list[str] = []
+
     def _send_desktop_ui(
         self,
         sender_id: str,
@@ -249,6 +253,7 @@ class _TestGate(StationAccessSessionClassSuiteGate):
         evidence_key: str,
     ) -> str:
         del receiver_id, conversation_id, message_id, text
+        self.mobile_receiver_scenarios.append(evidence_key)
         return f"artifact:{evidence_key}:mobile-receiver"
 
     def _attach_suite_report(self, report: dict[str, Any]) -> dict[str, str]:
@@ -473,6 +478,14 @@ class StationAccessSessionClassSuiteGateTest(unittest.TestCase):
         self.assertEqual(
             runtime.prepared_desktop_identity,
             [("desktop-bob", "desktop-bob-peer")],
+        )
+        self.assertEqual(
+            gate.mobile_receiver_scenarios,
+            [
+                "same-station-chat",
+                "cross-class-coexistence",
+                "desktop-takeover",
+            ],
         )
 
 
