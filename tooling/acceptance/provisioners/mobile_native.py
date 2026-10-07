@@ -4326,17 +4326,19 @@ class _ParentAppiumSession:
                 deadline_monotonic=deadline_monotonic,
                 cancellation=cancellation,
             )
-            field = "bundleId"
+            result = (
+                str(value.get("bundleId") or "")
+                if isinstance(value, Mapping)
+                else ""
+            )
         else:
-            value = self.execute_script(
-                "mobile: getCurrentActivity",
+            value = self._request(
+                "GET",
+                self._path("/appium/device/current_package"),
                 deadline_monotonic=deadline_monotonic,
                 cancellation=cancellation,
             )
-            field = "appPackage"
-        result = (
-            str(value.get(field) or "") if isinstance(value, Mapping) else ""
-        )
+            result = value.strip() if isinstance(value, str) else ""
         if not result:
             raise DriverError("Appium active application is unavailable")
         return result
