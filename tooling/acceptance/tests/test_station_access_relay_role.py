@@ -19,6 +19,7 @@ from tooling.acceptance.provisioners import (
     get_provisioner,
 )
 from tooling.acceptance.provisioners.station_access_relay_role import (
+    DESKTOP_RELAY_NATIVE_GATE_ID,
     _relay_runtime_security,
     _validate_runtime_status,
 )
@@ -131,7 +132,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             StationAccessRelayRoleProvisioner,
         )
 
-    def test_attach_only_provisioning_emits_two_services_without_cleanup(
+    def test_attach_only_provisioning_emits_route_service_without_cleanup(
         self,
     ) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
@@ -198,14 +199,119 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 "_persist_relay_attestation",
                 return_value=_attestation("relay", "relay"),
             ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_station_route_attestation",
+                return_value=_attestation("station-via-relay", "station"),
+            ),
         ):
             manifest = provisioner.provision("relay-role-security-contract")
 
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
-        self.assertEqual(set(manifest.services), {"station", "relay"})
+        self.assertEqual(
+            set(manifest.services),
+            {"station", "relay", "station-via-relay"},
+        )
+        self.assertEqual(manifest.clients, ())
         self.assertFalse(manifest.cleanup_registered)
         self.assertEqual(manifest.cleanup_resources, ())
         self.assertEqual(provisioner.cleanup(), ())
+
+    def test_desktop_relay_gate_declares_native_station_binding(self) -> None:
+        provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        profile = {
+            "PT_STATION_MODE": "remote",
+            "PT_STATION_URL": "http://station.example",
+            "PT_STATION_HEALTH_URL": "http://station.example/healthz",
+            "PT_STATION_DEPLOY_ENV": "sixwin-station",
+            "PT_RELAY_MODE": "remote",
+            "PT_RELAY_URL": "http://relay.example",
+            "PT_RELAY_HEALTH_URL": "http://relay.example/healthz",
+            "PT_RELAY_DEPLOY_ENV": "sixwin-relay",
+        }
+        with (
+            patch.object(provisioner, "_git_commit", return_value=COMMIT),
+            patch.object(
+                provisioner,
+                "_git_workspace_digest",
+                return_value="clean",
+            ),
+            patch.object(
+                provisioner,
+                "_resolve_active_profile",
+                return_value=("sixwin", Path("/profile"), 6, profile),
+            ),
+            patch.object(provisioner, "_station_ready", return_value=True),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_deployment_environment_path",
+                side_effect=lambda name: Path(f"/{name}.env"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "WindowsRuntimeConfig.load",
+                side_effect=(_config("station"), _config("relay")),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_remote_source_identity",
+                return_value=(COMMIT, "clean", PROTO_DIGEST),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "source_proto_digest",
+                return_value=PROTO_DIGEST,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_runtime_status",
+                side_effect=(_status("station", 101), _status("relay", 202)),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_relay_runtime_security",
+                return_value={"rootAclProtected": True},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "produce_station_attestation",
+                return_value=_attestation("station", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_relay_attestation",
+                return_value=_attestation("relay", "relay"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_station_route_attestation",
+                return_value=_attestation("station-via-relay", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_available_ports",
+                return_value=(18101, 18102, 18103),
+            ),
+        ):
+            manifest = provisioner.provision(DESKTOP_RELAY_NATIVE_GATE_ID)
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(len(manifest.clients), 1)
+        client = manifest.clients[0]
+        self.assertEqual(client.id, "desktop-relay")
+        self.assertEqual(client.runtime, "native-tauri")
+        self.assertEqual(client.required_service_roles, ("station",))
+        self.assertEqual(
+            client.service_bindings["station"].service_id,
+            "station-via-relay",
+        )
+        self.assertEqual(
+            (client.gateway_port, client.renderer_port, client.webdriver_port),
+            (18101, 18102, 18103),
+        )
+        self.assertTrue(manifest.cleanup_registered)
+        self.assertEqual(manifest.cleanup_resources, ("storage",))
+        self.assertEqual(len(provisioner.cleanup()), 1)
 
     def test_runtime_status_accepts_prefixed_binary_digest(self) -> None:
         evidence = _validate_runtime_status(

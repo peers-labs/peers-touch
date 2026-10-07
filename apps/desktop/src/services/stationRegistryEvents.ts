@@ -1,8 +1,9 @@
 export const STATION_ACTIVE_CHANGED_EVENT = 'peers-touch:station-active-changed';
 
 export interface StationActiveChangedDetail {
-  url: string;
-  label?: string;
+  stationPeerId: string;
+  routeId: string;
+  displayName?: string;
 }
 
 export function dispatchStationActiveChanged(

@@ -12,6 +12,7 @@
     "station-access-relay-enrollment",
     "station-access-endpoint-discovery",
     "station-access-relay-opaque-tunnel",
+    "station-access-desktop-relay-binding",
     "station-access-interface-integrity"
   ],
   "validation_gate_id": "station-access-domain-validation"

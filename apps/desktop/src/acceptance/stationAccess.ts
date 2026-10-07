@@ -30,16 +30,32 @@ export async function configureAcceptanceStation(
   }
 
   const probed = await stationApi.stationAdd(expectedUrl);
-  const selected = await stationApi.stationSetActive(expectedUrl);
+  if (probed.entries.length !== 1) {
+    throw new Error('acceptance.stationAccess.stationSelectionRequired');
+  }
+  const discoveredEntry = probed.entries[0];
+  const discoveredRoute = discoveredEntry?.routes.find(
+    (route) => route.endpoint_origin === expectedUrl,
+  ) ?? discoveredEntry?.routes[0];
+  if (!discoveredEntry || !discoveredRoute) {
+    throw new Error('acceptance.stationAccess.stationRouteRequired');
+  }
+  const selected = await stationApi.stationSetActive(
+    discoveredEntry.station_peer_id,
+    discoveredRoute.route_id,
+  );
   const registry = await stationApi.stationList();
-  const activeUrl = normalizeStationUrl(registry.active_url);
-  const boundUrl = normalizeStationUrl(selected.binding.bound_url);
   const activeEntry = registry.entries.find(
-    (entry) => normalizeStationUrl(entry.url) === expectedUrl,
+    (entry) => entry.station_peer_id === registry.active_station_peer_id,
   );
-  const activeStationPeerId = (
-    activeEntry?.peer_id?.trim() || probed.peer_id?.trim() || null
+  const activeRoute = activeEntry?.routes.find(
+    (route) => route.route_id === activeEntry.active_route_id,
   );
+  const activeUrl = normalizeStationUrl(activeRoute?.endpoint_origin);
+  const boundUrl = selected.binding.active_route_id === activeRoute?.route_id
+    ? activeUrl
+    : null;
+  const activeStationPeerId = activeEntry?.station_peer_id.trim() || null;
   const bindingPhase = selected.binding.phase ?? null;
 
   return {
@@ -47,12 +63,12 @@ export async function configureAcceptanceStation(
       activeUrl === expectedUrl
       && boundUrl === expectedUrl
       && bindingPhase === 'access_gate'
-      && activeEntry?.online === true
+      && activeRoute?.health === 'available'
       && Boolean(activeStationPeerId),
     activeUrl,
     boundUrl,
     bindingPhase,
-    online: activeEntry?.online === true,
+    online: activeRoute?.health === 'available',
     peerIdAvailable: Boolean(activeStationPeerId),
     activeStationPeerId,
   };

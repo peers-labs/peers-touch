@@ -412,6 +412,36 @@
       "tier": "env-evidence",
       "description": "Prove the exact-source binary Relay tunnel, Station-owned inner TLS 1.3 and SPKI binding, bounded framing, protocol rejection, and opaque payload handling."
     },
+    "station-access-desktop-relay-native-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.desktop_relay_native_e2e"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Prove installed macOS Desktop discovers a Relay, binds its Station identity, exposes Via Relay, preserves scope across Direct and Relay route switches, and recovers the persisted Relay route."
+    },
+    "station-access-desktop-relay-windows-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.desktop_relay_native_e2e"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "requiredRuntimeCells": [
+        "desktop-windows-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Prove exact-source sixwin Desktop uses the same Station-keyed Relay discovery, route switching, visible Via Relay state, and persisted route recovery contract."
+    },
     "station-access-auth-e2e": {
       "argv": [
         "python3",

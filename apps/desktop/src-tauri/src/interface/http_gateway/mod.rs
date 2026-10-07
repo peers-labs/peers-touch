@@ -1388,12 +1388,12 @@ fn notification_preferences_snapshot_json(
 
 fn station_list_payload(
     entries: Vec<crate::infrastructure::station_registry::StationEntry>,
-    active_url: Option<String>,
+    active_station_peer_id: Option<String>,
     binding: crate::application::station_binding::StationBindingState,
 ) -> Value {
     json!({
         "entries": entries,
-        "active_url": active_url,
+        "active_station_peer_id": active_station_peer_id,
         "binding": binding,
     })
 }
@@ -6408,12 +6408,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
-        // Station registry (dynamic URL picker)
+        // Station registry (verified Station identity and route picker)
         // =================================================================
         "station_list" => {
             let reg = crate::infrastructure::station_client::station_registry();
             let entries = reg.list();
-            let active = reg.active_url();
+            let active = reg.active_station_peer_id();
             let payload = station_list_payload(
                 entries,
                 active,
@@ -6425,21 +6425,15 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }))
         }
         "station_set_active" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            if url.is_empty() {
-                to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "url is required",
-                    None,
-                ))
-            } else {
-                let reg = crate::infrastructure::station_client::station_registry();
-                reg.set_active(url);
-                let payload = json!({ "active_url": url });
-                to_json(AppResult::success(StubPayload {
-                    command: "station_set_active".into(),
-                    status: serde_json::to_string(&payload).unwrap_or_default(),
-                }))
+            match parse_args::<crate::interface::tauri_commands::station::StationSelectionInput>(
+                args,
+            ) {
+                Ok(input) => to_json(
+                    crate::interface::tauri_commands::station::station_set_active_with_state(
+                        input, state,
+                    ),
+                ),
+                Err(error) => error,
             }
         }
         "station_binding_complete" => to_json(
@@ -6448,77 +6442,35 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ),
         ),
         "station_add" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            if url.is_empty() {
-                to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "url is required",
-                    None,
-                ))
-            } else {
-                let (online, label, peer_id, peers_count) =
-                    crate::infrastructure::station_client::probe_station(url);
-                let now = time::OffsetDateTime::now_utc()
-                    .format(&time::format_description::well_known::Rfc3339)
-                    .unwrap_or_else(|_| "unknown".to_string());
-                let entry = crate::infrastructure::station_registry::StationEntry {
-                    url: url.trim_end_matches('/').to_string(),
-                    label: label.clone(),
-                    peer_id: peer_id.clone(),
-                    peers_count,
-                    last_probe: Some(now),
-                    online,
-                };
-                let reg = crate::infrastructure::station_client::station_registry();
-                reg.add(entry.clone());
-                to_json(AppResult::success(StubPayload {
-                    command: "station_add".into(),
-                    status: serde_json::to_string(&entry).unwrap_or_default(),
-                }))
+            match parse_args::<crate::interface::tauri_commands::station::StationDiscoveryInput>(
+                args,
+            ) {
+                Ok(input) => to_json(crate::interface::tauri_commands::station::station_add(
+                    input,
+                )),
+                Err(error) => error,
             }
         }
         "station_remove" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            if url.is_empty() {
-                to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "url is required",
-                    None,
-                ))
-            } else {
-                let reg = crate::infrastructure::station_client::station_registry();
-                reg.remove(url);
-                let payload = json!({ "removed": url });
-                to_json(AppResult::success(StubPayload {
-                    command: "station_remove".into(),
-                    status: serde_json::to_string(&payload).unwrap_or_default(),
-                }))
+            match parse_args::<crate::interface::tauri_commands::station::StationIdentityInput>(
+                args,
+            ) {
+                Ok(input) => to_json(
+                    crate::interface::tauri_commands::station::station_remove_with_state(
+                        input, state,
+                    ),
+                ),
+                Err(error) => error,
             }
         }
         "station_probe" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            if url.is_empty() {
-                to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "url is required",
-                    None,
-                ))
-            } else {
-                let (online, label, peer_id, peers_count) =
-                    crate::infrastructure::station_client::probe_station(url);
-                let reg = crate::infrastructure::station_client::station_registry();
-                reg.update_probe(url, label.clone(), peer_id.clone(), peers_count, online);
-                let payload = json!({
-                    "url": url,
-                    "online": online,
-                    "label": label,
-                    "peer_id": peer_id,
-                    "peers_count": peers_count,
-                });
-                to_json(AppResult::success(StubPayload {
-                    command: "station_probe".into(),
-                    status: serde_json::to_string(&payload).unwrap_or_default(),
-                }))
+            match parse_args::<crate::interface::tauri_commands::station::StationDiscoveryInput>(
+                args,
+            ) {
+                Ok(input) => to_json(crate::interface::tauri_commands::station::station_probe(
+                    input,
+                )),
+                Err(error) => error,
             }
         }
 
@@ -7664,13 +7616,15 @@ mod tests {
     fn station_list_exposes_binding_state_to_gateway_clients() {
         let payload = station_list_payload(
             Vec::new(),
-            Some("https://station.invalid".to_string()),
+            Some("station-peer-invalid".to_string()),
             crate::application::station_binding::StationBindingState {
                 phase: crate::application::station_binding::StationBindingPhase::Bound,
-                selected_url: Some("https://station.invalid".to_string()),
-                bound_url: Some("https://station.invalid".to_string()),
-                target_url: None,
-                generation: 3,
+                station_peer_id: Some("station-peer-invalid".to_string()),
+                active_route_id: Some("route-invalid".to_string()),
+                target_station_peer_id: None,
+                target_route_id: None,
+                route_revision: 2,
+                lifecycle_generation: 3,
                 error: None,
             },
         );

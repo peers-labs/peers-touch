@@ -354,6 +354,35 @@
       ]
     },
     {
+      "id": "station-access-desktop-relay-binding",
+      "features": [
+        "station-access-desktop-relay-binding"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/application/station_binding/**",
+          "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+          "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs",
+          "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+          "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs",
+          "apps/desktop/src/acceptance/stationAccess.ts",
+          "apps/desktop/src/acceptance/station_access/**",
+          "apps/desktop/src/components/common/StationPicker.tsx",
+          "packages/locales/en/common.json",
+          "packages/locales/zh-CN/common.json",
+          "tooling/acceptance/environments/station-access-relay-role.yaml",
+          "tooling/acceptance/features/station-access-desktop-relay-binding.yaml",
+          "tooling/acceptance/gates/station_access/desktop_relay_native_e2e.py",
+          "tooling/acceptance/provisioners/station_access_relay_role.py"
+        ]
+      },
+      "require": [
+        "station-access-desktop-relay-native-e2e",
+        "station-access-desktop-relay-windows-e2e"
+      ]
+    },
+    {
       "id": "station-access-acceptance",
       "features": [
         "station-access-wire-contract",
@@ -365,6 +394,7 @@
         "station-access-relay-enrollment",
         "station-access-endpoint-discovery",
         "station-access-relay-opaque-tunnel",
+        "station-access-desktop-relay-binding",
         "station-access-interface-contract"
       ],
       "when": {

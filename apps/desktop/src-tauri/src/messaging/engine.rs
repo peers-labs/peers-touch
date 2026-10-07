@@ -1436,18 +1436,21 @@ impl MessagingEngine {
                 let matches = station_client::station_registry()
                     .list()
                     .into_iter()
-                    .filter(|entry| {
-                        entry.peer_id.as_deref() == Some(conversation.authority_station_id.as_str())
-                    })
+                    .filter(|entry| entry.station_peer_id == conversation.authority_station_id)
                     .collect::<Vec<_>>();
                 if matches.len() != 1 {
                     return Err(
                         "messaging recovery authority Station route is unavailable".to_string()
                     );
                 }
-                let authority_url = matches[0].url.clone();
+                let authority_url = matches[0]
+                    .active_route()
+                    .map(|route| route.endpoint_origin.clone())
+                    .ok_or_else(|| {
+                        "messaging recovery authority Station route is unavailable".to_string()
+                    })?;
                 let authority_pin = station_client::station_registry()
-                    .federation_signing_key_pin(&authority_url)
+                    .federation_signing_key_pin(&conversation.authority_station_id)
                     .map_err(|error| {
                         format!("messaging recovery authority Station pin is invalid: {error}")
                     })?

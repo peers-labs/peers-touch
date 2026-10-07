@@ -18,6 +18,30 @@ pub mod model {
             pub use messaging_core::proto::common::*;
         }
     }
+
+    pub mod actor {
+        pub mod v1 {
+            include!(concat!(env!("OUT_DIR"), "/peers_touch.model.actor.v1.rs"));
+        }
+        pub use v1::*;
+    }
+
+    pub mod peer {
+        pub mod v1 {
+            include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
+        }
+        pub use v1::*;
+    }
+
+    pub mod federation {
+        pub mod v1 {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/peers_touch.model.federation.v1.rs"
+            ));
+        }
+        pub use v1::*;
+    }
 }
 
 pub(crate) use interface::contracts;
@@ -29,8 +53,12 @@ pub mod infrastructure {
     pub mod i18n;
     #[path = "station_client.rs"]
     pub(crate) mod station_client;
+    #[path = "station_discovery.rs"]
+    pub(crate) mod station_discovery;
     #[path = "station_registry.rs"]
     pub(crate) mod station_registry;
+    #[path = "station_transport.rs"]
+    pub(crate) mod station_transport;
     #[path = "storage/mod.rs"]
     pub mod storage;
 }
