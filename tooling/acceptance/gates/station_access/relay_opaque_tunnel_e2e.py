@@ -56,7 +56,14 @@ def validate_opaque_tunnel_source_contract() -> None:
             "AuthorizeClientTunnel",
             "AuthorizePeerTunnel",
             "MaxConnectionBytes",
-            "newTunnelRateLimiter",
+            "entry.rateLimiter",
+        ),
+        (
+            "apps/station/frame/core/plugin/native/subserver/relay/"
+            "stream.go"
+        ): (
+            "rateLimiter:",
+            "newTunnelRateLimiter(rateBytesPerSecond)",
         ),
         (
             "apps/station/frame/core/plugin/native/subserver/relay/relay.go"
