@@ -21,6 +21,7 @@ from tooling.acceptance.gates.mobile.proof_contracts import (
     protected_path_snapshot,
     validate_artifact_roles,
     validate_contract_payload,
+    validate_historical_lease_acquisition_payload,
     validate_redaction,
     verify_protected_paths,
     verify_version_policy,
@@ -956,6 +957,38 @@ class E20AContractTests(unittest.TestCase):
         for payload in payloads:
             with self.subTest(kind=payload["artifactKind"]):
                 validate_contract_payload(payload, expected_run_id=RUN_ID)
+
+    def test_expired_acquisition_is_history_only_after_full_validation(self) -> None:
+        payload = physical_device_lease()
+        payload.update(
+            {
+                "heartbeatAt": "2000-01-01T00:00:00Z",
+                "renewBefore": "2000-01-01T00:05:00Z",
+                "expiresAt": "2000-01-01T00:10:00Z",
+            }
+        )
+
+        with self.assertRaisesRegex(
+            ProofContractError,
+            "expiresAt must be in the future",
+        ):
+            validate_contract_payload(payload, expected_run_id=RUN_ID)
+
+        self.assertEqual(
+            validate_historical_lease_acquisition_payload(
+                payload,
+                expected_run_id=RUN_ID,
+            ),
+            payload,
+        )
+
+        malformed = copy.deepcopy(payload)
+        malformed["renewBefore"] = malformed["heartbeatAt"]
+        with self.assertRaisesRegex(ProofContractError, "timestamps must satisfy"):
+            validate_historical_lease_acquisition_payload(
+                malformed,
+                expected_run_id=RUN_ID,
+            )
 
     def test_e20a_physical_device_lease_is_opaque_physical_and_fenced(self) -> None:
         mutations = (

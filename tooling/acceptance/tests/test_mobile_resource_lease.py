@@ -47,6 +47,7 @@ from tooling.acceptance.fixtures.mobile_resource_lease import (
     RunScopedCorrelationSecret,
     contains_sensitive_lease_material,
 )
+from tooling.acceptance.gates.mobile import proof_contracts
 from tooling.acceptance.gates.mobile.proof_contracts import GATE_ID
 
 
@@ -2369,6 +2370,52 @@ class MobileResourceLeaseTests(unittest.TestCase):
         self.clock.advance(timedelta(minutes=11))
         outcomes = reconstructed.quarantine_expired()
         self.assertEqual(outcomes, ())
+
+    def test_expired_quarantine_reconstructs_for_fenced_recovery(self) -> None:
+        lease = self.broker.acquire_physical_device("alice-android")
+        self.broker.quarantine(
+            lease,
+            "LEASE_OPERATION_INCOMPLETE",
+        )
+        self.clock.advance(timedelta(minutes=11))
+
+        class AfterExpiryDateTime(datetime):
+            @classmethod
+            def now(cls, tz: timezone | None = None) -> datetime:
+                value = NOW + timedelta(minutes=11)
+                return value if tz is not None else value.replace(tzinfo=None)
+
+        reconstructed_ledger = test_resource_lease_ledger(self.ledger_root)
+        try:
+            with mock.patch.object(
+                proof_contracts,
+                "datetime",
+                AfterExpiryDateTime,
+            ):
+                reconstructed = MobileResourceLeaseBroker(
+                    run_handle=self.writer,
+                    correlation_secret=RunScopedCorrelationSecret(b"r" * 32),
+                    physical_identity_key=PHYSICAL_IDENTITY_KEY,
+                    artifact_writer_resolver=self._resolve_artifact_writer,
+                    physical_device_resolver=self._resolve_device,
+                    provider_expected_subjects=PROVIDER_SUBJECTS,
+                    ledger=reconstructed_ledger,
+                    now=self.clock,
+                )
+            reconstructed.recover_quarantined(
+                lease["resourceKey"],
+                restore_and_reverify=lambda _, __: BaselineRestoreResult(
+                    True,
+                    True,
+                    True,
+                ),
+            )
+            self.assertNotIn(
+                lease["resourceKey"],
+                reconstructed.ledger.records,
+            )
+        finally:
+            reconstructed_ledger.close()
 
     def test_two_linked_worktrees_share_one_physical_authority(self) -> None:
         repository = self.temp_root / "authority-repository"
