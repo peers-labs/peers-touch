@@ -2891,6 +2891,46 @@ class MobileResourceLeaseTests(unittest.TestCase):
             "LEASE_OPERATION_INCOMPLETE",
         )
 
+    def test_release_callback_reverifies_physical_without_nested_operation(
+        self,
+    ) -> None:
+        lease = self.broker.acquire_physical_device("alice-android")
+        observed_intents: list[tuple[str, int]] = []
+
+        def restore() -> BaselineRestoreResult:
+            with self.ledger.lock:
+                record = self.ledger.records[lease["resourceKey"]]
+                observed_intents.append(
+                    (
+                        str(record.operation_intent["operationKind"]),
+                        record.operation_active,
+                    )
+                )
+            verified = self.broker.physical_device_baseline_matches(lease)
+            with self.ledger.lock:
+                record = self.ledger.records[lease["resourceKey"]]
+                observed_intents.append(
+                    (
+                        str(record.operation_intent["operationKind"]),
+                        record.operation_active,
+                    )
+                )
+            return BaselineRestoreResult(True, True, verified)
+
+        outcome = self.broker.release(lease, restore=restore)
+
+        self.assertEqual(outcome["finalState"], "RELEASED")
+        self.assertEqual(outcome["failureCode"], "")
+        self.assertEqual(
+            observed_intents,
+            [
+                ("baseline-restore-callback", 1),
+                ("baseline-restore-callback", 1),
+            ],
+        )
+        with self.ledger.lock:
+            self.assertNotIn(lease["resourceKey"], self.ledger.records)
+
     def test_provider_callback_failure_quarantines_without_replay(self) -> None:
         lease = self.broker.acquire_provider_account("github")
         self.broker.provider_identity_assertion(

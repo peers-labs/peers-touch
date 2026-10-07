@@ -3,8 +3,8 @@
   "finalizerRegistry": {
     "path": "tooling/acceptance/gates/mobile/finalizer-registry.json",
     "protectedBaseline": "tooling/acceptance/gates/mobile/finalizer-baseline.json",
-    "protectedBaselineDigest": "0639ab1fbcc167c72aa8f8acdb61ecbc058849b89f8b8469ecde7d5ec516b80a",
-    "protectedBaselineFileSha256": "518643e3df3680cfb4d5259daebd231269bde0608f7c907bb6f246834f205908"
+    "protectedBaselineDigest": "481fb130975c2f3bdad365cf07eadb0c6e6bf4e588ccd0dd9920d54bbc7bd3bf",
+    "protectedBaselineFileSha256": "2b1558e05692acb2246252bac0c699d9defb32e74ac133b28650d8d949692f33"
   },
   "requiredEvidenceFinalizers": {
     "mobile-native-access-e2e": "mobile.native.oauth-cleanup-evidence"
