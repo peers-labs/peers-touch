@@ -585,10 +585,16 @@ records remain diagnostics.
 
 After required proof:
 
-1. Run completion and quality review for the named scope.
-2. Use `pt-github-commit`, `pt-github-pr`, and `pt-github-review`.
-3. Stop/release owned runtime resources through their physical owner.
-4. Run the single close coordinator:
+1. For tracked work, publish the immutable repository completion attestation:
+
+```bash
+make plan-seal-completion PLAN=<package-plan.md>
+```
+
+2. Run completion and quality review for the named scope.
+3. Use `pt-github-commit`, `pt-github-pr`, and `pt-github-review`.
+4. Stop/release owned runtime resources through their physical owner.
+5. Run the single close coordinator:
 
 ```bash
 make dev-close \
@@ -608,9 +614,9 @@ make dev-close \
    `make dev-release`, `make active-work-close`, Session archive, Plan unmount,
    and environment unregister remain low-level owner/recovery commands; normal
    closure never treats one of them as complete.
-5. Run `pt-completion-auditor` with `claimClass=close-ready`; it must consume
+6. Run `pt-completion-auditor` with `claimClass=close-ready`; it must consume
    that exact `CLOSED` receipt and resource matrix.
-6. For tracked work, emit the final read-only Context Anchor before close when
+7. For tracked work, emit the final read-only Context Anchor before close when
    the host contract requires it. Standalone work creates no Anchor.
 
 A checkpoint commit is source identity, not delivery approval. Push, PR,
