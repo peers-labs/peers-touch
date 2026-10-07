@@ -472,6 +472,27 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             identity.device_id,
         )
 
+    def test_desktop_replacement_reuses_only_actor_identity_storage(self) -> None:
+        runtime = object.__new__(MixedNativeRuntime)
+        runtime.desktop_binding = MagicMock()
+        runtime.client_specs = {
+            "desktop-bob": {"id": "desktop-bob"},
+            "desktop-bob-peer": {"id": "desktop-bob-peer"},
+        }
+
+        runtime.prepare_desktop_actor_identity(
+            "desktop-bob",
+            "desktop-bob-peer",
+        )
+
+        runtime.desktop_binding.clone_actor_storage.assert_called_once_with(
+            "desktop-bob",
+            runtime.client_specs["desktop-bob"],
+            "desktop-bob-peer",
+            runtime.client_specs["desktop-bob-peer"],
+            "peers-touch/desktop/data/secure-store/identity-keys",
+        )
+
     def test_mobile_start_waits_for_messaging_endpoint_activation(self) -> None:
         runtime = object.__new__(MixedNativeRuntime)
         runtime.gate_id = "chat-mixed-native-lifecycle-e2e"
