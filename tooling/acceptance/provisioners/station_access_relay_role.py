@@ -466,7 +466,7 @@ def _persist_relay_attestation(
 def _persist_station_route_attestation(
     *,
     environment_id: str,
-    relay_url: str,
+    route_endpoint: str,
     station_attestation: ServiceAttestation,
     relay_attestation: ServiceAttestation,
 ) -> ServiceAttestation:
@@ -475,7 +475,7 @@ def _persist_station_route_attestation(
         service_kind="station",
         environment_id=environment_id,
         deployment_environment=station_attestation.deployment_environment,
-        endpoint=relay_url,
+        endpoint=route_endpoint,
         live_commit=station_attestation.live_commit,
         workspace_digest=station_attestation.workspace_digest,
         protocol_digest=station_attestation.protocol_digest,
@@ -530,6 +530,23 @@ def config_host(endpoint: str) -> str:
             resource="profile:PT_RELAY_URL",
         )
     return host
+
+
+def _relay_route_endpoint(
+    relay_url: str,
+    relay_runtime: Mapping[str, Any],
+) -> str:
+    stream_port = relay_runtime.get("streamPort")
+    if (
+        isinstance(stream_port, bool)
+        or not isinstance(stream_port, int)
+        or stream_port <= 0
+    ):
+        raise BlockedError(
+            reason="Relay runtime has no valid stream port",
+            resource="relay-stream-endpoint",
+        )
+    return f"https://{config_host(relay_url)}:{stream_port}"
 
 
 class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
@@ -781,7 +798,10 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
             )
             station_route_attestation = _persist_station_route_attestation(
                 environment_id=self.environment_id,
-                relay_url=relay_url,
+                route_endpoint=_relay_route_endpoint(
+                    relay_url,
+                    relay_runtime,
+                ),
                 station_attestation=station_attestation,
                 relay_attestation=relay_attestation,
             )

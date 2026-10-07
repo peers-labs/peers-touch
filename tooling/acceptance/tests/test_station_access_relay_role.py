@@ -20,6 +20,7 @@ from tooling.acceptance.provisioners import (
 )
 from tooling.acceptance.provisioners.station_access_relay_role import (
     DESKTOP_RELAY_NATIVE_GATE_ID,
+    _relay_route_endpoint,
     _relay_runtime_security,
     _validate_runtime_status,
 )
@@ -331,6 +332,25 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 status,
                 config=_config("relay"),
                 source_commit=COMMIT,
+            )
+
+    def test_relay_route_endpoint_uses_tls_stream_not_control_http(self) -> None:
+        self.assertEqual(
+            _relay_route_endpoint(
+                "http://relay.example:18081",
+                {"streamPort": 4501},
+            ),
+            "https://relay.example:4501",
+        )
+
+    def test_relay_route_endpoint_rejects_missing_stream_port(self) -> None:
+        with self.assertRaisesRegex(
+            BlockedError,
+            "no valid stream port",
+        ):
+            _relay_route_endpoint(
+                "http://relay.example:18081",
+                {"streamPort": None},
             )
 
     def test_secret_audit_requires_restricted_acl_and_live_binary(self) -> None:
