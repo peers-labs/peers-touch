@@ -188,6 +188,23 @@ class ProfileLeaseTests(unittest.TestCase):
 
 
 class RemoteGitSourceLeaseTests(unittest.TestCase):
+    def test_remote_lease_decodes_non_utf8_diagnostics_lossily(self) -> None:
+        lease = RemoteGitSourceLease(
+            "sixwin-relay",
+            "gate-owner",
+            host="windows.example",
+            user="acceptance",
+            deploy_path="relay",
+        )
+        with patch(
+            "tooling.acceptance.core.lease.subprocess.Popen",
+            side_effect=OSError("unavailable"),
+        ) as popen, self.assertRaises(RemoteGitSourceLeaseUnavailable):
+            lease.acquire()
+
+        self.assertEqual(popen.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(popen.call_args.kwargs["errors"], "replace")
+
     def test_deployment_environment_resolver_uses_reviewed_authority(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

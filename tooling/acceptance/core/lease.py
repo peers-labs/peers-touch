@@ -487,6 +487,8 @@ class RemoteGitSourceLease:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
                 start_new_session=True,
             )
@@ -593,6 +595,8 @@ class RemoteGitSourceLease:
                 ],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=15,
                 check=False,
             )
