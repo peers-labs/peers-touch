@@ -600,6 +600,72 @@ class ParentAppiumTransportTests(unittest.TestCase):
 
         self.assertIsInstance(observed.exception, DriverError)
 
+    def test_active_application_id_reads_android_package(self) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.platform = "android"
+        session.session_id = "session-id"
+        cancellation = threading.Event()
+        requests: list[tuple[str, str, object, object]] = []
+
+        def request(
+            method: str,
+            path: str,
+            _payload: Mapping[str, Any] | None = None,
+            *,
+            deadline_monotonic: float | None = None,
+            cancellation: threading.Event | None = None,
+        ) -> str:
+            requests.append(
+                (method, path, deadline_monotonic, cancellation)
+            )
+            return "  com.peers.touch.mobile  "
+
+        session._request = request
+
+        observed = session._active_application_id(
+            deadline_monotonic=123.0,
+            cancellation=cancellation,
+        )
+
+        self.assertEqual(observed, "com.peers.touch.mobile")
+        self.assertEqual(
+            requests,
+            [
+                (
+                    "GET",
+                    "/session/session-id/appium/device/current_package",
+                    123.0,
+                    cancellation,
+                )
+            ],
+        )
+
+    def test_active_application_id_reads_ios_bundle(self) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.platform = "ios"
+        scripts: list[str] = []
+        session.execute_script = lambda script, **_kwargs: (
+            scripts.append(script)
+            or {"bundleId": "com.peers.touch.mobile"}
+        )
+
+        observed = session._active_application_id()
+
+        self.assertEqual(observed, "com.peers.touch.mobile")
+        self.assertEqual(scripts, ["mobile: activeAppInfo"])
+
+    def test_active_application_id_rejects_empty_android_package(self) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.platform = "android"
+        session.session_id = "session-id"
+        session._request = lambda *_args, **_kwargs: " "
+
+        with self.assertRaisesRegex(
+            DriverError,
+            "Appium active application is unavailable",
+        ):
+            session._active_application_id()
+
     def test_build_identity_uses_webview_then_restores_native_context(
         self,
     ) -> None:
