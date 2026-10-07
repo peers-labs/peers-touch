@@ -8,6 +8,7 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from tooling.acceptance.core import (
     AcceptanceGate,
@@ -54,6 +55,17 @@ def _mapping(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise GateError(f"{label} must be an object")
     return dict(value)
+
+
+def is_relay_transport(locator: str, transport: object) -> bool:
+    locator_url = urlsplit(locator)
+    transport_url = urlsplit(str(transport or ""))
+    return (
+        transport_url.scheme == "https"
+        and bool(transport_url.hostname)
+        and transport_url.hostname == locator_url.hostname
+        and transport_url.port is not None
+    )
 
 
 def station_registry_snapshot(session: TauriSession) -> dict[str, Any]:
@@ -255,10 +267,10 @@ class DesktopRelayNativeGate(AcceptanceGate):
                 "relay_route_is_active",
                 relay_initial["stationPeerId"] == station_peer_id
                 and relay_initial["route"].get("route_type") == "relay"
-                and str(
-                    relay_initial["route"].get("endpoint_origin") or ""
-                ).rstrip("/")
-                == relay_endpoint
+                and is_relay_transport(
+                    relay_endpoint,
+                    relay_initial["route"].get("endpoint_origin"),
+                )
                 and relay_initial["route"].get("health") == "available",
                 json.dumps(relay_initial, sort_keys=True),
             )

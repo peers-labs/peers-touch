@@ -10,11 +10,26 @@ from tooling.acceptance.gates.station_access.desktop_relay_native_e2e import (
     MACOS_GATE_ID,
     WINDOWS_GATE_ID,
     expected_runtime_cell,
+    is_relay_transport,
     station_registry_snapshot,
 )
 
 
 class DesktopRelayNativeGateTest(unittest.TestCase):
+    def test_relay_transport_is_distinct_from_discovery_locator(self) -> None:
+        self.assertTrue(
+            is_relay_transport(
+                "http://10.36.3.187:18081",
+                "https://10.36.3.187:4501",
+            )
+        )
+        self.assertFalse(
+            is_relay_transport(
+                "http://10.36.3.187:18081",
+                "http://10.36.3.187:18081",
+            )
+        )
+
     def test_gate_variants_are_closed_over_platform_runtime_cells(self) -> None:
         self.assertEqual(
             expected_runtime_cell(MACOS_GATE_ID),
