@@ -589,6 +589,78 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
             timeout_seconds=STEP_TIMEOUT,
             description=f"{receiver_id} receiver projection before UI capture",
         )
+        self._navigate_mobile_receiver(receiver_id, conversation_id)
+
+        dom_ref = None
+        recovery_attempted = False
+        for attempt in range(1, 9):
+            candidate = self.runtime.mobile_binding.capture_web_dom(
+                receiver_id,
+                f"{evidence_key}-{attempt}",
+            )
+            dom_text = self.evidence_store.resolve(candidate).read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+            if text in dom_text:
+                dom_ref = candidate
+                break
+            if 'data-acceptance-id="mobile-route-unavailable"' in dom_text:
+                lifecycle = self.runtime.call_action(
+                    receiver_id,
+                    "recovery.snapshot",
+                    {},
+                )
+                if (
+                    not recovery_attempted
+                    and 'data-runtime-status="failed"' in dom_text
+                    and self._is_deferred_capability_only(lifecycle)
+                ):
+                    self.runtime.restart_client(
+                        receiver_id,
+                        timeout_seconds=STEP_TIMEOUT,
+                    )
+                    self.runtime.wait_for_message(
+                        receiver_id,
+                        conversation_id,
+                        message_id,
+                        lambda value: value.get("plaintext") == text,
+                        kind="direct",
+                        timeout_seconds=STEP_TIMEOUT,
+                        description=(
+                            f"{receiver_id} receiver projection after "
+                            "runtime recovery"
+                        ),
+                    )
+                    self._navigate_mobile_receiver(
+                        receiver_id,
+                        conversation_id,
+                    )
+                    recovery_attempted = True
+                    continue
+                raise GateError(
+                    f"{receiver_id} Mobile receiver route is unavailable: "
+                    f"{compact_json(lifecycle)}"
+                )
+            time.sleep(0.5)
+        if dom_ref is None:
+            raise GateError(
+                f"{receiver_id} Mobile receiver text is not visible"
+            )
+        screenshot_ref = self.runtime.mobile_binding.capture_screenshot(
+            receiver_id,
+            evidence_key,
+        )
+        return self._artifact_set_resource(
+            f"{evidence_key}-mobile-receiver",
+            (dom_ref.to_dict(), screenshot_ref.to_dict()),
+        )
+
+    def _navigate_mobile_receiver(
+        self,
+        receiver_id: str,
+        conversation_id: str,
+    ) -> None:
         self.runtime.call_action(
             receiver_id,
             "navigation.apply",
@@ -628,41 +700,20 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
             timeout_seconds=STEP_TIMEOUT,
         )
 
-        dom_ref = None
-        for attempt in range(1, 9):
-            candidate = self.runtime.mobile_binding.capture_web_dom(
-                receiver_id,
-                f"{evidence_key}-{attempt}",
-            )
-            dom_text = self.evidence_store.resolve(candidate).read_text(
-                encoding="utf-8",
-                errors="replace",
-            )
-            if text in dom_text:
-                dom_ref = candidate
-                break
-            if 'data-acceptance-id="mobile-route-unavailable"' in dom_text:
-                lifecycle = self.runtime.call_action(
-                    receiver_id,
-                    "recovery.snapshot",
-                    {},
-                )
-                raise GateError(
-                    f"{receiver_id} Mobile receiver route is unavailable: "
-                    f"{compact_json(lifecycle)}"
-                )
-            time.sleep(0.5)
-        if dom_ref is None:
-            raise GateError(
-                f"{receiver_id} Mobile receiver text is not visible"
-            )
-        screenshot_ref = self.runtime.mobile_binding.capture_screenshot(
-            receiver_id,
-            evidence_key,
-        )
-        return self._artifact_set_resource(
-            f"{evidence_key}-mobile-receiver",
-            (dom_ref.to_dict(), screenshot_ref.to_dict()),
+    @staticmethod
+    def _is_deferred_capability_only(value: object) -> bool:
+        if not isinstance(value, Mapping):
+            return False
+        admission = value.get("writeAdmission")
+        states = value.get("states")
+        return (
+            value.get("isWriteBlocked") is False
+            and isinstance(admission, Mapping)
+            and admission.get("open") is True
+            and isinstance(states, list)
+            and len(states) == 1
+            and isinstance(states[0], Mapping)
+            and states[0].get("kind") == "deferred-capability"
         )
 
     def _open_desktop_conversation(
