@@ -158,6 +158,51 @@ test('publishes a closed declaration with owner-only storage', () => {
   }
 });
 
+test('coordinates with a foreign legacy declaration without mutating it', () => {
+  const scope = fixture();
+  try {
+    const foreign = startOrUpdateDeclaration(
+      options(scope, {
+        workspaceRoot: scope.workspaceB,
+        workItemId: 'foreign-work',
+        sessionId: 'foreign-session',
+        branch: 'foreign-branch',
+        sourceClaims: 'exclusive-write:apps/mobile',
+        runtimeClaims: 'exclusive:profile:foreign-profile',
+      }),
+    );
+    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
+    const seeded = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+    const legacy = seeded.declarations[foreign.declarationId];
+    legacy.planVersionDigest = legacy.planDigest;
+    delete legacy.planDigest;
+    legacy.declarationDigest = digestDeclaration(legacy);
+    writeFileSync(ledgerFile, `${JSON.stringify(seeded, null, 2)}\n`);
+
+    const current = startOrUpdateDeclaration(options(scope));
+    const persisted = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+
+    assert.equal(current.workspaceId === foreign.workspaceId, false);
+    assert.deepEqual(persisted.declarations[foreign.declarationId], legacy);
+    assert.equal(
+      Object.hasOwn(
+        persisted.declarations[current.declarationId],
+        'planVersionDigest',
+      ),
+      false,
+    );
+    assert.equal(
+      Object.hasOwn(
+        persisted.declarations[current.declarationId],
+        'planDigest',
+      ),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('persists the verified main-session owner on a declaration', () => {
   const scope = fixture();
   try {

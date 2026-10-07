@@ -58,13 +58,17 @@ const RUN_STATES = new Set([
 const TASK_STATES = new Set(['pending', 'in_progress', 'blocked', 'done']);
 const LOCK_TIMEOUT_MS = 5_000;
 
-const LEDGER_KEYS = new Set([
+const STABLE_LEDGER_KEYS = new Set([
   'kind',
   'revision',
   'liveMountsByWorkspace',
   'liveMountsByPlan',
   'runsByMount',
   'recordDigest',
+]);
+const MIXED_LEDGER_KEYS = new Set([
+  ...STABLE_LEDGER_KEYS,
+  'liveMountsByPlanVersion',
 ]);
 const MOUNT_KEYS = new Set([
   'kind',
@@ -80,6 +84,11 @@ const MOUNT_KEYS = new Set([
   'releasedAt',
   'releaseReason',
   'recordDigest',
+]);
+const LEGACY_MOUNT_KEYS = new Set([
+  ...MOUNT_KEYS,
+  'planVersionId',
+  'planVersionDigest',
 ]);
 const SNAPSHOT_KEYS = new Set([
   'kind',
@@ -381,14 +390,21 @@ function validateStringMap(value, field, valuePattern = IDENTIFIER) {
 }
 
 export function validatePlanMountLedger(value) {
-  if (isObject(value) && Object.hasOwn(value, 'liveMountsByPlanVersion')) {
+  const hasLegacyIndex =
+    isObject(value) && Object.hasOwn(value, 'liveMountsByPlanVersion');
+  const hasStableIndex =
+    isObject(value) && Object.hasOwn(value, 'liveMountsByPlan');
+  if (hasLegacyIndex && !hasStableIndex) {
     fail(
       'PLAN_STATE_MIGRATION_REQUIRED',
-      'Plan mount ledger uses the retired version-indexed schema; close live work and run plan-state-migrate',
+      'Plan mount ledger has not adopted the workspace-scoped stable Plan envelope; run plan-state-migrate from this workspace',
     );
   }
   if (
-    !exactKeys(value, LEDGER_KEYS) ||
+    !exactKeys(
+      value,
+      hasLegacyIndex ? MIXED_LEDGER_KEYS : STABLE_LEDGER_KEYS,
+    ) ||
     value.kind !== PLAN_MOUNT_LEDGER_KIND ||
     !Number.isInteger(value.revision) ||
     value.revision < 0 ||
@@ -424,25 +440,50 @@ export function validatePlanMountLedger(value) {
       );
     }
   }
+  if (hasLegacyIndex) {
+    validateStringMap(
+      value.liveMountsByPlanVersion,
+      'liveMountsByPlanVersion',
+      IDENTIFIER,
+    );
+    for (const digest of Object.keys(value.liveMountsByPlanVersion)) {
+      if (!SHA256.test(digest)) {
+        fail(
+          'PLAN_MOUNT_LEDGER_INVALID',
+          'legacy live Plan index contains an invalid digest',
+        );
+      }
+    }
+  }
   validateStringMap(value.runsByMount, 'runsByMount', IDENTIFIER);
+  const workspaceMountIds = Object.values(value.liveMountsByWorkspace);
+  const stableMountIds = Object.values(value.liveMountsByPlan);
+  const legacyMountIds = Object.values(
+    value.liveMountsByPlanVersion ?? {},
+  );
+  const uniqueWorkspaceMountIds = new Set(workspaceMountIds);
+  const uniqueStableMountIds = new Set(stableMountIds);
+  const uniqueLegacyMountIds = new Set(legacyMountIds);
+  if (
+    uniqueWorkspaceMountIds.size !== workspaceMountIds.length ||
+    uniqueStableMountIds.size !== stableMountIds.length ||
+    uniqueLegacyMountIds.size !== legacyMountIds.length ||
+    stableMountIds.some((mountId) => uniqueLegacyMountIds.has(mountId)) ||
+    [...workspaceMountIds].sort().join('\0') !==
+      [...stableMountIds, ...legacyMountIds].sort().join('\0') ||
+    workspaceMountIds.some(
+      (mountId) => !Object.hasOwn(value.runsByMount, mountId),
+    )
+  ) {
+    fail(
+      'PLAN_MOUNT_LEDGER_INVALID',
+      'Plan mount ledger indexes are inconsistent',
+    );
+  }
   return value;
 }
 
-function validateMount(record) {
-  if (
-    !exactKeys(record, MOUNT_KEYS) ||
-    record.kind !== PLAN_MOUNT_KIND ||
-    !IDENTIFIER.test(record.mountId ?? '') ||
-    !IDENTIFIER.test(record.projectId ?? '') ||
-    !IDENTIFIER.test(record.planId ?? '') ||
-    !WORKSPACE_ID.test(record.workspaceId ?? '') ||
-    !path.isAbsolute(record.canonicalRoot ?? '') ||
-    !MOUNT_STATES.has(record.state) ||
-    !SHA256.test(record.recordDigest ?? '') ||
-    digestRecord(record) !== record.recordDigest
-  ) {
-    fail('PLAN_MOUNT_INVALID', 'Plan mount record is invalid');
-  }
+function validateMountLifecycle(record) {
   validateRepositoryPath(record.planPath, 'PlanMount.planPath');
   canonicalTimestamp(record.mountedAt, 'PlanMount.mountedAt');
   requiredText(record.mountedBy, 'PlanMount.mountedBy');
@@ -460,6 +501,24 @@ function validateMount(record) {
     }
   }
   return record;
+}
+
+function validateMount(record) {
+  if (
+    !exactKeys(record, MOUNT_KEYS) ||
+    record.kind !== PLAN_MOUNT_KIND ||
+    !IDENTIFIER.test(record.mountId ?? '') ||
+    !IDENTIFIER.test(record.projectId ?? '') ||
+    !IDENTIFIER.test(record.planId ?? '') ||
+    !WORKSPACE_ID.test(record.workspaceId ?? '') ||
+    !path.isAbsolute(record.canonicalRoot ?? '') ||
+    !MOUNT_STATES.has(record.state) ||
+    !SHA256.test(record.recordDigest ?? '') ||
+    digestRecord(record) !== record.recordDigest
+  ) {
+    fail('PLAN_MOUNT_INVALID', 'Plan mount record is invalid');
+  }
+  return validateMountLifecycle(record);
 }
 
 function validateSnapshot(snapshot) {
@@ -939,6 +998,95 @@ function readMount(mountId, options) {
   );
 }
 
+function validateLegacyMount(record) {
+  if (
+    !exactKeys(record, LEGACY_MOUNT_KEYS) ||
+    record.kind !== PLAN_MOUNT_KIND ||
+    !IDENTIFIER.test(record.mountId ?? '') ||
+    !IDENTIFIER.test(record.projectId ?? '') ||
+    !IDENTIFIER.test(record.planId ?? '') ||
+    !IDENTIFIER.test(record.planVersionId ?? '') ||
+    !SHA256.test(record.planVersionDigest ?? '') ||
+    !WORKSPACE_ID.test(record.workspaceId ?? '') ||
+    !path.isAbsolute(record.canonicalRoot ?? '') ||
+    !MOUNT_STATES.has(record.state) ||
+    !SHA256.test(record.recordDigest ?? '') ||
+    digestRecord(record) !== record.recordDigest
+  ) {
+    fail('PLAN_MOUNT_INVALID', 'legacy Plan mount record is invalid');
+  }
+  return validateMountLifecycle(record);
+}
+
+function validateLegacyRunForClose(run, mount) {
+  if (
+    !exactKeys(run, RUN_KEYS) ||
+    run.kind !== EXECUTION_RUN_KIND ||
+    !IDENTIFIER.test(run.runId ?? '') ||
+    !IDENTIFIER.test(run.snapshotId ?? '') ||
+    !SHA256.test(run.snapshotDigest ?? '') ||
+    run.mountId !== mount.mountId ||
+    !RUN_STATES.has(run.state) ||
+    !isObject(run.taskStates) ||
+    !Number.isInteger(run.revision) ||
+    run.revision < 1 ||
+    !SHA256.test(run.recordDigest ?? '') ||
+    digestRecord(run) !== run.recordDigest
+  ) {
+    fail(
+      'EXECUTION_RUN_INVALID',
+      'legacy Execution Run is invalid for close',
+    );
+  }
+  canonicalTimestamp(run.updatedAt, 'ExecutionRun.updatedAt');
+  if (
+    ['completed', 'cancelled'].includes(run.state) &&
+    run.currentTaskId !== null
+  ) {
+    fail(
+      'EXECUTION_RUN_INVALID',
+      'terminal legacy Execution Run still has a current Task',
+    );
+  }
+  return run;
+}
+
+function readMountForClose(mountId, options) {
+  return parseJsonFile(
+    planMountRecordPath(mountId, options),
+    'PLAN_MOUNT_INVALID',
+    'Plan mount record cannot be read',
+    (record) =>
+      Object.hasOwn(record ?? {}, 'planVersionDigest')
+        ? validateLegacyMount(record)
+        : validateMount(record),
+  );
+}
+
+function legacyPlanMountId(ledger, projectId, planId, options) {
+  let matching = null;
+  for (const mountId of new Set(
+    Object.values(ledger.liveMountsByPlanVersion ?? {}),
+  )) {
+    const mount = parseJsonFile(
+      planMountRecordPath(mountId, options),
+      'PLAN_MOUNT_INVALID',
+      'legacy Plan mount record cannot be read',
+      validateLegacyMount,
+    ).value;
+    if (mount.projectId !== projectId || mount.planId !== planId) continue;
+    if (matching !== null && matching !== mountId) {
+      fail(
+        'PLAN_MOUNT_LEDGER_INVALID',
+        'multiple legacy mounts claim the same stable Plan identity',
+        { projectId, planId, mountIds: [matching, mountId] },
+      );
+    }
+    matching = mountId;
+  }
+  return matching;
+}
+
 export function readLivePlanMountId(workspaceId, options = {}) {
   requiredText(workspaceId, 'workspaceId', WORKSPACE_ID);
   return readLedger(options).value.liveMountsByWorkspace[workspaceId] ?? null;
@@ -961,7 +1109,9 @@ export function resolvePlanMountByIdentity(options = {}) {
       workspaceId,
     });
   }
-  const mount = readMount(mountId, options).value;
+  const mountRecord = readMountForClose(mountId, options);
+  const mount = mountRecord.value;
+  const legacy = Object.hasOwn(mount, 'planVersionDigest');
   if (mount.workspaceId !== workspaceId) {
     fail(
       'PLAN_MOUNT_IDENTITY_MISMATCH',
@@ -996,6 +1146,52 @@ export function resolvePlanMountByIdentity(options = {}) {
     workspaceId,
     canonicalRoot: mount.canonicalRoot,
   };
+  if (legacy) {
+    if (options.allowLegacyClose !== true) {
+      fail(
+        'PLAN_STATE_MIGRATION_REQUIRED',
+        'legacy Plan execution is close-only under the stable Plan contract',
+        { workspaceId, mountId },
+      );
+    }
+    const legacyIndexMatches = Object.entries(
+      ledger.liveMountsByPlanVersion ?? {},
+    ).filter(([, indexedId]) => indexedId === mountId);
+    if (
+      mount.state === 'mounted' &&
+      (
+        legacyIndexMatches.length !== 1 ||
+        legacyIndexMatches[0][0] !== mount.planVersionDigest
+      )
+    ) {
+      fail(
+        'PLAN_MOUNT_IDENTITY_MISMATCH',
+        'legacy Plan mount index does not match its record',
+        { workspaceId, mountId },
+      );
+    }
+    const paths = executionRunPaths(runId, {
+      home: options.home,
+      repoRoot: mount.canonicalRoot,
+      workspaceId,
+    });
+    const run = parseJsonFile(
+      paths.run,
+      'EXECUTION_RUN_INVALID',
+      'legacy Execution Run cannot be read',
+      (value) => validateLegacyRunForClose(value, mount),
+    );
+    return {
+      workspace,
+      ledger,
+      mount,
+      snapshot: null,
+      run: run.value,
+      runRaw: run.raw,
+      paths,
+      legacyCloseOnly: true,
+    };
+  }
   const { paths, snapshot, run } = readSnapshotAndRun(
     runId,
     workspace,
@@ -1851,10 +2047,17 @@ export async function mountPlan(options = {}) {
       const currentLedger = readLedger(options);
       const workspaceMountId =
         currentLedger.value.liveMountsByWorkspace[workspace.workspaceId];
-      const planMountId =
+      const stablePlanMountId =
         currentLedger.value.liveMountsByPlan[
           planIndexKey(projectId, planPackage.plan.planId)
         ];
+      const legacyPlanMountIdValue = legacyPlanMountId(
+        currentLedger.value,
+        projectId,
+        planPackage.plan.planId,
+        options,
+      );
+      const planMountId = stablePlanMountId ?? legacyPlanMountIdValue;
       if (workspaceMountId) {
         const existingExecution = resolvePlanMountByIdentity({
           ...options,
@@ -2069,6 +2272,107 @@ export async function cancelExecutionRun(options = {}) {
   });
 }
 
+async function releaseLegacyPlanMountUnderLock({
+  resolved,
+  workspace,
+  owner,
+  reason,
+  now,
+  options,
+}) {
+  if (
+    reason !== 'owner-unmount' ||
+    options.allowUnfinished !== true
+  ) {
+    fail(
+      'PLAN_MOUNT_RELEASE_DENIED',
+      'legacy Plan mount close requires explicit owner-unmount authorization',
+    );
+  }
+
+  let released = resolved.mount;
+  if (released.state === 'released') {
+    if (released.releaseReason !== reason) {
+      fail(
+        'PLAN_MOUNT_RELEASE_CONFLICT',
+        'Plan mount was already released for a different reason',
+        {
+          expected: released.releaseReason,
+          actual: reason,
+        },
+      );
+    }
+  } else {
+    released = {
+      ...released,
+      state: 'released',
+      releasedAt: now.toISOString(),
+      releaseReason: reason,
+      mountedBy: owner,
+    };
+    released.recordDigest = digestPlanMountRecord(released);
+    validateLegacyMount(released);
+    const mountFile = planMountRecordPath(released.mountId, options);
+    await writeJsonAtomic(mountFile, released, fs.readFileSync(mountFile));
+  }
+
+  const currentLedger = readLedger(options);
+  const workspaceMountId =
+    currentLedger.value.liveMountsByWorkspace[workspace.workspaceId] ?? null;
+  const legacyPlanMountId =
+    currentLedger.value.liveMountsByPlanVersion?.[
+      released.planVersionDigest
+    ] ?? null;
+  if (
+    (workspaceMountId !== null && workspaceMountId !== released.mountId) ||
+    (legacyPlanMountId !== null && legacyPlanMountId !== released.mountId)
+  ) {
+    fail(
+      'PLAN_MOUNT_IDENTITY_MISMATCH',
+      'legacy Plan mount indexes changed before release',
+    );
+  }
+  if (workspaceMountId === null && legacyPlanMountId === null) {
+    return {
+      mount: released,
+      run: resolved.run,
+      ledger: currentLedger.value,
+    };
+  }
+  if (
+    workspaceMountId !== released.mountId ||
+    legacyPlanMountId !== released.mountId
+  ) {
+    fail(
+      'PLAN_MOUNT_IDENTITY_MISMATCH',
+      'legacy Plan mount indexes are incomplete before release',
+    );
+  }
+
+  const liveMountsByWorkspace = {
+    ...currentLedger.value.liveMountsByWorkspace,
+  };
+  const liveMountsByPlanVersion = {
+    ...currentLedger.value.liveMountsByPlanVersion,
+  };
+  delete liveMountsByWorkspace[workspace.workspaceId];
+  delete liveMountsByPlanVersion[released.planVersionDigest];
+  const ledger = {
+    ...currentLedger.value,
+    revision: currentLedger.value.revision + 1,
+    liveMountsByWorkspace,
+  };
+  if (Object.keys(liveMountsByPlanVersion).length === 0) {
+    delete ledger.liveMountsByPlanVersion;
+  } else {
+    ledger.liveMountsByPlanVersion = liveMountsByPlanVersion;
+  }
+  ledger.recordDigest = digestRecord(ledger);
+  validatePlanMountLedger(ledger);
+  await writeJsonAtomic(currentLedger.file, ledger, currentLedger.raw);
+  return { mount: released, run: resolved.run, ledger };
+}
+
 export async function releasePlanMount(options = {}) {
   const workspace =
     options.workspaceId === undefined
@@ -2092,6 +2396,7 @@ export async function releasePlanMount(options = {}) {
         ...options,
         workspaceId: workspace.workspaceId,
         allowReleased: true,
+        allowLegacyClose: true,
       });
       if (
         options.mountId !== undefined &&
@@ -2115,6 +2420,16 @@ export async function releasePlanMount(options = {}) {
             actual: owner,
           },
         );
+      }
+      if (resolved.legacyCloseOnly === true) {
+        return releaseLegacyPlanMountUnderLock({
+          resolved,
+          workspace,
+          owner,
+          reason,
+          now,
+          options,
+        });
       }
       if (resolved.mount.state === 'released') {
         if (resolved.mount.releaseReason !== reason) {
