@@ -7008,8 +7008,9 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         clients: Sequence[EnvironmentClient] | None = None,
     ) -> dict[str, Any]:
         environment_clients = tuple(clients or self.contract.clients)
-        reset_scope = self._reset_scope()
+        reset_scope = ""
         if self.requires_actor_reset:
+            reset_scope = self._reset_scope()
             require_station_reset_authority(reset_scope)
         fixture_roles = tuple(
             sorted({client.actor for client in environment_clients})
@@ -7115,30 +7116,31 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             federation_id = fixture_federation_id_from_station_ids(
                 actor["homeStationPeerId"] for actor in selected_actor_routes
             )
-            federation_targets = {
-                service_id: (
-                    service_bindings[service_id].endpoint,
-                    service_bindings[service_id].deployment_environment,
-                    tuple(sorted({
-                        client.actor
-                        for client in environment_clients
-                        if client.service_bindings["station"].service_id
-                        == service_id
-                    })),
+            if self.requires_actor_reset:
+                federation_targets = {
+                    service_id: (
+                        service_bindings[service_id].endpoint,
+                        service_bindings[service_id].deployment_environment,
+                        tuple(sorted({
+                            client.actor
+                            for client in environment_clients
+                            if client.service_bindings["station"].service_id
+                            == service_id
+                        })),
+                    )
+                    for service_id in station_service_ids
+                }
+                prepared_federation_id = prepare_federation_contexts(
+                    federation_targets
                 )
-                for service_id in station_service_ids
-            }
-            prepared_federation_id = prepare_federation_contexts(
-                federation_targets
-            )
-            if prepared_federation_id != federation_id:
-                raise BlockedError(
-                    reason=(
-                        f"{self.environment_id} Fixture Federation identity "
-                        "does not match the actor manifest"
-                    ),
-                    resource=f"{self.environment_id}:fixture-federation",
-                )
+                if prepared_federation_id != federation_id:
+                    raise BlockedError(
+                        reason=(
+                            f"{self.environment_id} Fixture Federation identity "
+                            "does not match the actor manifest"
+                        ),
+                        resource=f"{self.environment_id}:fixture-federation",
+                    )
             for station in stations.values():
                 for actor in station["actors"]:
                     actor["federationId"] = federation_id
@@ -7222,6 +7224,7 @@ class MobileSocialSimulatorProvisioner(
     station_profile_keys = MOBILE_SOCIAL_STATION_PROFILE_KEYS
     service_profile_keys = MOBILE_SOCIAL_SERVICE_PROFILE_KEYS
     require_distinct_station_profiles = True
+    requires_actor_reset = False
     actor_manifest_kind = "mobile-social-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-social-simulator-actors.json"
     ephemeral_gate_ids = frozenset(

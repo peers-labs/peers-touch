@@ -722,11 +722,13 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.assertFalse(contract.profile.required)
         self.assertFalse(contract.profile.identity_match)
         self.assertEqual(contract.credentials, ())
+        self.assertFalse(contract.fixtures[0].authorization_required)
         provisioner = get_provisioner(contract)
         self.assertIsInstance(
             provisioner,
             MobileSocialSimulatorProvisioner,
         )
+        self.assertFalse(provisioner.requires_actor_reset)
         self.assertEqual(
             provisioner._load_overlay()["harness"]["namespace"],
             "__PEERS_MOBILE_ACCEPTANCE__",
@@ -1222,17 +1224,12 @@ class MobileSimulatorContractTests(unittest.TestCase):
         with (
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
-                "require_station_reset_authority",
-                return_value={"validation": "current"},
-            ),
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
                 "verify_reset_target",
-            ),
+            ) as verify_target,
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "reset_fixture",
-            ),
+            ) as reset_fixture,
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "resolve_actor_identity",
@@ -1249,16 +1246,6 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     ),
                 ),
             ) as resolve_actor,
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
-                "prepare_federation_contexts",
-                return_value=(
-                    "fed_chat_"
-                    + hashlib.sha256(
-                        b"station-primary\x00station-secondary"
-                    ).hexdigest()[:20]
-                ),
-            ) as prepare_federation,
         ):
             provisioner._prepare_actor_fixture(
                 "mobile-simulator-social-convergence-e2e",
@@ -1266,6 +1253,8 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 provisioner._load_overlay(),
             )
 
+        verify_target.assert_not_called()
+        reset_fixture.assert_not_called()
         self.assertEqual(
             resolve_actor.call_args_list,
             [
@@ -1309,7 +1298,14 @@ class MobileSimulatorContractTests(unittest.TestCase):
             1,
         )
         self.assertTrue(actors[0]["federationId"])
-        prepare_federation.assert_called_once()
+        self.assertEqual(
+            actor_payload["reset"],
+            {
+                "authorized": False,
+                "authorizationRef": None,
+                "targetVerified": False,
+            },
+        )
 
     def test_direct_actor_fixture_resolves_both_roles_on_same_station(
         self,
