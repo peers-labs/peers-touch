@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Created**: 2026-09-13 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -54,7 +54,7 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
     └── <workspaceId>/
         ├── workflow/
         │   └── <runId>/
-        │       ├── execution-plan-snapshot.json
+        │       ├── execution-plan-snapshots/<snapshotId>.json
         │       └── execution-run.json
         ├── runtime/
         ├── pids/
@@ -73,6 +73,8 @@ Target command behavior:
 
 | Command | Control-plane action |
 |---------|----------------------|
+| `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]` | Create an explicitly authorized Git worktree and persist immutable creating main-session provenance |
+| `make worktree-creation-status` | Read the current worktree creation provenance |
 | `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
 | `make env-unregister [WORKSPACE_ID=<id>]` | Remove the exact idle registration after coordinated close; reject live declaration, active-work, PlanMount, or lease |
 | `make profile <name>` | Explicitly select a reviewed Profile; register with the lowest free slot and minimum operational capabilities, excluding reset, on first use; otherwise update the existing binding |
@@ -86,8 +88,9 @@ Target command behavior:
 | `make dev-close ... ENVIRONMENT_POLICY=<retain|unregister>` | Coordinate every workflow/resource owner and persist the resumable close receipt |
 | `make dev-resources-prepare` | Ask Dev Workflow to aggregate module impacts and atomically publish ready-target resource claims |
 | `make dev-resource-record` | Record a Runtime Owner result against the committed resource-plan fence |
-| `make plan-mount PLAN=<path>` | Mount one frozen Plan Version to the current execution workspace |
+| `make plan-mount PLAN=<path>` | Mount one stable Plan to the current execution workspace |
 | `make plan-mount-status` | Resolve the live mount, immutable snapshot, and ExecutionRun |
+| `make plan-amend PLAN=<path> REASON='<why>' CHANGE='<what>'` | Record an Agent-owned in-place Plan correction and advance the current snapshot without remounting |
 | `make plan-unmount MOUNT=<id> REASON=<reason>` | Release a completed/cancelled run or consume explicit owner unmount authority |
 | `make profile-authorize <name> SLOT=<n>` | Human-only interactive grant for one exact local compose profile |
 | `make profile-init <name> SLOT=<n>` | Consume the exact pending grant and persist a digest-bound receipt |

@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-05
+> **Created**: 2026-09-13 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 
 ---
@@ -10,17 +10,17 @@
 
 | Existing owner/path | Current role | Target relationship |
 |---|---|---|
-| `docs/global/workflow.md` | Outer development stages | Retains stages; points PLAN/EXECUTE to Plan Version, mount, run, and Session |
+| `docs/global/workflow.md` | Outer development stages | Retains stages; points PLAN/EXECUTE to Plan, mount, run, and Session |
 | `pt-god-view` | Methodology entry facade | Classifies intent and routes exactly one owner; never executes or persists |
 | `pt-dev-workflow` | Stage classification and dispatch | Sole intake-to-close Development Run application service |
 | `pt-architecture-execution-methodology` | Execution-plan analysis | Produces the vertical dependency model without writing files |
-| `pt-plan-and-document` | Document writer | Persists the accepted model as a frozen Plan Version; explicit owner action mounts it for execution |
+| `pt-plan-and-document` | Document writer | Persists the accepted model as a stable Plan; explicit owner action mounts it for execution |
 | `pt-goal-orchestrator` | Host-neutral Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
 | `pt-dev-runtime-handoff` | Runtime verification owner | Selects project drivers, operates the Journey, commits Session results, and cleans up |
 | `pt-*-host-adapter` | Optional host transport | Invokes capabilities exposed by detected TRAE, Cursor, Codex, or future hosts |
 | `pt-execution-plan-guardian` | Plan-conformance guard | Returns a read-only allow/deny/escalate decision for one proposed action |
 | `pt-context-anchor` | Status adapter | Validates owners and renders a read-only chat projection |
-| `execution-plan.py` | Resolves local or explicit Plan input | Loads the current PlanMount and immutable snapshot locally; CI validates explicit frozen Plan inputs |
+| `execution-plan.py` | Resolves local or explicit Plan input | Loads the current PlanMount and current immutable snapshot locally; CI validates explicit stable Plan inputs |
 | `acceptance-plan.py` | Selects current closure Gates | Uses current Task `closureId` from package |
 | `tooling/scripts/local-dev/` | Make-backed runtime commands | Adds public declaration and Session commands |
 | Domain development Skills | Module-local impact policy | Emit standard `ModuleImpact`; never allocate or provision concrete resources |
@@ -28,7 +28,7 @@
 | `skill-overlay-control.py` | Machine-local user Overlay lifecycle | Installs immutable copies and resolves interaction-only policy for `pt-ew` |
 | `pt-ew` | Shared personal-workflow entry | Loads enabled user Overlays, then delegates project routing to `pt-god-view` |
 | `tooling/acceptance/` | Formal product proof | Runs only after functional promotion |
-| execution plans | Frozen execution specification | Immutable Plan Version + Task Slices |
+| execution plans | Stable goal and current execution specification | Mutable Plan + Task Slices with append-only amendments |
 
 ## 2. Control-Plane Composition
 
@@ -52,9 +52,12 @@ ExecutionPlanSnapshot -> ExecutionRun -> current Task -> Development Session
 
 No layer duplicates another:
 
-- Plan Version and Task Slices own only immutable specification.
-- PlanMount owns worktree occupancy; ExecutionPlanSnapshot owns exact run input.
-- ExecutionRun owns Plan/Task lifecycle and evidence references.
+- Plan and Task Slices own the current specification and append-only amendment
+  history, never execution lifecycle.
+- PlanMount owns worktree occupancy; immutable ExecutionPlanSnapshots own exact
+  historical inputs.
+- ExecutionRun owns Plan/Task lifecycle, evidence references, and the current
+  snapshot pointer.
 - Session event journal owns current transition/attempt; `session.json` is its projection.
 - Local Dev owns allocation, not task completion.
 - Acceptance owns proof, not development iteration.
@@ -128,22 +131,25 @@ When a Local Dev lease request matches a planner-owned declaration claim,
 and current before lease acquisition. Claims present before planning remain
 base declaration claims and do not acquire or lose planner ownership.
 
-Plan Version and execution mount:
+Plan and execution mount:
 
 ```bash
 make plan-validate PLAN=<package-plan.md>
+make plan-approve-north-star PLAN=<package-plan.md> \
+  DECISION_REF=<durable-user-decision-ref>
 make plan-mount PLAN=<package-plan.md>
 make plan-mount-status
+make plan-amend PLAN=<package-plan.md> REASON='<why>' CHANGE='<what changed>'
 make plan-unmount MOUNT=<mount-id> REASON=<completed|cancelled|owner-unmount>
-make plan-run-activate RUN=<run-id> TASK=<ready-id>
-make plan-current RUN=<run-id>
-make plan-next RUN=<run-id>
-make plan-status RUN=<run-id>
-make plan-advance RUN=<run-id> WORK_ITEM=<id> \
+make plan-state-migrate
+make plan-activate PLAN=<package-plan.md> TASK=<ready-id>
+make plan-current PLAN=<package-plan.md>
+make plan-next PLAN=<package-plan.md>
+make plan-status PLAN=<package-plan.md>
+make plan-advance PLAN=<package-plan.md> WORK_ITEM=<id> \
   TASK=<current-id> TO=done NEXT=<ready-id> SESSION=<session.json>
 make plan-cancel PLAN=<package-plan.md>
-make plan-reopen RUN=<run-id> WORK_ITEM=<id>
-make plan-migrate LEGACY_PLAN=<legacy.md> PACKAGE=<package-plan.md>
+make plan-reopen PLAN=<package-plan.md> WORK_ITEM=<id>
 ```
 
 Development Session:
@@ -333,10 +339,15 @@ remains.
 
 - renders an accepted plan model into `plan.md` plus `tasks/*.md`;
 - enforces manifest/task/current-snapshot bounds;
-- freezes the Plan Version and, only with an explicitly selected execution
-  worktree, creates its PlanMount and immutable snapshot; after review, Dev
+- persists the stable Plan as a candidate with source-backed criterion
+  coverage and no implicit approval;
+- records explicit user approval against the current North Star digest and,
+  only with that approval plus an explicitly selected execution worktree,
+  creates its PlanMount and initial immutable snapshot; after review, Dev
   Workflow creates the ExecutionRun, publishes the tracked declaration, and
   derives workspace active-work from its owners;
+- records ordinary execution-model changes through `planctl amend`, preserving
+  Plan/mount/run identity while advancing the internal snapshot;
 - creates no Context Anchor section and no progress appendix;
 - uses archive only for migrated historical input.
 
@@ -446,12 +457,14 @@ Completion Review receipt.
 
 ## 5. Acceptance Integration
 
-`execution-plan.py` and `acceptance-plan.py` consume immutable snapshots through
-a structured parser. Local execution loads only the current workspace
-PlanMount's snapshot and run; synchronized foreign Plans are ignored.
-Pull-request CI
-reads `## Execution Plans / 执行计划` and invokes `--plan` once per declared
-path. The current closure is the current Task's `closureId`.
+`execution-plan.py` and `acceptance-plan.py` use two explicit projections.
+Local execution loads only the current workspace PlanMount's immutable snapshot
+and run; synchronized foreign Plans are ignored. Pull-request CI reads
+`## Execution Plans / 执行计划`, validates each declared Plan directly from
+repository source, and requires its immutable
+`completions/<planDigest>.json` attestation. CI never reads machine-local mount
+state. `make plan-seal-completion PLAN=<path>` publishes that attestation only
+after every Task in the mounted ExecutionRun is `done`.
 
 The dedicated `development-workflow-control-plane` Gate runs package, Session,
 legacy-declaration, package-aware execution-plan and Skill contract tests. It is
@@ -471,12 +484,11 @@ The preallocated ID is generated and written into the Task's durable evidence
 URI before source capture. Allocation rejects an existing ID instead of
 silently generating a replacement.
 
-Compatibility policy is task-scoped, not dual truth:
-
-- completed/inactive legacy single-file plans remain readable historical records;
-- a legacy active plan is migrated atomically before further tracked execution;
-- once migrated, its live references point only to package `plan.md`;
-- the archived original is excluded from plan discovery and closure selection.
+Historical plan documents remain source history only. Normal execution accepts
+the current stable Plan contract and has no legacy reader, alias, or dual write.
+Before installing the hard cut on a machine with old state, close every live
+declaration and mount, then run `make plan-state-migrate`; the command refuses
+to run while any old owner is live and rewrites only the idle ledger schema.
 
 The diff-based planner may report candidate Gates but may not mutate the package
 or current closure.
@@ -548,7 +560,7 @@ The pilot uses the package itself to exercise DWF-D14 before B5:
 
 ## 8. Historical Plan Inputs
 
-Completed legacy Plan migrations are retained only under each Plan Version's `archive/` directory. No executable migration journal, compatibility reader, or workspace binding path remains.
+Completed legacy Plan migrations are retained only under each Plan's `archive/` directory. No executable migration journal, compatibility reader, or workspace binding path remains.
 
 ## 9. Migration Constraints
 

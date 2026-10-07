@@ -1,17 +1,36 @@
 # MCP Dual Runtime - Plan Package
 
 > **Plan ID**: agent-mcp-dual-runtime-20261003
-> **Version ID**: agent-mcp-dual-runtime-20261003-v1
 > **Created**: 2026-10-03T02:30:00.000Z
 
-## Plan Version
+## Plan
 
 ```json
 {
-  "kind": "peers-touch-plan-version",
+  "kind": "peers-touch-plan",
   "planId": "agent-mcp-dual-runtime-20261003",
-  "versionId": "agent-mcp-dual-runtime-20261003-v1",
   "createdAt": "2026-10-03T02:30:00.000Z",
+  "northStar": {
+    "objective": "Make MCP execution location explicit and trustworthy across Station-owned and Desktop-local runtimes.",
+    "successCriteria": [
+      {
+        "id": "MCP-NS-01",
+        "statement": "Station owns MCP configuration, manifests, bindings, readiness, ToolCalls, results, and audit.",
+        "sourceRefs": [
+          "MCA-D15",
+          "MCA-D16A"
+        ]
+      },
+      {
+        "id": "MCP-NS-02",
+        "statement": "Station-local and Desktop-local MCP execution preserve one fenced capability contract without a generic local_mcp fallback.",
+        "sourceRefs": [
+          "MCA-D16A",
+          "MCA-D23"
+        ]
+      }
+    ]
+  },
   "workClass": "product-behavior",
   "architecture": {
     "sources": [
@@ -23,12 +42,14 @@
       "docs/architecture/domains/agent/modern-chat-agent/data-model.md",
       "docs/architecture/domains/agent/modern-chat-agent/module-layout.md",
       "docs/architecture/domains/agent/modern-chat-agent/integration.md",
-      "docs/architecture/domains/agent/modern-chat-agent/decisions.md"
+      "docs/architecture/domains/agent/modern-chat-agent/decisions.md",
+      "docs/architecture/engineering/development-workflow/design.md"
     ],
     "decisions": [
       "MCA-D15",
       "MCA-D16A",
-      "MCA-D23"
+      "MCA-D23",
+      "DWF-D42"
     ]
   },
   "scope": {
@@ -105,8 +126,7 @@
   ],
   "authorization": {
     "checkpoint": {
-      "localCommit": "allowed",
-      "amend": "allowed"
+      "localCommit": "allowed"
     },
     "delivery": {
       "push": "denied",
@@ -119,7 +139,49 @@
     "history": {
       "rewrite": "denied"
     }
-  }
+  },
+  "amendments": [],
+  "northStarApproval": {
+    "northStarDigest": "ad307c81fc2d8b78ef18379bb401f2bf7b47eb8d50343f6a07ac5c0421456d11",
+    "approvedBy": "user",
+    "approvedAt": "2026-10-06T18:18:40.000Z",
+    "decisionRef": "USER-DECISION-20261007-NORTH-STAR"
+  },
+  "criterionCoverage": [
+    {
+      "criterionId": "MCP-NS-01",
+      "taskIds": [
+        "MCP-01-STATION-RUNTIME",
+        "MCP-03-HARD-CUT-PROOF"
+      ],
+      "closureIds": [
+        "MCP-station-runtime",
+        "MCP-dual-runtime-proof"
+      ],
+      "gateIds": [
+        "station-agent-unit",
+        "agent-mcp-dual-runtime-source"
+      ]
+    },
+    {
+      "criterionId": "MCP-NS-02",
+      "taskIds": [
+        "MCP-01-STATION-RUNTIME",
+        "MCP-02-DESKTOP-RUNTIME",
+        "MCP-03-HARD-CUT-PROOF"
+      ],
+      "closureIds": [
+        "MCP-station-runtime",
+        "MCP-desktop-runtime",
+        "MCP-dual-runtime-proof"
+      ],
+      "gateIds": [
+        "station-agent-unit",
+        "desktop-check",
+        "agent-mcp-dual-runtime-source"
+      ]
+    }
+  ]
 }
 ```
 

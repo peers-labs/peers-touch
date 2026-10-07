@@ -1,7 +1,7 @@
 # Development Workflow 产品定义
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-05
+> **Created**: 2026-09-26 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
@@ -31,6 +31,7 @@ Development Workflow 不是通用项目管理器、CI 替代品、IDE 或运行�
 3. 工作是推进、等待、阻塞、停滞、循环还是发生漂移；
 4. 完成声明是否通过独立的当前源码审查；
 5. 每项声明由哪个 owner、命令和证据义务支撑。
+6. 同一 Plan 为什么被修订、影响哪些 Task/Gate，以及是否触及 North Star。
 
 Conversation 不得静默改变执行根。Task 或 Plan 不得因聊天文本、陈旧证据或
 实现者自报成功而被判定完成。
@@ -48,10 +49,12 @@ Conversation 不得静默改变执行根。Task 或 Plan 不得因聊天文本�
 | DWF-D28 | Completion Review | 独立的当前源码完成审查 | accepted |
 | DWF-D29 | Action Receipt | 有界、脱敏的 Agent 动作收据 | accepted |
 | DWF-D30 | Workflow Doctor | 可执行的工作流自诊断 | accepted |
-| DWF-D38 | Frozen Plan Version and PlanMount | 项目设计与执行 worktree 分离，mount 在完整 Plan Run 期间占用 worktree | accepted |
+| DWF-D38 | Frozen Plan and PlanMount | 已由 DWF-D42 取代 frozen-version 语义，保留显式 worktree 占用 | superseded |
 | DWF-D32 | Cross-module resource aggregation | runtime acquisition 前统一解析 target、复用、容量与 park | accepted |
 | DWF-D40 | Explicit no-Plan standalone | 用户拒绝 Plan 时不制造 tracked owner state | accepted |
 | DWF-D41 | Coordinated Development close | 一个可恢复收据编排独立 owner 的关闭顺序 | accepted |
+| DWF-D42 | Stable Plan amendments | North Star 必须显式批准；普通执行调整原地记录并继续，只有 North Star 变化需要重新批准与 owner 决策 | accepted |
+| DWF-D43 | Worktree main-session provenance | Agent 创建 worktree 时持久化创建会话，当前 Development 状态传播已验证 OWNER 引用 | accepted |
 
 Accepted 决策定义目标合同，不等于实现或验收已经通过。在当前源码完成验证前，
 消费者仍须把尚未证明的能力投影为 `UNPROVEN`。
@@ -67,9 +70,10 @@ Accepted 决策定义目标合同，不等于实现或验收已经通过。在�
 | DEV-C05 | Self-diagnosis | required | DWF-D30 | 一个 Doctor 入口检查安装、Hook、mount/run、状态 owner 和完成 Gate |
 | DEV-C06 | Mutation from Workflow Snapshot | unsupported | DWF-D27 | Snapshot 保持只读，所有写入由 owner CLI 执行 |
 | DEV-C07 | Cross-worktree writes | unsupported | DWF-D33 | OWNER lineage 可读取其他 worktree，但只能写入自己的不可变执行根 |
-| DEV-C08 | Plan mount occupancy | required | DWF-D38 | 一个 worktree 在完成、取消或显式 unmount 前只执行一个 frozen Plan Version |
+| DEV-C08 | Plan mount occupancy | required | DWF-D42 | 一个 worktree 在完成、取消或显式 unmount 前只执行一个 stable Plan；普通修订不重挂 |
 | DEV-C09 | Plan-level resource preparation | required | DWF-D32 | 多模块影响在 runtime acquisition 前聚合；复用、容量、冲突和 park 由一个资源计划裁决 |
 | DEV-C10 | Resumable Development close | required | DWF-D41 | exact selector 串行关闭 owner；只有 `DevelopmentCloseReceipt=CLOSED` 支持 close-ready |
+| DEV-C11 | Explicit North Star approval | required | DWF-D42 | Agent 生成的 North Star 是 candidate；只有绑定当前 `planId + northStarDigest` 的用户决定允许 mount/execute |
 
 ## 5. 首次可用结果
 
@@ -136,7 +140,7 @@ Acceptance 单元独立证明。
 | DEV-C03 | Workflow Snapshot 是按需只读投影 | 接入 owner snapshot、action reducer 与 review state | CLI/library contract 验证投影一致性 |
 | DEV-C04 | 架构文档和应用 README 已存在 | 确立唯一操作指南并将每条命令纳入 truth audit | 从干净 worktree 执行所有已声明命令 |
 | DEV-C05 | 现有 audit 可作为候选检查输入 | 组合为一个 typed Doctor 并验证公开承诺 | healthy fixture 与故障注入 fixture |
-| DEV-C08 | PlanMount 隔离同步进入仓库的外来 Plan | 增加 frozen version、snapshot、run 与显式 unmount | mount conflict、snapshot immutability 与并发测试 |
+| DEV-C08 | PlanMount 隔离同步进入仓库的外来 Plan | 增加 stable Plan、snapshot history、run、in-place amendment 与显式 unmount | mount conflict、amendment、snapshot immutability 与并发测试 |
 | DEV-C09 | Machine ledger、Local Dev lease 和 Acceptance runtime manifest 已有明确 owner | 增加标准 ModuleImpact、target closure 与 fenced PlanResourcePlan | 多模块、复用、容量不足、all-or-none、quarantine replacement 与跨 Plan 冲突测试 |
 | DEV-C10 | Declaration、Session、active-work、PlanMount、lease 与 environment 已有独立 owner | 增加幂等 close coordinator、receipt 与新任务准入守卫 | 中断恢复、错误 owner、tracked/standalone、cancel 和 deleted-worktree orphan 测试 |
 

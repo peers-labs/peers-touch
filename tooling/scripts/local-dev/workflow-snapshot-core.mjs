@@ -72,6 +72,7 @@ export function projectWorkflowContext(binding, inspection) {
       null,
     sessionState,
     workItemId: inspection.declaration?.workItemId ?? null,
+    workflowOwner: inspection.declaration?.workflowOwner ?? null,
     binding: {
       role: binding.role,
       bindingDigest: binding.bindingDigest,

@@ -201,8 +201,33 @@ where
     })
 }
 
+fn should_resume_access_binding(
+    phase: &crate::application::station_binding::StationBindingPhase,
+) -> bool {
+    matches!(
+        phase,
+        crate::application::station_binding::StationBindingPhase::Connecting
+            | crate::application::station_binding::StationBindingPhase::Failed
+    )
+}
+
 fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResult<T>> {
-    let binding = crate::application::station_binding::service().state();
+    let binding_service = crate::application::station_binding::service();
+    let mut binding = binding_service.state();
+    if should_resume_access_binding(&binding.phase) {
+        binding = binding_service
+            .resume_persisted(station_client::station_registry())
+            .map_err(|error| {
+                AppResult::fail(
+                    ErrorCode::Conflict,
+                    error.message,
+                    Some(json!({
+                        "code": error.code,
+                        "retryable": error.retryable,
+                    })),
+                )
+            })?;
+    }
     if binding.phase != crate::application::station_binding::StationBindingPhase::AccessGate
         && binding.phase != crate::application::station_binding::StationBindingPhase::Bound
     {
@@ -1399,8 +1424,10 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
 #[cfg(test)]
 mod tests {
     use super::{
-        run_required_logout_cleanup, station_verification_rejects_session, DESKTOP_SESSION_CLASS,
+        run_required_logout_cleanup, should_resume_access_binding,
+        station_verification_rejects_session, DESKTOP_SESSION_CLASS,
     };
+    use crate::application::station_binding::StationBindingPhase;
     use crate::contracts::AuthSessionPayload;
     use crate::error::ErrorCode;
     use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
@@ -1521,6 +1548,22 @@ mod tests {
                 None,
             )
         ));
+    }
+
+    #[test]
+    fn access_start_resumes_only_persisted_incomplete_station_bindings() {
+        assert!(should_resume_access_binding(
+            &StationBindingPhase::Connecting
+        ));
+        assert!(should_resume_access_binding(&StationBindingPhase::Failed));
+        for phase in [
+            StationBindingPhase::Unbound,
+            StationBindingPhase::AccessGate,
+            StationBindingPhase::Bound,
+            StationBindingPhase::Switching,
+        ] {
+            assert!(!should_resume_access_binding(&phase));
+        }
     }
 
     fn assert_logout_cleanup_failure(

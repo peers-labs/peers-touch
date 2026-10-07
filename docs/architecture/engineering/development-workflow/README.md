@@ -1,7 +1,7 @@
 # Development Workflow Control Plane
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-05
+> **Created**: 2026-09-13 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 
 ---
@@ -15,7 +15,7 @@
 - Development、Local Dev、Acceptance 和 Quality 的所有权边界。
 - 所有 worktree 可见的机器级资源声明。
 - 跨模块 `ModuleImpact` 聚合、target 依赖、峰值容量和资源复用计划。
-- frozen Plan Version、PlanMount、ExecutionPlanSnapshot、独立 Task Slice
+- stable Plan、append-only Amendment Log、PlanMount、ExecutionPlanSnapshot、独立 Task Slice
   和跨会话恢复协议。
 - checkpoint、部署、reset、push 和 branch rewrite 的授权模型。
 - 低噪声状态汇报和仓库外瞬态诊断记录。
@@ -40,7 +40,7 @@
 PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 ```
 
-当前 binding 路径有三个已验证问题：
+当前 binding 和 Plan 修订路径有四个已验证问题：
 
 1. 宿主字段被跨 host 等价归一，TRAE 内部 reviewer、retry 或 subtask 的
    `session_id` 会创建新的顶层 owner binding。
@@ -48,10 +48,13 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
    release receipt 的历史记录会永久被视为 active。
 3. Completion Review 在近期 Action Receipt 解析失败后枚举整个 worktree 并
    强制全局唯一，使过期 child 历史阻断当前 reviewer。
+4. 旧的冻结版本模型把补充 write set、Gate 或依赖等执行修正变成新版本、
+   cancel/unmount/remount 和重复确认，虽然北极星目标并未改变。
 
-这三个问题共同把执行历史误当成实时授权状态。目标设计必须把一个可见开发会话
+这些问题共同把内部执行历史误当成用户决策边界。目标设计必须把一个可见开发会话
 固定为唯一 OWNER，让 worker child identity/liveness 显式可校验，并让
-Completion Review 使用独立的 repository-native reviewer handoff。
+Completion Review 使用独立的 repository-native reviewer handoff，同时让同一
+Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 
 ## 3. Design Goals
 
@@ -59,9 +62,10 @@ Completion Review 使用独立的 repository-native reviewer handoff。
 2. 源码闭环以 `SOURCE_READY` 如实结束；运行时闭环通过 exact-source
    `FUNCTIONAL_PASS` 后再进入完整 Acceptance。
 3. 一次失败只产生一个首要失败点，不触发无界 Gate 扩散。
-4. Plan Version 冻结后不可变、紧凑且可机械验证，不含执行 worktree 身份。
-5. 每个 Task Slice 属于冻结版本；运行状态与 durable evidence 留在
-   ExecutionRun 和 Evidence Store。
+4. Plan 在同一北极星目标下保持稳定、紧凑且可机械验证；普通执行调整原地修订，
+   不生成用户可见版本号，也不包含执行 worktree 身份。
+5. 每个 Task Slice 属于当前 Plan 快照；修订历史追加记录，运行状态与 durable
+   evidence 留在 ExecutionRun 和 Evidence Store。
 6. Dev Session 拥有瞬态状态、attempt 和 first failure，不回写运行日记。
 7. Context Anchor 只投影 mount、snapshot、run、current task 和 session。
 8. 所有状态和结论绑定 source、workspace、task/Journey 和 runtime identity。
@@ -91,8 +95,8 @@ Completion Review 使用独立的 repository-native reviewer handoff。
 20. Task 和 Plan 完成必须有独立、当前源码绑定的 Completion Review。
    Review request 从成功 Development Session 派生，并通过 request-scoped
    capability 交给 reviewer；不得依赖 IDE Hook 或 Action Receipt。
-21. Project Ledger 显式挂载一个 frozen PlanVersion 到一个执行 worktree；
-    完成、取消或 Owner 显式 unmount 前，该 worktree 不承接其他 Plan。
+21. Project Ledger 显式挂载一个 stable Plan 到一个执行 worktree；普通修订
+    保留原 `planId`、`mountId` 与 `runId`，只推进内部 snapshot。
 22. 模块 Skill 只输出影响与逻辑需求；Dev Workflow 在 runtime acquisition
     前形成唯一 `PlanResourcePlan`，具体资源生命周期仍由既有 Runtime/Suite
     Owner 管理。
@@ -117,9 +121,9 @@ Completion Review 使用独立的 repository-native reviewer handoff。
 
 | Document | Purpose |
 |---|---|
-| [design.md](./design.md) | 控制面边界、Plan Version、mount、snapshot、Task Slice 和恢复数据流 |
+| [design.md](./design.md) | 控制面边界、stable Plan、amendment、mount、snapshot、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D41 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D43 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
 | [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33 的 Kernel、宿主投影和 rollout 流程 |
@@ -135,13 +139,16 @@ Completion Review 使用独立的 repository-native reviewer handoff。
 
 ## 5. Current Status
 
-DWF-D01..DWF-D41 已接受。仓库与 PR 可包含多个 frozen Plan Version；
-Project Ledger 的显式 PlanMount 是执行 worktree 唯一 Plan 占用真源。执行前
-生成 immutable ExecutionPlanSnapshot，并在其中绑定 mount、workspace、branch
-和 initial HEAD。Plan 完成、取消或 Owner 显式 unmount 前 worktree 持续被
-占用；repository discovery、声明、Session 或 Agent 新建 worktree 都不能替代
-该关系。当前 source HEAD 由 Git、Development declaration、Session checkpoint
-与消费 worktree 的 machine-local active-work projection 在各自生命周期中持有。
+DWF-D01..DWF-D43 已接受。仓库与 PR 可包含多个 stable Plan；Project Ledger
+的显式 PlanMount 是执行 worktree 唯一 Plan 占用真源。执行时以 immutable
+ExecutionPlanSnapshot 固定每次读取的内容；普通修订追加原因与影响记录，并让
+同一个 ExecutionRun 以 CAS 指向新快照，无需取消或重挂。只有修改或削弱
+`northStar` 时才要求重新取得用户显式批准和 owner 修订决定。新 Plan 的
+North Star 初始为 candidate，只有 `planctl approve-north-star` 写入与
+`planId + northStarDigest` 匹配的决定后才能 mount/execute；Task、Gate 与
+`criterionCoverage` 的普通修订不使该批准失效。当前 source HEAD 由 Git、Development
+declaration、Session checkpoint 与消费 worktree 的 machine-local active-work
+projection 在各自生命周期中持有。
 `peers-dev-workflow` 只负责规范实现和 rollout，不持有消费 worktree 的可变
 运行时状态。
 一次授权可在 accepted Plan 内连续跨越多个 Task 和 agent review gate；

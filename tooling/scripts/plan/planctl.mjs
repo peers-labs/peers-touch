@@ -9,15 +9,25 @@ import {
 } from '../local-dev/dev-session-store.mjs';
 import { canonicalize } from '../local-dev/dev-work-schema.mjs';
 import {
+  resolveWorkflowOwnerCommandContext,
+} from '../local-dev/workflow-owner-context.mjs';
+import {
   PlanPackageError,
   isDirectInvocation,
   loadPlanPackage,
+  recordNorthStarApproval,
   summarizePlanPackage,
 } from './plan-package.mjs';
 import {
+  PlanCompletionError,
+  readPlanCompletion,
+} from './plan-completion.mjs';
+import {
   PlanMountError,
+  amendMountedPlan,
   cancelExecutionRun,
   resolvePlanExecution,
+  sealPlanCompletion,
   updateExecutionRun,
 } from './plan-mount.mjs';
 
@@ -26,6 +36,7 @@ const SUCCESSFUL_SESSION_STATES = new Set([
   'DELIVERY_READY',
 ]);
 const REPEATABLE_OPTIONS = new Set([
+  'change',
   'exhaustion-decision-ref',
   'exhaustion-evidence-ref',
 ]);
@@ -45,7 +56,7 @@ function digest(value) {
 export function digestRunCompletionCandidate(resolved, candidate) {
   return digest({
     kind: 'peers-touch-execution-run-completion-candidate',
-    planVersionDigest: resolved.mount.planVersionDigest,
+    planDigest: resolved.snapshot.planDigest,
     snapshotDigest: resolved.snapshot.recordDigest,
     runId: resolved.run.runId,
     runRevision: resolved.run.revision,
@@ -122,7 +133,7 @@ function assertRequestedPlan(resolved, options) {
   if (requested && requested !== resolved.planPackage.path) {
     fail(
       'PLAN_TARGET_NOT_CURRENT',
-      'requested Plan Version is not mounted in this workspace',
+      'requested Plan is not mounted in this workspace',
       {
         requested,
         mounted: resolved.planPackage.path,
@@ -265,8 +276,14 @@ export function summarizeExecution(resolved) {
     plan: resolved.planPackage.path,
     planPath: resolved.planPackage.planPath,
     planId: resolved.snapshot.planId,
-    versionId: resolved.snapshot.planVersionId,
-    planVersionDigest: resolved.snapshot.planVersionDigest,
+    planDigest: resolved.snapshot.planDigest,
+    planContentDigest: resolved.snapshot.planContentDigest,
+    northStarDigest: resolved.planPackage.northStarApproval.northStarDigest,
+    northStarApprovalStatus:
+      resolved.planPackage.northStarApproval.status,
+    northStarApproval:
+      resolved.planPackage.northStarApproval.approval,
+    amendmentCount: resolved.snapshot.amendmentCount,
     mountId: resolved.mount.mountId,
     runId: resolved.run.runId,
     snapshotDigest: resolved.snapshot.recordDigest,
@@ -590,7 +607,7 @@ export async function invalidateSourcePlan(_planPath, options) {
   if (policy === null) {
     fail(
       'PLAN_SOURCE_INVALIDATION_UNAVAILABLE',
-      'Plan Version has no Source Invalidation Policy',
+      'Plan has no Source Invalidation Policy',
     );
   }
   const affected = new Set();
@@ -619,15 +636,114 @@ export async function invalidateSourcePlan(_planPath, options) {
   };
 }
 
+export async function amendPlan(_planPath, options) {
+  const result = await amendMountedPlan({
+    ...mountOptions(options),
+    plan: requireOption(options, 'plan'),
+    actor: requireOption(options, 'actor'),
+    reason: requireOption(options, 'reason'),
+    changes: options.change ?? [],
+    approval: options.approval ?? 'agent',
+    decisionRef: options['decision-ref'],
+    amendmentId: options['amendment-id'],
+  });
+  return {
+    ...summarizeExecution(result),
+    amended: result.amended,
+    amendment: result.amendment,
+    affectedTaskIds: result.affectedTaskIds,
+  };
+}
+
+export async function approveNorthStar(_planPath, options) {
+  const planPackage = await loadPlanPackage(
+    explicitPlanPath({
+      ...options,
+      plan: requireOption(options, 'plan'),
+    }),
+    {
+      repoRoot: options['repo-root'],
+      allowUnrecordedAmendment: true,
+    },
+  );
+  const approvedAt = (
+    options.now instanceof Date ? options.now : new Date()
+  ).toISOString();
+  const approved = await recordNorthStarApproval(planPackage, {
+    approvedBy: requireOption(options, 'actor'),
+    approvedAt,
+    decisionRef: requireOption(options, 'decision-ref'),
+  });
+  return {
+    ...summarizePlanPackage(approved),
+    approvalRecorded: approved !== planPackage,
+  };
+}
+
 async function validateCommand(options) {
   assertAllowedOptions(options, READ_OPTIONS);
   const plan = await loadPlanPackage(
-    requireOption(options, 'plan'),
+    explicitPlanPath({
+      ...options,
+      plan: requireOption(options, 'plan'),
+    }),
     { repoRoot: options['repo-root'] },
   );
   return {
     ...summarizePlanPackage(plan),
     taskCount: plan.plan.tasks.length,
+  };
+}
+
+async function sourceStatusCommand(options) {
+  assertAllowedOptions(options, READ_OPTIONS);
+  const planPackage = await loadPlanPackage(
+    explicitPlanPath({
+      ...options,
+      plan: requireOption(options, 'plan'),
+    }),
+    { repoRoot: options['repo-root'] },
+  );
+  const completion = readPlanCompletion(planPackage);
+  const taskStatuses =
+    completion?.taskStates ??
+    Object.fromEntries(
+      planPackage.plan.tasks.map((task) => [task.id, 'unverified']),
+    );
+  const closureStatuses =
+    completion?.closureStatuses ??
+    Object.fromEntries(
+      planPackage.tasks.map((task) => [task.closureId, 'unverified']),
+    );
+  return {
+    ...summarizePlanPackage(planPackage),
+    status: completion === null ? 'unverified' : 'completed',
+    branch: completion?.branch ?? null,
+    workspaceId: completion?.workspaceId ?? null,
+    initialHead: completion?.initialHead ?? null,
+    currentTaskId: null,
+    currentTaskPath: null,
+    currentTaskWriteSet: [],
+    currentClosure: null,
+    taskStatuses,
+    closureStatuses,
+    completionContract: completion,
+  };
+}
+
+async function sealCompletionCommand(options) {
+  assertAllowedOptions(options, READ_OPTIONS);
+  const sealed = await sealPlanCompletion({
+    ...mountOptions(options),
+    plan: requireOption(options, 'plan'),
+  });
+  return {
+    ok: true,
+    plan: sealed.planPackage.path,
+    planId: sealed.snapshot.planId,
+    planDigest: sealed.snapshot.planDigest,
+    completion: sealed.completion,
+    completionPath: sealed.file,
   };
 }
 
@@ -708,15 +824,43 @@ async function invalidateSourceCommand(options) {
   };
 }
 
+async function amendCommand(options) {
+  assertAllowedOptions(options, [
+    ...READ_OPTIONS,
+    'actor',
+    'reason',
+    'change',
+    'approval',
+    'decision-ref',
+    'amendment-id',
+  ]);
+  return amendPlan(options.plan, options);
+}
+
+async function approveNorthStarCommand(options) {
+  assertAllowedOptions(options, [
+    ...READ_OPTIONS,
+    'actor',
+    'decision-ref',
+  ]);
+  return approveNorthStar(options.plan, options);
+}
+
 export async function runPlanctl(argv = process.argv.slice(2)) {
   const { command, options } = parseArguments(argv);
   if (command === 'validate') return validateCommand(options);
+  if (command === 'source-status') return sourceStatusCommand(options);
+  if (command === 'seal-completion') return sealCompletionCommand(options);
   if (command === 'current') return currentCommand(options);
   if (command === 'next') return nextCommand(options);
   if (command === 'status') return statusCommand(options);
   if (command === 'activate') return activateCommand(options);
   if (command === 'advance') return advanceCommand(options);
   if (command === 'cancel') return cancelCommand(options);
+  if (command === 'amend') return amendCommand(options);
+  if (command === 'approve-north-star') {
+    return approveNorthStarCommand(options);
+  }
   if (command === 'reopen') return reopenCommand(options);
   if (command === 'invalidate-source') {
     return invalidateSourceCommand(options);
@@ -725,12 +869,16 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
     command,
     commands: [
       'validate',
+      'source-status',
+      'seal-completion',
       'current',
       'next',
       'status',
       'activate',
       'advance',
       'cancel',
+      'amend',
+      'approve-north-star',
       'reopen',
       'invalidate-source',
     ],
@@ -740,6 +888,7 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
 function typedError(error) {
   if (
     error instanceof PlanPackageError ||
+    error instanceof PlanCompletionError ||
     error instanceof PlanMountError ||
     error?.name === 'CompletionReviewError'
   ) {
@@ -753,6 +902,11 @@ function typedError(error) {
 
 export async function main(argv = process.argv.slice(2)) {
   try {
+    const { command, options } = parseArguments(argv);
+    resolveWorkflowOwnerCommandContext('planctl', command, {
+      home: options.home,
+      workspaceRoot: options['repo-root'] ?? process.cwd(),
+    });
     const result = await runPlanctl(argv);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {

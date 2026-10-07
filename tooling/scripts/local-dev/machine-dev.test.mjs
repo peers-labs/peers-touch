@@ -40,6 +40,7 @@ import {
   updateWorkspace,
   validateLeaseRequest,
 } from './machine-dev-registry.mjs';
+import { runCli as runMachineCli } from './machine-dev.mjs';
 import {
   RESOURCE_PLAN_KIND,
   digestValue,
@@ -47,6 +48,10 @@ import {
 } from './dev-resource-plan.mjs';
 import { inspectGitWorkspace } from './git-workspace.mjs';
 import { acquireWorkspaceLifecycleLockSync } from './workspace-lifecycle-lock.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const cli = fileURLToPath(new URL('./machine-dev.mjs', import.meta.url));
 const leaseCli = fileURLToPath(new URL('./machine-dev-lease.py', import.meta.url));
@@ -186,6 +191,17 @@ function registrationOptions(scope, overrides = {}) {
   };
 }
 
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
+}
+
 function expectCode(code, operation) {
   assert.throws(operation, (error) => {
     assert.ok(error instanceof MachineDevError);
@@ -209,6 +225,7 @@ function declareLeaseIntent(scope) {
       'exclusive:station.deploy:station-four',
       'exclusive:station.reset:station-four-fixture',
     ].join(';'),
+    workflowOwner: workflowOwner(),
   });
 }
 
@@ -366,6 +383,79 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
   }
 });
 
+test('registration preserves the worktree main-session owner', () => {
+  const scope = fixture();
+  try {
+    const owner = workflowOwner();
+    const registered = registerWorkspace(
+      registrationOptions(scope, { createdBy: owner }),
+    );
+    assert.deepEqual(registered.createdBy, owner);
+    const updated = updateWorkspace(
+      registrationOptions(scope, {
+        purpose: 'updated without changing provenance',
+        createdBy: {
+          ...owner,
+          rootBindingDigest: 'b'.repeat(64),
+        },
+      }),
+    );
+    assert.deepEqual(updated.createdBy, owner);
+    assert.deepEqual(
+      statusAll({ home: scope.home, envRepo: scope.envRepo })
+        .registrations[0].createdBy,
+      owner,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('registration never substitutes the current OWNER for missing creation provenance', async () => {
+  const scope = fixture();
+  try {
+    await runMachineCli(
+      [
+        'register',
+        '--home',
+        scope.home,
+        '--workspace-root',
+        scope.workspaceA,
+        '--env-repo',
+        scope.envRepo,
+        '--profile',
+        'four',
+        '--slot',
+        '5',
+        '--capabilities',
+        'station.connect',
+        '--purpose',
+        'do not invent creation provenance',
+        '--owner',
+        'machine-dev-test@example.invalid',
+      ],
+      {
+        output() {},
+        dependencies: {
+          resolveWorkflowOwnerCommandContext: () => ({
+            workflowOwner: workflowOwner(),
+            actionReceiptDigest: 'b'.repeat(64),
+          }),
+          readWorktreeCreation: () => null,
+        },
+      },
+    );
+
+    const [registration] = statusAll({
+      home: scope.home,
+      envRepo: scope.envRepo,
+    }).registrations;
+    assert.equal(Object.hasOwn(registration, 'createdBy'), false);
+  } finally {
+    scope.close();
+  }
+});
+
 test('current Git HEAD is source state, not durable registration identity', () => {
   const scope = fixture();
   try {
@@ -503,7 +593,7 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
       currentTaskId: 'DWF-RESOURCE-T1',
       workspaceId: registered.workspaceId,
       branch: registered.branch,
-      planVersionDigest: 'a'.repeat(64),
+      planDigest: 'a'.repeat(64),
       mountId: 'mount-machine-dev-test',
       runId: 'run-machine-dev-test',
       status: 'active',
@@ -515,8 +605,10 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
       mount: {
         planId: planStatus.planId,
         planPath,
-        planVersionDigest: planStatus.planVersionDigest,
         mountId: planStatus.mountId,
+      },
+      snapshot: {
+        planDigest: planStatus.planDigest,
       },
       run: {
         runId: planStatus.runId,
@@ -537,6 +629,7 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
         'exclusive:station.deploy:station-four',
         'exclusive:station.reset:station-four-fixture',
       ].join(';'),
+      workflowOwner: workflowOwner(),
       planPath,
       taskId: planStatus.currentTaskId,
       planStatus,
@@ -793,6 +886,7 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       workspaceRoot: scope.workspaceA,
       workItemId: declaration.workItemId,
       sessionId: declaration.sessionId,
+      workflowOwner: declaration.workflowOwner,
     });
 
     const activeWork = updateActiveWorkRecord(
@@ -816,6 +910,7 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
         branch: registered.branch,
         initialHead: git(scope.workspaceA, 'rev-parse', 'HEAD'),
         expectedHead: git(scope.workspaceA, 'rev-parse', 'HEAD'),
+        workflowOwner: declaration.workflowOwner,
       },
       {
         home: scope.home,
@@ -834,6 +929,7 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       workspaceRoot: scope.workspaceA,
       expectedRevision: activeWork.revision,
       workItemId: activeWork.workItemId,
+      workflowOwner: activeWork.workflowOwner,
     });
     expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
       unregisterWorkspace({

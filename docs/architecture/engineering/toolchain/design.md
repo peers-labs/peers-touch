@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-09-12 | **Updated**: 2026-09-18
+> **Created**: 2026-09-12 | **Updated**: 2026-10-07
 > **Owner**: Developer Infrastructure
 > **Module**: `tooling/devctl/`
 
@@ -119,7 +119,7 @@ indexes or projections. None may redefine plan scope, progress, or Gate timing.
 | Runtime health | live health endpoint and listening port | status/doctor probes |
 | Product data | Station/Desktop storage roots | product runtimes, never `devctl` |
 | Work scope and progress | formal execution plan | planning/execution stage owner |
-| Plan lookup | immutable workspace Plan binding, or explicit CI input | Development Workflow binding |
+| Plan lookup | stable PlanMount plus current immutable snapshot, or explicit CI input | Development Workflow mount/run |
 | Acceptance timing | plan Acceptance Execution contract | planning stage owner |
 | Diff impact | generated Acceptance projection | Acceptance planner |
 
@@ -134,8 +134,8 @@ defines plan-completion and explicit full/release Gate sets.
 
 The runner:
 
-1. resolves the verified workspace's immutable Plan binding directly;
-2. reads the current closure from the existing Implementation Status table;
+1. resolves the verified workspace's stable PlanMount and current snapshot;
+2. reads the current closure from the Execution Run;
 3. validates actual changed paths against the registry-derived impact
    projection;
 4. rejects undeclared impact with `ACCEPTANCE_PLAN_DRIFT`;
@@ -252,9 +252,14 @@ Stable CLI error codes:
 | `DEVCTL_START_TIMEOUT` | Runtime did not become ready before the deadline |
 | `DEVCTL_UNSUPPORTED_MODE` | The selected operation is not implemented for the profile mode/platform |
 | `DEVCTL_CHECK_FAILED` | A deterministic source check failed |
-| `WORKSPACE_PLAN_BINDING_REQUIRED` | The local workspace has no immutable Plan binding |
-| `WORKSPACE_PLAN_BINDING_MISMATCH` | The bound Plan identity/path/workspace does not match |
-| `WORKSPACE_PLAN_REBIND_DENIED` | A different Plan attempted to replace the immutable binding |
+| `PLAN_MOUNT_REQUIRED` | The local workspace has no active PlanMount |
+| `PLAN_MOUNT_IDENTITY_MISMATCH` | The mounted Plan identity/path/workspace does not match |
+| `PLAN_MOUNT_CONFLICT` | A different Plan attempted to occupy the mounted workspace |
+| `PLAN_AMENDMENT_REQUIRED` | Stable Plan source changed without a recorded amendment |
+| `NORTH_STAR_APPROVAL_REQUIRED` | The Plan North Star has no approval or its approval digest is stale |
+| `NORTH_STAR_APPROVAL_IMMUTABLE` | An amendment tried to rewrite approval metadata without changing the North Star |
+| `PLAN_AMENDMENT_APPROVAL_MISMATCH` | A North Star amendment's decision reference does not match its explicit approval |
+| `OWNER_DECISION_REQUIRED` | An amendment changes the accepted North Star |
 | `WORKSPACE_PLAN_DECLARATION_REQUIRED` | A Plan-bound workspace attempted untracked mutation |
 | `EXECUTION_PLAN_INPUT_REQUIRED` | CI omitted its explicit Plan input |
 | `EXECUTION_PLAN_INVALID` | Plan metadata, status, or Acceptance contract is malformed |

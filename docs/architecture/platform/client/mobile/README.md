@@ -71,7 +71,7 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 - `docs/architecture/engineering/api-governance/proposals/20260918-conversation-member-authority.md`:
   accepted Conversation member administration and atomic owner transfer.
 - `docs/architecture/domains/chat/lifecycle/`: cross-client Chat product composition.
-- `docs/architecture/shared/notification/notification-architecture.md`: notification
+- `docs/architecture/domains/notification/notification-architecture.md`: notification
   preferences, push-device registration, and APNs/FCM delivery ownership.
 - `docs/architecture/shared/security/secure-content/`: private Social content and encrypted
   media ownership.

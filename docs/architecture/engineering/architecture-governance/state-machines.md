@@ -226,7 +226,7 @@
 - **触发**：`Rotate()`（事务内 current 降级为 prev、写入新 current）；`ClearPrev()`（双签宽限期默认 24h 结束后删除 prev）；后台 finalizer `RunOnce` 检查 `prev.GeneratedAt + Grace` 后清理
 - **不变量**：双签宽限期内同时接受 current/prev 签名，避免轮换瞬断；转换有时间窗守卫。
 - **Owner**：[federation/keystore.go](../../../../apps/station/frame/core/auth/federation/keystore.go#L18) · [oss/worker/key_rotation_final.go](../../../../apps/station/app/subserver/oss/worker/key_rotation_final.go#L88)
-- **关联架构** → [architecture/shared/federation/README.md](../../shared/federation/README.md)
+- **关联架构** → [architecture/domains/federation/README.md](../../domains/federation/README.md)
 
 ### 6.8 FriendMessage 投递（单调前向状态机）⚠️ 内嵌精简设计
 

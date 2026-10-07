@@ -50,6 +50,8 @@ WORKFLOW_KERNEL_FILES = (
     "tooling/scripts/local-dev/workflow-binding.mjs",
     "tooling/scripts/local-dev/workflow-host-adapters.mjs",
     "tooling/scripts/local-dev/workflow-kernel.mjs",
+    "tooling/scripts/local-dev/workflow-owner-command-policy.mjs",
+    "tooling/scripts/local-dev/workflow-owner-reference.mjs",
     "tooling/scripts/local-dev/workflow-state-inspector.mjs",
     "tooling/scripts/local-dev/workflow-tool-intent.mjs",
 )
@@ -557,7 +559,7 @@ def structured_plan(plan_path: Path) -> dict[str, object]:
         return {}
     content = plan_path.read_text(encoding="utf-8")
     match = re.search(
-        r"## Plan Package\s+```json\s+(\{.*?\})\s+```",
+        r"## Plan\s+```json\s+(\{.*?\})\s+```",
         content,
         flags=re.DOTALL,
     )

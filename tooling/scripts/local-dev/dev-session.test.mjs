@@ -28,6 +28,7 @@ import { processStartIdentity } from './dev-work-ledger.mjs';
 import {
   archiveDevelopmentSession,
   commitFunctionalResult,
+  createInitialSessionState,
   createTransitionEvent,
   DevSessionError,
   readSessionJournal,
@@ -45,6 +46,10 @@ import {
   inspectSessionJournal,
   summarizeSessionJournal,
 } from './dev-session-store.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -65,6 +70,17 @@ const INITIAL_HEAD =
 const WORKSPACE_ID = workspaceIdForRoot(REPO_ROOT);
 const START_TIME = Date.parse('2026-09-16T12:00:00.000Z');
 
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
+}
+
 function fixture({
   workClass = 'refactor',
   planWorkClass,
@@ -83,7 +99,7 @@ function fixture({
   const sessionId = 'dwf-b1-session';
   const journeyId = 'DWF-AS03';
   const taskId = 'DWF-B1';
-  const planVersionDigest = 'a'.repeat(64);
+  const planDigest = 'a'.repeat(64);
   const mountId = 'mount-fixture';
   const runId = 'run-fixture';
   const task = {
@@ -158,7 +174,7 @@ function fixture({
     taskSlices: new Map([[taskId, task]]),
     currentTask: task,
     readyTasks: [],
-    planVersionDigest,
+    planDigest,
   };
   const executionBinding = {
     mountId,
@@ -172,10 +188,11 @@ function fixture({
       mountId,
       planId: manifest.planId,
       planPath: 'fake-plan.md',
-      planVersionDigest,
+      planDigest,
     },
     snapshot: {
       executionBinding,
+      planDigest,
     },
     run: {
       runId,
@@ -232,6 +249,7 @@ function fixture({
     planPath: plan.path,
     taskId,
     journeyId,
+    workflowOwner: workflowOwner(),
     clock,
   };
   return {
@@ -265,6 +283,7 @@ function declarationOptions(scope, overrides = {}) {
     sourceHead: EXPECTED_HEAD,
     sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
     runtimeClaims: scope.runtimeClaims,
+    workflowOwner: scope.baseOptions.workflowOwner,
     planPath: 'fake-plan.md',
     planId: scope.plan.manifest.planId,
     taskId: scope.task.taskId,
@@ -277,7 +296,7 @@ function declarationOptions(scope, overrides = {}) {
       taskStatuses: {
         [scope.task.taskId]: 'in_progress',
       },
-      planVersionDigest: scope.plan.planVersionDigest,
+      planDigest: scope.plan.planDigest,
       mountId: scope.planExecution.mount.mountId,
       runId: scope.planExecution.run.runId,
     },
@@ -730,6 +749,26 @@ function expectCode(code, operation) {
   });
 }
 
+test('initial Session state carries the verified main-session owner', () => {
+  const owner = workflowOwner();
+  const state = createInitialSessionState(
+    {
+      sessionId: 'session-owner',
+      workItemId: 'WORK-OWNER',
+      planId: 'PLAN-OWNER',
+      taskId: 'TASK-OWNER',
+      workspaceId: WORKSPACE_ID,
+      branch: BRANCH,
+      journeyId: 'JOURNEY-OWNER',
+      executionMode: 'build',
+      workflowOwner: owner,
+    },
+    '2026-10-07T00:00:00.000Z',
+  );
+  assert.deepEqual(state.workflowOwner, owner);
+  assert.equal(validateSessionState(state), state);
+});
+
 test('legacy Session state without host request history remains readable', () => {
   const scope = fixture();
   try {
@@ -768,6 +807,19 @@ test('archive preserves a terminal Session and clears the work-item slot', async
       workspaceId: WORKSPACE_ID,
       workItemId: scope.workItemId,
     });
+    assert.throws(
+      () =>
+        archiveDevelopmentSession({
+          ...scope.baseOptions,
+          workflowOwner: {
+            ...scope.baseOptions.workflowOwner,
+            rootBindingDigest: 'b'.repeat(64),
+          },
+        }),
+      (error) =>
+        error instanceof DevSessionError &&
+        error.code === 'SESSION_IDENTITY_MISMATCH',
+    );
 
     const archived = archiveDevelopmentSession(scope.baseOptions);
 

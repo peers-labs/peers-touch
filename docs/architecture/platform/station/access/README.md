@@ -72,7 +72,7 @@ Station/Actor/Device scope。该模块把这条接入链及其 Federation contex
 
 - `docs/architecture/platform/station/access/`
 - `docs/architecture/engineering/api-governance/`
-- `docs/architecture/shared/federation/`
+- `docs/architecture/domains/federation/`
 - `docs/architecture/domains/identity/`
 - `docs/architecture/platform/runtime/service-coordination.md`
 - `docs/client/desktop/identity-lifecycle.md`

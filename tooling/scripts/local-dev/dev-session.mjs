@@ -39,6 +39,9 @@ import {
   transitionSessionStore,
   writeDurableFileAtomic,
 } from './dev-session-store.mjs';
+import {
+  resolveWorkflowOwnerCommandContext,
+} from './workflow-owner-context.mjs';
 
 export {
   DevSessionError,
@@ -166,11 +169,7 @@ function assertPlanAndDeclaration(
     ['declarationPlanId', plan.plan.planId, declaration.planId],
     ['declarationPlanPath', planPath, declaration.planPath],
     ['declarationTaskId', currentTask.taskId, declaration.taskId],
-    [
-      'planVersionDigest',
-      plan.planVersionDigest,
-      declaration.planVersionDigest,
-    ],
+    ['planDigest', plan.planDigest, declaration.planDigest],
     ['mountId', plan.mount.mountId, declaration.mountId],
     ['runId', plan.run.runId, declaration.runId],
   ]) {
@@ -257,6 +256,7 @@ async function loadBoundContext(options, dependencies = {}) {
       workspaceRoot,
       workItemId: options.workItemId,
       sessionId: options.sessionId,
+      workflowOwner: options.workflowOwner,
       clock: options.clock,
       now: options.now,
       lockTimeoutMs: options.lockTimeoutMs,
@@ -274,7 +274,7 @@ async function loadBoundContext(options, dependencies = {}) {
     if (requestedAbsolute !== execution.planPackage.path) {
       sessionFail(
         'SESSION_IDENTITY_MISMATCH',
-        'requested Plan Version is not mounted in this workspace',
+        'requested Plan is not mounted in this workspace',
       );
     }
     const currentTaskId = execution.run.currentTaskId;
@@ -348,6 +348,7 @@ export async function startDevelopmentSession(options, dependencies = {}) {
       branch: plan.executionBinding.branch,
       journeyId: plan.currentTask.journeyId,
       executionMode: plan.currentTask.executionMode,
+      workflowOwner: declaration.workflowOwner,
     },
     at,
   );
@@ -385,6 +386,7 @@ export function archiveDevelopmentSession(options) {
       workItemId: options.workItemId,
       workspaceId,
       sessionId: options.sessionId,
+      workflowOwner: options.workflowOwner,
     },
   });
 }
@@ -412,6 +414,7 @@ export async function transitionDevelopmentSession(options, dependencies = {}) {
       taskId: plan.currentTask.taskId,
       workspaceId: plan.executionBinding.workspaceId,
       branch: plan.executionBinding.branch,
+      workflowOwner: declaration.workflowOwner,
     },
     to: options.to,
     reason: options.reason,
@@ -1874,6 +1877,7 @@ export async function commitFunctionalResult(options, dependencies = {}) {
       taskId: plan.currentTask.taskId,
       workspaceId: plan.executionBinding.workspaceId,
       branch: plan.executionBinding.branch,
+      workflowOwner: declaration.workflowOwner,
     },
     reason: options.reason,
     context: {
@@ -1885,7 +1889,12 @@ export async function commitFunctionalResult(options, dependencies = {}) {
   const preflightSession = loadSessionStore(store);
   const expectedIdentity = store.expected;
   for (const field of Object.keys(expectedIdentity)) {
-    if (preflightSession.state[field] !== expectedIdentity[field]) {
+    const matches =
+      field === 'workflowOwner'
+        ? JSON.stringify(canonicalize(preflightSession.state[field])) ===
+          JSON.stringify(canonicalize(expectedIdentity[field]))
+        : preflightSession.state[field] === expectedIdentity[field];
+    if (!matches) {
       sessionFail(
         'SESSION_IDENTITY_MISMATCH',
         'Session identity does not match before Development execution',
@@ -2040,6 +2049,19 @@ function output(value, stream = process.stdout) {
 export async function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
   const write = io.output ?? output;
+  const ownerContext = resolveWorkflowOwnerCommandContext(
+    'dev-session',
+    action,
+    {
+      home: options.home,
+      workspaceRoot: options.workspaceRoot ?? process.cwd(),
+      resolveCurrentWorkflowOwnerContext:
+        io.dependencies?.resolveCurrentWorkflowOwnerContext,
+    },
+  );
+  if (ownerContext !== null) {
+    options.workflowOwner = ownerContext.workflowOwner;
+  }
   let session;
   switch (action) {
     case 'start':
