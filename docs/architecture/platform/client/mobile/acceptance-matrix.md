@@ -1,8 +1,8 @@
 # Mobile Shell — 产品验收矩阵
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-09-21
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-08
 > **Owner**: Mobile Product Team
 
 ---
@@ -36,6 +36,8 @@
 | MS-PA25 | MS-J01, MS-J07 | Station peer mismatch, capability incompatibility, OAuth expiry/replay, and session revocation show blocking trust state and recovery | Signed handshake/access/session evidence | iOS Simulator |
 | MS-PA26 | MS-J07 | Fill command capacity or overflow data events; reads remain available and writes explain why they are blocked | Queue/admission/reconcile counters | simulator stress cell |
 | MS-PA27 | MS-J01, MS-J03, MS-J07 | WeChat/call/Docs entries are absent or disabled with a useful reason; local-only capability is not advertised as shared | Surface inventory and interaction evidence | iOS Simulator |
+| MS-PA28 | MS-J08 | In one foreground iOS run, open and interact with every registered pre-shell, tab, detail, overlay, and recovery surface; every surface has coherent hierarchy, touch targets, navigation, state meaning, and a valid next action | Route/state coverage manifest, screenshots, DOM/AX snapshots, and interaction trace for every inventory row | foreground iOS Simulator |
+| MS-PA29 | MS-J08 | Across the complete surface inventory, friendly identity and product copy remain primary; raw PTIDs, Station URLs, runtime/command IDs, untranslated keys, blocking module notices, clipping, overlap, and occluded controls are absent | Automated visual/content assertions plus agent-reviewed screenshots at normal and maximum supported text size | foreground iOS Simulator |
 
 ## Architecture Gates
 
@@ -56,6 +58,7 @@ before runtime gates run.
 | MS-AG09 Admission/overload | same Acceptance command | 50 intents/5 s across 8 ordering keys; Station delay 10 s; fill ledger limits; flood 2,000 data events plus revocation | command bounds/fairness hold; overflow is typed; data overflow reconciles; revocation closes writes; zero silent drop/duplicate | Evidence Store admission and reconcile `ArtifactRef`s |
 | MS-AG10 Payload/storage | same Acceptance command | payload at 256 KiB and +1 byte; media at Station-advertised maximum and +1 byte; process kill during ledger/draft transition | boundaries hold; media bytes stay external; command/draft stores recover atomically; disk scan finds no token, secret, or plaintext content | Evidence Store payload, recovery and redaction `ArtifactRef`s |
 | MS-AG11 Accessibility/i18n | layout and platform simulator Gates | simulator accessibility trees; maximum supported text size; reduced motion; longest supported locale; keyboard/focus traversal | semantic order and labels complete; focus restored; no clipped/overlapping text; motion preference honored | Evidence Store accessibility tree, focus trace and screenshot `ArtifactRef`s |
+| MS-AG12 Whole-product usability | extend `mobile-ios-simulator-layout-accessibility-e2e` with the descriptor/state inventory and foreground evidence contract | visible iOS Simulator; every registered route and product-owned recovery state; normal and maximum supported text size | every inventory row visited; zero raw-identifier, untranslated-copy, blocking-overlay, clipping, overlap, occlusion, missing-action, or prototype-drift failures; agent visual review passes | Per-surface screenshot, DOM/AX, interaction trace, inventory coverage manifest, and reviewed verdict `ArtifactRef`s |
 
 Missing required iOS Simulator evidence remains `UNPROVEN`. Android Emulator,
 physical-device, live-provider, VoiceOver/TalkBack, OEM scheduler/picker,
@@ -82,6 +85,7 @@ evidence cannot be promoted to that scope.
 | MS-PA18, MS-PA19, MS-PA20, MS-PA21 | MS-AG04, MS-AG06, MS-AG08, MS-AG09, MS-AG10 |
 | MS-PA22, MS-PA23, MS-PA26 | MS-AG04, MS-AG05, MS-AG09, MS-AG10 |
 | MS-PA24, MS-PA27 | MS-AG08, MS-AG11 |
+| MS-PA28, MS-PA29 | MS-AG08, MS-AG11, MS-AG12 |
 
 ## Capability Traceability
 
@@ -100,6 +104,7 @@ evidence cannot be promoted to that scope.
 | MS-C11 | MS-J01 | MS-PA27 | Disabled/absent WeChat OAuth entry |
 | MS-C12, MS-C13 | MS-J03 | MS-PA27 | Disabled/absent call and Docs entries |
 | MS-C14 | MS-J07 | MS-PA22, MS-PA27 | Device-only message flag |
+| MS-C15 | MS-J08 | MS-PA28, MS-PA29 | Complete foreground Mobile surface inventory |
 
 ## Architecture Requirement Traceability
 
@@ -114,6 +119,7 @@ evidence cannot be promoted to that scope.
 | MS-PA22 | Device-local typed flag projection; no shared business contract |
 | MS-PA23 | MS-P08 device-local draft envelope |
 | MS-PA24, MS-PA27 | UI Identity and component-tree contracts; no new business schema |
+| MS-PA28, MS-PA29 | MS-D28 whole-product usability attestation; descriptor/state inventory; UI Identity and confirmed prototype |
 
 Execution-plan W0 must register the concrete Acceptance JSON and run:
 
