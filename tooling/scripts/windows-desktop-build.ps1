@@ -80,14 +80,25 @@ $env:WindowsSdkDir = "$WindowsSdkRoot/"
 $env:WindowsSDKVersion = "$WindowsSdkVersion/"
 $env:INCLUDE = ($sdkInclude + $env:INCLUDE) -join ";"
 $env:LIB = ($sdkLib + $env:LIB) -join ";"
-$env:PATH = "$WindowsSdkRoot/bin/$WindowsSdkVersion/x64;$env:PATH"
+$protocDirectory = Split-Path -Parent $ProtocPath
+$env:PATH = (
+    "$protocDirectory;$WindowsSdkRoot/bin/$WindowsSdkVersion/x64;$env:PATH"
+)
 $env:CARGO_TARGET_DIR = $CargoTargetRoot
 $env:OPENSSL_SRC_PERL = $PerlPath
 $env:PROTOC = $ProtocPath
 
+$gitCommand = Get-Command "git.exe" -ErrorAction Stop
+$gitRoot = Split-Path (Split-Path $gitCommand.Source -Parent) -Parent
+$bashPath = Join-Path $gitRoot "bin/bash.exe"
+if (-not (Test-Path -LiteralPath $bashPath)) {
+    throw "Git Bash does not exist: $bashPath"
+}
+
 Push-Location -LiteralPath $SourceRoot
 try {
     Invoke-NativeCommand "pnpm.cmd" @("install", "--frozen-lockfile")
+    Invoke-NativeCommand $bashPath @("model/build.sh")
     $env:VITE_ACCEPTANCE_HARNESS = "1"
     Invoke-NativeCommand "pnpm.cmd" @("--dir", "apps/desktop", "run", "build")
 
