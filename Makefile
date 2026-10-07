@@ -55,7 +55,7 @@ help:
 	@echo "  make plan-mount PLAN=<path>    Mount one stable Plan in this workspace"
 	@echo "  make plan-mount-status         Show this workspace's live Plan mount and run"
 	@echo "  make plan-unmount REASON=<reason>  Release a completed/cancelled or owner-authorized mount"
-	@echo "  make plan-state-migrate       One-time idle-machine migration to stable Plan state"
+	@echo "  make plan-state-migrate       Adopt stable Plan state for this workspace"
 	@echo ""
 	@echo "  make station                   Ready Station (local start / remote deploy)"
 	@echo "  make station-check             Health-check Station only"

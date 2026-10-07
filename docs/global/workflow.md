@@ -15,9 +15,12 @@ make skills IDE=trae
 make workflow-doctor
 ```
 
-When upgrading from the retired frozen-version contract, first close every live
-Development Run and then run `make plan-state-migrate` once. The migration
-refuses live work and does not install a legacy runtime fallback.
+When upgrading from the retired frozen-version contract, run
+`make plan-state-migrate` from the selected worktree. It preserves that
+workspace's declaration lifecycle and foreign coordination records. A legacy
+PlanMount remains close-only: finish it before upgrading when possible;
+otherwise current tooling permits only separately authorized exact-owner
+`owner-unmount`, never legacy snapshot execution or terminal-state trust.
 
 The installer projects repository-owned Skills and supported blockable hooks
 into the current worktree. The Doctor verifies the public promises below. A
