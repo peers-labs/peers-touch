@@ -35,11 +35,11 @@ type SubServer struct {
 	status  server.Status
 	svc     *application.Service
 	streams *StreamManager
+	tunnels *tunnelAdmission
 
 	mountJWTWrapper        server.Wrapper
 	mountRotateJWTWrapper  server.Wrapper
 	routePublishJWTWrapper server.Wrapper
-	networkJWTWrapper      server.Wrapper
 	operatorJWTWrapper     server.Wrapper
 
 	listener net.Listener
@@ -95,7 +95,6 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 		s.svc,
 		domain.ScopeRoutePublish,
 	)
-	s.networkJWTWrapper = networkAuthenticationWrapper(s.svc)
 	s.operatorJWTWrapper = operatorAuthenticationWrapper(
 		securityMaterial.operatorKey,
 		s.opts.OperatorIssuer,
@@ -120,6 +119,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 				logger.Errorf(ctx, "[relay] update mount status online for %s: %v", peerID, err)
 			}
 		} else {
+			s.svc.InvalidateStationRoutes(peerID)
 			if err := s.svc.UpdateMountStatus(
 				ctx,
 				peerID,
@@ -129,7 +129,12 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 				logger.Errorf(ctx, "[relay] update mount status offline for %s: %v", peerID, err)
 			}
 		}
-	}, s.opts.MaxConcurrentPerStation)
+	}, s.opts.MaxConcurrentPerStation, int64(s.opts.MaxBodySize))
+	s.tunnels = newTunnelAdmission(
+		s.opts.MaxStations*s.opts.MaxConcurrentPerStation,
+		min(8, s.opts.MaxConcurrentPerStation),
+		s.opts.MaxConcurrentPerStation,
+	)
 
 	// Tier C1 — turn on the federation invalidation pub/sub topic.
 	// We list it explicitly here (rather than auto-allowing every
@@ -328,6 +333,27 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 		metConnectionsTotal.Inc("auth_error")
 		return
 	}
+	mount, err := s.svc.GetMountByStationPeerID(ctx, hs.StationPeerID)
+	if err != nil {
+		logger.Warnf(ctx, "[relay] load mount limits for %s: %v", hs.StationPeerID, err)
+		s.writeHandshakeACK(conn, false, "mount limits are unavailable")
+		_ = conn.Close()
+		metConnectionsTotal.Inc("auth_error")
+		return
+	}
+	limits := streamLimits{
+		maxConcurrent:      s.opts.MaxConcurrentPerStation,
+		maxDirectionBytes:  int64(s.opts.MaxBodySize),
+		rateBytesPerSecond: tunnelRateBytesPerSecond,
+	}
+	if mount.MaxClients > 0 &&
+		int(mount.MaxClients) < limits.maxConcurrent {
+		limits.maxConcurrent = int(mount.MaxClients)
+	}
+	if mount.BandwidthLimit > 0 &&
+		mount.BandwidthLimit < limits.rateBytesPerSecond {
+		limits.rateBytesPerSecond = mount.BandwidthLimit
+	}
 
 	brc := &bufferedReadConn{Reader: br, Conn: conn}
 	entry, err := s.streams.AddValidated(
@@ -336,6 +362,7 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 		identity.Generation,
 		identity.ExpiresAt,
 		brc,
+		limits,
 		func() error {
 			_, err := s.svc.AuthenticateMountCredential(
 				ctx,

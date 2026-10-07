@@ -21,10 +21,11 @@ import (
 // ---- DTO: Invite ----
 
 type createInviteRequest struct {
-	StationPeerID string `json:"station_peer_id,omitempty"`
-	Label         string `json:"label,omitempty"`
-	MaxClients    int32  `json:"max_clients,omitempty"`
-	ExpiresIn     string `json:"expires_in,omitempty"`
+	StationPeerID  string `json:"station_peer_id,omitempty"`
+	Label          string `json:"label,omitempty"`
+	MaxClients     int32  `json:"max_clients,omitempty"`
+	BandwidthLimit int64  `json:"bandwidth_limit,omitempty"`
+	ExpiresIn      string `json:"expires_in,omitempty"`
 }
 
 type inviteInfo struct {
@@ -32,6 +33,7 @@ type inviteInfo struct {
 	IntendedStationPeerID string `json:"intended_station_peer_id,omitempty"`
 	Label                 string `json:"label"`
 	MaxClients            int32  `json:"max_clients"`
+	BandwidthLimit        int64  `json:"bandwidth_limit"`
 	Status                int32  `json:"status"`
 	ConsumedBy            string `json:"consumed_by,omitempty"`
 	ExpiresAt             string `json:"expires_at"`
@@ -76,6 +78,7 @@ func (h *relayHandler) handleCreateInvite(w http.ResponseWriter, r *http.Request
 		req.StationPeerID,
 		req.Label,
 		req.MaxClients,
+		req.BandwidthLimit,
 		expiresIn,
 	)
 	if err != nil {
@@ -109,6 +112,7 @@ func (h *relayHandler) handleListInvites(w http.ResponseWriter, r *http.Request)
 			IntendedStationPeerID: inv.IntendedStationPeerID,
 			Label:                 inv.Label,
 			MaxClients:            inv.MaxClients,
+			BandwidthLimit:        inv.BandwidthLimit,
 			Status:                int32(inv.Status),
 			ConsumedBy:            inv.ConsumedBy,
 			ExpiresAt:             inv.ExpiresAt.Format(time.RFC3339),

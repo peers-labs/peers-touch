@@ -61,7 +61,7 @@ def validate_discovery_source_contract() -> None:
             "application/discovery.go"
         ): (
             "ACCESS_ENDPOINT_ROLE_RELAY",
-            "verifyStationRouteAttestation",
+            "domain.VerifyStationRouteAttestation",
             "RegisterConnectionGrant",
             "GRANT_REPLAYED",
             "GRANT_WRONG_RELAY",

@@ -219,6 +219,7 @@ func TestStreamManagerValidatedAddIsClosedByConcurrentRemoval(t *testing.T) {
 			7,
 			time.Now().Add(time.Hour),
 			relayConn,
+			streamLimits{},
 			func() error {
 				close(validationStarted)
 				<-releaseValidation
@@ -268,6 +269,7 @@ func TestStreamManagerValidatedAddRejectsStaleCredentialBeforeReadLoop(t *testin
 		3,
 		time.Now().Add(time.Hour),
 		relayConn,
+		streamLimits{},
 		func() error { return stale },
 	)
 	if !errors.Is(err, stale) {

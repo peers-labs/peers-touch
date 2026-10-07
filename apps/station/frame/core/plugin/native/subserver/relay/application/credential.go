@@ -125,24 +125,6 @@ func (a *CredentialAuthority) IssueMountCredential(
 	)
 }
 
-func (a *CredentialAuthority) IssueClientCredential(
-	mount *domain.Mount,
-	jti string,
-	ttl time.Duration,
-) (*domain.MountCredential, error) {
-	if ttl <= 0 || ttl > defaultMountCredentialTTL {
-		ttl = defaultMountCredentialTTL
-	}
-	return a.issueCredential(
-		mount,
-		jti,
-		"relay_client",
-		domain.ClientCredentialAudience,
-		[]string{domain.ScopeClientForward},
-		ttl,
-	)
-}
-
 func (a *CredentialAuthority) issueCredential(
 	mount *domain.Mount,
 	jti string,
@@ -340,9 +322,7 @@ func parseEd25519PrivateKey(material []byte) (ed25519.PrivateKey, error) {
 }
 
 func subjectForCredential(credentialType, stationPeerID string) string {
-	if credentialType == "relay_client" {
-		return domain.SubjectRelayClient + stationPeerID
-	}
+	_ = credentialType
 	return domain.SubjectRelayAccess + stationPeerID
 }
 

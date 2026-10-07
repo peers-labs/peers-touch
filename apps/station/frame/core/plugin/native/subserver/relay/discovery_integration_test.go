@@ -25,6 +25,7 @@ func TestRelayDiscoveryFiltersRoutesAndConsumesPrivateGrant(t *testing.T) {
 		station.peerID,
 		"discovery",
 		2,
+		0,
 		time.Hour,
 	)
 	require.NoError(t, err)
@@ -158,6 +159,21 @@ func TestRelayDiscoveryFiltersRoutesAndConsumesPrivateGrant(t *testing.T) {
 		privateDiscovery.GetOutcome(),
 	)
 	require.Len(t, privateDiscovery.GetStationRoutes(), 1)
+	authorizedRoute, err := env.svc.AuthorizeClientTunnel(
+		ctx,
+		grantBytes,
+		"private-route",
+		enrolled.Credential.Generation,
+	)
+	require.NoError(t, err)
+	require.Equal(t, station.peerID, authorizedRoute.StationPeerID)
+	_, err = env.svc.AuthorizeClientTunnel(
+		ctx,
+		grantBytes,
+		"private-route",
+		enrolled.Credential.Generation,
+	)
+	require.ErrorIs(t, err, application.ErrTunnelUnauthorized)
 
 	replayed, err := env.svc.DiscoverEndpoint(
 		ctx,
@@ -187,6 +203,7 @@ func TestRelayDiscoveryReturnsTypedCandidateAndGrantFailures(t *testing.T) {
 		station.peerID,
 		"discovery-failures",
 		2,
+		0,
 		time.Hour,
 	)
 	require.NoError(t, err)
@@ -331,6 +348,7 @@ func TestRegisterConnectionGrantRetryPreservesRemainingUses(t *testing.T) {
 		station.peerID,
 		"grant-retry",
 		2,
+		0,
 		time.Hour,
 	)
 	require.NoError(t, err)

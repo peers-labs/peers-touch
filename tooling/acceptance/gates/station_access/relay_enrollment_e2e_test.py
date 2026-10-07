@@ -123,7 +123,6 @@ class RelayEnrollmentGateTest(unittest.TestCase):
                     "streamClosedAfterRotate": True,
                     "oldCredentialAfterRotateStatus": 401,
                     "newCredentialAfterRotateStatus": 200,
-                    "oldClientCredentialAfterRotateStatus": 401,
                     "revokeStatus": "revoked",
                     "streamClosedAfterRevoke": True,
                     "reconnectRejectedAfterRevoke": True,

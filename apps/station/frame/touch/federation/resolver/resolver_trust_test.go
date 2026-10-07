@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 
 type resolverRelayClient struct {
 	baseURL string
-	token   string
+	client  *http.Client
 }
 
 type membershipReaderStub struct {
@@ -36,16 +37,35 @@ func (s *membershipReaderStub) IsActiveMember(
 	return s.active, s.err
 }
 
-func (c resolverRelayClient) BaseURL() string {
+func (c resolverRelayClient) RelayOrigin() string {
 	return c.baseURL
 }
 
-func (c resolverRelayClient) Token() string {
-	return c.token
-}
+func (c resolverRelayClient) Available() bool { return c.baseURL != "" }
 
 func (resolverRelayClient) Publish(context.Context, string, []byte) error {
 	return nil
+}
+
+func (c resolverRelayClient) RoundTrip(
+	ctx context.Context,
+	targetStationPeerID string,
+	request *http.Request,
+) (*http.Response, error) {
+	if targetStationPeerID != "station-remote" {
+		return nil, errors.New("unexpected Relay tunnel target")
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, err
+	}
+	outbound := request.Clone(ctx)
+	target := *request.URL
+	target.Scheme = base.Scheme
+	target.Host = base.Host
+	outbound.URL = &target
+	outbound.RequestURI = ""
+	return c.client.Do(outbound)
 }
 
 func TestRequireActiveMembershipFailsClosed(t *testing.T) {
@@ -200,8 +220,8 @@ func TestResolveRemoteUsesProtobufAndBindsProfileToLocator(t *testing.T) {
 		if request.Header.Get("Accept") != "application/protobuf" {
 			t.Fatalf("Accept = %q", request.Header.Get("Accept"))
 		}
-		if request.Header.Get("Authorization") != "Bearer relay-token" {
-			t.Fatalf("Authorization = %q", request.Header.Get("Authorization"))
+		if request.Header.Get("Authorization") != "" {
+			t.Fatalf("unexpected outer authorization in inner request")
 		}
 		writer.Header().Set("Content-Type", "application/protobuf")
 		_, _ = writer.Write(body)
@@ -210,14 +230,11 @@ func TestResolveRemoteUsesProtobufAndBindsProfileToLocator(t *testing.T) {
 	nativefed.ClearRelayClient()
 	nativefed.RegisterRelayClient(resolverRelayClient{
 		baseURL: server.URL,
-		token:   "relay-token",
+		client:  server.Client(),
 	})
 	t.Cleanup(nativefed.ClearRelayClient)
 
-	resolver := New(Config{
-		HTTPClient: server.Client(),
-		Now:        func() time.Time { return now },
-	})
+	resolver := New(Config{Now: func() time.Time { return now }})
 	resolved, err := resolver.resolveRemote(
 		context.Background(),
 		"@bob@remote.invalid",

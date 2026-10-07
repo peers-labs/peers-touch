@@ -11,6 +11,7 @@
     "station-access-relay-runtime-security",
     "station-access-relay-enrollment",
     "station-access-endpoint-discovery",
+    "station-access-relay-opaque-tunnel",
     "station-access-interface-integrity"
   ],
   "validation_gate_id": "station-access-domain-validation"

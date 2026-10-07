@@ -274,8 +274,7 @@ func TestRelayRouteInventoryIsRoleBounded(t *testing.T) {
 		"/api/v1/relay/heartbeat":            server.POST,
 		"/api/v1/relay/rotation/challenge":   server.POST,
 		"/api/v1/relay/token/refresh":        server.POST,
-		"/api/v1/relay/client-token":         server.POST,
-		"/relay/forward/*path":               server.ANY,
+		"/.well-known/peers-touch/tunnel":    server.GET,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Relay route inventory = %#v, want %#v", got, want)

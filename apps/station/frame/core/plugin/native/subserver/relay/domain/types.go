@@ -6,16 +6,13 @@ import "time"
 // Single source of truth — never duplicate these strings elsewhere.
 const (
 	SubjectRelayAccess = "relay-access:"
-	SubjectRelayClient = "relay-client:"
 
-	MountCredentialAudience  = "peers-touch-relay-mount"
-	ClientCredentialAudience = "peers-touch-relay-client"
+	MountCredentialAudience = "peers-touch-relay-mount"
 
-	ScopeMountConnect  = "relay.mount.connect"
-	ScopeMountRotate   = "relay.mount.rotate"
-	ScopeRoutePublish  = "relay.route.publish"
-	ScopePeerTunnel    = "relay.peer.tunnel"
-	ScopeClientForward = "relay.client.forward"
+	ScopeMountConnect = "relay.mount.connect"
+	ScopeMountRotate  = "relay.mount.rotate"
+	ScopeRoutePublish = "relay.route.publish"
+	ScopePeerTunnel   = "relay.peer.tunnel"
 
 	StationIdentityDomain       = "peers-touch/station-identity/v1\x00"
 	EnrollmentChallengeDomain   = "peers-touch/relay-enrollment-challenge/v1\x00"

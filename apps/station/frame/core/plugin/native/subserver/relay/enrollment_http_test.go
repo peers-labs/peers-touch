@@ -60,6 +60,7 @@ func TestEnrollmentHTTPDerivesIdentityAndNeverListsInviteSecret(t *testing.T) {
 		"",
 		"station",
 		4,
+		0,
 		time.Hour,
 	)
 	if err != nil {

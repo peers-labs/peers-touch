@@ -411,7 +411,7 @@ func (s *SubServer) Handlers() []server.Handler {
 			server.WithMethod(server.POST),
 		),
 		// Phase C: federated user resolver — wraps locator lookup +
-		// /relay/forward profile fetch + envelope verification into a
+		// opaque Relay tunnel profile fetch + envelope verification into a
 		// single diagnostic endpoint so operators can validate the
 		// full read-side loop end-to-end.
 		server.NewHandlerWithURL(

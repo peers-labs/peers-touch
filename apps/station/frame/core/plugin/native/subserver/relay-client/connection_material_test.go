@@ -16,6 +16,7 @@ import (
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	federationcore "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -91,6 +92,10 @@ func TestIssueConnectionMaterialRegistersGrantBeforeReturningCode(t *testing.T) 
 	stationIdentity, err := peer.IDFromPublicKey(publicKey)
 	if err != nil {
 		t.Fatalf("derive Station peer ID: %v", err)
+	}
+	ingress, err := newInnerTLSIngress(0, time.Second)
+	if err != nil {
+		t.Fatalf("create inner TLS ingress: %v", err)
 	}
 
 	var published *peerpb.StationRouteAttestation
@@ -173,6 +178,8 @@ func TestIssueConnectionMaterialRegistersGrantBeforeReturningCode(t *testing.T) 
 		status:          server.StatusRunning,
 		enrollmentState: "mounted",
 		stationSigner:   connectionMaterialSigner{privateKey: privateKey},
+		innerTLS:        ingress,
+		publishedRoutes: make(map[string]uint64),
 	}
 	subserver.setCredential(&cachedMountCredential{
 		Token:         "mount-token",
@@ -230,6 +237,28 @@ func TestIssueConnectionMaterialRegistersGrantBeforeReturningCode(t *testing.T) 
 	if !proto.Equal(envelope.GetRouteAttestation(), published) {
 		t.Fatal("returned route attestation differs from published route")
 	}
+	statement := &peerpb.StationRouteStatement{}
+	if err := proto.Unmarshal(published.GetStatementBytes(), statement); err != nil {
+		t.Fatalf("decode published route statement: %v", err)
+	}
+	if !bytes.Equal(statement.GetInnerTlsSpkiSha256(), ingress.SPKISHA256()) {
+		t.Fatal("route attestation does not bind the Station-owned inner TLS SPKI")
+	}
+	if !bytes.Equal(
+		statement.GetCapabilitiesDigest(),
+		federationcore.PeerCapabilityManifestDigest(),
+	) {
+		t.Fatal("route attestation does not bind the canonical capability manifest")
+	}
+	if bytes.Equal(
+		statement.GetInnerTlsSpkiSha256(),
+		bytes.Repeat([]byte{0x31}, sha256.Size),
+	) || bytes.Equal(
+		statement.GetCapabilitiesDigest(),
+		bytes.Repeat([]byte{0x32}, sha256.Size),
+	) {
+		t.Fatal("caller-controlled route security material was trusted")
+	}
 }
 
 func TestIssueConnectionMaterialReturnsNothingWhenGrantRegistrationFails(
@@ -238,6 +267,10 @@ func TestIssueConnectionMaterialReturnsNothingWhenGrantRegistrationFails(
 	privateKey, publicKey, err := libp2pcrypto.GenerateEd25519Key(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
+	}
+	ingress, err := newInnerTLSIngress(0, time.Second)
+	if err != nil {
+		t.Fatalf("create inner TLS ingress: %v", err)
 	}
 	stationIdentity, err := peer.IDFromPublicKey(publicKey)
 	if err != nil {
@@ -271,6 +304,8 @@ func TestIssueConnectionMaterialReturnsNothingWhenGrantRegistrationFails(
 		status:          server.StatusRunning,
 		enrollmentState: "mounted",
 		stationSigner:   connectionMaterialSigner{privateKey: privateKey},
+		innerTLS:        ingress,
+		publishedRoutes: make(map[string]uint64),
 	}
 	subserver.setCredential(&cachedMountCredential{
 		Token:         "mount-token",

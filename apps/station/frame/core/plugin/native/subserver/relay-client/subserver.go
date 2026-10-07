@@ -1,8 +1,5 @@
-// Package relayclient implements the station-side driver that mounts the local
-// Station onto a remote Relay subserver. It is the missing piece between the
-// existing relay/client library (which knows how to speak the framed TCP
-// protocol) and the Hertz HTTP server we want to expose through the relay's
-// /relay/forward/<peer>/<path> endpoint.
+// Package relayclient mounts a Station onto a Relay and terminates opaque
+// client-to-Station TLS inside the Station process.
 //
 // Lifecycle (Start spawns a single goroutine running run()):
 //
@@ -12,10 +9,10 @@
 //  2. Acquire a relay_token. We prefer a cached value at TokenStorePath; on
 //     cache miss we complete challenge-bound enrollment with the operator's
 //     one-time InviteToken and persist the resulting structured credential.
-//  3. Hand off to relay/client.Client which keeps the TCP stream alive,
-//     reconnects on disconnect, and forwards request frames to a dispatcher
-//     we provide. Our dispatcher loops every incoming HTTP request back into
-//     the local Hertz server on 127.0.0.1:<LocalHTTPPort>.
+//  3. Hand off to relay/client.Client, which multiplexes opaque tunnels over
+//     the authenticated mount stream.
+//  4. Terminate inner TLS 1.3 and bridge decrypted HTTP to the canonical local
+//     Station router. The Relay never receives method, path, headers, or body.
 //
 // Layering note: this subserver lives in frame/core/plugin/native and reuses
 // frame-layer components only. It does not touch apps/station/app and does
@@ -39,7 +36,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/client"
-	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/protocol"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
@@ -51,18 +47,17 @@ type federationHandle struct {
 	sub *SubServer
 }
 
-func (f federationHandle) BaseURL() string {
-	if f.sub == nil {
-		return ""
-	}
-	return strings.TrimRight(f.sub.opts.RelayURL, "/")
+func (f federationHandle) Available() bool {
+	return f.sub != nil &&
+		f.sub.Status() == server.StatusRunning &&
+		f.sub.getToken() != ""
 }
 
-func (f federationHandle) Token() string {
-	if f.sub == nil {
+func (f federationHandle) RelayOrigin() string {
+	if f.sub == nil || f.sub.opts == nil {
 		return ""
 	}
-	return f.sub.getToken()
+	return strings.TrimRight(strings.TrimSpace(f.sub.opts.RelayURL), "/")
 }
 
 // Publish forwards to the embedded *client.Client. Error semantics:
@@ -112,6 +107,10 @@ type SubServer struct {
 	cancel          context.CancelFunc
 	runner          *client.Client
 	stationSigner   stationConnectionSigner
+	innerTLS        *innerTLSIngress
+
+	routeMu         sync.RWMutex
+	publishedRoutes map[string]uint64
 
 	// tokenMu guards the complete current mount credential. Route and grant
 	// issuance must bind the same Relay, Station, and generation as the token
@@ -163,7 +162,10 @@ func (s *SubServer) getRunner() *client.Client {
 // NewRelayClientSubServer constructs the subserver from accumulated options.
 func NewRelayClientSubServer(opts ...option.Option) server.Subserver {
 	o := option.GetOptions(opts...).Ctx().Value(optionsKey{}).(*Options)
-	return &SubServer{opts: o}
+	return &SubServer{
+		opts:            o,
+		publishedRoutes: make(map[string]uint64),
+	}
 }
 
 // Name returns the subserver identifier shown in framework logs.
@@ -243,6 +245,7 @@ func (s *SubServer) Stop(ctx context.Context) error {
 	runner := s.runner
 	s.cancel = nil
 	s.runner = nil
+	s.innerTLS = nil
 	s.status = server.StatusStopping
 	s.mu.Unlock()
 
@@ -254,6 +257,7 @@ func (s *SubServer) Stop(ctx context.Context) error {
 	}
 
 	s.setCredential(nil)
+	s.clearPublishedRoutes()
 	federation.ClearRelayClient()
 
 	s.mu.Lock()
@@ -278,6 +282,19 @@ func (s *SubServer) run(ctx context.Context) {
 	}
 	logger.Infof(ctx, "[relay-client] resolved station_peer_id=%s", peerID)
 
+	ingress, err := newInnerTLSIngress(
+		s.opts.LocalHTTPPort,
+		time.Duration(s.opts.LocalHTTPTimeoutSec)*time.Second,
+	)
+	if err != nil {
+		logger.Errorf(ctx, "[relay-client] initialize inner TLS ingress: %v", err)
+		s.setEnrollmentFailure(err)
+		return
+	}
+	s.mu.Lock()
+	s.innerTLS = ingress
+	s.mu.Unlock()
+
 	credential, err := s.acquireRelayCredential(ctx, peerID)
 	if err != nil {
 		logger.Errorf(ctx, "[relay-client] could not acquire relay token: %v", err)
@@ -291,7 +308,7 @@ func (s *SubServer) run(ctx context.Context) {
 		RelayAddr:              s.opts.RelayStreamAddr,
 		RelayToken:             credential.Token,
 		StationPeerID:          peerID,
-		Dispatcher:             s.makeDispatcher(),
+		TunnelHandler:          s.handleInboundTunnel,
 		TokenRefresher:         s.makeTokenRefresher(),
 		CredentialRejected:     s.makeCredentialRejected(peerID),
 		ConnectionStateChanged: s.setMountReady,
@@ -314,6 +331,7 @@ func (s *SubServer) run(ctx context.Context) {
 	go s.runHeartbeat(ctx)
 
 	cli.Run(ctx)
+	go s.runRoutePublisher(ctx)
 
 	<-ctx.Done()
 	logger.Infof(ctx, "[relay-client] run loop exiting: %v", ctx.Err())
@@ -428,50 +446,21 @@ func (s *SubServer) fetchBootstrapPeerID(ctx context.Context) (string, error) {
 	return out.PeerID, nil
 }
 
-// makeDispatcher returns a relay/client.Dispatcher that loops every incoming
-// forwarded request back into the local Hertz server. We strip hop-by-hop
-// headers so they are not blindly proxied — they describe the relay→station
-// hop, not the station→loopback hop.
-func (s *SubServer) makeDispatcher() client.Dispatcher {
-	base := fmt.Sprintf("http://127.0.0.1:%d", s.opts.LocalHTTPPort)
-	timeout := time.Duration(s.opts.LocalHTTPTimeoutSec) * time.Second
-	if timeout <= 0 {
-		timeout = 30 * time.Second
+func (s *SubServer) handleInboundTunnel(
+	ctx context.Context,
+	tunnel *client.InboundTunnel,
+) {
+	if tunnel == nil || !s.routeIsPublished(
+		tunnel.RouteID(),
+		tunnel.RouteGeneration(),
+	) {
+		return
 	}
-	cl := &http.Client{Timeout: timeout}
-	return func(ctx context.Context, req *protocol.RequestFrame) (uint32, map[string]string, []byte, error) {
-		url := base + req.Path
-		httpReq, err := http.NewRequestWithContext(ctx, req.Method, url, bytes.NewReader(req.Body))
-		if err != nil {
-			return http.StatusBadGateway, map[string]string{"Content-Type": "text/plain"}, []byte(err.Error()), nil
-		}
-		for k, v := range req.Headers {
-			if isHopByHop(k) {
-				continue
-			}
-			httpReq.Header.Set(k, v)
-		}
-		if targetAuth := strings.TrimSpace(httpReq.Header.Get(federation.ForwardAuthorizationHeader)); targetAuth != "" {
-			httpReq.Header.Set("Authorization", targetAuth)
-			httpReq.Header.Del(federation.ForwardAuthorizationHeader)
-		}
-		resp, err := cl.Do(httpReq)
-		if err != nil {
-			return http.StatusBadGateway,
-				map[string]string{"Content-Type": "text/plain"},
-				[]byte(err.Error()),
-				nil
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		hdrs := make(map[string]string, len(resp.Header))
-		for k, v := range resp.Header {
-			if len(v) == 0 || isHopByHop(k) {
-				continue
-			}
-			hdrs[k] = v[0]
-		}
-		return uint32(resp.StatusCode), hdrs, body, nil
+	s.mu.Lock()
+	ingress := s.innerTLS
+	s.mu.Unlock()
+	if ingress != nil {
+		ingress.Serve(ctx, tunnel)
 	}
 }
 
@@ -542,12 +531,14 @@ func (s *SubServer) setMountReady(connected bool) {
 		s.status = server.StatusRunning
 		s.enrollmentState = "mounted"
 		federation.RegisterRelayClient(federationHandle{sub: s})
+		go s.publishDefaultRoute(context.Background())
 		return
 	}
 	if s.status != server.StatusStopping && s.status != server.StatusStopped {
 		s.status = server.StatusStarting
 		s.enrollmentState = "reconnecting"
 	}
+	s.clearPublishedRoutes()
 	federation.ClearRelayClient()
 }
 
@@ -573,24 +564,4 @@ func (s *SubServer) setEnrollmentFailure(err error) {
 		return
 	}
 	s.enrollmentState = "error"
-}
-
-// hopByHopHeaders enumerates the standard RFC 7230 §6.1 hop-by-hop headers
-// plus Host, which we never want to copy from one hop to another because it
-// would break loopback addressing.
-var hopByHopHeaders = map[string]struct{}{
-	"Connection":          {},
-	"Keep-Alive":          {},
-	"Proxy-Authenticate":  {},
-	"Proxy-Authorization": {},
-	"Te":                  {},
-	"Trailer":             {},
-	"Transfer-Encoding":   {},
-	"Upgrade":             {},
-	"Host":                {},
-}
-
-func isHopByHop(h string) bool {
-	_, ok := hopByHopHeaders[http.CanonicalHeaderKey(h)]
-	return ok
 }

@@ -74,10 +74,10 @@ func TestMountCredentialUsesRelayEdDSAClaims(t *testing.T) {
 	}
 	if _, err := authority.ValidateCredential(
 		credential.Token,
-		domain.ClientCredentialAudience,
-		domain.ScopeClientForward,
+		domain.MountCredentialAudience,
+		"relay.unknown",
 	); err == nil {
-		t.Fatal("mount credential was accepted for client audience")
+		t.Fatal("mount credential was accepted for an unknown scope")
 	}
 }
 

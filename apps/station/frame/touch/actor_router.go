@@ -78,7 +78,7 @@ const (
 	// RouterURLFederationProfile is the home-station endpoint that returns
 	// a signed ActorProfileEnvelope for one of its local actors. Public
 	// (no JWT). The federated user-discovery resolver on a peer station
-	// hits this endpoint via /relay/forward to retrieve verified profile
+	// reaches this endpoint through the opaque Relay tunnel to retrieve verified profile
 	// snapshots without granting itself a session on this station.
 	RouterURLFederationProfile RouterPath = "/federation/profile"
 
