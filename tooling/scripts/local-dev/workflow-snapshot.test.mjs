@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildDevSnapshot,
   deriveWorktrees,
   workflowProjection,
 } from './workflow-snapshot.mjs';
@@ -172,6 +173,47 @@ test('worktree status exposes creation and current main-session owners', () => {
   assert.deepEqual(worktree.workflow.owner, currentOwner);
 });
 
+test('registration metadata never substitutes for creation provenance', () => {
+  const workspaceId = '0123456789abcdef';
+  const inferred = {
+    kind: 'peers-touch-workflow-owner-reference',
+    host: 'trae',
+    rootChatId: 'later-chat',
+    rootChatHash: hashWorkflowRootChatIdentity('trae', 'later-chat'),
+    rootBindingDigest: 'd'.repeat(64),
+  };
+  const [worktree] = deriveWorktrees(
+    [],
+    [
+      {
+        workspaceId,
+        name: 'legacy-worktree',
+        branch: 'feat/legacy',
+        createdBy: inferred,
+      },
+    ],
+    [],
+    [],
+    [],
+    [
+      {
+        workspaceId,
+        name: 'legacy-worktree',
+        branch: 'feat/legacy',
+        head: 'e'.repeat(40),
+        detached: false,
+      },
+    ],
+    [],
+    [],
+    '2026-10-07T00:00:00.000Z',
+    true,
+    { readActions: () => [] },
+  );
+
+  assert.equal(worktree.createdBy, null);
+});
+
 test('live legacy work without main-session provenance is explicit', () => {
   const workspaceId = '0123456789abcdef';
   const [worktree] = deriveWorktrees(
@@ -217,6 +259,87 @@ test('live legacy work without main-session provenance is explicit', () => {
   assert.equal(
     worktree.environmentHealth.issues.includes(
       'WORKFLOW_OWNER_SESSION_MISSING',
+    ),
+    true,
+  );
+});
+
+test('Plan fallback uses the declaration digest without referencing hidden state', () => {
+  const projected = workflowProjection({
+    work: [
+      {
+        state: 'ACTIVE',
+        planDigest: 'a'.repeat(64),
+        plan: {
+          status: 'unavailable',
+          errorCode: 'PLAN_UNAVAILABLE',
+          review: {
+            state: 'MISSING',
+            reviewedAt: null,
+            reviewId: null,
+          },
+        },
+      },
+    ],
+    issues: [],
+    freshness: { issues: [] },
+    activeWork: {
+      planId: 'PLAN-1',
+      planStatus: 'active',
+      currentTaskId: 'TASK-1',
+      devState: 'IMPLEMENTING',
+      updatedAt: '2026-10-07T00:00:00.000Z',
+    },
+    workspaceId: '0123456789abcdef',
+    options: {
+      now: new Date('2026-10-07T00:00:00.000Z'),
+      readActions: () => [],
+    },
+  });
+
+  assert.equal(projected.workflow.plan.digest, 'a'.repeat(64));
+  assert.equal(projected.workflow.verdict, 'BLOCKED');
+});
+
+test('OWNER binding read errors block the aggregate snapshot', async () => {
+  const snapshot = await buildDevSnapshot({
+    envRepo: process.cwd(),
+    now: new Date('2026-10-07T00:00:00.000Z'),
+    discovery: {
+      checkedAt: '2026-10-07T00:00:00.000Z',
+      records: [],
+      error: null,
+      available: true,
+    },
+    observations: { records: [], errors: [] },
+    machineStatus: {
+      authority: 'available',
+      registrations: [],
+      activeLeases: [],
+      staleLeaseMetadata: [],
+      unregisteredObservations: false,
+    },
+    ledger: { declarations: {} },
+    activeWork: { records: [], errors: [] },
+    ownerBindings: {
+      records: [],
+      errors: [
+        {
+          host: 'trae',
+          rootChatHash: 'a'.repeat(64),
+          code: 'WORKFLOW_OWNER_BINDING_INVALID',
+          message: 'invalid owner binding',
+        },
+      ],
+    },
+    worktreeCreations: { records: [], errors: [] },
+  });
+
+  assert.equal(snapshot.verdict, 'BLOCKED');
+  assert.equal(snapshot.continuation, 'HARD_BLOCK');
+  assert.equal(
+    snapshot.findings.some(
+      (finding) => finding.code === 'WORKFLOW_OWNER_BINDING_INVALID',
     ),
     true,
   );

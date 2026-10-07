@@ -457,12 +457,14 @@ Completion Review receipt.
 
 ## 5. Acceptance Integration
 
-`execution-plan.py` and `acceptance-plan.py` consume the current immutable
-snapshot through a structured parser. Local execution loads only the current
-workspace PlanMount's snapshot and run; synchronized foreign Plans are ignored.
-Pull-request CI
-reads `## Execution Plans / 执行计划` and invokes `--plan` once per declared
-path. The current closure is the current Task's `closureId`.
+`execution-plan.py` and `acceptance-plan.py` use two explicit projections.
+Local execution loads only the current workspace PlanMount's immutable snapshot
+and run; synchronized foreign Plans are ignored. Pull-request CI reads
+`## Execution Plans / 执行计划`, validates each declared Plan directly from
+repository source, and requires its immutable
+`completions/<planDigest>.json` attestation. CI never reads machine-local mount
+state. `make plan-seal-completion PLAN=<path>` publishes that attestation only
+after every Task in the mounted ExecutionRun is `done`.
 
 The dedicated `development-workflow-control-plane` Gate runs package, Session,
 legacy-declaration, package-aware execution-plan and Skill contract tests. It is

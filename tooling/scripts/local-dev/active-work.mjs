@@ -28,12 +28,12 @@ import {
   withWorkspaceLifecycleLock,
 } from './workspace-lifecycle-lock.mjs';
 import {
-  resolveCurrentWorkflowOwnerContext,
+  resolveWorkflowOwnerCommandContext,
 } from './workflow-owner-context.mjs';
 import {
-  sameWorkflowOwnerReference,
-  validateWorkflowOwnerReference,
-} from './workflow-owner-reference.mjs';
+  assertMatchingWorkflowOwner,
+  requireWorkflowOwnerReference,
+} from './workflow-owner-command-policy.mjs';
 
 const LIVE_DECLARATION_STATES = new Set(['DECLARED', 'ACTIVE', 'RELEASING']);
 const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
@@ -47,6 +47,22 @@ function requiredIdentifier(value, field) {
     fail('INVALID_ARGUMENT', `${field} is invalid`, { field });
   }
   return value;
+}
+
+function requireActiveWorkOwner(value, detail = {}) {
+  try {
+    return requireWorkflowOwnerReference(value, detail);
+  } catch (error) {
+    fail('ACTIVE_WORK_OWNER_MISMATCH', error.message, error.detail);
+  }
+}
+
+function assertActiveWorkOwner(expected, actual, detail = {}) {
+  try {
+    return assertMatchingWorkflowOwner(expected, actual, detail);
+  } catch (error) {
+    fail('ACTIVE_WORK_OWNER_MISMATCH', error.message, error.detail);
+  }
 }
 
 function canonicalWorkspaceRoot(root) {
@@ -158,24 +174,11 @@ function assertOwnerAgreement({
       { mismatches },
     );
   }
-  if (
-    declaration.workflowOwner !== undefined &&
-    workflowOwner !== undefined &&
-    workflowOwner !== null &&
-    !sameWorkflowOwnerReference(
-      declaration.workflowOwner,
-      validateWorkflowOwnerReference(workflowOwner),
-    )
-  ) {
-    fail(
-      'ACTIVE_WORK_OWNER_MISMATCH',
-      'current workflow OWNER does not own the declaration',
-      {
-        expected: declaration.workflowOwner.rootBindingDigest,
-        actual: workflowOwner.rootBindingDigest,
-      },
-    );
-  }
+  assertActiveWorkOwner(
+    declaration.workflowOwner,
+    workflowOwner,
+    { record: 'development declaration' },
+  );
 }
 
 function readSessionState(options, declaration, dependencies) {
@@ -336,6 +339,9 @@ export function statusActiveWork(options = {}) {
 
 export function closeActiveWork(options = {}) {
   requiredIdentifier(options.workItemId, 'workItemId');
+  const workflowOwner = requireActiveWorkOwner(options.workflowOwner, {
+    record: 'active-work',
+  });
   if (options.expectedRevision === undefined) {
     fail('INVALID_ARGUMENT', 'close requires --expected-revision');
   }
@@ -345,6 +351,7 @@ export function closeActiveWork(options = {}) {
     workspaceId: options.workspaceId,
     expectedRevision: options.expectedRevision,
     workItemId: options.workItemId,
+    workflowOwner,
   });
 }
 
@@ -387,20 +394,18 @@ function output(value, stream = process.stdout) {
 export async function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
   const write = io.output ?? output;
-  const ownerOperationLabels = {
-    sync: 'active-work-sync',
-    repair: 'active-work-repair',
-    close: 'active-work-close',
-  };
-  if (ownerOperationLabels[action]) {
-    options.workflowOwner = (
-      io.dependencies?.resolveCurrentWorkflowOwnerContext ??
-      resolveCurrentWorkflowOwnerContext
-    )({
+  const ownerContext = resolveWorkflowOwnerCommandContext(
+    'active-work',
+    action,
+    {
       home: options.home,
       workspaceRoot: options.workspaceRoot ?? process.cwd(),
-      operationLabel: ownerOperationLabels[action],
-    }).workflowOwner;
+      resolveCurrentWorkflowOwnerContext:
+        io.dependencies?.resolveCurrentWorkflowOwnerContext,
+    },
+  );
+  if (ownerContext !== null) {
+    options.workflowOwner = ownerContext.workflowOwner;
   }
   let result;
   switch (action) {

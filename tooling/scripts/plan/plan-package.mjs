@@ -156,6 +156,10 @@ function lineCount(text) {
   return newlineCount + (text.endsWith('\n') ? 0 : 1);
 }
 
+function digestBytes(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
 function assertBounds(text, kind, sourcePath) {
   const isManifest = kind === 'manifest';
   const maxLines = isManifest ? MANIFEST_MAX_LINES : TASK_MAX_LINES;
@@ -1606,6 +1610,12 @@ export async function loadPlanPackage(planPath, options = {}) {
   }
 
   const taskSlices = new Map();
+  const sourceFiles = [
+    {
+      path: realPlan,
+      digest: digestBytes(markdown),
+    },
+  ];
   for (const planTask of plan.tasks) {
     const taskPath = path.join(
       packageDirectory,
@@ -1621,6 +1631,10 @@ export async function loadPlanPackage(planPath, options = {}) {
       `Task ${planTask.id} path`,
     );
     const taskMarkdown = await fsp.readFile(taskPath, 'utf8');
+    sourceFiles.push({
+      path: taskPath,
+      digest: digestBytes(taskMarkdown),
+    });
     assertBounds(taskMarkdown, 'task', taskPath);
     assertNoForbiddenSections(taskMarkdown, taskPath);
     assertCurrentSnapshot(taskMarkdown, taskPath);
@@ -1705,7 +1719,53 @@ export async function loadPlanPackage(planPath, options = {}) {
     northStarApproval,
     markdown,
     planBlock,
+    sourceFiles,
+    taskDirectory: path.join(packageDirectory, 'tasks'),
+    taskFileNames: actualFiles,
   };
+}
+
+export async function assertPlanPackageSourceCurrent(planPackage) {
+  const taskFileNames = await taskMarkdownFiles(planPackage.taskDirectory);
+  if (
+    taskFileNames.length !== planPackage.taskFileNames.length ||
+    taskFileNames.some(
+      (file, index) => file !== planPackage.taskFileNames[index],
+    )
+  ) {
+    fail(
+      'PLAN_SOURCE_CHANGED',
+      'Plan Task file set changed after validation',
+      {
+        expected: planPackage.taskFileNames,
+        actual: taskFileNames,
+      },
+    );
+  }
+  for (const source of planPackage.sourceFiles) {
+    let bytes;
+    try {
+      bytes = await fsp.readFile(source.path);
+    } catch (error) {
+      fail(
+        'PLAN_SOURCE_CHANGED',
+        'Plan source changed after validation',
+        { path: source.path, cause: String(error) },
+      );
+    }
+    const actualDigest = digestBytes(bytes);
+    if (actualDigest !== source.digest) {
+      fail(
+        'PLAN_SOURCE_CHANGED',
+        'Plan source changed after validation',
+        {
+          path: source.path,
+          expectedDigest: source.digest,
+          actualDigest,
+        },
+      );
+    }
+  }
 }
 
 export async function recordNorthStarApproval(planPackage, approval) {

@@ -7,7 +7,12 @@ import {
 } from './workflow-binding-store.mjs';
 import { readWorkspaceActions } from './workflow-action-store.mjs';
 import {
-  validateWorkflowOwnerReference,
+  isExactWorkflowOwnerReceipt,
+  requireWorkflowOwnerReference,
+  workflowOwnerActionIdentity,
+  workflowOwnerOperationLabel,
+} from './workflow-owner-command-policy.mjs';
+import {
   workflowOwnerReferenceFromBinding,
 } from './workflow-owner-reference.mjs';
 
@@ -26,20 +31,12 @@ function operationDate(value = new Date()) {
 function latestActionReceipts(receipts) {
   const latest = new Map();
   for (const receipt of receipts) {
-    latest.set(receipt.actionId, receipt);
+    latest.set(workflowOwnerActionIdentity(receipt), receipt);
   }
   return [...latest.values()];
 }
 
 export function resolveCurrentWorkflowOwnerContext(options = {}) {
-  if (options.workflowOwner !== undefined) {
-    return {
-      workflowOwner: validateWorkflowOwnerReference(options.workflowOwner, {
-        nullable: true,
-      }),
-      actionReceiptDigest: options.actionReceiptDigest ?? null,
-    };
-  }
   const workspaceRoot = path.resolve(options.workspaceRoot ?? process.cwd());
   const workspaceId = workspaceIdForRoot(workspaceRoot);
   const now = operationDate(options.now);
@@ -55,8 +52,10 @@ export function resolveCurrentWorkflowOwnerContext(options = {}) {
       ['RUNNING', 'WAITING'].includes(receipt.result) &&
       receipt.leaseUntil !== null &&
       Date.parse(receipt.leaseUntil) > now.getTime() &&
-      (options.operationLabel === undefined ||
-        receipt.operation?.label === options.operationLabel),
+      isExactWorkflowOwnerReceipt(receipt, {
+        workspaceId,
+        operationLabel: options.operationLabel,
+      }),
   );
   if (receipts.length === 0) {
     return { workflowOwner: null, actionReceiptDigest: null };
@@ -107,8 +106,52 @@ export function resolveCurrentWorkflowOwnerContext(options = {}) {
       { workspaceId, rootBindingDigest: owner.digest },
     );
   }
+  if (
+    owner.host !== matching[0].actor.host ||
+    owner.digest !== matching[0].actor.bindingDigest
+  ) {
+    fail(
+      'WORKFLOW_OWNER_CONTEXT_MISMATCH',
+      'live workflow action is not the root OWNER binding',
+      { workspaceId, rootBindingDigest: owner.digest },
+    );
+  }
   return {
     workflowOwner: workflowOwnerReferenceFromBinding(owner),
     actionReceiptDigest: matching[0].digest,
+  };
+}
+
+export function resolveWorkflowOwnerCommandContext(
+  group,
+  action,
+  options = {},
+) {
+  const operationLabel = workflowOwnerOperationLabel(group, action);
+  if (operationLabel === null) return null;
+  const context = (
+    options.resolveCurrentWorkflowOwnerContext ??
+    resolveCurrentWorkflowOwnerContext
+  )({
+    home: options.home,
+    machineRoot: options.machineRoot,
+    workspaceRoot: options.workspaceRoot,
+    operationLabel,
+    now: options.now,
+  });
+  if (!/^[0-9a-f]{64}$/.test(context.actionReceiptDigest ?? '')) {
+    fail(
+      'WORKFLOW_OWNER_CONTEXT_REQUIRED',
+      'operation requires an exact live main-session OWNER receipt',
+      { group, action, operationLabel },
+    );
+  }
+  return {
+    ...context,
+    workflowOwner: requireWorkflowOwnerReference(context.workflowOwner, {
+      group,
+      action,
+      operationLabel,
+    }),
   };
 }

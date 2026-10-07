@@ -32,6 +32,9 @@ import {
   projectWorkflowBinding,
 } from './workflow-binding-projection.mjs';
 import {
+  workflowOwnerReferenceFromBinding,
+} from './workflow-owner-reference.mjs';
+import {
   updateActiveWorkRecord,
 } from './active-work-store.mjs';
 import {
@@ -60,12 +63,17 @@ function fixture() {
 }
 
 function seedActiveSession(scope, sessionId = 'DEV-SESSION') {
-  const workspaceId = ownerProjection(
-    bindWorkflowOwner('trae', 'session-seed', scope.root, {
+  const owner = bindWorkflowOwner(
+    'trae',
+    'session-seed',
+    scope.root,
+    {
       machineRoot: scope.machineRoot,
       now: new Date('2026-10-01T00:00:00.000Z'),
-    }).binding,
-  ).workspaceId;
+    },
+  ).binding;
+  const workspaceId = ownerProjection(owner).workspaceId;
+  const workflowOwner = workflowOwnerReferenceFromBinding(owner);
   const workItemId = 'WORK-1';
   const at = '2026-10-01T00:00:00.000Z';
   const state = createInitialSessionState(
@@ -78,6 +86,7 @@ function seedActiveSession(scope, sessionId = 'DEV-SESSION') {
       branch: 'test',
       journeyId: 'JOURNEY-1',
       executionMode: 'build',
+      workflowOwner,
     },
     at,
   );
@@ -107,6 +116,7 @@ function seedActiveSession(scope, sessionId = 'DEV-SESSION') {
       branch: 'test',
       initialHead: '1'.repeat(40),
       expectedHead: '2'.repeat(40),
+      workflowOwner,
     },
     {
       home: scope.home,

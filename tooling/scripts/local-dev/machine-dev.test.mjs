@@ -40,6 +40,7 @@ import {
   updateWorkspace,
   validateLeaseRequest,
 } from './machine-dev-registry.mjs';
+import { runCli as runMachineCli } from './machine-dev.mjs';
 import {
   RESOURCE_PLAN_KIND,
   digestValue,
@@ -224,6 +225,7 @@ function declareLeaseIntent(scope) {
       'exclusive:station.deploy:station-four',
       'exclusive:station.reset:station-four-fixture',
     ].join(';'),
+    workflowOwner: workflowOwner(),
   });
 }
 
@@ -409,6 +411,51 @@ test('registration preserves the worktree main-session owner', () => {
   }
 });
 
+test('registration never substitutes the current OWNER for missing creation provenance', async () => {
+  const scope = fixture();
+  try {
+    await runMachineCli(
+      [
+        'register',
+        '--home',
+        scope.home,
+        '--workspace-root',
+        scope.workspaceA,
+        '--env-repo',
+        scope.envRepo,
+        '--profile',
+        'four',
+        '--slot',
+        '5',
+        '--capabilities',
+        'station.connect',
+        '--purpose',
+        'do not invent creation provenance',
+        '--owner',
+        'machine-dev-test@example.invalid',
+      ],
+      {
+        output() {},
+        dependencies: {
+          resolveWorkflowOwnerCommandContext: () => ({
+            workflowOwner: workflowOwner(),
+            actionReceiptDigest: 'b'.repeat(64),
+          }),
+          readWorktreeCreation: () => null,
+        },
+      },
+    );
+
+    const [registration] = statusAll({
+      home: scope.home,
+      envRepo: scope.envRepo,
+    }).registrations;
+    assert.equal(Object.hasOwn(registration, 'createdBy'), false);
+  } finally {
+    scope.close();
+  }
+});
+
 test('current Git HEAD is source state, not durable registration identity', () => {
   const scope = fixture();
   try {
@@ -582,6 +629,7 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
         'exclusive:station.deploy:station-four',
         'exclusive:station.reset:station-four-fixture',
       ].join(';'),
+      workflowOwner: workflowOwner(),
       planPath,
       taskId: planStatus.currentTaskId,
       planStatus,
@@ -838,6 +886,7 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       workspaceRoot: scope.workspaceA,
       workItemId: declaration.workItemId,
       sessionId: declaration.sessionId,
+      workflowOwner: declaration.workflowOwner,
     });
 
     const activeWork = updateActiveWorkRecord(
@@ -861,6 +910,7 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
         branch: registered.branch,
         initialHead: git(scope.workspaceA, 'rev-parse', 'HEAD'),
         expectedHead: git(scope.workspaceA, 'rev-parse', 'HEAD'),
+        workflowOwner: declaration.workflowOwner,
       },
       {
         home: scope.home,
@@ -879,6 +929,7 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       workspaceRoot: scope.workspaceA,
       expectedRevision: activeWork.revision,
       workItemId: activeWork.workItemId,
+      workflowOwner: activeWork.workflowOwner,
     });
     expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
       unregisterWorkspace({

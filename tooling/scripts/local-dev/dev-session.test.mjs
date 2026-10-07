@@ -248,6 +248,7 @@ function fixture({
     planPath: plan.path,
     taskId,
     journeyId,
+    workflowOwner: workflowOwner(),
     clock,
   };
   return {
@@ -281,6 +282,7 @@ function declarationOptions(scope, overrides = {}) {
     sourceHead: EXPECTED_HEAD,
     sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
     runtimeClaims: scope.runtimeClaims,
+    workflowOwner: scope.baseOptions.workflowOwner,
     planPath: 'fake-plan.md',
     planId: scope.plan.manifest.planId,
     taskId: scope.task.taskId,
@@ -804,6 +806,19 @@ test('archive preserves a terminal Session and clears the work-item slot', async
       workspaceId: WORKSPACE_ID,
       workItemId: scope.workItemId,
     });
+    assert.throws(
+      () =>
+        archiveDevelopmentSession({
+          ...scope.baseOptions,
+          workflowOwner: {
+            ...scope.baseOptions.workflowOwner,
+            rootBindingDigest: 'b'.repeat(64),
+          },
+        }),
+      (error) =>
+        error instanceof DevSessionError &&
+        error.code === 'SESSION_IDENTITY_MISMATCH',
+    );
 
     const archived = archiveDevelopmentSession(scope.baseOptions);
 

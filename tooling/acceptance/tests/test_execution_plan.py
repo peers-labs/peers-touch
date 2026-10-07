@@ -359,7 +359,7 @@ class ExecutionPlanTest(unittest.TestCase):
                 }
             )
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                "tooling.acceptance.core.execution_plan._source_plan_status",
                 return_value=status,
             ):
                 plan = load_formal_plan(plan_path)
@@ -377,7 +377,7 @@ class ExecutionPlanTest(unittest.TestCase):
             path.write_text(stable_plan_text("1" * 16), encoding="utf-8")
 
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                "tooling.acceptance.core.execution_plan._source_plan_status",
                 return_value=mounted_plan_status("1" * 16),
             ):
                 plan = load_formal_plan(path)
@@ -399,12 +399,29 @@ class ExecutionPlanTest(unittest.TestCase):
             ),
         )
 
+    def test_repository_plan_validation_does_not_require_a_machine_mount(self) -> None:
+        repo_root = Path(__file__).resolve().parents[3]
+        plan = load_formal_plan(
+            repo_root
+            / "docs"
+            / "architecture"
+            / "domains"
+            / "agent"
+            / "execution-plans"
+            / "20261003-mcp-dual-runtime"
+            / "plan.md"
+        )
+
+        self.assertEqual(plan.plan_id, "agent-mcp-dual-runtime-20261003")
+        self.assertEqual(plan.status, "unverified")
+        self.assertIsNone(plan.workspace_id)
+
     def test_stable_plan_changed_paths_are_limited_to_source_claims(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
             path.write_text(stable_plan_text("1" * 16), encoding="utf-8")
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                "tooling.acceptance.core.execution_plan._source_plan_status",
                 return_value=mounted_plan_status("1" * 16),
             ):
                 plan = load_formal_plan(path)
@@ -458,7 +475,7 @@ class ExecutionPlanTest(unittest.TestCase):
             )
 
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                "tooling.acceptance.core.execution_plan._source_plan_status",
                 return_value=mounted_plan_status(
                     "1" * 16,
                     status="blocked",

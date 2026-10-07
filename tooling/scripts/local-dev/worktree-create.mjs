@@ -27,10 +27,16 @@ import {
   workspaceWorkflowRootPath,
 } from '../lib/machine-dev-paths.mjs';
 import {
+  WorkspaceLifecycleLockError,
+  withWorkspaceLifecycleLockSync,
+} from './workspace-lifecycle-lock.mjs';
+import {
   readWorkflowOwnerByDigest,
   workflowOwnerIsReleased,
 } from './workflow-binding-store.mjs';
-import { resolveCurrentWorkflowOwnerContext } from './workflow-owner-context.mjs';
+import {
+  resolveWorkflowOwnerCommandContext,
+} from './workflow-owner-context.mjs';
 import {
   sameWorkflowOwnerReference,
   validateWorkflowOwnerReference,
@@ -38,6 +44,8 @@ import {
 } from './workflow-owner-reference.mjs';
 
 export const WORKTREE_CREATION_KIND = 'peers-touch-worktree-creation';
+export const WORKTREE_CREATION_TRANSACTION_KIND =
+  'peers-touch-worktree-creation-transaction';
 
 const WORKSPACE_ID = /^[0-9a-f]{16}$/;
 const HEAD = /^[0-9a-f]{40,64}$/;
@@ -55,6 +63,20 @@ const RECORD_KEYS = new Set([
   'schemaVersion',
   'sourceWorkspaceId',
   'workspaceId',
+]);
+const TRANSACTION_KEYS = new Set([
+  'branch',
+  'createdAt',
+  'createdBy',
+  'creationActionReceiptDigest',
+  'digest',
+  'head',
+  'kind',
+  'purpose',
+  'schemaVersion',
+  'sourceRoot',
+  'sourceWorkspaceId',
+  'targetRoot',
 ]);
 
 export class WorktreeCreationError extends Error {
@@ -185,7 +207,13 @@ function readOwnedRecord(file, expectedWorkspaceId) {
   }
 }
 
-function publishCreateOnce(file, record) {
+function publishImmutable(
+  file,
+  record,
+  readExisting,
+  conflictCode,
+  conflictMessage,
+) {
   ensurePrivateDirectory(path.dirname(file));
   const temporary = path.join(
     path.dirname(file),
@@ -205,32 +233,144 @@ function publishCreateOnce(file, record) {
     linkSync(temporary, file);
     unlinkSync(temporary);
     chmodSync(file, 0o600);
-    if (process.platform !== 'win32') {
-      const descriptor = openSync(path.dirname(file), 'r');
-      try {
-        fsyncSync(descriptor);
-      } finally {
-        closeSync(descriptor);
-      }
-    }
+    syncDirectory(path.dirname(file));
     return record;
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;
-    const existing = readOwnedRecord(file, record.workspaceId);
+    const existing = readExisting(file);
     if (
       existing === null ||
       JSON.stringify(canonicalize(existing)) !==
         JSON.stringify(canonicalize(record))
     ) {
       fail(
-        'WORKTREE_CREATION_IMMUTABLE',
-        'worktree creation record already has different provenance',
+        conflictCode,
+        conflictMessage,
       );
     }
     return existing;
   } finally {
     if (existsSync(temporary)) unlinkSync(temporary);
   }
+}
+
+function publishCreateOnce(file, record) {
+  return publishImmutable(
+    file,
+    record,
+    (candidate) => readOwnedRecord(candidate, record.workspaceId),
+    'WORKTREE_CREATION_IMMUTABLE',
+    'worktree creation record already has different provenance',
+  );
+}
+
+function syncDirectory(directory) {
+  if (process.platform === 'win32') return;
+  const descriptor = openSync(directory, 'r');
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function transactionPath(options) {
+  const targetKey = createHash('sha256')
+    .update(options.targetRoot)
+    .digest('hex');
+  return path.join(
+    workspaceWorkflowRootPath({
+      home: options.home,
+      workspaceId: options.sourceWorkspaceId,
+    }),
+    'worktree-creation-transactions',
+    `${targetKey}.json`,
+  );
+}
+
+function validateCreationTransaction(transaction) {
+  if (
+    !exactKeys(transaction, TRANSACTION_KEYS) ||
+    transaction.schemaVersion !== 1 ||
+    transaction.kind !== WORKTREE_CREATION_TRANSACTION_KIND ||
+    !WORKSPACE_ID.test(transaction.sourceWorkspaceId) ||
+    !path.isAbsolute(transaction.sourceRoot) ||
+    !path.isAbsolute(transaction.targetRoot) ||
+    !HEAD.test(transaction.head) ||
+    !SHA256.test(transaction.creationActionReceiptDigest) ||
+    !validTimestamp(transaction.createdAt)
+  ) {
+    fail(
+      'WORKTREE_CREATION_TRANSACTION_INVALID',
+      'worktree creation transaction is invalid',
+    );
+  }
+  for (const field of ['branch', 'purpose']) {
+    requiredText(transaction[field], field);
+  }
+  validateWorkflowOwnerReference(transaction.createdBy);
+  if (
+    !SHA256.test(transaction.digest) ||
+    digestRecord(transaction) !== transaction.digest
+  ) {
+    fail(
+      'WORKTREE_CREATION_TRANSACTION_INVALID',
+      'worktree creation transaction digest is invalid',
+    );
+  }
+  return transaction;
+}
+
+function readCreationTransaction(file) {
+  if (!existsSync(file)) return null;
+  const metadata = lstatSync(file);
+  if (
+    !metadata.isFile() ||
+    metadata.isSymbolicLink() ||
+    !owned(metadata) ||
+    (process.platform !== 'win32' && (metadata.mode & 0o077) !== 0) ||
+    metadata.size > 32 * 1024
+  ) {
+    fail(
+      'WORKTREE_CREATION_TRANSACTION_INVALID',
+      'worktree creation transaction is not owner-controlled',
+    );
+  }
+  let transaction;
+  try {
+    transaction = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    fail(
+      'WORKTREE_CREATION_TRANSACTION_INVALID',
+      'worktree creation transaction is not valid JSON',
+      { cause: String(error) },
+    );
+  }
+  return validateCreationTransaction(transaction);
+}
+
+function publishCreationTransaction(file, transaction) {
+  const existing = readCreationTransaction(file);
+  if (existing !== null) {
+    if (
+      JSON.stringify(canonicalize(existing)) !==
+      JSON.stringify(canonicalize(transaction))
+    ) {
+      fail(
+        'WORKTREE_CREATION_TRANSACTION_CONFLICT',
+        'target path already has a different creation transaction',
+        { targetRoot: transaction.targetRoot },
+      );
+    }
+    return existing;
+  }
+  return publishImmutable(
+    file,
+    transaction,
+    readCreationTransaction,
+    'WORKTREE_CREATION_TRANSACTION_CONFLICT',
+    'target path already has a different creation transaction',
+  );
 }
 
 export function validateWorktreeCreation(record, expectedWorkspaceId) {
@@ -316,25 +456,78 @@ function gitValue(root, arguments_, field) {
   }
 }
 
-export function createWorktree(options = {}) {
-  const requestedSourceRoot = realpathSync(
-    path.resolve(options.sourceRoot ?? repoRoot),
+function branchHead(sourceRoot, branch) {
+  try {
+    return execFileSync(
+      'git',
+      ['show-ref', '--verify', '--hash', `refs/heads/${branch}`],
+      {
+        cwd: sourceRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    ).trim();
+  } catch {
+    return null;
+  }
+}
+
+function sameCreationIntent(record, expected) {
+  return (
+    record.sourceWorkspaceId === expected.sourceWorkspaceId &&
+    (record.sourceRoot === undefined ||
+      record.sourceRoot === expected.sourceRoot) &&
+    (record.targetRoot === undefined ||
+      record.targetRoot === expected.targetRoot) &&
+    record.branch === expected.branch &&
+    record.head === expected.head &&
+    record.purpose === expected.purpose &&
+    sameWorkflowOwnerReference(record.createdBy, expected.createdBy)
   );
-  const sourceRoot = realpathSync(
-    gitValue(
-      requestedSourceRoot,
-      ['rev-parse', '--show-toplevel'],
-      'source worktree root',
-    ),
-  );
-  if (sourceRoot !== requestedSourceRoot) {
+}
+
+function verifyCreatedWorktree(targetRoot, branch, expectedHead) {
+  let canonicalRoot;
+  try {
+    canonicalRoot = realpathSync(targetRoot);
+  } catch (error) {
     fail(
-      'WORKTREE_CREATION_INVALID',
-      'sourceRoot must be the Git worktree root',
-      { requestedSourceRoot, sourceRoot },
+      'WORKTREE_CREATION_RECOVERY_REQUIRED',
+      'worktree creation transaction has no recoverable target',
+      { targetRoot, cause: String(error) },
     );
   }
-  const sourceWorkspaceId = workspaceIdForRoot(sourceRoot);
+  const actualRoot = realpathSync(
+    gitValue(canonicalRoot, ['rev-parse', '--show-toplevel'], 'worktree root'),
+  );
+  const actualBranch = gitValue(
+    canonicalRoot,
+    ['branch', '--show-current'],
+    'branch',
+  );
+  const actualHead = gitValue(canonicalRoot, ['rev-parse', 'HEAD'], 'HEAD');
+  if (
+    actualRoot !== canonicalRoot ||
+    actualBranch !== branch ||
+    actualHead !== expectedHead
+  ) {
+    fail(
+      'WORKTREE_CREATION_RECOVERY_REQUIRED',
+      'created worktree identity does not match its durable transaction',
+      {
+        canonicalRoot,
+        actualRoot,
+        branch,
+        actualBranch,
+        expectedHead,
+        actualHead,
+      },
+    );
+  }
+  return { canonicalRoot, workspaceId: workspaceIdForRoot(canonicalRoot) };
+}
+
+function createWorktreeUnderFence(options, sourceRoot, sourceWorkspaceId) {
   const requestedTargetRoot = requiredText(
     options.targetRoot,
     'targetRoot',
@@ -362,6 +555,175 @@ export function createWorktree(options = {}) {
       'creationActionReceiptDigest is invalid',
     );
   }
+  const head = gitValue(
+    sourceRoot,
+    ['rev-parse', '--verify', '--end-of-options', `${startPoint}^{commit}`],
+    'startPoint commit',
+  );
+  if (!HEAD.test(head)) {
+    fail('WORKTREE_CREATION_INVALID', 'startPoint did not resolve to a commit');
+  }
+  execFileSync('git', ['check-ref-format', '--branch', branch], {
+    cwd: sourceRoot,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+
+  const file = transactionPath({
+    home: options.home,
+    sourceWorkspaceId,
+    targetRoot,
+  });
+  const existingTransaction = readCreationTransaction(file);
+  const currentBranchHead = branchHead(sourceRoot, branch);
+  const requestedIntent = {
+    sourceWorkspaceId,
+    sourceRoot,
+    targetRoot,
+    branch,
+    head,
+    purpose,
+    createdBy,
+  };
+  if (existingTransaction === null && existsSync(targetRoot)) {
+    const existingWorktree = verifyCreatedWorktree(targetRoot, branch, head);
+    const existingRecord = readWorktreeCreation({
+      home: options.home,
+      workspaceId: existingWorktree.workspaceId,
+    });
+    if (
+      existingRecord !== null &&
+      sameCreationIntent(existingRecord, requestedIntent)
+    ) {
+      return existingRecord;
+    }
+  }
+  if (
+    existingTransaction === null &&
+    (existsSync(targetRoot) || currentBranchHead !== null)
+  ) {
+    fail(
+      'WORKTREE_CREATION_CONFLICT',
+      'target path or branch already exists without a matching transaction',
+      { targetRoot, branch },
+    );
+  }
+  const unsignedTransaction = {
+    schemaVersion: 1,
+    kind: WORKTREE_CREATION_TRANSACTION_KIND,
+    sourceWorkspaceId,
+    sourceRoot,
+    targetRoot,
+    branch,
+    head,
+    purpose,
+    createdBy,
+    creationActionReceiptDigest:
+      existingTransaction?.creationActionReceiptDigest ??
+      creationActionReceiptDigest,
+    createdAt:
+      existingTransaction?.createdAt ??
+      new Date(options.now ?? new Date()).toISOString(),
+  };
+  const transaction = {
+    ...unsignedTransaction,
+    digest: digestRecord(unsignedTransaction),
+  };
+  if (
+    existingTransaction !== null &&
+    !sameCreationIntent(existingTransaction, requestedIntent)
+  ) {
+    fail(
+      'WORKTREE_CREATION_TRANSACTION_CONFLICT',
+      'target path already has a different creation transaction',
+      { targetRoot },
+    );
+  }
+  validateCreationTransaction(transaction);
+  publishCreationTransaction(file, transaction);
+
+  if (!existsSync(targetRoot)) {
+    const currentHead = branchHead(sourceRoot, branch);
+    if (currentHead !== null && currentHead !== head) {
+      fail(
+        'WORKTREE_CREATION_RECOVERY_REQUIRED',
+        'transaction branch no longer points at its resolved start commit',
+        { branch, expectedHead: head, actualHead: currentHead },
+      );
+    }
+    try {
+      execFileSync(
+        'git',
+        currentHead === null
+          ? ['worktree', 'add', '-b', branch, '--', targetRoot, head]
+          : ['worktree', 'add', '--', targetRoot, branch],
+        {
+          cwd: sourceRoot,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+    } catch (error) {
+      fail('WORKTREE_CREATION_RECOVERY_REQUIRED', 'git worktree creation failed', {
+        targetRoot,
+        branch,
+        transaction: file,
+        cause: error?.stderr?.toString().trim() || String(error),
+      });
+    }
+  }
+
+  const { canonicalRoot, workspaceId } = verifyCreatedWorktree(
+    targetRoot,
+    branch,
+    head,
+  );
+  options.creationFailpoint?.('after-git-create', {
+    transaction,
+    workspaceId,
+  });
+  const unsigned = {
+    schemaVersion: 1,
+    kind: WORKTREE_CREATION_KIND,
+    workspaceId,
+    name: path.basename(canonicalRoot),
+    branch,
+    head,
+    purpose,
+    sourceWorkspaceId,
+    createdBy,
+    creationActionReceiptDigest: transaction.creationActionReceiptDigest,
+    createdAt: transaction.createdAt,
+  };
+  const record = { ...unsigned, digest: digestRecord(unsigned) };
+  validateWorktreeCreation(record, workspaceId);
+  const published = publishCreateOnce(
+    creationPath({ home: options.home, workspaceId }),
+    record,
+  );
+  unlinkSync(file);
+  syncDirectory(path.dirname(file));
+  return published;
+}
+
+export function createWorktree(options = {}) {
+  const requestedSourceRoot = realpathSync(
+    path.resolve(options.sourceRoot ?? repoRoot),
+  );
+  const sourceRoot = realpathSync(
+    gitValue(
+      requestedSourceRoot,
+      ['rev-parse', '--show-toplevel'],
+      'source worktree root',
+    ),
+  );
+  if (sourceRoot !== requestedSourceRoot) {
+    fail(
+      'WORKTREE_CREATION_INVALID',
+      'sourceRoot must be the Git worktree root',
+      { requestedSourceRoot, sourceRoot },
+    );
+  }
+  const sourceWorkspaceId = workspaceIdForRoot(sourceRoot);
+  const createdBy = validateWorkflowOwnerReference(options.workflowOwner);
   const owner = (options.readOwnerByDigest ?? readWorkflowOwnerByDigest)(
     createdBy.rootBindingDigest,
     {
@@ -386,84 +748,22 @@ export function createWorktree(options = {}) {
       { sourceWorkspaceId, rootBindingDigest: createdBy.rootBindingDigest },
     );
   }
-  if (existsSync(targetRoot)) {
-    fail('WORKTREE_CREATION_CONFLICT', 'target worktree path already exists', {
-      targetRoot,
-    });
-  }
   try {
-    execFileSync('git', ['check-ref-format', '--branch', branch], {
-      cwd: sourceRoot,
-      stdio: ['ignore', 'ignore', 'pipe'],
-    });
-    execFileSync(
-      'git',
-      ['worktree', 'add', '-b', branch, targetRoot, startPoint],
+    return withWorkspaceLifecycleLockSync(
       {
-        cwd: sourceRoot,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        home: options.home,
+        workspaceRoot: sourceRoot,
+        workspaceId: sourceWorkspaceId,
+        lockTimeoutMs: options.lockTimeoutMs,
       },
+      () => createWorktreeUnderFence(options, sourceRoot, sourceWorkspaceId),
     );
   } catch (error) {
-    fail('WORKTREE_CREATION_FAILED', 'git worktree creation failed', {
-      cause: error?.stderr?.toString().trim() || String(error),
-    });
-  }
-
-  try {
-    const canonicalRoot = realpathSync(targetRoot);
-    const workspaceId = workspaceIdForRoot(canonicalRoot);
-    const actualRoot = realpathSync(
-      gitValue(canonicalRoot, ['rev-parse', '--show-toplevel'], 'worktree root'),
-    );
-    const actualBranch = gitValue(
-      canonicalRoot,
-      ['branch', '--show-current'],
-      'branch',
-    );
-    const head = gitValue(canonicalRoot, ['rev-parse', 'HEAD'], 'HEAD');
-    if (actualRoot !== canonicalRoot || actualBranch !== branch) {
-      fail(
-        'WORKTREE_CREATION_FAILED',
-        'created worktree identity does not match the request',
-        { canonicalRoot, actualRoot, branch, actualBranch },
-      );
-    }
-    const unsigned = {
-      schemaVersion: 1,
-      kind: WORKTREE_CREATION_KIND,
-      workspaceId,
-      name: path.basename(canonicalRoot),
-      branch,
-      head,
-      purpose,
-      sourceWorkspaceId,
-      createdBy,
-      creationActionReceiptDigest,
-      createdAt: new Date(options.now ?? new Date()).toISOString(),
-    };
-    const record = { ...unsigned, digest: digestRecord(unsigned) };
-    validateWorktreeCreation(record, workspaceId);
-    return publishCreateOnce(
-      creationPath({ home: options.home, workspaceId }),
-      record,
-    );
-  } catch (error) {
-    try {
-      execFileSync('git', ['worktree', 'remove', '--force', targetRoot], {
-        cwd: sourceRoot,
-        stdio: ['ignore', 'ignore', 'ignore'],
-      });
-      execFileSync('git', ['branch', '-D', branch], {
-        cwd: sourceRoot,
-        stdio: ['ignore', 'ignore', 'ignore'],
-      });
-    } catch {
-      // The error below retains the original failure and target path.
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
     }
     if (error instanceof WorktreeCreationError) throw error;
-    fail('WORKTREE_CREATION_FAILED', 'cannot persist worktree creation record', {
-      targetRoot,
+    fail('WORKTREE_CREATION_FAILED', 'worktree creation transaction failed', {
       cause: String(error),
     });
   }
@@ -496,22 +796,25 @@ export function runWorktreeCreationCli(argv, dependencies = {}) {
     });
   }
   const sourceRoot = options['source-root'] ?? repoRoot;
-  const context = (
-    dependencies.resolveCurrentWorkflowOwnerContext ??
-    resolveCurrentWorkflowOwnerContext
-  )({
-    home: options.home,
-    machineRoot: dependencies.machineRoot,
-    workspaceRoot: sourceRoot,
-    operationLabel: 'worktree-create',
-  });
-  if (
-    context.workflowOwner === null ||
-    context.actionReceiptDigest === null
-  ) {
+  let context;
+  try {
+    context = resolveWorkflowOwnerCommandContext(
+      'worktree',
+      'create',
+      {
+        home: options.home,
+        machineRoot: dependencies.machineRoot,
+        workspaceRoot: sourceRoot,
+        resolveCurrentWorkflowOwnerContext:
+          dependencies.resolveCurrentWorkflowOwnerContext,
+      },
+    );
+  } catch (error) {
+    if (error?.code !== 'WORKFLOW_OWNER_CONTEXT_REQUIRED') throw error;
     fail(
       'WORKTREE_OWNER_CONTEXT_REQUIRED',
       'worktree creation requires the current main-session OWNER receipt',
+      error.detail,
     );
   }
   return (dependencies.createWorktree ?? createWorktree)({

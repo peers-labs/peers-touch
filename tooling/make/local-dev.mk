@@ -6,9 +6,9 @@
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release dev-close dev-close-status \
         dev-resources-prepare dev-resources-status dev-resource-record \
         dev-session-start dev-session-status dev-session-archive dev-transition dev-functional-result \
-        active-work-sync active-work-status active-work-status-all active-work-close \
+        active-work-sync active-work-repair active-work-status active-work-status-all active-work-close \
         completion-review-prepare completion-review-submit completion-review-status \
-        plan-mount plan-mount-status plan-unmount plan-state-migrate plan-validate plan-approve-north-star plan-amend plan-status plan-current plan-next \
+        plan-mount plan-mount-status plan-unmount plan-state-migrate plan-validate plan-approve-north-star plan-amend plan-seal-completion plan-status plan-current plan-next \
         plan-activate plan-advance plan-cancel plan-reopen \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
@@ -157,6 +157,10 @@ plan-amend:
 		--change "$(CHANGE)" \
 		--approval "$(or $(APPROVAL),agent)" \
 		$(if $(DECISION_REF),--decision-ref "$(DECISION_REF)",)
+
+plan-seal-completion:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-seal-completion PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) seal-completion --plan "$(PLAN)" --repo-root "$(CURDIR)"
 
 plan-status:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-status PLAN=<package-plan.md>"; exit 1; fi
@@ -375,6 +379,16 @@ active-work-sync:
 	@node $(ACTIVE_WORK_SCRIPT) sync \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		$(if $(EXPECTED_REVISION),--expected-revision "$(EXPECTED_REVISION)",)
+
+active-work-repair:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(EXPECTED_REVISION)" ] || [ -z "$(EXPECTED_RECORD_SHA256)" ]; then \
+		echo "Usage: make active-work-repair WORK_ITEM=<id> EXPECTED_REVISION=<n> EXPECTED_RECORD_SHA256=<sha256>"; \
+		exit 1; \
+	fi
+	@node $(ACTIVE_WORK_SCRIPT) repair \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--expected-revision "$(EXPECTED_REVISION)" \
+		--expected-record-sha256 "$(EXPECTED_RECORD_SHA256)"
 
 active-work-status:
 	@node $(ACTIVE_WORK_SCRIPT) status

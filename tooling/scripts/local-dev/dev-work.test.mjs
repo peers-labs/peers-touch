@@ -97,6 +97,7 @@ function options(scope, overrides = {}) {
       'exclusive-write:tooling/scripts/local-dev;shared-read:docs/architecture',
     runtimeClaims: 'shared:station.connect:station-four',
     planExecution: null,
+    workflowOwner: workflowOwner(),
     clock: clock(),
     ...overrides,
   };
@@ -182,6 +183,19 @@ test('persists the verified main-session owner on a declaration', () => {
           },
         }),
         { requireExisting: true },
+      ),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('rejects a new declaration without a verified workflow OWNER', () => {
+  const scope = fixture();
+  try {
+    expectCode('WORK_DECLARATION_OWNER_REQUIRED', () =>
+      startOrUpdateDeclaration(
+        options(scope, { workflowOwner: null }),
       ),
     );
   } finally {
@@ -627,6 +641,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
         home: scope.home,
         workspaceRoot: currentRepo,
         workItemId: 'dwf-b1',
+        workflowOwner: workflowOwner(),
         clock: clock(),
       }),
     );
@@ -635,6 +650,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
       workspaceRoot: currentRepo,
       workItemId: 'dwf-b1',
       sessionId: 'session-a',
+      workflowOwner: workflowOwner(),
       clock: clock('2026-09-16T12:00:10.000Z'),
     });
     assert.equal(active.state, 'ACTIVE');
@@ -643,6 +659,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
       workspaceRoot: currentRepo,
       workItemId: 'dwf-b1',
       sessionId: 'session-a',
+      workflowOwner: workflowOwner(),
       expiresMinutes: 10,
       clock: clock('2026-09-16T12:00:30.000Z'),
     });
@@ -653,6 +670,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
         workspaceRoot: currentRepo,
         workItemId: 'dwf-b1',
         sessionId: 'other-session',
+        workflowOwner: workflowOwner(),
         clock: clock('2026-09-16T12:01:00.000Z'),
       }),
     );
@@ -662,6 +680,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
         workspaceRoot: currentRepo,
         workItemId: 'dwf-b1',
         sessionId: 'session-a',
+        workflowOwner: workflowOwner(),
         clock: clock('2026-09-16T12:01:00.000Z'),
       }).state,
       'RELEASED',
@@ -715,6 +734,7 @@ test('activation rejects branch and source identity drift', () => {
         workspaceRoot: currentRepo,
         workItemId: 'dwf-b1',
         sessionId: 'session-a',
+        workflowOwner: workflowOwner(),
         clock: clock(),
       }),
     );

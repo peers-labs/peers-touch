@@ -629,6 +629,7 @@ function safeDeclaration(declaration) {
     purpose: declaration.purpose,
     journeyId: declaration.journeyId,
     planId: declaration.planId ?? null,
+    planDigest: declaration.planDigest ?? null,
     taskId: declaration.taskId ?? null,
     state: declaration.state,
     heartbeatAt: declaration.heartbeatAt ?? null,
@@ -988,7 +989,7 @@ export function workflowProjection({
           : activeWork
             ? {
                 id: activeWork.planId,
-                digest: declaration?.planDigest ?? null,
+                digest: primary?.planDigest ?? null,
                 amendmentCount: null,
                 latestAmendment: null,
                 status: activeWork.planStatus,
@@ -1240,7 +1241,7 @@ export function deriveWorktrees(
         workspaceId,
         name: discovery?.name ?? observation?.name ?? registration?.name ?? null,
         creation,
-        createdBy: creation?.createdBy ?? registration?.createdBy ?? null,
+        createdBy: creation?.createdBy ?? null,
         workflowOwner,
         activeWork: activeWork ? safeActiveWork(activeWork) : null,
         git: discovery
@@ -1447,6 +1448,13 @@ export async function buildDevSnapshot(options = {}) {
     worktreeCreations.records,
     worktreeCreations.errors,
   );
+  const ownerBindingFindings = ownerBindings.errors.map((error) => ({
+    workspaceId: null,
+    code: error.code,
+    message: error.message,
+    owner: 'workflow-owner',
+    severity: 'error',
+  }));
   const occupancy = deriveOccupancy(
     profiles,
     registrations,
@@ -1456,7 +1464,9 @@ export async function buildDevSnapshot(options = {}) {
   const continuations = worktrees.map(
     (worktree) => worktree.workflow.continuation,
   );
-  const continuation = continuations.includes('HARD_BLOCK')
+  const continuation =
+    ownerBindingFindings.length > 0 ||
+    continuations.includes('HARD_BLOCK')
     ? 'HARD_BLOCK'
     : continuations.length > 0 &&
         continuations.every((value) => value === 'COMPLETE')
@@ -1476,13 +1486,21 @@ export async function buildDevSnapshot(options = {}) {
       ...finding,
     })),
   );
+  findings.push(...ownerBindingFindings);
+  const aggregateVerdict = findings.some(
+    (finding) => finding.severity === 'error',
+  )
+    ? verdict === 'DRIFT'
+      ? 'DRIFT'
+      : 'BLOCKED'
+    : verdict;
   const snapshot = {
     kind: 'peers-touch-dev-snapshot',
     observedAt: now.toISOString(),
     server: options.server ?? null,
     serverFreshness: options.serverFreshness ?? null,
     authority: machine.authority ?? 'missing',
-    verdict,
+    verdict: aggregateVerdict,
     continuation,
     findings,
     discovery: {

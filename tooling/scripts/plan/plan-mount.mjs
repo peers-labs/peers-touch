@@ -15,9 +15,14 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLock,
 } from '../local-dev/workspace-lifecycle-lock.mjs';
+import {
+  resolveWorkflowOwnerCommandContext,
+} from '../local-dev/workflow-owner-context.mjs';
 import { assertDevelopmentCloseAdmission } from '../local-dev/development-close-store.mjs';
+import { publishPlanCompletion } from './plan-completion.mjs';
 import {
   appendPlanAmendment,
+  assertPlanPackageSourceCurrent,
   atomicReplaceFile,
   digestPlan,
   digestPlanContent,
@@ -375,7 +380,7 @@ function validateStringMap(value, field, valuePattern = IDENTIFIER) {
   }
 }
 
-function validateLedger(value) {
+export function validatePlanMountLedger(value) {
   if (isObject(value) && Object.hasOwn(value, 'liveMountsByPlanVersion')) {
     fail(
       'PLAN_STATE_MIGRATION_REQUIRED',
@@ -712,7 +717,7 @@ function readLedger(options = {}) {
       file,
       'PLAN_MOUNT_LEDGER_INVALID',
       'Plan mount ledger cannot be read',
-      validateLedger,
+      validatePlanMountLedger,
     ),
   };
 }
@@ -756,7 +761,7 @@ function lockOwnerIsLive(lock) {
   }
 }
 
-async function acquireLedgerLock(options = {}) {
+export async function acquirePlanMountLedgerLock(options = {}) {
   const file = planMountLockPath(options);
   await fsp.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + (options.lockTimeoutMs ?? LOCK_TIMEOUT_MS);
@@ -797,7 +802,7 @@ async function acquireLedgerLock(options = {}) {
   }
 }
 
-async function releaseLedgerLock(lease) {
+export async function releasePlanMountLedgerLock(lease) {
   let current;
   try {
     current = JSON.parse(await fsp.readFile(lease.file, 'utf8'));
@@ -814,11 +819,11 @@ async function releaseLedgerLock(lease) {
 }
 
 async function withLedgerLock(options, operation) {
-  const lease = await acquireLedgerLock(options);
+  const lease = await acquirePlanMountLedgerLock(options);
   try {
     return await operation();
   } finally {
-    await releaseLedgerLock(lease);
+    await releasePlanMountLedgerLock(lease);
   }
 }
 
@@ -1571,6 +1576,37 @@ export async function resolvePlanExecution(options = {}) {
   };
 }
 
+export async function sealPlanCompletion(options = {}) {
+  const workspace = canonicalWorkspace(options.repoRoot ?? process.cwd());
+  return withWorkspaceLifecycle(workspace, options, async () => {
+    const resolved = await resolvePlanExecution({
+      ...options,
+      repoRoot: workspace.canonicalRoot,
+    });
+    if (options.plan !== undefined) {
+      const requestedPlan = path.isAbsolute(options.plan)
+        ? path.resolve(options.plan)
+        : path.resolve(workspace.canonicalRoot, options.plan);
+      if (requestedPlan !== resolved.planPackage.path) {
+        fail(
+          'PLAN_TARGET_NOT_CURRENT',
+          'requested Plan is not mounted in this workspace',
+          {
+            requested: requestedPlan,
+            mounted: resolved.planPackage.path,
+          },
+        );
+      }
+    }
+    await assertPlanPackageSourceCurrent(resolved.planPackage);
+    return {
+      ...publishPlanCompletion(resolved),
+      planPackage: resolved.planPackage,
+      snapshot: resolved.snapshot,
+    };
+  });
+}
+
 export async function amendMountedPlan(options = {}) {
   const workspace = canonicalWorkspace(options.repoRoot ?? process.cwd());
   return withWorkspaceLifecycle(workspace, options, async () => {
@@ -1675,6 +1711,7 @@ export async function amendMountedPlan(options = {}) {
     }
     let amendment;
     if (sameValue(candidateAmendments, previousAmendments)) {
+      await assertPlanPackageSourceCurrent(planPackage);
       const now = operationDate(options);
       amendment = {
         id:
@@ -1693,6 +1730,12 @@ export async function amendMountedPlan(options = {}) {
         toContentDigest: planPackage.planContentDigest,
       };
       planPackage = await appendPlanAmendment(planPackage, amendment);
+      if (planPackage.planContentDigest !== amendment.toContentDigest) {
+        fail(
+          'PLAN_SOURCE_CHANGED',
+          'Plan source changed while its amendment was being recorded',
+        );
+      }
     } else if (
       candidateAmendments.length === previousAmendments.length + 1 &&
       sameValue(
@@ -1750,7 +1793,12 @@ export async function amendMountedPlan(options = {}) {
       repoRoot: workspace.canonicalRoot,
       workspaceId: workspace.workspaceId,
     });
+    const assertSourceCurrent =
+      options.assertPlanPackageSourceCurrent ??
+      assertPlanPackageSourceCurrent;
+    await assertSourceCurrent(planPackage);
     await publishImmutable(snapshotFile, snapshot);
+    await assertSourceCurrent(planPackage);
     await writeJsonAtomic(
       resolved.paths.run,
       run,
@@ -1913,7 +1961,7 @@ export async function mountPlan(options = {}) {
         },
       };
       ledger.recordDigest = digestRecord(ledger);
-      validateLedger(ledger);
+      validatePlanMountLedger(ledger);
       await writeJsonAtomic(
         currentLedger.file,
         ledger,
@@ -2119,7 +2167,7 @@ export async function releasePlanMount(options = {}) {
           liveMountsByPlan,
         };
         ledger.recordDigest = digestRecord(ledger);
-        validateLedger(ledger);
+        validatePlanMountLedger(ledger);
         await writeJsonAtomic(currentLedger.file, ledger, currentLedger.raw);
         return { mount: resolved.mount, run: resolved.run, ledger };
       }
@@ -2193,7 +2241,7 @@ export async function releasePlanMount(options = {}) {
         liveMountsByPlan,
       };
       ledger.recordDigest = digestRecord(ledger);
-      validateLedger(ledger);
+      validatePlanMountLedger(ledger);
       await writeJsonAtomic(currentLedger.file, ledger, currentLedger.raw);
       return { mount: released, run: resolved.run, ledger };
     }),
@@ -2251,8 +2299,14 @@ function output(value) {
   process.stdout.write(`${JSON.stringify({ ok: true, ...value }, null, 2)}\n`);
 }
 
-export async function runCli(argv = process.argv.slice(2)) {
+export async function runCli(argv = process.argv.slice(2), io = {}) {
   const { action, options } = parseArguments(argv);
+  resolveWorkflowOwnerCommandContext('plan-mount', action, {
+    home: options.home,
+    workspaceRoot: options.repoRoot ?? process.cwd(),
+    resolveCurrentWorkflowOwnerContext:
+      io.dependencies?.resolveCurrentWorkflowOwnerContext,
+  });
   if (action === 'mount') {
     const result = await mountPlan(options);
     output({

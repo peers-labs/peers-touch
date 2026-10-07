@@ -2118,6 +2118,10 @@ bookkeeping that the Agent could validate deterministically.
 - Content and snapshot digests are internal integrity/CAS identities. They are
   observable diagnostics, never Plan versions and never user approval
   boundaries.
+- Local execution status remains machine-owned. A completed run may publish one
+  immutable repository `completions/<planDigest>.json` attestation. CI validates
+  an explicit Plan and this digest-bound completion record without reading or
+  reconstructing machine-local PlanMount state.
 - Repository Plan sources are converted in the same hard cut. Existing
   machine ledgers are converted by `make plan-state-migrate` only after every
   live declaration and mount is closed. Normal readers have no legacy fallback,
@@ -2185,9 +2189,18 @@ identify the main session that created or currently owned the work.
   Receipt as execution provenance and writes immutable
   `worktree-creation.json` in the target workspace state. The receipt does not
   replace the user's explicit authorization.
+- Worktree creation first resolves `START` to an exact commit and publishes an
+  immutable transaction under the source workspace. A retry may finish Git
+  creation or provenance publication only when target path, branch, commit,
+  purpose, and OWNER are unchanged; path reuse and conflicting recovery fail
+  closed.
 - New machine registrations and Development declarations copy a verified
   `WorkflowOwnerReference`. Development Session and active-work projections
   carry the same reference.
+- One repository-owned OWNER command policy defines recognized Make targets and
+  CLI action labels. Mutating wrappers accept only a live root OWNER receipt
+  whose `bindingDigest` equals `rootBindingDigest`; child receipts and
+  ownerless state cannot authorize mutation.
 - Workflow Snapshot joins creation provenance, current workflow ownership, and
   Plan/Task state. Git author/email remains an actor label and never substitutes
   for a main-session identity.

@@ -8,6 +8,9 @@ import {
   sessionStorePaths,
 } from '../local-dev/dev-session-store.mjs';
 import {
+  resolveWorkflowOwnerCommandContext,
+} from '../local-dev/workflow-owner-context.mjs';
+import {
   PlanPackageError,
   isDirectInvocation,
   loadPlanPackage,
@@ -15,10 +18,15 @@ import {
   summarizePlanPackage,
 } from './plan-package.mjs';
 import {
+  PlanCompletionError,
+  readPlanCompletion,
+} from './plan-completion.mjs';
+import {
   PlanMountError,
   amendMountedPlan,
   cancelExecutionRun,
   resolvePlanExecution,
+  sealPlanCompletion,
   updateExecutionRun,
 } from './plan-mount.mjs';
 
@@ -671,6 +679,58 @@ async function validateCommand(options) {
   };
 }
 
+async function sourceStatusCommand(options) {
+  assertAllowedOptions(options, READ_OPTIONS);
+  const planPackage = await loadPlanPackage(
+    explicitPlanPath({
+      ...options,
+      plan: requireOption(options, 'plan'),
+    }),
+    { repoRoot: options['repo-root'] },
+  );
+  const completion = readPlanCompletion(planPackage);
+  const taskStatuses =
+    completion?.taskStates ??
+    Object.fromEntries(
+      planPackage.plan.tasks.map((task) => [task.id, 'unverified']),
+    );
+  const closureStatuses =
+    completion?.closureStatuses ??
+    Object.fromEntries(
+      planPackage.tasks.map((task) => [task.closureId, 'unverified']),
+    );
+  return {
+    ...summarizePlanPackage(planPackage),
+    status: completion === null ? 'unverified' : 'completed',
+    branch: completion?.branch ?? null,
+    workspaceId: completion?.workspaceId ?? null,
+    initialHead: completion?.initialHead ?? null,
+    currentTaskId: null,
+    currentTaskPath: null,
+    currentTaskWriteSet: [],
+    currentClosure: null,
+    taskStatuses,
+    closureStatuses,
+    completionContract: completion,
+  };
+}
+
+async function sealCompletionCommand(options) {
+  assertAllowedOptions(options, READ_OPTIONS);
+  const sealed = await sealPlanCompletion({
+    ...mountOptions(options),
+    plan: requireOption(options, 'plan'),
+  });
+  return {
+    ok: true,
+    plan: sealed.planPackage.path,
+    planId: sealed.snapshot.planId,
+    planDigest: sealed.snapshot.planDigest,
+    completion: sealed.completion,
+    completionPath: sealed.file,
+  };
+}
+
 async function statusCommand(options) {
   assertAllowedOptions(options, READ_OPTIONS);
   return summarizeExecution(await resolveCurrent(options));
@@ -773,6 +833,8 @@ async function approveNorthStarCommand(options) {
 export async function runPlanctl(argv = process.argv.slice(2)) {
   const { command, options } = parseArguments(argv);
   if (command === 'validate') return validateCommand(options);
+  if (command === 'source-status') return sourceStatusCommand(options);
+  if (command === 'seal-completion') return sealCompletionCommand(options);
   if (command === 'current') return currentCommand(options);
   if (command === 'next') return nextCommand(options);
   if (command === 'status') return statusCommand(options);
@@ -791,6 +853,8 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
     command,
     commands: [
       'validate',
+      'source-status',
+      'seal-completion',
       'current',
       'next',
       'status',
@@ -808,6 +872,7 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
 function typedError(error) {
   if (
     error instanceof PlanPackageError ||
+    error instanceof PlanCompletionError ||
     error instanceof PlanMountError ||
     error?.name === 'CompletionReviewError'
   ) {
@@ -821,6 +886,11 @@ function typedError(error) {
 
 export async function main(argv = process.argv.slice(2)) {
   try {
+    const { command, options } = parseArguments(argv);
+    resolveWorkflowOwnerCommandContext('planctl', command, {
+      home: options.home,
+      workspaceRoot: options['repo-root'] ?? process.cwd(),
+    });
     const result = await runPlanctl(argv);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {

@@ -14,6 +14,7 @@ import {
 } from './plan-mount.mjs';
 import {
   appendPlanAmendment,
+  assertPlanPackageSourceCurrent,
   findStructuredBlocks,
   loadPlanPackage,
 } from './plan-package.mjs';
@@ -70,7 +71,13 @@ function primaryTaskPath(options) {
 function updateTaskCommand(options, command) {
   const taskPath = primaryTaskPath(options);
   const text = fs.readFileSync(taskPath, 'utf8');
-  fs.writeFileSync(taskPath, text.replace('"command": "true"', `"command": "${command}"`));
+  fs.writeFileSync(
+    taskPath,
+    text.replace(
+      /"command": "(?:true|node --version|node --help)"/,
+      `"command": "${command}"`,
+    ),
+  );
 }
 
 test('mount publishes the initial immutable snapshot and mutable Execution Run', async (t) => {
@@ -581,6 +588,33 @@ test('amending a completed Task reopens its affected closure without remounting'
   assert.equal(amended.run.state, 'prepared');
   assert.equal(amended.run.taskStates['FIXTURE-TASK'].state, 'pending');
   assert.deepEqual(amended.affectedTaskIds, ['FIXTURE-TASK']);
+});
+
+test('amendment publication fences every validated Plan source file', async (t) => {
+  const options = scope(t);
+  const mounted = await mountPlan(options);
+  updateTaskCommand(options, 'node --version');
+  let fenceCount = 0;
+
+  await assert.rejects(
+    amendMountedPlan({
+      ...options,
+      actor: 'agent:test',
+      reason: 'Update the source check.',
+      changes: ['Change the Task command.'],
+      async assertPlanPackageSourceCurrent(planPackage) {
+        fenceCount += 1;
+        if (fenceCount === 2) {
+          updateTaskCommand(options, 'node --help');
+        }
+        await assertPlanPackageSourceCurrent(planPackage);
+      },
+    }),
+    (error) => error?.code === 'PLAN_SOURCE_CHANGED',
+  );
+
+  const run = JSON.parse(fs.readFileSync(mounted.paths.run, 'utf8'));
+  assert.equal(run.recordDigest, mounted.run.recordDigest);
 });
 
 test('unfinished mount requires explicit owner unmount authorization', async (t) => {

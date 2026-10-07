@@ -18,6 +18,7 @@ PLAN_INVALID = "EXECUTION_PLAN_INVALID"
 PLAN_COMPLETE = "EXECUTION_PLAN_COMPLETE"
 PLAN_BLOCKED = "EXECUTION_PLAN_BLOCKED"
 PLAN_DRIFT = "ACCEPTANCE_PLAN_DRIFT"
+PLAN_COMPLETION_REQUIRED = "PLAN_COMPLETION_REQUIRED"
 
 class ExecutionPlanError(RuntimeError):
     def __init__(self, code: str, message: str):
@@ -31,9 +32,9 @@ class FormalExecutionPlan:
     plan_id: str | None
     plan_format: str
     status: str
-    branch: str
-    workspace_id: str
-    initial_head: str
+    branch: str | None
+    workspace_id: str | None
+    initial_head: str | None
     current_task_id: str | None
     current_task_path: str | None
     current_task_write_set: tuple[str, ...] | None
@@ -43,6 +44,11 @@ class FormalExecutionPlan:
     source_claims: tuple[str, ...] | None = None
 
     def gate_ids(self, mode: str) -> list[str]:
+        if self.status == "unverified":
+            raise ExecutionPlanError(
+                PLAN_COMPLETION_REQUIRED,
+                "source Plan has no repository completion contract",
+            )
         if mode == "closure":
             if self.current_closure is None:
                 if self.status == "blocked":
@@ -99,7 +105,7 @@ def _is_plan(text: str) -> bool:
     )
 
 
-def _mounted_plan_status(path: Path) -> dict[str, Any]:
+def _planctl_projection(path: Path, command: str) -> dict[str, Any]:
     try:
         repository_root = Path(_git(path.parent, "rev-parse", "--show-toplevel"))
     except ExecutionPlanError as error:
@@ -117,7 +123,7 @@ def _mounted_plan_status(path: Path) -> dict[str, Any]:
         [
             "node",
             str(planctl),
-            "status",
+            command,
             "--plan",
             str(path),
             "--repo-root",
@@ -153,8 +159,15 @@ def _mounted_plan_status(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _load_plan(path: Path) -> FormalExecutionPlan:
-    payload = _mounted_plan_status(path)
+def _mounted_plan_status(path: Path) -> dict[str, Any]:
+    return _planctl_projection(path, "status")
+
+
+def _source_plan_status(path: Path) -> dict[str, Any]:
+    return _planctl_projection(path, "source-status")
+
+
+def _load_plan(path: Path, payload: dict[str, Any]) -> FormalExecutionPlan:
     acceptance = payload.get("acceptance")
     if not isinstance(acceptance, dict):
         acceptance = {
@@ -191,15 +204,27 @@ def _load_plan(path: Path) -> FormalExecutionPlan:
     required_text = {
         "planId": payload.get("planId"),
         "status": payload.get("status"),
-        "branch": payload.get("branch"),
-        "workspaceId": payload.get("workspaceId"),
-        "initialHead": payload.get("initialHead"),
     }
     missing = [field for field, value in required_text.items() if not value]
     if missing:
         raise ExecutionPlanError(
             PLAN_INVALID,
             f"Plan status omitted fields: {', '.join(missing)}",
+        )
+    optional_text = {
+        "branch": payload.get("branch"),
+        "workspaceId": payload.get("workspaceId"),
+        "initialHead": payload.get("initialHead"),
+    }
+    invalid = [
+        field
+        for field, value in optional_text.items()
+        if value is not None and (not isinstance(value, str) or not value)
+    ]
+    if invalid:
+        raise ExecutionPlanError(
+            PLAN_INVALID,
+            f"Plan status has invalid fields: {', '.join(invalid)}",
         )
     source_claims = payload.get("sourceClaims")
     if (
@@ -221,9 +246,9 @@ def _load_plan(path: Path) -> FormalExecutionPlan:
         plan_id=required_text["planId"],
         plan_format="stable",
         status=required_text["status"],
-        branch=required_text["branch"],
-        workspace_id=required_text["workspaceId"],
-        initial_head=required_text["initialHead"],
+        branch=optional_text["branch"],
+        workspace_id=optional_text["workspaceId"],
+        initial_head=optional_text["initialHead"],
         current_task_id=current_task_id,
         current_task_path=current_task_path,
         current_task_write_set=tuple(current_task_write_set),
@@ -242,7 +267,7 @@ def load_formal_plan(path: Path) -> FormalExecutionPlan:
             PLAN_INVALID,
             f"execution plan does not use the current stable Plan contract: {resolved}",
         )
-    return _load_plan(resolved)
+    return _load_plan(resolved, _source_plan_status(resolved))
 
 
 def _workspace_plan_mount(root: Path) -> dict[str, str]:
@@ -320,7 +345,7 @@ def discover_active_plan(
             PLAN_BINDING_MISMATCH,
             "mounted Plan path is missing or outside the current worktree",
         ) from error
-    plan = load_formal_plan(path)
+    plan = _load_plan(path, _mounted_plan_status(path))
     if plan.plan_format != "stable" or plan.plan_id != mount["planId"]:
         raise ExecutionPlanError(
             PLAN_BINDING_MISMATCH,
@@ -351,6 +376,11 @@ def changed_paths_for_plan(
     plan: FormalExecutionPlan,
     execution_mode: str = "closure",
 ) -> list[str]:
+    if plan.initial_head is None:
+        raise ExecutionPlanError(
+            PLAN_COMPLETION_REQUIRED,
+            "changed-path selection requires a repository completion contract",
+        )
     paths = set(
         line
         for line in _git(root, "diff", "--name-only", f"{plan.initial_head}..HEAD").splitlines()
