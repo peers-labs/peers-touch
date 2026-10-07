@@ -272,6 +272,64 @@ class MobileSimulatorRuntimeBinding:
             return validate_scope_projection(value)
         return value
 
+    def capture_web_dom(
+        self,
+        client_id: str,
+        capture_id: str,
+    ) -> ArtifactRef:
+        normalized_capture_id = self._capture_id(capture_id)
+        response = self._client.invoke(
+            CAPABILITY_ID,
+            "capture_page_source",
+            {
+                "clientId": client_id,
+                "captureId": normalized_capture_id,
+            },
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        )
+        if response.get("clientId") != client_id:
+            raise DriverError(
+                "Mobile simulator evidence client identity does not match"
+            )
+        return self._artifact_ref(
+            response,
+            "pageSource",
+            expected_path=(
+                "runtime/mobile-simulator/evidence/"
+                f"{normalized_capture_id}/{client_id}/web-dom.html"
+            ),
+            expected_media_type="text/html",
+        )
+
+    def capture_screenshot(
+        self,
+        client_id: str,
+        capture_id: str,
+    ) -> ArtifactRef:
+        normalized_capture_id = self._capture_id(capture_id)
+        response = self._client.invoke(
+            CAPABILITY_ID,
+            "capture_screenshot",
+            {
+                "clientId": client_id,
+                "captureId": normalized_capture_id,
+            },
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        )
+        if response.get("clientId") != client_id:
+            raise DriverError(
+                "Mobile simulator evidence client identity does not match"
+            )
+        return self._artifact_ref(
+            response,
+            "screenshot",
+            expected_path=(
+                "runtime/mobile-simulator/evidence/"
+                f"{normalized_capture_id}/{client_id}/screenshot.png"
+            ),
+            expected_media_type="image/png",
+        )
+
     def authenticate_fixture_actor(
         self,
         client_id: str,
@@ -389,6 +447,46 @@ class MobileSimulatorRuntimeBinding:
             raise DriverError(
                 f"Mobile simulator {label} identity is invalid"
             )
+
+    @classmethod
+    def _capture_id(cls, value: str) -> str:
+        cls._require_identifier(value, "capture")
+        return value
+
+    def _artifact_ref(
+        self,
+        response: Mapping[str, object],
+        field: str,
+        *,
+        expected_path: str,
+        expected_media_type: str,
+    ) -> ArtifactRef:
+        if set(response) != {"clientId", field}:
+            raise DriverError(
+                "Mobile simulator evidence response has an invalid shape"
+            )
+        client_id = response.get("clientId")
+        if not isinstance(client_id, str) or not client_id:
+            raise DriverError(
+                "Mobile simulator evidence client identity is invalid"
+            )
+        try:
+            reference = ArtifactRef.from_dict(
+                _mapping(response.get(field), field)
+            )
+        except (EvidenceError, TypeError, ValueError) as error:
+            raise DriverError(
+                "Mobile simulator evidence reference is invalid"
+            ) from error
+        if (
+            reference.gate_id != self._gate_id
+            or reference.path != expected_path
+            or reference.media_type != expected_media_type
+        ):
+            raise DriverError(
+                "Mobile simulator evidence reference identity is invalid"
+            )
+        return reference
 
 
 def validate_scope_projection(value: object) -> dict[str, Any]:

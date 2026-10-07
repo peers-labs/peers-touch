@@ -229,15 +229,12 @@
           "apps/desktop/src-tauri/src/messaging/**",
           "apps/mobile/src-tauri/src/runtime/oauth/**",
           "apps/mobile/src-tauri/src/messaging/**",
-          "tooling/acceptance/gates/station_access/session_class_e2e.py",
-          "tooling/acceptance/gates/station_access/session_class_e2e_test.py"
+          "tooling/acceptance/gates/station_access/session_class_suite_e2e.py",
+          "tooling/acceptance/gates/station_access/session_class_suite_e2e_test.py"
         ]
       },
       "require": [
-        "chat-native-multi-device-e2e",
-        "chat-lifecycle-mixed-client-multi-device-e2e",
-        "mobile-simulator-station-lifecycle-e2e",
-        "station-access-session-class-e2e"
+        "station-access-session-class-suite-e2e"
       ]
     },
     {
@@ -299,10 +296,7 @@
         "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
-        "chat-native-multi-device-e2e",
-        "chat-lifecycle-mixed-client-multi-device-e2e",
-        "mobile-simulator-station-lifecycle-e2e",
-        "station-access-session-class-e2e",
+        "station-access-session-class-suite-e2e",
         "station-access-federation-boundary-e2e",
         "desktop-release-build",
         "mobile-native-build",

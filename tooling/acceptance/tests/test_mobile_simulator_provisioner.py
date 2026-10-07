@@ -403,7 +403,7 @@ class FakeEvidenceRun:
     run_id = "20260909T120000000000Z-" + ("1" * 32)
 
     def __init__(self) -> None:
-        self.writes: list[tuple[str, dict[str, Any], str | None]] = []
+        self.writes: list[tuple[str, Any, str | None]] = []
 
     def write_json(
         self,
@@ -422,6 +422,26 @@ class FakeEvidenceRun:
             path=path,
             sha256=hashlib.sha256(path.encode("utf-8")).hexdigest(),
             media_type="application/json",
+        )
+
+    def write_bytes(
+        self,
+        path: str,
+        value: bytes,
+        *,
+        media_type: str,
+        role: str | None = None,
+        redact: bool = True,
+    ) -> ArtifactRef:
+        del redact
+        self.writes.append((path, value, role))
+        return ArtifactRef(
+            workspace_id="a" * 16,
+            gate_id="mobile-simulator-station-lifecycle-e2e",
+            run_id=self.run_id,
+            path=path,
+            sha256=hashlib.sha256(value).hexdigest(),
+            media_type=media_type,
         )
 
 
@@ -455,6 +475,12 @@ class FakeParentSimulatorSession:
     def require_harness(self, actions: list[str]) -> list[str]:
         self.calls.append(("require_harness", {"actions": actions}))
         return actions
+
+    def get_page_source(self) -> str:
+        return "<html><body>receiver visible message</body></html>"
+
+    def screenshot_bytes(self) -> bytes:
+        return b"\x89PNG\r\n\x1a\nreceiver-visible"
 
     def call_action(
         self,
@@ -2449,6 +2475,24 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             deadline_monotonic=time.monotonic() + 5,
             cancellation=cancellation,
         )
+        page_source = handler.invoke(
+            "capture_page_source",
+            {
+                "clientId": "sim-ios",
+                "captureId": "receiver-visible",
+            },
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=cancellation,
+        )
+        screenshot = handler.invoke(
+            "capture_screenshot",
+            {
+                "clientId": "sim-ios",
+                "captureId": "receiver-visible",
+            },
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=cancellation,
+        )
 
         session = sessions["sim-ios"]
         station_calls = [
@@ -2507,6 +2551,20 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 "publicProjectionAbsent": True,
             },
         )
+        self.assertEqual(
+            page_source["pageSource"]["path"],
+            (
+                "runtime/mobile-simulator/evidence/receiver-visible/"
+                "sim-ios/web-dom.html"
+            ),
+        )
+        self.assertEqual(
+            screenshot["screenshot"]["path"],
+            (
+                "runtime/mobile-simulator/evidence/receiver-visible/"
+                "sim-ios/screenshot.png"
+            ),
+        )
         proofs = [
             value
             for _path, value, role in self.evidence_run.writes
@@ -2535,6 +2593,24 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 "requestId": "cleanup-request",
                 "status": "OK",
                 "result": cleaned,
+                "error": None,
+            },
+        )
+        handler.project_response(
+            "capture_page_source",
+            {
+                "requestId": "page-source-request",
+                "status": "OK",
+                "result": page_source,
+                "error": None,
+            },
+        )
+        handler.project_response(
+            "capture_screenshot",
+            {
+                "requestId": "screenshot-request",
+                "status": "OK",
+                "result": screenshot,
                 "error": None,
             },
         )
