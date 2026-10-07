@@ -1624,8 +1624,9 @@ accessibility, or recovery states elsewhere in the app.
 
 ### Consequences
 
-- `mobile-ios-simulator-layout-accessibility-e2e` must cover the full
-  descriptor/state inventory and preserve per-surface evidence.
+- `mobile-simulator-whole-product-usability-e2e` must cover the full
+  descriptor/state inventory and preserve per-surface evidence; the
+  launch-only layout Gate remains independently scoped.
 - Any unvisited route or required visible state remains `UNPROVEN`.
 - Any blocker or major usability finding prevents a whole-product completion
   claim even when feature-specific business assertions pass.

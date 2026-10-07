@@ -1617,6 +1617,14 @@
       "tier": "env-evidence",
       "description": "Prove the current iPhone 17 Simulator launch-surface layout, keyboard avoidance, localization, accessible naming, orientation, and cleanup."
     },
+    "mobile-simulator-whole-product-usability-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e",
+      "timeout_seconds": 10800,
+      "environment": "mobile-direct-simulator",
+      "provisioner": "mobile-direct-simulator",
+      "tier": "env-evidence",
+      "description": "Walk the complete registered Mobile surface inventory in a foreground iOS Simulator and prove human-readable identity, valid actions, accessibility, viewport containment, and non-occlusion."
+    },
     "mobile-simulator-social-convergence-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario social-convergence",
       "timeout_seconds": 2400,

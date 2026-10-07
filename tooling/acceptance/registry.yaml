@@ -1246,6 +1246,23 @@
       ]
     },
     {
+      "id": "mobile-whole-product-usability",
+      "features": [
+        "mobile-native-accessibility-performance"
+      ],
+      "when": {
+        "paths": [
+          "tooling/acceptance/gates/mobile/whole_product_surface_inventory.json",
+          "apps/mobile/scripts/review-mobile-surfaces.mjs",
+          "tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e.py",
+          "tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e_test.py"
+        ]
+      },
+      "require": [
+        "mobile-simulator-whole-product-usability-e2e"
+      ]
+    },
+    {
       "id": "mobile-runtime-lifecycle",
       "features": [
         "mobile-session-lifecycle",
@@ -1594,12 +1611,14 @@
           "apps/mobile/src/components/BoundedList.tsx",
           "apps/mobile/src/components/boundedListRange.ts",
           "apps/mobile/scripts/check-bounded-lists.mjs",
+          "apps/mobile/scripts/review-mobile-surfaces.mjs",
           "apps/mobile/scripts/fixtures/bounded-list.tsx",
           "packages/locales/**"
         ]
       },
       "require": [
         "mobile-ios-simulator-layout-accessibility-e2e",
+        "mobile-simulator-whole-product-usability-e2e",
         "mobile-simulator-platform-e2e",
         "mobile-hard-cut-static"
       ]
