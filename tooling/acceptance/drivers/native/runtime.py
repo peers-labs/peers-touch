@@ -426,6 +426,7 @@ class NativeDesktopRuntimeBinding(ABC):
                 "Runtime Binding Station discovery returned no entries"
             )
         expected_url = station_url.rstrip("/")
+        fallback: tuple[str, str] | None = None
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -433,6 +434,14 @@ class NativeDesktopRuntimeBinding(ABC):
             routes = entry.get("routes")
             if not station_peer_id or not isinstance(routes, list):
                 continue
+            if (
+                len(entries) == 1
+                and len(routes) == 1
+                and isinstance(routes[0], dict)
+            ):
+                route_id = str(routes[0].get("route_id") or "").strip()
+                if route_id:
+                    fallback = (station_peer_id, route_id)
             for route in routes:
                 if (
                     isinstance(route, dict)
@@ -451,6 +460,17 @@ class NativeDesktopRuntimeBinding(ABC):
                             },
                         )
                         return
+        if fallback is not None:
+            session.invoke_app_result(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": fallback[0],
+                        "route_id": fallback[1],
+                    }
+                },
+            )
+            return
         raise DriverError(
             "Runtime Binding Station discovery did not return the requested route"
         )

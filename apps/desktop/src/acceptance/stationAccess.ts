@@ -33,11 +33,12 @@ export async function configureAcceptanceStation(
   if (probed.entries.length !== 1) {
     throw new Error('acceptance.stationAccess.stationSelectionRequired');
   }
+  const expectedRouteOrigin = normalizeStationUrl(probed.canonical_origin);
   const discoveredEntry = probed.entries[0];
   const discoveredRoute = discoveredEntry?.routes.find(
-    (route) => route.endpoint_origin === expectedUrl,
+    (route) => normalizeStationUrl(route.endpoint_origin) === expectedRouteOrigin,
   ) ?? discoveredEntry?.routes[0];
-  if (!discoveredEntry || !discoveredRoute) {
+  if (!discoveredEntry || !discoveredRoute || !expectedRouteOrigin) {
     throw new Error('acceptance.stationAccess.stationRouteRequired');
   }
   const selected = await stationApi.stationSetActive(
@@ -60,8 +61,8 @@ export async function configureAcceptanceStation(
 
   return {
     configured:
-      activeUrl === expectedUrl
-      && boundUrl === expectedUrl
+      activeUrl === expectedRouteOrigin
+      && boundUrl === expectedRouteOrigin
       && bindingPhase === 'access_gate'
       && activeRoute?.health === 'available'
       && Boolean(activeStationPeerId),
