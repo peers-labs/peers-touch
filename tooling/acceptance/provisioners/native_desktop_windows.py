@@ -456,9 +456,6 @@ class NativeDesktopWindowsProvisioner:
                 resource=f"runtime-cell:{self.contract.cell_id}",
             )
         run_id = _new_run_id()
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            seconds=self.contract.lease_ttl_seconds
-        )
         remote_home = ""
         remote_source = ""
         broker_root = ""
@@ -509,6 +506,9 @@ class NativeDesktopWindowsProvisioner:
                 remote_home,
             )
             self._require_interactive_desktop(host)
+            expires_at = datetime.now(timezone.utc) + timedelta(
+                seconds=self.contract.lease_ttl_seconds
+            )
             acquired = self._broker(
                 broker_path,
                 broker_root,

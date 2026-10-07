@@ -825,21 +825,6 @@ function describeCompletionCandidate(manifest) {
   };
 }
 
-function completionCandidateRun(planPackage, manifest) {
-  const candidate = structuredClone(planPackage.execution.run);
-  for (const task of manifest.tasks) {
-    candidate.taskStates[task.id] = {
-      state: task.status,
-      blocker: task.blocker ?? null,
-    };
-  }
-  candidate.state = manifest.status;
-  candidate.currentTaskId =
-    manifest.tasks.find((task) => task.status === 'in_progress')?.id ?? null;
-  candidate.exhaustion = manifest.exhaustion;
-  return candidate;
-}
-
 async function completionCandidate(
   planPackage,
   requestedNextTaskId,

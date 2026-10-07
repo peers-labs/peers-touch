@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 import zlib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import Mock
 
 from tooling.acceptance.core import (
@@ -101,7 +101,7 @@ class WindowsCellProfileTest(unittest.TestCase):
 
         self.assertEqual(
             _normalized_windows_path(candidate),
-            Path(root, "storage", "attachment-cache", "attachment-1"),
+            PureWindowsPath(root, "storage", "attachment-cache", "attachment-1"),
         )
         self.assertTrue(_windows_path_is_descendant(candidate, root))
         self.assertEqual(_windows_verbatim_path(candidate), candidate)
@@ -391,6 +391,15 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             ready.index("self._require_interactive_desktop("),
             ready.index('self._broker('),
         )
+
+    def test_broker_lease_expiry_is_computed_after_build_preflight(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+        ready = source[source.index("    def ready("):source.index("    def status(")]
+        expiry = "expires_at = datetime.now(timezone.utc) + timedelta("
+
+        self.assertEqual(ready.count(expiry), 1)
+        self.assertLess(ready.index("self._build_binary("), ready.index(expiry))
+        self.assertLess(ready.index(expiry), ready.index('self._broker('))
 
     def test_interactive_gate_fails_closed_without_desktop_session(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(
