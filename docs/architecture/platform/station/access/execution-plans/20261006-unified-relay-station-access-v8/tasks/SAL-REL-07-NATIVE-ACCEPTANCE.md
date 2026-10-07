@@ -19,7 +19,7 @@
     "docs/architecture/engineering/api-governance",
     "docs/architecture/engineering/architecture-governance/architecture-modules.json",
     "docs/architecture/platform/station/access",
-    "docs/architecture/shared/federation",
+    "docs/architecture/domains/federation",
     "docs/knowledge",
     "docs/README.md",
     "tooling/acceptance",

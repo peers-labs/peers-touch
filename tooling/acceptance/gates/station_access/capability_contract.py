@@ -171,7 +171,8 @@ CLIENT_ACCESS_DISCOVERY_PATTERNS = (
     ),
     re.compile(r"^\s*['\"`](access_[a-z0-9_]+)['\"`]\s*=>", re.MULTILINE),
     re.compile(
-        r"^\s*pub(?:\s+async)?\s+fn\s+(access_[a-z0-9_]+)\s*\(",
+        r"^\s*#\[tauri::command\]\s*"
+        r"pub(?:\s+async)?\s+fn\s+(access_[a-z0-9_]+)\s*\(",
         re.MULTILINE,
     ),
     re.compile(r"\b(?:auth|oauth)::(access_[a-z0-9_]+)\b"),

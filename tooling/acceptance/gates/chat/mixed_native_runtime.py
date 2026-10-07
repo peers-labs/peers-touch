@@ -33,7 +33,9 @@ from tooling.acceptance.gates.chat.native_support import (
     is_native_tauri_url,
     read_station_version,
     verify_runtime_fixture_ready,
-    wait_for_peer_key_bundle,
+)
+from tooling.acceptance.gates.mobile.simulator_harness_contract import (
+    STATION_ACCESS_NATIVE_GATE_IDS,
 )
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
     MobileSimulatorRuntimeBinding,
@@ -42,13 +44,7 @@ from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
 
 ENVIRONMENT_ID = "chat-mixed-native"
 STATION_ACCESS_ENVIRONMENT_ID = "station-access-native"
-STATION_ACCESS_GATE_IDS = frozenset(
-    {
-        "station-access-auth-e2e",
-        "station-access-scope-isolation-e2e",
-        "station-access-federation-boundary-e2e",
-    }
-)
+STATION_ACCESS_GATE_IDS = STATION_ACCESS_NATIVE_GATE_IDS
 DESKTOP_RUNTIME = "native-tauri"
 MOBILE_RUNTIME = "tauri-ios-simulator"
 POLL_INTERVAL_SECONDS = 0.25
@@ -625,11 +621,12 @@ class MixedNativeRuntime:
             "runtimeStationPeerId": scope.get("runtimeStationPeerId"),
             "actorPtid": scope.get("activeActorPtid"),
             "deviceIdentityDigest": (
-                scope.get("deviceIdentityDigest")
+                self._identity_digest(scope.get("deviceId"))
                 if self.gate_id in STATION_ACCESS_GATE_IDS
                 else device.get("deviceIdentityDigest")
             ),
             "social": scope.get("social"),
+            "group": scope.get("group"),
             "navigation": scope.get("navigation"),
         }
 
@@ -678,10 +675,24 @@ class MixedNativeRuntime:
             "Direct Federation context",
         )
         if self._is_desktop(sender_id):
-            wait_for_peer_key_bundle(
+            expected_peer_devices = tuple(
+                sorted(
+                    {
+                        identity.device_id
+                        for identity in self.identities.values()
+                        if (
+                            identity.ptid == receiver.ptid
+                            and identity.station_peer_id
+                            == receiver.station_peer_id
+                        )
+                    }
+                )
+            )
+            self._wait_for_peer_key_bundles(
                 self.desktop_sessions[sender_id],
                 receiver.ptid,
                 receiver.station_peer_id,
+                expected_peer_devices,
                 timeout=timeout_seconds,
             )
             created = self.call_action(
@@ -712,6 +723,53 @@ class MixedNativeRuntime:
             timeout_seconds=timeout_seconds,
         )
         return conversation_id
+
+    def _wait_for_peer_key_bundles(
+        self,
+        client: TauriSession,
+        peer_ptid: str,
+        home_station_peer_id: str,
+        expected_device_identity_digests: tuple[str, ...],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        expected_devices = set(expected_device_identity_digests)
+
+        def ready() -> dict[str, Any] | None:
+            state = async_harness(
+                client,
+                "peerKeyBundleState",
+                {
+                    "peerPtid": peer_ptid,
+                    "homeStationPeerId": home_station_peer_id,
+                },
+                timeout=10,
+            )
+            device_ids = (
+                state.get("deviceIds", [])
+                if isinstance(state, Mapping)
+                else []
+            )
+            observed_devices = {
+                hashlib.sha256(device_id.encode("utf-8")).hexdigest()
+                for device_id in device_ids
+                if isinstance(device_id, str) and device_id
+            }
+            return (
+                dict(state)
+                if (
+                    isinstance(state, Mapping)
+                    and int(state.get("bundleCount") or 0) > 0
+                    and expected_devices.issubset(observed_devices)
+                )
+                else None
+            )
+
+        return self.wait_until(
+            ready,
+            f"complete peer key bundles for {peer_ptid}",
+            timeout_seconds=timeout,
+        )
 
     def create_group(
         self,

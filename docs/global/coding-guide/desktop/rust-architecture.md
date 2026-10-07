@@ -26,7 +26,7 @@ src-tauri/src/
 │   └── ...                 # admin, applets, profile, timeline
 ├── infrastructure/         # 基础设施层 - 外部集成
 │   ├── auth_identity/      # 身份管理
-│   ├── local_chat_store/   # SQLite 聊天持久化
+│   ├── storage/            # 通用数据库与密钥基础设施
 │   ├── logger/             # 基于 Tracing 的日志
 │   ├── p2p/                # P2P 网络
 │   ├── realtime/           # 实时连接
@@ -212,7 +212,7 @@ pub fn send_message(
 ```rust
 // application/chat/mod.rs
 pub fn send_message(
-    state: &AppState,
+    messaging: &MessagingEngine,
     input: SendMessageInput,
 ) -> AppResult<SendMessageOutput> {
     // 1. 领域层：校验消息内容
@@ -225,12 +225,8 @@ pub fn send_message(
         input.message_type,
     );
 
-    // 3. 基础设施层：持久化消息
-    let store = infrastructure::local_chat_store::get_store(state);
-    store.save_message(&message)?;
-
-    // 4. 基础设施层：通过实时通道推送
-    infrastructure::realtime::push_message(state, &message)?;
+    // 3. Messaging Engine 原子提交 command/outbox/projection
+    messaging.submit_message(message)?;
 
     AppResult::success(SendMessageOutput {
         message_id: message.id,
@@ -307,12 +303,12 @@ pub fn side_effect(key: &SettingKey) -> Option<SideEffect> {
 基础设施层实现所有外部交互：
 
 ```rust
-// infrastructure/local_chat_store/mod.rs
-pub struct LocalChatStore {
+// messaging/store.rs
+pub struct MessagingStore {
     db: SqliteConnection,
 }
 
-impl LocalChatStore {
+impl MessagingStore {
     pub fn save_message(&self, message: &Message) -> Result<(), InfraError> {
         // SQLite 持久化逻辑
     }

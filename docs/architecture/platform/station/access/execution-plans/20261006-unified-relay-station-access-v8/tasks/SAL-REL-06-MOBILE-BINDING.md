@@ -25,7 +25,7 @@
   "readSet": [
     "apps/station/frame/core/plugin/native/subserver/bootstrap",
     "apps/station/frame/core/plugin/native/subserver/relay",
-    "docs/architecture/shared/federation",
+    "docs/architecture/domains/federation",
     "model/domain/federation",
     "model/domain/peer"
   ],

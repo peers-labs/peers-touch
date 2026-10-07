@@ -20,6 +20,7 @@
 | SAL-J07 | 用私有连接材料接入未公开 Station | SAL-C07-C09 |
 | SAL-J08 | Station operator 注册、轮换与撤销 Relay mount | SAL-C10 |
 | SAL-J09 | 同一 Station 在直连与 Relay 间换路 | SAL-C03/C08-C09 |
+| SAL-J10 | 跨类别共存与同类别接管 | SAL-C03/C11 |
 
 ## 2. SAL-J01：直连接入
 
@@ -98,7 +99,22 @@ analytics 或日志字段发送。
 | mount credential 过期 | Station 轮换或重新 enrollment；不信任非空缓存 |
 | 配额耗尽 | typed overload + retry-after；不得静默截断 |
 
-## 9. 禁止体验
+## 9. SAL-J10：跨类别共存与同类别接管
+
+1. 同一账号先在 Desktop 登录，再在 Mobile 登录。
+2. 两端 Session、Messaging 与 Actor Device 使用各自安装实例的 `device_id`，
+   并共享同一 Station/Actor 业务事实。
+3. Desktop 与 Mobile 均保持登录，可发送、接收和读取同一 Conversation。
+4. 同一账号在第二个 Desktop 登录；旧 Desktop 收到 typed `kicked`，停止
+   runtime 并回到登录态，Mobile 不受影响。
+5. 同一账号在第二个 Mobile 登录；旧 Mobile 在下一次鉴权、事件恢复或显式
+   resume 时收敛到 typed `kicked`，清除旧 projection 并回到登录态，Desktop
+   不受影响。
+
+密码、OAuth、冷启动恢复和 session takeover 必须使用同一个客户端类别槽。
+运行时标签、窗口 label、设备型号和不同 `device_id` 不得绕过同类别接管。
+
+## 10. 禁止体验
 
 - 要求用户预先选择“Station 模式”或“Relay 模式”。
 - probe 成功、Relay 列表或 URL 文本即被当作 Station identity。

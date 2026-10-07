@@ -287,9 +287,20 @@ func newOAuthFixture(t *testing.T, decision accessgatepb.AccessDecisionState) *o
 		&dbmodel.OAuthAttempt{},
 		&dbmodel.OAuthSessionCandidate{},
 		&dbmodel.OAuthCredentialEnvelope{},
-		&session.SessionRecord{},
 	); err != nil {
 		t.Fatalf("migrate OAuth tables: %v", err)
+	}
+	if err := database.Exec("CREATE TABLE touch_actor (id INTEGER PRIMARY KEY)").Error; err != nil {
+		t.Fatalf("create actor lock table: %v", err)
+	}
+	if err := database.Exec("INSERT INTO touch_actor(id) VALUES (?)", 17).Error; err != nil {
+		t.Fatalf("create actor lock row: %v", err)
+	}
+	sessionStore := session.NewDBStore(func(context.Context) (*gorm.DB, error) {
+		return database, nil
+	}, time.Hour)
+	if err := sessionStore.AutoMigrate(context.Background()); err != nil {
+		t.Fatalf("migrate session table: %v", err)
 	}
 	if err := database.Create(&dbmodel.AccessAttempt{
 		ID:               testAccessAttempt,
@@ -888,6 +899,62 @@ func TestOAuthAcknowledgeClearsEnvelopeAndActivatesPersistedSession(t *testing.T
 		t.Fatalf("acknowledged session is not active and candidate-bound: %#v", record)
 	}
 	assertPersistenceCounts(t, fixture.database, 1, 0)
+}
+
+func TestOAuthAcknowledgeReplacesOnlySameClientClass(t *testing.T) {
+	fixture := newOAuthFixture(t, accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED)
+	now := time.Now().UTC().Truncate(time.Second)
+	existing := []session.SessionRecord{
+		{
+			SessionID: "desktop-existing",
+			UserID:    17, DeviceType: session.DeviceTypeDesktop,
+			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
+		},
+		{
+			SessionID: "mobile-existing",
+			UserID:    17, DeviceType: session.DeviceTypeMobile,
+			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastActiveAt: now,
+		},
+	}
+	if err := fixture.database.Create(&existing).Error; err != nil {
+		t.Fatalf("create existing class sessions: %v", err)
+	}
+
+	start, completeRequest := fixture.start(t)
+	completed, err := fixture.service.Complete(context.Background(), completeRequest)
+	if err != nil {
+		t.Fatalf("complete OAuth attempt: %v", err)
+	}
+	if _, err := fixture.service.Acknowledge(
+		context.Background(),
+		fixture.acknowledgeRequest(start.GetOauthAttemptId()),
+	); err != nil {
+		t.Fatalf("acknowledge credential: %v", err)
+	}
+
+	var desktop session.SessionRecord
+	if err := fixture.database.Where("session_id = ?", "desktop-existing").First(&desktop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if desktop.Revoked {
+		t.Fatalf("mobile OAuth acknowledgement revoked Desktop: %#v", desktop)
+	}
+	var mobile session.SessionRecord
+	if err := fixture.database.Where("session_id = ?", "mobile-existing").First(&mobile).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !mobile.Revoked || mobile.RevokedReason != "kicked" {
+		t.Fatalf("mobile OAuth acknowledgement did not replace Mobile: %#v", mobile)
+	}
+	var activated session.SessionRecord
+	if err := fixture.database.
+		Where("session_id = ?", completed.GetCredentialEnvelope().GetSessionId()).
+		First(&activated).Error; err != nil {
+		t.Fatal(err)
+	}
+	if activated.Revoked || activated.DeviceType != session.DeviceTypeMobile {
+		t.Fatalf("acknowledged Mobile session is not active: %#v", activated)
+	}
 }
 
 func TestOAuthCancelAfterAcknowledgementPreservesActivatedSession(t *testing.T) {

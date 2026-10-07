@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Data Model
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-05
+> **Created**: 2026-09-13 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 
 ---
@@ -32,17 +32,36 @@ type DevelopmentWorkClass =
 A product defect cannot be downgraded to infrastructure/documentation to avoid
 a runtime Journey.
 
-## 2. Frozen Plan Version
+## 2. Stable Plan
 
-`plan.md` contains one fenced `Plan Version` JSON object. It is reviewed source,
-not execution state:
+`plan.md` contains one fenced `Plan` JSON object. It is reviewed source, not
+execution state:
 
 ```ts
-interface PlanVersion {
-  kind: 'peers-touch-plan-version';
+interface Plan {
+  kind: 'peers-touch-plan';
   planId: string;
-  versionId: string;
   createdAt: string;
+  northStar: {
+    objective: string;
+    successCriteria: Array<{
+      id: string;
+      statement: string;
+      sourceRefs: string[];
+    }>;
+  };
+  northStarApproval: null | {
+    northStarDigest: string;
+    approvedBy: string;
+    approvedAt: string;
+    decisionRef: string;
+  };
+  criterionCoverage: Array<{
+    criterionId: string;
+    taskIds: string[];
+    closureIds: string[];
+    gateIds: string[];
+  }>;
   workClass: DevelopmentWorkClass;
   architecture: {
     sources: string[];
@@ -62,16 +81,68 @@ interface PlanVersion {
     dependsOn: string[];
   }>;
   authorization: ExecutionAuthorization;
+  amendments: PlanAmendment[];
+}
+
+interface PlanAmendment {
+  id: string;
+  createdAt: string;
+  actor: string;
+  reason: string;
+  changes: string[];
+  impact: {
+    taskIds: string[];
+    gateIds: string[];
+  };
+  approval: {
+    kind: 'agent' | 'owner';
+    decisionRef: string | null;
+  };
+  fromContentDigest: string;
+  toContentDigest: string;
 }
 ```
 
-The complete version digest is computed over canonical `PlanVersion`, every
-referenced Task Slice, `Acceptance Execution`, and optional source invalidation
-policy. Once frozen, no field or referenced Task file may change. A correction
-creates a new `versionId` and digest through an explicit owner amendment; an
-Agent cannot amend a mounted version.
+Plan authoring always emits `northStarApproval: null`. The result is a
+reviewable candidate, not an executable Plan. `northStarDigest` is SHA-256 over
+canonical `{ kind: 'peers-touch-north-star', planId, northStar }`; approval
+metadata and `criterionCoverage` are deliberately outside that digest.
+`planctl approve-north-star` is the only writer for the approval record and
+requires an explicit actor plus durable user decision reference.
+An approval record is immutable while `northStar` is unchanged; ordinary
+amendments cannot rewrite its actor, timestamp, or decision reference.
 
-The Plan Version does not store:
+Every success criterion has a stable ID and source references.
+`criterionCoverage` contains each criterion exactly once. Its Task IDs must
+exist, its closure IDs must exactly equal those Tasks' closures, and its Gate
+IDs must exactly equal the Gates owned by those closures. The mapping is
+Plan-owned execution detail: Task, closure, or Gate remapping does not
+invalidate North Star approval while the objective and criteria remain
+unchanged.
+
+`planId` is stable for the complete goal lifetime. `planContentDigest` is
+computed over the current Plan fields excluding `amendments`, every referenced
+Task Slice, `Acceptance Execution`, and optional source invalidation policy.
+`planDigest` covers that content digest plus the append-only amendment log.
+Both digests are internal integrity/CAS identities, never user-facing versions.
+
+The initial Plan has an empty amendment log. `planctl validate` reports
+`candidate | stale | approved` without converting review into approval.
+PlanMount and every execution admission reject candidate or stale approval as
+`NORTH_STAR_APPROVAL_REQUIRED`. A mounted Plan may be edited in place only
+through `planctl amend`: the command validates the candidate package, derives
+affected Task and Gate IDs, appends exactly one amendment, writes a new
+immutable execution snapshot, and atomically advances the Execution Run to
+that snapshot. It keeps `planId`, `mountId`, and `runId` unchanged.
+
+The Agent approves ordinary execution-model repairs when `northStar` is
+unchanged. Changing the objective, criterion statement, criterion ID, or source
+references makes the prior approval stale. The user must explicitly approve
+the new digest before an owner-approved amendment can publish it. Expanding the
+operation authorization envelope remains a separate explicit authorization
+boundary.
+
+The Plan does not store:
 
 - execution worktree, branch, or initial HEAD;
 - Plan/Task lifecycle or current selection;
@@ -80,14 +151,14 @@ The Plan Version does not store:
 - per-attempt evidence;
 - dated progress narratives.
 
-The version `workClass` classifies the overall delivery. Each Task
+The Plan `workClass` classifies the overall delivery. Each Task
 Slice independently classifies its own closure, and may use a different
 `workClass`; Session transition guards and claim vocabulary always use the
 current Task's class. This permits one product version to retain infrastructure,
 refactor or documentation closures without downgrading product Tasks.
 
-Current and ready Tasks derive from the mounted `ExecutionRun`, whose immutable
-input is an `ExecutionPlanSnapshot`. Git remains physical source truth.
+Current and ready Tasks derive from the mounted `ExecutionRun`, whose current
+input is one immutable `ExecutionPlanSnapshot`. Git remains physical source truth.
 `ExecutionPlanSnapshot.executionBinding.initialHead` is the run baseline,
 `DevelopmentResourceDeclaration.sourceHead` authorizes the current mutation
 slice, and `DevelopmentSession.source.commit` identifies a clean runtime
@@ -116,7 +187,7 @@ interface PlanProgress {
 ```
 
 Plans that permit a completed source owner to reopen declare a separate strict
-block outside the Plan Version:
+block outside the Plan:
 
 ```ts
 interface SourceInvalidationPolicy {
@@ -129,11 +200,11 @@ interface SourceInvalidationPolicy {
 The policy is optional because most Plans never reopen source. When present,
 `planctl invalidate-source` derives the full transitive closure from
 `rootTaskIds`; callers cannot provide an owner or affected set. The command
-stores an immutable machine-local proof containing the Plan Version digest,
+stores an immutable machine-local proof containing the Plan digest,
 the first-failure reference, and every invalidated durable-evidence reference
 before atomically replacing the Execution Run lifecycle projection.
 
-The projection is computed from the immutable Task DAG plus
+The projection is computed from the current snapshot Task DAG plus
 `ExecutionRun.taskStates`. It is not persisted. A non-blocked active run always
 exposes one `nextProgressBoundary`. Prepared, blocked, completed and cancelled
 runs expose `null`.
@@ -150,9 +221,9 @@ percentagePointDelta = round(percentageAfter - percentage, 2)
 `percentage`. Newly unlocked Tasks remain pending and do not contribute to
 `completedAfter`.
 
-Markdown metadata is a discovery projection. `Plan ID`, `Version ID`, and
-`Created` must equal the machine block. Execution status, branch, worktree, and
-source HEAD are never projected into the frozen Plan file.
+Markdown metadata is a discovery projection. `Plan ID` and `Created` must equal
+the machine block. Version, execution status, branch, worktree, and source HEAD
+are forbidden in the Plan file.
 
 ## 3. Task Slice
 
@@ -250,10 +321,10 @@ Task checks must make the Session path reachable:
 closure reached `SOURCE_READY`; it does not imply that its workstream's
 functional proof Task is done.
 
-The frozen Task does not own lifecycle status, current selection, durable
-evidence, or transition event history. Those belong to `ExecutionRun`,
-`TaskAttempt`, and Evidence. `updatedAt` changes only when a new Plan Version is
-authored, never during execution.
+The Task does not own lifecycle status, current selection, durable evidence, or
+transition event history. Those belong to `ExecutionRun`, `TaskAttempt`, and
+Evidence. `updatedAt` changes only when its durable specification changes in a
+recorded amendment, never for command execution.
 
 Task closure is the only progress unit. Task weights and command-level progress
 percentages are forbidden. A Task that cannot be completed as one meaningful
@@ -317,8 +388,6 @@ interface PlanMount {
   mountId: string;
   projectId: string;
   planId: string;
-  planVersionId: string;
-  planVersionDigest: string;
   planPath: string;
   workspaceId: string;
   canonicalRoot: string;
@@ -339,11 +408,14 @@ index:
 ~/.peers-touch/dev/plan-mounts/mounts/<mountId>.json
 ```
 
+`liveMountsByPlan` is keyed by the SHA-256 of `projectId + NUL + planId`, so
+equal Plan IDs in unrelated repositories do not collide.
+
 Rules:
 
 - mount is explicit, owner-authorized, atomic, and idempotent for the same
-  `planVersionDigest + workspaceId`;
-- one workspace has at most one live mount and one Plan Version has at most one
+  `planId + planPath + workspaceId`;
+- one workspace has at most one live mount and one Plan has at most one
   live execution mount unless its Plan explicitly allows parallel runs;
 - a different live mount returns `PLAN_MOUNT_CONFLICT`;
 - normal release requires the corresponding run to be `completed` or
@@ -355,11 +427,17 @@ Rules:
 - ledger writes hold one short atomic lock; the lock is not Plan occupancy;
 - every mount record is create-once, digest-verified, and owner-controlled;
 - `planPath` is repository-relative and resolves inside `canonicalRoot`;
-- the referenced frozen version must match `planVersionDigest`;
+- the mount binds stable Plan identity while its Execution Run points at the
+  current immutable snapshot;
 - repository/branch scans, active-work, Session, and declaration recency never
   select or replace a mount;
 - there is no workspace-binding, generation-advance, dual-read, or migration
   fallback path.
+
+The hard cut from the retired version-indexed machine schema runs only through
+`make plan-state-migrate` while every declaration and mount is non-live. It
+renames ledger keys and recomputes integrity digests once; normal readers reject
+the retired shape with `PLAN_STATE_MIGRATION_REQUIRED`.
 
 ## 5.2 Execution Plan Snapshot And Run
 
@@ -369,12 +447,14 @@ interface ExecutionPlanSnapshot {
   snapshotId: string;
   capturedAt: string;
   planId: string;
-  planVersionId: string;
-  planVersionDigest: string;
+  planDigest: string;
+  planContentDigest: string;
+  amendmentCount: number;
   planPath: string;
-  plan: PlanVersion;
+  plan: Plan;
   tasks: TaskSlice[];
   acceptance: AcceptanceExecution;
+  sourceInvalidationPolicy: SourceInvalidationPolicy | null;
   executionBinding: {
     mountId: string;
     workspaceId: string;
@@ -413,14 +493,56 @@ interface ExecutionRun {
 }
 ```
 
-The snapshot is written once before execution and never updated. The mutable
-run owns Plan/Task lifecycle only; it cannot change the snapshot, mount, source
-scope, authorization, or Acceptance contract. Run storage is:
+Completed tracked work may be exported for CI as an immutable repository
+attestation at
+`<plan-package>/completions/<planDigest>.json`. The record binds the stable
+`planId`, exact Plan/content/snapshot digests, run ID, source binding, and
+complete Task/closure maps. It is the only source-controlled completion
+authority; CI must not consult `~/.peers-touch` or infer completion from prose.
+
+```ts
+interface PlanCompletion {
+  schemaVersion: 1;
+  kind: 'peers-touch-plan-completion';
+  planId: string;
+  planDigest: string;
+  planContentDigest: string;
+  runId: string;
+  snapshotDigest: string;
+  workspaceId: string;
+  branch: string;
+  initialHead: string;
+  taskStates: Record<string, 'done'>;
+  closureStatuses: Record<string, 'done'>;
+  completedAt: string;
+  digest: string;
+}
+```
+
+Each snapshot is written once and never updated. The mutable run points to the
+current snapshot and owns Plan/Task lifecycle. An amendment publishes a new
+snapshot and changes that pointer with the same CAS update that revalidates Task
+states. The mount remains stable. Run storage is:
 
 ```text
-~/.peers-touch/dev/workspaces/<workspaceId>/workflow/<runId>/execution-plan-snapshot.json
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/<runId>/execution-plan-snapshots/<snapshotId>.json
 ~/.peers-touch/dev/workspaces/<workspaceId>/workflow/<runId>/execution-run.json
 ```
+
+Amendment transition rules:
+
+- current source must preserve `planId`, `planPath`, and `createdAt`;
+- the existing amendment array must be an exact prefix of the candidate;
+- the command appends exactly one new record and rejects no-op updates;
+- an unchanged North Star uses `approval.kind=agent`;
+- a changed North Star first requires a current `northStarApproval`, then
+  requires `approval.kind=owner` with the same non-empty `decisionRef`;
+- a `criterionCoverage`-only change preserves the current North Star approval;
+- operation-authorization expansion requires the same explicit owner approval;
+- new or changed Tasks and their transitive dependents become `pending`;
+- unchanged Task states are retained only when their dependencies remain done;
+- the old snapshot remains immutable and addressable after the run pointer
+  advances.
 
 Status rules:
 
@@ -463,6 +585,7 @@ interface WorkspaceActiveWork {
   branch: string;
   initialHead: string;
   expectedHead: string;
+  workflowOwner: WorkflowOwnerReference;
   updatedAt: string;
   recordDigest: string;
 }
@@ -566,8 +689,8 @@ Rules:
 
 ## 6.2 Workflow Binding Projection
 
-Raw host identities are never persisted. Each host adapter extracts exactly
-the fields defined for that host and hashes them independently:
+Each host adapter extracts exactly the fields defined for that host and hashes
+them independently:
 
 | Host | OWNER identity key | Assigned-child identity key |
 |---|---|---|
@@ -579,18 +702,65 @@ An absent required root-chat field produces `OBSERVE_ONLY`. Adapters do not
 probe aliases from another host and do not read process-global identity
 fallbacks.
 
+The canonical root ID is also retained in owner-controlled machine-local state
+so another Agent can identify the originating main session. It is not written
+to Git, telemetry, runtime logs, or Acceptance evidence.
+
 The create-once OWNER binding is:
 
 ```ts
 interface WorkflowOwnerBinding {
   kind: 'peers-touch-workflow-owner-binding';
   host: 'trae' | 'cursor' | 'codex';
+  rootChatId: string;
   rootChatHash: string;
   role: 'OWNER';
   executionRoot: string;
   workspaceId: string;
   boundAt: string;
   bindingEvent: 'PRE_TOOL_USE';
+  digest: string;
+}
+```
+
+The portable reference copied into worktree and Development state is:
+
+```ts
+interface WorkflowOwnerReference {
+  kind: 'peers-touch-workflow-owner-reference';
+  host: 'trae' | 'cursor' | 'codex';
+  rootChatId: string;
+  rootChatHash: string;
+  rootBindingDigest: string;
+}
+
+interface WorktreeCreation {
+  schemaVersion: 1;
+  kind: 'peers-touch-worktree-creation';
+  workspaceId: string;
+  name: string;
+  branch: string;
+  head: string;
+  sourceWorkspaceId: string;
+  purpose: string;
+  createdBy: WorkflowOwnerReference;
+  creationActionReceiptDigest: string;
+  createdAt: string;
+  digest: string;
+}
+
+interface WorktreeCreationTransaction {
+  schemaVersion: 1;
+  kind: 'peers-touch-worktree-creation-transaction';
+  sourceWorkspaceId: string;
+  sourceRoot: string;
+  targetRoot: string;
+  branch: string;
+  head: string;
+  purpose: string;
+  createdBy: WorkflowOwnerReference;
+  creationActionReceiptDigest: string;
+  createdAt: string;
   digest: string;
 }
 ```
@@ -849,10 +1019,11 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
   sessionId: string;
   planPath: string | null;
   planId: string | null;
-  planVersionDigest: string | null;
+  planDigest: string | null;
   mountId: string | null;
   runId: string | null;
   taskId: string | null;
+  workflowOwner: WorkflowOwnerReference;
   workspaceId: string;
   branch: string;
   sourceHead: string;
@@ -870,10 +1041,10 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
 The Plan locator fields are an all-or-none tuple. Null means the declaration is
 explicitly untracked; it never means "discover a Plan". A non-null `planPath`
 is repository-relative, resolves inside the declared worktree, and must match
-the live `mountId`, immutable `planVersionDigest`, `runId`, `planId`, and the
+the live `mountId`, current snapshot `planDigest`, `runId`, `planId`, and the
 ExecutionRun's current `taskId`. Once a workspace is mounted, locator-less
 declarations are rejected with `WORKSPACE_PLAN_DECLARATION_REQUIRED`. There is
-no mixed-version binding fallback.
+no legacy-format fallback.
 
 Publication uses lock, closed-schema validation, atomic replace and digest
 readback. Declaration intent never substitutes for a live runtime lease.
@@ -1208,7 +1379,6 @@ Rules:
 interface ExecutionAuthorization {
   checkpoint: {
     localCommit: 'allowed' | 'denied';
-    amend: 'allowed' | 'denied';
   };
   delivery: {
     push: 'allowed' | 'denied';
@@ -1311,6 +1481,7 @@ type DevelopmentState =
 
 interface DevelopmentSessionState {
   sessionId: string;
+  workflowOwner: WorkflowOwnerReference;
   workItemId: string;
   planId: string;
   taskId: string;
@@ -1567,6 +1738,8 @@ Unknown, skipped or work-class-incompatible edges are invalid.
 
 ```text
 ~/.peers-touch/dev/workspaces/<workspaceId>/workflow/
+├── worktree-creation.json
+├── active-work.json
 ├── <workItemId>/
 │   ├── session.json
 │   ├── events.ndjson
@@ -1599,7 +1772,9 @@ Constraints:
 - logically append-only bounded events with replay repair;
 - injected clock for deterministic tests;
 - no credential or private key;
-- no raw host conversation identifier;
+- no raw child execution-session identifier; the main-session root ID is
+  retained only in owner-controlled provenance;
 - no legacy conversation/action store compatibility;
-- no repository writer;
+- machine-state persistence never writes tracked source; `worktree-create`
+  delegates only the explicitly authorized Git topology operation;
 - no fallback to Acceptance Evidence Store.

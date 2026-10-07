@@ -18,12 +18,14 @@
 - 签名 Station identity 是最终身份，Relay 不是业务或账号 authority；
 - 一个按 `station_peer_id` 建模、可持有多个 route candidate 的客户端 binding；
 - protobuf Access Gate、Station/Actor/Device scope 与 Federation context；
-- 直连与 Relay 路由切换、恢复、撤销和双端一致验收。
+- 直连与 Relay 路由切换、恢复、撤销和双端一致验收；
+- 接入能力、owner 和双端 consumer 的正向完整性；
+- Desktop/Mobile 跨类别共存与同类别 Session 接管。
 
 本文档集不定义：
 
 - Federation Ledger、membership 与 Relay 内部传输实现，见
-  [Shared Federation](../../../shared/federation/README.md)；
+  [Federation Domain](../../../domains/federation/README.md)；
 - Chat、Social、Agent 等业务 API；
 - Relay invite、mount、证书或配额的普通客户端管理 UI；
 - Browser 客户端。
@@ -46,7 +48,9 @@
 4. Relay 传输对业务内容和 Station session credential 保持不可见。
 5. 同 Station 换路只重启 transport；Station 身份变化才清理完整 scope。
 6. 私有 Station 默认不进入 Relay 目录，只通过 Station 签发的连接材料发现。
-7. Desktop 与 Mobile 以相同结果、错误、安全条件和持久状态验收。
+7. 所有接入接口均由当前 capability registry 声明且拥有真实 consumer。
+8. 同一 actor 每个 canonical client class 只保留一个 active Session。
+9. Desktop 与 Mobile 以相同结果、错误、安全条件和持久状态验收。
 
 ## 4. 文档导航
 
@@ -61,6 +65,9 @@
 | [data-model.md](./data-model.md) | endpoint、route binding 与 scope 数据模型 |
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 当前实现证据、差距与切换策略 |
+| [station-access-gate-architecture.md](./station-access-gate-architecture.md) | Access Gate 链的早期架构输入 |
+| [station-access-gate-implementation-plan.md](./station-access-gate-implementation-plan.md) | Access Gate 实施记录 |
+| [execution-plans/20261006-unified-relay-station-access-v8/plan.md](./execution-plans/20261006-unified-relay-station-access-v8/plan.md) | 当前已批准的 Relay 执行 Plan |
 | [execution-plans/20261006-unified-relay-station-access-v7/plan.md](./execution-plans/20261006-unified-relay-station-access-v7/plan.md) | 已批准的 Plan Version；v7 补齐 SAL-REL-03 Dashboard source impact 的 formal Gate |
 | [execution-plans/20261006-unified-relay-station-access-v6/plan.md](./execution-plans/20261006-unified-relay-station-access-v6/plan.md) | 已由 v7 替换；缺少 SAL-REL-03 Dashboard unit/web formal Gate |
 | [execution-plans/20261006-unified-relay-station-access-v5/plan.md](./execution-plans/20261006-unified-relay-station-access-v5/plan.md) | 已由 v6 替换；缺少 SAL-REL-03 真实生产调用面与完整生成绑定写集 |
@@ -76,12 +83,17 @@
 | [reviews/review-08-unified-relay-plan-v5.md](./reviews/review-08-unified-relay-plan-v5.md) | 当前 source impact formal Gate inventory 修订与 v5 readiness review |
 | [reviews/review-09-unified-relay-plan-v6.md](./reviews/review-09-unified-relay-plan-v6.md) | Dashboard operator 与完整生成绑定写集修订的 v6 review |
 | [reviews/review-10-unified-relay-plan-v7.md](./reviews/review-10-unified-relay-plan-v7.md) | Dashboard source impact formal Gate 修订的 v7 review |
+| [execution-plans/20260926-station-access-lifecycle/plan.md](./execution-plans/20260926-station-access-lifecycle/plan.md) | 已完成的绑定 Plan |
+| [execution-plans/20260929-desktop-oauth-preauth/plan.md](./execution-plans/20260929-desktop-oauth-preauth/plan.md) | Desktop OAuth 登录前回归修复 |
+| [../client/mobile/execution-plans/20261006-infra-chat-usability/plan.md](../../client/mobile/execution-plans/20261006-infra-chat-usability/plan.md) | Mobile Infra/Chat 可用性与 Session 类别矩阵 |
+| [reviews/review-01-product-architecture.md](./reviews/review-01-product-architecture.md) | 第一轮产品与架构审查 |
+| [reviews/review-02-plan-readiness.md](./reviews/review-02-plan-readiness.md) | 第二轮计划与验收审查 |
 
 ## 5. 上游真源
 
 - `docs/architecture/platform/station/access/`
-- `docs/architecture/shared/federation/`
 - `docs/architecture/engineering/api-governance/`
+- `docs/architecture/domains/federation/`
 - `docs/architecture/domains/identity/`
 - `docs/architecture/platform/runtime/service-coordination.md`
 - `docs/client/desktop/identity-lifecycle.md`
@@ -89,9 +101,10 @@
 ## 6. 当前状态
 
 - 既有直连 Access Gate：已实现并验收。
-- Relay Station-to-Station 原型：存在，但不满足客户端接入与生产安全条件。
-- 统一 Relay/Station 接入：产品与架构口径不变；frozen v1 因旧 `relay-1`
-  不具备安全材料而取消，v2-v5 依次补齐 Windows 源码和 formal Gate inventory。
-  v6 补齐当前 SAL-REL-03 的 Dashboard operator 与完整生成绑定写集；v7 已获
-  Owner 批准，补齐 Dashboard source impact 所要求的 unit/web formal Gate；
-  运行时继续使用 sixwin 隔离环境。
+- Product：`accepted`
+- Architecture：`accepted`
+- Lifecycle Plan：`completed`，3/3 Task 已关闭
+- Desktop OAuth 回归 Plan：`completed`，SAL-OAUTH-01 已关闭
+- Relay v8 Plan：Task 1-3 已关闭，Task 4 源码 checkpoint 已完成，运行态 Gate 待执行
+- Mobile Infra/Chat 可用性 Plan：按独立 Run 跟踪
+- `CCU-20260922`：保持 `completed`

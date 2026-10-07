@@ -20,8 +20,7 @@ import {
   CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
   CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
 } from '../chatGeometry';
-import type { FriendMessageStatus } from '../../../gen/proto/domain/chat/friend_chat_pb';
-import { FriendMessageStatus as FMS } from '../../../gen/proto/domain/chat/friend_chat_pb';
+import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
 import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
 import { ChatMessageContent } from './ChatMessageContent';
 import {
@@ -82,24 +81,24 @@ function formatMsgTime(sentAtMs: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function ReadReceipt({ status }: { status: FriendMessageStatus }) {
+function ReadReceipt({ status }: { status: MessageStatus }) {
   const { token } = theme.useToken();
-  if (status === FMS.READ) {
+  if (status === MessageStatus.READ) {
     return <CheckCheck size={14} style={{ color: token.colorPrimary }} />;
   }
-  if (status === FMS.DELIVERED) {
+  if (status === MessageStatus.DELIVERED) {
     return <CheckCheck size={14} style={{ color: token.colorTextQuaternary }} />;
   }
-  if (status === FMS.SENT) {
+  if (status === MessageStatus.SENT) {
     return <Check size={14} style={{ color: token.colorTextQuaternary }} />;
   }
   return null;
 }
 
-function receiptEvidenceStatus(status: FriendMessageStatus): string {
-  if (status === FMS.READ) return 'read';
-  if (status === FMS.DELIVERED) return 'delivered';
-  if (status === FMS.SENT) return 'sent';
+function receiptEvidenceStatus(status: MessageStatus): string {
+  if (status === MessageStatus.READ) return 'read';
+  if (status === MessageStatus.DELIVERED) return 'delivered';
+  if (status === MessageStatus.SENT) return 'sent';
   return 'unknown';
 }
 
@@ -687,8 +686,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             </Text>
           )}
           {isOwn && isFriendMessage(message) && !isRecalled && (
-            <span data-message-receipt={receiptEvidenceStatus(message.status as FriendMessageStatus)}>
-              <ReadReceipt status={message.status as FriendMessageStatus} />
+            <span data-message-receipt={receiptEvidenceStatus(message.status as MessageStatus)}>
+              <ReadReceipt status={message.status as MessageStatus} />
             </span>
           )}
           {pendingStateLabel && (

@@ -38,8 +38,9 @@
     "docs/architecture/platform/applet-runtime",
     "docs/architecture/platform/client/frontend-runtime",
     "docs/architecture/platform/client/mobile",
+    "docs/architecture/domains/federation",
     "docs/architecture/shared/i18n",
-    "docs/architecture/shared/notification",
+    "docs/architecture/domains/notification",
     "docs/architecture/shared/security/secure-content"
   ],
   "modules": [
@@ -180,10 +181,11 @@
         "DWF-D35",
         "DWF-D36",
         "DWF-D37",
-        "DWF-D38",
         "DWF-D39",
         "DWF-D40",
-        "DWF-D41"
+        "DWF-D41",
+        "DWF-D42",
+        "DWF-D43"
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",
@@ -217,6 +219,10 @@
         "tooling/scripts/local-dev/workflow-binding-store.test.mjs",
         "tooling/scripts/local-dev/workflow-binding.mjs",
         "tooling/scripts/local-dev/workflow-binding.test.mjs",
+        "tooling/scripts/local-dev/workflow-owner-context.mjs",
+        "tooling/scripts/local-dev/workflow-owner-context.test.mjs",
+        "tooling/scripts/local-dev/workflow-owner-command-policy.mjs",
+        "tooling/scripts/local-dev/workflow-owner-reference.mjs",
         "tooling/scripts/local-dev/workflow-doctor.mjs",
         "tooling/scripts/local-dev/workflow-doctor.test.mjs",
         "tooling/scripts/local-dev/workflow-snapshot-core.mjs",
@@ -231,13 +237,19 @@
         "tooling/scripts/local-dev/worktree-observation-store.mjs",
         "tooling/scripts/local-dev/worktree-observation-store.test.mjs",
         "tooling/scripts/local-dev/worktree-observe.mjs",
+        "tooling/scripts/local-dev/worktree-create.mjs",
+        "tooling/scripts/local-dev/worktree-create.test.mjs",
         "tooling/scripts/plan/acceptance-admission.mjs",
         "tooling/scripts/plan/acceptance-admission.test.mjs",
         "tooling/scripts/plan/acceptance_admission.py",
         "tooling/scripts/plan/acceptance_admission_test.py",
+        "tooling/scripts/plan/plan-completion.mjs",
+        "tooling/scripts/plan/plan-completion.test.mjs",
         "tooling/scripts/plan/plan-mount.mjs",
         "tooling/scripts/plan/plan-mount.test.mjs",
         "tooling/scripts/plan/planctl.mjs",
+        "tooling/scripts/plan/stable-plan-state-migration.mjs",
+        "tooling/scripts/plan/stable-plan-state-migration.test.mjs",
         "tooling/skills/pt-acceptance-gap-detector",
         "tooling/skills/pt-agent-development",
         "tooling/skills/pt-completion-auditor",
@@ -510,7 +522,8 @@
         "SAL-D08",
         "SAL-D09",
         "SAL-D10",
-        "SAL-D11"
+        "SAL-D11",
+        "SAL-D12"
       ],
       "governedPaths": [
         "apps/desktop/src/components/common/StationPicker.tsx",
@@ -553,59 +566,6 @@
           "gate": "station-api-ownership"
         }
       ]
-    },
-    {
-      "id": "shared-federation",
-      "root": "docs/architecture/shared/federation",
-      "status": "active",
-      "owner": "Architecture Team",
-      "characteristics": {
-        "protocol": true,
-        "stateMachine": true,
-        "persistence": true,
-        "ownership": true,
-        "moduleLayout": true,
-        "crossRuntime": true,
-        "integration": true
-      },
-      "requiredDocuments": [
-        "README.md",
-        "design.md",
-        "decisions.md",
-        "data-model.md",
-        "module-layout.md",
-        "integration.md"
-      ],
-      "decisionIds": [
-        "D-01",
-        "D-02",
-        "D-03",
-        "D-04",
-        "D-05",
-        "D-06",
-        "D-07",
-        "D-08",
-        "D-09",
-        "D-10",
-        "D-11",
-        "D-12",
-        "D-13",
-        "D-14",
-        "D-15",
-        "D-16"
-      ],
-      "governedPaths": [
-        "apps/station/app/subserver/federation",
-        "apps/station/frame/core/federation",
-        "apps/station/frame/core/plugin/native/federation",
-        "apps/station/frame/core/plugin/native/subserver/relay",
-        "apps/station/frame/core/plugin/native/subserver/relay-client",
-        "docs/architecture/shared/federation",
-        "model/domain/federation",
-        "tooling/acceptance/gates/federation"
-      ],
-      "capabilities": [],
-      "externalCapabilityRegistries": []
     },
     {
       "id": "chat-storage-governance",

@@ -18,6 +18,10 @@ import {
   resolveExecutionRoot,
   resolveProjectRoot,
 } from './workflow-state-inspector.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 function projectRoot(parent) {
   const root = path.join(parent, 'workspace');
@@ -105,12 +109,22 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
       cwd: root,
       encoding: 'utf8',
     }).trim();
+    const workflowOwner = {
+      kind: WORKFLOW_OWNER_REFERENCE_KIND,
+      host: 'trae',
+      rootChatId: 'main-chat-session',
+      rootChatHash: hashWorkflowRootChatIdentity(
+        'trae',
+        'main-chat-session',
+      ),
+      rootBindingDigest: 'b'.repeat(64),
+    };
     const declaration = {
       workItemId: 'WORK-1',
       sessionId: 'SESSION-1',
       planId: 'PLAN-1',
       planPath: 'docs/plan.md',
-      planVersionDigest: 'a'.repeat(64),
+      planDigest: 'a'.repeat(64),
       mountId: 'mount-1',
       runId: 'run-1',
       taskId: 'TASK-1',
@@ -121,6 +135,7 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
       state: 'ACTIVE',
       heartbeatAt: '2026-09-23T00:01:00.000Z',
       expiresAt: '2026-09-24T00:00:00.000Z',
+      workflowOwner,
     };
     const session = {
       state: {
@@ -131,6 +146,7 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
         workspaceId,
         branch,
         state: 'IMPLEMENTING',
+        workflowOwner,
       },
     };
     const activeWork = {
@@ -146,10 +162,16 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
       devState: session.state.state,
       branch,
       expectedHead: head,
+      workflowOwner,
     };
     let sessionOptions = null;
     const result = await inspectWorkflowContext(
-      { executionRoot: root, workspaceId },
+      {
+        executionRoot: root,
+        workspaceId,
+        host: 'trae',
+        rootBindingDigest: workflowOwner.rootBindingDigest,
+      },
       {
         now: new Date('2026-09-23T12:00:00.000Z'),
         ledgerPath: '/machine/work.json',
@@ -163,11 +185,12 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
             mount: {
               planId: declaration.planId,
               planPath: declaration.planPath,
-              planVersionDigest: declaration.planVersionDigest,
+              planDigest: declaration.planDigest,
               mountId: declaration.mountId,
             },
             snapshot: {
               recordDigest: activeWork.snapshotDigest,
+              planDigest: declaration.planDigest,
               plan: {
                 tasks: [{ id: declaration.taskId }],
               },
@@ -201,6 +224,22 @@ test('joins Plan, declaration, Session, and active-work owners by task ID', asyn
     assert.equal(result.activeWork, activeWork);
     assert.equal(sessionOptions.expected.taskId, 'TASK-1');
     assert.equal(sessionOptions.expected.sessionId, 'SESSION-1');
+
+    const mismatched = await inspectWorkflowContext(
+      {
+        executionRoot: root,
+        workspaceId,
+        host: 'trae',
+        rootBindingDigest: 'c'.repeat(64),
+      },
+      {
+        now: new Date('2026-09-23T12:00:00.000Z'),
+        ledgerPath: '/machine/work.json',
+        readLedger: () => ({ declarations: { declaration } }),
+      },
+    );
+    assert.equal(mismatched.status, 'HARD_BLOCK');
+    assert.equal(mismatched.code, 'WORKFLOW_OWNER_MISMATCH');
   } finally {
     rmSync(temporary, {
       recursive: true,

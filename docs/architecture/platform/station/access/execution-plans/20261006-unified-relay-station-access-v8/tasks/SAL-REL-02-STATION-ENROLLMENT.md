@@ -20,7 +20,7 @@
     "apps/station/frame/core/plugin/native/subserver/relay",
     "apps/station/frame/core/plugin/native/subserver/relay-client",
     "docs/architecture/engineering/api-governance",
-    "docs/architecture/shared/federation",
+    "docs/architecture/domains/federation",
     "docs/knowledge",
     "model/domain/federation",
     "tooling/acceptance",

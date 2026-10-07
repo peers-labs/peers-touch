@@ -25,7 +25,7 @@
     "apps/station/frame/core/plugin/native/subserver/relay-client",
     "docs/architecture/engineering/api-governance",
     "docs/architecture/platform/station/access",
-    "docs/architecture/shared/federation",
+    "docs/architecture/domains/federation",
     "model/domain/federation",
     "model/domain/peer",
     "tooling/acceptance"

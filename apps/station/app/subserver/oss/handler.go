@@ -129,7 +129,7 @@ func (s *ossSubServer) resolveOrigin(r *http.Request) string {
 // client. Format: `oss://{origin}/{key}` — origin is the result of
 // `resolveOrigin`. Receivers parse the URI to know which station to
 // pull the bytes from, enabling small-scale federation without a global
-// CDN. See `docs/architecture/shared/object-storage.md`.
+// CDN. See `docs/architecture/platform/station/object-storage.md`.
 func (s *ossSubServer) buildCID(r *http.Request, key string) string {
 	origin := s.resolveOrigin(r)
 	return "oss://" + origin + "/" + key

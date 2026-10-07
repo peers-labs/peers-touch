@@ -26,6 +26,7 @@
 | SAL-C08 Route-aware binding | SAL-J02/J03/J09 | 未实现 | SAL-G04 |
 | SAL-C09 安全 Relay 隧道 | SAL-J06/J07/J09 | 未实现 | SAL-G05 |
 | SAL-C10 Station Relay 生命周期 | SAL-J08 | 原型不足 | SAL-G06 |
+| SAL-C11 客户端类别会话 | SAL-J10 | 已实现，待聚合证明 | SAL-G08 |
 
 ## 3. Gates
 
@@ -90,6 +91,20 @@
 - 现有 Station-to-Station relay 只接受 typed capability manifest。
 - 架构治理、API ownership、release build 和 Acceptance aggregate 全部通过。
 
+### SAL-G08：客户端类别会话矩阵
+
+- 同一测试账号在一个 Desktop 与一个 Mobile 上同时登录后，两端 Session 均有效。
+- 两端使用不同 `device_id`，但共享相同 actor PTID，并能从同一 Station 读取、
+  发送和接收 Conversation。
+- 第二个 Desktop 使用不同安装/存储身份登录后，旧 Desktop 收到
+  `session_revoked/kicked`，Mobile Session 保持有效。
+- 第二个 Mobile 使用不同模拟器、安装和存储身份登录后，旧 Mobile 收敛到
+  `session_revoked/kicked`，Desktop Session 保持有效。
+- 密码 Access Gate、OAuth credential acknowledgement 和
+  `/actor/session/takeover` 使用同一 canonical client-class slot。
+- 两个同类别登录并发时，Station 最终最多保留一个未撤销 Session；不得通过
+  `desktop-native`、窗口 label、设备型号或新 `device_id` 创建第二个类别槽。
+
 ## 4. 必需运行单元
 
 | Cell | 证明 |
@@ -100,8 +115,12 @@
 | Mobile native | 与 Desktop 相同语义的 iOS Simulator 证明 |
 | Adversarial client | forgery、replay、wrong-route、oversize、overload 与 cancellation |
 | Relay observer | 无客户端 Station Session credential、Access payload 或业务明文 |
+| Mixed same-Station | 不同账号 Desktop↔Mobile Chat；同一账号 Desktop+Mobile 并存 |
+| Same-class takeover | 双 Desktop 和双 Mobile 分别证明新 Session 接管旧同类端 |
+| Mixed cross-Station | 显式 Federation context 与 Relay 隔离 |
+| Fresh install/reset | 仅依赖当前 scoped key、route 与 schema |
 
 ## 5. 完成条件
 
-`UNIFIED_RELAY_STATION_ACCESS_ACCEPTED` 仅在 SAL-G00..SAL-G07 对同一精确源码
+`UNIFIED_RELAY_STATION_ACCESS_ACCEPTED` 仅在 SAL-G00..SAL-G08 对同一精确源码
 全部通过、全部 Task 为 `done`、旧任意转发入口删除、运行资源释放且工作树干净时成立。

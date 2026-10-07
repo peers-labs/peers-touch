@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -35,6 +36,9 @@ PROFILE_ENV_OVERRIDES = (
     "PT_AGENT_PROVIDER_API_KEY",
     "PT_AGENT_DEFAULT_MODEL_ID",
     "PT_AGENT_PROVIDER_BASE_URL",
+)
+REVIEWED_PROFILE_NAME_PATTERN = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
 )
 
 
@@ -169,6 +173,114 @@ def resolve_machine_profile_environment(
             )
         values[environment_field] = str(port)
     return profile_name, profile_file, slot, values
+
+
+def resolve_reviewed_profile_environment(
+    profile_name: str,
+    *,
+    repo_root: Path | None = None,
+) -> tuple[Path, dict[str, str]]:
+    if not REVIEWED_PROFILE_NAME_PATTERN.fullmatch(profile_name):
+        raise BlockedError(
+            reason=f"Invalid reviewed profile name: {profile_name!r}",
+            resource="service-profile-bindings",
+        )
+    root = (repo_root or REPO_ROOT).resolve()
+    configured_env_repo = os.environ.get("PT_ENV_REPO", "").strip()
+    env_repo = (
+        Path(configured_env_repo).expanduser().resolve()
+        if configured_env_repo
+        else root.parent / "env"
+    )
+    relative_directory = Path("peers-touch") / profile_name
+    relative_profile = relative_directory / "profile.env.example"
+    resource = f"service-profile:{profile_name}"
+    try:
+        worktree = subprocess.run(
+            ["git", "-C", str(env_repo), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        tracked = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(env_repo),
+                "ls-files",
+                "--error-unmatch",
+                relative_profile.as_posix(),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        source_state = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(env_repo),
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+                "--",
+                relative_directory.as_posix(),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise BlockedError(
+            reason=(
+                f"Reviewed profile {profile_name!r} authority is unavailable: "
+                f"{error}"
+            ),
+            resource=resource,
+        ) from error
+    if (
+        worktree.returncode != 0
+        or worktree.stdout.strip() != "true"
+        or tracked.returncode != 0
+        or source_state.returncode != 0
+    ):
+        raise BlockedError(
+            reason=(
+                f"Reviewed profile {profile_name!r} is not a tracked "
+                "environment-repository definition"
+            ),
+            resource=resource,
+        )
+    if source_state.stdout.strip():
+        raise BlockedError(
+            reason=(
+                f"Reviewed profile {profile_name!r} has dirty or untracked "
+                "environment definitions"
+            ),
+            resource=resource,
+        )
+    try:
+        profile_path = (env_repo / relative_profile).resolve(strict=True)
+        profile_path.relative_to(env_repo.resolve(strict=True))
+    except (OSError, RuntimeError, ValueError) as error:
+        raise BlockedError(
+            reason=f"Reviewed profile {profile_name!r} path is unavailable",
+            resource=resource,
+        ) from error
+    values = load_env_file(profile_path)
+    declared_profile = values.get("PT_DEV_PROFILE", "").strip()
+    if declared_profile != profile_name:
+        raise BlockedError(
+            reason=(
+                f"Reviewed profile {profile_name!r} declares "
+                f"PT_DEV_PROFILE={declared_profile!r}"
+            ),
+            resource=resource,
+        )
+    return profile_path, values
 
 
 def resolve_deployment_environment_path(

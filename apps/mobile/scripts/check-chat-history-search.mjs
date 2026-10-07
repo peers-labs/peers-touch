@@ -22,10 +22,9 @@ const sourcePaths = [
   'apps/mobile/scripts/check-chat-history-search.mjs',
   'apps/mobile/src/features/chat/useChatHistorySearch.ts',
   'apps/mobile/src/features/chat/chatCommands.ts',
-  'apps/mobile/src/features/chat/messagingProjectionAdapters.ts',
+  'apps/mobile/src/features/chat/messageProjection.ts',
   'apps/mobile/src/services/mobileCommands.ts',
   'apps/mobile/src/features/social/socialStore.ts',
-  'apps/mobile/src/features/group/groupStore.ts',
 ];
 async function sourceHashes() {
   return Object.fromEntries(await Promise.all(sourcePaths.map(async (path) => [

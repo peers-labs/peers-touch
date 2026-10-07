@@ -44,7 +44,6 @@ import {
   type SettingsExitAction,
 } from '../app/navigation';
 import type { MobileAuthSession } from '../features/auth/authSession';
-import { useGroupStore } from '../features/group/groupStore';
 import { requestSocialCurrentUserProfile } from '../features/social/socialRuntime';
 import { useSocialStore } from '../features/social/socialStore';
 import {
@@ -171,10 +170,15 @@ export function SettingsPage({
     (state) => state.lastReconcileAt !== null && state.error === null,
   );
   const blockedUsersCount = useSocialStore((state) => state.blockedUsers.length);
+  const groupCount = useSocialStore((state) => state.messagingConversations.reduce(
+    (count, conversation) => count + Number(
+      conversation.active && conversation.kind === 2,
+    ),
+    0,
+  ));
 
   // Friendship status is a per-target cache, not a canonical total.
   const friendCount = unavailableLabel;
-  const groupCount = useGroupStore((state) => state.groups.length);
 
   // Settings controller — owns dirty/save/discard/conflict lifecycle
   const controller = useSettingsController(

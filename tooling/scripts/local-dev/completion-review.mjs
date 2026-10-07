@@ -812,7 +812,7 @@ function completionCandidateManifest(
 
 export function digestCompletionCandidate(candidateDocument) {
   return createHash('sha256')
-    .update(JSON.stringify(candidateDocument))
+    .update(JSON.stringify(canonicalize(candidateDocument)))
     .digest('hex');
 }
 

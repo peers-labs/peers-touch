@@ -24,8 +24,10 @@ apps/station/
 │   └── relay-client/               # Station mount and tunnel ingress
 ├── frame/core/plugin/native/federation/
 │   └── transport                   # typed peer capability adapter
-├── frame/touch/accessgate/         # Station access policy
-└── app/subserver/federation/       # Federation business owner
+├── frame/core/facility/session/    # canonical client-class Session slots
+├── frame/touch/accessgate/         # access policy and attempt owner
+├── frame/touch/actor/              # actor and device session owner
+└── app/subserver/federation/       # Federation context and operator API
 
 apps/desktop/
 ├── src-tauri/src/application/station_binding/
@@ -58,6 +60,14 @@ tooling/
 | 双端业务 runtimes | 消费同一个 active Station transport | 自行选择 Relay |
 | `tooling/docker/` | role allowlist、TLS/key/config 注入 | 复制 Station image |
 | `tooling/acceptance/` | exact-source security/Journey proof | 生产状态或凭据真源 |
+| `model/domain/access_gate/` | 跨端 Access Gate wire contract | 平台 UI 或持久化策略 |
+| `frame/core/facility/session/` | Session class slot、撤销与持久化 | 客户端运行时标签或 UI policy |
+| `frame/touch/accessgate/` | gate policy、attempt、decision | 客户端 projection |
+| `frame/touch/actor/` | Actor/Device session truth | Federation topology |
+| `app/subserver/federation/` | Federation context 与 operator 能力 | 普通客户端 UI |
+| `apps/desktop/src/kernel/` | Desktop identity/startup 编排 | Station policy |
+| `apps/mobile/src/features/auth/` | Mobile gate 呈现与输入 | Station policy |
+| 双端 `runtimes/` | scope 生命周期与异步 fence | 共享业务真相 |
 
 ## 3. 依赖关系
 

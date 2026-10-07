@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-28
+> **Created**: 2026-09-13 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -77,6 +77,7 @@ interface WorkspaceRecord {
   allowedCapabilities: StationCapability[];
   purpose: string;
   owner: string;
+  createdBy?: WorkflowOwnerReference;
   registeredAt: string;
   updatedAt: string;
   updatedBy: string;
@@ -89,6 +90,11 @@ ID, and registered branch before every resolved command. Current Git HEAD is
 captured from the worktree at operation time and is never persisted in the
 registration. A root or branch mismatch makes the registration `stale`;
 ordinary commits, merges, rebases, and pulls do not.
+
+`owner` remains the Git/user actor label. `createdBy`, when present, is the
+verified main-session reference captured by the Workflow Kernel during
+worktree creation or first registration. It must not be inferred from `owner`,
+branch names, or process-global environment variables.
 
 Schema v1 authoritative registrations exclude `WorkspaceRecord.head`. This is
 a development-stage hard correction, not a version migration. Runtime has no
@@ -177,9 +183,11 @@ Rules:
 ### 4.1 Plan Mount
 
 Development Workflow owns the machine Project Ledger under
-`~/.peers-touch/dev/plan-mounts/`. Its live index binds one frozen Plan Version
-digest to one execution `workspaceId`; immutable mount records preserve audit
-history.
+`~/.peers-touch/dev/plan-mounts/`. Its live index binds one stable `planId` to
+one execution `workspaceId`; immutable mount records preserve occupancy
+history. The corresponding Execution Run points to the current immutable Plan
+snapshot and advances that pointer when `planctl amend` records a valid
+in-place amendment.
 
 PlanMount is not part of `WorkspaceRecord`: Profile, slot, capabilities, and
 branch may change under their existing guards, while current HEAD belongs to
@@ -319,6 +327,8 @@ interface DevelopmentWorkflowSnapshot {
   worktrees: Array<{
     workspaceId: string;
     name: string | null;
+    createdBy: WorkflowOwnerReference | null;
+    workflowOwner: WorkflowOwnerReference | null;
     branches: string[];
     workState:
       | 'in-progress'
@@ -333,12 +343,13 @@ interface DevelopmentWorkflowSnapshot {
       workItemId: string;
       journeyId: string | null;
       purpose: string;
+      workflowOwner: WorkflowOwnerReference | null;
       state: 'DECLARED' | 'ACTIVE' | 'RELEASING' | 'STALE';
       plan: null | {
         mountId: string;
         runId: string;
         planId: string;
-        planVersionId: string;
+        planDigest: string;
         taskId: string;
         status:
           | 'available'

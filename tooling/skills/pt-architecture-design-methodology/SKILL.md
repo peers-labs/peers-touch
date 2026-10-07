@@ -333,11 +333,18 @@ findings-first pass, reviews the evidence ledger, ownership, contracts,
 alternatives, failure semantics, and quality gates. Source-backed findings are
 fixed and re-reviewed inside the Run.
 
-Human owner input is required only when accepted sources cannot choose among
-multiple materially valid product/architecture/security/privacy/compatibility/
-rollout outcomes, or when a DWF-D20 destructive, irreversible, permission, or
-external-resource boundary applies. Until the review passes or that precise
-decision is resolved, status remains `draft` or `proposed`.
+Human owner input is required to approve every generated Plan North Star.
+Afterward, it is required only when the unresolved choice would change, weaken,
+or abandon that accepted North Star, or when a DWF-D20 destructive,
+irreversible, permission, or external-resource boundary applies. Other
+source-backed product, architecture, security, privacy, compatibility, and
+rollout choices are resolved by the Agent and recorded. Until the review passes
+or that precise decision is resolved, status remains `draft` or `proposed`.
+
+Accepted architecture is input to Plan-specific North Star generation, not an
+implicit approval of the generated Plan. The execution-planning handoff must
+preserve source references so each success criterion can be reviewed and
+explicitly approved before mount.
 
 ## Handoff To Execution Planning
 

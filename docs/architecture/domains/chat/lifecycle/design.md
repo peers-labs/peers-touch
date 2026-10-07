@@ -21,7 +21,7 @@ Upstream sources:
 - `docs/architecture/domains/social/runtime/`
 - `docs/architecture/shared/communication/event-stream.md`
 - `docs/architecture/domains/chat/calling/voice-video.md`
-- `docs/architecture/shared/federation/`
+- `docs/architecture/domains/federation/`
 - `docs/client/chat/`
 
 ## 2. Evidence Ledger

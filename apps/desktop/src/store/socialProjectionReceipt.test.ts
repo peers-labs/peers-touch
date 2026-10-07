@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FriendMessageStatus } from '../gen/proto/domain/chat/friend_chat_pb';
+import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
 import {
   preserveMessageReceiptStatuses,
   projectDesktopIMConversation,
@@ -9,7 +9,7 @@ import {
   type SocialMessage,
 } from './socialProjection';
 
-function friendMessage(ulid: string, status: FriendMessageStatus): SocialMessage {
+function friendMessage(ulid: string, status: MessageStatus): SocialMessage {
   return {
     ulid,
     status,
@@ -19,28 +19,28 @@ function friendMessage(ulid: string, status: FriendMessageStatus): SocialMessage
 describe('message receipt reconciliation', () => {
   it('preserves the highest Station receipt status across message reloads', () => {
     const existing = [
-      friendMessage('delivered', FriendMessageStatus.DELIVERED),
-      friendMessage('read', FriendMessageStatus.READ),
+      friendMessage('delivered', MessageStatus.DELIVERED),
+      friendMessage('read', MessageStatus.READ),
     ];
     const reconciled = [
-      friendMessage('delivered', FriendMessageStatus.SENT),
-      friendMessage('read', FriendMessageStatus.SENT),
+      friendMessage('delivered', MessageStatus.SENT),
+      friendMessage('read', MessageStatus.SENT),
     ];
 
     expect(preserveMessageReceiptStatuses(existing, reconciled).map((message) => (
       'status' in message ? message.status : null
     ))).toEqual([
-      FriendMessageStatus.DELIVERED,
-      FriendMessageStatus.READ,
+      MessageStatus.DELIVERED,
+      MessageStatus.READ,
     ]);
   });
 
   it('allows reconciliation to advance but never downgrade receipt status', () => {
-    const existing = [friendMessage('message', FriendMessageStatus.DELIVERED)];
-    const reconciled = [friendMessage('message', FriendMessageStatus.READ)];
+    const existing = [friendMessage('message', MessageStatus.DELIVERED)];
+    const reconciled = [friendMessage('message', MessageStatus.READ)];
 
     const [message] = preserveMessageReceiptStatuses(existing, reconciled);
-    expect('status' in message ? message.status : null).toBe(FriendMessageStatus.READ);
+    expect('status' in message ? message.status : null).toBe(MessageStatus.READ);
   });
 });
 

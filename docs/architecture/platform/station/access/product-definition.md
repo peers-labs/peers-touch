@@ -40,6 +40,7 @@ Station，也不获得业务数据或账号权限。
 | SAL-C08 | Route-aware binding | 同一 Station 可在已验证 route 间切换，不复制 registry 或业务 runtime |
 | SAL-C09 | 安全 Relay 隧道 | Relay 只见 route、长度、时序和配额元数据，不见业务明文与客户端 Station Session credential |
 | SAL-C10 | Station Relay 生命周期 | operator 可完成注册、轮换、撤销、恢复和审计，所有动作绑定 Station host key |
+| SAL-C11 | 客户端类别会话 | 同一账号可同时保留一个 Desktop 和一个 Mobile Session；同一客户端类别的新登录必须接管并撤销旧 Session |
 
 Desktop 与 Mobile 均为 `required`；Browser 不在本模块范围。
 
@@ -52,6 +53,9 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块范围。
 5. 客户端验证 Station 签名和 route attestation 后进入相同 Access Gate。
 6. 同一 Station 从直连切到 Relay 或反向切换时，用户账号与业务 scope 不变。
 7. 账号或 Station 身份变化时完整停止旧 runtime 并清空旧 projection。
+8. 登录后显示当前 Station 与 Federation context。
+9. 同一账号的 Desktop 与 Mobile 可同时使用；第二个 Desktop 或第二个 Mobile
+   登录后，旧同类端收到 `kicked` 并回到登录态，异类端保持可用。
 
 ## 5. 非目标
 
@@ -61,6 +65,11 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块范围。
 - 不展示 Relay admin credential、invite、mount、seed 或内部 endpoint。
 - 不自研通用 VPN、Service Mesh、区块链或新传输框架。
 - 不保留现有任意路径 `/relay/forward/*` 作为兼容客户端入口。
+- 不设计 Dashboard/CLI 运维流程。
+- 不修改 Conversation authority、Chat 删除语义或本机存储。
+- 不支持 registry 之外的 Station 或客户端 wire。
+- 不允许用运行时、窗口或构建标签创建额外 Session 类别；类别只允许
+  `desktop`、`mobile` 和已明确声明的 `web`。
 
 ## 6. 成功指标
 

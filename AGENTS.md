@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-09-19
+> Last updated: 2026-10-07
 
 ---
 
@@ -147,7 +147,7 @@ Example:
     first edit, bind the explicitly selected current worktree through
     `tooling/scripts/verify-worktree-binding.py` and resolve its canonical root,
     branch, `workspaceId`, immutable initial HEAD, and current expected HEAD.
-    Expected HEAD is advancing source identity outside the frozen Plan Version; only
+    Expected HEAD is advancing source identity outside the stable Plan; only
     an explicitly authorized refresh operation defined in §13.5.1 may change
     it.
 13. **Development declaration first** — Read-only intake may inspect any
@@ -377,8 +377,9 @@ fixtures. Cross-model conformance requires a separate evaluation.
 - **Readability**: Well-structured code with appropriate comments, blank lines, logical grouping.
 - **Change tracking**: Record reason, content, impact in comments for every modification.
 - **Feature iteration**: Establish accepted business logic and directory
-  architecture before generating. Use project review Skills by default; ask
-  the user only when accepted sources cannot resolve a material semantic choice.
+  architecture before generating. Use project review Skills by default. Ask
+  the user to explicitly approve each generated Plan North Star; after that,
+  ask again only when an unresolved choice would change, weaken, or abandon it.
 - **Desktop UI**: LobeUI first, antd fallback.
 - **Subserver code**: Must follow DDD (aggregate root, domain service, domain event).
 
@@ -495,7 +496,7 @@ Current project skills:
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
 | `pt-oauth2-client-2-vercel` | Publish and verify the OAuth2 Client on Vercel with fail-closed provider, environment, callback, and persistence checks |
-| `pt-plan-and-document` | Persist accepted models into canonical frozen Plan Versions, validate them, and optionally mount one to an explicitly selected execution worktree |
+| `pt-plan-and-document` | Persist accepted models into canonical stable Plans, record amendments, and optionally mount one to an explicitly selected execution worktree |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
@@ -569,7 +570,7 @@ Plan policy, and dispatch to the correct skill.**
 
 An explicit user instruction such as `no plan`, `不要 plan`, or `直接做，不创建计划`
 is authoritative for the current request. It forbids creating or mounting a
-Plan Version, invoking Plan persistence, and fabricating Plan/Task/Session or
+Plan, invoking Plan persistence, and fabricating Plan/Task/Session or
 active-work state. The Agent may still publish the required untracked
 Development declaration, execute against existing accepted product and
 architecture sources, run focused verification, and deliver a standalone PR.
@@ -580,7 +581,7 @@ boundary instead of silently creating one.
 |-------|----------------|--------------------|-----------------------|----------|
 | **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-dev-workflow` → `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | `docs/architecture/<taxonomy>/<module>/` |
-| **PLAN** | Architecture accepted and formal planning is authorized | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (frozen Plan Version + optional explicit PlanMount + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Version |
+| **PLAN** | Architecture accepted and formal planning is authorized | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (stable Plan + optional explicit PlanMount + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan |
 | **EXECUTE** | Plan accepted, or explicit standalone no-Plan work has sufficient accepted sources | `pt-dev-workflow` coordinates host-neutral execution and, for tracked work only, the scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-dev-workflow` → `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
@@ -604,8 +605,9 @@ boundary instead of silently creating one.
    Escalate only an operation absent from the accepted authorization envelope,
    a destructive/irreversible or separately governed operation (including
    version/schema bump and worktree topology), a missing external resource, or
-   a material product/architecture/security/privacy/compatibility/rollout
-   choice that accepted sources cannot resolve.
+   a product/architecture/security/privacy/compatibility/rollout choice that
+   would change, weaken, or abandon the accepted North Star and cannot be
+   resolved from accepted sources.
 6. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN.
    Mutating fixes enter EXECUTE through `pt-dev-workflow`, which dispatches
    `pt-small-fix-discipline`; only a trivial text-only correction may invoke
@@ -662,7 +664,10 @@ edits, status claims, and completion claims.
    blockable `PreToolUse`. TRAE uses only `chat_session_id` for owner identity;
    its `session_id` is execution-session identity and never creates another
    owner. Cursor uses only `conversation_id`; Codex uses only `session_id`.
-   Host-field aliases and process-global identity fallbacks are forbidden.
+   The canonical root ID is persisted only in owner-controlled machine-local
+   state together with its hash and binding digest so another Agent can identify
+   the originating main session. Host-field aliases and process-global identity
+   fallbacks are forbidden.
 2. `WORKER` and `REVIEWER` are create-once assigned children. Every child
    preserves `rootBindingDigest`, direct `parentBindingDigest`, assignment,
    Development Session, role, and bounded lease. Expired or terminal children
@@ -709,28 +714,35 @@ edits, status claims, and completion claims.
    Resume and context compaction verify the persisted values; they MUST NOT
    recapture current Git state as a replacement baseline. Unrelated sibling
    worktree inventory is machine topology and never part of this binding.
-11. Do not run `git switch`, `git checkout`, `git worktree add`,
+11. Do not run `git switch`, `git checkout`, raw `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
-    A Plan mount or lifecycle conflict is never implicit permission to create
-    another worktree.
-12. A repository or PR may contain multiple frozen Plan Versions. A Plan
-    Version contains no execution worktree identity; branch scans, directory
-    order, lifecycle state and synchronized foreign Plans never select
-    execution ownership.
-13. `make plan-mount PLAN=<path>` is an explicit owner action that binds one
-    frozen version digest to one selected execution `workspaceId` and creates
-    an immutable ExecutionPlanSnapshot with mount/workspace/branch/initial-HEAD
-    binding. The same tuple is idempotent; a second live Plan returns
+   Authorized Agent creation must use `make worktree-create` so the target
+   workspace receives immutable main-session provenance. A Plan mount or
+   lifecycle conflict is never implicit permission to create another worktree.
+12. A repository or PR may contain multiple stable Plans. A Plan contains no
+    execution worktree identity; branch scans, directory order, lifecycle state
+    and synchronized foreign Plans never select execution ownership.
+13. Plan authoring produces `northStarApproval=null`. The Plan remains a
+    non-executable candidate until the user explicitly approves its current
+    `planId + northStarDigest` through `planctl approve-north-star`.
+    `make plan-mount PLAN=<path>` then binds one stable `planId + planPath` to
+    one selected execution `workspaceId` and creates an immutable
+    ExecutionPlanSnapshot with
+    mount/workspace/branch/initial-HEAD binding. The same tuple is idempotent;
+    a second live Plan returns
     `PLAN_MOUNT_CONFLICT`.
 14. A PlanMount has no TTL and occupies the worktree until completion,
-    cancellation, or explicit owner unmount. Agents may execute the snapshot
-    but MUST NOT amend the frozen Plan Version, switch its worktree, or unmount
-    it. Runtime leases and atomic locks are separate resource classes.
+    cancellation, or explicit owner unmount. Ordinary Plan repairs retain the
+    same `planId`, `mountId`, and `runId`; `planctl amend` appends the reason
+    and impact and advances only the internal snapshot. Agents MUST NOT change
+    the Plan North Star, switch its worktree, expand authorization, or unmount
+    it without explicit owner authorization. A North Star edit invalidates its
+    prior approval; Task/Gate/criterion-coverage amendments do not.
 15. ExecutionRun, tracked declaration, workspace active-work record, Session
     and Context Anchor must match the mount and immutable snapshot. A mounted
     workspace cannot publish untracked work. CI has no machine mount and must
-    receive an explicit Plan Version.
+    receive an explicit Plan.
 
 Legacy shared `project_memory.md ## active_work` rows are not runtime state and
 cannot resume directly. The bounded Plan migration flow may read a declared
@@ -800,16 +812,24 @@ arbitrary replacement JSON.
 - **Explicit standalone no-Plan work** → keep the request unmounted for its
   entire lifecycle; publish only the untracked Development declaration, and do
   not create Plan, Task, Session, active-work, or Context Anchor state.
-- **Plan Version frozen** → validate it; only after an owner explicitly selects
-  the execution worktree, create PlanMount and ExecutionPlanSnapshot, publish
-  the tracked declaration, then derive this workspace's record.
+- **Plan generated** → validate its source-backed North Star and criterion
+  coverage as a candidate; after explicit user approval is recorded and an
+  owner selects the execution worktree, create PlanMount and
+  ExecutionPlanSnapshot, publish the tracked declaration, then derive this
+  workspace's record.
+- **Plan execution detail changed** → update the Plan/Task source, run
+  `planctl amend`, refresh the declaration, and continue the same Plan Run.
+  A North Star change first returns `NORTH_STAR_APPROVAL_REQUIRED`, then
+  requires a matching owner-approved amendment.
 - **Next Plan created** → mount it only after the prior mount is released by
   completion, cancellation, or explicit owner unmount. Never create a worktree
   as an Agent workaround.
-- **Worktree binding created** → record the verified `workspace_id`,
-  `initial_head`, and `expected_head`; initially both HEAD fields are
-  identical. Never derive identity from a skill path or copy it from another
-  worktree.
+- **Worktree created** → record the verified `workspace_id`, branch, initial
+  HEAD, purpose, creation Action Receipt, and the creating OWNER's host,
+  `rootChatId`, `rootChatHash`, and `rootBindingDigest`.
+- **Worktree binding created** → record `initial_head` and `expected_head`;
+  initially both are identical. Never derive either identity from a skill path,
+  Git actor, or another worktree.
 - **Task/Session transition** → Dev Workflow updates manifest/Task/Session
   owners first, then invokes active-work sync with revision/CAS.
 - **Task done with ready successor** → Dev Workflow advances the manifest,
@@ -841,7 +861,7 @@ Context Anchor rules:
   after that exact projection is observable in the assistant response or host
   transcript.
 - The chat projection records `<worktree-name> (<repo-root>)`, verified branch,
-  `workspaceId`, initial HEAD, and expected/verified HEAD.
+  `workspaceId`, main-session ID, initial HEAD, and expected/verified HEAD.
   It never persists a developer or CI user-home absolute path or an ambiguous
   bare `<repo-root>`.
 - The chat projection also records completed delta, dependency-ready queue,

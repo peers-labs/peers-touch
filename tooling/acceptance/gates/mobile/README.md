@@ -398,13 +398,12 @@ simulator inventory. The native parent has a closed response validator for it,
 but native product-scenario admission remains parked with W5. Do not expand the
 frozen OAuth inventory to admit a Social action.
 
-The current shared journey still needs an authoritative Federation-only
-Fixture binding and cleanup contract. The existing Chat friendship fixture
-pre-accepts a relationship and therefore cannot prove fresh request delivery.
-Do not derive a Federation ID in a Gate or assume acceptance creates Direct.
-After the Fixture contract is available, the journey must observe the scoped
-accepted relationship, invoke `social.contact.open`, and assert that returned
-conversation on both clients. Source-level adapter tests are not that proof.
+The shared journey consumes the authoritative Federation binding exported by
+the Direct Simulator Fixture. It proves fresh request delivery, observes the
+scoped accepted relationship, invokes `social.contact.open`, and asserts the
+Station-returned conversation on both clients. The Gate must not derive a
+Federation ID or assume acceptance creates Direct. Source-level adapter tests
+are not a substitute for this two-client proof.
 
 ## 9. Gate Runner Workflow
 
