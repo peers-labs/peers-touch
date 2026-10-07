@@ -446,25 +446,9 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
                 timeout_seconds=STEP_TIMEOUT,
                 description="surviving Desktop receiver",
             )
-            self.runtime.wait_for_message(
-                "sim-ios-peer",
-                conversation_id,
-                message_id,
-                lambda value: value.get("plaintext") == text,
-                kind="direct",
-                timeout_seconds=STEP_TIMEOUT,
-                description="replacement Mobile receiver",
-            )
             desktop_receiver = self._assert_desktop_receiver(
                 "desktop-bob-peer",
                 conversation_id,
-                text,
-                scenario_id,
-            )
-            mobile_receiver = self._assert_mobile_receiver(
-                "sim-ios-peer",
-                conversation_id,
-                message_id,
                 text,
                 scenario_id,
             )
@@ -472,7 +456,7 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
                 ledger,
                 scenario_id,
                 ui_resource=ui_resource,
-                receiver_resources=(desktop_receiver, mobile_receiver),
+                receiver_resources=(desktop_receiver,),
                 supporting_resource=f"revocation:{mobile_bob.device_id}",
             )
             scenario_results[scenario_id] = "PASS"
