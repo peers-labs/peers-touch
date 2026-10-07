@@ -96,10 +96,17 @@
       "id": "station-access-scope-isolation",
       "domain": "station-access",
       "direction": "acceptance_validates_product",
-      "features": ["station-access-scope-isolation"],
+      "features": [
+        "station-access-scope-isolation",
+        "station-access-session-class"
+      ],
       "required_gates": [
         "station-access-capability-contract",
-        "station-access-scope-isolation-e2e"
+        "station-access-scope-isolation-e2e",
+        "chat-native-multi-device-e2e",
+        "chat-lifecycle-mixed-client-multi-device-e2e",
+        "mobile-simulator-station-lifecycle-e2e",
+        "station-access-session-class-e2e"
       ],
       "synthetic_paths": [
         "apps/desktop/src/kernel/identityRuntime.ts",
@@ -114,18 +121,28 @@
         "truth_sources": [
           "Desktop identity lifecycle and Device Messaging Engine",
           "MobileLifecycleKernel and Mobile Messaging runtime",
+          "Station canonical client-class Session slots",
           "Station-bound native runtime manifests"
         ],
         "surfaces": [
           "Desktop authenticated shell across process restart",
           "Mobile authenticated shell across WebView restart",
-          "Desktop and Mobile runtime scope projections"
+          "Desktop and Mobile runtime scope projections",
+          "same-actor Desktop and Mobile coexistence with same-class takeover"
         ],
-        "proven_by": ["station-access-scope-isolation-e2e"],
+        "proven_by": [
+          "station-access-scope-isolation-e2e",
+          "chat-native-multi-device-e2e",
+          "chat-lifecycle-mixed-client-multi-device-e2e",
+          "mobile-simulator-station-lifecycle-e2e",
+          "station-access-session-class-e2e"
+        ],
         "proven_scope": [
           "Station, Actor, and Device scope remain aligned after native restart",
           "isolated clients do not expose another actor or Station projection",
-          "lifecycle generation fences stale Mobile results"
+          "lifecycle generation fences stale Mobile results",
+          "Desktop and Mobile Sessions for one actor coexist through canonical client-class slots",
+          "a newer same-class Session revokes only its predecessor while the cross-class Session remains usable"
         ],
         "unproven_scope": [
           "Cross-Station Federation context is proven by the SAL-02 boundary Gate"

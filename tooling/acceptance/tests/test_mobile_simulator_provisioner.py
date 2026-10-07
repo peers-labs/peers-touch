@@ -528,6 +528,7 @@ class FakeParentSimulatorSession:
                 "runtimeStationPeerId": (
                     self.active_station_peer_id if active else None
                 ),
+                "deviceId": f"device-{self.client_id}",
                 "social": {
                     "stationPeerId": (
                         self.active_station_peer_id if active else None
@@ -790,22 +791,22 @@ class MobileSimulatorContractTests(unittest.TestCase):
         contract = EnvironmentContract.from_yaml(path)
         provisioner = MobileDirectSimulatorProvisioner(
             contract,
-            station_profiles={"station": "chat-native-disposable"},
+            station_profiles={"station": "three"},
         )
-        active = {"PT_DEV_PROFILE": "chat-native-five"}
+        active = {"PT_DEV_PROFILE": "three"}
 
-        with (
-            patch.object(Path, "is_file", return_value=True),
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
-                "load_env_file",
-                return_value={
-                    "PT_DEV_PROFILE": "chat-native-disposable",
+        with patch(
+            "tooling.acceptance.provisioners.mobile_simulator."
+            "resolve_machine_profile_environment",
+            return_value=(
+                "three",
+                Path("/canonical/three/profile.env.example"),
+                15,
+                {
+                    "PT_DEV_PROFILE": "three",
                     "PT_STATION_MODE": "remote",
                     "PT_STATION_URL": "https://direct.example",
-                    "PT_STATION_DEPLOY_ENV": (
-                        "chat-native-disposable-station"
-                    ),
+                    "PT_STATION_DEPLOY_ENV": "station-three",
                 },
             ),
         ):
@@ -817,9 +818,40 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.assertEqual(
             merged["PT_MOBILE_DIRECT_STATION_DEPLOY_ENV"],
-            "chat-native-disposable-station",
+            "station-three",
         )
         self.assertNotIn("PT_MOBILE_DIRECT_STATION_URL", active)
+
+    def test_direct_simulator_rejects_non_active_station_profile(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-direct-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileDirectSimulatorProvisioner(
+            contract,
+            station_profiles={"station": "three"},
+        )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_machine_profile_environment",
+                return_value=(
+                    "two",
+                    Path("/canonical/two/profile.env.example"),
+                    1,
+                    {
+                        "PT_DEV_PROFILE": "two",
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_URL": "https://two.example",
+                        "PT_STATION_DEPLOY_ENV": "station-two",
+                    },
+                ),
+            ),
+            self.assertRaisesRegex(
+                BlockedError,
+                "requested='three' active='two'",
+            ),
+        ):
+            provisioner._inject_station_profile_bindings({})
 
     def test_current_two_actor_gates_use_direct_environment(self) -> None:
         catalog = json.loads(
@@ -924,6 +956,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     home_station_peer_id="station-peer",
                 ),
             ) as existing_resolver,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_federation_contexts",
+            ) as prepare_federation,
         ):
             provisioner._prepare_actor_fixture(
                 "mobile-social-ios-native",
@@ -934,6 +970,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
         verify_reset.assert_not_called()
         reset.assert_not_called()
         destructive_resolver.assert_not_called()
+        prepare_federation.assert_not_called()
         self.assertEqual(
             [entry.args for entry in existing_resolver.call_args_list],
             [
@@ -1034,13 +1071,13 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "PT_RELAY_DEPLOY_ENV": "relay",
         }
         station_profiles = {
-            "four.env": {
+            "four": {
                 "PT_DEV_PROFILE": "four",
                 "PT_STATION_MODE": "remote",
                 "PT_STATION_URL": "https://four.example",
                 "PT_STATION_DEPLOY_ENV": "station-four",
             },
-            "fiveArm.env": {
+            "fiveArm": {
                 "PT_DEV_PROFILE": "fiveArm",
                 "PT_STATION_MODE": "remote",
                 "PT_STATION_URL": "https://five.example",
@@ -1049,13 +1086,16 @@ class MobileSimulatorContractTests(unittest.TestCase):
         }
 
         with (
-            patch.object(Path, "is_file", return_value=True),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
-                "load_env_file",
-                side_effect=lambda profile_path: station_profiles[
-                    profile_path.name
-                ],
+                "resolve_reviewed_profile_environment",
+                side_effect=lambda profile_name: (
+                    Path(
+                        f"/canonical/{profile_name}/"
+                        "profile.env.example"
+                    ),
+                    station_profiles[profile_name],
+                ),
             ),
         ):
             merged = provisioner._inject_station_profile_bindings(active)
@@ -1085,19 +1125,21 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "PT_RELAY_DEPLOY_ENV": "relay",
         }
         with (
-            patch.object(Path, "is_file", return_value=True),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
-                "load_env_file",
-                return_value={
-                    "PT_DEV_PROFILE": "one",
-                    "PT_RELAY_MODE": "remote",
-                    "PT_RELAY_URL": "https://relay.example",
-                    "PT_RELAY_HEALTH_URL": (
-                        "https://relay.example/healthz"
-                    ),
-                    "PT_RELAY_DEPLOY_ENV": "relay-1",
-                },
+                "resolve_reviewed_profile_environment",
+                return_value=(
+                    Path("/canonical/one/profile.env.example"),
+                    {
+                        "PT_DEV_PROFILE": "one",
+                        "PT_RELAY_MODE": "remote",
+                        "PT_RELAY_URL": "https://relay.example",
+                        "PT_RELAY_HEALTH_URL": (
+                            "https://relay.example/healthz"
+                        ),
+                        "PT_RELAY_DEPLOY_ENV": "relay-1",
+                    },
+                ),
             ),
         ):
             merged = provisioner._inject_service_profile_bindings(active)
@@ -1285,10 +1327,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
 
         with (
-            patch.dict(
-                "os.environ",
-                {"MOBILE_ACCEPTANCE_RESET": "1"},
-                clear=False,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
             ),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
@@ -1314,6 +1356,16 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     ),
                 ),
             ) as resolve_actor,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_federation_contexts",
+                return_value=(
+                    "fed_chat_"
+                    + hashlib.sha256(
+                        b"station-primary\x00station-secondary"
+                    ).hexdigest()[:20]
+                ),
+            ) as prepare_federation,
         ):
             provisioner._prepare_actor_fixture(
                 "mobile-simulator-social-convergence-e2e",
@@ -1364,6 +1416,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             1,
         )
         self.assertTrue(actors[0]["federationId"])
+        prepare_federation.assert_called_once()
 
     def test_direct_actor_fixture_resolves_both_roles_on_same_station(
         self,
@@ -1390,10 +1443,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
 
         with (
-            patch.dict(
-                "os.environ",
-                {"MOBILE_ACCEPTANCE_RESET": "1"},
-                clear=False,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
             ),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
@@ -1415,6 +1468,14 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     home_station_peer_id="station-direct",
                 ),
             ) as resolve_actor,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_federation_contexts",
+                return_value=(
+                    "fed_chat_"
+                    + hashlib.sha256(b"station-direct").hexdigest()[:20]
+                ),
+            ) as prepare_federation,
         ):
             provisioner._prepare_actor_fixture(
                 "mobile-simulator-recovery-e2e",
@@ -1461,6 +1522,13 @@ class MobileSimulatorContractTests(unittest.TestCase):
             },
             {"station-direct"},
         )
+        prepare_federation.assert_called_once_with({
+            "station": (
+                "https://direct.example",
+                "chat-native-disposable-station",
+                ("alice", "bob"),
+            ),
+        })
 
     def test_station_lifecycle_overlay_has_exact_topology_and_bindings(
         self,
@@ -1612,7 +1680,6 @@ class MobileSimulatorContractTests(unittest.TestCase):
             patch.dict(
                 "os.environ",
                 {
-                    "MOBILE_ACCEPTANCE_RESET": "1",
                     "PT_MOBILE_STATION_PRIMARY_URL": (
                         "https://station-primary.example"
                     ),
@@ -1632,6 +1699,11 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     ),
                 },
                 clear=False,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
             ),
             patch.object(
                 provisioner,
@@ -1849,6 +1921,52 @@ class MobileSimulatorContractTests(unittest.TestCase):
 
 
 class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
+    def test_lifecycle_projector_keeps_scope_and_digests_nested_device_ids(
+        self,
+    ) -> None:
+        scope = {"deviceId": "device-one", "group": {}}
+        self.assertIs(
+            MobileStationLifecycleSimulatorProvisioner
+            ._project_lifecycle_harness_result(
+                "lifecycle.scope.read",
+                scope,
+            ),
+            scope,
+        )
+        self.assertIs(
+            mobile_simulator_module.ChatMixedNativeProvisioner
+            ._project_chat_harness_result(
+                "lifecycle.scope.read",
+                scope,
+            ),
+            scope,
+        )
+
+        projected = (
+            MobileStationLifecycleSimulatorProvisioner
+            ._project_lifecycle_harness_result(
+                "session.logout",
+                {
+                    "runtime": {"deviceId": "device-one"},
+                    "winningDeviceId": "device-two",
+                },
+            )
+        )
+
+        self.assertEqual(
+            projected,
+            {
+                "runtime": {
+                    "deviceIdentityDigest": hashlib.sha256(
+                        b"device-one"
+                    ).hexdigest(),
+                },
+                "winningDeviceIdentityDigest": hashlib.sha256(
+                    b"device-two"
+                ).hexdigest(),
+            },
+        )
+
     def setUp(self) -> None:
         self.contract_path = (
             ENVIRONMENTS_DIR / "mobile-station-lifecycle-simulator.yaml"
@@ -2041,10 +2159,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         with (
             patch.dict(
                 "os.environ",
-                {
-                    **self._service_environment(),
-                    "MOBILE_ACCEPTANCE_RESET": "",
-                },
+                self._service_environment(),
                 clear=False,
             ),
             patch.object(
@@ -2088,7 +2203,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
         self.assertEqual(
             manifest.blocked_resource,
-            "fixture-authorization:MOBILE_ACCEPTANCE_RESET",
+            "station.reset:mobile-station-lifecycle-alice",
         )
         blocked_payload = manifest.to_dict()
         self.assertEqual(
@@ -2198,11 +2313,13 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         with (
             patch.dict(
                 "os.environ",
-                {
-                    **self._service_environment(),
-                    "MOBILE_ACCEPTANCE_RESET": "1",
-                },
+                self._service_environment(),
                 clear=False,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
             ),
             patch.object(
                 provisioner,
@@ -2528,6 +2645,19 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 "error": None,
             },
         )
+        with self.assertRaisesRegex(ValueError, "raw authority"):
+            handler.project_response(
+                "harness_action",
+                {
+                    "requestId": "unsafe-request",
+                    "status": "OK",
+                    "result": {
+                        "clientId": "sim-ios",
+                        "value": {"deviceId": "unscoped-device"},
+                    },
+                    "error": None,
+                },
+            )
         self.assertTrue(handler.close().closed)
 
 

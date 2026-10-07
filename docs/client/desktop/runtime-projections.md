@@ -15,7 +15,9 @@ Read this before changing:
 
 - `apps/desktop/src/kernel/runtime.ts`, `kernel/page.ts`, `kernel/boot.ts`, `kernel/PageHost.tsx`, `kernel/usePrefetch.ts`
 - `apps/desktop/src/runtimes/socialRuntime.ts`, `momentsRuntime.ts`, `searchRuntime.ts`, `settingsRuntime.ts`
+- `apps/desktop/src/runtimes/messagingRuntime.ts`
 - `apps/desktop/src/services/socialRealtime.ts`
+- `apps/desktop/src/services/messagingRealtime.ts`
 - `apps/desktop/src/services/appRuntime.ts`
 - `apps/desktop/src/store/socialChat.ts`
 - `apps/desktop/src/store/notification.ts`
@@ -30,7 +32,8 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 
 | Runtime | Owns |
 |---|---|
-| `socialRealtime` | Chat/contact/social projections, realtime event consumption, cold sync, periodic reconciliation |
+| `messaging` | Chat command lifecycle, native projection events, scoped reset, cold sync, and periodic reconciliation |
+| `socialRealtime` | Friendship, contact, profile, presence, and Social notification projections |
 | `momentsRuntime` | Moments HOME / Explore / Circles projection bootstrap, periodic reconciliation, and actor-scoped reset |
 | `agent-capability` | Provider, model, Agent, applet, MCP, Skill, and Tool projection bootstrap |
 | `agent-topic` | Selected Agent topic/message bootstrap, Agent-switch refresh, and periodic reconciliation |
@@ -54,16 +57,25 @@ If a feature only refreshes on component mount, tab switch, or button click, the
 
 ## 4. Social Runtime Contract
 
-`socialRealtime` is responsible for keeping social projections current after login:
+`messaging` is the only Desktop Web owner of Chat projection freshness after
+login:
+
+- own the authenticated Device Messaging Engine scope and command facade;
+- consume native Messaging projection invalidations;
+- reconcile conversations, messages, receipts, typing, membership, settings,
+  and attachments after dropped events, reconnects, and foreground resume;
+- reset Chat projection state atomically on actor or Station scope change;
+- keep pages and `socialRealtime` from installing Chat consumers.
+
+`socialRealtime` is responsible for keeping Social projections current after login:
 
 - own the `/events/stream` supervisor lifecycle after authentication, independent of page or presence-hook mounts;
 - bootstrap current user profile, friend requests, relationship state,
-  current-actor followers, notification counts, and notification list;
-- consume presence, social graph, and notification-derived social signals;
+  notification counts, and notification list;
+- consume presence, relationship, profile, and Social notification events;
 - consume notification-derived social signals such as friend request and friend accepted notifications;
-- periodically reconcile friend requests, relationship state, peer identity,
-  presence, and Social notifications;
-- keep UI components as pure readers of `socialChat` store whenever possible.
+- periodically reconcile friendship, profiles, presence, and notifications;
+- keep UI components as pure readers of the owning stores whenever possible.
 
 Chat/Messaging event consumption (messages, receipts, typing, mutations, group membership, group federation, conversation settings, cold resync) has been extracted to the `messaging` runtime (see §4.x Messaging Runtime Contract below).
 
@@ -189,7 +201,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | Page | PageDescriptor | Runtimes | Status |
 |---|---|---|---|
 | `search` | `pages/SearchPage.descriptor.tsx` | `search` | migrated |
-| `chat` | `pages/SocialChatPage.descriptor.tsx` | `social` | migrated |
+| `chat` | `pages/SocialChatPage.descriptor.tsx` | `messaging`, `social` | migrated |
 | `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated |
 | `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
 | `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route; `appletsRuntime` owns `acquirePage/releasePage` session lease |

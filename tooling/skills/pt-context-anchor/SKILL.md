@@ -36,7 +36,7 @@ This Skill may read:
 
 - the current canonical `BindingProjection`;
 - the current workspace's `workflow/active-work.json`;
-- the frozen Plan Version through its immutable ExecutionPlanSnapshot;
+- the stable Plan through its current immutable ExecutionPlanSnapshot;
 - the ExecutionRun's current Task Slice;
 - matching Development `session.json`;
 - referenced durable evidence;

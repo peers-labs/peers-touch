@@ -48,6 +48,7 @@ def _activation(
             "activeStationPeerId": "station-primary-peer",
             "activeActorPtid": None,
             "runtimeStationPeerId": None,
+            "deviceId": f"device-{client_id}",
             "social": {
                 "stationPeerId": None,
                 "actorPtid": None,

@@ -149,7 +149,7 @@ type PresignedBackend interface {
 // LocalBackend stores files under a local root directory. It is the
 // zero-config default — no external services, no credentials — and
 // the right backend for the home-deployment story spelled out in
-// `docs/architecture/shared/object-storage.md`.
+// `docs/architecture/platform/station/object-storage.md`.
 type LocalBackend struct{ root string }
 
 // NewLocalBackend creates a LocalBackend with the given root.

@@ -239,6 +239,7 @@ class FakeBinding:
             "activeStationPeerId": station,
             "activeActorPtid": actor,
             "runtimeStationPeerId": station if active else None,
+            "deviceId": f"device-{client_id}",
             "social": {
                 "stationPeerId": station if active else None,
                 "actorPtid": actor,

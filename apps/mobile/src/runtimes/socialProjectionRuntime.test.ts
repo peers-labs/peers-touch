@@ -159,25 +159,17 @@ describe('social projection runtime', () => {
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
-    const groupStore = {
-      error: null,
-      activeGroupUlid: null,
-      reconcile: vi.fn(async () => undefined),
-      refreshGroups: vi.fn(async () => undefined),
-      loadSettings: vi.fn(async () => undefined),
-      selectGroup: vi.fn(async () => undefined),
-      loadMembers: vi.fn(async () => undefined),
-    };
     const wakeMessaging = vi.fn(async () => undefined);
     const revalidateSession = vi.fn(async () => undefined);
+    const ingestCallSignal = vi.fn();
     const reportError = vi.fn();
     const runtime = createSocialProjectionRuntime(
       session,
       () => socialStore,
-      () => groupStore,
       {
         wakeMessaging,
         revalidateSession,
+        ingestCallSignal,
         reportError,
       },
     );
@@ -187,7 +179,6 @@ describe('social projection runtime', () => {
     expect(readActiveMomentsRuntime(session)).toBe(runtime.moments);
     expect(readActiveProfileRuntime(session)).toBe(runtime.profile);
     expect(socialStore.reconcile).toHaveBeenCalledOnce();
-    expect(groupStore.reconcile).not.toHaveBeenCalled();
     expect(gatewayMocks.fetchFeed).toHaveBeenCalledOnce();
     expect(gatewayMocks.getCurrentProfile).toHaveBeenCalledOnce();
     expect(gatewayMocks.getNotificationPreferences).toHaveBeenCalledOnce();
@@ -231,9 +222,17 @@ describe('social projection runtime', () => {
         data: { outcome: PostDetailOutcome.DELETED },
       });
 
-    await runtime.reconcile('group-bootstrap', ['group']);
-    expect(groupStore.reconcile).toHaveBeenCalledOnce();
-
+    runtime.ingestRealtimeEvent({
+      kind: 'call-signal',
+      sessionUlid: 'ptid:alice-ptid:bob',
+      fromActorPtid: 'ptid:bob',
+      signalKind: 'CALL_REQUEST',
+      callId: '01K5TCALL00000000000000000',
+      winningDeviceId: '',
+      payload: new Uint8Array([1, 2, 3]),
+      cursor: 'cursor-call',
+      timestampMs: 9,
+    });
     runtime.ingestRealtimeEvent({
       kind: 'moment',
       momentKind: 'post-commented',
@@ -261,6 +260,13 @@ describe('social projection runtime', () => {
       timestampMs: 11,
     });
     runtime.ingestRealtimeEvent({
+      kind: 'settings-changed',
+      conversationKind: 'group',
+      containerUlid: 'group-1',
+      cursor: 'cursor-settings',
+      timestampMs: 11,
+    });
+    runtime.ingestRealtimeEvent({
       kind: 'social-graph',
       graphKind: 'friend-request-received',
       actorPtid: 'ptid:bob',
@@ -268,6 +274,16 @@ describe('social projection runtime', () => {
       requestId: 'request-1',
       conversationId: '',
       cursor: 'cursor-2',
+      timestampMs: 12,
+    });
+    runtime.ingestRealtimeEvent({
+      kind: 'social-graph',
+      graphKind: 'friend-request-accepted',
+      actorPtid: 'ptid:bob',
+      targetPtid: 'ptid:alice',
+      requestId: 'request-1',
+      conversationId: 'conversation-1',
+      cursor: 'cursor-2-accepted',
       timestampMs: 12,
     });
     runtime.ingestRealtimeEvent({
@@ -335,6 +351,13 @@ describe('social projection runtime', () => {
     ]);
     expect(socialStore.refreshNotifications).toHaveBeenCalled();
     expect(socialStore.loadPeerProfile).toHaveBeenCalledWith('ptid:bob', true);
+    expect(socialStore.refreshSessions).not.toHaveBeenCalled();
+    expect(socialStore.loadConversationSettings).not.toHaveBeenCalled();
+    expect(wakeMessaging).toHaveBeenCalledTimes(5);
+    expect(ingestCallSignal).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'call-signal',
+      callId: '01K5TCALL00000000000000000',
+    }));
     expect(readActiveSocialIngressState()?.streamCursor).toBe('cursor-5');
 
     await runtime.suspend();
@@ -351,6 +374,7 @@ describe('social projection runtime', () => {
     )).toThrowError(expect.objectContaining({ reason: 'runtime_suspended' }));
 
     await runtime.resume();
+    expect(wakeMessaging).toHaveBeenCalledTimes(6);
     expect(readActiveSocialIngressState()).toMatchObject({
       lifecycle: 'active',
       writeAdmission: { open: true },
@@ -370,6 +394,47 @@ describe('social projection runtime', () => {
       'social',
     )).toThrowError(expect.objectContaining({ reason: 'runtime_unavailable' }));
     expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('keeps write admission closed when resume cannot reconcile Messaging', async () => {
+    const socialStore = {
+      error: null,
+      currentUserPtid: 'ptid:alice',
+      reconcile: vi.fn(async () => undefined),
+      refreshNotifications: vi.fn(async () => undefined),
+      drainProfileCacheWrites: vi.fn(async () => undefined),
+      loadCurrentUserProfile: vi.fn(async () => undefined),
+    };
+    const wakeMessaging = vi.fn(async () => undefined);
+    const reportError = vi.fn();
+    const runtime = createSocialProjectionRuntime(
+      session,
+      () => socialStore,
+      {
+        wakeMessaging,
+        revalidateSession: vi.fn(async () => undefined),
+        ingestCallSignal: vi.fn(),
+        reportError,
+      },
+    );
+    await runtime.bootstrap();
+    await runtime.suspend();
+    wakeMessaging.mockRejectedValueOnce(new Error('messaging unavailable'));
+
+    await runtime.resume();
+
+    expect(readActiveSocialIngressState()).toMatchObject({
+      lifecycle: 'active',
+      writeAdmission: {
+        open: false,
+        reason: 'runtime_suspended',
+      },
+    });
+    expect(reportError).toHaveBeenCalledWith(
+      'reconcile:messaging:runtime_resume',
+      expect.any(Error),
+    );
+    await runtime.teardown();
   });
 
   it('does not make Profile unavailable when Notification preferences fail', async () => {
@@ -398,23 +463,14 @@ describe('social projection runtime', () => {
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
-    const groupStore = {
-      error: null,
-      activeGroupUlid: null,
-      reconcile: vi.fn(async () => undefined),
-      refreshGroups: vi.fn(async () => undefined),
-      loadSettings: vi.fn(async () => undefined),
-      selectGroup: vi.fn(async () => undefined),
-      loadMembers: vi.fn(async () => undefined),
-    };
     const reportError = vi.fn();
     const runtime = createSocialProjectionRuntime(
       session,
       () => socialStore,
-      () => groupStore,
       {
         wakeMessaging: vi.fn(async () => undefined),
         revalidateSession: vi.fn(async () => undefined),
+        ingestCallSignal: vi.fn(),
         reportError,
       },
     );
@@ -456,22 +512,13 @@ describe('social projection runtime', () => {
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
-    const groupStore = {
-      error: null,
-      activeGroupUlid: null,
-      reconcile: vi.fn(async () => undefined),
-      refreshGroups: vi.fn(async () => undefined),
-      loadSettings: vi.fn(async () => undefined),
-      selectGroup: vi.fn(async () => undefined),
-      loadMembers: vi.fn(async () => undefined),
-    };
     const runtime = createSocialProjectionRuntime(
       session,
       () => socialStore,
-      () => groupStore,
       {
         wakeMessaging: vi.fn(async () => undefined),
         revalidateSession: vi.fn(async () => undefined),
+        ingestCallSignal: vi.fn(),
         reportError: vi.fn(),
       },
     );
@@ -514,10 +561,10 @@ describe('social projection runtime', () => {
         loadCurrentUserProfile: async () => undefined,
         drainProfileCacheWrites: async () => undefined,
       }),
-      () => ({ error: null }),
       {
         wakeMessaging: async () => undefined,
         revalidateSession: async () => undefined,
+        ingestCallSignal: vi.fn(),
         reportError: vi.fn(),
       },
     );

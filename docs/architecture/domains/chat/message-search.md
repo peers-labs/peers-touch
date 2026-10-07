@@ -39,7 +39,7 @@ This document does not define:
 |-------|------------------|--------|
 | Station Conversation | Conversation-scoped reads | Full-text indexing and one canonical search contract remain to be completed |
 | Station frame | Stubbed `HandleSearchMessages` (returns empty) | Not implemented |
-| Desktop Rust | SQLCipher FTS5 on `chat_messages_fts` | Exists but **not wired** to TS UI |
+| Desktop Rust | Canonical Messaging store FTS5 on `messaging_message_search_fts` | Wired through the Messaging runtime search projection |
 | Desktop TS | No search UI for messages | — |
 
 ### 2.2 Design Goals
@@ -229,12 +229,12 @@ handler, repository, or public route family.
 
 ### 6.1 Existing Infrastructure
 
-The `local_chat_store.rs` already has:
+The canonical encrypted Messaging store owns:
 
-- `chat_messages` table with `scope`, `conversation_id`, `message_id`, `sender_did`, `content`, `sent_at`
-- `chat_messages_fts` FTS5 virtual table indexing `content`
-- `search_local()` function using `MATCH`
-- Conversation ingestion paths that populate the local cache for Direct and Group kinds
+- `messaging_message_projections` for Direct and Group message projections;
+- `messaging_message_search_fts` for local plaintext search indexing;
+- conversation-scoped search through the Messaging runtime;
+- one projection ingestion path for both Direct and Group messages.
 
 ### 6.2 What Needs Wiring
 

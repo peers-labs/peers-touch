@@ -13,6 +13,9 @@ import { resolvePlanExecution } from '../plan/plan-mount.mjs';
 import { readActiveWorkRecord } from './active-work-store.mjs';
 import { loadSessionStore } from './dev-session-store.mjs';
 import { readLedger } from './dev-work-ledger.mjs';
+import {
+  sameWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 const LIVE_DECLARATION_STATES = new Set(['DECLARED', 'ACTIVE', 'RELEASING']);
 
@@ -146,6 +149,21 @@ export async function inspectWorkflowContext(binding, options = {}) {
       { state: declaration.state, workItemId: declaration.workItemId },
     );
   }
+  if (
+    declaration.workflowOwner !== undefined &&
+    (declaration.workflowOwner.host !== binding.host ||
+      declaration.workflowOwner.rootBindingDigest !==
+        binding.rootBindingDigest)
+  ) {
+    return mismatch(
+      'WORKFLOW_OWNER_MISMATCH',
+      'The active declaration belongs to another main-session OWNER.',
+      {
+        expected: declaration.workflowOwner.rootBindingDigest,
+        actual: binding.rootBindingDigest,
+      },
+    );
+  }
 
   const head = currentHead(canonicalRoot);
   const branch = currentBranch(canonicalRoot);
@@ -204,7 +222,7 @@ export async function inspectWorkflowContext(binding, options = {}) {
   if (
     execution.mount.planId !== declaration.planId ||
     execution.mount.planPath !== declaration.planPath ||
-    execution.mount.planVersionDigest !== declaration.planVersionDigest ||
+    execution.snapshot.planDigest !== declaration.planDigest ||
     execution.mount.mountId !== declaration.mountId ||
     execution.run.runId !== declaration.runId ||
     currentTask?.id !== declaration.taskId
@@ -259,6 +277,19 @@ export async function inspectWorkflowContext(binding, options = {}) {
   }
 
   const state = session.state;
+  if (
+    declaration.workflowOwner !== undefined &&
+    (state.workflowOwner === undefined ||
+      !sameWorkflowOwnerReference(
+        declaration.workflowOwner,
+        state.workflowOwner,
+      ))
+  ) {
+    return mismatch(
+      'WORKFLOW_OWNER_MISMATCH',
+      'Development Session owner does not match the active declaration.',
+    );
+  }
   const sessionMismatches = Object.fromEntries(
     Object.entries(expectedSessionIdentity)
       .filter(([field, value]) => state[field] !== value)
@@ -301,6 +332,19 @@ export async function inspectWorkflowContext(binding, options = {}) {
       'ACTIVE_WORK_MISMATCH',
       'Workspace active-work does not match its owner state.',
       activeWorkMismatches,
+    );
+  }
+  if (
+    declaration.workflowOwner !== undefined &&
+    (activeWork.workflowOwner === undefined ||
+      !sameWorkflowOwnerReference(
+        declaration.workflowOwner,
+        activeWork.workflowOwner,
+      ))
+  ) {
+    return mismatch(
+      'WORKFLOW_OWNER_MISMATCH',
+      'Workspace active-work owner does not match the declaration.',
     );
   }
 

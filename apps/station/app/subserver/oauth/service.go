@@ -872,14 +872,9 @@ func (stationSessionCredentialIssuer) Prepare(
 }
 
 func oauthSessionDeviceType(platform string) (session.DeviceType, error) {
-	switch strings.TrimSpace(platform) {
-	case string(session.DeviceTypeDesktop):
-		return session.DeviceTypeDesktop, nil
-	case string(session.DeviceTypeMobile):
-		return session.DeviceTypeMobile, nil
-	case string(session.DeviceTypeWeb):
-		return session.DeviceTypeWeb, nil
-	default:
+	deviceType, err := session.ParseDeviceType(platform)
+	if err != nil {
 		return "", fmt.Errorf("unsupported OAuth client platform %q", platform)
 	}
+	return deviceType, nil
 }

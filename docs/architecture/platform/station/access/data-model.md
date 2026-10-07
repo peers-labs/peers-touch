@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 数据模型
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-27 | **Updated**: 2026-09-27
+> **Version**: v1.1
+> **Created**: 2026-09-27 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
 ---
@@ -143,3 +143,40 @@ Station Access 模块引用以下当前能力：
 
 能力的 method、path、request/response Proto 和 Station owner 由
 `station-api-capabilities.yaml` 定义，本模块不复制第二份 route registry。
+
+## 7. Client-Class Session Slot
+
+```text
+ClientClass
+  desktop
+  mobile
+  web
+
+ActorSessionClassSlot
+  actor_id          // Station-internal storage identity
+  client_class
+  active_session_id
+  device_id
+  lifecycle_generation
+  revoked
+  revoked_reason
+```
+
+`SessionRecord.device_type` 是当前持久化字段名，但其业务含义是
+`ClientClass`，只允许 canonical enum。`device_id` 是安装实例身份，不是
+Session 并发类别。
+
+不变量：
+
+- `(actor_id, client_class)` 最多存在一个 `revoked=false` 的 Session；
+- `actor_sessions` 以 partial unique index
+  `(user_id, device_type) WHERE revoked = false` 执行该不变量；
+- 新同类 Session 激活与旧同类 Session 的 `kicked` 撤销在一个事务中完成；
+- 不同 `client_class` 的 Session 不参与该事务的撤销集合；
+- password、OAuth 和 takeover 入口产生相同 class-slot 结果；
+- 非 canonical 类别不得写入；历史 alias 只允许在一次性 schema migration
+  中归一。
+
+Migration 顺序固定为：归一类别、按 `created_at DESC, id DESC` 选择每个
+`(user_id, device_type)` winner、撤销其余 active 行、创建 partial unique
+index。任何一步失败都阻止 Station 启动，不以无约束模式继续服务。

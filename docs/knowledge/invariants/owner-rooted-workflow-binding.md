@@ -8,6 +8,7 @@ owns:
   - tooling/scripts/agent-integration-audit.py
   - tooling/scripts/install-agent-integration.sh
   - tooling/scripts/local-dev/workflow-*.mjs
+  - tooling/scripts/local-dev/worktree-create.mjs
   - tooling/make/setup.mk
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
@@ -27,6 +28,12 @@ TRAE derives that root only from `chat_session_id`; an internal `session_id`
 never creates peer owner authority. Cursor and Codex use only their documented
 host-specific root fields. Missing root identity is `OBSERVE_ONLY`; aliases and
 process-global identity fallbacks are forbidden.
+
+The canonical root ID is retained only in owner-controlled machine-local
+state together with its hash. An authorized Agent-created worktree must use
+`make worktree-create`, which writes immutable target-workspace provenance
+containing the creating main-session reference. Git author/email is never a
+conversation identity.
 
 WORKER and REVIEWER sessions exist only through a create-once assignment that
 records role, root and parent binding digests, Development Session identity,
@@ -93,6 +100,11 @@ authority because a timer elapsed.
 - `node --test tooling/scripts/local-dev/workflow-*.test.mjs
   tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs` passes.
 - TRAE accepts `chat_session_id`, never `session_id` alone as OWNER identity.
+- A new Agent-created worktree exposes `createdBy.rootChatId` through Workflow
+  Snapshot, while current Development state exposes
+  `workflowOwner.rootChatId`.
+- A legacy hash-only OWNER binding upgrades only when the matching host root ID
+  is observed again; missing provenance is reported, never inferred.
 - One OWNER plus WORKER and REVIEWER children retain exact root/parent lineage.
 - Concurrent execution sessions cannot claim the same assignment.
 - Assignment creation rejects a missing or non-current Development Session.

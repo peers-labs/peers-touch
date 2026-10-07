@@ -141,7 +141,8 @@ For each independent worker:
 
 - `GOAL_REPLACEMENT_REQUIRED`: stale objective cannot be repaired in place.
 - `RECOVERABLE_IMPLEMENTATION`: source-backed remediation and retry.
-- `PLAN_AMENDMENT_REQUIRED`: plan owner updates the formal model.
+- `PLAN_AMENDMENT_REQUIRED`: Dev Workflow records the execution-model change
+  with `planctl amend` and continues the same Plan Run.
 - `HOST_PARALLELISM_UNAVAILABLE`: recompute serial/hybrid transport.
 - `SOFT_EXTERNAL`: park and continue independent work.
 - `HARD_GOVERNANCE`: name the missing decision, authorization, or resource.

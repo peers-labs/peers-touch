@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -27,6 +28,7 @@ import { processStartIdentity } from './dev-work-ledger.mjs';
 import {
   archiveDevelopmentSession,
   commitFunctionalResult,
+  createInitialSessionState,
   createTransitionEvent,
   DevSessionError,
   readSessionJournal,
@@ -44,6 +46,10 @@ import {
   inspectSessionJournal,
   summarizeSessionJournal,
 } from './dev-session-store.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -64,6 +70,17 @@ const INITIAL_HEAD =
 const WORKSPACE_ID = workspaceIdForRoot(REPO_ROOT);
 const START_TIME = Date.parse('2026-09-16T12:00:00.000Z');
 
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
+}
+
 function fixture({
   workClass = 'refactor',
   planWorkClass,
@@ -82,7 +99,7 @@ function fixture({
   const sessionId = 'dwf-b1-session';
   const journeyId = 'DWF-AS03';
   const taskId = 'DWF-B1';
-  const planVersionDigest = 'a'.repeat(64);
+  const planDigest = 'a'.repeat(64);
   const mountId = 'mount-fixture';
   const runId = 'run-fixture';
   const task = {
@@ -157,7 +174,7 @@ function fixture({
     taskSlices: new Map([[taskId, task]]),
     currentTask: task,
     readyTasks: [],
-    planVersionDigest,
+    planDigest,
   };
   const executionBinding = {
     mountId,
@@ -171,10 +188,11 @@ function fixture({
       mountId,
       planId: manifest.planId,
       planPath: 'fake-plan.md',
-      planVersionDigest,
+      planDigest,
     },
     snapshot: {
       executionBinding,
+      planDigest,
     },
     run: {
       runId,
@@ -231,6 +249,7 @@ function fixture({
     planPath: plan.path,
     taskId,
     journeyId,
+    workflowOwner: workflowOwner(),
     clock,
   };
   return {
@@ -264,6 +283,7 @@ function declarationOptions(scope, overrides = {}) {
     sourceHead: EXPECTED_HEAD,
     sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
     runtimeClaims: scope.runtimeClaims,
+    workflowOwner: scope.baseOptions.workflowOwner,
     planPath: 'fake-plan.md',
     planId: scope.plan.manifest.planId,
     taskId: scope.task.taskId,
@@ -276,7 +296,7 @@ function declarationOptions(scope, overrides = {}) {
       taskStatuses: {
         [scope.task.taskId]: 'in_progress',
       },
-      planVersionDigest: scope.plan.planVersionDigest,
+      planDigest: scope.plan.planDigest,
       mountId: scope.planExecution.mount.mountId,
       runId: scope.planExecution.run.runId,
     },
@@ -525,7 +545,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
       workspaceDigest: 'clean',
       canonicalWorktreeHash: WORKSPACE_ID,
     },
-    runtime: {},
+    runtime: runtimeEvidence ? { _manifest_ref: manifestRef } : {},
     result: {
       ...standardizedResult,
       workItemId: scope.workItemId,
@@ -729,6 +749,26 @@ function expectCode(code, operation) {
   });
 }
 
+test('initial Session state carries the verified main-session owner', () => {
+  const owner = workflowOwner();
+  const state = createInitialSessionState(
+    {
+      sessionId: 'session-owner',
+      workItemId: 'WORK-OWNER',
+      planId: 'PLAN-OWNER',
+      taskId: 'TASK-OWNER',
+      workspaceId: WORKSPACE_ID,
+      branch: BRANCH,
+      journeyId: 'JOURNEY-OWNER',
+      executionMode: 'build',
+      workflowOwner: owner,
+    },
+    '2026-10-07T00:00:00.000Z',
+  );
+  assert.deepEqual(state.workflowOwner, owner);
+  assert.equal(validateSessionState(state), state);
+});
+
 test('legacy Session state without host request history remains readable', () => {
   const scope = fixture();
   try {
@@ -767,6 +807,19 @@ test('archive preserves a terminal Session and clears the work-item slot', async
       workspaceId: WORKSPACE_ID,
       workItemId: scope.workItemId,
     });
+    assert.throws(
+      () =>
+        archiveDevelopmentSession({
+          ...scope.baseOptions,
+          workflowOwner: {
+            ...scope.baseOptions.workflowOwner,
+            rootBindingDigest: 'b'.repeat(64),
+          },
+        }),
+      (error) =>
+        error instanceof DevSessionError &&
+        error.code === 'SESSION_IDENTITY_MISMATCH',
+    );
 
     const archived = archiveDevelopmentSession(scope.baseOptions);
 
@@ -780,6 +833,114 @@ test('archive preserves a terminal Session and clears the work-item slot', async
     );
     assert.equal(
       existsSync(path.join(archived.archiveDirectory, 'events.ndjson')),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('archive preserves a prior Session when the same sessionId is reused', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const first = archiveDevelopmentSession(scope.baseOptions);
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const second = archiveDevelopmentSession(scope.baseOptions);
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    const historyDirectory = path.join(
+      paths.directory,
+      'archive-history',
+      scope.sessionId,
+      first.eventDigest,
+    );
+
+    assert.notEqual(first.eventDigest, second.eventDigest);
+    assert.equal(
+      existsSync(path.join(historyDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(historyDirectory, 'events.ndjson')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(second.archiveDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(second.archiveDirectory, 'events.ndjson')),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('archive tolerates an identical displaced Session already in history', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    archiveDevelopmentSession(scope.baseOptions);
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const second = archiveDevelopmentSession(scope.baseOptions);
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    const duplicateHistory = path.join(
+      paths.directory,
+      'archive-history',
+      scope.sessionId,
+      second.eventDigest,
+    );
+    mkdirSync(duplicateHistory, { recursive: true });
+    copyFileSync(
+      path.join(second.archiveDirectory, 'session.json'),
+      path.join(duplicateHistory, 'session.json'),
+    );
+    copyFileSync(
+      path.join(second.archiveDirectory, 'events.ndjson'),
+      path.join(duplicateHistory, 'events.ndjson'),
+    );
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const third = archiveDevelopmentSession(scope.baseOptions);
+
+    assert.notEqual(second.eventDigest, third.eventDigest);
+    assert.equal(
+      existsSync(path.join(duplicateHistory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(duplicateHistory, 'events.ndjson')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(third.archiveDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(third.archiveDirectory, 'events.ndjson')),
       true,
     );
   } finally {
@@ -1414,6 +1575,55 @@ test('functional result commit accepts the standard development policy envelope'
       'development-functional-evidence-bundle',
     );
     assert.ok(sealed.artifacts.length >= 7);
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result accepts the Gate-owned runtime manifest reference', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-desktop',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    const committed = await commitStandardizedFunctionalPass(scope, {
+      result: { manifest: undefined },
+    });
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result rejects a conflicting child runtime manifest reference', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-desktop',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    await rejectCode('SESSION_EVIDENCE_OUT_OF_SEQUENCE', () =>
+      commitStandardizedFunctionalPass(scope, {
+        result: { manifest: { _manifest_ref: {} } },
+      }),
+    );
   } finally {
     scope.close();
   }

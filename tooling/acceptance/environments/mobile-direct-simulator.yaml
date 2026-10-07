@@ -25,7 +25,7 @@
     {
       "id": "mobile-social-simulator-actors",
       "authorization_required": true,
-      "authorization_ref": "env:MOBILE_ACCEPTANCE_RESET",
+      "authorization_ref": "station.reset:mobile-social-simulator-actors",
       "target_assertion": "the Station is an approved disposable target",
       "initial_assertion": "Alice and Bob have distinct PTIDs on the same Station"
     }

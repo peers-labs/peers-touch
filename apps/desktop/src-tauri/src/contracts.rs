@@ -259,67 +259,6 @@ pub struct KeyExchangeFetchInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListInput {
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListMessagesInput {
-    pub group_ulid: String,
-    pub before_ulid: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatThreadInput {
-    pub group_ulid: String,
-    pub root_ulid: String,
-    pub after_ulid: Option<String>,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatUnreadInput {
-    pub group_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatMarkReadInput {
-    pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatSyncInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatLocalSearchInput {
-    pub query: String,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatScopeCursorSetInput {
-    pub scope: String,
-    pub cursor: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatScopeCursorGetInput {
-    pub scope: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatKeyRotateInput {
-    pub next_version: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileUpdateInput {
     pub display_name: Option<String>,
     pub note: Option<String>,
@@ -1626,31 +1565,6 @@ pub struct ProviderModelToggleInput {
 pub struct ProviderModelToggleAllInput {
     pub provider_id: String,
     pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUlidInput {
-    pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupSearchMessagesInput {
-    pub group_ulid: String,
-    pub query: String,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupMembersInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupOfflineMessagesInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
