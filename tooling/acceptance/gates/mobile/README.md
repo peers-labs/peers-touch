@@ -255,6 +255,7 @@ authority and the fallback for platform-specific coverage.
 | `native_e2e.py` | Physical-device provider and product journeys |
 | `mobile_simulator.py` | Dual-iOS simulator/build/Appium resource lifecycle |
 | `mobile_native.py` | Physical devices, services, credentials, and fixture inputs |
+| `mobile_native_build.py` | Source-bound build identity, offline toolchain, package inspection, and Acceptance signing |
 | `mobile_installation.py` | Installation strategies and platform adapter contract |
 | `tooling/acceptance/devices/` | Model-specific device matching and install policy |
 | `apps/mobile/src/acceptance/` | Typed production-action Harness |
@@ -301,6 +302,14 @@ locked-preseeded tool-native offline resolution. `resolverArguments` is the
 only resolver-detail source: Android records pnpm, Cargo, and Gradle arguments
 and marks Xcode inapplicable; iOS records pnpm, Cargo, and Xcode arguments and
 marks Gradle inapplicable. This is not a general-purpose hermetic sandbox.
+
+Run-scoped directories are normalized before the allowlisted environment digest
+is calculated. The embedded build ID is derived from source, platform, build
+inputs, configuration, and that normalized environment digest; it is not a
+per-run nonce. Android Acceptance builds reuse one machine-local debug signer
+under the declared external runtime cache. The signer is atomically published,
+stored in an owner-only directory as an owner-only regular file, and never
+records its path or key material in evidence.
 
 iOS signing records the `codesign` SHA-256 CDHash as 40 lowercase hexadecimal
 characters plus the 64-character full candidate. Android records signer
@@ -547,6 +556,10 @@ and must pass the same hash readback before launch; unreadable hashes fail
 closed. Device serials and installed package paths remain process-local and
 never enter evidence. OAuth and all scenarios without this descriptor retain
 the existing fresh-install contract.
+
+UiAutomator2 sessions apply both the Android install timeout and the matching
+ADB command timeout so explicit `install_app` calls use the declared bounded
+budget. Unsupported driver `installOptions` capabilities are not emitted.
 
 The lifecycle branch drives Appium's bounded physical `background_app`
 operation for twenty background/foreground cycles, then verifies canonical

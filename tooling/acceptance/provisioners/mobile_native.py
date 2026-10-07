@@ -2912,6 +2912,10 @@ def preflight_mobile_native_inputs(
         spec.lease_authentication_key_ref,
         command_environment,
     )
+    _, runtime_cache_root = _required_env_ref(
+        spec.chromedriver.cache_root_ref,
+        "mobile-runtime:acceptance-runtime-cache",
+    )
     return {
         "appiumUrl": appium_url,
         "appiumVersion": actual_appium_version,
@@ -2927,6 +2931,9 @@ def preflight_mobile_native_inputs(
         "chromedriver": chromedriver,
         "physicalDevices": physical_devices,
         "storageRoot": storage_root,
+        "runtimeCacheRoot": str(
+            Path(runtime_cache_root).expanduser().resolve()
+        ),
         "leaseAuthenticationKey": lease_authentication_key,
     }
 
@@ -3640,7 +3647,9 @@ class _ParentAppiumSession:
                     "appium:androidInstallTimeout": (
                         MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS
                     ),
-                    "appium:installOptions": ["--no-streaming"],
+                    "appium:adbExecTimeout": (
+                        MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS
+                    ),
                     "appium:ignoreHiddenApiPolicyError": True,
                 }
             )
@@ -7910,6 +7919,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 root=REPO_ROOT,
                 platform=platform_name,
                 run_root=runtime_root / "source-builds" / platform_name,
+                runtime_cache=Path(self._native_inputs["runtimeCacheRoot"]),
             )
             _, build_refs[platform_name] = produce_build_attestation(
                 run=self._artifact_session,
@@ -8110,6 +8120,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 root=REPO_ROOT,
                 platform=platform_name,
                 run_root=runtime_root / "source-builds" / platform_name,
+                runtime_cache=Path(self._native_inputs["runtimeCacheRoot"]),
             )
             _, build_refs[platform_name] = (
                 produce_scenario_build_attestation(

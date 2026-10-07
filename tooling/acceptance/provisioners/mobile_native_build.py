@@ -9,6 +9,7 @@ import re
 import signal
 import shlex
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -50,6 +51,11 @@ ACCEPTANCE_CARGO_FEATURE = "acceptance-harness"
 ENVIRONMENT_POLICY = "empty-base-explicit-allowlist"
 DEPENDENCY_POLICY = "locked-preseeded-offline"
 SIGNING_POLICY = "mobile-acceptance-debug"
+CONTROLLED_BUILD_ROOT_TOKEN = "<controlled-build-root>"
+ANDROID_ACCEPTANCE_SIGNING_ROOT = Path(
+    "mobile-native/android-acceptance-signing"
+)
+ANDROID_ACCEPTANCE_KEYSTORE = "acceptance-debug.keystore"
 ANDROID_GRADLE_LOCK_REQUIREMENTS = {
     "apps/mobile/src-tauri/gen/android/buildscript-gradle.lockfile": (
         "com.android.tools.build:gradle:8.5.1",
@@ -1792,8 +1798,36 @@ def allowlisted_environment_digest(environment: Mapping[str, str]) -> str:
         raise MobileNativeBuildError(
             f"build environment contains non-allowlisted keys: {sorted(unexpected)}"
         )
+    cargo_home = environment.get("CARGO_HOME")
+    if not cargo_home:
+        raise MobileNativeBuildError(
+            "build environment has no controlled CARGO_HOME"
+        )
+    controlled_root = Path(cargo_home)
+    if controlled_root.name != "cargo-home":
+        raise MobileNativeBuildError(
+            "build environment CARGO_HOME is not run-root scoped"
+        )
+    controlled_root_text = str(controlled_root.parent)
+
+    def normalize_path(value: str) -> str:
+        if value == controlled_root_text:
+            return CONTROLLED_BUILD_ROOT_TOKEN
+        prefix = controlled_root_text + os.sep
+        if value.startswith(prefix):
+            relative = value.removeprefix(prefix).replace(os.sep, "/")
+            return f"{CONTROLLED_BUILD_ROOT_TOKEN}/{relative}"
+        return value
+
     digest_values = {
-        key: value
+        key: (
+            os.pathsep.join(
+                normalize_path(entry)
+                for entry in value.split(os.pathsep)
+            )
+            if key == "PATH"
+            else normalize_path(value)
+        )
         for key, value in environment.items()
         if key != "PT_MOBILE_BUILD_IDENTITY_JSON"
     }
@@ -1914,6 +1948,30 @@ def create_build_identity(
     }
     parse_build_identity(canonical_json_bytes(identity).decode("ascii"))
     return identity
+
+
+def _content_bound_build_id(
+    *,
+    platform: str,
+    configuration: str,
+    source: SourceIdentity,
+    build_inputs_digest: str,
+    environment_digest: str,
+) -> str:
+    digest = canonical_value_digest(
+        {
+            "schema": BUILD_IDENTITY_SCHEMA,
+            "platform": platform,
+            "configuration": configuration,
+            "sourceCommit": source.source_commit,
+            "workspaceState": source.workspace_state,
+            "workspaceDigest": source.workspace_digest,
+            "buildInputsDigest": build_inputs_digest,
+            "allowlistedEnvironmentDigest": environment_digest,
+            "applicationId": APPLICATION_ID,
+        }
+    )
+    return f"{configuration}-{digest.removeprefix('sha256:')}"
 
 
 def _create_release_build_identity(
@@ -4009,10 +4067,123 @@ def _remove_stale_ios_external_outputs(root: Path) -> None:
         shutil.rmtree(external_root)
 
 
+def _assert_no_symlink_components(path: Path) -> None:
+    absolute = path.expanduser().absolute()
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise MobileNativeBuildError(
+                "Android Acceptance signing path contains a symlink"
+            )
+
+
+def _require_private_signing_directory(path: Path) -> None:
+    _assert_no_symlink_components(path.parent)
+    created = not path.exists()
+    path.mkdir(parents=True, mode=0o700, exist_ok=True)
+    _assert_no_symlink_components(path)
+    if created:
+        path.chmod(0o700)
+    if (
+        not path.is_dir()
+        or stat.S_IMODE(path.stat().st_mode) != 0o700
+    ):
+        raise MobileNativeBuildError(
+            "Android Acceptance signing directory must be owner-only"
+        )
+
+
+def _persistent_android_acceptance_keystore(
+    *,
+    root: Path,
+    runtime_cache: Path,
+    runner: CommandRunner,
+    environment: Mapping[str, str],
+    keytool: str,
+) -> tuple[Path, bool, tuple[str, ...] | None]:
+    repository = root.resolve(strict=True)
+    cache_root = runtime_cache.expanduser().absolute()
+    if cache_root.is_symlink():
+        raise MobileNativeBuildError(
+            "Android Acceptance runtime cache must not be a symlink"
+        )
+    resolved_cache = cache_root.resolve()
+    _assert_no_symlink_components(resolved_cache)
+    if resolved_cache == repository or repository in resolved_cache.parents:
+        raise MobileNativeBuildError(
+            "Android Acceptance runtime cache must be outside the repository"
+        )
+    signing_root = resolved_cache / ANDROID_ACCEPTANCE_SIGNING_ROOT
+    _require_private_signing_directory(signing_root)
+    keystore = signing_root / ANDROID_ACCEPTANCE_KEYSTORE
+
+    generated_command: tuple[str, ...] | None = None
+    reused = keystore.exists() or keystore.is_symlink()
+    if not reused:
+        with tempfile.TemporaryDirectory(
+            prefix=".acceptance-debug-",
+            dir=signing_root,
+        ) as temporary:
+            temporary_root = Path(temporary)
+            temporary_root.chmod(0o700)
+            candidate = temporary_root / ANDROID_ACCEPTANCE_KEYSTORE
+            generated_command = (
+                keytool,
+                "-genkeypair",
+                "-noprompt",
+                "-keystore",
+                str(candidate),
+                "-storepass",
+                "android",
+                "-keypass",
+                "android",
+                "-alias",
+                "androiddebugkey",
+                "-dname",
+                "CN=Android Debug,O=Android,C=US",
+                "-keyalg",
+                "RSA",
+                "-keysize",
+                "2048",
+                "-validity",
+                "10950",
+            )
+            generated = runner.run(
+                generated_command,
+                cwd=root,
+                env=environment,
+            )
+            if (
+                generated.returncode != 0
+                or candidate.is_symlink()
+                or not candidate.is_file()
+            ):
+                raise MobileNativeBuildError(
+                    "controlled Android Acceptance keystore generation failed"
+                )
+            candidate.chmod(0o600)
+            try:
+                os.link(candidate, keystore)
+            except FileExistsError:
+                reused = True
+
+    if (
+        keystore.is_symlink()
+        or not keystore.is_file()
+        or stat.S_IMODE(keystore.stat().st_mode) != 0o600
+    ):
+        raise MobileNativeBuildError(
+            "Android Acceptance keystore must be a private regular file"
+        )
+    return keystore, reused, generated_command
+
+
 def _sign_android_acceptance_output(
     *,
     root: Path,
     run_root: Path,
+    runtime_cache: Path,
     runner: CommandRunner,
     environment: Mapping[str, str],
     executables: Mapping[str, str],
@@ -4031,42 +4202,16 @@ def _sign_android_acceptance_output(
     unsigned_apk = candidates[0]
     signing_root = run_root / "signing"
     signing_root.mkdir(parents=True, exist_ok=False)
-    keystore = signing_root / "acceptance-debug.keystore"
     signed_apk = signing_root / "mobile-v2-v3.apk"
-    keytool_command = [
-        executables["keytool"],
-        "-genkeypair",
-        "-noprompt",
-        "-keystore",
-        str(keystore),
-        "-storepass",
-        "android",
-        "-keypass",
-        "android",
-        "-alias",
-        "androiddebugkey",
-        "-dname",
-        "CN=Android Debug,O=Android,C=US",
-        "-keyalg",
-        "RSA",
-        "-keysize",
-        "2048",
-        "-validity",
-        "10950",
-    ]
-    generated = runner.run(
-        keytool_command,
-        cwd=root,
-        env=environment,
-    )
-    if (
-        generated.returncode != 0
-        or keystore.is_symlink()
-        or not keystore.is_file()
-    ):
-        raise MobileNativeBuildError(
-            "controlled Android Acceptance keystore generation failed"
+    keystore, keystore_reused, keytool_command = (
+        _persistent_android_acceptance_keystore(
+            root=root,
+            runtime_cache=runtime_cache,
+            runner=runner,
+            environment=environment,
+            keytool=executables["keytool"],
         )
+    )
     keystore_sha256 = _sha256_file(keystore)
     sign_command = [
         executables.get("apksigner", "apksigner"),
@@ -4092,14 +4237,11 @@ def _sign_android_acceptance_output(
         "--in",
         str(unsigned_apk),
     ]
-    try:
-        signed = runner.run(
-            sign_command,
-            cwd=root,
-            env=environment,
-        )
-    finally:
-        keystore.unlink(missing_ok=True)
+    signed = runner.run(
+        sign_command,
+        cwd=root,
+        env=environment,
+    )
     if (
         signed.returncode != 0
         or signed_apk.is_symlink()
@@ -4124,7 +4266,8 @@ def _sign_android_acceptance_output(
         "keystoreSha256": keystore_sha256,
         "signedArtifactSha256": signed_sha256,
         "enabledSigningSchemes": ["v2", "v3"],
-        "keystoreRetained": False,
+        "keystoreRetained": True,
+        "keystoreReused": keystore_reused,
     }
 
 
@@ -4166,6 +4309,7 @@ def orchestrate_source_bound_build(
     root: Path,
     platform: str,
     run_root: Path,
+    runtime_cache: Path,
 ) -> SuccessfulBuildReceipt:
     repository = root.resolve(strict=True)
     resolved_run_root = run_root.resolve()
@@ -4278,14 +4422,26 @@ def orchestrate_source_bound_build(
         release_environment_without_identity
     )
     identity = create_build_identity(
-        build_id=uuid.uuid4().hex,
+        build_id=_content_bound_build_id(
+            platform=platform,
+            configuration=BUILD_CONFIGURATION,
+            source=source,
+            build_inputs_digest=input_digest,
+            environment_digest=environment_digest,
+        ),
         platform=platform,
         source=source,
         build_inputs_digest=input_digest,
         environment_digest=environment_digest,
     )
     release_identity = _create_release_build_identity(
-        build_id=f"{identity['buildId']}-release",
+        build_id=_content_bound_build_id(
+            platform=platform,
+            configuration=RELEASE_CONFIGURATION,
+            source=source,
+            build_inputs_digest=release_input_digest,
+            environment_digest=release_environment_digest,
+        ),
         platform=platform,
         source=source,
         build_inputs_digest=release_input_digest,
@@ -4354,6 +4510,7 @@ def orchestrate_source_bound_build(
             _sign_android_acceptance_output(
                 root=root,
                 run_root=acceptance_root,
+                runtime_cache=runtime_cache,
                 runner=command_runner,
                 environment=environment,
                 executables=toolchain.executable_paths,
