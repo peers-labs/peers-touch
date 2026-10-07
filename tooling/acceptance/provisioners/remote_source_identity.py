@@ -101,12 +101,8 @@ def open_reviewed_remote_tunnel(
 def resolve_windows_service_version(
     deploy_environment: str,
 ) -> dict[str, Any]:
-    environment_path = resolve_deployment_environment_path(deploy_environment)
-    config = WindowsRuntimeConfig.load(
-        deploy_environment,
-        environment_path,
-    )
-    if config.platform != RemotePlatform.WINDOWS:
+    transport, _ = _reviewed_remote_transport(deploy_environment)
+    if transport.target.remote_platform != RemotePlatform.WINDOWS:
         raise BlockedError(
             reason=(
                 f"Deployment {deploy_environment!r} is not a Windows "
@@ -114,6 +110,11 @@ def resolve_windows_service_version(
             ),
             resource=f"runtime-status:{deploy_environment}",
         )
+    environment_path = resolve_deployment_environment_path(deploy_environment)
+    config = WindowsRuntimeConfig.load(
+        deploy_environment,
+        environment_path,
+    )
     try:
         status = execute_windows_runtime("status", config, branch="")
     except (OSError, ProvisioningError, RuntimeError) as error:

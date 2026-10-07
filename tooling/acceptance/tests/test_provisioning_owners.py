@@ -274,10 +274,11 @@ class StationAttestationOwnerTests(unittest.TestCase):
         )
 
         config = MagicMock(
-            platform=RemotePlatform.WINDOWS,
             role="relay",
             task_name="PeersTouch-sixwin-relay",
         )
+        transport = MagicMock()
+        transport.target.remote_platform = RemotePlatform.WINDOWS
         status = {
             "artifactKind": "windows-native-runtime-status",
             "environmentName": "sixwin-relay",
@@ -298,6 +299,10 @@ class StationAttestationOwnerTests(unittest.TestCase):
             },
         }
         with patch(
+            "tooling.acceptance.provisioners.remote_source_identity."
+            "_reviewed_remote_transport",
+            return_value=(transport, {}),
+        ), patch(
             "tooling.acceptance.provisioners.remote_source_identity."
             "resolve_deployment_environment_path",
             return_value=Path("/reviewed/sixwin-relay.env.example"),
