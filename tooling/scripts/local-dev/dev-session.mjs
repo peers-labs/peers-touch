@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  fstatSync,
   lstatSync,
   mkdtempSync,
   mkdirSync,
@@ -1218,6 +1219,7 @@ function runDevelopmentClosure(
   spawnDevelopmentRunner = spawnSync,
   inspectSource = actualSource,
   spawnTaskCheck = spawnSync,
+  environment = process.env,
 ) {
   const expectedGates =
     plan.acceptance?.closures?.[plan.currentTask.closureId] ?? [];
@@ -1318,22 +1320,25 @@ function runDevelopmentClosure(
     for (const binding of stationProfiles) {
       arguments_.push('--station-profile', binding);
     }
+    const childEnvironment = {
+      ...environment,
+      ...(options.home
+        ? {
+            HOME: options.home,
+            PT_MACHINE_DEV_ROOT: path.join(
+              options.home,
+              '.peers-touch',
+              'dev',
+            ),
+          }
+        : {}),
+    };
+    const leaseStdio = inheritedMachineLeaseStdio(childEnvironment);
     const completed = spawnDevelopmentRunner('python3', arguments_, {
       cwd: workspaceRoot,
       encoding: 'utf8',
-      env: {
-        ...process.env,
-        ...(options.home
-          ? {
-              HOME: options.home,
-              PT_MACHINE_DEV_ROOT: path.join(
-                options.home,
-                '.peers-touch',
-                'dev',
-              ),
-            }
-          : {}),
-      },
+      env: childEnvironment,
+      ...(leaseStdio === null ? {} : { stdio: leaseStdio }),
       maxBuffer: 16 * 1024 * 1024,
     });
     if (completed.error || completed.status !== 0) {
@@ -1359,6 +1364,36 @@ function runDevelopmentClosure(
   } finally {
     rmSync(controlDirectory, { recursive: true, force: true });
   }
+}
+
+function inheritedMachineLeaseStdio(environment) {
+  const rawLeaseFd = environment.PT_MACHINE_LEASE_FD;
+  if (rawLeaseFd === undefined || rawLeaseFd === '') return null;
+  if (!/^[0-9]+$/.test(rawLeaseFd)) {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is invalid',
+    );
+  }
+  const leaseFd = Number(rawLeaseFd);
+  if (!Number.isSafeInteger(leaseFd) || leaseFd < 3) {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is invalid',
+    );
+  }
+  try {
+    fstatSync(leaseFd);
+  } catch {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is not open',
+    );
+  }
+  const stdio = ['ignore', 'pipe', 'pipe'];
+  while (stdio.length <= leaseFd) stdio.push('ignore');
+  stdio[leaseFd] = leaseFd;
+  return stdio;
 }
 
 function validateAggregateReport(report, expectedGates) {
@@ -1926,6 +1961,7 @@ export async function commitFunctionalResult(options, dependencies = {}) {
         dependencies.spawnDevelopmentRunner ?? spawnSync,
         dependencies.inspectSource ?? actualSource,
         dependencies.spawnTaskCheck ?? spawnSync,
+        dependencies.environment ?? process.env,
       );
   let prepared = null;
   return transitionSessionSequenceStore({
