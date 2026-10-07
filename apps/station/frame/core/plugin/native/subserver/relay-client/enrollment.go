@@ -306,7 +306,7 @@ func (s *SubServer) postJSON(
 	if bearer != "" {
 		request.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+	response, err := s.relayHTTPClient(30 * time.Second).Do(request)
 	if err != nil {
 		return fmt.Errorf("Relay request failed: %w", err)
 	}
