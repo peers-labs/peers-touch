@@ -289,10 +289,14 @@
       "when": {
         "paths": [
           "model/domain/peer/access_endpoint.proto",
+          "apps/station/app/subserver/dashboard/handler.go",
+          "apps/station/app/subserver/dashboard/handler_middleware.go",
+          "apps/station/app/subserver/dashboard/subserver.go",
           "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
           "apps/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint/**",
           "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
           "apps/station/frame/core/plugin/native/subserver/relay/domain/discovery.go",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/connection_material.go",
           "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go",
           "tooling/acceptance/features/station-access-endpoint-discovery.yaml",
           "tooling/acceptance/gates/station_access/relay_endpoint_discovery_contract.py"

@@ -37,6 +37,8 @@ def validate_discovery_source_contract() -> None:
             "message AccessEndpointResponse",
             "message StationRouteAttestation",
             "message StationConnectionGrant",
+            "message IssueStationConnectionMaterialRequest",
+            "message IssueStationConnectionMaterialResponse",
         ),
         (
             "apps/station/frame/core/plugin/native/subserver/bootstrap/"
@@ -68,10 +70,34 @@ def validate_discovery_source_contract() -> None:
             "apps/station/frame/core/plugin/native/subserver/relay-client/"
             "connection_material.go"
         ): (
+            "connectionMaterialReady",
+            "ErrConnectionMaterialUnavailable",
             "IssueConnectionMaterial",
             "RegisterStationConnectionGrantRequest",
             "connectionCodePrefix = \"ptc1:\"",
             "proto.MarshalOptions{Deterministic: true}",
+        ),
+        "apps/station/app/subserver/dashboard/handler.go": (
+            'routeRelayConnectionMaterial = "/dashboard/api/relay/connection-material"',
+            "NewStrictTypedHandler",
+            "handleIssueRelayConnectionMaterial",
+            "h.connectionMaterialResponseWrapper()",
+        ),
+        "apps/station/app/subserver/dashboard/handler_middleware.go": (
+            'resp.SetHeader("Cache-Control", "no-store")',
+            'resp.SetHeader("Referrer-Policy", "no-referrer")',
+        ),
+        "apps/station/app/subserver/dashboard/subserver.go": (
+            "relayclient.ConnectionMaterialIssuer",
+            "resolveConnectionMaterialIssuer",
+        ),
+        (
+            "docs/architecture/engineering/api-governance/"
+            "station-api-capabilities.yaml"
+        ): (
+            "/dashboard/api/relay",
+            "access.connection_material.issue",
+            "/dashboard/api/relay/connection-material",
         ),
         (
             "apps/station/frame/core/plugin/native/subserver/relay/handler.go"
@@ -330,6 +356,12 @@ class RelayEndpointDiscoveryGate(AcceptanceGate):
             ),
             "relay_has_typed_empty_directory": (
                 result.get("relay_no_candidates") is True
+            ),
+            "dashboard_connection_material_requires_auth": (
+                result.get("dashboard_auth_required") is True
+            ),
+            "dashboard_connection_material_is_non_cacheable": (
+                result.get("dashboard_sensitive_headers") is True
             ),
         }
         for name, passed in assertions.items():

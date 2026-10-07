@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -24,10 +25,12 @@ type request struct {
 }
 
 type response struct {
-	StationRoleBound  bool `json:"station_role_bound"`
-	RelayRoleBound    bool `json:"relay_role_bound"`
-	ChallengesBound   bool `json:"challenges_bound"`
-	RelayNoCandidates bool `json:"relay_no_candidates"`
+	StationRoleBound          bool `json:"station_role_bound"`
+	RelayRoleBound            bool `json:"relay_role_bound"`
+	ChallengesBound           bool `json:"challenges_bound"`
+	RelayNoCandidates         bool `json:"relay_no_candidates"`
+	DashboardAuthRequired     bool `json:"dashboard_auth_required"`
+	DashboardSensitiveHeaders bool `json:"dashboard_sensitive_headers"`
 }
 
 func main() {
@@ -57,6 +60,8 @@ func main() {
 		relayChallenge,
 		peerpb.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_RELAY,
 	)
+	dashboardAuthRequired, dashboardSensitiveHeaders :=
+		verifyDashboardConnectionMaterial(input.StationURL)
 	payload, err := json.Marshal(response{
 		StationRoleBound: stationStatement.GetEndpointRole() ==
 			peerpb.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_DIRECT_STATION,
@@ -71,6 +76,8 @@ func main() {
 		),
 		RelayNoCandidates: relay.GetOutcome() ==
 			peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_NO_CANDIDATES,
+		DashboardAuthRequired:     dashboardAuthRequired,
+		DashboardSensitiveHeaders: dashboardSensitiveHeaders,
 	})
 	if err != nil {
 		fail("encode discovery probe result")
@@ -122,6 +129,27 @@ func discover(origin string, challenge []byte) *peerpb.AccessEndpointResponse {
 		fail("decode discovery response")
 	}
 	return result
+}
+
+func verifyDashboardConnectionMaterial(origin string) (bool, bool) {
+	request, err := http.NewRequest(
+		http.MethodPost,
+		origin+"/dashboard/api/relay/connection-material",
+		strings.NewReader("{}"),
+	)
+	if err != nil {
+		fail("build Dashboard connection material request")
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		fail("execute Dashboard connection material request")
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
+	return response.StatusCode == http.StatusUnauthorized,
+		response.Header.Get("Cache-Control") == "no-store" &&
+			response.Header.Get("Referrer-Policy") == "no-referrer"
 }
 
 func verify(

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 	"google.golang.org/protobuf/proto"
 )
@@ -167,8 +169,10 @@ func TestIssueConnectionMaterialRegistersGrantBeforeReturningCode(t *testing.T) 
 	defer relayServer.Close()
 
 	subserver := &SubServer{
-		opts:          &Options{RelayURL: relayServer.URL},
-		stationSigner: connectionMaterialSigner{privateKey: privateKey},
+		opts:            &Options{RelayURL: relayServer.URL},
+		status:          server.StatusRunning,
+		enrollmentState: "mounted",
+		stationSigner:   connectionMaterialSigner{privateKey: privateKey},
 	}
 	subserver.setCredential(&cachedMountCredential{
 		Token:         "mount-token",
@@ -263,8 +267,10 @@ func TestIssueConnectionMaterialReturnsNothingWhenGrantRegistrationFails(
 	defer relayServer.Close()
 
 	subserver := &SubServer{
-		opts:          &Options{RelayURL: relayServer.URL},
-		stationSigner: connectionMaterialSigner{privateKey: privateKey},
+		opts:            &Options{RelayURL: relayServer.URL},
+		status:          server.StatusRunning,
+		enrollmentState: "mounted",
+		stationSigner:   connectionMaterialSigner{privateKey: privateKey},
 	}
 	subserver.setCredential(&cachedMountCredential{
 		Token:         "mount-token",
@@ -287,5 +293,69 @@ func TestIssueConnectionMaterialReturnsNothingWhenGrantRegistrationFails(
 	}
 	if material != nil {
 		t.Fatal("connection material escaped before grant registration")
+	}
+}
+
+func TestIssueConnectionMaterialRequiresMountedRelayConnection(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		status          server.Status
+		enrollmentState string
+	}{
+		{
+			name:            "stopped",
+			status:          server.StatusStopped,
+			enrollmentState: "mounted",
+		},
+		{
+			name:            "disconnected",
+			status:          server.StatusStarting,
+			enrollmentState: "reconnecting",
+		},
+		{
+			name:            "running but not mounted",
+			status:          server.StatusRunning,
+			enrollmentState: "connecting",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			subserver := &SubServer{
+				opts:            &Options{RelayURL: "https://relay.invalid"},
+				status:          test.status,
+				enrollmentState: test.enrollmentState,
+			}
+			subserver.setCredential(&cachedMountCredential{
+				Token:         "mount-token",
+				RelayPeerID:   "relay-peer",
+				StationPeerID: "station-peer",
+				MountID:       7,
+				Generation:    3,
+				ExpiresAt: time.Now().Add(time.Hour).UTC().
+					Format(time.RFC3339),
+			})
+
+			material, err := subserver.IssueConnectionMaterial(
+				context.Background(),
+				ConnectionMaterialRequest{
+					InnerTLSSPKISHA256: bytes.Repeat(
+						[]byte{0x51},
+						sha256.Size,
+					),
+					CapabilitiesDigest: bytes.Repeat(
+						[]byte{0x52},
+						sha256.Size,
+					),
+				},
+			)
+			if !errors.Is(err, ErrConnectionMaterialUnavailable) {
+				t.Fatalf(
+					"error = %v, want ErrConnectionMaterialUnavailable",
+					err,
+				)
+			}
+			if material != nil {
+				t.Fatal("connection material escaped an unavailable mount")
+			}
+		})
 	}
 }

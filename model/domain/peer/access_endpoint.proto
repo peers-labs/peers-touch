@@ -86,6 +86,21 @@ message StationConnectionEnvelope {
   StationConnectionGrant connection_grant = 4;
 }
 
+message IssueStationConnectionMaterialRequest {
+  string route_id = 1;
+  bytes inner_tls_spki_sha256 = 2;
+  bytes capabilities_digest = 3;
+  uint32 route_lifetime_seconds = 4;
+  uint32 grant_lifetime_seconds = 5;
+  uint32 max_uses = 6;
+}
+
+message IssueStationConnectionMaterialResponse {
+  string code = 1;
+  string deep_link = 2;
+  int64 expires_at_unix_ms = 3;
+}
+
 message AccessEndpointResponse {
   AccessEndpointOutcome outcome = 1;
   bytes endpoint_statement_bytes = 2;

@@ -395,7 +395,7 @@
       "environment": "station-access-relay-role",
       "provisioner": "station-access-relay-role",
       "tier": "env-evidence",
-      "description": "Prove the shared protobuf discovery endpoint reports challenge-bound signed Station and Relay roles and that route/grant filtering passes its canonical contract."
+      "description": "Prove challenge-bound signed Station and Relay discovery plus the authenticated, non-cacheable Dashboard connection-material issuance boundary."
     },
     "station-access-auth-e2e": {
       "argv": [

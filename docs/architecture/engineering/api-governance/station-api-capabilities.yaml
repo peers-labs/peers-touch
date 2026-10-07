@@ -10,6 +10,7 @@ activation:
 governed_prefixes:
   - /.well-known/peers-touch/access
   - /sub-bootstrap/station-identity
+  - /dashboard/api/relay
   - /api/v1/relay/grants
   - /api/v1/relay/routes
   - /actor/access/
@@ -34,6 +35,8 @@ owner_roots:
     - apps/station/frame/core/plugin/native/subserver/relay/
   station.bootstrap_identity:
     - apps/station/frame/core/plugin/native/subserver/bootstrap/
+  station.dashboard_access:
+    - apps/station/app/subserver/dashboard/
   station.access:
     - apps/station/frame/touch/
   station.conversation:
@@ -117,6 +120,18 @@ capabilities:
     response_proto: peers_touch.model.peer.v1.RegisterStationConnectionGrantResponse
     truth_stores: []
     allowed_dependencies: [relay.mount.verify, relay.route.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.connection_material.issue
+    domain_owner: station.dashboard_access
+    truth_owner: station.route
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/relay/connection-material }
+    request_proto: peers_touch.model.peer.v1.IssueStationConnectionMaterialRequest
+    response_proto: peers_touch.model.peer.v1.IssueStationConnectionMaterialResponse
+    truth_stores: []
+    allowed_dependencies: [relay.route.publish, relay.grant.register]
     forbidden_aliases: []
     superseded_symbols: []
 
