@@ -317,17 +317,38 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "phase": "bound",
                 "bound_url": "https://station.invalid",
             },
-            "scopeState": {
-                "authenticated": True,
-                "bindingPhase": "bound",
-                "actorPtid": "ptid:bob",
-                "deviceId": "desktop-device",
-                "stationPeerId": "station-peer",
-            },
         }
-        station_harness.side_effect = lambda _session, method, *_args, **_kwargs: (
-            events.append(f"station:{method}") or station_results[method]
+        scope_states = iter(
+            (
+                {
+                    "authenticated": False,
+                    "bindingPhase": "binding",
+                    "actorPtid": "",
+                    "deviceId": "",
+                    "stationPeerId": "station-peer",
+                },
+                {
+                    "authenticated": True,
+                    "bindingPhase": "bound",
+                    "actorPtid": "ptid:bob",
+                    "deviceId": "desktop-device",
+                    "stationPeerId": "station-peer",
+                },
+            )
         )
+
+        def station_result(
+            _session: object,
+            method: str,
+            *_args: object,
+            **_kwargs: object,
+        ) -> dict[str, object]:
+            events.append(f"station:{method}")
+            if method == "scopeState":
+                return next(scope_states)
+            return station_results[method]
+
+        station_harness.side_effect = station_result
         chat_harness.side_effect = lambda _session, method, *_args, **_kwargs: (
             events.append(f"chat:{method}")
             or {
@@ -387,6 +408,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "station:identityState",
                 "station:loginWithPassword",
                 "station:bindingState",
+                "station:scopeState",
                 "station:scopeState",
             ],
         )

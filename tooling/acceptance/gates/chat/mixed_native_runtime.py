@@ -373,6 +373,12 @@ class MixedNativeRuntime:
     def actor_fixture(self, client_id: str) -> dict[str, Any]:
         return self._actor_for_client(client_id)
 
+    def mark_desktop_auth_revoked(self, client_id: str) -> None:
+        session = self.desktop_sessions.get(client_id)
+        if session is None:
+            raise GateError(f"Desktop client {client_id!r} is not active")
+        self.desktop_lifecycles.mark_auth_revoked(session)
+
     def desktop_session(self, client_id: str) -> TauriSession | None:
         return self.desktop_sessions.get(client_id)
 
@@ -1512,10 +1518,14 @@ class MixedNativeRuntime:
         if not is_native_tauri_url(session.get_current_url()):
             raise GateError(f"{client_id} is not a native Tauri client")
         self.desktop_sessions[client_id] = session
-        return self._identity_with_device(
-            client_id,
-            expected,
-            runtime="desktop-macos-native",
+        return self.wait_until(
+            lambda: self._pending_identity_with_device(
+                client_id,
+                expected,
+                runtime="desktop-macos-native",
+            ),
+            f"{client_id} active messaging endpoint",
+            timeout_seconds=60.0,
         )
 
     def _start_mobile(
@@ -1720,6 +1730,22 @@ class MixedNativeRuntime:
             federation_id=str(expected.get("federationId") or ""),
             device_id=device_id,
         )
+
+    def _pending_identity_with_device(
+        self,
+        client_id: str,
+        expected: Mapping[str, Any],
+        *,
+        runtime: str,
+    ) -> MixedClientIdentity | None:
+        try:
+            return self._identity_with_device(
+                client_id,
+                expected,
+                runtime=runtime,
+            )
+        except GateError:
+            return None
 
     def _client_spec(self, client_id: str) -> dict[str, Any]:
         spec = self.client_specs.get(client_id)

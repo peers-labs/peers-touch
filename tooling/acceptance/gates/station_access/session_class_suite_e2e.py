@@ -323,6 +323,7 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
                 "predecessor Desktop Session revocation",
                 timeout_seconds=STEP_TIMEOUT,
             )
+            self.runtime.mark_desktop_auth_revoked("desktop-bob")
             self.assert_condition(
                 "desktop_takeover_preserves_mobile",
                 (
