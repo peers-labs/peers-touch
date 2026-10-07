@@ -457,6 +457,12 @@ export interface MobileRuntimeScopeProjection {
     requestCount: number;
     messageThreadCount: number;
   };
+  group: {
+    stationPeerId: string | null;
+    actorPtid: string | null;
+    groupCount: number;
+    messageThreadCount: number;
+  };
   navigation: MobileNavigationProjection;
 }
 
@@ -469,6 +475,7 @@ export interface LifecycleScopeReadOutput {
   deviceId: string | null;
   runtimeStationPeerId: string | null;
   social: MobileRuntimeScopeProjection['social'];
+  group: MobileRuntimeScopeProjection['group'];
   navigation: MobileRuntimeScopeProjection['navigation'];
 }
 

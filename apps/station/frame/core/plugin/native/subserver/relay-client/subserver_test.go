@@ -45,7 +45,7 @@ func TestMakeDispatcherMapsForwardAuthorizationToLocalAuthorization(t *testing.T
 	}
 	status, headers, body, err := sub.makeDispatcher()(context.Background(), &protocol.RequestFrame{
 		Method: http.MethodPost,
-		Path:   "/group-chat/proposal/accept",
+		Path:   "/conversation/proposal/accept",
 		Headers: map[string]string{
 			"Authorization":                       "Bearer relay-token",
 			federation.ForwardAuthorizationHeader: "Bearer peer-jwt",

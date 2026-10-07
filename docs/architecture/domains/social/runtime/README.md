@@ -74,6 +74,6 @@ Peers-Touch 的社交能力需要在 Desktop 与 Mobile 上长期共同演进。
 | `docs/client/mobile/execution-plans/20260603-mobile-social-runtime-closure.md` | Mobile social runtime closure 当前实现计划 |
 | `docs/architecture/platform/client/mobile/` | Mobile Shell runtime graph、descriptor navigation 与 `commandRuntime` 平台映射 |
 | `docs/architecture/platform/client/desktop/runtime.md` | Desktop 多运行单元边界 |
-| `docs/architecture/shared/notification/notification-architecture.md` | 通知系统真源 |
+| `docs/architecture/domains/notification/notification-architecture.md` | 通知系统真源 |
 | `docs/architecture/shared/communication/event-stream.md` | Realtime event stream 真源 |
 | `docs/architecture/domains/chat/encryption/README.md` | 设备级私聊、MLS、投递与恢复设计 |

@@ -173,19 +173,18 @@
 
 ## 4. 按模块同步设计
 
-### 4.1 Chat 同步（Friend Chat + Group Chat）
+### 4.1 Chat 同步（Unified Conversation）
 
 #### 4.1.1 数据结构
 
 | 实体 | Proto 定义 | 说明 |
 | --- | --- | --- |
-| FriendChatSession | `chat.FriendChatSession` | 私聊会话，含双方 DID、未读计数、最后消息 |
-| FriendChatMessage | `chat.FriendChatMessage` | 私聊消息，含状态流转（发送中→已发→已送达→已读） |
-| Group | `chat.Group` | 群组实体，含成员数、类型、可见性 |
-| GroupMessage | `chat.GroupMessage` | 群消息，含 @提醒、回复引用 |
-| GroupMember | `chat.GroupMember` | 群成员，含角色、禁言状态 |
-| MessageEnvelope | `chat.MessageEnvelope` | 消息信封，含加密载荷与签名 |
-| OfflineMessage | `chat.OfflineMessage` | 离线消息暂存 |
+| Conversation | `chat.Conversation` | Direct/Group 统一会话与 authority 元数据 |
+| ConversationMember | `chat.ConversationMember` | 成员、角色、禁言与 Home Station 路由 |
+| ChatCommand | `chat.ChatCommand` | 发送、编辑、撤回、reaction、pin 与成员变更 intent |
+| ConversationEvent | `chat.ConversationEvent` | authority 提交后的有序公共事实 |
+| DurableDeviceInboxItem | `chat.DurableDeviceInboxItem` | 设备级离线/重连投递单元 |
+| DeviceConsumptionReceipt | `chat.DeviceConsumptionReceipt` | projection commit 后的设备消费回执 |
 
 #### 4.1.2 同步方向
 - **双向**：客户端发送消息 → Station 持久化 → Station 推送给接收方。

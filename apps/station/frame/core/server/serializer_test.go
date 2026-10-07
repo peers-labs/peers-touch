@@ -60,13 +60,12 @@ func TestProtoSerializer(t *testing.T) {
 	})
 
 	t.Run("Marshal and Unmarshal", func(t *testing.T) {
-		original := &chat.FriendChatMessage{
-			Ulid:         "01TEST000000000000TEST",
-			SessionUlid:  "01SESSION00000000000",
-			SenderPtid:   "did:sender:123",
-			ReceiverPtid: "did:receiver:456",
-			Content:      "Hello World",
-			Type:         chat.FriendMessageType_FRIEND_MESSAGE_TYPE_TEXT,
+		original := &chat.ChatMessage{
+			Id:         "01TEST000000000000TEST",
+			SessionId:  "01SESSION00000000000",
+			SenderPtid: "did:sender:123",
+			Content:    "Hello World",
+			Type:       chat.MessageType_MESSAGE_TYPE_TEXT,
 		}
 
 		// Marshal
@@ -76,12 +75,12 @@ func TestProtoSerializer(t *testing.T) {
 		}
 
 		// Unmarshal
-		decoded := &chat.FriendChatMessage{}
+		decoded := &chat.ChatMessage{}
 		if err := serializer.Unmarshal(data, decoded); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
-		if decoded.Ulid != original.Ulid || decoded.Content != original.Content {
+		if decoded.Id != original.Id || decoded.Content != original.Content {
 			t.Errorf("Marshal/Unmarshal mismatch: got %+v, want %+v", decoded, original)
 		}
 	})
@@ -106,7 +105,7 @@ func TestProtoSerializer(t *testing.T) {
 			protowire.AppendTag(wire, 1, protowire.BytesType),
 			"second",
 		)
-		if err := strict.Unmarshal(wire, &chat.FriendChatMessage{}); err == nil {
+		if err := strict.Unmarshal(wire, &chat.ChatMessage{}); err == nil {
 			t.Fatal("strict protobuf accepted a duplicate singular field")
 		}
 	})
@@ -121,25 +120,25 @@ func TestProtoSerializer(t *testing.T) {
 			"second",
 		)
 		wire := protowire.AppendBytes(
-			protowire.AppendTag(nil, 7, protowire.BytesType),
+			protowire.AppendTag(nil, 9, protowire.BytesType),
 			attachment,
 		)
-		if err := strict.Unmarshal(wire, &chat.FriendChatMessage{}); err == nil {
+		if err := strict.Unmarshal(wire, &chat.ChatMessage{}); err == nil {
 			t.Fatal("strict protobuf accepted a nested duplicate singular field")
 		}
 	})
 
 	t.Run("strict accepts repeated message fields", func(t *testing.T) {
-		wire, err := proto.Marshal(&chat.FriendChatMessage{
-			Attachments: []*chat.FriendMessageAttachment{
-				{Cid: "first"},
-				{Cid: "second"},
+		wire, err := proto.Marshal(&chat.ChatMessage{
+			Attachments: []*chat.MessageAttachment{
+				{Id: "first"},
+				{Id: "second"},
 			},
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		decoded := &chat.FriendChatMessage{}
+		decoded := &chat.ChatMessage{}
 		if err := strict.Unmarshal(wire, decoded); err != nil {
 			t.Fatal(err)
 		}
@@ -172,7 +171,7 @@ func TestGetSerializerForType(t *testing.T) {
 	}{
 		{
 			name:      "Proto message type",
-			typ:       reflect.TypeOf(&chat.FriendChatMessage{}),
+			typ:       reflect.TypeOf(&chat.ChatMessage{}),
 			wantProto: true,
 		},
 		{

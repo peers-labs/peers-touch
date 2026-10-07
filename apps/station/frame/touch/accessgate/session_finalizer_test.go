@@ -39,12 +39,14 @@ func TestAccessGateSessionDeviceType(t *testing.T) {
 	}
 }
 
-func TestRevokeReplacedAccessGateSessionsOnlyRevokesSameDevice(t *testing.T) {
+func TestRevokeReplacedAccessGateSessionsRevokesSameClassAndPreservesOtherClasses(t *testing.T) {
 	database, err := gorm.Open(
 		sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"),
 		&gorm.Config{},
 	)
 	require.NoError(t, err)
+	require.NoError(t, database.Exec("CREATE TABLE touch_actor (id INTEGER PRIMARY KEY)").Error)
+	require.NoError(t, database.Exec("INSERT INTO touch_actor(id) VALUES (?), (?)", 41, 42).Error)
 	require.NoError(t, database.AutoMigrate(&session.SessionRecord{}))
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -63,14 +65,14 @@ func TestRevokeReplacedAccessGateSessionsOnlyRevokesSameDevice(t *testing.T) {
 	require.NoError(t, revokeReplacedAccessGateSessions(
 		database,
 		41,
-		"desktop-device",
+		session.DeviceTypeDesktop,
 		"desktop-current",
 		now.Add(time.Minute),
 	))
 
 	assertAccessGateSessionState(t, database, "desktop-old", true, "kicked")
 	assertAccessGateSessionState(t, database, "desktop-current", false, "")
-	assertAccessGateSessionState(t, database, "desktop-other", false, "")
+	assertAccessGateSessionState(t, database, "desktop-other", true, "kicked")
 	assertAccessGateSessionState(t, database, "mobile-other", false, "")
 	assertAccessGateSessionState(t, database, "other-actor", false, "")
 	assertAccessGateSessionState(t, database, "already-revoked", true, "logout")

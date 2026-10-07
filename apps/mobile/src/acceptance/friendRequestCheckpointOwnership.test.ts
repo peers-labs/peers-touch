@@ -15,6 +15,7 @@ vi.mock('../runtimes/commandRuntime', () => ({
 import {
   bindMobileMutationAdmission,
   bindMobileSessionMutationAdmission,
+  mobileMutationScopeKey,
 } from '../runtimes/mutationAdmission';
 import {
   socialFriendRequestAccept,
@@ -28,7 +29,12 @@ const account = {
   deviceId: 'device-alice',
   lifecycleGeneration: 1,
 };
-const scopeKey = 'station-a|ptid:alice|device-alice|1';
+const scopeKey = mobileMutationScopeKey(
+  account.stationPeerId,
+  account.actorPtid,
+  account.deviceId,
+  account.lifecycleGeneration,
+);
 const decision = {
   ...account,
   requestId: 'request-1',

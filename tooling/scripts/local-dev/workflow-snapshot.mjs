@@ -32,6 +32,11 @@ import { resolvePlanExecution } from '../plan/plan-mount.mjs';
 import { summarizeExecutionProgress } from '../plan/planctl.mjs';
 import { readAllWorktreeObservations } from './worktree-observation-store.mjs';
 import { discoverGitWorktrees } from './worktree-discovery.mjs';
+import { readWorkflowOwnerReferences } from './workflow-binding-store.mjs';
+import { readAllWorktreeCreations } from './worktree-create.mjs';
+import {
+  sameWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 const PROFILE_FIELDS = new Set([
   'PT_DEV_PROFILE',
@@ -199,6 +204,7 @@ function safeSession(session) {
     state: session.state.state ?? null,
     updatedAt: session.state.updatedAt ?? null,
     eventDigest: session.eventDigest ?? null,
+    workflowOwner: session.state.workflowOwner ?? null,
     lastVerification: session.state.lastVerification
       ? {
           verificationClass:
@@ -352,6 +358,9 @@ function unavailablePlan(status, locator = {}, errorCode = null) {
     status,
     locatorSource: locator.locatorSource ?? null,
     planId: locator.planId ?? null,
+    planDigest: null,
+    amendmentCount: 0,
+    latestAmendment: null,
     taskId: locator.taskId ?? null,
     planStatus: null,
     currentTaskId: null,
@@ -465,7 +474,7 @@ export async function resolveDeclarationPlan(
     workspaceId: declaration.workspaceId,
     branch: declaration.branch,
     declarationSourceHead: declaration.sourceHead,
-    planVersionDigest: declaration.planVersionDigest,
+    planDigest: declaration.planDigest,
     mountId: declaration.mountId,
     runId: declaration.runId,
     mountedPlanId: locator.planId,
@@ -477,7 +486,7 @@ export async function resolveDeclarationPlan(
     workspaceId: mountedExecution.snapshot.executionBinding.workspaceId,
     branch: mountedExecution.snapshot.executionBinding.branch,
     declarationSourceHead: actualHead.ok ? actualHead.output : null,
-    planVersionDigest: mountedExecution.mount.planVersionDigest,
+    planDigest: mountedExecution.snapshot.planDigest,
     mountId: mountedExecution.mount.mountId,
     runId: mountedExecution.run.runId,
     mountedPlanId: mountedExecution.mount.planId,
@@ -499,6 +508,10 @@ export async function resolveDeclarationPlan(
     status: 'available',
     locatorSource: locator.locatorSource,
     planId: locator.planId,
+    planDigest: mountedExecution.snapshot.planDigest,
+    amendmentCount: mountedExecution.snapshot.amendmentCount,
+    latestAmendment:
+      mountedExecution.snapshot.plan.amendments.at(-1) ?? null,
     taskId: locator.taskId,
     planStatus: mountedExecution.run.state,
     currentTaskId,
@@ -601,6 +614,7 @@ function safeRegistration(registration) {
     resetPolicy: registration.resetPolicy ?? null,
     profileState: registration.profileState ?? 'blocked',
     profileError: registration.profileError ?? null,
+    createdBy: registration.createdBy ?? null,
   };
 }
 
@@ -615,11 +629,13 @@ function safeDeclaration(declaration) {
     purpose: declaration.purpose,
     journeyId: declaration.journeyId,
     planId: declaration.planId ?? null,
+    planDigest: declaration.planDigest ?? null,
     taskId: declaration.taskId ?? null,
     state: declaration.state,
     heartbeatAt: declaration.heartbeatAt ?? null,
     expiresAt: declaration.expiresAt,
     runtimeClaims: declaration.runtimeClaims,
+    workflowOwner: declaration.workflowOwner ?? null,
   };
 }
 
@@ -641,6 +657,7 @@ function safeActiveWork(record) {
     expectedHead: record.expectedHead,
     revision: record.revision,
     updatedAt: record.updatedAt,
+    workflowOwner: record.workflowOwner ?? null,
   };
 }
 
@@ -836,6 +853,7 @@ export function workflowProjection({
   freshness,
   activeWork,
   workspaceId,
+  workflowOwner = null,
   options,
 }) {
   const primary =
@@ -962,18 +980,25 @@ export function workflowProjection({
         plan?.status === 'available'
           ? {
               id: plan.planId,
+              digest: plan.planDigest,
+              amendmentCount: plan.amendmentCount,
+              latestAmendment: plan.latestAmendment,
               status: plan.planStatus,
               progress: plan.progress,
             }
           : activeWork
             ? {
                 id: activeWork.planId,
+                digest: primary?.planDigest ?? null,
+                amendmentCount: null,
+                latestAmendment: null,
                 status: activeWork.planStatus,
                 progress: null,
               }
             : null,
       task: plan?.task ?? fallbackTask(activeWork, review),
       session,
+      owner: workflowOwner,
       review,
       action: agentActivity,
       findings,
@@ -994,6 +1019,9 @@ export function deriveWorktrees(
   checkedAt = new Date().toISOString(),
   discoveryAvailable = true,
   projectionOptions = {},
+  ownerBindings = [],
+  worktreeCreations = [],
+  worktreeCreationErrors = [],
 ) {
   const profileByName = new Map(
     profiles.map((profile) => [profile.name, profile]),
@@ -1011,6 +1039,18 @@ export function deriveWorktrees(
   );
   const observationErrorByWorkspace = new Map(
     observationErrors.map((error) => [error.workspaceId, error]),
+  );
+  const ownerBindingsByWorkspace = new Map();
+  for (const record of ownerBindings) {
+    const current = ownerBindingsByWorkspace.get(record.workspaceId) ?? [];
+    current.push(record);
+    ownerBindingsByWorkspace.set(record.workspaceId, current);
+  }
+  const creationByWorkspace = new Map(
+    worktreeCreations.map((record) => [record.workspaceId, record]),
+  );
+  const creationErrorByWorkspace = new Map(
+    worktreeCreationErrors.map((error) => [error.workspaceId, error]),
   );
   const visibleDeclarations = declarations.filter((declaration) =>
     VISIBLE_DECLARATION_STATES.has(declaration.state),
@@ -1034,7 +1074,6 @@ export function deriveWorktrees(
   for (const error of observationErrors) {
     workspaceIds.add(error.workspaceId);
   }
-
   const slotOwners = new Map();
   for (const registration of registrations) {
     if (!Number.isInteger(registration.slot)) continue;
@@ -1050,6 +1089,10 @@ export function deriveWorktrees(
       const observation = observationByWorkspace.get(workspaceId) ?? null;
       const observationError =
         observationErrorByWorkspace.get(workspaceId) ?? null;
+      const creation = creationByWorkspace.get(workspaceId) ?? null;
+      const creationError = creationErrorByWorkspace.get(workspaceId) ?? null;
+      const workspaceOwnerBindings =
+        ownerBindingsByWorkspace.get(workspaceId) ?? [];
       const work = visibleDeclarations.filter(
         (declaration) => declaration.workspaceId === workspaceId,
       );
@@ -1088,6 +1131,44 @@ export function deriveWorktrees(
         (slotOwners.get(registration.slot)?.length ?? 0) > 1
       ) {
         issues.push('LOCAL_SLOT_CONFLICT');
+      }
+      if (creationError) {
+        issues.push(creationError.code);
+      }
+      if (
+        creation?.createdBy &&
+        registration?.createdBy &&
+        !sameWorkflowOwnerReference(
+          creation.createdBy,
+          registration.createdBy,
+        )
+      ) {
+        issues.push('WORKTREE_CREATION_OWNER_MISMATCH');
+      }
+      const stateOwnerCandidates = [
+        ...liveWork.map((declaration) => declaration.workflowOwner),
+        activeWork?.workflowOwner,
+      ].filter(Boolean);
+      const hasCurrentWork = liveWork.length > 0 || activeWork !== null;
+      const ownerCandidates =
+        hasCurrentWork
+          ? stateOwnerCandidates
+          : workspaceOwnerBindings
+              .filter((record) => !record.released)
+              .map((record) => record.workflowOwner)
+              .filter(Boolean);
+      const ownerByDigest = new Map(
+        ownerCandidates.map((owner) => [owner.rootBindingDigest, owner]),
+      );
+      const workflowOwner =
+        ownerByDigest.size === 1 ? [...ownerByDigest.values()][0] : null;
+      if (ownerByDigest.size > 1) {
+        issues.push('WORKFLOW_OWNER_MISMATCH');
+      } else if (
+        workflowOwner === null &&
+        hasCurrentWork
+      ) {
+        issues.push('WORKFLOW_OWNER_SESSION_MISSING');
       }
 
       const environmentState =
@@ -1149,6 +1230,7 @@ export function deriveWorktrees(
         freshness,
         activeWork,
         workspaceId,
+        workflowOwner,
         options: {
           ...projectionOptions,
           now: projectionOptions.now ?? new Date(checkedAt),
@@ -1158,6 +1240,9 @@ export function deriveWorktrees(
       return {
         workspaceId,
         name: discovery?.name ?? observation?.name ?? registration?.name ?? null,
+        creation,
+        createdBy: creation?.createdBy ?? null,
+        workflowOwner,
         activeWork: activeWork ? safeActiveWork(activeWork) : null,
         git: discovery
           ? {
@@ -1200,6 +1285,7 @@ export function deriveWorktrees(
           state: declaration.state,
           expiresAt: declaration.expiresAt,
           plan: declaration.plan,
+          workflowOwner: declaration.workflowOwner ?? null,
         })),
         environment: {
           profile: profileName,
@@ -1298,6 +1384,17 @@ export async function buildDevSnapshot(options = {}) {
     readAllActiveWorkRecords({
       home: options.home,
     });
+  const ownerBindings =
+    options.ownerBindings ??
+    readWorkflowOwnerReferences({
+      home: options.home,
+      machineRoot: options.machineRoot,
+    });
+  const worktreeCreations =
+    options.worktreeCreations ??
+    readAllWorktreeCreations({
+      home: options.home,
+    });
   const rawRegistrations = machine.registrations ?? [];
   const registrations = rawRegistrations.map(safeRegistration);
   const rawRegistrationByWorkspace = new Map(
@@ -1347,7 +1444,17 @@ export async function buildDevSnapshot(options = {}) {
       now,
       readActions: options.readActions,
     },
+    ownerBindings.records,
+    worktreeCreations.records,
+    worktreeCreations.errors,
   );
+  const ownerBindingFindings = ownerBindings.errors.map((error) => ({
+    workspaceId: null,
+    code: error.code,
+    message: error.message,
+    owner: 'workflow-owner',
+    severity: 'error',
+  }));
   const occupancy = deriveOccupancy(
     profiles,
     registrations,
@@ -1357,7 +1464,9 @@ export async function buildDevSnapshot(options = {}) {
   const continuations = worktrees.map(
     (worktree) => worktree.workflow.continuation,
   );
-  const continuation = continuations.includes('HARD_BLOCK')
+  const continuation =
+    ownerBindingFindings.length > 0 ||
+    continuations.includes('HARD_BLOCK')
     ? 'HARD_BLOCK'
     : continuations.length > 0 &&
         continuations.every((value) => value === 'COMPLETE')
@@ -1377,13 +1486,21 @@ export async function buildDevSnapshot(options = {}) {
       ...finding,
     })),
   );
+  findings.push(...ownerBindingFindings);
+  const aggregateVerdict = findings.some(
+    (finding) => finding.severity === 'error',
+  )
+    ? verdict === 'DRIFT'
+      ? 'DRIFT'
+      : 'BLOCKED'
+    : verdict;
   const snapshot = {
     kind: 'peers-touch-dev-snapshot',
     observedAt: now.toISOString(),
     server: options.server ?? null,
     serverFreshness: options.serverFreshness ?? null,
     authority: machine.authority ?? 'missing',
-    verdict,
+    verdict: aggregateVerdict,
     continuation,
     findings,
     discovery: {
@@ -1399,6 +1516,8 @@ export async function buildDevSnapshot(options = {}) {
       records: activeWork.records.map(safeActiveWork),
       errors: activeWork.errors,
     },
+    workflowOwners: ownerBindings,
+    worktreeCreations,
     activeLeases,
     staleLeaseCount: (machine.staleLeaseMetadata ?? []).length,
     unregisteredObservationCount: machine.unregisteredObservations ? 1 : 0,

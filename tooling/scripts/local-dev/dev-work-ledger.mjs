@@ -47,6 +47,10 @@ import {
 } from './workspace-lifecycle-lock.mjs';
 import { assertDevelopmentCloseAdmission } from './development-close-store.mjs';
 import { readActiveWorkRecord } from './active-work-store.mjs';
+import {
+  assertMatchingWorkflowOwner as assertPolicyOwnerMatch,
+  requireWorkflowOwnerReference as requirePolicyOwner,
+} from './workflow-owner-command-policy.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
 const WORKSPACE_ID = /^[0-9a-f]{16}$/;
@@ -112,6 +116,30 @@ const ATOMIC_RENAME_SCRIPT = [
 function exactKeys(value, keys) {
   const actual = Object.keys(value);
   return actual.length === keys.size && actual.every((key) => keys.has(key));
+}
+
+function requireWorkflowOwner(value, detail = {}) {
+  try {
+    return requirePolicyOwner(value, detail);
+  } catch (error) {
+    fail(
+      'WORK_DECLARATION_OWNER_REQUIRED',
+      'development declaration requires a workflow OWNER',
+      error.detail,
+    );
+  }
+}
+
+function assertWorkflowOwnerMatch(expected, actual, detail = {}) {
+  try {
+    return assertPolicyOwnerMatch(expected, actual, detail);
+  } catch (error) {
+    fail(
+      'WORK_DECLARATION_OWNER_MISMATCH',
+      'workflow OWNER does not own declaration',
+      error.detail,
+    );
+  }
 }
 
 function toOperationDate(options = {}) {
@@ -597,6 +625,17 @@ function acquireLock(
   }
 }
 
+export function acquireDevelopmentWorkLedgerLock(options = {}) {
+  const home = options.home ?? homedir();
+  const lockFile = options.lockPath ?? developmentWorkLockPath(home);
+  ensurePrivateDirectory(path.dirname(lockFile));
+  return acquireLock(
+    lockFile,
+    options.lockTimeoutMs,
+    toOperationDate(options),
+  );
+}
+
 function writeLedgerAtomic(file, ledger) {
   const directory = path.dirname(file);
   ensurePrivateDirectory(directory);
@@ -854,7 +893,7 @@ function resolvePlanLocator(options, existing, identity) {
     return {
       planPath: null,
       planId: null,
-      planVersionDigest: null,
+      planDigest: null,
       mountId: null,
       runId: null,
       taskId: null,
@@ -901,9 +940,9 @@ function resolvePlanLocator(options, existing, identity) {
     ['mountedPlanId', normalizedPlanId, execution.mount.planId],
     ['mountedPlanPath', normalizedPlanPath, execution.mount.planPath],
     [
-      'planVersionDigest',
-      status.planVersionDigest,
-      execution.mount.planVersionDigest,
+      'planDigest',
+      status.planDigest,
+      execution.snapshot.planDigest,
     ],
     ['mountId', status.mountId, execution.mount.mountId],
     ['runId', status.runId, execution.run.runId],
@@ -920,7 +959,6 @@ function resolvePlanLocator(options, existing, identity) {
   }
   if (existingHasLocator) {
     for (const [field, actual] of [
-      ['planVersionDigest', status.planVersionDigest],
       ['mountId', status.mountId],
       ['runId', status.runId],
     ]) {
@@ -940,7 +978,7 @@ function resolvePlanLocator(options, existing, identity) {
   return {
     planPath: normalizedPlanPath,
     planId: normalizedPlanId,
-    planVersionDigest: status.planVersionDigest,
+    planDigest: status.planDigest,
     mountId: status.mountId,
     runId: status.runId,
     taskId: normalizedTaskId,
@@ -982,6 +1020,18 @@ function buildDeclaration(options, existing, now) {
     branch,
     sourceHead,
   });
+  const suppliedWorkflowOwner = requireWorkflowOwner(
+    options.workflowOwner,
+    { record: 'development declaration' },
+  );
+  const workflowOwner =
+    existing === null || existing === undefined
+      ? suppliedWorkflowOwner
+      : assertWorkflowOwnerMatch(
+          existing.workflowOwner,
+          suppliedWorkflowOwner,
+          { record: 'development declaration' },
+        );
   const declaration = {
     declarationId: declarationId(workItemId, workspaceId),
     workItemId,
@@ -1002,10 +1052,11 @@ function buildDeclaration(options, existing, now) {
     runtimeClaims,
     planPath: null,
     planId: null,
-    planVersionDigest: null,
+    planDigest: null,
     mountId: null,
     runId: null,
     taskId: null,
+    workflowOwner,
   };
   if (planLocator !== null) Object.assign(declaration, planLocator);
   declaration.declarationDigest = digestDeclaration(declaration);
@@ -1020,7 +1071,12 @@ function mutateLedgerUnderFence(options, mutation) {
   const now = toOperationDate(options);
   ensurePrivateDirectory(path.dirname(file));
   ensurePrivateDirectory(path.dirname(lockFile));
-  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
+  const release = acquireDevelopmentWorkLedgerLock({
+    ...options,
+    home,
+    lockPath: lockFile,
+    now,
+  });
   try {
     const ledger = readLedger(file, now);
     reconcileExpired(ledger, now);
@@ -1084,7 +1140,12 @@ function inspectLedger(options, inspection) {
   const now = toOperationDate(options);
   ensurePrivateDirectory(path.dirname(file));
   ensurePrivateDirectory(path.dirname(lockFile));
-  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
+  const release = acquireDevelopmentWorkLedgerLock({
+    ...options,
+    home,
+    lockPath: lockFile,
+    now,
+  });
   try {
     const ledger = readLedger(file, now);
     reconcileExpired(ledger, now);
@@ -1220,6 +1281,11 @@ function ownedDeclaration(options, ledger) {
       actual: options.owner,
     });
   }
+  assertWorkflowOwnerMatch(
+    declaration.workflowOwner,
+    options.workflowOwner,
+    { declarationId: id },
+  );
   return declaration;
 }
 
@@ -1323,7 +1389,7 @@ export function checkDeclaration(options) {
           ...options,
           planPath: declaration.planPath,
           planId: declaration.planId,
-          planVersionDigest: declaration.planVersionDigest,
+          planDigest: declaration.planDigest,
           mountId: declaration.mountId,
           runId: declaration.runId,
           taskId: declaration.taskId,

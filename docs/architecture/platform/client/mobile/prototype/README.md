@@ -62,7 +62,7 @@ Owner confirmation covers the current Social UI and interaction behavior only.
 | Shell tabs and tabbar badge behavior | `apps/mobile/src/components/MobileShell.tsx` |
 | Chat list, thread, action surface boundaries | `apps/mobile/src/pages/ChatPage.tsx` |
 | Friend conversation projection | `apps/mobile/src/features/social/socialProjection.ts` |
-| Group conversation projection | `apps/mobile/src/features/group/groupProjection.ts` |
+| Group conversation projection | `apps/mobile/src/features/social/socialStore.ts`, `apps/mobile/src/runtimes/messagingRuntime.ts` |
 | Find people and create group | `apps/mobile/src/pages/ContactsPage.tsx` |
 | Access gate launch state | `apps/mobile/src/App.tsx`, `apps/mobile/src/features/auth/AccessGateHost.tsx` |
 | OAuth progress and recovery | MS-C03 / MS-J01 / MS-PA03 / MS-PA25 |

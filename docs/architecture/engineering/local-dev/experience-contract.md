@@ -29,9 +29,11 @@ Browser，也不持有刷新状态。
 4. observation、registration、declaration、Session 和 Git 的独立时间戳。
 5. typed findings、workflow verdict 与 Plan Run decision。
 
-Git discovery 是当前 branch/HEAD 的唯一投影来源。registration、
-declaration、active-work、Session 和 observation 只能提供各自拥有的事实，
-不得覆盖 Git 身份或互相修复。
+Git discovery 是当前 branch/HEAD 的唯一投影来源。Worktree creation
+provenance 提供 `createdBy.rootChatId`，当前 OWNER binding、registration、
+declaration、active-work 和 Session 提供 `workflowOwner.rootChatId`。这些
+owner 只能提供各自拥有的事实，不得覆盖 Git 身份或互相修复；Git actor
+也不得替代主会话身份。
 
 ## 3. State Vocabulary
 
@@ -67,6 +69,8 @@ Snapshot 保留每个 owner 的独立时钟：
   declaration、active-work、registry、profile 或 lease。
 - 单个损坏记录产生 typed finding，不抑制其他 worktree。
 - 输出不包含 canonical root、凭据、日志正文、产品数据或 Acceptance payload。
+  主会话 ID 是本机工作流关联标识，不是 credential；仅从权限为 `0600` 的
+  owner state 投影。
 - worktree observation 只用于诊断，不注册 workspace、不选择 Plan、不证明运行。
 - Snapshot 不提供删除 worktree、分配 profile、部署、重置或启动 runtime 的操作。
 

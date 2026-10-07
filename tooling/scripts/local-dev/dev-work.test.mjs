@@ -34,6 +34,10 @@ import {
   parseRuntimeClaims,
   RUNTIME_KINDS,
 } from './dev-work-schema.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
 const CANONICAL_RUNTIME_KINDS = [
@@ -93,6 +97,7 @@ function options(scope, overrides = {}) {
       'exclusive-write:tooling/scripts/local-dev;shared-read:docs/architecture',
     runtimeClaims: 'shared:station.connect:station-four',
     planExecution: null,
+    workflowOwner: workflowOwner(),
     clock: clock(),
     ...overrides,
   };
@@ -104,6 +109,17 @@ function expectCode(code, operation) {
     assert.equal(error.code, code);
     return true;
   });
+}
+
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
 }
 
 test('resolves a stable process-start identity for the current platform', () => {
@@ -142,6 +158,51 @@ test('publishes a closed declaration with owner-only storage', () => {
   }
 });
 
+test('persists the verified main-session owner on a declaration', () => {
+  const scope = fixture();
+  try {
+    const owner = workflowOwner();
+    const declaration = startOrUpdateDeclaration(
+      options(scope, { workflowOwner: owner }),
+    );
+    assert.deepEqual(declaration.workflowOwner, owner);
+    assert.deepEqual(
+      statusCurrent({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        clock: clock(),
+      }).declarations[0].workflowOwner,
+      owner,
+    );
+    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
+      startOrUpdateDeclaration(
+        options(scope, {
+          workflowOwner: {
+            ...owner,
+            rootBindingDigest: 'b'.repeat(64),
+          },
+        }),
+        { requireExisting: true },
+      ),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('rejects a new declaration without a verified workflow OWNER', () => {
+  const scope = fixture();
+  try {
+    expectCode('WORK_DECLARATION_OWNER_REQUIRED', () =>
+      startOrUpdateDeclaration(
+        options(scope, { workflowOwner: null }),
+      ),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('publishes and validates an explicit closed Plan locator', () => {
   const scope = fixture();
   try {
@@ -150,7 +211,7 @@ test('publishes and validates an explicit closed Plan locator', () => {
       currentTaskId: 'DWF-T1',
       workspaceId: 'unused',
       branch: 'merge-desktop-prototype',
-      planVersionDigest: 'a'.repeat(64),
+      planDigest: 'a'.repeat(64),
       mountId: 'mount-test',
       runId: 'run-test',
       status: 'active',
@@ -161,10 +222,10 @@ test('publishes and validates an explicit closed Plan locator', () => {
       mount: {
         planId: planStatus.planId,
         planPath: 'docs/architecture/example/execution-plans/test/plan.md',
-        planVersionDigest: planStatus.planVersionDigest,
         mountId: planStatus.mountId,
       },
       run: { runId: planStatus.runId },
+      snapshot: { planDigest: planStatus.planDigest },
     };
     const legacy = statusCurrent({
       home: scope.home,
@@ -199,6 +260,25 @@ test('publishes and validates an explicit closed Plan locator', () => {
         taskId: 'DWF-T1',
       },
     );
+    planStatus.planDigest = 'b'.repeat(64);
+    planExecution.snapshot.planDigest = planStatus.planDigest;
+    const amended = startOrUpdateDeclaration(
+      options(scope, {
+        workItemId: 'tracked-task',
+        sessionId: 'tracked-session',
+        sourceClaims: 'exclusive-write:apps/desktop',
+        runtimeClaims: '',
+        planPath: tracked.planPath,
+        planId: tracked.planId,
+        taskId: tracked.taskId,
+        planStatus,
+        planExecution,
+      }),
+      { requireExisting: true },
+    );
+    assert.equal(amended.planDigest, planStatus.planDigest);
+    assert.equal(amended.mountId, tracked.mountId);
+    assert.equal(amended.runId, tracked.runId);
     const delivery = startOrUpdateDeclaration(
       options(scope, {
         workItemId: 'tracked-task',
@@ -561,6 +641,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
         home: scope.home,
         workspaceRoot: currentRepo,
         workItemId: 'dwf-b1',
+        workflowOwner: workflowOwner(),
         clock: clock(),
       }),
     );
@@ -569,6 +650,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
       workspaceRoot: currentRepo,
       workItemId: 'dwf-b1',
       sessionId: 'session-a',
+      workflowOwner: workflowOwner(),
       clock: clock('2026-09-16T12:00:10.000Z'),
     });
     assert.equal(active.state, 'ACTIVE');
@@ -577,6 +659,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
       workspaceRoot: currentRepo,
       workItemId: 'dwf-b1',
       sessionId: 'session-a',
+      workflowOwner: workflowOwner(),
       expiresMinutes: 10,
       clock: clock('2026-09-16T12:00:30.000Z'),
     });
@@ -587,6 +670,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
         workspaceRoot: currentRepo,
         workItemId: 'dwf-b1',
         sessionId: 'other-session',
+        workflowOwner: workflowOwner(),
         clock: clock('2026-09-16T12:01:00.000Z'),
       }),
     );
@@ -596,6 +680,7 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
         workspaceRoot: currentRepo,
         workItemId: 'dwf-b1',
         sessionId: 'session-a',
+        workflowOwner: workflowOwner(),
         clock: clock('2026-09-16T12:01:00.000Z'),
       }).state,
       'RELEASED',
@@ -649,6 +734,7 @@ test('activation rejects branch and source identity drift', () => {
         workspaceRoot: currentRepo,
         workItemId: 'dwf-b1',
         sessionId: 'session-a',
+        workflowOwner: workflowOwner(),
         clock: clock(),
       }),
     );

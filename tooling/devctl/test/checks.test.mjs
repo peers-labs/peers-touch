@@ -28,7 +28,6 @@ function fixtureRoot(t) {
     'apps/mobile/src/pages',
     'apps/mobile/src/components',
     'apps/mobile/src/features/social',
-    'apps/mobile/src/features/group',
     'apps/mobile/src-tauri/src',
   ]) {
     fs.mkdirSync(path.join(root, directory), { recursive: true });
@@ -41,12 +40,17 @@ function fixtureRoot(t) {
   write(
     root,
     'apps/desktop/src/services/socialRealtime.ts',
-    'import { fromBinary } from "proto";\nFriendChatMessageSchema;\nGroupMessageSchema;\n',
+    'export function refreshSocialProjection() {}\n',
+  );
+  write(
+    root,
+    'apps/desktop/src/services/messagingRealtime.ts',
+    'import { fromBinary } from "proto";\nChatMessageSchema;\n',
   );
   write(
     root,
     'apps/mobile/src/features/social/socialWire.ts',
-    'StreamEventSchema;\nFriendChatMessageSchema;\nGroupMessageSchema;\n',
+    'StreamEventSchema;\n',
   );
   return root;
 }

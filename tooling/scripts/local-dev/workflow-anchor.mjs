@@ -52,6 +52,7 @@ function anchorBody(binding, inspection) {
     `- **Execution horizon**: ${next}`,
     `- **Current closure / state**: ${field(state)}`,
     `- **Worktree / branch / workspace**: ${path.basename(binding.executionRoot)} (<repo-root>) / ${field(inspection.branch)} / ${binding.workspaceId}`,
+    `- **Main session**: ${field(inspection.declaration?.workflowOwner?.host)}:${field(inspection.declaration?.workflowOwner?.rootChatId)}`,
     `- **Initial HEAD**: ${field(inspection.planPackage?.manifest?.binding?.initialHead)}`,
     `- **Expected / verified HEAD**: ${field(inspection.head)}`,
     `- **Progress**: ${progress.completed}/${progress.total} Task closures (${progress.percentage}%)`,

@@ -125,6 +125,27 @@ interface RemoveGroupMemberInput {
   memberPtid: string;
 }
 
+interface UpdateGroupInput {
+  groupUlid: string;
+  name?: string;
+  description?: string;
+}
+
+interface UpdateGroupMemberInput {
+  groupUlid: string;
+  memberPtid: string;
+  role?: number;
+  muted?: boolean;
+}
+
+interface GroupLifecycleInput {
+  groupUlid: string;
+}
+
+interface TransferGroupOwnershipInput extends GroupLifecycleInput {
+  memberPtid: string;
+}
+
 interface AddFederatedGroupMemberInput {
   groupUlid: string;
   member: GroupChatFederatedActorInput;
@@ -1004,6 +1025,64 @@ export function installAcceptanceHarness(): void {
         groupUlid,
         success: true,
         memberPtid,
+      };
+    },
+
+    async updateGroup({ groupUlid, name, description }: UpdateGroupInput) {
+      return imServiceV1.messaging.updateConversation(groupUlid, {
+        ...(name !== undefined ? { name } : {}),
+        ...(description !== undefined ? { description } : {}),
+      });
+    },
+
+    async updateGroupMember({
+      groupUlid,
+      memberPtid,
+      role,
+      muted,
+    }: UpdateGroupMemberInput) {
+      return imServiceV1.messaging.updateMemberAuthority(
+        groupUlid,
+        memberPtid,
+        {
+          ...(role !== undefined ? { role } : {}),
+          ...(muted !== undefined ? { muted } : {}),
+        },
+      );
+    },
+
+    async transferGroupOwnership({
+      groupUlid,
+      memberPtid,
+    }: TransferGroupOwnershipInput) {
+      return imServiceV1.messaging.transferOwnership(groupUlid, memberPtid);
+    },
+
+    async leaveGroup({ groupUlid }: GroupLifecycleInput) {
+      return imServiceV1.messaging.leaveConversation(groupUlid);
+    },
+
+    async dissolveGroup({ groupUlid }: GroupLifecycleInput) {
+      return imServiceV1.messaging.dissolveConversation(groupUlid);
+    },
+
+    async groupLifecycleSnapshot({ groupUlid }: GroupLifecycleInput) {
+      const conversation = (await imServiceV1.messaging.listConversations())
+        .find((item) => item.conversationId === groupUlid);
+      if (!conversation) return null;
+      return {
+        groupUlid,
+        active: conversation.active,
+        name: conversation.name,
+        ownerPtid: conversation.ownerPtid,
+        membershipEpoch: conversation.membershipEpoch,
+        mlsEpoch: conversation.mlsEpoch,
+        members: conversation.members.map((member) => ({
+          ptid: member.ptid,
+          role: member.role,
+          muted: member.muted,
+          memberStatus: member.memberStatus,
+        })),
       };
     },
 

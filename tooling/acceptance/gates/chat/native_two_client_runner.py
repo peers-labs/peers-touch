@@ -116,13 +116,13 @@ REQUIRED_ASSERTIONS = {
 }
 CURRENT_PROFILE_REQUIRED_ASSERTIONS = {
     "current_profile_cross_worktree",
-    "current_profile_group_chat_initiator",
+    "current_profile_group_initiator",
     "current_profile_persistent_device_state",
 }
 SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS = {
     "source_build_runtime_identity",
     "current_profile_cross_worktree",
-    "current_profile_group_chat_initiator",
+    "current_profile_group_initiator",
     "current_profile_persistent_device_state",
     "native_runtime",
     "actor_isolation",
@@ -1666,7 +1666,7 @@ class NativeTwoClientGate(AcceptanceGate):
                     json.dumps(topology, sort_keys=True),
                 )
                 self.assert_condition(
-                    "current_profile_group_chat_initiator",
+                    "current_profile_group_initiator",
                     self.direction_order[0] == CURRENT_PROFILE_INITIAL_SENDER
                     and topology[self.direction_order[0]]["logicalName"]
                     == "peers-group-chat",

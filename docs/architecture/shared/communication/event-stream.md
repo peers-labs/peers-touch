@@ -6,7 +6,7 @@
 > mobile client and its home Station. Covers text messaging, presence,
 > typing, read receipts, future voice/video signaling, and future
 > server-to-server federation. Does **not** cover the file plane (see
-> `docs/architecture/shared/object-storage.md`).
+> `docs/architecture/platform/station/object-storage.md`).
 >
 > API ownership: Conversation is the sole Chat business entry point under
 > `/conversation/*`. Device delivery, device identity, recovery, key exchange,
@@ -617,7 +617,7 @@ an internal subsystem, or an inbound federated POST.
 
 Authentication, replay protection, and cross-station event_id
 namespacing for the federation channel are out of scope for this doc
-and will be specified in `docs/architecture/shared/federation/...` when we
+and will be specified in `docs/architecture/domains/federation/...` when we
 build it.
 
 ---
@@ -700,7 +700,7 @@ These exist; they are tracked elsewhere and reference back to this
 document for the realtime contract:
 
 - Federation server-to-server protocol details
-  (`docs/architecture/shared/federation/...`, future).
+  (`docs/architecture/domains/federation/...`, future).
 - Voice/video protocol on top of `CallSignal`
   ([voice/video calls](../../domains/chat/calling/voice-video.md) and
   [group calls](../../domains/chat/calling/group-calls.md)).

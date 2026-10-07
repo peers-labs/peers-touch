@@ -34,6 +34,13 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLockSync,
 } from './workspace-lifecycle-lock.mjs';
+import {
+  assertMatchingWorkflowOwner as assertPolicyOwnerMatch,
+  requireWorkflowOwnerReference as requirePolicyOwner,
+} from './workflow-owner-command-policy.mjs';
+import {
+  validateWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 export const ACTIVE_WORK_SCHEMA_VERSION = 1;
 export const ACTIVE_WORK_KIND = 'peers-touch-workspace-active-work';
@@ -66,6 +73,7 @@ const INPUT_KEYS = new Set([
   'initialHead',
   'expectedHead',
 ]);
+const INPUT_OPTIONAL_KEYS = new Set(['workflowOwner']);
 const RECORD_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -74,6 +82,7 @@ const RECORD_KEYS = new Set([
   'updatedAt',
   'recordDigest',
 ]);
+const RECORD_OPTIONAL_KEYS = new Set(INPUT_OPTIONAL_KEYS);
 const LOCK_KEYS = new Set(['pid', 'processStart', 'createdAt']);
 const SHA_PATTERN = /^[0-9a-f]{40,64}$/;
 const WORKSPACE_ID_PATTERN = /^[0-9a-f]{16}$/;
@@ -89,6 +98,22 @@ export class ActiveWorkError extends Error {
 
 function fail(code, message, detail = {}) {
   throw new ActiveWorkError(code, message, detail);
+}
+
+function assertActiveWorkOwner(expected, actual, detail = {}) {
+  try {
+    return assertPolicyOwnerMatch(expected, actual, detail);
+  } catch (error) {
+    fail('ACTIVE_WORK_OWNER_MISMATCH', error.message, error.detail);
+  }
+}
+
+function requireActiveWorkOwner(value, detail = {}) {
+  try {
+    return requirePolicyOwner(value, detail);
+  } catch (error) {
+    fail('ACTIVE_WORK_OWNER_MISMATCH', error.message, error.detail);
+  }
 }
 
 function exactKeys(value, keys) {
@@ -151,7 +176,13 @@ function validateRepositoryMarkdownPath(value, field) {
 }
 
 function validateInput(input) {
-  if (!isObject(input) || !exactKeys(input, INPUT_KEYS)) {
+  if (
+    !isObject(input) ||
+    [...INPUT_KEYS].some((key) => !Object.hasOwn(input, key)) ||
+    Object.keys(input).some(
+      (key) => !INPUT_KEYS.has(key) && !INPUT_OPTIONAL_KEYS.has(key),
+    )
+  ) {
     fail('ACTIVE_WORK_INVALID', 'active-work input fields are invalid');
   }
   if (!WORKSPACE_ID_PATTERN.test(input.workspaceId)) {
@@ -188,6 +219,13 @@ function validateInput(input) {
       fail('ACTIVE_WORK_INVALID', `${field} is invalid`, { field });
     }
   }
+  if (Object.hasOwn(input, 'workflowOwner')) {
+    try {
+      validateWorkflowOwnerReference(input.workflowOwner, { nullable: true });
+    } catch {
+      fail('ACTIVE_WORK_INVALID', 'workflowOwner is invalid');
+    }
+  }
   return input;
 }
 
@@ -210,7 +248,13 @@ export function validateActiveWorkRecord(record, expectedWorkspaceId) {
 }
 
 function validateActiveWorkRecordShape(record, expectedWorkspaceId) {
-  if (!isObject(record) || !exactKeys(record, RECORD_KEYS)) {
+  if (
+    !isObject(record) ||
+    [...RECORD_KEYS].some((key) => !Object.hasOwn(record, key)) ||
+    Object.keys(record).some(
+      (key) => !RECORD_KEYS.has(key) && !RECORD_OPTIONAL_KEYS.has(key),
+    )
+  ) {
     fail('ACTIVE_WORK_INVALID', 'active-work record fields are invalid');
   }
   if (
@@ -221,9 +265,12 @@ function validateActiveWorkRecordShape(record, expectedWorkspaceId) {
   ) {
     fail('ACTIVE_WORK_INVALID', 'active-work record header is invalid');
   }
-  validateInput(
-    Object.fromEntries([...INPUT_KEYS].map((key) => [key, record[key]])),
-  );
+  validateInput({
+    ...Object.fromEntries([...INPUT_KEYS].map((key) => [key, record[key]])),
+    ...(Object.hasOwn(record, 'workflowOwner')
+      ? { workflowOwner: record.workflowOwner }
+      : {}),
+  });
   if (
     expectedWorkspaceId !== undefined &&
     record.workspaceId !== expectedWorkspaceId
@@ -488,7 +535,12 @@ function acquireLock(file, now, timeoutMs = LOCK_TIMEOUT_MS) {
 }
 
 function semanticInput(record) {
-  return Object.fromEntries([...INPUT_KEYS].map((key) => [key, record[key]]));
+  return {
+    ...Object.fromEntries([...INPUT_KEYS].map((key) => [key, record[key]])),
+    ...(Object.hasOwn(record, 'workflowOwner')
+      ? { workflowOwner: record.workflowOwner }
+      : {}),
+  };
 }
 
 function expectedRevision(options, existing) {
@@ -542,6 +594,9 @@ function updateActiveWorkRecordUnderFence(input, options) {
 
 export function updateActiveWorkRecord(input, options = {}) {
   validateInput(input);
+  requireActiveWorkOwner(input.workflowOwner, {
+    record: 'active-work',
+  });
   const paths = activeWorkStorePaths({
     ...options,
     workspaceId: input.workspaceId,
@@ -642,6 +697,22 @@ function repairActiveWorkRecordUnderFence(input, options) {
         );
       }
     }
+    if (
+      (existing.workflowOwner !== undefined ||
+        input.workflowOwner !== undefined) &&
+      JSON.stringify(canonicalize(existing.workflowOwner ?? null)) !==
+        JSON.stringify(canonicalize(input.workflowOwner ?? null))
+    ) {
+      fail(
+        'ACTIVE_WORK_OWNER_MISMATCH',
+        'invalid active-work record does not match immutable owners',
+        {
+          field: 'workflowOwner',
+          expected: input.workflowOwner ?? null,
+          actual: existing.workflowOwner ?? null,
+        },
+      );
+    }
     expectedRevision(options, existing);
     const record = {
       schemaVersion: ACTIVE_WORK_SCHEMA_VERSION,
@@ -661,6 +732,9 @@ function repairActiveWorkRecordUnderFence(input, options) {
 
 export function repairActiveWorkRecord(input, options = {}) {
   validateInput(input);
+  requireActiveWorkOwner(input.workflowOwner, {
+    record: 'active-work',
+  });
   const paths = activeWorkStorePaths({
     ...options,
     workspaceId: input.workspaceId,
@@ -707,6 +781,11 @@ function clearActiveWorkRecordUnderFence(options) {
         actual: existing.workItemId,
       });
     }
+    assertActiveWorkOwner(
+      existing.workflowOwner,
+      options.workflowOwner,
+      { record: 'active-work', workspaceId: paths.workspaceId },
+    );
     unlinkSync(paths.record);
     syncDirectory(path.dirname(paths.record));
     return existing;

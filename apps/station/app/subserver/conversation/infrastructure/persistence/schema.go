@@ -14,9 +14,6 @@ func MigrateCanonicalSchema(ctx context.Context, db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("conversation persistence: database is required")
 	}
-	if err := dropRetiredColumns(db.WithContext(ctx)); err != nil {
-		return fmt.Errorf("conversation persistence: drop retired schema: %w", err)
-	}
 	if err := db.WithContext(ctx).AutoMigrate(
 		&ConversationModel{},
 		&ConversationMemberModel{},
@@ -34,44 +31,46 @@ func MigrateCanonicalSchema(ctx context.Context, db *gorm.DB) error {
 	); err != nil {
 		return fmt.Errorf("conversation persistence: migrate canonical schema: %w", err)
 	}
+	if err := dropRetiredConversationColumns(ctx, db); err != nil {
+		return err
+	}
 	if err := requireCanonicalSchema(db.WithContext(ctx)); err != nil {
 		return fmt.Errorf("conversation persistence: validate canonical schema: %w", err)
 	}
 	return nil
 }
 
-func dropRetiredColumns(db *gorm.DB) error {
-	for _, retired := range []struct {
-		table  string
-		probe  any
+// AutoMigrate does not remove retired columns from existing installations.
+func dropRetiredConversationColumns(ctx context.Context, db *gorm.DB) error {
+	retired := []struct {
+		model  any
 		column string
 	}{
 		{
-			table:  "conversations",
-			probe:  &ConversationModel{},
+			model:  &ConversationModel{},
 			column: "disappear_timer_seconds",
 		},
 		{
-			table:  "conversation_member_settings",
-			probe:  &ConversationMemberSettingsModel{},
+			model:  &ConversationMemberSettingsModel{},
 			column: "cleared_at_unix_ms",
 		},
-	} {
-		if !db.Migrator().HasTable(retired.probe) ||
-			!db.Migrator().HasColumn(retired.probe, retired.column) {
+	}
+	migrator := db.WithContext(ctx).Migrator()
+	for _, column := range retired {
+		if !migrator.HasColumn(column.model, column.column) {
 			continue
 		}
-		statement := fmt.Sprintf(
-			`ALTER TABLE "%s" DROP COLUMN "%s"`,
-			retired.table,
-			retired.column,
-		)
-		if err := db.Exec(statement).Error; err != nil {
+		if err := migrator.DropColumn(column.model, column.column); err != nil {
 			return fmt.Errorf(
-				"drop %T.%s: %w",
-				retired.probe,
-				retired.column,
+				"conversation persistence: drop retired column %s: %w",
+				column.column,
 				err,
+			)
+		}
+		if migrator.HasColumn(column.model, column.column) {
+			return fmt.Errorf(
+				"conversation persistence: retired column %s still exists",
+				column.column,
 			)
 		}
 	}

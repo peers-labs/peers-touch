@@ -38,6 +38,9 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLockSync,
 } from './workspace-lifecycle-lock.mjs';
+import {
+  validateWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 import { readLivePlanMountId } from '../plan/plan-mount.mjs';
 
 export const MACHINE_REGISTRY_KIND = 'peers-touch-machine-dev-registry';
@@ -72,6 +75,7 @@ const REGISTRATION_KEYS = new Set([
   'updatedAt',
   'updatedBy',
 ]);
+const REGISTRATION_OPTIONAL_KEYS = new Set(['createdBy']);
 const AUTHORITATIVE_REGISTRY_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -581,6 +585,14 @@ function normalizeRegistration(value) {
     registeredAt: value.registeredAt,
     updatedAt: value.updatedAt,
     updatedBy: value.updatedBy,
+    ...(Object.hasOwn(value, 'createdBy')
+      ? {
+          createdBy: validateWorkflowOwnerReference(
+            value.createdBy,
+            { nullable: true },
+          ),
+        }
+      : {}),
   };
   if (
     !/^[0-9a-f]{16}$/.test(normalized.workspaceId) ||
@@ -624,8 +636,10 @@ function normalizeRegistrationCollection(registry, keys, normalize) {
   registry.registrations = registry.registrations.map((entry) => {
     if (
       !isObject(entry) ||
-      Object.keys(entry).length !== keys.size ||
-      Object.keys(entry).some((key) => !keys.has(key))
+      [...keys].some((key) => !Object.hasOwn(entry, key)) ||
+      Object.keys(entry).some(
+        (key) => !keys.has(key) && !REGISTRATION_OPTIONAL_KEYS.has(key),
+      )
     ) {
       fail('MACHINE_REGISTRY_INVALID', 'registration fields are invalid');
     }
@@ -1163,6 +1177,14 @@ export function registerWorkspace(options) {
       registeredAt: timestamp,
       updatedAt: timestamp,
       updatedBy: owner,
+      ...(options.createdBy === null ||
+      options.createdBy === undefined
+        ? {}
+        : {
+            createdBy: validateWorkflowOwnerReference(
+              options.createdBy,
+            ),
+          }),
     };
     registry.registrations.push(registration);
     registry.registrations.sort((left, right) =>
@@ -1232,6 +1254,15 @@ export function selectWorkspaceProfile(options) {
       registeredAt: current?.registeredAt ?? timestamp,
       updatedAt: timestamp,
       updatedBy: selectedBy,
+      ...(current?.createdBy
+        ? { createdBy: current.createdBy }
+        : options.createdBy
+          ? {
+              createdBy: validateWorkflowOwnerReference(
+                options.createdBy,
+              ),
+            }
+          : {}),
     };
     if (currentIndex === -1) {
       registry.registrations.push(registration);
@@ -1290,6 +1321,15 @@ export function updateWorkspace(options) {
       owner,
       updatedAt: now.toISOString(),
       updatedBy: owner,
+      ...(current.createdBy
+        ? { createdBy: current.createdBy }
+        : options.createdBy
+          ? {
+              createdBy: validateWorkflowOwnerReference(
+                options.createdBy,
+              ),
+            }
+          : {}),
     };
     registry.registrations[
       registry.registrations.findIndex(

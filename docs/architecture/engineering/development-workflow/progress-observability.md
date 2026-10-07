@@ -1,7 +1,7 @@
 # Progress And Agent Activity Observability 产品合同
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-01
+> **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -118,7 +118,8 @@ drift -> blocked -> completed -> looping -> stalled -> waiting -> working -> idl
 Each invocation emits one bounded redacted snapshot containing:
 
 - project/worktree identity and source status;
-- PlanMount, Plan Version, ExecutionRun, and closure progress;
+- PlanMount, Plan, ExecutionRun, and closure progress;
+- current internal Plan digest, amendment count, and latest amendment reason;
 - current Task and source/functional/acceptance/review state;
 - Agent state, last action, age, and result;
 - Completion Review state;

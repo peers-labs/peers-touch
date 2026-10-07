@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 产品定义
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-27
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
 ---
@@ -32,6 +32,7 @@ Station 发布的准入流程完成登录。两端可以有不同布局，但不
 | SAL-C04 | Federation context | 用户可查看或选择 context，并用于 search/resolve/Chat |
 | SAL-C05 | 基础设施收口 | 普通客户端无 Federation 治理和 Relay token/mount/invite 入口 |
 | SAL-C06 | 能力完整性治理 | capability 有唯一 owner、contract 与双端 consumer |
+| SAL-C07 | 客户端类别会话 | 同一账号可同时保留一个 Desktop 和一个 Mobile Session；同一客户端类别的新登录必须接管并撤销旧 Session |
 
 Desktop 与 Mobile 均为 `required`；Browser 不在本模块声明范围。
 
@@ -43,6 +44,8 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块声明范围。
 4. Gate 完成后才建立 Session 并启动业务 runtime。
 5. 登录后显示当前 Station 与 Federation context。
 6. 账号或 Station 切换不会显示前一 scope 的头像、Chat、context 或本地统计。
+7. 同一账号的 Desktop 与 Mobile 可同时使用；第二个 Desktop 或第二个 Mobile
+   登录后，旧同类端收到 `kicked` 并回到登录态，异类端保持可用。
 
 ## 5. 非目标
 
@@ -51,6 +54,8 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块声明范围。
 - 不设计 Dashboard/CLI 运维流程。
 - 不修改 Conversation authority、Chat 删除语义或本机存储。
 - 不支持 registry 之外的 Station 或客户端 wire。
+- 不允许用运行时、窗口或构建标签创建额外 Session 类别；类别只允许
+  `desktop`、`mobile` 和已明确声明的 `web`。
 
 ## 6. 成功指标
 

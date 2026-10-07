@@ -1,6 +1,9 @@
 import path from 'node:path';
 
 import { parse } from 'shell-quote';
+import {
+  isWorkflowOwnerCommandTarget,
+} from './workflow-owner-command-policy.mjs';
 
 const READ_ONLY_TOOL_NAMES = new Set([
   'askuserquestion',
@@ -15,43 +18,6 @@ const READ_ONLY_TOOL_NAMES = new Set([
 const WRITE_TOOL_NAMES =
   /(applypatch|edit|strreplace|write|delete|move|rename)/;
 const SHELL_TOOL_NAMES = /(bash|command|exec|run|shell|terminal)/;
-const OWNER_TARGETS = new Set([
-  'env-register',
-  'env-update',
-  'env-unregister',
-  'env-check',
-  'env-status-all',
-  'dev-start',
-  'dev-update',
-  'dev-check',
-  'dev-heartbeat',
-  'dev-release',
-  'dev-session-start',
-  'dev-session-status',
-  'dev-transition',
-  'dev-functional-result',
-  'active-work-sync',
-  'active-work-status',
-  'active-work-status-all',
-  'active-work-close',
-  'plan-mount',
-  'plan-unmount',
-  'plan-activate',
-  'plan-validate',
-  'plan-status',
-  'plan-current',
-  'plan-next',
-  'plan-advance',
-  'plan-reopen',
-  'completion-review-prepare',
-  'completion-review-submit',
-  'completion-review-status',
-  'skills',
-  'skills-hard-cut',
-  'skills-gc',
-  'agent-integration-audit',
-  'agent-integration-audit-all',
-]);
 const READ_ONLY_COMMANDS = new Set([
   'cat',
   'cd',
@@ -310,7 +276,7 @@ function isOwnerCommand(ast) {
   const words = ast.commands[0].filter((item) => typeof item === 'string');
   return (
     executableName(ast.commands[0]) === 'make' &&
-    OWNER_TARGETS.has(words[1])
+    isWorkflowOwnerCommandTarget(words[1])
   );
 }
 

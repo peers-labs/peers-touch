@@ -48,7 +48,7 @@ import {
   type SocialAudienceChoice,
 } from '../../features/social/socialAudience';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
-import { useGroupStore } from '../../features/group/groupStore';
+import { useSocialStore } from '../../features/social/socialStore';
 
 const { Text } = Typography;
 const MAX_IMAGES_PER_POST = 9;
@@ -233,7 +233,15 @@ export function MomentComposer({
   const pendingImagesRef = useRef<PendingMomentImage[]>([]);
   const draftIdRef = useRef(globalThis.crypto.randomUUID());
   const circles = useSocialCirclesStore((state) => state.circles);
-  const groups = useGroupStore((state) => state.groups);
+  const messagingConversations = useSocialStore(
+    (state) => state.messagingConversations,
+  );
+  const groups = useMemo(
+    () => messagingConversations.filter(
+      (conversation) => conversation.active && conversation.kind === 2,
+    ),
+    [messagingConversations],
+  );
   const audience = useMemo<Audience | null>(() => {
     try {
       return buildSocialAudience(audienceChoice, {
@@ -833,7 +841,7 @@ export function MomentComposer({
                       setCircleId(circles[0].id.toString());
                     }
                     if (option.id === 'GROUP' && !groupConversationId && groups[0]) {
-                      setGroupConversationId(groups[0].ulid);
+                      setGroupConversationId(groups[0].conversationId);
                     }
                     if (!['CIRCLE', 'GROUP', 'CUSTOM_ALLOW', 'CUSTOM_DENY', 'DIRECT'].includes(option.id)) {
                       setAudienceOpen(false);
@@ -877,8 +885,8 @@ export function MomentComposer({
                   placeholder={t('mobile.moments.audience.selectGroup')}
                   disabled={editingDisabled}
                   options={groups.map((group) => ({
-                    label: group.name || group.ulid,
-                    value: group.ulid,
+                    label: group.name || group.conversationId,
+                    value: group.conversationId,
                   }))}
                 />
                 <Button

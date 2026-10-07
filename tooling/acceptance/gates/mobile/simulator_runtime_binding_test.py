@@ -23,6 +23,7 @@ def scope(
     station_peer_id: str = "station-peer-primary",
     actor_ptid: str | None = None,
     launch_state: str | None = None,
+    device_id: str = "device-sim-ios",
 ) -> dict[str, object]:
     active = actor_ptid is not None
     return {
@@ -34,6 +35,7 @@ def scope(
         "activeStationPeerId": station_peer_id,
         "activeActorPtid": actor_ptid,
         "runtimeStationPeerId": station_peer_id if active else None,
+        "deviceId": device_id,
         "social": {
             "stationPeerId": station_peer_id if active else None,
             "actorPtid": actor_ptid,
@@ -290,6 +292,31 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
                 ):
                     binding.call_action("sim-ios", action, {})
 
+    def test_chat_gate_uses_the_shared_child_action_contract(self) -> None:
+        gate_id = "chat-lifecycle-mixed-client-multi-device-e2e"
+        client = RecordingClient(gate_id)
+        binding = MobileSimulatorRuntimeBinding(  # type: ignore[arg-type]
+            client,
+            gate_id=gate_id,
+        )
+
+        result = binding.call_action(
+            "sim-ios",
+            "messaging.reconcile",
+            {},
+        )
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(client.calls[-1][1], "harness_action")
+        self.assertEqual(
+            client.calls[-1][2],
+            {
+                "clientId": "sim-ios",
+                "action": "messaging.reconcile",
+                "actionPayload": {},
+            },
+        )
+
     def test_fixture_authentication_keeps_credentials_parent_owned(self) -> None:
         client = RecordingClient()
         binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
@@ -307,7 +334,11 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
         )
 
     def test_scope_rejects_raw_endpoint_or_device_authority(self) -> None:
-        for field in ("url", "serverUrl", "deviceId", "artifact"):
+        self.assertEqual(
+            validate_scope_projection(scope())["deviceId"],
+            "device-sim-ios",
+        )
+        for field in ("url", "serverUrl", "device", "artifact"):
             invalid = scope()
             invalid[field] = "raw-authority"
             with self.subTest(field=field):

@@ -495,6 +495,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       runtimeStationPeerId: runtime.activeStationPeerId,
       deviceId: runtime.deviceId,
       social: runtime.social,
+      group: runtime.group,
       navigation: runtime.navigation,
     };
   },

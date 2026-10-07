@@ -806,10 +806,10 @@ done
 if grep -Fq "planctl validate" "$god_view_skill" ||
   grep -Fq "current_task_id" "$god_view_skill" ||
   grep -Fq "dev_state" "$god_view_skill"; then
-  fail "$god_view_skill must not embed Plan Version implementation details"
+  fail "$god_view_skill must not embed Plan implementation details"
 fi
 
-plan_version_contract_files=(
+stable_plan_contract_files=(
   "$architecture_execution_skill"
   "$plan_skill"
   "$dev_workflow_skill"
@@ -819,9 +819,21 @@ plan_version_contract_files=(
   "$agents_contract"
 )
 
-for contract_file in "${plan_version_contract_files[@]}"; do
-  if ! grep -Fq "Plan Version" "$contract_file"; then
-    fail "$contract_file missing Plan Version contract marker"
+for contract_file in "${stable_plan_contract_files[@]}"; do
+  if ! grep -Eiq "stable Plan" "$contract_file"; then
+    fail "$contract_file missing stable Plan contract marker"
+  fi
+done
+
+for marker in \
+  "planctl amend" \
+  "approve-north-star" \
+  "NORTH_STAR_APPROVAL_REQUIRED" \
+  "OWNER_DECISION_REQUIRED" \
+  "northStar" \
+  "criterionCoverage"; do
+  if ! grep -Fq "$marker" "$dev_workflow_skill"; then
+    fail "$dev_workflow_skill missing stable Plan amendment marker: $marker"
   fi
 done
 
@@ -848,7 +860,7 @@ for marker in \
 done
 
 for marker in \
-  "Frozen Plan Version 没有 current Task" \
+  "Stable Plan 没有 current Task" \
   "make active-work-sync WORK_ITEM=<id>" \
   "不创建 active-work"; do
   if ! grep -Fq "$marker" "$plan_skill"; then
@@ -867,8 +879,10 @@ done
 
 for marker in \
   "planctl validate" \
+  "approve-north-star" \
   "Task Slice" \
-  "frozen" \
+  "planctl amend" \
+  "criterionCoverage" \
   "Acceptance Execution"; do
   if ! grep -Fq "$marker" "$plan_skill"; then
     fail "$plan_skill missing package authoring marker: $marker"
@@ -876,7 +890,7 @@ for marker in \
 done
 
 if rg -q '\| id \| plan \| stage \| current_step \|' \
-  "${plan_version_contract_files[@]}"; then
+  "${stable_plan_contract_files[@]}"; then
   fail "workflow contracts still publish the legacy active_work current_step schema"
 fi
 
@@ -1076,7 +1090,7 @@ while IFS= read -r plan_doc; do
   fi
 done < <(
   rg -l \
-    'peers-touch-plan-package|peers-touch-task-slice' \
+    'peers-touch-plan"|peers-touch-task-slice' \
     docs/architecture \
     --glob '**/execution-plans/**/*.md'
 )

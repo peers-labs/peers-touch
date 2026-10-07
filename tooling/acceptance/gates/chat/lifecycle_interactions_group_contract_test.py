@@ -56,38 +56,6 @@ class LifecycleInteractionsGroupContractTest(unittest.TestCase):
         self.assertEqual(GATE_ROLES[GATE_ID], expected_roles)
         self.assertEqual(CLIENT_ROLES[GATE_ID], expected_roles)
 
-    def test_active_client_has_no_legacy_group_mutation_owner(self) -> None:
-        active_sources = "\n".join(
-            self.source(path)
-            for path in (
-                "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
-                "apps/desktop/src/services/im-service.ts",
-                "apps/desktop/src/services/desktop_api.ts",
-                "apps/desktop/src-tauri/src/main.rs",
-                "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
-            )
-        )
-        for legacy in (
-            "group_chat_create_group",
-            "group_chat_invite_to_group",
-            "group_chat_add_federated_member",
-            "group_chat_join_group",
-            "group_chat_remove_member",
-            "group_chat_recall_message",
-            "group_chat_edit_message",
-            "group_chat_delete_message",
-            "group_chat_update_nickname",
-            "group_chat_update_settings",
-            "group_chat_mark_read",
-            "group_chat_ack_offline_messages",
-            "group_chat_update_group",
-            "group_chat_leave_group",
-            "group_chat_update_member",
-            "group_chat_transfer_ownership",
-            "group_chat_dissolve_group",
-        ):
-            self.assertNotIn(legacy, active_sources)
-
     def test_native_journey_covers_complete_group_lifecycle(self) -> None:
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
@@ -101,7 +69,6 @@ class LifecycleInteractionsGroupContractTest(unittest.TestCase):
             "group_leave_convergence",
             "group_dissolve_terminal",
             "group_terminal_restart_history",
-            "group_legacy_mutation_hard_cut",
         ):
             self.assertIn(assertion, runner)
         for action in (

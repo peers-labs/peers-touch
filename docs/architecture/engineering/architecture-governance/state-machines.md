@@ -226,14 +226,14 @@
 - **触发**：`Rotate()`（事务内 current 降级为 prev、写入新 current）；`ClearPrev()`（双签宽限期默认 24h 结束后删除 prev）；后台 finalizer `RunOnce` 检查 `prev.GeneratedAt + Grace` 后清理
 - **不变量**：双签宽限期内同时接受 current/prev 签名，避免轮换瞬断；转换有时间窗守卫。
 - **Owner**：[federation/keystore.go](../../../../apps/station/frame/core/auth/federation/keystore.go#L18) · [oss/worker/key_rotation_final.go](../../../../apps/station/app/subserver/oss/worker/key_rotation_final.go#L88)
-- **关联架构** → [architecture/shared/federation/README.md](../../shared/federation/README.md)
+- **关联架构** → [architecture/domains/federation/README.md](../../domains/federation/README.md)
 
 ### 6.8 FriendMessage 投递（单调前向状态机）⚠️ 内嵌精简设计
 
 - **状态**：`SENDING(1)` → `SENT(2)` → `DELIVERED(3)` → `READ(4)`（异常 `FAILED(5)`）
 - **触发**：ack 流程对状态做**严格前向单调**更新（`status < ?` 守卫，防乱序 ack 回退）；`READ` 时重置未读计数
-- **不变量**：单调不可回退；映射到 realtime receipt（`receiptKindFromFriendStatus`）。前端镜像见 `socialChat.ts` 的 `FriendMessageStatus`。
-- **Owner**：[Conversation federation receiver](../../../../apps/station/app/subserver/conversation/infrastructure/federation/receiver.go#L1048) · [Conversation production federation](../../../../apps/station/app/subserver/conversation/production_federation.go#L757) · [FriendMessageStatus proto](../../../../model/domain/chat/friend_chat.proto)
+- **不变量**：单调不可回退；映射到 canonical Conversation receipt。前端镜像见 Messaging projection 的 `MessageStatus`。
+- **Owner**：[Conversation federation receiver](../../../../apps/station/app/subserver/conversation/infrastructure/federation/receiver.go#L1048) · [Conversation production federation](../../../../apps/station/app/subserver/conversation/production_federation.go#L757) · [MessageStatus proto](../../../../model/domain/chat/chat.proto)
 - **关联架构** → [architecture/shared/communication/event-stream.md](../../shared/communication/event-stream.md)
 
 > Station 另有 proto 枚举状态（OfflineMessage `pending/delivered/expired`、Notification `unread/read/archived`、GroupInvitation、Media、Delegation 等），多为服务端权威状态的 proto 定义、Go 侧转换较轻或仅作分类，按 §2 口径暂不收录为独立 FSM。

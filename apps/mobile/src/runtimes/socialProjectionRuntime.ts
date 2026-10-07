@@ -5,7 +5,6 @@ import {
 
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
-import type { GroupState } from '../features/group/groupStore';
 import type { SocialState } from '../features/social/socialStore';
 import { invalidatePrivateMoments } from './privateMomentsRuntime';
 import {
@@ -30,7 +29,6 @@ import { getRecoveryProjection } from './recoveryProjection';
 import {
   createSocialEventIngress,
   type ControlEvent,
-  type GroupDataEvent,
   type IngressReconcileRequest,
   type MomentsDataEvent,
   type NotificationDataEvent,
@@ -45,7 +43,6 @@ export type ProjectionDomain = Exclude<SocialIngressDomain, 'control'>;
 
 const PROJECTION_DOMAINS: readonly ProjectionDomain[] = [
   'social',
-  'group',
   'moments',
   'notification',
   'profile',
@@ -153,7 +150,6 @@ export function readActiveSocialIngressState() {
 export function createSocialProjectionRuntime(
   session: MobileAuthSession,
   getSocialStore: () => SocialState,
-  getGroupStore: () => GroupState,
   dependencies: SocialProjectionRuntimeDependencies,
 ): SocialProjectionRuntimeController {
   const sessionKey = mobileAuthScopeKey(session);
@@ -258,21 +254,27 @@ export function createSocialProjectionRuntime(
         return false;
       }
     }));
-    if (!torn && results.every(Boolean)) ingress.reopenAdmission();
+    let messagingReady = true;
+    if (!torn && shouldReconcileMessaging(reason)) {
+      try {
+        await dependencies.wakeMessaging();
+      } catch (error) {
+        messagingReady = false;
+        dependencies.reportError(`reconcile:messaging:${reason}`, error);
+      }
+    }
+    if (!torn && messagingReady && results.every(Boolean)) {
+      ingress.reopenAdmission();
+    }
     if (!torn) recovery.reportIngressState(ingress.state());
   }
 
   async function reconcileDomain(domain: ProjectionDomain): Promise<boolean> {
     const socialStore = getSocialStore();
-    const groupStore = getGroupStore();
     switch (domain) {
       case 'social':
         await socialStore.reconcile();
         if (getSocialStore().error) throw getSocialStore().error;
-        return true;
-      case 'group':
-        await groupStore.reconcile();
-        if (getGroupStore().error) throw getGroupStore().error;
         return true;
       case 'moments': {
         const reconciled = await momentsFeed.reconcile();
@@ -305,9 +307,6 @@ export function createSocialProjectionRuntime(
       case 'social':
         await routeSocialEvent(event);
         return;
-      case 'group':
-        await routeGroupEvent(event);
-        return;
       case 'moments':
         momentsProjection.ingestEvent(event);
         if (event.kind === 'post-deleted' && event.postId) {
@@ -334,7 +333,10 @@ export function createSocialProjectionRuntime(
       case 'control':
         if (event.kind === 'session-revalidate') {
           await dependencies.revalidateSession();
-        } else if (event.kind === 'resync-required') {
+        } else if (
+          event.kind === 'messaging-wake'
+          || event.kind === 'resync-required'
+        ) {
           await dependencies.wakeMessaging();
         }
     }
@@ -343,11 +345,6 @@ export function createSocialProjectionRuntime(
   async function routeSocialEvent(event: SocialDataEvent): Promise<void> {
     const socialStore = getSocialStore();
     switch (event.kind) {
-      case 'friend-message':
-      case 'friend-receipt':
-      case 'friend-mutation':
-        await dependencies.wakeMessaging();
-        return;
       case 'friend-typing':
         socialStore.applyTypingState(
           requireString(event.payload, 'sessionUlid'),
@@ -360,9 +357,6 @@ export function createSocialProjectionRuntime(
           requireString(event.payload, 'actorPtid'),
           requireBoolean(event.payload, 'online'),
         );
-        return;
-      case 'friend-settings-changed':
-        if (event.sessionUlid) await socialStore.loadConversationSettings(event.sessionUlid);
         return;
       case 'friend-request':
         await Promise.all([
@@ -391,7 +385,6 @@ export function createSocialProjectionRuntime(
         await Promise.all([
           socialStore.refreshBlockedUsers(),
           socialStore.refreshFriendRequests(),
-          socialStore.refreshSessions(),
           peerPtid
             ? socialStore.loadAuthoredPosts(peerPtid)
             : Promise.resolve(),
@@ -400,39 +393,9 @@ export function createSocialProjectionRuntime(
             : Promise.resolve(),
           scheduleReconcile(['moments'], graphKind, event.cursor),
         ]);
-        return;
-      }
-      case 'session-update':
-        await Promise.all([
-          socialStore.refreshSessions(),
-          socialStore.refreshFriendRequests(),
-        ]);
-    }
-  }
-
-  async function routeGroupEvent(event: GroupDataEvent): Promise<void> {
-    const groupStore = getGroupStore();
-    switch (event.kind) {
-      case 'group-message':
-      case 'group-mutation':
         await dependencies.wakeMessaging();
         return;
-      case 'group-settings-changed':
-        if (event.groupUlid) await groupStore.loadSettings(event.groupUlid);
-        return;
-      case 'group-membership':
-        await groupStore.refreshGroups();
-        if (!event.groupUlid) return;
-        if (
-          event.payload.membershipKind === 'DISSOLVED'
-          && groupStore.activeGroupUlid === event.groupUlid
-        ) {
-          await groupStore.selectGroup(null);
-          return;
-        }
-        if (groupStore.activeGroupUlid === event.groupUlid) {
-          await groupStore.loadMembers(event.groupUlid);
-        }
+      }
     }
   }
 
@@ -476,16 +439,6 @@ export function createSocialProjectionRuntime(
 
   function dispatchExternalEvent(event: SocialHostEvent): void {
     const timestampMs = Date.now();
-    if (event.sessionUlid) {
-      ingress.ingestDataEvent({
-        domain: 'social',
-        kind: 'session-update',
-        sessionUlid: event.sessionUlid,
-        payload: { reason: event.reason ?? event.kind },
-        cursor: '',
-        timestampMs,
-      });
-    }
     if (socialHostEventTargetsNotifications(event)) {
       ingress.ingestDataEvent({
         domain: 'notification',
@@ -557,7 +510,6 @@ export function createSocialProjectionRuntime(
     async resume(): Promise<void> {
       ingress.resume();
       await reconcileTail;
-      ingress.reopenAdmission();
       recovery.reportIngressState(ingress.state());
     },
     async reconcile(
@@ -590,6 +542,16 @@ export function createSocialProjectionRuntime(
   };
 }
 
+function shouldReconcileMessaging(reason: string): boolean {
+  return reason === 'control_event_lost'
+    || reason === 'cursor-repair'
+    || reason === 'explicit-request'
+    || reason === 'host-wakeup'
+    || reason === 'resync-required'
+    || reason === 'runtime_resume'
+    || reason === 'stream-reconnect';
+}
+
 function projectionDomains(
   domains: readonly SocialIngressDomain[],
 ): ProjectionDomain[] {
@@ -610,46 +572,12 @@ function toIngressEvents(event: RealtimeWireEvent): SocialIngressEvent[] {
         kind: 'heartbeat',
         payload: { floorEventId: event.floorEventId },
       }];
-    case 'message':
+    case 'messaging-wake':
       return [{
         ...base,
-        domain: 'social',
-        kind: 'friend-message',
-        sessionUlid: event.sessionUlid,
-        payload: { message: event.message },
-      }];
-    case 'group-message':
-      return [{
-        ...base,
-        domain: 'group',
-        kind: 'group-message',
-        groupUlid: event.groupUlid,
-        payload: { message: event.message },
-      }];
-    case 'receipt':
-      return [{
-        ...base,
-        domain: 'social',
-        kind: 'friend-receipt',
-        sessionUlid: event.sessionUlid,
-        payload: {
-          messageUlid: event.messageUlid,
-          receiptKind: event.receiptKind,
-        },
-      }];
-    case 'mutation':
-      return [{
-        ...base,
-        domain: 'social',
-        kind: 'friend-mutation',
-        sessionUlid: event.sessionUlid,
-        payload: {
-          messageUlid: event.messageUlid,
-          mutationKind: event.mutationKind,
-          newContent: event.newContent,
-          newCiphertext: event.newCiphertext,
-          mutatedTsUnixMs: event.mutatedTsUnixMs,
-        },
+        domain: 'control',
+        kind: 'messaging-wake',
+        payload: { conversationId: event.conversationId },
       }];
     case 'typing':
       return [{
@@ -673,29 +601,13 @@ function toIngressEvents(event: RealtimeWireEvent): SocialIngressEvent[] {
           online: event.online,
         },
       }];
-    case 'group-membership':
-      return [{
-        ...base,
-        domain: 'group',
-        kind: 'group-membership',
-        groupUlid: event.groupUlid,
-        payload: {
-          actorPtid: event.actorPtid,
-          membershipKind: event.membershipKind,
-        },
-      }];
     case 'settings-changed':
       return [{
         ...base,
-        domain: event.conversationKind === 'friend' ? 'social' : 'group',
-        kind: event.conversationKind === 'friend'
-          ? 'friend-settings-changed'
-          : 'group-settings-changed',
-        ...(event.conversationKind === 'friend'
-          ? { sessionUlid: event.containerUlid }
-          : { groupUlid: event.containerUlid }),
-        payload: {},
-      } as SocialDataEvent | GroupDataEvent];
+        domain: 'control',
+        kind: 'messaging-wake',
+        payload: { conversationId: event.containerUlid },
+      }];
     case 'moment': {
       const momentsEvent: MomentsDataEvent = {
         ...base,
@@ -720,18 +632,11 @@ function toIngressEvents(event: RealtimeWireEvent): SocialIngressEvent[] {
       return [momentsEvent, notificationEvent];
     }
     case 'social-graph': {
-      const relationshipChanged =
-        event.graphKind === 'unfriended'
-        || event.graphKind === 'relationship-blocked'
-        || event.graphKind === 'relationship-unblocked';
+      const friendRequestEvent = event.graphKind.startsWith('friend-request');
       const socialEvent: SocialDataEvent = {
         ...base,
         domain: 'social',
-        kind: relationshipChanged
-          ? 'relationship-changed'
-          : event.graphKind.startsWith('friend-request')
-            ? 'friend-request'
-            : 'session-update',
+        kind: friendRequestEvent ? 'friend-request' : 'relationship-changed',
         sessionUlid: event.conversationId || undefined,
         payload: {
           graphKind: event.graphKind,
@@ -753,7 +658,18 @@ function toIngressEvents(event: RealtimeWireEvent): SocialIngressEvent[] {
         actorPtid: event.actorPtid,
         payload: { targetPtid: event.targetPtid },
       };
-      return [socialEvent, notificationEvent, profileEvent];
+      const wakeMessagingEvent: ControlEvent | null =
+        event.graphKind === 'friend-request-accepted'
+          ? {
+              ...base,
+              domain: 'control',
+              kind: 'messaging-wake',
+              payload: { conversationId: event.conversationId },
+            }
+          : null;
+      return wakeMessagingEvent
+        ? [socialEvent, notificationEvent, profileEvent, wakeMessagingEvent]
+        : [socialEvent, notificationEvent, profileEvent];
     }
     case 'resync':
       return [{

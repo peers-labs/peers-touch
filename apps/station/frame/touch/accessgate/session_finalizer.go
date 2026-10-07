@@ -18,47 +18,34 @@ import (
 )
 
 func accessGateSessionDeviceType(platform string) (session.DeviceType, error) {
-	switch strings.TrimSpace(platform) {
-	case string(session.DeviceTypeDesktop):
-		return session.DeviceTypeDesktop, nil
-	case string(session.DeviceTypeMobile):
-		return session.DeviceTypeMobile, nil
-	case string(session.DeviceTypeWeb):
-		return session.DeviceTypeWeb, nil
-	default:
+	deviceType, err := session.ParseDeviceType(platform)
+	if err != nil {
 		return "", fmt.Errorf("unsupported Access Gate client platform %q", platform)
 	}
+	return deviceType, nil
 }
 
 func revokeReplacedAccessGateSessions(
 	tx *gorm.DB,
 	userID uint64,
-	deviceID, currentSessionID string,
+	deviceType session.DeviceType,
+	currentSessionID string,
 	now time.Time,
 ) error {
-	deviceID = strings.TrimSpace(deviceID)
-	if deviceID == "" {
-		return errors.New("cannot replace Access Gate session without device id")
-	}
-	return tx.Model(&session.SessionRecord{}).
-		Where(
-			"user_id = ? AND device_id = ? AND session_id <> ? AND revoked = ?",
-			userID,
-			deviceID,
-			currentSessionID,
-			false,
-		).
-		Updates(map[string]any{
-			"revoked":        true,
-			"revoked_at":     now,
-			"revoked_reason": "kicked",
-		}).Error
+	_, err := session.RevokeReplacedClientClassSessions(
+		tx,
+		userID,
+		deviceType,
+		currentSessionID,
+		now,
+	)
+	return err
 }
 
 // FinalizeGrantedSession is the sole password/generic Access Gate credential
-// finalizer. It creates at most one session for a granted attempt, replaces an
-// older session only for the same canonical device, and reissues credentials
-// for that same session on an idempotent retry.
+// finalizer. It creates at most one session for a granted attempt, replaces
+// older sessions in the same client-class slot, and reissues credentials for
+// that same session on an idempotent retry.
 func FinalizeGrantedSession(
 	ctx context.Context,
 	attemptID, stationPeerID, deviceID string,
@@ -137,7 +124,7 @@ func FinalizeGrantedSession(
 
 		now := time.Now().UTC()
 		if err := revokeReplacedAccessGateSessions(
-			tx, actor.ID, attempt.DeviceID, record.SessionID, now,
+			tx, actor.ID, record.DeviceType, record.SessionID, now,
 		); err != nil {
 			return err
 		}

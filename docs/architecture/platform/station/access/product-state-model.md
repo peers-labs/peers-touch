@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 产品状态模型
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-27
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
 ---
@@ -62,7 +62,29 @@ ready(previous)
 
 - `ready` 但没有已验证的 `station_peer_id`。
 - Session 与 Messaging 使用不同 `device_id`。
+- 同一 actor 在同一 Station 同时存在两个未撤销的同类别 Session。
+- 运行时标签（如 `desktop-native`）被持久化为新的 Session 类别。
 - Federation action 没有明确 `federation_id`。
 - 前一账号、Station、Chat 或 context projection 出现在新 scope。
 - 未知 gate 被转换为其他登录路径或 generic success。
 - Relay topology 成为普通客户端可编辑状态。
+
+## 5. 客户端类别会话
+
+```text
+empty(class)
+  -> active(class, session_a)
+  -> replacing(class, session_b)
+  -> active(class, session_b)
+
+active(desktop) + active(mobile) -> allowed
+active(class, session_a) + active(class, session_b) -> forbidden
+```
+
+- canonical 类别为 `desktop`、`mobile` 和明确声明的 `web`。
+- 新同类别 Session 激活与旧同类别 Session 的 `kicked` 撤销属于一个 Station
+  authority 事务；不同类别 Session 不参与该撤销。
+- `device_id` 仍绑定具体安装实例、Messaging identity 和 credential scope，但
+  不创建额外并发槽。
+- 被接管端进入 `revoked(kicked)`，停止旧 generation 的写入与长生命周期
+  runtime，并返回 Access Gate。

@@ -161,7 +161,7 @@ async function makeFixture(
     },
     taskSlices: slices,
     currentTask: slices.get(current.id),
-    planVersionDigest: '6'.repeat(64),
+    planDigest: '6'.repeat(64),
     execution: {
       snapshot: {
         recordDigest: '7'.repeat(64),
@@ -424,7 +424,7 @@ test('rejects missing or wrong capabilities and caller-supplied identity', async
   const wrongCapability = JSON.parse(
     await fsp.readFile(prepared.paths.capability, 'utf8'),
   );
-  wrongCapability.secret = 'd'.repeat(64);
+  wrongCapability.capabilityDigest = 'd'.repeat(64);
   await expectReviewError(
     submitCompletionReview(
       {
