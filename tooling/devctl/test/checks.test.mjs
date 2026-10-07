@@ -28,7 +28,6 @@ function fixtureRoot(t) {
     'apps/mobile/src/pages',
     'apps/mobile/src/components',
     'apps/mobile/src/features/social',
-    'apps/mobile/src/features/group',
     'apps/mobile/src-tauri/src',
   ]) {
     fs.mkdirSync(path.join(root, directory), { recursive: true });
