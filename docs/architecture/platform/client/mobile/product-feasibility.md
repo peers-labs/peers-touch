@@ -1,8 +1,8 @@
 # Mobile Shell — 产品可行性闭环
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-10-07
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-08
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -31,6 +31,7 @@
 | MS-C12 Voice/video call | See unavailable action before commitment | Disabled prototype call action | Call product/runtime contract absent; remains deferred | MS-PA27 |
 | MS-C13 Chat Docs tab | No enabled entry | None required | Shared-document product/domain absent; remains deferred | MS-PA27 |
 | MS-C14 Local message flag | Flag/unflag locally and understand device-only scope | Prototype interaction | Durable local projection and explicit scope copy | MS-PA22 |
+| MS-C15 Whole-product usability | Complete every primary task and recovery path on every reachable page in a visible iOS Simulator | Confirmed Mobile prototype, descriptor registry, current production pages, Appium/DOM/AX/screenshot capture | Remove production/prototype drift; add complete route/state inventory, automated content/layout oracles, and agent visual review | MS-PA28, MS-PA29 |
 
 ## 3. Feasibility Rules
 

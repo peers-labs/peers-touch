@@ -1,8 +1,8 @@
 # Mobile Shell Architecture
 
-> **Status**: active; iOS simulator-canonical Acceptance amendment accepted
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-09-21
+> **Status**: active; whole-product foreground usability amendment accepted
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-08
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -61,6 +61,7 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 | [execution-plans/20260827-mobile-shell-implementation/plan.md](./execution-plans/20260827-mobile-shell-implementation/plan.md) | Dependency-ordered implementation and Acceptance plan |
 | [execution-plans/20260829-mobile-native-oauth-proof.md](./execution-plans/20260829-mobile-native-oauth-proof.md) | Historical focused W2-E2 physical-diagnostics plan |
 | [execution-plans/20261006-infra-chat-usability/plan.md](./execution-plans/20261006-infra-chat-usability/plan.md) | Focused Infra/Chat usability, mixed-client parity, and Session class takeover plan |
+| [execution-plans/20261008-mobile-whole-product-usability/plan.md](./execution-plans/20261008-mobile-whole-product-usability/plan.md) | Successor plan for page-by-page foreground iOS usability closure |
 
 ## 5. Upstream Sources
 
