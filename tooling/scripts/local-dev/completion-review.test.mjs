@@ -10,6 +10,7 @@ import {
   CompletionReviewError,
   completionReviewPaths,
   completionReviewState,
+  digestCompletionCandidate,
   inspectForbiddenPathInventory,
   prepareCompletionReview,
   readCompletionReview,
@@ -367,6 +368,18 @@ test('reviews a fixed-point blocked handoff without inventing a successor', asyn
       evidenceRefs: ['evidence://task-b'],
     },
   });
+  const candidateRun = structuredClone(fixture.planPackage.execution.run);
+  candidateRun.taskStates['task-a'] = {
+    state: 'done',
+    blocker: null,
+  };
+  candidateRun.state = 'blocked';
+  candidateRun.currentTaskId = null;
+  candidateRun.exhaustion = prepared.candidateTransition.exhaustion;
+  assert.equal(
+    prepared.request.candidatePlanDigest,
+    digestCompletionCandidate(candidateRun),
+  );
 
   fixture.useReviewer();
   const submitted = await submitCompletionReview(

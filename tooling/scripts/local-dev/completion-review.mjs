@@ -811,7 +811,9 @@ function completionCandidateManifest(
 }
 
 export function digestCompletionCandidate(candidateDocument) {
-  return digest(candidateDocument);
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(candidateDocument)))
+    .digest('hex');
 }
 
 function describeCompletionCandidate(manifest) {
@@ -821,6 +823,21 @@ function describeCompletionCandidate(manifest) {
       manifest.tasks.find((task) => task.status === 'in_progress')?.id ?? null,
     exhaustion: manifest.exhaustion,
   };
+}
+
+function completionCandidateRun(planPackage, manifest) {
+  const candidate = structuredClone(planPackage.execution.run);
+  for (const task of manifest.tasks) {
+    candidate.taskStates[task.id] = {
+      state: task.status,
+      blocker: task.blocker ?? null,
+    };
+  }
+  candidate.state = manifest.status;
+  candidate.currentTaskId =
+    manifest.tasks.find((task) => task.status === 'in_progress')?.id ?? null;
+  candidate.exhaustion = manifest.exhaustion;
+  return candidate;
 }
 
 async function completionCandidate(

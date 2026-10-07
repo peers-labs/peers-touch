@@ -1,21 +1,5 @@
 package relay
 
-// 2026-04-07: Major rewrite — introduced frame dispatcher model.
-//
-// Old model: streamEntry was a passive conn wrapper; handleForward directly
-// called ReadFrame on the conn in parallel with handleIncomingFrames → race.
-//
-// New model: each streamEntry owns a readLoop goroutine (the ONLY reader on
-// the conn). Incoming frames are dispatched by type:
-//   - Response → routed to pending[reqID] channel (wakes up the Forward caller)
-//   - Ping     → immediately replies Pong via writeMu
-//   - Pong     → updates lastPong timestamp (used by liveness check)
-//   - Others   → logged and dropped
-//
-// All writes go through writeMu. Forward callers use SendRequest() which
-// registers a pending channel, writes the request frame, and selects on the
-// channel with context cancellation.
-
 import (
 	"context"
 	"errors"
@@ -25,247 +9,410 @@ import (
 	"sync/atomic"
 	"time"
 
+	federationmodel "github.com/peers-labs/peers-touch/station/frame/core/federation/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/protocol"
 )
 
-// ---- Sentinel errors ----
-
 var (
 	ErrStreamClosed       = errors.New("stream closed")
-	ErrStreamDisconnected = errors.New("stream disconnected while waiting for response")
+	ErrStreamDisconnected = errors.New("stream disconnected")
+	ErrTunnelProtocol     = errors.New("tunnel protocol violation")
+	ErrTunnelOverloaded   = errors.New("tunnel queue overloaded")
+	ErrTunnelOversize     = errors.New("tunnel byte limit exceeded")
 )
 
-// StatusCallback is invoked when a stream goes online/offline.
-type StatusCallback func(ctx context.Context, peerID string, online bool)
+const tunnelQueueDepth = 16
 
-// BroadcastCallback is invoked by the readLoop when a station
-// publishes a Broadcast frame on its stream. The relay (StreamManager)
-// uses this hook to fan the event out to all OTHER connected streams,
-// stamped with the authenticated `originPeerID`.
-//
-// The dispatcher invokes this callback in a fresh goroutine (see
-// readLoop's BroadcastFrame case), so the callback MAY perform
-// blocking work; it must NOT, however, write to the *publisher's*
-// stream (e.peerID) from inside the callback because that would
-// require the same writeMu the readLoop's pong path also uses.
-// Callbacks must also tolerate being invoked rapidly — there's no
-// rate-limiting in the codec layer.
-type BroadcastCallback func(ctx context.Context, originPeerID, topic string, body []byte)
+type StatusCallback func(
+	ctx context.Context,
+	peerID string,
+	generation uint64,
+	online bool,
+)
 
-// pendingRequest is a slot in the response dispatch table.
-type pendingRequest struct {
-	ch chan *protocol.ResponseFrame
+type BroadcastCallback func(
+	ctx context.Context,
+	originPeerID string,
+	topic string,
+	body []byte,
+)
+
+type streamTunnel struct {
+	id                   uint32
+	entry                *streamEntry
+	opened               chan struct{}
+	incoming             chan []byte
+	done                 chan struct{}
+	finishOnce           sync.Once
+	mu                   sync.Mutex
+	finished             bool
+	openedOK             bool
+	nextIncomingSequence uint64
+	nextOutgoingSequence uint64
+	incomingBytes        int64
+	outgoingBytes        int64
+	maxDirectionBytes    int64
 }
 
-// streamEntry represents a live TCP connection to a station.
-// It owns its readLoop goroutine and serialises all writes via writeMu.
-type streamEntry struct {
-	peerID    string
-	conn      net.Conn
-	mountedAt time.Time
+func newStreamTunnel(
+	entry *streamEntry,
+	id uint32,
+	maxDirectionBytes int64,
+) *streamTunnel {
+	return &streamTunnel{
+		id:                   id,
+		entry:                entry,
+		opened:               make(chan struct{}),
+		incoming:             make(chan []byte, tunnelQueueDepth),
+		done:                 make(chan struct{}),
+		nextIncomingSequence: 1,
+		nextOutgoingSequence: 1,
+		maxDirectionBytes:    maxDirectionBytes,
+	}
+}
 
-	// writeMu serialises ALL writes to conn (request frames, pong, ping).
+func (t *streamTunnel) markOpened() {
+	t.mu.Lock()
+	if !t.finished && !t.openedOK {
+		t.openedOK = true
+		close(t.opened)
+	}
+	t.mu.Unlock()
+}
+
+func (t *streamTunnel) acceptData(frame *protocol.TunnelDataFrame) error {
+	t.mu.Lock()
+	if t.finished || frame.Sequence != t.nextIncomingSequence {
+		t.mu.Unlock()
+		return ErrTunnelProtocol
+	}
+	nextBytes := t.incomingBytes + int64(len(frame.Data))
+	if nextBytes > t.maxDirectionBytes ||
+		nextBytes+t.outgoingBytes > t.maxDirectionBytes*2 {
+		t.mu.Unlock()
+		return ErrTunnelOversize
+	}
+	t.nextIncomingSequence++
+	t.incomingBytes = nextBytes
+	t.mu.Unlock()
+
+	data := append([]byte(nil), frame.Data...)
+	select {
+	case t.incoming <- data:
+		return nil
+	default:
+		return ErrTunnelOverloaded
+	}
+}
+
+func (t *streamTunnel) Send(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if len(data) > protocol.MaxTunnelDataLen {
+		return ErrTunnelOversize
+	}
+	t.mu.Lock()
+	if t.finished {
+		t.mu.Unlock()
+		return ErrStreamClosed
+	}
+	nextBytes := t.outgoingBytes + int64(len(data))
+	if nextBytes > t.maxDirectionBytes ||
+		t.incomingBytes+nextBytes > t.maxDirectionBytes*2 {
+		t.mu.Unlock()
+		return ErrTunnelOversize
+	}
+	sequence := t.nextOutgoingSequence
+	t.nextOutgoingSequence++
+	t.outgoingBytes = nextBytes
+	t.mu.Unlock()
+
+	t.entry.writeMu.Lock()
+	err := protocol.WriteTunnelData(t.entry.conn, t.id, sequence, data)
+	t.entry.writeMu.Unlock()
+	if err != nil {
+		return fmt.Errorf("write tunnel data: %w", err)
+	}
+	return nil
+}
+
+func (t *streamTunnel) Receive(ctx context.Context) ([]byte, error) {
+	select {
+	case data := <-t.incoming:
+		return data, nil
+	default:
+	}
+	select {
+	case data := <-t.incoming:
+		return data, nil
+	case <-t.done:
+		return nil, ErrStreamDisconnected
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (t *streamTunnel) Cancel(
+	reason federationmodel.RelayTunnelCloseReason,
+) {
+	t.entry.finishTunnel(t.id, reason, true)
+}
+
+func (t *streamTunnel) finish() {
+	t.finishOnce.Do(func() {
+		t.mu.Lock()
+		t.finished = true
+		t.mu.Unlock()
+		close(t.done)
+	})
+}
+
+type streamEntry struct {
+	peerID              string
+	generation          uint64
+	conn                net.Conn
+	credentialExpiresAt time.Time
+	maxDirectionBytes   int64
+	rateBytesPerSecond  int64
+
 	writeMu sync.Mutex
 
-	// pending maps reqID → response channel. Protected by pendingMu.
-	pendingMu sync.Mutex
-	pending   map[uint32]*pendingRequest
+	tunnelsMu sync.RWMutex
+	tunnels   map[uint32]*streamTunnel
 
-	// semaphore limits per-station concurrent forwards (Block 7).
 	semaphore chan struct{}
+	lastPong  atomic.Value
+	closed    atomic.Bool
+	done      chan struct{}
+	ctx       context.Context
+	cancel    context.CancelFunc
 
-	// lastPong is updated by readLoop when a Pong arrives.
-	lastPong atomic.Value // time.Time
-
-	// closed is set once; signals readLoop and prevents double-close.
-	closed atomic.Bool
-
-	// done is closed when readLoop exits.
-	done chan struct{}
-
-	// ctx/cancel for the entry's lifetime (tied to parent context).
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	// onBroadcast is the relay-side fan-out hook. Inbound Broadcast
-	// frames are dispatched here verbatim so the StreamManager can
-	// fan them out to siblings. May be nil during tests.
 	onBroadcast BroadcastCallback
 }
 
-// newStreamEntry creates and starts a stream entry. The readLoop goroutine
-// begins immediately — the entry is "live" after this call.
-func newStreamEntry(parentCtx context.Context, peerID string, conn net.Conn, maxConcurrent int, onBroadcast BroadcastCallback) *streamEntry {
+func newStreamEntry(
+	parentCtx context.Context,
+	peerID string,
+	generation uint64,
+	credentialExpiresAt time.Time,
+	conn net.Conn,
+	maxConcurrent int,
+	maxDirectionBytes int64,
+	rateBytesPerSecond int64,
+	onBroadcast BroadcastCallback,
+) *streamEntry {
 	ctx, cancel := context.WithCancel(parentCtx)
-	e := &streamEntry{
-		peerID:      peerID,
-		conn:        conn,
-		mountedAt:   time.Now(),
-		pending:     make(map[uint32]*pendingRequest),
-		semaphore:   make(chan struct{}, maxConcurrent),
-		done:        make(chan struct{}),
-		ctx:         ctx,
-		cancel:      cancel,
-		onBroadcast: onBroadcast,
+	entry := &streamEntry{
+		peerID:              peerID,
+		generation:          generation,
+		conn:                conn,
+		credentialExpiresAt: credentialExpiresAt,
+		maxDirectionBytes:   maxDirectionBytes,
+		rateBytesPerSecond:  rateBytesPerSecond,
+		tunnels:             make(map[uint32]*streamTunnel),
+		semaphore:           make(chan struct{}, maxConcurrent),
+		done:                make(chan struct{}),
+		ctx:                 ctx,
+		cancel:              cancel,
+		onBroadcast:         onBroadcast,
 	}
-	e.lastPong.Store(time.Now())
-	go e.readLoop()
-	return e
+	entry.lastPong.Store(time.Now())
+	return entry
 }
 
-// readLoop is the ONLY goroutine that reads from conn. It dispatches frames
-// by type and exits when the conn is closed or context is cancelled.
+func (e *streamEntry) start() {
+	go e.readLoop()
+}
+
+// readLoop is the only reader for a mount stream. Blocking tunnel and
+// broadcast work is handed off so Ping/Pong liveness cannot be starved.
 func (e *streamEntry) readLoop() {
 	defer close(e.done)
-	defer e.failAllPending()
+	defer e.failAllTunnels()
 
 	for {
 		frame, err := protocol.ReadFrame(e.conn)
 		if err != nil {
 			if !e.closed.Load() {
-				logger.Warnf(e.ctx, "[stream] readLoop error for %s: %v", e.peerID, err)
+				logger.Warnf(
+					e.ctx,
+					"[stream] read error for %s: %v",
+					e.peerID,
+					err,
+				)
 			}
 			return
 		}
-
-		switch f := frame.(type) {
-		case *protocol.ResponseFrame:
-			e.dispatchResponse(f)
-
+		switch typed := frame.(type) {
+		case *protocol.TunnelOpenedFrame:
+			if tunnel := e.tunnel(typed.TunnelID); tunnel != nil {
+				tunnel.markOpened()
+			}
+		case *protocol.TunnelDataFrame:
+			tunnel := e.tunnel(typed.TunnelID)
+			if tunnel == nil {
+				go e.writeTunnelCancel(
+					typed.TunnelID,
+					federationmodel.RelayTunnelCloseReason_RELAY_TUNNEL_CLOSE_REASON_PROTOCOL_ERROR,
+				)
+				continue
+			}
+			if err := tunnel.acceptData(typed); err != nil {
+				reason := federationmodel.RelayTunnelCloseReason_RELAY_TUNNEL_CLOSE_REASON_PROTOCOL_ERROR
+				if errors.Is(err, ErrTunnelOverloaded) {
+					reason = federationmodel.RelayTunnelCloseReason_RELAY_TUNNEL_CLOSE_REASON_OVERLOADED
+				} else if errors.Is(err, ErrTunnelOversize) {
+					reason = federationmodel.RelayTunnelCloseReason_RELAY_TUNNEL_CLOSE_REASON_OVERSIZE
+				}
+				go e.finishTunnel(typed.TunnelID, reason, true)
+			}
+		case *protocol.TunnelCancelFrame:
+			e.finishTunnel(typed.TunnelID, typed.Reason, false)
+		case *protocol.TunnelCloseFrame:
+			e.finishTunnel(typed.TunnelID, typed.Reason, false)
 		case *protocol.PingFrame:
 			e.writeMu.Lock()
-			writeErr := protocol.WritePong(e.conn, f.RequestID)
+			writeErr := protocol.WritePong(e.conn, typed.RequestID)
 			e.writeMu.Unlock()
 			if writeErr != nil {
-				logger.Warnf(e.ctx, "[stream] pong write error for %s: %v", e.peerID, writeErr)
 				return
 			}
-
 		case *protocol.PongFrame:
 			e.lastPong.Store(time.Now())
-
 		case *protocol.BroadcastFrame:
-			// Tier C1: fan-out is delegated to the StreamManager via
-			// onBroadcast, dispatched off the read loop so a slow
-			// sibling cannot stall this stream's heartbeat or
-			// response dispatch. We *deliberately* discard whatever
-			// origin_peer_id the publisher sent — the relay is the
-			// authority for that field — and pass our authenticated
-			// peer id into the callback instead.
 			if e.onBroadcast != nil {
-				go e.onBroadcast(e.ctx, e.peerID, f.Topic, f.Body)
-			} else {
-				logger.Warnf(e.ctx, "[stream] broadcast from %s topic=%s but no fan-out hook installed", e.peerID, f.Topic)
+				go e.onBroadcast(e.ctx, e.peerID, typed.Topic, typed.Body)
 			}
-
 		default:
-			logger.Warnf(e.ctx, "[stream] unexpected frame type for %s: %T", e.peerID, f)
+			logger.Warnf(
+				e.ctx,
+				"[stream] unexpected frame for %s: %T",
+				e.peerID,
+				typed,
+			)
 		}
 	}
 }
 
-// dispatchResponse routes a ResponseFrame to the corresponding pending
-// request channel. If no waiter exists (timeout/cancelled), the frame is dropped.
-func (e *streamEntry) dispatchResponse(f *protocol.ResponseFrame) {
-	e.pendingMu.Lock()
-	pr, ok := e.pending[f.RequestID]
-	if ok {
-		delete(e.pending, f.RequestID)
-	}
-	e.pendingMu.Unlock()
-
-	if ok {
-		// Non-blocking send — if the waiter already left (ctx cancelled),
-		// the channel has a buffer of 1 so this won't block.
-		select {
-		case pr.ch <- f:
-		default:
-		}
-	} else {
-		logger.Warnf(e.ctx, "[stream] orphan response frame req_id=%d for %s", f.RequestID, e.peerID)
-	}
-}
-
-// failAllPending wakes all waiting SendRequest callers with nil (they'll
-// see an error because the channel is closed without a value, or ctx is done).
-func (e *streamEntry) failAllPending() {
-	e.pendingMu.Lock()
-	for id, pr := range e.pending {
-		close(pr.ch)
-		delete(e.pending, id)
-	}
-	e.pendingMu.Unlock()
-}
-
-// SendRequest sends a request frame and waits for the corresponding response.
-// This is the ONLY way Forward should interact with the stream.
-//
-// The method:
-//  1. Registers a pending slot for reqID
-//  2. Writes the request frame under writeMu
-//  3. Waits on the response channel with ctx cancellation
-//
-// Thread-safe: multiple goroutines can call SendRequest concurrently —
-// each gets its own reqID and response channel.
-func (e *streamEntry) SendRequest(
+func (e *streamEntry) OpenTunnel(
 	ctx context.Context,
-	reqID uint32,
-	method, path string,
-	headers map[string]string,
-	body []byte,
-) (*protocol.ResponseFrame, error) {
+	tunnelID uint32,
+	routeID string,
+	routeGeneration uint64,
+	callerStationPeerID string,
+	purpose federationmodel.RelayTunnelPurpose,
+	handshakeTimeout time.Duration,
+) (*streamTunnel, error) {
 	if e.closed.Load() {
 		return nil, ErrStreamClosed
 	}
+	tunnel := newStreamTunnel(e, tunnelID, e.maxDirectionBytes)
+	e.tunnelsMu.Lock()
+	if _, exists := e.tunnels[tunnelID]; exists {
+		e.tunnelsMu.Unlock()
+		return nil, ErrTunnelProtocol
+	}
+	e.tunnels[tunnelID] = tunnel
+	e.tunnelsMu.Unlock()
 
-	// 1. Register pending slot (buffered channel so readLoop never blocks).
-	pr := &pendingRequest{ch: make(chan *protocol.ResponseFrame, 1)}
-	e.pendingMu.Lock()
-	e.pending[reqID] = pr
-	e.pendingMu.Unlock()
-
-	// Ensure cleanup on all exit paths.
-	defer func() {
-		e.pendingMu.Lock()
-		delete(e.pending, reqID)
-		e.pendingMu.Unlock()
-	}()
-
-	// 2. Write request frame.
 	e.writeMu.Lock()
-	writeErr := protocol.WriteRequestFrame(e.conn, reqID, method, path, headers, body)
+	err := protocol.WriteTunnelOpen(e.conn, &protocol.TunnelOpenFrame{
+		TunnelID:            tunnelID,
+		RouteID:             routeID,
+		RouteGeneration:     routeGeneration,
+		CallerStationPeerID: callerStationPeerID,
+		Purpose:             purpose,
+	})
 	e.writeMu.Unlock()
-	if writeErr != nil {
-		return nil, fmt.Errorf("write request: %w", writeErr)
+	if err != nil {
+		e.finishTunnel(tunnelID, 0, false)
+		return nil, fmt.Errorf("write tunnel open: %w", err)
 	}
 
-	// 3. Wait for response or cancellation.
+	timer := time.NewTimer(handshakeTimeout)
+	defer timer.Stop()
 	select {
-	case resp, ok := <-pr.ch:
-		if !ok || resp == nil {
-			return nil, ErrStreamDisconnected
-		}
-		return resp, nil
+	case <-tunnel.opened:
+		return tunnel, nil
+	case <-tunnel.done:
+		return nil, ErrStreamDisconnected
+	case <-timer.C:
+		e.finishTunnel(
+			tunnelID,
+			federationmodel.RelayTunnelCloseReason_RELAY_TUNNEL_CLOSE_REASON_TIMEOUT,
+			true,
+		)
+		return nil, context.DeadlineExceeded
 	case <-ctx.Done():
+		e.finishTunnel(
+			tunnelID,
+			federationmodel.RelayTunnelCloseReason_RELAY_TUNNEL_CLOSE_REASON_CANCELLED,
+			true,
+		)
 		return nil, ctx.Err()
-	case <-e.done:
-		return nil, ErrStreamClosed
 	}
 }
 
-// WritePing sends a Ping frame through the write lock.
-func (e *streamEntry) WritePing(reqID uint32) error {
+func (e *streamEntry) tunnel(tunnelID uint32) *streamTunnel {
+	e.tunnelsMu.RLock()
+	tunnel := e.tunnels[tunnelID]
+	e.tunnelsMu.RUnlock()
+	return tunnel
+}
+
+func (e *streamEntry) finishTunnel(
+	tunnelID uint32,
+	reason federationmodel.RelayTunnelCloseReason,
+	notifyStation bool,
+) {
+	e.tunnelsMu.Lock()
+	tunnel := e.tunnels[tunnelID]
+	delete(e.tunnels, tunnelID)
+	e.tunnelsMu.Unlock()
+	if tunnel == nil {
+		return
+	}
+	tunnel.finish()
+	if notifyStation && reason != 0 {
+		e.writeTunnelCancel(tunnelID, reason)
+	}
+}
+
+func (e *streamEntry) writeTunnelCancel(
+	tunnelID uint32,
+	reason federationmodel.RelayTunnelCloseReason,
+) {
+	e.writeMu.Lock()
+	_ = protocol.WriteTunnelCancel(e.conn, tunnelID, reason)
+	e.writeMu.Unlock()
+}
+
+func (e *streamEntry) failAllTunnels() {
+	e.tunnelsMu.Lock()
+	tunnels := make([]*streamTunnel, 0, len(e.tunnels))
+	for id, tunnel := range e.tunnels {
+		tunnels = append(tunnels, tunnel)
+		delete(e.tunnels, id)
+	}
+	e.tunnelsMu.Unlock()
+	for _, tunnel := range tunnels {
+		tunnel.finish()
+	}
+}
+
+func (e *streamEntry) WritePing(requestID uint32) error {
 	e.writeMu.Lock()
 	defer e.writeMu.Unlock()
-	return protocol.WritePing(e.conn, reqID)
+	return protocol.WritePing(e.conn, requestID)
 }
 
-// WriteBroadcast sends a Broadcast frame to this station, stamping
-// `originPeerID` (the authenticated publisher) before write. The caller
-// is responsible for filtering out the publisher's own stream so we
-// don't echo events back to the source.
-func (e *streamEntry) WriteBroadcast(topic, originPeerID string, body []byte) error {
+func (e *streamEntry) WriteBroadcast(
+	topic string,
+	originPeerID string,
+	body []byte,
+) error {
 	if e.closed.Load() {
 		return ErrStreamClosed
 	}
@@ -274,28 +421,22 @@ func (e *streamEntry) WriteBroadcast(topic, originPeerID string, body []byte) er
 	return protocol.WriteBroadcastFrame(e.conn, topic, originPeerID, body)
 }
 
-// Close marks the entry as closed, cancels context, and closes the conn.
-// readLoop will exit on its own when the conn is closed.
 func (e *streamEntry) Close() {
 	if e.closed.Swap(true) {
-		return // already closed
+		return
 	}
 	e.cancel()
 	_ = e.conn.Close()
 }
 
-// Wait blocks until the readLoop goroutine exits.
 func (e *streamEntry) Wait() {
 	<-e.done
 }
 
-// LastPong returns the timestamp of the last received Pong.
 func (e *streamEntry) LastPong() time.Time {
 	return e.lastPong.Load().(time.Time)
 }
 
-// AcquireSemaphore tries to acquire a slot for this station. Returns false
-// if the station already has too many concurrent forwards (Block 7).
 func (e *streamEntry) AcquireSemaphore() bool {
 	select {
 	case e.semaphore <- struct{}{}:
@@ -305,68 +446,61 @@ func (e *streamEntry) AcquireSemaphore() bool {
 	}
 }
 
-// ReleaseSemaphore releases a previously acquired slot.
 func (e *streamEntry) ReleaseSemaphore() {
 	<-e.semaphore
 }
 
-// ---- StreamManager ----
-
-// StreamManager owns the peer-id → streamEntry mapping, provides
-// request dispatching, periodic liveness checks, and graceful drain.
 type StreamManager struct {
 	mu       sync.RWMutex
 	streams  map[string]*streamEntry
 	inflight atomic.Int64
-	reqID    atomic.Uint32
+	streamID atomic.Uint32
 
 	maxConcurrentPerStation int
+	maxDirectionBytes       int64
 	callback                StatusCallback
-
-	// allowedBroadcastTopics gates which Broadcast topics the relay is
-	// willing to fan out. Empty map = deny-by-default (no broadcast).
-	// Tier C1 ships only one topic; future event types must be added
-	// here to be relayed.
-	allowedBroadcastTopics map[string]struct{}
+	allowedBroadcastTopics  map[string]struct{}
 }
 
-// NewStreamManager builds a manager with the supplied status callback
-// and concurrency budget. Broadcast topics are off by default —
-// callers wanting pub/sub must set them via SetAllowedBroadcastTopics.
-func NewStreamManager(cb StatusCallback, maxConcurrentPerStation int) *StreamManager {
+type streamLimits struct {
+	maxConcurrent      int
+	maxDirectionBytes  int64
+	rateBytesPerSecond int64
+}
+
+func NewStreamManager(
+	callback StatusCallback,
+	maxConcurrentPerStation int,
+	maxDirectionBytes ...int64,
+) *StreamManager {
 	if maxConcurrentPerStation <= 0 {
 		maxConcurrentPerStation = 64
+	}
+	directionLimit := int64(32 << 20)
+	if len(maxDirectionBytes) > 0 && maxDirectionBytes[0] > 0 {
+		directionLimit = maxDirectionBytes[0]
 	}
 	return &StreamManager{
 		streams:                 make(map[string]*streamEntry),
 		maxConcurrentPerStation: maxConcurrentPerStation,
-		callback:                cb,
+		maxDirectionBytes:       directionLimit,
+		callback:                callback,
 		allowedBroadcastTopics:  make(map[string]struct{}),
 	}
 }
 
-// SetAllowedBroadcastTopics replaces the topic allow-list. Calling
-// this with an empty list re-enables deny-by-default.
-//
-// The allow-list is the relay's only pub/sub policy gate today; we
-// keep it deliberately simple because Tier C1 has exactly one topic.
-// Per-station rate-limits / per-topic ACLs land in a later tier.
 func (sm *StreamManager) SetAllowedBroadcastTopics(topics ...string) {
 	next := make(map[string]struct{}, len(topics))
-	for _, t := range topics {
-		if t == "" {
-			continue
+	for _, topic := range topics {
+		if topic != "" {
+			next[topic] = struct{}{}
 		}
-		next[t] = struct{}{}
 	}
 	sm.mu.Lock()
 	sm.allowedBroadcastTopics = next
 	sm.mu.Unlock()
 }
 
-// IsBroadcastTopicAllowed reports whether the relay is configured to
-// fan out the given topic. Used by the broadcast callback to drop
-// off-policy publishes early.
 func (sm *StreamManager) IsBroadcastTopicAllowed(topic string) bool {
 	sm.mu.RLock()
 	_, ok := sm.allowedBroadcastTopics[topic]
@@ -374,278 +508,257 @@ func (sm *StreamManager) IsBroadcastTopicAllowed(topic string) bool {
 	return ok
 }
 
-// Add registers (or replaces) a stream for the given peerID.
-// If an old stream exists it is closed first.
-// The new entry starts its readLoop immediately.
-func (sm *StreamManager) Add(ctx context.Context, peerID string, conn net.Conn) {
-	// We bind the broadcast hook here (not in NewStreamManager) so
-	// each entry's readLoop dispatches into the same fan-out path,
-	// without the entry having to know about its peers.
-	entry := newStreamEntry(ctx, peerID, conn, sm.maxConcurrentPerStation, sm.handleInboundBroadcast)
+func (sm *StreamManager) Add(
+	ctx context.Context,
+	peerID string,
+	generation uint64,
+	credentialExpiresAt time.Time,
+	conn net.Conn,
+) {
+	_, _ = sm.AddValidated(
+		ctx,
+		peerID,
+		generation,
+		credentialExpiresAt,
+		conn,
+		streamLimits{},
+		nil,
+	)
+}
 
+func (sm *StreamManager) AddValidated(
+	ctx context.Context,
+	peerID string,
+	generation uint64,
+	credentialExpiresAt time.Time,
+	conn net.Conn,
+	limits streamLimits,
+	validate func() error,
+) (*streamEntry, error) {
 	sm.mu.Lock()
-	if old, exists := sm.streams[peerID]; exists {
+	if validate != nil {
+		if err := validate(); err != nil {
+			sm.mu.Unlock()
+			return nil, err
+		}
+	}
+	if limits.maxConcurrent <= 0 ||
+		limits.maxConcurrent > sm.maxConcurrentPerStation {
+		limits.maxConcurrent = sm.maxConcurrentPerStation
+	}
+	if limits.maxDirectionBytes <= 0 ||
+		limits.maxDirectionBytes > sm.maxDirectionBytes {
+		limits.maxDirectionBytes = sm.maxDirectionBytes
+	}
+	if limits.rateBytesPerSecond <= 0 ||
+		limits.rateBytesPerSecond > tunnelRateBytesPerSecond {
+		limits.rateBytesPerSecond = tunnelRateBytesPerSecond
+	}
+	entry := newStreamEntry(
+		ctx,
+		peerID,
+		generation,
+		credentialExpiresAt,
+		conn,
+		limits.maxConcurrent,
+		limits.maxDirectionBytes,
+		limits.rateBytesPerSecond,
+		sm.handleInboundBroadcast,
+	)
+	if old := sm.streams[peerID]; old != nil {
 		old.Close()
 	}
 	sm.streams[peerID] = entry
+	entry.start()
 	sm.mu.Unlock()
 
 	if sm.callback != nil {
-		sm.callback(ctx, peerID, true)
+		sm.callback(ctx, peerID, generation, true)
 	}
-	logger.Infof(ctx, "[stream] added stream for %s", peerID)
+	return entry, nil
 }
 
-// handleInboundBroadcast is the readLoop callback for Broadcast
-// frames. It applies the topic allow-list, then fans the event out to
-// every registered stream EXCEPT the publisher (we don't echo).
-//
-// `originPeerID` is the authenticated publisher (set by Add via the
-// entry callback closure) — never trust whatever the publisher might
-// have placed in the inbound frame.
-func (sm *StreamManager) handleInboundBroadcast(ctx context.Context, originPeerID, topic string, body []byte) {
+func (sm *StreamManager) handleInboundBroadcast(
+	ctx context.Context,
+	originPeerID string,
+	topic string,
+	body []byte,
+) {
 	if !sm.IsBroadcastTopicAllowed(topic) {
-		// We still record the topic the publisher used — cardinality
-		// is bounded by the publisher's frame parser (max 128 bytes,
-		// see protocol.MaxBroadcastTopicLen) AND by the fact that
-		// any unknown topic is a config bug we want to surface rather
-		// than aggregate away.
 		metBroadcastReceived.Inc(topic, broadcastResultDroppedDisallowed)
-		logger.Warnf(ctx, "[stream] dropping broadcast from %s on disallowed topic %q", originPeerID, topic)
 		return
 	}
-
 	metBroadcastReceived.Inc(topic, broadcastResultAllowed)
 
-	// Snapshot the peer list under the read lock. We don't hold the
-	// lock during writes because per-entry writeMu is what serialises
-	// them, and a long broadcast must not block Add/Remove.
 	sm.mu.RLock()
-	peers := make([]*streamEntry, 0, len(sm.streams))
-	for pid, e := range sm.streams {
-		if pid == originPeerID || e.closed.Load() {
-			continue
+	targets := make([]*streamEntry, 0, len(sm.streams))
+	for peerID, entry := range sm.streams {
+		if peerID != originPeerID && !entry.closed.Load() {
+			targets = append(targets, entry)
 		}
-		peers = append(peers, e)
 	}
 	sm.mu.RUnlock()
+	metBroadcastFanoutSize.Observe(float64(len(targets)), topic)
 
-	// Fan-out cardinality at dispatch time. Recorded BEFORE the
-	// goroutines run so a per-write failure doesn't bias the
-	// histogram; the per-write outcome counter below tells you how
-	// many of those siblings actually got the frame.
-	metBroadcastFanoutSize.Observe(float64(len(peers)), topic)
-
-	// Each per-peer WriteBroadcast acquires that peer's writeMu, which
-	// can be held for several seconds by an in-flight HTTP forward.
-	// Issuing the writes in parallel goroutines means one stuck sibling
-	// cannot head-of-line-block its neighbours; logging happens
-	// per-goroutine. We bound concurrency only by the live peer count —
-	// fan-out volume is intrinsically capped by topic allow-list +
-	// 64KB body limit + publisher rate.
-	for _, e := range peers {
+	for _, entry := range targets {
 		go func(target *streamEntry) {
 			if err := target.WriteBroadcast(topic, originPeerID, body); err != nil {
 				metBroadcastForwarded.Inc(topic, broadcastResultError)
-				logger.Warnf(ctx, "[stream] broadcast write to %s failed (topic=%s origin=%s): %v",
-					target.peerID, topic, originPeerID, err)
 				return
 			}
 			metBroadcastForwarded.Inc(topic, broadcastResultOK)
-		}(e)
+		}(entry)
 	}
-
-	logger.Debugf(ctx, "[stream] broadcast topic=%s origin=%s fanout_count=%d body_len=%d",
-		topic, originPeerID, len(peers), len(body))
 }
 
-// Remove closes and deletes the stream for peerID.
 func (sm *StreamManager) Remove(ctx context.Context, peerID string) {
 	sm.mu.Lock()
-	entry, exists := sm.streams[peerID]
-	if exists {
+	entry := sm.streams[peerID]
+	if entry != nil {
 		entry.Close()
 		delete(sm.streams, peerID)
 	}
 	sm.mu.Unlock()
-
-	if exists && sm.callback != nil {
-		sm.callback(ctx, peerID, false)
+	if entry != nil && sm.callback != nil {
+		sm.callback(ctx, peerID, entry.generation, false)
 	}
 }
 
-// RemoveIfSame only removes the entry if it is still the same pointer as `expected`.
-// This prevents a reconnecting station's new entry from being killed by the old
-// goroutine's cleanup path.
-func (sm *StreamManager) RemoveIfSame(ctx context.Context, peerID string, expected *streamEntry) {
+func (sm *StreamManager) RemoveIfSame(
+	ctx context.Context,
+	peerID string,
+	expected *streamEntry,
+) {
 	if expected == nil {
 		return
 	}
-
 	sm.mu.Lock()
-	current, exists := sm.streams[peerID]
-	if exists && current == expected {
+	current := sm.streams[peerID]
+	if current == expected {
 		current.Close()
 		delete(sm.streams, peerID)
 	} else {
-		exists = false
+		current = nil
 	}
 	sm.mu.Unlock()
-
-	if exists && sm.callback != nil {
-		sm.callback(ctx, peerID, false)
+	if current != nil && sm.callback != nil {
+		sm.callback(ctx, peerID, expected.generation, false)
 	}
 }
 
-// GetEntry returns the stream entry for peerID (if it exists and is not closed).
-// The caller may call entry.SendRequest() concurrently — no external locking needed.
 func (sm *StreamManager) GetEntry(peerID string) (*streamEntry, bool) {
 	sm.mu.RLock()
-	entry, ok := sm.streams[peerID]
+	entry := sm.streams[peerID]
 	sm.mu.RUnlock()
-	if !ok || entry.closed.Load() {
-		return nil, false
-	}
-	return entry, true
+	return entry, entry != nil && !entry.closed.Load()
 }
 
-// TrackInflight increments inflight counter. Caller MUST call UntrackInflight after.
+func (sm *StreamManager) NextTunnelID() uint32 {
+	for {
+		id := sm.streamID.Add(1)
+		if id != 0 {
+			return id
+		}
+	}
+}
+
 func (sm *StreamManager) TrackInflight() {
 	sm.inflight.Add(1)
 }
 
-// UntrackInflight decrements inflight counter.
 func (sm *StreamManager) UntrackInflight() {
 	sm.inflight.Add(-1)
 }
 
-// NextRequestID returns a monotonically increasing ID for framing.
-func (sm *StreamManager) NextRequestID() uint32 {
-	return sm.reqID.Add(1)
-}
-
-// Inflight returns the current number of in-flight forwards.
 func (sm *StreamManager) Inflight() int64 {
 	return sm.inflight.Load()
 }
 
-// Count returns the total number of registered streams.
 func (sm *StreamManager) Count() int {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return len(sm.streams)
 }
 
-// PingAll sends a Ping to every stream and checks liveness based on the last
-// Pong timestamp. Streams that haven't responded within `interval + timeout`
-// are removed.
-//
-// The cutoff is `interval + timeout`, NOT `timeout` alone, because a healthy
-// pong cycle looks like: at t=N we send a ping and (within timeout) record
-// lastPong; at t=N+interval we run PingAll again and lastPong is `interval`
-// old by construction. If we used `now - timeout` as the cutoff we would
-// kill every healthy stream on the very next cycle. Initial lastPong is
-// stored at stream creation, so the same `interval + timeout` budget gives
-// brand-new streams their first full cycle to handshake.
-//
-// Unlike the old implementation, this does NOT lock each entry.mu — it simply
-// writes a Ping (via writeMu inside WritePing) and checks lastPong on the
-// next round. This means PingAll does not block ongoing Forward calls.
-func (sm *StreamManager) PingAll(ctx context.Context, interval, timeout time.Duration) int {
+func (sm *StreamManager) PingAll(
+	ctx context.Context,
+	interval time.Duration,
+	timeout time.Duration,
+) int {
 	sm.mu.RLock()
 	snapshot := make([]*streamEntry, 0, len(sm.streams))
-	for _, e := range sm.streams {
-		snapshot = append(snapshot, e)
+	for _, entry := range sm.streams {
+		snapshot = append(snapshot, entry)
 	}
 	sm.mu.RUnlock()
 
-	var failed []string
 	cutoff := time.Now().Add(-(interval + timeout))
-
-	for _, e := range snapshot {
-		if e.closed.Load() {
+	failed := make([]string, 0)
+	for _, entry := range snapshot {
+		if entry.closed.Load() ||
+			!entry.credentialExpiresAt.After(time.Now()) ||
+			entry.LastPong().Before(cutoff) {
+			failed = append(failed, entry.peerID)
 			continue
 		}
-
-		// Check if last pong is too old (station not responding).
-		if e.LastPong().Before(cutoff) {
-			logger.Warnf(ctx, "[stream] no pong from %s within %v, removing", e.peerID, interval+timeout)
-			failed = append(failed, e.peerID)
-			continue
-		}
-
-		// Send a new ping for the next round's liveness check.
-		pingID := sm.reqID.Add(1)
-		if err := e.WritePing(pingID); err != nil {
-			logger.Warnf(ctx, "[stream] ping write failed for %s: %v", e.peerID, err)
-			failed = append(failed, e.peerID)
+		if err := entry.WritePing(sm.NextTunnelID()); err != nil {
+			failed = append(failed, entry.peerID)
 		}
 	}
-
-	for _, pid := range failed {
-		sm.Remove(ctx, pid)
+	for _, peerID := range failed {
+		sm.Remove(ctx, peerID)
 	}
 	return len(failed)
 }
 
-// CleanupStale removes streams whose mountedAt is older than cutoff.
-func (sm *StreamManager) CleanupStale(ctx context.Context, cutoff time.Time) int {
-	sm.mu.Lock()
-	var stale []*streamEntry
-	for _, e := range sm.streams {
-		if e.mountedAt.Before(cutoff) {
-			stale = append(stale, e)
+// CleanupStale uses observed liveness, never mount age. A healthy long-lived
+// stream must survive indefinitely.
+func (sm *StreamManager) CleanupStale(
+	ctx context.Context,
+	cutoff time.Time,
+) int {
+	sm.mu.RLock()
+	staleIDs := make([]string, 0)
+	for peerID, entry := range sm.streams {
+		if entry.LastPong().Before(cutoff) {
+			staleIDs = append(staleIDs, peerID)
 		}
 	}
-	for _, e := range stale {
-		e.Close()
-		delete(sm.streams, e.peerID)
+	sm.mu.RUnlock()
+	for _, peerID := range staleIDs {
+		sm.Remove(ctx, peerID)
 	}
-	sm.mu.Unlock()
-
-	for _, e := range stale {
-		if sm.callback != nil {
-			sm.callback(ctx, e.peerID, false)
-		}
-		logger.Infof(ctx, "[stream] cleaned stale stream for %s", e.peerID)
-	}
-	return len(stale)
+	return len(staleIDs)
 }
 
-// DrainAndClose waits for inflight to reach 0 (up to timeout),
-// then closes all remaining streams and waits for their readLoops to exit.
-func (sm *StreamManager) DrainAndClose(ctx context.Context, timeout time.Duration) {
-	deadline := time.After(timeout)
+func (sm *StreamManager) DrainAndClose(
+	ctx context.Context,
+	timeout time.Duration,
+) {
+	timer := time.NewTimer(timeout)
 	ticker := time.NewTicker(50 * time.Millisecond)
+	defer timer.Stop()
 	defer ticker.Stop()
-
-drain:
-	for {
-		if sm.inflight.Load() <= 0 {
-			break
-		}
+	for sm.inflight.Load() > 0 {
 		select {
-		case <-deadline:
-			logger.Warnf(ctx, "[stream] drain timeout, %d requests still inflight", sm.inflight.Load())
-			break drain
+		case <-timer.C:
+			goto closeStreams
 		case <-ticker.C:
+		case <-ctx.Done():
+			goto closeStreams
 		}
 	}
 
-	// Close all streams.
+closeStreams:
 	sm.mu.Lock()
 	entries := make([]*streamEntry, 0, len(sm.streams))
-	for id, e := range sm.streams {
-		entries = append(entries, e)
-		e.Close()
-		delete(sm.streams, id)
+	for peerID, entry := range sm.streams {
+		entries = append(entries, entry)
+		entry.Close()
+		delete(sm.streams, peerID)
 	}
 	sm.mu.Unlock()
-
-	// Wait for all readLoops to finish (bounded by conn close).
-	for _, e := range entries {
-		e.Wait()
+	for _, entry := range entries {
+		entry.Wait()
 	}
-
-	logger.Infof(ctx, "[stream] all streams closed")
 }

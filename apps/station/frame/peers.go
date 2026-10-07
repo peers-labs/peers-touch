@@ -2,11 +2,13 @@ package peers
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	"github.com/peers-labs/peers-touch/station/frame/core/runtime/role"
 	"github.com/peers-labs/peers-touch/station/frame/object"
 	"github.com/peers-labs/peers-touch/station/frame/touch"
 )
@@ -58,9 +60,16 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 		// set context should be the first step
 		n.opts.Apply(option.WithRootCtx(ctx))
 
-		// prepare all fundamental handlers
-		opts = append(opts, touch.Routers()...)
-		opts = append(opts, touch.Lifecycle()...)
+		processRole, roleErr := role.FromContext(ctx)
+		if roleErr != nil {
+			err = fmt.Errorf("initialize peer role: %w", roleErr)
+			return
+		}
+
+		if processRole.IncludesTouch() {
+			opts = append(opts, touch.Routers()...)
+			opts = append(opts, touch.Lifecycle()...)
+		}
 
 		for _, o := range opts {
 			n.opts.Apply(o)

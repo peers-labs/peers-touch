@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/core/federation/model;model";
+
+enum RelayTunnelPurpose {
+  RELAY_TUNNEL_PURPOSE_UNSPECIFIED = 0;
+  RELAY_TUNNEL_PURPOSE_CLIENT_ACCESS = 1;
+  RELAY_TUNNEL_PURPOSE_FEDERATION_PEER = 2;
+}
+
+enum RelayTunnelCloseReason {
+  RELAY_TUNNEL_CLOSE_REASON_UNSPECIFIED = 0;
+  RELAY_TUNNEL_CLOSE_REASON_NORMAL = 1;
+  RELAY_TUNNEL_CLOSE_REASON_UNAVAILABLE = 2;
+  RELAY_TUNNEL_CLOSE_REASON_REVOKED = 3;
+  RELAY_TUNNEL_CLOSE_REASON_OVERLOADED = 4;
+  RELAY_TUNNEL_CLOSE_REASON_OVERSIZE = 5;
+  RELAY_TUNNEL_CLOSE_REASON_TIMEOUT = 6;
+  RELAY_TUNNEL_CLOSE_REASON_PROTOCOL_ERROR = 7;
+  RELAY_TUNNEL_CLOSE_REASON_CANCELLED = 8;
+}
+
+message RelayTunnelOpen {
+  string route_id = 1;
+  uint64 route_generation = 2;
+  bytes client_nonce = 3;
+  bytes connection_grant = 4;
+  string target_station_peer_id = 5;
+  RelayTunnelPurpose purpose = 6;
+}
+
+message RelayTunnelLimits {
+  uint64 max_frame_bytes = 1;
+  uint64 max_request_bytes = 2;
+  uint64 max_response_bytes = 3;
+  uint64 max_connection_bytes = 4;
+  uint32 idle_timeout_seconds = 5;
+  uint32 rate_bytes_per_second = 6;
+}
+
+message RelayTunnelOpened {
+  uint64 tunnel_id = 1;
+  RelayTunnelLimits limits = 2;
+  bytes route_attestation = 3;
+  bytes relay_nonce = 4;
+}
+
+message RelayTunnelData {
+  uint64 tunnel_id = 1;
+  uint64 sequence = 2;
+  bytes ciphertext = 3;
+}
+
+message RelayTunnelCancel {
+  uint64 tunnel_id = 1;
+  RelayTunnelCloseReason reason = 2;
+}
+
+message RelayTunnelClose {
+  uint64 tunnel_id = 1;
+  RelayTunnelCloseReason reason = 2;
+}
+
+message RelayTunnelFrame {
+  uint32 protocol_version = 1;
+  oneof payload {
+    RelayTunnelOpen open = 2;
+    RelayTunnelOpened opened = 3;
+    RelayTunnelData data = 4;
+    RelayTunnelCancel cancel = 5;
+    RelayTunnelClose close = 6;
+  }
+}

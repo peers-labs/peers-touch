@@ -13,9 +13,9 @@ peers:
           relay-url: ""
           relay-stream-addr: ""
 
-          # Single-use admin invite. Issued via tooling/scripts/pt-relay-issue-invites.sh
-          # and consumed by the FIRST /api/v1/relay/register call. After that
-          # the relay_token at token-store-path is the source of truth.
+          # Single-use opaque invite issued by the Relay operator API and
+          # consumed by challenge-bound enrollment. After that the structured
+          # mount credential at token-store-path is the source of truth.
           invite-token: ""
 
           # Human-readable label echoed in /api/v1/relay/mounts. Defaults to
@@ -28,12 +28,12 @@ peers:
           local-http-timeout-sec: 30
 
           # We resolve our own peer_id by polling the bootstrap subserver's
-          # info endpoint. The default points at the local Hertz; override
-          # when running in a separate process.
+          # info endpoint, then ask the same owner to sign Relay challenges.
           bootstrap-info-url: "http://127.0.0.1:18080/sub-bootstrap/info"
+          bootstrap-identity-url: "http://127.0.0.1:18080/sub-bootstrap/station-identity"
 
-          # Persistent relay_token. Lives under /app/data so the docker named
-          # volume preserves it across container recreation.
+          # Persistent structured mount credential. Legacy plaintext token
+          # files are rejected and replaced through explicit enrollment.
           token-store-path: "data/relay_token"
 
           # TLS for the TCP stream connection. The relay subserver supports
@@ -45,3 +45,4 @@ peers:
           # smaller than the relay's HeartbeatTimeout (default 60s) so the
           # mount stays Online in the relay's view.
           heartbeat-interval-sec: 30
+          credential-refresh-interval-sec: 300

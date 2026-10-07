@@ -161,6 +161,7 @@ EOF
   (
     cd "$STATION_DIR"
     export PEERS_AUTH_SECRET="$(cat "$auth_secret_file")"
+    export PEERS_NODE_ROLE=station
     export PEERS_PROFILE="$PT_DEV_PROFILE"
     export PEERS_CONFIG_DIR="$native_storage_root/config"
     export PEERS_DATA_DIR="$native_storage_root/data"

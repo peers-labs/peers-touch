@@ -1,7 +1,7 @@
 # Station 接入生命周期 - 设计决策
 
 > **Status**: active
-> **Version**: v1.2
+> **Version**: v2.0
 > **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
@@ -15,9 +15,14 @@
 | SAL-D02 | 只维护当前接入契约 | accepted |
 | SAL-D03 | 签名 Station identity + Access Gate 是唯一接入路径 | accepted |
 | SAL-D04 | Federation governance 与普通客户端分离 | accepted |
-| SAL-D05 | Relay 只属于基础设施 | accepted |
+| SAL-D05 | Relay 不参与客户端接入 | superseded by SAL-D07 |
 | SAL-D06 | 完整 E2E 与当前接口完整性共同决定完成 | accepted |
-| SAL-D07 | 一个 actor 每个 canonical client class 只保留一个 active Session | accepted |
+| SAL-D07 | 一个接入地址自动识别 Station 或 Relay | accepted |
+| SAL-D08 | Station binding 以身份为主键、route 为候选 | accepted |
+| SAL-D09 | Relay 只转发端到端加密 opaque tunnel | accepted |
+| SAL-D10 | Station enrollment 必须证明 host-key possession | accepted |
+| SAL-D11 | Relay 使用显式最小运行角色 | accepted |
+| SAL-D12 | 一个 actor 每个 canonical client class 只保留一个 active Session | accepted |
 
 ## SAL-D01：双端统一按语义和结果衡量
 
@@ -136,9 +141,9 @@ Desktop Federation 设置页收缩为 context 与状态。
 
 ---
 
-## SAL-D05：Relay 只属于基础设施
+## SAL-D05：Relay 不参与客户端接入
 
-**Status**: accepted
+**Status**: superseded
 **Date**: 2026-09-26
 
 ### Context
@@ -148,8 +153,9 @@ Relay 的 token、mount 和 routing 属于 Station 连通性实现，不是普�
 
 ### Decision
 
-客户端不直接访问 Relay，不展示 token、mount、invite、seed 或 forwarding endpoint。
-只消费 Station 提供的人类可理解连接诊断。
+原决策禁止客户端把 Relay 当作接入 endpoint。该限制由 SAL-D07 与 SAL-D09
+替代：客户端可以连接 Relay transport，但 Relay 仍不是 Station 业务 API 或信任
+authority，普通客户端仍不管理 token、mount、invite 或内部 forwarding endpoint。
 
 **Rationale**
 
@@ -161,7 +167,7 @@ Relay 没有普通客户端业务语义，暴露它会制造错误 owner 和安�
 
 **Consequences**
 
-Relay 操作只在 Station/运维文档和工具中出现。
+Relay 运维仍只存在于 operator surface；客户端只看到接入方式摘要。
 
 ---
 
@@ -193,7 +199,170 @@ Desktop/Mobile 首次接入、恢复、切换、same/cross-Station context E2E �
 
 ---
 
-## SAL-D07：按 canonical client class 原子接管 Session
+## SAL-D07：一个接入地址自动识别 Station 或 Relay
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+要求用户先理解并选择 Station/Relay 类型，会把部署拓扑泄漏为产品流程，也无法让
+同一入口在网络变化后平滑换路。
+
+### Decision
+
+Desktop 与 Mobile 保留一个接入输入。客户端只通过签名 endpoint discovery 自动
+分类 `DIRECT_STATION` 或 `RELAY`。Relay 单候选自动选中，多候选显式选择；私有
+Station 使用 Station 签发的连接材料走同一输入。
+
+### Rationale
+
+统一输入降低用户心智，同时签名 role 避免通过 URL 形态或探测响应猜测 endpoint。
+
+### Alternatives Considered
+
+- 分别提供 Station URL 与 Relay URL：拒绝，会形成两套接入流程。
+- 依次探测多组历史 endpoint：拒绝，会产生降级与歧义攻击面。
+
+### Consequences
+
+需要一个 canonical protobuf discovery capability 和一致的 typed outcomes。
+
+---
+
+## SAL-D08：Station binding 以身份为主键、route 为候选
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+URL-keyed registry 会把同一 Station 的直连和 Relay 地址误判成两个业务身份，并让
+Session、缓存和 runtime 随网络路径复制。
+
+### Decision
+
+客户端 registry 以已验证 `station_peer_id` 为主键，保存多个签名 route candidate。
+route 变化只增加 `route_revision`；Station identity 变化才触发完整 scope teardown
+和显式替换。
+
+### Rationale
+
+身份与位置解耦后，网络 failover 不会污染业务 scope，Desktop 与 Mobile 也能共享
+同一生命周期语义。
+
+### Alternatives Considered
+
+- 为 Relay 新建 registry/runtime：拒绝，属于烟囱架构。
+- 继续以 URL 为主键并用 alias 关联：拒绝，会保留双真源。
+
+### Consequences
+
+Desktop URL-keyed registry 必须硬切；Mobile 现有 `station_peer_id` registry 需要
+扩展 route candidates。所有 URL-keyed 业务持久化需按 owner 审计和迁移。
+
+---
+
+## SAL-D09：Relay 只转发端到端加密 opaque tunnel
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+现有 Relay 复制 method/path/header/body，并在 Station loopback 恢复
+`Authorization`。把该入口开放给客户端会让 Relay 看到 Session credential 和业务
+明文，也扩大任意路径代理面。
+
+### Decision
+
+客户端经 Relay 时建立 outer TLS，再在 opaque byte stream 内建立 client-to-Station
+TLS 1.3。inner certificate SPKI 由 Station host-key 签名 route attestation 固定。
+Relay 只处理 tunnel lifecycle、route、字节、时序和配额，不解析 HTTP。
+
+### Rationale
+
+标准 TLS 能复用成熟实现并把业务认证留在 Station，无需自研加密协议或第二套 API。
+
+### Alternatives Considered
+
+- 直接复用透明 `/relay/forward/*`：拒绝，Relay 可见明文和凭据。
+- 仅依赖 client-to-Relay TLS：拒绝，Relay 仍是明文终止点。
+- 自研 AEAD/Noise 变体：拒绝，密码协议风险和维护成本过高。
+
+### Consequences
+
+需要 Station 内部 TLS ingress、opaque framing、SPKI attestation 和 bounded
+backpressure；旧 transparent forward 在迁移完成后删除。
+
+---
+
+## SAL-D10：Station enrollment 必须证明 host-key possession
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+invite 或 `X-Station-Peer-ID` 只能表达声明，不能证明注册者控制对应 Station 私钥。
+删除 mount 但保留可刷新 credential 也不能实现撤销。
+
+### Decision
+
+Relay 发出 challenge，Station 使用其 host key 对 challenge、invite、Relay identity
+和请求参数签名。Relay 从 public key 推导 `station_peer_id`，并原子消费 invite、
+创建 mount generation。短期 credential 使用独立非对称 issuer 和
+`aud/scope/jti/exp/generation`；撤销递增 epoch 并关闭流。
+
+### Rationale
+
+proof-of-possession 把 enrollment 与现有 Station identity 绑定；generation 让撤销
+和轮换具备可验证语义。
+
+### Alternatives Considered
+
+- 继续信任 header 中的 PeerID：拒绝，可冒充未定向 Station。
+- 全局 HS256 secret：拒绝，跨角色共享密钥扩大泄漏半径。
+- 仅删除数据库 mount：拒绝，旧 token 可重建状态。
+
+### Consequences
+
+invite 只存 hash 且明文只返回一次；注册、刷新、撤销和恢复需专门的并发与重放测试。
+
+---
+
+## SAL-D11：Relay 使用显式最小运行角色
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+当前 Relay 与 Station 使用同一 image/config，Relay 可能同时暴露不需要的业务
+subserver。网络边界上的 Relay 不应拥有 Station 业务攻击面。
+
+### Decision
+
+保留同一代码库和 binary，通过显式 `relay` role allowlist 只装配 health、discovery、
+operator admin、mount control、opaque tunnel 和 metrics。生产 Relay 缺少 TLS、
+signing key、operator policy 或配额时启动失败。
+
+### Rationale
+
+同源构建避免烟囱库，最小运行角色降低攻击面并使 route inventory 可机械验证。
+
+### Alternatives Considered
+
+- 新建独立 Relay 仓库：拒绝，会复制协议、发布和安全治理。
+- 同一进程默认加载所有 Station handler：拒绝，攻击面不可控。
+
+### Consequences
+
+部署配置、启动检查、API ownership 和 Acceptance 都必须按 role 证明允许与禁止项。
+
+---
+
+## SAL-D12：按 canonical client class 原子接管 Session
 
 **Status**: accepted
 **Date**: 2026-10-06

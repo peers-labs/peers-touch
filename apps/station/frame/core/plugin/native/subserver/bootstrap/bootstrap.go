@@ -28,6 +28,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/internal/mdns"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/core/types"
@@ -394,6 +395,7 @@ func (s *SubServer) Handlers() []server.Handler {
 			server.POST,
 			s.stationIdentity,
 		),
+		accessendpoint.Handler(s),
 		// Phase B: federation locator diagnostic endpoints. These are
 		// intentionally on the bootstrap subserver (not /touch/...)
 		// because they manipulate the federation DHT directly and have
@@ -409,7 +411,7 @@ func (s *SubServer) Handlers() []server.Handler {
 			server.WithMethod(server.POST),
 		),
 		// Phase C: federated user resolver — wraps locator lookup +
-		// /relay/forward profile fetch + envelope verification into a
+		// opaque Relay tunnel profile fetch + envelope verification into a
 		// single diagnostic endpoint so operators can validate the
 		// full read-side loop end-to-end.
 		server.NewHandlerWithURL(

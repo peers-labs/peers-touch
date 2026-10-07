@@ -12,6 +12,7 @@
 #   deploy.sh <env-name> [BRANCH=main]
 #   deploy.sh status <env-name>
 #   deploy.sh logs <env-name>
+#   deploy.sh stop <env-name>
 #   deploy.sh resolve <env-name>
 # ─────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -19,11 +20,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 SOURCE_SYNC_SCRIPT="$SCRIPT_DIR/source-sync.sh"
+WINDOWS_RUNTIME_SCRIPT="$SCRIPT_DIR/windows_runtime.py"
 
 cmd="${1:-}"
 env_name="${2:-$cmd}"
 
-if [[ "$cmd" == "status" || "$cmd" == "logs" || "$cmd" == "resolve" ]]; then
+if [[ "$cmd" == "status" || "$cmd" == "logs" || "$cmd" == "stop" || "$cmd" == "resolve" ]]; then
   env_name="${2:-}"
   if [[ -z "$env_name" ]]; then
     echo "[ERROR] Usage: deploy.sh $cmd <env-name>"
@@ -186,6 +188,32 @@ if [[ "$cmd" != "status" && "$cmd" != "logs" ]]; then
   fi
 fi
 
+if [[ "${PT_DEPLOY_PLATFORM:-posix}" == "windows" ]]; then
+  windows_action="$cmd"
+  if [[ "$windows_action" != "status" && "$windows_action" != "logs" && "$windows_action" != "stop" ]]; then
+    windows_action="deploy"
+  fi
+  if [[ "$windows_action" == "deploy" && "${PT_SOURCE_LEASE_HELD:-0}" != "1" ]]; then
+    echo "[0/5] Synchronizing exact Git source ..."
+    exec /bin/bash "$SOURCE_SYNC_SCRIPT" \
+      "$env_name" \
+      --environment-file "$ENV_FILE" \
+      --branch "$BRANCH" \
+      -- \
+      /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
+  fi
+  exec python3 "$WINDOWS_RUNTIME_SCRIPT" \
+    "$windows_action" \
+    "$env_name" \
+    --environment-file "$ENV_FILE" \
+    --branch "$BRANCH"
+fi
+
+if [[ "${PT_DEPLOY_PLATFORM:-posix}" != "posix" ]]; then
+  echo "[ERROR] Unsupported PT_DEPLOY_PLATFORM: ${PT_DEPLOY_PLATFORM}" >&2
+  exit 1
+fi
+
 SSH_TARGET="${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}"
 SSH_OPTS=(
   -o BatchMode=yes
@@ -212,6 +240,7 @@ remote_cli_runtime_env_prefix() {
   local cli_home="${PEERS_HOST_CLI_HOME_MOUNT:-}"
   if [[ -z "$cli_bin" || -z "$cli_home" ]]; then
     local detected
+    # shellcheck disable=SC2016 # The remote shell expands these expressions.
     if ! detected="$(ssh_run '
       # PT_CLI_MOUNT_DISCOVERY
       set -eu
@@ -271,6 +300,15 @@ case "$cmd" in
   logs)
     echo "[$env_name] Fetching logs from $SSH_TARGET ..."
     ssh_run "cd \$HOME/$PT_DEPLOY_PATH && tail -n 50 .local/dev/logs/${PT_DEPLOY_ROLE}.log 2>/dev/null || docker compose -p pt-${PT_DEPLOY_ROLE}-c logs --tail=50 ${PT_DEPLOY_ROLE} 2>/dev/null || echo 'No logs found'"
+    ;;
+
+  stop)
+    echo "[$env_name] Stopping $PT_DEPLOY_ROLE on $SSH_TARGET ..."
+    if [[ -n "${PT_DEPLOY_STOP_CMD:-}" ]]; then
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_STOP_CMD"
+    else
+      ssh_run "systemctl --user stop peers-${PT_DEPLOY_ROLE}"
+    fi
     ;;
 
   *)

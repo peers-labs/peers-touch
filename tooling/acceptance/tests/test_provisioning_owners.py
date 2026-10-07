@@ -215,6 +215,57 @@ class StationAttestationOwnerTests(unittest.TestCase):
             ):
                 resolve_remote_source_identity("station-three")
 
+    def test_remote_attestation_uses_windows_transport_without_bash(self) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            _windows_source_identity_script,
+            resolve_remote_source_identity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = root / "sixwin-station.env.example"
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=sixwin.example",
+                        "PT_DEPLOY_USER=Administrator",
+                        "PT_DEPLOY_PATH=.peers-touch/deploy/sixwin-station/source",
+                        "PT_DEPLOY_PLATFORM=windows",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    ["abcdef123456", "clean", "proto-digest"]
+                )
+                + "\n",
+                stderr="",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.remote_source_identity."
+                "resolve_deployment_environment_path",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.transports.ssh.subprocess.run",
+                return_value=completed,
+            ) as run:
+                identity = resolve_remote_source_identity("sixwin-station")
+
+        self.assertEqual(
+            identity,
+            ("abcdef123456", "clean", "proto-digest"),
+        )
+        command = run.call_args.args[0]
+        self.assertIn("powershell.exe -NoProfile -NonInteractive", command[-1])
+        self.assertNotIn("bash -lc", command[-1])
+        identity_script = _windows_source_identity_script()
+        self.assertIn("['git','show','HEAD:'", identity_script)
+        self.assertNotIn("x.read_bytes()", identity_script)
+
     def test_remote_attestation_uses_strict_openssh_default_known_hosts(self) -> None:
         from tooling.acceptance.provisioners.remote_source_identity import (
             resolve_remote_source_identity,

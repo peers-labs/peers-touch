@@ -230,8 +230,12 @@
   好友建立、会话进入、文本与富媒体、语音消息、实时一对一语音/视频、群聊到跨设备/跨 Station
   恢复的唯一产品完成口径与当前执行计划）
 - Station 接入生命周期：`architecture/platform/station/access/README.md`
-  （active；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
-  Federation context 与 Relay 客户端边界，实施 Plan 已完成）
+  （active；定义同一接入地址自动识别直连 Station 或 Relay、签名 Station identity、
+  route-aware binding、protobuf Access Gate 与 scope 隔离；统一 Relay 接入 Plan
+  执行中）
+- Federation 与安全 Relay transport：`architecture/domains/federation/README.md`
+  （active；定义 Federation governance，以及不可信 Relay 的 Station enrollment、
+  signed route attestation、opaque tunnel、最小运行角色和资源边界）
 - OAuth Login Broker：`architecture/domains/identity/oauth-login-broker/README.md`
   （active；定义 Vercel 跨实例 OAuth 事务、GitHub 私有仓库存储、
   AES-256-GCM 凭据、Provider refresh 与只读管理面）

@@ -21,18 +21,20 @@ var relayClientOptions struct {
 			Server struct {
 				Subserver struct {
 					RelayClient struct {
-						Enabled               bool   `pconf:"enabled"`
-						RelayURL              string `pconf:"relay-url"`
-						RelayStreamAddr       string `pconf:"relay-stream-addr"`
-						InviteToken           string `pconf:"invite-token"`
-						Label                 string `pconf:"label"`
-						LocalHTTPPort         int    `pconf:"local-http-port"`
-						LocalHTTPTimeoutSec   int    `pconf:"local-http-timeout-sec"`
-						BootstrapInfoURL      string `pconf:"bootstrap-info-url"`
-						TokenStorePath        string `pconf:"token-store-path"`
-						UseTLS                bool   `pconf:"use-tls"`
-						TLSInsecureSkipVerify bool   `pconf:"tls-insecure-skip-verify"`
-						HeartbeatIntervalSec  int    `pconf:"heartbeat-interval-sec"`
+						Enabled                      bool   `pconf:"enabled"`
+						RelayURL                     string `pconf:"relay-url"`
+						RelayStreamAddr              string `pconf:"relay-stream-addr"`
+						InviteToken                  string `pconf:"invite-token"`
+						Label                        string `pconf:"label"`
+						LocalHTTPPort                int    `pconf:"local-http-port"`
+						LocalHTTPTimeoutSec          int    `pconf:"local-http-timeout-sec"`
+						BootstrapInfoURL             string `pconf:"bootstrap-info-url"`
+						BootstrapIdentityURL         string `pconf:"bootstrap-identity-url"`
+						TokenStorePath               string `pconf:"token-store-path"`
+						UseTLS                       bool   `pconf:"use-tls"`
+						TLSInsecureSkipVerify        bool   `pconf:"tls-insecure-skip-verify"`
+						HeartbeatIntervalSec         int    `pconf:"heartbeat-interval-sec"`
+						CredentialRefreshIntervalSec int    `pconf:"credential-refresh-interval-sec"`
 					} `pconf:"relay-client"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
@@ -80,6 +82,12 @@ func (p *relayClientPlugin) Options() []option.Option {
 	}
 	opts = append(opts, WithBootstrapInfoURL(bootstrapInfoURL))
 
+	bootstrapIdentityURL := c.BootstrapIdentityURL
+	if bootstrapIdentityURL == "" {
+		bootstrapIdentityURL = "http://127.0.0.1:18080/sub-bootstrap/station-identity"
+	}
+	opts = append(opts, WithBootstrapIdentityURL(bootstrapIdentityURL))
+
 	tokenStore := c.TokenStorePath
 	if tokenStore == "" {
 		tokenStore = "data/relay_token"
@@ -91,6 +99,12 @@ func (p *relayClientPlugin) Options() []option.Option {
 		hbInterval = 30
 	}
 	opts = append(opts, WithHeartbeatIntervalSec(hbInterval))
+
+	refreshInterval := c.CredentialRefreshIntervalSec
+	if refreshInterval <= 0 {
+		refreshInterval = 300
+	}
+	opts = append(opts, WithCredentialRefreshIntervalSec(refreshInterval))
 
 	return opts
 }

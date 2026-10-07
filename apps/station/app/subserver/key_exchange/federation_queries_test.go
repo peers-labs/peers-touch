@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/proto"
 )
@@ -33,11 +33,31 @@ const (
 
 type keyExchangeRelayFixture struct {
 	baseURL string
-	token   string
+	client  *http.Client
 }
 
-func (r keyExchangeRelayFixture) BaseURL() string { return r.baseURL }
-func (r keyExchangeRelayFixture) Token() string   { return r.token }
+func (r keyExchangeRelayFixture) Available() bool { return r.baseURL != "" }
+
+func (r keyExchangeRelayFixture) RoundTrip(
+	ctx context.Context,
+	targetStationPeerID string,
+	request *http.Request,
+) (*http.Response, error) {
+	if targetStationPeerID != keyExchangeTargetStation {
+		return nil, errors.New("unexpected Relay tunnel target")
+	}
+	base, err := url.Parse(r.baseURL)
+	if err != nil {
+		return nil, err
+	}
+	outbound := request.Clone(ctx)
+	target := *request.URL
+	target.Scheme = base.Scheme
+	target.Host = base.Host
+	outbound.URL = &target
+	outbound.RequestURI = ""
+	return r.client.Do(outbound)
+}
 
 func TestCanonicalFederationPortFetchesDirectBundlesThroughCanonicalRoute(t *testing.T) {
 	sourceKeys := newKeyExchangeFederationKeyCache(t)
@@ -94,7 +114,7 @@ func TestCanonicalFederationPortFetchesDirectBundlesThroughCanonicalRoute(t *tes
 	port := newFederationQueryPort(
 		server.Client(),
 		sourceKeys,
-		keyExchangeRelayFixture{baseURL: server.URL, token: "relay-token"},
+		keyExchangeRelayFixture{baseURL: server.URL},
 	)
 	bundles, err := port.FetchDirectKeyBundles(
 		context.Background(),
@@ -160,7 +180,7 @@ func TestCanonicalFederationPortFetchesAllDirectBundlesThroughCanonicalRoute(t *
 	port := newFederationQueryPort(
 		server.Client(),
 		sourceKeys,
-		keyExchangeRelayFixture{baseURL: server.URL, token: "relay-token"},
+		keyExchangeRelayFixture{baseURL: server.URL},
 	)
 	bundles, err := port.FetchDirectKeyBundles(
 		context.Background(),
@@ -233,7 +253,7 @@ func TestCanonicalFederationPortFetchesMLSKeyPackageThroughCanonicalRoute(t *tes
 	port := newFederationQueryPort(
 		server.Client(),
 		sourceKeys,
-		keyExchangeRelayFixture{baseURL: server.URL, token: "relay-token"},
+		keyExchangeRelayFixture{baseURL: server.URL},
 	)
 	reservation, err := port.FetchMLSKeyPackage(
 		context.Background(),
@@ -302,7 +322,7 @@ func TestCanonicalFederationPortClaimsMLSKeyPackageWithExactPlanBinding(t *testi
 	port := newFederationQueryPort(
 		server.Client(),
 		sourceKeys,
-		keyExchangeRelayFixture{baseURL: server.URL, token: "relay-token"},
+		keyExchangeRelayFixture{baseURL: server.URL},
 	)
 	claim := domain.MLSKeyPackageClaim{
 		AuthenticatedAuthorityStation: keyExchangeSourceStation,
@@ -356,7 +376,7 @@ func TestCanonicalFederationPortRejectsMismatchedRemoteDevice(t *testing.T) {
 	port := newFederationQueryPort(
 		server.Client(),
 		sourceKeys,
-		keyExchangeRelayFixture{baseURL: server.URL, token: "relay-token"},
+		keyExchangeRelayFixture{baseURL: server.URL},
 	)
 	_, err := port.FetchDirectKeyBundles(
 		context.Background(),
@@ -402,6 +422,7 @@ func newFederationQueryPort(
 	keys *authfed.KeyCache,
 	relay keyExchangeRelayFixture,
 ) *canonicalFederationPort {
+	relay.client = client
 	return &canonicalFederationPort{
 		keys:           keys,
 		client:         client,
@@ -420,31 +441,22 @@ func assertKeyExchangeRelayRequest(
 	expectedClaims map[string]string,
 ) {
 	t.Helper()
-	expectedPath := "/relay/forward/" +
-		urlPathEscape(keyExchangeTargetStation) +
-		route
-	if request.URL.Path != expectedPath {
-		t.Errorf("request path = %q, want %q", request.URL.Path, expectedPath)
+	if request.URL.Path != route {
+		t.Errorf("request path = %q, want %q", request.URL.Path, route)
 	}
-	if request.Header.Get("Authorization") != "Bearer relay-token" {
-		t.Errorf(
-			"relay authorization = %q",
-			request.Header.Get("Authorization"),
-		)
-	}
-	forwarded := strings.TrimPrefix(
-		request.Header.Get(nativefed.ForwardAuthorizationHeader),
+	innerAuthorization := strings.TrimPrefix(
+		request.Header.Get("Authorization"),
 		"Bearer ",
 	)
 	claims, err := authfed.Verify(
 		request.Context(),
 		peerKeys,
-		forwarded,
+		innerAuthorization,
 		scopeName,
 		keyExchangeTargetStation,
 	)
 	if err != nil {
-		t.Errorf("verify forwarded Federation token: %v", err)
+		t.Errorf("verify inner Federation token: %v", err)
 		return
 	}
 	if claims.Issuer != keyExchangeSourceStation ||
@@ -538,8 +550,4 @@ func bytesOfLength(length int, value byte) []byte {
 		result[index] = value
 	}
 	return result
-}
-
-func urlPathEscape(value string) string {
-	return url.PathEscape(value)
 }

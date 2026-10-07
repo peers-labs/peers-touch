@@ -6,6 +6,8 @@ import (
 	peers "github.com/peers-labs/peers-touch/station/frame"
 	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/runtime/role"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
@@ -41,14 +43,37 @@ import (
 )
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
+	processRole, err := role.FromEnvironment()
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithCancel(
+		role.WithContext(context.Background(), processRole),
+	)
 	defer cancel()
 
-	p := peers.NewPeer()
-	err := p.Init(
-		ctx,
+	opts := []option.Option{
 		node.WithPrivateKey("private.pem"),
-		node.Name("peers-touch-station"),
+		node.Name(processRole.NodeName()),
+	}
+	if processRole.IncludesApplicationSubservers() {
+		opts = append(opts, stationApplicationSubservers()...)
+	}
+
+	p := peers.NewPeer()
+	err = p.Init(ctx, opts...)
+	if err != nil {
+		panic(err)
+	}
+
+	if err := p.Start(); err != nil {
+		panic(err)
+	}
+}
+
+func stationApplicationSubservers() []option.Option {
+	return []option.Option{
 		server.WithSubServer("actor_identity", actoridentity.NewActorIdentitySubServer),
 		server.WithSubServer("app_meta", appmeta.NewAppMetaSubServer),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
@@ -67,12 +92,5 @@ func main() {
 		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
 		server.WithSubServer("federation", federation.NewFederationSubServer),
 		server.WithSubServer("groupcall", groupcall.NewGroupCallSubServer),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	if err := p.Start(); err != nil {
-		panic(err)
 	}
 }

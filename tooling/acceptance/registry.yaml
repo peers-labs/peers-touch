@@ -271,6 +271,89 @@
       ]
     },
     {
+      "id": "station-access-relay-role-security",
+      "features": [
+        "station-access-relay-role-security",
+        "station-access-relay-enrollment"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/conf/sub_relay.yml",
+          "apps/station/app/main.go",
+          "apps/station/app/subserver/events/bus.go",
+          "apps/station/frame/core/federation/transport.go",
+          "apps/station/frame/core/plugin/native/node/**",
+          "apps/station/frame/core/plugin/native/subserver/relay/**",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/**",
+          "apps/station/frame/core/runtime/role/**",
+          "apps/station/frame/peers.go",
+          "tooling/docker/.env.example",
+          "tooling/docker/README.md",
+          "tooling/docker/compose.yml",
+          "tooling/docker/entrypoint.sh",
+          "tooling/acceptance/environments/station-access-relay-role.yaml",
+          "tooling/acceptance/provisioners/station_access_relay_role.py",
+          "tooling/acceptance/tests/test_station_access_relay_role.py",
+          "tooling/scripts/local-dev/relay-check.sh",
+          "tooling/scripts/local-dev/station-dev.sh"
+        ]
+      },
+      "require": [
+        "relay-role-security-contract",
+        "relay-station-enrollment-e2e"
+      ]
+    },
+    {
+      "id": "station-access-endpoint-discovery",
+      "features": [
+        "station-access-endpoint-discovery"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/peer/access_endpoint.proto",
+          "apps/station/app/subserver/dashboard/handler.go",
+          "apps/station/app/subserver/dashboard/handler_middleware.go",
+          "apps/station/app/subserver/dashboard/subserver.go",
+          "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+          "apps/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint/**",
+          "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/domain/discovery.go",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/connection_material.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go",
+          "tooling/acceptance/features/station-access-endpoint-discovery.yaml",
+          "tooling/acceptance/gates/station_access/relay_endpoint_discovery_contract.py"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "station-api-ownership",
+        "relay-endpoint-discovery-contract"
+      ]
+    },
+    {
+      "id": "station-access-relay-opaque-tunnel",
+      "features": [
+        "station-access-relay-opaque-tunnel"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/federation/relay_transport.proto",
+          "apps/station/app/subserver/actor_identity/**",
+          "apps/station/app/subserver/key_exchange/**",
+          "apps/station/frame/core/federation/**",
+          "apps/station/frame/core/plugin/native/federation/relay_client.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/**",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/**",
+          "apps/station/frame/touch/federation/resolver/**",
+          "tooling/acceptance/features/station-access-relay-opaque-tunnel.yaml",
+          "tooling/acceptance/gates/station_access/relay_opaque_tunnel_e2e.py"
+        ]
+      },
+      "require": [
+        "relay-opaque-tunnel-e2e"
+      ]
+    },
+    {
       "id": "station-access-acceptance",
       "features": [
         "station-access-wire-contract",
@@ -278,6 +361,10 @@
         "station-access-scope-isolation",
         "station-access-session-class",
         "station-access-federation-boundary",
+        "station-access-relay-role-security",
+        "station-access-relay-enrollment",
+        "station-access-endpoint-discovery",
+        "station-access-relay-opaque-tunnel",
         "station-access-interface-contract"
       ],
       "when": {
@@ -288,8 +375,10 @@
           "tooling/acceptance/features/station-access-*.yaml",
           "tooling/acceptance/environments/station-access-desktop-oauth-native.yaml",
           "tooling/acceptance/environments/station-access-native.yaml",
+          "tooling/acceptance/environments/station-access-relay-role.yaml",
           "tooling/acceptance/gates/station_access/**",
-          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py"
+          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
+          "tooling/acceptance/provisioners/station_access_relay_role.py"
         ]
       },
       "require": [
@@ -304,6 +393,9 @@
         "mobile-simulator-station-lifecycle-e2e",
         "station-access-session-class-e2e",
         "station-access-federation-boundary-e2e",
+        "relay-role-security-contract",
+        "relay-station-enrollment-e2e",
+        "relay-opaque-tunnel-e2e",
         "desktop-release-build",
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",

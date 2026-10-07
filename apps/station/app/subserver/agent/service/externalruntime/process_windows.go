@@ -3,6 +3,7 @@
 package externalruntime
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"time"
@@ -14,7 +15,7 @@ func terminateProcessGroup(process *os.Process) error {
 	if process == nil {
 		return nil
 	}
-	if err := process.Kill(); err != nil && !os.IsProcessDone(err) {
+	if err := process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
 	return nil
