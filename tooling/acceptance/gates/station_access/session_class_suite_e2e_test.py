@@ -38,6 +38,7 @@ class _FakeRuntime:
         self.desktop_binding = _FakeBinding()
         self.desktop_revoked = False
         self.mobile_revoked = False
+        self.marked_desktop_revoked: list[str] = []
         self.started: list[str] = []
         self.identities = {
             "desktop-alice": SimpleNamespace(
@@ -158,6 +159,9 @@ class _FakeRuntime:
     def set_mobile_suspended(self, client_id: str, suspended: bool) -> None:
         del client_id, suspended
 
+    def mark_desktop_auth_revoked(self, client_id: str) -> None:
+        self.marked_desktop_revoked.append(client_id)
+
     def scope_snapshot(self, client_id: str) -> dict[str, object]:
         identity = self.identities[client_id]
         if client_id == "sim-ios" and self.mobile_revoked:
@@ -271,6 +275,7 @@ class StationAccessSessionClassSuiteGateTest(unittest.TestCase):
                 "sim-ios-peer",
             ],
         )
+        self.assertEqual(runtime.marked_desktop_revoked, ["desktop-bob"])
 
 
 if __name__ == "__main__":
