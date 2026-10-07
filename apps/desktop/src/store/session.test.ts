@@ -160,8 +160,10 @@ describe('session authentication convergence', () => {
     });
     mocks.stationBindingComplete.mockResolvedValue({
       phase: 'bound',
-      selected_url: 'http://station.example',
-      bound_url: 'http://station.example',
+      station_peer_id: 'station-peer',
+      active_route_id: 'route-direct',
+      route_revision: 1,
+      lifecycle_generation: 1,
     });
 
     await useSessionStore.getState().restoreSession();

@@ -4739,18 +4739,39 @@ export interface ContextHealthOutput {
 
 // ── Station registry types ──
 
+export type StationRouteType = 'direct' | 'relay';
+export type StationRouteHealth = 'available' | 'degraded' | 'unavailable' | 'revoked';
+
+export interface StationRouteCandidate {
+  route_id: string;
+  route_type: StationRouteType;
+  transport: string;
+  endpoint_origin: string;
+  relay_peer_id?: string | null;
+  route_generation: number;
+  inner_tls_spki_sha256?: number[] | null;
+  attestation_bytes?: number[] | null;
+  attestation_expires_at_unix_ms?: number | null;
+  last_verified_at: string;
+  last_success_at?: string | null;
+  health: StationRouteHealth;
+}
+
 export interface StationEntry {
-  url: string;
-  label?: string;
-  peer_id?: string;
-  peers_count?: number;
-  last_probe?: string;
-  online: boolean;
+  station_peer_id: string;
+  display_name?: string | null;
+  pinned_host_public_key: number[];
+  routes: StationRouteCandidate[];
+  active_route_id: string;
+  route_revision: number;
+  lifecycle_generation: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StationListResponse {
   entries: StationEntry[];
-  active_url?: string | null;
+  active_station_peer_id?: string | null;
   binding: StationBindingState;
 }
 
@@ -4770,20 +4791,20 @@ export interface StationBindingError {
 
 export interface StationBindingState {
   phase: StationBindingPhase;
-  selected_url?: string | null;
-  bound_url?: string | null;
-  target_url?: string | null;
-  generation: number;
+  station_peer_id?: string | null;
+  active_route_id?: string | null;
+  target_station_peer_id?: string | null;
+  target_route_id?: string | null;
+  route_revision: number;
+  lifecycle_generation: number;
   error?: StationBindingError | null;
 }
 
-export interface StationProbeResult {
-  url: string;
-  online: boolean;
-  label?: string;
-  peer_id?: string;
-  peers_count?: number;
-  error?: string;
+export interface StationDiscoveryResult {
+  role: 'direct_station' | 'relay';
+  endpoint_peer_id: string;
+  canonical_origin: string;
+  entries: StationEntry[];
 }
 
 function requireEvaluationValue<T>(
@@ -7885,31 +7906,42 @@ export const api = {
       input,
     ),
 
-  // ── Station registry (dynamic URL picker) ──
+  // ── Station registry (verified Station identity and route picker) ──
 
   stationList: () =>
     invokeRustDataFromStatus<void, StationListResponse>('station_list'),
 
-  stationSetActive: (url: string) =>
+  stationSetActive: (stationPeerId: string, routeId?: string) =>
     invokeRustDataFromStatus<
-      { url: string },
-      { active_url?: string | null; binding: StationBindingState }
-    >('station_set_active', { url }),
+      { station_peer_id: string; route_id?: string },
+      {
+        active_station_peer_id?: string | null;
+        active_route_id?: string | null;
+        binding: StationBindingState;
+      }
+    >('station_set_active', {
+      station_peer_id: stationPeerId,
+      ...(routeId ? { route_id: routeId } : {}),
+    }),
 
   stationBindingComplete: () =>
     invokeRustDataFromStatus<void, StationBindingState>('station_binding_complete'),
 
-  stationAdd: (url: string) =>
-    invokeRustDataFromStatus<{ url: string }, StationEntry>('station_add', { url }),
+  stationAdd: (input: string) =>
+    invokeRustDataFromStatus<{ input: string }, StationDiscoveryResult>('station_add', { input }),
 
-  stationRemove: (url: string) =>
+  stationRemove: (stationPeerId: string) =>
     invokeRustDataFromStatus<
-      { url: string },
-      { removed: string; was_selected: boolean; binding: StationBindingState }
-    >('station_remove', { url }),
+      { station_peer_id: string },
+      {
+        removed_station_peer_id: string;
+        was_selected: boolean;
+        binding: StationBindingState;
+      }
+    >('station_remove', { station_peer_id: stationPeerId }),
 
-  stationProbe: (url: string) =>
-    invokeRustDataFromStatus<{ url: string }, StationProbeResult>('station_probe', { url }),
+  stationProbe: (input: string) =>
+    invokeRustDataFromStatus<{ input: string }, StationDiscoveryResult>('station_probe', { input }),
 
   resolveErrorAction: (action: { type: string; cliId?: string; providerId?: string; label: string }) =>
     invoke<{ ok: boolean; reauth?: boolean; message?: string; opened?: boolean }>('resolve_error_action', { action }),

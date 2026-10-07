@@ -363,6 +363,51 @@
       }
     },
     {
+      "id": "station-access-desktop-relay-binding",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-desktop-relay-binding"],
+      "required_gates": [
+        "station-access-desktop-relay-native-e2e",
+        "station-access-desktop-relay-windows-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs",
+        "apps/desktop/src/components/common/StationPicker.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "signed endpoint discovery",
+          "Station-signed route attestation",
+          "station_peer_id keyed registry",
+          "native runtime binding proof"
+        ],
+        "surfaces": [
+          "installed macOS Desktop Station picker",
+          "exact-source sixwin Windows Desktop Station picker"
+        ],
+        "proven_by": [
+          "station-access-desktop-relay-native-e2e",
+          "station-access-desktop-relay-windows-e2e"
+        ],
+        "proven_scope": [
+          "direct Station and Relay inputs converge on one Station identity",
+          "Direct and Via Relay are route candidates under one registry entry",
+          "same-Station route switching preserves identity scope and fences stale transport",
+          "Relay route recovery survives native process restart",
+          "macOS and Windows consume the same discovery and persistence schema"
+        ],
+        "unproven_scope": [
+          "Mobile Relay binding is owned by SAL-REL-06",
+          "cross-client security aggregation is owned by SAL-REL-07"
+        ]
+      }
+    },
+    {
       "id": "station-access-interface-integrity",
       "domain": "station-access",
       "direction": "acceptance_validates_product",
