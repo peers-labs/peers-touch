@@ -299,6 +299,62 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             ],
         )
 
+    def test_station_configuration_selects_single_relay_transport_route(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-primary",
+                                        "endpoint_origin": (
+                                            "https://relay.example:4501"
+                                        ),
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                )
+            }
+        }
+
+        binding._configure_session_station(
+            session,
+            "http://relay.example:18081",
+        )
+
+        self.assertEqual(
+            session.invoke_app_result.call_args_list,
+            [
+                call(
+                    "station_add",
+                    {"input": {"input": "http://relay.example:18081"}},
+                ),
+                call(
+                    "station_set_active",
+                    {
+                        "input": {
+                            "station_peer_id": "station-peer-four",
+                            "route_id": "relay-primary",
+                        }
+                    },
+                ),
+            ],
+        )
+
     def test_observation_requires_active_station_and_bound_route(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
             "/workspace/run/actors/alice/fixture.png"
