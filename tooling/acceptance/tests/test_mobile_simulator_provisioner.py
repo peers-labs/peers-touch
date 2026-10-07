@@ -58,6 +58,7 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     IOS_LAYOUT_CLIENTS,
     IOS_RUNTIME,
     MOBILE_WEB_DIST_RELATIVE_PATH,
+    SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
     SIMULATOR_APPIUM_CAPABILITY_ID,
     STATION_BOUND_SIMULATOR_GATE_IDS,
     STATION_LIFECYCLE_ENVIRONMENT_ID,
@@ -2194,6 +2195,24 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             ),
             "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
         }
+
+    def test_appium_transport_uses_capability_timeout(self) -> None:
+        provisioner = MobileStationLifecycleSimulatorProvisioner(
+            self.contract,
+        )
+        provisioner._base_manifest = self._base_manifest()
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_e2e."
+            "UrllibAppiumTransport"
+        ) as transport:
+            session = provisioner._new_appium_session("sim-ios-peer")
+
+        transport.assert_called_once_with(
+            "http://127.0.0.1:4723",
+            timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
+        )
+        self.assertIs(session.transport, transport.return_value)
 
     def test_service_attestation_uses_remote_source_owner(self) -> None:
         provisioner = MobileStationLifecycleSimulatorProvisioner(
