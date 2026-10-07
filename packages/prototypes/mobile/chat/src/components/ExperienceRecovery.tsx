@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   FileClock,
   KeyRound,
+  LoaderCircle,
   RefreshCw,
   ShieldAlert,
 } from 'lucide-react';
@@ -36,19 +37,24 @@ export function SocialRuntimeNotice({ runtime, onRetry }: {
   const retrying = runtime === 'retrying';
   return (
     <section className="mp-runtime-notice" role="status" aria-busy={retrying}
-      data-demo-recovery-owner="lifecycle">
-      <Text strong>{copy[retrying
-        ? 'mobile.recovery.deferredCapability.title'
-        : 'mobile.recovery.deferredCapability.failedTitle']}</Text>
-      <Text className="mp-recovery-description">
-        {copy[retrying
-          ? 'mobile.recovery.deferredCapability.body'
-          : 'mobile.recovery.deferredCapability.failedBody'].replace('{{count}}', '2')}
-      </Text>
-      <Button type="primary" loading={retrying} disabled={retrying} onClick={onRetry}
-        icon={<RefreshCw size={16} />}>
-        {copy['common.action.retry']}
-      </Button>
+      data-demo-recovery-owner="lifecycle" data-blocks-unrelated-content="false">
+      <span className="mp-runtime-notice-icon" aria-hidden="true">
+        {retrying ? <LoaderCircle size={18} className="mp-spin" /> : <AlertTriangle size={18} />}
+      </span>
+      <div className="mp-runtime-notice-content">
+        <Text strong>{copy[retrying
+          ? 'mobile.recovery.deferredCapability.title'
+          : 'mobile.recovery.deferredCapability.failedTitle']}</Text>
+        <Text className="mp-recovery-description">
+          {copy[retrying
+            ? 'mobile.recovery.deferredCapability.body'
+            : 'mobile.recovery.deferredCapability.failedBody'].replace('{{count}}', '2')}
+        </Text>
+        <Button type="primary" loading={retrying} disabled={retrying} onClick={onRetry}
+          icon={<RefreshCw size={16} />}>
+          {copy['common.action.retry']}
+        </Button>
+      </div>
     </section>
   );
 }
