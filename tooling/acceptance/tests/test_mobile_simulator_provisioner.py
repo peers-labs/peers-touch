@@ -56,6 +56,7 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     IOS_PEER_DEVICE_NAME,
     IOS_LAYOUT_CLIENTS,
     IOS_RUNTIME,
+    MOBILE_RELAY_CHILD_HARNESS_ACTIONS,
     MOBILE_WEB_DIST_RELATIVE_PATH,
     SIMULATOR_APPIUM_CAPABILITY_ID,
     STATION_BOUND_SIMULATOR_GATE_IDS,
@@ -723,6 +724,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.assertFalse(contract.profile.identity_match)
         self.assertEqual(contract.credentials, ())
         self.assertFalse(contract.fixtures[0].authorization_required)
+        self.assertLessEqual(
+            set(MOBILE_RELAY_CHILD_HARNESS_ACTIONS),
+            set(payload["harness"]["required_actions"]),
+        )
         provisioner = get_provisioner(contract)
         self.assertIsInstance(
             provisioner,

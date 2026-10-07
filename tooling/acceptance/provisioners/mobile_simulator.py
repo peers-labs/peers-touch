@@ -137,6 +137,14 @@ MOBILE_LIFECYCLE_SCOPE_FIELDS = frozenset(
         "navigation",
     }
 )
+MOBILE_RELAY_CHILD_HARNESS_ACTIONS = frozenset(
+    {
+        "cleanup",
+        "lifecycle.restart",
+        "lifecycle.scope.read",
+        "settings.profile.read",
+    }
+)
 CHAT_MIXED_NATIVE_HARNESS_ACTIONS = (
     CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS
 )
@@ -7302,6 +7310,7 @@ class MobileSocialSimulatorProvisioner(
                 self.session_factory or self._new_appium_session
             ),
             harness_actions=overlay["harness"]["required_actions"],
+            child_harness_actions=MOBILE_RELAY_CHILD_HARNESS_ACTIONS,
             actor_manifest=self.evidence_run.store.read_json(
                 ArtifactRef.from_dict(self._manifest.actor_manifest_ref)
             ),

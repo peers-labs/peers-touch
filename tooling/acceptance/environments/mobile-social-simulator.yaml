@@ -86,6 +86,7 @@
       "access.submit",
       "lifecycle.restart",
       "lifecycle.scope.read",
+      "settings.profile.read",
       "projection.read",
       "messaging.createDirect",
       "messaging.createGroup",
