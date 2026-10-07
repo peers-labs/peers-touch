@@ -3392,6 +3392,7 @@ class _ParentAppiumSession:
                     "appium:chromedriverPort": self._required_port("webview"),
                     "appium:ensureWebviewsHavePages": True,
                     "appium:chromedriverExecutable": self.chromedriver_executable,
+                    "appium:ignoreHiddenApiPolicyError": True,
                 }
             )
 
