@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
+from collections.abc import Mapping
+from typing import Any
 
-from tooling.acceptance.core.attestation import PROTOCOL_SOURCE_PATHS
+from tooling.acceptance.core.attestation import (
+    PROTOCOL_SOURCE_PATHS,
+    commits_match,
+)
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.provisioner import (
     load_env_file,
@@ -13,6 +19,13 @@ from tooling.acceptance.core.provisioner import (
 )
 from tooling.acceptance.remote_platform import RemotePlatform
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport, SshTunnel
+from tooling.scripts.deploy.windows_runtime import (
+    WindowsRuntimeConfig,
+    execute as execute_windows_runtime,
+)
+
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _reviewed_remote_transport(
@@ -83,6 +96,85 @@ def open_reviewed_remote_tunnel(
             reason=f"Cannot open deployment tunnel {deploy_environment}: {error}",
             resource=f"deployment-tunnel:{deploy_environment}",
         ) from error
+
+
+def resolve_windows_service_version(
+    deploy_environment: str,
+) -> dict[str, Any]:
+    environment_path = resolve_deployment_environment_path(deploy_environment)
+    config = WindowsRuntimeConfig.load(
+        deploy_environment,
+        environment_path,
+    )
+    if config.platform != RemotePlatform.WINDOWS:
+        raise BlockedError(
+            reason=(
+                f"Deployment {deploy_environment!r} is not a Windows "
+                "native runtime"
+            ),
+            resource=f"runtime-status:{deploy_environment}",
+        )
+    try:
+        status = execute_windows_runtime("status", config, branch="")
+    except (OSError, ProvisioningError, RuntimeError) as error:
+        raise BlockedError(
+            reason=(
+                f"Cannot inspect attached {config.role} runtime "
+                f"{deploy_environment}: {error}"
+            ),
+            resource=f"runtime-status:{deploy_environment}",
+        ) from error
+
+    deployment = status.get("manifest")
+    process_ids = status.get("processIds")
+    if (
+        status.get("artifactKind") != "windows-native-runtime-status"
+        or status.get("environmentName") != deploy_environment
+        or status.get("role") != config.role
+        or status.get("taskName") != config.task_name
+        or status.get("taskRegistered") is not True
+        or status.get("healthy") is not True
+        or status.get("sourceClean") is not True
+        or not isinstance(process_ids, list)
+        or not process_ids
+        or any(
+            isinstance(process_id, bool)
+            or not isinstance(process_id, int)
+            or process_id <= 0
+            for process_id in process_ids
+        )
+        or not isinstance(deployment, Mapping)
+    ):
+        raise BlockedError(
+            reason=(
+                f"Attached {config.role} runtime status is incomplete or "
+                "unhealthy"
+            ),
+            resource=f"runtime-status:{deploy_environment}",
+        )
+
+    status_commit = str(status.get("sourceCommit") or "")
+    deployment_commit = str(deployment.get("sourceCommit") or "")
+    binary_sha256 = str(deployment.get("binarySha256") or "").lower()
+    binary_sha256 = binary_sha256.removeprefix("sha256:")
+    if (
+        not commits_match(status_commit, deployment_commit)
+        or not _SHA256.fullmatch(binary_sha256)
+        or deployment.get("sourceClean") is not True
+        or deployment.get("role") != config.role
+        or deployment.get("taskName") != config.task_name
+    ):
+        raise BlockedError(
+            reason=(
+                f"Attached {config.role} runtime identity is inconsistent"
+            ),
+            resource=f"runtime-status:{deploy_environment}",
+        )
+    return {
+        "build_commit": status_commit,
+        "build_time": str(deployment.get("deployedAt") or ""),
+        "service_id": f"windows-task:{config.task_name}",
+    }
 
 
 def _windows_source_identity_script() -> str:

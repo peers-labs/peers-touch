@@ -98,6 +98,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
+    resolve_windows_service_version,
 )
 
 
@@ -6994,6 +6995,9 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     require_runtime_identity=True,
                     remote_source_identity_provider=(
                         resolve_remote_source_identity
+                    ),
+                    runtime_version_provider=(
+                        resolve_windows_service_version
                     ),
                 )
             services[service_id] = attestation

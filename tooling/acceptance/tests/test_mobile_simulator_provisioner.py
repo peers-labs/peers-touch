@@ -1189,6 +1189,12 @@ class MobileSimulatorContractTests(unittest.TestCase):
             ],
             mobile_simulator_module.resolve_remote_source_identity,
         )
+        self.assertIs(
+            service_producer.call_args.kwargs[
+                "runtime_version_provider"
+            ],
+            mobile_simulator_module.resolve_windows_service_version,
+        )
 
     def test_social_actor_fixture_resolves_each_role_in_its_deployment(
         self,
