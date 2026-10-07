@@ -53,6 +53,10 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             clients["desktop-bob"].actor,
             clients["sim-ios"].actor,
         )
+        self.assertEqual(
+            clients["desktop-bob-peer"].actor,
+            clients["desktop-bob"].actor,
+        )
         provisioner = get_provisioner(
             contract,
             station_profiles={
@@ -95,6 +99,34 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             same_station_clients["desktop-alice"]
             .service_bindings["station"].service_id,
             "station-primary",
+        )
+        suite_clients = {
+            client.id: client
+            for client in provisioner._clients_for_gate(
+                "station-access-session-class-suite-e2e",
+                overlay,
+            )
+        }
+        self.assertEqual(
+            set(suite_clients),
+            {
+                "desktop-alice",
+                "desktop-bob",
+                "desktop-bob-peer",
+                "sim-ios",
+                "sim-ios-peer",
+            },
+        )
+        self.assertEqual(
+            {client.actor for client in suite_clients.values()},
+            {"alice", "bob"},
+        )
+        self.assertEqual(
+            {
+                client.service_bindings["station"].service_id
+                for client in suite_clients.values()
+            },
+            {"station-primary"},
         )
 
     def test_catalog_uses_typed_ephemeral_mobile_capability(self) -> None:

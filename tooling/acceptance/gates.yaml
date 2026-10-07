@@ -414,6 +414,21 @@
       "tier": "ci-cheap",
       "description": "Require current-source native receiver proof for Desktop-Mobile coexistence and independent Desktop and Mobile same-class takeover."
     },
+    "station-access-session-class-suite-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.session_class_suite_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 5400,
+      "environment": "chat-mixed-native",
+      "provisioner": "chat-mixed-native",
+      "tier": "env-evidence",
+      "description": "Prove same-Station Chat, Desktop-Mobile coexistence, Desktop takeover, and Mobile takeover in one exact-source reusable Suite Runtime with UI and receiver-visible evidence."
+    },
     "station-access-federation-boundary-e2e": {
       "argv": [
         "python3",
