@@ -7530,6 +7530,21 @@ const composerBackdrop = composer?.closest('.moments-sheet-backdrop');
 const composerBackdropStyle = composerBackdrop
   ? getComputedStyle(composerBackdrop)
   : null;
+const composerRect = composer?.getBoundingClientRect();
+const composerInputRect = composer
+  ?.querySelector('[data-acceptance-id="social-composer-text"]')
+  ?.getBoundingClientRect();
+const composerAudienceRect = composer
+  ?.querySelector('[data-acceptance-id="social-audience-select"]')
+  ?.getBoundingClientRect();
+const composerHeaderRect = composer
+  ?.querySelector('.moments-sheet-header')
+  ?.getBoundingClientRect();
+const composerPublishRect = composer
+  ?.querySelector('[data-acceptance-id="social-composer-publish"]')
+  ?.getBoundingClientRect();
+const tabbarRect = document.querySelector('.mobile-tabbar')
+  ?.getBoundingClientRect();
 const viewport = window.visualViewport;
 return {
   viewportWidth: Number(viewport?.width || window.innerWidth || 0),
@@ -7555,6 +7570,27 @@ return {
   composerBottomSheet: !composer || (
     composerBackdropStyle?.position === 'fixed'
     && Number.parseFloat(composerStyle?.borderTopLeftRadius || '0') >= 16
+  ),
+  composerInputHeight: Number(composerInputRect?.height || 0),
+  composerAudienceHeight: Number(composerAudienceRect?.height || 0),
+  composerHeaderHeight: Number(composerHeaderRect?.height || 0),
+  composerPublishHeight: Number(composerPublishRect?.height || 0),
+  composerBottomClearance: composerRect
+    ? Number(window.innerHeight - composerRect.bottom)
+    : 0,
+  composerTabbarGap: composerRect && tabbarRect
+    ? Number(tabbarRect.top - composerRect.bottom)
+    : 0,
+  composerInputDominant: Boolean(
+    composerInputRect
+    && composerAudienceRect
+    && composerInputRect.height >= 220
+    && composerInputRect.height >= composerAudienceRect.height * 4
+  ),
+  composerBottomAnchored: Boolean(
+    composerRect
+    && tabbarRect
+    && Math.abs(tabbarRect.top - composerRect.bottom) <= 2
   ),
   activeElementAcceptanceId:
     document.activeElement?.getAttribute?.('data-acceptance-id') || '',

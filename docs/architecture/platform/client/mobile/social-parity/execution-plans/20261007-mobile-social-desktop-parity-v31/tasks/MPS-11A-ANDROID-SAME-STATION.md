@@ -20,6 +20,7 @@
     "apps/mobile/src-tauri",
     "packages/locales",
     "packages/prototypes/mobile/chat",
+    "docs/architecture/platform/client/mobile/social-parity/prototype",
     "tooling/acceptance",
     "tooling/scripts/generate-mobile-brand-assets.py"
   ],

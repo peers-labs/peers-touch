@@ -151,6 +151,31 @@ class AndroidSocialGateTests(unittest.TestCase):
         self.assertIn("session.installation_trace", source)
         self.assertNotIn("session.fresh_install_trace", source)
 
+    def test_android_native_quality_enforces_dominant_compact_composer(
+        self,
+    ) -> None:
+        metrics_source = inspect.getsource(_mobile_social_ui_operation)
+        quality_source = inspect.getsource(
+            AndroidSocialGate._run_android_native_quality
+        )
+
+        for marker in (
+            "composerInputHeight",
+            "composerAudienceHeight",
+            "composerHeaderHeight",
+            "composerPublishHeight",
+            "composerBottomClearance",
+            "composerTabbarGap",
+            "composerInputDominant",
+            "composerBottomAnchored",
+        ):
+            self.assertIn(marker, metrics_source)
+            self.assertIn(marker, quality_source)
+        self.assertIn(
+            'keyboard_composer_metrics = bob.social_ui("metrics")',
+            quality_source,
+        )
+
     def test_android_physical_environment_resolves_registered_provisioner(
         self,
     ) -> None:

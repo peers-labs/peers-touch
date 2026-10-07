@@ -1199,13 +1199,14 @@ class AndroidSocialGate(AcceptanceGate):
             '[data-acceptance-id="social-composer-open"]',
             "Android composer",
         )
+        composer_metrics = bob.social_ui("metrics")
         self._set_ui_value(
             bob,
             '[data-acceptance-id="social-composer-text"]',
             "keyboard probe",
             "Android keyboard probe",
         )
-        composer_metrics = bob.social_ui("metrics")
+        keyboard_composer_metrics = bob.social_ui("metrics")
         keyboard = bob.social_ui("keyboard-state")
         back = bob.social_ui("system-back")
         bob.background_app(1.0)
@@ -1239,6 +1240,31 @@ class AndroidSocialGate(AcceptanceGate):
             < float(metrics.get("pageWidth", 0)) - 40
             or metrics.get("flatFeed") is not True
             or composer_metrics.get("composerBottomSheet") is not True
+            or composer_metrics.get("composerInputDominant") is not True
+            or composer_metrics.get("composerBottomAnchored") is not True
+            or float(composer_metrics.get("composerInputHeight", 0)) < 220
+            or not (
+                40
+                <= float(composer_metrics.get("composerAudienceHeight", 0))
+                <= 44
+            )
+            or not (
+                42
+                <= float(composer_metrics.get("composerHeaderHeight", 0))
+                <= 46
+            )
+            or not (
+                30
+                <= float(composer_metrics.get("composerPublishHeight", 0))
+                <= 34
+            )
+            or not (
+                48
+                <= float(composer_metrics.get("composerBottomClearance", 0))
+                <= 96
+            )
+            or abs(float(composer_metrics.get("composerTabbarGap", 99))) > 2
+            or keyboard_composer_metrics.get("composerBottomSheet") is not True
             or back != {"pressed": True}
         ):
             raise GateError("Android native quality metrics are invalid")
@@ -1253,6 +1279,7 @@ class AndroidSocialGate(AcceptanceGate):
             "keyboardObserved": keyboard.get("shown") is True,
             "metrics": metrics,
             "composerMetrics": composer_metrics,
+            "keyboardComposerMetrics": keyboard_composer_metrics,
             "accessibility": accessibility.to_dict(),
             "screenshot": screenshot.to_dict(),
         }
