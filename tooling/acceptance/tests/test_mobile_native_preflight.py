@@ -1596,6 +1596,7 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
             "physicalDevices": {
                 client_id: object() for client_id in EXPECTED_CLIENTS
             },
+            "runtimeCacheRoot": "/tmp/mobile-native-runtime-cache",
             "leaseAuthenticationKey": bytearray(b"l" * 32),
         }
 
@@ -4408,7 +4409,8 @@ class MobileNativeContractTests(unittest.TestCase):
         self.assertIn('"appium:autoAcceptAlerts"', source)
         self.assertIn('"appium:autoGrantPermissions"', source)
         self.assertIn('"appium:androidInstallTimeout"', source)
-        self.assertIn('"appium:installOptions": ["--no-streaming"]', source)
+        self.assertIn('"appium:adbExecTimeout"', source)
+        self.assertNotIn('"appium:installOptions"', source)
         self.assertIn('"appium:ignoreHiddenApiPolicyError"', source)
         self.assertIn('if self.platform == "ios"', source)
 

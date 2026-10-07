@@ -749,6 +749,8 @@ def orchestrate_fake_android(
     root: Path,
     run_root: Path,
     runner: FakeRunner,
+    runtime_cache: Path | None = None,
+    toolchain: ToolchainIdentity | None = None,
 ) -> SuccessfulBuildReceipt:
     with (
         patch(
@@ -773,7 +775,7 @@ def orchestrate_fake_android(
         patch(
             "tooling.acceptance.provisioners.mobile_native_build."
             "resolve_toolchain_identity",
-            return_value=fake_toolchain(root),
+            return_value=toolchain or fake_toolchain(root),
         ),
         patch(
             "tooling.acceptance.provisioners.mobile_native_build."
@@ -785,6 +787,7 @@ def orchestrate_fake_android(
             root=root,
             platform="android",
             run_root=run_root,
+            runtime_cache=runtime_cache or run_root.parent / "runtime-cache",
         )
 
 
@@ -959,6 +962,84 @@ class MobileNativeBuildTest(unittest.TestCase):
             "-Dkotlin.compiler.execution.strategy=in-process",
         )
         self.assertRegex(allowlisted_environment_digest(environment), r"^sha256:[0-9a-f]{64}$")
+
+    def test_environment_digest_normalizes_the_controlled_run_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            toolchain = fake_toolchain(root)
+            first = construct_build_environment(
+                platform="android",
+                run_root=root / "run-a",
+                executable_paths=toolchain.executable_paths,
+                sdk_paths=toolchain.environment_paths,
+            )
+            second = construct_build_environment(
+                platform="android",
+                run_root=root / "run-b",
+                executable_paths=toolchain.executable_paths,
+                sdk_paths=toolchain.environment_paths,
+            )
+
+            self.assertEqual(
+                allowlisted_environment_digest(first),
+                allowlisted_environment_digest(second),
+            )
+
+    def test_android_build_identity_and_signer_are_stable_across_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            root.mkdir()
+            runtime_cache = Path(temporary) / "runtime-cache"
+            toolchain = fake_toolchain(root)
+            first_runner = android_runner(
+                effect=android_build_effect(root, lambda: b"stable-package")
+            )
+            second_runner = android_runner(
+                effect=android_build_effect(root, lambda: b"stable-package")
+            )
+
+            first = orchestrate_fake_android(
+                root=root,
+                run_root=Path(temporary) / "run-a",
+                runner=first_runner,
+                runtime_cache=runtime_cache,
+                toolchain=toolchain,
+            )
+            second = orchestrate_fake_android(
+                root=root,
+                run_root=Path(temporary) / "run-b",
+                runner=second_runner,
+                runtime_cache=runtime_cache,
+                toolchain=toolchain,
+            )
+
+            self.assertEqual(first._build_identity, second._build_identity)
+            self.assertEqual(
+                first._artifact_inspection.sha256,
+                second._artifact_inspection.sha256,
+            )
+            self.assertEqual(
+                sum(
+                    Path(command[0]).name == "keytool"
+                    for command in first_runner.commands
+                    if command
+                ),
+                1,
+            )
+            self.assertFalse(
+                any(
+                    Path(command[0]).name == "keytool"
+                    for command in second_runner.commands
+                    if command
+                )
+            )
+            keystore = (
+                runtime_cache
+                / "mobile-native/android-acceptance-signing"
+                / "acceptance-debug.keystore"
+            )
+            self.assertTrue(keystore.is_file())
+            self.assertEqual(keystore.stat().st_mode & 0o777, 0o600)
 
     def test_protoc_must_be_resolved_attested_and_present_on_sanitized_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1603,6 +1684,7 @@ class MobileNativeBuildTest(unittest.TestCase):
         identity_value = identity("android")
         environment = {
             "PATH": "/controlled/bin",
+            "CARGO_HOME": "/controlled/cargo-home",
             "PT_MOBILE_BUILD_IDENTITY_JSON": canonical_json_bytes(identity_value).decode(),
         }
         with tempfile.TemporaryDirectory() as temporary:
@@ -2156,6 +2238,7 @@ time.sleep(60)
             root = Path(temporary) / "repo"
             root.mkdir()
             run_root = Path(temporary) / "run"
+            runtime_cache = Path(temporary) / "runtime-cache"
             toolchain = fake_toolchain(root)
             package_payload = [b"oauth_acceptance_negative_callback"]
             runner = android_runner(
@@ -2196,6 +2279,7 @@ time.sleep(60)
                     root=root,
                     platform="android",
                     run_root=run_root,
+                    runtime_cache=runtime_cache,
                 )
                 run = FakeRun()
                 payload, reference = produce_build_attestation(
@@ -2368,6 +2452,16 @@ time.sleep(60)
                         / ACCEPTANCE_VARIANT
                         / "signing/acceptance-debug.keystore"
                     ).exists()
+                )
+                retained_keystore = (
+                    runtime_cache
+                    / "mobile-native/android-acceptance-signing"
+                    / "acceptance-debug.keystore"
+                )
+                self.assertTrue(retained_keystore.is_file())
+                self.assertEqual(
+                    retained_keystore.stat().st_mode & 0o777,
+                    0o600,
                 )
                 self.assertLess(debug_index, keytool_index)
                 self.assertLess(keytool_index, signing_index)
@@ -3570,6 +3664,7 @@ time.sleep(60)
                         root=root,
                         platform="android",
                         run_root=Path(temporary) / "run",
+                        runtime_cache=Path(temporary) / "runtime-cache",
                     )
 
     def test_noop_build_cannot_reuse_stale_repository_outputs(self) -> None:
@@ -3632,6 +3727,7 @@ time.sleep(60)
                         root=root,
                         platform="android",
                         run_root=Path(temporary) / "run",
+                        runtime_cache=Path(temporary) / "runtime-cache",
                     )
             self.assertFalse(stale_apk.exists())
             self.assertFalse(stale_dist.exists())
@@ -3735,6 +3831,7 @@ time.sleep(60)
                             root=root,
                             platform="android",
                             run_root=Path(temporary) / "run",
+                            runtime_cache=Path(temporary) / "runtime-cache",
                         )
 
     def test_fresh_install_and_runtime_inputs_are_artifact_ref_bound(self) -> None:
