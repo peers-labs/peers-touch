@@ -55,6 +55,7 @@ const ACCESS_PATH: &str = "/.well-known/peers-touch/access";
 const IDENTITY_PATH: &str = "/sub-bootstrap/station-identity";
 const TUNNEL_PATH: &str = "/.well-known/peers-touch/tunnel";
 const TUNNEL_SUBPROTOCOL: &str = "peers-touch.tunnel.v1";
+const PROTOBUF_CONTENT_TYPE: &str = "application/protobuf";
 const ACCESS_ENDPOINT_DOMAIN: &[u8] = b"peers-touch/access-endpoint/v1\0";
 const STATION_ROUTE_DOMAIN: &[u8] = b"peers-touch/station-route/v1\0";
 const ACCESS_PROTOCOL_VERSION: u32 = 1;
@@ -419,8 +420,8 @@ fn discover_station_input(input: &str) -> MobileResult<VerifiedDiscovery> {
         .build()
         .map_err(|_| discovery_error("clientUnavailable"))?
         .post(endpoint)
-        .header("Accept", "application/x-protobuf")
-        .header("Content-Type", "application/x-protobuf")
+        .header("Accept", PROTOBUF_CONTENT_TYPE)
+        .header("Content-Type", PROTOBUF_CONTENT_TYPE)
         .body(request.encode_to_vec())
         .send()
         .map_err(|_| discovery_error("endpointUnavailable"))?;
@@ -746,8 +747,8 @@ fn fetch_station_identity() -> MobileResult<VerifiedStationIdentity> {
         .build()
         .map_err(|_| identity_error("clientUnavailable"))?
         .post(format!("{origin}{IDENTITY_PATH}"))
-        .header("Accept", "application/x-protobuf")
-        .header("Content-Type", "application/x-protobuf")
+        .header("Accept", PROTOBUF_CONTENT_TYPE)
+        .header("Content-Type", PROTOBUF_CONTENT_TYPE)
         .body(request.encode_to_vec())
         .send()
         .map_err(|_| identity_error("endpointUnavailable"))?;
@@ -1493,6 +1494,11 @@ mod tests {
     use rand::rngs::OsRng;
 
     use super::*;
+
+    #[test]
+    fn discovery_uses_station_protobuf_media_type() {
+        assert_eq!(PROTOBUF_CONTENT_TYPE, "application/protobuf");
+    }
 
     #[test]
     fn private_connection_material_is_parsed_without_exposing_the_grant() {
