@@ -355,12 +355,15 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn("$env:PROTOC = $ProtocPath", source)
         self.assertIn("$env:CARGO_TARGET_DIR = $CargoTargetRoot", source)
         self.assertIn("Split-Path -Parent $ProtocPath", source)
-        self.assertIn('Join-Path $gitRoot "bin/bash.exe"', source)
+        self.assertIn("protoc-gen-es.CMD", source)
+        self.assertIn('Get-ChildItem (', source)
+        self.assertIn('-Recurse -Filter "*.proto"', source)
+        self.assertIn('"--es_opt=target=ts"', source)
         install = source.index(
             'Invoke-NativeCommand "pnpm.cmd" @("install", "--frozen-lockfile")'
         )
         generate = source.index(
-            'Invoke-NativeCommand $bashPath @("model/build.sh")'
+            "Invoke-NativeCommand $ProtocPath"
         )
         desktop_build = source.index(
             'Invoke-NativeCommand "pnpm.cmd" '
