@@ -88,17 +88,33 @@ $env:CARGO_TARGET_DIR = $CargoTargetRoot
 $env:OPENSSL_SRC_PERL = $PerlPath
 $env:PROTOC = $ProtocPath
 
-$gitCommand = Get-Command "git.exe" -ErrorAction Stop
-$gitRoot = Split-Path (Split-Path $gitCommand.Source -Parent) -Parent
-$bashPath = Join-Path $gitRoot "bin/bash.exe"
-if (-not (Test-Path -LiteralPath $bashPath)) {
-    throw "Git Bash does not exist: $bashPath"
-}
-
 Push-Location -LiteralPath $SourceRoot
 try {
     Invoke-NativeCommand "pnpm.cmd" @("install", "--frozen-lockfile")
-    Invoke-NativeCommand $bashPath @("model/build.sh")
+    $protoRoot = Join-Path $SourceRoot "model"
+    $desktopProtoOutput = Join-Path $SourceRoot "apps/desktop/src/gen/proto"
+    $protocGenEs = Join-Path (
+        $SourceRoot
+    ) "apps/desktop/node_modules/.bin/protoc-gen-es.CMD"
+    if (-not (Test-Path -LiteralPath $protocGenEs)) {
+        throw "Desktop protoc-gen-es does not exist: $protocGenEs"
+    }
+    Remove-Item -Recurse -Force $desktopProtoOutput -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $desktopProtoOutput | Out-Null
+    $protoFiles = Get-ChildItem (
+        Join-Path $protoRoot "domain"
+    ) -Recurse -Filter "*.proto" | Where-Object {
+        $_.FullName -notlike "*\ai_box\ai_box_message.proto"
+    }
+    foreach ($protoFile in $protoFiles) {
+        Invoke-NativeCommand $ProtocPath @(
+            "--plugin=protoc-gen-es=$protocGenEs",
+            "--es_out=$desktopProtoOutput",
+            "--es_opt=target=ts",
+            "-I$protoRoot",
+            $protoFile.FullName
+        )
+    }
     $env:VITE_ACCEPTANCE_HARNESS = "1"
     Invoke-NativeCommand "pnpm.cmd" @("--dir", "apps/desktop", "run", "build")
 
