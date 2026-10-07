@@ -72,6 +72,25 @@ func TestTunnelSourceKeyIgnoresEphemeralPort(t *testing.T) {
 	}
 }
 
+func TestTunnelSourceKeyTrustsForwardedAddressOnlyFromLoopbackProxy(t *testing.T) {
+	t.Parallel()
+
+	proxied := tunnelSourceKeyFromForwarded(
+		&net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 41000},
+		"192.0.2.10, 127.0.0.1",
+	)
+	if proxied != "192.0.2.10" {
+		t.Fatalf("proxied source key = %q", proxied)
+	}
+	direct := tunnelSourceKeyFromForwarded(
+		&net.TCPAddr{IP: net.ParseIP("198.51.100.20"), Port: 42000},
+		"192.0.2.10",
+	)
+	if direct != "198.51.100.20" {
+		t.Fatalf("direct source key trusted spoofed forwarding header: %q", direct)
+	}
+}
+
 func TestStreamEntryRateLimiterAggregatesConcurrentTunnels(t *testing.T) {
 	relayConn, stationConn := net.Pipe()
 	defer relayConn.Close()

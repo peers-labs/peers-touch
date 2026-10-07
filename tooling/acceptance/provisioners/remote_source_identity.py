@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import shlex
+import ssl
 from collections.abc import Mapping
 from typing import Any
 
@@ -178,7 +181,90 @@ def resolve_windows_service_version(
     }
 
 
+def resolve_windows_relay_trust_anchor(
+    deploy_environment: str,
+) -> tuple[bytes, str]:
+    transport, _ = _reviewed_remote_transport(deploy_environment)
+    if transport.target.remote_platform != RemotePlatform.WINDOWS:
+        raise BlockedError(
+            reason=(
+                f"Deployment {deploy_environment!r} is not a Windows "
+                "native runtime"
+            ),
+            resource=f"runtime-trust:{deploy_environment}",
+        )
+    environment_path = resolve_deployment_environment_path(deploy_environment)
+    config = WindowsRuntimeConfig.load(
+        deploy_environment,
+        environment_path,
+    )
+    if config.role != "relay":
+        raise BlockedError(
+            reason=f"Deployment {deploy_environment!r} is not a Relay runtime",
+            resource=f"runtime-trust:{deploy_environment}",
+        )
+    try:
+        status = execute_windows_runtime("status", config, branch="")
+        deployment = status.get("manifest")
+        certificate_path = (
+            str(deployment.get("tlsCaCertificatePath") or "")
+            if isinstance(deployment, Mapping)
+            else ""
+        )
+        expected_digest = (
+            str(deployment.get("tlsCaCertificateSha256") or "").lower()
+            if isinstance(deployment, Mapping)
+            else ""
+        )
+        if not certificate_path or not expected_digest:
+            raise ValueError("Relay runtime manifest has no TLS trust anchor")
+        completed = transport.run_argv(
+            [
+                "python",
+                "-c",
+                (
+                    "import base64,pathlib,sys;"
+                    "sys.stdout.write(base64.b64encode("
+                    "pathlib.Path(sys.argv[1]).read_bytes()).decode('ascii'))"
+                ),
+                certificate_path,
+            ],
+            timeout=30,
+            check=False,
+        )
+        certificate = base64.b64decode(
+            completed.stdout.strip(),
+            validate=True,
+        )
+        ssl.PEM_cert_to_DER_cert(certificate.decode("ascii"))
+    except (
+        OSError,
+        ProvisioningError,
+        RuntimeError,
+        ValueError,
+        UnicodeError,
+    ) as error:
+        raise BlockedError(
+            reason=(
+                f"Cannot load Relay trust anchor from "
+                f"{deploy_environment!r}: {error}"
+            ),
+            resource=f"runtime-trust:{deploy_environment}",
+        ) from error
+    digest = "sha256:" + hashlib.sha256(certificate).hexdigest()
+    if completed.returncode != 0 or digest != expected_digest:
+        raise BlockedError(
+            reason=(
+                f"Relay trust anchor from {deploy_environment!r} "
+                "does not match its runtime manifest"
+            ),
+            resource=f"runtime-trust:{deploy_environment}",
+        )
+    return certificate, digest
+
+
 def _windows_source_identity_script() -> str:
+    protocol_pathspecs = repr(list(PROTOCOL_SOURCE_PATHS))
     protocol_pathspecs = repr(list(PROTOCOL_SOURCE_PATHS))
     return (
         "import hashlib,json,pathlib,subprocess,sys;"

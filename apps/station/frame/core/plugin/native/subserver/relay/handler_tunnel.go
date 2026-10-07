@@ -54,7 +54,7 @@ func (h *relayHandler) tunnelCaller(
 	ctx context.Context,
 	request *app.RequestContext,
 ) (tunnelCaller, error) {
-	caller := tunnelCaller{sourceKey: tunnelSourceKey(request.RemoteAddr())}
+	caller := tunnelCaller{sourceKey: tunnelRequestSourceKey(request)}
 	authorization := strings.TrimSpace(
 		string(request.Request.Header.Peek("Authorization")),
 	)
@@ -382,6 +382,26 @@ func callerStationPeerID(caller tunnelCaller) string {
 		return ""
 	}
 	return caller.mount.StationPeerID
+}
+
+func tunnelRequestSourceKey(request *app.RequestContext) string {
+	return tunnelSourceKeyFromForwarded(
+		request.RemoteAddr(),
+		string(request.Request.Header.Peek("X-Forwarded-For")),
+	)
+}
+
+func tunnelSourceKeyFromForwarded(remoteAddress net.Addr, forwarded string) string {
+	if remoteAddress == nil || !isLoopbackAddress(remoteAddress.String()) {
+		return tunnelSourceKey(remoteAddress)
+	}
+	if separator := strings.IndexByte(forwarded, ','); separator >= 0 {
+		forwarded = forwarded[:separator]
+	}
+	if forwardedIP := net.ParseIP(strings.TrimSpace(forwarded)); forwardedIP != nil {
+		return forwardedIP.String()
+	}
+	return tunnelSourceKey(remoteAddress)
 }
 
 func tunnelSourceKey(address net.Addr) string {

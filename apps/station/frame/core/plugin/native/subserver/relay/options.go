@@ -28,6 +28,8 @@ type Options struct {
 	StreamPingInterval int
 	StreamPingTimeout  int
 	StreamListenAddr   string
+	PublicListenAddr   string
+	PublicUpstreamURL  string
 	PublicBaseURL      string
 
 	// Graceful shutdown
@@ -101,6 +103,18 @@ func WithStreamPingTimeout(seconds int) option.Option {
 func WithStreamListenAddr(addr string) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.StreamListenAddr = addr
+	})
+}
+
+func WithPublicListenAddr(addr string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.PublicListenAddr = addr
+	})
+}
+
+func WithPublicUpstreamURL(upstreamURL string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.PublicUpstreamURL = upstreamURL
 	})
 }
 

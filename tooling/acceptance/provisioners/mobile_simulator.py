@@ -98,6 +98,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
+    resolve_windows_relay_trust_anchor,
     resolve_windows_service_version,
 )
 
@@ -6564,6 +6565,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     resource=f"{self.environment_id}:base-manifest",
                 )
             self._base_manifest = base_manifest
+            transport_trust = self._prepare_transport_trust(
+                gate_id,
+                base,
+                base_manifest,
+                service_bindings,
+            )
 
             actor_manifest_ref = self._prepare_actor_fixture(
                 gate_id,
@@ -6629,6 +6636,8 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 }
                 for client in environment_clients
             }
+            if transport_trust:
+                resources["transportTrust"] = transport_trust
             manifest = MobileSimulatorRuntimeManifest(
                 **{
                     field.name: (
@@ -6673,6 +6682,16 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 reason=blocked.reason,
                 resource=blocked.resource,
             )
+
+    def _prepare_transport_trust(
+        self,
+        gate_id: str,
+        base: MobileSimulatorProvisioner,
+        base_manifest: MobileSimulatorRuntimeManifest,
+        service_bindings: Mapping[str, MobileServiceBinding],
+    ) -> dict[str, Any]:
+        del gate_id, base, base_manifest, service_bindings
+        return {}
 
     def _load_overlay(self) -> dict[str, Any]:
         try:
@@ -6940,9 +6959,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     ) -> dict[str, Any]:
         services: dict[str, Any] = {}
         for service_id, binding in service_bindings.items():
-            if not self._station_ready(
-                binding.endpoint,
-                binding.health_endpoint,
+            if (
+                binding.kind == "station"
+                and not self._station_ready(
+                    binding.endpoint,
+                    binding.health_endpoint,
+                )
             ):
                 raise BlockedError(
                     reason=f"Required service {service_id!r} is unhealthy",
@@ -7235,6 +7257,9 @@ class MobileSocialSimulatorProvisioner(
         station_profiles: Mapping[str, str] | None = None,
         service_profiles: Mapping[str, str] | None = None,
         session_factory: Callable[[str], Any] | None = None,
+        relay_trust_anchor_provider: (
+            Callable[[str], tuple[bytes, str]] | None
+        ) = None,
     ) -> None:
         super().__init__(
             contract,
@@ -7244,10 +7269,101 @@ class MobileSocialSimulatorProvisioner(
             service_profiles=service_profiles,
         )
         self.session_factory = session_factory
+        self.relay_trust_anchor_provider = (
+            relay_trust_anchor_provider
+            or resolve_windows_relay_trust_anchor
+        )
         self._appium_handler: (
             MobileSimulatorAppiumCapabilityHandler | None
         ) = None
         self._appium_cleanup_registered = False
+
+    def _prepare_transport_trust(
+        self,
+        gate_id: str,
+        base: MobileSimulatorProvisioner,
+        base_manifest: MobileSimulatorRuntimeManifest,
+        service_bindings: Mapping[str, MobileServiceBinding],
+    ) -> dict[str, Any]:
+        if gate_id not in self.ephemeral_gate_ids:
+            return {}
+        relay = service_bindings.get("relay")
+        if relay is None:
+            raise BlockedError(
+                reason="Mobile Relay Gate has no Relay service binding",
+                resource="mobile-relay:transport-trust",
+            )
+        certificate, digest = self.relay_trust_anchor_provider(
+            relay.deployment_environment
+        )
+        actual_digest = "sha256:" + hashlib.sha256(certificate).hexdigest()
+        if actual_digest != digest:
+            raise BlockedError(
+                reason="Relay trust anchor digest is inconsistent",
+                resource="mobile-relay:transport-trust",
+            )
+        clients = _required_object(
+            base_manifest.simulator_resources,
+            "clients",
+            "mobile-relay:transport-trust",
+        )
+        if not base_manifest.clients:
+            raise BlockedError(
+                reason="Mobile Relay Gate has no simulator clients",
+                resource="mobile-relay:transport-trust",
+            )
+        runtime_root = Path(base_manifest.clients[0].storage_root).parents[1]
+        trust_path = runtime_root / "trust" / "relay-ca.pem"
+        trust_path.parent.mkdir(parents=True, exist_ok=True)
+        trust_path.write_bytes(certificate)
+        installed: list[str] = []
+        command_env = dict(os.environ)
+        for client_id in ("sim-ios", "sim-ios-peer"):
+            client = _required_object(
+                clients,
+                client_id,
+                f"mobile-relay:transport-trust:{client_id}",
+            )
+            udid = _required_text(
+                client,
+                "device",
+                f"mobile-relay:transport-trust:{client_id}",
+            )
+            base._run_checked(
+                (
+                    "xcrun",
+                    "simctl",
+                    "keychain",
+                    udid,
+                    "add-root-cert",
+                    str(trust_path),
+                ),
+                env=command_env,
+                timeout=60,
+                resource=f"mobile-relay:trust-install:{client_id}",
+            )
+            self.register_cleanup(
+                f"mobile-relay:keychain-reset:{client_id}",
+                lambda device=udid: base._run_cleanup(
+                    (
+                        "xcrun",
+                        "simctl",
+                        "keychain",
+                        device,
+                        "reset",
+                    ),
+                    env=command_env,
+                    resource=f"mobile-relay:keychain-reset:{device}",
+                ),
+            )
+            installed.append(client_id)
+        return {
+            "relay": {
+                "sha256": digest,
+                "installedClients": installed,
+                "cleanup": "simulator-keychain-reset",
+            }
+        }
 
     def create_gate_launch_context(
         self,

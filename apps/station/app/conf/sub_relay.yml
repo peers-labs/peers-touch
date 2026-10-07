@@ -12,6 +12,8 @@ peers:
           stream-ping-interval: 30
           stream-ping-timeout: 5
           stream-listen-addr: ""
+          public-listen-addr: ""
+          public-upstream-url: ""
           graceful-drain-timeout: 10
           tls-cert-file: ""
           tls-key-file: ""

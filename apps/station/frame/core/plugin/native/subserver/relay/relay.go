@@ -12,6 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -42,8 +45,10 @@ type SubServer struct {
 	routePublishJWTWrapper server.Wrapper
 	operatorJWTWrapper     server.Wrapper
 
-	listener net.Listener
-	stopCh   chan struct{}
+	listener       net.Listener
+	publicListener net.Listener
+	publicServer   *http.Server
+	stopCh         chan struct{}
 }
 
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -167,6 +172,18 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 		logger.Infof(ctx, "[relay] stream listener started on %s (tls=%v)",
 			s.opts.StreamListenAddr, s.opts.TLSCertFile != "")
 	}
+	if s.opts.PublicListenAddr != "" {
+		if err := s.startPublicProxy(ctx); err != nil {
+			if s.listener != nil {
+				_ = s.listener.Close()
+			}
+			return fmt.Errorf(
+				"[relay] public TLS listen on %s: %w",
+				s.opts.PublicListenAddr,
+				err,
+			)
+		}
+	}
 
 	go s.heartbeatChecker(ctx)
 	go s.streamPinger(ctx)
@@ -198,6 +215,68 @@ func relayTLSConfig(cert tls.Certificate) *tls.Config {
 	}
 }
 
+func (s *SubServer) startPublicProxy(ctx context.Context) error {
+	target, err := url.Parse(s.opts.PublicUpstreamURL)
+	if err != nil {
+		return fmt.Errorf("parse public upstream URL: %w", err)
+	}
+	cert, err := tls.LoadX509KeyPair(s.opts.TLSCertFile, s.opts.TLSKeyFile)
+	if err != nil {
+		return fmt.Errorf("load public TLS key pair: %w", err)
+	}
+	rawListener, err := net.Listen("tcp", s.opts.PublicListenAddr)
+	if err != nil {
+		return err
+	}
+	proxy := newRelayPublicProxy(target)
+	s.publicListener = tls.NewListener(rawListener, relayTLSConfig(cert))
+	s.publicServer = &http.Server{
+		Handler:           proxy,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
+	go func() {
+		if serveErr := s.publicServer.Serve(s.publicListener); serveErr != nil &&
+			!errors.Is(serveErr, http.ErrServerClosed) {
+			logger.Errorf(ctx, "[relay] public TLS listener failed: %v", serveErr)
+		}
+	}()
+	logger.Infof(
+		ctx,
+		"[relay] public HTTPS/WSS listener started on %s",
+		s.opts.PublicListenAddr,
+	)
+	return nil
+}
+
+func newRelayPublicProxy(target *url.URL) *httputil.ReverseProxy {
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Director = nil
+	proxy.Rewrite = func(request *httputil.ProxyRequest) {
+		request.SetURL(target)
+		request.Out.Host = request.In.Host
+		request.SetXForwarded()
+		request.Out.Header.Set("X-Forwarded-Proto", "https")
+	}
+	proxy.ErrorHandler = func(
+		response http.ResponseWriter,
+		request *http.Request,
+		proxyErr error,
+	) {
+		logger.Warnf(
+			request.Context(),
+			"[relay] public proxy request failed: %v",
+			proxyErr,
+		)
+		http.Error(
+			response,
+			http.StatusText(http.StatusBadGateway),
+			http.StatusBadGateway,
+		)
+	}
+	return proxy
+}
+
 func (s *SubServer) Stop(ctx context.Context) error {
 	s.status = server.StatusStopping
 	defer func() { s.status = server.StatusStopped }()
@@ -209,6 +288,13 @@ func (s *SubServer) Stop(ctx context.Context) error {
 	}
 
 	drainTimeout := time.Duration(s.opts.GracefulDrainTimeout) * time.Second
+	if s.publicServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, drainTimeout)
+		if err := s.publicServer.Shutdown(shutdownCtx); err != nil {
+			_ = s.publicServer.Close()
+		}
+		cancel()
+	}
 	s.streams.DrainAndClose(ctx, drainTimeout)
 
 	logger.Infof(ctx, "[relay] stopped")

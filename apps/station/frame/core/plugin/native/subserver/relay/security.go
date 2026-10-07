@@ -38,7 +38,12 @@ func validateRelaySecurityOptions(options *Options) (*relaySecurityMaterial, err
 		return nil, fmt.Errorf("relay security: stream listen address is required")
 	}
 	publicBaseURL, err := url.Parse(strings.TrimSpace(options.PublicBaseURL))
-	if err != nil || publicBaseURL.Host == "" {
+	if err != nil ||
+		publicBaseURL.Host == "" ||
+		publicBaseURL.User != nil ||
+		(publicBaseURL.Path != "" && publicBaseURL.Path != "/") ||
+		publicBaseURL.RawQuery != "" ||
+		publicBaseURL.Fragment != "" {
 		return nil, fmt.Errorf("relay security: valid public base URL is required")
 	}
 
@@ -97,6 +102,9 @@ func validateRelaySecurityOptions(options *Options) (*relaySecurityMaterial, err
 		if !strings.EqualFold(publicBaseURL.Scheme, "https") {
 			return nil, fmt.Errorf("relay security: public base URL must use HTTPS")
 		}
+		if err := validateRelayPublicListener(options, publicBaseURL); err != nil {
+			return nil, err
+		}
 		if _, err := readCredentialFile("TLS certificate", options.TLSCertFile, 1); err != nil {
 			return nil, err
 		}
@@ -120,6 +128,12 @@ func validateRelaySecurityOptions(options *Options) (*relaySecurityMaterial, err
 	if !options.AllowInsecureLoopback {
 		return nil, fmt.Errorf("relay security: TLS certificate and key are required")
 	}
+	if strings.TrimSpace(options.PublicListenAddr) != "" ||
+		strings.TrimSpace(options.PublicUpstreamURL) != "" {
+		return nil, fmt.Errorf(
+			"relay security: insecure loopback mode cannot expose a public listener",
+		)
+	}
 	if !isLoopbackAddress(options.StreamListenAddr) {
 		return nil, fmt.Errorf(
 			"relay security: insecure listener %q is not loopback",
@@ -137,6 +151,57 @@ func validateRelaySecurityOptions(options *Options) (*relaySecurityMaterial, err
 		signingKey:  signingKey,
 		operatorKey: operatorKey,
 	}, nil
+}
+
+func validateRelayPublicListener(options *Options, publicBaseURL *url.URL) error {
+	listenAddress := strings.TrimSpace(options.PublicListenAddr)
+	if listenAddress == "" {
+		return fmt.Errorf("relay security: public TLS listen address is required")
+	}
+	_, listenPort, err := net.SplitHostPort(listenAddress)
+	if err != nil || listenPort == "" {
+		return fmt.Errorf("relay security: public TLS listen address is invalid")
+	}
+	publicPort := publicBaseURL.Port()
+	if publicPort == "" {
+		publicPort = "443"
+	}
+	if listenPort != publicPort {
+		return fmt.Errorf(
+			"relay security: public base URL and TLS listener ports must match",
+		)
+	}
+	_, streamPort, err := net.SplitHostPort(
+		strings.TrimSpace(options.StreamListenAddr),
+	)
+	if err != nil || streamPort == "" {
+		return fmt.Errorf("relay security: stream listen address is invalid")
+	}
+	if streamPort == listenPort {
+		return fmt.Errorf(
+			"relay security: public TLS and stream listeners must use distinct ports",
+		)
+	}
+
+	upstream, err := url.Parse(strings.TrimSpace(options.PublicUpstreamURL))
+	if err != nil ||
+		!strings.EqualFold(upstream.Scheme, "http") ||
+		!isLoopbackHost(upstream.Hostname()) ||
+		upstream.User != nil ||
+		upstream.Port() == "" ||
+		(upstream.Path != "" && upstream.Path != "/") ||
+		upstream.RawQuery != "" ||
+		upstream.Fragment != "" {
+		return fmt.Errorf(
+			"relay security: public upstream must be a loopback HTTP origin",
+		)
+	}
+	if upstream.Port() == listenPort || upstream.Port() == streamPort {
+		return fmt.Errorf(
+			"relay security: public upstream must use a distinct loopback port",
+		)
+	}
+	return nil
 }
 
 func validateRelayQuotas(options *Options) error {

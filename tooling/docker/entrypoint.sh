@@ -69,6 +69,8 @@ if [ "$PEERS_NODE_ROLE" = "relay" ]; then
     true)
       ;;
     false)
+      : "${RELAY_PUBLIC_LISTEN_ADDR:?RELAY_PUBLIC_LISTEN_ADDR is required for relay role}"
+      : "${RELAY_PUBLIC_UPSTREAM_URL:?RELAY_PUBLIC_UPSTREAM_URL is required for relay role}"
       : "${RELAY_TLS_CERT_FILE:?RELAY_TLS_CERT_FILE is required for relay role}"
       : "${RELAY_TLS_KEY_FILE:?RELAY_TLS_KEY_FILE is required for relay role}"
       case "$PEERS_NODE_SERVER_BASEURL" in
@@ -235,12 +237,21 @@ fi
 # The relay subserver's TCP listener for station mounts. Emitted only on the
 # Relay node so stations do NOT accidentally accept relay client streams.
 if [ "$PEERS_NODE_ROLE" = "relay" ]; then
+  relay_public_config=""
+  if [ "${RELAY_ALLOW_INSECURE_LOOPBACK:-false}" = "false" ]; then
+    relay_public_config="$(printf \
+      '          public-listen-addr: "%s"\n          public-upstream-url: "%s"\n' \
+      "$RELAY_PUBLIC_LISTEN_ADDR" \
+      "$RELAY_PUBLIC_UPSTREAM_URL")"
+  fi
   cat > /app/conf/relay.docker.yml <<EOF
 peers:
   node:
     server:
+      address: "127.0.0.1:18080"
       subserver:
         relay:
+${relay_public_config}
           stream-listen-addr: "${RELAY_STREAM_LISTEN_ADDR}"
           tls-cert-file: "${RELAY_TLS_CERT_FILE:-}"
           tls-key-file: "${RELAY_TLS_KEY_FILE:-}"

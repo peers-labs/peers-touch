@@ -158,6 +158,75 @@ func TestValidateRelaySecurityOptions(t *testing.T) {
 	}
 }
 
+func TestValidateRelaySecurePublicListener(t *testing.T) {
+	t.Parallel()
+
+	valid := validRelaySecurityOptions(t)
+	valid.AllowInsecureLoopback = false
+	valid.StreamListenAddr = ":4501"
+	valid.PublicListenAddr = ":18443"
+	valid.PublicUpstreamURL = "http://127.0.0.1:18081"
+	valid.PublicBaseURL = "https://relay.example.test:18443"
+	valid.TLSCertFile = filepath.Join(t.TempDir(), "relay.crt")
+	valid.TLSKeyFile = filepath.Join(t.TempDir(), "relay-tls.key")
+	if err := os.WriteFile(valid.TLSCertFile, []byte("certificate"), 0o600); err != nil {
+		t.Fatalf("write TLS certificate: %v", err)
+	}
+	if err := os.WriteFile(valid.TLSKeyFile, []byte("private-key"), 0o600); err != nil {
+		t.Fatalf("write TLS key: %v", err)
+	}
+	if _, err := validateRelaySecurityOptions(valid); err != nil {
+		t.Fatalf("valid secure Relay options: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Options)
+	}{
+		{
+			name: "missing public listener",
+			mutate: func(options *Options) {
+				options.PublicListenAddr = ""
+			},
+		},
+		{
+			name: "public port differs from origin",
+			mutate: func(options *Options) {
+				options.PublicListenAddr = ":18444"
+			},
+		},
+		{
+			name: "public listener aliases stream",
+			mutate: func(options *Options) {
+				options.PublicListenAddr = ":4501"
+				options.PublicBaseURL = "https://relay.example.test:4501"
+			},
+		},
+		{
+			name: "public upstream is remote",
+			mutate: func(options *Options) {
+				options.PublicUpstreamURL = "http://relay.example.test:18081"
+			},
+		},
+		{
+			name: "public upstream uses TLS",
+			mutate: func(options *Options) {
+				options.PublicUpstreamURL = "https://127.0.0.1:18081"
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			options := *valid
+			test.mutate(&options)
+			if _, err := validateRelaySecurityOptions(&options); err == nil {
+				t.Fatal("validateRelaySecurityOptions succeeded, want failure")
+			}
+		})
+	}
+}
+
 func TestOperatorAuthenticationRequiresDedicatedPolicy(t *testing.T) {
 	t.Parallel()
 

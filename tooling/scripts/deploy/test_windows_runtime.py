@@ -7,13 +7,43 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from tooling.acceptance.core.errors import ProvisioningError
 from tooling.scripts.deploy.windows_runtime import (
+    WindowsRuntimeConfig,
     _remote_runtime_script,
     _rotate_service_log,
 )
 
 
 class WindowsRuntimeScriptTest(unittest.TestCase):
+    def test_relay_config_rejects_public_port_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            environment = Path(directory) / "relay.env"
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=relay.example",
+                        "PT_DEPLOY_USER=administrator",
+                        "PT_DEPLOY_PATH=deploy/relay",
+                        "PT_DEPLOY_RUNTIME_PATH=runtime/relay",
+                        "PT_DEPLOY_ROLE=relay",
+                        "PT_DEPLOY_PLATFORM=windows",
+                        "PT_DEPLOY_HTTP_PORT=18081",
+                        "PT_DEPLOY_PUBLIC_BASE_URL=https://relay.example:18081",
+                        "PT_DEPLOY_STREAM_PORT=4501",
+                        "PT_DEPLOY_TASK_NAME=PeersTouch-relay",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ProvisioningError,
+                "must be distinct",
+            ):
+                WindowsRuntimeConfig.load("relay", environment)
+
     def test_remote_runtime_script_is_valid_python(self) -> None:
         compile(_remote_runtime_script(), "<windows-runtime>", "exec")
 
@@ -43,6 +73,23 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
 
         self.assertIn('"-config",', generate_tls)
         self.assertIn('"NUL",', generate_tls)
+        self.assertIn("basicConstraints=critical,CA:TRUE,pathlen:0", generate_tls)
+        self.assertIn("extendedKeyUsage=serverAuth", generate_tls)
+        self.assertIn("subjectAltName=", generate_tls)
+
+    def test_relay_uses_distinct_public_internal_and_stream_ports(self) -> None:
+        script = _remote_runtime_script()
+
+        self.assertIn('"          public-listen-addr: :"', script)
+        self.assertIn(
+            '"          public-upstream-url: http://127.0.0.1:"',
+            script,
+        )
+        self.assertIn('"      address: 127.0.0.1:"', script)
+        self.assertIn(
+            'cfg["publicPort"] if role == "relay" else cfg["httpPort"]',
+            script,
+        )
 
     def test_native_service_stderr_does_not_terminate_runner(self) -> None:
         script = _remote_runtime_script()
@@ -151,6 +198,8 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
 
         self.assertIn('secret_root / "relay-operator.key"', acl)
         self.assertIn('secret_root / "relay-signing.key"', acl)
+        self.assertIn('secret_root / "relay-ca.key"', acl)
+        self.assertIn('secret_root / "relay-ca.crt"', acl)
         self.assertIn('secret_root / "relay-tls.key"', acl)
         self.assertIn('secret_root / "relay.crt"', acl)
         self.assertIn("for secret_path in secret_paths:", acl)

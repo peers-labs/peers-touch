@@ -196,6 +196,8 @@ services:
       # by entrypoint.sh. Only the Relay node sets this; stations leave it
       # unset so their relay subserver's listener stays dormant.
       RELAY_STREAM_LISTEN_ADDR: ${RELAY_STREAM_LISTEN_ADDR:-:4501}
+      RELAY_PUBLIC_LISTEN_ADDR: ${RELAY_PUBLIC_LISTEN_ADDR:-:18443}
+      RELAY_PUBLIC_UPSTREAM_URL: ${RELAY_PUBLIC_UPSTREAM_URL:-http://127.0.0.1:18080}
       RELAY_TLS_CERT_FILE: ${RELAY_TLS_CERT_FILE:-}
       RELAY_TLS_KEY_FILE: ${RELAY_TLS_KEY_FILE:-}
       RELAY_ALLOW_INSECURE_LOOPBACK: ${RELAY_ALLOW_INSECURE_LOOPBACK:-false}
@@ -206,7 +208,7 @@ services:
       RELAY_OPERATOR_SCOPE: ${RELAY_OPERATOR_SCOPE:-}
       PEERS_NODE_LABEL: ${PEERS_NODE_LABEL:-}
     ports:
-      - "${RELAY_STATION_PORT:-18081}:18080"
+      - "${RELAY_STATION_PORT:-18081}:18443"
       - "${LIBP2P_PORT:-4001}:4001"
       # Relay subserver TCP stream listener for station mounts.
       - "${RELAY_STREAM_PORT:-4501}:4501"

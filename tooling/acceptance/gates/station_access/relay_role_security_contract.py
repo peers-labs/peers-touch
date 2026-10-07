@@ -46,6 +46,8 @@ _RELAY_SECRET_FILES = frozenset(
         "auth-secret",
         "relay-operator.key",
         "relay-signing.key",
+        "relay-ca.key",
+        "relay-ca.crt",
         "relay-tls.key",
         "relay.crt",
     }
@@ -168,6 +170,8 @@ def validate_relay_role_source_contract() -> None:
             "operatorAuthenticationWrapper(",
             "tls.VersionTLS13",
             "s.opts.AllowInsecureLoopback",
+            "startPublicProxy(ctx)",
+            "newRelayPublicProxy(target)",
         ),
         "Relay security composition",
     )
@@ -197,6 +201,8 @@ def validate_relay_role_source_contract() -> None:
         config_source,
         (
             "allow-insecure-loopback: false",
+            'public-listen-addr: ""',
+            'public-upstream-url: ""',
             'signing-key-file: ""',
             'operator-key-file: ""',
             'operator-issuer: ""',
@@ -213,6 +219,8 @@ def validate_relay_role_source_contract() -> None:
             "PEERS_NODE_ROLE: station",
             "PEERS_NODE_ROLE: relay",
             "RELAY_TLS_CERT_FILE:",
+            "RELAY_PUBLIC_LISTEN_ADDR:",
+            "RELAY_PUBLIC_UPSTREAM_URL:",
             "RELAY_SIGNING_KEY_FILE:",
             "RELAY_OPERATOR_KEY_FILE:",
             '"http://127.0.0.1:18080/healthz"',
@@ -226,6 +234,8 @@ def validate_relay_role_source_contract() -> None:
         (
             'case "${PEERS_NODE_ROLE:-}" in',
             "RELAY_TLS_CERT_FILE is required for relay role",
+            "RELAY_PUBLIC_LISTEN_ADDR is required for relay role",
+            "RELAY_PUBLIC_UPSTREAM_URL is required for relay role",
             "RELAY_SIGNING_KEY_FILE is required for relay role",
             "RELAY_OPERATOR_KEY_FILE is required for relay role",
             "relay role cannot enable relay-client",
@@ -266,10 +276,15 @@ def validate_relay_role_security_contract() -> None:
     )
 
 
-def _http_status(url: str) -> int:
+def _http_status(url: str, *, trust_anchor: str = "") -> int:
     request = Request(url, headers={"Accept": "application/json"})
+    context = (
+        ssl.create_default_context(cadata=trust_anchor)
+        if trust_anchor
+        else None
+    )
     try:
-        with urlopen(request, timeout=8) as response:
+        with urlopen(request, timeout=8, context=context) as response:
             response.read(1)
             return response.status
     except HTTPError as error:
@@ -568,8 +583,24 @@ def _validate_runtime_evidence(
     ):
         raise GateError("Attached Station/Relay runtime security is incomplete")
     stream_endpoint = str(security.get("streamEndpoint") or "")
-    if not stream_endpoint:
-        raise GateError("Relay stream endpoint is missing")
+    public_endpoint = str(security.get("publicEndpoint") or "")
+    trust_anchor = _required_object(
+        security.get("tlsTrustAnchor"),
+        "tlsTrustAnchor",
+        "Relay runtime security",
+    )
+    trust_anchor_ref = _required_object(
+        trust_anchor.get("artifact"),
+        "artifact",
+        "Relay TLS trust anchor",
+    )
+    if (
+        not stream_endpoint
+        or public_endpoint != str(relay.get("endpoint") or "").rstrip("/")
+        or not str(trust_anchor.get("sha256") or "").startswith("sha256:")
+        or trust_anchor_ref.get("mediaType") != "application/x-pem-file"
+    ):
+        raise GateError("Relay TLS endpoint evidence is incomplete")
     return {
         "sourceCommit": source_commit,
         "station": station,
@@ -578,6 +609,8 @@ def _validate_runtime_evidence(
         "relayRuntime": relay_runtime,
         "relayStorageSecurity": storage_security,
         "streamEndpoint": stream_endpoint,
+        "publicEndpoint": public_endpoint,
+        "tlsTrustAnchor": trust_anchor,
     }
 
 
@@ -594,6 +627,10 @@ def validate_relay_role_runtime_contract() -> dict[str, Any]:
             worktree=REPO_ROOT,
         )
         relay_attestation = store.read_json(reference)
+        trust_reference = ArtifactRef.from_dict(
+            relay_attestation["runtimeSecurity"]["tlsTrustAnchor"]["artifact"]
+        )
+        trust_anchor = store.resolve(trust_reference).read_text(encoding="ascii")
     except Exception as error:
         raise GateError(f"Relay runtime manifest is invalid: {error}") from error
     evidence = _validate_runtime_evidence(manifest, relay_attestation)
@@ -603,10 +640,19 @@ def validate_relay_role_runtime_contract() -> dict[str, Any]:
     station_version_status = _http_status(
         f"{station_endpoint}/app-meta/version"
     )
-    relay_health_status = _http_status(f"{relay_endpoint}/healthz")
-    metrics_status = _http_status(f"{relay_endpoint}/metrics")
+    relay_health_status = _http_status(
+        f"{relay_endpoint}/healthz",
+        trust_anchor=trust_anchor,
+    )
+    metrics_status = _http_status(
+        f"{relay_endpoint}/metrics",
+        trust_anchor=trust_anchor,
+    )
     isolated_routes = {
-        route: _http_status(f"{relay_endpoint}{route}")
+        route: _http_status(
+            f"{relay_endpoint}{route}",
+            trust_anchor=trust_anchor,
+        )
         for route in ISOLATED_ROUTES
     }
     if station_version_status != 200:

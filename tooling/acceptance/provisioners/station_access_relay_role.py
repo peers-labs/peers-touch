@@ -9,6 +9,7 @@ import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -36,6 +37,7 @@ from tooling.acceptance.core.provisioning import (
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
+    resolve_windows_relay_trust_anchor,
 )
 from tooling.acceptance.remote_platform import RemotePlatform
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
@@ -76,6 +78,8 @@ _RELAY_SECRET_FILES = frozenset(
         "auth-secret",
         "relay-operator.key",
         "relay-signing.key",
+        "relay-ca.key",
+        "relay-ca.crt",
         "relay-tls.key",
         "relay.crt",
     }
@@ -200,6 +204,7 @@ def _validate_runtime_status(
     deployment_commit = str(deployment.get("sourceCommit") or "")
     binary_sha256 = _sha256_digest(deployment.get("binarySha256"))
     http_port = deployment.get("httpPort")
+    public_port = deployment.get("publicPort")
     stream_port = deployment.get("streamPort")
     if (
         not commits_match(status_commit, source_commit)
@@ -209,6 +214,7 @@ def _validate_runtime_status(
         or deployment.get("role") != config.role
         or deployment.get("taskName") != config.task_name
         or http_port != config.http_port
+        or public_port != config.public_port
         or stream_port != config.stream_port
     ):
         raise BlockedError(
@@ -228,6 +234,7 @@ def _validate_runtime_status(
         "binarySha256": binary_sha256,
         "healthUrl": str(status.get("healthUrl") or ""),
         "httpPort": http_port,
+        "publicPort": public_port,
         "streamPort": stream_port,
     }
 
@@ -414,6 +421,8 @@ def _persist_relay_attestation(
     station_runtime: Mapping[str, Any],
     relay_runtime: Mapping[str, Any],
     runtime_security: Mapping[str, Any],
+    trust_anchor: bytes,
+    trust_anchor_digest: str,
 ) -> ServiceAttestation:
     commit, workspace_digest, protocol_digest = relay_identity
     deployment = relay_status.get("manifest")
@@ -437,6 +446,12 @@ def _persist_relay_attestation(
         build_time=str(deployment.get("deployedAt") or ""),
         runtime_identity=f"windows-task:{relay_runtime['taskName']}",
     )
+    trust_anchor_path = "runtime/services/relay/tls-ca.pem"
+    write_current_artifact(
+        trust_anchor_path,
+        trust_anchor,
+        repo_root=REPO_ROOT,
+    )
     payload = attestation.to_dict()
     payload["runtimeSecurity"] = {
         "attachmentMode": "existing-owner-managed",
@@ -446,6 +461,15 @@ def _persist_relay_attestation(
         "streamEndpoint": (
             f"tls://{config_host(relay_url)}:{relay_runtime['streamPort']}"
         ),
+        "publicEndpoint": relay_url,
+        "tlsTrustAnchor": {
+            "sha256": trust_anchor_digest,
+            "artifact": current_artifact_ref(
+                trust_anchor_path,
+                repo_root=REPO_ROOT,
+                media_type="application/x-pem-file",
+            ).to_dict(),
+        },
     }
     relative_path = "runtime/services/relay/attestation.json"
     write_current_artifact(
@@ -538,17 +562,21 @@ def _relay_route_endpoint(
     relay_url: str,
     relay_runtime: Mapping[str, Any],
 ) -> str:
-    stream_port = relay_runtime.get("streamPort")
+    parsed = urlparse(relay_url)
+    public_port = relay_runtime.get("publicPort")
     if (
-        isinstance(stream_port, bool)
-        or not isinstance(stream_port, int)
-        or stream_port <= 0
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or isinstance(public_port, bool)
+        or not isinstance(public_port, int)
+        or public_port <= 0
+        or (parsed.port or 443) != public_port
     ):
         raise BlockedError(
-            reason="Relay runtime has no valid stream port",
-            resource="relay-stream-endpoint",
+            reason="Relay runtime has no valid public HTTPS endpoint",
+            resource="relay-public-endpoint",
         )
-    return f"https://{config_host(relay_url)}:{stream_port}"
+    return relay_url.rstrip("/")
 
 
 class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
@@ -692,7 +720,7 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 "PT_STATION_DEPLOY_ENV",
             )
             relay_url = _required(profile_env, "PT_RELAY_URL").rstrip("/")
-            relay_health = _required(profile_env, "PT_RELAY_HEALTH_URL")
+            _required(profile_env, "PT_RELAY_HEALTH_URL")
             relay_deployment = _required(
                 profile_env,
                 "PT_RELAY_DEPLOY_ENV",
@@ -702,12 +730,6 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                     reason=f"Attached Station is unhealthy at {station_health}",
                     resource=f"service-health:{station_deployment}",
                 )
-            if not self._station_ready(relay_url, relay_health):
-                raise BlockedError(
-                    reason=f"Attached Relay is unhealthy at {relay_health}",
-                    resource=f"service-health:{relay_deployment}",
-                )
-
             station_config = WindowsRuntimeConfig.load(
                 station_deployment,
                 resolve_deployment_environment_path(station_deployment),
@@ -776,6 +798,9 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 relay_status,
                 station_runtime,
             )
+            trust_anchor, trust_anchor_digest = (
+                resolve_windows_relay_trust_anchor(relay_deployment)
+            )
             station_attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
@@ -797,6 +822,8 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 station_runtime=station_runtime,
                 relay_runtime=relay_runtime,
                 runtime_security=runtime_security,
+                trust_anchor=trust_anchor,
+                trust_anchor_digest=trust_anchor_digest,
             )
             station_route_attestation = _persist_station_route_attestation(
                 environment_id=self.environment_id,

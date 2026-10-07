@@ -22,6 +22,8 @@ var relayOptions struct {
 						StreamPingInterval      int    `pconf:"stream-ping-interval"`
 						StreamPingTimeout       int    `pconf:"stream-ping-timeout"`
 						StreamListenAddr        string `pconf:"stream-listen-addr"`
+						PublicListenAddr        string `pconf:"public-listen-addr"`
+						PublicUpstreamURL       string `pconf:"public-upstream-url"`
 						GracefulDrainTimeout    int    `pconf:"graceful-drain-timeout"`
 						TLSCertFile             string `pconf:"tls-cert-file"`
 						TLSKeyFile              string `pconf:"tls-key-file"`
@@ -82,6 +84,12 @@ func (p *relayPlugin) Options() []option.Option {
 	}
 	if r.StreamListenAddr != "" {
 		opts = append(opts, WithStreamListenAddr(r.StreamListenAddr))
+	}
+	if r.PublicListenAddr != "" {
+		opts = append(opts, WithPublicListenAddr(r.PublicListenAddr))
+	}
+	if r.PublicUpstreamURL != "" {
+		opts = append(opts, WithPublicUpstreamURL(r.PublicUpstreamURL))
 	}
 	if r.GracefulDrainTimeout > 0 {
 		opts = append(opts, WithGracefulDrainTimeout(r.GracefulDrainTimeout))

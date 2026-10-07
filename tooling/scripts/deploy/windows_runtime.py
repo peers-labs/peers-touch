@@ -138,6 +138,7 @@ class WindowsRuntimeConfig:
     role: str
     profile: str
     http_port: int
+    public_port: int
     health_path: str
     public_base_url: str
     stream_port: int | None
@@ -182,6 +183,15 @@ class WindowsRuntimeConfig:
             raise ProvisioningError(
                 f"{role} PT_DEPLOY_PUBLIC_BASE_URL must use {required_scheme}"
             )
+        try:
+            public_port = parsed_base_url.port or (
+                443 if required_scheme == "https" else 80
+            )
+        except ValueError as error:
+            raise ProvisioningError(
+                f"PT_DEPLOY_PUBLIC_BASE_URL has an invalid port in {environment_path}"
+            ) from error
+        http_port = _port(values, "PT_DEPLOY_HTTP_PORT", environment_path)
         task_name = _required(values, "PT_DEPLOY_TASK_NAME", environment_path)
         if not _IDENTIFIER.fullmatch(task_name):
             raise ProvisioningError("PT_DEPLOY_TASK_NAME is invalid")
@@ -205,6 +215,12 @@ class WindowsRuntimeConfig:
             if role == "relay"
             else None
         )
+        if role == "relay" and (
+            public_port == http_port or public_port == stream_port
+        ):
+            raise ProvisioningError(
+                "relay public, internal HTTP, and stream ports must be distinct"
+            )
         return cls(
             environment_name=environment_name,
             host=_required(values, "PT_DEPLOY_HOST", environment_path),
@@ -224,7 +240,8 @@ class WindowsRuntimeConfig:
             ),
             role=role,
             profile=profile,
-            http_port=_port(values, "PT_DEPLOY_HTTP_PORT", environment_path),
+            http_port=http_port,
+            public_port=public_port,
             health_path=health_path,
             public_base_url=public_base_url,
             stream_port=stream_port,
@@ -240,6 +257,7 @@ class WindowsRuntimeConfig:
             "role": self.role,
             "profile": self.profile,
             "httpPort": self.http_port,
+            "publicPort": self.public_port,
             "healthPath": self.health_path,
             "publicBaseUrl": self.public_base_url,
             "streamPort": self.stream_port,
@@ -467,9 +485,12 @@ def _remote_runtime_script() -> str:
             if not path.is_file() or not path.read_text(encoding="utf-8").strip():
                 path.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
 
-        def generate_tls(cert_path, key_path):
-            if cert_path.is_file() and key_path.is_file():
+        def generate_tls(ca_cert_path, ca_key_path, cert_path, key_path):
+            required = (ca_cert_path, ca_key_path, cert_path, key_path)
+            if all(path.is_file() for path in required):
                 return
+            for path in required:
+                path.unlink(missing_ok=True)
             host = cfg["publicBaseUrl"].split("://", 1)[1].split(":", 1)[0]
             try:
                 ipaddress.ip_address(host)
@@ -482,21 +503,92 @@ def _remote_runtime_script() -> str:
                     "req",
                     "-x509",
                     "-newkey",
-                    "rsa:2048",
+                    "rsa:3072",
                     "-sha256",
                     "-nodes",
                     "-config",
                     "NUL",
                     "-keyout",
-                    str(key_path),
+                    str(ca_key_path),
                     "-out",
-                    str(cert_path),
+                    str(ca_cert_path),
                     "-days",
-                    "365",
+                    "3650",
                     "-subj",
-                    "/CN=" + host,
+                    "/CN=Peers Touch Relay Acceptance CA",
                     "-addext",
-                    "subjectAltName=" + san,
+                    "basicConstraints=critical,CA:TRUE,pathlen:0",
+                    "-addext",
+                    "keyUsage=critical,keyCertSign,cRLSign",
+                ]
+            )
+            request_path = secret_root / "relay-tls.csr"
+            extensions_path = secret_root / "relay-tls.ext"
+            serial_path = ca_cert_path.with_suffix(".srl")
+            try:
+                run(
+                    [
+                        "openssl",
+                        "req",
+                        "-new",
+                        "-newkey",
+                        "rsa:2048",
+                        "-sha256",
+                        "-nodes",
+                        "-config",
+                        "NUL",
+                        "-keyout",
+                        str(key_path),
+                        "-out",
+                        str(request_path),
+                        "-subj",
+                        "/CN=" + host,
+                    ]
+                )
+                extensions_path.write_text(
+                    "[server]\n"
+                    "basicConstraints=critical,CA:FALSE\n"
+                    "keyUsage=critical,digitalSignature,keyEncipherment\n"
+                    "extendedKeyUsage=serverAuth\n"
+                    "subjectAltName=" + san + ",IP:127.0.0.1\n",
+                    encoding="ascii",
+                )
+                run(
+                    [
+                        "openssl",
+                        "x509",
+                        "-req",
+                        "-in",
+                        str(request_path),
+                        "-CA",
+                        str(ca_cert_path),
+                        "-CAkey",
+                        str(ca_key_path),
+                        "-CAcreateserial",
+                        "-out",
+                        str(cert_path),
+                        "-days",
+                        "825",
+                        "-sha256",
+                        "-extfile",
+                        str(extensions_path),
+                        "-extensions",
+                        "server",
+                    ]
+                )
+            finally:
+                request_path.unlink(missing_ok=True)
+                extensions_path.unlink(missing_ok=True)
+                serial_path.unlink(missing_ok=True)
+
+        def install_relay_ca(ca_cert_path):
+            run(
+                [
+                    "certutil.exe",
+                    "-addstore",
+                    "-f",
+                    "Root",
+                    str(ca_cert_path),
                 ]
             )
 
@@ -518,6 +610,8 @@ def _remote_runtime_script() -> str:
                     [
                         secret_root / "relay-operator.key",
                         secret_root / "relay-signing.key",
+                        secret_root / "relay-ca.key",
+                        secret_root / "relay-ca.crt",
                         secret_root / "relay-tls.key",
                         secret_root / "relay.crt",
                     ]
@@ -586,7 +680,12 @@ def _remote_runtime_script() -> str:
                 "        libp2p-identity-key-file: "
                 + json.dumps(yaml_path(data_root / "libp2p.key")),
                 "    server:",
-                "      address: :" + str(cfg["httpPort"]),
+                (
+                    "      address: 127.0.0.1:"
+                    if role == "relay"
+                    else "      address: :"
+                )
+                + str(cfg["httpPort"]),
                 "      subserver:",
                 "        bootstrap:",
                 "          identity-key: "
@@ -599,6 +698,10 @@ def _remote_runtime_script() -> str:
                     [
                         "        relay:",
                         "          enabled: true",
+                        "          public-listen-addr: :"
+                        + str(cfg["publicPort"]),
+                        "          public-upstream-url: http://127.0.0.1:"
+                        + str(cfg["httpPort"]),
                         "          stream-listen-addr: :"
                         + str(cfg["streamPort"]),
                         "          tls-cert-file: "
@@ -777,8 +880,10 @@ def _remote_runtime_script() -> str:
             return station_tree, artifact_key, file_digest(binary)
 
         def configure_firewall():
-            ports = [cfg["httpPort"]]
-            if cfg["streamPort"] is not None:
+            ports = [
+                cfg["publicPort"] if role == "relay" else cfg["httpPort"]
+            ]
+            if role == "relay" and cfg["streamPort"] is not None:
                 ports.append(cfg["streamPort"])
             group = "PeersTouch-" + cfg["environmentName"]
             commands = [
@@ -831,9 +936,12 @@ def _remote_runtime_script() -> str:
                 ensure_secret(secret_root / "relay-signing.key")
                 ensure_secret(secret_root / "relay-operator.key")
                 generate_tls(
+                    secret_root / "relay-ca.crt",
+                    secret_root / "relay-ca.key",
                     secret_root / "relay.crt",
                     secret_root / "relay-tls.key",
                 )
+                install_relay_ca(secret_root / "relay-ca.crt")
             apply_secret_acl()
             prepare_config()
             stop_owned()
@@ -924,7 +1032,18 @@ def _remote_runtime_script() -> str:
                 "runtimePath": str(runtime),
                 "healthUrl": health_url,
                 "httpPort": cfg["httpPort"],
+                "publicPort": cfg["publicPort"],
                 "streamPort": cfg["streamPort"],
+                "tlsCaCertificatePath": (
+                    str(secret_root / "relay-ca.crt")
+                    if role == "relay"
+                    else ""
+                ),
+                "tlsCaCertificateSha256": (
+                    file_digest(secret_root / "relay-ca.crt")
+                    if role == "relay"
+                    else ""
+                ),
                 "deployedAt": datetime.now(timezone.utc).isoformat(),
             }
             temporary = manifest_path.with_suffix(".json.tmp")

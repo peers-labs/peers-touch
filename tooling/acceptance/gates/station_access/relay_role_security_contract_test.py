@@ -262,7 +262,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
                     "liveCommit": commit,
                     "workspaceDigest": "clean",
                     "protocolDigest": "p" * 64,
-                    "endpoint": "http://relay.example",
+                    "endpoint": "https://relay.example:18081",
                     "attestationArtifact": artifact,
                 },
             },
@@ -275,6 +275,15 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
             "runtimeSecurity": {
                 "attachmentMode": "existing-owner-managed",
                 "streamEndpoint": "tls://relay.example:4501",
+                "publicEndpoint": "https://relay.example:18081",
+                "tlsTrustAnchor": {
+                    "sha256": "sha256:" + "4" * 64,
+                    "artifact": {
+                        **artifact,
+                        "path": "runtime/services/relay/tls-ca.pem",
+                        "mediaType": "application/x-pem-file",
+                    },
+                },
                 "stationRuntime": {
                     "role": "station",
                     "taskName": "station-task",
@@ -299,6 +308,8 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
                         _protected_file("auth-secret"),
                         _protected_file("relay-operator.key"),
                         _protected_file("relay-signing.key"),
+                        _protected_file("relay-ca.key"),
+                        _protected_file("relay-ca.crt"),
                         _protected_file("relay-tls.key"),
                         _protected_file("relay.crt"),
                     ],

@@ -48,7 +48,7 @@ def _protected_file(name: str) -> dict[str, object]:
 
 
 def _config(role: str) -> SimpleNamespace:
-    http_port = 18080 if role == "station" else 18081
+    http_port = 18080 if role == "station" else 18082
     return SimpleNamespace(
         environment_name=f"sixwin-{role}",
         role=role,
@@ -59,6 +59,7 @@ def _config(role: str) -> SimpleNamespace:
         known_hosts_file="",
         runtime_path=f".peers-touch/runtime/sixwin-{role}",
         http_port=http_port,
+        public_port=18080 if role == "station" else 18081,
         stream_port=4501 if role == "relay" else None,
     )
 
@@ -75,7 +76,7 @@ def _status(role: str, process_id: int) -> dict[str, object]:
         "processIds": [process_id],
         "healthy": True,
         "healthUrl": (
-            f"http://127.0.0.1:{18080 if role == 'station' else 18081}/healthz"
+            f"http://127.0.0.1:{18080 if role == 'station' else 18082}/healthz"
         ),
         "runtimePath": runtime_path,
         "sourceCommit": COMMIT,
@@ -89,7 +90,8 @@ def _status(role: str, process_id: int) -> dict[str, object]:
             "sourceClean": True,
             "binaryPath": runtime_path + "\\bin\\peers-touch.exe",
             "binarySha256": "sha256:" + BINARY_SHA256,
-            "httpPort": 18080 if role == "station" else 18081,
+            "httpPort": 18080 if role == "station" else 18082,
+            "publicPort": 18080 if role == "station" else 18081,
             "streamPort": 4501 if role == "relay" else None,
             "deployedAt": "2026-10-06T00:00:00+00:00",
         },
@@ -143,8 +145,8 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             "PT_STATION_HEALTH_URL": "http://station.example/healthz",
             "PT_STATION_DEPLOY_ENV": "sixwin-station",
             "PT_RELAY_MODE": "remote",
-            "PT_RELAY_URL": "http://relay.example",
-            "PT_RELAY_HEALTH_URL": "http://relay.example/healthz",
+            "PT_RELAY_URL": "https://relay.example:18081",
+            "PT_RELAY_HEALTH_URL": "https://relay.example:18081/healthz",
             "PT_RELAY_DEPLOY_ENV": "sixwin-relay",
         }
         with (
@@ -189,6 +191,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "_relay_runtime_security",
                 return_value={"rootAclProtected": True},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_windows_relay_trust_anchor",
+                return_value=(b"certificate", "sha256:" + "d" * 64),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -226,8 +233,8 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             "PT_STATION_HEALTH_URL": "http://station.example/healthz",
             "PT_STATION_DEPLOY_ENV": "sixwin-station",
             "PT_RELAY_MODE": "remote",
-            "PT_RELAY_URL": "http://relay.example",
-            "PT_RELAY_HEALTH_URL": "http://relay.example/healthz",
+            "PT_RELAY_URL": "https://relay.example:18081",
+            "PT_RELAY_HEALTH_URL": "https://relay.example:18081/healthz",
             "PT_RELAY_DEPLOY_ENV": "sixwin-relay",
         }
         with (
@@ -275,6 +282,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_windows_relay_trust_anchor",
+                return_value=(b"certificate", "sha256:" + "d" * 64),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
                 "produce_station_attestation",
                 return_value=_attestation("station", "station"),
             ),
@@ -309,13 +321,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         persist_station_route.assert_called_once()
         self.assertEqual(
             persist_station_route.call_args.kwargs["relay_locator"],
-            "http://relay.example",
+            "https://relay.example:18081",
         )
         self.assertEqual(
             persist_station_route.call_args.kwargs[
                 "relay_transport_endpoint"
             ],
-            "https://relay.example:4501",
+            "https://relay.example:18081",
         )
         self.assertEqual(
             (client.gateway_port, client.renderer_port, client.webdriver_port),
@@ -345,23 +357,23 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 source_commit=COMMIT,
             )
 
-    def test_relay_route_endpoint_uses_tls_stream_not_control_http(self) -> None:
+    def test_relay_route_endpoint_uses_public_https_listener(self) -> None:
         self.assertEqual(
             _relay_route_endpoint(
-                "http://relay.example:18081",
-                {"streamPort": 4501},
+                "https://relay.example:18081",
+                {"publicPort": 18081},
             ),
-            "https://relay.example:4501",
+            "https://relay.example:18081",
         )
 
-    def test_relay_route_endpoint_rejects_missing_stream_port(self) -> None:
+    def test_relay_route_endpoint_rejects_missing_public_port(self) -> None:
         with self.assertRaisesRegex(
             BlockedError,
-            "no valid stream port",
+            "no valid public HTTPS endpoint",
         ):
             _relay_route_endpoint(
-                "http://relay.example:18081",
-                {"streamPort": None},
+                "https://relay.example:18081",
+                {"publicPort": None},
             )
 
     def test_secret_audit_requires_restricted_acl_and_live_binary(self) -> None:
@@ -377,6 +389,8 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 _protected_file("auth-secret"),
                 _protected_file("relay-operator.key"),
                 _protected_file("relay-signing.key"),
+                _protected_file("relay-ca.key"),
+                _protected_file("relay-ca.crt"),
                 _protected_file("relay-tls.key"),
                 _protected_file("relay.crt"),
             ],
@@ -436,6 +450,8 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 _protected_file("auth-secret"),
                 _protected_file("relay-operator.key"),
                 _protected_file("relay-signing.key"),
+                _protected_file("relay-ca.key"),
+                _protected_file("relay-ca.crt"),
                 {
                     **_protected_file("relay-tls.key"),
                     "unexpectedPrincipals": ["BUILTIN\\Users"],
