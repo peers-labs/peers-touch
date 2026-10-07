@@ -399,6 +399,40 @@ class ExecutionPlanTest(unittest.TestCase):
             ),
         )
 
+    def test_explicit_current_plan_uses_mounted_execution_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "plans" / "active" / "plan.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(stable_plan_text("1" * 16), encoding="utf-8")
+            status = mounted_plan_status("1" * 16)
+
+            with (
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._git",
+                    return_value=str(root),
+                ),
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._workspace_plan_mount",
+                    return_value={
+                        "planId": "EXAMPLE-PLAN",
+                        "planPath": "plans/active/plan.md",
+                    },
+                ),
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._mounted_plan_status",
+                    return_value=status,
+                ) as mounted_status,
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._source_plan_status",
+                ) as source_status,
+            ):
+                plan = load_formal_plan(path)
+
+        self.assertEqual(plan.initial_head, "a" * 40)
+        mounted_status.assert_called_once_with(path.resolve())
+        source_status.assert_not_called()
+
     def test_repository_plan_validation_does_not_require_a_machine_mount(self) -> None:
         repo_root = Path(__file__).resolve().parents[3]
         plan = load_formal_plan(
