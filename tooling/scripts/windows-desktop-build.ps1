@@ -85,6 +85,7 @@ $env:PATH = (
     "$protocDirectory;$WindowsSdkRoot/bin/$WindowsSdkVersion/x64;$env:PATH"
 )
 $env:CARGO_TARGET_DIR = $CargoTargetRoot
+$env:CARGO_HOME = Join-Path $CargoTargetRoot "cargo-home"
 $env:OPENSSL_SRC_PERL = $PerlPath
 $env:PROTOC = $ProtocPath
 
