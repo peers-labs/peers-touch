@@ -11,13 +11,17 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path, PureWindowsPath
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     RUNTIME_CELLS_DIR,
     RuntimeCellContract,
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
+from tooling.acceptance.core.source_sync import (
+    RemoteSourceSynchronizer,
+    SourceSyncRequest,
+)
 from tooling.acceptance.provisioners.native_desktop_windows import (
     NativeDesktopWindowsProvisioner,
     WindowsCellProfile,
@@ -400,6 +404,60 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertEqual(ready.count(expiry), 1)
         self.assertLess(ready.index("self._build_binary("), ready.index(expiry))
         self.assertLess(ready.index(expiry), ready.index('self._broker('))
+
+    def test_source_sync_cleans_reused_checkout_before_identity_check(self) -> None:
+        commit = "a" * 40
+        request = SourceSyncRequest(
+            environment_name="acceptance-windows",
+            source_root=Path.cwd(),
+            branch="test-branch",
+            host="windows.example",
+            user="administrator",
+            deploy_path="peers-touch",
+            source_mode="bundle",
+            remote_platform=RemotePlatform.WINDOWS,
+        )
+        transport = Mock()
+        transport.run_argv.side_effect = (
+            subprocess.CompletedProcess(
+                ("git",),
+                0,
+                stdout=commit + "\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ("powershell.exe",),
+                0,
+                stdout="",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ("powershell.exe",),
+                0,
+                stdout=json.dumps({"commit": commit, "clean": True}),
+                stderr="",
+            ),
+        )
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner.source_root = Path.cwd()
+        provisioner.transport = transport
+        provisioner._source_request = Mock(return_value=request)
+
+        with patch.object(
+            RemoteSourceSynchronizer,
+            "preflight",
+            return_value=(commit, "sha256:" + ("b" * 64)),
+        ):
+            result = provisioner._sync_source(r"C:\Users\administrator")
+
+        self.assertEqual(result.commit, commit)
+        self.assertEqual(transport.run_argv.call_count, 3)
+        cleanup_command = transport.run_argv.call_args_list[1].args[0][-1]
+        self.assertIn(f"reset --hard '{commit}'", cleanup_command)
+        self.assertIn("clean -ffdqx", cleanup_command)
+        transport.copy_file.assert_not_called()
 
     def test_interactive_gate_fails_closed_without_desktop_session(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(
