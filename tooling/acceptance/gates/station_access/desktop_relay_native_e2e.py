@@ -253,10 +253,8 @@ class DesktopRelayNativeGate(AcceptanceGate):
             "relay_service_preserves_station_identity",
             bool(station_peer_id)
             and station_via_relay.get("runtimeIdentity") == station_peer_id
-            and is_relay_transport(
-                relay_endpoint,
-                station_via_relay.get("endpoint"),
-            ),
+            and str(station_via_relay.get("endpoint") or "").rstrip("/")
+            == relay_endpoint,
             json.dumps(self.services, sort_keys=True),
         )
         try:

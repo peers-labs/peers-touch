@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any, Mapping, Protocol, Sequence, cast
+from urllib.parse import urlsplit
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.errors import ClientBindingError, DriverError
@@ -141,6 +142,26 @@ class _TransportOverride:
     service_id: str
     endpoint: str
     endpoint_lease_id: str
+
+
+def _route_matches_bound_service(
+    service_id: str,
+    expected_url: str,
+    route: Mapping[str, Any],
+) -> bool:
+    endpoint = str(route.get("endpoint_origin") or "").rstrip("/")
+    if service_id != "station-via-relay":
+        return endpoint == expected_url
+
+    locator = urlsplit(expected_url)
+    transport = urlsplit(endpoint)
+    return (
+        route.get("route_type") == "relay"
+        and transport.scheme == "https"
+        and bool(locator.hostname)
+        and transport.hostname == locator.hostname
+        and transport.port is not None
+    )
 
 
 class NativeDesktopRuntimeBinding(ABC):
@@ -484,7 +505,7 @@ class NativeDesktopRuntimeBinding(ABC):
     ) -> str:
         if self._runtime_manifest is None:
             raise DriverError("Runtime Binding manifest is not set")
-        _, service = require_runtime_client_service(
+        service_id, service = require_runtime_client_service(
             self._runtime_manifest,
             client_id,
             binding_role,
@@ -529,10 +550,11 @@ class NativeDesktopRuntimeBinding(ABC):
                         if (
                             isinstance(route, dict)
                             and route.get("route_id") == active_route_id
-                            and str(
-                                route.get("endpoint_origin") or ""
-                            ).rstrip("/")
-                            == expected_url
+                            and _route_matches_bound_service(
+                                service_id,
+                                expected_url,
+                                route,
+                            )
                             and route.get("health") == "available"
                         ):
                             return peer_id

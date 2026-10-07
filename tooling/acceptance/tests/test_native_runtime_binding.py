@@ -25,6 +25,7 @@ from tooling.acceptance.drivers.native.runtime import (
     LocalMacOSRuntimeBinding,
     NativeLaunchOptions,
     WindowsNativeDesktopRuntimeBinding,
+    _route_matches_bound_service,
     resolve_native_desktop_runtime,
 )
 from tooling.acceptance.drivers.tauri import (
@@ -398,6 +399,104 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         )
 
         self.assertEqual(observed, "station-peer-four")
+
+    def test_relay_observation_accepts_discovered_tls_transport(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        manifest = self.runtime_manifest()
+        manifest["services"] = {
+            "station-via-relay": {
+                "kind": "station",
+                "endpoint": "http://relay.example:18081",
+                "runtimeIdentity": "station-peer-four",
+            }
+        }
+        clients = manifest["clients"]
+        assert isinstance(clients, list)
+        client = clients[0]
+        assert isinstance(client, dict)
+        client["service_bindings"] = {
+            "station": {
+                "service_id": "station-via-relay",
+                "required_kind": "station",
+            }
+        }
+        binding.set_runtime_manifest(manifest)
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "active_station_peer_id": "station-peer-four",
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "active_route_id": "relay-primary",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-primary",
+                                        "route_type": "relay",
+                                        "endpoint_origin": (
+                                            "https://relay.example:4501"
+                                        ),
+                                        "health": "available",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                )
+            }
+        }
+
+        observed = binding._observe_live_service_identity(
+            session,
+            client_id="alice",
+            binding_role="station",
+        )
+
+        self.assertEqual(observed, "station-peer-four")
+
+    def test_relay_route_match_rejects_non_relay_or_foreign_transport(
+        self,
+    ) -> None:
+        locator = "http://relay.example:18081"
+        self.assertFalse(
+            _route_matches_bound_service(
+                "station-via-relay",
+                locator,
+                {
+                    "route_type": "direct",
+                    "endpoint_origin": "https://relay.example:4501",
+                },
+            )
+        )
+        self.assertFalse(
+            _route_matches_bound_service(
+                "station-via-relay",
+                locator,
+                {
+                    "route_type": "relay",
+                    "endpoint_origin": "https://other.example:4501",
+                },
+            )
+        )
+        self.assertFalse(
+            _route_matches_bound_service(
+                "station-via-relay",
+                locator,
+                {
+                    "route_type": "relay",
+                    "endpoint_origin": "http://relay.example:4501",
+                },
+            )
+        )
 
     def test_observation_rejects_route_for_different_station(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
