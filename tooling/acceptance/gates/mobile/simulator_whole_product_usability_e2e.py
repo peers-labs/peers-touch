@@ -1196,11 +1196,16 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                 f"mobile-whole-product:surface-adapter:{surface_set}",
             )
         source = _validate_source_identity(manifest)
-        if set(source) != {"commit", "workspaceDigest", "canonicalWorktreeHash"}:
+        canonical_worktree_hash = source.get("canonicalWorktreeHash")
+        if canonical_worktree_hash not in (
+            None,
+            artifacts.store.workspace_id,
+        ):
             raise SimulatorGateBlocked(
-                "Whole-product source identity is incomplete",
+                "Whole-product source workspace identity is inconsistent",
                 "mobile-whole-product:source-identity",
             )
+        source["canonicalWorktreeHash"] = artifacts.store.workspace_id
         resources = _required_object(
             manifest,
             "mobileSimulator",
