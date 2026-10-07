@@ -47,6 +47,7 @@ export function DeferredCapabilityNotice({
     <section
       className="recovery-notice recovery-deferred-capability"
       data-acceptance-id="recovery-deferred-capability"
+      data-product-surface="shell.degraded-module-notice"
       role="status"
       aria-label={t(titleKey)}
       aria-busy={!failed || retrying}

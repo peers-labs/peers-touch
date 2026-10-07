@@ -24,14 +24,15 @@ function fail(message) {
 
 function parseArgs(argv) {
   if (argv.length === 1 && argv[0] === '--self-test') {
-    return { surfaceSet: '', mode: 'self-test' };
+    return { surfaceSet: '', mode: 'self-test', workItem: '' };
   }
-  const options = { surfaceSet: '', mode: 'review' };
+  const options = { surfaceSet: '', mode: 'review', workItem: '' };
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (flag === '--surface-set' && value) options.surfaceSet = value;
     else if (flag === '--mode' && value) options.mode = value;
+    else if (flag === '--work-item' && value) options.workItem = value;
     else fail(`unsupported argument ${flag ?? '<missing>'}`);
   }
   if (!options.surfaceSet) fail('--surface-set is required');
@@ -39,6 +40,23 @@ function parseArgs(argv) {
     fail('--mode must be functional, review, or record-review');
   }
   return options;
+}
+
+export function workItemFromActiveWork(value) {
+  const workItem = value?.activeWork?.workItemId;
+  if (typeof workItem !== 'string' || !workItem.trim()) {
+    fail('current active-work has no work item');
+  }
+  return workItem;
+}
+
+function resolveWorkItem(explicitWorkItem) {
+  if (explicitWorkItem) return explicitWorkItem;
+  const output = execFileSync('make', ['active-work-status'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  return workItemFromActiveWork(JSON.parse(output));
 }
 
 export function collectScreenshotRefs(result, surfaceIds) {
@@ -90,6 +108,13 @@ function selfTest() {
   ) {
     fail('screenshot projection self-test failed');
   }
+  if (
+    workItemFromActiveWork({
+      activeWork: { workItemId: 'MOBILE-WHOLE-PRODUCT-USABILITY-TEST' },
+    }) !== 'MOBILE-WHOLE-PRODUCT-USABILITY-TEST'
+  ) {
+    fail('active-work projection self-test failed');
+  }
   process.stdout.write('PASS: review-mobile-surfaces self-test\n');
 }
 
@@ -118,7 +143,7 @@ function requiredSurfaceIds(inventory, surfaceSet) {
   return entries.map((entry) => entry.id);
 }
 
-function runFunctional(surfaceSet, gateId) {
+function runFunctional(surfaceSet, gateId, workItem) {
   spawnSync('open', ['-a', 'Simulator'], {
     cwd: repoRoot,
     stdio: 'ignore',
@@ -129,6 +154,8 @@ function runFunctional(surfaceSet, gateId) {
       'tooling/scripts/acceptance-run.py',
       '--execution-policy',
       'development',
+      '--work-item',
+      workItem,
       '--gate',
       gateId,
     ],
@@ -229,7 +256,13 @@ if (typeof gateId !== 'string' || !gateId) {
   fail(`surface set ${options.surfaceSet} has no functional Gate`);
 }
 
-if (options.mode === 'functional') runFunctional(options.surfaceSet, gateId);
+if (options.mode === 'functional') {
+  runFunctional(
+    options.surfaceSet,
+    gateId,
+    resolveWorkItem(options.workItem),
+  );
+}
 const result = readLatestResult(gateId);
 validateLatest(result, options.surfaceSet, false);
 if (options.mode === 'review') {

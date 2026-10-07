@@ -8,7 +8,9 @@ import json
 import os
 import re
 import struct
+import subprocess
 import sys
+import time
 import zlib
 from collections.abc import Mapping
 from html.parser import HTMLParser
@@ -16,18 +18,30 @@ from pathlib import Path
 from typing import Any
 
 from tooling.acceptance.core import (
-    AcceptanceGate,
     ArtifactRef,
     ArtifactSession,
+    DriverError,
     EvidenceStore,
     GateError,
+    ProvisioningError,
     REPO_ROOT,
     load_runtime_manifest,
+    require_runtime_service,
     source_identity,
 )
 from tooling.acceptance.core.redaction import redact_text
+from tooling.acceptance.fixtures.chat_native_actors import ACTOR_PASSWORD
+from tooling.acceptance.gates.mobile.messaging_journey import (
+    MessagingActor,
+    MobileMessagingJourney,
+)
 from tooling.acceptance.gates.mobile.simulator_e2e import (
+    SimulatorCallbackRoutingGate,
     SimulatorGateBlocked,
+    _redacted_markup,
+    _required_object,
+    _required_text,
+    _validate_runtime_identity,
     _validate_source_identity,
 )
 from tooling.acceptance.gates.mobile.surface_audit import (
@@ -58,6 +72,141 @@ ARTIFACT_REF_FIELDS = {
     "sha256",
     "mediaType",
 }
+SHELL_CLIENT_ID = "sim-ios"
+SHELL_REQUIRED_HARNESS_ACTIONS = (
+    "access.submit",
+    "cleanup",
+    "lifecycle.restart",
+    "lifecycle.snapshot",
+    "navigation.apply",
+    "navigation.snapshot",
+    "projection.read",
+    "social.projection.read",
+    "station.add",
+)
+SHELL_ROUTE_ACTIONS = {
+    "tap-chat-tab": "tab:chat",
+    "tap-moments-tab": "tab:moments",
+    "tap-contacts-tab": "tab:contacts",
+    "tap-settings-tab": "tab:settings",
+}
+TEXT_SIZE_SCRIPT = """
+const size = arguments[0];
+if (size !== 'normal' && size !== 'maximum') {
+  throw new Error(`unsupported text size ${size}`);
+}
+document.documentElement.dataset.acceptanceTextSize = size;
+document.documentElement.style.webkitTextSizeAdjust =
+  size === 'maximum' ? '200%' : '100%';
+document.documentElement.style.textSizeAdjust =
+  size === 'maximum' ? '200%' : '100%';
+return {
+  textSize: size,
+  width: Math.round(window.innerWidth),
+  height: Math.round(window.innerHeight),
+};
+"""
+SURFACE_AUDIT_SCRIPT = """
+const selector = arguments[0];
+const minimum = arguments[1];
+const visible = (element) => {
+  const style = getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return style.display !== 'none'
+    && style.visibility !== 'hidden'
+    && Number(style.opacity) > 0
+    && rect.width > 0
+    && rect.height > 0
+    && rect.right > 0
+    && rect.bottom > 0
+    && rect.left < window.innerWidth
+    && rect.top < window.innerHeight;
+};
+const label = (element) => String(
+  element.getAttribute('aria-label')
+  || element.getAttribute('placeholder')
+  || element.getAttribute('title')
+  || element.textContent
+  || '',
+).trim();
+const root = document.querySelector(selector);
+if (!root || !visible(root)) return {found: false};
+const rootRect = root.getBoundingClientRect();
+const interactiveSelector =
+  'button,input,select,textarea,a[href],[role="button"],[tabindex]';
+const interactive = Array.from(document.querySelectorAll(interactiveSelector))
+  .filter(visible)
+  .filter((element) => element.getAttribute('tabindex') !== '-1');
+const controls = interactive.map((element) => {
+  const rect = element.getBoundingClientRect();
+  return {
+    element,
+    value: {
+      label: label(element),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      visible: true,
+      inViewport: rect.left >= -1
+        && rect.top >= -1
+        && rect.right <= window.innerWidth + 1
+        && rect.bottom <= window.innerHeight + 1,
+    },
+  };
+});
+const occlusions = controls.flatMap(({element, value}) => {
+  const rect = element.getBoundingClientRect();
+  const x = Math.min(window.innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
+  const y = Math.min(window.innerHeight - 1, Math.max(0, rect.top + rect.height / 2));
+  const top = document.elementFromPoint(x, y);
+  return top && (element.contains(top) || top.contains(element))
+    ? []
+    : [value.label || element.tagName.toLowerCase()];
+});
+const clippedText = Array.from(document.querySelectorAll('body *'))
+  .filter(visible)
+  .filter((element) => element.children.length === 0)
+  .filter((element) => label(element))
+  .filter((element) => {
+    const style = getComputedStyle(element);
+    if (['auto', 'scroll'].includes(style.overflowX)
+        || ['auto', 'scroll'].includes(style.overflowY)) return false;
+    return element.scrollWidth > element.clientWidth + 1
+      || element.scrollHeight > element.clientHeight + 1;
+  })
+  .map((element) => label(element).slice(0, 160));
+const blockingSurfaces = Array.from(document.querySelectorAll(
+  '[data-blocks-unrelated-content="true"]',
+)).filter(visible).map((element) => (
+  element.getAttribute('data-acceptance-id') || element.tagName.toLowerCase()
+));
+return {
+  found: true,
+  viewport: {
+    width: Math.round(window.innerWidth),
+    height: Math.round(window.innerHeight),
+  },
+  surfaceElement: {
+    selector,
+    width: Math.round(rootRect.width),
+    height: Math.round(rootRect.height),
+    visible: true,
+    inViewport: rootRect.left >= -1
+      && rootRect.top >= -1
+      && rootRect.right <= window.innerWidth + 1
+      && rootRect.bottom <= window.innerHeight + 1,
+  },
+  controls: controls.map(({value}) => value),
+  unlabeledControls: controls
+    .filter(({value}) => !value.label)
+    .map(({element}) => element.outerHTML.slice(0, 240)),
+  undersizedControls: controls
+    .filter(({value}) => value.width < minimum || value.height < minimum)
+    .map(({value}) => value.label),
+  clippedText,
+  occlusions,
+  blockingSurfaces,
+};
+"""
 
 
 def load_surface_inventory(path: Path = INVENTORY_PATH) -> dict[str, Any]:
@@ -894,8 +1043,14 @@ def record_visual_review(
     return review_ref.to_dict()
 
 
-class SimulatorWholeProductUsabilityGate(AcceptanceGate):
+class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
     gate_id = GATE_ID
+
+    def __init__(self, *, foreground_probe: Any = None, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.foreground_probe = (
+            foreground_probe or self._probe_simulator_foreground
+        )
 
     def run(self) -> dict[str, Any]:
         raise GateError(
@@ -913,49 +1068,17 @@ class SimulatorWholeProductUsabilityGate(AcceptanceGate):
             selected_surface_entries(inventory, surface_set)
             result: dict[str, Any]
             try:
-                manifest_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "")
-                if not manifest_path:
-                    raise SimulatorGateBlocked(
-                        "PT_ACCEPTANCE_RUNTIME_MANIFEST is required",
-                        "mobile-whole-product:manifest",
-                    )
-                manifest = load_runtime_manifest(Path(manifest_path), self.gate_id)
-                if manifest.get("environmentId") != ENVIRONMENT_ID:
-                    raise SimulatorGateBlocked(
-                        f"RuntimeManifest environment must be {ENVIRONMENT_ID}",
-                        f"{ENVIRONMENT_ID}:environment",
-                    )
-                source = _validate_source_identity(manifest)
-                result = {
-                    "artifactKind": "mobile-whole-product-surface-evidence",
-                    "gateId": self.gate_id,
-                    "contractId": CONTRACT_ID,
-                    "surfaceSet": surface_set,
-                    "runId": str(manifest.get("runId") or ""),
-                    "workspaceId": str(manifest.get("workspaceId") or ""),
-                    "source": source,
-                    "foregroundEvidence": {
-                        "platform": "ios",
-                        "simulatorApplication": "com.apple.iphonesimulator",
-                        "frontmost": False,
-                        "windowVisible": False,
-                        "observation": None,
-                    },
-                    "surfaceEvidence": {},
-                    "findings": [
-                        {
-                            "code": "MOBILE_SURFACE_JOURNEY_ADAPTER_PENDING",
-                            "message": (
-                                "The executable inventory is registered; "
-                                "surface adapters close in the page Tasks."
-                            ),
-                        }
-                    ],
-                }
-                raise SimulatorGateBlocked(
-                    "Whole-product surface journey adapters are incomplete",
-                    "mobile-whole-product:surface-adapters",
+                manifest = self._load_manifest()
+                result = self._run_surface_journey(
+                    artifacts,
+                    manifest,
+                    inventory,
+                    surface_set,
                 )
+                status = "PASS"
+                completion_status = "DONE"
+                proof_status = "PROVEN"
+                exit_code = 0
             except SimulatorGateBlocked as error:
                 result = locals().get(
                     "result",
@@ -977,6 +1100,48 @@ class SimulatorWholeProductUsabilityGate(AcceptanceGate):
                 result["proofStatus"] = proof_status
                 result["blockedReason"] = redact_text(error.reason)
                 result["blockedResource"] = error.resource
+            except (DriverError, GateError, ProvisioningError) as error:
+                status = "FAIL"
+                completion_status = "PARTIAL"
+                proof_status = "UNPROVEN"
+                exit_code = 1
+                result = {
+                    "artifactKind": "mobile-whole-product-surface-evidence",
+                    "gateId": self.gate_id,
+                    "contractId": CONTRACT_ID,
+                    "surfaceSet": surface_set,
+                    "runId": "",
+                    "workspaceId": "",
+                    "source": {},
+                    "foregroundEvidence": {},
+                    "surfaceEvidence": {},
+                    "findings": [
+                        {
+                            "code": type(error).__name__,
+                            "message": redact_text(str(error)),
+                        }
+                    ],
+                }
+            finally:
+                self._cleanup_sessions(artifacts)
+            if any(item["status"] == "failed" for item in self.cleanup):
+                status = "FAIL"
+                completion_status = "PARTIAL"
+                proof_status = "UNPROVEN"
+                exit_code = 1
+                result["findings"].append(
+                    {
+                        "code": "MOBILE_SURFACE_CLEANUP_FAILED",
+                        "message": "Simulator shell journey cleanup was incomplete",
+                    }
+                )
+            result.update(
+                {
+                    "status": status,
+                    "completionStatus": completion_status,
+                    "proofStatus": proof_status,
+                }
+            )
             artifacts.write_json(
                 "mobile-whole-product/surface-evidence.json",
                 result,
@@ -992,8 +1157,500 @@ class SimulatorWholeProductUsabilityGate(AcceptanceGate):
                     "foregroundRequired": True,
                 },
             )
-        sys.stderr.write(f"{status}: {self.gate_id}\n")
+        stream = sys.stdout if exit_code == 0 else sys.stderr
+        stream.write(f"{status}: {self.gate_id}\n")
         return exit_code
+
+    def _load_manifest(self) -> dict[str, Any]:
+        manifest_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "")
+        if not manifest_path:
+            raise SimulatorGateBlocked(
+                "PT_ACCEPTANCE_RUNTIME_MANIFEST is required",
+                "mobile-whole-product:manifest",
+            )
+        try:
+            manifest = load_runtime_manifest(Path(manifest_path), self.gate_id)
+            require_runtime_service(manifest, "station", "station")
+        except ProvisioningError as error:
+            raise SimulatorGateBlocked(
+                str(error),
+                "mobile-whole-product:manifest",
+            ) from error
+        if manifest.get("environmentId") != ENVIRONMENT_ID:
+            raise SimulatorGateBlocked(
+                f"RuntimeManifest environment must be {ENVIRONMENT_ID}",
+                f"{ENVIRONMENT_ID}:environment",
+            )
+        return manifest
+
+    def _run_surface_journey(
+        self,
+        artifacts: ArtifactSession,
+        manifest: Mapping[str, Any],
+        inventory: Mapping[str, Any],
+        surface_set: str,
+    ) -> dict[str, Any]:
+        if surface_set != "shell":
+            raise SimulatorGateBlocked(
+                f"Surface adapter is not implemented for {surface_set}",
+                f"mobile-whole-product:surface-adapter:{surface_set}",
+            )
+        source = _validate_source_identity(manifest)
+        if set(source) != {"commit", "workspaceDigest", "canonicalWorktreeHash"}:
+            raise SimulatorGateBlocked(
+                "Whole-product source identity is incomplete",
+                "mobile-whole-product:source-identity",
+            )
+        resources = _required_object(
+            manifest,
+            "mobileSimulator",
+            "RuntimeManifest",
+        )
+        self._reject_credentials(manifest, resources)
+        runtime_identity = _validate_runtime_identity(resources)
+        appium = _required_object(
+            resources,
+            "appium",
+            f"{ENVIRONMENT_ID} resources",
+        )
+        server_url = _required_text(
+            appium,
+            "serverUrl",
+            f"{ENVIRONMENT_ID} Appium",
+        )
+        specs = self._client_specs(resources)
+        spec = next(
+            (candidate for candidate in specs if candidate.client_id == SHELL_CLIENT_ID),
+            None,
+        )
+        if spec is None or spec.platform != "ios":
+            raise SimulatorGateBlocked(
+                "Whole-product shell proof requires sim-ios",
+                f"{ENVIRONMENT_ID}:client:{SHELL_CLIENT_ID}",
+            )
+
+        session = self._create_session(server_url, spec)
+        self.sessions.append(session)
+        session.start()
+        self._record(spec.client_id, "session-created")
+        self._preflight_ios(artifacts, session, spec)
+        session.require_harness(list(SHELL_REQUIRED_HARNESS_ACTIONS))
+        actor = self._load_actor(artifacts, manifest)
+        authentication = MobileMessagingJourney(
+            timeout_seconds=45,
+        ).authenticate(session, actor, password=ACTOR_PASSWORD)
+        self._record(spec.client_id, "shell-authenticated")
+
+        foreground = self.foreground_probe()
+        if not isinstance(foreground, dict):
+            raise GateError("Mobile foreground probe returned an invalid result")
+        foreground.update(
+            {
+                "artifactKind": "mobile-simulator-foreground-observation",
+                "gateId": self.gate_id,
+                "runId": artifacts.run_id,
+            }
+        )
+        foreground_ref = artifacts.write_json(
+            "mobile-whole-product/foreground.json",
+            foreground,
+            role="mobile-whole-product-foreground",
+        )
+
+        entries = selected_surface_entries(inventory, surface_set)
+        surface_evidence = {
+            entry["id"]: {
+                "status": "PASS",
+                "routeOrState": entry["routeOrState"],
+                "entryAction": entry["entryAction"],
+                "surfaceSelector": entry["surfaceSelector"],
+                "expectedResult": expected_result(inventory, entry),
+                "cells": {},
+            }
+            for entry in entries
+        }
+        for cell_id in inventory["viewportTextSizeCells"]:
+            viewport = self._configure_cell(session, cell_id)
+            for entry in entries:
+                action = self._enter_surface(session, entry)
+                surface_evidence[entry["id"]]["cells"][cell_id] = (
+                    self._capture_surface(
+                        artifacts,
+                        session,
+                        inventory,
+                        entry,
+                        cell_id,
+                        viewport,
+                        action,
+                    )
+                )
+        self._configure_cell(session, "portrait-normal")
+        artifacts.write_json(
+            "mobile-whole-product/source-runtime.json",
+            {
+                "artifactKind": "mobile-whole-product-source-runtime",
+                "gateId": self.gate_id,
+                "runId": artifacts.run_id,
+                "source": source,
+                "runtime": runtime_identity,
+                "authentication": authentication,
+            },
+            role="mobile-whole-product-source-runtime",
+        )
+        return {
+            "artifactKind": "mobile-whole-product-surface-evidence",
+            "gateId": self.gate_id,
+            "contractId": CONTRACT_ID,
+            "surfaceSet": surface_set,
+            "runId": artifacts.run_id,
+            "workspaceId": artifacts.store.workspace_id,
+            "status": "PASS",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "source": source,
+            "foregroundEvidence": {
+                "platform": "ios",
+                "simulatorApplication": "com.apple.iphonesimulator",
+                "frontmost": True,
+                "windowVisible": True,
+                "observation": foreground_ref.to_dict(),
+            },
+            "surfaceEvidence": surface_evidence,
+            "findings": [],
+        }
+
+    def _load_actor(
+        self,
+        artifacts: ArtifactSession,
+        manifest: Mapping[str, Any],
+    ) -> MessagingActor:
+        raw_reference = manifest.get("actorManifest")
+        if not isinstance(raw_reference, Mapping):
+            raise SimulatorGateBlocked(
+                "Mobile direct simulator actor manifest is missing",
+                f"{ENVIRONMENT_ID}:actor-manifest",
+            )
+        try:
+            reference = ArtifactRef.from_dict(raw_reference)
+            if (
+                reference.workspace_id != artifacts.store.workspace_id
+                or reference.gate_id != self.gate_id
+                or reference.run_id != artifacts.run_id
+            ):
+                raise ValueError("actor manifest identity mismatch")
+            payload = artifacts.store.read_json(reference)
+            station = _required_object(
+                _required_object(
+                    payload,
+                    "stations",
+                    "Mobile direct actor manifest",
+                ),
+                "station",
+                "Mobile direct actor manifest",
+            )
+            actors = station.get("actors")
+            if not isinstance(actors, list):
+                raise ValueError("actor list is missing")
+            actor = next(
+                (
+                    value
+                    for value in actors
+                    if isinstance(value, Mapping) and value.get("role") == "alice"
+                ),
+                None,
+            )
+            if not isinstance(actor, Mapping):
+                raise ValueError("alice actor is missing")
+            service = require_runtime_service(manifest, "station", "station")
+            return MessagingActor(
+                client_id=SHELL_CLIENT_ID,
+                role="alice",
+                station_url=_required_text(
+                    service,
+                    "endpoint",
+                    "Mobile direct Station",
+                ),
+                station_peer_id=_required_text(
+                    service,
+                    "runtimeIdentity",
+                    "Mobile direct Station",
+                ),
+                ptid=_required_text(actor, "ptid", "Mobile direct actor"),
+                account_ref=_required_text(
+                    actor,
+                    "accountRef",
+                    "Mobile direct actor",
+                ),
+                federated_handle=_required_text(
+                    actor,
+                    "federatedHandle",
+                    "Mobile direct actor",
+                ),
+                federation_id=_required_text(
+                    actor,
+                    "federationId",
+                    "Mobile direct actor",
+                ),
+            )
+        except (GateError, ProvisioningError, ValueError) as error:
+            raise SimulatorGateBlocked(
+                "Mobile direct simulator actor manifest is invalid",
+                f"{ENVIRONMENT_ID}:actor-manifest",
+            ) from error
+
+    def _configure_cell(
+        self,
+        session: Any,
+        cell_id: str,
+    ) -> dict[str, Any]:
+        orientation = (
+            "landscape" if cell_id.startswith("landscape") else "portrait"
+        )
+        text_size = (
+            "maximum" if cell_id.endswith("maximum-text") else "normal"
+        )
+        session.switch_to_native()
+        session.set_orientation(orientation.upper())
+        time.sleep(0.5)
+        session.switch_to_app_webview()
+        value = session.execute_script(TEXT_SIZE_SCRIPT, text_size)
+        if (
+            not isinstance(value, dict)
+            or value.get("textSize") != text_size
+            or not isinstance(value.get("width"), int)
+            or not isinstance(value.get("height"), int)
+            or value["width"] <= 0
+            or value["height"] <= 0
+        ):
+            raise GateError(f"Mobile viewport setup failed for {cell_id}")
+        if (
+            orientation == "portrait"
+            and value["width"] >= value["height"]
+        ) or (
+            orientation == "landscape"
+            and value["width"] <= value["height"]
+        ):
+            raise GateError(f"Mobile viewport orientation failed for {cell_id}")
+        self._record(
+            session.client_id,
+            "surface-cell-configured",
+            {"cellId": cell_id},
+        )
+        return {
+            "width": value["width"],
+            "height": value["height"],
+            "orientation": orientation,
+            "textSize": text_size,
+        }
+
+    def _enter_surface(
+        self,
+        session: Any,
+        entry: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        action = str(entry["entryAction"])
+        route_id = SHELL_ROUTE_ACTIONS.get(action)
+        session.switch_to_app_webview()
+        if route_id is not None:
+            button = session.find_element(
+                "css selector",
+                f'[data-route-id="{route_id}"]',
+            )
+            session.click_element(button)
+            projection = session.call_action("navigation.snapshot")
+            if (
+                not isinstance(projection, Mapping)
+                or projection.get("primaryRouteId") != route_id
+            ):
+                raise GateError(f"Mobile shell did not navigate to {route_id}")
+            action_kind = "native-touch"
+        elif action == "fixture-deferred-module":
+            lifecycle = session.call_action("lifecycle.snapshot")
+            runtimes = (
+                lifecycle.get("runtimes")
+                if isinstance(lifecycle, Mapping)
+                else None
+            )
+            if (
+                not isinstance(runtimes, list)
+                or not any(
+                    isinstance(runtime, Mapping)
+                    and runtime.get("id") != "recovery-projection"
+                    and runtime.get("status")
+                    in {"pending", "bootstrapping", "failed", "suspended", "resuming"}
+                    for runtime in runtimes
+                )
+            ):
+                raise GateError(
+                    "Mobile shell has no real degraded module to observe"
+                )
+            action_kind = "system"
+        else:
+            raise GateError(f"Unsupported shell entry action: {action}")
+        self._wait_for_surface(session, str(entry["surfaceSelector"]))
+        return {
+            "kind": action_kind,
+            "target": action,
+            "performed": True,
+        }
+
+    @staticmethod
+    def _wait_for_surface(
+        session: Any,
+        selector: str,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            found = session.execute_script(
+                "const node=document.querySelector(arguments[0]);"
+                "if(!node)return false;"
+                "const rect=node.getBoundingClientRect();"
+                "const style=getComputedStyle(node);"
+                "return style.display!=='none'&&style.visibility!=='hidden'"
+                "&&Number(style.opacity)>0&&rect.width>0&&rect.height>0;",
+                selector,
+            )
+            if found is True:
+                return
+            time.sleep(0.2)
+        raise GateError(f"Mobile shell surface did not appear: {selector}")
+
+    def _capture_surface(
+        self,
+        artifacts: ArtifactSession,
+        session: Any,
+        inventory: Mapping[str, Any],
+        entry: Mapping[str, Any],
+        cell_id: str,
+        viewport: Mapping[str, Any],
+        action: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        session.switch_to_app_webview()
+        observation = session.execute_script(
+            SURFACE_AUDIT_SCRIPT,
+            entry["surfaceSelector"],
+            inventory["qualityRules"]["minimumTouchTargetCssPx"],
+        )
+        if not isinstance(observation, Mapping) or observation.get("found") is not True:
+            raise GateError(f"Mobile shell surface is unavailable: {entry['id']}")
+        for field in ("unlabeledControls", "undersizedControls", "clippedText"):
+            findings = observation.get(field)
+            if not isinstance(findings, list) or findings:
+                raise GateError(
+                    f"Mobile shell surface {entry['id']} failed {field}: "
+                    f"{findings!r}"
+                )
+        actual_viewport = observation.get("viewport")
+        if (
+            not isinstance(actual_viewport, Mapping)
+            or actual_viewport.get("width") != viewport["width"]
+            or actual_viewport.get("height") != viewport["height"]
+        ):
+            raise GateError(f"Mobile viewport changed while capturing {entry['id']}")
+        dom = session.get_webview_source()
+        text_parser = _SurfaceHTMLAudit()
+        text_parser.feed(dom)
+        text_findings = audit_visible_text(inventory, text_parser.texts)
+        if text_findings:
+            raise GateError(
+                f"Mobile shell contains technical visible text: {text_findings[:5]!r}"
+            )
+
+        session.switch_to_native()
+        accessibility = session.get_page_source()
+        audit_accessibility_tree(accessibility)
+        screenshot = session.screenshot_bytes()
+        prefix = f"mobile-whole-product/{entry['id']}/{cell_id}"
+        screenshot_ref = artifacts.write_bytes(
+            f"{prefix}/screenshot.png",
+            screenshot,
+            media_type="image/png",
+            role=f"mobile-whole-product-screenshot/{entry['id']}/{cell_id}",
+        )
+        dom_ref = artifacts.write_bytes(
+            f"{prefix}/dom.html",
+            _redacted_markup(dom),
+            media_type="text/html",
+            role=f"mobile-whole-product-dom/{entry['id']}/{cell_id}",
+        )
+        accessibility_ref = artifacts.write_bytes(
+            f"{prefix}/accessibility.xml",
+            _redacted_markup(accessibility),
+            media_type="application/xml",
+            role=f"mobile-whole-product-accessibility/{entry['id']}/{cell_id}",
+        )
+        interaction = {
+            "artifactKind": "mobile-surface-interaction-trace",
+            "gateId": self.gate_id,
+            "runId": artifacts.run_id,
+            "surfaceId": entry["id"],
+            "cellId": cell_id,
+            "entryAction": entry["entryAction"],
+            "surfaceSelector": entry["surfaceSelector"],
+            "expectedResult": expected_result(inventory, entry),
+            "viewport": dict(viewport),
+            "surfaceElement": dict(observation["surfaceElement"]),
+            "uiAction": dict(action),
+            "controls": list(observation["controls"]),
+            "occlusions": list(observation["occlusions"]),
+            "blockingSurfaces": list(observation["blockingSurfaces"]),
+        }
+        interaction_ref = artifacts.write_json(
+            f"{prefix}/interaction.json",
+            interaction,
+            role=f"mobile-whole-product-interaction/{entry['id']}/{cell_id}",
+        )
+        self._record(
+            session.client_id,
+            "surface-captured",
+            {"surfaceId": entry["id"], "cellId": cell_id},
+        )
+        return {
+            "status": "PASS",
+            "viewport": dict(viewport),
+            "evidence": {
+                "screenshot": screenshot_ref.to_dict(),
+                "dom": dom_ref.to_dict(),
+                "accessibility": accessibility_ref.to_dict(),
+                "interactionTrace": interaction_ref.to_dict(),
+            },
+        }
+
+    @staticmethod
+    def _probe_simulator_foreground() -> dict[str, Any]:
+        if os.environ.get("PT_MOBILE_FOREGROUND_REQUIRED") != "1":
+            raise SimulatorGateBlocked(
+                "PT_MOBILE_FOREGROUND_REQUIRED=1 is required",
+                "mobile-whole-product:foreground-policy",
+            )
+        probe = subprocess.run(
+            [
+                "osascript",
+                "-e",
+                (
+                    'tell application "System Events" to get bundle identifier '
+                    "of first application process whose frontmost is true"
+                ),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        bundle_id = probe.stdout.strip()
+        if probe.returncode != 0 or bundle_id != "com.apple.iphonesimulator":
+            raise SimulatorGateBlocked(
+                "iOS Simulator is not the frontmost visible application",
+                "mobile-whole-product:foreground-window",
+            )
+        return {
+            "platform": "ios",
+            "bundleIdentifier": bundle_id,
+            "frontmost": True,
+            "windowVisible": True,
+        }
 
 
 def main() -> int:
