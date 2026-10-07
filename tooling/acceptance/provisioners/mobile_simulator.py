@@ -7059,6 +7059,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     binding.endpoint,
                     binding.deployment_environment,
                     role,
+                    require_disposable=self.requires_actor_reset,
                 )
                 for role in fixture_roles
             ]

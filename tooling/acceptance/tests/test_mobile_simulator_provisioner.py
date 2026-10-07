@@ -1239,7 +1239,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "resolve_actor_identity",
-                side_effect=lambda endpoint, _deployment, role: SimpleNamespace(
+                side_effect=lambda endpoint, _deployment, role, **_: SimpleNamespace(
                     role=role,
                     account_ref=f"station-account:{role}@p.t",
                     ptid=f"ptid:{role}",
@@ -1268,21 +1268,25 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     "https://station-primary.example",
                     "deploy-primary",
                     "alice",
+                    require_disposable=False,
                 ),
                 call(
                     "https://station-primary.example",
                     "deploy-primary",
                     "bob",
+                    require_disposable=False,
                 ),
                 call(
                     "https://station-secondary.example",
                     "deploy-secondary",
                     "alice",
+                    require_disposable=False,
                 ),
                 call(
                     "https://station-secondary.example",
                     "deploy-secondary",
                     "bob",
+                    require_disposable=False,
                 ),
             ],
         )
@@ -1354,7 +1358,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "resolve_actor_identity",
-                side_effect=lambda _endpoint, _deployment, role: SimpleNamespace(
+                side_effect=lambda _endpoint, _deployment, role, **_: SimpleNamespace(
                     role=role,
                     account_ref=f"station-account:{role}@p.t",
                     ptid=f"ptid:{role}",
@@ -1390,11 +1394,13 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     "https://direct.example",
                     "chat-native-disposable-station",
                     "alice",
+                    require_disposable=True,
                 ),
                 call(
                     "https://direct.example",
                     "chat-native-disposable-station",
                     "bob",
+                    require_disposable=True,
                 ),
             ],
         )
