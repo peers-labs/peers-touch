@@ -327,7 +327,7 @@ export function SettingsPage({
   );
   const ActiveSettingIcon = activeSetting?.icon;
 
-  const profileSubtitle = activeStation?.label || t('mobile.settings.connected');
+  const profileSubtitle = t('mobile.settings.connected');
 
   // --- Logout flow ---
   const handleLogoutConfirm = useCallback(async () => {
