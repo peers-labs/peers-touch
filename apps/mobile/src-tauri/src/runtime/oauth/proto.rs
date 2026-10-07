@@ -22,6 +22,13 @@ pub mod peers_touch {
         }
 
         #[allow(dead_code)]
+        pub mod error {
+            pub mod v1 {
+                include!(concat!(env!("OUT_DIR"), "/peers_touch.model.error.v1.rs"));
+            }
+        }
+
+        #[allow(dead_code)]
         pub mod access_gate {
             pub mod v1 {
                 include!(concat!(
@@ -46,4 +53,4 @@ pub mod peers_touch {
 }
 
 #[allow(unused_imports)]
-pub use peers_touch::model::{access_gate, actor, auth, common, oauth};
+pub use peers_touch::model::{access_gate, actor, auth, common, error, oauth};

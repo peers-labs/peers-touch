@@ -5,6 +5,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE};
 
 use super::proto::auth::v1::LoginResponse;
 use super::proto::common::v1::PeersResponse;
+use super::proto::error::v1::ErrorResponse;
 use crate::error::{MobileError, MobileResult};
 use crate::station_origin::{normalize_station_origin, StationOriginError, StationOriginPolicy};
 
@@ -120,10 +121,7 @@ impl StationOAuthTransport {
             })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(MobileError::oauth(format!(
-                "mobile.auth.accessGateStationRejected:{}",
-                status.as_u16()
-            )));
+            return Err(access_gate_rejection(response).await);
         }
         validate_protobuf_response(&response)?;
         let body = response.bytes().await.map_err(|error| {
@@ -277,6 +275,83 @@ fn validate_protobuf_response(response: &reqwest::Response) -> MobileResult<()> 
     Ok(())
 }
 
+async fn access_gate_rejection(mut response: reqwest::Response) -> MobileError {
+    let status = response.status().as_u16();
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return MobileError::oauth(format!("mobile.auth.accessGateStationRejected:{status}"));
+    }
+
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    let mut body = Vec::new();
+    while let Ok(Some(chunk)) = response.chunk().await {
+        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return MobileError::oauth(format!("mobile.auth.accessGateStationRejected:{status}"));
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    let typed = STATION_RESPONSE_CONTENT_TYPES
+        .contains(&content_type.as_str())
+        .then(|| ErrorResponse::decode(body.as_slice()).ok())
+        .flatten();
+    let error_code = typed.as_ref().map(|error| error.code);
+    let json_message = (content_type == JSON_CONTENT_TYPE)
+        .then(|| serde_json::from_slice::<String>(&body).ok())
+        .flatten();
+    let message = typed
+        .as_ref()
+        .map(|error| error.message.as_str())
+        .or(json_message.as_deref());
+    let category = message.and_then(access_gate_rejection_category);
+
+    match (error_code, category) {
+        (Some(code), Some(category)) => MobileError::oauth(format!(
+            "mobile.auth.accessGateStationRejected:{status}:{code}:{category}"
+        )),
+        (Some(code), None) => MobileError::oauth(format!(
+            "mobile.auth.accessGateStationRejected:{status}:{code}"
+        )),
+        (None, Some(category)) => MobileError::oauth(format!(
+            "mobile.auth.accessGateStationRejected:{status}:{category}"
+        )),
+        (None, None) => {
+            MobileError::oauth(format!("mobile.auth.accessGateStationRejected:{status}"))
+        }
+    }
+}
+
+fn access_gate_rejection_category(message: &str) -> Option<&'static str> {
+    let message = message.trim();
+    match message {
+        "access gate requires application/protobuf request and response" => {
+            Some("protobuf-media-type")
+        }
+        "access attempt expired or not found" => Some("attempt-not-found"),
+        "access gate submission Station identity mismatch" => Some("station-identity-mismatch"),
+        "access gate submission device mismatch" => Some("device-mismatch"),
+        "access gate submission lifecycle generation mismatch" => Some("lifecycle-mismatch"),
+        "access gate submission descriptor is stale or mismatched" => Some("descriptor-mismatch"),
+        "access gate submission attempt does not match the current decision" => {
+            Some("attempt-decision-mismatch")
+        }
+        "access gate submission does not match the current gate" => Some("current-gate-mismatch"),
+        "access gate is not actionable" => Some("gate-not-actionable"),
+        "current access gate descriptor is unavailable" => Some("descriptor-unavailable"),
+        "login gate requires typed credentials" => Some("typed-credentials-required"),
+        _ => None,
+    }
+}
+
 pub(crate) fn validate_station_origin(value: &str) -> MobileResult<String> {
     normalize_station_origin(value, StationOriginPolicy::current_build()).map_err(|error| {
         MobileError::invalid_input(match error {
@@ -365,6 +440,35 @@ mod tests {
                 "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
             )
             .expect("write response");
+            String::from_utf8(request).expect("request is HTTP text")
+        });
+        (origin, handle)
+    }
+
+    fn spawn_error_response(
+        status: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> (String, thread::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test Station");
+        let origin = format!(
+            "http://{}",
+            listener.local_addr().expect("test Station address")
+        );
+        let status = status.to_string();
+        let content_type = content_type.to_string();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept session request");
+            let mut request = vec![0_u8; 8_192];
+            let read = stream.read(&mut request).expect("read session request");
+            request.truncate(read);
+            write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .expect("write response headers");
+            stream.write_all(&body).expect("write response body");
             String::from_utf8(request).expect("request is HTTP text")
         });
         (origin, handle)
@@ -510,5 +614,60 @@ mod tests {
 
         let request = server.join().expect("revoke server");
         assert!(request.starts_with("POST /actor/logout HTTP/1.1"));
+    }
+
+    #[test]
+    fn access_gate_rejection_exposes_only_a_safe_typed_category() {
+        let body = ErrorResponse {
+            code: 1,
+            message: "access gate submission device mismatch".to_string(),
+            details: [("internal".to_string(), "must-not-leak".to_string())]
+                .into_iter()
+                .collect(),
+        }
+        .encode_to_vec();
+        let (origin, server) = spawn_error_response("400 Bad Request", PROTOBUF_CONTENT_TYPE, body);
+        let transport = StationOAuthTransport::new().expect("transport");
+
+        let error = tauri::async_runtime::block_on(transport.post_enveloped::<Any, Any>(
+            &origin,
+            "/actor/access/submit",
+            &Any::default(),
+            "unused",
+        ))
+        .expect_err("Station rejection");
+
+        assert_eq!(
+            error.message,
+            "mobile.auth.accessGateStationRejected:400:1:device-mismatch"
+        );
+        assert!(!error.message.contains("must-not-leak"));
+        let request = server.join().expect("access gate server");
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("content-type: application/protobuf"));
+    }
+
+    #[test]
+    fn access_gate_media_type_rejection_is_categorized_without_raw_body() {
+        let body =
+            serde_json::to_vec("access gate requires application/protobuf request and response")
+                .expect("JSON error");
+        let (origin, server) = spawn_error_response("400 Bad Request", JSON_CONTENT_TYPE, body);
+        let transport = StationOAuthTransport::new().expect("transport");
+
+        let error = tauri::async_runtime::block_on(transport.post_enveloped::<Any, Any>(
+            &origin,
+            "/actor/access/start",
+            &Any::default(),
+            "unused",
+        ))
+        .expect_err("Station rejection");
+
+        assert_eq!(
+            error.message,
+            "mobile.auth.accessGateStationRejected:400:protobuf-media-type"
+        );
+        let _request = server.join().expect("access gate server");
     }
 }
