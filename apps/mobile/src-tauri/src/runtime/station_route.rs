@@ -464,7 +464,7 @@ fn verify_discovery_response(
     let canonical_origin = normalize_origin(&statement.canonical_origin)?;
     if statement.encode_to_vec() != response.endpoint_statement_bytes
         || statement.challenge != challenge
-        || canonical_origin != requested_origin
+        || !endpoint_origin_is_valid(role, requested_origin, &canonical_origin)
         || !statement
             .protocol_versions
             .contains(&ACCESS_PROTOCOL_VERSION)
@@ -532,6 +532,18 @@ fn verify_discovery_response(
         canonical_origin,
         routes,
     })
+}
+
+fn endpoint_origin_is_valid(
+    role: AccessEndpointRole,
+    requested_origin: &str,
+    canonical_origin: &str,
+) -> bool {
+    match role {
+        AccessEndpointRole::DirectStation => canonical_origin == requested_origin,
+        AccessEndpointRole::Relay => canonical_origin.starts_with("https://"),
+        _ => false,
+    }
 }
 
 fn verify_relay_outcome(response: &AccessEndpointResponse) -> MobileResult<()> {
@@ -1498,6 +1510,30 @@ mod tests {
     #[test]
     fn discovery_uses_station_protobuf_media_type() {
         assert_eq!(PROTOBUF_CONTENT_TYPE, "application/protobuf");
+    }
+
+    #[test]
+    fn endpoint_origin_validation_distinguishes_direct_and_relay_roles() {
+        assert!(endpoint_origin_is_valid(
+            AccessEndpointRole::DirectStation,
+            "https://station.example",
+            "https://station.example",
+        ));
+        assert!(!endpoint_origin_is_valid(
+            AccessEndpointRole::DirectStation,
+            "https://station.example",
+            "https://other.example",
+        ));
+        assert!(endpoint_origin_is_valid(
+            AccessEndpointRole::Relay,
+            "http://relay.example:18081",
+            "https://relay.example:4501",
+        ));
+        assert!(!endpoint_origin_is_valid(
+            AccessEndpointRole::Relay,
+            "http://relay.example:18081",
+            "http://relay.example:4501",
+        ));
     }
 
     #[test]
