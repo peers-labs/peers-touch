@@ -8,37 +8,73 @@ describe('configureAcceptanceStation', () => {
       stationAdd: vi.fn(async (url: string) => {
         calls.push(`add:${url}`);
         return {
-          url,
-          online: true,
-          peer_id: 'station-peer',
+          role: 'direct_station' as const,
+          endpoint_peer_id: 'station-peer',
+          canonical_origin: url,
+          entries: [{
+            station_peer_id: 'station-peer',
+            display_name: 'Station',
+            pinned_host_public_key: [1],
+            active_route_id: 'route-direct',
+            route_revision: 1,
+            lifecycle_generation: 1,
+            created_at: '2026-10-07T00:00:00Z',
+            updated_at: '2026-10-07T00:00:00Z',
+            routes: [{
+              route_id: 'route-direct',
+              route_type: 'direct' as const,
+              transport: 'https',
+              endpoint_origin: url,
+              route_generation: 1,
+              last_verified_at: '2026-10-07T00:00:00Z',
+              health: 'available' as const,
+            }],
+          }],
         };
       }),
-      stationSetActive: vi.fn(async (url: string) => {
-        calls.push(`activate:${url}`);
+      stationSetActive: vi.fn(async (stationPeerId: string, routeId?: string) => {
+        calls.push(`activate:${stationPeerId}:${routeId}`);
         return {
-          active_url: url,
+          active_station_peer_id: stationPeerId,
+          active_route_id: routeId,
           binding: {
             phase: 'access_gate' as const,
-            selected_url: url,
-            bound_url: url,
-            generation: 1,
+            station_peer_id: stationPeerId,
+            active_route_id: routeId,
+            route_revision: 1,
+            lifecycle_generation: 1,
           },
         };
       }),
       stationList: vi.fn(async () => {
         calls.push('list');
         return {
-          active_url: 'https://station.invalid',
+          active_station_peer_id: 'station-peer',
           binding: {
             phase: 'access_gate' as const,
-            selected_url: 'https://station.invalid',
-            bound_url: 'https://station.invalid',
-            generation: 1,
+            station_peer_id: 'station-peer',
+            active_route_id: 'route-direct',
+            route_revision: 1,
+            lifecycle_generation: 1,
           },
           entries: [{
-            url: 'https://station.invalid',
-            online: true,
-            peer_id: 'station-peer',
+            station_peer_id: 'station-peer',
+            display_name: 'Station',
+            pinned_host_public_key: [1],
+            active_route_id: 'route-direct',
+            route_revision: 1,
+            lifecycle_generation: 1,
+            created_at: '2026-10-07T00:00:00Z',
+            updated_at: '2026-10-07T00:00:00Z',
+            routes: [{
+              route_id: 'route-direct',
+              route_type: 'direct' as const,
+              transport: 'https',
+              endpoint_origin: 'https://station.invalid',
+              route_generation: 1,
+              last_verified_at: '2026-10-07T00:00:00Z',
+              health: 'available' as const,
+            }],
           }],
         };
       }),
@@ -57,7 +93,7 @@ describe('configureAcceptanceStation', () => {
     });
     expect(calls).toEqual([
       'add:https://station.invalid',
-      'activate:https://station.invalid',
+      'activate:station-peer:route-direct',
       'list',
     ]);
   });

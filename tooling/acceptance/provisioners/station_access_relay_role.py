@@ -3,6 +3,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+import shutil
+import socket
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Optional
@@ -24,6 +27,7 @@ from tooling.acceptance.core.provisioner import (
     resolve_deployment_environment_path,
 )
 from tooling.acceptance.core.provisioning import (
+    ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
@@ -57,6 +61,15 @@ from tooling.scripts.deploy.windows_runtime import (
 
 
 ROLE_SECURITY_GATE_ID = "relay-role-security-contract"
+DESKTOP_RELAY_NATIVE_GATE_ID = "station-access-desktop-relay-native-e2e"
+DESKTOP_RELAY_WINDOWS_GATE_ID = "station-access-desktop-relay-windows-e2e"
+DESKTOP_RELAY_GATE_IDS = frozenset(
+    {
+        DESKTOP_RELAY_NATIVE_GATE_ID,
+        DESKTOP_RELAY_WINDOWS_GATE_ID,
+    }
+)
+DESKTOP_RELAY_CLIENT_ID = "desktop-relay"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _RELAY_SECRET_FILES = frozenset(
     {
@@ -450,6 +463,63 @@ def _persist_relay_attestation(
     )
 
 
+def _persist_station_route_attestation(
+    *,
+    environment_id: str,
+    relay_url: str,
+    station_attestation: ServiceAttestation,
+    relay_attestation: ServiceAttestation,
+) -> ServiceAttestation:
+    attestation = ServiceAttestation(
+        service_id="station-via-relay",
+        service_kind="station",
+        environment_id=environment_id,
+        deployment_environment=station_attestation.deployment_environment,
+        endpoint=relay_url,
+        live_commit=station_attestation.live_commit,
+        workspace_digest=station_attestation.workspace_digest,
+        protocol_digest=station_attestation.protocol_digest,
+        artifact_ref={},
+        produced_at=utc_now(),
+        producer="station-relay-role-attachment",
+        build_time=station_attestation.build_time,
+        runtime_identity=station_attestation.runtime_identity,
+    )
+    payload = attestation.to_dict()
+    payload["route"] = {
+        "routeType": "relay",
+        "stationServiceId": station_attestation.service_id,
+        "stationAttestationRef": dict(station_attestation.artifact_ref),
+        "relayServiceId": relay_attestation.service_id,
+        "relayAttestationRef": dict(relay_attestation.artifact_ref),
+    }
+    relative_path = "runtime/services/station-via-relay/attestation.json"
+    write_current_artifact(
+        relative_path,
+        (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+        repo_root=REPO_ROOT,
+    )
+    return dataclasses.replace(
+        attestation,
+        artifact_ref=current_artifact_ref(
+            relative_path,
+            repo_root=REPO_ROOT,
+            media_type="application/json",
+        ).to_dict(),
+    )
+
+
+def _available_ports(count: int) -> tuple[int, ...]:
+    listeners = [socket.socket() for _ in range(count)]
+    try:
+        for listener in listeners:
+            listener.bind(("127.0.0.1", 0))
+        return tuple(int(listener.getsockname()[1]) for listener in listeners)
+    finally:
+        for listener in listeners:
+            listener.close()
+
+
 def config_host(endpoint: str) -> str:
     from urllib.parse import urlparse
 
@@ -564,6 +634,7 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 ENROLLMENT_GATE_ID,
                 DISCOVERY_GATE_ID,
                 OPAQUE_TUNNEL_GATE_ID,
+                *DESKTOP_RELAY_GATE_IDS,
             }:
                 raise BlockedError(
                     reason=f"{self.environment_id} does not support {gate_id}",
@@ -708,14 +779,67 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 relay_runtime=relay_runtime,
                 runtime_security=runtime_security,
             )
+            station_route_attestation = _persist_station_route_attestation(
+                environment_id=self.environment_id,
+                relay_url=relay_url,
+                station_attestation=station_attestation,
+                relay_attestation=relay_attestation,
+            )
+            clients: tuple[ClientRuntime, ...] = ()
+            cleanup_resources: tuple[str, ...] = ()
+            if gate_id in DESKTOP_RELAY_GATE_IDS:
+                declared = {
+                    client.id: client for client in self.contract.clients
+                }
+                if set(declared) != {DESKTOP_RELAY_CLIENT_ID}:
+                    raise BlockedError(
+                        reason=(
+                            "Desktop Relay environment must declare one "
+                            "native client"
+                        ),
+                        resource=f"gate-environment:{gate_id}",
+                    )
+                runtime_root = Path(
+                    tempfile.mkdtemp(
+                        prefix=f"pt-desktop-relay-{manifest.run_id}-"
+                    )
+                )
+                self.register_cleanup(
+                    f"client-storage:{runtime_root}",
+                    lambda: shutil.rmtree(runtime_root, ignore_errors=True),
+                )
+                gateway_port, renderer_port, webdriver_port = _available_ports(
+                    3
+                )
+                client_contract = declared[DESKTOP_RELAY_CLIENT_ID]
+                clients = (
+                    ClientRuntime(
+                        id=DESKTOP_RELAY_CLIENT_ID,
+                        actor=client_contract.actor,
+                        runtime=client_contract.runtime,
+                        worktree=str(REPO_ROOT),
+                        gateway_port=gateway_port,
+                        renderer_port=renderer_port,
+                        webdriver_port=webdriver_port,
+                        profile=f"{profile_name}-desktop-relay",
+                        storage_root=str(runtime_root / "storage"),
+                        required_service_roles=(
+                            client_contract.required_service_roles
+                        ),
+                        service_bindings=client_contract.service_bindings,
+                    ),
+                )
+                cleanup_resources = self.contract.cleanup.resources
             manifest = dataclasses.replace(
                 manifest,
                 state=ProvisioningState.PROVISIONED,
                 services={
                     "station": station_attestation,
                     "relay": relay_attestation,
+                    "station-via-relay": station_route_attestation,
                 },
-                cleanup_resources=(),
+                clients=clients,
+                cleanup_resources=cleanup_resources,
             )
             self._manifest = manifest
             return self._ready(manifest)

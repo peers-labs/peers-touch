@@ -218,11 +218,15 @@ describe('identityRuntime account switch ordering', () => {
       };
     });
     mocks.stationList.mockResolvedValue({
-      active_url: 'http://station.test',
+      active_station_peer_id: 'station-peer',
       binding: {
-        bound_url: 'http://station.test',
+        station_peer_id: 'station-peer',
+        active_route_id: 'route-direct',
+        route_revision: 1,
+        lifecycle_generation: 1,
         phase: 'bound',
       },
+      entries: [],
     });
     mocks.stationSetActive.mockResolvedValue(undefined);
     mocks.runIdentityPipeline.mockImplementation(async () => {
@@ -287,10 +291,12 @@ describe('identityRuntime account switch ordering', () => {
       mocks.order.push('station-bound');
       return {
         phase: 'bound',
-        selected_url: 'http://station.example',
-        bound_url: 'http://station.example',
-        target_url: null,
-        generation: 1,
+        station_peer_id: 'station-peer',
+        active_route_id: 'route-direct',
+        target_station_peer_id: null,
+        target_route_id: null,
+        route_revision: 1,
+        lifecycle_generation: 1,
         error: null,
       };
     });

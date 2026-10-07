@@ -91,6 +91,7 @@ fn compile_protos() {
         "domain/core/core.proto",
         "domain/error/error.proto",
         "domain/events/events.proto",
+        "domain/peer/access_endpoint.proto",
         "domain/peer/peer.proto",
         "domain/peer/station_identity.proto",
         "domain/presence/presence.proto",
@@ -127,6 +128,7 @@ fn compile_protos() {
         "domain/federation/federation_projection_service.proto",
         "domain/federation/delivery.proto",
         "domain/federation/profile.proto",
+        "domain/federation/relay_transport.proto",
         "domain/recovery/recovery.proto",
     ]
     .iter()
