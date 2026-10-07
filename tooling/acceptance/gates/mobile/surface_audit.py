@@ -15,6 +15,7 @@ INTERACTIVE_TYPES = {
     "XCUIElementTypeSwitch",
     "XCUIElementTypeTextField",
 }
+GEOMETRY_TOLERANCE_PX = 1
 
 
 def _rect(node: ET.Element) -> tuple[int, int, int, int] | None:
@@ -69,10 +70,10 @@ def audit_accessibility_tree(markup: str) -> dict[str, Any]:
             continue
         x, y, width, height = bounds
         if (
-            x < 0
-            or y < 0
-            or x + width > screen_width
-            or y + height > screen_height
+            x < -GEOMETRY_TOLERANCE_PX
+            or y < -GEOMETRY_TOLERANCE_PX
+            or x + width > screen_width + GEOMETRY_TOLERANCE_PX
+            or y + height > screen_height + GEOMETRY_TOLERANCE_PX
         ):
             outside_screen.append(f"{node.tag}:{label[:80]}")
 

@@ -3439,10 +3439,8 @@ select,
   color: rgba(31, 35, 48, 0.92);
 }
 
-.settings-profile-ptid {
+.settings-profile-subtitle {
   font-size: 12px !important;
-  font-family: 'SF Mono', 'Menlo', monospace;
-  letter-spacing: 0.02em;
 }
 
 /* Profile stats row */

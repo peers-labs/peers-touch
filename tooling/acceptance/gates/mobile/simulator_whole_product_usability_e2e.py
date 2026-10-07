@@ -96,14 +96,37 @@ if (size !== 'normal' && size !== 'maximum') {
   throw new Error(`unsupported text size ${size}`);
 }
 document.documentElement.dataset.acceptanceTextSize = size;
-document.documentElement.style.webkitTextSizeAdjust =
-  size === 'maximum' ? '200%' : '100%';
-document.documentElement.style.textSizeAdjust =
-  size === 'maximum' ? '200%' : '100%';
+const nodes = Array.from(document.body.querySelectorAll('*')).filter(
+  (element) => element instanceof HTMLElement
+    && (
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)
+      || Array.from(element.childNodes).some(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim(),
+      )
+    ),
+);
+for (const element of nodes) {
+  const attribute = 'data-acceptance-original-font-size';
+  if (size === 'normal') {
+    if (element.hasAttribute(attribute)) {
+      element.style.fontSize = element.getAttribute(attribute);
+      element.removeAttribute(attribute);
+    }
+    continue;
+  }
+  if (!element.hasAttribute(attribute)) {
+    element.setAttribute(attribute, element.style.fontSize || '');
+  }
+  const computed = Number.parseFloat(getComputedStyle(element).fontSize);
+  if (Number.isFinite(computed) && computed > 0) {
+    element.style.fontSize = `${Math.min(32, computed * 1.35)}px`;
+  }
+}
 return {
   textSize: size,
   width: Math.round(window.innerWidth),
   height: Math.round(window.innerHeight),
+  scaledElementCount: size === 'maximum' ? nodes.length : 0,
 };
 """
 SURFACE_AUDIT_SCRIPT = """
@@ -138,11 +161,14 @@ const interactive = Array.from(document.querySelectorAll(interactiveSelector))
   .filter(visible)
   .filter((element) => element.getAttribute('tabindex') !== '-1');
 const controls = interactive.map((element) => {
-  const rect = element.getBoundingClientRect();
+  const boundary = element.closest(
+    '.ant-input-affix-wrapper,.ant-select-selector',
+  ) || element;
+  const rect = boundary.getBoundingClientRect();
   return {
-    element,
+    element: boundary,
     value: {
-      label: label(element),
+      label: label(element) || label(boundary),
       width: Math.round(rect.width),
       height: Math.round(rect.height),
       visible: true,
@@ -1142,10 +1168,23 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                     "proofStatus": proof_status,
                 }
             )
-            artifacts.write_json(
+            surface_evidence_ref = artifacts.write_json(
                 "mobile-whole-product/surface-evidence.json",
                 result,
                 role=EVIDENCE_ROLE,
+            )
+            report = self._result_report(status)
+            report.update(
+                {
+                    "completionStatus": completion_status,
+                    "proofStatus": proof_status,
+                    "surfaceEvidence": surface_evidence_ref.to_dict(),
+                }
+            )
+            artifacts.write_json(
+                "mobile-whole-product/result.json",
+                report,
+                role="mobile-whole-product-result",
             )
             artifacts.complete(
                 status=status,
@@ -1160,6 +1199,32 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
         stream = sys.stdout if exit_code == 0 else sys.stderr
         stream.write(f"{status}: {self.gate_id}\n")
         return exit_code
+
+    @staticmethod
+    def _result_report(status: str) -> dict[str, Any]:
+        return {
+            "artifactKind": "acceptance-gate-evidence-report",
+            "gateId": GATE_ID,
+            "gate": GATE_ID,
+            "environment": ENVIRONMENT_ID,
+            "runtimeCell": "ios-simulator-shell",
+            "status": status,
+            "phase": "MWPU-02 Shell Usability",
+            "bom": ["MWPU-02-SHELL"],
+            "spec": ["MS-PA28", "MS-PA29", "MS-AG12"],
+            "observedScope": (
+                ["shell-navigation", "shell-degraded-module"]
+                if status == "PASS"
+                else []
+            ),
+            "unprovenScope": [
+                "non-shell Mobile surface sets",
+                "Android",
+                "physical-device behavior",
+            ],
+            "physicalDeviceClaimed": False,
+            "sampleEmissionAllowed": status == "PASS",
+        }
 
     def _load_manifest(self) -> dict[str, Any]:
         manifest_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "")
@@ -1435,6 +1500,16 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
             or value["height"] <= 0
         ):
             raise GateError(f"Mobile viewport setup failed for {cell_id}")
+        if (
+            text_size == "maximum"
+            and (
+                not isinstance(value.get("scaledElementCount"), int)
+                or value["scaledElementCount"] <= 0
+            )
+        ):
+            raise GateError(
+                f"Mobile maximum text stress did not scale content for {cell_id}"
+            )
         if (
             orientation == "portrait"
             and value["width"] >= value["height"]

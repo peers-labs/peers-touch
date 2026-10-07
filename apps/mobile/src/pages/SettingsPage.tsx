@@ -327,10 +327,7 @@ export function SettingsPage({
   );
   const ActiveSettingIcon = activeSetting?.icon;
 
-  // --- PTID display ---
-  const ptidDisplay = authSession?.actorRef.ptid
-    ? `ptid:${String(authSession.actorRef.ptid).slice(0, 24)}...`
-    : '';
+  const profileSubtitle = activeStation?.label || t('mobile.settings.connected');
 
   // --- Logout flow ---
   const handleLogoutConfirm = useCallback(async () => {
@@ -508,7 +505,7 @@ export function SettingsPage({
       </header>
 
       <div className="settings-body">
-        {/* Profile header card — Avatar 64px + name + PTID + chevron + stats */}
+        {/* Profile header card — Avatar 64px + friendly identity + chevron + stats */}
         <button
           type="button"
           className="settings-profile-trigger"
@@ -530,11 +527,9 @@ export function SettingsPage({
                 <Text strong className="settings-profile-name">
                   {displayName || t('mobile.settings.notLoggedIn')}
                 </Text>
-                {ptidDisplay && (
-                  <Text type="secondary" className="settings-profile-ptid">
-                    {ptidDisplay}
-                  </Text>
-                )}
+                <Text type="secondary" className="settings-profile-subtitle">
+                  {profileSubtitle}
+                </Text>
               </div>
               <ChevronRight size={20} color="#9ca0ab" />
             </div>

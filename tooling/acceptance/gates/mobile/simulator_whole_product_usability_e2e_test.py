@@ -157,6 +157,7 @@ class _ShellDriverSession:
                 "textSize": args[0],
                 "width": width,
                 "height": height,
+                "scaledElementCount": 1 if args[0] == "maximum" else 0,
             }
         return True
 
@@ -357,6 +358,20 @@ def valid_surface_evidence(
 
 
 class WholeProductSurfaceContractTests(unittest.TestCase):
+    def test_shell_gate_emits_canonical_acceptance_report(self) -> None:
+        report = SimulatorWholeProductUsabilityGate._result_report("PASS")
+
+        self.assertEqual(
+            report["artifactKind"],
+            "acceptance-gate-evidence-report",
+        )
+        self.assertEqual(report["bom"], ["MWPU-02-SHELL"])
+        self.assertEqual(
+            report["spec"],
+            ["MS-PA28", "MS-PA29", "MS-AG12"],
+        )
+        self.assertTrue(report["sampleEmissionAllowed"])
+
     def test_foreground_probe_requires_the_declared_booted_simulator(self) -> None:
         completed = subprocess.CompletedProcess(
             args=[],
@@ -464,6 +479,9 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             REPO_ROOT
             / "apps/mobile/src/components/recovery/DeferredCapabilityNotice.tsx"
         ).read_text(encoding="utf-8")
+        settings = (
+            REPO_ROOT / "apps/mobile/src/pages/SettingsPage.tsx"
+        ).read_text(encoding="utf-8")
 
         self.assertIn(
             "data-product-surface={`shell.${activeTab}-tab`}",
@@ -474,6 +492,8 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             'data-product-surface="shell.degraded-module-notice"',
             notice,
         )
+        self.assertNotIn("ptidDisplay", settings)
+        self.assertIn("settings-profile-subtitle", settings)
 
     def test_inventory_covers_every_surface_set_and_contract_cell(self) -> None:
         inventory = load_surface_inventory()
