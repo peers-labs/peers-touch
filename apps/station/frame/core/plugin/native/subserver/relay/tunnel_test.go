@@ -54,6 +54,51 @@ func TestTunnelRateLimiterResetsOnlyAtWindowBoundary(t *testing.T) {
 	}
 }
 
+func TestTunnelSourceKeyIgnoresEphemeralPort(t *testing.T) {
+	first := tunnelSourceKey(&net.TCPAddr{
+		IP:   net.ParseIP("192.0.2.10"),
+		Port: 41000,
+	})
+	second := tunnelSourceKey(&net.TCPAddr{
+		IP:   net.ParseIP("192.0.2.10"),
+		Port: 42000,
+	})
+	if first != "192.0.2.10" || second != first {
+		t.Fatalf("source keys differ across ports: %q != %q", first, second)
+	}
+	ipv6 := tunnelSourceKey(testTunnelAddr("[2001:db8::1]:43000"))
+	if ipv6 != "2001:db8::1" {
+		t.Fatalf("IPv6 source key = %q", ipv6)
+	}
+}
+
+func TestStreamEntryRateLimiterAggregatesConcurrentTunnels(t *testing.T) {
+	relayConn, stationConn := net.Pipe()
+	defer relayConn.Close()
+	defer stationConn.Close()
+
+	entry := newStreamEntry(
+		context.Background(),
+		"station-target",
+		1,
+		time.Now().Add(time.Hour),
+		relayConn,
+		2,
+		1024,
+		10,
+		nil,
+	)
+	if !entry.rateLimiter.allow(100, 6) {
+		t.Fatal("first tunnel was rejected")
+	}
+	if entry.rateLimiter.allow(100, 5) {
+		t.Fatal("second tunnel bypassed the shared Station budget")
+	}
+	if !entry.rateLimiter.allow(101, 10) {
+		t.Fatal("shared Station budget did not reset")
+	}
+}
+
 func TestStreamTunnelMultiplexesAndReleasesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -270,4 +315,14 @@ func TestHealthyLongLivedStreamSurvivesAgeCleanup(t *testing.T) {
 		t.Fatalf("advertised tunnel limits = %+v", limits)
 	}
 	manager.DrainAndClose(ctx, time.Second)
+}
+
+type testTunnelAddr string
+
+func (a testTunnelAddr) Network() string {
+	return "tcp"
+}
+
+func (a testTunnelAddr) String() string {
+	return string(a)
 }

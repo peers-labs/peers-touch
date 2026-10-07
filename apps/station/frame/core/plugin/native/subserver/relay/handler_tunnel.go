@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+	"net"
 	"strings"
 	"time"
 
@@ -53,7 +54,7 @@ func (h *relayHandler) tunnelCaller(
 	ctx context.Context,
 	request *app.RequestContext,
 ) (tunnelCaller, error) {
-	caller := tunnelCaller{sourceKey: request.RemoteAddr().String()}
+	caller := tunnelCaller{sourceKey: tunnelSourceKey(request.RemoteAddr())}
 	authorization := strings.TrimSpace(
 		string(request.Request.Header.Peek("Authorization")),
 	)
@@ -191,7 +192,7 @@ func (h *relayHandler) serveTunnel(
 	}
 	_ = socket.SetReadDeadline(time.Now().Add(tunnelIdleTimeout))
 
-	rate := newTunnelRateLimiter(int64(limits.GetRateBytesPerSecond()))
+	rate := entry.rateLimiter
 	readResult := make(chan error, 1)
 	go func() {
 		readResult <- h.forwardWebSocketToStation(
@@ -333,12 +334,11 @@ func (h *relayHandler) forwardWebSocketToStation(
 			}
 			total += uint64(len(data.GetCiphertext()))
 			if total > limits.GetMaxRequestBytes() ||
-				total > limits.GetMaxConnectionBytes() ||
-				!rate.allow(
-					time.Now().Unix(),
-					int64(len(data.GetCiphertext())),
-				) {
+				total > limits.GetMaxConnectionBytes() {
 				return ErrTunnelOversize
+			}
+			if !rate.allow(time.Now().Unix(), int64(len(data.GetCiphertext()))) {
+				return ErrTunnelOverloaded
 			}
 			if err := tunnel.Send(data.GetCiphertext()); err != nil {
 				return err
@@ -382,6 +382,33 @@ func callerStationPeerID(caller tunnelCaller) string {
 		return ""
 	}
 	return caller.mount.StationPeerID
+}
+
+func tunnelSourceKey(address net.Addr) string {
+	if address == nil {
+		return "unknown"
+	}
+	if tcpAddress, ok := address.(*net.TCPAddr); ok {
+		if len(tcpAddress.IP) == 0 {
+			return "unknown"
+		}
+		return tcpAddress.IP.String()
+	}
+	raw := strings.TrimSpace(address.String())
+	host, _, err := net.SplitHostPort(raw)
+	if err == nil {
+		if ip := net.ParseIP(host); ip != nil {
+			return ip.String()
+		}
+		return strings.ToLower(host)
+	}
+	if ip := net.ParseIP(raw); ip != nil {
+		return ip.String()
+	}
+	if raw == "" {
+		return "unknown"
+	}
+	return strings.ToLower(raw)
 }
 
 func readOuterTunnelFrame(
