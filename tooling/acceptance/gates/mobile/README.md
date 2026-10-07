@@ -1,8 +1,8 @@
 # Mobile Native Acceptance
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-28 | **Updated**: 2026-09-21
+> **Version**: v1.2
+> **Created**: 2026-08-28 | **Updated**: 2026-10-07
 > **Owner**: Mobile Team
 > **Module**: `tooling/acceptance/gates/mobile/`
 
@@ -255,6 +255,8 @@ authority and the fallback for platform-specific coverage.
 | `native_e2e.py` | Physical-device provider and product journeys |
 | `mobile_simulator.py` | Dual-iOS simulator/build/Appium resource lifecycle |
 | `mobile_native.py` | Physical devices, services, credentials, and fixture inputs |
+| `mobile_installation.py` | Installation strategies and platform adapter contract |
+| `tooling/acceptance/devices/` | Model-specific device matching and install policy |
 | `apps/mobile/src/acceptance/` | Typed production-action Harness |
 | `proof-contract.schema.json` | Mobile OAuth proof payload and Artifact Role catalog |
 | `proof_contracts.py` | Fail-closed payload, role, source/version, redaction, and cutover validation |
@@ -535,6 +537,17 @@ credentials, provider/browser leases, or access finalizer. Its Harness action
 lists remain closed per scenario. A blocked optional physical Gate does not
 block required Mobile completion.
 
+The Android Social physical cell selects its device descriptor through
+`mobile-android-physical-runtime.yaml`. The descriptor owns manufacturer/model
+matching, installation adapter selection, and whether the OS may require user
+confirmation. `reuse-exact-artifact` skips installation only when the
+device-side SHA-256 of the installed base APK equals the current attested APK
+SHA-256. Missing or mismatched artifacts take the single remove/install path
+and must pass the same hash readback before launch; unreadable hashes fail
+closed. Device serials and installed package paths remain process-local and
+never enter evidence. OAuth and all scenarios without this descriptor retain
+the existing fresh-install contract.
+
 The lifecycle branch drives Appium's bounded physical `background_app`
 operation for twenty background/foreground cycles, then verifies canonical
 generation/state through the production lifecycle Harness before restart. The
@@ -567,6 +580,7 @@ Each gate run produces artifacts under its run-scoped storage root:
 | Device lease | JSON | `physical-device-lease` payload (native tier) |
 | Lease outcome | JSON | `mobile-lease-outcome` terminal payload (native tier) |
 | Fresh install trace | JSON | `mobile-fresh-install-trace` payload (native tier) |
+| Scenario installation trace | JSON | Exact-artifact reuse/install decision for descriptor-selected physical cells |
 
 ### 10.2 Evidence Store Integration
 

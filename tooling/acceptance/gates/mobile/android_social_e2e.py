@@ -560,11 +560,12 @@ class AndroidSocialGate(AcceptanceGate):
             build_attestation=build_ref,
             callback_scheme=callback_scheme,
             gate_id=self.gate_id,
+            installation_trace_field="installationTrace",
         )
         session.start()
         session.wait_for_ready()
         session.switch_to_native()
-        session.verify_installed_build_identity(session.fresh_install_trace)
+        session.verify_installed_build_identity(session.installation_trace)
         session.switch_to_app_webview()
         harness = self._required_object(
             resources,

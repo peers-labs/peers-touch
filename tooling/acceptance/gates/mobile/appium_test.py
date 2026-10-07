@@ -21,10 +21,11 @@ def _reference(
     path: str,
     *,
     media_type: str = "application/json",
+    gate_id: str = GATE_ID,
 ) -> ArtifactRef:
     return ArtifactRef(
         workspace_id=WORKSPACE_ID,
-        gate_id=GATE_ID,
+        gate_id=gate_id,
         run_id=RUN_ID,
         path=path,
         sha256="b" * 64,
@@ -139,6 +140,7 @@ class AppiumChildFacadeTests(unittest.TestCase):
                 "build_attestation",
                 "callback_scheme",
                 "gate_id",
+                "installation_trace_field",
             },
         )
         for forbidden in (
@@ -178,6 +180,57 @@ class AppiumChildFacadeTests(unittest.TestCase):
         self.assertNotIn("device", payload)
         self.assertGreaterEqual(timeout, 180.0)
         self.assertIsInstance(self.session.fresh_install_trace, ArtifactRef)
+
+    def test_android_social_uses_generic_installation_trace(self) -> None:
+        gate_id = "mobile-social-android-native"
+        installation_ref = _reference(
+            "evidence/mobile/runtime/alice-android/install.json",
+            gate_id=gate_id,
+        )
+        identity_ref = _reference(
+            "evidence/mobile/runtime/alice-android/build-identity.json",
+            gate_id=gate_id,
+        )
+        self.client.responses["start"] = {
+            "sessionRef": "opaque-session/alice-android",
+            "installationTrace": installation_ref.to_dict(),
+        }
+        self.client.responses["verify_build_identity"] = {
+            "installedBuildIdentity": identity_ref.to_dict(),
+        }
+        session = AppiumSession(
+            self.client,  # type: ignore[arg-type]
+            client_id="alice-android",
+            platform="android",
+            physical_device_lease=_reference(
+                "runtime/mobile/leases/devices/alice-android.json",
+                gate_id=gate_id,
+            ),
+            build_attestation=_reference(
+                "runtime/mobile/builds/android.json",
+                gate_id=gate_id,
+            ),
+            callback_scheme="peers-touch",
+            gate_id=gate_id,
+            installation_trace_field="installationTrace",
+        )
+
+        session.start()
+        self.assertEqual(session.installation_trace, installation_ref)
+        with self.assertRaisesRegex(DriverError, "unavailable for this Gate"):
+            _ = session.fresh_install_trace
+        self.assertEqual(
+            session.verify_installed_build_identity(
+                session.installation_trace
+            ),
+            identity_ref,
+        )
+        verify_payload = self.client.calls[-1][2]
+        self.assertEqual(
+            verify_payload["installationTrace"],
+            installation_ref.to_dict(),
+        )
+        self.assertNotIn("freshInstallTrace", verify_payload)
 
     def test_all_session_operations_use_bound_capability_and_opaque_ref(self) -> None:
         self.session.start()

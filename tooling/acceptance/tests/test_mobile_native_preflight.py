@@ -60,6 +60,7 @@ from tooling.acceptance.provisioners.mobile_native import (
     MobileNativeSourceArtifactRefs,
     MobileNativeSourceProjection,
     MobileNativeStationFixtureCapabilityHandler,
+    _ParentAndroidInstallationAdapter,
     _ParentAppiumSession,
     _ParentAppiumTransport,
     _appium_server_version,
@@ -686,6 +687,11 @@ class FakeCommandExecutor:
         }
         self.android_devices = {"android-alice", "android-bob"}
         self.android_abi = "arm64-v8a"
+        self.android_manufacturer = "OPPO"
+        self.android_model = "PEEM00"
+        self.android_version = "13"
+        self.android_api_level = "33"
+        self.android_fingerprint = "OPPO/PEEM00/device:13/build:user/release-keys"
         self.browser_version = "124.0.6367.82"
         self.chromedriver_version = "124.0.6367.207"
 
@@ -727,6 +733,16 @@ class FakeCommandExecutor:
             return CommandResult(0, "0\n")
         if command[-2:] == ("getprop", "ro.product.cpu.abi"):
             return CommandResult(0, f"{self.android_abi}\n")
+        if command[-2:] == ("getprop", "ro.product.manufacturer"):
+            return CommandResult(0, f"{self.android_manufacturer}\n")
+        if command[-2:] == ("getprop", "ro.product.model"):
+            return CommandResult(0, f"{self.android_model}\n")
+        if command[-2:] == ("getprop", "ro.build.version.release"):
+            return CommandResult(0, f"{self.android_version}\n")
+        if command[-2:] == ("getprop", "ro.build.version.sdk"):
+            return CommandResult(0, f"{self.android_api_level}\n")
+        if command[-2:] == ("getprop", "ro.build.fingerprint"):
+            return CommandResult(0, f"{self.android_fingerprint}\n")
         if command[-2:] == ("dumpsys", "webviewupdate"):
             return CommandResult(
                 0,
@@ -738,6 +754,97 @@ class FakeCommandExecutor:
         if command[-1:] == ("--version",):
             return CommandResult(0, f"ChromeDriver {self.chromedriver_version}\n")
         return CommandResult(1, stderr="unexpected command")
+
+
+class ParentAndroidInstallationAdapterTests(unittest.TestCase):
+    def test_adapter_reads_only_base_apk_digest_from_opaque_device_handle(
+        self,
+    ) -> None:
+        commands: list[tuple[str, ...]] = []
+
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                del cwd, env, timeout
+                commands.append(command)
+                if command[-4:-1] == ("shell", "pm", "path"):
+                    return CommandResult(
+                        0,
+                        "package:/data/app/opaque/base.apk\n"
+                        "package:/data/app/opaque/split_config.apk\n",
+                    )
+                if command[-3:-1] == ("shell", "sha256sum"):
+                    return CommandResult(0, f"{'a' * 64}  opaque\n")
+                return CommandResult(1, stderr="unexpected command")
+
+        class Session:
+            _device_lease = {"opaque": True}
+
+            @staticmethod
+            def _with_physical_device(
+                _lease: Mapping[str, object],
+                operation,
+                **_kwargs: object,
+            ):
+                return operation(SimpleNamespace(identifier="process-local"))
+
+        adapter = _ParentAndroidInstallationAdapter(
+            Session(),  # type: ignore[arg-type]
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+            executor=Executor(),
+        )
+
+        observed = adapter.inspect("com.peers.touch.mobile")
+
+        self.assertTrue(observed.present)
+        self.assertEqual(observed.sha256, "a" * 64)
+        self.assertEqual(commands[0][-1], "com.peers.touch.mobile")
+        self.assertEqual(commands[1][-1], "/data/app/opaque/base.apk")
+
+    def test_adapter_reports_absent_package_without_hash_command(self) -> None:
+        commands: list[tuple[str, ...]] = []
+
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                del cwd, env, timeout
+                commands.append(command)
+                return CommandResult(0, "")
+
+        class Session:
+            _device_lease = {"opaque": True}
+
+            @staticmethod
+            def _with_physical_device(
+                _lease: Mapping[str, object],
+                operation,
+                **_kwargs: object,
+            ):
+                return operation(SimpleNamespace(identifier="process-local"))
+
+        observed = _ParentAndroidInstallationAdapter(
+            Session(),  # type: ignore[arg-type]
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+            executor=Executor(),
+        ).inspect("com.peers.touch.mobile")
+
+        self.assertFalse(observed.present)
+        self.assertIsNone(observed.sha256)
+        self.assertEqual(len(commands), 1)
 
 
 class MobileNativeSourceProjectionTests(unittest.TestCase):
@@ -3164,6 +3271,85 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(handler.sessions, {})
 
+    def test_appium_handler_projects_generic_installation_trace_variant(
+        self,
+    ) -> None:
+        writes: list[tuple[str, str | None]] = []
+
+        class Session:
+            physical_device_lease_ref = parent_artifact_ref(
+                "runtime/mobile/leases/devices/alice-android.json"
+            )
+            build_attestation_ref = parent_artifact_ref(
+                "runtime/mobile/builds/android.json"
+            )
+            installation_trace = {
+                "artifactKind": "mobile-native-scenario-installation-trace"
+            }
+            _application_id = "com.peers.touch.mobile"
+
+            @staticmethod
+            def start(**_kwargs: Any) -> None:
+                return None
+
+        class Writer:
+            @staticmethod
+            def write_json(
+                path: str,
+                _value: Mapping[str, object],
+                *,
+                role: str | None,
+                redact: bool,
+            ) -> ArtifactRef:
+                self.assertFalse(redact)
+                writes.append((path, role))
+                return parent_artifact_ref(path)
+
+        handler = MobileNativeAppiumCapabilityHandler(
+            session_factory=lambda _client_id: Session(),
+            artifact_writer=Writer(),
+            broker=object(),
+            device_leases={},
+            installation_trace_field="installationTrace",
+        )
+        result = handler.invoke(
+            "start",
+            {
+                "clientId": "alice-android",
+                "physicalDeviceLease": (
+                    Session.physical_device_lease_ref.to_dict()
+                ),
+                "buildAttestation": Session.build_attestation_ref.to_dict(),
+            },
+            deadline_monotonic=float("inf"),
+            cancellation=threading.Event(),
+        )
+
+        self.assertIn("installationTrace", result)
+        self.assertNotIn("freshInstallTrace", result)
+        self.assertEqual(
+            writes,
+            [
+                (
+                    "evidence/mobile/runtime/alice-android/install.json",
+                    "mobile-native-scenario-installation-trace/alice-android",
+                )
+            ],
+        )
+        projected = handler.project_response(
+            "start",
+            {
+                "requestId": "request-install",
+                "status": "OK",
+                "result": result,
+                "error": None,
+            },
+        )
+        self.assertEqual(
+            projected["result"]["installationTrace"],
+            result["installationTrace"],
+        )
+
     def test_failed_start_with_session_id_retains_cleanup_ownership(
         self,
     ) -> None:
@@ -4641,6 +4827,59 @@ class MobileNativeInputPreflightTests(unittest.TestCase):
             result["iosReadiness"]["nativeContext"],
             "NATIVE_APP",
         )
+
+    def test_android_social_preflight_binds_declared_device_strategy(
+        self,
+    ) -> None:
+        scenario_spec = load_mobile_native_preflight_spec(
+            ENVIRONMENTS_DIR / "mobile-android-physical-runtime.yaml",
+            gate_id="mobile-social-android-native",
+        )
+        self.spec = dataclasses.replace(
+            scenario_spec,
+            chromedriver=self.spec.chromedriver,
+        )
+        self.executor.android_devices = {"android-alice"}
+        self._install_harness_actions()
+        with patch.dict(os.environ, self.environment, clear=True), patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_appium_server_version",
+            return_value="2.19.0",
+        ):
+            result = self._preflight()
+
+        facts = result["androidDeviceFacts"]["alice-android"]
+        self.assertEqual(facts["manufacturer"], "OPPO")
+        self.assertEqual(facts["model"], "PEEM00")
+        self.assertEqual(facts["deviceDescriptorId"], "oppo-peem00")
+        self.assertEqual(
+            facts["installationStrategy"],
+            "reuse-exact-artifact",
+        )
+        self.assertTrue(facts["userConfirmationOnInstall"])
+
+    def test_android_social_preflight_rejects_descriptor_mismatch(self) -> None:
+        scenario_spec = load_mobile_native_preflight_spec(
+            ENVIRONMENTS_DIR / "mobile-android-physical-runtime.yaml",
+            gate_id="mobile-social-android-native",
+        )
+        self.spec = dataclasses.replace(
+            scenario_spec,
+            chromedriver=self.spec.chromedriver,
+        )
+        self.executor.android_devices = {"android-alice"}
+        self.executor.android_model = "different"
+        self._install_harness_actions()
+        with patch.dict(os.environ, self.environment, clear=True), patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_appium_server_version",
+            return_value="2.19.0",
+        ):
+            with self.assertRaisesRegex(
+                BlockedError,
+                "does not match the declared device descriptor",
+            ):
+                self._preflight()
 
     def test_resource_lease_key_is_stable_across_preflight_runs(self) -> None:
         self._install_harness_actions()

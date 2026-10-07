@@ -1,6 +1,7 @@
 {
   "id": "mobile-android-physical-runtime",
   "base_environment": "mobile-native",
+  "device_descriptor_ref": "../devices/oppo-peem00.yaml",
   "scenarios": {
     "android-social": {
       "gate_id": "mobile-social-android-native",
