@@ -176,6 +176,7 @@ type streamEntry struct {
 	credentialExpiresAt time.Time
 	maxDirectionBytes   int64
 	rateBytesPerSecond  int64
+	rateLimiter         *tunnelRateLimiter
 
 	writeMu sync.Mutex
 
@@ -211,6 +212,7 @@ func newStreamEntry(
 		credentialExpiresAt: credentialExpiresAt,
 		maxDirectionBytes:   maxDirectionBytes,
 		rateBytesPerSecond:  rateBytesPerSecond,
+		rateLimiter:         newTunnelRateLimiter(rateBytesPerSecond),
 		tunnels:             make(map[uint32]*streamTunnel),
 		semaphore:           make(chan struct{}, maxConcurrent),
 		done:                make(chan struct{}),
