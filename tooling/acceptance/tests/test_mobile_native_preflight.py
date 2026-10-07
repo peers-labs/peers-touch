@@ -4164,6 +4164,7 @@ class MobileNativeContractTests(unittest.TestCase):
 
         self.assertIn('"appium:autoAcceptAlerts"', source)
         self.assertIn('"appium:autoGrantPermissions"', source)
+        self.assertIn('"appium:ignoreHiddenApiPolicyError"', source)
         self.assertIn('if self.platform == "ios"', source)
 
     def test_parent_harness_actions_are_exact_and_disjoint(self) -> None:
