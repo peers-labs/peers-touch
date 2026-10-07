@@ -4164,8 +4164,27 @@ class MobileNativeContractTests(unittest.TestCase):
 
         self.assertIn('"appium:autoAcceptAlerts"', source)
         self.assertIn('"appium:autoGrantPermissions"', source)
+        self.assertIn('"appium:androidInstallTimeout"', source)
+        self.assertIn('"appium:installOptions": ["--no-streaming"]', source)
         self.assertIn('"appium:ignoreHiddenApiPolicyError"', source)
         self.assertIn('if self.platform == "ios"', source)
+
+    def test_parent_request_budgets_cover_android_fresh_install(self) -> None:
+        launch_source = inspect.getsource(
+            MobileNativeProvisioner.create_gate_launch_context
+        )
+        session_source = inspect.getsource(
+            MobileNativeProvisioner._new_appium_session
+        )
+
+        self.assertIn(
+            "MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS",
+            launch_source,
+        )
+        self.assertIn(
+            "MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS",
+            session_source,
+        )
 
     def test_parent_harness_actions_are_exact_and_disjoint(self) -> None:
         for parent_actions in (
