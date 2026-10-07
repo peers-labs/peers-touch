@@ -101,6 +101,15 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     produce_build_attestation,
     produce_scenario_build_attestation,
 )
+from tooling.acceptance.provisioners.mobile_installation import (
+    ANDROID_ADB_PACKAGE_SHA256_ADAPTER,
+    AndroidInstalledArtifact,
+    AndroidInstallationExecution,
+    MobileDeviceDescriptor,
+    MobileInstallationError,
+    execute_android_installation,
+    load_mobile_device_descriptor,
+)
 from tooling.acceptance.provisioners.mobile_service_bindings import (
     resolve_mobile_service_bindings,
 )
@@ -542,6 +551,7 @@ class MobileNativeScenarioSpec:
 @dataclass(frozen=True)
 class MobileNativePreflightSpec:
     scenario: MobileNativeScenarioSpec
+    device_descriptor: MobileDeviceDescriptor | None
     appium_server_url_ref: str
     appium_executable: str
     appium_expected_version: str
@@ -1586,6 +1596,7 @@ def _load_mobile_native_contract_payload(path: Path) -> dict[str, Any]:
     required_overlay_fields = {
         "id",
         "base_environment",
+        "device_descriptor_ref",
         "scenarios",
         "services",
         "fixtures",
@@ -1598,6 +1609,7 @@ def _load_mobile_native_contract_payload(path: Path) -> dict[str, Any]:
     return {
         **base,
         "id": payload["id"],
+        "device_descriptor_ref": payload["device_descriptor_ref"],
         "scenarios": payload["scenarios"],
         "services": payload["services"],
         "fixtures": payload["fixtures"],
@@ -1612,6 +1624,30 @@ def load_mobile_native_preflight_spec(
     payload = _load_mobile_native_contract_payload(path)
 
     scenario = _load_mobile_native_scenario(payload, gate_id)
+    device_descriptor: MobileDeviceDescriptor | None = None
+    if scenario.id == "android-social":
+        descriptor_ref = _required_text(
+            payload,
+            "device_descriptor_ref",
+            "mobile-contract:device-descriptor",
+        )
+        descriptor_root = (ENVIRONMENTS_DIR.parent / "devices").resolve()
+        descriptor_path = (path.parent / descriptor_ref).resolve()
+        if (
+            descriptor_path.parent != descriptor_root
+            or descriptor_path.suffix not in {".json", ".yaml"}
+        ):
+            raise BlockedError(
+                reason="Mobile device descriptor reference is invalid",
+                resource="mobile-contract:device-descriptor",
+            )
+        try:
+            device_descriptor = load_mobile_device_descriptor(descriptor_path)
+        except MobileInstallationError as error:
+            raise BlockedError(
+                reason=f"Mobile device descriptor is invalid: {error}",
+                resource="mobile-contract:device-descriptor",
+            ) from error
     appium = _required_object(payload, "appium", "mobile-contract:appium")
     server = _required_object(appium, "server", "mobile-contract:appium-server")
     drivers = _required_object(appium, "drivers", "mobile-contract:appium-drivers")
@@ -2044,6 +2080,7 @@ def load_mobile_native_preflight_spec(
     leases = _required_object(payload, "leases", "mobile-contract:leases")
     return MobileNativePreflightSpec(
         scenario=scenario,
+        device_descriptor=device_descriptor,
         appium_server_url_ref=_required_text(
             server,
             "url_ref",
@@ -2713,6 +2750,20 @@ def preflight_mobile_native_inputs(
             )
         android_abis.add(abi)
         if spec.scenario.id == "android-social":
+            manufacturer = _run_checked(
+                executor,
+                (
+                    "adb",
+                    "-s",
+                    device,
+                    "shell",
+                    "getprop",
+                    "ro.product.manufacturer",
+                ),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-manufacturer:{client.id}",
+            ).stdout.strip()
             model = _run_checked(
                 executor,
                 ("adb", "-s", device, "shell", "getprop", "ro.product.model"),
@@ -2763,7 +2814,8 @@ def preflight_mobile_native_inputs(
                 resource=f"mobile-runtime:android-fingerprint:{client.id}",
             ).stdout.strip()
             if (
-                not model
+                not manufacturer
+                or not model
                 or not version
                 or not api_level.isdigit()
                 or not fingerprint
@@ -2775,7 +2827,9 @@ def preflight_mobile_native_inputs(
                     ),
                     resource=f"mobile-runtime:android-facts:{client.id}",
                 )
-            android_device_facts[client.id] = {
+            facts: dict[str, Any] = {
+                "platform": "android",
+                "manufacturer": manufacturer,
                 "model": model,
                 "androidVersion": version,
                 "apiLevel": int(api_level),
@@ -2785,6 +2839,26 @@ def preflight_mobile_native_inputs(
                 "physical": True,
                 "authorized": True,
             }
+            descriptor = spec.device_descriptor
+            if descriptor is None or not descriptor.matches(facts):
+                raise BlockedError(
+                    reason=(
+                        "Android physical device does not match the declared "
+                        "device descriptor"
+                    ),
+                    resource=f"mobile-runtime:device-descriptor:{client.id}",
+                )
+            facts.update(
+                {
+                    "deviceDescriptorId": descriptor.id,
+                    "installationAdapter": descriptor.installation.adapter,
+                    "installationStrategy": descriptor.installation.strategy,
+                    "userConfirmationOnInstall": (
+                        descriptor.installation.user_confirmation_on_install
+                    ),
+                }
+            )
+            android_device_facts[client.id] = facts
         provider, version, major = _discover_android_browser(
             spec.chromedriver,
             device,
@@ -3265,6 +3339,141 @@ class _AppiumDeadlineExceeded(DriverError, TimeoutError):
     """An Appium request exhausted the enclosing capability deadline."""
 
 
+class _ParentAndroidInstallationAdapter:
+    adapter_id = ANDROID_ADB_PACKAGE_SHA256_ADAPTER
+
+    def __init__(
+        self,
+        session: "_ParentAppiumSession",
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+        executor: CommandExecutor | None = None,
+    ) -> None:
+        self.session = session
+        self.deadline_monotonic = deadline_monotonic
+        self.cancellation = cancellation
+        self.executor = executor or SubprocessExecutor()
+
+    def inspect(self, application_id: str) -> AndroidInstalledArtifact:
+        lease = self.session._device_lease
+        if lease is None:
+            raise DriverError(
+                "Android installation adapter has no physical-device authority"
+            )
+        return self.session._with_physical_device(
+            lease,
+            lambda handle: self._inspect_with_handle(
+                handle.identifier,
+                application_id,
+            ),
+            deadline_monotonic=self.deadline_monotonic,
+            cancellation=self.cancellation,
+        )
+
+    def remove(self, application_id: str) -> None:
+        self.session._request(
+            "POST",
+            self.session._path("/appium/device/remove_app"),
+            {"appId": application_id},
+            deadline_monotonic=self.deadline_monotonic,
+            cancellation=self.cancellation,
+        )
+
+    def install(self, package: Path) -> None:
+        self.session._request(
+            "POST",
+            self.session._path("/appium/device/install_app"),
+            {"appPath": str(package)},
+            deadline_monotonic=self.deadline_monotonic,
+            cancellation=self.cancellation,
+        )
+
+    def activate(self, application_id: str) -> None:
+        self.session._request(
+            "POST",
+            self.session._path("/appium/device/activate_app"),
+            {"appId": application_id},
+            deadline_monotonic=self.deadline_monotonic,
+            cancellation=self.cancellation,
+        )
+
+    def _inspect_with_handle(
+        self,
+        device_identifier: str,
+        application_id: str,
+    ) -> AndroidInstalledArtifact:
+        package_result = self._run_adb(
+            device_identifier,
+            "shell",
+            "pm",
+            "path",
+            application_id,
+        )
+        if package_result.returncode != 0:
+            raise DriverError("Android installed package lookup failed")
+        package_lines = [
+            line.removeprefix("package:").strip()
+            for line in package_result.stdout.splitlines()
+            if line.startswith("package:")
+        ]
+        if not package_lines:
+            return AndroidInstalledArtifact(present=False, sha256=None)
+        base_packages = [
+            path for path in package_lines if path.endswith("/base.apk")
+        ]
+        if len(base_packages) != 1:
+            raise DriverError(
+                "Android installed package has no unique base artifact"
+            )
+        digest_result = self._run_adb(
+            device_identifier,
+            "shell",
+            "sha256sum",
+            base_packages[0],
+        )
+        digest = digest_result.stdout.split(maxsplit=1)[0].lower()
+        if (
+            digest_result.returncode != 0
+            or SHA256_PATTERN.fullmatch(digest) is None
+        ):
+            raise DriverError(
+                "Android installed package SHA-256 readback failed"
+            )
+        return AndroidInstalledArtifact(present=True, sha256=digest)
+
+    def _run_adb(
+        self,
+        device_identifier: str,
+        *arguments: str,
+    ) -> CommandResult:
+        if self.cancellation is not None and self.cancellation.is_set():
+            raise _AppiumDeadlineExceeded(
+                "Android installation inspection was cancelled"
+            )
+        timeout_seconds = 30.0
+        if self.deadline_monotonic is not None:
+            timeout_seconds = min(
+                timeout_seconds,
+                self.deadline_monotonic - time.monotonic(),
+            )
+            if timeout_seconds <= 0:
+                raise _AppiumDeadlineExceeded(
+                    "Android installation inspection exceeded its deadline"
+                )
+        try:
+            return self.executor.run(
+                ("adb", "-s", device_identifier, *arguments),
+                cwd=REPO_ROOT,
+                env=os.environ,
+                timeout=timeout_seconds,
+            )
+        except BlockedError as error:
+            raise DriverError(
+                "Android installation inspection command failed"
+            ) from error
+
+
 class _ParentAppiumSession:
     """Raw Appium authority retained exclusively in the Provisioner process."""
 
@@ -3281,9 +3490,14 @@ class _ParentAppiumSession:
         build_attestation: ArtifactRef,
         ports: Mapping[str, int],
         source_gate_id: str = MOBILE_OAUTH_PROOF_GATE_ID,
+        device_descriptor: MobileDeviceDescriptor | None = None,
         auto_accept_alerts: bool = False,
         chromedriver_executable: str = "",
     ) -> None:
+        if device_descriptor is not None and platform_name != "android":
+            raise DriverError(
+                "Mobile device installation descriptor requires Android"
+            )
         self.transport = transport
         self.client_id = client_id
         self.platform = platform_name
@@ -3293,6 +3507,7 @@ class _ParentAppiumSession:
         self.physical_device_lease_ref = physical_device_lease
         self.build_attestation_ref = build_attestation
         self.source_gate_id = source_gate_id
+        self.device_descriptor = device_descriptor
         self.auto_accept_alerts = auto_accept_alerts
         self.ports = dict(ports)
         self.chromedriver_executable = chromedriver_executable
@@ -3300,13 +3515,23 @@ class _ParentAppiumSession:
         self._device_lease: dict[str, Any] | None = None
         self._build_attestation: dict[str, Any] | None = None
         self._application_id = ""
-        self._fresh_install_trace: dict[str, Any] | None = None
+        self._installation_trace: dict[str, Any] | None = None
+
+    @property
+    def installation_trace(self) -> dict[str, Any]:
+        if self._installation_trace is None:
+            raise DriverError("Appium installation trace is unavailable")
+        return json.loads(json.dumps(self._installation_trace))
 
     @property
     def fresh_install_trace(self) -> dict[str, Any]:
-        if self._fresh_install_trace is None:
+        if self.device_descriptor is not None:
+            raise DriverError(
+                "Appium fresh-install trace is unavailable for this strategy"
+            )
+        if self._installation_trace is None:
             raise DriverError("Appium fresh-install trace is unavailable")
-        return json.loads(json.dumps(self._fresh_install_trace))
+        return json.loads(json.dumps(self._installation_trace))
 
     def start(
         self,
@@ -3432,11 +3657,41 @@ class _ParentAppiumSession:
             raise DriverError("Appium session response has no session ID")
         self.session_id = session_id
         try:
-            self._fresh_install_trace = self._fresh_install(
-                package,
-                deadline_monotonic=deadline_monotonic,
-                cancellation=cancellation,
-            )
+            if self.device_descriptor is None:
+                self._installation_trace = self._fresh_install(
+                    package,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            else:
+                execution = execute_android_installation(
+                    self.device_descriptor.installation,
+                    _ParentAndroidInstallationAdapter(
+                        self,
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    ),
+                    application_id=self._application_id,
+                    package=package,
+                    expected_sha256=str(
+                        attestation["artifact"]["sha256"]
+                    ).removeprefix("sha256:"),
+                    timestamp=_utc_timestamp,
+                )
+                self._installation_trace = (
+                    self._scenario_installation_trace(execution)
+                )
+        except MobileInstallationError as error:
+            try:
+                self.stop(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            except BaseException:
+                pass
+            raise DriverError(
+                f"Android installation strategy failed: {error}"
+            ) from error
         except BaseException:
             try:
                 self.stop(
@@ -3804,7 +4059,7 @@ class _ParentAppiumSession:
 
     def verify_installed_build_identity(
         self,
-        fresh_install_trace: ArtifactRef,
+        installation_trace: ArtifactRef,
         *,
         deadline_monotonic: float | None = None,
         cancellation: threading.Event | None = None,
@@ -3819,20 +4074,20 @@ class _ParentAppiumSession:
         if source_gate_id == MOBILE_OAUTH_PROOF_GATE_ID:
             trace = _load_source_artifact(
                 self.artifact_reader,
-                fresh_install_trace,
+                installation_trace,
                 expected_path=(
                     f"evidence/mobile/runtime/{self.client_id}/install.json"
                 ),
                 expected_kind="mobile-fresh-install-trace",
-                expected_workspace_id=fresh_install_trace.workspace_id,
-                expected_run_id=fresh_install_trace.run_id,
+                expected_workspace_id=installation_trace.workspace_id,
+                expected_run_id=installation_trace.run_id,
             )
         else:
             try:
-                trace = self.artifact_reader.read_json(fresh_install_trace)
+                trace = self.artifact_reader.read_json(installation_trace)
             except (EvidenceError, OSError, TypeError, ValueError) as error:
                 raise DriverError(
-                    "Appium scenario fresh-install trace is unavailable"
+                    "Appium scenario installation trace is unavailable"
                 ) from error
         runtime = self.call_action(
             "build.identity",
@@ -3851,9 +4106,14 @@ class _ParentAppiumSession:
                 cancellation=cancellation,
             )
             != expected["applicationId"]
-            or trace != self._fresh_install_trace
+            or trace != self._installation_trace
         ):
             raise DriverError("installed and attested build identities differ")
+        installation_trace_field = (
+            "installationTrace"
+            if self.device_descriptor is not None
+            else "freshInstallTrace"
+        )
         payload = {
             "artifactKind": (
                 "mobile-installed-build-identity"
@@ -3865,7 +4125,7 @@ class _ParentAppiumSession:
             "clientId": self.client_id,
             "platform": self.platform,
             "buildAttestation": self.build_attestation_ref.to_dict(),
-            "freshInstallTrace": fresh_install_trace.to_dict(),
+            installation_trace_field: installation_trace.to_dict(),
             "buildId": expected["buildId"],
             "activeApplicationId": expected["applicationId"],
             "webEmbeddedIdentitySha256": digest,
@@ -3882,6 +4142,30 @@ class _ParentAppiumSession:
             expected_run_id=self._build_attestation["runId"],
             expected_workspace_id=self.build_attestation_ref.workspace_id,
         )
+
+    def _scenario_installation_trace(
+        self,
+        execution: AndroidInstallationExecution,
+    ) -> dict[str, Any]:
+        if self._build_attestation is None or self.device_descriptor is None:
+            raise DriverError(
+                "Appium scenario installation authority is unavailable"
+            )
+        return {
+            "artifactKind": "mobile-native-scenario-installation-trace",
+            "runId": self._build_attestation["runId"],
+            "gateId": self.source_gate_id,
+            "clientId": self.client_id,
+            "platform": self.platform,
+            "deviceDescriptorId": self.device_descriptor.id,
+            "buildAttestation": self.build_attestation_ref.to_dict(),
+            "applicationId": self._application_id,
+            "artifactSha256": self._build_attestation["artifact"]["sha256"],
+            "installation": execution.to_trace(
+                self.device_descriptor.installation
+            ),
+            "observedAt": _utc_timestamp(),
+        }
 
     def _fresh_install(
         self,
@@ -5997,10 +6281,16 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         allowed_operations: Sequence[str] = (
             MOBILE_NATIVE_CAPABILITIES["mobile.native.appium-session"]
         ),
+        installation_trace_field: str = "freshInstallTrace",
         harness_actions: Sequence[str] = (),
         parent_harness_actions: Sequence[str] = (),
         sensitive_values: Sequence[str] = (),
     ) -> None:
+        if installation_trace_field not in {
+            "freshInstallTrace",
+            "installationTrace",
+        }:
+            raise ValueError("Mobile installation trace field is invalid")
         self._session_factory = session_factory
         self._artifact_writer = artifact_writer
         self._broker = broker
@@ -6010,6 +6300,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         }
         self._allowed_client_ids = frozenset(allowed_client_ids)
         self._allowed_operations = tuple(allowed_operations)
+        self._installation_trace_field = installation_trace_field
         self._harness_actions = frozenset(harness_actions)
         self._parent_harness_actions = frozenset(parent_harness_actions)
         self._sensitive_values = tuple(
@@ -6018,7 +6309,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         self._sessions: dict[str, _ParentAppiumSession] = {}
         self._cleanup_sessions: list[_ParentAppiumSession] = []
         self._session_refs: dict[str, str] = {}
-        self._install_refs: dict[str, ArtifactRef] = {}
+        self._installation_refs: dict[str, ArtifactRef] = {}
         self._closed = False
 
     @property
@@ -6094,10 +6385,35 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
             self._sessions[client_id] = session
             self._session_refs[client_id] = session_ref
             try:
+                installation_trace = (
+                    session.installation_trace
+                    if self._installation_trace_field == "installationTrace"
+                    else session.fresh_install_trace
+                )
+                expected_installation_kinds = (
+                    {"mobile-native-scenario-installation-trace"}
+                    if self._installation_trace_field == "installationTrace"
+                    else {
+                        "mobile-fresh-install-trace",
+                        "mobile-native-scenario-fresh-install-trace",
+                    }
+                )
+                if (
+                    installation_trace.get("artifactKind")
+                    not in expected_installation_kinds
+                ):
+                    raise DriverError(
+                        "Mobile installation trace kind does not match its "
+                        "capability field"
+                    )
                 reference = self._artifact_writer.write_json(
                     f"evidence/mobile/runtime/{client_id}/install.json",
-                    session.fresh_install_trace,
-                    role=f"mobile-fresh-install-trace/{client_id}",
+                    installation_trace,
+                    role=(
+                        f"mobile-native-scenario-installation-trace/{client_id}"
+                        if self._installation_trace_field == "installationTrace"
+                        else f"mobile-fresh-install-trace/{client_id}"
+                    ),
                     redact=False,
                 )
             except BaseException:
@@ -6112,12 +6428,12 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     self._sessions.pop(client_id, None)
                     self._session_refs.pop(client_id, None)
                 raise
-            self._install_refs[client_id] = reference
+            self._installation_refs[client_id] = reference
             return {
                 "clientId": client_id,
                 "sessionRef": session_ref,
                 "applicationId": session._application_id,
-                "freshInstallTrace": reference.to_dict(),
+                self._installation_trace_field: reference.to_dict(),
             }
 
         session = self._require_session(client_id)
@@ -6430,22 +6746,22 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "Mobile build identity action is not parent-authorized",
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
-            install_ref = self._install_refs.get(client_id)
+            install_ref = self._installation_refs.get(client_id)
             if install_ref is None:
                 raise EphemeralCapabilityBlocked(
-                    "Mobile native fresh-install evidence is unavailable",
+                    "Mobile native installation evidence is unavailable",
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
             requested_install_ref = ArtifactRef.from_dict(
                 _capability_mapping(
                     payload,
-                    "freshInstallTrace",
+                    self._installation_trace_field,
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
             )
             if requested_install_ref != install_ref:
                 raise EphemeralCapabilityBlocked(
-                    "Mobile native fresh-install ref does not match the session",
+                    "Mobile native installation ref does not match the session",
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
             identity = session.verify_installed_build_identity(
@@ -6483,7 +6799,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "clientId",
                     "sessionRef",
                     "applicationId",
-                    "freshInstallTrace",
+                    self._installation_trace_field,
                 },
                 "stop": {"clientId", "stopped"},
                 "wait_ready": {"clientId", "ready"},
@@ -7445,6 +7761,11 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                     "mobile.native.appium-session"
                 ]
             ),
+            installation_trace_field=(
+                "installationTrace"
+                if scenario_id == "android-social"
+                else "freshInstallTrace"
+            ),
             harness_actions=self._native_spec.harness_actions,
             parent_harness_actions=self._native_spec.parent_harness_actions,
             sensitive_values=tuple(
@@ -7527,6 +7848,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 "gate_id",
                 MOBILE_OAUTH_PROOF_GATE_ID,
             ),
+            device_descriptor=self._native_spec.device_descriptor,
             auto_accept_alerts=(
                 getattr(
                     getattr(self._native_spec, "scenario", None),

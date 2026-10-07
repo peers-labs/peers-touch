@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import unittest
+import inspect
 import threading
+import unittest
 from unittest.mock import patch
 
 from tooling.acceptance.core import (
@@ -136,6 +137,19 @@ class AndroidSocialGateTests(unittest.TestCase):
             [(client.id, client.platform) for client in spec.clients],
             [(CLIENT_ID, "android")],
         )
+        self.assertIsNotNone(spec.device_descriptor)
+        assert spec.device_descriptor is not None
+        self.assertEqual(spec.device_descriptor.id, "oppo-peem00")
+        self.assertEqual(
+            spec.device_descriptor.installation.strategy,
+            "reuse-exact-artifact",
+        )
+
+    def test_android_social_consumes_generic_installation_evidence(self) -> None:
+        source = inspect.getsource(AndroidSocialGate._start_physical_session)
+
+        self.assertIn("session.installation_trace", source)
+        self.assertNotIn("session.fresh_install_trace", source)
 
     def test_android_physical_environment_resolves_registered_provisioner(
         self,
