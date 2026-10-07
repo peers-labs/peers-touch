@@ -4563,6 +4563,8 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         "select_binding",
         "authenticate_fixture_actor",
         "begin_access_gate",
+        "activate_station_route",
+        "station_route_snapshot",
         "harness_action",
         "stop",
     )
@@ -4687,6 +4689,23 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             value = self._begin_access_gate(session)
             self._require_active(deadline_monotonic, cancellation)
             return {"clientId": client_id, "value": value}
+        if operation == "activate_station_route":
+            self._require_exact_fields(
+                payload,
+                {"clientId", "routeType"},
+                operation,
+            )
+            value = self._activate_station_route(
+                session,
+                self._request_text(payload, "routeType"),
+            )
+            self._require_active(deadline_monotonic, cancellation)
+            return {"clientId": client_id, "value": value}
+        if operation == "station_route_snapshot":
+            self._require_exact_fields(payload, {"clientId"}, operation)
+            value = self._station_route_snapshot(session)
+            self._require_active(deadline_monotonic, cancellation)
+            return {"clientId": client_id, "value": value}
         if operation == "harness_action":
             self._require_exact_fields(
                 payload,
@@ -4764,6 +4783,8 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 },
                 "authenticate_fixture_actor": {"clientId", "value"},
                 "begin_access_gate": {"clientId", "value"},
+                "activate_station_route": {"clientId", "value"},
+                "station_route_snapshot": {"clientId", "value"},
                 "harness_action": {"clientId", "value"},
                 "stop": {"clientId", "stopped"},
             }
@@ -4781,6 +4802,194 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             }
             self._assert_no_raw_authority(safe_projection)
         return projected
+
+    def _activate_station_route(
+        self,
+        session: Any,
+        route_type: str,
+    ) -> dict[str, Any]:
+        snapshot = self._station_route_snapshot(session)
+        if route_type == "relay":
+            if not self._route_of_type(snapshot, "relay"):
+                services = _required_object(
+                    self._manifest,
+                    "services",
+                    f"{SIMULATOR_APPIUM_CAPABILITY_ID}:services",
+                )
+                relay = _required_object(
+                    services,
+                    "relay",
+                    f"{SIMULATOR_APPIUM_CAPABILITY_ID}:relay",
+                )
+                endpoint = str(relay.get("endpoint") or "")
+                if not endpoint:
+                    raise EphemeralCapabilityBlocked(
+                        "Mobile Relay service endpoint is unavailable",
+                        resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:relay",
+                    )
+                session.call_action("station.add", {"url": endpoint})
+                snapshot = self._station_route_snapshot(session)
+        if route_type != "direct":
+            if route_type != "relay":
+                raise EphemeralCapabilityBlocked(
+                    "Mobile Station route type is unsupported",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:route-type",
+                )
+        route = self._route_of_type(snapshot, route_type)
+        if route is None:
+            raise EphemeralCapabilityBlocked(
+                f"Mobile {route_type} Station route is unavailable",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{route_type}-route",
+            )
+        active_entry = self._active_station_entry(snapshot)
+        if active_entry.get("activeRouteId") == route.get("routeId"):
+            return snapshot
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "station-connection",
+                },
+            },
+        )
+        route_element = session.find_element(
+            "css selector",
+            f'button[data-station-route-type="{route_type}"]',
+        )
+        session.click_element(route_element)
+        confirm = session.find_element(
+            "css selector",
+            'button[data-station-route-confirm="true"]',
+        )
+        session.click_element(confirm)
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            snapshot = self._station_route_snapshot(session)
+            active_entry = self._active_station_entry(snapshot)
+            active = self._route_of_type(snapshot, route_type)
+            if (
+                active is not None
+                and active_entry.get("activeRouteId")
+                == active.get("routeId")
+            ):
+                revision = active_entry.get("routeRevision")
+                screenshot = self._artifact_writer.write_bytes(
+                    (
+                        "runtime/mobile-relay/"
+                        f"{route_type}-route-{revision}.png"
+                    ),
+                    session.screenshot_bytes(),
+                    role="mobile-relay-route-ui",
+                    discriminator=f"{route_type}:{revision}",
+                )
+                snapshot["uiEvidence"] = screenshot.to_dict()
+                return snapshot
+            time.sleep(0.25)
+        raise EphemeralCapabilityBlocked(
+            f"Mobile {route_type} Station route did not become active",
+            resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{route_type}-route",
+        )
+
+    @staticmethod
+    def _active_station_entry(
+        snapshot: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        station_peer_id = str(snapshot.get("activeStationPeerId") or "")
+        entries = snapshot.get("entries")
+        entry = next(
+            (
+                item
+                for item in entries
+                if isinstance(item, Mapping)
+                and item.get("stationPeerId") == station_peer_id
+            ),
+            None,
+        ) if isinstance(entries, list) else None
+        if not isinstance(entry, Mapping):
+            raise EphemeralCapabilityBlocked(
+                "Mobile active Station route entry is unavailable",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:station-route",
+            )
+        return entry
+
+    @classmethod
+    def _route_of_type(
+        cls,
+        snapshot: Mapping[str, Any],
+        route_type: str,
+    ) -> Mapping[str, Any] | None:
+        entry = cls._active_station_entry(snapshot)
+        routes = entry.get("routes")
+        return next(
+            (
+                item
+                for item in routes
+                if isinstance(item, Mapping)
+                and item.get("routeType") == route_type
+            ),
+            None,
+        ) if isinstance(routes, list) else None
+
+    @staticmethod
+    def _station_route_snapshot(session: Any) -> dict[str, Any]:
+        raw = session.call_action("station.route.snapshot")
+        snapshot = _json_safe_mapping(
+            raw,
+            label="Mobile Station route snapshot",
+        )
+        entries = snapshot.get("entries")
+        projected_entries = []
+        if isinstance(entries, list):
+            for value in entries:
+                if not isinstance(value, Mapping):
+                    continue
+                routes = value.get("routes")
+                projected_entries.append(
+                    {
+                        "stationPeerId": value.get("stationPeerId"),
+                        "activeRouteId": value.get("activeRouteId"),
+                        "routeRevision": value.get("routeRevision"),
+                        "lifecycleGeneration": value.get(
+                            "lifecycleGeneration"
+                        ),
+                        "routes": [
+                            {
+                                "routeId": route.get("routeId"),
+                                "routeType": route.get("routeType"),
+                                "routeGeneration": route.get(
+                                    "routeGeneration"
+                                ),
+                                "health": route.get("health"),
+                            }
+                            for route in routes
+                            if isinstance(route, Mapping)
+                        ] if isinstance(routes, list) else [],
+                    }
+                )
+        binding = snapshot.get("binding")
+        projected_binding = (
+            {
+                "stationPeerId": binding.get("stationPeerId"),
+                "routeId": binding.get("routeId"),
+                "routeType": binding.get("routeType"),
+                "routeGeneration": binding.get("routeGeneration"),
+                "routeRevision": binding.get("routeRevision"),
+            }
+            if isinstance(binding, Mapping)
+            else None
+        )
+        return {
+            "activeStationPeerId": snapshot.get("activeStationPeerId"),
+            "entries": projected_entries,
+            "sessionRevocation": snapshot.get("sessionRevocation"),
+            "binding": projected_binding,
+        }
 
     def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool:
         del reason
@@ -7015,6 +7224,113 @@ class MobileSocialSimulatorProvisioner(
     require_distinct_station_profiles = True
     actor_manifest_kind = "mobile-social-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-social-simulator-actors.json"
+    ephemeral_gate_ids = frozenset(
+        {"station-access-mobile-relay-native-e2e"}
+    )
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        base_factory: Any = MobileSimulatorProvisioner,
+        overlay_path: Path | None = None,
+        station_profiles: Mapping[str, str] | None = None,
+        service_profiles: Mapping[str, str] | None = None,
+        session_factory: Callable[[str], Any] | None = None,
+    ) -> None:
+        super().__init__(
+            contract,
+            base_factory=base_factory,
+            overlay_path=overlay_path,
+            station_profiles=station_profiles,
+            service_profiles=service_profiles,
+        )
+        self.session_factory = session_factory
+        self._appium_handler: (
+            MobileSimulatorAppiumCapabilityHandler | None
+        ) = None
+        self._appium_cleanup_registered = False
+
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        if (
+            gate_id not in self.ephemeral_gate_ids
+            or required_capabilities != (SIMULATOR_APPIUM_CAPABILITY_ID,)
+        ):
+            raise BlockedError(
+                reason=(
+                    "Mobile Social simulator Gate requires the exact "
+                    "simulator Appium capability and an allowed Gate identity"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        if (
+            not isinstance(self._manifest, MobileSimulatorRuntimeManifest)
+            or not self._manifest.is_ready()
+            or self._base_manifest is None
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != self._manifest.run_id
+        ):
+            raise BlockedError(
+                reason="Mobile Relay parent authorities are not ready",
+                resource=f"ephemeral-capabilities:{gate_id}:run-identities",
+            )
+        overlay = self._load_overlay()
+        handler = MobileSimulatorAppiumCapabilityHandler(
+            manifest=self._manifest.to_dict(),
+            artifact_writer=self.evidence_run,
+            session_factory=(
+                self.session_factory or self._new_appium_session
+            ),
+            harness_actions=overlay["harness"]["required_actions"],
+            actor_manifest=self.evidence_run.store.read_json(
+                ArtifactRef.from_dict(self._manifest.actor_manifest_ref)
+            ),
+            sensitive_values=self._raw_authority_values(),
+        )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities,
+            request_timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
+        )
+        context.register_capability(
+            SIMULATOR_APPIUM_CAPABILITY_ID,
+            handler,
+        )
+        self._appium_handler = handler
+        if not self._appium_cleanup_registered:
+            self.register_cleanup(
+                "appium-sessions",
+                self._cleanup_appium_sessions,
+            )
+            self._appium_cleanup_registered = True
+        return context
+
+    def _cleanup_appium_sessions(self) -> None:
+        if self._appium_handler is None:
+            return
+        result = self._appium_handler.close()
+        if not result.closed:
+            raise ProvisioningError(
+                "Mobile Relay Appium sessions did not close"
+            )
+
+    def _raw_authority_values(self) -> tuple[str, ...]:
+        return (
+            MobileStationLifecycleSimulatorProvisioner
+            ._raw_authority_values(self)
+        )
+
+    def _new_appium_session(self, client_id: str) -> Any:
+        return (
+            MobileStationLifecycleSimulatorProvisioner
+            ._new_appium_session(self, client_id)
+        )
 
 
 class MobileDirectSimulatorProvisioner(

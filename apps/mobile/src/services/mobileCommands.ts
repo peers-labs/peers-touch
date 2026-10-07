@@ -1379,12 +1379,90 @@ export interface VerifiedStationIdentity {
   canonicalOrigin: string;
   capabilities: string[];
   verifiedAt: number;
+  routeId?: string;
+  routeType?: StationRouteType;
 }
 
 export async function verifyStationIdentityProof(
   input: VerifyStationIdentityProofInput,
 ): Promise<VerifiedStationIdentity> {
   return invoke<VerifiedStationIdentity>('station_identity_verify', { input });
+}
+
+export type StationRouteType = 'direct' | 'relay';
+
+export interface NativeStationRouteCandidate {
+  stationPeerId: string;
+  stationHostPublicKey: number[];
+  routeId: string;
+  routeType: StationRouteType;
+  transport: 'direct_https' | 'relay_wss_v1';
+  endpointOrigin: string;
+  relayPeerId?: string;
+  routeGeneration: number;
+  innerTlsSpkiSha256?: number[];
+  attestationBytes?: number[];
+  attestationExpiresAtUnixMs?: number;
+  sourceRef: string;
+}
+
+export interface StationEndpointDiscovery {
+  role: 'direct_station' | 'relay';
+  endpointPeerId: string;
+  canonicalOrigin: string;
+  routes: NativeStationRouteCandidate[];
+}
+
+export interface StationRouteBindingProjection {
+  stationPeerId: string;
+  routeId: string;
+  routeType: StationRouteType;
+  endpointOrigin: string;
+  relayPeerId?: string;
+  routeGeneration: number;
+  routeRevision: number;
+  transportOrigin: string;
+}
+
+export async function discoverStationEndpoint(
+  input: string,
+): Promise<StationEndpointDiscovery> {
+  return invoke<StationEndpointDiscovery>('station_endpoint_discover', { input });
+}
+
+export async function activateStationRouteBinding(input: {
+  stationPeerId: string;
+  routeId: string;
+  routeRevision: number;
+}): Promise<StationRouteBindingProjection> {
+  return invoke<StationRouteBindingProjection>('station_route_activate', { input });
+}
+
+export async function restoreStationRouteBinding(input: {
+  stationPeerId: string;
+  routeId: string;
+  routeGeneration: number;
+  routeRevision: number;
+  sourceRef: string;
+  endpointOrigin: string;
+}): Promise<StationRouteBindingProjection> {
+  return invoke<StationRouteBindingProjection>('station_route_restore', { input });
+}
+
+export async function removeStationRouteBinding(input: {
+  stationPeerId: string;
+  routeId: string;
+  sourceRef: string;
+}): Promise<void> {
+  await invoke<void>('station_route_remove', { input });
+}
+
+export async function readStationRouteBinding(): Promise<StationRouteBindingProjection | null> {
+  return invoke<StationRouteBindingProjection | null>('station_route_snapshot');
+}
+
+export async function fetchActiveStationIdentity(): Promise<VerifiedStationIdentity> {
+  return invoke<VerifiedStationIdentity>('station_identity_fetch');
 }
 
 export type MobileOAuthProvider = 'github' | 'google';

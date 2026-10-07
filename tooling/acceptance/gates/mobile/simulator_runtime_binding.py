@@ -272,6 +272,36 @@ class MobileSimulatorRuntimeBinding:
             return validate_scope_projection(value)
         return value
 
+    def activate_station_route(
+        self,
+        client_id: str,
+        route_type: str,
+    ) -> dict[str, Any]:
+        self._require_identifier(client_id, "client")
+        if route_type not in {"direct", "relay"}:
+            raise DriverError("Mobile Station route type is invalid")
+        response = self._client.invoke(
+            CAPABILITY_ID,
+            "activate_station_route",
+            {"clientId": client_id, "routeType": route_type},
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        )
+        if set(response) != {"clientId", "value"} or response.get("clientId") != client_id:
+            raise DriverError("Mobile Station route activation response is invalid")
+        return _mapping(response.get("value"), "Station route activation")
+
+    def station_route_snapshot(self, client_id: str) -> dict[str, Any]:
+        self._require_identifier(client_id, "client")
+        response = self._client.invoke(
+            CAPABILITY_ID,
+            "station_route_snapshot",
+            {"clientId": client_id},
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        )
+        if set(response) != {"clientId", "value"} or response.get("clientId") != client_id:
+            raise DriverError("Mobile Station route snapshot response is invalid")
+        return _mapping(response.get("value"), "Station route snapshot")
+
     def authenticate_fixture_actor(
         self,
         client_id: str,

@@ -1146,6 +1146,47 @@ select,
   text-align: left;
 }
 
+.station-route-options,
+.settings-station-routes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.station-route-options .ant-btn,
+.settings-station-routes .ant-btn {
+  min-width: 72px;
+}
+
+.station-route-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.station-route-candidate {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: #fff;
+  color: rgba(15, 23, 42, 0.88);
+  text-align: left;
+}
+
+.station-route-candidate code {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(15, 23, 42, 0.55);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .station-entry-status {
   flex: 0 0 auto;
   color: rgba(0, 0, 0, 0.38);
@@ -3686,6 +3727,10 @@ select,
 
 .settings-station-actions {
   flex-direction: column;
+}
+
+.settings-station-routes {
+  align-items: center;
 }
 
 .settings-dirty-buttons {

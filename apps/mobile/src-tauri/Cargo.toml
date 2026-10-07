@@ -17,6 +17,7 @@ base64 = "0.22"
 bip39 = "2"
 ed25519-dalek = { version = "2", features = ["pem", "rand_core"] }
 hkdf = "0.12"
+hex = "0.4"
 libp2p-identity = { version = "=0.3.0", features = ["ed25519", "peerid"] }
 messaging-core = { path = "../../../packages/messaging-core" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
@@ -25,6 +26,7 @@ prost-types = "=0.14.3"
 log = "0.4"
 rand = "0.8"
 reqwest = { version = "=0.13.2", features = ["blocking", "multipart", "stream"] }
+rustls = { version = "0.23", features = ["ring"] }
 rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -33,7 +35,9 @@ tauri = { version = "2.0.1", features = ["devtools"] }
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-opener = "=2.5.4"
 tauri-plugin-peers-platform-permissions = { path = "plugins/platform-permissions" }
+tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 ulid = "1"
+x509-parser = "0.17"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 zeroize = { version = "1", features = ["derive"] }
 

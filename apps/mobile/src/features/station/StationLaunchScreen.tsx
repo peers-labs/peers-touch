@@ -4,7 +4,12 @@ import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { StationSelector } from './StationSelector';
-import { activeStationEntry, type StationProtocol, type StoredStationRegistry } from './stationRegistry';
+import {
+  activeStationEntry,
+  type MobileStationRouteCandidate,
+  type StationProtocol,
+  type StoredStationRegistry,
+} from './stationRegistry';
 
 export function StationLaunchScreen({
   registry,
@@ -13,6 +18,7 @@ export function StationLaunchScreen({
   verifyingUrls,
   onAddStation,
   onSelectStation,
+  onSelectStationRoute,
   onRemoveStation,
   onContinue,
 }: {
@@ -22,6 +28,10 @@ export function StationLaunchScreen({
   verifyingUrls: string[];
   onAddStation: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
   onSelectStation: (stationPeerId: string) => void | Promise<void>;
+  onSelectStationRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => void | Promise<void>;
   onRemoveStation: (stationPeerId: string) => void;
   onContinue: () => void | Promise<void>;
 }) {
@@ -48,6 +58,7 @@ export function StationLaunchScreen({
             verifyingUrls={verifyingUrls}
             onAdd={onAddStation}
             onSelect={onSelectStation}
+            onSelectRoute={onSelectStationRoute}
             onRemove={onRemoveStation}
           />
           <div className="launch-actions">

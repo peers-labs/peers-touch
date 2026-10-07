@@ -408,6 +408,45 @@
       }
     },
     {
+      "id": "station-access-mobile-relay-binding",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-mobile-relay-binding"],
+      "required_gates": [
+        "station-access-mobile-relay-native-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/mobile/src-tauri/src/runtime/station_route.rs",
+        "apps/mobile/src/features/station/stationRegistry.ts",
+        "apps/mobile/src/features/station/StationSelector.tsx",
+        "apps/mobile/src/runtimes/stationRuntime.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "signed endpoint discovery",
+          "Station-signed route attestation",
+          "station_peer_id keyed Mobile registry",
+          "iOS Simulator Runtime Binding proof"
+        ],
+        "surfaces": [
+          "iOS Simulator Station setup",
+          "iOS Simulator Settings connection routes"
+        ],
+        "proven_by": [
+          "station-access-mobile-relay-native-e2e"
+        ],
+        "proven_scope": [
+          "direct Station and Relay inputs converge on one Station identity",
+          "same-Station route switching preserves Session and lifecycle generation",
+          "Relay route recovery survives WebView restart"
+        ],
+        "unproven_scope": [
+          "Android and physical-device Relay behavior",
+          "cross-client security aggregation is owned by SAL-REL-07"
+        ]
+      }
+    },
+    {
       "id": "station-access-interface-integrity",
       "domain": "station-access",
       "direction": "acceptance_validates_product",

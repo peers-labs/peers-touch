@@ -383,6 +383,33 @@
       ]
     },
     {
+      "id": "station-access-mobile-relay-binding",
+      "features": [
+        "station-access-mobile-relay-binding"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "apps/mobile/src-tauri/src/runtime/oauth/**",
+          "apps/mobile/src/features/station/**",
+          "apps/mobile/src/runtimes/stationRuntime.ts",
+          "apps/mobile/src/acceptance/**",
+          "apps/mobile/src/App.tsx",
+          "apps/mobile/src/components/MobileShell.tsx",
+          "apps/mobile/src/pages/SettingsPage.tsx",
+          "apps/mobile/src/pages/settings/SettingsSections.tsx",
+          "packages/locales/en/common.json",
+          "packages/locales/zh-CN/common.json",
+          "tooling/acceptance/environments/mobile-social-simulator.yaml",
+          "tooling/acceptance/features/station-access-mobile-relay-binding.yaml",
+          "tooling/acceptance/gates/station_access/mobile_relay_native_e2e.py"
+        ]
+      },
+      "require": [
+        "station-access-mobile-relay-native-e2e"
+      ]
+    },
+    {
       "id": "station-access-acceptance",
       "features": [
         "station-access-wire-contract",
@@ -395,6 +422,7 @@
         "station-access-endpoint-discovery",
         "station-access-relay-opaque-tunnel",
         "station-access-desktop-relay-binding",
+        "station-access-mobile-relay-binding",
         "station-access-interface-contract"
       ],
       "when": {

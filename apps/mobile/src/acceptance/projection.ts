@@ -186,6 +186,17 @@ function toPublicStationEntry(
     label: entry.label,
     online: entry.online,
     lastCheckedAt: entry.lastCheckedAt,
+    activeRouteId: entry.activeRouteId,
+    routeRevision: entry.routeRevision,
+    lifecycleGeneration: entry.lifecycleGeneration,
+    routes: entry.routes?.map((route) => ({
+      routeId: route.routeId,
+      routeType: route.routeType,
+      endpointOrigin: route.endpointOrigin,
+      relayPeerId: route.relayPeerId,
+      routeGeneration: route.routeGeneration,
+      health: route.health,
+    })),
   };
 }
 

@@ -442,6 +442,21 @@
       "tier": "env-evidence",
       "description": "Prove exact-source sixwin Desktop uses the same Station-keyed Relay discovery, route switching, visible Via Relay state, and persisted route recovery contract."
     },
+    "station-access-mobile-relay-native-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.mobile_relay_native_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 5400,
+      "environment": "mobile-social-simulator",
+      "provisioner": "mobile-social-simulator",
+      "tier": "env-evidence",
+      "description": "Prove exact-source iOS Simulator Mobile discovers a Relay, retains one Station identity across Direct and Relay routes, preserves its Session during explicit route switching, and restores the Relay route after restart."
+    },
     "station-access-auth-e2e": {
       "argv": [
         "python3",

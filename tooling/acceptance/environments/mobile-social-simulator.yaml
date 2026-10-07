@@ -82,6 +82,8 @@
     "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
     "required_actions": [
       "station.add",
+      "station.route.select",
+      "station.route.snapshot",
       "access.submit",
       "lifecycle.restart",
       "lifecycle.scope.read",

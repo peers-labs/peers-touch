@@ -30,21 +30,21 @@ pub struct StationProbeResult {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifyStationIdentityProofInput {
-    requested_origin: String,
-    challenge: Vec<u8>,
-    statement_bytes: Vec<u8>,
-    host_public_key: Vec<u8>,
-    signature: Vec<u8>,
-    required_capabilities: Vec<String>,
+    pub(crate) requested_origin: String,
+    pub(crate) challenge: Vec<u8>,
+    pub(crate) statement_bytes: Vec<u8>,
+    pub(crate) host_public_key: Vec<u8>,
+    pub(crate) signature: Vec<u8>,
+    pub(crate) required_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedStationIdentity {
-    station_peer_id: String,
-    canonical_origin: String,
-    capabilities: Vec<String>,
-    verified_at: u64,
+    pub(crate) station_peer_id: String,
+    pub(crate) canonical_origin: String,
+    pub(crate) capabilities: Vec<String>,
+    pub(crate) verified_at: u64,
 }
 
 #[tauri::command]
@@ -77,7 +77,7 @@ pub fn station_identity_verify(
     verify_station_identity_proof(input, current_unix_millis() as i64)
 }
 
-fn verify_station_identity_proof(
+pub(crate) fn verify_station_identity_proof(
     input: VerifyStationIdentityProofInput,
     now_unix_ms: i64,
 ) -> MobileResult<VerifiedStationIdentity> {
