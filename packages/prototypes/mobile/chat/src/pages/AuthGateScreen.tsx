@@ -126,14 +126,16 @@ export function AuthGateScreen({
       <Card className="mp-auth-card" variant="borderless">
         <section className="mp-auth-brand">
           <img src={logo} alt="Peers" className="mp-auth-logo" />
-          <Title level={1} className="mp-auth-title">
-            {expiredSession ? 'Welcome back' : 'Sign In'}
-          </Title>
-          <Text type="secondary" className="mp-auth-subtitle">
-            {expiredSession
-              ? 'Sign in again to continue where you left off.'
-              : 'Log in before entering this Station'}
-          </Text>
+          <div className="mp-auth-brand-copy">
+            <Title level={1} className="mp-auth-title">
+              {expiredSession ? 'Welcome back' : 'Sign In'}
+            </Title>
+            <Text type="secondary" className="mp-auth-subtitle">
+              {expiredSession
+                ? 'Sign in again to continue where you left off.'
+                : 'Log in before entering this Station'}
+            </Text>
+          </div>
         </section>
 
         {expiredSession && (

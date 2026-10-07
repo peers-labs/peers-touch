@@ -182,6 +182,13 @@ describe('AccessGateHost shared Auth identity', () => {
     expect(source.indexOf('<Card className="auth-gate-card"')).toBeLessThan(
       source.indexOf('<section className="auth-gate-brand">'),
     );
+    expect(source).toContain('className="auth-gate-brand-copy"');
+  });
+
+  it('uses localized client copy for the known login gate', () => {
+    expect(source).toMatch(
+      /: showLogin\s*\?\s*t\('mobile\.auth\.subtitle'\)/,
+    );
   });
 
   it('preserves a friendly Station label and hides address-shaped labels', () => {

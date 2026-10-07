@@ -257,32 +257,32 @@ module contract govern these samples; native Mobile behavior remains separately
 unproven. Render verification does not confirm the additions or establish full
 pixel parity with native Mobile.
 
-### 2026-09-13 Auth Identity Parity
+### 2026-10-08 Auth Entry Density
 
 Desktop/shared Auth is the visual source for Mobile Auth. The prototype and
 production now share the exact Desktop 512x512 icon, one dominant 400px-wide
-card with 24px radius, a 72x72 in-card logo, compact header and segmented login
-mode, and the same GitHub/Google action hierarchy. The Mobile-only wordmark and
-`PEERS TOUCH MOBILE` kicker are removed. Station context uses a friendly label
-instead of a raw host/URL.
+card with 8px radius, a compact 44x44 horizontal brand header, segmented login
+mode, and the same GitHub/Google action hierarchy. Login modes render their
+actual content height instead of reserving the tallest form height. The
+Mobile-only wordmark and `PEERS TOUCH MOBILE` kicker remain removed. Station
+context uses a friendly label instead of a raw host/URL, and known login gates
+use localized client copy instead of unlocalized Station descriptions.
 
 `?scenario=session-revoked` renders the expired-session notice inside the Auth
 card. It does not mount a second recovery panel or cover the sign-in controls.
 `check-layout.mjs` now asserts one Auth card, brand containment, exact logo
 geometry, zero brand-to-card gap, no duplicate recovery, no Mobile kicker, no
-raw Station address, and no vertical overflow.
+raw Station address, no vertical overflow, and a card height no greater than
+76% of the available Auth viewport.
 
 Current-source verification:
 
-- all 51 captures pass at 1440x1100, 554x954, and 390x844 with zero defects;
-- evidence is under
-  `apps/mobile/src-tauri/target/auth-parity-20260913/prototype-current-source/`;
-- the inspected narrow expired-session capture is
-  `390-auth-session-revoked.png`;
-- the exact-current-source native normal Auth capture is
-  `apps/mobile/src-tauri/target/auth-parity-20260913/final-current-source.png`;
-- native 402x874 geometry proves one card, 72x72 logo, zero gap/overlap, no
-  kicker, no raw Station address, and no viewport overflow.
+- all 57 captures pass at 1440x1100, 554x954, and 390x844 with zero defects;
+- 390x844 expired-session geometry proves one card at 514px high inside a
+  720px Auth viewport, a 44x44 logo, zero gap/overlap, no kicker, no raw
+  Station address, and no viewport overflow;
+- the physical Android build must preserve the same compact hierarchy at its
+  320 CSS px viewport before Auth entry work is considered complete.
 
 The native expired-session state was not recreated by mutating retained client
 state. Its production composition is covered by focused tests and the direct
