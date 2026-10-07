@@ -24,6 +24,7 @@ from tooling.acceptance.core.provisioning import (
     EnvironmentContract,
     RuntimeManifest,
 )
+from tooling.acceptance.remote_platform import RemotePlatform
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -431,6 +432,7 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                         "PT_DEPLOY_PATH=station-three",
                         "PT_DEPLOY_SSH_PORT=2222",
                         "PT_DEPLOY_KNOWN_HOSTS_FILE=/tmp/known-hosts",
+                        "PT_DEPLOY_PLATFORM=windows",
                     )
                 )
                 + "\n",
@@ -463,6 +465,7 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
             deploy_path="station-three",
             port=2222,
             known_hosts_file="/tmp/known-hosts",
+            remote_platform=RemotePlatform.WINDOWS,
         )
         lease.acquire.assert_called_once_with()
         lease.release.assert_called_once_with()
