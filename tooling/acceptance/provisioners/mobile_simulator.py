@@ -7054,15 +7054,19 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                         )
                     ),
                 )
-            actors = [
-                resolve_actor_identity(
-                    binding.endpoint,
-                    binding.deployment_environment,
-                    role,
-                    require_disposable=self.requires_actor_reset,
-                )
-                for role in fixture_roles
-            ]
+            actors = (
+                [
+                    resolve_actor_identity(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        role,
+                        require_disposable=True,
+                    )
+                    for role in fixture_roles
+                ]
+                if self.requires_actor_reset
+                else []
+            )
             resolved_actors[service_id] = {
                 actor.role: actor for actor in actors
             }
@@ -7107,17 +7111,17 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 role_targets,
                 tuple(selected_actors.values()),
             )
-        selected_actor_routes = tuple(
-            next(
-                actor
-                for actor in stations[
-                    client.service_bindings["station"].service_id
-                ]["actors"]
-                if actor["role"] == client.actor
-            )
-            for client in environment_clients
-        )
         if self.derives_fixture_federation_id:
+            selected_actor_routes = tuple(
+                next(
+                    actor
+                    for actor in stations[
+                        client.service_bindings["station"].service_id
+                    ]["actors"]
+                    if actor["role"] == client.actor
+                )
+                for client in environment_clients
+            )
             federation_id = fixture_federation_id_from_station_ids(
                 actor["homeStationPeerId"] for actor in selected_actor_routes
             )
@@ -7230,6 +7234,7 @@ class MobileSocialSimulatorProvisioner(
     service_profile_keys = MOBILE_SOCIAL_SERVICE_PROFILE_KEYS
     require_distinct_station_profiles = True
     requires_actor_reset = False
+    derives_fixture_federation_id = False
     actor_manifest_kind = "mobile-social-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-social-simulator-actors.json"
     ephemeral_gate_ids = frozenset(

@@ -47,7 +47,7 @@
       "id": "mobile-social-simulator-actors",
       "authorization_required": false,
       "target_assertion": "both Stations are reviewed remote profiles and the journey is read-only",
-      "initial_assertion": "configured actors already exist on their assigned Stations"
+      "initial_assertion": "actor availability and identity are established by real Access login"
     }
   ],
   "credentials": [],

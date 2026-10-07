@@ -1196,7 +1196,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             mobile_simulator_module.resolve_windows_service_version,
         )
 
-    def test_social_actor_fixture_resolves_each_role_in_its_deployment(
+    def test_social_actor_fixture_defers_identity_to_real_login(
         self,
     ) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
@@ -1239,18 +1239,6 @@ class MobileSimulatorContractTests(unittest.TestCase):
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "resolve_actor_identity",
-                side_effect=lambda endpoint, _deployment, role, **_: SimpleNamespace(
-                    role=role,
-                    account_ref=f"station-account:{role}@p.t",
-                    ptid=f"ptid:{role}",
-                    device_policy="single-active-session",
-                    federated_handle=f"@{role}@station.example",
-                    home_station_peer_id=(
-                        "station-primary"
-                        if "primary" in endpoint
-                        else "station-secondary"
-                    ),
-                ),
             ) as resolve_actor,
         ):
             provisioner._prepare_actor_fixture(
@@ -1261,53 +1249,24 @@ class MobileSimulatorContractTests(unittest.TestCase):
 
         verify_target.assert_not_called()
         reset_fixture.assert_not_called()
-        self.assertEqual(
-            resolve_actor.call_args_list,
-            [
-                call(
-                    "https://station-primary.example",
-                    "deploy-primary",
-                    "alice",
-                    require_disposable=False,
-                ),
-                call(
-                    "https://station-primary.example",
-                    "deploy-primary",
-                    "bob",
-                    require_disposable=False,
-                ),
-                call(
-                    "https://station-secondary.example",
-                    "deploy-secondary",
-                    "alice",
-                    require_disposable=False,
-                ),
-                call(
-                    "https://station-secondary.example",
-                    "deploy-secondary",
-                    "bob",
-                    require_disposable=False,
-                ),
-            ],
-        )
+        resolve_actor.assert_not_called()
         actor_payload = evidence.writes[-1][1]
-        actors = [
-            actor
-            for station in actor_payload["stations"].values()
-            for actor in station["actors"]
-        ]
         self.assertTrue(
-            all(actor["federatedHandle"] for actor in actors)
+            all(
+                station["actors"] == []
+                for station in actor_payload["stations"].values()
+            )
         )
         self.assertEqual(
-            {actor["homeStationPeerId"] for actor in actors},
-            {"station-primary", "station-secondary"},
+            {
+                client["id"]: client["serviceId"]
+                for client in actor_payload["clients"]
+            },
+            {
+                "sim-ios": "station-primary",
+                "sim-ios-peer": "station-secondary",
+            },
         )
-        self.assertEqual(
-            len({actor["federationId"] for actor in actors}),
-            1,
-        )
-        self.assertTrue(actors[0]["federationId"])
         self.assertEqual(
             actor_payload["reset"],
             {
