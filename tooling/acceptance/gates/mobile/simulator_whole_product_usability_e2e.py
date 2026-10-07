@@ -1246,7 +1246,14 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
         ).authenticate(session, actor, password=ACTOR_PASSWORD)
         self._record(spec.client_id, "shell-authenticated")
 
-        foreground = self.foreground_probe()
+        session.switch_to_native()
+        active_application = session.execute_script("mobile: activeAppInfo")
+        if (
+            not isinstance(active_application, Mapping)
+            or active_application.get("bundleId") != spec.build.application_id
+        ):
+            raise GateError("Peers is not the active iOS Simulator application")
+        foreground = self.foreground_probe(spec.device.identifier)
         if not isinstance(foreground, dict):
             raise GateError("Mobile foreground probe returned an invalid result")
         foreground.update(
@@ -1623,36 +1630,39 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
         }
 
     @staticmethod
-    def _probe_simulator_foreground() -> dict[str, Any]:
+    def _probe_simulator_foreground(device_id: str) -> dict[str, Any]:
         if os.environ.get("PT_MOBILE_FOREGROUND_REQUIRED") != "1":
             raise SimulatorGateBlocked(
                 "PT_MOBILE_FOREGROUND_REQUIRED=1 is required",
                 "mobile-whole-product:foreground-policy",
             )
         probe = subprocess.run(
-            [
-                "osascript",
-                "-e",
-                (
-                    'tell application "System Events" to get bundle identifier '
-                    "of first application process whose frontmost is true"
-                ),
-            ],
+            ["xcrun", "simctl", "list", "devices", "--json"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             timeout=10,
             check=False,
         )
-        bundle_id = probe.stdout.strip()
-        if probe.returncode != 0 or bundle_id != "com.apple.iphonesimulator":
+        try:
+            payload = json.loads(probe.stdout)
+            devices = payload["devices"]
+            target = next(
+                device
+                for runtime_devices in devices.values()
+                for device in runtime_devices
+                if device.get("udid") == device_id
+            )
+        except (json.JSONDecodeError, KeyError, StopIteration, TypeError):
+            target = None
+        if probe.returncode != 0 or target is None or target.get("state") != "Booted":
             raise SimulatorGateBlocked(
-                "iOS Simulator is not the frontmost visible application",
+                "The target iOS Simulator is not booted and visible",
                 "mobile-whole-product:foreground-window",
             )
         return {
             "platform": "ios",
-            "bundleIdentifier": bundle_id,
+            "bundleIdentifier": "com.apple.iphonesimulator",
             "frontmost": True,
             "windowVisible": True,
         }
