@@ -180,7 +180,7 @@ describe('mobile runtime registry', () => {
     expect(teardown).toHaveBeenCalledOnce();
   });
 
-  it('keeps Group subordinate to the single Social supervisor', () => {
+  it('keeps Direct and Group under the single Messaging runtime', () => {
     const descriptors = createMobileRuntimeDescriptors();
     const ids = descriptors.map((descriptor) => descriptor.id);
     const deviceSettings = descriptors.find(
@@ -193,7 +193,12 @@ describe('mobile runtime registry', () => {
     const access = descriptors.find((descriptor) => descriptor.id === 'access');
     const session = descriptors.find((descriptor) => descriptor.id === 'session');
     const social = descriptors.find((descriptor) => descriptor.id === 'social');
-    const group = descriptors.find((descriptor) => descriptor.id === 'group');
+    const messaging = descriptors.find(
+      (descriptor) => descriptor.id === 'messaging',
+    );
+    const chatStorage = descriptors.find(
+      (descriptor) => descriptor.id === 'chat-storage',
+    );
     const recovery = descriptors.find(
       (descriptor) => descriptor.id === 'recovery-projection',
     );
@@ -212,11 +217,13 @@ describe('mobile runtime registry', () => {
     expect(ids).not.toContain('profile-projection');
     expect(social?.responsibility).toContain('single session-scoped Social ingress');
     expect(social?.dependsOn).toContain('session');
-    expect(group?.dependsOn).toContain('social');
-    expect(group?.responsibility).toContain('single Social event ingress');
-    expect(recovery?.dependsOn).toEqual(
-      expect.arrayContaining(['social', 'group']),
-    );
+    expect(ids).not.toContain('group');
+    expect(messaging?.dependsOn).toContain('session');
+    expect(messaging?.responsibility).toContain('Device Messaging Engine');
+    expect(chatStorage?.dependsOn).toEqual(['messaging']);
+    expect(chatStorage?.responsibility).toContain('device-local Chat storage');
+    expect(social?.dependsOn).toContain('messaging');
+    expect(recovery?.dependsOn).toContain('social');
   });
 
   it('owns persisted Friend Request retry wakeups in the command runtime', () => {

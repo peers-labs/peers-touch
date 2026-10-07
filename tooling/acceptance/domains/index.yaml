@@ -6,8 +6,8 @@
       "status": "active",
       "profile": "tooling/acceptance/domains/federation.yaml",
       "capabilities": "tooling/acceptance/capabilities/federation.yaml",
-      "coverage": "project_validation_domain",
-      "notes": "First complex validation domain. It proves acceptance framework feasibility without becoming acceptance core."
+      "coverage": "managed_domain",
+      "notes": "Federation product domain with local Station, Native Desktop, and Station Access proof; multi-Station runtime convergence remains unproven."
     },
     {
       "id": "chat",

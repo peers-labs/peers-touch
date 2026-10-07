@@ -34,7 +34,14 @@ ACCEPTANCE_ROOT = REPO_ROOT / "tooling" / "acceptance"
 CAPABILITIES_DIR = ACCEPTANCE_ROOT / "capabilities"
 FEATURES_DIR = ACCEPTANCE_ROOT / "features"
 GATES_FILE = ACCEPTANCE_ROOT / "gates.yaml"
-OUTPUT_PATH = REPO_ROOT / "docs" / "architecture" / "acceptance-framework" / "coverage-report.md"
+OUTPUT_PATH = (
+    REPO_ROOT
+    / "docs"
+    / "architecture"
+    / "engineering"
+    / "acceptance"
+    / "coverage-report.md"
+)
 
 # Domain display order and mapping
 DOMAIN_ORDER = ["chat", "mobile", "federation", "applet", "station-dashboard"]

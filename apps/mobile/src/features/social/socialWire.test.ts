@@ -4,6 +4,7 @@ import { create, toBinary } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 
 import {
+  MessageEnvelopeSchema,
   MomentEvent_Kind,
   MomentEventSchema,
   SocialGraphEvent_Kind,
@@ -18,6 +19,27 @@ function encodeFrame(input: Parameters<typeof create<typeof StreamEventSchema>>[
 }
 
 describe('social realtime wire', () => {
+  it('projects Chat envelopes as wake hints without decoding message payloads', () => {
+    const chunk = encodeFrame({
+      eventId: 'event-chat',
+      tsUnixMs: 122n,
+      kind: {
+        case: 'message',
+        value: create(MessageEnvelopeSchema, {
+          sessionUlid: 'conversation-1',
+          ciphertext: new Uint8Array([0xff, 0x00]),
+        }),
+      },
+    });
+
+    expect(decodeRealtimeSseChunk(chunk)).toEqual([{
+      kind: 'messaging-wake',
+      conversationId: 'conversation-1',
+      cursor: 'event-chat',
+      timestampMs: 122,
+    }]);
+  });
+
   it('preserves the generated event cursor and decodes Moment events', () => {
     const chunk = encodeFrame({
       eventId: 'event-42',

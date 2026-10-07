@@ -1,8 +1,8 @@
 # Station 接入生命周期
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-29
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -19,6 +19,7 @@
 - Federation context 的消费与选择；
 - Relay 对普通客户端不可见；
 - 接入能力、owner 和双端 consumer 的正向完整性。
+- Desktop/Mobile 跨类别共存与同类别 Session 接管。
 
 本文档集不定义：
 
@@ -44,6 +45,7 @@ Station/Actor/Device scope。该模块把这条接入链及其 Federation contex
 4. Relay 只属于 Station/运维基础设施。
 5. 所有接入接口均由当前 capability registry 声明且拥有真实 consumer。
 6. Desktop 与 Mobile 以相同结果、错误和状态验收。
+7. 同一 actor 每个 canonical client class 只保留一个 active Session。
 
 ## 4. 文档导航
 
@@ -62,6 +64,7 @@ Station/Actor/Device scope。该模块把这条接入链及其 Federation contex
 | [station-access-gate-implementation-plan.md](./station-access-gate-implementation-plan.md) | Access Gate 实施记录 |
 | [execution-plans/20260926-station-access-lifecycle/plan.md](./execution-plans/20260926-station-access-lifecycle/plan.md) | 已完成的绑定 Plan |
 | [execution-plans/20260929-desktop-oauth-preauth/plan.md](./execution-plans/20260929-desktop-oauth-preauth/plan.md) | Desktop OAuth 登录前回归修复 |
+| [../client/mobile/execution-plans/20261006-infra-chat-usability/plan.md](../../client/mobile/execution-plans/20261006-infra-chat-usability/plan.md) | Mobile Infra/Chat 可用性与 Session 类别矩阵 |
 | [reviews/review-01-product-architecture.md](./reviews/review-01-product-architecture.md) | 第一轮产品与架构审查 |
 | [reviews/review-02-plan-readiness.md](./reviews/review-02-plan-readiness.md) | 第二轮计划与验收审查 |
 
@@ -80,4 +83,5 @@ Station/Actor/Device scope。该模块把这条接入链及其 Federation contex
 - Architecture：`accepted`
 - Lifecycle Plan：`completed`，3/3 Task 已关闭
 - Desktop OAuth 回归 Plan：`completed`，SAL-OAUTH-01 已关闭
+- Mobile Infra/Chat 可用性 Plan：待挂载执行
 - `CCU-20260922`：保持 `completed`

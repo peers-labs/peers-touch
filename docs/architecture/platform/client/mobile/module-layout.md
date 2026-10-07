@@ -1,8 +1,8 @@
 # Mobile Shell — 目标模块布局
 
 > **Status**: active; owner-contract closure amendment accepted
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-09-19
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-07
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -29,11 +29,10 @@ apps/mobile/src/
 │   ├── accessRuntime.ts
 │   ├── sessionRuntime.ts
 │   ├── commandRuntime.ts
+│   ├── messagingRuntime.ts
+│   ├── chatStorageRuntime.ts
 │   ├── socialRuntime.ts
-│   ├── groupRuntime.ts
-│   ├── momentsRuntime.ts
-│   ├── notificationRuntime.ts
-│   ├── profileRuntime.ts
+│   ├── privateMomentsRuntime.ts
 │   └── deviceSettingsRuntime.ts
 ├── services/
 │   ├── api/              # generated domain gateways; no credential ownership
@@ -77,11 +76,10 @@ apps/mobile/src-tauri/plugins/
 | `runtimes/accessRuntime.ts` | Station gate descriptor, schema-bound user submission, and access decision projection | gate policy, action execution, or finalization |
 | `runtimes/sessionRuntime.ts` | active PTID session, refresh and revocation | credential collection or social projections |
 | `runtimes/commandRuntime.ts` | bounded admission, scheduling, and outcome convergence | domain mutation semantics or persistent storage implementation |
-| `runtimes/socialRuntime.ts` | relationship, outgoing block-list, contacts, and shared realtime cursor projection | Conversation membership, group E2EE, or Moments policy |
-| `runtimes/groupRuntime.ts` | Conversation group projection, member-authority intents, and E2EE readiness | legacy Group authority or friend/session truth |
-| `runtimes/momentsRuntime.ts` | Social-owned feed/detail policy projection plus post/comment/reaction intents | privacy derivation, object encryption, or settings |
-| `runtimes/notificationRuntime.ts` | Notification entities, preferences, push-registration projection, and badge state | OS push token acquisition or domain business truth |
-| `runtimes/profileRuntime.ts` | current and remote Actor profiles plus current-actor Profile CAS | Notification, Social, device settings, or session |
+| `runtimes/messagingRuntime.ts` | Device Messaging Engine activation, Direct/Group conversation and message freshness, Conversation settings readback, group-command outcome convergence, and E2EE readiness | relationship, profile, notification, or legacy Group authority |
+| `runtimes/chatStorageRuntime.ts` | account-scoped Chat storage accounting over the active Messaging runtime | a second message store or independent lifecycle |
+| `runtimes/socialRuntime.ts` | relationship, outgoing block-list, contacts, presence, notification, profile, Moments invalidation, and shared realtime cursor projection | Conversation/message/settings refresh, membership, or group E2EE |
+| `runtimes/privateMomentsRuntime.ts` | private Moment content runtime and secure-content readiness | Social feed policy or Chat state |
 | `runtimes/deviceSettingsRuntime.ts` | device preference projection | Station-owned Profile, Notification, or Social state |
 | `services/api/` | generated request/response mapping and quarantined wire adapters | credentials, arbitrary URLs, or public manual domain DTOs |
 | `services/transport/` | generated operation IDs and typed calls into Rust Station transport | bearer tokens, redirects, or domain projection merge |
@@ -109,11 +107,10 @@ apps/mobile/src-tauri/plugins/
 | `accessRuntime` | station / pre-shell-gate | `stationRuntime`, `authRuntime` | none | network |
 | `sessionRuntime` | session / shell-blocking | `stationRuntime`, `authRuntime`, `accessRuntime` | none | network |
 | `commandRuntime` | session / degradable | `sessionRuntime` | none | local |
-| `socialRuntime` | session / degradable | `sessionRuntime` | `commandRuntime` | network |
-| `groupRuntime` | session / degradable | `sessionRuntime` | `socialRuntime`, `commandRuntime` | network |
-| `momentsRuntime` | session / degradable | `sessionRuntime` | `socialRuntime`, `commandRuntime` | network |
-| `notificationRuntime` | session / degradable | `sessionRuntime` | `socialRuntime` | network |
-| `profileRuntime` | session / degradable | `sessionRuntime` | `socialRuntime`, `commandRuntime` | network |
+| `messagingRuntime` | session / degradable | `sessionRuntime`, `secure-storage`, `native-event-bridge` | none | network |
+| `chatStorageRuntime` | session / degradable | `messagingRuntime` | none | local |
+| `socialRuntime` | session / degradable | `sessionRuntime`, `native-event-bridge`, `messagingRuntime`, `commandRuntime` | none | network |
+| `privateMomentsRuntime` | session / degradable | `sessionRuntime`, `secure-storage` | `socialRuntime` | network |
 
 `native-event-bridge` remains app-installed and generation-fenced. Push,
 scheduled-work, deep-link, network, permission, and media-picker callbacks enter
@@ -156,9 +153,11 @@ interaction uses Station attempt expiry instead. A timeout returns typed
 readiness/teardown failure and never advances lifecycle implicitly.
 An unavailable `uses` capability disables only the dependent command surface;
 it does not block that runtime's read projection.
-For session domains, `uses: socialRuntime` means consuming the shared typed
-event-ingress capability. It does not permit importing `socialRuntime` private
-stores or opening another long-lived Station stream.
+Chat envelopes, receipts, mutations, membership changes, and Conversation
+settings events cross the shared typed ingress only as `messaging-wake`
+control intents. Social handlers never refresh Conversation projections
+directly. `messagingRuntime` is the sole owner of conversation, message,
+settings, and group-command freshness.
 
 ### Session credential contract
 
@@ -224,7 +223,7 @@ app/lifecycle ---->    |
 | Port | Producer | Consumer | Completion truth |
 |---|---|---|---|
 | Access Gate action | Station gate descriptor | `accessRuntime` | next Station `AccessDecision`; session only after finalizer grant |
-| Member authority | Conversation AO-D10 | `groupRuntime` | command result plus member/owner authority projection |
+| Member authority | Conversation AO-D10 | `messagingRuntime` | command result plus member/owner authority projection |
 | Relationship authority | Social | `socialRuntime` | command result plus relationship revision/event |
 | Chat message actions | Device Messaging Engine + Conversation | Chat runtime | matching command ID/hash and ordered event/readback |
 | Moments policy | Social + Secure Content | `momentsRuntime` | typed feed/detail outcome and committed object descriptor |
@@ -238,11 +237,8 @@ app/lifecycle ---->    |
 
 The target tree contains no production client for:
 
-- `/group-chat/member/update`;
-- `/group-chat/ownership/transfer`;
-- `/friend-chat/block`;
-- `/friend-chat/blocked`;
-- `/friend-chat/friendship/status`;
+- retired Group member or ownership route families;
+- Chat-owned block, blocked-list, or friendship-status routes;
 - any alias or fallback with equivalent retired ownership.
 
 Generated compatibility comments, tests, fixtures, and historical documents may

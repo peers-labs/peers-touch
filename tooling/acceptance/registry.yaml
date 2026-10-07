@@ -218,6 +218,29 @@
       ]
     },
     {
+      "id": "station-access-session-class",
+      "features": [
+        "station-access-session-class"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/frame/core/facility/session/**",
+          "apps/desktop/src-tauri/src/application/auth/**",
+          "apps/desktop/src-tauri/src/messaging/**",
+          "apps/mobile/src-tauri/src/runtime/oauth/**",
+          "apps/mobile/src-tauri/src/messaging/**",
+          "tooling/acceptance/gates/station_access/session_class_e2e.py",
+          "tooling/acceptance/gates/station_access/session_class_e2e_test.py"
+        ]
+      },
+      "require": [
+        "chat-native-multi-device-e2e",
+        "chat-lifecycle-mixed-client-multi-device-e2e",
+        "mobile-simulator-station-lifecycle-e2e",
+        "station-access-session-class-e2e"
+      ]
+    },
+    {
       "id": "station-access-federation-boundary",
       "features": [
         "station-access-federation-boundary"
@@ -243,7 +266,6 @@
       },
       "require": [
         "station-federation-unit",
-        "federation-three-node-e2e",
         "station-api-ownership",
         "station-access-federation-boundary-e2e"
       ]
@@ -254,6 +276,7 @@
         "station-access-wire-contract",
         "station-access-authentication",
         "station-access-scope-isolation",
+        "station-access-session-class",
         "station-access-federation-boundary",
         "station-access-interface-contract"
       ],
@@ -276,6 +299,10 @@
         "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
+        "chat-native-multi-device-e2e",
+        "chat-lifecycle-mixed-client-multi-device-e2e",
+        "mobile-simulator-station-lifecycle-e2e",
+        "station-access-session-class-e2e",
         "station-access-federation-boundary-e2e",
         "desktop-release-build",
         "mobile-native-build",
@@ -1006,8 +1033,7 @@
       },
       "require": [
         "proto-build",
-        "station-federation-unit",
-        "federation-three-node-e2e"
+        "station-federation-unit"
       ]
     },
     {
@@ -1023,9 +1049,7 @@
         ]
       },
       "require": [
-        "station-federation-unit",
-        "federation-three-node-e2e",
-        "federation-surface-smoke"
+        "station-federation-unit"
       ]
     },
     {
@@ -1035,12 +1059,11 @@
       ],
       "when": {
         "paths": [
-          "apps/station/frame/core/plugin/native/federation/discovery/**"
+          "apps/station/frame/core/plugin/native/federation/locator/**"
         ]
       },
       "require": [
-        "station-federation-unit",
-        "federation-surface-smoke"
+        "station-federation-unit"
       ]
     },
     {
@@ -1057,26 +1080,6 @@
       "require": [
         "station-dashboard-unit",
         "station-dashboard-web-check"
-      ]
-    },
-    {
-      "id": "dashboard-federation",
-      "features": [
-        "federation-dashboard-operations",
-        "federation-operational-observability"
-      ],
-      "when": {
-        "paths": [
-          "apps/station/app/subserver/dashboard/domain/federation.go",
-          "apps/station/app/subserver/dashboard/infrastructure/federation_repo.go",
-          "apps/station/app/subserver/dashboard/application/federation_service.go",
-          "apps/station/app/subserver/dashboard/web/src/api/federation.ts",
-          "apps/station/app/subserver/dashboard/web/src/pages/FederationPage.tsx"
-        ]
-      },
-      "require": [
-        "station-dashboard-unit",
-        "federation-dashboard-operational-drilldown"
       ]
     },
     {

@@ -28,30 +28,29 @@ import { MobileAvatar } from '../../components/MobileAvatar';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
+  type FriendConversationSettings,
+  type UpdateFriendConversationSettingsInput,
 } from '../../features/social/socialApiTypes';
 import type { ChatActionState } from '../../features/chat/chatActionState';
-import type {
-  GroupSettings,
-  UpdateGroupSettingsInput,
-} from '../../services/gateways/groupGateway';
+import {
+  groupCommandOutcomeKey,
+  isGroupCommandBusy,
+  type GroupCommandOutcome,
+  type GroupCommandOutcomes,
+} from '../../features/chat/groupCommandState';
 import type {
   SocialConversation,
   SocialMessage,
   PeerProfile,
 } from '../../features/social/socialTypes';
+import { MemberRole } from '../../gen/proto/domain/chat/conversation_pb';
 import type {
-  Group,
-  GroupMember,
-  GroupMessage,
-} from '../../gen/proto/domain/chat/group_chat_pb';
-import { GroupRole } from '../../gen/proto/domain/chat/group_chat_pb';
-import {
-  groupMembershipOperationKey,
-  useGroupMembershipOperations,
-} from '../../features/group/groupStore';
+  MessagingConversationProjection,
+  MessagingMemberAuthorityMemberProjection,
+} from '../../services/mobileCommands';
 import {
   messageProjectionMetadata,
-} from '../../features/chat/messagingProjectionAdapters';
+} from '../../features/chat/messageProjection';
 import { isOwnChatMessage } from '../../features/chat/chatSelectors';
 import type { ConversationSettingsFeedback } from './conversationSettingsState';
 
@@ -83,7 +82,7 @@ export function MessageActionSheet({
   canModerate,
   onModerate,
 }: {
-  readonly message: SocialMessage | GroupMessage | undefined;
+  readonly message: SocialMessage | undefined;
   readonly currentUserPtid: string | null;
   readonly canEdit: boolean;
   readonly commandBusy: boolean;
@@ -346,14 +345,7 @@ export function ChatActionSheet({
             {onManageGroup ? <ChatActionButton icon={<Users size={18} />} title={t('mobile.group.members')} onClick={onManageGroup} /> : null}
           </div>
           <div className="chat-action-group danger">
-            <ChatActionButton
-              dataChatHistoryAction="clear"
-              icon={<Trash2 size={18} />}
-              title={t('mobile.chat.quickClearHistory')}
-              danger
-              disabled={settingsBusy}
-              onClick={onClearHistory}
-            />
+            <ChatActionButton icon={<Trash2 size={18} />} title={t('mobile.chat.quickClearHistory')} danger disabled={settingsBusy} onClick={onClearHistory} />
             {isFriendThread ? (
               peerBlocked
                 ? <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.contacts.unblock')} onClick={onUnblockPeer} />
@@ -369,21 +361,22 @@ export function ChatActionSheet({
 interface GroupManagementModalProps {
   readonly open: boolean;
   readonly onClose: () => void;
-  readonly conversation: Group;
-  readonly members: readonly GroupMember[];
+  readonly conversation: MessagingConversationProjection;
+  readonly members: readonly MessagingMemberAuthorityMemberProjection[];
   readonly myRole: number;
   readonly canManage: boolean;
   readonly groupNameDraft: string;
   readonly setGroupNameDraft: (value: string) => void;
   readonly groupDescriptionDraft: string;
   readonly setGroupDescriptionDraft: (value: string) => void;
-  readonly conversationSettings: GroupSettings | undefined;
+  readonly conversationSettings: FriendConversationSettings | undefined;
+  readonly groupCommandOutcomes: GroupCommandOutcomes;
   readonly inviteCandidates: readonly SocialConversation[];
   readonly peerProfiles: Record<string, PeerProfile | null>;
   readonly currentUserPtid: string | null;
   readonly onSaveGroup: (name: string, description: string) => Promise<unknown>;
   readonly onUpdateMySettings: (
-    patch: UpdateGroupSettingsInput,
+    patch: UpdateFriendConversationSettingsInput,
   ) => Promise<unknown> | void;
   readonly onUpdateMemberRole: (
     memberPtid: string,
@@ -412,6 +405,7 @@ export function GroupManagementModal({
   groupDescriptionDraft,
   setGroupDescriptionDraft,
   conversationSettings,
+  groupCommandOutcomes,
   inviteCandidates,
   peerProfiles,
   currentUserPtid,
@@ -426,55 +420,34 @@ export function GroupManagementModal({
   onLeaveGroup,
 }: GroupManagementModalProps) {
   const { t } = useMobileI18n();
-  const membershipOperations = useGroupMembershipOperations();
   const [pendingOperation, setPendingOperation] = useState('');
   const [operationError, setOperationError] = useState('');
   if (!open) return null;
+  const visibleGroupOutcomes = Object.values(groupCommandOutcomes).filter(
+    (outcome) => outcome.conversationId === conversation.conversationId,
+  );
+  const visibleGroupOutcome = visibleGroupOutcomes.find(
+    (outcome) => outcome.state === 'failed',
+  ) ?? visibleGroupOutcomes.find(
+    (outcome) => outcome.state === 'uncertain',
+  ) ?? visibleGroupOutcomes[0];
+  const groupCommandBusy = visibleGroupOutcomes.some(isGroupCommandBusy);
 
   const runOperation = async (
     operationKey: string,
     failureKey: string,
     operation: () => Promise<unknown>,
-    holdUntilProjection = false,
   ) => {
-    if (pendingOperation) return;
+    if (pendingOperation || groupCommandBusy) return;
     setPendingOperation(operationKey);
     setOperationError('');
     try {
       await operation();
-      if (!holdUntilProjection) setPendingOperation('');
+      setPendingOperation('');
     } catch {
       setOperationError(t(failureKey));
       setPendingOperation('');
     }
-  };
-
-  const confirmMembershipOperation = (
-    action: 'add' | 'remove',
-    memberPtid: string,
-    memberName: string,
-  ) => {
-    const adding = action === 'add';
-    Modal.confirm({
-      title: t('common.action.confirm'),
-      content: `${t(adding
-        ? 'mobile.group.invite'
-        : 'mobile.group.removeMember')} ${memberName}`,
-      okText: t(adding
-        ? 'mobile.group.invite'
-        : 'mobile.group.removeMember'),
-      cancelText: t('common.action.cancel'),
-      okButtonProps: { danger: !adding },
-      onOk: () => runOperation(
-        `${adding ? 'invite' : 'member'}:${memberPtid}${adding ? '' : ':remove'}`,
-        adding
-          ? 'mobile.group.operationInviteFailed'
-          : 'mobile.group.operationRemoveFailed',
-        () => adding
-          ? onInviteMember(memberPtid)
-          : onRemoveMember(memberPtid),
-      ),
-    });
   };
 
   return (
@@ -506,29 +479,36 @@ export function GroupManagementModal({
         </div>
         <div className="chat-action-list group-management-panel">
           {operationError ? <Alert type="error" showIcon title={operationError} /> : null}
+          {visibleGroupOutcome ? (
+            <GroupCommandNotice outcome={visibleGroupOutcome} />
+          ) : null}
 
           <SectionTitle
             title={t('mobile.group.profile')}
-            count={conversation.memberCount}
+            count={conversation.memberPtids.length}
           />
           <Input
             value={groupNameDraft}
             onChange={(event) => setGroupNameDraft(event.target.value)}
             placeholder={t('mobile.group.namePlaceholder')}
-            disabled={!canManage || Boolean(pendingOperation)}
+            disabled={!canManage || Boolean(pendingOperation) || groupCommandBusy}
           />
           <Input.TextArea
             value={groupDescriptionDraft}
             onChange={(event) => setGroupDescriptionDraft(event.target.value)}
             placeholder={t('mobile.group.descriptionPlaceholder')}
             autoSize={{ minRows: 2, maxRows: 4 }}
-            disabled={!canManage || Boolean(pendingOperation)}
+            disabled={!canManage || Boolean(pendingOperation) || groupCommandBusy}
           />
           {canManage ? (
             <Button
               type="primary"
               loading={pendingOperation === 'save'}
-              disabled={!groupNameDraft.trim() || Boolean(pendingOperation)}
+              disabled={
+                !groupNameDraft.trim()
+                || Boolean(pendingOperation)
+                || groupCommandBusy
+              }
               onClick={() => void runOperation(
                 'save',
                 'mobile.group.operationUpdateFailed',
@@ -546,7 +526,7 @@ export function GroupManagementModal({
             <Text>{t('mobile.group.myMuted')}</Text>
             <Switch
               checked={Boolean(conversationSettings?.isMuted)}
-              disabled={Boolean(pendingOperation)}
+              disabled={Boolean(pendingOperation) || groupCommandBusy}
               onChange={(value) => void runOperation(
                 'settings:mute',
                 'mobile.settings.dirty.saveFailed',
@@ -558,7 +538,7 @@ export function GroupManagementModal({
             <Text>{t('mobile.group.pinned')}</Text>
             <Switch
               checked={Boolean(conversationSettings?.isPinned)}
-              disabled={Boolean(pendingOperation)}
+              disabled={Boolean(pendingOperation) || groupCommandBusy}
               onChange={(value) => void runOperation(
                 'settings:pin',
                 'mobile.settings.dirty.saveFailed',
@@ -570,7 +550,7 @@ export function GroupManagementModal({
           <SectionTitle title={t('mobile.group.members')} count={members.length} />
           {members.length > 0 ? (
             <BoundedList
-              surfaceKey={`members:${conversation.ulid}`}
+              surfaceKey={`members:${conversation.conversationId}`}
               items={[...members]}
               itemKey={(member) => member.ptid}
             >
@@ -586,46 +566,48 @@ export function GroupManagementModal({
                     const isSelf = member.ptid === currentUserPtid;
                     const canManageTarget = canManage
                       && !isSelf
-                      && member.role !== GroupRole.OWNER
+                      && member.role !== MemberRole.OWNER
                       && (
-                        myRole === GroupRole.OWNER
+                        myRole === MemberRole.OWNER
                         || member.role < myRole
                       );
                     const memberOperation = `member:${member.ptid}`;
-                    const membershipOperation = membershipOperations[
-                      groupMembershipOperationKey(conversation.ulid, member.ptid)
-                    ];
+                    const membershipOutcome = groupMembershipOutcome(
+                      groupCommandOutcomes,
+                      conversation.conversationId,
+                      member.ptid,
+                    );
                     return (
                       <List.Item
                         data-scroll-anchor-id={member.ptid}
-                        data-group-membership-state={membershipOperation?.phase ?? 'idle'}
+                        data-group-membership-state={membershipOutcome?.state}
                         actions={[
-                          canManageTarget && myRole === GroupRole.OWNER ? (
+                          canManageTarget && myRole === MemberRole.OWNER ? (
                             <Button
                               key="role"
                               size="small"
-                              disabled={Boolean(pendingOperation)}
+                              disabled={Boolean(pendingOperation) || groupCommandBusy}
                               onClick={() => void runOperation(
                                 `${memberOperation}:role`,
                                 'mobile.group.operationUpdateMemberFailed',
                                 () => onUpdateMemberRole(
                                   member.ptid,
-                                  member.role === GroupRole.ADMIN
+                                  member.role === MemberRole.ADMIN
                                     ? 'member'
                                     : 'admin',
                                 ),
                               )}
                             >
-                              {t(member.role === GroupRole.ADMIN
+                              {t(member.role === MemberRole.ADMIN
                                 ? 'mobile.group.demoteAdmin'
                                 : 'mobile.group.promoteAdmin')}
                             </Button>
                           ) : null,
-                          canManageTarget && myRole === GroupRole.OWNER ? (
+                          canManageTarget && myRole === MemberRole.OWNER ? (
                             <Button
                               key="transfer"
                               size="small"
-                              disabled={Boolean(pendingOperation)}
+                              disabled={Boolean(pendingOperation) || groupCommandBusy}
                               onClick={() => {
                                 Modal.confirm({
                                   title: t('mobile.group.transferOwnerConfirmTitle'),
@@ -650,7 +632,7 @@ export function GroupManagementModal({
                             <Button
                               key="mute"
                               size="small"
-                              disabled={Boolean(pendingOperation)}
+                              disabled={Boolean(pendingOperation) || groupCommandBusy}
                               onClick={() => void runOperation(
                                 `${memberOperation}:mute`,
                                 'mobile.group.operationUpdateMemberFailed',
@@ -667,14 +649,21 @@ export function GroupManagementModal({
                               key="remove"
                               size="small"
                               danger
-                              loading={membershipOperation?.phase === 'pending'}
-                              disabled={Boolean(pendingOperation)
-                                || membershipOperation?.phase === 'pending'}
-                              onClick={() => confirmMembershipOperation(
-                                'remove',
-                                member.ptid,
-                                memberName,
-                              )}
+                              disabled={Boolean(pendingOperation) || groupCommandBusy}
+                              onClick={() => {
+                                Modal.confirm({
+                                  title: t('common.action.confirm'),
+                                  content: `${t('mobile.group.removeMember')} ${memberName}`,
+                                  okText: t('mobile.group.removeMember'),
+                                  cancelText: t('common.action.cancel'),
+                                  okButtonProps: { danger: true },
+                                  onOk: () => runOperation(
+                                    `${memberOperation}:remove`,
+                                    'mobile.group.operationRemoveFailed',
+                                    () => onRemoveMember(member.ptid),
+                                  ),
+                                });
+                              }}
                             >
                               {t('mobile.group.removeMember')}
                             </Button>
@@ -692,14 +681,8 @@ export function GroupManagementModal({
                         />
                         <Tag>{groupRoleLabel(member.role, t)}</Tag>
                         {member.muted ? <Tag color="warning">{t('mobile.group.memberMuted')}</Tag> : null}
-                        {membershipOperation?.phase === 'pending' ? (
-                          <Tag color="processing">
-                            {t('mobile.recovery.command.state.pending')}
-                          </Tag>
-                        ) : membershipOperation?.phase === 'failed' ? (
-                          <Tag color="error">
-                            {t('mobile.recovery.command.state.failed-retryable')}
-                          </Tag>
+                        {membershipOutcome ? (
+                          <GroupCommandTag outcome={membershipOutcome} />
                         ) : null}
                       </List.Item>
                     );
@@ -720,7 +703,7 @@ export function GroupManagementModal({
           />
           {inviteCandidates.length > 0 ? (
             <BoundedList
-              surfaceKey={`invite:${conversation.ulid}`}
+              surfaceKey={`invite:${conversation.conversationId}`}
               items={[...inviteCandidates]}
               itemKey={(candidate) => candidate.peerPtid}
             >
@@ -729,28 +712,31 @@ export function GroupManagementModal({
                   dataSource={rows}
                   rowKey="peerPtid"
                   renderItem={(candidate) => {
-                    const membershipOperation = membershipOperations[
-                      groupMembershipOperationKey(
-                        conversation.ulid,
+                    const membershipOutcome = groupCommandOutcomes[
+                      groupCommandOutcomeKey(
+                        conversation.conversationId,
+                        'add-member',
                         candidate.peerPtid,
                       )
                     ];
                     return (
                       <List.Item
                         data-scroll-anchor-id={candidate.peerPtid}
-                        data-group-membership-state={membershipOperation?.phase ?? 'idle'}
+                        data-group-membership-state={membershipOutcome?.state}
                         actions={[
                           <Button
                             key="invite"
                             size="small"
                             type="primary"
-                            disabled={Boolean(pendingOperation)
-                              || membershipOperation?.phase === 'pending'}
-                            loading={membershipOperation?.phase === 'pending'}
-                            onClick={() => confirmMembershipOperation(
-                              'add',
-                              candidate.peerPtid,
-                              candidate.peerName,
+                            disabled={Boolean(pendingOperation) || groupCommandBusy}
+                            loading={
+                              pendingOperation === `invite:${candidate.peerPtid}`
+                              || isGroupCommandBusy(membershipOutcome)
+                            }
+                            onClick={() => void runOperation(
+                              `invite:${candidate.peerPtid}`,
+                              'mobile.group.operationInviteFailed',
+                              () => onInviteMember(candidate.peerPtid),
                             )}
                           >
                             {t('mobile.group.invite')}
@@ -766,10 +752,8 @@ export function GroupManagementModal({
                           title={<Text strong>{candidate.peerName}</Text>}
                           description={<Text type="secondary" copyable>{candidate.peerPtid}</Text>}
                         />
-                        {membershipOperation?.phase === 'failed' ? (
-                          <Tag color="error">
-                            {t('mobile.recovery.command.state.failed-retryable')}
-                          </Tag>
+                        {membershipOutcome ? (
+                          <GroupCommandTag outcome={membershipOutcome} />
                         ) : null}
                       </List.Item>
                     );
@@ -788,10 +772,10 @@ export function GroupManagementModal({
             <Button
               danger
               block
-              disabled={Boolean(pendingOperation)}
+              disabled={Boolean(pendingOperation) || groupCommandBusy}
               loading={pendingOperation === 'leave-or-dissolve'}
               onClick={() => {
-                const owner = myRole === GroupRole.OWNER;
+                const owner = myRole === MemberRole.OWNER;
                 Modal.confirm({
                   title: t(owner
                     ? 'mobile.group.dissolveGroupConfirmTitle'
@@ -810,12 +794,11 @@ export function GroupManagementModal({
                       ? 'mobile.group.operationDissolveFailed'
                       : 'mobile.group.operationLeaveFailed',
                     owner ? onDissolveGroup : onLeaveGroup,
-                    true,
                   ),
                 });
               }}
             >
-              {t(myRole === GroupRole.OWNER
+              {t(myRole === MemberRole.OWNER
                 ? 'mobile.group.dissolveGroup'
                 : 'mobile.group.leaveGroup')}
             </Button>
@@ -824,6 +807,69 @@ export function GroupManagementModal({
       </aside>
     </div>
   );
+}
+
+function GroupCommandNotice({
+  outcome,
+}: {
+  readonly outcome: GroupCommandOutcome;
+}) {
+  const { t } = useMobileI18n();
+  return (
+    <Alert
+      data-group-command-state={outcome.state}
+      type={outcome.state === 'failed' ? 'error' : 'info'}
+      role={outcome.state === 'failed' ? 'alert' : 'status'}
+      showIcon
+      title={t(groupCommandStateLabel(outcome))}
+    />
+  );
+}
+
+function GroupCommandTag({
+  outcome,
+}: {
+  readonly outcome: GroupCommandOutcome;
+}) {
+  const { t } = useMobileI18n();
+  return (
+    <Tag
+      color={outcome.state === 'failed'
+        ? 'error'
+        : outcome.state === 'uncertain'
+          ? 'warning'
+          : 'processing'}
+    >
+      {t(groupCommandStateLabel(outcome))}
+    </Tag>
+  );
+}
+
+function groupMembershipOutcome(
+  outcomes: GroupCommandOutcomes,
+  conversationId: string,
+  memberPtid: string,
+): GroupCommandOutcome | undefined {
+  return [
+    'remove-member',
+    'update-member',
+    'transfer-ownership',
+  ].map((kind) => outcomes[groupCommandOutcomeKey(
+    conversationId,
+    kind as 'remove-member' | 'update-member' | 'transfer-ownership',
+    memberPtid,
+  )]).find(Boolean);
+}
+
+function groupCommandStateLabel(
+  outcome: GroupCommandOutcome,
+): string {
+  if (outcome.state === 'failed') {
+    return 'mobile.recovery.command.state.failed-retryable';
+  }
+  return outcome.state === 'uncertain'
+    ? 'mobile.chat.commandRetrying'
+    : 'mobile.recovery.command.state.pending';
 }
 
 function ConversationSettingsFeedbackNotice({
@@ -876,13 +922,12 @@ function groupRoleLabel(
   role: number,
   t: (key: string) => string,
 ): string {
-  if (role >= GroupRole.OWNER) return t('mobile.group.roleOwner');
-  if (role >= GroupRole.ADMIN) return t('mobile.group.roleAdmin');
+  if (role >= MemberRole.OWNER) return t('mobile.group.roleOwner');
+  if (role >= MemberRole.ADMIN) return t('mobile.group.roleAdmin');
   return t('mobile.group.roleMember');
 }
 
 function ChatActionButton({
-  dataChatHistoryAction,
   icon,
   title,
   active,
@@ -890,7 +935,6 @@ function ChatActionButton({
   disabled,
   onClick,
 }: {
-  readonly dataChatHistoryAction?: 'clear';
   readonly icon: ReactNode;
   readonly title: string;
   readonly active?: boolean;
@@ -900,7 +944,6 @@ function ChatActionButton({
 }) {
   return (
     <button
-      data-chat-history-action={dataChatHistoryAction}
       className={`chat-action-button ${active ? 'active' : ''} ${danger ? 'danger' : ''}`}
       type="button"
       onClick={onClick}

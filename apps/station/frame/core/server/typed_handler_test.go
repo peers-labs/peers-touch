@@ -281,10 +281,10 @@ func TestStrictTypedHandlerRejectsUnknownJSONFields(t *testing.T) {
 		POST,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ChatMessage,
+		) (*chat.ChatMessage, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ChatMessage{}, nil
 		},
 	)
 	request := &typedHandlerTestRequest{
@@ -318,14 +318,14 @@ func TestStrictTypedHandlerRejectsUnknownProtobufFields(t *testing.T) {
 		POST,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ChatMessage,
+		) (*chat.ChatMessage, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ChatMessage{}, nil
 		},
 	)
-	body, err := proto.Marshal(&chat.FriendChatMessage{
-		Ulid: "01TEST000000000000TEST",
+	body, err := proto.Marshal(&chat.ChatMessage{
+		Id: "01TEST000000000000TEST",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -361,10 +361,10 @@ func TestStrictTypedHandlerRejectsUnknownQueryFields(t *testing.T) {
 		GET,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ChatMessage,
+		) (*chat.ChatMessage, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ChatMessage{}, nil
 		},
 	)
 	request := &typedHandlerTestRequest{
@@ -395,10 +395,10 @@ func TestStrictTypedHandlerRejectsQueryAlongsideBody(t *testing.T) {
 		POST,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ChatMessage,
+		) (*chat.ChatMessage, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ChatMessage{}, nil
 		},
 	)
 	request := &typedHandlerTestRequest{
@@ -431,10 +431,10 @@ func TestStrictTypedHandlerRejectsQueryOnlyPost(t *testing.T) {
 		POST,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ChatMessage,
+		) (*chat.ChatMessage, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ChatMessage{}, nil
 		},
 	)
 	request := &typedHandlerTestRequest{

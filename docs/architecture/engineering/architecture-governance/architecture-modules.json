@@ -518,7 +518,8 @@
         "SAL-D03",
         "SAL-D04",
         "SAL-D05",
-        "SAL-D06"
+        "SAL-D06",
+        "SAL-D07"
       ],
       "governedPaths": [
         "apps/desktop/src/services/desktop_api.ts",

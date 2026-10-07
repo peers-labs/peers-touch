@@ -682,7 +682,6 @@ time.sleep(60)
                 return ("station-secondary", "station-primary")
 
         environment = {
-            "MOBILE_ACCEPTANCE_RESET": "1",
             "PT_MOBILE_STATION_PRIMARY_URL": "https://primary.invalid",
             "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "primary",
             "PT_MOBILE_STATION_SECONDARY_URL": "https://secondary.invalid",
@@ -690,6 +689,11 @@ time.sleep(60)
         }
         with (
             patch.dict(os.environ, environment, clear=True),
+            patch.object(
+                mobile_native_reset,
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
+            ),
             patch.object(
                 mobile_native_reset,
                 "verify_reset_target",
@@ -738,7 +742,6 @@ time.sleep(60)
         for service_id in ("station-primary", "station-secondary"):
             self.fixture.acquire(service_id)
         environment = {
-            "MOBILE_ACCEPTANCE_RESET": "1",
             "PT_MOBILE_STATION_PRIMARY_URL": "https://primary.invalid",
             "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "primary",
             "PT_MOBILE_STATION_SECONDARY_URL": "https://secondary.invalid",
@@ -746,6 +749,11 @@ time.sleep(60)
         }
         with (
             patch.dict(os.environ, environment, clear=True),
+            patch.object(
+                mobile_native_reset,
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
+            ),
             patch.object(mobile_native_reset, "verify_reset_target"),
             patch.object(mobile_native_reset, "reset_fixture"),
         ):
@@ -778,7 +786,6 @@ time.sleep(60)
             self.fixture.acquire(service_id)
         self.executor.conflict_service = "station-primary"
         environment = {
-            "MOBILE_ACCEPTANCE_RESET": "1",
             "PT_MOBILE_STATION_PRIMARY_URL": "https://primary.invalid",
             "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "primary",
             "PT_MOBILE_STATION_SECONDARY_URL": "https://secondary.invalid",
@@ -786,6 +793,11 @@ time.sleep(60)
         }
         with (
             patch.dict(os.environ, environment, clear=True),
+            patch.object(
+                mobile_native_reset,
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
+            ),
             patch.object(mobile_native_reset, "verify_reset_target"),
             patch.object(mobile_native_reset, "reset_fixture"),
             self.assertRaises(BlockedError),

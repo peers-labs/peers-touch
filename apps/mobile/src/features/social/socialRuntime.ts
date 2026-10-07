@@ -3,7 +3,6 @@ import {
   type SocialHostEvent,
   type SocialHostEventKind,
 } from '@peers-touch/client-chat-core';
-import type { GroupState } from '../group/groupStore';
 import { restoreAndRevalidateAccessRuntime } from '../../runtimes/accessRuntime';
 import {
   MOBILE_MESSAGING_RUNTIME_ERROR_EVENT,
@@ -190,6 +189,7 @@ export async function acceptSocialFriendRequest(
 ): Promise<SocialRuntimePublicProjection> {
   requireActiveSocialRuntime();
   await useSocialStore.getState().acceptFriendRequest(requestId);
+  await wakeMessaging();
   return readSocialRuntimeProjection();
 }
 
@@ -327,7 +327,6 @@ interface ForegroundResources {
 export async function startSocialRuntime(
   session: MobileAuthSession,
   getSocialStore: () => SocialState,
-  getGroupStore: () => GroupState,
 ): Promise<SocialRuntimeController> {
   let torn = false;
   let suspended = false;
@@ -345,7 +344,6 @@ export async function startSocialRuntime(
   const projectionRuntime = createSocialProjectionRuntime(
     session,
     getSocialStore,
-    getGroupStore,
     {
       wakeMessaging,
       revalidateSession: async () => {
@@ -397,6 +395,7 @@ export async function startSocialRuntime(
     unblockUser: (targetPtid) => track(async () => {
       await getSocialStore().unblockUser(targetPtid);
       await getSocialStore().refreshBlockedUsers();
+      await wakeMessaging();
     }),
   };
   activeRuntime = runtimeRef;

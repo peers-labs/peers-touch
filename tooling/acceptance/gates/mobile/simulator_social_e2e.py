@@ -2669,12 +2669,20 @@ return {
             role=f"mobile-simulator-social-screenshot/{client_id}",
         )
         session.switch_to_app_webview()
+        markup = _redacted_markup(session.get_page_source())
         dom = artifacts.write_bytes(
             f"mobile-simulator-social/{self.scenario}/{client_id}/web-dom.html",
-            _redacted_markup(session.get_page_source()),
+            markup,
             media_type="text/html",
             role=f"mobile-simulator-social-dom/{client_id}",
         )
+        if (
+            b'data-testid="chat-render-error"' in markup
+            or b"Chat could not be displayed." in markup
+        ):
+            raise GateError(
+                f"{client_id} rendered the Mobile Chat error boundary"
+            )
         return {
             "clientId": client_id,
             "screenshot": screenshot.to_dict(),

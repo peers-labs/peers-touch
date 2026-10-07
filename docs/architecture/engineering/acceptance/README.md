@@ -27,7 +27,7 @@
   Evidence Store run finalize前执行detached只读验证。
 - 多场景 Task 如何通过 Suite Runtime 复用服务、Actor、客户端、设备、存储和
   登录态，并保持 Scenario attach-only 与 receiver-visible proof。
-- Federation 与 Acceptance Framework 双边互验证的架构闭环。
+- Federation managed-domain 的产品验证闭环。
 - 新产品域如何按统一标准接入项目级 acceptance。
 
 本文档集不定义：
@@ -51,7 +51,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 - 用 registry 固化“路径变更影响哪些能力”。
 - 用 gates 固化“如何重复证明能力仍成立”。
 - 用 reports 固化“哪些已证明，哪些未证明，哪些需要人审”。
-- 用 Federation 这种跨 Station / Dashboard / Desktop / testnet 的复杂域验证框架本身不是纸面流程。
+- 用 Federation 这种跨 Station / Dashboard / Desktop / Station Access 的复杂域验证框架本身不是纸面流程。
 
 ---
 
@@ -157,7 +157,7 @@ Accepted `PostCleanupEvidenceFinalizer` target architecture由`D-19`定义：
 
 ## 5. 相关文档
 
-- [Federation Architecture](../../domains/federation/README.md) — 双边互验证的首个复杂产品域。
+- [Federation Architecture](../../domains/federation/README.md) — Federation 产品域架构。
 - [Federation Ledger Phase 1](../../domains/federation/execution-plans/phase-1-federation-ledger.md) — 当前仓库保留的 Federation Ledger 实施计划；后续产品治理以 Federation 架构与新计划为准。
 - [Project Docs Entry](../../../README.md) — 文档层级与当前真源规则。
 - [`pt-acceptance-infra-engineering`](../../../../tooling/skills/pt-acceptance-infra-engineering/SKILL.md) — Acceptance Infra 优化、审计与责任防火墙入口。

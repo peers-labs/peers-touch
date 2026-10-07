@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 设计决策
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-27
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
 ---
@@ -17,6 +17,7 @@
 | SAL-D04 | Federation governance 与普通客户端分离 | accepted |
 | SAL-D05 | Relay 只属于基础设施 | accepted |
 | SAL-D06 | 完整 E2E 与当前接口完整性共同决定完成 | accepted |
+| SAL-D07 | 一个 actor 每个 canonical client class 只保留一个 active Session | accepted |
 
 ## SAL-D01：双端统一按语义和结果衡量
 
@@ -189,3 +190,55 @@ Desktop/Mobile 首次接入、恢复、切换、same/cross-Station context E2E �
 **Consequences**
 
 最终 Gate 必须基于同一精确源码和真实原生客户端。
+
+---
+
+## SAL-D07：按 canonical client class 原子接管 Session
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+Station 旧 `CreateWithKick` 按 `device_type` 撤销同类 Session，允许 Desktop 与
+Mobile 并存。后续 Access Gate password finalizer 改成按 `device_id` 替换，
+OAuth acknowledgement 又撤销 actor 的全部 Session；Desktop restore/takeover
+还提交 `desktop-native`。三个入口因此对同一产品语义使用三个不同槽定义，
+既可能允许两个 Desktop 并存，也可能错误踢掉 Mobile。
+
+### Decision
+
+Station Session authority 使用 canonical client class `desktop | mobile | web`
+作为并发槽。一个 actor 在一个 Station 每个 class 最多有一个未撤销 Session；
+新同类 Session 原子撤销旧同类 Session，不撤销其他 class。
+
+密码 Access Gate、OAuth acknowledgement 与 session takeover 共用该策略。
+`device_id` 继续标识安装实例并绑定 Messaging/OAuth/lifecycle，不决定并发槽。
+Desktop 统一提交 `desktop`，Mobile 提交 `mobile`；非 canonical 运行时标签
+fail closed。既有 `desktop-native` 行在迁移时一次性归一，不保留运行时 alias。
+
+### Rationale
+
+用户需要同账号跨 Desktop/Mobile 连续使用，同时避免同类客户端并发产生不明确的
+当前端。把类别与设备身份分离后，Station 能同时保证跨类别共存、同类别单一 winner
+和 Session/Messaging 设备绑定。
+
+### Alternatives Considered
+
+- 按 `device_id` 接管：拒绝，因为每个新安装都会获得新的并发槽。
+- 每次登录撤销 actor 全部 Session：拒绝，因为破坏 Desktop+Mobile 共存。
+- 接受 `desktop-native` 等 alias：拒绝，因为运行时标签会变成永久业务类别。
+- 仅在客户端本地互斥：拒绝，因为多机器和多安装不能共享本地 registry。
+
+### Consequences
+
+- Session schema migration 必须归一历史类别并处理已存在的同类重复 active 行。
+- 激活事务必须锁定 actor 行，并由 active class partial unique index 保证并发
+  登录仍收敛到每类一个 winner。
+- 被接管端通过既有 `session_revoked/kicked` 路径停止 runtime 并回到 Access Gate。
+- Browser 保持独立 `web` 类别；本项目不声明 Browser 产品验收。
+
+### Reversal Trigger
+
+只有新的多实例产品合同明确允许同类并发，并同时定义 device picker、winner、
+通知、写入冲突和撤销语义时，才可替换该策略。

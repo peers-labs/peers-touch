@@ -53,6 +53,11 @@ class LifecycleTreeZeroReferenceTest(unittest.TestCase):
             "forbiddenCommands": ["group_chat_list_groups"],
             "forbiddenLegacyTables": ["chat_messages"],
             "dimensionRoots": self.dimension_roots,
+            "activeAcceptanceRoots": [
+                "acceptance/features",
+                "acceptance/gates.yaml",
+                "acceptance/registry.yaml",
+            ],
             "negativeAssertionPaths": [],
             "compatibilityIdentifierRoots": ["src"],
             "forbiddenCompatibilityPathSegments": ["legacy"],
@@ -122,6 +127,39 @@ class LifecycleTreeZeroReferenceTest(unittest.TestCase):
             any(
                 item.pattern_label == "required dimension contract mismatch"
                 for item in result.dimensions["tracked-source"].violations
+            )
+        )
+
+    def test_active_acceptance_declarations_are_scanned(self) -> None:
+        self.write(
+            "acceptance/features/retired-chat.yaml",
+            '{"route": "/group-chat/list"}\n',
+        )
+        self.inventory()
+
+        result = scan_repository(self.root, self.inventory_path)
+
+        self.assertTrue(
+            any(
+                item.file == "acceptance/features/retired-chat.yaml"
+                and item.pattern_label.startswith("forbidden route")
+                for item in result.dimensions[
+                    "test-fixture-script"
+                ].violations
+            )
+        )
+
+    def test_active_acceptance_root_contract_fails_closed(self) -> None:
+        self.inventory(activeAcceptanceRoots=[])
+
+        result = scan_repository(self.root, self.inventory_path)
+
+        self.assertTrue(
+            any(
+                item.pattern_label == "active Acceptance roots missing"
+                for item in result.dimensions[
+                    "test-fixture-script"
+                ].violations
             )
         )
 

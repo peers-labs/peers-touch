@@ -8,8 +8,7 @@ import { BoundedList, type BoundedListHandle } from '../../components/BoundedLis
 import {
   chatMessageAttachments,
   formatRelativeTime,
-  friendMessageDisplayText,
-  groupMessageDisplayText,
+  messageDisplayText,
   isOwnChatMessage,
   messageTimestampMillis,
 } from '../../features/chat/chatSelectors';
@@ -21,26 +20,18 @@ import {
   messageDeliveryDisplayState,
   messageProjectionMetadata,
   type MessageDeliveryDisplayState,
-} from '../../features/chat/messagingProjectionAdapters';
-import { projectGroupMessageDisplay } from '../../features/group/groupProjection';
+} from '../../features/chat/messageProjection';
 import type {
-  GroupMember,
-  GroupMessage,
-} from '../../gen/proto/domain/chat/group_chat_pb';
-import type {
-  FriendChatMessage,
-  FriendMessageAttachment,
+  SocialMessage,
+  SocialMessageAttachment,
   PeerProfile,
 } from '../../features/social/socialTypes';
 import { MessageAvatar } from './ChatMessagePresentation';
 
 const { Text } = Typography;
 
-type ChatMessage = FriendChatMessage | GroupMessage;
-type ChatAttachment = FriendMessageAttachment;
-
 export interface MessageMetaRenderInput {
-  readonly message: ChatMessage;
+  readonly message: SocialMessage;
   readonly deliveryState: MessageDeliveryDisplayState | null;
   readonly commandOutcome: ChatMessageCommandOutcome | undefined;
   readonly canRetry: boolean;
@@ -50,16 +41,14 @@ export interface MessageMetaRenderInput {
 interface ChatMessageSectionBoundaryProps {
   readonly surfaceKey: string;
   readonly background: string;
-  readonly messages: ChatMessage[];
-  readonly historyById: ReadonlyMap<string, ChatMessage>;
-  readonly isGroupThread: boolean;
+  readonly messages: SocialMessage[];
+  readonly historyById: ReadonlyMap<string, SocialMessage>;
   readonly currentUserPtid: string | null;
   readonly highlightedMessageUlid: string;
   readonly ownAvatar: string;
   readonly ownName: string;
   readonly peerProfiles: Record<string, PeerProfile | null>;
   readonly peerMessageAvatar: string | undefined;
-  readonly groupMemberByPtid: ReadonlyMap<string, GroupMember>;
   readonly peerName: string;
   readonly title: string;
   readonly flaggedMessageIds: ReadonlySet<string>;
@@ -67,12 +56,12 @@ interface ChatMessageSectionBoundaryProps {
   readonly windowSize: number;
   readonly controllerRef: Ref<BoundedListHandle>;
   readonly renderAttachments: (
-    attachments: ChatAttachment[],
+    attachments: SocialMessageAttachment[],
     isOwn: boolean,
   ) => ReactNode;
   readonly renderMetaRow: (input: MessageMetaRenderInput) => ReactNode;
   readonly onScrollToMessage: (messageUlid: string) => void;
-  readonly onToggleReaction: (message: ChatMessage, reaction: string) => void;
+  readonly onToggleReaction: (message: SocialMessage, reaction: string) => void;
 }
 
 export function ChatMessageSectionBoundary({
@@ -80,14 +69,12 @@ export function ChatMessageSectionBoundary({
   background,
   messages,
   historyById,
-  isGroupThread,
   currentUserPtid,
   highlightedMessageUlid,
   ownAvatar,
   ownName,
   peerProfiles,
   peerMessageAvatar,
-  groupMemberByPtid,
   peerName,
   title,
   flaggedMessageIds,
@@ -119,14 +106,9 @@ export function ChatMessageSectionBoundary({
             const recalled = isRecalledChatMessage(message);
             const metadata = messageProjectionMetadata(message);
             const moderated = metadata.moderated;
-            const groupDisplay = isGroupThread
-              ? projectGroupMessageDisplay(message as GroupMessage)
-              : null;
             const content = moderated
               ? t('mobile.chat.moderatedMessage')
-              : groupDisplay
-                ? groupMessageDisplayText(groupDisplay, t)
-                : friendMessageDisplayText(message as FriendChatMessage, t);
+              : messageDisplayText(message, t);
             const attachments = chatMessageAttachments(message);
             const hasAttachmentOnlyPreview = attachments.length > 0
               && content === t('mobile.chat.noPreview');
@@ -159,7 +141,7 @@ export function ChatMessageSectionBoundary({
                 {!mine ? (
                   <MessageAvatar
                     src={messageAvatarUrl(message, peerProfiles, peerMessageAvatar)}
-                    fallback={messageSenderFallback(message, groupMemberByPtid, peerName || title)}
+                    fallback={(peerName || title || message.senderPtid || '').slice(0, 1).toUpperCase()}
                   />
                 ) : null}
                 <div className="message-bubble">
@@ -180,7 +162,7 @@ export function ChatMessageSectionBoundary({
                       <CornerUpLeft size={12} />
                       <span>
                         {replyMessage
-                          ? messageContentForSearch(replyMessage, isGroupThread, t)
+                          ? messageContentForSearch(replyMessage, t)
                           : t('mobile.chat.noPreview')}
                       </span>
                     </button>
@@ -232,12 +214,12 @@ export function ChatMessageSectionBoundary({
   );
 }
 
-export function messageKey(message: ChatMessage): string {
+export function messageKey(message: SocialMessage): string {
   return message.ulid;
 }
 
 export function chatMessageSenderPtids(
-  messages: ChatMessage[],
+  messages: SocialMessage[],
   currentUserPtid: string | null,
 ): string[] {
   return Array.from(new Set(messages
@@ -246,29 +228,17 @@ export function chatMessageSenderPtids(
 }
 
 export function messageContentForSearch(
-  message: ChatMessage,
-  isGroupThread: boolean,
+  message: SocialMessage,
   t: (key: string) => string,
 ): string {
   if (messageProjectionMetadata(message).moderated) {
     return t('mobile.chat.moderatedMessage');
   }
-  return isGroupThread
-    ? groupMessageDisplayText(projectGroupMessageDisplay(message as GroupMessage), t)
-    : friendMessageDisplayText(message as FriendChatMessage, t);
-}
-
-function messageSenderFallback(
-  message: ChatMessage,
-  groupMemberByPtid: ReadonlyMap<string, GroupMember>,
-  peerName: string,
-): string {
-  const member = groupMemberByPtid.get(message.senderPtid);
-  return (member?.nickname || peerName || message.senderPtid || '').slice(0, 1).toUpperCase();
+  return messageDisplayText(message, t);
 }
 
 function messageAvatarUrl(
-  message: ChatMessage,
+  message: SocialMessage,
   peerProfiles: Record<string, PeerProfile | null>,
   fallbackAvatar: string | undefined,
 ): string {

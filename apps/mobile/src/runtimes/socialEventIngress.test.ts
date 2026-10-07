@@ -10,19 +10,18 @@ import {
 function socialEvent(cursor: string): SocialIngressEvent {
   return {
     domain: 'social',
-    kind: 'session-update',
+    kind: 'relationship-changed',
     payload: {},
     cursor,
     timestampMs: 1,
   };
 }
 
-function groupEvent(cursor: string): SocialIngressEvent {
+function notificationEvent(cursor: string): SocialIngressEvent {
   return {
-    domain: 'group',
-    kind: 'group-membership',
-    groupUlid: 'group-1',
-    payload: { membershipKind: 'UPDATED' },
+    domain: 'notification',
+    kind: 'notification-received',
+    payload: {},
     cursor,
     timestampMs: 1,
   };
@@ -39,12 +38,12 @@ describe('social event ingress', () => {
 
     expect(ingress.ingestDataEvent(socialEvent('cursor-1'))).toBe(true);
     expect(ingress.ingestDataEvent(socialEvent('cursor-1'))).toBe(true);
-    expect(ingress.ingestDataEvent(groupEvent('cursor-1'))).toBe(true);
+    expect(ingress.ingestDataEvent(notificationEvent('cursor-1'))).toBe(true);
     await ingress.drain();
 
-    expect(handled.map((event) => event.domain)).toEqual(['social', 'group']);
+    expect(handled.map((event) => event.domain)).toEqual(['social', 'notification']);
     expect(ingress.state().cursors.social.lastCursor).toBe('cursor-1');
-    expect(ingress.state().cursors.group.lastCursor).toBe('cursor-1');
+    expect(ingress.state().cursors.notification.lastCursor).toBe('cursor-1');
     expect(ingress.state().streamCursor).toBe('cursor-1');
   });
 
@@ -94,11 +93,11 @@ describe('social event ingress', () => {
 
     ingress.resume();
     expect(reconcile).toHaveBeenCalledWith({
-      domains: ['social', 'group', 'moments', 'notification', 'profile'],
+      domains: ['social', 'moments', 'notification', 'profile'],
       reason: 'runtime_resume',
       checkpointCursor: '',
     });
-    for (const domain of ['social', 'group', 'moments', 'notification', 'profile'] as const) {
+    for (const domain of ['social', 'moments', 'notification', 'profile'] as const) {
       ingress.repairCursor(domain, '');
     }
     ingress.reopenAdmission();
@@ -142,7 +141,7 @@ describe('social event ingress', () => {
       reason: 'control_event_lost',
     });
     expect(reconcile).toHaveBeenCalledWith({
-      domains: ['social', 'group', 'moments', 'notification', 'profile'],
+      domains: ['social', 'moments', 'notification', 'profile'],
       reason: 'control_event_lost',
       checkpointCursor: 'cursor-2',
     });

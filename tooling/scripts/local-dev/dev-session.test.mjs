@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -544,7 +545,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
       workspaceDigest: 'clean',
       canonicalWorktreeHash: WORKSPACE_ID,
     },
-    runtime: {},
+    runtime: runtimeEvidence ? { _manifest_ref: manifestRef } : {},
     result: {
       ...standardizedResult,
       workItemId: scope.workItemId,
@@ -832,6 +833,114 @@ test('archive preserves a terminal Session and clears the work-item slot', async
     );
     assert.equal(
       existsSync(path.join(archived.archiveDirectory, 'events.ndjson')),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('archive preserves a prior Session when the same sessionId is reused', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const first = archiveDevelopmentSession(scope.baseOptions);
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const second = archiveDevelopmentSession(scope.baseOptions);
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    const historyDirectory = path.join(
+      paths.directory,
+      'archive-history',
+      scope.sessionId,
+      first.eventDigest,
+    );
+
+    assert.notEqual(first.eventDigest, second.eventDigest);
+    assert.equal(
+      existsSync(path.join(historyDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(historyDirectory, 'events.ndjson')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(second.archiveDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(second.archiveDirectory, 'events.ndjson')),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('archive tolerates an identical displaced Session already in history', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    archiveDevelopmentSession(scope.baseOptions);
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const second = archiveDevelopmentSession(scope.baseOptions);
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    const duplicateHistory = path.join(
+      paths.directory,
+      'archive-history',
+      scope.sessionId,
+      second.eventDigest,
+    );
+    mkdirSync(duplicateHistory, { recursive: true });
+    copyFileSync(
+      path.join(second.archiveDirectory, 'session.json'),
+      path.join(duplicateHistory, 'session.json'),
+    );
+    copyFileSync(
+      path.join(second.archiveDirectory, 'events.ndjson'),
+      path.join(duplicateHistory, 'events.ndjson'),
+    );
+
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const third = archiveDevelopmentSession(scope.baseOptions);
+
+    assert.notEqual(second.eventDigest, third.eventDigest);
+    assert.equal(
+      existsSync(path.join(duplicateHistory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(duplicateHistory, 'events.ndjson')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(third.archiveDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(third.archiveDirectory, 'events.ndjson')),
       true,
     );
   } finally {
@@ -1446,6 +1555,55 @@ test('functional result commit accepts the standard development policy envelope'
       'development-functional-evidence-bundle',
     );
     assert.ok(sealed.artifacts.length >= 7);
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result accepts the Gate-owned runtime manifest reference', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-desktop',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    const committed = await commitStandardizedFunctionalPass(scope, {
+      result: { manifest: undefined },
+    });
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result rejects a conflicting child runtime manifest reference', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-desktop',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    await rejectCode('SESSION_EVIDENCE_OUT_OF_SEQUENCE', () =>
+      commitStandardizedFunctionalPass(scope, {
+        result: { manifest: { _manifest_ref: {} } },
+      }),
+    );
   } finally {
     scope.close();
   }
