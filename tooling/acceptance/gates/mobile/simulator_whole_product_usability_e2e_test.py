@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import struct
+import subprocess
 import tempfile
 import unittest
 import zlib
@@ -355,6 +357,43 @@ def valid_surface_evidence(
 
 
 class WholeProductSurfaceContractTests(unittest.TestCase):
+    def test_foreground_probe_requires_the_declared_booted_simulator(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "devices": {
+                        "ios": [
+                            {
+                                "udid": "simulator-1",
+                                "state": "Booted",
+                            }
+                        ]
+                    }
+                }
+            ),
+            stderr="",
+        )
+        with (
+            patch.dict(os.environ, {"PT_MOBILE_FOREGROUND_REQUIRED": "1"}),
+            patch(
+                "tooling.acceptance.gates.mobile."
+                "simulator_whole_product_usability_e2e.subprocess.run",
+                return_value=completed,
+            ),
+        ):
+            self.assertEqual(
+                SimulatorWholeProductUsabilityGate
+                ._probe_simulator_foreground("simulator-1"),
+                {
+                    "platform": "ios",
+                    "bundleIdentifier": "com.apple.iphonesimulator",
+                    "frontmost": True,
+                    "windowVisible": True,
+                },
+            )
+
     def test_shell_driver_configures_each_required_viewport_cell(self) -> None:
         gate = SimulatorWholeProductUsabilityGate(
             foreground_probe=lambda: {},
