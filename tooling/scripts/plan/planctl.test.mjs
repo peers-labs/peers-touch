@@ -4,7 +4,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { mountPlanVersion, resolvePlanExecution } from './plan-mount.mjs';
+import { mountPlan, resolvePlanExecution } from './plan-mount.mjs';
+import { findStructuredBlocks } from './plan-package.mjs';
 import { createPlanRepository } from './plan-test-fixture.mjs';
 import {
   activatePlan,
@@ -28,20 +29,82 @@ function scope(t) {
   };
 }
 
-test('status projects frozen Plan Version and mutable Run state', async (t) => {
+function updatePlan(options, update) {
+  const planPath = path.join(options.repoRoot, options.plan);
+  const text = fs.readFileSync(planPath, 'utf8');
+  const block = findStructuredBlocks(text, 'Plan')[0];
+  const plan = JSON.parse(block.text);
+  update(plan);
+  fs.writeFileSync(
+    planPath,
+    `${text.slice(0, block.contentStart)}${JSON.stringify(plan)}\n${text.slice(block.contentEnd)}`,
+  );
+}
+
+test('CLI validates a candidate and records explicit North Star approval', async (t) => {
+  const options = scope(t);
+  updatePlan(options, (plan) => {
+    plan.northStarApproval = null;
+  });
+
+  const candidate = await runPlanctl([
+    'validate',
+    '--repo-root',
+    options.repoRoot,
+    '--plan',
+    options.plan,
+  ]);
+  assert.equal(candidate.northStarApprovalStatus, 'candidate');
+
+  const approved = await runPlanctl([
+    'approve-north-star',
+    '--repo-root',
+    options.repoRoot,
+    '--plan',
+    options.plan,
+    '--actor',
+    options.owner,
+    '--decision-ref',
+    'USER-DECISION-CLI',
+  ]);
+  assert.equal(approved.approvalRecorded, true);
+  assert.equal(approved.northStarApprovalStatus, 'approved');
+  assert.equal(approved.northStarApproval.decisionRef, 'USER-DECISION-CLI');
+
+  const repeated = await runPlanctl([
+    'approve-north-star',
+    '--repo-root',
+    options.repoRoot,
+    '--plan',
+    options.plan,
+    '--actor',
+    options.owner,
+    '--decision-ref',
+    'USER-DECISION-CLI',
+  ]);
+  assert.equal(repeated.approvalRecorded, false);
+  assert.equal(repeated.planContentDigest, approved.planContentDigest);
+});
+
+test('status projects the current Plan snapshot and mutable Run state', async (t) => {
   const options = scope(t);
   const planBytes = fs.readFileSync(
     path.join(options.repoRoot, options.plan),
     'utf8',
   );
-  await mountPlanVersion(options);
+  await mountPlan(options);
   const resolved = await resolvePlanExecution(options);
   const summary = summarizeExecution(resolved);
 
   assert.equal(summary.planId, resolved.snapshot.planId);
   assert.equal(summary.status, 'prepared');
   assert.equal(summary.currentTaskId, null);
-  assert.equal(summary.planVersionDigest, resolved.mount.planVersionDigest);
+  assert.equal(summary.planDigest, resolved.snapshot.planDigest);
+  assert.equal(summary.northStarApprovalStatus, 'approved');
+  assert.equal(
+    summary.northStarDigest,
+    resolved.snapshot.plan.northStarApproval.northStarDigest,
+  );
   assert.equal(
     fs.readFileSync(path.join(options.repoRoot, options.plan), 'utf8'),
     planBytes,
@@ -50,7 +113,7 @@ test('status projects frozen Plan Version and mutable Run state', async (t) => {
 
 test('activate starts only one dependency-ready Task in the Execution Run', async (t) => {
   const options = scope(t);
-  const mounted = await mountPlanVersion(options);
+  const mounted = await mountPlan(options);
   const taskId = mounted.snapshot.plan.tasks.find(
     (task) => task.dependsOn.length === 0,
   ).id;
@@ -66,7 +129,7 @@ test('activate starts only one dependency-ready Task in the Execution Run', asyn
 
 test('cancel transitions an active Execution Run and is idempotent', async (t) => {
   const options = scope(t);
-  const mounted = await mountPlanVersion(options);
+  const mounted = await mountPlan(options);
   const taskId = mounted.snapshot.plan.tasks.find(
     (task) => task.dependsOn.length === 0,
   ).id;
@@ -98,9 +161,9 @@ test('cancel transitions an active Execution Run and is idempotent', async (t) =
   assert.equal(repeated.runId, cancelled.run.runId);
 });
 
-test('CLI status resolves only the workspace-mounted Plan Version', async (t) => {
+test('CLI status resolves only the workspace-mounted Plan', async (t) => {
   const options = scope(t);
-  await mountPlanVersion(options);
+  await mountPlan(options);
   const result = await runPlanctl([
     'status',
     '--repo-root',
@@ -114,6 +177,44 @@ test('CLI status resolves only the workspace-mounted Plan Version', async (t) =>
   assert.equal(result.ok, true);
   assert.equal(result.status, 'prepared');
   assert.equal(result.planPath, options.plan);
+});
+
+test('CLI amend records the reason and keeps the current mount and run', async (t) => {
+  const options = scope(t);
+  const mounted = await mountPlan(options);
+  const taskPath = path.join(
+    options.repoRoot,
+    'plans',
+    'primary',
+    'tasks',
+    'FIXTURE-TASK.md',
+  );
+  const taskText = fs.readFileSync(taskPath, 'utf8');
+  fs.writeFileSync(
+    taskPath,
+    taskText.replace('"command": "true"', '"command": "node --version"'),
+  );
+
+  const result = await runPlanctl([
+    'amend',
+    '--repo-root',
+    options.repoRoot,
+    '--home',
+    options.home,
+    '--plan',
+    options.plan,
+    '--actor',
+    'agent:test',
+    '--reason',
+    'Use a real focused check.',
+    '--change',
+    'Replace the placeholder command.',
+  ]);
+
+  assert.equal(result.mountId, mounted.mount.mountId);
+  assert.equal(result.runId, mounted.run.runId);
+  assert.equal(result.amendmentCount, 1);
+  assert.equal(result.amendment.reason, 'Use a real focused check.');
 });
 
 test('completion review precedes the single guarded Run update', () => {

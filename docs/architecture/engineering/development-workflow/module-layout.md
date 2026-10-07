@@ -1,14 +1,14 @@
 # Development Workflow Control Plane - Module Layout
 
 > **Status**: active
-> **Created**: 2026-09-16 | **Updated**: 2026-10-05
+> **Created**: 2026-09-16 | **Updated**: 2026-10-07
 > **Owner**: Platform Team
 
 ---
 
 ## 1. Target Directory Tree
 
-This is the accepted DWF-D38 target. PlanMount owns tracked execution placement;
+This is the accepted DWF-D42 target. PlanMount owns tracked execution placement;
 standalone work does not create Plan package or machine-local tracked state.
 The superseded workspace-binding path is deleted, and target paths are not by
 themselves implementation readiness claims.
@@ -24,17 +24,23 @@ docs/architecture/engineering/development-workflow/
 └── execution-plans/
     └── <date>-<slug>/
         ├── plan.md
+        ├── completions/
+        │   └── <planDigest>.json
         ├── tasks/
         │   └── <task-id>.md
         └── archive/
             └── <historical-input>.md
 
 tooling/scripts/plan/
+├── plan-completion.mjs
+├── plan-completion.test.mjs
 ├── plan-package.mjs
 ├── planctl.mjs
 ├── planctl.test.mjs
 ├── plan-mount.mjs
-└── plan-mount.test.mjs
+├── plan-mount.test.mjs
+├── stable-plan-state-migration.mjs
+└── stable-plan-state-migration.test.mjs
 
 tooling/scripts/local-dev/
 ├── dev-work-schema.mjs
@@ -63,6 +69,7 @@ tooling/scripts/local-dev/
 ├── workflow-doctor.mjs
 ├── workflow-host-adapters.mjs
 ├── workflow-kernel.mjs
+├── workflow-owner-command-policy.mjs
 ├── workflow-snapshot-core.mjs
 ├── workflow-snapshot.mjs
 ├── workflow-state-inspector.mjs
@@ -98,11 +105,13 @@ tooling/scripts/
 │       ├── overlay.json
 │       └── SKILL.md
 └── workspaces/<workspaceId>/workflow/
+    ├── worktree-creation.json
+    ├── worktree-creation-transactions/<targetHash>.json
     ├── active-work.json
     ├── active-work.lock
     ├── agent-integration.json
     ├── <workItemId>/
-    │   ├── execution-plan-snapshot.json
+    │   ├── execution-plan-snapshots/<snapshotId>.json
     │   ├── execution-run.json
     │   ├── session.json
     │   ├── events.ndjson
@@ -131,17 +140,20 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D41 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D43 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
-| `execution-plans/*/plan.md` | Frozen Plan Version and Acceptance contract |
+| `execution-plans/*/plan.md` | Stable Plan, digest-bound North Star approval, criterion coverage, Amendment Log, and Acceptance contract |
 | `execution-plans/*/tasks/*.md` | One immutable Task Slice specification |
+| `execution-plans/*/completions/*.json` | Immutable final-run attestation bound to one exact Plan digest for CI |
 | `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
+| `plan-completion.mjs` | Repository completion attestation schema, validation, and create-once publication |
 | `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
-| `planctl.mjs` | `validate/current/next/status/activate/advance/reopen/invalidate-source` CLI |
+| `planctl.mjs` | `validate/source-status/approve-north-star/amend/seal-completion/current/next/status/activate/advance/reopen/invalidate-source` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
-| `plan-mount.mjs` | Project Ledger mount/unmount owner, immutable snapshot creation, live-worktree exclusion, and direct resolution |
-| `plan-mount.test.mjs` | Authoring/execution separation, idempotence, mount conflict, explicit unmount, snapshot, tamper, and concurrency regressions |
+| `plan-mount.mjs` | Stable Plan mount/unmount owner, immutable snapshot history, amendment transition, live-worktree exclusion, and direct resolution |
+| `plan-mount.test.mjs` | Candidate approval, criterion coverage, idempotence, mount conflict, amendment, North Star invalidation, explicit unmount, snapshot, tamper, and concurrency regressions |
+| `stable-plan-state-migration.mjs` | Explicit global-idle hard cut for machine ledger field/index renames; normal readers contain no legacy fallback |
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
@@ -158,9 +170,13 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `dev-session.test.mjs` | State, identity, guard, clock and symlink regressions |
 | `completion-review.mjs` | Repository-native current-source review request, reviewer capability, assessment proof, receipt, and freshness owner |
 | `workflow-action-store.mjs` | Bounded redacted Action Receipt chain and activity reduction |
+| `workflow-owner-command-policy.mjs` | Canonical OWNER command registry, receipt identity, and persisted-owner admission guards |
+| `workflow-owner-reference.mjs` | Validated host-neutral main-session reference and root identity hash |
+| `workflow-owner-context.mjs` | Resolve the current main-session OWNER from the live Hook Action Receipt |
 | `workflow-host-adapters.mjs` | TRAE/Cursor/Codex event normalization and native response rendering; no cross-host identity aliases |
 | `workflow-binding-projection.mjs` | Pure host-specific root/execution identity projection plus role, lineage and subject/tool/target roots |
-| `workflow-binding-store.mjs` | Atomic OWNER binding, child assignment/claim/lease/terminal lifecycle, Anchor receipt and OWNER release |
+| `workflow-binding-store.mjs` | Atomic OWNER binding with machine-local root chat ID, child assignment/claim/lease/terminal lifecycle, Anchor receipt and OWNER release |
+| `worktree-create.mjs` | Authorized Git worktree creation plus immutable main-session provenance |
 | `workflow-binding.mjs` | OWNER-authorized child assignment, terminalization, status, and hard-cut reset CLI |
 | `workflow-tool-intent.mjs` | Structured shell/tool intent parsing without regex command admission |
 | `workflow-anchor.mjs` | Deterministic Context Anchor rendering and response/transcript verification |
@@ -173,6 +189,7 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `tooling/scripts/acceptance-run.py` | Shared Journey/provisioning execution with explicit non-publishing development and formal Acceptance policies |
 | `session.json` | Replayable current Development transition projection |
 | `active-work.json` | One consuming workspace's resumable locator projection; never shared across workspace IDs |
+| `worktree-creation.json` | Immutable target-worktree creator session, source workspace, purpose, initial branch/HEAD, and creation Action Receipt |
 | `events.ndjson` | Bounded transition transaction journal |
 | `migration.json` | Reviewed crosswalk/reference inventory, source identity, registry-backed `active_work` observation, prepared replacements and recovery state |
 | `migration.json.reviewed` | Exact B4-reviewed PREPARED journal snapshot retained for commit/recovery lineage checks |
@@ -203,7 +220,7 @@ continues to use its own immutable run layout and latest pointers.
 ```text
 planctl.mjs
   -> plan-package.mjs
-  -> repository frozen Plan Version files
+  -> repository stable Plan files
 
 plan-mount.mjs
   -> plan-package.mjs

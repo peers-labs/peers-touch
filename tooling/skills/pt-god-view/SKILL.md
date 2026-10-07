@@ -64,7 +64,7 @@ whose owner is already obvious.
 2. Resolve explicit user Plan policy before task-size or stage classification.
    `no plan`, `不要 plan`, and equivalent instructions select standalone work
    and forbid PLAN analysis/persistence for the current request.
-3. Resolve the workspace's immutable Plan binding. Ignore
+3. Resolve the workspace's stable PlanMount and current snapshot. Ignore
    other active Plans synchronized into the same repository or PR; never
    replace an existing binding. Explicit no-Plan intent plus a live mount
    returns `PLAN_POLICY_CONFLICT`; it does not silently unmount or downgrade

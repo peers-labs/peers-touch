@@ -20,6 +20,9 @@ import {
   recordDevelopmentResourceResult,
   statusDevelopmentResources,
 } from './dev-resource-plan.mjs';
+import {
+  resolveWorkflowOwnerCommandContext,
+} from './workflow-owner-context.mjs';
 
 export { DevWorkError, digestDeclaration };
 export {
@@ -88,6 +91,19 @@ function output(value, stream = process.stdout) {
 export function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
   const write = io.output ?? output;
+  const ownerContext = resolveWorkflowOwnerCommandContext(
+    'dev-work',
+    action,
+    {
+      home: options.home,
+      workspaceRoot: options.workspaceRoot ?? process.cwd(),
+      resolveCurrentWorkflowOwnerContext:
+        io.dependencies?.resolveCurrentWorkflowOwnerContext,
+    },
+  );
+  if (ownerContext !== null) {
+    options.workflowOwner = ownerContext.workflowOwner;
+  }
   let result;
   switch (action) {
     case 'start':

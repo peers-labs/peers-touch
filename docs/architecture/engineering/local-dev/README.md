@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-04
+> **Created**: 2026-09-13 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -61,11 +61,13 @@ Application Support namespace，不适合承载开发期产物；目标路径统
     Agent 在完整声明、能力、精确 scope 和 lease 约束下选择 reset。
 12. Workflow Snapshot 通过按需 CLI/API 提供只读开发状态，不启动常驻服务、
     不占用端口，也不成为控制面真源。
-13. 同一仓库或 PR 可同步多个 frozen Plan Version，但每个 workspace 只执行
+13. 同一仓库或 PR 可同步多个 stable Plan，但每个 workspace 只执行
     Project Ledger 显式挂载的 PlanMount。
-14. Workflow Snapshot 将工作状态与环境健康分开；stale 声明可见但不拥有
+14. Plan 的普通执行修订保留 `planId`、`mountId` 和 `runId`，只推进内部
+    snapshot；Local Dev 只消费新的 `planDigest`，不解释修订语义。
+15. Workflow Snapshot 将工作状态与环境健康分开；stale 声明可见但不拥有
     资源。
-15. Peers Dev browser dashboard、固定 4177 endpoint 和 browser Gate 不属于
+16. Peers Dev browser dashboard、固定 4177 endpoint 和 browser Gate 不属于
     Local Dev Control Plane。
 16. 现有非 stable Profile 的 reset 不要求人工授权；已有 Profile 的 deploy
     与 reset 都不得因内部能力刷新或执行边界重复询问。
@@ -94,6 +96,11 @@ Discovery and legacy profile pointers never perform promotion or registration.
 Git worktree discovery does not create a registration. The initial registered
 cohort is owner-declared; until that list is provided, the machine registry may
 record observations but must keep `registrations` empty.
+
+An Agent may create a worktree only after explicit user authorization and only
+through `make worktree-create`. That command records the creating main-session
+OWNER, source workspace, purpose, branch, and initial HEAD in machine-local
+target-workspace state before the worktree is used by another Agent.
 
 Normal `make config`, `make station`, Desktop, and Mobile resolution requires
 the authoritative binding. `make profile` creates that binding on first

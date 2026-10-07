@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v3.0
-> **Created**: 2026-09-23 | **Updated**: 2026-10-04
+> **Created**: 2026-09-23 | **Updated**: 2026-10-06
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -40,7 +40,7 @@ Product promise:
 2. The command reads current owner stores and Git observations.
 3. The result lists each discovered workspace with independent work state and
    environment health.
-4. A mounted workspace identifies its `mountId`, `runId`, Plan Version,
+4. A mounted workspace identifies its `mountId`, `runId`, Plan,
    current Task, declaration, Session, and active-work consistency.
 5. Stale or malformed sources are reported as typed issues and never inferred
    into authority.

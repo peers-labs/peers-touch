@@ -35,10 +35,25 @@ import {
   repoRoot,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 const WORKSPACE_A = workspaceIdForRoot(repoRoot);
 const WORKSPACE_B = 'fedcba9876543210';
 const NOW = '2026-09-19T08:00:00.000Z';
+
+function workflowOwner() {
+  const rootChatId = 'main-chat-session';
+  return {
+    kind: WORKFLOW_OWNER_REFERENCE_KIND,
+    host: 'trae',
+    rootChatId,
+    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
+    rootBindingDigest: 'a'.repeat(64),
+  };
+}
 
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'pt-active-work-'));
@@ -73,6 +88,7 @@ function input(workspaceId = WORKSPACE_A, overrides = {}) {
     branch: 'feature/workspace-active-work',
     initialHead: '1'.repeat(40),
     expectedHead: '2'.repeat(40),
+    workflowOwner: workflowOwner(),
     ...overrides,
   };
 }
@@ -104,10 +120,11 @@ function ownerDependencies(overrides = {}) {
     runtimeClaims: [],
     planPath: 'docs/architecture/example/execution-plans/test/plan.md',
     planId: 'DWF-PLAN',
-    planVersionDigest: 'a'.repeat(64),
+    planDigest: 'a'.repeat(64),
     mountId: 'mount-active-work',
     runId: 'run-active-work',
     taskId: 'DWF-T1',
+    workflowOwner: workflowOwner(),
     declarationDigest: 'f'.repeat(64),
   };
   return {
@@ -119,11 +136,12 @@ function ownerDependencies(overrides = {}) {
         mount: {
           planId: 'DWF-PLAN',
           planPath: declaration.planPath,
-          planVersionDigest: declaration.planVersionDigest,
+          planDigest: declaration.planDigest,
           mountId: declaration.mountId,
         },
         snapshot: {
           recordDigest: 'b'.repeat(64),
+          planDigest: declaration.planDigest,
           executionBinding: {
             workspaceId: WORKSPACE_A,
             branch: declaration.branch,
@@ -173,7 +191,10 @@ function ownerDependencies(overrides = {}) {
 test('writes one owner-only record per workspace with revision and digest', () => {
   const scope = fixture();
   try {
-    const record = updateActiveWorkRecord(input(), {
+    const owner = workflowOwner();
+    const record = updateActiveWorkRecord(input(WORKSPACE_A, {
+      workflowOwner: owner,
+    }), {
       home: scope.home,
       now: new Date(NOW),
       expectedRevision: 0,
@@ -183,6 +204,7 @@ test('writes one owner-only record per workspace with revision and digest', () =
       workspaceId: WORKSPACE_A,
     });
     assert.equal(record.revision, 1);
+    assert.deepEqual(record.workflowOwner, owner);
     assert.equal(record.recordDigest, digestActiveWork(record));
     assert.equal(statSync(paths.record).mode & 0o777, 0o600);
     assert.equal(statSync(path.dirname(paths.record)).mode & 0o777, 0o700);
@@ -191,12 +213,30 @@ test('writes one owner-only record per workspace with revision and digest', () =
       workspaceId: WORKSPACE_A,
     }), record);
 
-    const idempotent = updateActiveWorkRecord(input(), {
+    const idempotent = updateActiveWorkRecord(input(WORKSPACE_A, {
+      workflowOwner: owner,
+    }), {
       home: scope.home,
       now: new Date('2026-09-19T08:01:00.000Z'),
       expectedRevision: 1,
     });
     assert.deepEqual(idempotent, record);
+  } finally {
+    scope.close();
+  }
+});
+
+test('rejects active-work publication without a workflow OWNER', () => {
+  const scope = fixture();
+  try {
+    const ownerless = input();
+    delete ownerless.workflowOwner;
+    expectCode('ACTIVE_WORK_OWNER_MISMATCH', () =>
+      updateActiveWorkRecord(ownerless, {
+        home: scope.home,
+        now: new Date(NOW),
+      }),
+    );
   } finally {
     scope.close();
   }
@@ -339,6 +379,19 @@ test('rejects stale revisions and cross-owner clear attempts', () => {
         workspaceId: WORKSPACE_A,
         expectedRevision: 1,
         workItemId: 'OTHER-WORK',
+        workflowOwner: workflowOwner(),
+      }),
+    );
+    expectCode('ACTIVE_WORK_OWNER_MISMATCH', () =>
+      clearActiveWorkRecord({
+        home: scope.home,
+        workspaceId: WORKSPACE_A,
+        expectedRevision: 1,
+        workItemId: 'DWF-ACTIVE-WORK',
+        workflowOwner: {
+          ...workflowOwner(),
+          rootBindingDigest: 'b'.repeat(64),
+        },
       }),
     );
     const cleared = clearActiveWorkRecord({
@@ -346,6 +399,7 @@ test('rejects stale revisions and cross-owner clear attempts', () => {
       workspaceId: WORKSPACE_A,
       expectedRevision: 1,
       workItemId: 'DWF-ACTIVE-WORK',
+      workflowOwner: workflowOwner(),
     });
     assert.equal(cleared.revision, 1);
     assert.equal(readActiveWorkRecord({
@@ -484,6 +538,7 @@ test('repairs a digest-invalid record only from current owner state', async () =
       {
         home: scope.home,
         workItemId: 'DWF-ACTIVE-WORK',
+        workflowOwner: workflowOwner(),
         expectedRevision: 1,
         expectedRecordSha256: createHash('sha256').update(raw).digest('hex'),
         now: new Date('2026-09-19T08:01:00.000Z'),
@@ -541,6 +596,7 @@ test('derives the projection from Plan, declaration, Task, Session and Git owner
         {
           home: scope.home,
           workItemId: 'DWF-ACTIVE-WORK',
+          workflowOwner: workflowOwner(),
           now: new Date(NOW),
         },
         dependencies,
@@ -551,6 +607,7 @@ test('derives the projection from Plan, declaration, Task, Session and Git owner
       {
         home: scope.home,
         workItemId: 'DWF-ACTIVE-WORK',
+        workflowOwner: workflowOwner(),
         now: new Date(NOW),
       },
       dependencies,

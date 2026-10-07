@@ -5,6 +5,10 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 
+import {
+  validateWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
+
 export const LEDGER_KIND = 'peers-touch-development-work-ledger';
 export const SCHEMA_VERSION = 1;
 export const DEFAULT_EXPIRES_MINUTES = 480;
@@ -55,11 +59,12 @@ const DECLARATION_KEYS = new Set([
   'declarationDigest',
   'planPath',
   'planId',
-  'planVersionDigest',
+  'planDigest',
   'mountId',
   'runId',
   'taskId',
 ]);
+const DECLARATION_OPTIONAL_KEYS = new Set(['workflowOwner']);
 const SOURCE_CLAIM_KEYS = new Set(['pathPrefix', 'mode']);
 const RUNTIME_CLAIM_KEYS = new Set(['kind', 'resourceId', 'mode']);
 
@@ -360,8 +365,24 @@ function validIsoTimestamp(value) {
 
 export function validateDeclaration(declaration) {
   if (
+    isObject(declaration) &&
+    Object.hasOwn(declaration, 'planVersionDigest')
+  ) {
+    fail(
+      'PLAN_STATE_MIGRATION_REQUIRED',
+      'development declaration uses the retired Plan Version schema; close live work and run plan-state-migrate',
+    );
+  }
+  if (
     !isObject(declaration) ||
-    !hasExactKeys(declaration, DECLARATION_KEYS)
+    [...DECLARATION_KEYS].some(
+      (key) => !Object.hasOwn(declaration, key),
+    ) ||
+    Object.keys(declaration).some(
+      (key) =>
+        !DECLARATION_KEYS.has(key) &&
+        !DECLARATION_OPTIONAL_KEYS.has(key),
+    )
   ) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'declaration fields are invalid');
   }
@@ -401,7 +422,7 @@ export function validateDeclaration(declaration) {
   const locatorFields = [
     'planPath',
     'planId',
-    'planVersionDigest',
+    'planDigest',
     'mountId',
     'runId',
     'taskId',
@@ -438,10 +459,10 @@ export function validateDeclaration(declaration) {
         fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
       }
     }
-    if (!/^[0-9a-f]{64}$/.test(declaration.planVersionDigest)) {
+    if (!/^[0-9a-f]{64}$/.test(declaration.planDigest)) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
-        'planVersionDigest is invalid',
+        'planDigest is invalid',
       );
     }
   }
@@ -480,6 +501,18 @@ export function validateDeclaration(declaration) {
     }
     if (normalized !== declaration.journeyId) {
       fail('MACHINE_WORK_LEDGER_INVALID', 'journeyId is not canonical');
+    }
+  }
+  if (Object.hasOwn(declaration, 'workflowOwner')) {
+    try {
+      validateWorkflowOwnerReference(declaration.workflowOwner, {
+        nullable: true,
+      });
+    } catch {
+      fail(
+        'MACHINE_WORK_LEDGER_INVALID',
+        'workflowOwner is invalid',
+      );
     }
   }
   validateClaimArrays(declaration);

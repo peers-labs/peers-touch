@@ -836,7 +836,7 @@ async function completionCandidate(
   return {
     digest: digestCompletionCandidate({
       kind: 'peers-touch-execution-run-completion-candidate',
-      planVersionDigest: planPackage.planVersionDigest,
+      planDigest: planPackage.planDigest,
       snapshotDigest: planPackage.execution.snapshot.recordDigest,
       runId: planPackage.execution.run.runId,
       runRevision: planPackage.execution.run.revision,
