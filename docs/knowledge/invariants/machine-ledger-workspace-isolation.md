@@ -38,6 +38,12 @@ or trust its retired snapshot, while only explicitly authorized exact-owner
 `owner-unmount` may remove its legacy indexes. Legacy and stable Plan indexes
 MUST be disjoint and their union MUST equal the live workspace index.
 
+When a selected pre-owner-provenance declaration has no `workflowOwner`, schema
+adoption MAY attach only the live OWNER reference supplied by the exact
+repository Hook action that admitted the migration. Existing ownership MUST
+match that reference or migration fails closed. Foreign declarations MUST
+never gain, lose, or change ownership during another workspace's adoption.
+
 ## Why this is non-negotiable
 
 The global ledger exists so independent worktrees can see overlapping intent.
@@ -56,7 +62,7 @@ newer ledger.
 
 - `node --test tooling/scripts/plan/stable-plan-state-migration.test.mjs`
   passes foreign-live, selected live-declaration preservation, interruption,
-  tamper, preservation, and stale writer cases.
+  tamper, owner adoption/mismatch, preservation, and stale writer cases.
 - `node --test tooling/scripts/local-dev/dev-work.test.mjs` passes mixed
   declaration coordination and resource-conflict cases.
 - `node --test tooling/scripts/plan/plan-mount.test.mjs` passes mixed-index

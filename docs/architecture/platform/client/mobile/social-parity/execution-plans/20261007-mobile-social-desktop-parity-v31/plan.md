@@ -1,104 +1,12 @@
 # Mobile Social Desktop Parity
 
 > **Plan ID**: MPS-20261006
-> **Version ID**: MPS-20261006-v31
 > **Created**: 2026-10-07T02:56:05.000Z
 
-## Plan Version
+## Plan
 
 ```json
-{
-  "kind": "peers-touch-plan-version",
-  "planId": "MPS-20261006",
-  "versionId": "MPS-20261006-v31",
-  "createdAt": "2026-10-07T02:56:05.000Z",
-  "workClass": "product-behavior",
-  "architecture": {
-    "sources": [
-      "docs/architecture/platform/client/mobile/social-parity/product-definition.md",
-      "docs/architecture/platform/client/mobile/social-parity/experience-contract.md",
-      "docs/architecture/platform/client/mobile/social-parity/product-state-model.md",
-      "docs/architecture/platform/client/mobile/social-parity/acceptance-matrix.md",
-      "docs/architecture/platform/client/mobile/social-parity/design.md",
-      "docs/architecture/platform/client/mobile/social-parity/decisions.md",
-      "docs/architecture/platform/client/mobile/social-parity/data-model.md",
-      "docs/architecture/platform/client/mobile/social-parity/integration.md",
-      "docs/architecture/platform/client/mobile/social-parity/module-layout.md",
-      "docs/architecture/platform/client/mobile/social-parity/prototype/README.md"
-    ],
-    "decisions": [
-      "MPS-D01",
-      "MPS-D02",
-      "MPS-D03",
-      "MPS-D04",
-      "MPS-D05",
-      "MPS-D06",
-      "MPS-D07",
-      "MPS-D08",
-      "MPS-D09",
-      "MPS-D10",
-      "MPS-D11",
-      "MPS-D12",
-      "MPS-D13"
-    ]
-  },
-  "scope": {
-    "sourceClaims": [
-      {"pathPrefix":"apps/mobile","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop","mode":"shared-read"},
-      {"pathPrefix":"apps/station","mode":"shared-read"},
-      {"pathPrefix":"docs/architecture/domains/social/core","mode":"shared-read"},
-      {"pathPrefix":"docs/architecture/domains/social/core/README.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/domains/social/core/acceptance-matrix.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/domains/social/core/experience-contract.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/domains/social/core/product-definition.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/domains/social/core/product-state-model.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/domains/social/cross-station","mode":"shared-read"},
-      {"pathPrefix":"docs/architecture/engineering/architecture-governance/architecture-modules.json","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/platform/client/mobile","mode":"shared-read"},
-      {"pathPrefix":"docs/architecture/platform/client/mobile/README.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/platform/client/mobile/social-parity/README.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/platform/client/mobile/social-parity/acceptance-matrix.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/platform/client/mobile/social-parity/integration.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/platform/client/mobile/social-parity/module-layout.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/shared/federation","mode":"shared-read"},
-      {"pathPrefix":"docs/architecture/shared/security/secure-content","mode":"shared-read"},
-      {"pathPrefix":"docs/client/common/ui-identity/frontend-component-tree-registry.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/README.md","mode":"exclusive-write"},
-      {"pathPrefix":"model/domain/social","mode":"shared-read"},
-      {"pathPrefix":"packages/locales","mode":"exclusive-write"},
-      {"pathPrefix":"packages/prototypes/mobile/chat","mode":"shared-read"},
-      {"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/scripts/acceptance-gap-detect.py","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/scripts/acceptance-gap-detect-test.py","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/scripts/architecture/module-governance.test.mjs","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/scripts/local-dev/completion-review.mjs","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/scripts/plan/planctl.mjs","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/scripts/plan/planctl.test.mjs","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/scripts/generate-mobile-brand-assets.py","mode":"exclusive-write"}
-    ],
-    "nonGoals": [
-      "Change Station Social authority, Audience semantics, Secure Content algorithms, or Federation transport ownership",
-      "Add Browser Social, Mobile P2P, direct remote-Station calls, or a second Mobile Social stack",
-      "Preserve Web bearer transport, three-Audience subsets, public/private fallback, dual writes, or parallel durable stores",
-      "Claim Android or full Mobile parity from an Emulator, iOS-only evidence, static checks, or prototype screenshots",
-      "Reset shared or production data, create environments, push, open a pull request, amend checkpoints, or rewrite history"
-    ]
-  },
-  "tasks": [
-    {"id":"MPS-11A-ANDROID-SAME-STATION","workstreamId":"MPS-PROOF","path":"tasks/MPS-11A-ANDROID-SAME-STATION.md","dependsOn":[]},
-    {"id":"MPS-09-IOS-ACCEPTANCE","workstreamId":"MPS-MOBILE-SOCIAL","path":"tasks/MPS-09-IOS-ACCEPTANCE.md","dependsOn":[]},
-    {"id":"MPS-10-CROSS-STATION-IOS","workstreamId":"MPS-PROOF","path":"tasks/MPS-10-CROSS-STATION-IOS.md","dependsOn":["MPS-09-IOS-ACCEPTANCE"]},
-    {"id":"MPS-11B-ANDROID-INTEROP","workstreamId":"MPS-PROOF","path":"tasks/MPS-11B-ANDROID-INTEROP.md","dependsOn":["MPS-11A-ANDROID-SAME-STATION","MPS-10-CROSS-STATION-IOS"]},
-    {"id":"MPS-12-AGGREGATE","workstreamId":"MPS-DELIVERY","path":"tasks/MPS-12-AGGREGATE.md","dependsOn":["MPS-10-CROSS-STATION-IOS","MPS-11B-ANDROID-INTEROP"]}
-  ],
-  "authorization": {
-    "checkpoint": {"localCommit":"allowed","amend":"denied"},
-    "delivery": {"push":"denied","pullRequest":"denied"},
-    "runtime": {"deployProfiles":["fiveArm","three","two"],"destructiveResetScopes":[]},
-    "history": {"rewrite":"denied"}
-  }
-}
+{"kind":"peers-touch-plan","planId":"MPS-20261006","createdAt":"2026-10-07T02:56:05.000Z","northStar":{"objective":"Deliver one canonical Mobile Social facade and Native adapter with receiver-visible semantic parity across iOS, physical Android, Desktop, and two Stations, without duplicating Station Social, Secure Content, or Federation authority.","successCriteria":[{"id":"MPS-NS-01","statement":"iOS RC01 proves complete same-Station Mobile Social behavior on isolated native Simulators.","sourceRefs":["MSP-J01-J09-IOS","RC01","PA01-PA09","PA14-PA15","PA18-PA19"]},{"id":"MPS-NS-02","statement":"Physical Android RC02 proves the same canonical Social behavior, Peers branding, lifecycle, accessibility, and bounded-list outcomes without an Emulator substitute.","sourceRefs":["MSP-J01-J05-J09-ANDROID","RC02","PA01-PA09","PA14-PA15","PA18-PA19"]},{"id":"MPS-NS-03","statement":"Desktop and iOS prove bidirectional cross-Station convergence, authorization, outage, recovery, replay, and invalidation for RC03, RC04, RC08, RC09, and RC10.","sourceRefs":["MSP-J07-J08-J10-CROSS-STATION-IOS","RC03","RC04","RC08","RC09","RC10"]},{"id":"MPS-NS-04","statement":"Desktop, iOS, and the USB-authorized physical Android device prove all RC05, RC06, and RC07 interoperability directions on exact source.","sourceRefs":["MSP-J05-J10-ANDROID-INTEROP","RC05","RC06","RC07"]},{"id":"MPS-NS-05","statement":"The final aggregate emits SOCIAL_MOBILE_DESKTOP_PARITY_PROVEN only when RC01-RC10, PA01-PA19, AG01-AG10, exact-source identity, and cleanup all pass.","sourceRefs":["MSP-J01-J10-AGGREGATE","RC01-RC10","PA01-PA19","AG01-AG10"]}]},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/platform/client/mobile/social-parity/product-definition.md","docs/architecture/platform/client/mobile/social-parity/experience-contract.md","docs/architecture/platform/client/mobile/social-parity/product-state-model.md","docs/architecture/platform/client/mobile/social-parity/acceptance-matrix.md","docs/architecture/platform/client/mobile/social-parity/design.md","docs/architecture/platform/client/mobile/social-parity/decisions.md","docs/architecture/platform/client/mobile/social-parity/data-model.md","docs/architecture/platform/client/mobile/social-parity/integration.md","docs/architecture/platform/client/mobile/social-parity/module-layout.md","docs/architecture/platform/client/mobile/social-parity/prototype/README.md"],"decisions":["MPS-D01","MPS-D02","MPS-D03","MPS-D04","MPS-D05","MPS-D06","MPS-D07","MPS-D08","MPS-D09","MPS-D10","MPS-D11","MPS-D12","MPS-D13"]},"scope":{"sourceClaims":[{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"apps/desktop","mode":"shared-read"},{"pathPrefix":"apps/station","mode":"shared-read"},{"pathPrefix":"docs/architecture/domains/social/core","mode":"shared-read"},{"pathPrefix":"docs/architecture/domains/social/core/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/domains/social/core/acceptance-matrix.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/domains/social/core/experience-contract.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/domains/social/core/product-definition.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/domains/social/core/product-state-model.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/domains/social/cross-station","mode":"shared-read"},{"pathPrefix":"docs/architecture/engineering/architecture-governance/architecture-modules.json","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/platform/client/mobile","mode":"shared-read"},{"pathPrefix":"docs/architecture/platform/client/mobile/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/platform/client/mobile/social-parity/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/platform/client/mobile/social-parity/acceptance-matrix.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/platform/client/mobile/social-parity/integration.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/platform/client/mobile/social-parity/module-layout.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/shared/federation","mode":"shared-read"},{"pathPrefix":"docs/architecture/shared/security/secure-content","mode":"shared-read"},{"pathPrefix":"docs/client/common/ui-identity/frontend-component-tree-registry.md","mode":"exclusive-write"},{"pathPrefix":"docs/README.md","mode":"exclusive-write"},{"pathPrefix":"model/domain/social","mode":"shared-read"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"packages/prototypes/mobile/chat","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/acceptance-gap-detect.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/acceptance-gap-detect-test.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/architecture/module-governance.test.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/local-dev/completion-review.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/plan/planctl.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/plan/planctl.test.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/generate-mobile-brand-assets.py","mode":"exclusive-write"}],"nonGoals":["Change Station Social authority, Audience semantics, Secure Content algorithms, or Federation transport ownership","Add Browser Social, Mobile P2P, direct remote-Station calls, or a second Mobile Social stack","Preserve Web bearer transport, three-Audience subsets, public/private fallback, dual writes, or parallel durable stores","Claim Android or full Mobile parity from an Emulator, iOS-only evidence, static checks, or prototype screenshots","Reset shared or production data, create environments, push, open a pull request, amend checkpoints, or rewrite history"]},"tasks":[{"id":"MPS-11A-ANDROID-SAME-STATION","workstreamId":"MPS-PROOF","path":"tasks/MPS-11A-ANDROID-SAME-STATION.md","dependsOn":[]},{"id":"MPS-09-IOS-ACCEPTANCE","workstreamId":"MPS-MOBILE-SOCIAL","path":"tasks/MPS-09-IOS-ACCEPTANCE.md","dependsOn":[]},{"id":"MPS-10-CROSS-STATION-IOS","workstreamId":"MPS-PROOF","path":"tasks/MPS-10-CROSS-STATION-IOS.md","dependsOn":["MPS-09-IOS-ACCEPTANCE"]},{"id":"MPS-11B-ANDROID-INTEROP","workstreamId":"MPS-PROOF","path":"tasks/MPS-11B-ANDROID-INTEROP.md","dependsOn":["MPS-11A-ANDROID-SAME-STATION","MPS-10-CROSS-STATION-IOS"]},{"id":"MPS-12-AGGREGATE","workstreamId":"MPS-DELIVERY","path":"tasks/MPS-12-AGGREGATE.md","dependsOn":["MPS-10-CROSS-STATION-IOS","MPS-11B-ANDROID-INTEROP"]}],"authorization":{"checkpoint":{"localCommit":"allowed"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["fiveArm","three","two"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}},"amendments":[],"northStarApproval":{"northStarDigest":"04381a218004031025c292336fe32ab6b6c23db6f5d80a66d444064ee4952c59","approvedBy":"user","approvedAt":"2026-10-07T10:01:53.274Z","decisionRef":"USER-APPROVED-MPS-V31-20261007"},"criterionCoverage":[{"criterionId":"MPS-NS-01","taskIds":["MPS-09-IOS-ACCEPTANCE"],"closureIds":["mps-ios-acceptance"],"gateIds":["mobile-social-ios-native"]},{"criterionId":"MPS-NS-02","taskIds":["MPS-11A-ANDROID-SAME-STATION"],"closureIds":["mps-android-same-station"],"gateIds":["mobile-social-android-native"]},{"criterionId":"MPS-NS-03","taskIds":["MPS-10-CROSS-STATION-IOS"],"closureIds":["mps-cross-station-ios"],"gateIds":["mobile-social-cross-platform"]},{"criterionId":"MPS-NS-04","taskIds":["MPS-11B-ANDROID-INTEROP"],"closureIds":["mps-android-interoperability"],"gateIds":["mobile-social-android-interoperability"]},{"criterionId":"MPS-NS-05","taskIds":["MPS-11A-ANDROID-SAME-STATION","MPS-09-IOS-ACCEPTANCE","MPS-10-CROSS-STATION-IOS","MPS-11B-ANDROID-INTEROP","MPS-12-AGGREGATE"],"closureIds":["mps-android-same-station","mps-ios-acceptance","mps-cross-station-ios","mps-android-interoperability","mps-aggregate"],"gateIds":["mobile-social-android-native","mobile-social-ios-native","mobile-social-cross-platform","mobile-social-android-interoperability","mobile-social-desktop-parity-aggregate"]}]}
 ```
 
 ## Acceptance Execution

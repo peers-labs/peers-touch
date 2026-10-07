@@ -2277,6 +2277,10 @@ contradicted DWF-D11's claim-based conflict model.
   root, acquires the existing short machine locks, rewrites only declarations
   for that workspace, preserves their lifecycle state, and preserves every
   foreign record and index entry.
+- A selected pre-DWF-D43 declaration with no `workflowOwner` may adopt only
+  the live OWNER reference carried by the exact Hook action that admitted the
+  migration. Existing ownership must match or migration fails closed; foreign
+  declarations are never adopted by another workspace.
 - A legacy mount remains close-only after adoption. Stable execution never
   consumes its retired snapshot or trusts its terminal state. Only separately
   authorized exact-owner `owner-unmount` may close it; close validates the
