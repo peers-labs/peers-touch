@@ -30,7 +30,9 @@
     "tooling/acceptance/registry.yaml",
     "tooling/acceptance/tests/test_mobile_simulator_provisioner.py",
     "tooling/scripts/acceptance-pipeline-audit-test.py",
-    "tooling/scripts/acceptance-pipeline-audit.py"
+    "tooling/scripts/acceptance-pipeline-audit.py",
+    "tooling/scripts/acceptance-plan-test.py",
+    "tooling/scripts/acceptance-plan.py"
   ],
   "readSet": [
     "apps/desktop",
@@ -54,7 +56,7 @@
   "checks": [
     {
       "id": "session-class-suite-source",
-      "command": "python3 -m unittest tooling.acceptance.gates.chat.lifecycle_mixed_client_test tooling.acceptance.gates.station_access.session_class_suite_e2e_test tooling.acceptance.tests.test_mobile_simulator_provisioner tooling.acceptance.tests.test_suite_runtime && python3 tooling/scripts/acceptance-pipeline-audit-test.py",
+      "command": "python3 -m unittest tooling.acceptance.gates.chat.lifecycle_mixed_client_test tooling.acceptance.gates.station_access.session_class_suite_e2e_test tooling.acceptance.tests.test_mobile_simulator_provisioner tooling.acceptance.tests.test_suite_runtime && python3 tooling/scripts/acceptance-pipeline-audit-test.py && python3 tooling/scripts/acceptance-plan-test.py",
       "verificationClass": "SOURCE_CHECK"
     },
     {
