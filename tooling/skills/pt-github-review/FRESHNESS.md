@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-07
-covered_docs_hash: 888cc2f3ce7eabaa50e3ba968d726cf3486e66787279266e4e7e8dcfcddf6cc5
+covered_docs_hash: e777ff8d0e2a0df0ec78d571d078a9aede483941fa1e9b31e9799fea2a3f5d1b
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,15 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-07 Plan And Ownership Hardening Review
+
+DWF-D42 and DWF-D43 now require source-only CI Plan validation, immutable
+digest-bound completion attestations, full-source amendment fences, exact root
+OWNER receipts, and recoverable worktree creation transactions. Review rejects
+machine-state-dependent CI checks, child-session OWNER substitution,
+ownerless lifecycle mutation, unvalidated legacy migration input, and
+non-transactional provenance publication.
 
 ## 2026-10-07 Main-Session Worktree Provenance Review
 

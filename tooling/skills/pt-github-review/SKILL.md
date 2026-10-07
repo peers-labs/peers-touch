@@ -160,9 +160,17 @@ verify:
   `PostCompact` persist and verify one receipt per complete binding lineage so
   concurrent OWNER/WORKER/REVIEWER compactions cannot overwrite each other;
 - Agent-created worktrees use the explicitly authorized owner-aware creation
-  path and persist immutable `createdBy` main-session provenance; reject raw
-  Git creation presented as supported, Git actor substitution, Action Receipt
-  substitution for user authorization, or guessed legacy provenance;
+  path, resolve the requested start point to an exact commit, and persist both
+  a recoverable creation transaction and immutable `createdBy` main-session
+  provenance; reject raw Git creation presented as supported, Git actor
+  substitution, Action Receipt substitution for user authorization, path
+  reuse, or guessed legacy provenance;
+- stable Plan changes preserve one `planId`, append exactly one auditable
+  amendment, fence the complete manifest/Task byte set before switching the
+  ExecutionRun, and invalidate affected Task closures without remounting;
+- CI validates explicit Plan source without consulting machine-local mounts and
+  accepts completion only from an immutable repository
+  `completions/<planDigest>.json` attestation;
 - TRAE multi-root integration projects equivalent ingress into the selected
   source root, descriptor bootstrap root, and existing TRAE-participating
   roots, never treats Hook location or folder order as execution authority,
