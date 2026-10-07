@@ -373,6 +373,19 @@ class MixedNativeRuntime:
     def actor_fixture(self, client_id: str) -> dict[str, Any]:
         return self._actor_for_client(client_id)
 
+    def prepare_desktop_actor_identity(
+        self,
+        source_client_id: str,
+        target_client_id: str,
+    ) -> None:
+        self.desktop_binding.clone_actor_storage(
+            source_client_id,
+            self._client_spec(source_client_id),
+            target_client_id,
+            self._client_spec(target_client_id),
+            "peers-touch/desktop/data/secure-store/identity-keys",
+        )
+
     def mark_desktop_auth_revoked(self, client_id: str) -> None:
         session = self.desktop_sessions.get(client_id)
         if session is None:

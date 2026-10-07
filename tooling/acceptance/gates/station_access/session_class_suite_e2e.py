@@ -150,6 +150,10 @@ class StationAccessSessionClassSuiteGate(AcceptanceGate):
                     resource_id=f"session:{client_id}",
                 )
 
+            self.runtime.prepare_desktop_actor_identity(
+                "desktop-bob",
+                "desktop-bob-peer",
+            )
             source_identity = self.runtime.source_identity()
             alice = self.runtime.identities["desktop-alice"]
             desktop_bob = self.runtime.identities["desktop-bob"]
