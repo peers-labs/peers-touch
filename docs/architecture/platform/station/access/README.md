@@ -61,7 +61,8 @@
 | [data-model.md](./data-model.md) | endpoint、route binding 与 scope 数据模型 |
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 当前实现证据、差距与切换策略 |
-| [execution-plans/20261006-unified-relay-station-access-v6/plan.md](./execution-plans/20261006-unified-relay-station-access-v6/plan.md) | 已批准的 Plan Version；v6 补齐 SAL-REL-03 Dashboard operator 与 Go/Desktop/Mobile 生成绑定写集 |
+| [execution-plans/20261006-unified-relay-station-access-v7/plan.md](./execution-plans/20261006-unified-relay-station-access-v7/plan.md) | 已批准的 Plan Version；v7 补齐 SAL-REL-03 Dashboard source impact 的 formal Gate |
+| [execution-plans/20261006-unified-relay-station-access-v6/plan.md](./execution-plans/20261006-unified-relay-station-access-v6/plan.md) | 已由 v7 替换；缺少 SAL-REL-03 Dashboard unit/web formal Gate |
 | [execution-plans/20261006-unified-relay-station-access-v5/plan.md](./execution-plans/20261006-unified-relay-station-access-v5/plan.md) | 已由 v6 替换；缺少 SAL-REL-03 真实生产调用面与完整生成绑定写集 |
 | [execution-plans/20261006-unified-relay-station-access-v4/plan.md](./execution-plans/20261006-unified-relay-station-access-v4/plan.md) | 已取消；因 `ACCEPTANCE_PLAN_DRIFT` 被 v5 替换 |
 | [execution-plans/20261006-unified-relay-station-access-v3/plan.md](./execution-plans/20261006-unified-relay-station-access-v3/plan.md) | 已取消的 frozen v3；保留 sixwin exact-source Windows 编译与首次双角色运行快照 |
@@ -74,6 +75,7 @@
 | [reviews/review-07-unified-relay-plan-v4.md](./reviews/review-07-unified-relay-plan-v4.md) | externalruntime formal Gate inventory 修订与 v4 readiness review |
 | [reviews/review-08-unified-relay-plan-v5.md](./reviews/review-08-unified-relay-plan-v5.md) | 当前 source impact formal Gate inventory 修订与 v5 readiness review |
 | [reviews/review-09-unified-relay-plan-v6.md](./reviews/review-09-unified-relay-plan-v6.md) | Dashboard operator 与完整生成绑定写集修订的 v6 review |
+| [reviews/review-10-unified-relay-plan-v7.md](./reviews/review-10-unified-relay-plan-v7.md) | Dashboard source impact formal Gate 修订的 v7 review |
 
 ## 5. 上游真源
 
@@ -90,5 +92,6 @@
 - Relay Station-to-Station 原型：存在，但不满足客户端接入与生产安全条件。
 - 统一 Relay/Station 接入：产品与架构口径不变；frozen v1 因旧 `relay-1`
   不具备安全材料而取消，v2-v5 依次补齐 Windows 源码和 formal Gate inventory。
-  v6 已获 Owner 批准，补齐当前 SAL-REL-03 的 Dashboard operator 与完整生成
-  绑定写集；运行时继续使用 sixwin 隔离环境。
+  v6 补齐当前 SAL-REL-03 的 Dashboard operator 与完整生成绑定写集；v7 已获
+  Owner 批准，补齐 Dashboard source impact 所要求的 unit/web formal Gate；
+  运行时继续使用 sixwin 隔离环境。
