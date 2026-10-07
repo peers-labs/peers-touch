@@ -19,6 +19,7 @@
     "apps/mobile/src",
     "apps/mobile/src-tauri",
     "packages/locales",
+    "packages/prototypes/mobile/chat",
     "tooling/acceptance",
     "tooling/scripts/generate-mobile-brand-assets.py"
   ],
@@ -78,6 +79,7 @@
     "Android launcher uses the Peers wordmark through adaptive foreground, solid background, monochrome and round-icon resources without a baked vendor mask",
     "OPPO ColorOS applies its own launcher mask with no clipped wordmark, mismatched corner radius or Tauri default icon",
     "Home/Explore, Search/Profile, Circles, Composer/Audience, Thread/Reaction/Media and recovery/lifecycle interactions match the confirmed Mobile Social prototype structure and geometry",
+    "Production and prototype use a bottom-anchored composer with the text input as the dominant surface and compact audience/action controls",
     "Alice, Bob and Eve execute the RC02 same-Station suite on that physical Android product surface without an Emulator substitute",
     "RC02 produces receiver-visible and authoritative observations for PA01-PA09, PA14-PA15 and PA18-PA19",
     "Android keyboard, safe area, system back, accessibility, background, restart, scope switch and bounded-list assertions pass",
@@ -87,7 +89,7 @@
   "failureBehavior": [
     "Run make config and make env-check before every Station operation and reject loopback or deploy-environment drift",
     "Never substitute an Android Emulator, unauthorized serial or stale device evidence",
-    "Do not modify the confirmed prototype to excuse production drift; production must follow the confirmed interaction contract",
+    "Do not modify the prototype to excuse production drift; update both only for an explicit owner-approved product decision",
     "If no authorized USB device exists, record the deterministic blocker and keep RC02 BLOCKED/UNPROVEN",
     "Do not reset accounts, claim cross-platform directions or emit SOCIAL_MOBILE_DESKTOP_PARITY_PROVEN"
   ],
