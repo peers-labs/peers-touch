@@ -601,7 +601,7 @@ function MobileAppRoot() {
     );
   }
 
-  if (launchState === 'shell') {
+  if (launchState === 'shell' || launchState === 'resume') {
     return renderWithRecovery(
       <MobileShell
         stationRegistry={stationRegistry}

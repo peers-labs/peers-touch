@@ -136,6 +136,7 @@ class _ShellDriverSession:
         self.orientation = "PORTRAIT"
         self.route_id = "tab:chat"
         self.clicked: list[str] = []
+        self.lifecycle_actions: list[str] = []
 
     def switch_to_native(self) -> None:
         return None
@@ -175,16 +176,9 @@ class _ShellDriverSession:
     def call_action(self, action: str) -> Any:
         if action == "navigation.snapshot":
             return {"primaryRouteId": self.route_id}
-        if action == "lifecycle.snapshot":
-            return {
-                "runtimes": [
-                    {
-                        "id": "notifications",
-                        "status": "failed",
-                        "errorKey": "mobile.lifecycle.runtimeFailed",
-                    }
-                ]
-            }
+        if action in {"lifecycle.suspend", "lifecycle.resume"}:
+            self.lifecycle_actions.append(action)
+            return {"snapshot": {"phase": action.removeprefix("lifecycle.")}}
         raise AssertionError(action)
 
 
@@ -470,6 +464,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             entries["shell.degraded-module-notice"],
         )
         self.assertEqual(degraded["kind"], "system")
+        self.assertEqual(session.lifecycle_actions, ["lifecycle.suspend"])
 
     def test_shell_product_selectors_are_present_in_production(self) -> None:
         shell = (
@@ -482,6 +477,9 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         settings = (
             REPO_ROOT / "apps/mobile/src/pages/SettingsPage.tsx"
         ).read_text(encoding="utf-8")
+        app = (REPO_ROOT / "apps/mobile/src/App.tsx").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn(
             "data-product-surface={`shell.${activeTab}-tab`}",
@@ -494,6 +492,10 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
         self.assertNotIn("ptidDisplay", settings)
         self.assertIn("settings-profile-subtitle", settings)
+        self.assertIn(
+            "launchState === 'shell' || launchState === 'resume'",
+            app,
+        )
 
     def test_inventory_covers_every_surface_set_and_contract_cell(self) -> None:
         inventory = load_surface_inventory()

@@ -17,6 +17,7 @@
   "runtimeClass": "native-mobile",
   "writeSet": [
     "apps/mobile/scripts",
+    "apps/mobile/src/App.tsx",
     "apps/mobile/src/components",
     "apps/mobile/src/pages/SettingsPage.tsx",
     "apps/mobile/src/styles.css",
