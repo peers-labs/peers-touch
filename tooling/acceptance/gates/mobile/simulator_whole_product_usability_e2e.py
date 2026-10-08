@@ -137,7 +137,7 @@ if (!root || typeof root['lifecycle.resume'] !== 'function') return false;
 window.__PEERS_MOBILE_RESUME_DONE__ = false;
 window.__PEERS_MOBILE_RESUME_ERROR__ = null;
 window.__PEERS_MOBILE_RESUME__ = Promise.resolve(
-  root['lifecycle.resume']({}),
+  root['lifecycle.resume']({})
 ).then(() => {
   window.__PEERS_MOBILE_RESUME_DONE__ = true;
 ).catch((error) => {
