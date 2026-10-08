@@ -544,6 +544,13 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             '[data-product-surface="shell.degraded-module-notice"]',
             SURFACE_AUDIT_SCRIPT,
         )
+        self.assertIn("fullyVisibleWithinAncestors", SURFACE_AUDIT_SCRIPT)
+        self.assertIn("clipsOverflow(style.overflowX)", SURFACE_AUDIT_SCRIPT)
+        self.assertIn("clipsOverflow(style.overflowY)", SURFACE_AUDIT_SCRIPT)
+        self.assertIn(
+            "fullyVisibleWithinAncestors(boundary, rect)",
+            SURFACE_AUDIT_SCRIPT,
+        )
 
     def test_shell_product_selectors_are_present_in_production(self) -> None:
         shell = (

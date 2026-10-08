@@ -177,6 +177,28 @@ const label = (element) => String(
   || element.textContent
   || '',
 ).trim();
+const clipsOverflow = (value) => (
+  ['auto', 'scroll', 'hidden', 'clip', 'overlay'].includes(value)
+);
+const fullyVisibleWithinAncestors = (element, rect) => {
+  for (
+    let ancestor = element.parentElement;
+    ancestor && ancestor !== document.documentElement;
+    ancestor = ancestor.parentElement
+  ) {
+    const style = getComputedStyle(ancestor);
+    const ancestorRect = ancestor.getBoundingClientRect();
+    if (
+      clipsOverflow(style.overflowX)
+      && (rect.left < ancestorRect.left - 1 || rect.right > ancestorRect.right + 1)
+    ) return false;
+    if (
+      clipsOverflow(style.overflowY)
+      && (rect.top < ancestorRect.top - 1 || rect.bottom > ancestorRect.bottom + 1)
+    ) return false;
+  }
+  return true;
+};
 const root = document.querySelector(selector);
 if (!root || !visible(root)) return {found: false};
 const rootRect = root.getBoundingClientRect();
@@ -200,7 +222,8 @@ const controls = interactive.map((element) => {
       inViewport: rect.left >= -1
         && rect.top >= -1
         && rect.right <= window.innerWidth + 1
-        && rect.bottom <= window.innerHeight + 1,
+        && rect.bottom <= window.innerHeight + 1
+        && fullyVisibleWithinAncestors(boundary, rect),
     },
   };
 }).filter(({value}) => value.inViewport);
