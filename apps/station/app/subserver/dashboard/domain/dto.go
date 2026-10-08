@@ -296,7 +296,20 @@ type ChangePasswordRequest struct {
 
 // ResetPasswordRequest is the request body for POST /actors/:ptid/reset-password.
 type ResetPasswordRequest struct {
+	PTID        string `json:"ptid"`
 	NewPassword string `json:"new_password"`
+}
+
+// ActorPathRequest carries the :ptid path parameter for actor subroutes.
+type ActorPathRequest struct {
+	PTID string `json:"ptid"`
+}
+
+// ActorRevokeSessionRequest carries the :ptid and :sid path parameters for
+// POST /actors/:ptid/sessions/:sid/revoke.
+type ActorRevokeSessionRequest struct {
+	PTID      string `json:"ptid"`
+	SessionID string `json:"sid"`
 }
 
 // ---------------------------------------------------------------------------
