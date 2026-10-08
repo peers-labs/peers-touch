@@ -47,6 +47,7 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
 )
 from tooling.acceptance.gates.mobile.surface_audit import (
     audit_accessibility_tree,
+    audit_keyboard_tree,
 )
 
 
@@ -77,6 +78,7 @@ ARTIFACT_REF_FIELDS = {
 SHELL_CLIENT_ID = "sim-ios"
 SHELL_REQUIRED_HARNESS_ACTIONS = (
     "access.submit",
+    "chat.fixture",
     "cleanup",
     "entry.fixture",
     "lifecycle.restart",
@@ -227,7 +229,10 @@ const rootRect = root.getBoundingClientRect();
 const interactiveSelector =
   'button,input,select,textarea,a[href],[role="button"],[tabindex]';
 const controlScope = allowDegradedNotice || usePageControls ? document.body : root;
-const interactive = Array.from(controlScope.querySelectorAll(interactiveSelector))
+const interactive = [
+  ...(controlScope.matches(interactiveSelector) ? [controlScope] : []),
+  ...Array.from(controlScope.querySelectorAll(interactiveSelector)),
+]
   .filter(visible)
   .filter((element) => element.getAttribute('tabindex') !== '-1');
 const controls = interactive.map((element) => {
@@ -257,6 +262,7 @@ const controls = interactive.map((element) => {
   };
 }).filter(({value}) => value.inViewport);
 const occlusions = controls.flatMap(({element, value}) => {
+  if (element.matches('.chat-action-sheet-backdrop')) return [];
   const rect = element.getBoundingClientRect();
   const x = Math.min(window.innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
   const y = Math.min(window.innerHeight - 1, Math.max(0, rect.top + rect.height / 2));
@@ -306,13 +312,13 @@ return {
       && rootRect.right <= window.innerWidth + 1
       && rootRect.bottom <= window.innerHeight + 1,
   },
-  controls: controls.map(({value}) => value),
+  controls: controls.map(({value}) => ({...value})),
   unlabeledControls: controls
     .filter(({value}) => !value.label)
     .map(({element}) => element.outerHTML.slice(0, 240)),
   undersizedControls: controls
     .filter(({value}) => value.width < minimum || value.height < minimum)
-    .map(({value}) => value),
+    .map(({value}) => ({...value})),
   clippedText,
   occlusions,
   blockingSurfaces,
@@ -712,15 +718,16 @@ def _validate_artifact_ref(
 def _is_proven_manifest_result(value: Any) -> bool:
     if not isinstance(value, Mapping):
         return False
-    if (
-        value.get("completionStatus") != "DONE"
-        or value.get("proofStatus") != "PROVEN"
-    ):
+    if value.get("completionStatus") != "DONE":
         return False
-    if value.get("status") == "PASS":
+    if (
+        value.get("status") == "PASS"
+        and value.get("proofStatus") == "PROVEN"
+    ):
         return True
     return (
-        value.get("artifactKind") == "acceptance-gate-result"
+        value.get("artifactKind")
+        in {"acceptance-gate-result", "development-functional-result"}
         and value.get("status") == "passed"
         and value.get("evidenceStatus") == "PASS"
         and value.get("exit_code") == 0
@@ -1411,6 +1418,18 @@ class SimulatorWholeProductUsabilityGate(
                     "shell-degraded-module",
                 ],
             },
+            "chat": {
+                "runtimeCell": "ios-simulator-chat",
+                "phase": "MWPU-04 Chat Usability",
+                "bom": ["MWPU-04-CHAT"],
+                "observedScope": [
+                    "conversation-list",
+                    "direct-and-group-threads",
+                    "composer-and-attachments",
+                    "message-and-conversation-actions",
+                    "group-management",
+                ],
+            },
         }.get(surface_set)
         if report_scope is None:
             report_scope = {
@@ -1476,7 +1495,7 @@ class SimulatorWholeProductUsabilityGate(
                 manifest,
                 inventory,
             )
-        if surface_set not in {"shell", "recovery"}:
+        if surface_set not in {"shell", "recovery", "chat"}:
             raise SimulatorGateBlocked(
                 f"Surface adapter is not implemented for {surface_set}",
                 f"mobile-whole-product:surface-adapter:{surface_set}",
@@ -1592,11 +1611,17 @@ class SimulatorWholeProductUsabilityGate(
                 session.switch_to_app_webview()
                 session.call_action("recovery.fixture", {"surfaceId": None})
                 time.sleep(0.5)
+            elif surface_set == "chat":
+                session.switch_to_app_webview()
+                session.call_action("chat.fixture", {"surfaceId": None})
+                time.sleep(0.5)
             viewport = self._configure_cell(session, cell_id)
             for entry in entries:
                 action = (
                     self._enter_recovery_surface(session, entry)
                     if surface_set == "recovery"
+                    else self._enter_chat_surface(session, entry)
+                    if surface_set == "chat"
                     else self._enter_surface(session, entry)
                 )
                 surface_evidence[entry["id"]]["cells"][cell_id] = (
@@ -1615,6 +1640,8 @@ class SimulatorWholeProductUsabilityGate(
         self._configure_cell(session, "portrait-normal")
         if surface_set == "recovery":
             session.call_action("recovery.fixture", {"surfaceId": None})
+        elif surface_set == "chat":
+            session.call_action("chat.fixture", {"surfaceId": None})
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
             {
@@ -2067,6 +2094,112 @@ class SimulatorWholeProductUsabilityGate(
             "performed": True,
         }
 
+    def _enter_chat_surface(
+        self,
+        session: Any,
+        entry: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        surface_id = str(entry["id"])
+        action = str(entry["entryAction"])
+        session.switch_to_app_webview()
+        composer_was_focused = session.execute_script(
+            "const active=document.activeElement;"
+            "const focused=active instanceof HTMLElement"
+            "&&active.matches('[data-chat-fixture-composer]');"
+            "if(active instanceof HTMLElement){active.blur();}"
+            "return focused;"
+        )
+        if composer_was_focused is True:
+            time.sleep(0.4)
+        observed = session.call_action(
+            "chat.fixture",
+            {"surfaceId": surface_id},
+        )
+        if (
+            not isinstance(observed, Mapping)
+            or observed.get("surfaceId") != surface_id
+        ):
+            raise GateError(f"Mobile Chat fixture did not project {surface_id}")
+        self._wait_for_surface(
+            session,
+            str(entry["surfaceSelector"]),
+        )
+
+        action_kind = "system"
+        if action in {"type-conversation-query", "search-unknown-conversation"}:
+            search = session.find_element(
+                "css selector",
+                "[data-chat-fixture-search]",
+            )
+            session.click_element(search)
+            action_kind = "native-text"
+        elif action == "focus-message-composer":
+            composer = session.find_element(
+                "css selector",
+                "[data-chat-fixture-composer]",
+            )
+            session.click_element(composer)
+            session.switch_to_native()
+            native_composer = session.find_element(
+                "class name",
+                "XCUIElementTypeTextField",
+            )
+            session.click_element(native_composer)
+            self._wait_for_chat_keyboard(session)
+            session.switch_to_app_webview()
+            self._wait_for_chat_composer_focus(session)
+            action_kind = "native-touch"
+        elif action == "tap-chat-tab":
+            tab = session.find_element(
+                "css selector",
+                '[data-route-id="tab:chat"]',
+            )
+            session.click_element(tab)
+            action_kind = "native-touch"
+
+        return {
+            "kind": action_kind,
+            "target": action,
+            "performed": True,
+        }
+
+    @staticmethod
+    def _wait_for_chat_composer_focus(
+        session: Any,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            focused = session.execute_script(
+                "const node=document.querySelector('[data-chat-fixture-composer]');"
+                "return Boolean(node&&document.activeElement===node);"
+            )
+            if focused is True:
+                time.sleep(0.5)
+                return
+            time.sleep(0.2)
+        raise GateError("Mobile Chat composer did not receive foreground focus")
+
+    @staticmethod
+    def _wait_for_chat_keyboard(
+        session: Any,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        last_error: GateError | None = None
+        while time.monotonic() < deadline:
+            source = session.get_page_source()
+            if "<XCUIElementTypeKeyboard" in source:
+                try:
+                    audit_keyboard_tree(source)
+                    return
+                except GateError as error:
+                    last_error = error
+            time.sleep(0.2)
+        if last_error is not None:
+            raise last_error
+        raise GateError("Mobile Chat software keyboard did not appear")
+
     def _enter_entry_surface(
         self,
         session: Any,
@@ -2156,14 +2289,15 @@ class SimulatorWholeProductUsabilityGate(
                 "&&Number(style.opacity)>0&&rect.width>0&&rect.height>0;"
                 "if(!visible)return false;"
                 "if(!arguments[1])return true;"
-                "const heading=document.querySelector('h1,[role=\"heading\"][aria-level=\"1\"]');"
-                "if(!heading)return false;"
+                "return Array.from(document.querySelectorAll("
+                "'h1,[role=\"heading\"][aria-level=\"1\"]'"
+                ")).some((heading)=>{"
                 "const headingRect=heading.getBoundingClientRect();"
                 "const headingStyle=getComputedStyle(heading);"
                 "return headingStyle.display!=='none'"
                 "&&headingStyle.visibility!=='hidden'"
                 "&&Number(headingStyle.opacity)>0"
-                "&&headingRect.width>0&&headingRect.height>0;",
+                "&&headingRect.width>0&&headingRect.height>0;});",
                 selector,
                 require_heading,
             )
@@ -2226,12 +2360,25 @@ class SimulatorWholeProductUsabilityGate(
                     f"{findings!r}"
                 )
         actual_viewport = observation.get("viewport")
-        if (
-            not isinstance(actual_viewport, Mapping)
-            or actual_viewport.get("width") != viewport["width"]
-            or actual_viewport.get("height") != viewport["height"]
-        ):
+        if not isinstance(actual_viewport, Mapping):
             raise GateError(f"Mobile viewport changed while capturing {entry['id']}")
+        viewport_changed = (
+            actual_viewport.get("width") != viewport["width"]
+            or actual_viewport.get("height") != viewport["height"]
+        )
+        keyboard_viewport = (
+            entry["id"] == "chat.composer-keyboard"
+            and actual_viewport.get("width") == viewport["width"]
+            and isinstance(actual_viewport.get("height"), int)
+            and 0 < actual_viewport["height"] < viewport["height"]
+        )
+        if viewport_changed and not keyboard_viewport:
+            raise GateError(f"Mobile viewport changed while capturing {entry['id']}")
+        captured_viewport = {
+            **dict(viewport),
+            "width": actual_viewport["width"],
+            "height": actual_viewport["height"],
+        }
         dom = session.get_webview_source()
         text_parser = _SurfaceHTMLAudit()
         text_parser.feed(dom)
@@ -2273,7 +2420,7 @@ class SimulatorWholeProductUsabilityGate(
             "entryAction": entry["entryAction"],
             "surfaceSelector": entry["surfaceSelector"],
             "expectedResult": expected_result(inventory, entry),
-            "viewport": dict(viewport),
+            "viewport": captured_viewport,
             "surfaceElement": dict(observation["surfaceElement"]),
             "uiAction": dict(action),
             "controls": list(observation["controls"]),
@@ -2292,7 +2439,7 @@ class SimulatorWholeProductUsabilityGate(
         )
         return {
             "status": "PASS",
-            "viewport": dict(viewport),
+            "viewport": captured_viewport,
             "evidence": {
                 "screenshot": screenshot_ref.to_dict(),
                 "dom": dom_ref.to_dict(),

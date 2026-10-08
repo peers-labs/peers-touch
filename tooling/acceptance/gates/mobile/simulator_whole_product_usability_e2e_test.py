@@ -30,6 +30,7 @@ from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e impor
     TEXT_SIZE_SCRIPT,
     VISUAL_REVIEW_GATE_ID,
     SimulatorWholeProductUsabilityGate,
+    _is_proven_manifest_result,
     _validate_lifecycle_readiness,
     audit_visible_text,
     expected_result,
@@ -150,6 +151,7 @@ class _ShellDriverSession:
         self.lifecycle_actions: list[str] = []
         self.entry_surface_id: str | None = None
         self.recovery_surface_id: str | None = None
+        self.chat_surface_id: str | None = None
         self.activated_apps: list[str] = []
 
     def switch_to_native(self) -> None:
@@ -187,7 +189,7 @@ class _ShellDriverSession:
         return True
 
     def find_element(self, using: str, value: str) -> str:
-        if using != "css selector":
+        if using not in {"css selector", "class name"}:
             raise AssertionError(using)
         return value
 
@@ -216,10 +218,23 @@ class _ShellDriverSession:
                 "surfaceId": self.recovery_surface_id,
                 "revision": 1,
             }
+        if action == "chat.fixture":
+            self.chat_surface_id = (payload or {}).get("surfaceId")
+            return {
+                "surfaceId": self.chat_surface_id,
+                "revision": 1,
+            }
         if action in {"lifecycle.suspend", "lifecycle.resume"}:
             self.lifecycle_actions.append(action)
             return {"snapshot": {"phase": action.removeprefix("lifecycle.")}}
         raise AssertionError(action)
+
+    def get_page_source(self) -> str:
+        return (
+            '<AppiumAUT><XCUIElementTypeTextField x="20" y="420" '
+            'width="300" height="44" /><XCUIElementTypeKeyboard '
+            'x="0" y="500" width="393" height="352" /></AppiumAUT>'
+        )
 
 
 def png_bytes(width: int, height: int) -> bytes:
@@ -626,6 +641,30 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             "recovery.projection-stale",
         )
 
+    def test_chat_driver_projects_declared_surfaces_and_focuses_composer(
+        self,
+    ) -> None:
+        inventory = load_surface_inventory()
+        entries = {
+            entry["id"]: entry
+            for entry in selected_surface_entries(inventory, "chat")
+        }
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+
+        action = gate._enter_chat_surface(
+            session,
+            entries["chat.composer-keyboard"],
+        )
+
+        self.assertEqual(action["kind"], "native-touch")
+        self.assertEqual(action["target"], "focus-message-composer")
+        self.assertEqual(session.chat_surface_id, "chat.composer-keyboard")
+        self.assertIn("[data-chat-fixture-composer]", session.clicked)
+        self.assertIn("XCUIElementTypeTextField", session.clicked)
+
     def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(
         self,
     ) -> None:
@@ -687,6 +726,10 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             "controlScope.querySelectorAll(interactiveSelector)",
             SURFACE_AUDIT_SCRIPT,
         )
+        self.assertIn(
+            "controlScope.matches(interactiveSelector)",
+            SURFACE_AUDIT_SCRIPT,
+        )
         self.assertNotIn(
             "document.querySelectorAll(interactiveSelector)",
             SURFACE_AUDIT_SCRIPT,
@@ -703,6 +746,28 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             "fullyVisibleWithinAncestors(boundary, rect)",
             SURFACE_AUDIT_SCRIPT,
         )
+        self.assertIn(
+            "controls: controls.map(({value}) => ({...value}))",
+            SURFACE_AUDIT_SCRIPT,
+        )
+        self.assertNotIn(
+            "controls: controls.map(({value}) => value)",
+            SURFACE_AUDIT_SCRIPT,
+        )
+        self.assertIn(
+            "element.matches('.chat-action-sheet-backdrop')",
+            SURFACE_AUDIT_SCRIPT,
+        )
+
+    def test_surface_wait_accepts_any_visible_primary_heading(self) -> None:
+        source = (
+            REPO_ROOT
+            / "tooling/acceptance/gates/mobile/"
+            "simulator_whole_product_usability_e2e.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("document.querySelectorAll(", source)
+        self.assertIn(")).some((heading)=>{", source)
 
     def test_shell_product_selectors_are_present_in_production(self) -> None:
         shell = (
@@ -765,6 +830,38 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
                 or surface_id in access,
                 surface_id,
             )
+
+    def test_chat_product_selectors_are_present_in_foreground_components(
+        self,
+    ) -> None:
+        fixture = (
+            REPO_ROOT / "apps/mobile/src/acceptance/chatSurfaceFixture.ts"
+        ).read_text(encoding="utf-8")
+        fixture_surface = (
+            REPO_ROOT
+            / "apps/mobile/src/pages/chat/ChatAcceptanceSurface.tsx"
+        ).read_text(encoding="utf-8")
+        overlays = (
+            REPO_ROOT / "apps/mobile/src/pages/chat/ChatOverlayHost.tsx"
+        ).read_text(encoding="utf-8")
+        page_content = (
+            REPO_ROOT / "apps/mobile/src/pages/chat/ChatPageContent.tsx"
+        ).read_text(encoding="utf-8")
+
+        for surface_id in REQUIRED_SURFACE_IDS["chat"]:
+            self.assertIn(surface_id, fixture, surface_id)
+        self.assertIn("data-product-surface={surfaceId}", fixture_surface)
+        self.assertIn(
+            'data-product-surface="chat.message-actions"',
+            overlays,
+        )
+        self.assertIn(
+            'data-product-surface="chat.destructive-confirm"',
+            overlays,
+        )
+        self.assertIn("data-product-surface={productSurface}", page_content)
+        self.assertNotIn("copyable>{member.ptid}", overlays)
+        self.assertNotIn("copyable>{candidate.peerPtid}", overlays)
 
     def test_inventory_covers_every_surface_set_and_contract_cell(self) -> None:
         inventory = load_surface_inventory()
@@ -920,6 +1017,18 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             )
 
         self.assertEqual(result["surfaceSet"], "shell")
+
+    def test_accepts_successful_development_functional_manifest_result(
+        self,
+    ) -> None:
+        self.assertTrue(_is_proven_manifest_result({
+            "artifactKind": "development-functional-result",
+            "status": "passed",
+            "evidenceStatus": "PASS",
+            "exit_code": 0,
+            "completionStatus": "DONE",
+            "proofStatus": "NOT_APPLICABLE",
+        }))
 
     def test_requires_an_independent_visual_review_after_surface_capture(self) -> None:
         inventory = load_surface_inventory()
@@ -1127,10 +1236,11 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
                 "Alice",
                 "ptid:v1:actor:peers:p:alice:0123456789abcdef",
                 "mobile.chat.messagePlaceholder",
+                "chat.social.composer.recording",
             ],
         )
 
-        self.assertEqual(len(findings), 2)
+        self.assertEqual(len(findings), 3)
 
     def test_contract_trace_registers_the_dedicated_gate(self) -> None:
         acceptance_root = Path(__file__).resolve().parents[2]

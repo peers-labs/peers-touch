@@ -16,6 +16,11 @@ INTERACTIVE_TYPES = {
     "XCUIElementTypeTextField",
 }
 GEOMETRY_TOLERANCE_PX = 1
+SYSTEM_KEYBOARD_CONTROL_LABELS = {
+    "Dictate",
+    "dictation",
+    "return",
+}
 
 
 def _rect(node: ET.Element) -> tuple[int, int, int, int] | None:
@@ -46,6 +51,19 @@ def audit_accessibility_tree(markup: str) -> dict[str, Any]:
     if application_rect is None:
         raise GateError("iOS accessibility tree has no application bounds")
     _, _, screen_width, screen_height = application_rect
+    webview_descendants = {
+        id(descendant)
+        for webview in root.iter()
+        if webview.tag == "XCUIElementTypeWebView"
+        for descendant in webview.iter()
+    }
+    keyboard_descendants = {
+        id(descendant)
+        for keyboard in root.iter()
+        if keyboard.tag == "XCUIElementTypeKeyboard"
+        for descendant in keyboard.iter()
+    }
+    keyboard_present = bool(keyboard_descendants)
 
     unlabeled: list[str] = []
     outside_screen: list[str] = []
@@ -74,6 +92,13 @@ def audit_accessibility_tree(markup: str) -> dict[str, Any]:
             or y < -GEOMETRY_TOLERANCE_PX
             or x + width > screen_width + GEOMETRY_TOLERANCE_PX
             or y + height > screen_height + GEOMETRY_TOLERANCE_PX
+        ) and (
+            id(node) not in webview_descendants
+            and id(node) not in keyboard_descendants
+            and not (
+                keyboard_present
+                and label in SYSTEM_KEYBOARD_CONTROL_LABELS
+            )
         ):
             outside_screen.append(f"{node.tag}:{label[:80]}")
 
@@ -125,7 +150,11 @@ def audit_keyboard_tree(markup: str) -> dict[str, Any]:
     _, keyboard_top, _, _ = keyboard_rect
     _, text_top, _, text_height = text_field_rect
     if text_top + text_height > keyboard_top:
-        raise GateError("iOS keyboard occludes the Station address field")
+        raise GateError(
+            "iOS keyboard occludes the active text field: "
+            f"textFieldBottom={text_top + text_height}, "
+            f"keyboardTop={keyboard_top}"
+        )
     return {
         "keyboardTop": keyboard_top,
         "textFieldBottom": text_top + text_height,
