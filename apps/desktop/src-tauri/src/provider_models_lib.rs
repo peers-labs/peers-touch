@@ -51,6 +51,8 @@ pub mod infrastructure {
     pub mod attachment_blob;
     #[path = "i18n/mod.rs"]
     pub mod i18n;
+    #[path = "relay_tls.rs"]
+    pub(crate) mod relay_tls;
     #[path = "station_client.rs"]
     pub(crate) mod station_client;
     #[path = "station_discovery.rs"]

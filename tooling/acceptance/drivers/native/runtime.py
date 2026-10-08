@@ -12,7 +12,7 @@ import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from typing import Any, Mapping, Protocol, Sequence, cast
 from urllib.parse import urlsplit
@@ -128,6 +128,7 @@ class NativeLaunchOptions:
     window_slot: int = 0
     window_count: int = 1
     restore_session: bool = False
+    extra_environment: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -239,6 +240,13 @@ class NativeDesktopRuntimeBinding(ABC):
             "PT_STATION_URL": station_url,
             "PT_STATION_HEALTH_URL": f"{station_url}/sub-oss/healthz",
         }
+        reserved = set(environment).intersection(options.extra_environment)
+        if reserved:
+            raise DriverError(
+                "Native launch environment cannot override binding-owned keys: "
+                + ", ".join(sorted(reserved))
+            )
+        environment.update(options.extra_environment)
 
         session = self._create_session(
             client_id,

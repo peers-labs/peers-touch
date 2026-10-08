@@ -9,6 +9,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::infrastructure::relay_tls::acceptance_relay_ca_der;
 use crate::model::peer::{
     AccessEndpointOutcome, AccessEndpointRequest, AccessEndpointResponse, AccessEndpointRole,
     StationConnectionEnvelope, StationRouteAttestation, StationRouteStatement,
@@ -81,9 +82,22 @@ pub fn discover_station_input(input: &str) -> Result<VerifiedEndpoint, StationDi
         client_protocol_version: ACCESS_PROTOCOL_VERSION,
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
-    let response = Client::builder()
+    let mut client = Client::builder()
         .timeout(Duration::from_secs(10))
-        .redirect(Policy::none())
+        .redirect(Policy::none());
+    if let Some(certificate) = acceptance_relay_ca_der().map_err(|error| {
+        StationDiscoveryError::new("station_discovery_trust_invalid", error, false)
+    })? {
+        let certificate = reqwest::Certificate::from_der(&certificate).map_err(|_| {
+            StationDiscoveryError::new(
+                "station_discovery_trust_invalid",
+                "Relay trust anchor is not a valid certificate",
+                false,
+            )
+        })?;
+        client = client.add_root_certificate(certificate);
+    }
+    let response = client
         .build()
         .map_err(|error| {
             StationDiscoveryError::new(

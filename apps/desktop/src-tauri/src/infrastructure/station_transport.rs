@@ -1,3 +1,4 @@
+use crate::infrastructure::relay_tls::acceptance_relay_ca_der;
 use crate::infrastructure::station_registry::{
     StationEntry, StationRegistry, StationRouteCandidate, StationRouteType,
 };
@@ -10,18 +11,21 @@ use rand::RngCore;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, SignatureScheme, StreamOwned};
+use rustls::{
+    ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme,
+    StreamOwned,
+};
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::io::{self, Cursor, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::header::SEC_WEBSOCKET_PROTOCOL;
 use tungstenite::http::HeaderValue;
 use tungstenite::stream::MaybeTlsStream;
-use tungstenite::{connect, Message, WebSocket};
+use tungstenite::{client_tls_with_config, connect, Connector, Message, WebSocket};
 use x509_parser::parse_x509_certificate;
 
 const TUNNEL_PATH: &str = "/.well-known/peers-touch/tunnel";
@@ -465,6 +469,13 @@ fn open_relay_tunnel(
     endpoint.set_path(TUNNEL_PATH);
     endpoint.set_query(None);
     endpoint.set_fragment(None);
+    let relay_host = endpoint
+        .host_str()
+        .ok_or_else(|| TransportError::new("Relay endpoint has no host"))?
+        .to_string();
+    let relay_port = endpoint
+        .port_or_known_default()
+        .ok_or_else(|| TransportError::new("Relay endpoint has no port"))?;
     let mut request = endpoint
         .as_str()
         .into_client_request()
@@ -473,8 +484,26 @@ fn open_relay_tunnel(
         SEC_WEBSOCKET_PROTOCOL,
         HeaderValue::from_static(TUNNEL_SUBPROTOCOL),
     );
-    let (mut socket, response) = connect(request)
-        .map_err(|error| TransportError::new(format!("open Relay WebSocket: {error}")))?;
+    let connector = acceptance_relay_tls_connector()?;
+    let (mut socket, response) = match connector {
+        Some(connector) => {
+            let address = (relay_host.as_str(), relay_port)
+                .to_socket_addrs()
+                .map_err(|error| TransportError::new(format!("resolve Relay endpoint: {error}")))?
+                .next()
+                .ok_or_else(|| TransportError::new("Relay endpoint did not resolve"))?;
+            let stream = TcpStream::connect_timeout(&address, timeout)
+                .map_err(|error| TransportError::new(format!("connect Relay: {error}")))?;
+            stream
+                .set_read_timeout(Some(timeout))
+                .and_then(|_| stream.set_write_timeout(Some(timeout)))
+                .map_err(|error| TransportError::new(format!("configure Relay socket: {error}")))?;
+            client_tls_with_config(request, stream, None, Some(connector))
+                .map_err(|error| TransportError::new(format!("open Relay WebSocket: {error}")))?
+        }
+        None => connect(request)
+            .map_err(|error| TransportError::new(format!("open Relay WebSocket: {error}")))?,
+    };
     if response
         .headers()
         .get(SEC_WEBSOCKET_PROTOCOL)
@@ -567,6 +596,25 @@ fn open_relay_tunnel(
         read_buffer: Cursor::new(Vec::new()),
         closed: false,
     })
+}
+
+fn acceptance_relay_tls_connector() -> Result<Option<Connector>, TransportError> {
+    let Some(certificate) = acceptance_relay_ca_der()
+        .map_err(|error| TransportError::new(format!("configure Relay trust: {error}")))?
+    else {
+        return Ok(None);
+    };
+    let mut roots = RootCertStore::empty();
+    roots
+        .add(CertificateDer::from(certificate))
+        .map_err(|error| TransportError::new(format!("configure Relay trust: {error}")))?;
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let config = ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(|error| TransportError::new(format!("configure Relay TLS: {error}")))?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Ok(Some(Connector::Rustls(Arc::new(config))))
 }
 
 fn is_loopback_host(host: &str) -> bool {

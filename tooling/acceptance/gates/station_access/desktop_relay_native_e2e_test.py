@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import unittest
 from pathlib import Path
@@ -12,18 +14,122 @@ from tooling.acceptance.gates.station_access.desktop_relay_native_e2e import (
     WINDOWS_GATE_ID,
     expected_runtime_cell,
     is_relay_transport,
+    relay_trust_environment,
     station_registry_snapshot,
 )
 
 
 class DesktopRelayNativeGateTest(unittest.TestCase):
+    def test_desktop_relay_uses_injected_ca_without_disabling_tls(self) -> None:
+        discovery = Path(
+            "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs"
+        ).read_text(encoding="utf-8")
+        transport = Path(
+            "apps/desktop/src-tauri/src/infrastructure/station_transport.rs"
+        ).read_text(encoding="utf-8")
+        trust = Path(
+            "apps/desktop/src-tauri/src/infrastructure/relay_tls.rs"
+        ).read_text(encoding="utf-8")
+        combined = discovery + transport + trust
+
+        self.assertIn("PT_ACCEPTANCE_RELAY_CA_DER_B64", trust)
+        self.assertIn("add_root_certificate", discovery)
+        self.assertIn("RootCertStore::empty()", transport)
+        self.assertIn("client_tls_with_config", transport)
+        self.assertNotIn("danger_accept_invalid_certs", combined)
+        self.assertNotIn("danger_accept_invalid_hostnames", combined)
+
+    def test_relay_trust_environment_uses_verified_run_artifact(self) -> None:
+        certificate = (
+            b"-----BEGIN CERTIFICATE-----\n"
+            b"YWJj\n"
+            b"-----END CERTIFICATE-----\n"
+        )
+        digest = hashlib.sha256(certificate).hexdigest()
+        attestation_path = "runtime/services/relay/attestation.json"
+        certificate_path = "runtime/services/relay/tls-ca.pem"
+        manifest = {
+            "services": {
+                "relay": {
+                    "attestationArtifact": {
+                        "path": attestation_path,
+                    }
+                }
+            }
+        }
+        attestation = {
+            "runtimeSecurity": {
+                "tlsTrustAnchor": {
+                    "sha256": f"sha256:{digest}",
+                    "artifact": {
+                        "path": certificate_path,
+                        "sha256": digest,
+                    },
+                }
+            }
+        }
+        artifacts = {
+            attestation_path: json.dumps(attestation).encode(),
+            certificate_path: certificate,
+        }
+
+        environment = relay_trust_environment(
+            manifest,
+            artifact_loader=artifacts.__getitem__,
+        )
+
+        self.assertEqual(
+            base64.b64decode(
+                environment["PT_ACCEPTANCE_RELAY_CA_DER_B64"]
+            ),
+            b"abc",
+        )
+
+    def test_relay_trust_environment_rejects_digest_mismatch(self) -> None:
+        attestation_path = "runtime/services/relay/attestation.json"
+        certificate_path = "runtime/services/relay/tls-ca.pem"
+        manifest = {
+            "services": {
+                "relay": {
+                    "attestationArtifact": {
+                        "path": attestation_path,
+                    }
+                }
+            }
+        }
+        attestation = {
+            "runtimeSecurity": {
+                "tlsTrustAnchor": {
+                    "sha256": "sha256:" + "0" * 64,
+                    "artifact": {
+                        "path": certificate_path,
+                        "sha256": "0" * 64,
+                    },
+                }
+            }
+        }
+        artifacts = {
+            attestation_path: json.dumps(attestation).encode(),
+            certificate_path: (
+                b"-----BEGIN CERTIFICATE-----\n"
+                b"YWJj\n"
+                b"-----END CERTIFICATE-----\n"
+            ),
+        }
+
+        with self.assertRaisesRegex(GateError, "digest"):
+            relay_trust_environment(
+                manifest,
+                artifact_loader=artifacts.__getitem__,
+            )
+
     def test_restart_preserves_station_registry_storage(self) -> None:
         source = Path(
             "tooling/acceptance/gates/station_access/"
             "desktop_relay_native_e2e.py"
         ).read_text(encoding="utf-8")
         stop = source.index("first.stop(preserve_state=True)")
-        restore = source.index("NativeLaunchOptions(restore_session=True)")
+        restore = source.index("restore_session=True")
 
         self.assertLess(stop, restore)
 

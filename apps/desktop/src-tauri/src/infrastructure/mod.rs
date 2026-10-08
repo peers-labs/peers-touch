@@ -11,6 +11,7 @@ pub mod oss_cache;
 pub mod p2p;
 pub mod profile_store;
 pub mod realtime;
+pub(crate) mod relay_tls;
 pub mod session_revocation;
 pub mod session_store;
 pub mod session_vault;

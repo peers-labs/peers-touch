@@ -809,7 +809,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 return_value=(proof, reference),
             ) as persist,
         ):
-            session = binding.create_bound_session("alice")
+            session = binding.create_bound_session(
+                "alice",
+                NativeLaunchOptions(
+                    extra_environment={
+                        "PT_ACCEPTANCE_RELAY_CA_DER_B64": "YWJj",
+                    }
+                ),
+            )
 
         self.assertIsNotNone(session)
         configure.assert_called_once_with(session, "http://station.example")
@@ -826,6 +833,32 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             launch_environment["PT_STATION_HEALTH_URL"],
             "http://station.example/sub-oss/healthz",
         )
+        self.assertEqual(
+            launch_environment["PT_ACCEPTANCE_RELAY_CA_DER_B64"],
+            "YWJj",
+        )
+
+    def test_bound_session_rejects_binding_environment_override(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        binding.set_runtime_manifest(self.runtime_manifest())
+
+        with self.assertRaisesRegex(
+            DriverError,
+            "cannot override binding-owned keys",
+        ):
+            binding.create_bound_session(
+                "alice",
+                NativeLaunchOptions(
+                    extra_environment={
+                        "PT_STATION_URL": "http://attacker.example",
+                    }
+                ),
+            )
 
     def test_bound_session_uses_client_id_for_same_actor_devices(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")

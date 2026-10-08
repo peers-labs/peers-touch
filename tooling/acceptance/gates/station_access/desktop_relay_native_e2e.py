@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
-from collections.abc import Mapping
+import ssl
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -13,7 +16,9 @@ from urllib.parse import urlsplit
 from tooling.acceptance.core import (
     AcceptanceGate,
     GateError,
+    REPO_ROOT,
     call_async_harness,
+    current_artifact_path,
     load_runtime_manifest,
 )
 from tooling.acceptance.drivers.native import resolve_native_desktop_runtime
@@ -55,6 +60,72 @@ def _mapping(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise GateError(f"{label} must be an object")
     return dict(value)
+
+
+def relay_trust_environment(
+    manifest: Mapping[str, Any],
+    *,
+    artifact_loader: Callable[[str], bytes] | None = None,
+) -> dict[str, str]:
+    services = _mapping(manifest.get("services"), "runtime services")
+    relay = _mapping(services.get("relay"), "Relay service")
+    attestation_ref = _mapping(
+        relay.get("attestationArtifact"),
+        "Relay attestation reference",
+    )
+
+    def load(relative_path: str) -> bytes:
+        if artifact_loader is not None:
+            return artifact_loader(relative_path)
+        return current_artifact_path(
+            relative_path,
+            repo_root=REPO_ROOT,
+        ).read_bytes()
+
+    attestation_path = str(attestation_ref.get("path") or "")
+    if not attestation_path.startswith("runtime/services/relay/"):
+        raise GateError("Relay attestation is not scoped to the run")
+    try:
+        attestation = _mapping(
+            json.loads(load(attestation_path)),
+            "Relay attestation",
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise GateError(f"Relay attestation is unreadable: {error}") from error
+    security = _mapping(
+        attestation.get("runtimeSecurity"),
+        "Relay runtime security",
+    )
+    trust_anchor = _mapping(
+        security.get("tlsTrustAnchor"),
+        "Relay TLS trust anchor",
+    )
+    certificate_ref = _mapping(
+        trust_anchor.get("artifact"),
+        "Relay TLS trust anchor artifact",
+    )
+    certificate_path = str(certificate_ref.get("path") or "")
+    if certificate_path != "runtime/services/relay/tls-ca.pem":
+        raise GateError("Relay TLS trust anchor is not scoped to the run")
+    try:
+        certificate = load(certificate_path)
+        certificate_der = ssl.PEM_cert_to_DER_cert(
+            certificate.decode("ascii")
+        )
+    except (OSError, UnicodeError, ValueError) as error:
+        raise GateError(f"Relay TLS trust anchor is invalid: {error}") from error
+    actual_digest = hashlib.sha256(certificate).hexdigest()
+    expected_digests = {
+        str(trust_anchor.get("sha256") or "").removeprefix("sha256:"),
+        str(certificate_ref.get("sha256") or "").removeprefix("sha256:"),
+    }
+    if expected_digests != {actual_digest}:
+        raise GateError("Relay TLS trust anchor digest does not match evidence")
+    return {
+        "PT_ACCEPTANCE_RELAY_CA_DER_B64": base64.b64encode(
+            certificate_der
+        ).decode("ascii")
+    }
 
 
 def is_relay_transport(locator: str, transport: object) -> bool:
@@ -159,6 +230,7 @@ class DesktopRelayNativeGate(AcceptanceGate):
             source_commit=source_commit,
         )
         self.runtime_binding.set_runtime_manifest(self.manifest)
+        self.launch_environment = relay_trust_environment(self.manifest)
         self.report.manifest = self.manifest
 
     def _client(self) -> dict[str, Any]:
@@ -258,7 +330,12 @@ class DesktopRelayNativeGate(AcceptanceGate):
             json.dumps(self.services, sort_keys=True),
         )
         try:
-            first = self.runtime_binding.create_bound_session(CLIENT_ID)
+            first = self.runtime_binding.create_bound_session(
+                CLIENT_ID,
+                NativeLaunchOptions(
+                    extra_environment=self.launch_environment,
+                ),
+            )
             sessions.append(first)
             last_session = first
             relay_initial = station_registry_snapshot(first)
@@ -331,7 +408,10 @@ class DesktopRelayNativeGate(AcceptanceGate):
             first.stop(preserve_state=True)
             restored = self.runtime_binding.create_bound_session(
                 CLIENT_ID,
-                NativeLaunchOptions(restore_session=True),
+                NativeLaunchOptions(
+                    restore_session=True,
+                    extra_environment=self.launch_environment,
+                ),
             )
             sessions.append(restored)
             last_session = restored
