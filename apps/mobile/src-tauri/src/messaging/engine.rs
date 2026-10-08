@@ -2854,6 +2854,20 @@ impl MobileMessagingEngine {
     pub(crate) fn secure_content_runtime_identity(
         &self,
     ) -> Result<SecureContentRuntimeIdentity, String> {
+        let access_token = self.access_token()?;
+        DeviceEnrollmentManager::new(
+            self.store.clone(),
+            self.scope.actor_ptid.clone(),
+            self.scope.device_id.clone(),
+        )?
+        .ensure_current(
+            "Mobile".to_string(),
+            &StationDeviceTransport::new(
+                self.scope.station_origin.clone(),
+                access_token.clone(),
+                self.scope.device_id.clone(),
+            )?,
+        )?;
         let (enrollment, device_signing_key) = self.store.active_device_signing_identity()?;
         let certificate = enrollment.certificate;
         let device = certificate
@@ -2872,7 +2886,7 @@ impl MobileMessagingEngine {
         }
         Ok(SecureContentRuntimeIdentity {
             scope: self.scope.clone(),
-            access_token: Zeroizing::new(self.access_token()?),
+            access_token: Zeroizing::new(access_token),
             signing_key_id: certificate.signing_key_id,
             profile_version: certificate.observed_profile_version,
             device_signing_key,
