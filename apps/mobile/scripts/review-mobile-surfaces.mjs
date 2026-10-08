@@ -16,6 +16,8 @@ const inventoryPath = path.join(
   'tooling/acceptance/gates/mobile/whole_product_surface_inventory.json',
 );
 const evidenceRole = 'mobile-surface-evidence';
+const stationResetScope = 'mobile-social-simulator-actors';
+const stationResetLeaseBudgetSeconds = '7200';
 
 function fail(message) {
   process.stderr.write(`FAIL: ${message}\n`);
@@ -82,6 +84,33 @@ export function collectScreenshotRefs(result, surfaceIds) {
   );
 }
 
+export function functionalCommand(surfaceSet, gateId, workItem) {
+  return [
+    'node',
+    'tooling/scripts/local-dev/machine-dev.mjs',
+    'lease',
+    '--workspace-root',
+    repoRoot,
+    '--resource-kind',
+    'station.reset',
+    '--resource-id',
+    stationResetScope,
+    '--reset-scope',
+    stationResetScope,
+    '--budget-seconds',
+    stationResetLeaseBudgetSeconds,
+    '--',
+    'python3',
+    'tooling/scripts/acceptance-run.py',
+    '--execution-policy',
+    'development',
+    '--work-item',
+    workItem,
+    '--gate',
+    gateId,
+  ];
+}
+
 function selfTest() {
   const screenshots = collectScreenshotRefs(
     {
@@ -114,6 +143,22 @@ function selfTest() {
     }) !== 'MOBILE-WHOLE-PRODUCT-USABILITY-TEST'
   ) {
     fail('active-work projection self-test failed');
+  }
+  const functional = functionalCommand(
+    'shell',
+    'mobile-simulator-whole-product-usability-e2e',
+    'MOBILE-WHOLE-PRODUCT-USABILITY-TEST',
+  );
+  if (
+    functional[0] !== 'node'
+    || !functional.includes('station.reset')
+    || functional.filter((value) => value === stationResetScope).length !== 2
+    || functional[functional.indexOf('--budget-seconds') + 1]
+      !== stationResetLeaseBudgetSeconds
+    || functional[functional.indexOf('--work-item') + 1]
+      !== 'MOBILE-WHOLE-PRODUCT-USABILITY-TEST'
+  ) {
+    fail('functional reset lease command self-test failed');
   }
   process.stdout.write('PASS: review-mobile-surfaces self-test\n');
 }
@@ -148,17 +193,14 @@ function runFunctional(surfaceSet, gateId, workItem) {
     cwd: repoRoot,
     stdio: 'ignore',
   });
+  const [command, ...args] = functionalCommand(
+    surfaceSet,
+    gateId,
+    workItem,
+  );
   const result = spawnSync(
-    'python3',
-    [
-      'tooling/scripts/acceptance-run.py',
-      '--execution-policy',
-      'development',
-      '--work-item',
-      workItem,
-      '--gate',
-      gateId,
-    ],
+    command,
+    args,
     {
       cwd: repoRoot,
       env: {
