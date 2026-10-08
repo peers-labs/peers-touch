@@ -5887,6 +5887,14 @@ def _assert_mobile_channel_safe(
         )
 
 
+def _project_harness_action_value(action: str, value: object) -> object:
+    if action != "lifecycle.scope.read" or not isinstance(value, Mapping):
+        return value
+    projected = dict(value)
+    projected.pop("deviceId", None)
+    return projected
+
+
 def _closed_mapping(
     value: object,
     *,
@@ -7041,7 +7049,9 @@ def _validate_harness_action_result(action: str, value: object) -> None:
                 f"{action} response must be structured",
                 resource="mobile.native.appium-session:harness-response",
             )
-        _assert_mobile_channel_safe(value)
+        _assert_mobile_channel_safe(
+            _project_harness_action_value(action, value)
+        )
         return
     if action in {"station.add", "station.replace"}:
         result = _closed_mapping(
@@ -7955,7 +7965,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
             _validate_harness_action_result(action, value)
             return {
                 "clientId": client_id,
-                "value": value,
+                "value": _project_harness_action_value(action, value),
             }
         if operation == "harness_negative_callback":
             if "oauth.negativeCallback" not in self._parent_harness_actions:
