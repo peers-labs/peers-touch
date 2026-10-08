@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -138,12 +139,18 @@ class _ShellDriverSession:
     client_id = "sim-ios"
 
     def __init__(self) -> None:
+        self.platform = "ios"
+        self.build = SimpleNamespace(
+            application_id="com.peers.touch.mobile",
+        )
         self.orientation = "PORTRAIT"
         self.route_id = "tab:chat"
         self.current_context = "WEBVIEW_com.peers.touch.mobile"
         self.clicked: list[str] = []
         self.lifecycle_actions: list[str] = []
         self.entry_surface_id: str | None = None
+        self.recovery_surface_id: str | None = None
+        self.activated_apps: list[str] = []
 
     def switch_to_native(self) -> None:
         self.current_context = "NATIVE_APP"
@@ -172,6 +179,9 @@ class _ShellDriverSession:
                 "height": height,
                 "scaledElementCount": 1 if args[0] == "maximum" else 0,
             }
+        if script == "mobile: activateApp":
+            self.activated_apps.append(args[0]["bundleId"])
+            return None
         if script == READ_RESUME_SCRIPT:
             return {"done": True, "error": None}
         return True
@@ -198,6 +208,12 @@ class _ShellDriverSession:
             self.entry_surface_id = (payload or {}).get("surfaceId")
             return {
                 "surfaceId": self.entry_surface_id,
+                "revision": 1,
+            }
+        if action == "recovery.fixture":
+            self.recovery_surface_id = (payload or {}).get("surfaceId")
+            return {
+                "surfaceId": self.recovery_surface_id,
                 "revision": 1,
             }
         if action in {"lifecycle.suspend", "lifecycle.resume"}:
@@ -406,6 +422,18 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             ],
         )
 
+    def test_recovery_gate_emits_recovery_specific_acceptance_report(self) -> None:
+        report = SimulatorWholeProductUsabilityGate._result_report(
+            "PASS",
+            "recovery",
+        )
+
+        self.assertEqual(report["runtimeCell"], "ios-simulator-recovery")
+        self.assertEqual(report["phase"], "MWPU-03 Recovery Usability")
+        self.assertEqual(report["bom"], ["MWPU-03-RECOVERY"])
+        self.assertIn("returning-session", report["observedScope"])
+        self.assertIn("scoped-degradation", report["observedScope"])
+
     def test_foreground_probe_requires_the_declared_booted_simulator(self) -> None:
         completed = subprocess.CompletedProcess(
             args=[],
@@ -480,6 +508,10 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
                     "textSize": "normal",
                 },
             )
+        self.assertEqual(
+            session.activated_apps,
+            ["com.peers.touch.mobile"] * 3,
+        )
 
     def test_shell_driver_retries_transient_ios_rotation_failure(self) -> None:
         class TransientRotationSession(_ShellDriverSession):
@@ -569,6 +601,29 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertIn(
             '[data-entry-action="remove-station"]',
             session.clicked,
+        )
+
+    def test_recovery_driver_projects_each_declared_surface(self) -> None:
+        inventory = load_surface_inventory()
+        entries = {
+            entry["id"]: entry
+            for entry in selected_surface_entries(inventory, "recovery")
+        }
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+
+        action = gate._enter_recovery_surface(
+            session,
+            entries["recovery.projection-stale"],
+        )
+
+        self.assertEqual(action["kind"], "system")
+        self.assertEqual(action["target"], "fixture-stale-projection")
+        self.assertEqual(
+            session.recovery_surface_id,
+            "recovery.projection-stale",
         )
 
     def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(

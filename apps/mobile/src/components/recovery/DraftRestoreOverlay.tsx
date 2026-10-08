@@ -18,6 +18,7 @@ import { getRecoveryProjection } from '../../runtimes/recoveryProjection';
 interface DraftRestoreOverlayProps {
   readonly state: DraftRestorePending;
   readonly t: (key: string, params?: Record<string, string | number>) => string;
+  readonly forceActionFailed?: boolean;
 }
 
 export async function executeDraftRestoreAction(
@@ -32,14 +33,22 @@ export async function executeDraftRestoreAction(
   getRecoveryProjection().clearDraftRestore();
 }
 
-export function DraftRestoreOverlay({ state, t }: DraftRestoreOverlayProps) {
+export function DraftRestoreOverlay({
+  state,
+  t,
+  forceActionFailed = false,
+}: DraftRestoreOverlayProps) {
   const primaryActionRef = useRef<HTMLButtonElement>(null);
   const [pendingAction, setPendingAction] = useState<'restore' | 'discard' | null>(null);
-  const [actionFailed, setActionFailed] = useState(false);
+  const [actionFailed, setActionFailed] = useState(forceActionFailed);
 
   useEffect(() => {
     primaryActionRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    setActionFailed(forceActionFailed);
+  }, [forceActionFailed]);
 
   async function runAction(action: 'restore' | 'discard') {
     if (pendingAction) return;
@@ -58,6 +67,9 @@ export function DraftRestoreOverlay({ state, t }: DraftRestoreOverlayProps) {
     <div
       className="recovery-overlay recovery-draft-restore"
       data-acceptance-id="recovery-draft-restore"
+      data-product-surface={
+        actionFailed ? 'recovery.draft-restore-failed' : undefined
+      }
       role="dialog"
       aria-modal="true"
       aria-label={t('mobile.recovery.draftRestore.title')}
@@ -74,8 +86,13 @@ export function DraftRestoreOverlay({ state, t }: DraftRestoreOverlayProps) {
         <ul className="recovery-draft-list" role="list">
           {state.drafts.map((draft) => (
             <li key={draft.key} className="recovery-draft-list__item">
-              <span className="recovery-draft-list__kind">{draft.kind}</span>
-              <span className="recovery-draft-list__key">{draft.key}</span>
+              <span className="recovery-draft-list__kind">
+                {t(
+                  draft.kind === 'chat'
+                    ? 'mobile.recovery.draftRestore.chatDraft'
+                    : 'mobile.recovery.draftRestore.momentDraft',
+                )}
+              </span>
             </li>
           ))}
         </ul>

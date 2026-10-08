@@ -117,6 +117,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('runtime.prepareActorIdentity');
     expect(actionNames).toContain('station.select');
     expect(actionNames).toContain('entry.fixture');
+    expect(actionNames).toContain('recovery.fixture');
     expect(actionNames).toContain('oauth.replayHandle');
     expect(actionNames).toContain('oauth.negativeCallback');
     expect(actionNames).toContain('lifecycle.snapshot');
@@ -174,6 +175,26 @@ describe('Mobile Acceptance Harness', () => {
       'acceptance.mobile.invalidInput:entry.fixture.surfaceId',
     );
     await expect(harness['entry.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+  });
+
+  it('projects only declared recovery surface fixtures', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['recovery.fixture']({
+      surfaceId: 'recovery.projection-stale',
+    })).resolves.toMatchObject({
+      surfaceId: 'recovery.projection-stale',
+    });
+    await expect(harness['recovery.fixture']({
+      surfaceId: 'recovery.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:recovery.fixture.surfaceId',
+    );
+    await expect(harness['recovery.fixture']({
       surfaceId: null,
     })).resolves.toMatchObject({
       surfaceId: null,

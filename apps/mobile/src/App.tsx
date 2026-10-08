@@ -32,6 +32,10 @@ import {
   useEntrySurfaceFixture,
   type EntrySurfaceFixtureId,
 } from './acceptance/entrySurfaceFixture';
+import {
+  setRecoverySurfaceFixture,
+  useRecoverySurfaceFixture,
+} from './acceptance/recoverySurfaceFixture';
 import { probeStation, verifyStationIdentity } from './features/station/stationConnection';
 import { EntryProgressScreen } from './features/station/EntryProgressScreen';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
@@ -132,6 +136,7 @@ function MobileAppRoot() {
   const [pendingIdentityReplacement, setPendingIdentityReplacement] =
     useState<PendingStationIdentityReplacement | null>(null);
   const entryFixture = useEntrySurfaceFixture();
+  const recoveryFixture = useRecoverySurfaceFixture();
   const stationUrlsKey = stationRegistry.entries.map((entry) => entry.url).join('\n');
   const activeStation = activeStationEntry(stationRegistry);
   const renderedLaunchState = fixtureLaunchState(entryFixture.surfaceId) ?? launchState;
@@ -651,6 +656,24 @@ function MobileAppRoot() {
             canCancel={pendingScopeExit.canCancel}
           />
         )}
+        {!pendingScopeExit
+          && recoveryFixture.surfaceId === 'recovery.scope-exit'
+          && (
+            <ScopeExitDraftDecisionOverlay
+              key={recoveryFixture.revision}
+              reason="logout"
+              draftCount={2}
+              committedDisposition={null}
+              t={t}
+              onDecision={async () => {
+                setRecoverySurfaceFixture(null);
+              }}
+              onCancel={async () => {
+                setRecoverySurfaceFixture(null);
+              }}
+              canCancel
+            />
+          )}
         <Modal
           open={replacementStation !== null}
           footer={null}

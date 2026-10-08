@@ -7,7 +7,7 @@ import { MobileDurableCommandState } from '../../gen/proto/domain/mobile/reliabi
 import { CommandRecoveryPanel } from './CommandRecoveryPanel';
 
 describe('CommandRecoveryPanel command identity', () => {
-  it('renders each Friend Request command with its request, target, and state', () => {
+  it('keeps command identity in diagnostics without exposing raw IDs', () => {
     const markup = renderToStaticMarkup(
       <CommandRecoveryPanel
         state={{
@@ -36,12 +36,12 @@ describe('CommandRecoveryPanel command identity', () => {
 
     expect(markup).toContain('data-command-id="command-queued"');
     expect(markup).toContain('data-command-state="pending"');
-    expect(markup).toContain('request-queued');
-    expect(markup).toContain('ptid:bob');
     expect(markup).toContain('data-command-id="command-unknown"');
     expect(markup).toContain('data-command-state="unknown-outcome"');
-    expect(markup).toContain('request-unknown');
-    expect(markup).toContain('ptid:carol');
+    expect(markup).not.toContain('request-queued');
+    expect(markup).not.toContain('ptid:bob');
+    expect(markup).not.toContain('request-unknown');
+    expect(markup).not.toContain('ptid:carol');
   });
 });
 

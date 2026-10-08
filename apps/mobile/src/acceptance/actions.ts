@@ -175,6 +175,10 @@ import {
   isEntrySurfaceFixtureId,
   setEntrySurfaceFixture,
 } from './entrySurfaceFixture';
+import {
+  isRecoverySurfaceFixtureId,
+  setRecoverySurfaceFixture,
+} from './recoverySurfaceFixture';
 import type {
   LifecycleWaitReadyInput,
   LifecycleWaitReadyOutput,
@@ -326,6 +330,16 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       throw new Error('acceptance.mobile.invalidInput:entry.fixture.surfaceId');
     }
     return setEntrySurfaceFixture(surfaceId);
+  },
+
+  'recovery.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isRecoverySurfaceFixtureId(surfaceId)) {
+      throw new Error(
+        'acceptance.mobile.invalidInput:recovery.fixture.surfaceId',
+      );
+    }
+    return setRecoverySurfaceFixture(surfaceId);
   },
 
   'access.submit': async (input) => {
