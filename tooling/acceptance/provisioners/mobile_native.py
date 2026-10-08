@@ -4,21 +4,23 @@ import base64
 import binascii
 import dataclasses
 import hashlib
+import ipaddress
 import json
 import math
 import os
 import platform
 import re
 import secrets
-import select
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -124,6 +126,34 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 
 EXPECTED_APPIUM_VERSION = "2.19.0"
+GNIREHTET_VERSION = "2.5.1"
+GNIREHTET_DARWIN_ARM64_EXECUTABLE_SHA256 = (
+    "5332243035c8b8a1094b575e653e80a14cf9efeecd96eaa7e8d6aeaeeb45b3c0"
+)
+USB_NETWORK_COMPANION_VERSION = "1.0.0"
+USB_NETWORK_COMPANION_PACKAGE = (
+    "com.peers.touch.acceptance.usbnetwork"
+)
+USB_NETWORK_COMPANION_START_ACTION = (
+    "com.peers.touch.acceptance.usbnetwork.START"
+)
+USB_NETWORK_COMPANION_STOP_ACTION = (
+    "com.peers.touch.acceptance.usbnetwork.STOP"
+)
+USB_NETWORK_COMPANION_COMPONENT = (
+    "com.peers.touch.acceptance.usbnetwork/.GnirehtetActivity"
+)
+USB_NETWORK_COMPANION_REVERSE_SOCKET = "localabstract:gnirehtet"
+USB_NETWORK_COMPANION_ROOT = (
+    REPO_ROOT
+    / "tooling"
+    / "acceptance"
+    / "android"
+    / "usb-network-companion"
+)
+USB_NETWORK_COMPANION_GRADLE = (
+    REPO_ROOT / "apps" / "mobile" / "src-tauri" / "gen" / "android" / "gradlew"
+)
 EXPECTED_DRIVER_IDENTITIES = {
     "ios": ("appium-xcuitest-driver", "xcuitest", "XCUITest", "9.10.5"),
     "android": (
@@ -391,7 +421,7 @@ MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES = (
 )
 MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES = (
     *MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
-    "usb-station-transports",
+    "usb-network-transports",
 )
 MOBILE_NATIVE_ANDROID_SOCIAL_CLIENT = "alice-android"
 MOBILE_NATIVE_ANDROID_SOCIAL_FIXTURE = "mobile-social-existing-actors"
@@ -483,148 +513,216 @@ class SubprocessExecutor:
         )
 
 
-class _LoopbackTcpRelay:
-    """Run-scoped loopback relay for a remote HTTP Station endpoint."""
+@dataclass(frozen=True)
+class _AndroidUsbNetworkTool:
+    version: str
+    relay_executable: Path
+    relay_sha256: str
+    companion_apk: Path
+    companion_apk_sha256: str
+    companion_source_sha256: str
+    build_root: Path
 
-    def __init__(self, upstream_host: str, upstream_port: int) -> None:
-        self._upstream_host = upstream_host
-        self._upstream_port = upstream_port
-        self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._listener.bind(("127.0.0.1", 0))
-        self._listener.listen()
-        self._listener.settimeout(0.25)
-        self._stop = threading.Event()
-        self._connections: set[socket.socket] = set()
-        self._connection_lock = threading.Lock()
-        self._workers: list[threading.Thread] = []
-        self._started = False
-        self._server = threading.Thread(
-            target=self._serve,
-            name="mobile-usb-station-relay",
-            daemon=True,
+
+class _ManagedProcess(Protocol):
+    def poll(self) -> int | None:
+        ...
+
+    def terminate(self) -> None:
+        ...
+
+    def kill(self) -> None:
+        ...
+
+    def wait(self, timeout: float | None = None) -> int:
+        ...
+
+
+def _source_tree_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    files = sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file()
+        and not {".gradle", "build"}.intersection(path.relative_to(root).parts)
+    )
+    if not files:
+        raise BlockedError(
+            reason="Android USB network companion source is missing",
+            resource="mobile-runtime:usb-network-transport",
         )
+    for path in files:
+        relative = path.relative_to(root).as_posix().encode()
+        content = path.read_bytes()
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
 
-    @property
-    def local_port(self) -> int:
-        return int(self._listener.getsockname()[1])
 
-    def start(self) -> None:
-        if self._started:
-            raise RuntimeError("loopback relay is already started")
-        self._started = True
-        self._server.start()
-
-    def close(self) -> None:
-        self._stop.set()
-        try:
-            self._listener.close()
-        except OSError:
-            pass
-        with self._connection_lock:
-            connections = tuple(self._connections)
-        for connection in connections:
-            try:
-                connection.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            connection.close()
-        if self._started:
-            self._server.join(timeout=2)
-        for worker in tuple(self._workers):
-            worker.join(timeout=2)
-
-    def _serve(self) -> None:
-        while not self._stop.is_set():
-            try:
-                client, _address = self._listener.accept()
-            except socket.timeout:
-                continue
-            except OSError:
-                return
-            worker = threading.Thread(
-                target=self._bridge,
-                args=(client,),
-                name="mobile-usb-station-connection",
-                daemon=True,
+def _build_android_usb_network_tool(
+    executor: CommandExecutor | None = None,
+) -> _AndroidUsbNetworkTool:
+    launcher = shutil.which("gnirehtet")
+    if not launcher:
+        raise BlockedError(
+            reason="Android USB network transport requires gnirehtet 2.5.1",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    wrapper = Path(launcher).resolve()
+    version_root = wrapper.parent.parent
+    executable = version_root / "libexec" / "gnirehtet"
+    if (
+        platform.system() != "Darwin"
+        or platform.machine().lower() not in {"arm64", "aarch64"}
+        or version_root.name != GNIREHTET_VERSION
+        or not executable.is_file()
+        or not USB_NETWORK_COMPANION_GRADLE.is_file()
+        or not USB_NETWORK_COMPANION_ROOT.is_dir()
+    ):
+        raise BlockedError(
+            reason=(
+                "Android USB network transport requires the reviewed Darwin "
+                "arm64 relay and repository companion source"
+            ),
+            resource="mobile-runtime:usb-network-transport",
+        )
+    relay_sha256 = _artifact_digest(executable)
+    if relay_sha256 != GNIREHTET_DARWIN_ARM64_EXECUTABLE_SHA256:
+        raise BlockedError(
+            reason="Android USB network relay identity is unreviewed",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    sdkmanager = shutil.which("sdkmanager")
+    if not sdkmanager:
+        raise BlockedError(
+            reason="Android USB network companion requires Android SDK tools",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    android_home = Path(sdkmanager).resolve().parents[3]
+    if not (
+        android_home / "platforms" / "android-34" / "android.jar"
+    ).is_file():
+        raise BlockedError(
+            reason="Android USB network companion requires Android API 34",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    build_environment = {
+        **os.environ,
+        "ANDROID_HOME": str(android_home),
+        "ANDROID_SDK_ROOT": str(android_home),
+    }
+    command_executor = executor or SubprocessExecutor()
+    build_root = Path(
+        tempfile.mkdtemp(prefix="peers-touch-usb-network-companion-")
+    )
+    output_root = build_root / "apk-build"
+    try:
+        build = command_executor.run(
+            (
+                str(USB_NETWORK_COMPANION_GRADLE),
+                "-p",
+                str(USB_NETWORK_COMPANION_ROOT),
+                "--project-cache-dir",
+                str(build_root / "project-cache"),
+                f"-PpeersTouchBuildDir={output_root}",
+                "--no-daemon",
+                "--console=plain",
+                "assembleDebug",
+            ),
+            cwd=REPO_ROOT,
+            env=build_environment,
+            timeout=900,
+        )
+        if build.returncode != 0:
+            raise BlockedError(
+                reason="Android USB network companion source build failed",
+                resource="mobile-runtime:usb-network-transport",
             )
-            self._workers.append(worker)
-            worker.start()
-
-    def _bridge(self, client: socket.socket) -> None:
-        upstream: socket.socket | None = None
-        try:
-            upstream = socket.create_connection(
-                (self._upstream_host, self._upstream_port),
-                timeout=5,
+        artifacts = sorted(
+            (output_root / "outputs" / "apk" / "debug").glob("*.apk")
+        )
+        if len(artifacts) != 1:
+            raise BlockedError(
+                reason=(
+                    "Android USB network companion build output is ambiguous"
+                ),
+                resource="mobile-runtime:usb-network-transport",
             )
-            client.setblocking(False)
-            upstream.setblocking(False)
-            with self._connection_lock:
-                self._connections.update((client, upstream))
-            peers = {client: upstream, upstream: client}
-            while not self._stop.is_set():
-                readable, _, _ = select.select(
-                    tuple(peers),
-                    (),
-                    (),
-                    0.25,
-                )
-                for source in readable:
-                    try:
-                        chunk = source.recv(64 * 1024)
-                    except BlockingIOError:
-                        continue
-                    if not chunk:
-                        return
-                    peers[source].sendall(chunk)
-        except OSError:
-            return
-        finally:
-            with self._connection_lock:
-                self._connections.discard(client)
-                if upstream is not None:
-                    self._connections.discard(upstream)
-            client.close()
-            if upstream is not None:
-                upstream.close()
+        companion_apk = artifacts[0]
+        return _AndroidUsbNetworkTool(
+            version=(
+                f"peers-touch-{USB_NETWORK_COMPANION_VERSION}"
+                f"+gnirehtet-{GNIREHTET_VERSION}"
+            ),
+            relay_executable=executable,
+            relay_sha256=relay_sha256,
+            companion_apk=companion_apk,
+            companion_apk_sha256=_artifact_digest(companion_apk),
+            companion_source_sha256=_source_tree_digest(
+                USB_NETWORK_COMPANION_ROOT
+            ),
+            build_root=build_root,
+        )
+    except BaseException:
+        shutil.rmtree(build_root, ignore_errors=True)
+        raise
 
 
-class _AndroidUsbStationTransport:
-    """Own one device-local Station route and its complete ADB lifecycle."""
+class _AndroidUsbNetworkTransport:
+    """Own one canonical-origin-preserving Android reverse-tether route."""
 
     def __init__(
         self,
-        upstream_url: str,
+        station_url: str,
         *,
+        relay_port: int,
         executor: CommandExecutor | None = None,
-        relay_factory: Callable[[str, int], _LoopbackTcpRelay] = (
-            _LoopbackTcpRelay
-        ),
+        process_factory: Callable[..., _ManagedProcess] = subprocess.Popen,
+        tool: _AndroidUsbNetworkTool | None = None,
     ) -> None:
-        parsed = urllib.parse.urlsplit(upstream_url)
+        parsed = urllib.parse.urlsplit(station_url)
+        try:
+            host = str(ipaddress.IPv4Address(parsed.hostname or ""))
+            parsed.port
+        except (ValueError, urllib.error.URLError) as error:
+            raise BlockedError(
+                reason=(
+                    "Android USB network transport requires one IPv4 "
+                    "HTTP(S) origin without credentials or a path"
+                ),
+                resource="mobile-runtime:usb-network-transport",
+            ) from error
         if (
-            parsed.scheme != "http"
-            or not parsed.hostname
+            parsed.scheme not in {"http", "https"}
+            or parsed.hostname != host
             or parsed.username is not None
             or parsed.password is not None
             or parsed.path not in {"", "/"}
             or parsed.query
             or parsed.fragment
+            or relay_port <= 0
+            or relay_port > 65535
         ):
             raise BlockedError(
                 reason=(
-                    "Android USB Station transport requires one plain HTTP "
-                    "origin without credentials or a path"
+                    "Android USB network transport requires one IPv4 "
+                    "HTTP(S) origin without credentials or a path"
                 ),
-                resource="mobile-runtime:usb-station-transport",
+                resource="mobile-runtime:usb-network-transport",
             )
-        upstream_port = parsed.port or 80
-        self.upstream_url = upstream_url.rstrip("/")
+        self.canonical_origin = station_url.rstrip("/")
+        self.route_host = host
+        self.route = f"{host}/32"
+        self.relay_port = relay_port
         self.executor = executor or SubprocessExecutor()
-        self.relay = relay_factory(parsed.hostname, upstream_port)
-        self.device_port = self.relay.local_port
-        self.device_url = f"http://127.0.0.1:{self.device_port}"
+        self.process_factory = process_factory
+        self._owns_tool = tool is None
+        self.tool = tool or _build_android_usb_network_tool(self.executor)
+        self._process: _ManagedProcess | None = None
+        self._installed_apk_sha256_before: str | None = None
+        self._package_installed_by_run = False
         self._started = False
 
     def start(
@@ -633,41 +731,187 @@ class _AndroidUsbStationTransport:
         *,
         deadline_monotonic: float | None = None,
         cancellation: threading.Event | None = None,
-    ) -> str:
-        self.relay.start()
+    ) -> dict[str, Any]:
+        if self._started:
+            raise ProvisioningError(
+                "Android USB network transport is already active"
+            )
         try:
-            target = f"tcp:{self.device_port}"
-            result = self._adb(
+            self._installed_apk_sha256_before = (
+                self._installed_package_sha256(
+                    device_identifier,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            )
+            if (
+                self._installed_apk_sha256_before is not None
+                and self._installed_apk_sha256_before
+                != self.tool.companion_apk_sha256
+            ):
+                raise BlockedError(
+                    reason=(
+                        "Android USB network companion package has an "
+                        "unexpected pre-existing identity"
+                    ),
+                    resource="mobile-runtime:usb-network-transport",
+                )
+            self._started = True
+            if self._installed_apk_sha256_before is None:
+                self._package_installed_by_run = True
+                install = self._install_companion(
+                    device_identifier,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if install.returncode != 0:
+                    raise ProvisioningError(
+                        "Android USB network companion installation failed"
+                    )
+            installed_apk_sha256 = self._installed_package_sha256(
                 device_identifier,
-                "reverse",
-                target,
-                target,
                 deadline_monotonic=deadline_monotonic,
                 cancellation=cancellation,
             )
-            if result.returncode != 0:
+            if installed_apk_sha256 != self.tool.companion_apk_sha256:
                 raise ProvisioningError(
-                    "Android USB Station reverse setup failed"
+                    "Android USB network companion identity verification failed"
                 )
-            self._started = True
-            if not self._reverse_is_present(
+            if self._route_is_active(
                 device_identifier,
                 deadline_monotonic=deadline_monotonic,
                 cancellation=cancellation,
             ):
                 raise ProvisioningError(
-                    "Android USB Station reverse setup was not observable"
+                    "Android USB network route was active before provisioning"
                 )
-            return self.device_url
-        except BaseException:
-            try:
-                self.close(
+            self._process = self.process_factory(
+                [
+                    str(self.tool.relay_executable),
+                    "relay",
+                    "-p",
+                    str(self.relay_port),
+                ],
+                cwd=REPO_ROOT,
+                env=os.environ,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                start_new_session=True,
+            )
+            tunnel = self._adb(
+                device_identifier,
+                "reverse",
+                USB_NETWORK_COMPANION_REVERSE_SOCKET,
+                f"tcp:{self.relay_port}",
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            if tunnel.returncode != 0:
+                raise ProvisioningError(
+                    "Android USB network tunnel setup failed"
+                )
+            start = self._companion_action(
+                device_identifier,
+                USB_NETWORK_COMPANION_START_ACTION,
+                route=self.route,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            if start.returncode != 0:
+                raise ProvisioningError(
+                    "Android USB network client start failed"
+                )
+            readiness_deadline = min(
+                deadline_monotonic
+                if deadline_monotonic is not None
+                else time.monotonic() + 20,
+                time.monotonic() + 20,
+            )
+            while time.monotonic() < readiness_deadline:
+                self._require_active(cancellation)
+                if self._process.poll() is not None:
+                    raise ProvisioningError(
+                        "Android USB network transport exited before ready"
+                    )
+                if not self._client_is_active(
                     device_identifier,
-                    deadline_monotonic=deadline_monotonic,
+                    deadline_monotonic=readiness_deadline,
                     cancellation=cancellation,
-                )
-            except BaseException:
-                pass
+                ):
+                    self._approve_vpn_consent_if_visible(
+                        device_identifier,
+                        deadline_monotonic=readiness_deadline,
+                        cancellation=cancellation,
+                    )
+                if (
+                    self._reverse_is_present(
+                        device_identifier,
+                        deadline_monotonic=readiness_deadline,
+                        cancellation=cancellation,
+                    )
+                    and self._route_is_active(
+                        device_identifier,
+                        deadline_monotonic=readiness_deadline,
+                        cancellation=cancellation,
+                    )
+                    and self._canonical_origin_is_reachable(
+                        device_identifier,
+                        deadline_monotonic=readiness_deadline,
+                        cancellation=cancellation,
+                    )
+                ):
+                    return {
+                        "artifactKind": "mobile-android-usb-network-transport",
+                        "version": self.tool.version,
+                        "relaySha256": self.tool.relay_sha256,
+                        "companionSourceSha256": (
+                            self.tool.companion_source_sha256
+                        ),
+                        "companionApkSha256": (
+                            self.tool.companion_apk_sha256
+                        ),
+                        "canonicalOrigin": self.canonical_origin,
+                        "route": self.route,
+                        "relayPort": self.relay_port,
+                        "packagePreinstalled": (
+                            self._installed_apk_sha256_before is not None
+                        ),
+                        "packageInstalledByRun": (
+                            self._package_installed_by_run
+                        ),
+                    }
+                time.sleep(0.1)
+            raise ProvisioningError(
+                "Android USB network transport did not become ready"
+            )
+        except BaseException as error:
+            cleanup_error: BaseException | None = None
+            try:
+                if self._started:
+                    self.close(
+                        device_identifier,
+                        deadline_monotonic=time.monotonic() + 30,
+                        cancellation=None,
+                    )
+                else:
+                    self._cleanup_owned_tool()
+            except BaseException as candidate:
+                cleanup_error = candidate
+            if cleanup_error is not None:
+                raise ProvisioningError(
+                    "Android USB network startup cleanup failed after "
+                    f"{type(error).__name__}: "
+                    f"{type(cleanup_error).__name__}"
+                ) from cleanup_error
+            if isinstance(error, OSError):
+                raise BlockedError(
+                    reason=(
+                        "Android USB network transport process could not "
+                        f"start: {type(error).__name__}"
+                    ),
+                    resource="mobile-runtime:usb-network-transport",
+                ) from error
             raise
 
     def close(
@@ -677,42 +921,531 @@ class _AndroidUsbStationTransport:
         deadline_monotonic: float | None = None,
         cancellation: threading.Event | None = None,
     ) -> None:
-        failure: BaseException | None = None
-        try:
-            if self._started:
-                result = self._adb(
+        failures: list[str] = []
+
+        def attempt(label: str, action: Callable[[], Any]) -> Any | None:
+            try:
+                return action()
+            except BaseException as error:
+                failures.append(f"{label}: {type(error).__name__}")
+                return None
+
+        installed_apk_sha256 = attempt(
+            "package inventory",
+            lambda: self._installed_package_sha256(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if installed_apk_sha256 is not None:
+            result = attempt(
+                "client stop",
+                lambda: self._companion_action(
+                    device_identifier,
+                    USB_NETWORK_COMPANION_STOP_ACTION,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            )
+            if result is not None and result.returncode != 0:
+                failures.append("client stop: non-zero exit")
+            result = attempt(
+                "client force-stop",
+                lambda: self._adb(
+                    device_identifier,
+                    "shell",
+                    "am",
+                    "force-stop",
+                    USB_NETWORK_COMPANION_PACKAGE,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            )
+            if result is not None and result.returncode != 0:
+                failures.append("client force-stop: non-zero exit")
+        reverse_present = attempt(
+            "reverse inventory",
+            lambda: self._reverse_is_present(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if reverse_present is True:
+            result = attempt(
+                "reverse remove",
+                lambda: self._adb(
                     device_identifier,
                     "reverse",
                     "--remove",
-                    f"tcp:{self.device_port}",
+                    USB_NETWORK_COMPANION_REVERSE_SOCKET,
                     deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            )
+            if result is not None and result.returncode != 0:
+                failures.append("reverse remove: non-zero exit")
+        attempt("relay process", self._terminate_process)
+        self._started = False
+        if self._package_installed_by_run:
+            result = attempt(
+                "companion uninstall",
+                lambda: self._adb(
+                    device_identifier,
+                    "uninstall",
+                    USB_NETWORK_COMPANION_PACKAGE,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            )
+            if result is not None and result.returncode != 0:
+                failures.append("companion uninstall: non-zero exit")
+        route_active = attempt(
+            "route verification",
+            lambda: self._route_is_active(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if route_active is True:
+            failures.append("VPN route remained active")
+        client_active = attempt(
+            "process verification",
+            lambda: self._client_is_active(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if client_active is True:
+            failures.append("client remained active")
+        reverse_present = attempt(
+            "reverse verification",
+            lambda: self._reverse_is_present(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if reverse_present is True:
+            failures.append("reverse remained active")
+        installed_apk_sha256 = attempt(
+            "package baseline verification",
+            lambda: self._installed_package_sha256(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if installed_apk_sha256 != self._installed_apk_sha256_before:
+            failures.append("client package baseline mismatch")
+        self._package_installed_by_run = False
+        try:
+            self._cleanup_owned_tool()
+        except BaseException as error:
+            failures.append(
+                f"companion build root: {type(error).__name__}"
+            )
+        if failures:
+            raise ProvisioningError(
+                "Android USB network cleanup failed: "
+                + ", ".join(failures)
+            )
+
+    def _cleanup_owned_tool(self) -> None:
+        if not self._owns_tool:
+            return
+        shutil.rmtree(self.tool.build_root, ignore_errors=True)
+        if self.tool.build_root.exists():
+            raise ProvisioningError(
+                "Android USB network companion build root remained active"
+            )
+
+    def _terminate_process(self) -> None:
+        process = self._process
+        self._process = None
+        if process is None or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except (subprocess.TimeoutExpired, TimeoutError):
+            process.kill()
+            process.wait(timeout=5)
+
+    def _installed_package_sha256(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> str | None:
+        result = self._adb(
+            device_identifier,
+            "shell",
+            "pm",
+            "path",
+            USB_NETWORK_COMPANION_PACKAGE,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if result.returncode != 0:
+            return None
+        package_paths = [
+            line.removeprefix("package:").strip()
+            for line in result.stdout.splitlines()
+            if line.startswith("package:")
+        ]
+        base_paths = [
+            path for path in package_paths if path.endswith("/base.apk")
+        ]
+        if len(base_paths) != 1:
+            raise ProvisioningError(
+                "Android USB network client package identity is ambiguous"
+            )
+        digest = self._adb(
+            device_identifier,
+            "shell",
+            "sha256sum",
+            base_paths[0],
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if digest.returncode != 0:
+            raise ProvisioningError(
+                "Android USB network client package hash is unavailable"
+            )
+        value = digest.stdout.split(maxsplit=1)[0].strip().lower()
+        if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            raise ProvisioningError(
+                "Android USB network client package hash is invalid"
+            )
+        return value
+
+    def _client_is_active(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        result = self._adb(
+            device_identifier,
+            "shell",
+            "pidof",
+            USB_NETWORK_COMPANION_PACKAGE,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return result.returncode == 0 and bool(result.stdout.strip())
+
+    def _install_companion(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> CommandResult:
+        self._require_active(cancellation)
+        install_deadline = min(
+            deadline_monotonic
+            if deadline_monotonic is not None
+            else time.monotonic() + 120,
+            time.monotonic() + 120,
+        )
+        outcome: dict[str, Any] = {}
+
+        def install() -> None:
+            try:
+                outcome["result"] = self.executor.run(
+                    (
+                        "adb",
+                        "-s",
+                        device_identifier,
+                        "install",
+                        "-r",
+                        "--no-streaming",
+                        str(self.tool.companion_apk),
+                    ),
+                    cwd=REPO_ROOT,
+                    env=os.environ,
+                    timeout=max(
+                        1.0,
+                        install_deadline - time.monotonic(),
+                    ),
+                )
+            except BaseException as error:
+                outcome["error"] = error
+
+        worker = threading.Thread(
+            target=install,
+            name="android-usb-network-companion-install",
+            daemon=True,
+        )
+        worker.start()
+        interaction_error: BaseException | None = None
+        try:
+            while worker.is_alive() and time.monotonic() < install_deadline:
+                self._approve_install_confirmation_if_visible(
+                    device_identifier,
+                    deadline_monotonic=install_deadline,
                     cancellation=cancellation,
                 )
-                if result.returncode != 0:
-                    failure = ProvisioningError(
-                        "Android USB Station reverse cleanup failed"
-                    )
-                elif self._reverse_is_present(
-                    device_identifier,
-                    deadline_monotonic=deadline_monotonic,
-                    cancellation=cancellation,
-                ):
-                    failure = ProvisioningError(
-                        "Android USB Station reverse remained after cleanup"
-                    )
+                worker.join(timeout=0.1)
+        except BaseException as error:
+            interaction_error = error
         finally:
-            self._started = False
-            self.relay.close()
-        if failure is not None:
-            raise failure
-
-    def rewrite_station_url(self, requested_url: str) -> str:
-        if requested_url.rstrip("/") != self.upstream_url:
-            raise EphemeralCapabilityBlocked(
-                "Mobile Station route does not match its USB transport",
-                resource="mobile.native.appium-session:station-route",
+            worker.join()
+        if interaction_error is not None:
+            raise interaction_error
+        error = outcome.get("error")
+        if isinstance(error, BaseException):
+            raise error
+        result = outcome.get("result")
+        if not isinstance(result, CommandResult):
+            raise ProvisioningError(
+                "Android USB network companion install result is unavailable"
             )
-        return self.device_url
+        return result
+
+    def _read_ui_hierarchy(
+        self,
+        device_identifier: str,
+        dump_path: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> ET.Element | None:
+        dumped = self._adb(
+            device_identifier,
+            "shell",
+            "uiautomator",
+            "dump",
+            dump_path,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if dumped.returncode != 0:
+            return None
+        try:
+            content = self._adb(
+                device_identifier,
+                "exec-out",
+                "cat",
+                dump_path,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        finally:
+            removed = self._adb(
+                device_identifier,
+                "shell",
+                "rm",
+                "-f",
+                dump_path,
+                deadline_monotonic=time.monotonic() + 5,
+                cancellation=None,
+            )
+            if removed.returncode != 0:
+                raise ProvisioningError(
+                    "Android USB network UI hierarchy cleanup failed"
+                )
+        if content.returncode != 0:
+            return None
+        try:
+            return ET.fromstring(content.stdout)
+        except ET.ParseError:
+            return None
+
+    def _approve_install_confirmation_if_visible(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        root = self._read_ui_hierarchy(
+            device_identifier,
+            "/sdcard/peers-touch-usb-network-install.xml",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if root is None:
+            return False
+        nodes = tuple(root.iter("node"))
+        if not any(
+            node.attrib.get("resource-id")
+            == "com.oplus.appdetail:id/app_name"
+            and node.attrib.get("text") == "Peers USB Network"
+            for node in nodes
+        ):
+            return False
+        buttons = [
+            node
+            for node in nodes
+            if node.attrib.get("package") == "com.oplus.appdetail"
+            and node.attrib.get("resource-id")
+            == "com.oplus.appdetail:id/btn_left"
+            and node.attrib.get("enabled") == "true"
+            and node.attrib.get("clickable") == "true"
+        ]
+        return self._tap_ui_node(
+            device_identifier,
+            buttons,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def _companion_action(
+        self,
+        device_identifier: str,
+        action: str,
+        *,
+        route: str | None = None,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> CommandResult:
+        arguments = [
+            "shell",
+            "am",
+            "start",
+            "-W",
+            "-a",
+            action,
+            "-n",
+            USB_NETWORK_COMPANION_COMPONENT,
+        ]
+        if route is not None:
+            arguments.extend(("--esa", "routes", route))
+        return self._adb(
+            device_identifier,
+            *arguments,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def _approve_vpn_consent_if_visible(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        root = self._read_ui_hierarchy(
+            device_identifier,
+            "/sdcard/peers-touch-usb-network-consent.xml",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if root is None:
+            return False
+        nodes = tuple(root.iter("node"))
+        if not any(
+            "vpn" in (
+                node.attrib.get("text", "")
+                + node.attrib.get("content-desc", "")
+            ).casefold()
+            for node in nodes
+        ):
+            return False
+        buttons = [
+            node
+            for node in nodes
+            if node.attrib.get("resource-id") == "android:id/button1"
+            and node.attrib.get("enabled") == "true"
+            and node.attrib.get("package")
+            in {
+                "com.android.vpndialogs",
+                "com.android.systemui",
+                "com.android.settings",
+            }
+        ]
+        return self._tap_ui_node(
+            device_identifier,
+            buttons,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def _tap_ui_node(
+        self,
+        device_identifier: str,
+        nodes: Sequence[ET.Element],
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        if len(nodes) != 1:
+            return False
+        bounds = re.fullmatch(
+            r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+            nodes[0].attrib.get("bounds", ""),
+        )
+        if bounds is None:
+            return False
+        left, top, right, bottom = map(int, bounds.groups())
+        approved = self._adb(
+            device_identifier,
+            "shell",
+            "input",
+            "tap",
+            str((left + right) // 2),
+            str((top + bottom) // 2),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if approved.returncode != 0:
+            raise ProvisioningError(
+                "Android USB network UI confirmation interaction failed"
+            )
+        return True
+
+    def _route_is_active(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        result = self._adb(
+            device_identifier,
+            "shell",
+            "ip",
+            "route",
+            "get",
+            self.route_host,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return (
+            result.returncode == 0
+            and self.route_host in result.stdout
+            and re.search(r"\bdev\s+tun\d+\b", result.stdout) is not None
+        )
+
+    def _canonical_origin_is_reachable(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        result = self._adb(
+            device_identifier,
+            "shell",
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            f"{self.canonical_origin}/sub-oss/healthz",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return result.returncode == 0
 
     def _reverse_is_present(
         self,
@@ -730,11 +1463,12 @@ class _AndroidUsbStationTransport:
         )
         if result.returncode != 0:
             raise ProvisioningError(
-                "Android USB Station reverse inventory failed"
+                "Android USB network reverse inventory failed"
             )
-        expected = f"tcp:{self.device_port}"
+        expected_remote = f"tcp:{self.relay_port}"
         return any(
-            line.split()[-2:] == [expected, expected]
+            line.split()[-2:]
+            == [USB_NETWORK_COMPANION_REVERSE_SOCKET, expected_remote]
             for line in result.stdout.splitlines()
             if len(line.split()) >= 2
         )
@@ -746,23 +1480,44 @@ class _AndroidUsbStationTransport:
         deadline_monotonic: float | None,
         cancellation: threading.Event | None,
     ) -> CommandResult:
-        if cancellation is not None and cancellation.is_set():
-            raise ProvisioningError(
-                "Android USB Station transport was cancelled"
-            )
+        return self._run(
+            ("adb", "-s", device_identifier, *arguments),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+            environment=os.environ,
+        )
+
+    def _run(
+        self,
+        command: Sequence[str],
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+        environment: Mapping[str, str],
+    ) -> CommandResult:
+        self._require_active(cancellation)
         timeout = 30.0
         if deadline_monotonic is not None:
             timeout = min(timeout, deadline_monotonic - time.monotonic())
             if timeout <= 0:
                 raise ProvisioningError(
-                    "Android USB Station transport exceeded its deadline"
+                    "Android USB network transport exceeded its deadline"
                 )
         return self.executor.run(
-            ("adb", "-s", device_identifier, *arguments),
+            command,
             cwd=REPO_ROOT,
-            env=os.environ,
+            env=environment,
             timeout=timeout,
         )
+
+    @staticmethod
+    def _require_active(
+        cancellation: threading.Event | None,
+    ) -> None:
+        if cancellation is not None and cancellation.is_set():
+            raise ProvisioningError(
+                "Android USB network transport was cancelled"
+            )
 
 
 @dataclass(frozen=True)
@@ -6614,10 +7369,6 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         harness_actions: Sequence[str] = (),
         parent_harness_actions: Sequence[str] = (),
         sensitive_values: Sequence[str] = (),
-        station_transports: Mapping[
-            str,
-            _AndroidUsbStationTransport,
-        ] | None = None,
     ) -> None:
         if installation_trace_field not in {
             "freshInstallTrace",
@@ -6639,7 +7390,6 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         self._sensitive_values = tuple(
             value for value in sensitive_values if value
         )
-        self._station_transports = dict(station_transports or {})
         self._sessions: dict[str, _ParentAppiumSession] = {}
         self._cleanup_sessions: list[_ParentAppiumSession] = []
         self._session_refs: dict[str, str] = {}
@@ -6850,19 +7600,6 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
             )
-            if action in {"station.add", "station.replace"}:
-                transport = self._station_transports.get(client_id)
-                if transport is not None:
-                    action_payload["url"] = transport.rewrite_station_url(
-                        _capability_text(
-                            action_payload,
-                            "url",
-                            resource=(
-                                "mobile.native.appium-session:"
-                                f"{client_id}:station-route"
-                            ),
-                        )
-                    )
             value = session.call_action(
                 action,
                 action_payload,
@@ -8020,10 +8757,11 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self._credential_values_by_provider: dict[str, str] = {}
         self._provider_subjects: dict[str, str] = {}
         self._appium_handler: MobileNativeAppiumCapabilityHandler | None = None
-        self._usb_station_transports: dict[
+        self._usb_network_transports: dict[
             str,
-            _AndroidUsbStationTransport,
+            _AndroidUsbNetworkTransport,
         ] = {}
+        self._usb_network_tool: _AndroidUsbNetworkTool | None = None
         self._port_reservations: list[_PortReservation] = []
         self._storage_roots: list[Path] = []
         self._cleanup_registered = False
@@ -8165,7 +8903,6 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                     )
                 )
             ),
-            station_transports=self._usb_station_transports,
         )
         context = EphemeralGateLaunchContext(
             required_capabilities=required_capabilities,
@@ -8717,29 +9454,46 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self.register_cleanup("mobile-native-parent-authorities", self._cleanup_parent)
         self._cleanup_registered = True
 
-    def _prepare_android_usb_station_transports(
+    def _prepare_android_usb_network_transports(
         self,
         station_url: str,
-    ) -> None:
+    ) -> dict[str, dict[str, Any]]:
         if self._lease_broker is None or self._native_spec is None:
             raise BlockedError(
-                reason="Android USB Station transport has no device authority",
-                resource="mobile-runtime:usb-station-transport",
+                reason="Android USB network transport has no device authority",
+                resource="mobile-runtime:usb-network-transport",
             )
-        for client in self._native_spec.clients:
-            if client.platform != "android":
-                continue
-            transport = _AndroidUsbStationTransport(station_url)
-            self._usb_station_transports[client.id] = transport
+        android_clients = tuple(
+            client
+            for client in self._native_spec.clients
+            if client.platform == "android"
+        )
+        if not android_clients:
+            return {}
+        tool = _build_android_usb_network_tool()
+        self._usb_network_tool = tool
+        attestations: dict[str, dict[str, Any]] = {}
+        for client in android_clients:
+            reservation = _PortReservation()
+            self._port_reservations.append(reservation)
+            relay_port = reservation.port
+            reservation.release()
+            transport = _AndroidUsbNetworkTransport(
+                station_url,
+                relay_port=relay_port,
+                tool=tool,
+            )
+            self._usb_network_transports[client.id] = transport
             lease = self._device_leases[client.id]
-            self._lease_broker.with_physical_device(
+            attestations[client.id] = self._lease_broker.with_physical_device(
                 lease,
                 lambda handle, transport=transport: transport.start(
                     handle.identifier
                 ),
             )
+        return attestations
 
-    def _cleanup_android_usb_station_transports(
+    def _cleanup_android_usb_network_transports(
         self,
         *,
         deadline_monotonic: float,
@@ -8748,16 +9502,12 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         failures: list[str] = []
         broker = self._lease_broker
         for client_id, transport in reversed(
-            tuple(self._usb_station_transports.items())
+            tuple(self._usb_network_transports.items())
         ):
             lease = self._device_leases.get(client_id)
             if broker is None or lease is None:
-                try:
-                    transport.relay.close()
-                except BaseException as error:
-                    failures.append(
-                        f"{client_id}: relay {type(error).__name__}"
-                    )
+                transport._terminate_process()
+                failures.append(f"{client_id}: device authority unavailable")
                 continue
             try:
                 _require_cleanup_budget(
@@ -8777,7 +9527,14 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             except BaseException as error:
                 failures.append(f"{client_id}: {type(error).__name__}")
             else:
-                self._usb_station_transports.pop(client_id, None)
+                self._usb_network_transports.pop(client_id, None)
+        if not self._usb_network_transports and self._usb_network_tool:
+            build_root = self._usb_network_tool.build_root
+            shutil.rmtree(build_root, ignore_errors=True)
+            if build_root.exists():
+                failures.append("companion build root remained active")
+            else:
+                self._usb_network_tool = None
         return failures
 
     def _zeroize_pending_lease_authentication_key(self) -> bool:
@@ -8830,7 +9587,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             except BaseException as error:
                 failures.append(f"appium sessions: {type(error).__name__}")
         failures.extend(
-            self._cleanup_android_usb_station_transports(
+            self._cleanup_android_usb_network_transports(
                 deadline_monotonic=deadline,
                 cancellation=cancellation,
             )
@@ -8978,7 +9735,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             except BaseException as error:
                 failures.append(f"appium sessions: {type(error).__name__}")
         failures.extend(
-            self._cleanup_android_usb_station_transports(
+            self._cleanup_android_usb_network_transports(
                 deadline_monotonic=deadline,
                 cancellation=cancellation,
             )
@@ -9328,9 +10085,15 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             runtime_root=runtime_root,
         )
         if native_spec.scenario.id == "android-social":
-            self._prepare_android_usb_station_transports(
-                service_bindings["station-primary"].endpoint
+            usb_network_attestations = (
+                self._prepare_android_usb_network_transports(
+                    service_bindings["station-primary"].endpoint
+                )
             )
+            for client_id, attestation in usb_network_attestations.items():
+                client_resources[client_id]["usbNetworkTransport"] = (
+                    attestation
+                )
         actor_manifest_ref = (
             self._prepare_android_social_actor_manifest()
             if native_spec.scenario.id == "android-social"

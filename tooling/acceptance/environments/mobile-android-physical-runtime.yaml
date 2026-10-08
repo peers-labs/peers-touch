@@ -70,7 +70,7 @@
         "correlation-channel",
         "profile-leases",
         "deployment-leases",
-        "usb-station-transports"
+        "usb-network-transports"
       ]
     }
   },

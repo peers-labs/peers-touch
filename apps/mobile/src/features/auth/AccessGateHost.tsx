@@ -264,6 +264,7 @@ export function AccessGateHost({
       ? t('mobile.auth.subtitle')
       : currentGate?.description || t('mobile.auth.subtitle');
   const hasPrimaryAction = showInviteCode
+    || showSchemaGate
     || (showEmailLogin && activeLoginTab === 'email');
   const visibleStationLabel = authStationLabel(
     stationLabel,

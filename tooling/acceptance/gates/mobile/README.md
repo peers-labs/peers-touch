@@ -556,6 +556,14 @@ closed. Device serials and installed package paths remain process-local and
 never enter evidence. OAuth and all scenarios without this descriptor retain
 the existing fresh-install contract.
 
+When that cell cannot route the canonical Station IPv4 origin directly, the
+Provisioner owns a source-built Android companion plus an attested gnirehtet
+host relay. It must not rewrite `station.add` to loopback, mutate VPN app-ops,
+disable device security controls, or relax the signed canonical-origin check.
+The complete startup, manifest, baseline restoration, and cleanup procedure is
+defined in
+[`playbooks/mobile-android-usb-network.md`](../../playbooks/mobile-android-usb-network.md).
+
 UiAutomator2 sessions apply both the Android install timeout and the matching
 ADB command timeout so explicit `install_app` calls use the declared bounded
 budget. Unsupported driver `installOptions` capabilities are not emitted.

@@ -2,7 +2,7 @@
 
 > **Status**: confirmed
 > **Version**: v1.0
-> **Created**: 2026-10-06 | **Updated**: 2026-10-07
+> **Created**: 2026-10-06 | **Updated**: 2026-10-08
 > **Owner**: Mobile Product / Social Product
 > **Module**: `packages/prototypes/mobile/chat/`
 
@@ -21,6 +21,9 @@ This design amends the existing Mobile Shell prototype instead of creating a sec
 - Mobile navigation descriptors and Social experience facade
 
 The prototype is a React/Vite interaction reference only. Production remains Tauri Mobile Web + Rust.
+
+The Auth entry states are governed by
+[`auth-entry-interaction-contract.yaml`](./auth-entry-interaction-contract.yaml).
 
 ## Run
 
@@ -115,6 +118,19 @@ at all three viewports. The 390px and 1440px screenshots were opened and
 visually inspected. This is prototype evidence only; the matching production
 geometry is enforced by the Android RC02 Native Gate and remains unproven until
 the exact-source OPPO run completes.
+
+## 2026-10-08 Auth Entry Evidence
+
+`check-layout.mjs` now captures normal and expired-session Auth in both Quick
+Login and Email Login states at 390x844, 554x954, and 1440x1100. It rejects any
+inactive login panel that still contributes layout geometry.
+
+The run produced 66 captures with zero geometry, overflow, overlap, recovery,
+raw-address, or inactive-panel defects. The four 390px Auth screenshots and the
+1440px Email screenshot were opened and visually inspected. Quick Login remains
+compact; Email Login exposes one wider secondary Station action and one clear
+primary Sign In action without clipping. Production schema gates retain the
+same primary action hierarchy through `AccessGateHost.test.ts`.
 
 ## Known Differences
 

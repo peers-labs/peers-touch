@@ -908,8 +908,8 @@ select,
 
 .auth-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(96px, 0.8fr);
+  gap: 8px;
 }
 
 .auth-actions.single {

@@ -671,7 +671,7 @@
   }
 
   .mp-auth-actions {
-    display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px;
+    display: grid; grid-template-columns: minmax(0,1.2fr) minmax(96px,0.8fr); gap: 8px;
     .ant-btn { height: 44px; border-radius: 8px; }
     &.single {
       display: flex; justify-content: center;
@@ -682,19 +682,13 @@
     }
   }
 
-  /* ── Tab content grid overlay — locks height across tabs ── */
   .mp-auth-tab-content {
-    display: grid;
     min-height: 0;
-    > * {
-      grid-area: 1 / 1;
-      visibility: hidden;
-      opacity: 0;
-      transition: opacity 0.15s ease;
-      &.active {
-        visibility: visible;
-        opacity: 1;
-      }
+    > *:not(.active) {
+      display: none;
+    }
+    > *.active {
+      display: flex;
     }
   }
   /* ── OAuth buttons ── */
