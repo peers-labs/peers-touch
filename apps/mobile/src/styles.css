@@ -3850,7 +3850,10 @@ select,
   pointer-events: none;
 }
 
-.recovery-overlay-host[data-launch-state='shell'] {
+.recovery-overlay-host:is(
+  [data-launch-state='shell'],
+  [data-launch-state='resume']
+) {
   padding-bottom:
     calc(var(--tabbar-height) + var(--safe-area-bottom) + 12px);
 }
@@ -4009,7 +4012,10 @@ select,
   margin-top: 8px;
 }
 
-.recovery-overlay-host[data-launch-state='shell'] .recovery-deferred-capability {
+.recovery-overlay-host:is(
+  [data-launch-state='shell'],
+  [data-launch-state='resume']
+) .recovery-deferred-capability {
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
@@ -4017,14 +4023,20 @@ select,
   border-radius: 10px;
 }
 
-.recovery-overlay-host[data-launch-state='shell']
+.recovery-overlay-host:is(
+  [data-launch-state='shell'],
+  [data-launch-state='resume']
+)
   .recovery-deferred-capability
   .recovery-notice__icon {
   width: 24px;
   height: 24px;
 }
 
-.recovery-overlay-host[data-launch-state='shell']
+.recovery-overlay-host:is(
+  [data-launch-state='shell'],
+  [data-launch-state='resume']
+)
   .recovery-deferred-capability
   .recovery-notice__content {
   display: grid;
@@ -4034,16 +4046,25 @@ select,
   align-items: center;
 }
 
-.recovery-overlay-host[data-launch-state='shell']
+.recovery-overlay-host:is(
+  [data-launch-state='shell'],
+  [data-launch-state='resume']
+)
   .recovery-deferred-capability
   .recovery-notice__title,
-.recovery-overlay-host[data-launch-state='shell']
+.recovery-overlay-host:is(
+  [data-launch-state='shell'],
+  [data-launch-state='resume']
+)
   .recovery-deferred-capability
   .recovery-notice__text {
   grid-column: 1;
 }
 
-.recovery-overlay-host[data-launch-state='shell']
+.recovery-overlay-host:is(
+  [data-launch-state='shell'],
+  [data-launch-state='resume']
+)
   .recovery-deferred-capability
   .recovery-notice__actions {
   grid-column: 2;
@@ -4052,7 +4073,10 @@ select,
   margin-top: 0;
 }
 
-.recovery-overlay-host[data-launch-state='shell']
+.recovery-overlay-host:is(
+  [data-launch-state='shell'],
+  [data-launch-state='resume']
+)
   .recovery-deferred-capability
   .recovery-btn--compact {
   min-height: 44px;
@@ -4060,13 +4084,19 @@ select,
 }
 
 @media (max-width: 360px) {
-  .recovery-overlay-host[data-launch-state='shell']
+  .recovery-overlay-host:is(
+    [data-launch-state='shell'],
+    [data-launch-state='resume']
+  )
     .recovery-deferred-capability
     .recovery-notice__content {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .recovery-overlay-host[data-launch-state='shell']
+  .recovery-overlay-host:is(
+    [data-launch-state='shell'],
+    [data-launch-state='resume']
+  )
     .recovery-deferred-capability
     .recovery-notice__actions {
     grid-column: 1;
