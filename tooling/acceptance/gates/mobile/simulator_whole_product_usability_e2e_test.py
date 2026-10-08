@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import patch
 
 from tooling.acceptance.core import (
+    DriverError,
     EvidenceManifestInvalid,
     EvidenceStore,
     GateError,
@@ -452,6 +453,33 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
                     "textSize": "normal",
                 },
             )
+
+    def test_shell_driver_retries_transient_ios_rotation_failure(self) -> None:
+        class TransientRotationSession(_ShellDriverSession):
+            def __init__(self) -> None:
+                super().__init__()
+                self.orientation_attempts = 0
+
+            def set_orientation(self, orientation: str) -> None:
+                self.orientation_attempts += 1
+                if self.orientation_attempts == 1:
+                    raise DriverError("Unable To Rotate Device")
+                super().set_orientation(orientation)
+
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = TransientRotationSession()
+
+        with patch(
+            "tooling.acceptance.gates.mobile."
+            "simulator_whole_product_usability_e2e.time.sleep"
+        ):
+            result = gate._configure_cell(session, "landscape-normal")
+
+        self.assertEqual(session.orientation_attempts, 2)
+        self.assertEqual(result["orientation"], "landscape")
+        self.assertGreater(result["width"], result["height"])
 
     def test_shell_driver_uses_real_navigation_and_degraded_state(self) -> None:
         inventory = load_surface_inventory()

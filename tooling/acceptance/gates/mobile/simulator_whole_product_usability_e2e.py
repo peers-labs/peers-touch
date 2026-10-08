@@ -54,6 +54,7 @@ ENVIRONMENT_ID = "mobile-direct-simulator"
 EVIDENCE_ROLE = "mobile-surface-evidence"
 VISUAL_REVIEW_GATE_ID = "mobile-whole-product-visual-review"
 VISUAL_REVIEW_ROLE = "mobile-whole-product-visual-review"
+ORIENTATION_MAX_ATTEMPTS = 3
 CONTRACT_ID = "mobile-whole-product-surface-inventory-v1"
 INVENTORY_PATH = (
     REPO_ROOT
@@ -1640,7 +1641,17 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
             "maximum" if cell_id.endswith("maximum-text") else "normal"
         )
         session.switch_to_native()
-        session.set_orientation(orientation.upper())
+        for attempt in range(1, ORIENTATION_MAX_ATTEMPTS + 1):
+            try:
+                session.set_orientation(orientation.upper())
+                break
+            except DriverError as error:
+                if (
+                    "Unable To Rotate Device" not in str(error)
+                    or attempt == ORIENTATION_MAX_ATTEMPTS
+                ):
+                    raise
+                time.sleep(0.75)
         time.sleep(0.5)
         session.switch_to_app_webview()
         value = session.execute_script(TEXT_SIZE_SCRIPT, text_size)
