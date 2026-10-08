@@ -567,9 +567,29 @@ class MobileRelayNativeGate(AcceptanceGate):
                     attempt == 1
                     and "mobile.lifecycle.teardownIncomplete" in str(error)
                 ):
+                    snapshot = self._mapping(
+                        binding.call_action(
+                            CLIENT_ID,
+                            "lifecycle.waitReady",
+                            {"includeDiagnostics": True},
+                        ),
+                        "Mobile teardown recovery snapshot",
+                    )
+                    runtimes = snapshot.get("runtimes")
+                    unavailable = sorted(
+                        str(runtime.get("id") or "")
+                        for runtime in runtimes
+                        if (
+                            isinstance(runtime, Mapping)
+                            and runtime.get("status") != "ready"
+                            and runtime.get("id")
+                        )
+                    ) if isinstance(runtimes, list) else []
                     self._record(
                         "relay-restart-retry",
                         reason="teardown-incomplete",
+                        phase=snapshot.get("phase"),
+                        unavailableRuntimeIds=unavailable,
                     )
                     continue
                 raise

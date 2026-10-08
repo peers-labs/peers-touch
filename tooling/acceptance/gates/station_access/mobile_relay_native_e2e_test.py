@@ -203,6 +203,10 @@ class MobileRelayNativeGateTests(unittest.TestCase):
             2,
         )
         self.assertEqual(
+            binding.action_calls.count("lifecycle.waitReady"),
+            1,
+        )
+        self.assertEqual(
             gate.events[0]["event"],
             "relay-restart-retry",
         )
