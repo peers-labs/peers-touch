@@ -58,6 +58,16 @@ describe('AccessGateHost schema gate surface', () => {
     expect(source).toContain('<Select');
     expect(source).toContain('<InputNumber');
   });
+
+  it('keeps the Station-authored Continue action primary', () => {
+    const markup = renderGate([], {
+      decision: schemaDecision(),
+    });
+
+    expect(markup).toContain('common.continue');
+    expect(markup).toContain('ant-btn-primary');
+    expect(markup).not.toContain('auth-actions single');
+  });
 });
 
 describe('AccessGateHost advertised credential gating', () => {
@@ -238,6 +248,34 @@ function loginDecision(alternativeActions: AccessGateAction[]): AccessDecision {
       actionId: 'auth.password',
       schemaRevision: 1,
       schemaDigest: 'a'.repeat(64),
+    }],
+  };
+}
+
+function schemaDecision(): AccessDecision {
+  return {
+    state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+    attemptId: 'attempt-1',
+    currentGateId: 'terms.acceptance',
+    gates: [{
+      gateId: 'terms.acceptance',
+      type: 'ACCESS_GATE_TYPE_CUSTOM',
+      state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+      title: 'Terms',
+      description: 'Review the current Station terms.',
+      submitAction: 'submit_generic',
+      inputSchemaJson: JSON.stringify({
+        fields: [{
+          name: 'accepted',
+          type: 'checkbox',
+          label: 'Accept',
+          required: true,
+        }],
+      }),
+      alternativeActions: [],
+      actionId: 'terms.acceptance',
+      schemaRevision: 1,
+      schemaDigest: 'b'.repeat(64),
     }],
   };
 }

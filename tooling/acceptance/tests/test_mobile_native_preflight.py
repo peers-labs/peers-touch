@@ -10,6 +10,7 @@ import http.server
 import inspect
 import json
 import os
+import shutil
 import socket
 import tempfile
 import threading
@@ -53,6 +54,7 @@ from tooling.acceptance.provisioners.mobile_native import (
     MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS,
     MOBILE_NATIVE_PRODUCT_SCENARIOS,
     MOBILE_NATIVE_SCENARIO_GATES,
+    USB_NETWORK_COMPANION_ROOT,
     CommandResult,
     MobileAndroidPhysicalProvisioner,
     MobileNativeAppiumCapabilityHandler,
@@ -61,8 +63,8 @@ from tooling.acceptance.provisioners.mobile_native import (
     MobileNativeSourceArtifactRefs,
     MobileNativeSourceProjection,
     MobileNativeStationFixtureCapabilityHandler,
-    _AndroidUsbStationTransport,
-    _LoopbackTcpRelay,
+    _AndroidUsbNetworkTransport,
+    _AndroidUsbNetworkTool,
     _ParentAndroidInstallationAdapter,
     _ParentAppiumSession,
     _ParentAppiumTransport,
@@ -925,22 +927,55 @@ class FakeCommandExecutor:
         return CommandResult(1, stderr="unexpected command")
 
 
-class AndroidUsbStationTransportTests(unittest.TestCase):
-    class Relay:
-        def __init__(self, _host: str, _port: int) -> None:
-            self.local_port = 49181
-            self.started = False
-            self.closed = False
+class AndroidUsbNetworkTransportTests(unittest.TestCase):
+    class Process:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+            self.terminated = False
+            self.killed = False
 
-        def start(self) -> None:
-            self.started = True
+        def poll(self) -> int | None:
+            return self.returncode
 
-        def close(self) -> None:
-            self.closed = True
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = 0
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
+
+        def wait(self, timeout: float | None = None) -> int:
+            del timeout
+            if self.returncode is None:
+                raise TimeoutError("process is still running")
+            return self.returncode
 
     class Executor:
-        def __init__(self) -> None:
+        def __init__(
+            self,
+            *,
+            package_installed: bool = True,
+            package_digest: str = "b" * 64,
+            consent_required: bool = False,
+            install_confirmation_required: bool = False,
+            data_plane_reachable: bool = True,
+        ) -> None:
+            self.package_installed = package_installed
+            self.package_digest = package_digest
+            self.consent_required = consent_required
+            self.consent_granted = not consent_required
+            self.dialog_visible = False
+            self.install_confirmation_required = (
+                install_confirmation_required
+            )
+            self.install_confirmed = not install_confirmation_required
+            self.install_dialog_visible = False
+            self.install_confirmation = threading.Event()
+            self.client_active = False
+            self.route_active = False
             self.reverse_present = False
+            self.data_plane_reachable = data_plane_reachable
             self.commands: list[tuple[str, ...]] = []
 
         def run(
@@ -954,141 +989,637 @@ class AndroidUsbStationTransportTests(unittest.TestCase):
             del cwd, env, timeout
             observed = tuple(command)
             self.commands.append(observed)
+            if observed[-4:] == (
+                "install",
+                "-r",
+                "--no-streaming",
+                "/attested/usb-network-companion.apk",
+            ):
+                if not self.install_confirmed:
+                    self.install_dialog_visible = True
+                    self.install_confirmation.wait(timeout=2)
+                if not self.install_confirmed:
+                    return CommandResult(1, stderr="confirmation unavailable")
+                self.package_installed = True
+                self.package_digest = "b" * 64
+                return CommandResult(0, "Success\n")
+            if observed[-2:] == (
+                "uninstall",
+                "com.peers.touch.acceptance.usbnetwork",
+            ):
+                self.package_installed = False
+                self.client_active = False
+                self.route_active = False
+                return CommandResult(0)
             if observed[-3:] == (
                 "reverse",
-                "tcp:49181",
+                "localabstract:gnirehtet",
                 "tcp:49181",
             ):
                 self.reverse_present = True
-                return CommandResult(0, "49181\n")
+                return CommandResult(0)
             if observed[-3:] == (
                 "reverse",
                 "--remove",
-                "tcp:49181",
+                "localabstract:gnirehtet",
             ):
                 self.reverse_present = False
                 return CommandResult(0)
             if observed[-2:] == ("reverse", "--list"):
                 output = (
-                    "UsbFfs tcp:49181 tcp:49181\n"
+                    "UsbFfs localabstract:gnirehtet tcp:49181\n"
                     if self.reverse_present
                     else ""
                 )
                 return CommandResult(0, output)
+            if (
+                "com.peers.touch.acceptance.usbnetwork.START" in observed
+                and "am" in observed
+            ):
+                if self.consent_granted:
+                    self.client_active = True
+                    self.route_active = True
+                else:
+                    self.dialog_visible = True
+                return CommandResult(0)
+            if (
+                "com.peers.touch.acceptance.usbnetwork.STOP" in observed
+                and "am" in observed
+            ):
+                self.client_active = False
+                self.route_active = False
+                return CommandResult(0)
+            if observed[-3:] == (
+                "am",
+                "force-stop",
+                "com.peers.touch.acceptance.usbnetwork",
+            ):
+                self.client_active = False
+                self.route_active = False
+                return CommandResult(0)
+            if observed[-3:] == (
+                "shell",
+                "pidof",
+                "com.peers.touch.acceptance.usbnetwork",
+            ):
+                return CommandResult(
+                    0 if self.client_active else 1,
+                    "31337\n" if self.client_active else "",
+                )
+            if observed[-4:] == (
+                "shell",
+                "pm",
+                "path",
+                "com.peers.touch.acceptance.usbnetwork",
+            ):
+                return CommandResult(
+                    0 if self.package_installed else 1,
+                    (
+                        "package:/data/app/usb-network/base.apk\n"
+                        if self.package_installed
+                        else ""
+                    ),
+                )
+            if (
+                len(observed) >= 3
+                and observed[-3:-1] == ("shell", "sha256sum")
+            ):
+                return CommandResult(
+                    0 if self.package_installed else 1,
+                    f"{self.package_digest}  {observed[-1]}\n"
+                    if self.package_installed
+                    else "",
+                )
+            if observed[-5:] == (
+                "shell",
+                "ip",
+                "route",
+                "get",
+                "10.37.221.38",
+            ):
+                return CommandResult(
+                    0,
+                    (
+                        "10.37.221.38 dev tun0 src 10.0.0.2 uid 2000\n"
+                        if self.route_active
+                        else "10.37.221.38 dev wlan0 src 192.0.2.2\n"
+                    ),
+                )
+            if (
+                observed[-8:-1]
+                == (
+                    "shell",
+                    "curl",
+                    "--fail",
+                    "--silent",
+                    "--show-error",
+                    "--max-time",
+                    "5",
+                )
+                and observed[-1].endswith("/sub-oss/healthz")
+            ):
+                return CommandResult(
+                    0 if self.data_plane_reachable else 1,
+                    '{"status":"ok"}\n'
+                    if self.data_plane_reachable
+                    else "",
+                )
+            if observed[-4:-1] == (
+                "shell",
+                "uiautomator",
+                "dump",
+            ):
+                path = observed[-1]
+                visible = (
+                    self.install_dialog_visible
+                    if path.endswith("-install.xml")
+                    else self.dialog_visible
+                )
+                return CommandResult(0 if visible else 1)
+            if observed[-3:] == (
+                "exec-out",
+                "cat",
+                "/sdcard/peers-touch-usb-network-consent.xml",
+            ):
+                if not self.dialog_visible:
+                    return CommandResult(1)
+                return CommandResult(
+                    0,
+                    (
+                        '<hierarchy><node text="Connection request" '
+                        'package="com.android.vpndialogs">'
+                        '<node text="Allow this app to set up a VPN?" '
+                        'package="com.android.vpndialogs"/>'
+                        '<node text="OK" resource-id="android:id/button1" '
+                        'enabled="true" package="com.android.vpndialogs" '
+                        'bounds="[10,20][110,70]"/>'
+                        "</node></hierarchy>"
+                    ),
+                )
+            if observed[-3:] == (
+                "exec-out",
+                "cat",
+                "/sdcard/peers-touch-usb-network-install.xml",
+            ):
+                if not self.install_dialog_visible:
+                    return CommandResult(1)
+                return CommandResult(
+                    0,
+                    (
+                        '<hierarchy><node text="Peers USB Network" '
+                        'resource-id="com.oplus.appdetail:id/app_name" '
+                        'package="com.oplus.appdetail"/>'
+                        '<node text="Continue install" '
+                        'resource-id="com.oplus.appdetail:id/btn_left" '
+                        'enabled="true" clickable="true" '
+                        'package="com.oplus.appdetail" '
+                        'bounds="[10,20][110,70]"/></hierarchy>'
+                    ),
+                )
+            if observed[-4:-1] == ("shell", "rm", "-f"):
+                return CommandResult(0)
+            if observed[-4:-2] == ("input", "tap"):
+                if self.install_dialog_visible:
+                    self.install_confirmed = True
+                    self.install_dialog_visible = False
+                    self.install_confirmation.set()
+                else:
+                    self.consent_granted = True
+                    self.dialog_visible = False
+                    self.client_active = True
+                    self.route_active = True
+                return CommandResult(0)
             return CommandResult(1, stderr="unexpected command")
 
-    def test_transport_owns_reverse_mapping_and_verified_cleanup(self) -> None:
-        executor = self.Executor()
-        relay = self.Relay("", 0)
-        transport = _AndroidUsbStationTransport(
-            "http://10.37.221.38:18080",
-            executor=executor,
-            relay_factory=lambda _host, _port: relay,
-        )
-
-        device_url = transport.start("opaque-device")
-
-        self.assertEqual(device_url, "http://127.0.0.1:49181")
-        self.assertTrue(relay.started)
-        self.assertTrue(executor.reverse_present)
-        self.assertEqual(
-            transport.rewrite_station_url(
-                "http://10.37.221.38:18080/"
+    @staticmethod
+    def tool() -> _AndroidUsbNetworkTool:
+        return _AndroidUsbNetworkTool(
+            version="peers-touch-1.0.0+gnirehtet-2.5.1",
+            relay_executable=Path("/attested/gnirehtet"),
+            relay_sha256="a" * 64,
+            companion_apk=Path(
+                "/attested/usb-network-companion.apk"
             ),
-            device_url,
+            companion_apk_sha256="b" * 64,
+            companion_source_sha256="c" * 64,
+            build_root=Path("/attested/companion-build"),
         )
-        with self.assertRaisesRegex(
-            BlockedError,
-            "does not match its USB transport",
-        ):
-            transport.rewrite_station_url("http://station.invalid:18080")
+
+    def test_transport_preserves_canonical_origin_and_restores_baseline(
+        self,
+    ) -> None:
+        executor = self.Executor()
+        process = self.Process()
+        spawned: list[tuple[tuple[str, ...], Mapping[str, object]]] = []
+
+        def spawn(
+            command: list[str],
+            **options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            spawned.append((tuple(command), dict(options)))
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        attestation = transport.start("opaque-device")
+
+        self.assertEqual(
+            attestation["canonicalOrigin"],
+            "http://10.37.221.38:18080",
+        )
+        self.assertEqual(attestation["route"], "10.37.221.38/32")
+        self.assertEqual(
+            spawned[0][0],
+            (
+                "/attested/gnirehtet",
+                "relay",
+                "-p",
+                "49181",
+            ),
+        )
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "opaque-device",
+                "reverse",
+                "localabstract:gnirehtet",
+                "tcp:49181",
+            ),
+            executor.commands,
+        )
+        self.assertNotIn("GNIREHTET_APK", spawned[0][1]["env"])
+        self.assertEqual(attestation["relaySha256"], "a" * 64)
+        self.assertEqual(attestation["companionApkSha256"], "b" * 64)
+        self.assertEqual(
+            attestation["companionSourceSha256"],
+            "c" * 64,
+        )
 
         transport.close("opaque-device")
 
+        self.assertFalse(executor.client_active)
+        self.assertFalse(executor.route_active)
         self.assertFalse(executor.reverse_present)
-        self.assertTrue(relay.closed)
-        self.assertEqual(
-            executor.commands[-2:],
-            [
-                (
-                    "adb",
-                    "-s",
-                    "opaque-device",
-                    "reverse",
-                    "--remove",
-                    "tcp:49181",
-                ),
-                (
-                    "adb",
-                    "-s",
-                    "opaque-device",
-                    "reverse",
-                    "--list",
-                ),
-            ],
+        self.assertTrue(executor.package_installed)
+        self.assertTrue(process.terminated)
+        self.assertTrue(attestation["packagePreinstalled"])
+        self.assertFalse(attestation["packageInstalledByRun"])
+        self.assertFalse(
+            any("appops" in command for command in executor.commands)
+        )
+        source = inspect.getsource(_AndroidUsbNetworkTransport)
+        self.assertNotIn("ACTIVATE_VPN", source)
+        self.assertNotIn("appops", source)
+
+    def test_transport_preserves_preinstalled_client_package(self) -> None:
+        executor = self.Executor(package_installed=True)
+        process = self.Process()
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "https://10.37.221.38:18443",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+        transport.start("opaque-device")
+        transport.close("opaque-device")
+
+        self.assertTrue(executor.package_installed)
+        self.assertFalse(
+            any("install" in command for command in executor.commands)
         )
 
-    def test_transport_rejects_non_http_or_path_bearing_station(self) -> None:
+    def test_transport_installs_and_removes_source_built_companion(self) -> None:
+        executor = self.Executor(
+            package_installed=False,
+            install_confirmation_required=True,
+        )
+        process = self.Process()
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        attestation = transport.start("opaque-device")
+        self.assertTrue(executor.package_installed)
+        self.assertTrue(executor.install_confirmed)
+        self.assertTrue(attestation["packageInstalledByRun"])
+
+        transport.close("opaque-device")
+
+        self.assertFalse(executor.package_installed)
+        self.assertFalse(executor.route_active)
+        self.assertFalse(executor.reverse_present)
+
+    def test_first_start_accepts_only_the_system_vpn_dialog(self) -> None:
+        executor = self.Executor(
+            package_installed=False,
+            consent_required=True,
+        )
+        process = self.Process()
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        transport.start("opaque-device")
+
+        self.assertTrue(executor.consent_granted)
+        self.assertTrue(executor.client_active)
+        self.assertTrue(executor.route_active)
+        self.assertTrue(
+            any(
+                command[-4:-2] == ("input", "tap")
+                for command in executor.commands
+            )
+        )
+        transport.close("opaque-device")
+
+    def test_transport_requires_device_data_plane_before_ready(self) -> None:
+        executor = self.Executor(data_plane_reachable=False)
+        process = self.Process()
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "did not become ready",
+        ):
+            transport.start(
+                "opaque-device",
+                deadline_monotonic=time.monotonic() + 0.2,
+            )
+
+        self.assertTrue(
+            any(
+                command[-2:]
+                == (
+                    "5",
+                    "http://10.37.221.38:18080/sub-oss/healthz",
+                )
+                for command in executor.commands
+            )
+        )
+        self.assertFalse(executor.client_active)
+        self.assertFalse(executor.route_active)
+        self.assertFalse(executor.reverse_present)
+        self.assertTrue(process.terminated)
+
+    def test_ui_dump_cleanup_ignores_cancelled_interaction(self) -> None:
+        cancellation = threading.Event()
+
+        class CancelAfterDumpExecutor(self.Executor):
+            def run(
+                nested_self,
+                command: tuple[str, ...] | list[str],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                result = super().run(
+                    command,
+                    cwd=cwd,
+                    env=env,
+                    timeout=timeout,
+                )
+                observed = tuple(command)
+                if observed[-4:-1] == (
+                    "shell",
+                    "uiautomator",
+                    "dump",
+                ):
+                    cancellation.set()
+                return result
+
+        executor = CancelAfterDumpExecutor(consent_required=True)
+        executor.dialog_visible = True
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            tool=self.tool(),
+        )
+
+        with self.assertRaisesRegex(ProvisioningError, "cancelled"):
+            transport._read_ui_hierarchy(
+                "opaque-device",
+                "/sdcard/peers-touch-usb-network-consent.xml",
+                deadline_monotonic=time.monotonic() + 5,
+                cancellation=cancellation,
+            )
+
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "opaque-device",
+                "shell",
+                "rm",
+                "-f",
+                "/sdcard/peers-touch-usb-network-consent.xml",
+            ),
+            executor.commands,
+        )
+
+    def test_relay_spawn_failure_restores_device_baseline(self) -> None:
+        executor = self.Executor(package_installed=False)
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            raise OSError("relay unavailable")
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "process could not start",
+        ):
+            transport.start("opaque-device")
+
+        self.assertFalse(executor.package_installed)
+        self.assertFalse(executor.client_active)
+        self.assertFalse(executor.route_active)
+        self.assertFalse(executor.reverse_present)
+
+    def test_transport_rejects_a_conflicting_preinstalled_package(self) -> None:
+        executor = self.Executor(package_digest="d" * 64)
+        spawned = False
+        build_root = Path(
+            tempfile.mkdtemp(prefix="owned-usb-network-tool-")
+        )
+        self.addCleanup(shutil.rmtree, build_root, ignore_errors=True)
+        tool = dataclasses.replace(self.tool(), build_root=build_root)
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            nonlocal spawned
+            spawned = True
+            return self.Process()
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_build_android_usb_network_tool",
+            return_value=tool,
+        ):
+            transport = _AndroidUsbNetworkTransport(
+                "http://10.37.221.38:18080",
+                relay_port=49181,
+                executor=executor,
+                process_factory=spawn,
+                tool=None,
+            )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "unexpected pre-existing identity",
+        ):
+            transport.start("opaque-device")
+
+        self.assertFalse(spawned)
+        self.assertFalse(build_root.exists())
+        self.assertTrue(executor.package_installed)
+        self.assertEqual(executor.package_digest, "d" * 64)
+        self.assertFalse(
+            any(
+                "com.peers.touch.acceptance.usbnetwork.STOP" in command
+                or command[-3:]
+                == (
+                    "am",
+                    "force-stop",
+                    "com.peers.touch.acceptance.usbnetwork",
+                )
+                for command in executor.commands
+            )
+        )
+
+    def test_startup_cleanup_failure_is_not_hidden(self) -> None:
+        executor = self.Executor(package_digest="d" * 64)
+        build_root = Path(
+            tempfile.mkdtemp(prefix="leaked-usb-network-tool-")
+        )
+        self.addCleanup(shutil.rmtree, build_root, ignore_errors=True)
+        tool = dataclasses.replace(self.tool(), build_root=build_root)
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_build_android_usb_network_tool",
+            return_value=tool,
+        ):
+            transport = _AndroidUsbNetworkTransport(
+                "http://10.37.221.38:18080",
+                relay_port=49181,
+                executor=executor,
+                tool=None,
+            )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_native."
+                "shutil.rmtree",
+            ),
+            self.assertRaisesRegex(
+                ProvisioningError,
+                "startup cleanup failed after BlockedError",
+            ),
+        ):
+            transport.start("opaque-device")
+
+    def test_companion_accepts_only_one_station_route(self) -> None:
+        activity = (
+            USB_NETWORK_COMPANION_ROOT
+            / "src/main/java/com/peers/touch/acceptance/usbnetwork/"
+            "GnirehtetActivity.java"
+        ).read_text()
+        service = (
+            USB_NETWORK_COMPANION_ROOT
+            / "src/main/java/com/peers/touch/acceptance/usbnetwork/"
+            "GnirehtetService.java"
+        ).read_text()
+
+        self.assertIn("routes.length != 1", activity)
+        self.assertIn("getPrefixLength() != 32", activity)
+        self.assertIn("dnsServers.length != 0", activity)
+        self.assertIn("routes.length != 1", service)
+        self.assertIn("getPrefixLength() != 32", service)
+        self.assertIn("dnsServers.length != 0", service)
+        self.assertNotIn('builder.addRoute("0.0.0.0", 0)', service)
+        self.assertNotIn('builder.addDnsServer("8.8.8.8")', service)
+
+    def test_transport_rejects_non_origin_or_non_ipv4_station(self) -> None:
         for value in (
-            "https://station.example",
-            "http://station.example/path",
-            "http://user@station.example",
+            "http://station.example:18080",
+            "http://10.37.221.38:18080/path",
+            "http://user@10.37.221.38:18080",
+            "http://[::1]:18080",
         ):
             with self.subTest(value=value), self.assertRaisesRegex(
                 BlockedError,
-                "plain HTTP origin",
+                "IPv4 HTTP\\(S\\) origin",
             ):
-                _AndroidUsbStationTransport(value)
-
-    def test_loopback_relay_forwards_bidirectional_http(self) -> None:
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self) -> None:
-                body = b'{"service":"station"}'
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-            def log_message(self, *_args: object) -> None:
-                return
-
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        server_thread = threading.Thread(
-            target=server.serve_forever,
-            daemon=True,
-        )
-        server_thread.start()
-        relay = _LoopbackTcpRelay("127.0.0.1", server.server_port)
-        relay.start()
-        try:
-            with socket.create_connection(
-                ("127.0.0.1", relay.local_port),
-                timeout=2,
-            ) as connection:
-                connection.sendall(
-                    b"GET /app-meta/version HTTP/1.1\r\n"
-                    b"Host: 127.0.0.1\r\n"
-                    b"Connection: close\r\n\r\n"
+                _AndroidUsbNetworkTransport(
+                    value,
+                    relay_port=49181,
+                    tool=self.tool(),
                 )
-                response = bytearray()
-                while True:
-                    chunk = connection.recv(4096)
-                    if not chunk:
-                        break
-                    response.extend(chunk)
-            self.assertIn(b"HTTP/1.0 200 OK", response)
-            self.assertIn(b'{"service":"station"}', response)
-        finally:
-            relay.close()
-            server.shutdown()
-            server.server_close()
-            server_thread.join(timeout=2)
 
-    def test_loopback_relay_cleanup_is_valid_before_start(self) -> None:
-        relay = _LoopbackTcpRelay("127.0.0.1", 9)
-        relay.close()
-
-    def test_handler_rewrites_only_station_action_inside_parent(self) -> None:
+    def test_handler_keeps_station_action_on_canonical_origin(self) -> None:
         calls: list[tuple[str, Mapping[str, Any]]] = []
 
         class Session:
@@ -1102,17 +1633,10 @@ class AndroidUsbStationTransportTests(unittest.TestCase):
                 return {
                     "activeStationPeerId": "peer-five-arm",
                     "verifiedStationPeerId": "peer-five-arm",
-                    "canonicalOrigin": "http://127.0.0.1:49181",
+                    "canonicalOrigin": "http://10.37.221.38:18080",
                     "entries": [],
                 }
 
-        transport = SimpleNamespace(
-            rewrite_station_url=lambda value: (
-                "http://127.0.0.1:49181"
-                if value == "http://10.37.221.38:18080"
-                else value
-            )
-        )
         handler = MobileNativeAppiumCapabilityHandler(
             session_factory=lambda _client_id: Session(),
             artifact_writer=object(),
@@ -1121,7 +1645,6 @@ class AndroidUsbStationTransportTests(unittest.TestCase):
             allowed_client_ids=("alice-android",),
             allowed_operations=("harness_action",),
             harness_actions=("station.add",),
-            station_transports={"alice-android": transport},
         )
         handler._sessions["alice-android"] = Session()
         handler._session_refs["alice-android"] = "session-ref"
@@ -1145,10 +1668,13 @@ class AndroidUsbStationTransportTests(unittest.TestCase):
             [
                 (
                     "station.add",
-                    {"url": "http://127.0.0.1:49181"},
+                    {"url": "http://10.37.221.38:18080"},
                 )
             ],
         )
+        source = inspect.getsource(MobileNativeAppiumCapabilityHandler)
+        self.assertNotIn("rewrite_station_url", source)
+        self.assertNotIn("station_transports", source)
 
     def test_android_social_contract_declares_usb_cleanup_owner(self) -> None:
         spec = load_mobile_native_preflight_spec(

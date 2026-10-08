@@ -58,6 +58,12 @@ try {
         const authCardRect = authCard?.getBoundingClientRect();
         const authBrandRect = authBrand?.getBoundingClientRect();
         const authLogoStyle = authLogo ? getComputedStyle(authLogo) : null;
+        const authPanels = authScreen
+          ? [...authScreen.querySelectorAll('.mp-auth-tab-content > *')]
+          : [];
+        const inactiveAuthPanels = authPanels.filter(
+          (panel) => !panel.classList.contains('active'),
+        );
         const launchScreen = element.querySelector('.mp-launch-screen');
         const launchLogo = launchScreen?.querySelector('.mp-launch-brand-logo');
         const launchPanel = launchScreen?.querySelector('.mp-launch-panel');
@@ -110,6 +116,14 @@ try {
                   .includes('PEERS TOUCH MOBILE'),
                 hasRawStationAddress: /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}:\d+/
                   .test(String(authScreen.textContent || '')),
+                activeTab: authScreen.querySelector('.mp-auth-tab.active')?.textContent?.trim()
+                  ?? null,
+                inactivePanelInLayout: inactiveAuthPanels.some((panel) => {
+                  const panelRect = panel.getBoundingClientRect();
+                  return getComputedStyle(panel).display !== 'none'
+                    && panelRect.width > 0
+                    && panelRect.height > 0;
+                }),
                 clientHeight: authScreen.clientHeight,
                 scrollHeight: authScreen.scrollHeight,
                 verticallyScrollable: authScreen.scrollHeight
@@ -152,10 +166,17 @@ try {
 
     await open('journey');
     await capture('default');
+    await device.getByRole('button', { name: /^Open / }).click();
+    await device.locator('.mp-auth-screen').waitFor();
+    await capture('auth-normal-quick');
+    await device.getByRole('button', { name: 'Email Login', exact: true }).click();
+    await capture('auth-normal-email');
     await open('station-offline');
     await capture('station-offline');
     await open('session-revoked');
-    await capture('auth-session-revoked');
+    await capture('auth-expired-quick');
+    await device.getByRole('button', { name: 'Email Login', exact: true }).click();
+    await capture('auth-expired-email');
     await open('social-unavailable');
     const initial = await device.boundingBox();
     await capture('unavailable');
@@ -277,6 +298,7 @@ try {
       || geometry.auth.recoveryCount !== 0
       || geometry.auth.hasMobileKicker
       || geometry.auth.hasRawStationAddress
+      || geometry.auth.inactivePanelInLayout
       || geometry.auth.verticallyScrollable
     ))
     || (geometry.composer && (

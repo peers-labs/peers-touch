@@ -171,7 +171,7 @@ export function AuthGateScreen({
           >Email Login</button>
         </div>
 
-        {/* Tab content — both rendered, overlaid via grid to lock height */}
+        {/* Keep both states reachable while only the selected panel affects layout. */}
         <div className="mp-auth-tab-content">
           <div className={`mp-auth-oauth ${loginTab === 'quick' ? 'active' : ''}`}>
             <Button
