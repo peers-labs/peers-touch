@@ -130,8 +130,11 @@ describe('Mobile reliability recovery surfaces', () => {
   it('keeps shell degradation compact and explicitly non-blocking', () => {
     expect(hostSource).toContain('bindDeferredCapabilityProjection');
     expect(deferredSource).toContain('data-blocks-unrelated-content="false"');
-    expect(stylesSource).toContain(
-      ".recovery-overlay-host[data-launch-state='shell'] .recovery-deferred-capability",
+    expect(stylesSource).toMatch(
+      /\.recovery-overlay-host:is\(\s*\[data-launch-state='shell'\],\s*\[data-launch-state='resume'\]\s*\)\s*\{[^}]*padding-bottom:\s*calc\(var\(--tabbar-height\)/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.recovery-overlay-host:is\(\s*\[data-launch-state='shell'\],\s*\[data-launch-state='resume'\]\s*\)\s*\.recovery-deferred-capability/s,
     );
   });
 
