@@ -311,6 +311,9 @@ MAX_MOBILE_PAGE_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES = 64 * 1024 * 1024
 MOBILE_RESOURCE_LEASE_AUTH_KEY_BYTES = 32
 MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS = 30.0
+MOBILE_NATIVE_EPHEMERAL_QUIESCE_TIMEOUT_SECONDS = (
+    MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS + 5.0
+)
 MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS = 240.0
 MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS = 240.0
 MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS = 180_000
@@ -6694,6 +6697,23 @@ def _validate_permission_result(value: object, *, requested: bool) -> None:
         )
 
 
+def _validate_session_revocation(value: object, *, label: str) -> None:
+    projection = _closed_mapping(
+        value,
+        required={"remoteRevocation"},
+        label=label,
+    )
+    if projection["remoteRevocation"] not in {
+        "confirmed",
+        "unconfirmed",
+        "not-required",
+    }:
+        raise EphemeralCapabilityBlocked(
+            f"{label} remoteRevocation is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
 def _validate_harness_action_result(action: str, value: object) -> None:
     if action in MOBILE_NATIVE_ANDROID_SOCIAL_GENERIC_ACTIONS:
         if not isinstance(value, (Mapping, list, tuple)) and value is not None:
@@ -6712,6 +6732,7 @@ def _validate_harness_action_result(action: str, value: object) -> None:
                 "canonicalOrigin",
                 "entries",
             },
+            optional={"sessionRevocation"},
             label=action,
         )
         for field in (
@@ -6727,6 +6748,11 @@ def _validate_harness_action_result(action: str, value: object) -> None:
             )
         for entry in result["entries"]:
             _validate_station_entry(entry)
+        if "sessionRevocation" in result:
+            _validate_session_revocation(
+                result["sessionRevocation"],
+                label=f"{action} sessionRevocation",
+            )
         return
     if action == "access.submit":
         result = _closed_mapping(
@@ -8908,6 +8934,9 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             required_capabilities=required_capabilities,
             request_timeout_seconds=(
                 MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS
+            ),
+            quiesce_timeout_seconds=(
+                MOBILE_NATIVE_EPHEMERAL_QUIESCE_TIMEOUT_SECONDS
             ),
         )
         context.register_capability(
