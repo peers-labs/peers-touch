@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import dataclasses
 import hashlib
 import json
@@ -1046,115 +1047,47 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.assertEqual(active["PT_RELAY_DEPLOY_ENV"], "relay")
 
-    def test_mobile_relay_installs_and_resets_simulator_trust_anchor(self) -> None:
+    def test_mobile_relay_embeds_reviewed_trust_anchor_for_build(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
         contract = EnvironmentContract.from_yaml(path)
-        certificate = b"relay-ca-certificate"
+        certificate = (
+            b"-----BEGIN CERTIFICATE-----\n"
+            b"YWJj\n"
+            b"-----END CERTIFICATE-----\n"
+        )
         digest = "sha256:" + hashlib.sha256(certificate).hexdigest()
         provisioner = MobileSocialSimulatorProvisioner(
             contract,
             relay_trust_anchor_provider=lambda _: (certificate, digest),
         )
-        commands: list[tuple[str, ...]] = []
-
-        with tempfile.TemporaryDirectory() as directory:
-            runtime_root = Path(directory)
-
-            class Base:
-                @staticmethod
-                def _run_checked(
-                    command: tuple[str, ...],
-                    **_: object,
-                ) -> CommandResult:
-                    commands.append(command)
-                    container = runtime_root / command[3]
-                    container.mkdir()
-                    return CommandResult(0, str(container) + "\n")
-
-            clients = (
-                ClientRuntime(
-                    actor="alice",
-                    runtime="tauri-ios-simulator",
-                    worktree="/tmp/worktree",
-                    gateway_port=1,
-                    renderer_port=2,
-                    webdriver_port=3,
-                    profile="sim-ios",
-                    storage_root=str(runtime_root / "clients" / "sim-ios"),
-                ),
-                ClientRuntime(
-                    actor="bob",
-                    runtime="tauri-ios-simulator",
-                    worktree="/tmp/worktree",
-                    gateway_port=4,
-                    renderer_port=5,
-                    webdriver_port=6,
-                    profile="sim-ios-peer",
-                    storage_root=str(
-                        runtime_root / "clients" / "sim-ios-peer"
-                    ),
-                ),
-            )
-            base_manifest = _with_simulator_resources(
-                dataclasses.replace(
-                    new_manifest(
-                        environment_id="mobile-simulator",
-                        gate_id="station-access-mobile-relay-native-e2e",
-                        requested_profile="mobile-simulator",
-                        resolved_profile="mobile-simulator",
-                        slot=0,
-                        commit="a" * 40,
-                        worktree="/tmp/worktree",
-                        workspace_digest="clean",
-                    ),
-                    state=ProvisioningState.FIXTURE_READY,
-                    clients=clients,
-                ),
-                {
-                    "applications": {
-                        "ios": {"id": "com.peers.touch.mobile"}
-                    },
-                    "clients": {
-                        "sim-ios": {"device": "ios-primary"},
-                        "sim-ios-peer": {"device": "ios-peer"},
-                    }
-                },
-            )
-            trust = provisioner._prepare_transport_trust(
-                "station-access-mobile-relay-native-e2e",
-                Base(),  # type: ignore[arg-type]
-                base_manifest,
-                {
-                    "relay": MobileServiceBinding(
-                        service_id="relay",
-                        kind="relay",
-                        endpoint="https://relay.example:18081",
-                        deployment_environment="sixwin-relay",
-                        producer="relay-deployment",
-                    )
-                },
-            )
-            for client_id in ("sim-ios", "sim-ios-peer"):
-                trust_path = Path(
-                    base_manifest.simulator_resources["clients"][client_id][
-                        "processEnvironment"
-                    ]["SSL_CERT_FILE"]
+        environment, trust = provisioner._resolve_transport_trust(
+            "station-access-mobile-relay-native-e2e",
+            {
+                "relay": MobileServiceBinding(
+                    service_id="relay",
+                    kind="relay",
+                    endpoint="https://relay.example:18081",
+                    deployment_environment="sixwin-relay",
+                    producer="relay-deployment",
                 )
-                self.assertEqual(trust_path.read_bytes(), certificate)
+            },
+        )
 
-            self.assertEqual(trust["relay"]["sha256"], digest)
-            self.assertEqual(
-                [command[3] for command in commands],
-                ["ios-primary", "ios-peer"],
-            )
-            provisioner.cleanup()
-            for client_id in ("sim-ios", "sim-ios-peer"):
-                trust_path = Path(
-                    base_manifest.simulator_resources["clients"][client_id][
-                        "processEnvironment"
-                    ]["SSL_CERT_FILE"]
-                )
-                self.assertFalse(trust_path.exists())
+        self.assertEqual(
+            base64.b64decode(
+                environment["PT_ACCEPTANCE_RELAY_CA_DER_B64"]
+            ),
+            b"abc",
+        )
+        self.assertEqual(
+            environment["PT_ACCEPTANCE_RELAY_CA_SHA256"],
+            digest,
+        )
+        self.assertEqual(trust["relay"]["sha256"], digest)
+        self.assertEqual(
+            trust["relay"]["mechanism"],
+            "embedded-rustls-root",
+        )
 
     def test_social_simulator_preserves_base_harness_actions(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"

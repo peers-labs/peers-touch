@@ -1,7 +1,8 @@
 from types import SimpleNamespace
 import unittest
+from pathlib import Path
 
-from tooling.acceptance.core import AcceptanceGate
+from tooling.acceptance.core import AcceptanceGate, REPO_ROOT
 from tooling.acceptance.gates.station_access.mobile_relay_native_e2e import (
     CLIENT_ID,
     MobileRelayNativeGate,
@@ -93,6 +94,17 @@ class FakeBinding:
 
 
 class MobileRelayNativeGateTests(unittest.TestCase):
+    def test_mobile_relay_uses_the_injected_ca_without_disabling_tls(self) -> None:
+        source = (
+            Path(REPO_ROOT)
+            / "apps/mobile/src-tauri/src/runtime/station_route.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("PT_ACCEPTANCE_RELAY_CA_DER_B64", source)
+        self.assertIn("RootCertStore::empty()", source)
+        self.assertIn("client_tls_with_config", source)
+        self.assertNotIn("danger_accept_invalid_certs", source)
+
     def test_route_switch_preserves_station_and_actor_scope(self) -> None:
         gate = MobileRelayNativeGate.__new__(MobileRelayNativeGate)
         AcceptanceGate.__init__(gate)

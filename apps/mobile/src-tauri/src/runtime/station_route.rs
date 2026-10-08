@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{self, Cursor, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use libp2p_identity::PublicKey;
 use prost::Message as _;
@@ -18,14 +18,17 @@ use reqwest::{Method, Url};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, SignatureScheme, StreamOwned};
+use rustls::{
+    ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme,
+    StreamOwned,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::State;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::header::SEC_WEBSOCKET_PROTOCOL;
 use tungstenite::stream::MaybeTlsStream;
-use tungstenite::{connect, Message as WsMessage, WebSocket};
+use tungstenite::{client_tls_with_config, connect, Connector, Message as WsMessage, WebSocket};
 use x509_parser::parse_x509_certificate;
 
 use crate::commands::station::{
@@ -1176,6 +1179,13 @@ fn open_relay_tunnel(route: &ActiveRoute, timeout: Duration) -> MobileResult<Tun
     endpoint.set_path(TUNNEL_PATH);
     endpoint.set_query(None);
     endpoint.set_fragment(None);
+    let relay_host = endpoint
+        .host_str()
+        .ok_or_else(|| route_error("relayOriginInvalid"))?
+        .to_string();
+    let relay_port = endpoint
+        .port_or_known_default()
+        .ok_or_else(|| route_error("relayOriginInvalid"))?;
     let mut request = endpoint
         .as_str()
         .into_client_request()
@@ -1184,7 +1194,27 @@ fn open_relay_tunnel(route: &ActiveRoute, timeout: Duration) -> MobileResult<Tun
         SEC_WEBSOCKET_PROTOCOL,
         tungstenite::http::HeaderValue::from_static(TUNNEL_SUBPROTOCOL),
     );
-    let (mut socket, response) = connect(request).map_err(|_| route_error("relayUnavailable"))?;
+    let connector = acceptance_relay_tls_connector()?;
+    let (mut socket, response) = match connector {
+        Some(connector) => {
+            let address = (relay_host.as_str(), relay_port)
+                .to_socket_addrs()
+                .map_err(|_| route_error("relayUnavailable"))?
+                .next()
+                .ok_or_else(|| route_error("relayUnavailable"))?;
+            let stream = TcpStream::connect_timeout(&address, timeout)
+                .map_err(|_| route_error("relayUnavailable"))?;
+            stream
+                .set_read_timeout(Some(timeout))
+                .map_err(|_| route_error("relayUnavailable"))?;
+            stream
+                .set_write_timeout(Some(timeout))
+                .map_err(|_| route_error("relayUnavailable"))?;
+            client_tls_with_config(request, stream, None, Some(connector))
+                .map_err(|_| route_error("relayUnavailable"))?
+        }
+        None => connect(request).map_err(|_| route_error("relayUnavailable"))?,
+    };
     if response
         .headers()
         .get(SEC_WEBSOCKET_PROTOCOL)
@@ -1264,6 +1294,26 @@ fn open_relay_tunnel(route: &ActiveRoute, timeout: Duration) -> MobileResult<Tun
         read_buffer: Cursor::new(Vec::new()),
         closed: false,
     })
+}
+
+fn acceptance_relay_tls_connector() -> MobileResult<Option<Connector>> {
+    let Some(encoded) = option_env!("PT_ACCEPTANCE_RELAY_CA_DER_B64") else {
+        return Ok(None);
+    };
+    let certificate = STANDARD
+        .decode(encoded)
+        .map_err(|_| route_error("relayTrustAnchorInvalid"))?;
+    let mut roots = RootCertStore::empty();
+    roots
+        .add(CertificateDer::from(certificate))
+        .map_err(|_| route_error("relayTrustAnchorInvalid"))?;
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let config = ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(|_| route_error("relayTrustAnchorInvalid"))?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Ok(Some(Connector::Rustls(Arc::new(config))))
 }
 
 fn is_loopback_host(host: &str) -> bool {

@@ -11,6 +11,7 @@ import re
 import signal
 import shutil
 import socket
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -3701,18 +3702,10 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         )
         capabilities = client.get("appiumCapabilities")
         chromedriver = ""
-        process_environment: dict[str, str] = {}
         if isinstance(capabilities, Mapping):
             value = capabilities.get("appium:chromedriverExecutable")
             if isinstance(value, str):
                 chromedriver = value
-        raw_process_environment = client.get("processEnvironment")
-        if isinstance(raw_process_environment, Mapping):
-            process_environment = {
-                str(key): str(value)
-                for key, value in raw_process_environment.items()
-                if str(key) and str(value)
-            }
         return SimulatorAppiumSession(
             UrllibAppiumTransport(
                 _required_text(
@@ -3770,7 +3763,6 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 ).items()
             },
             chromedriver_executable=chromedriver,
-            process_environment=process_environment,
         )
 
     def _provision_selected_devices(
@@ -6394,20 +6386,12 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         )
         appium_capabilities = client.get("appiumCapabilities")
         chromedriver_executable = ""
-        process_environment: dict[str, str] = {}
         if isinstance(appium_capabilities, Mapping):
             value = appium_capabilities.get(
                 "appium:chromedriverExecutable"
             )
             if isinstance(value, str):
                 chromedriver_executable = value
-        raw_process_environment = client.get("processEnvironment")
-        if isinstance(raw_process_environment, Mapping):
-            process_environment = {
-                str(key): str(value)
-                for key, value in raw_process_environment.items()
-                if str(key) and str(value)
-            }
         return SimulatorAppiumSession(
             UrllibAppiumTransport(
                 _required_text(
@@ -6477,7 +6461,6 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 ).items()
             },
             chromedriver_executable=chromedriver_executable,
-            process_environment=process_environment,
         )
 
 
@@ -6559,6 +6542,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 manifest.run_id,
                 service_bindings,
             )
+            transport_environment, transport_trust = (
+                self._resolve_transport_trust(
+                    gate_id,
+                    service_bindings,
+                )
+            )
 
             base_contract = EnvironmentContract.from_yaml(
                 ENVIRONMENTS_DIR / "mobile-simulator.yaml"
@@ -6566,7 +6555,19 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             base = self.base_factory(base_contract)
             base.bind_evidence_run(self.evidence_run)
             self.register_cleanup("mobile-simulator-base", base.cleanup)
-            base_manifest = base.provision(gate_id)
+            previous_environment = {
+                key: os.environ.get(key)
+                for key in transport_environment
+            }
+            os.environ.update(transport_environment)
+            try:
+                base_manifest = base.provision(gate_id)
+            finally:
+                for key, value in previous_environment.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
             if base_manifest.is_blocked():
                 raise BlockedError(
                     reason=base_manifest.blocked_reason
@@ -6583,12 +6584,6 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     resource=f"{self.environment_id}:base-manifest",
                 )
             self._base_manifest = base_manifest
-            transport_trust = self._prepare_transport_trust(
-                gate_id,
-                base,
-                base_manifest,
-                service_bindings,
-            )
 
             actor_manifest_ref = self._prepare_actor_fixture(
                 gate_id,
@@ -6701,15 +6696,13 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 resource=blocked.resource,
             )
 
-    def _prepare_transport_trust(
+    def _resolve_transport_trust(
         self,
         gate_id: str,
-        base: MobileSimulatorProvisioner,
-        base_manifest: MobileSimulatorRuntimeManifest,
         service_bindings: Mapping[str, MobileServiceBinding],
-    ) -> dict[str, Any]:
-        del gate_id, base, base_manifest, service_bindings
-        return {}
+    ) -> tuple[dict[str, str], dict[str, Any]]:
+        del gate_id, service_bindings
+        return {}, {}
 
     def _load_overlay(self) -> dict[str, Any]:
         try:
@@ -7296,15 +7289,13 @@ class MobileSocialSimulatorProvisioner(
         ) = None
         self._appium_cleanup_registered = False
 
-    def _prepare_transport_trust(
+    def _resolve_transport_trust(
         self,
         gate_id: str,
-        base: MobileSimulatorProvisioner,
-        base_manifest: MobileSimulatorRuntimeManifest,
         service_bindings: Mapping[str, MobileServiceBinding],
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, str], dict[str, Any]]:
         if gate_id not in self.ephemeral_gate_ids:
-            return {}
+            return {}, {}
         relay = service_bindings.get("relay")
         if relay is None:
             raise BlockedError(
@@ -7320,86 +7311,29 @@ class MobileSocialSimulatorProvisioner(
                 reason="Relay trust anchor digest is inconsistent",
                 resource="mobile-relay:transport-trust",
             )
-        clients = _required_object(
-            base_manifest.simulator_resources,
-            "clients",
-            "mobile-relay:transport-trust",
-        )
-        if not base_manifest.clients:
+        try:
+            certificate_der = ssl.PEM_cert_to_DER_cert(
+                certificate.decode("ascii")
+            )
+        except (UnicodeError, ValueError) as error:
             raise BlockedError(
-                reason="Mobile Relay Gate has no simulator clients",
+                reason="Relay trust anchor is not a valid PEM certificate",
                 resource="mobile-relay:transport-trust",
-            )
-        application = _required_object(
-            _required_object(
-                base_manifest.simulator_resources,
-                "applications",
-                "mobile-relay:transport-trust",
-            ),
-            "ios",
-            "mobile-relay:transport-trust",
+            ) from error
+        return (
+            {
+                "PT_ACCEPTANCE_RELAY_CA_DER_B64": base64.b64encode(
+                    certificate_der
+                ).decode("ascii"),
+                "PT_ACCEPTANCE_RELAY_CA_SHA256": digest,
+            },
+            {
+                "relay": {
+                    "sha256": digest,
+                    "mechanism": "embedded-rustls-root",
+                }
+            },
         )
-        application_id = _required_text(
-            application,
-            "id",
-            "mobile-relay:transport-trust",
-        )
-        installed: list[str] = []
-        command_env = dict(os.environ)
-        for client_id in ("sim-ios", "sim-ios-peer"):
-            client = _required_object(
-                clients,
-                client_id,
-                f"mobile-relay:transport-trust:{client_id}",
-            )
-            udid = _required_text(
-                client,
-                "device",
-                f"mobile-relay:transport-trust:{client_id}",
-            )
-            container = base._run_checked(
-                (
-                    "xcrun",
-                    "simctl",
-                    "get_app_container",
-                    udid,
-                    application_id,
-                    "data",
-                ),
-                env=command_env,
-                timeout=60,
-                resource=f"mobile-relay:app-container:{client_id}",
-            )
-            container_path = Path(container.stdout.strip())
-            if not container_path.is_absolute():
-                raise BlockedError(
-                    reason="Mobile Relay app container path is invalid",
-                    resource=f"mobile-relay:transport-trust:{client_id}",
-                )
-            trust_path = (
-                container_path
-                / "Library"
-                / "Caches"
-                / f"relay-ca-{digest.removeprefix('sha256:')}.pem"
-            )
-            trust_path.parent.mkdir(parents=True, exist_ok=True)
-            trust_path.write_bytes(certificate)
-            client["processEnvironment"] = {
-                "SSL_CERT_FILE": str(trust_path),
-            }
-            self.register_cleanup(
-                f"mobile-relay:trust-file:{client_id}",
-                trust_path.unlink,
-            )
-            installed.append(client_id)
-        return {
-            "relay": {
-                "sha256": digest,
-                "installedClients": installed,
-                "mechanism": "SSL_CERT_FILE",
-                "cleanup": "app-container-file-remove",
-            }
-        }
 
     def create_gate_launch_context(
         self,

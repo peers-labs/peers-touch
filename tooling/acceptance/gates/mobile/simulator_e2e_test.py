@@ -920,44 +920,6 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
             transport.requests,
         )
 
-    def test_ios_launch_passes_declared_process_environment(self) -> None:
-        transport = FakeAppiumTransport("ios-session")
-        session = SimulatorAppiumSession(
-            transport,
-            client_id="sim-ios",
-            platform="ios",
-            automation_name="XCUITest",
-            device=SimulatorDeviceTarget(
-                platform="ios",
-                identifier="ios-simulator-udid",
-                role="ios-simulator",
-            ),
-            build=SimulatorBuildTarget(
-                platform="ios",
-                artifact=Path("/tmp/mobile.app"),
-                application_id="com.peers.touch.mobile",
-            ),
-            callback_scheme="peers-touch",
-            ports={"wda-local": 8101, "mjpeg": 9101, "webview": 9511},
-            process_environment={
-                "SSL_CERT_FILE": "/tmp/relay-ca.pem",
-            },
-        )
-
-        session.start()
-
-        create = next(
-            request
-            for request in transport.requests
-            if request[0] == "POST" and request[1] == "/session"
-        )
-        self.assertEqual(
-            create[2]["capabilities"]["alwaysMatch"][
-                "appium:processArguments"
-            ],
-            {"env": {"SSL_CERT_FILE": "/tmp/relay-ca.pem"}},
-        )
-
     def test_public_w3c_element_and_orientation_operations(self) -> None:
         class ElementTransport(FakeAppiumTransport):
             def request(
