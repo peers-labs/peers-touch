@@ -74,16 +74,9 @@ export function CommandRecoveryPanel({
         </span>
         <ul className="recovery-command__items">
           {state.commands.map((command) => {
-            const friendRequest = command.envelope.payload.case === 'friendRequest'
-              ? command.envelope.payload.value.body
-              : undefined;
             const relationship = command.envelope.payload.case === 'socialRelationship'
-              ? command.envelope.payload.value.body
-              : undefined;
-            const targetPtid = relationship?.targetActor?.ptid
-              || friendRequest?.receiver?.ptid
-              || friendRequest?.sender?.ptid
-              || '';
+              ? command.envelope.payload.value
+              : null;
             return (
               <li
                 key={command.commandId}
@@ -98,25 +91,6 @@ export function CommandRecoveryPanel({
                       : 'mobile.recovery.command.friendRequest',
                   )}
                 </strong>
-                <span>
-                  {t('mobile.recovery.command.commandId', {
-                    id: command.commandId,
-                  })}
-                </span>
-                {friendRequest?.requestId ? (
-                  <span>
-                    {t('mobile.recovery.command.requestId', {
-                      id: friendRequest.requestId,
-                    })}
-                  </span>
-                ) : null}
-                {targetPtid ? (
-                  <span>
-                    {t('mobile.recovery.command.target', {
-                      ptid: targetPtid,
-                    })}
-                  </span>
-                ) : null}
                 <span>
                   {t(`mobile.recovery.command.state.${command.state}`)}
                 </span>

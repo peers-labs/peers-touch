@@ -4274,6 +4274,10 @@ select,
   color: #b45309;
 }
 
+.recovery-notice__icon--success {
+  color: #16794b;
+}
+
 .recovery-notice__content,
 .recovery-bar__content {
   display: flex;
@@ -4302,6 +4306,10 @@ select,
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 8px;
+}
+
+.recovery-session-restored .recovery-notice__actions {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .recovery-overlay-host:is(

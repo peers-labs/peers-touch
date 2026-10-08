@@ -17,6 +17,11 @@ import {
 } from '../../app/lifecycle';
 import { useMobileI18n } from '../../app/mobileI18n';
 import {
+  recoveryStateForFixture,
+  setRecoverySurfaceFixture,
+  useRecoverySurfaceFixture,
+} from '../../acceptance/recoverySurfaceFixture';
+import {
   applyReliabilityCommandRecoveryAction,
   applyLegacyReliabilityDisposition,
   resetAllLocalReliabilityData,
@@ -45,6 +50,7 @@ import { OverflowReconcileBar } from './OverflowReconcileBar';
 import { DeferredCapabilityNotice } from './DeferredCapabilityNotice';
 import { DeviceLocalBar } from './DeviceLocalBar';
 import { WriteRevocationNotice } from './WriteRevocationNotice';
+import { SessionRestoreNotice } from './SessionRestoreNotice';
 
 interface RecoveryOverlayHostProps {
   readonly onReAuthenticate: (
@@ -84,6 +90,7 @@ export function RecoveryOverlayHost({
 }: RecoveryOverlayHostProps) {
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
+  const fixture = useRecoverySurfaceFixture();
   const recoveryRuntimeStatus =
     lifecycle.runtimes.get('recovery-projection')?.status;
   const [snapshot, setSnapshot] = useState<RecoveryProjectionSnapshot>(
@@ -161,11 +168,14 @@ export function RecoveryOverlayHost({
 
   const renderState = useCallback(
     (state: RecoveryState) => {
+      const key = fixture.surfaceId
+        ? `${state.kind}:${fixture.revision}`
+        : state.kind;
       switch (state.kind) {
         case 'legacy-reliability-recovery':
           return (
             <LegacyReliabilityRecoveryOverlay
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               onAction={handleLegacyReliabilityAction}
@@ -174,28 +184,37 @@ export function RecoveryOverlayHost({
         case 'reliability-reset-recovery':
           return (
             <ReliabilityResetRecoveryOverlay
-              key={state.kind}
+              key={key}
               t={t}
               onRetry={retryInterruptedReliabilityReset}
             />
           );
         case 'draft-restore-pending':
-          return <DraftRestoreOverlay key={state.kind} state={state} t={t} />;
+          return (
+            <DraftRestoreOverlay
+              key={key}
+              state={state}
+              t={t}
+              forceActionFailed={
+                fixture.surfaceId === 'recovery.draft-restore-failed'
+              }
+            />
+          );
         case 'command-recovery':
           return (
             <CommandRecoveryPanel
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               onAction={(action) => handleCommandRecoveryAction(state, action)}
             />
           );
         case 'capacity-read-only':
-          return <CapacityWarning key={state.kind} state={state} t={t} />;
+          return <CapacityWarning key={key} state={state} t={t} />;
         case 'session-mismatch':
           return (
             <SessionMismatchOverlay
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               onReAuthenticate={onReAuthenticate}
@@ -203,11 +222,11 @@ export function RecoveryOverlayHost({
             />
           );
         case 'event-overflow-reconcile':
-          return <OverflowReconcileBar key={state.kind} state={state} t={t} />;
+          return <OverflowReconcileBar key={key} state={state} t={t} />;
         case 'deferred-capability':
           return (
             <DeferredCapabilityNotice
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               canRetry={lifecycle.phase === 'ACTIVE'}
@@ -217,7 +236,7 @@ export function RecoveryOverlayHost({
         case 'device-local-flag':
           return (
             <DeviceLocalBar
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               onRetry={onRetryDeviceLocal}
@@ -225,7 +244,7 @@ export function RecoveryOverlayHost({
             />
           );
         case 'write-revocation':
-          return <WriteRevocationNotice key={state.kind} t={t} />;
+          return <WriteRevocationNotice key={key} t={t} />;
         default:
           return null;
       }
@@ -233,6 +252,8 @@ export function RecoveryOverlayHost({
     [
       handleLegacyReliabilityAction,
       handleCommandRecoveryAction,
+      fixture.revision,
+      fixture.surfaceId,
       lifecycle.phase,
       onReAuthenticate,
       onRetryDeviceLocal,
@@ -243,10 +264,24 @@ export function RecoveryOverlayHost({
     ],
   );
 
-  const visibleStates = visibleRecoveryStates(
-    snapshot.states,
-    lifecycle.launchState,
-  );
+  if (fixture.surfaceId === 'recovery.session-valid-restore') {
+    return (
+      <div
+        className="recovery-overlay-host"
+        data-launch-state={lifecycle.launchState}
+      >
+        <SessionRestoreNotice
+          t={t}
+          onContinue={() => setRecoverySurfaceFixture(null)}
+        />
+      </div>
+    );
+  }
+
+  const fixtureState = recoveryStateForFixture(fixture.surfaceId);
+  const visibleStates = fixture.surfaceId
+    ? (fixtureState ? [fixtureState] : [])
+    : visibleRecoveryStates(snapshot.states, lifecycle.launchState);
   if (visibleStates.length === 0) return null;
 
   return (

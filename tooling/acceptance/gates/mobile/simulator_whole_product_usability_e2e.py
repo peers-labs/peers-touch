@@ -55,7 +55,7 @@ ENVIRONMENT_ID = "mobile-direct-simulator"
 EVIDENCE_ROLE = "mobile-surface-evidence"
 VISUAL_REVIEW_GATE_ID = "mobile-whole-product-visual-review"
 VISUAL_REVIEW_ROLE = "mobile-whole-product-visual-review"
-ORIENTATION_MAX_ATTEMPTS = 3
+ORIENTATION_MAX_ATTEMPTS = 5
 CONTRACT_ID = "mobile-whole-product-surface-inventory-v1"
 INVENTORY_PATH = (
     REPO_ROOT
@@ -87,6 +87,7 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
     "navigation.apply",
     "navigation.snapshot",
     "projection.read",
+    "recovery.fixture",
     "social.projection.read",
     "station.add",
 )
@@ -102,6 +103,16 @@ ENTRY_PAGE_CONTROL_SURFACES = {
     "entry.station-address-invalid",
     "entry.station-verifying",
     "entry.station-unavailable",
+}
+RECOVERY_PAGE_CONTROL_SURFACES = {
+    "recovery.capacity",
+    "recovery.event-overflow",
+    "recovery.projection-stale",
+    "recovery.write-revocation",
+}
+DEGRADED_NOTICE_SURFACES = {
+    "shell.degraded-module-notice",
+    "recovery.deferred-capability",
 }
 TEXT_SIZE_SCRIPT = """
 const size = arguments[0];
@@ -1367,43 +1378,62 @@ class SimulatorWholeProductUsabilityGate(
 
     @staticmethod
     def _result_report(status: str, surface_set: str) -> dict[str, Any]:
-        is_entry = surface_set == "entry"
+        report_scope = {
+            "entry": {
+                "runtimeCell": "ios-simulator-entry",
+                "phase": "MWPU-03 Entry Usability",
+                "bom": ["MWPU-03-ENTRY"],
+                "observedScope": [
+                    "launch",
+                    "station-selection",
+                    "access-gates",
+                    "runtime-preparation",
+                ],
+            },
+            "recovery": {
+                "runtimeCell": "ios-simulator-recovery",
+                "phase": "MWPU-03 Recovery Usability",
+                "bom": ["MWPU-03-RECOVERY"],
+                "observedScope": [
+                    "returning-session",
+                    "session-revocation",
+                    "draft-and-command-recovery",
+                    "scoped-degradation",
+                    "local-reliability-recovery",
+                ],
+            },
+            "shell": {
+                "runtimeCell": "ios-simulator-shell",
+                "phase": "MWPU-02 Shell Usability",
+                "bom": ["MWPU-02-SHELL"],
+                "observedScope": [
+                    "shell-navigation",
+                    "shell-degraded-module",
+                ],
+            },
+        }.get(surface_set)
+        if report_scope is None:
+            report_scope = {
+                "runtimeCell": f"ios-simulator-{surface_set}",
+                "phase": "Mobile Whole-Product Usability",
+                "bom": [],
+                "observedScope": [],
+            }
         return {
             "artifactKind": "acceptance-gate-evidence-report",
             "gateId": GATE_ID,
             "gate": GATE_ID,
             "environment": ENVIRONMENT_ID,
-            "runtimeCell": (
-                "ios-simulator-entry" if is_entry else "ios-simulator-shell"
-            ),
+            "runtimeCell": report_scope["runtimeCell"],
             "status": status,
-            "phase": (
-                "MWPU-03 Entry Usability"
-                if is_entry
-                else "MWPU-02 Shell Usability"
-            ),
-            "bom": ["MWPU-03-ENTRY" if is_entry else "MWPU-02-SHELL"],
+            "phase": report_scope["phase"],
+            "bom": report_scope["bom"],
             "spec": ["MS-PA28", "MS-PA29", "MS-AG12"],
-            "observedScope": (
-                (
-                    [
-                        "launch",
-                        "station-selection",
-                        "access-gates",
-                        "runtime-preparation",
-                    ]
-                    if is_entry
-                    else ["shell-navigation", "shell-degraded-module"]
-                )
-                if status == "PASS"
-                else []
-            ),
+            "observedScope": report_scope["observedScope"]
+            if status == "PASS"
+            else [],
             "unprovenScope": [
-                (
-                    "non-entry Mobile surface sets"
-                    if is_entry
-                    else "non-shell Mobile surface sets"
-                ),
+                f"non-{surface_set} Mobile surface sets",
                 "Android",
                 "physical-device behavior",
             ],
@@ -1446,7 +1476,7 @@ class SimulatorWholeProductUsabilityGate(
                 manifest,
                 inventory,
             )
-        if surface_set != "shell":
+        if surface_set not in {"shell", "recovery"}:
             raise SimulatorGateBlocked(
                 f"Surface adapter is not implemented for {surface_set}",
                 f"mobile-whole-product:surface-adapter:{surface_set}",
@@ -1558,9 +1588,17 @@ class SimulatorWholeProductUsabilityGate(
             for entry in entries
         }
         for cell_id in inventory["viewportTextSizeCells"]:
+            if surface_set == "recovery":
+                session.switch_to_app_webview()
+                session.call_action("recovery.fixture", {"surfaceId": None})
+                time.sleep(0.5)
             viewport = self._configure_cell(session, cell_id)
             for entry in entries:
-                action = self._enter_surface(session, entry)
+                action = (
+                    self._enter_recovery_surface(session, entry)
+                    if surface_set == "recovery"
+                    else self._enter_surface(session, entry)
+                )
                 surface_evidence[entry["id"]]["cells"][cell_id] = (
                     self._capture_surface(
                         artifacts,
@@ -1575,6 +1613,8 @@ class SimulatorWholeProductUsabilityGate(
                 if entry["entryAction"] == "fixture-deferred-module":
                     self._wait_for_resume(session)
         self._configure_cell(session, "portrait-normal")
+        if surface_set == "recovery":
+            session.call_action("recovery.fixture", {"surfaceId": None})
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
             {
@@ -1884,6 +1924,12 @@ class SimulatorWholeProductUsabilityGate(
             "maximum" if cell_id.endswith("maximum-text") else "normal"
         )
         session.switch_to_native()
+        if getattr(session, "platform", "") == "ios":
+            session.execute_script(
+                "mobile: activateApp",
+                {"bundleId": session.build.application_id},
+            )
+            time.sleep(0.5)
         for attempt in range(1, ORIENTATION_MAX_ATTEMPTS + 1):
             try:
                 session.set_orientation(orientation.upper())
@@ -1894,7 +1940,7 @@ class SimulatorWholeProductUsabilityGate(
                     or attempt == ORIENTATION_MAX_ATTEMPTS
                 ):
                     raise
-                time.sleep(0.75)
+                time.sleep(0.75 * attempt)
         time.sleep(0.5)
         session.switch_to_app_webview()
         value = session.execute_script(TEXT_SIZE_SCRIPT, text_size)
@@ -1978,6 +2024,45 @@ class SimulatorWholeProductUsabilityGate(
         )
         return {
             "kind": action_kind,
+            "target": action,
+            "performed": True,
+        }
+
+    def _enter_recovery_surface(
+        self,
+        session: Any,
+        entry: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        surface_id = str(entry["id"])
+        action = str(entry["entryAction"])
+        session.switch_to_app_webview()
+        observed = session.call_action(
+            "recovery.fixture",
+            {"surfaceId": surface_id},
+        )
+        if (
+            not isinstance(observed, Mapping)
+            or observed.get("surfaceId") != surface_id
+        ):
+            raise GateError(
+                f"Mobile recovery fixture did not project {surface_id}"
+            )
+        self._wait_for_surface(
+            session,
+            str(entry["surfaceSelector"]),
+            require_heading=False,
+        )
+        if surface_id in {
+            "recovery.session-mismatch",
+            "recovery.draft-restore",
+            "recovery.draft-restore-failed",
+            "recovery.scope-exit",
+            "recovery.reset-incomplete",
+            "recovery.legacy-reliability",
+        }:
+            time.sleep(0.5)
+        return {
+            "kind": "system",
             "target": action,
             "performed": True,
         }
@@ -2125,8 +2210,11 @@ class SimulatorWholeProductUsabilityGate(
             SURFACE_AUDIT_SCRIPT,
             entry["surfaceSelector"],
             inventory["qualityRules"]["minimumTouchTargetCssPx"],
-            entry["id"] == "shell.degraded-module-notice",
-            entry["id"] in ENTRY_PAGE_CONTROL_SURFACES,
+            entry["id"] in DEGRADED_NOTICE_SURFACES,
+            entry["id"] in (
+                ENTRY_PAGE_CONTROL_SURFACES
+                | RECOVERY_PAGE_CONTROL_SURFACES
+            ),
         )
         if not isinstance(observation, Mapping) or observation.get("found") is not True:
             raise GateError(f"Mobile shell surface is unavailable: {entry['id']}")
