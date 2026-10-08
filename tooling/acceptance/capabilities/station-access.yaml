@@ -200,11 +200,13 @@
       "direction": "acceptance_validates_product",
       "features": ["station-access-relay-role-security"],
       "required_gates": [
-        "relay-role-security-contract"
+        "relay-role-security-contract",
+        "station-access-relay-security-e2e"
       ],
       "synthetic_paths": [
         "apps/station/frame/core/runtime/role/role.go",
         "apps/station/frame/core/plugin/native/subserver/relay/security.go",
+        "tooling/acceptance/gates/station_access/relay_aggregate.py",
         "tooling/docker/compose.yml",
         "tooling/docker/entrypoint.sh"
       ],
@@ -218,7 +220,8 @@
           "Relay startup, health, metrics, and operator API"
         ],
         "proven_by": [
-          "relay-role-security-contract"
+          "relay-role-security-contract",
+          "station-access-relay-security-e2e"
         ],
         "proven_scope": [
           "Station and Relay composition are selected by one explicit role owner",
@@ -228,8 +231,8 @@
           "hardcoded debug egress is absent from Station source"
         ],
         "unproven_scope": [
-          "live public-certificate negotiation and hostile-client behavior are proven by station-access-relay-security-e2e",
-          "signed discovery and opaque tunnel behavior are owned by later Relay closures"
+          "public CA negotiation outside the reviewed deployment trust anchor",
+          "sustained hostile-client soak beyond the bounded Relay quota proofs"
         ]
       }
     },
@@ -455,12 +458,14 @@
         "station-access-capability-contract",
         "desktop-release-build",
         "mobile-native-build",
-        "station-access-lifecycle-aggregate-e2e"
+        "station-access-lifecycle-aggregate-e2e",
+        "unified-relay-station-access-aggregate-e2e"
       ],
       "synthetic_paths": [
         "docs/architecture/platform/station/access/data-model.md",
         "tooling/acceptance/gates/station_access/capability_contract.py",
-        "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
+        "tooling/acceptance/gates/station_access/lifecycle_aggregate.py",
+        "tooling/acceptance/gates/station_access/relay_aggregate.py"
       ],
       "evidence": {
         "truth_sources": [
@@ -476,7 +481,8 @@
           "station-access-capability-contract",
           "desktop-release-build",
           "mobile-native-build",
-          "station-access-lifecycle-aggregate-e2e"
+          "station-access-lifecycle-aggregate-e2e",
+          "unified-relay-station-access-aggregate-e2e"
         ],
         "proven_scope": [
           "the current Station Access route and consumer inventory is complete",

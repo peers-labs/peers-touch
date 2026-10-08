@@ -436,6 +436,7 @@
           "tooling/acceptance/environments/station-access-native.yaml",
           "tooling/acceptance/environments/station-access-relay-role.yaml",
           "tooling/acceptance/gates/station_access/**",
+          "tooling/acceptance/gates/station_access/relay_aggregate.py",
           "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
           "tooling/acceptance/provisioners/station_access_relay_role.py"
         ]
@@ -455,9 +456,11 @@
         "relay-role-security-contract",
         "relay-station-enrollment-e2e",
         "relay-opaque-tunnel-e2e",
+        "station-access-relay-security-e2e",
         "desktop-release-build",
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",
+        "unified-relay-station-access-aggregate-e2e",
         "station-access-domain-validation"
       ]
     },

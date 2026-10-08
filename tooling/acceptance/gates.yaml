@@ -457,6 +457,20 @@
       "tier": "env-evidence",
       "description": "Prove exact-source iOS Simulator Mobile discovers a Relay, retains one Station identity across Direct and Relay routes, preserves its Session during explicit route switching, and restores the Relay route after restart."
     },
+    "station-access-relay-security-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require current-source DONE and PROVEN evidence for Relay role isolation, enrollment, signed discovery, and opaque tunnel security."
+    },
+    "unified-relay-station-access-aggregate-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require current-source DONE and PROVEN evidence for all Relay server, Dashboard, Desktop, Mobile, and security closure Gates."
+    },
     "station-access-auth-e2e": {
       "argv": [
         "python3",

@@ -16,6 +16,7 @@
     "tooling/docker/README.md",
     "tooling/docker/compose.yml",
     "tooling/docker/entrypoint.sh",
+    "tooling/acceptance/gates/station_access/relay_aggregate.py",
     "tooling/scripts/local-dev/relay-check.sh",
     "tooling/scripts/local-dev/station-dev.sh"
   ],
@@ -28,7 +29,8 @@
     {"type": "operator", "route": "Relay startup, health, metrics, and admin API"}
   ],
   "required_gates": [
-    "relay-role-security-contract"
+    "relay-role-security-contract",
+    "station-access-relay-security-e2e"
   ],
   "acceptance": {
     "service": [
