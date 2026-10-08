@@ -6337,6 +6337,7 @@ def _validate_social_projection(value: object) -> None:
             "typingPeers",
             "peerOnline",
             "lastReconcileAt",
+            "ingress",
         },
         label="Social runtime projection",
     )
@@ -6354,13 +6355,27 @@ def _validate_social_projection(value: object) -> None:
     for raw_request in friend_requests:
         request = _closed_mapping(
             raw_request,
-            required={"requestId", "senderPtid", "receiverPtid", "status"},
+            required={
+                "requestId",
+                "federationId",
+                "senderPtid",
+                "receiverPtid",
+                "senderHomeStationPeerId",
+                "receiverHomeStationPeerId",
+                "status",
+            },
             label="Social friend request",
         )
-        _response_nonempty_string(
-            request["requestId"],
-            label="Social friend request requestId",
-        )
+        for field in (
+            "requestId",
+            "federationId",
+            "senderHomeStationPeerId",
+            "receiverHomeStationPeerId",
+        ):
+            _response_nonempty_string(
+                request[field],
+                label=f"Social friend request {field}",
+            )
         _response_ptid(
             request["senderPtid"],
             label="Social friend request senderPtid",
@@ -6429,6 +6444,44 @@ def _validate_social_projection(value: object) -> None:
             _response_integer(
                 entry["lastUpdate"],
                 label="Social runtime typing lastUpdate",
+                minimum=0,
+            )
+    ingress = projection["ingress"]
+    if ingress is not None:
+        ingress = _closed_mapping(
+            ingress,
+            required={
+                "lifecycle",
+                "streamCursor",
+                "writeAdmissionOpen",
+                "staleDomains",
+                "dataQueueDepth",
+                "controlQueueDepth",
+            },
+            label="Social runtime ingress",
+        )
+        if ingress["lifecycle"] not in {"active", "suspended", "torn"}:
+            raise EphemeralCapabilityBlocked(
+                "Social runtime ingress lifecycle is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _response_string(
+            ingress["streamCursor"],
+            label="Social runtime ingress streamCursor",
+        )
+        if not isinstance(ingress["writeAdmissionOpen"], bool):
+            raise EphemeralCapabilityBlocked(
+                "Social runtime ingress writeAdmissionOpen must be a boolean",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _response_string_list(
+            ingress["staleDomains"],
+            label="Social runtime ingress staleDomains",
+        )
+        for field in ("dataQueueDepth", "controlQueueDepth"):
+            _response_integer(
+                ingress[field],
+                label=f"Social runtime ingress {field}",
                 minimum=0,
             )
 
