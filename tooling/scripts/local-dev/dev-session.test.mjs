@@ -32,6 +32,7 @@ import {
   createTransitionEvent,
   DevSessionError,
   readSessionJournal,
+  resolveDevelopmentRunnerPython,
   runCli,
   sessionStorePaths,
   startDevelopmentSession,
@@ -241,6 +242,9 @@ function fixture({
         stable: true,
         workspaceDigest: 'clean',
       };
+    },
+    resolveDevelopmentRunnerPython() {
+      return 'python3';
     },
   };
   const baseOptions = {
@@ -1754,6 +1758,75 @@ test('functional result forwards authorized and claimed Station profiles', async
       },
     });
     assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result uses the workspace Acceptance virtual environment', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-mobile',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  const venvRoot = path.join(
+    scope.home,
+    '.peers-touch',
+    'dev',
+    'workspaces',
+    WORKSPACE_ID,
+    'runtime',
+    'acceptance-gate-venv',
+  );
+  const executable = path.join(
+    venvRoot,
+    process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+  );
+  try {
+    mkdirSync(path.dirname(executable), { recursive: true });
+    if (process.platform === 'win32') {
+      copyFileSync(process.execPath, executable);
+    } else {
+      symlinkSync(process.execPath, executable);
+    }
+    writeFileSync(
+      path.join(venvRoot, 'pyvenv.cfg'),
+      `home = ${path.dirname(process.execPath)}\n` +
+        'include-system-site-packages = false\n' +
+        `version = ${process.versions.node}\n`,
+    );
+
+    assert.equal(
+      resolveDevelopmentRunnerPython({
+        home: scope.home,
+        workspaceRoot: REPO_ROOT,
+        workspaceId: WORKSPACE_ID,
+      }),
+      executable,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result fails closed when the workspace Acceptance virtual environment is absent', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-mobile',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    assert.throws(
+      () =>
+        resolveDevelopmentRunnerPython({
+          home: scope.home,
+          workspaceRoot: REPO_ROOT,
+          workspaceId: WORKSPACE_ID,
+        }),
+      (error) => error?.code === 'SESSION_RUNTIME_REQUIRED',
+    );
   } finally {
     scope.close();
   }
