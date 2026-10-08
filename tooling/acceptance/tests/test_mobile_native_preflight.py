@@ -46,6 +46,8 @@ from tooling.acceptance.provisioners.mobile_native import (
     MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
     MAX_MOBILE_SCREENSHOT_RESPONSE_BYTES,
     MAX_MOBILE_SCREENSHOT_BYTES,
+    MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS,
+    MOBILE_NATIVE_ANDROID_NEW_COMMAND_TIMEOUT_SECONDS,
     MOBILE_NATIVE_BLOCKED_SCENARIO_DEPENDENCIES,
     MOBILE_NATIVE_CAPABILITIES,
     MOBILE_OAUTH_PROOF_GATE_ID,
@@ -580,6 +582,91 @@ class ParentAppiumTransportTests(unittest.TestCase):
 
         self.assertEqual(len(observed_deadlines), 5)
         self.assertEqual(observed_deadlines, [deadline] * 5)
+
+    def test_android_session_timeout_covers_confirmed_install_budget(
+        self,
+    ) -> None:
+        session_payloads: list[dict[str, Any]] = []
+
+        class Transport:
+            @staticmethod
+            def request(
+                method: str,
+                path: str,
+                payload: dict[str, Any],
+                **_kwargs: Any,
+            ) -> dict[str, str]:
+                self.assertEqual((method, path), ("POST", "/session"))
+                session_payloads.append(payload)
+                return {"sessionId": "appium-session"}
+
+        class Broker:
+            @staticmethod
+            def with_physical_device(
+                _lease: object,
+                operation: Any,
+                **_kwargs: Any,
+            ) -> object:
+                return operation(
+                    SimpleNamespace(identifier="android-physical")
+                )
+
+        package_ref = parent_artifact_ref(
+            "runtime/mobile/builds/android.apk"
+        )
+        attestation = {
+            "buildIdentity": {
+                "applicationId": "com.peers.touch.mobile",
+            }
+        }
+        session = _ParentAppiumSession(
+            transport=Transport(),
+            client_id="alice-android",
+            platform_name="android",
+            automation_name="UiAutomator2",
+            artifact_reader=SimpleNamespace(
+                resolve=lambda _ref: Path("/tmp/mobile-app.apk")
+            ),
+            device_broker=Broker(),
+            physical_device_lease=parent_artifact_ref(
+                "runtime/mobile/leases/devices/alice-android.json"
+            ),
+            build_attestation=parent_artifact_ref(
+                "runtime/mobile/builds/android.json"
+            ),
+            ports={
+                "system": 8201,
+                "mjpeg": 8202,
+                "webview": 8203,
+            },
+            chromedriver_executable="/verified/chromedriver",
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_load_source_artifact",
+            side_effect=({}, attestation),
+        ), patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_resolve_build_package",
+            return_value=package_ref,
+        ), patch.object(
+            _ParentAppiumSession,
+            "_fresh_install",
+            return_value={},
+        ):
+            session.start()
+
+        capabilities = session_payloads[0]["capabilities"]["alwaysMatch"]
+        timeout_seconds = capabilities["appium:newCommandTimeout"]
+        self.assertEqual(
+            timeout_seconds,
+            MOBILE_NATIVE_ANDROID_NEW_COMMAND_TIMEOUT_SECONDS,
+        )
+        self.assertGreater(
+            timeout_seconds * 1000,
+            MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS,
+        )
 
     def test_is_alive_does_not_swallow_typed_deadline(self) -> None:
         transport = _ParentAppiumTransport("http://appium.invalid")
