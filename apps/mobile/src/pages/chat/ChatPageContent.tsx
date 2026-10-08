@@ -23,12 +23,14 @@ export function ChatThreadPageContent({
   activeInputPanel,
   children,
   keyboardOverlapHeight,
+  productSurface,
   style,
   tabBarVisible,
 }: {
   readonly activeInputPanel: ChatInputPanelState;
   readonly children: ReactNode;
   readonly keyboardOverlapHeight: number;
+  readonly productSurface?: string;
   readonly style: CSSProperties;
   readonly tabBarVisible: boolean;
 }) {
@@ -36,8 +38,10 @@ export function ChatThreadPageContent({
     <div
       className="page-container chat-thread-page"
       data-chat-input-panel={activeInputPanel}
+      data-chat-keyboard-open={keyboardOverlapHeight > 0}
       data-chat-keyboard-overlap={keyboardOverlapHeight}
       data-chat-tabbar-visible={tabBarVisible}
+      data-product-surface={productSurface}
       style={style}
     >
       {children}
@@ -75,9 +79,20 @@ export function ChatConversationListPageContent({
   onOpenConversation,
 }: ChatConversationListPageContentProps) {
   const { t } = useMobileI18n();
+  const productSurface = loading && items.length === 0
+    ? 'chat.list-loading'
+    : localError || socialError || groupError
+      ? 'chat.list-error'
+      : query.trim() && items.length === 0
+        ? 'chat.list-search-empty'
+        : query.trim()
+          ? 'chat.list-search'
+          : items.length === 0
+            ? 'chat.list-empty'
+            : 'chat.list';
 
   return (
-    <div className="page-container">
+    <div className="page-container" data-product-surface={productSurface}>
       <header className="page-header">
         <h1 className="header-title">{t('mobile.chat.title')}</h1>
         <button type="button" className="header-action" aria-label={t('mobile.chat.moreActions')}>

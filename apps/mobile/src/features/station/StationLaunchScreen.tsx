@@ -3,7 +3,10 @@ import { Button } from 'antd';
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
-import { StationSelector } from './StationSelector';
+import {
+  StationSelector,
+  type StationSelectorSurfaceFixture,
+} from './StationSelector';
 import { activeStationEntry, type StationProtocol, type StoredStationRegistry } from './stationRegistry';
 
 export function StationLaunchScreen({
@@ -11,6 +14,7 @@ export function StationLaunchScreen({
   error,
   checking,
   verifyingUrls,
+  surfaceFixture,
   onAddStation,
   onSelectStation,
   onRemoveStation,
@@ -20,6 +24,7 @@ export function StationLaunchScreen({
   error: string | null;
   checking: boolean;
   verifyingUrls: string[];
+  surfaceFixture?: StationSelectorSurfaceFixture;
   onAddStation: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
   onSelectStation: (stationPeerId: string) => void | Promise<void>;
   onRemoveStation: (stationPeerId: string) => void;
@@ -29,7 +34,10 @@ export function StationLaunchScreen({
   const activeStation = activeStationEntry(registry);
 
   return (
-    <main className="launch-screen">
+    <main
+      className="launch-screen"
+      data-product-surface="entry.station-selection"
+    >
       <div className="launch-topbar">
         <LanguageSwitcher />
       </div>
@@ -51,6 +59,7 @@ export function StationLaunchScreen({
             error={error}
             checking={checking}
             verifyingUrls={verifyingUrls}
+            surfaceFixture={surfaceFixture}
             onAdd={onAddStation}
             onSelect={onSelectStation}
             onRemove={onRemoveStation}

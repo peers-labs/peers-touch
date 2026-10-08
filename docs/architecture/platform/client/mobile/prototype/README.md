@@ -158,22 +158,20 @@ Station proof.
 The prototype package build passes. Fresh L2/L3 visual evidence for these
 action-sheet states remains `UNPROVEN` until the Portal render checks are run.
 
-### 2026-09-19 Settings Owner Parity
+### 2026-10-08 Settings Owner Parity
 
-The confirmed Me/Settings prototype now shows the canonical Social blocked-user
-list with readable actor identity, full PTID/Station context, and an explicit
-Unblock action. The undefined additional account-preference section is removed;
-Profile/privacy, Notification, Social, and device settings remain independent
-owners.
+The confirmed Me/Settings prototype mirrors the selected-only Mobile Settings
+tree and its existing owners: Station Profile/privacy and Notification
+preferences, Social blocked users, device appearance/language/storage, Station
+selection, and session logout. Summary and detail identity now remain
+human-readable; raw PTIDs and Station URLs are not used as primary identity.
+Ownerless Safety Number, Chat Background, and Encryption surfaces are explicitly
+unavailable instead of presenting invented configuration or an "Active" claim.
 
-This is product/prototype alignment only. `MS-D22A` is accepted; the
-Profile/Notification cross-client CAS hard cut remains source work in W6C, and
-native second-device conflict evidence remains in `W6C-PROOF`.
-
-Prototype verification passes the package build and all 51 layout captures
-with zero defects. The inspected 390px blocked-user detail is
-`apps/mobile/src-tauri/target/w6c-prototype/390-blocked-users-clean.png`;
-its two identity rows have no horizontal overflow or action overlap.
+Editable owner-backed details expose one local dirty/save surface. Storage,
+Station change, cache clearing, and logout use explicit confirmation surfaces.
+This is product/prototype alignment only; native foreground proof remains owned
+by `MWPU-07-SETTINGS`.
 
 Evidence captured on 2026-08-27 at the Portal mobile preview:
 

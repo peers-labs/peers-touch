@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import { useMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
 import { BoundedList } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
 import { useAuthStore } from '../features/auth/authStore';
@@ -55,6 +56,7 @@ import type { PrivateMomentReadProjection } from '../services/mobileCommands';
 import { MomentComposer } from './moments/MomentComposer';
 import { MomentFeedItem } from './moments/MomentFeedItem';
 import { MomentCommentsSection } from './moments/MomentCommentsSection';
+import { MomentsAcceptanceSurface } from './moments/MomentsAcceptanceSurface';
 import {
   MomentMediaOverlay,
   type MomentMediaSelection,
@@ -134,6 +136,33 @@ export async function retryMomentsRuntime(
 }
 
 export function MomentsPage({
+  activePostId,
+  onOpenProfile,
+  onOpenSearch,
+  onOpenCircles,
+  onBack,
+}: MomentsPageProps) {
+  const fixture = useMomentsSurfaceFixture();
+  if (fixture.surfaceId) {
+    return (
+      <MomentsAcceptanceSurface
+        key={`${fixture.surfaceId}:${fixture.revision}`}
+        surfaceId={fixture.surfaceId}
+      />
+    );
+  }
+  return (
+    <MomentsPageInner
+      activePostId={activePostId}
+      onOpenProfile={onOpenProfile}
+      onOpenSearch={onOpenSearch}
+      onOpenCircles={onOpenCircles}
+      onBack={onBack}
+    />
+  );
+}
+
+function MomentsPageInner({
   activePostId,
   onOpenProfile,
   onOpenSearch,
@@ -390,7 +419,10 @@ export function MomentsPage({
       (privateProjection) => privateProjection.postId === routeDetailPostId,
     );
     return (
-      <div className="page-container moments-page moments-route-detail">
+      <div
+        className="page-container moments-page moments-route-detail"
+        data-product-surface="moments.detail-comments"
+      >
         {facade && !isUnavailable && privateBlockingState
           ? renderPrivateBlockingState(privateBlockingState, onBack)
           : facade && !isUnavailable ? (
@@ -435,6 +467,7 @@ export function MomentsPage({
       className="page-container moments-page"
       data-acceptance-id="social-moments-page"
       data-feed-scope={feedScope}
+      data-product-surface="moments.feed"
     >
       {/* Header: the confirmed prototype keeps Search, Circles and Compose together. */}
       <header className="page-header">

@@ -7,9 +7,11 @@ from pathlib import Path
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.mobile.simulator_layout_accessibility_e2e import (
     GATE_ID,
+    validate_dom_audit,
+)
+from tooling.acceptance.gates.mobile.surface_audit import (
     audit_accessibility_tree,
     audit_keyboard_tree,
-    validate_dom_audit,
 )
 
 
@@ -103,7 +105,6 @@ class DomAuditTests(unittest.TestCase):
                 with self.assertRaisesRegex(GateError, field):
                     validate_dom_audit(payload)
 
-
 class GateIdentityTests(unittest.TestCase):
     def test_gate_identity_is_stable(self) -> None:
         self.assertEqual(
@@ -164,6 +165,11 @@ class GateIdentityTests(unittest.TestCase):
             "mobile-ios-layout-simulator",
         )
         self.assertIn(GATE_ID, plan["selected_gates"])
+        self.assertEqual(
+            plan["plan"],
+            "docs/architecture/platform/client/mobile/execution-plans/"
+            "20261008-mobile-whole-product-usability/plan.md",
+        )
 
 
 if __name__ == "__main__":

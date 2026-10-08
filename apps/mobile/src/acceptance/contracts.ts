@@ -31,6 +31,30 @@ import type {
 } from '../runtimes/nativeLifecycleBridge';
 import type { DevicePreferences } from '../runtimes/deviceSettingsRuntime';
 import type { EmbeddedMobileBuildIdentity } from './buildIdentity';
+import type {
+  EntrySurfaceFixtureId,
+  EntrySurfaceFixtureSnapshot,
+} from './entrySurfaceFixture';
+import type {
+  ChatSurfaceFixtureId,
+  ChatSurfaceFixtureSnapshot,
+} from './chatSurfaceFixture';
+import type {
+  ContactsSurfaceFixtureId,
+  ContactsSurfaceFixtureSnapshot,
+} from './contactsSurfaceFixture';
+import type {
+  MomentsSurfaceFixtureId,
+  MomentsSurfaceFixtureSnapshot,
+} from './momentsSurfaceFixture';
+import type {
+  RecoverySurfaceFixtureId,
+  RecoverySurfaceFixtureSnapshot,
+} from './recoverySurfaceFixture';
+import type {
+  SettingsSurfaceFixtureId,
+  SettingsSurfaceFixtureSnapshot,
+} from './settingsSurfaceFixture';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
@@ -38,6 +62,12 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'station.add',
   'station.replace',
   'station.select',
+  'entry.fixture',
+  'recovery.fixture',
+  'chat.fixture',
+  'contacts.fixture',
+  'moments.fixture',
+  'settings.fixture',
   'access.submit',
   'oauth.start',
   'oauth.status',
@@ -140,6 +170,30 @@ export interface StationReplaceInput {
 export interface StationSelectInput {
   stationPeerId: string;
   draftDisposition?: DraftDisposition;
+}
+
+export interface EntrySurfaceFixtureInput {
+  surfaceId: EntrySurfaceFixtureId | null;
+}
+
+export interface RecoverySurfaceFixtureInput {
+  surfaceId: RecoverySurfaceFixtureId | null;
+}
+
+export interface ChatSurfaceFixtureInput {
+  surfaceId: ChatSurfaceFixtureId | null;
+}
+
+export interface ContactsSurfaceFixtureInput {
+  surfaceId: ContactsSurfaceFixtureId | null;
+}
+
+export interface MomentsSurfaceFixtureInput {
+  surfaceId: MomentsSurfaceFixtureId | null;
+}
+
+export interface SettingsSurfaceFixtureInput {
+  surfaceId: SettingsSurfaceFixtureId | null;
 }
 
 export interface PublicStationEntry {
@@ -1150,6 +1204,30 @@ export interface MobileAcceptanceActionContract {
   'station.select': {
     input: StationSelectInput;
     output: StationSelectionOutput;
+  };
+  'entry.fixture': {
+    input: EntrySurfaceFixtureInput;
+    output: EntrySurfaceFixtureSnapshot;
+  };
+  'recovery.fixture': {
+    input: RecoverySurfaceFixtureInput;
+    output: RecoverySurfaceFixtureSnapshot;
+  };
+  'chat.fixture': {
+    input: ChatSurfaceFixtureInput;
+    output: ChatSurfaceFixtureSnapshot;
+  };
+  'contacts.fixture': {
+    input: ContactsSurfaceFixtureInput;
+    output: ContactsSurfaceFixtureSnapshot;
+  };
+  'moments.fixture': {
+    input: MomentsSurfaceFixtureInput;
+    output: MomentsSurfaceFixtureSnapshot;
+  };
+  'settings.fixture': {
+    input: SettingsSurfaceFixtureInput;
+    output: SettingsSurfaceFixtureSnapshot;
   };
   'access.submit': {
     input: AccessSubmitInput;

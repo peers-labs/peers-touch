@@ -55,6 +55,8 @@ try {
         const authCard = authScreen?.querySelector('.mp-auth-card');
         const authBrand = authScreen?.querySelector('.mp-auth-brand');
         const authLogo = authScreen?.querySelector('.mp-auth-logo');
+        const runtimeNotice = element.querySelector('.mp-runtime-notice');
+        const tabbar = element.querySelector('.mp-tabbar');
         const authCardRect = authCard?.getBoundingClientRect();
         const authBrandRect = authBrand?.getBoundingClientRect();
         const authLogoStyle = authLogo ? getComputedStyle(authLogo) : null;
@@ -84,6 +86,7 @@ try {
           composer?.querySelector('.mp-social-sheet-header > .primary'),
         );
         const tabbarRect = rect(element.querySelector('.mp-tabbar'));
+        const runtimeNoticeRect = rect(runtimeNotice);
         const deviceRect = rect(element);
         return {
           width: deviceRect.width,
@@ -101,6 +104,27 @@ try {
             clientHeight: section.clientHeight,
             scrollHeight: section.scrollHeight,
           })),
+          touchTargets: [...element.querySelectorAll(
+            '.mp-header-action, .mp-search-bar .ant-input-affix-wrapper, '
+              + '.mp-thread-back, .mp-thread-action, .mp-runtime-notice .ant-btn, '
+              + '.mp-profile-trigger, .mp-setting-row, .mp-sign-out, '
+              + '.mp-setting-detail-content .ant-btn, '
+              + '.mp-setting-detail-content .ant-switch, .mp-confirm-btn',
+          )].map((target) => {
+            const style = getComputedStyle(target);
+            return {
+              className: target.className,
+              width: Number.parseFloat(style.width),
+              height: Number.parseFloat(style.height),
+            };
+          }),
+          runtimeNotice: runtimeNotice && runtimeNoticeRect
+            ? {
+                blocksUnrelatedContent:
+                  runtimeNotice.getAttribute('data-blocks-unrelated-content') !== 'false',
+                overlapsTabbar: Boolean(tabbarRect && runtimeNoticeRect.bottom > tabbarRect.top + 1),
+              }
+            : null,
           auth: authScreen && authCard && authBrand && authLogoStyle
             ? {
                 cardCount: authScreen.querySelectorAll('.mp-auth-card').length,
@@ -173,6 +197,43 @@ try {
     await capture('auth-normal-email');
     await open('station-offline');
     await capture('station-offline');
+    await open('long-lists');
+    await device.getByRole('button', { name: 'Me', exact: true }).click();
+    await capture('settings-summary');
+    const settingsDetails = [
+      ['Account Info', 'account-info'],
+      ['Notifications', 'notifications'],
+      ['Privacy & Security', 'privacy-security'],
+      ['Safety Number', 'safety-number'],
+      ['Blocked Users', 'blocked-users'],
+      ['Chat Settings', 'chat-settings'],
+      ['Chat Background', 'chat-background'],
+      ['Station Connection', 'station-connection'],
+      ['Encryption', 'encryption'],
+      ['Language', 'language'],
+      ['About Peers Touch', 'about'],
+    ];
+    for (const [label, id] of settingsDetails) {
+      await device.getByRole('button', { name: new RegExp(label) }).first().click();
+      await capture(`settings-${id}`);
+      if (id === 'account-info') {
+        await device.locator('input[value="Alice Chen"]').fill('Alice Chen Updated');
+        await capture('settings-account-dirty');
+        await device.getByRole('button', { name: 'Save Changes', exact: true }).click();
+        await capture('settings-account-saved');
+      }
+      if (id === 'station-connection') {
+        await device.getByRole('button', { name: 'Change Station', exact: true }).click();
+        await device.getByRole('dialog', { name: 'Change Station', exact: true }).waitFor();
+        await capture('settings-station-change');
+        await device.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await device.getByRole('button', { name: 'Log Out', exact: true }).click();
+        await device.getByRole('dialog', { name: 'Log Out?', exact: true }).waitFor();
+        await capture('settings-logout-confirm');
+        await device.getByRole('button', { name: 'Cancel', exact: true }).click();
+      }
+      await device.getByRole('button', { name: 'Back', exact: true }).click();
+    }
     await open('session-revoked');
     await capture('auth-expired-quick');
     await device.getByRole('button', { name: 'Email Login', exact: true }).click();
@@ -278,6 +339,13 @@ try {
     || geometry.pageOverflow
     || geometry.scenarioOverlaps
     || geometry.scrollWidth > geometry.clientWidth
+    || geometry.touchTargets.some(
+      (target) => target.width < 44 || target.height < 44,
+    )
+    || (geometry.runtimeNotice && (
+      geometry.runtimeNotice.blocksUnrelatedContent
+      || geometry.runtimeNotice.overlapsTabbar
+    ))
     || geometry.sections.some((section) => section.scrollHeight > section.clientHeight + 1)
     || (geometry.launch && (
       geometry.launch.cardCount !== 0

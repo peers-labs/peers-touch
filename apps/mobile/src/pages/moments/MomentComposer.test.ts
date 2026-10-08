@@ -86,9 +86,13 @@ describe('Moment composer media restoration', () => {
   });
 
   it('allows image-only publication after every upload completes', () => {
-    expect(canPublishMoment('', 1, 0, 0, false)).toBe(true);
-    expect(canPublishMoment('', 0, 0, 0, false)).toBe(false);
-    expect(canPublishMoment('', 1, 1, 0, false)).toBe(false);
+    expect(canPublishMoment('', 1, 0, 0, false, true)).toBe(true);
+    expect(canPublishMoment('', 0, 0, 0, false, true)).toBe(false);
+    expect(canPublishMoment('', 1, 1, 0, false, true)).toBe(false);
+  });
+
+  it('requires an explicit audience before publication', () => {
+    expect(canPublishMoment('Ready to share', 0, 0, 0, false, false)).toBe(false);
   });
 
   it('requires every submitted image reference in the authoritative post', () => {

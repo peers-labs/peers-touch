@@ -50,11 +50,13 @@ import {
   activeStationEntry,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
+import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
 import {
   useBlockedUsersController,
   useNotificationPreferencesController,
   useSettingsController,
 } from './settings/useSettingsController';
+import { SettingsAcceptanceSurface } from './settings/SettingsAcceptanceSurface';
 import {
   BlockedUsersSection,
   DevicePrefsSection,
@@ -111,7 +113,12 @@ function ProfileUnavailable({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Card className="settings-section" variant="borderless" role="alert">
+    <Card
+      className="settings-section"
+      variant="borderless"
+      role="alert"
+      data-product-surface="settings.detail-unavailable"
+    >
       <Text type="secondary">
         {t(reason ?? 'mobile.settings.profileUnavailable')}
       </Text>
@@ -140,7 +147,20 @@ function BlockedUsersDetail() {
 // SettingsPage — pure renderer (prototype ProfilePage layout)
 // ---------------------------------------------------------------------------
 
-export function SettingsPage({
+export function SettingsPage(props: SettingsPageProps) {
+  const fixture = useSettingsSurfaceFixture();
+  if (fixture.surfaceId) {
+    return (
+      <SettingsAcceptanceSurface
+        key={`${fixture.surfaceId}:${fixture.revision}`}
+        surfaceId={fixture.surfaceId}
+      />
+    );
+  }
+  return <SettingsPageContent {...props} />;
+}
+
+function SettingsPageContent({
   stationRegistry,
   authSession,
   activeSettingId,
@@ -327,10 +347,7 @@ export function SettingsPage({
   );
   const ActiveSettingIcon = activeSetting?.icon;
 
-  // --- PTID display ---
-  const ptidDisplay = authSession?.actorRef.ptid
-    ? `ptid:${String(authSession.actorRef.ptid).slice(0, 24)}...`
-    : '';
+  const profileSubtitle = t('mobile.settings.connected');
 
   // --- Logout flow ---
   const handleLogoutConfirm = useCallback(async () => {
@@ -349,7 +366,7 @@ export function SettingsPage({
         return controller.profileAvailable ? (
           <ProfileSection
             profile={controller.draftProfile}
-            actorPtid={authSession?.actorRef.ptid}
+            actorIdentity={authSession?.actorRef.acct}
             disabled={false}
             onPatch={controller.patchProfile}
           />
@@ -456,14 +473,21 @@ export function SettingsPage({
   // --- Render ---
   if (controller.loading) {
     return (
-      <div className="page-container settings-loading">
+      <div
+        className="page-container settings-loading"
+        data-product-surface="settings.summary-loading"
+      >
+        <h1 className="sr-only">{t('mobile.settings.title')}</h1>
         <Spin />
       </div>
     );
   }
 
   const content = activeSettingId ? (
-    <div className="page-container settings-page mobile-detail-page">
+    <div
+      className="page-container settings-page mobile-detail-page"
+      data-product-surface={`settings.${activeSettingId}`}
+    >
       <header className="page-header">
         <button
           type="button"
@@ -493,7 +517,10 @@ export function SettingsPage({
       </div>
     </div>
   ) : (
-    <div className="page-container settings-page">
+    <div
+      className="page-container settings-page"
+      data-product-surface="settings.summary"
+    >
       {/* Header: "Me" + Settings gear */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.settings.title')}</h1>
@@ -508,7 +535,7 @@ export function SettingsPage({
       </header>
 
       <div className="settings-body">
-        {/* Profile header card — Avatar 64px + name + PTID + chevron + stats */}
+        {/* Profile header card — Avatar 64px + friendly identity + chevron + stats */}
         <button
           type="button"
           className="settings-profile-trigger"
@@ -530,11 +557,9 @@ export function SettingsPage({
                 <Text strong className="settings-profile-name">
                   {displayName || t('mobile.settings.notLoggedIn')}
                 </Text>
-                {ptidDisplay && (
-                  <Text type="secondary" className="settings-profile-ptid">
-                    {ptidDisplay}
-                  </Text>
-                )}
+                <Text type="secondary" className="settings-profile-subtitle">
+                  {profileSubtitle}
+                </Text>
               </div>
               <ChevronRight size={20} color="#9ca0ab" />
             </div>
@@ -650,7 +675,10 @@ export function SettingsPage({
         ]}
         destroyOnClose
       >
-        <div data-acceptance-id="settings-unsaved-exit">
+        <div
+          data-acceptance-id="settings-unsaved-exit"
+          data-product-surface="settings.unsaved-exit"
+        >
           {t('mobile.settings.exit.body')}
         </div>
       </Modal>
@@ -665,7 +693,9 @@ export function SettingsPage({
         onCancel={() => setLogoutConfirmOpen(false)}
         destroyOnClose
       >
-        {t('mobile.settings.station.logoutConfirmBody')}
+        <div data-product-surface="settings.logout-confirm">
+          {t('mobile.settings.station.logoutConfirmBody')}
+        </div>
       </Modal>
     </>
   );

@@ -141,6 +141,15 @@ class _Binding:
         payload: object = None,
     ) -> object:
         self.calls.append((client_id, action, payload))
+        if action == "lifecycle.waitReady":
+            return {
+                "phase": "ACTIVE",
+                "generation": 1,
+                "runtimes": [
+                    {"id": "profile", "status": "ready"},
+                    {"id": "notification", "status": "ready"},
+                ],
+            }
         if action == "settings.profile.read":
             return dict(self.profile)
         if action == "settings.profile.update":
@@ -184,6 +193,61 @@ class _Binding:
 
 
 class SimulatorSettingsGateTests(unittest.TestCase):
+    def test_authentication_restarts_one_failed_runtime_generation(self) -> None:
+        class RetryBinding(_Binding):
+            wait_attempts = 0
+
+            def call_action(
+                self,
+                client_id: str,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                if action == "lifecycle.waitReady":
+                    self.calls.append((client_id, action, payload))
+                    self.wait_attempts += 1
+                    return {
+                        "phase": "ACTIVE",
+                        "generation": self.wait_attempts,
+                        "runtimes": [{
+                            "id": "social",
+                            "status": (
+                                "failed"
+                                if self.wait_attempts == 1
+                                else "ready"
+                            ),
+                            "errorKey": (
+                                "mobile.lifecycle.runtimeFailed"
+                                if self.wait_attempts == 1
+                                else None
+                            ),
+                        }],
+                    }
+                return super().call_action(client_id, action, payload)
+
+        binding = RetryBinding()
+        gate = SimulatorSettingsGate(binding_factory=lambda: binding)  # type: ignore[arg-type]
+
+        actor_ptid = gate._authenticate(  # type: ignore[arg-type]
+            binding,
+            IOS_CLIENT,
+            expected_station_peer_id="station-primary-peer",
+        )
+
+        self.assertEqual(actor_ptid, "ptid:alice")
+        self.assertEqual(binding.wait_attempts, 2)
+        self.assertEqual(
+            [
+                call[2]
+                for call in binding.calls
+                if call[1] == "lifecycle.waitReady"
+            ],
+            [
+                {"includeDiagnostics": True, "minimumGeneration": 0},
+                {"includeDiagnostics": True, "minimumGeneration": 2},
+            ],
+        )
+
     def test_same_account_converges_and_device_settings_remain_local(self) -> None:
         binding = _Binding()
         original_profile = dict(binding.profile)
@@ -202,6 +266,14 @@ class SimulatorSettingsGateTests(unittest.TestCase):
         self.assertEqual(
             set(result["bindingProofs"][IOS_CLIENT]),
             {"station-primary", "station-secondary"},
+        )
+        self.assertEqual(
+            [
+                call[0]
+                for call in binding.calls
+                if call[1] == "lifecycle.waitReady"
+            ],
+            [IOS_CLIENT, PEER_IOS_CLIENT],
         )
 
         self.assertIsNone(gate._cleanup(binding))  # type: ignore[arg-type]
@@ -257,6 +329,38 @@ class SimulatorSettingsGateTests(unittest.TestCase):
             )["status"],
             "failed",
         )
+
+    def test_cleanup_refreshes_profile_revision_before_one_retry(self) -> None:
+        binding = _Binding()
+        gate = SimulatorSettingsGate(binding_factory=lambda: binding)  # type: ignore[arg-type]
+        gate._active_clients.extend((IOS_CLIENT, PEER_IOS_CLIENT))
+        gate._restore_owner_client = PEER_IOS_CLIENT
+        gate._profile_restore = {"displayName": "Alice"}
+        original_call_action = binding.call_action
+        failed_once = False
+
+        def fail_once(
+            client_id: str,
+            action: str,
+            payload: object = None,
+        ) -> object:
+            nonlocal failed_once
+            if action == "settings.profile.update" and not failed_once:
+                failed_once = True
+                raise RuntimeError("stale revision")
+            return original_call_action(client_id, action, payload)
+
+        binding.call_action = fail_once  # type: ignore[method-assign]
+
+        self.assertIsNone(gate._cleanup(binding))  # type: ignore[arg-type]
+        restored = next(
+            item
+            for item in gate.cleanup
+            if item["resource"] == "Profile-restore"
+        )
+        self.assertEqual(restored["status"], "passed")
+        self.assertTrue(restored["recoveredAfterRefresh"])
+        self.assertTrue(binding.closed)
 
 
 if __name__ == "__main__":

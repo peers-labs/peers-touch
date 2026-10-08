@@ -4,6 +4,7 @@ import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
+import { MobileNotice } from '../../components/MobileNotice';
 import {
   type MomentPolicyState,
   type ReactionMutationState,
@@ -131,11 +132,13 @@ export function MomentCommentsSection({
   const [replyTarget, setReplyTarget] = useState<CommentView | null>(null);
   const [sending, setSending] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [sendError, setSendError] = useState(false);
 
   useEffect(() => {
     setExpanded(false);
     setReplyTarget(null);
     setCommentText('');
+    setSendError(false);
   }, [postId]);
 
   useEffect(() => {
@@ -153,6 +156,7 @@ export function MomentCommentsSection({
   const handleSendComment = useCallback(async () => {
     const trimmed = commentText.trim();
     if (!trimmed || sending) return;
+    setSendError(false);
     setSending(true);
     try {
       const replyToCommentId = replyTarget
@@ -176,14 +180,14 @@ export function MomentCommentsSection({
         setCommentText('');
         setReplyTarget(null);
       } else {
-        message.error(t('mobile.moments.comment.sendError'));
+        setSendError(true);
       }
     } catch {
-      message.error(t('mobile.moments.comment.sendError'));
+      setSendError(true);
     } finally {
       setSending(false);
     }
-  }, [commentText, sending, replyTarget, privateRoute, intents, postId, t]);
+  }, [commentText, sending, replyTarget, privateRoute, intents, postId]);
 
   const handleLoadMore = useCallback(() => {
     if (privateRoute) {
@@ -222,6 +226,7 @@ export function MomentCommentsSection({
     <section
       className={`moments-comments-section moments-comments-section--${mode}`}
       data-acceptance-id="social-moment-thread"
+      data-product-surface="moments.detail-comments"
       data-post-id={postId}
       aria-label={t('mobile.moments.comment.title')}
     >
@@ -240,22 +245,30 @@ export function MomentCommentsSection({
 
       <div className="moments-comments-list">
         {!privateRoute && publicDetail.detail.kind === 'loading' && (
-          <MomentsFeedLoading />
+          <MomentsFeedLoading productSurface="moments.detail-loading" />
         )}
         {!privateRoute && publicDetail.detail.kind === 'unavailable' && (
           <MomentsUnavailable
             reason={publicDetail.detail.reason}
             onRetry={() => void retryMomentDetailRuntime(intents)}
+            productSurface="moments.detail-unavailable"
           />
         )}
         {!privateRoute && (
           publicDetail.detail.kind === 'hidden'
           || publicDetail.detail.kind === 'blocked'
         ) && (
-          <MomentsPolicyViolation blocked={publicDetail.detail.kind === 'blocked'} />
+          <MomentsPolicyViolation
+            blocked={publicDetail.detail.kind === 'blocked'}
+            productSurface="moments.detail-hidden"
+          />
         )}
         {!privateRoute && publicDetail.detail.kind === 'deleted' && !publicDetail.detail.post && (
-          <div className="moments-comments-empty" role="status">
+          <div
+            className="moments-comments-empty"
+            data-product-surface="moments.detail-deleted"
+            role="status"
+          >
             <Text type="secondary">{t('mobile.moments.detail.deleted')}</Text>
           </div>
         )}
@@ -276,18 +289,27 @@ export function MomentCommentsSection({
         )}
 
         {canRenderThread && loading && comments.length === 0 && (
-          <div className="moments-comments-empty">
+          <div
+            className="moments-comments-empty"
+            data-product-surface="moments.comments-loading"
+          >
             <Text type="secondary">{t('mobile.moments.comment.loading')}</Text>
           </div>
         )}
         {canRenderThread && initialized && !loading && comments.length === 0 && !errorMessage && (
-          <div className="moments-comments-empty">
+          <div
+            className="moments-comments-empty"
+            data-product-surface="moments.comments-empty"
+          >
             <MessageCircle size={28} />
             <Text type="secondary">{t('mobile.moments.comment.empty')}</Text>
           </div>
         )}
         {canRenderThread && errorMessage && (
-          <div className="moments-comments-error">
+          <div
+            className="moments-comments-error"
+            data-product-surface="moments.comments-error"
+          >
             <Text type="danger">{t('mobile.moments.comment.error')}</Text>
             <Button
               size="small"
@@ -364,6 +386,15 @@ export function MomentCommentsSection({
             </Button>
           </div>
         )}
+
+        {canRenderThread && loading && comments.length > 0 && (
+          <div
+            className="moments-comments-loading-more"
+            data-product-surface="moments.comments-loading-more"
+          >
+            <Text type="secondary">{t('mobile.moments.feed.loadingMore')}</Text>
+          </div>
+        )}
       </div>
 
       {canRenderThread && replyTarget && (
@@ -382,10 +413,30 @@ export function MomentCommentsSection({
       )}
 
       {canRenderThread && (
-        <div className="moments-comments-input">
+        <div
+          className="moments-comments-input"
+          data-product-surface={sending
+            ? 'moments.comments-pending'
+            : sendError
+              ? 'moments.comments-failed'
+              : undefined}
+        >
+          {sendError ? (
+            <MobileNotice onClose={() => setSendError(false)}>
+              {t('mobile.moments.comment.sendError')}
+              <Button
+                size="small"
+                icon={<Send size={14} />}
+                onClick={() => void handleSendComment()}
+              >
+                {t('common.action.retry')}
+              </Button>
+            </MobileNotice>
+          ) : null}
           <Input
             value={commentText}
             data-acceptance-id="social-comment-input"
+            aria-label={t('mobile.moments.comment.title')}
             onChange={(event) => setCommentText(event.target.value)}
             placeholder={replyTarget
               ? t('mobile.moments.reply.placeholder', { name: replyAuthorName })
