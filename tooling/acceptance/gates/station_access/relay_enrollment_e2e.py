@@ -200,6 +200,8 @@ def validate_enrollment_source_contract() -> None:
         "client": (
             "BootstrapIdentityURL",
             "loadCachedMountCredential",
+            "loadInviteToken",
+            "clearInviteToken",
             "ErrEnrollmentRequired",
             "plaintext Relay control is restricted to loopback",
             "Relay stream TLS is required",

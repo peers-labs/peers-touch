@@ -108,6 +108,31 @@ func TestCachedMountCredentialRejectsLegacyAndExpiredValues(t *testing.T) {
 	}
 }
 
+func TestRelayInviteTokenFileIsConsumedAfterEnrollment(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "relay-invite-token")
+	if err := os.WriteFile(path, []byte("one-time-invite\n"), 0o600); err != nil {
+		t.Fatalf("write invite token: %v", err)
+	}
+	subserver := &SubServer{
+		opts: &Options{InviteTokenFile: path},
+	}
+	token, err := subserver.loadInviteToken()
+	if err != nil {
+		t.Fatalf("load invite token: %v", err)
+	}
+	if token != "one-time-invite" {
+		t.Fatalf("invite token = %q", token)
+	}
+	if err := subserver.clearInviteToken(); err != nil {
+		t.Fatalf("clear invite token: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("consumed invite token remains: %v", err)
+	}
+}
+
 func TestSignRelayChallengeUsesStationHostKey(t *testing.T) {
 	privateKey, publicKey, err := libp2pcrypto.GenerateEd25519Key(rand.Reader)
 	if err != nil {

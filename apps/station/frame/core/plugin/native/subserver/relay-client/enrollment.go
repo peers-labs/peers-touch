@@ -133,10 +133,14 @@ func (s *SubServer) acquireRelayCredential(
 		_ = s.clearRelayCredential()
 	}
 
-	if strings.TrimSpace(s.opts.InviteToken) == "" {
+	inviteToken, err := s.loadInviteToken()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrEnrollmentRequired, err)
+	}
+	if inviteToken == "" {
 		return nil, ErrEnrollmentRequired
 	}
-	credential, err := s.enroll(ctx)
+	credential, err := s.enroll(ctx, inviteToken)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrEnrollmentRequired, err)
 	}
@@ -146,16 +150,52 @@ func (s *SubServer) acquireRelayCredential(
 	if err := s.persistRelayCredential(credential); err != nil {
 		return nil, err
 	}
+	if err := s.clearInviteToken(); err != nil {
+		return nil, err
+	}
 	return credential, nil
 }
 
-func (s *SubServer) enroll(ctx context.Context) (*cachedMountCredential, error) {
+func (s *SubServer) loadInviteToken() (string, error) {
+	if token := strings.TrimSpace(s.opts.InviteToken); token != "" {
+		return token, nil
+	}
+	path := strings.TrimSpace(s.opts.InviteTokenFile)
+	if path == "" {
+		return "", nil
+	}
+	token, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read Relay invite token: %w", err)
+	}
+	return strings.TrimSpace(string(token)), nil
+}
+
+func (s *SubServer) clearInviteToken() error {
+	s.opts.InviteToken = ""
+	path := strings.TrimSpace(s.opts.InviteTokenFile)
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove consumed Relay invite token: %w", err)
+	}
+	return nil
+}
+
+func (s *SubServer) enroll(
+	ctx context.Context,
+	inviteToken string,
+) (*cachedMountCredential, error) {
 	challenge := &enrollmentChallengeResponse{}
 	if err := s.postJSON(
 		ctx,
 		"/api/v1/relay/enrollment/challenge",
 		map[string]string{
-			"invite_token": s.opts.InviteToken,
+			"invite_token": inviteToken,
 			"label":        s.opts.Label,
 		},
 		"",
@@ -172,7 +212,7 @@ func (s *SubServer) enroll(ctx context.Context) (*cachedMountCredential, error) 
 		ctx,
 		"/api/v1/relay/register",
 		map[string]interface{}{
-			"invite_token": s.opts.InviteToken,
+			"invite_token": inviteToken,
 			"proof":        proof,
 		},
 		"",

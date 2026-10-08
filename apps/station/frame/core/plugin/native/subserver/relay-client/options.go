@@ -36,6 +36,9 @@ type Options struct {
 	// Station registers with this Relay. After registration the structured
 	// mount credential at TokenStorePath becomes the source of truth.
 	InviteToken string
+	// InviteTokenFile is the preferred deployment source for the one-time
+	// invite. It is removed after a credential is persisted successfully.
+	InviteTokenFile string
 
 	// Label is an opaque, human-readable identifier sent on /register and
 	// echoed back in /api/v1/relay/mounts. Useful to disambiguate stations
@@ -95,6 +98,10 @@ func WithRelayStreamAddr(v string) option.Option {
 // WithInviteToken sets the single-use admin invite token.
 func WithInviteToken(v string) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.InviteToken = v })
+}
+
+func WithInviteTokenFile(v string) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.InviteTokenFile = v })
 }
 
 // WithLabel sets the human-readable label for the registered mount.

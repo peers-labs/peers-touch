@@ -25,6 +25,7 @@ var relayClientOptions struct {
 						RelayURL                     string `pconf:"relay-url"`
 						RelayStreamAddr              string `pconf:"relay-stream-addr"`
 						InviteToken                  string `pconf:"invite-token"`
+						InviteTokenFile              string `pconf:"invite-token-file"`
 						Label                        string `pconf:"label"`
 						LocalHTTPPort                int    `pconf:"local-http-port"`
 						LocalHTTPTimeoutSec          int    `pconf:"local-http-timeout-sec"`
@@ -59,6 +60,7 @@ func (p *relayClientPlugin) Options() []option.Option {
 		WithRelayURL(c.RelayURL),
 		WithRelayStreamAddr(c.RelayStreamAddr),
 		WithInviteToken(c.InviteToken),
+		WithInviteTokenFile(c.InviteTokenFile),
 		WithLabel(c.Label),
 		WithUseTLS(c.UseTLS),
 		WithTLSInsecureSkipVerify(c.TLSInsecureSkipVerify),

@@ -44,6 +44,34 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
             ):
                 WindowsRuntimeConfig.load("relay", environment)
 
+    def test_station_relay_binding_requires_complete_endpoints(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            environment = Path(directory) / "station.env"
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=windows.example",
+                        "PT_DEPLOY_USER=administrator",
+                        "PT_DEPLOY_PATH=deploy/station",
+                        "PT_DEPLOY_RUNTIME_PATH=runtime/station",
+                        "PT_DEPLOY_ROLE=station",
+                        "PT_DEPLOY_PLATFORM=windows",
+                        "PT_DEPLOY_HTTP_PORT=18080",
+                        "PT_DEPLOY_PUBLIC_BASE_URL=http://station.example:18080",
+                        "PT_DEPLOY_TASK_NAME=PeersTouch-station",
+                        "PT_DEPLOY_RELAY_CLIENT_URL=https://relay.example:18081",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ProvisioningError,
+                "must define URL, control URL",
+            ):
+                WindowsRuntimeConfig.load("station", environment)
+
     def test_remote_runtime_script_is_valid_python(self) -> None:
         compile(_remote_runtime_script(), "<windows-runtime>", "exec")
 
@@ -90,6 +118,15 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
             'cfg["publicPort"] if role == "relay" else cfg["httpPort"]',
             script,
         )
+
+    def test_station_relay_client_uses_one_time_invite_file(self) -> None:
+        script = _remote_runtime_script()
+
+        self.assertIn("def prepare_station_relay_invite():", script)
+        self.assertIn("def wait_for_station_relay_mount():", script)
+        self.assertIn('"          invite-token-file: "', script)
+        self.assertIn('"          tls-insecure-skip-verify: false"', script)
+        self.assertIn("relay_invite_path.unlink(missing_ok=True)", script)
 
     def test_native_service_stderr_does_not_terminate_runner(self) -> None:
         script = _remote_runtime_script()

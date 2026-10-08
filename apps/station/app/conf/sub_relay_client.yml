@@ -17,6 +17,7 @@ peers:
           # consumed by challenge-bound enrollment. After that the structured
           # mount credential at token-store-path is the source of truth.
           invite-token: ""
+          invite-token-file: ""
 
           # Human-readable label echoed in /api/v1/relay/mounts. Defaults to
           # the station's compose project name when set via the docker overlay.

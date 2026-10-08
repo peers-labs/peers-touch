@@ -142,6 +142,10 @@ class WindowsRuntimeConfig:
     health_path: str
     public_base_url: str
     stream_port: int | None
+    relay_client_url: str
+    relay_control_url: str
+    relay_stream_addr: str
+    relay_runtime_path: str
     task_name: str
     firewall_remote_address: str
 
@@ -221,6 +225,56 @@ class WindowsRuntimeConfig:
             raise ProvisioningError(
                 "relay public, internal HTTP, and stream ports must be distinct"
             )
+        relay_client_url = values.get("PT_DEPLOY_RELAY_CLIENT_URL", "").strip()
+        relay_control_url = values.get(
+            "PT_DEPLOY_RELAY_CONTROL_URL",
+            "",
+        ).strip()
+        relay_stream_addr = values.get(
+            "PT_DEPLOY_RELAY_STREAM_ADDR",
+            "",
+        ).strip()
+        relay_runtime_path_raw = values.get(
+            "PT_DEPLOY_RELAY_RUNTIME_PATH",
+            "",
+        ).strip()
+        relay_values = (
+            relay_client_url,
+            relay_control_url,
+            relay_stream_addr,
+            relay_runtime_path_raw,
+        )
+        if role == "station" and any(relay_values):
+            if not all(relay_values):
+                raise ProvisioningError(
+                    "station Relay client binding must define URL, control URL, "
+                    "stream address, and Relay runtime path"
+                )
+            relay_public = urlparse(relay_client_url)
+            relay_control = urlparse(relay_control_url)
+            if (
+                relay_public.scheme.lower() != "https"
+                or not relay_public.hostname
+                or relay_control.scheme.lower() != "http"
+                or relay_control.hostname not in {"127.0.0.1", "::1", "localhost"}
+            ):
+                raise ProvisioningError(
+                    "station Relay client requires public HTTPS and loopback HTTP control"
+                )
+            stream = urlparse("//" + relay_stream_addr)
+            if not stream.hostname or stream.port is None:
+                raise ProvisioningError(
+                    "PT_DEPLOY_RELAY_STREAM_ADDR must be a host and port"
+                )
+            relay_runtime_path = _relative_path(
+                relay_runtime_path_raw,
+                "PT_DEPLOY_RELAY_RUNTIME_PATH",
+            )
+        else:
+            relay_client_url = ""
+            relay_control_url = ""
+            relay_stream_addr = ""
+            relay_runtime_path = ""
         return cls(
             environment_name=environment_name,
             host=_required(values, "PT_DEPLOY_HOST", environment_path),
@@ -245,6 +299,10 @@ class WindowsRuntimeConfig:
             health_path=health_path,
             public_base_url=public_base_url,
             stream_port=stream_port,
+            relay_client_url=relay_client_url,
+            relay_control_url=relay_control_url,
+            relay_stream_addr=relay_stream_addr,
+            relay_runtime_path=relay_runtime_path,
             task_name=task_name,
             firewall_remote_address=firewall_remote_address,
         )
@@ -261,6 +319,10 @@ class WindowsRuntimeConfig:
             "healthPath": self.health_path,
             "publicBaseUrl": self.public_base_url,
             "streamPort": self.stream_port,
+            "relayClientUrl": self.relay_client_url,
+            "relayControlUrl": self.relay_control_url,
+            "relayStreamAddr": self.relay_stream_addr,
+            "relayRuntimePath": self.relay_runtime_path,
             "taskName": self.task_name,
             "firewallRemoteAddress": self.firewall_remote_address,
             "branch": branch,
@@ -273,7 +335,9 @@ def _remote_runtime_script() -> str:
     script = textwrap.dedent(
         r"""
         import getpass
+        import base64
         import hashlib
+        import hmac
         import ipaddress
         import json
         import os
@@ -304,6 +368,9 @@ def _remote_runtime_script() -> str:
         runner_path = runtime / "run-service.ps1"
         manifest_path = runtime / "runtime-manifest.json"
         task_name = cfg["taskName"]
+        relay_client_enabled = bool(cfg["relayClientUrl"])
+        relay_credential_path = secret_root / "relay-mount-credential.json"
+        relay_invite_path = secret_root / "relay-invite-token"
         health_url = (
             "http://127.0.0.1:"
             + str(cfg["httpPort"])
@@ -592,6 +659,125 @@ def _remote_runtime_script() -> str:
                 ]
             )
 
+        def request_json(url, *, payload=None, bearer=""):
+            body = (
+                json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                if payload is not None
+                else None
+            )
+            request = urllib.request.Request(
+                url,
+                data=body,
+                method="POST",
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    **(
+                        {"Authorization": "Bearer " + bearer}
+                        if bearer
+                        else {}
+                    ),
+                },
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                decoded = json.loads(response.read().decode("utf-8"))
+            if not isinstance(decoded, dict):
+                raise RuntimeError("Relay returned a non-object response")
+            return decoded
+
+        def relay_operator_token(operator_key):
+            now = int(time.time())
+            header = {"alg": "HS256", "typ": "JWT"}
+            payload = {
+                "iss": "peers-relay-operator",
+                "sub": "operator:windows-runtime",
+                "aud": ["peers-relay-admin"],
+                "iat": now,
+                "exp": now + 300,
+                "scope": "relay.admin",
+            }
+
+            def encode(value):
+                return base64.urlsafe_b64encode(
+                    json.dumps(
+                        value,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ).encode("utf-8")
+                ).rstrip(b"=")
+
+            unsigned = encode(header) + b"." + encode(payload)
+            signature = base64.urlsafe_b64encode(
+                hmac.new(operator_key, unsigned, hashlib.sha256).digest()
+            ).rstrip(b"=")
+            return (unsigned + b"." + signature).decode("ascii")
+
+        def relay_credential_active():
+            if not relay_credential_path.is_file():
+                return False
+            try:
+                credential = json.loads(
+                    relay_credential_path.read_text(encoding="utf-8")
+                )
+                token = str(credential.get("relay_token") or "")
+                if not token:
+                    return False
+                request_json(
+                    cfg["relayControlUrl"] + "/api/v1/relay/heartbeat",
+                    payload={},
+                    bearer=token,
+                )
+                return True
+            except (
+                OSError,
+                ValueError,
+                urllib.error.HTTPError,
+                urllib.error.URLError,
+            ):
+                return False
+
+        def prepare_station_relay_invite():
+            if not relay_client_enabled:
+                return
+            if relay_credential_active():
+                relay_invite_path.unlink(missing_ok=True)
+                return
+            relay_credential_path.unlink(missing_ok=True)
+            relay_runtime = home / cfg["relayRuntimePath"]
+            operator_key = (
+                relay_runtime / "secrets" / "relay-operator.key"
+            ).read_text(encoding="utf-8").strip().encode("utf-8")
+            response = request_json(
+                cfg["relayControlUrl"] + "/api/v1/relay/invite",
+                payload={
+                    "label": cfg["environmentName"],
+                    "max_clients": 64,
+                    "bandwidth_limit": 8388608,
+                    "expires_in": "10m",
+                },
+                bearer=relay_operator_token(operator_key),
+            )
+            invite_token = str(response.get("invite_token") or "")
+            if not invite_token:
+                raise RuntimeError("Relay invite response omitted its secret")
+            relay_invite_path.write_text(
+                invite_token + "\n",
+                encoding="utf-8",
+            )
+
+        def wait_for_station_relay_mount():
+            if not relay_client_enabled:
+                return
+            deadline = time.monotonic() + 90
+            while time.monotonic() < deadline:
+                if relay_credential_active():
+                    relay_invite_path.unlink(missing_ok=True)
+                    return
+                time.sleep(1)
+            raise RuntimeError(
+                "Station Relay client did not establish an authenticated mount"
+            )
+
         def apply_secret_acl():
             username = os.environ.get("USERNAME") or getpass.getuser()
             run(
@@ -616,7 +802,16 @@ def _remote_runtime_script() -> str:
                         secret_root / "relay.crt",
                     ]
                 )
+            elif relay_client_enabled:
+                secret_paths.extend(
+                    [
+                        relay_invite_path,
+                        relay_credential_path,
+                    ]
+                )
             for secret_path in secret_paths:
+                if not secret_path.is_file():
+                    continue
                 run(
                     [
                         "icacls.exe",
@@ -656,6 +851,8 @@ def _remote_runtime_script() -> str:
                 if match is None:
                     raise RuntimeError("peers-sqlite.yml has no includes declaration")
                 includes = match.group(1)
+                if relay_client_enabled and "sub_relay_client.yml" not in includes:
+                    includes += ", sub_relay_client.yml"
                 if "runtime.windows.yml" not in includes:
                     includes += ", runtime.windows.yml"
             main = re.sub(
@@ -716,6 +913,32 @@ def _remote_runtime_script() -> str:
                         "          operator-issuer: peers-relay-operator",
                         "          operator-audience: peers-relay-admin",
                         "          operator-scope: relay.admin",
+                    ]
+                )
+            elif relay_client_enabled:
+                overlay.extend(
+                    [
+                        "        relay-client:",
+                        "          enabled: true",
+                        "          relay-url: "
+                        + json.dumps(cfg["relayClientUrl"]),
+                        "          relay-stream-addr: "
+                        + json.dumps(cfg["relayStreamAddr"]),
+                        "          invite-token-file: "
+                        + json.dumps(yaml_path(relay_invite_path)),
+                        "          label: "
+                        + json.dumps(cfg["environmentName"]),
+                        "          local-http-port: " + str(cfg["httpPort"]),
+                        "          bootstrap-info-url: http://127.0.0.1:"
+                        + str(cfg["httpPort"])
+                        + "/sub-bootstrap/info",
+                        "          bootstrap-identity-url: http://127.0.0.1:"
+                        + str(cfg["httpPort"])
+                        + "/sub-bootstrap/station-identity",
+                        "          token-store-path: "
+                        + json.dumps(yaml_path(relay_credential_path)),
+                        "          use-tls: true",
+                        "          tls-insecure-skip-verify: false",
                     ]
                 )
             (config_root / "runtime.windows.yml").write_text(
@@ -942,6 +1165,8 @@ def _remote_runtime_script() -> str:
                     secret_root / "relay-tls.key",
                 )
                 install_relay_ca(secret_root / "relay-ca.crt")
+            elif relay_client_enabled:
+                prepare_station_relay_invite()
             apply_secret_acl()
             prepare_config()
             stop_owned()
@@ -1009,6 +1234,7 @@ def _remote_runtime_script() -> str:
                 raise RuntimeError(
                     "runtime failed health check: " + "\n".join(tail)
                 )
+            wait_for_station_relay_mount()
             final_commit, final_digest, final_clean = source_identity()
             if (
                 final_commit != source_commit
