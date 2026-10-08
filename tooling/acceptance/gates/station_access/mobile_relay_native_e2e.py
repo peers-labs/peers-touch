@@ -15,6 +15,7 @@ from tooling.acceptance.core import (
     ArtifactSession,
     DriverError,
     EphemeralCapabilityBlocked,
+    EphemeralLaunchProtocolError,
     GateError,
     REPO_ROOT,
     load_runtime_manifest,
@@ -258,9 +259,7 @@ class MobileRelayNativeGate(AcceptanceGate):
             routeRevision=relay_revision,
         )
 
-        restarted = binding.call_action(CLIENT_ID, "lifecycle.restart")
-        if restarted != {"requested": True, "scope": "webview"}:
-            raise GateError("Mobile lifecycle.restart response is invalid")
+        self._restart_runtime(binding)
         self._wait_business_runtimes(binding, "relay-restart")
         restored_scope = self._wait_scope(
             binding,
@@ -552,6 +551,32 @@ class MobileRelayNativeGate(AcceptanceGate):
             "physicalDeviceClaimed": False,
             "stationMocksUsed": False,
         }
+
+    def _restart_runtime(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+    ) -> None:
+        for attempt in (1, 2):
+            try:
+                restarted = binding.call_action(
+                    CLIENT_ID,
+                    "lifecycle.restart",
+                )
+            except (DriverError, EphemeralLaunchProtocolError) as error:
+                if (
+                    attempt == 1
+                    and "mobile.lifecycle.teardownIncomplete" in str(error)
+                ):
+                    self._record(
+                        "relay-restart-retry",
+                        reason="teardown-incomplete",
+                    )
+                    continue
+                raise
+            if restarted != {"requested": True, "scope": "webview"}:
+                raise GateError("Mobile lifecycle.restart response is invalid")
+            return
+        raise GateError("Mobile lifecycle.restart retry was exhausted")
 
     @staticmethod
     def _mapping(value: object, label: str) -> dict[str, Any]:

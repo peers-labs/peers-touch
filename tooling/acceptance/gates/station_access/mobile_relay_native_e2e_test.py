@@ -2,7 +2,11 @@ from types import SimpleNamespace
 import unittest
 from pathlib import Path
 
-from tooling.acceptance.core import AcceptanceGate, REPO_ROOT
+from tooling.acceptance.core import (
+    AcceptanceGate,
+    EphemeralLaunchProtocolError,
+    REPO_ROOT,
+)
 from tooling.acceptance.gates.station_access.mobile_relay_native_e2e import (
     CLIENT_ID,
     MobileRelayNativeGate,
@@ -16,6 +20,7 @@ class FakeBinding:
         self.profile_routes: list[str] = []
         self.action_calls: list[str] = []
         self.unavailable_runtime: str | None = None
+        self.restart_teardown_failures = 0
 
     def create_bound_session(self, client_id: str) -> SimpleNamespace:
         return SimpleNamespace(
@@ -113,6 +118,11 @@ class FakeBinding:
             self.profile_routes.append(self.route_type)
             return {"actorPtid": "ptid:alice"}
         if action == "lifecycle.restart":
+            if self.restart_teardown_failures:
+                self.restart_teardown_failures -= 1
+                raise EphemeralLaunchProtocolError(
+                    "mobile.lifecycle.teardownIncomplete"
+                )
             return {"requested": True, "scope": "webview"}
         if action == "cleanup":
             return {"clean": True}
@@ -178,6 +188,24 @@ class MobileRelayNativeGateTests(unittest.TestCase):
             "Mobile business runtimes are unavailable: social=failed",
         ):
             gate._wait_business_runtimes(binding, "direct-login")
+
+    def test_restart_retries_only_teardown_incomplete_once(self) -> None:
+        gate = MobileRelayNativeGate.__new__(MobileRelayNativeGate)
+        AcceptanceGate.__init__(gate)
+        gate.events = []
+        binding = FakeBinding()
+        binding.restart_teardown_failures = 1
+
+        gate._restart_runtime(binding)
+
+        self.assertEqual(
+            binding.action_calls.count("lifecycle.restart"),
+            2,
+        )
+        self.assertEqual(
+            gate.events[0]["event"],
+            "relay-restart-retry",
+        )
 
     def test_active_route_rejects_ambiguous_registry(self) -> None:
         with self.assertRaisesRegex(Exception, "ambiguous"):
