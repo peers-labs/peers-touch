@@ -92,7 +92,7 @@ def validate_discovery_source_contract() -> None:
             "resolveConnectionMaterialIssuer",
         ),
         (
-            "docs/architecture/api-ownership/"
+            "docs/architecture/engineering/api-governance/"
             "station-api-capabilities.yaml"
         ): (
             "/dashboard/api/relay",
