@@ -189,6 +189,17 @@ impl<R: DeviceEnrollmentRepository> DeviceEnrollmentManager<R> {
         self.enroll(&enrollment, label, transport, false)
     }
 
+    pub fn ensure_current<T: DeviceEnrollmentTransport>(
+        &self,
+        label: String,
+        transport: &T,
+    ) -> Result<ActorDevice, String> {
+        if let Some(enrollment) = self.repository.pending_device_enrollment()? {
+            return self.enroll(&enrollment, label, transport, true);
+        }
+        self.enroll_current(label, transport)
+    }
+
     fn enroll<T: DeviceEnrollmentTransport>(
         &self,
         enrollment: &FreshDeviceEnrollment,
@@ -408,6 +419,84 @@ fn build_device_certificate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    struct EnrollmentRepository {
+        enrollment: FreshDeviceEnrollment,
+        pending: Mutex<bool>,
+    }
+
+    impl DeviceEnrollmentRepository for EnrollmentRepository {
+        fn device_enrollment(&self) -> Result<Option<FreshDeviceEnrollment>, String> {
+            Ok(Some(self.enrollment.clone()))
+        }
+
+        fn install_fresh_device_identity(
+            &self,
+            _state: &FreshDeviceIdentityState,
+        ) -> Result<(), String> {
+            Err("unexpected identity installation".to_string())
+        }
+
+        fn pending_device_enrollment(&self) -> Result<Option<FreshDeviceEnrollment>, String> {
+            Ok(self
+                .pending
+                .lock()
+                .map_err(|_| "test enrollment lock poisoned".to_string())?
+                .then(|| self.enrollment.clone()))
+        }
+
+        fn complete_device_enrollment(&self, _device_id: &str) -> Result<(), String> {
+            *self
+                .pending
+                .lock()
+                .map_err(|_| "test enrollment lock poisoned".to_string())? = false;
+            Ok(())
+        }
+
+        fn reset_device_enrollment(&self) -> Result<bool, String> {
+            *self
+                .pending
+                .lock()
+                .map_err(|_| "test enrollment lock poisoned".to_string())? = true;
+            Ok(true)
+        }
+    }
+
+    #[derive(Default)]
+    struct EnrollmentTransport {
+        requests: Mutex<Vec<EnrollActorDeviceRequest>>,
+    }
+
+    impl DeviceEnrollmentTransport for EnrollmentTransport {
+        fn enroll(
+            &self,
+            request: &EnrollActorDeviceRequest,
+        ) -> Result<EnrollActorDeviceResponse, String> {
+            self.requests
+                .lock()
+                .map_err(|_| "test transport lock poisoned".to_string())?
+                .push(request.clone());
+            let certificate = request
+                .certificate
+                .as_ref()
+                .ok_or_else(|| "test enrollment certificate is unavailable".to_string())?;
+            Ok(EnrollActorDeviceResponse {
+                device: Some(ActorDevice {
+                    r#ref: certificate.device.clone(),
+                    status: ActorDeviceStatus::Active as i32,
+                    label: request.label.clone(),
+                    actor_identity_key_fingerprint: certificate
+                        .actor_identity_key_fingerprint
+                        .clone(),
+                    signing_key_id: certificate.signing_key_id.clone(),
+                    device_signing_public_key: certificate.device_signing_public_key.clone(),
+                    profile_version: certificate.observed_profile_version,
+                    ..Default::default()
+                }),
+            })
+        }
+    }
 
     #[test]
     fn fresh_enrollment_round_trips() {
@@ -427,5 +516,65 @@ mod tests {
     #[test]
     fn enrollment_rejects_empty_ptid() {
         assert!(generate_fresh_device_identity("", [1u8; 32], 1).is_err());
+    }
+
+    #[test]
+    fn ensure_current_revalidates_active_device_with_transport() {
+        let identity = generate_fresh_device_identity_for_device_from_seed(
+            "ptid:alice",
+            "device-1",
+            &[42; 32],
+            1,
+        )
+        .unwrap();
+        let repository = Arc::new(EnrollmentRepository {
+            enrollment: identity.enrollment.clone(),
+            pending: Mutex::new(false),
+        });
+        let manager = DeviceEnrollmentManager::new(
+            repository.clone(),
+            "ptid:alice".to_string(),
+            "device-1".to_string(),
+        )
+        .unwrap();
+        let transport = EnrollmentTransport::default();
+
+        let device = manager
+            .ensure_current("Mobile".to_string(), &transport)
+            .unwrap();
+
+        assert_eq!(
+            device.signing_key_id,
+            identity.enrollment.certificate.signing_key_id
+        );
+        assert!(!*repository.pending.lock().unwrap());
+        assert_eq!(transport.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn ensure_current_completes_pending_device_enrollment() {
+        let identity = generate_fresh_device_identity_for_device_from_seed(
+            "ptid:alice",
+            "device-1",
+            &[42; 32],
+            1,
+        )
+        .unwrap();
+        let repository = Arc::new(EnrollmentRepository {
+            enrollment: identity.enrollment,
+            pending: Mutex::new(true),
+        });
+        let manager = DeviceEnrollmentManager::new(
+            repository.clone(),
+            "ptid:alice".to_string(),
+            "device-1".to_string(),
+        )
+        .unwrap();
+
+        manager
+            .ensure_current("Mobile".to_string(), &EnrollmentTransport::default())
+            .unwrap();
+
+        assert!(!*repository.pending.lock().unwrap());
     }
 }
