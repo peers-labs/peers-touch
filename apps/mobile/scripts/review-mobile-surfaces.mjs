@@ -61,6 +61,33 @@ function resolveWorkItem(explicitWorkItem) {
   return workItemFromActiveWork(JSON.parse(output));
 }
 
+export function stationProfileFromMachine(value) {
+  const profile = value?.binding?.profile;
+  if (
+    typeof profile !== 'string'
+    || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(profile)
+  ) {
+    fail('current machine binding has no valid Station profile');
+  }
+  return profile;
+}
+
+function resolveStationProfile() {
+  const output = execFileSync(
+    'node',
+    [
+      'tooling/scripts/local-dev/machine-dev.mjs',
+      'resolve',
+      '--workspace-root',
+      repoRoot,
+      '--format',
+      'json',
+    ],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  return stationProfileFromMachine(JSON.parse(output));
+}
+
 export function collectScreenshotRefs(result, surfaceIds) {
   return Object.fromEntries(
     surfaceIds.map((surfaceId) => {
@@ -84,7 +111,7 @@ export function collectScreenshotRefs(result, surfaceIds) {
   );
 }
 
-export function functionalCommand(surfaceSet, gateId, workItem) {
+export function functionalCommand(gateId, workItem, stationProfile) {
   return [
     'node',
     'tooling/scripts/local-dev/machine-dev.mjs',
@@ -106,6 +133,8 @@ export function functionalCommand(surfaceSet, gateId, workItem) {
     'development',
     '--work-item',
     workItem,
+    '--station-profile',
+    `station=${stationProfile}`,
     '--gate',
     gateId,
   ];
@@ -145,9 +174,9 @@ function selfTest() {
     fail('active-work projection self-test failed');
   }
   const functional = functionalCommand(
-    'shell',
     'mobile-simulator-whole-product-usability-e2e',
     'MOBILE-WHOLE-PRODUCT-USABILITY-TEST',
+    'chat-native-disposable',
   );
   if (
     functional[0] !== 'node'
@@ -157,6 +186,11 @@ function selfTest() {
       !== stationResetLeaseBudgetSeconds
     || functional[functional.indexOf('--work-item') + 1]
       !== 'MOBILE-WHOLE-PRODUCT-USABILITY-TEST'
+    || functional[functional.indexOf('--station-profile') + 1]
+      !== 'station=chat-native-disposable'
+    || stationProfileFromMachine({
+      binding: { profile: 'chat-native-disposable' },
+    }) !== 'chat-native-disposable'
   ) {
     fail('functional reset lease command self-test failed');
   }
@@ -194,9 +228,9 @@ function runFunctional(surfaceSet, gateId, workItem) {
     stdio: 'ignore',
   });
   const [command, ...args] = functionalCommand(
-    surfaceSet,
     gateId,
     workItem,
+    resolveStationProfile(),
   );
   const result = spawnSync(
     command,
