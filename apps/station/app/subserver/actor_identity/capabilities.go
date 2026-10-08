@@ -2,7 +2,6 @@ package actor_identity
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -288,11 +287,7 @@ func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 			domain.ErrorCodeDeviceConflict,
 			operation,
 			"signing_key_id",
-			fmt.Sprintf(
-				"does not match the established Actor device (stored=%s requested=%s)",
-				current.GetSigningKeyId(),
-				signingKeyID,
-			),
+			"does not match the established Actor device",
 		)
 	}
 
