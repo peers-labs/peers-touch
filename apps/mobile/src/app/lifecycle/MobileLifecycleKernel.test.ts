@@ -204,6 +204,29 @@ describe('MobileLifecycleKernel runtime ownership', () => {
     expect(result.runtimes.map(({ status }) => status)).toEqual(['failed', 'failed']);
   });
 
+  it('preserves structured runtime failure diagnostics', async () => {
+    const calls: string[] = [];
+    const kernel = configuredKernel(
+      () => [{
+        ...descriptor('private-social', [], calls),
+        bootstrap: async () => Promise.reject({
+          code: 'MOBILE_PRIVATE_SOCIAL_PREKEYS_UNAVAILABLE',
+          message: 'content prekeys are unavailable',
+        }),
+      }],
+      { current: 1 },
+      calls,
+    );
+
+    await kernel.startRuntimeGraph();
+
+    expect(kernel.getDiagnosticRuntimeErrors()).toEqual([{
+      runtimeId: 'private-social',
+      error:
+        'MOBILE_PRIVATE_SOCIAL_PREKEYS_UNAVAILABLE: content prekeys are unavailable',
+    }]);
+  });
+
   it('blocks resume rebootstrap when failed runtime cleanup is incomplete', async () => {
     const calls: string[] = [];
     const kernel = configuredKernel(
