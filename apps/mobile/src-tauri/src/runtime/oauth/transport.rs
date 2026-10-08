@@ -300,8 +300,7 @@ async fn access_gate_rejection(mut response: reqwest::Response) -> MobileError {
         body.extend_from_slice(&chunk);
     }
 
-    let typed = STATION_RESPONSE_CONTENT_TYPES
-        .contains(&content_type.as_str())
+    let typed = (content_type == PROTOBUF_CONTENT_TYPE)
         .then(|| ErrorResponse::decode(body.as_slice()).ok())
         .flatten();
     let error_code = typed.as_ref().map(|error| error.code);
