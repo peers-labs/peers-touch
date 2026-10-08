@@ -16,7 +16,7 @@ from tooling.acceptance.gates.mobile.proof_contracts import GATE_ID
 
 APPIUM_CAPABILITY_ID = "mobile.native.appium-session"
 DEFAULT_OPERATION_TIMEOUT_SECONDS = 60.0
-SESSION_START_TIMEOUT_SECONDS = 300.0
+SESSION_START_TIMEOUT_SECONDS = 600.0
 SESSION_STOP_TIMEOUT_SECONDS = 180.0
 
 
