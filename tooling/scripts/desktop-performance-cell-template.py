@@ -15,8 +15,8 @@ from _acceptance_artifacts import artifact_session, explicit_output_path, inspec
 
 OBSERVATIONS_TEMPLATE_ARTIFACT_KIND = "desktop-performance-cell-observations-template"
 PRODUCER_GATE_ID = "desktop-performance-cell-template-gate"
-DEFAULT_OUTPUT_DIR = "reports/desktop-performance-cells"
-DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT = "reports/desktop-performance-cell-observations-template.json"
+DEFAULT_OUTPUT_DIR = "tooling/acceptance/reports/desktop-performance-cells"
+DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT = "tooling/acceptance/reports/desktop-performance-cell-observations-template.json"
 
 
 def utc_now() -> str:

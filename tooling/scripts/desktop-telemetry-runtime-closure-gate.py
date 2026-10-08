@@ -24,7 +24,7 @@ GATE = (
     "P0a Station runtime proof must use a managed Station+Postgres dependency closure before "
     "Gateway upload, route probe, query, rollup, mirror, or runtime sample emission can be trusted"
 )
-DEFAULT_OUTPUT = "reports/desktop-telemetry-runtime-closure-gate.json"
+DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-telemetry-runtime-closure-gate.json"
 STATION_DEV_PATH = Path("tooling/scripts/local-dev/station-dev.sh")
 STORE_LOCAL_PATH = Path("apps/station/app/conf/store.local.yml")
 COMPOSE_PATH = Path("tooling/docker/compose.yml")

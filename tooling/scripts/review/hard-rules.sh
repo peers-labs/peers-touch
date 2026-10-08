@@ -269,6 +269,19 @@ done < "$tmp_files"
 
 rm -f /tmp/pt-review-match.$$
 
+scan_root_report_defaults() {
+  if rg -n --glob '*.py' \
+    '^(DEFAULT_OUTPUT(_DIR|_PREFIX)?|REPORT_PATH|REPORT_MARKDOWN_PATH|EVIDENCE_TEMPLATE_PATH|OBSERVATIONS_TEMPLATE_PATH)\s*=\s*["'"'"']reports/' \
+    tooling/scripts >/tmp/pt-review-match.$$ 2>/dev/null; then
+    while IFS= read -r line; do
+      report_failure "root-report-default" "$line"
+    done < /tmp/pt-review-match.$$
+  fi
+}
+
+scan_root_report_defaults
+rm -f /tmp/pt-review-match.$$
+
 if [[ "$failures" -gt 0 ]]; then
   echo "hard-rules: $failures blocking finding(s)" >&2
   exit 1

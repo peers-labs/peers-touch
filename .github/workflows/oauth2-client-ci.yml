@@ -1,0 +1,56 @@
+# Non-blocking CI for the OAuth2 broker. Runs only when a PR changes
+# apps/oauth2-client. It builds and tests the standalone Go module and
+# validates the semantic VERSION file, but is NOT a required status
+# check, so a red result does not block merging to master.
+name: OAuth2 Client CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/oauth2-client/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/oauth2-client/go.mod
+          # The module has no external dependencies (stdlib + internal only),
+          # so module download caching is unnecessary.
+          cache: false
+
+      - name: Build
+        working-directory: apps/oauth2-client
+        env:
+          # Build the standalone module, not the repository root go.work.
+          GOWORK: off
+        run: go build ./...
+
+      - name: Test
+        working-directory: apps/oauth2-client
+        env:
+          GOWORK: off
+        run: go test ./...
+
+      - name: Validate version format
+        run: python3 tooling/scripts/bump-oauth-version.py --check
+
+      # Informational only: never fails the job. Reminds the author to
+      # bump the patch version when Go code changes and VERSION is untouched.
+      - name: Version bump reminder (informational)
+        continue-on-error: true
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          go_changed=$(git diff --name-only "$base" HEAD -- apps/oauth2-client | grep '\.go$' || true)
+          version_changed=$(git diff --name-only "$base" HEAD -- apps/oauth2-client/internal/version/VERSION || true)
+          if [ -n "$go_changed" ] && [ -z "$version_changed" ]; then
+            echo "::warning title=Version not bumped::Go files in apps/oauth2-client changed but VERSION was not bumped. Run 'make oauth-version-bump' before release if this ships."
+          fi

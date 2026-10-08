@@ -15,7 +15,7 @@ from _acceptance_artifacts import artifact_session, explicit_output_path, inspec
 
 
 PRODUCER_GATE_ID = "desktop-telemetry-mirror-template-gate"
-DEFAULT_OUTPUT = "reports/desktop-performance-mirror-template.json"
+DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-performance-mirror-template.json"
 STATION_MIRROR_OUTPUT_PREFIX = "tooling/acceptance/reports/desktop-performance-station-mirror"
 
 

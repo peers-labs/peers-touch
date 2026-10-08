@@ -20,7 +20,7 @@ PHASE = "P0c-3"
 PLAN_TASK = "P0c3-R2"
 GATE = "All runtime cells must prove one complete and identical cohort, including the actual authenticated actor"
 DEFAULT_MANIFEST = "tooling/acceptance/desktop-performance-cohort.json"
-DEFAULT_OUTPUT = "reports/desktop-performance-cohort-gate.json"
+DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-performance-cohort-gate.json"
 REQUIRED_RUNTIMES = (
     "tauri-webview-dev",
     "tauri-webview-packaged",

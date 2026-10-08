@@ -15,7 +15,7 @@ from _acceptance_artifacts import artifact_session, explicit_output_path, inspec
 
 
 PRODUCER_GATE_ID = "desktop-performance-cell-collect-gate"
-DEFAULT_OUTPUT_DIR = "reports/desktop-performance-cells"
+DEFAULT_OUTPUT_DIR = "tooling/acceptance/reports/desktop-performance-cells"
 
 
 def utc_now() -> str:

@@ -18,7 +18,7 @@ GATE = (
     "Station telemetry DB schema evidence must prove raw event persistence, rollup persistence, "
     "query capability, and runtime migration application before P0a-5 local schema evidence can close"
 )
-DEFAULT_OUTPUT = "reports/desktop-telemetry-db-schema-gate.json"
+DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-telemetry-db-schema-gate.json"
 STORE_PATH = Path("apps/station/app/subserver/frontend_telemetry/store.go")
 HANDLER_TEST_PATH = Path("apps/station/app/subserver/frontend_telemetry/handler_test.go")
 SUBSERVER_PATH = Path("apps/station/app/subserver/frontend_telemetry/subserver.go")

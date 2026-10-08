@@ -20,8 +20,8 @@ from _acceptance_artifacts import (
 ARTIFACT_KIND = "desktop-anchor-dom-evidence-gate"
 DOM_EVIDENCE_PRODUCER_ID = "desktop-anchor-dom-evidence-collect-gate"
 DOM_EVIDENCE_ROLE = "report"
-REPORT_PATH = "reports/desktop-anchor-dom-evidence-gate.json"
-REPORT_MARKDOWN_PATH = "reports/desktop-anchor-dom-evidence-gate.md"
+REPORT_PATH = "tooling/acceptance/reports/desktop-anchor-dom-evidence-gate.json"
+REPORT_MARKDOWN_PATH = "tooling/acceptance/reports/desktop-anchor-dom-evidence-gate.md"
 
 
 def utc_now() -> str:
