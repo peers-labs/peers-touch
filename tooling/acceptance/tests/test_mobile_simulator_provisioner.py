@@ -544,6 +544,8 @@ class FakeParentSimulatorSession:
                     "actorPtid": self.actor_ptid,
                 },
             }
+        if action == "runtime.prepareActorIdentity":
+            return {"prepared": True}
         if action == "lifecycle.scope.read":
             active = self.actor_ptid is not None
             return {

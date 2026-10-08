@@ -4614,9 +4614,14 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         self._sessions: dict[str, Any] = {}
         self._session_order: list[str] = []
         self._known_services: dict[str, set[str]] = {}
+        self._active_binding_roles: dict[str, str] = {}
         self._binding_generations: dict[str, int] = {}
         self._binding_proofs: dict[str, dict[str, dict[str, Any]]] = {}
         self._proof_refs: list[dict[str, Any]] = []
+        self._ephemeral_actor_identity_seeds: dict[
+            tuple[str, str],
+            bytearray,
+        ] = {}
         self._closed = False
 
     @property
@@ -4948,6 +4953,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             self._stop_session(client_id, preserve_bindings=True)
             raise
 
+        self._active_binding_roles[client_id] = initial_role
         self._binding_proofs[client_id] = proof_refs
         self._require_active(deadline_monotonic, cancellation)
         return {
@@ -4977,6 +4983,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             binding_role,
             session=session,
         )
+        self._active_binding_roles[client_id] = binding_role
         proof_ref = self._binding_proofs.get(client_id, {}).get(binding_role)
         generation = self._binding_generations.get(client_id, 0)
         if proof_ref is None or generation <= 0:
@@ -5069,10 +5076,16 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             return False
         target = self._runtime_client(client_id)
         actor = str(target.get("actor") or "")
+        active_binding_role = self._active_binding_roles.get(client_id)
+        if not active_binding_role:
+            raise EphemeralCapabilityBlocked(
+                "Mobile simulator client has no active Station binding",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+            )
         target_service_id, target_service = require_runtime_client_service(
             self._manifest,
             client_id,
-            "station",
+            active_binding_role,
         )
         clients = self._manifest.get("clients")
         if not isinstance(clients, list):
@@ -5114,51 +5127,58 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 for source in sources
                 if source.get("id") == identity_source_id
             ]
+        actor_ptid = self._actor_ptid(client_id)
+        station_peer_id = str(target_service.get("runtimeIdentity") or "")
         if not sources:
-            return False
-        if len(sources) != 1:
+            seed_key = (target_service_id, actor_ptid)
+            shared_seed = self._ephemeral_actor_identity_seeds.setdefault(
+                seed_key,
+                bytearray(os.urandom(32)),
+            )
+            seed = bytearray(shared_seed)
+        elif len(sources) != 1:
             raise EphemeralCapabilityBlocked(
                 "Chat mixed-native actor identity source is ambiguous",
                 resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
             )
-        source = sources[0]
-        source_root = Path(str(source.get("storage_root") or ""))
-        actor_ptid = self._actor_ptid(client_id)
-        station_peer_id = str(target_service.get("runtimeIdentity") or "")
-        identity_root = (
-            source_root
-            / "peers-touch"
-            / "desktop"
-            / "data"
-            / "secure-store"
-            / "identity-keys"
-        )
-        if not identity_root.is_dir():
-            return False
-        identity_key_ref = (
-            f"station_peer_{self._storage_segment(station_peer_id)}/"
-            f"{self._storage_segment(actor_ptid)}"
-        )
-        identity_file = identity_root / (
-            hashlib.sha256(identity_key_ref.encode("utf-8")).hexdigest()
-            + ".key"
-        )
-        if not identity_file.is_file():
-            raise EphemeralCapabilityBlocked(
-                "Chat mixed-native actor identity source is incomplete",
-                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+        else:
+            source = sources[0]
+            source_root = Path(str(source.get("storage_root") or ""))
+            identity_root = (
+                source_root
+                / "peers-touch"
+                / "desktop"
+                / "data"
+                / "secure-store"
+                / "identity-keys"
             )
-        seed_hex = identity_file.read_text(encoding="utf-8").strip()
-        if re.fullmatch(r"[0-9a-f]{64}", seed_hex) is None:
-            raise EphemeralCapabilityBlocked(
-                "Chat mixed-native actor identity seed is invalid",
-                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+            if not identity_root.is_dir():
+                return False
+            identity_key_ref = (
+                f"station_peer_{self._storage_segment(station_peer_id)}/"
+                f"{self._storage_segment(actor_ptid)}"
             )
+            identity_file = identity_root / (
+                hashlib.sha256(identity_key_ref.encode("utf-8")).hexdigest()
+                + ".key"
+            )
+            if not identity_file.is_file():
+                raise EphemeralCapabilityBlocked(
+                    "Chat mixed-native actor identity source is incomplete",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                )
+            seed_hex = identity_file.read_text(encoding="utf-8").strip()
+            if re.fullmatch(r"[0-9a-f]{64}", seed_hex) is None:
+                raise EphemeralCapabilityBlocked(
+                    "Chat mixed-native actor identity seed is invalid",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                )
+            seed = bytearray.fromhex(seed_hex)
         storage_key = self._mobile_actor_identity_storage_key(
             station_peer_id,
             actor_ptid,
         )
-        seed = bytearray.fromhex(seed_hex)
+        seed_hex = seed.hex()
         seed_base64 = base64.b64encode(seed).decode("ascii")
         self._sensitive_values = tuple(
             dict.fromkeys((*self._sensitive_values, seed_hex, seed_base64))
@@ -5501,6 +5521,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         self._sessions.pop(client_id, None)
         if not preserve_bindings:
             self._known_services.pop(client_id, None)
+            self._active_binding_roles.pop(client_id, None)
             self._binding_proofs.pop(client_id, None)
         if client_id in self._session_order:
             self._session_order.remove(client_id)
@@ -5520,6 +5541,9 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 self._stop_session(client_id)
             except BaseException:
                 failed = True
+        for seed in self._ephemeral_actor_identity_seeds.values():
+            seed[:] = b"\x00" * len(seed)
+        self._ephemeral_actor_identity_seeds.clear()
         self._closed = True
         return not failed and not self._sessions
 
@@ -5637,6 +5661,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         self.session_factory = session_factory
         self._base_manifest: MobileSimulatorRuntimeManifest | None = None
         self._overlay_spec: MobileStationLifecycleSimulatorSpec | None = None
+        self._actor_manifest_payload: dict[str, Any] | None = None
         self._appium_handler: (
             MobileSimulatorAppiumCapabilityHandler | None
         ) = None
@@ -5841,6 +5866,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             ),
             harness_actions=self._overlay_spec.harness_actions,
             harness_result_projector=self._project_lifecycle_harness_result,
+            actor_manifest=self._actor_manifest_payload,
             sensitive_values=self._raw_authority_values(),
         )
         context = EphemeralGateLaunchContext(
@@ -5989,6 +6015,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 {
                     "id": client.id,
                     "actor": client.actor,
+                    "serviceId": client.required_service_roles[0],
                     "bindingRoles": list(client.required_service_roles),
                 }
                 for client in self.contract.clients
@@ -6006,6 +6033,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 for key, value in overlay.proof_scope.items()
             },
         }
+        self._actor_manifest_payload = json.loads(json.dumps(payload))
         return self.evidence_run.write_json(
             "runtime/mobile-station-lifecycle-actors.json",
             payload,

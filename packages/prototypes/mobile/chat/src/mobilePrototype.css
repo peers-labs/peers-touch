@@ -1452,10 +1452,15 @@
     > .ant-card-body { padding: 16px !important; }
   }
 
+  .mp-profile-trigger {
+    display: block; width: 100%; min-height: 44px; padding: 0;
+    border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer;
+  }
+
   .mp-profile-header { display: flex; align-items: center; gap: 14px; }
   .mp-profile-info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
   .mp-profile-name { font-size: 18px !important; font-weight: 700 !important; color: var(--mp-gray-900); }
-  .mp-profile-did { font-size: 12px !important; font-family: 'SF Mono', 'Menlo', monospace; letter-spacing: 0.02em; }
+  .mp-profile-subtitle { font-size: 12px !important; }
 
   .mp-profile-stats {
     display: flex; align-items: center; justify-content: space-around;
@@ -1666,19 +1671,93 @@
   }
 
   .mp-setting-detail-card {
+    display: flex; flex-direction: column; gap: 12px;
     background: #fff; border-radius: var(--mp-r-lg);
     border: 1px solid var(--mp-gray-100); padding: 16px;
     box-shadow: 0 1px 3px rgba(31,35,48,0.03);
   }
 
+  .mp-setting-section-header {
+    display: flex; min-height: 28px; align-items: center; gap: 8px; color: var(--mp-gray-700);
+  }
+
+  .mp-setting-profile-summary,
+  .mp-station-summary {
+    display: flex; align-items: center; gap: 12px; min-width: 0;
+  }
+
+  .mp-setting-profile-summary > span,
+  .mp-station-summary > span {
+    display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px;
+  }
+
+  .mp-setting-field {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
   .mp-setting-detail-row {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 12px 0; border-bottom: 0.5px solid var(--mp-gray-100);
     &:last-child { border-bottom: none; }
   }
 
   .mp-setting-detail-label { font-size: 14px; color: var(--mp-gray-700); font-weight: 500; }
   .mp-setting-detail-value { font-size: 14px; color: var(--mp-gray-500); }
+
+  .mp-setting-detail-row > span {
+    display: flex; min-width: 0; flex-direction: column; gap: 2px;
+  }
+
+  .mp-setting-detail-content .ant-btn,
+  .mp-setting-detail-content .ant-input,
+  .mp-setting-detail-content .ant-input-affix-wrapper,
+  .mp-setting-detail-content .ant-select-selector {
+    min-height: 44px;
+  }
+
+  .mp-setting-detail-content .ant-switch {
+    width: 44px; min-width: 44px; height: 44px; background: transparent !important;
+  }
+
+  .mp-setting-detail-content .ant-switch .ant-switch-inner {
+    height: 24px; margin: 10px 0; border-radius: 12px; background: var(--mp-gray-300);
+  }
+
+  .mp-setting-detail-content .ant-switch.ant-switch-checked .ant-switch-inner {
+    background: var(--mp-primary);
+  }
+
+  .mp-setting-detail-content .ant-switch .ant-switch-handle { top: 12px; }
+
+  .mp-setting-detail-content .ant-select-selector {
+    min-height: 44px !important; align-items: center;
+  }
+
+  .mp-setting-detail-content .ant-input-number { min-height: 44px; }
+  .mp-setting-detail-content .ant-input-number-input { height: 42px; }
+  .mp-setting-detail-content .ant-checkbox-wrapper { min-height: 44px; align-items: center; }
+
+  .mp-setting-owner-note,
+  .mp-setting-saved {
+    display: flex; min-height: 44px; align-items: center; gap: 8px;
+    padding: 8px 10px; border-radius: var(--mp-r-md);
+    background: rgba(34,197,94,0.08); color: #23784a; font-size: 13px;
+  }
+
+  .mp-settings-dirty-bar {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    padding: 10px 12px; border: 1px solid rgba(99,102,241,0.14);
+    border-radius: var(--mp-r-md); background: rgba(99,102,241,0.06);
+  }
+
+  .mp-settings-dirty-bar > span {
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+
+  .mp-setting-unavailable {
+    display: flex; min-height: 220px; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px; padding: 24px; text-align: center;
+  }
 
   .mp-blocked-user-row {
     align-items: flex-start;
@@ -1985,11 +2064,12 @@
   .mp-confirm-desc { font-size: 13px; color: #666; line-height: 1.5; margin-bottom: 20px; }
   .mp-confirm-actions { display: flex; gap: 10px; }
   .mp-confirm-btn {
-    flex: 1; padding: 11px; border-radius: 10px; border: none;
+    flex: 1; min-height: 44px; padding: 11px; border-radius: 10px; border: none;
     font-size: 14px; font-weight: 600; cursor: pointer;
     background: #f0f0f4; color: #2d3352;
     &:active { opacity: 0.7; }
   }
+  .mp-confirm-btn--primary { background: var(--mp-primary); color: white; }
   .mp-confirm-btn--danger { background: #ef4444; color: white; }
 
   /* ── antd scoped overrides ── */
