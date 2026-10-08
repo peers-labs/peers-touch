@@ -457,14 +457,18 @@ func (s *SubServer) handleInboundTunnel(
 		tunnel.RouteID(),
 		tunnel.RouteGeneration(),
 	) {
+		logger.Warnf(ctx, "[relay-client] rejected tunnel for an unpublished route")
 		return
 	}
 	s.mu.Lock()
 	ingress := s.innerTLS
 	s.mu.Unlock()
 	if ingress != nil {
+		logger.Infof(ctx, "[relay-client] accepted inbound tunnel")
 		ingress.Serve(ctx, tunnel)
+		return
 	}
+	logger.Warnf(ctx, "[relay-client] rejected tunnel because inner TLS is unavailable")
 }
 
 // makeBroadcastHandler bridges relay-client read-loop frames to the

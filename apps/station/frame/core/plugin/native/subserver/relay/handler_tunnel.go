@@ -86,11 +86,13 @@ func (h *relayHandler) serveTunnel(
 	_ = socket.SetReadDeadline(time.Now().Add(tunnelHandshakeTimeout))
 	frame, err := readOuterTunnelFrame(socket)
 	if err != nil || frame.GetOpen() == nil {
+		logger.Warnf(ctx, "[relay] tunnel open frame rejected: %v", err)
 		_ = socket.WriteClose(1002, "TunnelOpen required")
 		return
 	}
 	open := frame.GetOpen()
 	if len(open.GetClientNonce()) != 32 {
+		logger.Warnf(ctx, "[relay] tunnel nonce length rejected")
 		_ = writeOuterClose(
 			socket,
 			0,
@@ -101,6 +103,7 @@ func (h *relayHandler) serveTunnel(
 
 	route, err := h.authorizeTunnel(ctx, caller, open)
 	if err != nil {
+		logger.Warnf(ctx, "[relay] tunnel authorization rejected: %v", err)
 		_ = writeOuterClose(
 			socket,
 			0,
@@ -110,6 +113,12 @@ func (h *relayHandler) serveTunnel(
 	}
 	entry, ok := h.sub.streams.GetEntry(route.StationPeerID)
 	if !ok || entry.generation != route.RouteGeneration {
+		logger.Warnf(
+			ctx,
+			"[relay] tunnel route unavailable: mounted=%v generation_match=%v",
+			ok,
+			ok && entry.generation == route.RouteGeneration,
+		)
 		_ = writeOuterClose(
 			socket,
 			0,
@@ -118,6 +127,7 @@ func (h *relayHandler) serveTunnel(
 		return
 	}
 	if !entry.AcquireSemaphore() {
+		logger.Warnf(ctx, "[relay] tunnel Station concurrency limit reached")
 		_ = writeOuterClose(
 			socket,
 			0,
@@ -128,6 +138,7 @@ func (h *relayHandler) serveTunnel(
 	defer entry.ReleaseSemaphore()
 	release, ok := h.sub.tunnels.acquire(caller.sourceKey, route.RouteID)
 	if !ok {
+		logger.Warnf(ctx, "[relay] tunnel source or route concurrency limit reached")
 		_ = writeOuterClose(
 			socket,
 			0,
@@ -153,6 +164,7 @@ func (h *relayHandler) serveTunnel(
 		tunnelHandshakeTimeout,
 	)
 	if err != nil {
+		logger.Warnf(ctx, "[relay] tunnel Station open failed: %v", err)
 		_ = writeOuterClose(
 			socket,
 			uint64(tunnelID),
@@ -167,6 +179,7 @@ func (h *relayHandler) serveTunnel(
 	limits := h.tunnelLimits(entry)
 	relayNonce := make([]byte, 32)
 	if _, err := rand.Read(relayNonce); err != nil {
+		logger.Warnf(ctx, "[relay] tunnel nonce generation failed: %v", err)
 		_ = writeOuterClose(
 			socket,
 			uint64(tunnelID),
@@ -188,6 +201,7 @@ func (h *relayHandler) serveTunnel(
 			},
 		},
 	}); err != nil {
+		logger.Warnf(ctx, "[relay] tunnel open acknowledgement failed: %v", err)
 		return
 	}
 	_ = socket.SetReadDeadline(time.Now().Add(tunnelIdleTimeout))
@@ -230,12 +244,18 @@ func (h *relayHandler) serveTunnel(
 		select {
 		case err := <-readResult:
 			reason := closeReasonForError(err)
+			logger.Warnf(ctx, "[relay] client tunnel read failed: %v", err)
 			tunnel.Cancel(reason)
 			_ = writeOuterClose(socket, uint64(tunnelID), reason)
 			return
 		case result := <-stationResult:
 			if result.err != nil {
 				reason := closeReasonForError(result.err)
+				logger.Warnf(
+					ctx,
+					"[relay] Station tunnel read failed: %v",
+					result.err,
+				)
 				_ = writeOuterClose(socket, uint64(tunnelID), reason)
 				return
 			}
