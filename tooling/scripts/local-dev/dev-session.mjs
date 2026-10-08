@@ -16,6 +16,7 @@ import path from 'node:path';
 import {
   isDirectInvocation,
   repoRoot,
+  workspaceRuntimePath,
   workspaceStatePath,
   workspaceWorkflowPath,
   workspaceIdForRoot,
@@ -88,6 +89,42 @@ function asSessionError(error) {
     );
   }
   return error;
+}
+
+export function resolveDevelopmentRunnerPython(options = {}) {
+  const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
+  const workspaceId =
+    options.workspaceId ?? workspaceIdForRoot(workspaceRoot);
+  const venvRoot = workspaceRuntimePath('acceptance-gate-venv', {
+    home: options.home,
+    repoRoot: workspaceRoot,
+    workspaceId,
+  });
+  const executable = path.join(
+    venvRoot,
+    process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+  );
+  const config = path.join(venvRoot, 'pyvenv.cfg');
+  try {
+    const executableStatus = lstatSync(executable);
+    const resolvedExecutableStatus = lstatSync(realpathSync(executable));
+    const configStatus = lstatSync(config);
+    if (
+      (!executableStatus.isFile() && !executableStatus.isSymbolicLink()) ||
+      !resolvedExecutableStatus.isFile() ||
+      configStatus.isSymbolicLink() ||
+      !configStatus.isFile()
+    ) {
+      throw new Error('invalid Acceptance virtual environment');
+    }
+  } catch {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'Development Gate runner requires the workspace Acceptance virtual environment',
+      { runtime: 'acceptance-gate-venv' },
+    );
+  }
+  return executable;
 }
 
 function segmentContains(prefix, candidate) {
@@ -1226,6 +1263,7 @@ function runDevelopmentClosure(
   spawnDevelopmentRunner = spawnSync,
   inspectSource = actualSource,
   spawnTaskCheck = spawnSync,
+  resolveRunnerPython = resolveDevelopmentRunnerPython,
 ) {
   const expectedGates =
     plan.acceptance?.closures?.[plan.currentTask.closureId] ?? [];
@@ -1326,7 +1364,12 @@ function runDevelopmentClosure(
     for (const binding of stationProfiles) {
       arguments_.push('--station-profile', binding);
     }
-    const completed = spawnDevelopmentRunner('python3', arguments_, {
+    const runnerPython = resolveRunnerPython({
+      home: options.home,
+      workspaceRoot,
+      workspaceId: plan.executionBinding.workspaceId,
+    });
+    const completed = spawnDevelopmentRunner(runnerPython, arguments_, {
       cwd: workspaceRoot,
       encoding: 'utf8',
       env: {
@@ -1934,6 +1977,8 @@ export async function commitFunctionalResult(options, dependencies = {}) {
         dependencies.spawnDevelopmentRunner ?? spawnSync,
         dependencies.inspectSource ?? actualSource,
         dependencies.spawnTaskCheck ?? spawnSync,
+        dependencies.resolveDevelopmentRunnerPython ??
+          resolveDevelopmentRunnerPython,
       );
   let prepared = null;
   return transitionSessionSequenceStore({
