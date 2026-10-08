@@ -114,9 +114,10 @@ impl OAuthCoordinator {
         let scope = ValidatedScope::new(scope)?;
         let (storage_key, current) =
             read_bound_session(storage, &scope)?.ok_or_else(|| oauth_error("sessionMissing"))?;
+        let transport_origin = scope.transport_origin()?;
         let response = self
             .transport
-            .rotate_session(&scope.station_origin, &current.access_token)
+            .rotate_session(&transport_origin, &current.access_token)
             .await?;
         let refreshed = rotated_session(&current, response)?;
         persist_rotated_session(storage, &storage_key, &refreshed)?;
@@ -220,10 +221,14 @@ fn authenticated_native_session_inner<S: SecretStore>(
     {
         return Err(oauth_error("sessionTransportBindingMismatch"));
     }
-    let station_origin = super::transport::validate_station_origin(&session.station_origin)?;
-    if station_origin != session.station_origin {
+    let canonical_origin = super::transport::validate_station_origin(&session.station_origin)?;
+    if canonical_origin != session.station_origin {
         return Err(oauth_error("sessionTransportBindingMismatch"));
     }
+    let station_origin = crate::runtime::station_route::active_transport_origin(
+        &session.station_peer_id,
+        &canonical_origin,
+    )?;
     Ok(AuthenticatedNativeSession {
         station_peer_id: session.station_peer_id.clone(),
         station_origin,

@@ -8,6 +8,7 @@ from tooling.acceptance.core import ArtifactRef, DriverError
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
     CAPABILITY_ID,
     DEFAULT_GATE_ID,
+    DEFAULT_TIMEOUT_SECONDS,
     MobileSimulatorRuntimeBinding,
     validate_scope_projection,
 )
@@ -41,12 +42,6 @@ def scope(
             "actorPtid": actor_ptid,
             "sessionCount": 1 if active else 0,
             "requestCount": 0,
-            "messageThreadCount": 0,
-        },
-        "group": {
-            "stationPeerId": station_peer_id if active else None,
-            "actorPtid": actor_ptid,
-            "groupCount": 0,
             "messageThreadCount": 0,
         },
         "navigation": {
@@ -316,6 +311,27 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
                 "actionPayload": {},
             },
         )
+
+    def test_runtime_readiness_is_child_callable(self) -> None:
+        client = RecordingClient()
+        binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
+
+        self.assertEqual(
+            binding.call_action("sim-ios", "lifecycle.waitReady", {}),
+            {"ok": True},
+        )
+        capability, operation, payload, timeout = client.calls[-1]
+        self.assertEqual(capability, CAPABILITY_ID)
+        self.assertEqual(operation, "harness_action")
+        self.assertEqual(
+            payload,
+            {
+                "clientId": "sim-ios",
+                "action": "lifecycle.waitReady",
+                "actionPayload": {},
+            },
+        )
+        self.assertEqual(timeout, DEFAULT_TIMEOUT_SECONDS)
 
     def test_fixture_authentication_keeps_credentials_parent_owned(self) -> None:
         client = RecordingClient()

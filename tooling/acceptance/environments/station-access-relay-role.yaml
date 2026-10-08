@@ -1,0 +1,52 @@
+{
+  "id": "station-access-relay-role",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "services": {
+    "station": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-relay-role-attachment"
+    },
+    "relay": {
+      "kind": "relay",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "relay-check",
+      "status_action": "relay-status",
+      "attestation_producer": "station-relay-role-attachment"
+    },
+    "station-via-relay": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "relay-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-relay-role-attachment"
+    }
+  },
+  "fixtures": [],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "desktop-relay",
+      "actor": "unauthenticated",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-via-relay",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "cleanup": {
+    "resources": ["storage"]
+  }
+}

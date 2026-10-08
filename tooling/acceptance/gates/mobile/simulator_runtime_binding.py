@@ -272,6 +272,36 @@ class MobileSimulatorRuntimeBinding:
             return validate_scope_projection(value)
         return value
 
+    def activate_station_route(
+        self,
+        client_id: str,
+        route_type: str,
+    ) -> dict[str, Any]:
+        self._require_identifier(client_id, "client")
+        if route_type not in {"direct", "relay"}:
+            raise DriverError("Mobile Station route type is invalid")
+        response = self._client.invoke(
+            CAPABILITY_ID,
+            "activate_station_route",
+            {"clientId": client_id, "routeType": route_type},
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        )
+        if set(response) != {"clientId", "value"} or response.get("clientId") != client_id:
+            raise DriverError("Mobile Station route activation response is invalid")
+        return _mapping(response.get("value"), "Station route activation")
+
+    def station_route_snapshot(self, client_id: str) -> dict[str, Any]:
+        self._require_identifier(client_id, "client")
+        response = self._client.invoke(
+            CAPABILITY_ID,
+            "station_route_snapshot",
+            {"clientId": client_id},
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        )
+        if set(response) != {"clientId", "value"} or response.get("clientId") != client_id:
+            raise DriverError("Mobile Station route snapshot response is invalid")
+        return _mapping(response.get("value"), "Station route snapshot")
+
     def authenticate_fixture_actor(
         self,
         client_id: str,
@@ -405,7 +435,6 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "runtimeStationPeerId",
         "deviceId",
         "social",
-        "group",
         "navigation",
     }:
         raise DriverError("Mobile lifecycle scope has an invalid shape")
@@ -434,37 +463,18 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "messageThreadCount",
     }:
         raise DriverError("Mobile social scope has an invalid shape")
-    group = _mapping(scope.get("group"), "group scope")
-    if set(group) != {
-        "stationPeerId",
-        "actorPtid",
-        "groupCount",
-        "messageThreadCount",
-    }:
-        raise DriverError("Mobile group scope has an invalid shape")
-    for owner, fields in (
-        (social, ("stationPeerId", "actorPtid")),
-        (group, ("stationPeerId", "actorPtid")),
-    ):
-        for field in fields:
-            _optional_text(owner.get(field), field)
-    for owner, fields in (
-        (
-            social,
-            ("sessionCount", "requestCount", "messageThreadCount"),
-        ),
-        (group, ("groupCount", "messageThreadCount")),
-    ):
-        for field in fields:
-            item = owner.get(field)
-            if (
-                isinstance(item, bool)
-                or not isinstance(item, int)
-                or item < 0
-            ):
-                raise DriverError(
-                    f"Mobile lifecycle scope {field} is invalid"
-                )
+    for field in ("stationPeerId", "actorPtid"):
+        _optional_text(social.get(field), field)
+    for field in ("sessionCount", "requestCount", "messageThreadCount"):
+        item = social.get(field)
+        if (
+            isinstance(item, bool)
+            or not isinstance(item, int)
+            or item < 0
+        ):
+            raise DriverError(
+                f"Mobile lifecycle scope {field} is invalid"
+            )
 
     navigation = _mapping(scope.get("navigation"), "navigation scope")
     if set(navigation) != {

@@ -11,7 +11,7 @@ if [[ -z "$RELAY_URL" ]]; then
   exit 1
 fi
 
-RELAY_CHECK_URL="${PT_RELAY_HEALTH_URL:-$RELAY_URL/sub-oss/healthz}"
+RELAY_CHECK_URL="${PT_RELAY_HEALTH_URL:-$RELAY_URL/healthz}"
 
 echo "[INFO] Relay health check"
 echo "       URL   : $RELAY_URL"

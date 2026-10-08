@@ -25,7 +25,10 @@ import { useAuthStore } from '../features/auth/authStore';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { projectConversations, projectPendingInboundRequests } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
-import type { StoredStationRegistry } from '../features/station/stationRegistry';
+import type {
+  MobileStationRouteCandidate,
+  StoredStationRegistry,
+} from '../features/station/stationRegistry';
 import {
   visibleChatUnread,
 } from '../features/chat/chatActionState';
@@ -137,6 +140,7 @@ function renderPage(
           })}
           onBack={onBack}
           onChangeStation={props.onChangeStation}
+          onChangeStationRoute={props.onChangeStationRoute}
           onLogout={props.onLogout}
         />
       );
@@ -146,6 +150,10 @@ function renderPage(
 export interface MobileShellProps {
   stationRegistry: StoredStationRegistry;
   readonly onChangeStation: () => Promise<void>;
+  readonly onChangeStationRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => Promise<void>;
   onLogout: () => Promise<void>;
 }
 

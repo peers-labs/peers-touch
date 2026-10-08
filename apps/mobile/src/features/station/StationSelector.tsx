@@ -4,9 +4,11 @@ import { AlertTriangle, Check, Plus, Server, Trash2, X } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import {
-  buildStationUrl,
+  activeStationRoute,
+  buildStationAccessInput,
   splitStationInput,
   type MobileStationEntry,
+  type MobileStationRouteCandidate,
   type StationProtocol,
 } from './stationRegistry';
 
@@ -20,6 +22,7 @@ export function StationSelector({
   verifyingUrls,
   onAdd,
   onSelect,
+  onSelectRoute,
   onRemove,
 }: {
   activeStationPeerId: string;
@@ -29,6 +32,10 @@ export function StationSelector({
   verifyingUrls: string[];
   onAdd: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
   onSelect: (stationPeerId: string) => void | Promise<void>;
+  onSelectRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => void | Promise<void>;
   onRemove: (stationPeerId: string) => void;
 }) {
   const { t } = useMobileI18n();
@@ -38,7 +45,10 @@ export function StationSelector({
   const [pendingRemoval, setPendingRemoval] = useState<MobileStationEntry | null>(null);
   const hasEntries = entries.length > 0;
   const showStationInput = !hasEntries || addingStation;
-  const canAdd = useMemo(() => Boolean(buildStationUrl({ protocol, address })), [address, protocol]);
+  const canAdd = useMemo(
+    () => Boolean(buildStationAccessInput({ protocol, address })),
+    [address, protocol],
+  );
 
   function updateAddress(value: string) {
     const next = splitStationInput(value, protocol);
@@ -124,7 +134,12 @@ export function StationSelector({
         ) : (
           entries.map((entry) => {
             const isActive = entry.stationPeerId === activeStationPeerId;
-            const status = getStationStatus(entry, verifyingUrls.includes(entry.url), t);
+            const activeRoute = activeStationRoute(entry);
+            const status = getStationStatus(
+              entry,
+              verifyingUrls.includes(activeRoute?.endpointOrigin ?? entry.url),
+              t,
+            );
             return (
               <div
                 key={entry.stationPeerId}
@@ -141,7 +156,34 @@ export function StationSelector({
                 <Server size={18} />
                 <span className="station-entry-copy">
                   <Text strong={isActive} className="mobile-truncate">{entry.label}</Text>
-                  <Text type="secondary" className="mobile-truncate">{entry.url}</Text>
+                  <Text type="secondary" className="mobile-truncate">
+                    {activeRoute?.routeType === 'relay'
+                      ? t('mobile.launch.viaRelay')
+                      : t('mobile.launch.direct')}
+                  </Text>
+                  {(entry.routes?.length ?? 0) > 1 ? (
+                    <span className="station-route-options">
+                      {entry.routes!.map((route) => (
+                        <Button
+                          key={route.routeId}
+                          size="small"
+                          type={route.routeId === activeRoute?.routeId ? 'primary' : 'text'}
+                          aria-pressed={route.routeId === activeRoute?.routeId}
+                          data-station-route-id={route.routeId}
+                          data-station-route-type={route.routeType}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void onSelectRoute(entry.stationPeerId, route);
+                          }}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
+                          {route.routeType === 'relay'
+                            ? t('mobile.launch.viaRelay')
+                            : t('mobile.launch.direct')}
+                        </Button>
+                      ))}
+                    </span>
+                  ) : null}
                 </span>
                 <span className={`station-entry-status ${status.className}`}>
                   {status.label}

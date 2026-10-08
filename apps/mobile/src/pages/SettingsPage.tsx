@@ -47,7 +47,10 @@ import type { MobileAuthSession } from '../features/auth/authSession';
 import { requestSocialCurrentUserProfile } from '../features/social/socialRuntime';
 import { useSocialStore } from '../features/social/socialStore';
 import {
+  activeStationRoute,
   activeStationEntry,
+  stationRoutes,
+  type MobileStationRouteCandidate,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
 import {
@@ -99,6 +102,10 @@ interface SettingsPageProps {
   readonly onOpenSetting: (settingId: MobileSettingDetailId) => void;
   readonly onBack: () => void;
   readonly onChangeStation: () => Promise<void>;
+  readonly onChangeStationRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => Promise<void>;
   readonly onLogout: () => Promise<void>;
 }
 
@@ -147,6 +154,7 @@ export function SettingsPage({
   onOpenSetting,
   onBack,
   onChangeStation,
+  onChangeStationRoute,
   onLogout,
 }: SettingsPageProps) {
   const { t, language } = useMobileI18n();
@@ -417,6 +425,12 @@ export function SettingsPage({
             stationLabel={activeStation?.label || t('mobile.settings.stationNotSelected')}
             stationUrl={activeStation?.url || ''}
             identityVerified={activeStation?.identityVerified === true}
+            routes={activeStation ? stationRoutes(activeStation) : []}
+            activeRouteId={activeStation ? activeStationRoute(activeStation)?.routeId ?? '' : ''}
+            onChangeRoute={async (route) => {
+              if (!activeStation) return;
+              await onChangeStationRoute(activeStation.stationPeerId, route);
+            }}
             onChangeStation={async () => requestExit(onChangeStation)}
             onLogout={requestLogout}
             loggingOut={loggingOut}

@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package peers_touch.model.peer.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/peer;peer";
+
+enum AccessEndpointRole {
+  ACCESS_ENDPOINT_ROLE_UNSPECIFIED = 0;
+  ACCESS_ENDPOINT_ROLE_DIRECT_STATION = 1;
+  ACCESS_ENDPOINT_ROLE_RELAY = 2;
+}
+
+enum AccessEndpointOutcome {
+  ACCESS_ENDPOINT_OUTCOME_UNSPECIFIED = 0;
+  ACCESS_ENDPOINT_OUTCOME_READY = 1;
+  ACCESS_ENDPOINT_OUTCOME_NO_CANDIDATES = 2;
+  ACCESS_ENDPOINT_OUTCOME_MULTIPLE_CANDIDATES = 3;
+  ACCESS_ENDPOINT_OUTCOME_GRANT_EXPIRED = 4;
+  ACCESS_ENDPOINT_OUTCOME_GRANT_REPLAYED = 5;
+  ACCESS_ENDPOINT_OUTCOME_GRANT_WRONG_RELAY = 6;
+  ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION = 7;
+}
+
+enum StationRouteVisibility {
+  STATION_ROUTE_VISIBILITY_UNSPECIFIED = 0;
+  STATION_ROUTE_VISIBILITY_PUBLIC = 1;
+  STATION_ROUTE_VISIBILITY_GRANT_ONLY = 2;
+}
+
+message AccessEndpointRequest {
+  bytes challenge = 1;
+  bytes connection_grant = 2;
+  uint32 client_protocol_version = 3;
+}
+
+message AccessEndpointStatement {
+  bytes challenge = 1;
+  AccessEndpointRole endpoint_role = 2;
+  string endpoint_peer_id = 3;
+  string canonical_origin = 4;
+  repeated uint32 protocol_versions = 5;
+  repeated string capabilities = 6;
+  int64 issued_at_unix_ms = 7;
+  int64 expires_at_unix_ms = 8;
+}
+
+message StationRouteStatement {
+  string station_peer_id = 1;
+  string relay_peer_id = 2;
+  string route_id = 3;
+  uint64 route_generation = 4;
+  bytes inner_tls_spki_sha256 = 5;
+  bytes capabilities_digest = 6;
+  StationRouteVisibility visibility = 7;
+  int64 issued_at_unix_ms = 8;
+  int64 expires_at_unix_ms = 9;
+}
+
+message StationRouteAttestation {
+  bytes statement_bytes = 1;
+  bytes host_public_key = 2;
+  bytes signature = 3;
+}
+
+message StationConnectionGrantStatement {
+  string grant_id = 1;
+  string station_peer_id = 2;
+  string relay_peer_id = 3;
+  string route_id = 4;
+  uint64 route_generation = 5;
+  uint32 max_uses = 6;
+  int64 issued_at_unix_ms = 7;
+  int64 expires_at_unix_ms = 8;
+}
+
+message StationConnectionGrant {
+  bytes statement_bytes = 1;
+  bytes host_public_key = 2;
+  bytes signature = 3;
+}
+
+message StationConnectionEnvelope {
+  uint32 protocol_version = 1;
+  string relay_origin = 2;
+  StationRouteAttestation route_attestation = 3;
+  StationConnectionGrant connection_grant = 4;
+}
+
+message IssueStationConnectionMaterialRequest {
+  string route_id = 1;
+  bytes inner_tls_spki_sha256 = 2;
+  bytes capabilities_digest = 3;
+  uint32 route_lifetime_seconds = 4;
+  uint32 grant_lifetime_seconds = 5;
+  uint32 max_uses = 6;
+}
+
+message IssueStationConnectionMaterialResponse {
+  string code = 1;
+  string deep_link = 2;
+  int64 expires_at_unix_ms = 3;
+}
+
+message AccessEndpointResponse {
+  AccessEndpointOutcome outcome = 1;
+  bytes endpoint_statement_bytes = 2;
+  bytes endpoint_public_key = 3;
+  bytes endpoint_signature = 4;
+  repeated StationRouteAttestation station_routes = 5;
+}
+
+message PublishStationRouteRequest {
+  StationRouteAttestation route_attestation = 1;
+}
+
+message PublishStationRouteResponse {
+  string route_id = 1;
+  uint64 route_generation = 2;
+}
+
+message RegisterStationConnectionGrantRequest {
+  bytes grant_digest = 1;
+  string grant_id = 2;
+  string route_id = 3;
+  uint64 route_generation = 4;
+  uint32 max_uses = 5;
+  int64 expires_at_unix_ms = 6;
+}
+
+message RegisterStationConnectionGrantResponse {
+  string grant_id = 1;
+  uint32 remaining_uses = 2;
+}

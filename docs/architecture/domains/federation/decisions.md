@@ -1,8 +1,8 @@
 # Federation Architecture — 设计决策
 
-> **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-05-31 | **Updated**: 2026-05-31
+> **Status**: active
+> **Version**: v1.0
+> **Created**: 2026-05-31 | **Updated**: 2026-10-06
 > **Owner**: Architecture Team
 
 ---
@@ -15,13 +15,18 @@
 | D-02 | Station 可以加入多个 Federation | accepted |
 | D-03 | 联邦治理权限和普通社交权限分离 | accepted |
 | D-04 | 采用 Federation Ledger 而不是完整区块链 | accepted |
-| D-05 | 联邦是基础设施，不是产品入口 | accepted (supersedes original D-05) |
+| D-05 | 联邦是基础设施，不是产品入口 | accepted |
 | D-06 | 普通社交数据不上 Federation Ledger | accepted |
 | D-07 | v1 Ledger 采用 active sequencer，不引入完整共识 | accepted |
 | D-08 | Federation discovery 和 Catalog 查询必须显式带 Federation scope | accepted |
 | D-09 | 跨站身份复用 ActorRef，不新增 Account wire identity | accepted |
 | D-10 | Federation 业务归 Station app subserver，relay/locator 归 frame | accepted |
 | D-11 | Federation Ledger 是内部治理真源，ActivityPub 只作为互操作层 | accepted |
+| D-12 | Relay 是不可信传输，不是 Station 或 Federation authority | accepted |
+| D-13 | Station enrollment 绑定 host-key proof 与 generation revocation | accepted |
+| D-14 | Relay directory 只发布 Station 签名 route attestation | accepted |
+| D-15 | Relay 数据面使用端到端 TLS 的 opaque tunnel | accepted |
+| D-16 | Relay 复用 Station binary 但使用最小 role allowlist | accepted |
 
 ---
 
@@ -140,7 +145,7 @@ Federation Ledger 保留区块链式的可审计和防篡改特性，但复杂�
 
 ## D-05: 联邦是基础设施，不是产品入口
 
-**Status**: accepted (supersedes original D-05 "联邦广场是一级入口")
+**Status**: accepted
 **Date**: 2026-07-21
 
 ### Context
@@ -337,3 +342,168 @@ Ledger 能提供 Peers-Touch 所需的 permissioned governance、replay、audit 
 ### Consequences
 
 如果外部 ActivityPub 事件需要影响 Federation governance，必须先转换成合法 proposal / ledger event。内部 Station-to-Station 治理同步使用 proto + ledger，不使用 ActivityPub activity 作为事实源。
+
+---
+
+## D-12: Relay 是不可信传输，不是 Station 或 Federation authority
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+Relay 位于公网连接边界。如果它可以签发 Station identity、裁决 Access Gate 或修改
+Federation membership，Relay 被攻破就等同于全部 Station 业务真源被攻破。
+
+### Decision
+
+Relay 只拥有 endpoint identity、route directory、mount/tunnel lifecycle、配额和
+transport audit。Station identity、Access Gate、Session、Federation Ledger、
+membership、policy 与业务数据仍由各自 Station owner 裁决。
+
+### Rationale
+
+把 Relay 视为不可信网络中介，可将其泄漏半径限制为可用性和连接 metadata。
+
+### Alternatives Considered
+
+- Relay 兼任中央 Station registry：拒绝，产生中心业务 authority。
+- Relay 代理并解析全部 Station API：拒绝，扩大凭据与数据泄漏面。
+
+### Consequences
+
+所有经 Relay 的业务流量需要端到端保护；客户端与 Station 都不能信任 Relay 提供的
+Station 身份声明。
+
+---
+
+## D-13: Station enrollment 绑定 host-key proof 与 generation revocation
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+一次性 invite 证明“知道一个秘密”，但不能证明注册者控制声明的
+`station_peer_id`。无 generation 的 bearer token 也无法可靠撤销。
+
+### Decision
+
+Relay challenge 由 Station host key 签名，Relay 从 public key 推导 PeerID。invite
+消费与 mount generation 原子创建；credential 使用独立非对称 issuer 和严格
+audience/scope/jti/expiry。撤销递增 generation 并关闭全部旧流。
+
+### Rationale
+
+PoP 把 enrollment 与既有 Station identity 统一，generation 使 revoke、rotate 和
+reconnect 具有确定语义。
+
+### Alternatives Considered
+
+- 信任请求头或配置 PeerID：拒绝。
+- 共用 Station Session JWT secret：拒绝。
+- 仅删除 mount row：拒绝，旧 credential 仍可重建。
+
+### Consequences
+
+需要 hash-only invite、原子事务、credential key rotation、replay store 与完整
+operator recovery Journey。
+
+---
+
+## D-14: Relay directory 只发布 Station 签名 route attestation
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+客户端需要从 Relay 找到目标 Station，但 Relay 不能成为 Station identity 或公开性
+真源。
+
+### Decision
+
+Relay 只缓存并返回 Station host key 签名、短期有效、绑定 Relay identity 和 mount
+generation 的 route attestation。目录默认私有；公开列出必须由 Station opt-in，
+私有访问使用 Station 签名 grant。
+
+### Rationale
+
+客户端可独立验证 route，Relay 既不能伪造 Station，也不能擅自公开私有 Station。
+
+### Alternatives Considered
+
+- Relay 自签 Station directory：拒绝。
+- 默认公开全部 online mounts：拒绝。
+- 建全局 Peers-Touch registry：拒绝。
+
+### Consequences
+
+route attestation、grant digest、expiry 与 generation 必须成为 canonical Proto 和
+Acceptance attack surface。
+
+---
+
+## D-15: Relay 数据面使用端到端 TLS 的 opaque tunnel
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+当前透明 HTTP forward 暴露 method、path、headers、Authorization 和 body，无法满足
+客户端经 Relay 登录和使用业务 API 的安全要求。
+
+### Decision
+
+Relay 仅转发 opaque bytes。Client 到 Station 在 tunnel 内建立 TLS 1.3，证书 SPKI
+由 Station route attestation 固定；Station-to-Station traffic 也使用 scoped opaque
+tunnel 与 typed capability manifest。
+
+### Rationale
+
+成熟 TLS 实现提供机密性、完整性和服务端身份认证，避免自研加密协议，同时保留
+Station canonical HTTP/protobuf router。
+
+### Alternatives Considered
+
+- 透明 HTTP reverse proxy：拒绝。
+- 只有 outer TLS：拒绝。
+- 自研 Noise/AEAD wire：拒绝，除非未来独立安全评审证明标准 TLS 不可行。
+
+### Consequences
+
+需要 inner TLS ingress、SPKI lifecycle、bounded frames 与取消/backpressure。
+`/relay/forward/*` 和 client token 在 cutover 后删除。
+
+---
+
+## D-16: Relay 复用 Station binary 但使用最小 role allowlist
+
+**Status**: accepted
+**Date**: 2026-10-06
+
+### Context
+
+复制仓库或服务会形成协议烟囱；让 Relay 默认加载全部 Station subserver 又会扩大
+公网攻击面。
+
+### Decision
+
+Relay 继续从同一仓库、构建和 binary 产生，但以显式 role allowlist 只启用
+health、discovery、operator admin、mount、tunnel 和 metrics。生产缺少强制安全
+配置时启动失败。
+
+### Rationale
+
+共享实现和治理避免重复，角色最小化保持部署边界清晰。
+
+### Alternatives Considered
+
+- 新建 Relay 仓库/SDK：拒绝。
+- 用 denylist 从完整 Station 删除少数 handler：拒绝，新增业务默认暴露。
+
+### Consequences
+
+compose、entrypoint、route inventory 和发布验收必须验证 allowlist，而不是只检查
+一个 `enabled` flag。

@@ -237,7 +237,14 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
             None,
         ));
     }
-    if binding.bound_url.as_deref() != Some(station_client::station_base_url().as_str()) {
+    let active_entry = station_client::station_registry().active_entry();
+    let binding_matches_registry = active_entry.as_ref().is_some_and(|entry| {
+        binding.station_peer_id.as_deref() == Some(entry.station_peer_id.as_str())
+            && binding.active_route_id.as_deref() == Some(entry.active_route_id.as_str())
+            && binding.route_revision == entry.route_revision
+            && binding.lifecycle_generation == entry.lifecycle_generation
+    });
+    if !binding_matches_registry {
         return Err(AppResult::fail(
             ErrorCode::Conflict,
             "Verified Station scope does not match the active Station",
@@ -260,7 +267,7 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
             )
         })?;
     station_client::set_device_id(device_id.clone());
-    let generation = binding.generation;
+    let generation = binding.lifecycle_generation;
     if generation == 0 {
         return Err(AppResult::fail(
             ErrorCode::Conflict,

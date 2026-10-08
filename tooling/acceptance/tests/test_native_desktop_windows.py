@@ -10,14 +10,18 @@ import sys
 import tempfile
 import unittest
 import zlib
-from pathlib import Path
-from unittest.mock import Mock
+from pathlib import Path, PureWindowsPath
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     RUNTIME_CELLS_DIR,
     RuntimeCellContract,
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
+from tooling.acceptance.core.source_sync import (
+    RemoteSourceSynchronizer,
+    SourceSyncRequest,
+)
 from tooling.acceptance.provisioners.native_desktop_windows import (
     NativeDesktopWindowsProvisioner,
     WindowsCellProfile,
@@ -101,7 +105,7 @@ class WindowsCellProfileTest(unittest.TestCase):
 
         self.assertEqual(
             _normalized_windows_path(candidate),
-            Path(root, "storage", "attachment-cache", "attachment-1"),
+            PureWindowsPath(root, "storage", "attachment-cache", "attachment-1"),
         )
         self.assertTrue(_windows_path_is_descendant(candidate, root))
         self.assertEqual(_windows_verbatim_path(candidate), candidate)
@@ -354,6 +358,27 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn("$env:OPENSSL_SRC_PERL = $PerlPath", source)
         self.assertIn("$env:PROTOC = $ProtocPath", source)
         self.assertIn("$env:CARGO_TARGET_DIR = $CargoTargetRoot", source)
+        self.assertIn(
+            '$env:CARGO_HOME = Join-Path $CargoTargetRoot "cargo-home"',
+            source,
+        )
+        self.assertIn("Split-Path -Parent $ProtocPath", source)
+        self.assertIn("protoc-gen-es.CMD", source)
+        self.assertIn('Get-ChildItem (', source)
+        self.assertIn('-Recurse -Filter "*.proto"', source)
+        self.assertIn('"--es_opt=target=ts"', source)
+        install = source.index(
+            'Invoke-NativeCommand "pnpm.cmd" @("install", "--frozen-lockfile")'
+        )
+        generate = source.index(
+            "Invoke-NativeCommand $ProtocPath"
+        )
+        desktop_build = source.index(
+            'Invoke-NativeCommand "pnpm.cmd" '
+            '@("--dir", "apps/desktop", "run", "build")'
+        )
+        self.assertLess(install, generate)
+        self.assertLess(generate, desktop_build)
         self.assertIn("$env:VITE_ACCEPTANCE_HARNESS = \"1\"", source)
         self.assertIn("$env:TAURI_CONFIG =", source)
 
@@ -370,6 +395,69 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             ready.index("self._require_interactive_desktop("),
             ready.index('self._broker('),
         )
+
+    def test_broker_lease_expiry_is_computed_after_build_preflight(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+        ready = source[source.index("    def ready("):source.index("    def status(")]
+        expiry = "expires_at = datetime.now(timezone.utc) + timedelta("
+
+        self.assertEqual(ready.count(expiry), 1)
+        self.assertLess(ready.index("self._build_binary("), ready.index(expiry))
+        self.assertLess(ready.index(expiry), ready.index('self._broker('))
+
+    def test_source_sync_cleans_reused_checkout_before_identity_check(self) -> None:
+        commit = "a" * 40
+        request = SourceSyncRequest(
+            environment_name="acceptance-windows",
+            source_root=Path.cwd(),
+            branch="test-branch",
+            host="windows.example",
+            user="administrator",
+            deploy_path="peers-touch",
+            source_mode="bundle",
+            remote_platform=RemotePlatform.WINDOWS,
+        )
+        transport = Mock()
+        transport.run_argv.side_effect = (
+            subprocess.CompletedProcess(
+                ("git",),
+                0,
+                stdout=commit + "\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ("powershell.exe",),
+                0,
+                stdout="",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ("powershell.exe",),
+                0,
+                stdout=json.dumps({"commit": commit, "clean": True}),
+                stderr="",
+            ),
+        )
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner.source_root = Path.cwd()
+        provisioner.transport = transport
+        provisioner._source_request = Mock(return_value=request)
+
+        with patch.object(
+            RemoteSourceSynchronizer,
+            "preflight",
+            return_value=(commit, "sha256:" + ("b" * 64)),
+        ):
+            result = provisioner._sync_source(r"C:\Users\administrator")
+
+        self.assertEqual(result.commit, commit)
+        self.assertEqual(transport.run_argv.call_count, 3)
+        cleanup_command = transport.run_argv.call_args_list[1].args[0][-1]
+        self.assertIn(f"reset --hard '{commit}'", cleanup_command)
+        self.assertIn("clean -ffdqx", cleanup_command)
+        transport.copy_file.assert_not_called()
 
     def test_interactive_gate_fails_closed_without_desktop_session(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(

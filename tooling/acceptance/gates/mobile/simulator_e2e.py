@@ -410,6 +410,7 @@ class SimulatorAppiumSession:
             capabilities.update(
                 {
                     "appium:bundleId": self.build.application_id,
+                    "appium:autoAcceptAlerts": True,
                     "appium:isHeadless": True,
                     "appium:shouldTerminateApp": False,
                     "appium:wdaLocalPort": self._required_port("wda-local"),

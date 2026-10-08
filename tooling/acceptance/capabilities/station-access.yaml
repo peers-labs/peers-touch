@@ -195,6 +195,261 @@
       }
     },
     {
+      "id": "station-access-relay-runtime-security",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-relay-role-security"],
+      "required_gates": [
+        "relay-role-security-contract",
+        "station-access-relay-security-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/frame/core/runtime/role/role.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/security.go",
+        "tooling/acceptance/gates/station_access/relay_aggregate.py",
+        "tooling/docker/compose.yml",
+        "tooling/docker/entrypoint.sh"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "explicit process runtime role",
+          "Relay role composition allowlist",
+          "Relay startup security policy"
+        ],
+        "surfaces": [
+          "Relay startup, health, metrics, and operator API"
+        ],
+        "proven_by": [
+          "relay-role-security-contract",
+          "station-access-relay-security-e2e"
+        ],
+        "proven_scope": [
+          "Station and Relay composition are selected by one explicit role owner",
+          "Relay role excludes Station business surfaces by a deny-by-default plugin allowlist",
+          "missing TLS, signing key, operator policy, or quota configuration fails closed",
+          "operator credentials are isolated from Station application JWTs",
+          "hardcoded debug egress is absent from Station source"
+        ],
+        "unproven_scope": [
+          "public CA negotiation outside the reviewed deployment trust anchor",
+          "sustained hostile-client soak beyond the bounded Relay quota proofs"
+        ]
+      }
+    },
+    {
+      "id": "station-access-relay-enrollment",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-relay-enrollment"],
+      "required_gates": [
+        "relay-station-enrollment-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/frame/core/plugin/native/subserver/relay/application/credential.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/application/service.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/infrastructure/repo.go",
+        "apps/station/frame/core/plugin/native/subserver/relay-client/enrollment.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station libp2p host identity",
+          "Relay invite and mount persistence",
+          "Relay asymmetric credential authority"
+        ],
+        "surfaces": [
+          "Relay operator enrollment lifecycle",
+          "Station Relay mount readiness"
+        ],
+        "proven_by": [
+          "relay-station-enrollment-e2e"
+        ],
+        "proven_scope": [
+          "Station host-key proof determines station_peer_id",
+          "one-time invite plaintext is absent from storage and list responses",
+          "Relay EdDSA credentials rotate with jti and generation checks",
+          "revoke closes the stream and rejects old refresh and reconnect",
+          "a new invite restores the same Station at a later generation"
+        ],
+        "unproven_scope": [
+          "signed route discovery and opaque client tunnels are owned by later Relay closures"
+        ]
+      }
+    },
+    {
+      "id": "station-access-endpoint-discovery",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-endpoint-discovery"],
+      "required_gates": [
+        "proto-build",
+        "station-api-ownership",
+        "relay-endpoint-discovery-contract"
+      ],
+      "synthetic_paths": [
+        "model/domain/peer/access_endpoint.proto",
+        "apps/station/app/subserver/dashboard/handler.go",
+        "apps/station/app/subserver/dashboard/subserver.go",
+        "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
+        "apps/station/frame/core/plugin/native/subserver/relay-client/connection_material.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station host identity",
+          "Relay endpoint signing identity",
+          "Station-signed route attestations",
+          "Relay connection-grant registry"
+        ],
+        "surfaces": [
+          "POST /.well-known/peers-touch/access",
+          "Relay route publication and private grant registration",
+          "Authenticated POST /dashboard/api/relay/connection-material"
+        ],
+        "proven_by": [
+          "relay-endpoint-discovery-contract"
+        ],
+        "proven_scope": [
+          "Station and Relay roles use one challenge-bound protobuf discovery contract",
+          "Relay lists only current public routes without a grant",
+          "private grants are Station-signed, Relay-bound, expiring, and replay-limited",
+          "Dashboard connection material issuance is authenticated, strict, non-cacheable, and unavailable while the Relay mount is disconnected",
+          "forged Station routes and wrong-Relay grants fail closed"
+        ],
+        "unproven_scope": [
+          "Desktop and Mobile route binding are owned by later Relay closures"
+        ]
+      }
+    },
+    {
+      "id": "station-access-relay-opaque-tunnel",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-relay-opaque-tunnel"],
+      "required_gates": [
+        "relay-opaque-tunnel-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/federation/relay_transport.proto",
+        "apps/station/frame/core/federation/routes.go",
+        "apps/station/frame/core/federation/transport.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/handler_tunnel.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/stream.go",
+        "apps/station/frame/core/plugin/native/subserver/relay-client/inner_tls.go",
+        "apps/station/frame/core/plugin/native/subserver/relay-client/peer_tunnel.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station-signed route attestation",
+          "Relay mount generation and grant reservation",
+          "Station-owned inner TLS certificate",
+          "canonical Federation peer capability registry"
+        ],
+        "surfaces": [
+          "GET /.well-known/peers-touch/tunnel",
+          "Relay mount stream tunnel multiplexer",
+          "Station canonical HTTP router behind inner TLS"
+        ],
+        "proven_by": [
+          "relay-opaque-tunnel-e2e"
+        ],
+        "proven_scope": [
+          "binary Relay tunnel reaches the exact target Station",
+          "inner TLS 1.3 verifies the Station-attested SPKI",
+          "Station login succeeds without exposing the request marker to Relay logs",
+          "text, compression, redirect, protocol downgrade, replay, oversize, overload, and cancellation fail closed",
+          "Federation peer calls use the canonical typed capability manifest"
+        ],
+        "unproven_scope": [
+          "Desktop and Mobile binding behavior is owned by SAL-REL-05 and SAL-REL-06"
+        ]
+      }
+    },
+    {
+      "id": "station-access-desktop-relay-binding",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-desktop-relay-binding"],
+      "required_gates": [
+        "station-access-desktop-relay-native-e2e",
+        "station-access-desktop-relay-windows-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs",
+        "apps/desktop/src/components/common/StationPicker.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "signed endpoint discovery",
+          "Station-signed route attestation",
+          "station_peer_id keyed registry",
+          "native runtime binding proof"
+        ],
+        "surfaces": [
+          "installed macOS Desktop Station picker",
+          "exact-source sixwin Windows Desktop Station picker through the one Linux Relay"
+        ],
+        "proven_by": [
+          "station-access-desktop-relay-native-e2e",
+          "station-access-desktop-relay-windows-e2e"
+        ],
+        "proven_scope": [
+          "direct Station and Relay inputs converge on one Station identity",
+          "Direct and Via Relay are route candidates under one registry entry",
+          "same-Station route switching preserves identity scope and fences stale transport",
+          "Relay route recovery survives native process restart",
+          "macOS and Windows consume the same discovery and persistence schema"
+        ],
+        "unproven_scope": [
+          "Mobile Relay binding is owned by SAL-REL-06",
+          "cross-client security aggregation is owned by SAL-REL-07"
+        ]
+      }
+    },
+    {
+      "id": "station-access-mobile-relay-binding",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-mobile-relay-binding"],
+      "required_gates": [
+        "station-access-mobile-relay-native-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/mobile/src-tauri/src/runtime/station_route.rs",
+        "apps/mobile/src/features/station/stationRegistry.ts",
+        "apps/mobile/src/features/station/StationSelector.tsx",
+        "apps/mobile/src/runtimes/stationRuntime.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "signed endpoint discovery",
+          "Station-signed route attestation",
+          "station_peer_id keyed Mobile registry",
+          "iOS Simulator Runtime Binding proof"
+        ],
+        "surfaces": [
+          "iOS Simulator Station setup",
+          "iOS Simulator Settings connection routes"
+        ],
+        "proven_by": [
+          "station-access-mobile-relay-native-e2e"
+        ],
+        "proven_scope": [
+          "direct Station and Relay inputs converge on one Station identity",
+          "same-Station route switching preserves Session and lifecycle generation",
+          "Relay route recovery survives WebView restart"
+        ],
+        "unproven_scope": [
+          "Android and physical-device Relay behavior",
+          "cross-client security aggregation is owned by SAL-REL-07"
+        ]
+      }
+    },
+    {
       "id": "station-access-interface-integrity",
       "domain": "station-access",
       "direction": "acceptance_validates_product",
@@ -203,12 +458,14 @@
         "station-access-capability-contract",
         "desktop-release-build",
         "mobile-native-build",
-        "station-access-lifecycle-aggregate-e2e"
+        "station-access-lifecycle-aggregate-e2e",
+        "unified-relay-station-access-aggregate-e2e"
       ],
       "synthetic_paths": [
         "docs/architecture/platform/station/access/data-model.md",
         "tooling/acceptance/gates/station_access/capability_contract.py",
-        "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
+        "tooling/acceptance/gates/station_access/lifecycle_aggregate.py",
+        "tooling/acceptance/gates/station_access/relay_aggregate.py"
       ],
       "evidence": {
         "truth_sources": [
@@ -224,7 +481,8 @@
           "station-access-capability-contract",
           "desktop-release-build",
           "mobile-native-build",
-          "station-access-lifecycle-aggregate-e2e"
+          "station-access-lifecycle-aggregate-e2e",
+          "unified-relay-station-access-aggregate-e2e"
         ],
         "proven_scope": [
           "the current Station Access route and consumer inventory is complete",

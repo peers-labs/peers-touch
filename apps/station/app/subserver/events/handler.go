@@ -550,7 +550,7 @@ func (s *eventsSubServer) routeSignal(
 							federationruntime.ClaimTargetStationPeerID: homePeerID,
 						},
 						Request:  signal,
-						Response: &realtime.CallSignal{},
+						Response: &realtime.FederatedSignalAck{},
 					})
 					if err != nil {
 						return false, fmt.Errorf("federation signal forward: %w", err)

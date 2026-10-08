@@ -26,11 +26,16 @@ import { verifyStationIdentity } from '../features/station/stationConnection';
 import {
   activeStationEntry,
   activateStationEntry,
-  addStationEntry,
+  addStationRoute,
   emptyStationRegistry,
   removeStationEntry,
+  stationRoutes,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
+import {
+  readStationRouteBinding,
+  removeStationRouteBinding,
+} from '../services/mobileCommands';
 import {
   cancelOAuth,
   readAuthRuntimeSnapshot,
@@ -55,6 +60,7 @@ import {
 import {
   readStationRegistryProjection,
   replaceStationRegistryProjection,
+  selectStationRouteRuntime,
 } from '../runtimes/stationRuntime';
 import {
   checkAllPermissions,
@@ -315,6 +321,38 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       sessionRevocation: sanitizeSessionRevocation(sessionRevocation),
     };
   },
+
+  'station.route.select': async (input) => {
+    const stationPeerId = requireString(
+      input?.stationPeerId,
+      'station.route.select.stationPeerId',
+    );
+    const routeId = requireString(
+      input?.routeId,
+      'station.route.select.routeId',
+    );
+    const current = await readStationRegistryProjection();
+    const station = current.entries.find((entry) => entry.stationPeerId === stationPeerId);
+    const route = station ? stationRoutes(station).find((item) => item.routeId === routeId) : null;
+    if (!station || !route) throw new Error('acceptance.mobile.stationRouteNotFound');
+    const next = await selectStationRouteRuntime(stationPeerId, routeId);
+    return {
+      ...sanitizeStationRegistry(next),
+      sessionRevocation: sanitizeSessionRevocation({
+        remoteRevocation: 'not-required',
+        nativePurge: null,
+      }),
+    };
+  },
+
+  'station.route.snapshot': async () => ({
+    ...sanitizeStationRegistry(await readStationRegistryProjection()),
+    binding: await readStationRouteBinding(),
+    sessionRevocation: sanitizeSessionRevocation({
+      remoteRevocation: 'not-required',
+      nativePurge: null,
+    }),
+  }),
 
   'access.submit': async (input) => {
     if (!input) throw new Error('acceptance.mobile.invalidAccessSubmitInput');
@@ -1478,6 +1516,14 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       async () => {
         const logout = await logoutSessionRuntime();
         oauthPurge = logout.nativePurge ?? await purgeNativeOAuth();
+        const registry = await readStationRegistryProjection();
+        await Promise.all(registry.entries.flatMap((entry) => (
+          stationRoutes(entry).map((route) => removeStationRouteBinding({
+            stationPeerId: entry.stationPeerId,
+            routeId: route.routeId,
+            sourceRef: route.sourceRef,
+          }))
+        )));
         await replaceStationRegistryProjection(emptyStationRegistry());
       },
       { restart: false, draftDisposition: 'discard' },
@@ -1514,11 +1560,15 @@ function addVerifiedStation(
   registry: StoredStationRegistry,
   verified: Awaited<ReturnType<typeof verifyStationIdentity>>,
 ): StoredStationRegistry {
-  const result = addStationEntry(
+  const result = addStationRoute(
     registry,
     {
-      stationPeerId: verified.stationPeerId,
-      url: verified.canonicalOrigin,
+      identity: {
+        stationPeerId: verified.stationPeerId,
+        url: verified.canonicalOrigin,
+      },
+      stationHostPublicKey: verified.route.stationHostPublicKey,
+      route: verified.route,
     },
     {
       checkedAt: verified.verifiedAt,

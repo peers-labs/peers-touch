@@ -548,6 +548,8 @@ class EnvironmentProvisioner(ABC):
         resource: str,
         owner: str,
     ) -> None:
+        from tooling.acceptance.remote_platform import RemotePlatform
+
         try:
             environment_name = normalize_lease_resource(resource)
         except ValueError as error:
@@ -576,6 +578,14 @@ class EnvironmentProvisioner(ABC):
                 known_hosts_file=environment.get(
                     "PT_DEPLOY_KNOWN_HOSTS_FILE",
                     "",
+                ),
+                remote_platform=RemotePlatform(
+                    environment.get(
+                        "PT_DEPLOY_PLATFORM",
+                        RemotePlatform.POSIX.value,
+                    )
+                    .strip()
+                    .lower()
                 ),
             )
             lease.acquire()

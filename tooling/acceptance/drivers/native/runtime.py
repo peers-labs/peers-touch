@@ -12,9 +12,10 @@ import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from typing import Any, Mapping, Protocol, Sequence, cast
+from urllib.parse import urlsplit
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.errors import ClientBindingError, DriverError
@@ -127,6 +128,7 @@ class NativeLaunchOptions:
     window_slot: int = 0
     window_count: int = 1
     restore_session: bool = False
+    extra_environment: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,26 @@ class _TransportOverride:
     service_id: str
     endpoint: str
     endpoint_lease_id: str
+
+
+def _route_matches_bound_service(
+    service_id: str,
+    expected_url: str,
+    route: Mapping[str, Any],
+) -> bool:
+    endpoint = str(route.get("endpoint_origin") or "").rstrip("/")
+    if service_id != "station-via-relay":
+        return endpoint == expected_url
+
+    locator = urlsplit(expected_url)
+    transport = urlsplit(endpoint)
+    return (
+        route.get("route_type") == "relay"
+        and transport.scheme == "https"
+        and bool(locator.hostname)
+        and transport.hostname == locator.hostname
+        and transport.port is not None
+    )
 
 
 class NativeDesktopRuntimeBinding(ABC):
@@ -218,6 +240,13 @@ class NativeDesktopRuntimeBinding(ABC):
             "PT_STATION_URL": station_url,
             "PT_STATION_HEALTH_URL": f"{station_url}/sub-oss/healthz",
         }
+        reserved = set(environment).intersection(options.extra_environment)
+        if reserved:
+            raise DriverError(
+                "Native launch environment cannot override binding-owned keys: "
+                + ", ".join(sorted(reserved))
+            )
+        environment.update(options.extra_environment)
 
         session = self._create_session(
             client_id,
@@ -229,7 +258,8 @@ class NativeDesktopRuntimeBinding(ABC):
         try:
             session.start()
             session.wait_for_acceptance_harness(30)
-            self._configure_session_station(session, station_url)
+            if not options.restore_session:
+                self._configure_session_station(session, station_url)
             runtime_identity = self._client_runtime_identity(
                 client_id,
                 generation,
@@ -407,9 +437,72 @@ class NativeDesktopRuntimeBinding(ABC):
     ) -> None:
         if not station_url:
             raise DriverError("Runtime Binding Station endpoint is empty")
-        station_input = {"input": {"url": station_url}}
-        session.invoke_app_result("station_add", station_input)
-        session.invoke_app_result("station_set_active", station_input)
+        discovery = session.invoke_app_result(
+            "station_add",
+            {"input": {"input": station_url}},
+        )
+        data = discovery.get("data") if isinstance(discovery, dict) else None
+        status = data.get("status") if isinstance(data, dict) else None
+        try:
+            payload = json.loads(status) if isinstance(status, str) else {}
+        except json.JSONDecodeError as error:
+            raise DriverError(
+                "Runtime Binding Station discovery returned invalid status"
+            ) from error
+        entries = payload.get("entries")
+        if not isinstance(entries, list):
+            raise DriverError(
+                "Runtime Binding Station discovery returned no entries"
+            )
+        expected_url = station_url.rstrip("/")
+        fallback: tuple[str, str] | None = None
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            station_peer_id = str(entry.get("station_peer_id") or "").strip()
+            routes = entry.get("routes")
+            if not station_peer_id or not isinstance(routes, list):
+                continue
+            if (
+                len(entries) == 1
+                and len(routes) == 1
+                and isinstance(routes[0], dict)
+            ):
+                route_id = str(routes[0].get("route_id") or "").strip()
+                if route_id:
+                    fallback = (station_peer_id, route_id)
+            for route in routes:
+                if (
+                    isinstance(route, dict)
+                    and str(route.get("endpoint_origin") or "").rstrip("/")
+                    == expected_url
+                ):
+                    route_id = str(route.get("route_id") or "").strip()
+                    if route_id:
+                        session.invoke_app_result(
+                            "station_set_active",
+                            {
+                                "input": {
+                                    "station_peer_id": station_peer_id,
+                                    "route_id": route_id,
+                                }
+                            },
+                        )
+                        return
+        if fallback is not None:
+            session.invoke_app_result(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": fallback[0],
+                        "route_id": fallback[1],
+                    }
+                },
+            )
+            return
+        raise DriverError(
+            "Runtime Binding Station discovery did not return the requested route"
+        )
 
     def _observe_live_service_identity(
         self,
@@ -420,12 +513,13 @@ class NativeDesktopRuntimeBinding(ABC):
     ) -> str:
         if self._runtime_manifest is None:
             raise DriverError("Runtime Binding manifest is not set")
-        _, service = require_runtime_client_service(
+        service_id, service = require_runtime_client_service(
             self._runtime_manifest,
             client_id,
             binding_role,
         )
         expected_url = str(service.get("endpoint") or "").rstrip("/")
+        expected_peer_id = str(service.get("runtimeIdentity") or "").strip()
         deadline = time.monotonic() + 30
         latest: Any = None
         while time.monotonic() < deadline:
@@ -436,22 +530,41 @@ class NativeDesktopRuntimeBinding(ABC):
                 state = json.loads(status) if isinstance(status, str) else {}
             except json.JSONDecodeError:
                 state = {}
-            active_url = str(state.get("active_url") or "").rstrip("/")
+            active_peer_id = str(
+                state.get("active_station_peer_id") or ""
+            ).strip()
             entries = state.get("entries")
-            if active_url == expected_url and isinstance(entries, list):
+            if (
+                active_peer_id == expected_peer_id
+                and isinstance(entries, list)
+            ):
                 for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    peer_id = str(
+                        entry.get("station_peer_id") or ""
+                    ).strip()
+                    active_route_id = str(
+                        entry.get("active_route_id") or ""
+                    ).strip()
+                    routes = entry.get("routes")
                     if (
-                        isinstance(entry, dict)
-                        and str(entry.get("url") or "").rstrip("/")
-                        == expected_url
-                        and entry.get("online") is True
+                        peer_id != expected_peer_id
+                        or not active_route_id
+                        or not isinstance(routes, list)
                     ):
-                        peer_id = str(
-                            entry.get("peer_id")
-                            or entry.get("peerId")
-                            or ""
-                        )
-                        if peer_id:
+                        continue
+                    for route in routes:
+                        if (
+                            isinstance(route, dict)
+                            and route.get("route_id") == active_route_id
+                            and _route_matches_bound_service(
+                                service_id,
+                                expected_url,
+                                route,
+                            )
+                            and route.get("health") == "available"
+                        ):
                             return peer_id
             time.sleep(0.1)
         raise ClientBindingError(

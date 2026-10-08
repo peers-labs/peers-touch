@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "station-access-mobile-relay-binding",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/mobile/src-tauri/src/runtime/station_route.rs",
+    "apps/mobile/src-tauri/src/runtime/oauth/**",
+    "apps/mobile/src/features/station/**",
+    "apps/mobile/src/runtimes/stationRuntime.ts",
+    "apps/mobile/src/acceptance/**",
+    "apps/mobile/src/App.tsx",
+    "apps/mobile/src/components/MobileShell.tsx",
+    "apps/mobile/src/pages/SettingsPage.tsx",
+    "apps/mobile/src/pages/settings/SettingsSections.tsx",
+    "tooling/acceptance/environments/mobile-relay-simulator.yaml",
+    "tooling/acceptance/gates/station_access/mobile_relay_native_e2e.py"
+  ],
+  "truth_sources": [
+    "signed AccessEndpointResponse",
+    "Station-signed route attestation",
+    "station_peer_id keyed Mobile registry",
+    "Station-owned inner TLS SPKI",
+    "native iOS binding proof"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "mobile",
+      "route": "Station setup and Settings connection route selectors"
+    }
+  ],
+  "required_gates": [
+    "station-access-mobile-relay-native-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Mobile verifies signed endpoint role and Station route attestation",
+      "Relay WSS carries canonical protobuf frames and Station-owned TLS 1.3",
+      "registry identity remains station_peer_id while Direct and Relay are route candidates",
+      "same-Station route switching advances route revision without changing lifecycle generation or Session",
+      "persisted Relay source is restored from native secure storage"
+    ],
+    "surface": [
+      "iOS Simulator exposes Direct and Via Relay route state at the Station decision surface",
+      "route changes require explicit user action"
+    ]
+  },
+  "negative": [
+    "Relay origin is never accepted as Station identity",
+    "connection material is not persisted in Web storage or emitted through Acceptance projection",
+    "expired route attestation and revoked generation fail closed",
+    "route switching cannot clear or replace the active Station Session"
+  ]
+}

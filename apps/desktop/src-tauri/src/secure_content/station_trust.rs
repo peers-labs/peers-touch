@@ -128,7 +128,7 @@ pub fn resolve_station_signing_key(
 ) -> Result<TrustedStationSigningKey, String> {
     require_authenticated_station_transport(station_url)?;
     if let Some(pin) = registry
-        .federation_signing_key_pin(station_url)
+        .federation_signing_key_pin(station_peer_id)
         .map_err(|error| format!("load Station Federation signing-key pin: {error}"))?
     {
         if pin.station_peer_id != station_peer_id {
@@ -158,7 +158,6 @@ pub fn resolve_station_signing_key(
         verify_profile_envelope(&envelope, actor_handle, station_peer_id, current_unix_ms())?;
     registry
         .pin_or_verify_federation_signing_key(
-            station_url,
             station_peer_id,
             &trusted.key_id,
             trusted.verifying_key.to_bytes(),

@@ -247,12 +247,6 @@ class FakeBinding:
                 "requestCount": 0,
                 "messageThreadCount": 0,
             },
-            "group": {
-                "stationPeerId": station if active else None,
-                "actorPtid": actor,
-                "groupCount": 0,
-                "messageThreadCount": 0,
-            },
             "navigation": {
                 "primaryRouteId": "tab:chat",
                 "detailKeys": [],

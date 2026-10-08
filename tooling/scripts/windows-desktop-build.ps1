@@ -80,14 +80,42 @@ $env:WindowsSdkDir = "$WindowsSdkRoot/"
 $env:WindowsSDKVersion = "$WindowsSdkVersion/"
 $env:INCLUDE = ($sdkInclude + $env:INCLUDE) -join ";"
 $env:LIB = ($sdkLib + $env:LIB) -join ";"
-$env:PATH = "$WindowsSdkRoot/bin/$WindowsSdkVersion/x64;$env:PATH"
+$protocDirectory = Split-Path -Parent $ProtocPath
+$env:PATH = (
+    "$protocDirectory;$WindowsSdkRoot/bin/$WindowsSdkVersion/x64;$env:PATH"
+)
 $env:CARGO_TARGET_DIR = $CargoTargetRoot
+$env:CARGO_HOME = Join-Path $CargoTargetRoot "cargo-home"
 $env:OPENSSL_SRC_PERL = $PerlPath
 $env:PROTOC = $ProtocPath
 
 Push-Location -LiteralPath $SourceRoot
 try {
     Invoke-NativeCommand "pnpm.cmd" @("install", "--frozen-lockfile")
+    $protoRoot = Join-Path $SourceRoot "model"
+    $desktopProtoOutput = Join-Path $SourceRoot "apps/desktop/src/gen/proto"
+    $protocGenEs = Join-Path (
+        $SourceRoot
+    ) "apps/desktop/node_modules/.bin/protoc-gen-es.CMD"
+    if (-not (Test-Path -LiteralPath $protocGenEs)) {
+        throw "Desktop protoc-gen-es does not exist: $protocGenEs"
+    }
+    Remove-Item -Recurse -Force $desktopProtoOutput -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $desktopProtoOutput | Out-Null
+    $protoFiles = Get-ChildItem (
+        Join-Path $protoRoot "domain"
+    ) -Recurse -Filter "*.proto" | Where-Object {
+        $_.FullName -notlike "*\ai_box\ai_box_message.proto"
+    }
+    foreach ($protoFile in $protoFiles) {
+        Invoke-NativeCommand $ProtocPath @(
+            "--plugin=protoc-gen-es=$protocGenEs",
+            "--es_out=$desktopProtoOutput",
+            "--es_opt=target=ts",
+            "-I$protoRoot",
+            $protoFile.FullName
+        )
+    }
     $env:VITE_ACCEPTANCE_HARNESS = "1"
     Invoke-NativeCommand "pnpm.cmd" @("--dir", "apps/desktop", "run", "build")
 

@@ -1,72 +1,83 @@
-# Federation Architecture — 集成与映射
+# Federation Architecture - 集成与映射
 
-> **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-05-31 | **Updated**: 2026-05-31
+> **Status**: active
+> **Version**: v1.0
+> **Created**: 2026-05-31 | **Updated**: 2026-10-06
 > **Owner**: Architecture Team
 
 ---
 
-## 1. 与现有模块的映射
-
-### 1.1 Station app/frame
-
-Federation 落地必须遵守 Station 平台分层：
+## 1. Station app/frame
 
 | 层 | 责任 | 不允许 |
-|----|------|--------|
-| Station app layer | Federation lifecycle、membership、policy、role、ledger append/replay、materialized state、Plaza API | 直接管理 relay read loop、DHT routing、transport 连接 |
-| Station frame layer | relay、bootstrap、locator、resolver、profile envelope、station signing key、transport、auth middleware | 积累 Federation 业务规则或治理状态 |
+|---|---|---|
+| Station app | Federation lifecycle、membership、policy、role、ledger、业务权限 | 管理 Relay socket/read loop |
+| Station frame federation | typed peer capability、locator、resolver、signing adapter | 读取 app policy 表 |
+| Relay subserver | enrollment、route、opaque tunnel、quota、audit | Actor/Chat/Social/Agent 业务 |
+| Relay-client subserver | Station mount、credential、inner TLS ingress | Federation governance |
 
-实现时可以在 app layer 增加 Federation subserver；frame 只提供基础设施 primitive。app 可以依赖 frame，frame 不得依赖 app，也不得读取 Federation policy 表来裁决治理权限。
+app 可以依赖 frame primitive；frame 不得依赖 app 或复制业务真源。
 
-### 1.2 Catalog / Resolver
+## 2. Station Access
+
+[Station Access](../../platform/station/access/README.md) 是客户端接入 owner：
+
+- 定义统一 endpoint discovery 和 Station route binding；
+- 验证 Relay 返回的 Station route attestation；
+- 经 opaque tunnel 到达同一个 Station Access Gate；
+- 以 `station_peer_id` 而不是 Relay/Station URL 管理 scope。
 
 `docs/architecture/domains/identity/federation-catalog.md` 解决“如何发现用户”。Federation 文档解决“谁属于哪个 Federation、谁有权治理、治理事实如何持久和验证”。
 
-二者关系：
+本模块只提供 Relay transport protocol。它不创建客户端 registry、Session 或第二套
+Access API。
+
+## 3. Catalog / Resolver
 
 ```text
-Federation membership / policy
-  -> 决定可查询 Station 范围
-  -> Catalog 在该 federation_id 范围内返回可发现 ActorRef
-  -> Resolver hydrate 具体 actor profile
+Federation membership/policy
+  -> active member Station set
+  -> federation-scoped Catalog
+  -> ActorRef profile resolution
 ```
 
-Catalog 不负责 Federation lifecycle，也不负责 Station membership 治理。
+Relay directory 与 Federation Catalog 不同：
 
-### 1.3 ActivityPub
+- Relay directory 回答“哪些 opt-in Station route 当前可达”；
+- Federation Catalog 回答“在指定 Federation 中哪些 Actor 可发现”；
+- Relay mount 不意味着 Federation membership；
+- route URL/Host 不得生成 `ActorRef.acct`。
 
-整体架构历史上提到 ActivityPub federation。Federation Ledger 不是 ActivityPub 的简单替代，而是 Peers-Touch 内部治理真源：
+## 4. Typed Federation Transport
 
-- Federation Ledger 管 Station membership、policy、role、sequencer、governance audit。
-- ActivityPub 可作为未来对外互操作协议，承载与外部 fediverse 的 actor / activity 兼容。
-- 内部 Station-to-Station 治理事实必须以 Peers-Touch proto + ledger 为准。
-- 如果 ActivityPub 事件影响 Federation governance，必须被转换为合法 ledger proposal / event 后才生效。
-
----
-
-## 2. 影响面分析
-
-### 2.1 Model / Proto
-
-所有跨 Station wire payload 必须先定义在 `model/domain/federation/*.proto`。Station 内部可以使用数据库表和 materialized state，但不得绕过 proto 语义另起一套对外模型。
-
-需要补充的 proto 方向：
+Station-to-Station 调用必须从正向 capability manifest 解析：
 
 ```text
-model/domain/federation/federation.proto
-model/domain/federation/federation_ledger.proto
-model/domain/federation/federation_membership.proto
-model/domain/federation/federation_policy.proto
-model/domain/federation/federation_manifest.proto
-model/domain/federation/federation_sync.proto
-model/domain/federation/federation_discovery.proto
+Federation caller
+  -> resolve target station_peer_id
+  -> select verified direct/relay route
+  -> establish authenticated peer tunnel
+  -> invoke typed capability
+  -> receiver verifies caller identity + federation_id + policy
 ```
 
-现有 Catalog proto 方向需要补充 `federation_id`。没有 `federation_id` 的 Catalog API 只能作为 legacy / advanced handle discovery，不能作为 Federation scoped 发现的默认入口。
+Relay 不接收任意 method/path/header，不查看目标 Authorization。broadcast topic
+保持 allowlist，并由 receiver 执行 origin、membership、replay 和 relevance 校验。
 
-### 2.2 Client Projection
+## 5. Runtime Role 与部署
+
+当前 compose 的 Relay 与 Station 使用相同 image，这是保留项；需要把隐式配置改为
+显式 role：
+
+```text
+PEERS_NODE_ROLE=station
+  -> Station subserver allowlist
+  -> optional relay-client
+
+PEERS_NODE_ROLE=relay
+  -> Relay subserver allowlist
+  -> no Station business subservers
+```
 
 普通客户端与 operator surface 都消费 Federation projection，但职责不同：
 
@@ -75,39 +86,61 @@ model/domain/federation/federation_discovery.proto
 - Dashboard/CLI 可以消费治理 projection 并提交 operator intent；最终权限裁决始终在 Station。
 - Desktop/Mobile 使用同一显式 `federation_id` 语义，不改变 Station 作为共享业务真源的边界。
 
-Station Plaza projection 至少包含：
+entrypoint 只生成 role 允许的 overlay。生产 `relay` role 必须注入 TLS certificate、
+Relay signing key、operator trust policy 和 quota；缺失即启动失败。
 
-- `federation_id`、name、description、status、policy summary。
-- current `head_hash`、`head_seq`、sequencer、sync status。
-- 当前 Actor 的 capability：can_invite、can_approve_join、can_update_policy、can_view_ledger。
-- 成员 Station 分页列表。
-- 按 `federation_id` scoped 的 public actor search。
+当前安全基线使用以下运行时配置：
 
-### 2.3 Relay / Broadcast
+- `RELAY_TLS_CERT_FILE` 与 `RELAY_TLS_KEY_FILE`：公网 Relay 必填，监听器最低
+  TLS 1.3；
+- `RELAY_SIGNING_KEY_FILE`：Relay identity/attestation 专用 key，不能与 TLS 或
+  operator key 共用；
+- `RELAY_OPERATOR_KEY_FILE`、`RELAY_OPERATOR_ISSUER`、
+  `RELAY_OPERATOR_AUDIENCE`、`RELAY_OPERATOR_SCOPE`：独立 operator JWT policy；
+- `RELAY_ALLOW_INSECURE_LOOPBACK=true`：唯一明文例外，仅接受显式 loopback
+  listener，不能用于正式证据。
 
-Ledger sync 或 discovery 如果新增 relay-mediated topic，必须遵守现有 relay 纪律：
+Relay readiness 使用 `/healthz`；`/metrics` 与 admin routes 共同要求 operator
+credential。Station role 不装配 Relay subserver，Relay role 不装配 Touch、app
+business subserver 或其他 native plugins。
 
-- relay read loop 不得执行阻塞业务逻辑。
-- topic 必须 deny-by-default allow-list。
-- relay 可以 stamp `origin_peer_id`，但不能成为业务权限裁决者。
-- receiver 必须做 origin authority、replay protection、local relevance 检查。
+## 6. Credential 集成
 
----
+- Station host key：证明 Station identity，签 route attestation/enrollment proof。
+- Relay signing key：证明 Relay endpoint，签 mount/operator credential。
+- Station Session：只在 inner TLS 中到达 Station。
+- Federation peer authorization：由 caller Station identity 与 Federation policy
+  在 target Station 验证。
 
-## 3. 迁移策略
+四类 credential 不共用 issuer、audience 或 secret。普通客户端不接触 mount 或
+operator credential。
 
-### 3.1 Catalog Scope
+## 7. 迁移策略
 
-现有 Catalog 文档需要补充 `federation_id` 参数和 Federation scoped visibility。未完成补充前，Catalog 只能视为 actor discovery primitive，不能代表完整 Federation scoped discovery。
+1. 先删除硬编码 debug egress，建立 Relay role、TLS 和 auth 基线。
+2. 引入 PoP enrollment、hash-only invite、mount generation 与 revoke/rotate。
+3. 发布 endpoint/route Proto 与 signed discovery。
+4. 原子落地 bounded opaque tunnel 和 typed Federation transport，并删除
+   transparent forward、relay-client-token 和 header passthrough。
+5. Desktop/Mobile 迁移到 station-keyed route binding。
+6. 完成 exact-source native Acceptance。
 
-### 3.2 Legacy Handle Resolve
+不得双写旧/新 mount credential，不得保留旧 forward 作为 fallback。
 
-如果未来保留 handle-only resolve，它只能作为高级路径，并且必须声明 resolve 语境：
+## 8. ActivityPub
 
-- Home Station 已加入 Federation 范围。
-- 用户选择的 Federation。
-- 显式 external resolve。
+ActivityPub 仍只作为未来互操作层。任何外部 activity 若要影响 Federation
+governance，必须转换为合法 proposal 并通过 ledger policy；不能借 Relay route
+直接修改 membership 或 policy。
 
-### 3.3 ActivityPub Interop
+## 9. 观测
 
-ActivityPub 互操作应在 Federation Ledger 真源之后接入。任何外部 activity 影响 governance 前，都必须转换成 proposal 并通过 policy 校验。
+Relay metrics 只使用低基数标签：
+
+- role/version/readiness；
+- active mounts/tunnels、queue depth、bytes、latency；
+- enrollment/rotation/revoke outcome；
+- typed failure class。
+
+禁止记录 invite/grant/credential、Authorization、业务 path/body、Actor PII 或
+高基数 route/peer 原文。安全审计可以记录不可逆 digest 和明确 operator action。

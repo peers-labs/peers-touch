@@ -25,6 +25,22 @@ from tooling.acceptance.core.source_sync import (
 )
 
 
+def _source_lease(
+    request: SourceSyncRequest,
+    owner: str,
+) -> RemoteGitSourceLease:
+    return RemoteGitSourceLease(
+        request.environment_name,
+        owner,
+        host=request.host,
+        user=request.user,
+        deploy_path=request.deploy_path,
+        port=request.ssh_port,
+        known_hosts_file=request.known_hosts_file,
+        remote_platform=request.remote_platform,
+    )
+
+
 def _inherited_machine_lease_fds(
     environment: dict[str, str],
 ) -> tuple[int, ...]:
@@ -102,14 +118,9 @@ def main() -> int:
         if command:
             RemoteSourceSynchronizer(request).preflight()
             source_lease_owner = f"source-sync:{request.environment_name}"
-            lease = RemoteGitSourceLease(
-                request.environment_name,
+            lease = _source_lease(
+                request,
                 source_lease_owner,
-                host=request.host,
-                user=request.user,
-                deploy_path=request.deploy_path,
-                port=request.ssh_port,
-                known_hosts_file=request.known_hosts_file,
             )
             with lease:
                 result = RemoteSourceSynchronizer(

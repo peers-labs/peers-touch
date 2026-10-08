@@ -44,6 +44,16 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'station.route.select',
+    mobileAcceptanceActions['station.route.select'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'station.route.snapshot',
+    mobileAcceptanceActions['station.route.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'access.submit',
     mobileAcceptanceActions['access.submit'],
     registry,

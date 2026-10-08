@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "station-access-relay-opaque-tunnel",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "model/domain/federation/relay_transport.proto",
+    "apps/station/frame/core/federation/**",
+    "apps/station/frame/core/plugin/native/federation/relay_client.go",
+    "apps/station/frame/core/plugin/native/subserver/relay/**",
+    "apps/station/frame/core/plugin/native/subserver/relay-client/**",
+    "apps/station/app/subserver/actor_identity/**",
+    "apps/station/app/subserver/key_exchange/**",
+    "apps/station/frame/touch/federation/resolver/**",
+    "tooling/acceptance/gates/station_access/relay_opaque_tunnel_e2e.py"
+  ],
+  "truth_sources": [
+    "Station-signed route attestation",
+    "Relay mount generation and grant reservation",
+    "Station-owned inner TLS certificate",
+    "canonical Federation peer capability registry"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "client",
+      "route": "GET /.well-known/peers-touch/tunnel"
+    },
+    {
+      "type": "station",
+      "route": "TLS mount stream tunnel multiplexer"
+    }
+  ],
+  "required_gates": [
+    "relay-opaque-tunnel-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Relay forwards only bounded opaque binary frames",
+      "inner TLS 1.3 terminates inside Station and verifies the attested SPKI",
+      "connection grants reserve at discovery and redeem once at tunnel open",
+      "Station-to-Station calls carry typed capability authorization inside inner TLS",
+      "mount quotas constrain tunnel concurrency, bytes, and aggregate rate"
+    ],
+    "surface": [
+      "a real Station login succeeds through the exact-source Relay tunnel"
+    ]
+  },
+  "negative": [
+    "text frames, compression, redirects, protocol downgrade, replay, oversize, and overload fail closed",
+    "Relay logs do not contain the inner request marker",
+    "transparent forward, client-token, and target authorization passthrough are absent"
+  ]
+}

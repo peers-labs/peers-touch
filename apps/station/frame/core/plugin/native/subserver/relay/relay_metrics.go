@@ -18,23 +18,9 @@ var metActiveStreams = metrics.Get().Gauge(
 	"Current number of active station streams",
 )
 
-// ---- Forward-level metrics (used by handler_station.go forward) ----
-
-var metForwardTotal = metrics.Get().Counter(
-	"relay_forwards_total",
-	"Total number of forwarded requests",
-	"status",
-)
-
-var metForwardDuration = metrics.Get().Histogram(
-	"relay_forward_duration_seconds",
-	"Histogram of forward request durations",
-	[]float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
-)
-
-var metInflightForwards = metrics.Get().Gauge(
-	"relay_inflight_forwards",
-	"Current number of in-flight forward requests",
+var metActiveTunnels = metrics.Get().Gauge(
+	"relay_active_tunnels",
+	"Current number of active opaque tunnels",
 )
 
 // ---- Broadcast / pub-sub metrics (Tier C1 — push-style invalidation) ----

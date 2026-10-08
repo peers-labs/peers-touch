@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "test": "vitest",
     "brand:assets": "python3 ../../tooling/scripts/generate-mobile-brand-assets.py",
     "check": "pnpm run check:web && pnpm run build && pnpm run check:rust && pnpm run check:ios-project",
     "check:lifecycle-runtime": "vitest run src/app/lifecycle/MobileLifecycleKernel.test.ts src/app/lifecycle/runtimeReadiness.test.ts src/app/navigation/navigationDescriptors.test.ts src/components/MobileRouteBoundary.test.tsx src/features/auth/authRuntime.test.ts src/features/chat/messageProjection.test.ts src/features/social/momentsFeedStore.test.ts src/features/social/socialRealtime.test.ts src/features/social/socialRuntime.test.ts src/features/social/socialWire.test.ts src/runtimes/authRecovery.test.ts src/runtimes/messagingRuntime.test.ts src/runtimes/runtimeRegistry.test.ts src/runtimes/runtimeSessionTransition.test.ts src/runtimes/sessionRuntime.test.ts src/runtimes/socialEventIngress.test.ts src/runtimes/socialProjectionRuntime.test.ts src/acceptance/registry.test.ts",

@@ -28,6 +28,7 @@ import (
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
+	relayclient "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay-client"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -76,6 +77,10 @@ type subServer struct {
 	// Sibling subserver instances, populated at Start from
 	// server.GetOptions().SubserverInstances for overview & status display.
 	subservers []server.Subserver
+
+	// The relay-client owns mount credentials and signed connection material.
+	// Dashboard only exposes its narrow authenticated operator capability.
+	connectionMaterialIssuer relayclient.ConnectionMaterialIssuer
 
 	// Disabled flag: when true, Init returns early and Handlers returns nil.
 	disabled bool
@@ -247,6 +252,7 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 			break
 		}
 	}
+	s.resolveConnectionMaterialIssuer(ctx)
 
 	log.Infof(ctx, "[dashboard] subserver started, discovered %d sibling subservers", len(s.subservers))
 	return nil
@@ -301,6 +307,32 @@ func (s *subServer) getSubservers() []server.Subserver {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.subservers
+}
+
+func (s *subServer) resolveConnectionMaterialIssuer(ctx context.Context) {
+	s.connectionMaterialIssuer = nil
+	for _, sibling := range s.subservers {
+		if sibling == nil || sibling.Name() != "relay-client" {
+			continue
+		}
+		issuer, ok := sibling.(relayclient.ConnectionMaterialIssuer)
+		if !ok {
+			log.Warnf(
+				ctx,
+				"[dashboard] relay-client does not expose connection material issuance",
+			)
+			return
+		}
+		s.connectionMaterialIssuer = issuer
+		log.Infof(ctx, "[dashboard] relay connection material issuer wired")
+		return
+	}
+}
+
+func (s *subServer) getConnectionMaterialIssuer() relayclient.ConnectionMaterialIssuer {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.connectionMaterialIssuer
 }
 
 // deriveFallbackSecret returns a fallback JWT secret derived from environment.

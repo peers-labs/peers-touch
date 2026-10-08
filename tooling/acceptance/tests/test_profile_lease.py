@@ -24,6 +24,7 @@ from tooling.acceptance.core.provisioning import (
     EnvironmentContract,
     RuntimeManifest,
 )
+from tooling.acceptance.remote_platform import RemotePlatform
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -188,6 +189,23 @@ class ProfileLeaseTests(unittest.TestCase):
 
 
 class RemoteGitSourceLeaseTests(unittest.TestCase):
+    def test_remote_lease_decodes_non_utf8_diagnostics_lossily(self) -> None:
+        lease = RemoteGitSourceLease(
+            "sixwin-station",
+            "gate-owner",
+            host="windows.example",
+            user="acceptance",
+            deploy_path="station",
+        )
+        with patch(
+            "tooling.acceptance.core.lease.subprocess.Popen",
+            side_effect=OSError("unavailable"),
+        ) as popen, self.assertRaises(RemoteGitSourceLeaseUnavailable):
+            lease.acquire()
+
+        self.assertEqual(popen.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(popen.call_args.kwargs["errors"], "replace")
+
     def test_deployment_environment_resolver_uses_reviewed_authority(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -414,6 +432,7 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                         "PT_DEPLOY_PATH=station-three",
                         "PT_DEPLOY_SSH_PORT=2222",
                         "PT_DEPLOY_KNOWN_HOSTS_FILE=/tmp/known-hosts",
+                        "PT_DEPLOY_PLATFORM=windows",
                     )
                 )
                 + "\n",
@@ -446,6 +465,7 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
             deploy_path="station-three",
             port=2222,
             known_hosts_file="/tmp/known-hosts",
+            remote_platform=RemotePlatform.WINDOWS,
         )
         lease.acquire.assert_called_once_with()
         lease.release.assert_called_once_with()

@@ -3,30 +3,49 @@ package federation
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"net/url"
 	"testing"
 
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 )
 
 type peerClientTestRelay struct {
-	baseURL string
+	baseURL        string
+	client         *http.Client
+	expectedTarget string
 }
 
-func (r peerClientTestRelay) BaseURL() string {
-	return r.baseURL
+func (r peerClientTestRelay) Available() bool {
+	return r.baseURL != ""
 }
 
-func (peerClientTestRelay) Token() string {
-	return "relay-token"
+func (r peerClientTestRelay) RoundTrip(
+	ctx context.Context,
+	targetStationPeerID string,
+	request *http.Request,
+) (*http.Response, error) {
+	if targetStationPeerID != r.expectedTarget {
+		return nil, errors.New("unexpected Relay tunnel target")
+	}
+	base, err := url.Parse(r.baseURL)
+	if err != nil {
+		return nil, err
+	}
+	outbound := request.Clone(ctx)
+	target := *request.URL
+	target.Scheme = base.Scheme
+	target.Host = base.Host
+	outbound.URL = &target
+	outbound.RequestURI = ""
+	return r.client.Do(outbound)
 }
 
-func TestPeerClientStreamsAuthenticatedDynamicRoute(t *testing.T) {
+func TestPeerClientStreamsAuthenticatedDynamicRouteThroughOpaqueTunnel(t *testing.T) {
 	scope.ResetForTest()
 	if err := RegisterPeerScopes(); err != nil {
 		t.Fatal(err)
@@ -39,17 +58,11 @@ func TestPeerClientStreamsAuthenticatedDynamicRoute(t *testing.T) {
 			t.Errorf("method = %s, want PUT", request.Method)
 		}
 		if request.URL.Path !=
-			"/relay/forward/station-target/federation/conversation/attachments/uploads/upload-1/chunks/7" {
+			"/federation/conversation/attachments/uploads/upload-1/chunks/7" {
 			t.Errorf("path = %q", request.URL.Path)
 		}
-		if request.Header.Get("Authorization") != "Bearer relay-token" {
-			t.Error("relay authorization is missing")
-		}
-		if !strings.HasPrefix(
-			request.Header.Get(nativefed.ForwardAuthorizationHeader),
-			"Bearer ",
-		) {
-			t.Error("forward Federation authorization is missing")
+		if request.Header.Get("Authorization") == "" {
+			t.Error("inner Federation authorization is missing")
 		}
 		if request.Header.Get("X-Test-Metadata") != "metadata" {
 			t.Errorf(
@@ -81,7 +94,11 @@ func TestPeerClientStreamsAuthenticatedDynamicRoute(t *testing.T) {
 		),
 		"station-source",
 		nil,
-		peerClientTestRelay{baseURL: server.URL},
+		peerClientTestRelay{
+			baseURL:        server.URL,
+			client:         server.Client(),
+			expectedTarget: "station-target",
+		},
 	)
 	if err != nil {
 		t.Fatal(err)

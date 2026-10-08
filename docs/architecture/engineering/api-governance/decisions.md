@@ -86,7 +86,7 @@ second public Chat API and second authority store.
 These planes have different state, authorization, retry, and lifecycle semantics.
 Naming them separately makes forbidden dependencies enforceable.
 
-### Rejected Patterns
+### Alternatives Considered
 
 - An implementation-shaped catch-all facade was rejected because every route has a
   precise resource owner and the facade would invite authority drift.
@@ -299,6 +299,18 @@ consequences are documented in
 The Owner accepted AO-D07.1 through AO-D07.6 as one coherent v1 hard-cut
 amendment on 2026-09-07.
 
+### Rationale
+
+Canonical wire identity and replay semantics must be explicit before the production
+hard cut; synthesizing them inside adapters would create another authority path.
+
+### Alternatives Considered
+
+- Retain the old wire owner behind an adapter: rejected because the duplicate authority
+  would remain live.
+- Infer command identity or authority scope at the receiver: rejected because retries and
+  authorization would no longer bind the caller's exact intent.
+
 ### Consequences
 
 CA-W5 may resume proto-first mutation, production route registration, consumer
@@ -312,6 +324,12 @@ NDR-W10-D remain `UNPROVEN` until CA-W6.
 
 **Status**: accepted
 **Date**: 2026-09-18
+
+### Context
+
+Target-member role and mute changes, plus ownership transfer, were split across
+actor-local settings and legacy Group mutation paths without one atomic Conversation
+authority transaction.
 
 ### Decision
 
@@ -329,6 +347,18 @@ advance membership epoch but not MLS epoch because the MLS leaf set is unchanged
 The full contract and failure matrix are documented in
 [`proposals/20260918-conversation-member-authority.md`](./proposals/20260918-conversation-member-authority.md).
 
+### Rationale
+
+Membership authority, owner identity, epochs, events, and delivery must commit under one
+aggregate owner so partial role or ownership transitions cannot become observable.
+
+### Alternatives Considered
+
+- Reuse actor-local member settings: rejected because those settings do not own target
+  member authority.
+- Perform ownership transfer as separate demote/promote mutations: rejected because the
+  intermediate state has no valid single owner.
+
 ### Consequences
 
 - `/conversation/member/settings` remains actor-local preference state.
@@ -342,6 +372,12 @@ The full contract and failure matrix are documented in
 
 **Status**: accepted
 **Date**: 2026-09-19
+
+### Context
+
+The canonical member-authority handlers require the authority Station, while a remote
+member initiates the operation through its Home Station. The accepted signed proposal
+path previously carried only `ChatCommand`.
 
 ### Decision
 
@@ -362,6 +398,18 @@ and runtime gates are documented in
 [`proposals/20260918-conversation-member-authority-remote-routing-amendment.md`](./proposals/20260918-conversation-member-authority-remote-routing-amendment.md).
 
 The Owner accepted AO-D10A.1 through AO-D10A.6 on 2026-09-19.
+
+### Rationale
+
+Reusing the signed durable proposal path preserves exact actor-device intent,
+idempotency, Home-to-authority authentication, and one ordered completion truth.
+
+### Alternatives Considered
+
+- Send a remote bearer directly to the authority Station: rejected because it bypasses
+  Home Station policy and audit.
+- Add an unsigned Federation command or a second result store: rejected because either
+  would create a weaker parallel authority path.
 
 ### Consequences
 

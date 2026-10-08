@@ -811,7 +811,9 @@ function completionCandidateManifest(
 }
 
 export function digestCompletionCandidate(candidateDocument) {
-  return digest(candidateDocument);
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(candidateDocument)))
+    .digest('hex');
 }
 
 function describeCompletionCandidate(manifest) {

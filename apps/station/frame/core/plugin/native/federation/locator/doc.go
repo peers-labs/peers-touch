@@ -17,7 +17,7 @@
 //	├────────────────────────────────────────────────────────────────────┤
 //	│ Resolver                                                           │
 //	│   Owner: TBD (Phase C — frame/core/plugin/native/federation/resolver)│
-//	│   Drives: handle → ActorProfile via /relay/forward HTTP            │
+//	│   Drives: handle → ActorProfile via scoped opaque Relay tunnel     │
 //	└────────────────────────────────────────────────────────────────────┘
 //
 // Hard rules enforced here:

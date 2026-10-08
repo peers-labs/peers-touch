@@ -46,7 +46,8 @@ fn acceptance_station_binding_digests(
     station_url: &str,
     binding: &StationBindingState,
     confirmed_binding: &StationBindingState,
-    registry_active_url: Option<&str>,
+    registry_station_peer_id: Option<&str>,
+    registry_route_id: Option<&str>,
 ) -> Result<(String, String), String> {
     if binding != confirmed_binding {
         return Err("secure content Station binding changed during identity capture".to_string());
@@ -64,19 +65,22 @@ fn acceptance_station_binding_digests(
     if normalized_url.is_empty() {
         return Err("secure content active Station URL is invalid".to_string());
     }
-    let normalized_bound_url = binding
-        .bound_url
+    let bound_station_peer_id = binding
+        .station_peer_id
         .as_deref()
         .map(str::trim)
-        .map(|url| url.trim_end_matches('/'))
-        .filter(|url| !url.is_empty())
-        .ok_or_else(|| "secure content bound Station URL is unavailable".to_string())?;
-    let normalized_registry_url = registry_active_url
+        .filter(|peer_id| !peer_id.is_empty())
+        .ok_or_else(|| "secure content bound Station identity is unavailable".to_string())?;
+    let bound_route_id = binding
+        .active_route_id
+        .as_deref()
         .map(str::trim)
-        .map(|url| url.trim_end_matches('/'))
-        .filter(|url| !url.is_empty())
-        .ok_or_else(|| "secure content registry Station URL is unavailable".to_string())?;
-    if normalized_bound_url != normalized_url || normalized_registry_url != normalized_url {
+        .filter(|route_id| !route_id.is_empty())
+        .ok_or_else(|| "secure content bound Station route is unavailable".to_string())?;
+    if bound_station_peer_id != station_peer_id
+        || registry_station_peer_id != Some(station_peer_id)
+        || registry_route_id != Some(bound_route_id)
+    {
         return Err("secure content Station binding identity is inconsistent".to_string());
     }
     Ok((
@@ -590,7 +594,7 @@ pub fn social_private_moments_acceptance_runtime_identity(
         }
     };
     let station_url = station_client::station_base_url();
-    let registry_active_url = station_client::station_registry().active_url();
+    let registry_entry = station_client::station_registry().active_entry();
     let confirmed_binding = station_binding::service().state();
     let (station_runtime_identity_sha256, station_endpoint_sha256) =
         match acceptance_station_binding_digests(
@@ -598,7 +602,12 @@ pub fn social_private_moments_acceptance_runtime_identity(
             &station_url,
             &binding,
             &confirmed_binding,
-            registry_active_url.as_deref(),
+            registry_entry
+                .as_ref()
+                .map(|entry| entry.station_peer_id.as_str()),
+            registry_entry
+                .as_ref()
+                .map(|entry| entry.active_route_id.as_str()),
         ) {
             Ok(value) => value,
             Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
@@ -856,10 +865,12 @@ mod tests {
     fn binding(phase: StationBindingPhase, generation: u64) -> StationBindingState {
         StationBindingState {
             phase,
-            selected_url: Some("https://station.invalid".to_string()),
-            bound_url: Some("https://station.invalid".to_string()),
-            target_url: None,
-            generation,
+            station_peer_id: Some("station-peer-four".to_string()),
+            active_route_id: Some("route-direct".to_string()),
+            target_station_peer_id: None,
+            target_route_id: None,
+            route_revision: 1,
+            lifecycle_generation: generation,
             error: None,
         }
     }
@@ -872,7 +883,8 @@ mod tests {
             "https://station.invalid",
             &binding,
             &binding,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .expect("station binding should hash");
         let with_slash = acceptance_station_binding_digests(
@@ -880,7 +892,8 @@ mod tests {
             "https://station.invalid/",
             &binding,
             &binding,
-            Some("https://station.invalid/"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .expect("station binding should normalize");
 
@@ -896,7 +909,8 @@ mod tests {
             "https://station.invalid",
             &binding,
             &binding,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .is_err());
         assert!(acceptance_station_binding_digests(
@@ -904,7 +918,8 @@ mod tests {
             "",
             &binding,
             &binding,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .is_err());
     }
@@ -924,22 +939,24 @@ mod tests {
                 "https://station.invalid",
                 &binding,
                 &binding,
-                Some("https://station.invalid"),
+                Some("station-peer-four"),
+                Some("route-direct"),
             )
             .is_err());
         }
     }
 
     #[test]
-    fn acceptance_station_binding_rejects_divergent_urls() {
+    fn acceptance_station_binding_rejects_divergent_identity_or_route() {
         let mut divergent_bound = binding(StationBindingPhase::Bound, 1);
-        divergent_bound.bound_url = Some("https://other-station.invalid".to_string());
+        divergent_bound.station_peer_id = Some("station-peer-five".to_string());
         assert!(acceptance_station_binding_digests(
             "station-peer-four",
             "https://station.invalid",
             &divergent_bound,
             &divergent_bound,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .is_err());
         let binding = binding(StationBindingPhase::Bound, 1);
@@ -948,7 +965,8 @@ mod tests {
             "https://station.invalid",
             &binding,
             &binding,
-            Some("https://other-station.invalid"),
+            Some("station-peer-four"),
+            Some("route-relay"),
         )
         .is_err());
     }
@@ -962,7 +980,8 @@ mod tests {
             "https://station.invalid",
             &before,
             &after,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .is_err());
     }

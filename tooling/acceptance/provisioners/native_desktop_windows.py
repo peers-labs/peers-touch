@@ -456,9 +456,6 @@ class NativeDesktopWindowsProvisioner:
                 resource=f"runtime-cell:{self.contract.cell_id}",
             )
         run_id = _new_run_id()
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            seconds=self.contract.lease_ttl_seconds
-        )
         remote_home = ""
         remote_source = ""
         broker_root = ""
@@ -509,6 +506,9 @@ class NativeDesktopWindowsProvisioner:
                 remote_home,
             )
             self._require_interactive_desktop(host)
+            expires_at = datetime.now(timezone.utc) + timedelta(
+                seconds=self.contract.lease_ttl_seconds
+            )
             acquired = self._broker(
                 broker_path,
                 broker_root,
@@ -1338,10 +1338,7 @@ class NativeDesktopWindowsProvisioner:
                                 f"git -C '{remote_source}' fetch "
                                 f"'{remote_bundle}' '{commit}'; "
                                 f"git -C '{remote_source}' checkout -f "
-                                f"-B '{request.branch}' '{commit}'; "
-                                f"git -C '{remote_source}' reset --hard "
-                                f"'{commit}' | Out-Null; "
-                                f"git -C '{remote_source}' clean -ffdqx"
+                                f"-B '{request.branch}' '{commit}'"
                             ),
                         ),
                         timeout=600,
@@ -1359,6 +1356,22 @@ class NativeDesktopWindowsProvisioner:
                         timeout=30,
                         check=False,
                     )
+        self.transport.run_argv(
+            (
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                (
+                    "$ErrorActionPreference='Stop'; "
+                    f"git -C '{remote_source}' reset --hard "
+                    f"'{commit}' | Out-Null; "
+                    f"git -C '{remote_source}' clean -ffdqx"
+                ),
+            ),
+            timeout=180,
+            check=True,
+        )
         identity = self.transport.run_argv(
             (
                 "powershell.exe",

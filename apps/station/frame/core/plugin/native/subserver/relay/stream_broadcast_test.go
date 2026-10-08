@@ -19,6 +19,7 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -120,9 +121,10 @@ func TestStreamManager_BroadcastFanOut(t *testing.T) {
 	sm.SetAllowedBroadcastTopics(topic)
 
 	ctx := context.Background()
-	sm.Add(ctx, a.peerID, a.relayConn)
-	sm.Add(ctx, b.peerID, b.relayConn)
-	sm.Add(ctx, c.peerID, c.relayConn)
+	expiresAt := time.Now().Add(time.Hour)
+	sm.Add(ctx, a.peerID, 1, expiresAt, a.relayConn)
+	sm.Add(ctx, b.peerID, 1, expiresAt, b.relayConn)
+	sm.Add(ctx, c.peerID, 1, expiresAt, c.relayConn)
 
 	// A publishes; lie about the origin so we can prove the relay
 	// rewrites it to the authenticated peer id.
@@ -160,8 +162,9 @@ func TestStreamManager_BroadcastDropsDisallowedTopic(t *testing.T) {
 	// allow-list deliberately empty → every topic is disallowed.
 
 	ctx := context.Background()
-	sm.Add(ctx, a.peerID, a.relayConn)
-	sm.Add(ctx, b.peerID, b.relayConn)
+	expiresAt := time.Now().Add(time.Hour)
+	sm.Add(ctx, a.peerID, 1, expiresAt, a.relayConn)
+	sm.Add(ctx, b.peerID, 1, expiresAt, b.relayConn)
 
 	a.publish(t, "rogue.topic.v1", "", []byte("payload"))
 
@@ -169,4 +172,113 @@ func TestStreamManager_BroadcastDropsDisallowedTopic(t *testing.T) {
 	b.expectNoFrame(t, 150*time.Millisecond)
 
 	sm.DrainAndClose(ctx, time.Second)
+}
+
+func TestStreamManagerClosesExpiredCredential(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	relayConn, stationConn := net.Pipe()
+	defer stationConn.Close()
+
+	manager := NewStreamManager(nil, 1)
+	manager.Add(
+		ctx,
+		"peer-expired",
+		3,
+		time.Now().Add(-time.Second),
+		relayConn,
+	)
+	if cleaned := manager.PingAll(
+		ctx,
+		time.Second,
+		time.Second,
+	); cleaned != 1 {
+		t.Fatalf("cleaned streams = %d, want 1", cleaned)
+	}
+	if manager.Count() != 0 {
+		t.Fatalf("active streams = %d, want 0", manager.Count())
+	}
+}
+
+func TestStreamManagerValidatedAddIsClosedByConcurrentRemoval(t *testing.T) {
+	ctx := context.Background()
+	relayConn, stationConn := net.Pipe()
+	defer stationConn.Close()
+
+	manager := NewStreamManager(nil, 1)
+	validationStarted := make(chan struct{})
+	releaseValidation := make(chan struct{})
+	addDone := make(chan struct{})
+	var entry *streamEntry
+	var addErr error
+	go func() {
+		entry, addErr = manager.AddValidated(
+			ctx,
+			"peer-racing-revoke",
+			7,
+			time.Now().Add(time.Hour),
+			relayConn,
+			streamLimits{},
+			func() error {
+				close(validationStarted)
+				<-releaseValidation
+				return nil
+			},
+		)
+		close(addDone)
+	}()
+
+	<-validationStarted
+	removeDone := make(chan struct{})
+	go func() {
+		manager.Remove(ctx, "peer-racing-revoke")
+		close(removeDone)
+	}()
+	select {
+	case <-removeDone:
+		t.Fatal("remove bypassed the in-progress admission")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(releaseValidation)
+	<-addDone
+	<-removeDone
+	if addErr != nil {
+		t.Fatalf("validated add: %v", addErr)
+	}
+	if entry == nil || !entry.closed.Load() {
+		t.Fatal("concurrently revoked stream survived admission")
+	}
+	if manager.Count() != 0 {
+		t.Fatalf("active streams = %d, want 0", manager.Count())
+	}
+}
+
+func TestStreamManagerValidatedAddRejectsStaleCredentialBeforeReadLoop(t *testing.T) {
+	ctx := context.Background()
+	relayConn, stationConn := net.Pipe()
+	defer relayConn.Close()
+	defer stationConn.Close()
+
+	manager := NewStreamManager(nil, 1)
+	stale := errors.New("stale credential")
+	entry, err := manager.AddValidated(
+		ctx,
+		"peer-stale",
+		3,
+		time.Now().Add(time.Hour),
+		relayConn,
+		streamLimits{},
+		func() error { return stale },
+	)
+	if !errors.Is(err, stale) {
+		t.Fatalf("validated add error = %v, want %v", err, stale)
+	}
+	if entry != nil {
+		t.Fatal("stale credential created a stream entry")
+	}
+	if manager.Count() != 0 {
+		t.Fatalf("active streams = %d, want 0", manager.Count())
+	}
 }

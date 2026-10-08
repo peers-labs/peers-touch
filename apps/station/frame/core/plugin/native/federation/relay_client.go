@@ -1,20 +1,15 @@
 // relay_client.go — runtime singleton describing this station's egress
-// relay channel. The federation resolver uses it to forward HTTP requests
-// to peer stations through `/relay/forward/<peer_id>/...` without having
-// to import the relay-client subserver directly (which would invert
+// relay channel. Federation consumers use it to open scoped opaque tunnels
+// without importing the relay-client subserver directly (which would invert
 // layering: federation is read by relay-client at startup, not the other
 // way around).
 //
 // Lifecycle:
 //
-//   - The relay-client subserver, once it has acquired a relay token and
-//     opened the framed stream, calls RegisterRelayClient with a snapshot
-//     of (BaseURL, Token, accessor). The accessor lets federation read
-//     the freshest token without holding a copy that goes stale on
-//     refresh; the relay-client subserver rotates tokens internally.
-//   - The federation resolver calls RelayClient() per request to obtain
-//     the current credentials. Nil result == relay-client not yet ready
-//     or disabled; the resolver returns ErrRelayUnavailable in that case.
+//   - The relay-client subserver registers a live handle only while its
+//     authenticated mount stream is connected.
+//   - Federation consumers call RelayClient() per request. Nil result or
+//     Available()==false means relay-client is not ready or disabled.
 //
 // Why a singleton? At most one relay-client subserver runs per station
 // (the framework's subserver registry enforces that). The federation
@@ -26,6 +21,7 @@ package federation
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync/atomic"
 )
 
@@ -40,26 +36,26 @@ import (
 // guard the adapter's error wiring.
 var ErrRelayNotConnected = errors.New("relay-client: not connected")
 
-// ForwardAuthorizationHeader carries the target-station Authorization value
-// through /relay/forward when the relay hop itself already consumes the
-// regular Authorization header for the relay-client bearer token. The
-// station-side relay-client loopback dispatcher rewrites this header back to
-// Authorization before calling the local HTTP server.
-const ForwardAuthorizationHeader = "X-Peers-Forward-Authorization"
-
 // RelayClientHandle is the read-only view federation consumers see.
 //
-// Implementations MUST be safe for concurrent use; the resolver may call
-// Token() from many request goroutines at once.
+// Implementations MUST be safe for concurrent use.
 type RelayClientHandle interface {
-	// BaseURL returns the relay's HTTP origin (no trailing slash). The
-	// resolver builds forward URLs as `<base>/relay/forward/<peer>/<path>`.
-	BaseURL() string
+	// Available reports whether the authenticated mount stream can currently
+	// open peer tunnels.
+	Available() bool
 
-	// Token returns the relay-access bearer token currently held by the
-	// relay-client subserver. May return "" briefly during register /
-	// refresh; callers must treat that as transient and retry later.
-	Token() string
+	// RelayOrigin returns the configured Relay origin for locator mount hints.
+	// It is not a transport endpoint for business HTTP and carries no bearer.
+	RelayOrigin() string
+
+	// RoundTrip opens a scoped peer tunnel, verifies the target Station route
+	// attestation and inner TLS SPKI, and sends one canonical HTTP request.
+	// Authorization and business metadata remain inside inner TLS.
+	RoundTrip(
+		context.Context,
+		string,
+		*http.Request,
+	) (*http.Response, error)
 
 	// Publish writes a Broadcast frame on the relay stream (Tier C1).
 	// Returns an error when the stream is not connected; the publisher

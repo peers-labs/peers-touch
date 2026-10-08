@@ -19,6 +19,7 @@ from .mobile_simulator import (
     ChatMixedNativeProvisioner,
     MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
+    MobileRelaySimulatorProvisioner,
     MobileSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
     MobileStationLifecycleSimulatorProvisioner,
@@ -40,6 +41,7 @@ from .oauth2_client_local import (
 from .station_access_desktop_oauth_native import (
     StationAccessDesktopOAuthNativeProvisioner,
 )
+from .station_access_relay_role import StationAccessRelayRoleProvisioner
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
@@ -56,6 +58,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     MobileIOSLayoutSimulatorProvisioner.environment_id: (
         MobileIOSLayoutSimulatorProvisioner
     ),
+    MobileRelaySimulatorProvisioner.environment_id: (
+        MobileRelaySimulatorProvisioner
+    ),
     MobileSimulatorProvisioner.environment_id: MobileSimulatorProvisioner,
     MobileSocialSimulatorProvisioner.environment_id: (
         MobileSocialSimulatorProvisioner
@@ -68,6 +73,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     StationAccessDesktopOAuthNativeProvisioner.environment_id: (
         StationAccessDesktopOAuthNativeProvisioner
+    ),
+    StationAccessRelayRoleProvisioner.environment_id: (
+        StationAccessRelayRoleProvisioner
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
@@ -109,6 +117,7 @@ def get_provisioner(
     if provisioner_class in {
         ChatMixedNativeProvisioner,
         MobileDirectSimulatorProvisioner,
+        MobileRelaySimulatorProvisioner,
         MobileSocialSimulatorProvisioner,
         StationAccessNativeProvisioner,
     }:
@@ -146,11 +155,13 @@ __all__ = [
     "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",
     "MobileNativeProvisioner",
+    "MobileRelaySimulatorProvisioner",
     "MobileSimulatorProvisioner",
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
     "StationAccessDesktopOAuthNativeProvisioner",
     "StationAccessNativeProvisioner",
+    "StationAccessRelayRoleProvisioner",
     "NativeDesktopLinuxProvisioner",
     "NativeDesktopMacOSProvisioner",
     "NativeDesktopWindowsProvisioner",

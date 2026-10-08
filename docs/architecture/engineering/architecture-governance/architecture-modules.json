@@ -491,6 +491,46 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "api-ownership",
+      "root": "docs/architecture/engineering/api-governance",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": false,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "AO-D01",
+        "AO-D02",
+        "AO-D03",
+        "AO-D04",
+        "AO-D05",
+        "AO-D06",
+        "AO-D07",
+        "AO-D10",
+        "AO-D10A"
+      ],
+      "governedPaths": [
+        "apps/station/app/cmd/station_api_ownership",
+        "docs/architecture/engineering/api-governance"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "station-access-lifecycle",
       "root": "docs/architecture/platform/station/access",
       "status": "active",
@@ -517,16 +557,25 @@
         "SAL-D02",
         "SAL-D03",
         "SAL-D04",
-        "SAL-D05",
         "SAL-D06",
-        "SAL-D07"
+        "SAL-D07",
+        "SAL-D08",
+        "SAL-D09",
+        "SAL-D10",
+        "SAL-D11",
+        "SAL-D12",
+        "SAL-D13"
       ],
       "governedPaths": [
+        "apps/desktop/src/components/common/StationPicker.tsx",
+        "apps/desktop/src-tauri/src/application/station_binding",
+        "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
         "apps/desktop/src/services/desktop_api.ts",
         "apps/desktop/src-tauri/src/application/auth",
         "apps/desktop/src-tauri/src/application/federation",
         "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/federation.rs",
+        "apps/mobile/src/features/station",
         "apps/mobile/src/services/gateways/gatewayTypes.ts",
         "apps/mobile/src/services/gateways/profileGateway.ts",
         "apps/mobile/src/services/mobileCommands.ts",
@@ -534,10 +583,14 @@
         "apps/mobile/src-tauri/src/commands/oauth.rs",
         "apps/mobile/src-tauri/src/runtime/oauth",
         "apps/mobile/src-tauri/src/runtime/station_transport",
+        "apps/station/app/main.go",
+        "apps/station/frame/core/plugin/native/node",
+        "apps/station/frame/core/runtime/role",
+        "apps/station/frame/peers.go",
         "apps/station/frame/touch",
         "docs/architecture/platform/station/access",
         "model/domain/access_gate",
-        "model/domain/peer/station_identity.proto",
+        "model/domain/peer",
         "tooling/acceptance/gates/station_access"
       ],
       "capabilities": [],

@@ -166,6 +166,10 @@ message CallSignal {
   }
 }
 
+// FederatedSignalAck confirms that the recipient Home Station accepted one
+// authenticated call signal for local publication.
+message FederatedSignalAck {}
+
 // Cross-Station readback for direct-call arbitration. The callee Home Station
 // is the sole authority for this short-lived control-plane state.
 message GetFederatedCallResolutionRequest {

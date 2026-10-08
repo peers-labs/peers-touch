@@ -22,9 +22,17 @@ var relayOptions struct {
 						StreamPingInterval      int    `pconf:"stream-ping-interval"`
 						StreamPingTimeout       int    `pconf:"stream-ping-timeout"`
 						StreamListenAddr        string `pconf:"stream-listen-addr"`
+						PublicListenAddr        string `pconf:"public-listen-addr"`
+						PublicUpstreamURL       string `pconf:"public-upstream-url"`
 						GracefulDrainTimeout    int    `pconf:"graceful-drain-timeout"`
 						TLSCertFile             string `pconf:"tls-cert-file"`
 						TLSKeyFile              string `pconf:"tls-key-file"`
+						AllowInsecureLoopback   bool   `pconf:"allow-insecure-loopback"`
+						SigningKeyFile          string `pconf:"signing-key-file"`
+						OperatorKeyFile         string `pconf:"operator-key-file"`
+						OperatorIssuer          string `pconf:"operator-issuer"`
+						OperatorAudience        string `pconf:"operator-audience"`
+						OperatorScope           string `pconf:"operator-scope"`
 					} `pconf:"relay"`
 					Turn struct {
 						Enabled    bool   `pconf:"enabled"`
@@ -49,6 +57,9 @@ func (p *relayPlugin) Options() []option.Option {
 	r := relayOptions.Peers.Node.Server.Subserver.Relay
 
 	opts = append(opts, WithEnabled(r.Enabled))
+	if baseURL := config.Get("peers.node.server.baseurl").String(""); baseURL != "" {
+		opts = append(opts, WithPublicBaseURL(baseURL))
+	}
 
 	if r.MaxStations > 0 {
 		opts = append(opts, WithMaxStations(r.MaxStations))
@@ -74,6 +85,12 @@ func (p *relayPlugin) Options() []option.Option {
 	if r.StreamListenAddr != "" {
 		opts = append(opts, WithStreamListenAddr(r.StreamListenAddr))
 	}
+	if r.PublicListenAddr != "" {
+		opts = append(opts, WithPublicListenAddr(r.PublicListenAddr))
+	}
+	if r.PublicUpstreamURL != "" {
+		opts = append(opts, WithPublicUpstreamURL(r.PublicUpstreamURL))
+	}
 	if r.GracefulDrainTimeout > 0 {
 		opts = append(opts, WithGracefulDrainTimeout(r.GracefulDrainTimeout))
 	}
@@ -82,6 +99,22 @@ func (p *relayPlugin) Options() []option.Option {
 	}
 	if r.TLSKeyFile != "" {
 		opts = append(opts, WithTLSKeyFile(r.TLSKeyFile))
+	}
+	opts = append(opts, WithAllowInsecureLoopback(r.AllowInsecureLoopback))
+	if r.SigningKeyFile != "" {
+		opts = append(opts, WithSigningKeyFile(r.SigningKeyFile))
+	}
+	if r.OperatorKeyFile != "" {
+		opts = append(opts, WithOperatorKeyFile(r.OperatorKeyFile))
+	}
+	if r.OperatorIssuer != "" {
+		opts = append(opts, WithOperatorIssuer(r.OperatorIssuer))
+	}
+	if r.OperatorAudience != "" {
+		opts = append(opts, WithOperatorAudience(r.OperatorAudience))
+	}
+	if r.OperatorScope != "" {
+		opts = append(opts, WithOperatorScope(r.OperatorScope))
 	}
 
 	turn := relayOptions.Peers.Node.Server.Subserver.Turn

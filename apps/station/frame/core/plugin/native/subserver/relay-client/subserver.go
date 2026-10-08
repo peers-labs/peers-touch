@@ -1,8 +1,5 @@
-// Package relayclient implements the station-side driver that mounts the local
-// Station onto a remote Relay subserver. It is the missing piece between the
-// existing relay/client library (which knows how to speak the framed TCP
-// protocol) and the Hertz HTTP server we want to expose through the relay's
-// /relay/forward/<peer>/<path> endpoint.
+// Package relayclient mounts a Station onto a Relay and terminates opaque
+// client-to-Station TLS inside the Station process.
 //
 // Lifecycle (Start spawns a single goroutine running run()):
 //
@@ -10,13 +7,12 @@
 //     Subserver Start order is non-deterministic and the local Hertz HTTP
 //     server may not yet be listening when Start is invoked.
 //  2. Acquire a relay_token. We prefer a cached value at TokenStorePath; on
-//     cache miss we POST /api/v1/relay/register with the InviteToken (which
-//     the operator pre-distributed via tooling/scripts/pt-relay-issue-invites.sh)
-//     and persist the resulting token.
-//  3. Hand off to relay/client.Client which keeps the TCP stream alive,
-//     reconnects on disconnect, and forwards request frames to a dispatcher
-//     we provide. Our dispatcher loops every incoming HTTP request back into
-//     the local Hertz server on 127.0.0.1:<LocalHTTPPort>.
+//     cache miss we complete challenge-bound enrollment with the operator's
+//     one-time InviteToken and persist the resulting structured credential.
+//  3. Hand off to relay/client.Client, which multiplexes opaque tunnels over
+//     the authenticated mount stream.
+//  4. Terminate inner TLS 1.3 and bridge decrypted HTTP to the canonical local
+//     Station router. The Relay never receives method, path, headers, or body.
 //
 // Layering note: this subserver lives in frame/core/plugin/native and reuses
 // frame-layer components only. It does not touch apps/station/app and does
@@ -32,8 +28,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -42,7 +36,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/client"
-	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/protocol"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
@@ -54,18 +47,17 @@ type federationHandle struct {
 	sub *SubServer
 }
 
-func (f federationHandle) BaseURL() string {
-	if f.sub == nil {
-		return ""
-	}
-	return strings.TrimRight(f.sub.opts.RelayURL, "/")
+func (f federationHandle) Available() bool {
+	return f.sub != nil &&
+		f.sub.Status() == server.StatusRunning &&
+		f.sub.getToken() != ""
 }
 
-func (f federationHandle) Token() string {
-	if f.sub == nil {
+func (f federationHandle) RelayOrigin() string {
+	if f.sub == nil || f.sub.opts == nil {
 		return ""
 	}
-	return f.sub.getToken()
+	return strings.TrimRight(strings.TrimSpace(f.sub.opts.RelayURL), "/")
 }
 
 // Publish forwards to the embedded *client.Client. Error semantics:
@@ -109,31 +101,56 @@ var _ server.Subserver = &SubServer{}
 type SubServer struct {
 	opts *Options
 
-	mu     sync.Mutex
-	status server.Status
-	cancel context.CancelFunc
-	runner *client.Client
+	mu              sync.Mutex
+	status          server.Status
+	enrollmentState string
+	cancel          context.CancelFunc
+	runner          *client.Client
+	stationSigner   stationConnectionSigner
+	innerTLS        *innerTLSIngress
 
-	// tokenMu guards currentToken. The token is read by both the heartbeat
-	// goroutine and the token-refresher callback; we keep them in lockstep
-	// instead of re-reading from disk on every tick.
-	tokenMu      sync.RWMutex
-	currentToken string
-}
+	relayHTTPTransportOnce sync.Once
+	relayHTTPTransport     *http.Transport
 
-// setToken stores the latest relay_token. Callers are: initial register,
-// token refresher, and any future revoke-and-replace path.
-func (s *SubServer) setToken(t string) {
-	s.tokenMu.Lock()
-	s.currentToken = t
-	s.tokenMu.Unlock()
+	routeMu         sync.RWMutex
+	publishedRoutes map[string]uint64
+
+	// tokenMu guards the complete current mount credential. Route and grant
+	// issuance must bind the same Relay, Station, and generation as the token
+	// used for registration.
+	tokenMu           sync.RWMutex
+	currentCredential *cachedMountCredential
 }
 
 // getToken returns the latest relay_token, or empty string if none acquired.
 func (s *SubServer) getToken() string {
 	s.tokenMu.RLock()
 	defer s.tokenMu.RUnlock()
-	return s.currentToken
+	if s.currentCredential == nil {
+		return ""
+	}
+	return s.currentCredential.Token
+}
+
+func (s *SubServer) setCredential(credential *cachedMountCredential) {
+	s.tokenMu.Lock()
+	defer s.tokenMu.Unlock()
+	if credential == nil {
+		s.currentCredential = nil
+		return
+	}
+	copy := *credential
+	s.currentCredential = &copy
+}
+
+func (s *SubServer) getCredential() (*cachedMountCredential, bool) {
+	s.tokenMu.RLock()
+	defer s.tokenMu.RUnlock()
+	if s.currentCredential == nil {
+		return nil, false
+	}
+	copy := *s.currentCredential
+	return &copy, true
 }
 
 // getRunner returns the live *client.Client under the subserver lock,
@@ -148,14 +165,22 @@ func (s *SubServer) getRunner() *client.Client {
 // NewRelayClientSubServer constructs the subserver from accumulated options.
 func NewRelayClientSubServer(opts ...option.Option) server.Subserver {
 	o := option.GetOptions(opts...).Ctx().Value(optionsKey{}).(*Options)
-	return &SubServer{opts: o}
+	return &SubServer{
+		opts:            o,
+		publishedRoutes: make(map[string]uint64),
+	}
 }
 
 // Name returns the subserver identifier shown in framework logs.
 func (s *SubServer) Name() string { return "relay-client" }
 
-// Status returns the current lifecycle status.
-func (s *SubServer) Status() server.Status { return s.status }
+// Status reports ready only after the Relay accepted the current mount
+// credential and the stream handshake completed.
+func (s *SubServer) Status() server.Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status
+}
 
 // Type returns the registry-level subserver type.
 func (s *SubServer) Type() server.SubserverType { return SubserverTypeRelayClient }
@@ -186,7 +211,7 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.status.IsRunning() {
+	if s.status != "" && s.status != server.StatusStopped {
 		return errors.New("relay-client is already running")
 	}
 	if !s.opts.Enabled {
@@ -200,10 +225,14 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	if s.opts.RelayStreamAddr == "" {
 		return fmt.Errorf("[relay-client] relay-stream-addr is required when enabled=true")
 	}
+	if err := validateRelayClientOptions(s.opts); err != nil {
+		return fmt.Errorf("[relay-client] %w", err)
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
-	s.status = server.StatusRunning
+	s.status = server.StatusStarting
+	s.enrollmentState = "connecting"
 
 	go s.run(runCtx)
 
@@ -219,6 +248,8 @@ func (s *SubServer) Stop(ctx context.Context) error {
 	runner := s.runner
 	s.cancel = nil
 	s.runner = nil
+	s.innerTLS = nil
+	s.status = server.StatusStopping
 	s.mu.Unlock()
 
 	if cancel != nil {
@@ -228,6 +259,8 @@ func (s *SubServer) Stop(ctx context.Context) error {
 		runner.Stop()
 	}
 
+	s.setCredential(nil)
+	s.clearPublishedRoutes()
 	federation.ClearRelayClient()
 
 	s.mu.Lock()
@@ -247,28 +280,47 @@ func (s *SubServer) run(ctx context.Context) {
 	peerID, err := s.waitForStationPeerID(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "[relay-client] could not resolve station peer id: %v", err)
+		s.setEnrollmentFailure(err)
 		return
 	}
 	logger.Infof(ctx, "[relay-client] resolved station_peer_id=%s", peerID)
 
-	relayToken, err := s.acquireRelayToken(ctx, peerID)
+	ingress, err := newInnerTLSIngress(
+		s.opts.LocalHTTPPort,
+		time.Duration(s.opts.LocalHTTPTimeoutSec)*time.Second,
+	)
 	if err != nil {
-		logger.Errorf(ctx, "[relay-client] could not acquire relay token: %v", err)
+		logger.Errorf(ctx, "[relay-client] initialize inner TLS ingress: %v", err)
+		s.setEnrollmentFailure(err)
 		return
 	}
-	s.setToken(relayToken)
-	federation.RegisterRelayClient(federationHandle{sub: s})
+	s.mu.Lock()
+	s.innerTLS = ingress
+	s.mu.Unlock()
+
+	credential, err := s.acquireRelayCredential(ctx, peerID)
+	if err != nil {
+		logger.Errorf(ctx, "[relay-client] could not acquire relay token: %v", err)
+		s.setEnrollmentFailure(err)
+		return
+	}
+	s.setCredential(credential)
 	logger.Infof(ctx, "[relay-client] relay token acquired, opening stream")
 
 	cli := client.New(client.Config{
-		RelayAddr:             s.opts.RelayStreamAddr,
-		RelayToken:            relayToken,
-		StationPeerID:         peerID,
-		Dispatcher:            s.makeDispatcher(),
-		TokenRefresher:        s.makeTokenRefresher(),
-		BroadcastHandler:      s.makeBroadcastHandler(),
-		UseTLS:                s.opts.UseTLS,
-		TLSInsecureSkipVerify: s.opts.TLSInsecureSkipVerify,
+		RelayAddr:              s.opts.RelayStreamAddr,
+		RelayToken:             credential.Token,
+		StationPeerID:          peerID,
+		TunnelHandler:          s.handleInboundTunnel,
+		TokenRefresher:         s.makeTokenRefresher(),
+		CredentialRejected:     s.makeCredentialRejected(peerID),
+		ConnectionStateChanged: s.setMountReady,
+		BroadcastHandler:       s.makeBroadcastHandler(),
+		UseTLS:                 s.opts.UseTLS,
+		TLSInsecureSkipVerify:  s.opts.TLSInsecureSkipVerify,
+		TokenRefreshInterval: time.Duration(
+			s.opts.CredentialRefreshIntervalSec,
+		) * time.Second,
 	})
 
 	s.mu.Lock()
@@ -282,6 +334,7 @@ func (s *SubServer) run(ctx context.Context) {
 	go s.runHeartbeat(ctx)
 
 	cli.Run(ctx)
+	go s.runRoutePublisher(ctx)
 
 	<-ctx.Done()
 	logger.Infof(ctx, "[relay-client] run loop exiting: %v", ctx.Err())
@@ -298,7 +351,7 @@ func (s *SubServer) runHeartbeat(ctx context.Context) {
 		interval = 30 * time.Second
 	}
 	url := strings.TrimRight(s.opts.RelayURL, "/") + "/api/v1/relay/heartbeat"
-	cl := &http.Client{Timeout: 10 * time.Second}
+	cl := s.relayHTTPClient(10 * time.Second)
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
@@ -396,122 +449,26 @@ func (s *SubServer) fetchBootstrapPeerID(ctx context.Context) (string, error) {
 	return out.PeerID, nil
 }
 
-// acquireRelayToken returns a usable relay_token. Cache-first: if a previously
-// issued token exists at TokenStorePath we trust it as long as the file is
-// non-empty. The relay subserver is the source of truth for token expiry and
-// will reject expired tokens at handshake time, which surfaces in client logs.
-//
-// On cache miss we exchange the invite_token for a relay_token via /register
-// and persist the new value so future restarts do not consume a fresh invite.
-func (s *SubServer) acquireRelayToken(ctx context.Context, peerID string) (string, error) {
-	if s.opts.TokenStorePath != "" {
-		if data, err := os.ReadFile(s.opts.TokenStorePath); err == nil {
-			t := strings.TrimSpace(string(data))
-			if t != "" {
-				logger.Infof(ctx, "[relay-client] reusing cached relay token from %s", s.opts.TokenStorePath)
-				return t, nil
-			}
-		}
+func (s *SubServer) handleInboundTunnel(
+	ctx context.Context,
+	tunnel *client.InboundTunnel,
+) {
+	if tunnel == nil || !s.routeIsPublished(
+		tunnel.RouteID(),
+		tunnel.RouteGeneration(),
+	) {
+		logger.Warnf(ctx, "[relay-client] rejected tunnel for an unpublished route")
+		return
 	}
-
-	if s.opts.InviteToken == "" {
-		return "", fmt.Errorf("no cached relay token at %q and invite-token is empty", s.opts.TokenStorePath)
+	s.mu.Lock()
+	ingress := s.innerTLS
+	s.mu.Unlock()
+	if ingress != nil {
+		logger.Infof(ctx, "[relay-client] accepted inbound tunnel")
+		ingress.Serve(ctx, tunnel)
+		return
 	}
-
-	relayToken, err := s.callRegister(ctx, peerID)
-	if err != nil {
-		return "", err
-	}
-	if s.opts.TokenStorePath != "" {
-		if err := os.MkdirAll(filepath.Dir(s.opts.TokenStorePath), 0o700); err == nil {
-			if werr := os.WriteFile(s.opts.TokenStorePath, []byte(relayToken), 0o600); werr != nil {
-				logger.Warnf(ctx, "[relay-client] could not persist relay token to %s: %v", s.opts.TokenStorePath, werr)
-			}
-		}
-	}
-	return relayToken, nil
-}
-
-func (s *SubServer) callRegister(ctx context.Context, peerID string) (string, error) {
-	body, _ := json.Marshal(map[string]string{
-		"invite_token": s.opts.InviteToken,
-		"label":        s.opts.Label,
-	})
-	url := strings.TrimRight(s.opts.RelayURL, "/") + "/api/v1/relay/register"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Station-Peer-ID", peerID)
-
-	cl := &http.Client{Timeout: 30 * time.Second}
-	resp, err := cl.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("dial relay: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("relay register status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	var out struct {
-		RelayToken string `json:"relay_token"`
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", fmt.Errorf("relay register decode: %w (body=%s)", err, strings.TrimSpace(string(raw)))
-	}
-	if out.RelayToken == "" {
-		return "", fmt.Errorf("relay register response missing relay_token: %s", strings.TrimSpace(string(raw)))
-	}
-	return out.RelayToken, nil
-}
-
-// makeDispatcher returns a relay/client.Dispatcher that loops every incoming
-// forwarded request back into the local Hertz server. We strip hop-by-hop
-// headers so they are not blindly proxied — they describe the relay→station
-// hop, not the station→loopback hop.
-func (s *SubServer) makeDispatcher() client.Dispatcher {
-	base := fmt.Sprintf("http://127.0.0.1:%d", s.opts.LocalHTTPPort)
-	timeout := time.Duration(s.opts.LocalHTTPTimeoutSec) * time.Second
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	cl := &http.Client{Timeout: timeout}
-	return func(ctx context.Context, req *protocol.RequestFrame) (uint32, map[string]string, []byte, error) {
-		url := base + req.Path
-		httpReq, err := http.NewRequestWithContext(ctx, req.Method, url, bytes.NewReader(req.Body))
-		if err != nil {
-			return http.StatusBadGateway, map[string]string{"Content-Type": "text/plain"}, []byte(err.Error()), nil
-		}
-		for k, v := range req.Headers {
-			if isHopByHop(k) {
-				continue
-			}
-			httpReq.Header.Set(k, v)
-		}
-		if targetAuth := strings.TrimSpace(httpReq.Header.Get(federation.ForwardAuthorizationHeader)); targetAuth != "" {
-			httpReq.Header.Set("Authorization", targetAuth)
-			httpReq.Header.Del(federation.ForwardAuthorizationHeader)
-		}
-		resp, err := cl.Do(httpReq)
-		if err != nil {
-			return http.StatusBadGateway,
-				map[string]string{"Content-Type": "text/plain"},
-				[]byte(err.Error()),
-				nil
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		hdrs := make(map[string]string, len(resp.Header))
-		for k, v := range resp.Header {
-			if len(v) == 0 || isHopByHop(k) {
-				continue
-			}
-			hdrs[k] = v[0]
-		}
-		return uint32(resp.StatusCode), hdrs, body, nil
-	}
+	logger.Warnf(ctx, "[relay-client] rejected tunnel because inner TLS is unavailable")
 }
 
 // makeBroadcastHandler bridges relay-client read-loop frames to the
@@ -536,61 +493,82 @@ func (s *SubServer) makeBroadcastHandler() client.BroadcastHandler {
 	}
 }
 
-// makeTokenRefresher swaps the current relay_token for a freshly-signed one
-// via /api/v1/relay/token/refresh. The refreshed token is persisted to disk
-// so a subsequent station restart does not invalidate the live mount.
+// makeTokenRefresher rotates the current credential only after a fresh
+// Station host-key proof.
 func (s *SubServer) makeTokenRefresher() client.TokenRefresher {
 	return func(ctx context.Context, currentToken string) (string, error) {
-		url := strings.TrimRight(s.opts.RelayURL, "/") + "/api/v1/relay/token/refresh"
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+		credential, err := s.rotateRelayCredential(ctx, currentToken)
 		if err != nil {
 			return "", err
 		}
-		req.Header.Set("Authorization", "Bearer "+currentToken)
-		cl := &http.Client{Timeout: 15 * time.Second}
-		resp, err := cl.Do(req)
-		if err != nil {
-			return "", err
+		s.setCredential(credential)
+		if err := s.persistRelayCredential(credential); err != nil {
+			logger.Warnf(
+				ctx,
+				"[relay-client] could not persist rotated credential: %v",
+				err,
+			)
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("status=%d", resp.StatusCode)
-		}
-		var out struct {
-			RelayToken string `json:"relay_token"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-			return "", err
-		}
-		if out.RelayToken == "" {
-			return "", fmt.Errorf("missing relay_token in refresh response")
-		}
-		if s.opts.TokenStorePath != "" {
-			if werr := os.WriteFile(s.opts.TokenStorePath, []byte(out.RelayToken), 0o600); werr != nil {
-				logger.Warnf(ctx, "[relay-client] could not persist refreshed token: %v", werr)
-			}
-		}
-		s.setToken(out.RelayToken)
-		return out.RelayToken, nil
+		return credential.Token, nil
 	}
 }
 
-// hopByHopHeaders enumerates the standard RFC 7230 §6.1 hop-by-hop headers
-// plus Host, which we never want to copy from one hop to another because it
-// would break loopback addressing.
-var hopByHopHeaders = map[string]struct{}{
-	"Connection":          {},
-	"Keep-Alive":          {},
-	"Proxy-Authenticate":  {},
-	"Proxy-Authorization": {},
-	"Te":                  {},
-	"Trailer":             {},
-	"Transfer-Encoding":   {},
-	"Upgrade":             {},
-	"Host":                {},
+func (s *SubServer) makeCredentialRejected(
+	stationPeerID string,
+) client.CredentialRejectedHandler {
+	return func(ctx context.Context, _ string) (string, error) {
+		if err := s.clearRelayCredential(); err != nil {
+			logger.Warnf(ctx, "[relay-client] clear rejected credential: %v", err)
+		}
+		s.setEnrollmentRequired()
+		credential, err := s.acquireRelayCredential(ctx, stationPeerID)
+		if err != nil {
+			s.setEnrollmentFailure(err)
+			return "", err
+		}
+		s.setCredential(credential)
+		return credential.Token, nil
+	}
 }
 
-func isHopByHop(h string) bool {
-	_, ok := hopByHopHeaders[http.CanonicalHeaderKey(h)]
-	return ok
+func (s *SubServer) setMountReady(connected bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if connected {
+		s.status = server.StatusRunning
+		s.enrollmentState = "mounted"
+		federation.RegisterRelayClient(federationHandle{sub: s})
+		go s.publishDefaultRoute(context.Background())
+		return
+	}
+	if s.status != server.StatusStopping && s.status != server.StatusStopped {
+		s.status = server.StatusStarting
+		s.enrollmentState = "reconnecting"
+	}
+	s.clearPublishedRoutes()
+	federation.ClearRelayClient()
+}
+
+func (s *SubServer) setEnrollmentRequired() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status == server.StatusStopping || s.status == server.StatusStopped {
+		return
+	}
+	s.status = server.StatusStarting
+	s.enrollmentState = "enrollment_required"
+}
+
+func (s *SubServer) setEnrollmentFailure(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status == server.StatusStopping || s.status == server.StatusStopped {
+		return
+	}
+	s.status = server.StatusError
+	if errors.Is(err, ErrEnrollmentRequired) {
+		s.enrollmentState = "enrollment_required"
+		return
+	}
+	s.enrollmentState = "error"
 }

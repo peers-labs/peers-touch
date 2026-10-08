@@ -55,6 +55,7 @@ services:
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [station]
     environment:
+      PEERS_NODE_ROLE: station
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
       PEERS_OAUTH_BRIDGE_SECRET: ${PEERS_OAUTH_BRIDGE_SECRET:-}
       # Canonical Station-owned durable files, including Messaging attachment
@@ -165,8 +166,8 @@ services:
     restart: unless-stopped
 
   # ── Relay Station ──────────────────────────────────────────────
-  # Same image, same Dockerfile — the relay role is selected by the
-  # node's own conf (sub_relay.yml) at runtime, not by build flags.
+  # Same image, same Dockerfile. PEERS_NODE_ROLE selects the relay
+  # composition allowlist at runtime; build flags never fork the binary.
   relay:
     build:
       context: ../..
@@ -177,6 +178,7 @@ services:
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [relay]
     environment:
+      PEERS_NODE_ROLE: relay
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
       PEERS_DATA_DIR: /app/data
       PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_relay} port=5432 sslmode=disable TimeZone=Asia/Shanghai
@@ -194,23 +196,47 @@ services:
       # by entrypoint.sh. Only the Relay node sets this; stations leave it
       # unset so their relay subserver's listener stays dormant.
       RELAY_STREAM_LISTEN_ADDR: ${RELAY_STREAM_LISTEN_ADDR:-:4501}
+      RELAY_PUBLIC_LISTEN_ADDR: ${RELAY_PUBLIC_LISTEN_ADDR:-:18443}
+      RELAY_PUBLIC_UPSTREAM_URL: ${RELAY_PUBLIC_UPSTREAM_URL:-http://127.0.0.1:18080}
+      RELAY_TLS_CERT_FILE: ${RELAY_TLS_CERT_FILE:-}
+      RELAY_TLS_KEY_FILE: ${RELAY_TLS_KEY_FILE:-}
+      RELAY_ALLOW_INSECURE_LOOPBACK: ${RELAY_ALLOW_INSECURE_LOOPBACK:-false}
+      RELAY_SIGNING_KEY_FILE: ${RELAY_SIGNING_KEY_FILE:-}
+      RELAY_OPERATOR_KEY_FILE: ${RELAY_OPERATOR_KEY_FILE:-}
+      RELAY_OPERATOR_ISSUER: ${RELAY_OPERATOR_ISSUER:-}
+      RELAY_OPERATOR_AUDIENCE: ${RELAY_OPERATOR_AUDIENCE:-}
+      RELAY_OPERATOR_SCOPE: ${RELAY_OPERATOR_SCOPE:-}
       PEERS_NODE_LABEL: ${PEERS_NODE_LABEL:-}
     ports:
-      - "${RELAY_STATION_PORT:-18081}:18080"
+      - "127.0.0.1:${RELAY_CONTROL_PORT:-18082}:18080"
+      - "${RELAY_PUBLIC_PORT:-18081}:18443"
       - "${LIBP2P_PORT:-4001}:4001"
       # Relay subserver TCP stream listener for station mounts.
       - "${RELAY_STREAM_PORT:-4501}:4501"
     volumes:
       - peers_data:/app/data
+      - ${RELAY_SECRET_DIR_MOUNT:-/dev/null}:/app/relay-secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:18080/sub-oss/healthz"]
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:18080/healthz"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 30s
+    restart: unless-stopped
+
+  relay-proxy:
+    image: nginx:1.27-alpine
+    profiles: [relay]
+    network_mode: "service:relay"
+    volumes:
+      - ./relay-nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${RELAY_SECRET_DIR_MOUNT:-/dev/null}:/etc/nginx/tls:ro
+    depends_on:
+      relay:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── LiveKit SFU (group voice/video calls) ──────────────────────

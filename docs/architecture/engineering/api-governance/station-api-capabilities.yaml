@@ -8,7 +8,11 @@ activation:
     - complete_inventory_for_every_governed_prefix
     - implementation_gate_and_schema_validation_land_together
 governed_prefixes:
+  - /.well-known/peers-touch/access
   - /sub-bootstrap/station-identity
+  - /dashboard/api/relay
+  - /api/v1/relay/grants
+  - /api/v1/relay/routes
   - /actor/access/
   - /conversation/
   - /messaging/
@@ -26,8 +30,13 @@ governed_prefixes:
   - /notification/push/
   - /federation/
 owner_roots:
+  station.access_endpoint:
+    - apps/station/frame/core/plugin/native/subserver/bootstrap/
+    - apps/station/frame/core/plugin/native/subserver/relay/
   station.bootstrap_identity:
     - apps/station/frame/core/plugin/native/subserver/bootstrap/
+  station.dashboard_access:
+    - apps/station/app/subserver/dashboard/
   station.access:
     - apps/station/frame/touch/
   station.conversation:
@@ -78,6 +87,54 @@ ddd_layers:
       - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
 
 capabilities:
+  - id: access.endpoint.resolve
+    domain_owner: station.access_endpoint
+    truth_owner: station.route
+    exposure: client
+    canonical_route: { method: POST, path: /.well-known/peers-touch/access }
+    request_proto: peers_touch.model.peer.v1.AccessEndpointRequest
+    response_proto: peers_touch.model.peer.v1.AccessEndpointResponse
+    truth_stores: []
+    allowed_dependencies: [station.host_identity.read, relay.route.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: relay.route.publish
+    domain_owner: station.access_endpoint
+    truth_owner: relay.route
+    exposure: peer
+    canonical_route: { method: POST, path: /api/v1/relay/routes }
+    request_proto: peers_touch.model.peer.v1.PublishStationRouteRequest
+    response_proto: peers_touch.model.peer.v1.PublishStationRouteResponse
+    truth_stores: []
+    allowed_dependencies: [relay.mount.verify, station.identity.verify]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: relay.grant.register
+    domain_owner: station.access_endpoint
+    truth_owner: relay.connection_grant
+    exposure: peer
+    canonical_route: { method: POST, path: /api/v1/relay/grants }
+    request_proto: peers_touch.model.peer.v1.RegisterStationConnectionGrantRequest
+    response_proto: peers_touch.model.peer.v1.RegisterStationConnectionGrantResponse
+    truth_stores: []
+    allowed_dependencies: [relay.mount.verify, relay.route.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.connection_material.issue
+    domain_owner: station.dashboard_access
+    truth_owner: station.route
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/relay/connection-material }
+    request_proto: peers_touch.model.peer.v1.IssueStationConnectionMaterialRequest
+    response_proto: peers_touch.model.peer.v1.IssueStationConnectionMaterialResponse
+    truth_stores: []
+    allowed_dependencies: [relay.route.publish, relay.grant.register]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: station.identity.verify
     domain_owner: station.bootstrap_identity
     truth_owner: station.identity
@@ -1268,37 +1325,37 @@ capabilities:
 
   - id: federation.presence.query
     domain_owner: station.federation
-    truth_owner: presence.runtime
+    truth_owner: presence.authority
     exposure: peer
     canonical_route: { method: POST, path: /federation/presence/query }
     request_proto: peers_touch.model.presence.v1.PresenceQueryRequest
     response_proto: peers_touch.model.presence.v1.PresenceQueryResponse
-    truth_stores: []
-    allowed_dependencies: [federation.auth.verify, presence.query]
+    truth_stores: [actor_presence_leases]
+    allowed_dependencies: [federation.auth.verify, presence.authority.read]
     forbidden_aliases: []
     superseded_symbols: []
 
-  - id: federation.realtime.signal
+  - id: federation.realtime.signal.forward
     domain_owner: station.federation
-    truth_owner: realtime.event
+    truth_owner: realtime.call_control
     exposure: peer
     canonical_route: { method: POST, path: /federation/realtime/signal }
     request_proto: peers_touch.model.realtime.v1.CallSignal
-    response_proto: ""
-    truth_stores: []
-    allowed_dependencies: [federation.auth.verify, conversation.membership.read, realtime.signal.publish]
+    response_proto: peers_touch.model.realtime.v1.FederatedSignalAck
+    truth_stores: [realtime_events, realtime_call_resolutions]
+    allowed_dependencies: [federation.auth.verify, realtime.signal.authorize, realtime.signal.publish]
     forbidden_aliases: []
     superseded_symbols: []
 
-  - id: federation.realtime.call_resolution.get
+  - id: federation.realtime.call_resolution.read
     domain_owner: station.federation
-    truth_owner: realtime.call_resolution
+    truth_owner: realtime.call_control
     exposure: peer
     canonical_route: { method: POST, path: /federation/realtime/call-resolution }
     request_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionRequest
     response_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionResponse
     truth_stores: [realtime_call_resolutions]
-    allowed_dependencies: [federation.auth.verify, actor.home_station.read, realtime.call_resolution.read]
+    allowed_dependencies: [federation.auth.verify, realtime.call_resolution.read]
     forbidden_aliases: []
     superseded_symbols: []
 

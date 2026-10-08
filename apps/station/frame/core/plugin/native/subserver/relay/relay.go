@@ -1,7 +1,7 @@
 package relay
 
 // 2026-04-07: Block 1-8 refactoring (see CHANGELOG per block).
-// 2026-04-08: Refactored — jwtWrapper constructed in Init() and shared with handler layer.
+// 2026-04-08: Refactored — route auth wrappers are constructed in Init().
 //             Metrics declarations moved to relay_metrics.go.
 
 import (
@@ -9,32 +9,26 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"time"
 
-	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/infrastructure"
+	"github.com/peers-labs/peers-touch/station/frame/core/runtime/role"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
 const (
 	SubserverTypeRelay server.SubserverType = "relay"
-
-	defaultMaxStations             = 100
-	defaultHeartbeatTimeout        = 60
-	defaultForwardTimeout          = 30
-	defaultMaxBodySize             = 10 * 1024 * 1024 // 10 MB
-	defaultMaxConcurrentPerStation = 64
-	defaultStreamPingInterval      = 30
-	defaultStreamPingTimeout       = 5
-	defaultGracefulDrainTimeout    = 10
 )
 
 var _ server.Subserver = &SubServer{}
@@ -44,13 +38,17 @@ type SubServer struct {
 	status  server.Status
 	svc     *application.Service
 	streams *StreamManager
+	tunnels *tunnelAdmission
 
-	// jwtWrapper is constructed once in Init() and shared with handler layer.
-	// Pattern from friend_chat/subserver.go.
-	jwtWrapper server.Wrapper
+	mountJWTWrapper        server.Wrapper
+	mountRotateJWTWrapper  server.Wrapper
+	routePublishJWTWrapper server.Wrapper
+	operatorJWTWrapper     server.Wrapper
 
-	listener net.Listener
-	stopCh   chan struct{}
+	listener       net.Listener
+	publicListener net.Listener
+	publicServer   *http.Server
+	stopCh         chan struct{}
 }
 
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -58,11 +56,24 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 		s.opts.Apply(opt)
 	}
 
-	applyDefaults(s.opts)
+	processRole, err := role.FromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("[relay] resolve runtime role: %w", err)
+	}
+	if processRole != role.Relay {
+		return fmt.Errorf("[relay] subserver cannot initialize under %q role", processRole)
+	}
 
-	// Auth: construct JWT wrapper once, shared with handler layer.
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	securityMaterial, err := validateRelaySecurityOptions(s.opts)
+	if err != nil {
+		return err
+	}
+	authority, err := application.NewCredentialAuthority(
+		securityMaterial.signingKey,
+	)
+	if err != nil {
+		return fmt.Errorf("[relay] initialize credential authority: %w", err)
+	}
 
 	// Infrastructure layer: persistence
 	rds, err := store.GetRDS(ctx)
@@ -76,20 +87,59 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 	}
 
 	// Application layer: business logic
-	s.svc = application.NewService(repo)
+	s.svc = application.NewService(repo, authority)
+	s.mountJWTWrapper = mountAuthenticationWrapper(
+		s.svc,
+		domain.ScopeMountConnect,
+	)
+	s.mountRotateJWTWrapper = mountAuthenticationWrapper(
+		s.svc,
+		domain.ScopeMountRotate,
+	)
+	s.routePublishJWTWrapper = mountAuthenticationWrapper(
+		s.svc,
+		domain.ScopeRoutePublish,
+	)
+	s.operatorJWTWrapper = operatorAuthenticationWrapper(
+		securityMaterial.operatorKey,
+		s.opts.OperatorIssuer,
+		s.opts.OperatorAudience,
+		s.opts.OperatorScope,
+	)
 
 	// Stream manager with status callback (Block 7: pass maxConcurrent).
-	s.streams = NewStreamManager(func(ctx context.Context, peerID string, online bool) {
+	s.streams = NewStreamManager(func(
+		ctx context.Context,
+		peerID string,
+		generation uint64,
+		online bool,
+	) {
 		if online {
-			if err := s.svc.UpdateMountStatus(ctx, peerID, domain.MountStatusOnline); err != nil {
+			if err := s.svc.UpdateMountStatus(
+				ctx,
+				peerID,
+				generation,
+				domain.MountStatusOnline,
+			); err != nil && !errors.Is(err, domain.ErrMountCredentialStale) {
 				logger.Errorf(ctx, "[relay] update mount status online for %s: %v", peerID, err)
 			}
 		} else {
-			if err := s.svc.UpdateMountStatus(ctx, peerID, domain.MountStatusOffline); err != nil {
+			s.svc.InvalidateStationRoutes(peerID)
+			if err := s.svc.UpdateMountStatus(
+				ctx,
+				peerID,
+				generation,
+				domain.MountStatusOffline,
+			); err != nil && !errors.Is(err, domain.ErrMountCredentialStale) {
 				logger.Errorf(ctx, "[relay] update mount status offline for %s: %v", peerID, err)
 			}
 		}
-	}, s.opts.MaxConcurrentPerStation)
+	}, s.opts.MaxConcurrentPerStation, int64(s.opts.MaxBodySize))
+	s.tunnels = newTunnelAdmission(
+		s.opts.MaxStations*s.opts.MaxConcurrentPerStation,
+		min(8, s.opts.MaxConcurrentPerStation),
+		s.opts.MaxConcurrentPerStation,
+	)
 
 	// Tier C1 — turn on the federation invalidation pub/sub topic.
 	// We list it explicitly here (rather than auto-allowing every
@@ -122,6 +172,18 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 		logger.Infof(ctx, "[relay] stream listener started on %s (tls=%v)",
 			s.opts.StreamListenAddr, s.opts.TLSCertFile != "")
 	}
+	if s.opts.PublicListenAddr != "" {
+		if err := s.startPublicProxy(ctx); err != nil {
+			if s.listener != nil {
+				_ = s.listener.Close()
+			}
+			return fmt.Errorf(
+				"[relay] public TLS listen on %s: %w",
+				s.opts.PublicListenAddr,
+				err,
+			)
+		}
+	}
 
 	go s.heartbeatChecker(ctx)
 	go s.streamPinger(ctx)
@@ -130,20 +192,89 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	return nil
 }
 
-// listenStream creates the TCP or TLS listener (Block 8).
+// listenStream creates a TLS 1.3 listener unless an explicit loopback-only
+// development exception was validated during Init.
 func (s *SubServer) listenStream() (net.Listener, error) {
-	if s.opts.TLSCertFile != "" && s.opts.TLSKeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(s.opts.TLSCertFile, s.opts.TLSKeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("load TLS key pair: %w", err)
-		}
-		tlsCfg := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
-		}
-		return tls.Listen("tcp", s.opts.StreamListenAddr, tlsCfg)
+	if s.opts.AllowInsecureLoopback &&
+		s.opts.TLSCertFile == "" &&
+		s.opts.TLSKeyFile == "" {
+		return net.Listen("tcp", s.opts.StreamListenAddr)
 	}
-	return net.Listen("tcp", s.opts.StreamListenAddr)
+
+	cert, err := tls.LoadX509KeyPair(s.opts.TLSCertFile, s.opts.TLSKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load TLS key pair: %w", err)
+	}
+	return tls.Listen("tcp", s.opts.StreamListenAddr, relayTLSConfig(cert))
+}
+
+func relayTLSConfig(cert tls.Certificate) *tls.Config {
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS13,
+	}
+}
+
+func (s *SubServer) startPublicProxy(ctx context.Context) error {
+	target, err := url.Parse(s.opts.PublicUpstreamURL)
+	if err != nil {
+		return fmt.Errorf("parse public upstream URL: %w", err)
+	}
+	cert, err := tls.LoadX509KeyPair(s.opts.TLSCertFile, s.opts.TLSKeyFile)
+	if err != nil {
+		return fmt.Errorf("load public TLS key pair: %w", err)
+	}
+	rawListener, err := net.Listen("tcp", s.opts.PublicListenAddr)
+	if err != nil {
+		return err
+	}
+	proxy := newRelayPublicProxy(target)
+	s.publicListener = tls.NewListener(rawListener, relayTLSConfig(cert))
+	s.publicServer = &http.Server{
+		Handler:           proxy,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
+	go func() {
+		if serveErr := s.publicServer.Serve(s.publicListener); serveErr != nil &&
+			!errors.Is(serveErr, http.ErrServerClosed) {
+			logger.Errorf(ctx, "[relay] public TLS listener failed: %v", serveErr)
+		}
+	}()
+	logger.Infof(
+		ctx,
+		"[relay] public HTTPS/WSS listener started on %s",
+		s.opts.PublicListenAddr,
+	)
+	return nil
+}
+
+func newRelayPublicProxy(target *url.URL) *httputil.ReverseProxy {
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Director = nil
+	proxy.Rewrite = func(request *httputil.ProxyRequest) {
+		request.SetURL(target)
+		request.Out.Host = request.In.Host
+		request.SetXForwarded()
+		request.Out.Header.Set("X-Forwarded-Proto", "https")
+	}
+	proxy.ErrorHandler = func(
+		response http.ResponseWriter,
+		request *http.Request,
+		proxyErr error,
+	) {
+		logger.Warnf(
+			request.Context(),
+			"[relay] public proxy request failed: %v",
+			proxyErr,
+		)
+		http.Error(
+			response,
+			http.StatusText(http.StatusBadGateway),
+			http.StatusBadGateway,
+		)
+	}
+	return proxy
 }
 
 func (s *SubServer) Stop(ctx context.Context) error {
@@ -157,6 +288,13 @@ func (s *SubServer) Stop(ctx context.Context) error {
 	}
 
 	drainTimeout := time.Duration(s.opts.GracefulDrainTimeout) * time.Second
+	if s.publicServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, drainTimeout)
+		if err := s.publicServer.Shutdown(shutdownCtx); err != nil {
+			_ = s.publicServer.Close()
+		}
+		cancel()
+	}
 	s.streams.DrainAndClose(ctx, drainTimeout)
 
 	logger.Infof(ctx, "[relay] stopped")
@@ -243,20 +381,21 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	// Block 4: Validate relay token via JWT provider.
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	subj, err := provider.Validate(ctx, hs.RelayToken)
+	identity, err := s.svc.AuthenticateMountCredential(
+		ctx,
+		hs.RelayToken,
+		domain.ScopeMountConnect,
+	)
 	if err != nil {
-		logger.Warnf(ctx, "[relay] handshake JWT validation failed for %s: %v", hs.StationPeerID, err)
+		logger.Warnf(ctx, "[relay] handshake credential validation failed for %s: %v", hs.StationPeerID, err)
 		s.writeHandshakeACK(conn, false, "invalid relay token")
 		_ = conn.Close()
 		metConnectionsTotal.Inc("auth_error")
 		return
 	}
 
-	expectedSubject := domain.SubjectRelayAccess + hs.StationPeerID
-	if subj.ID != expectedSubject {
-		logger.Warnf(ctx, "[relay] handshake subject mismatch: want %s, got %s", expectedSubject, subj.ID)
+	if identity.StationPeerID != hs.StationPeerID {
+		logger.Warnf(ctx, "[relay] handshake subject mismatch for %s", hs.StationPeerID)
 		s.writeHandshakeACK(conn, false, "token subject does not match station_peer_id")
 		_ = conn.Close()
 		metConnectionsTotal.Inc("auth_error")
@@ -273,47 +412,75 @@ func (s *SubServer) handleStreamConnection(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	// Block 5: DB upsert — errors are NOT silenced.
-	now := time.Now()
-	if _, getErr := s.svc.GetMountByStationPeerID(ctx, hs.StationPeerID); getErr != nil {
-		if err := s.svc.CreateMount(ctx, &domain.Mount{
-			StationPeerID: hs.StationPeerID,
-			Status:        domain.MountStatusOnline,
-			LastHeartbeat: now,
-			MountedAt:     now,
-		}); err != nil {
-			logger.Errorf(ctx, "[relay] create mount for %s: %v", hs.StationPeerID, err)
-			s.writeHandshakeACK(conn, false, "internal error")
-			_ = conn.Close()
-			metConnectionsTotal.Inc("db_error")
-			return
-		}
-	} else {
-		if err := s.svc.UpdateMountStatus(ctx, hs.StationPeerID, domain.MountStatusOnline); err != nil {
-			logger.Errorf(ctx, "[relay] update mount for %s: %v", hs.StationPeerID, err)
-		}
-		if err := s.svc.UpdateHeartbeat(ctx, hs.StationPeerID); err != nil {
-			logger.Errorf(ctx, "[relay] update heartbeat for %s: %v", hs.StationPeerID, err)
-		}
+	if err := s.svc.ActivateMount(ctx, identity); err != nil {
+		logger.Warnf(ctx, "[relay] handshake mount activation failed for %s: %v", hs.StationPeerID, err)
+		s.writeHandshakeACK(conn, false, "mount is revoked or stale")
+		_ = conn.Close()
+		metConnectionsTotal.Inc("auth_error")
+		return
+	}
+	mount, err := s.svc.GetMountByStationPeerID(ctx, hs.StationPeerID)
+	if err != nil {
+		logger.Warnf(ctx, "[relay] load mount limits for %s: %v", hs.StationPeerID, err)
+		s.writeHandshakeACK(conn, false, "mount limits are unavailable")
+		_ = conn.Close()
+		metConnectionsTotal.Inc("auth_error")
+		return
+	}
+	limits := streamLimits{
+		maxConcurrent:      s.opts.MaxConcurrentPerStation,
+		maxDirectionBytes:  int64(s.opts.MaxBodySize),
+		rateBytesPerSecond: tunnelRateBytesPerSecond,
+	}
+	if mount.MaxClients > 0 &&
+		int(mount.MaxClients) < limits.maxConcurrent {
+		limits.maxConcurrent = int(mount.MaxClients)
+	}
+	if mount.BandwidthLimit > 0 &&
+		mount.BandwidthLimit < limits.rateBytesPerSecond {
+		limits.rateBytesPerSecond = mount.BandwidthLimit
 	}
 
-	// Block 4: Send ACK to station — handshake succeeded.
-	s.writeHandshakeACK(conn, true, "")
-
 	brc := &bufferedReadConn{Reader: br, Conn: conn}
+	entry, err := s.streams.AddValidated(
+		ctx,
+		hs.StationPeerID,
+		identity.Generation,
+		identity.ExpiresAt,
+		brc,
+		limits,
+		func() error {
+			_, err := s.svc.AuthenticateMountCredential(
+				ctx,
+				hs.RelayToken,
+				domain.ScopeMountConnect,
+			)
+			return err
+		},
+	)
+	if err != nil {
+		logger.Warnf(
+			ctx,
+			"[relay] handshake credential became stale for %s: %v",
+			hs.StationPeerID,
+			err,
+		)
+		s.writeHandshakeACK(conn, false, "mount is revoked or stale")
+		_ = conn.Close()
+		metConnectionsTotal.Inc("auth_error")
+		return
+	}
 
-	// Block 1: Add starts readLoop goroutine internally — no handleIncomingFrames.
-	s.streams.Add(ctx, hs.StationPeerID, brc)
+	// ACK only after the stream is registered. Rotation or revocation updates
+	// persistent state first, then removes this exact live entry.
+	s.writeHandshakeACK(conn, true, "")
 
 	metConnectionsTotal.Inc("success")
 	metActiveStreams.Inc()
 	logger.Infof(ctx, "[relay] stream connected for %s from %s", hs.StationPeerID, conn.RemoteAddr())
 
 	// Wait for this entry's readLoop to exit (stream disconnect).
-	entry, ok := s.streams.GetEntry(hs.StationPeerID)
-	if ok {
-		entry.Wait()
-	}
+	entry.Wait()
 
 	metActiveStreams.Dec()
 
@@ -398,35 +565,6 @@ type bufferedReadConn struct {
 func (c *bufferedReadConn) Read(p []byte) (int, error)  { return c.Reader.Read(p) }
 func (c *bufferedReadConn) Write(p []byte) (int, error) { return c.Conn.Write(p) }
 func (c *bufferedReadConn) Close() error                { return c.Conn.Close() }
-
-// ---- Defaults ----
-
-func applyDefaults(o *Options) {
-	if o.MaxStations <= 0 {
-		o.MaxStations = defaultMaxStations
-	}
-	if o.HeartbeatTimeout <= 0 {
-		o.HeartbeatTimeout = defaultHeartbeatTimeout
-	}
-	if o.ForwardTimeout <= 0 {
-		o.ForwardTimeout = defaultForwardTimeout
-	}
-	if o.MaxBodySize <= 0 {
-		o.MaxBodySize = defaultMaxBodySize
-	}
-	if o.MaxConcurrentPerStation <= 0 {
-		o.MaxConcurrentPerStation = defaultMaxConcurrentPerStation
-	}
-	if o.StreamPingInterval <= 0 {
-		o.StreamPingInterval = defaultStreamPingInterval
-	}
-	if o.StreamPingTimeout <= 0 {
-		o.StreamPingTimeout = defaultStreamPingTimeout
-	}
-	if o.GracefulDrainTimeout <= 0 {
-		o.GracefulDrainTimeout = defaultGracefulDrainTimeout
-	}
-}
 
 // ---- Constructor ----
 

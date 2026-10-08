@@ -919,6 +919,7 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
             ("DELETE", "/session/ios-session", None),
             transport.requests,
         )
+
     def test_public_w3c_element_and_orientation_operations(self) -> None:
         class ElementTransport(FakeAppiumTransport):
             def request(
@@ -1065,6 +1066,9 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
                         self.assertEqual(
                             capabilities["appium:bundleId"],
                             "com.peers.touch.mobile",
+                        )
+                        self.assertTrue(
+                            capabilities["appium:autoAcceptAlerts"]
                         )
                         self.assertTrue(capabilities["appium:isHeadless"])
                         self.assertFalse(

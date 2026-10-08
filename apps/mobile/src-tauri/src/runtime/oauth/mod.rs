@@ -371,10 +371,11 @@ impl OAuthCoordinator {
             (Some(session), Some(scope))
                 if !session.access_token.is_empty() && !session.session_id.is_empty() =>
             {
+                let transport_origin = scope.transport_origin()?;
                 Some(
                     self.transport
                         .revoke_session(
-                            &scope.station_origin,
+                            &transport_origin,
                             &session.access_token,
                             &session.session_id,
                         )
@@ -509,9 +510,13 @@ impl OAuthCoordinator {
         attempt: &mut PersistedOAuthAttempt,
     ) -> MobileResult<OAuthLaunch> {
         let request = attempt.start_request();
+        let transport_origin = crate::runtime::station_route::active_transport_origin(
+            &attempt.station_peer_id,
+            &attempt.station_origin,
+        )?;
         let response: StartOAuthAttemptResponse = match self
             .transport
-            .post(&attempt.station_origin, START_PATH, &request)
+            .post(&transport_origin, START_PATH, &request)
             .await
         {
             Ok(response) => response,
@@ -564,9 +569,13 @@ impl OAuthCoordinator {
         attempt.phase = OAuthPublicPhase::Exchanging;
         write_attempt(storage, attempt)?;
 
+        let transport_origin = crate::runtime::station_route::active_transport_origin(
+            &attempt.station_peer_id,
+            &attempt.station_origin,
+        )?;
         let response: CompleteOAuthAttemptResponse = match self
             .transport
-            .post(&attempt.station_origin, COMPLETE_PATH, &request)
+            .post(&transport_origin, COMPLETE_PATH, &request)
             .await
         {
             Ok(response) => response,
@@ -593,9 +602,13 @@ impl OAuthCoordinator {
         attempt: &mut PersistedOAuthAttempt,
     ) -> MobileResult<OAuthPublicProjection> {
         let request = attempt.status_request()?;
+        let transport_origin = crate::runtime::station_route::active_transport_origin(
+            &attempt.station_peer_id,
+            &attempt.station_origin,
+        )?;
         let response: GetOAuthAttemptResponse = self
             .transport
-            .post(&attempt.station_origin, STATUS_PATH, &request)
+            .post(&transport_origin, STATUS_PATH, &request)
             .await?;
         clear_resolved_callback_material(storage, attempt)?;
         self.apply_station_outcome(storage, attempt, StationOutcome::from_status(response))
@@ -651,9 +664,13 @@ impl OAuthCoordinator {
         attempt: &mut PersistedOAuthAttempt,
     ) -> MobileResult<OAuthPublicProjection> {
         let request = attempt.acknowledge_request()?;
+        let transport_origin = crate::runtime::station_route::active_transport_origin(
+            &attempt.station_peer_id,
+            &attempt.station_origin,
+        )?;
         let response: AcknowledgeOAuthCredentialResponse = self
             .transport
-            .post(&attempt.station_origin, ACKNOWLEDGE_PATH, &request)
+            .post(&transport_origin, ACKNOWLEDGE_PATH, &request)
             .await?;
         let result = OAuthAttemptResult::try_from(response.result)
             .map_err(|_| oauth_error("oauthInvalidAcknowledgeResult"))?;
@@ -673,9 +690,13 @@ impl OAuthCoordinator {
         }
         if attempt.oauth_attempt_id.is_some() {
             let request = attempt.cancel_request()?;
+            let transport_origin = crate::runtime::station_route::active_transport_origin(
+                &attempt.station_peer_id,
+                &attempt.station_origin,
+            )?;
             let response: CancelOAuthAttemptResponse = self
                 .transport
-                .post(&attempt.station_origin, CANCEL_PATH, &request)
+                .post(&transport_origin, CANCEL_PATH, &request)
                 .await?;
             let result = OAuthAttemptResult::try_from(response.result)
                 .map_err(|_| oauth_error("oauthInvalidCancelResult"))?;
@@ -754,6 +775,13 @@ impl ValidatedScope {
             station_origin: validate_station_origin(&input.station_origin)?,
             station_peer_id: clean_required(input.station_peer_id, "stationPeerId")?,
         })
+    }
+
+    fn transport_origin(&self) -> MobileResult<String> {
+        crate::runtime::station_route::active_transport_origin(
+            &self.station_peer_id,
+            &self.station_origin,
+        )
     }
 }
 

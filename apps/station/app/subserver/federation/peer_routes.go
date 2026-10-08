@@ -455,5 +455,5 @@ func handleRealtimeSignal(
 		return err
 	}
 
-	return writeFederationPeerResponse(response, &realtime.CallSignal{})
+	return writeFederationPeerResponse(response, &realtime.FederatedSignalAck{})
 }

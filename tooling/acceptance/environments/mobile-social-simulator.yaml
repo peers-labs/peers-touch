@@ -45,10 +45,9 @@
   "fixtures": [
     {
       "id": "mobile-social-simulator-actors",
-      "authorization_required": true,
-      "authorization_ref": "station.reset:mobile-social-simulator-actors",
-      "target_assertion": "both Stations are approved disposable targets",
-      "initial_assertion": "Alice and Bob have distinct PTIDs on their assigned Stations"
+      "authorization_required": false,
+      "target_assertion": "both Stations are reviewed remote profiles and the journey is read-only",
+      "initial_assertion": "actor availability and identity are established by real Access login"
     }
   ],
   "credentials": [],
@@ -82,9 +81,13 @@
     "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
     "required_actions": [
       "station.add",
+      "station.route.select",
+      "station.route.snapshot",
       "access.submit",
       "lifecycle.restart",
+      "lifecycle.waitReady",
       "lifecycle.scope.read",
+      "settings.profile.read",
       "projection.read",
       "messaging.createDirect",
       "messaging.createGroup",

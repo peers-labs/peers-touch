@@ -26,6 +26,7 @@ STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS = frozenset(
         "lifecycle.scope.read",
         "lifecycle.snapshot",
         "lifecycle.suspend",
+        "lifecycle.waitReady",
         "session.logout",
         "settings.device.read",
         "settings.device.update",

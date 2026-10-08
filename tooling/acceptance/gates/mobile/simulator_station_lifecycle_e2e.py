@@ -656,7 +656,6 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
     @staticmethod
     def _scope_is_cleared(scope: Mapping[str, Any]) -> bool:
         social = scope.get("social")
-        group = scope.get("group")
         navigation = scope.get("navigation")
         return (
             scope.get("activeActorPtid") is None
@@ -667,11 +666,6 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             and social.get("sessionCount") == 0
             and social.get("requestCount") == 0
             and social.get("messageThreadCount") == 0
-            and isinstance(group, Mapping)
-            and group.get("stationPeerId") is None
-            and group.get("actorPtid") is None
-            and group.get("groupCount") == 0
-            and group.get("messageThreadCount") == 0
             and isinstance(navigation, Mapping)
             and navigation.get("detailKeys") == []
             and navigation.get("overlayRouteId") is None

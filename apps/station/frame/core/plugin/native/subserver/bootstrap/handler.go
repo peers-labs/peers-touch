@@ -289,7 +289,7 @@ func (s *SubServer) locatorPublish(c context.Context, ctx *app.RequestContext) {
 
 // federationResolve is the Phase C diagnostic that exercises the full
 // federated user-discovery read path: locator DHT lookup → home-station
-// /actor/federation/profile fetch via /relay/forward → signature
+// /actor/federation/profile fetch via opaque Relay tunnel → signature
 // verification against the locator's pinned key.
 //
 // Query: handle=user@host  (or @user@host)

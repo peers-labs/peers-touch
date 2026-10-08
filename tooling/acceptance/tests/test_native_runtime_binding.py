@@ -14,7 +14,7 @@ from tooling.acceptance.core import (
     ClientRuntimeIdentity,
 )
 from tooling.acceptance.core.evidence_store import workspace_id
-from tooling.acceptance.core.errors import DriverError
+from tooling.acceptance.core.errors import ClientBindingError, DriverError
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeDesktopAdapter,
@@ -23,7 +23,9 @@ from tooling.acceptance.drivers.native.base import (
 from tooling.acceptance.drivers.native.runtime import (
     LinuxNativeDesktopRuntimeBinding,
     LocalMacOSRuntimeBinding,
+    NativeLaunchOptions,
     WindowsNativeDesktopRuntimeBinding,
+    _route_matches_bound_service,
     resolve_native_desktop_runtime,
 )
 from tooling.acceptance.drivers.tauri import (
@@ -252,6 +254,27 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             lifecycle,
         )
         session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-primary",
+                                        "endpoint_origin": (
+                                            "http://station.example"
+                                        ),
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                )
+            }
+        }
 
         binding._configure_session_station(
             session,
@@ -263,14 +286,252 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             [
                 call(
                     "station_add",
-                    {"input": {"url": "http://station.example"}},
+                    {"input": {"input": "http://station.example"}},
                 ),
                 call(
                     "station_set_active",
-                    {"input": {"url": "http://station.example"}},
+                    {
+                        "input": {
+                            "station_peer_id": "station-peer-four",
+                            "route_id": "relay-primary",
+                        }
+                    },
                 ),
             ],
         )
+
+    def test_station_configuration_selects_single_relay_transport_route(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-primary",
+                                        "endpoint_origin": (
+                                            "https://relay.example:4501"
+                                        ),
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                )
+            }
+        }
+
+        binding._configure_session_station(
+            session,
+            "http://relay.example:18081",
+        )
+
+        self.assertEqual(
+            session.invoke_app_result.call_args_list,
+            [
+                call(
+                    "station_add",
+                    {"input": {"input": "http://relay.example:18081"}},
+                ),
+                call(
+                    "station_set_active",
+                    {
+                        "input": {
+                            "station_peer_id": "station-peer-four",
+                            "route_id": "relay-primary",
+                        }
+                    },
+                ),
+            ],
+        )
+
+    def test_observation_requires_active_station_and_bound_route(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        binding.set_runtime_manifest(self.runtime_manifest())
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "active_station_peer_id": "station-peer-four",
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "active_route_id": "relay-primary",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-primary",
+                                        "endpoint_origin": (
+                                            "http://station.example"
+                                        ),
+                                        "health": "available",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                )
+            }
+        }
+
+        observed = binding._observe_live_service_identity(
+            session,
+            client_id="alice",
+            binding_role="station",
+        )
+
+        self.assertEqual(observed, "station-peer-four")
+
+    def test_relay_observation_accepts_discovered_tls_transport(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        manifest = self.runtime_manifest()
+        manifest["services"] = {
+            "station-via-relay": {
+                "kind": "station",
+                "endpoint": "http://relay.example:18081",
+                "runtimeIdentity": "station-peer-four",
+            }
+        }
+        clients = manifest["clients"]
+        assert isinstance(clients, list)
+        client = clients[0]
+        assert isinstance(client, dict)
+        client["service_bindings"] = {
+            "station": {
+                "service_id": "station-via-relay",
+                "required_kind": "station",
+            }
+        }
+        binding.set_runtime_manifest(manifest)
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "active_station_peer_id": "station-peer-four",
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "active_route_id": "relay-primary",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-primary",
+                                        "route_type": "relay",
+                                        "endpoint_origin": (
+                                            "https://relay.example:4501"
+                                        ),
+                                        "health": "available",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                )
+            }
+        }
+
+        observed = binding._observe_live_service_identity(
+            session,
+            client_id="alice",
+            binding_role="station",
+        )
+
+        self.assertEqual(observed, "station-peer-four")
+
+    def test_relay_route_match_rejects_non_relay_or_foreign_transport(
+        self,
+    ) -> None:
+        locator = "http://relay.example:18081"
+        self.assertFalse(
+            _route_matches_bound_service(
+                "station-via-relay",
+                locator,
+                {
+                    "route_type": "direct",
+                    "endpoint_origin": "https://relay.example:4501",
+                },
+            )
+        )
+        self.assertFalse(
+            _route_matches_bound_service(
+                "station-via-relay",
+                locator,
+                {
+                    "route_type": "relay",
+                    "endpoint_origin": "https://other.example:4501",
+                },
+            )
+        )
+        self.assertFalse(
+            _route_matches_bound_service(
+                "station-via-relay",
+                locator,
+                {
+                    "route_type": "relay",
+                    "endpoint_origin": "http://relay.example:4501",
+                },
+            )
+        )
+
+    def test_observation_rejects_route_for_different_station(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        binding.set_runtime_manifest(self.runtime_manifest())
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "active_station_peer_id": "other-station",
+                        "entries": [],
+                    }
+                )
+            }
+        }
+
+        with (
+            patch(
+                "tooling.acceptance.drivers.native.runtime.time.monotonic",
+                side_effect=[0.0, 31.0],
+            ),
+            self.assertRaises(ClientBindingError),
+        ):
+            binding._observe_live_service_identity(
+                session,
+                client_id="alice",
+                binding_role="station",
+            )
 
     def test_windows_binding_delegates_to_platform_neutral_lifecycle(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
@@ -548,7 +809,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 return_value=(proof, reference),
             ) as persist,
         ):
-            session = binding.create_bound_session("alice")
+            session = binding.create_bound_session(
+                "alice",
+                NativeLaunchOptions(
+                    extra_environment={
+                        "PT_ACCEPTANCE_RELAY_CA_DER_B64": "YWJj",
+                    }
+                ),
+            )
 
         self.assertIsNotNone(session)
         configure.assert_called_once_with(session, "http://station.example")
@@ -565,6 +833,32 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             launch_environment["PT_STATION_HEALTH_URL"],
             "http://station.example/sub-oss/healthz",
         )
+        self.assertEqual(
+            launch_environment["PT_ACCEPTANCE_RELAY_CA_DER_B64"],
+            "YWJj",
+        )
+
+    def test_bound_session_rejects_binding_environment_override(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        binding.set_runtime_manifest(self.runtime_manifest())
+
+        with self.assertRaisesRegex(
+            DriverError,
+            "cannot override binding-owned keys",
+        ):
+            binding.create_bound_session(
+                "alice",
+                NativeLaunchOptions(
+                    extra_environment={
+                        "PT_STATION_URL": "http://attacker.example",
+                    }
+                ),
+            )
 
     def test_bound_session_uses_client_id_for_same_actor_devices(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
@@ -601,6 +895,42 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         )
         self.assertEqual(launch_call[1][0], "alice2")
         self.assertEqual(launch_call[1][1]["actor"], "alice")
+
+    def test_restored_session_observes_persisted_binding_without_reconfigure(
+        self,
+    ) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        binding.set_runtime_manifest(self.runtime_manifest())
+
+        with (
+            patch.object(TauriSession, "start"),
+            patch.object(TauriSession, "wait_for_acceptance_harness"),
+            patch.object(
+                binding,
+                "_configure_session_station",
+            ) as configure,
+            patch.object(
+                binding,
+                "_observe_live_service_identity",
+                return_value="station-peer-four",
+            ),
+            patch(
+                "tooling.acceptance.drivers.native.runtime."
+                "persist_client_binding_observation",
+                return_value=(object(), {}),
+            ),
+        ):
+            binding.create_bound_session(
+                "alice",
+                NativeLaunchOptions(restore_session=True),
+            )
+
+        configure.assert_not_called()
 
     def test_linux_binding_keeps_posix_absolute_path_validation(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("relative/fixture.png")

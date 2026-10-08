@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, call, patch
 
 from tooling.acceptance.core.attestation import (
     PROTOCOL_SOURCE_PATHS,
+    produce_service_attestation,
     produce_station_attestation,
     source_proto_digest,
     source_workspace_digest,
@@ -33,6 +34,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     produce_bound_actor_manifest,
     reset_fixture,
 )
+from tooling.acceptance.remote_platform import RemotePlatform
 
 
 class StationAttestationOwnerTests(unittest.TestCase):
@@ -214,6 +216,112 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 "SSH contract is invalid",
             ):
                 resolve_remote_source_identity("station-three")
+
+    def test_remote_attestation_uses_windows_transport_without_bash(self) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            _windows_source_identity_script,
+            resolve_remote_source_identity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = root / "sixwin-station.env.example"
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=sixwin.example",
+                        "PT_DEPLOY_USER=Administrator",
+                        "PT_DEPLOY_PATH=.peers-touch/deploy/sixwin-station/source",
+                        "PT_DEPLOY_PLATFORM=windows",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    ["abcdef123456", "clean", "proto-digest"]
+                )
+                + "\n",
+                stderr="",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.remote_source_identity."
+                "resolve_deployment_environment_path",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.transports.ssh.subprocess.run",
+                return_value=completed,
+            ) as run:
+                identity = resolve_remote_source_identity("sixwin-station")
+
+        self.assertEqual(
+            identity,
+            ("abcdef123456", "clean", "proto-digest"),
+        )
+        command = run.call_args.args[0]
+        self.assertIn("powershell.exe -NoProfile -NonInteractive", command[-1])
+        self.assertNotIn("bash -lc", command[-1])
+        identity_script = _windows_source_identity_script()
+        self.assertIn("['git','show','HEAD:'", identity_script)
+        self.assertNotIn("x.read_bytes()", identity_script)
+
+    def test_windows_service_version_uses_registered_runtime_identity(self) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_windows_service_version,
+        )
+
+        config = MagicMock(
+            role="station",
+            task_name="PeersTouch-sixwin-station",
+        )
+        transport = MagicMock()
+        transport.target.remote_platform = RemotePlatform.WINDOWS
+        status = {
+            "artifactKind": "windows-native-runtime-status",
+            "environmentName": "sixwin-station",
+            "role": "station",
+            "taskName": "PeersTouch-sixwin-station",
+            "taskRegistered": True,
+            "healthy": True,
+            "sourceClean": True,
+            "sourceCommit": "abcdef1234567890",
+            "processIds": [42],
+            "manifest": {
+                "sourceCommit": "abcdef123456",
+                "sourceClean": True,
+                "role": "station",
+                "taskName": "PeersTouch-sixwin-station",
+                "binarySha256": "sha256:" + "b" * 64,
+                "deployedAt": "2026-10-08T00:00:00Z",
+            },
+        }
+        with patch(
+            "tooling.acceptance.provisioners.remote_source_identity."
+            "_reviewed_remote_transport",
+            return_value=(transport, {}),
+        ), patch(
+            "tooling.acceptance.provisioners.remote_source_identity."
+            "resolve_deployment_environment_path",
+            return_value=Path("/reviewed/sixwin-station.env.example"),
+        ), patch(
+            "tooling.acceptance.provisioners.remote_source_identity."
+            "WindowsRuntimeConfig.load",
+            return_value=config,
+        ), patch(
+            "tooling.acceptance.provisioners.remote_source_identity."
+            "execute_windows_runtime",
+            return_value=status,
+        ):
+            version = resolve_windows_service_version("sixwin-station")
+
+        self.assertEqual(version["build_commit"], "abcdef1234567890")
+        self.assertEqual(
+            version["service_id"],
+            "windows-task:PeersTouch-sixwin-station",
+        )
 
     def test_remote_attestation_uses_strict_openssh_default_known_hosts(self) -> None:
         from tooling.acceptance.provisioners.remote_source_identity import (
@@ -538,6 +646,57 @@ class StationAttestationOwnerTests(unittest.TestCase):
                         "PT_STATION_DEPLOY_ENV": "station-three",
                     },
                 )
+
+    def test_service_attestation_accepts_deployment_runtime_version_owner(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("test-gate", source={})
+            runtime_version = MagicMock(
+                return_value={
+                    "build_commit": "abcdef123456",
+                    "build_time": "2026-10-08T00:00:00Z",
+                    "service_id": "docker-compose:pt-relay/relay",
+                }
+            )
+            with patch.dict(
+                os.environ,
+                run.subprocess_environment(os.environ),
+            ), patch(
+                "tooling.acceptance.core.attestation.REPO_ROOT",
+                worktree,
+            ), patch(
+                "tooling.acceptance.core.attestation.read_service_version",
+            ) as endpoint_version:
+                attestation = produce_service_attestation(
+                    environment_id="test",
+                    run_id="run-1",
+                    service_id="relay",
+                    service_kind="relay",
+                    endpoint="http://relay.example",
+                    mode="remote",
+                    deployment_environment="relay-1",
+                    producer="relay-deployment",
+                    require_runtime_identity=True,
+                    remote_source_identity_provider=lambda _: (
+                        "abcdef1234567890",
+                        "clean",
+                        "proto-digest",
+                    ),
+                    runtime_version_provider=runtime_version,
+                )
+
+            endpoint_version.assert_not_called()
+            runtime_version.assert_called_once_with("relay-1")
+            self.assertEqual(
+                attestation.runtime_identity,
+                "docker-compose:pt-relay/relay",
+            )
+            run.close()
 
     def test_dirty_station_deployment_blocks(self) -> None:
         with patch(

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "station-access-relay-role-security",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/app/conf/sub_relay.yml",
+    "apps/station/app/main.go",
+    "apps/station/app/subserver/events/bus.go",
+    "apps/station/frame/core/federation/transport.go",
+    "apps/station/frame/core/plugin/native/node/**",
+    "apps/station/frame/core/plugin/native/subserver/relay/**",
+    "apps/station/frame/core/runtime/role/**",
+    "apps/station/frame/peers.go",
+    "tooling/docker/.env.example",
+    "tooling/docker/README.md",
+    "tooling/docker/compose.yml",
+    "tooling/docker/entrypoint.sh",
+    "tooling/acceptance/gates/station_access/relay_aggregate.py",
+    "tooling/scripts/local-dev/relay-check.sh",
+    "tooling/scripts/local-dev/station-dev.sh"
+  ],
+  "truth_sources": [
+    "explicit process runtime role",
+    "Relay role composition allowlist",
+    "Relay startup security policy"
+  ],
+  "visible_surfaces": [
+    {"type": "operator", "route": "Relay startup, health, metrics, and admin API"}
+  ],
+  "required_gates": [
+    "relay-role-security-contract",
+    "station-access-relay-security-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "one Station binary requires an explicit station or relay role",
+      "relay role excludes Touch, Station application subservers, and every native plugin except relay",
+      "Relay startup fails closed without TLS, signing key, dedicated operator policy, or positive quotas",
+      "Relay stream TLS requires TLS 1.3 and plaintext is limited to an explicit loopback-only development exception",
+      "Relay operator credentials use a key, issuer, audience, and scope independent from Station application JWTs"
+    ],
+    "surface": [
+      "Relay exposes its own public health endpoint and operator-protected metrics endpoint"
+    ]
+  },
+  "negative": [
+    "Relay role must not expose Actor, OAuth, Conversation, Social, Agent, OSS, or Federation governance handlers",
+    "ordinary Station application JWTs must not authorize Relay operator routes",
+    "missing security configuration must not fall back to plaintext",
+    "Station source must not contain undeclared hardcoded debug egress"
+  ]
+}
