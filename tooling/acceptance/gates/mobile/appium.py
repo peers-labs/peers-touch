@@ -16,6 +16,7 @@ from tooling.acceptance.gates.mobile.proof_contracts import GATE_ID
 
 APPIUM_CAPABILITY_ID = "mobile.native.appium-session"
 DEFAULT_OPERATION_TIMEOUT_SECONDS = 60.0
+SESSION_START_TIMEOUT_SECONDS = 300.0
 SESSION_STOP_TIMEOUT_SECONDS = 180.0
 
 
@@ -106,7 +107,7 @@ class AppiumSession:
         result = self._invoke(
             "start",
             source_inputs,
-            timeout_seconds=180.0,
+            timeout_seconds=SESSION_START_TIMEOUT_SECONDS,
             include_session=False,
         )
         session_ref = _required_text(result, "sessionRef", "Appium start")
