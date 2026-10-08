@@ -468,6 +468,8 @@
   "mobile.moments.composer.mixedMediaUnavailable": "添加新图片前，请先移除草稿中已保存的图片",
   "mobile.moments.imageReadbackFailed": "Station 未确认全部图片，草稿已保留。",
   "mobile.moments.audience.label": "可见范围",
+  "mobile.moments.audience.select": "选择可见范围",
+  "mobile.moments.audience.required": "请选择谁可以看到这条动态",
   "mobile.moments.audience.public": "公开",
   "mobile.moments.audience.followers": "仅关注者",
   "mobile.moments.audience.circle": "圈子",

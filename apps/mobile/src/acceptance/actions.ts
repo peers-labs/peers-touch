@@ -186,6 +186,11 @@ import {
   setContactsSurfaceFixture,
 } from './contactsSurfaceFixture';
 import {
+  isMomentsSurfaceFixtureId,
+  momentsSurfaceFixtureRouteKind,
+  setMomentsSurfaceFixture,
+} from './momentsSurfaceFixture';
+import {
   isRecoverySurfaceFixtureId,
   setRecoverySurfaceFixture,
 } from './recoverySurfaceFixture';
@@ -408,6 +413,28 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       });
     }
     return setContactsSurfaceFixture(surfaceId);
+  },
+
+  'moments.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isMomentsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:moments.fixture.surfaceId');
+    }
+    const routeKind = momentsSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:moments',
+    });
+    if (routeKind === 'detail') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:moment',
+          postId: 'acceptance-moment',
+        },
+      });
+    }
+    return setMomentsSurfaceFixture(surfaceId);
   },
 
   'access.submit': async (input) => {

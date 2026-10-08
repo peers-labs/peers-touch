@@ -28,6 +28,7 @@ import { Button, Typography } from 'antd';
 import { ArrowLeft, ImagePlus, RefreshCw } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import { useMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
 import { BoundedList } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
 import { useAuthStore } from '../features/auth/authStore';
@@ -52,6 +53,7 @@ import type { MomentsGateway } from '../services/gateways/momentsGateway';
 import { MomentComposer } from './moments/MomentComposer';
 import { MomentFeedItem } from './moments/MomentFeedItem';
 import { MomentCommentsSection } from './moments/MomentCommentsSection';
+import { MomentsAcceptanceSurface } from './moments/MomentsAcceptanceSurface';
 import {
   MomentsFeedEmpty,
   MomentsFeedError,
@@ -99,6 +101,29 @@ export async function retryMomentsRuntime(
 }
 
 export function MomentsPage({
+  activePostId,
+  onOpenMoment,
+  onBack,
+}: MomentsPageProps) {
+  const fixture = useMomentsSurfaceFixture();
+  if (fixture.surfaceId) {
+    return (
+      <MomentsAcceptanceSurface
+        key={`${fixture.surfaceId}:${fixture.revision}`}
+        surfaceId={fixture.surfaceId}
+      />
+    );
+  }
+  return (
+    <MomentsPageInner
+      activePostId={activePostId}
+      onOpenMoment={onOpenMoment}
+      onBack={onBack}
+    />
+  );
+}
+
+function MomentsPageInner({
   activePostId,
   onOpenMoment,
   onBack,
@@ -194,7 +219,10 @@ export function MomentsPage({
   if (activePostId) {
     const activePost = feed.posts.find((post) => post.id === activePostId);
     return (
-      <div className="page-container moments-page mobile-detail-page">
+      <div
+        className="page-container moments-page mobile-detail-page"
+        data-product-surface="moments.detail-comments"
+      >
         {gateway && !isUnavailable ? (
           <MomentCommentsSection
             postId={activePostId}
@@ -231,7 +259,7 @@ export function MomentsPage({
   }
 
   return (
-    <div className="page-container moments-page">
+    <div className="page-container moments-page" data-product-surface="moments.feed">
       {/* Header: title + ImagePlus new-post toggle (prototype) */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.moments.title')}</h1>
@@ -266,11 +294,14 @@ export function MomentsPage({
 
       {/* Composer: toggled by the header ImagePlus button */}
       {showNewPost && !isUnavailable && authSession && gateway && (
-        <MomentComposer
-          session={authSession}
-          gateway={gateway}
-          onPublished={handlePublished}
-        />
+        <div className="moments-composer-backdrop">
+          <MomentComposer
+            session={authSession}
+            gateway={gateway}
+            onClose={() => setShowNewPost(false)}
+            onPublished={handlePublished}
+          />
+        </div>
       )}
 
       {/* Feed states */}

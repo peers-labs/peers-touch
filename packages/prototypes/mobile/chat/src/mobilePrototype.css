@@ -2067,6 +2067,111 @@
     &:disabled { opacity: 0.5; cursor: not-allowed; }
   }
 
+  .mp-moment-composer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(12, 18, 32, 0.38);
+  }
+  .mp-moment-composer-sheet {
+    display: flex;
+    width: min(100%, 640px);
+    max-height: 100%;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 16px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+    overflow-y: auto;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -12px 36px rgba(12, 18, 32, 0.16);
+  }
+  .mp-moment-composer-header {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .mp-moment-composer-header h2 {
+    margin: 0;
+    font-size: 18px;
+    letter-spacing: 0;
+  }
+  .mp-moment-audience {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .mp-moment-audience-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .mp-moment-audience-options button {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid var(--mp-gray-200);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--mp-gray-600);
+    font: inherit;
+  }
+  .mp-moment-audience-options button.active {
+    border-color: var(--mp-primary);
+    background: var(--mp-primary-light);
+    color: var(--mp-primary);
+  }
+  .mp-moment-composer-media {
+    position: relative;
+    display: flex;
+    min-height: 132px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    border-radius: 8px;
+    background: var(--mp-gray-100);
+    color: var(--mp-gray-600);
+  }
+  .mp-moment-composer-media button {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    color: var(--mp-gray-600);
+  }
+  .mp-new-post-actions button {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .mp-moment-detail {
+    padding: 10px 12px 24px;
+    overflow-y: auto;
+  }
+  .mp-moment-detail-card > .ant-card-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .mp-moment-detail-comments {
+    margin-top: 12px;
+    border-radius: 8px;
+  }
+
   /* ── Inline Comment Input (Moments) ── */
   .mp-moment-comment-input-row {
     display: flex;

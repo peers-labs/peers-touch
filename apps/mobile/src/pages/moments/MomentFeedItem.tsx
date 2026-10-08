@@ -17,10 +17,11 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Card, Typography } from 'antd';
-import { Heart, MessageCircle, Send, Share2, ShieldAlert } from 'lucide-react';
+import { Heart, MessageCircle, RotateCcw, Send, Share2, ShieldAlert } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
+import { MobileNotice } from '../../components/MobileNotice';
 import type {
   MomentPolicyState,
   ReactionMutationState,
@@ -120,6 +121,7 @@ export function MomentFeedItem({
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentSending, setCommentSending] = useState(false);
+  const [commentFailed, setCommentFailed] = useState(false);
 
   const createdAtMs = useMemo(() => {
     if (!post.createdAt) return 0;
@@ -191,12 +193,14 @@ export function MomentFeedItem({
       return;
     }
 
+    setCommentFailed(false);
     setCommentSending(true);
     const result = await submitInlineMomentComment(
       commentText,
       (content) => onSubmitComment(post.id, content),
     );
     setCommentText(result.nextText);
+    setCommentFailed(!result.submitted);
     setCommentSending(false);
   }, [commentSending, commentText, onSubmitComment, onOpenComments, post.id]);
 
@@ -204,7 +208,11 @@ export function MomentFeedItem({
   if (policyState !== 'visible') {
     const blocked = policyState === 'blocked';
     return (
-      <Card className="moments-card moments-card--policy" variant="borderless">
+      <Card
+        className="moments-card moments-card--policy"
+        data-product-surface="moments.policy-hidden"
+        variant="borderless"
+      >
         <div className="moments-policy-inline" role="alert">
           <ShieldAlert size={24} strokeWidth={1.5} />
           <Text strong>
@@ -322,6 +330,7 @@ export function MomentFeedItem({
             type="button"
             className="moments-action"
             onClick={() => onOpenComments(post.id)}
+            aria-label={t('mobile.moments.comment.title')}
           >
             <MessageCircle size={18} />
             {commentCount > 0 && <span>{commentCount}</span>}
@@ -330,7 +339,8 @@ export function MomentFeedItem({
             type="button"
             className="moments-action moments-action--share"
             disabled
-            title={t('mobile.moments.reaction.celebrate')}
+            aria-label={t('common.state.unavailable')}
+            title={t('common.state.unavailable')}
           >
             <Share2 size={18} />
           </button>
@@ -357,6 +367,9 @@ export function MomentFeedItem({
       {reactionMutation && (
         <Text
           className={`moments-reaction-status moments-reaction-status--${reactionMutation.status}`}
+          data-product-surface={reactionMutation.status === 'pending'
+            ? 'moments.reaction-pending'
+            : 'moments.reaction-rollback'}
           type={reactionMutation.status === 'rolled-back' ? 'danger' : 'secondary'}
           role="status"
           aria-live="polite"
@@ -370,31 +383,47 @@ export function MomentFeedItem({
 
       {/* Inline comment input with Send button */}
       {showInlineComment && (
-        <div className="moments-comment-input-row" aria-busy={commentSending}>
-          <input
-            type="text"
-            className="moments-comment-input"
-            placeholder={t('mobile.moments.comment.placeholder')}
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void handleSendComment();
-              }
-            }}
-            disabled={commentSending}
-          />
-          <button
-            type="button"
-            className={`moments-comment-send ${commentText.trim() ? 'active' : ''}`}
-            onClick={() => void handleSendComment()}
-            disabled={!commentText.trim() || commentSending}
-            aria-label={t('mobile.moments.comment.send')}
-          >
-            <Send size={14} />
-          </button>
-        </div>
+        <>
+          {commentFailed ? (
+            <MobileNotice onClose={() => setCommentFailed(false)}>
+              {t('mobile.moments.comment.sendError')}
+              <button
+                type="button"
+                className="moments-inline-retry"
+                onClick={() => void handleSendComment()}
+              >
+                <RotateCcw size={14} />
+                <span>{t('common.action.retry')}</span>
+              </button>
+            </MobileNotice>
+          ) : null}
+          <div className="moments-comment-input-row" aria-busy={commentSending}>
+            <input
+              type="text"
+              className="moments-comment-input"
+              aria-label={t('mobile.moments.comment.title')}
+              placeholder={t('mobile.moments.comment.placeholder')}
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSendComment();
+                }
+              }}
+              disabled={commentSending}
+            />
+            <button
+              type="button"
+              className={`moments-comment-send ${commentText.trim() ? 'active' : ''}`}
+              onClick={() => void handleSendComment()}
+              disabled={!commentText.trim() || commentSending}
+              aria-label={t('mobile.moments.comment.send')}
+            >
+              <Send size={14} />
+            </button>
+          </div>
+        </>
       )}
     </Card>
   );

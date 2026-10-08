@@ -326,7 +326,7 @@ function resolveParameterizedGatewayOperation(
 ): StationTransportOperation {
   const postAction = matchPath(
     options.path,
-    /^\/api\/v1\/social\/posts\/([^/]+)\/(react|unreact)$/,
+    /^\/api\/v1\/social\/moments\/([^/]+)\/(react|unreact)$/,
   );
   if (options.method === 'POST' && postAction) {
     return {
@@ -337,7 +337,7 @@ function resolveParameterizedGatewayOperation(
   }
   const postComments = matchPath(
     options.path,
-    /^\/api\/v1\/social\/posts\/([^/]+)\/comments$/,
+    /^\/api\/v1\/social\/moments\/([^/]+)\/comments$/,
   );
   if (postComments && options.method === 'GET') {
     return {
@@ -355,7 +355,7 @@ function resolveParameterizedGatewayOperation(
       reply_to_comment_id: optionalString(options.body?.reply_to_comment_id),
     };
   }
-  const post = matchPath(options.path, /^\/api\/v1\/social\/posts\/([^/]+)$/);
+  const post = matchPath(options.path, /^\/api\/v1\/social\/moments\/([^/]+)$/);
   if (post && options.method === 'GET') {
     return {
       operationId: 'moments_post_get',
